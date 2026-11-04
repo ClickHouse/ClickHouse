@@ -219,9 +219,10 @@ public:
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 
-    /// The join order optimizer chose `full_sorting_merge` for this join because its inputs are sorted by the key.
-    bool isPlannedAsSortMerge() const { return planned_as_sort_merge; }
-    void setPlannedAsSortMerge() { planned_as_sort_merge = true; }
+    /// The algorithm the join order optimizer chose for this join, if any. `join_algorithms` stays the user's list: the
+    /// physical join tries the planned algorithm first and falls back to that list.
+    std::optional<JoinAlgorithm> getPlannedAlgorithm() const { return planned_algorithm; }
+    void setPlannedAlgorithm(JoinAlgorithm algorithm) { planned_algorithm = algorithm; }
 
     /// Swap left and right sides
     void swapInputs();
@@ -319,7 +320,7 @@ protected:
 private:
 
     bool disjunctions_optimization_applied = false;
-    bool planned_as_sort_merge = false;
+    std::optional<JoinAlgorithm> planned_algorithm;
 };
 
 

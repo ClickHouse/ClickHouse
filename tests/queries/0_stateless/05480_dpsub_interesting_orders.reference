@@ -60,6 +60,10 @@ merge join
 hash join
 -- join_algorithm set explicitly in a subquery only: its join stays a hash join
 hash join
+-- join_algorithm set explicitly with full_sorting_merge as a fallback: the priority list is kept, a hash join
+hash join
+-- join_algorithm set explicitly to its default: the optimizer still chooses, a merge join
+merge join
 -- the setting is off: hash join
 hash join
 -- results

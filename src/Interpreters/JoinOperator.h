@@ -67,8 +67,6 @@ struct QueryPlanSerializationSettings;
 struct JoinSettings
 {
     std::vector<JoinAlgorithm> join_algorithms;
-    /// Whether `join_algorithm` was set rather than left at its default; the join order optimizer must not override it.
-    bool join_algorithm_is_explicit = false;
 
     /// The block nested loop join is not one of `join_algorithms`: it executes what no algorithm can.
     bool allow_block_nested_loop_join;
@@ -138,6 +136,10 @@ struct JoinSettings
 
     explicit JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_ = JoinAnalyzeMode::None);
     JoinSettings(const QueryPlanSerializationSettings & settings, UInt64 version);
+
+    /// Whether `join_algorithms` is the built-in default of `join_algorithm`, whose algorithm the join order optimizer may
+    /// choose per join. Any other list is a priority list the user chose, used as it is.
+    bool hasDefaultJoinAlgorithms() const;
 
     /// `join_operator` is the step the settings are serialized for: whether a downgraded plan can be
     /// handed to an older peer depends on which algorithm of the preference list that step reaches.

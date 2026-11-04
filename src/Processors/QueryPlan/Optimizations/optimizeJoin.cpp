@@ -1177,8 +1177,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     if (const auto & context = *query_graph_builder.context; context.optimization_settings.query_plan_join_order_use_interesting_orders)
     {
         const auto & join_settings = context.join_settings;
-        query_graph.use_interesting_orders = !join_settings.join_algorithm_is_explicit
-            || std::ranges::contains(join_settings.join_algorithms, JoinAlgorithm::FULL_SORTING_MERGE);
+        /// An explicit `join_algorithm` is a priority list: the optimizer does not choose another algorithm over it.
+        query_graph.use_interesting_orders = join_settings.hasDefaultJoinAlgorithms();
         /// `CreateSetAndFilterOnTheFlyStep` (`max_rows_in_set_to_optimize_join`) prevents reading in order.
         if (query_graph.use_interesting_orders && context.optimization_settings.read_in_order && join_settings.max_rows_in_set_to_optimize_join == 0)
             query_graph.find_read_in_order_prefixes = [inputs = query_graph_builder.inputs, sorting_settings = context.sorting_settings](
@@ -1545,26 +1545,19 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 current_input_nodes.at(first_dropped_node_pos).second = first_dropped_node;
             }
 
-            /// A join planned as a sort-merge join runs as `full_sorting_merge`, the other algorithms remain its fallback.
-            auto step_join_settings = join_settings;
-            if (entry->join_method == JoinMethod::Merge)
-            {
-                std::erase(step_join_settings.join_algorithms, JoinAlgorithm::FULL_SORTING_MERGE);
-                step_join_settings.join_algorithms.insert(step_join_settings.join_algorithms.begin(), JoinAlgorithm::FULL_SORTING_MERGE);
-            }
-
             auto join_step = std::make_unique<JoinStepLogical>(
                 left_header_ptr,
                 right_header_ptr,
                 std::move(join_operator),
                 std::move(current_expression_actions),
                 actions_after_join,
-                step_join_settings,
+                join_settings,
                 sorting_settings);
 
             join_step->setDisjunctionsOptimizationApplied(disjunctions_optimization_applied);
+            /// The physical join runs it, with the user's `join_algorithm` list as its fallback.
             if (entry->join_method == JoinMethod::Merge)
-                join_step->setPlannedAsSortMerge();
+                join_step->setPlannedAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE);
 
             /// Diagnostic only: a join is imprecise if any of its leaves was (see `leaf_imprecise` above).
             bool imprecise_estimate = false;

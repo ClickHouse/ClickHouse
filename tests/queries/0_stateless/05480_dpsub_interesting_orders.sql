@@ -259,6 +259,16 @@ SELECT if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%',
     SELECT * FROM (SELECT sum(sorted1.v + sorted2.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k SETTINGS join_algorithm = 'parallel_hash'))
 WHERE explain LIKE '%Algorithm:%';
 
+SELECT '-- join_algorithm set explicitly with full_sorting_merge as a fallback: the priority list is kept, a hash join';
+SELECT if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join'), replaceRegexpAll(explain, '^[│└├─ ]+', '')) FROM (EXPLAIN PLAN sorting = 1 SELECT sum(sorted1.v + sorted2.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k)
+WHERE explain LIKE '%Algorithm:%'
+SETTINGS join_algorithm = 'parallel_hash,full_sorting_merge';
+
+SELECT '-- join_algorithm set explicitly to its default: the optimizer still chooses, a merge join';
+SELECT if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join'), replaceRegexpAll(explain, '^[│└├─ ]+', '')) FROM (EXPLAIN PLAN sorting = 1 SELECT sum(sorted1.v + sorted2.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k)
+WHERE explain LIKE '%Algorithm:%'
+SETTINGS join_algorithm = 'direct,parallel_hash,hash,ie_join';
+
 SELECT '-- the setting is off: hash join';
 SELECT if(explain LIKE '%Algorithm:%', if(explain LIKE '%FullSortingMergeJoin%', 'merge join', 'hash join'), replaceRegexpAll(explain, '^[│└├─ ]+', '')) FROM (EXPLAIN PLAN sorting = 1 SELECT sum(sorted1.v + sorted2.v) FROM sorted1 JOIN sorted2 ON sorted1.k = sorted2.k)
 WHERE explain LIKE '%Algorithm:%'
