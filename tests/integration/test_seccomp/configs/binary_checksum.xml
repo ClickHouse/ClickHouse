@@ -1,0 +1,5 @@
+<clickhouse>
+    <!-- The common configuration of the integration tests skips the integrity check of the
+         executable, and this test is about that check running under the filter. -->
+    <skip_binary_checksum_checks>false</skip_binary_checksum_checks>
+</clickhouse>

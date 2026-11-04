@@ -1,0 +1,31 @@
+lc	LowCardinality(String)					
+lcn	LowCardinality(Nullable(String))					
+e8	Enum8(\'a\' = 1, \'b\' = 2, \'c\' = 3, \'d\' = 4, \'e\' = 5)					
+e16	Enum16(\'x\' = -1000, \'y\' = 0, \'z\' = 1000)					
+d32	Date32					
+dt64	DateTime64(3, \'UTC\')					
+dt64_0	DateTime64(0, \'Asia/Kolkata\')					
+dec32	Decimal(9, 2)					
+dec128	Decimal(38, 10)					
+u128	UInt128					
+i256	Int256					
+ip4	IPv4					
+ip6	IPv6					
+tup	Tuple(\n    a UInt32,\n    b String)					
+m	Map(String, UInt64)					
+bf	BFloat16					
+1000
+LowCardinality	1	1
+LowCardinality(Nullable) keeps the null map	1
+Enum	5	5	3	3
+Date32 is kept	1
+DateTime64 keeps the date	1	1	1	1
+Decimal	1	1	1	1
+wide integers	1	1	1	1	1
+IP	1	1	1	1
+Tuple	1
+Map keeps the sizes	1
+BFloat16	100	100
+\N
+\N
+\N

@@ -11,3 +11,10 @@
 [thread]
 # https://github.com/ClickHouse/ClickHouse/issues/55629
 fun:rd_kafka_broker_set_nodename
+# `randomnessPid` in the SQLite amalgamation is read in `unixOpen` and written both there and in
+# `unixRandomness` without synchronization. SQLite documents the race as harmless right at the
+# access ("two or more threads all trying to open databases at the same instant might all reset
+# the PRNG. But multiple resets are harmless."), and the writer in `unixRandomness` runs under
+# SQLite's own PRNG mutex, which the reader in `unixOpen` does not take. Two concurrent SQLite
+# queries, one opening a database and one writing, are enough to report it.
+fun:*unixOpen*

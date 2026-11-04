@@ -9,9 +9,7 @@ keywords: ['clickpipes', 'terraform', 'infrastructure as code', 'iac', 'programm
 
 Tous les types de ClickPipes peuvent être créés et gérés à l’aide de la ressource `clickhouse_clickpipe` du [fournisseur Terraform ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipe). Cette page présente la configuration du fournisseur ainsi que des exemples de configuration pour chaque type de ClickPipe pris en charge.
 
-<div id="provider-setup">
-  ## Configuration du fournisseur
-</div>
+## Configuration du fournisseur {#provider-setup}
 
 <Note>
   La prise en charge de ClickPipes est en disponibilité générale à partir de la version **v3.14.0** du fournisseur.
@@ -41,9 +39,7 @@ provider "clickhouse" {
 
 Consultez [Gestion des clés API](/fr/products/cloud/features/admin-features/api/openapi) pour savoir comment créer une clé API à utiliser avec le fournisseur.
 
-<div id="resource-overview">
-  ## Aperçu de la ressource
-</div>
+## Aperçu de la ressource {#resource-overview}
 
 La ressource `clickhouse_clickpipe` comporte les arguments de niveau supérieur suivants :
 
@@ -60,9 +56,7 @@ La ressource `clickhouse_clickpipe` comporte les arguments de niveau supérieur 
 
 Les attributs `id` et `state` sont en lecture seule et sont renseignés par ClickHouse Cloud après la création.
 
-<div id="destination">
-  ## Destination
-</div>
+## Destination {#destination}
 
 Le bloc `destination` est commun à tous les types de source :
 
@@ -94,13 +88,9 @@ destination {
 
 Pour les sources CDC (Postgres, MySQL, MongoDB, BigQuery), les tables de destination sont créées automatiquement à partir du schéma de la source — seul `database` est généralement nécessaire.
 
-<div id="examples">
-  ## Exemples par type de ClickPipe
-</div>
+## Exemples par type de ClickPipe {#examples}
 
-<div id="kafka">
-  ### Kafka
-</div>
+### Kafka {#kafka}
 
 Valeurs de `type` prises en charge : `kafka`, `confluent`, `msk`, `azureeventhub`, `redpanda`, `warpstream`.
 
@@ -163,9 +153,7 @@ resource "clickhouse_clickpipe" "kafka_clickpipe" {
 }
 ```
 
-<div id="kafka-schema-registry">
-  #### Kafka avec un registre de schémas
-</div>
+#### Kafka avec un registre de schémas {#kafka-schema-registry}
 
 ```hcl
 resource "clickhouse_clickpipe" "kafka_avro_clickpipe" {
@@ -219,9 +207,7 @@ resource "clickhouse_clickpipe" "kafka_avro_clickpipe" {
 }
 ```
 
-<div id="kinesis">
-  ### Amazon Kinesis
-</div>
+### Amazon Kinesis {#kinesis}
 
 ```hcl
 resource "clickhouse_clickpipe" "kinesis_clickpipe" {
@@ -230,11 +216,17 @@ resource "clickhouse_clickpipe" "kinesis_clickpipe" {
 
   source {
     kinesis {
-      format         = "JSONEachRow"
+      format         = "AvroConfluent"
       stream_name    = "my-stream"
       region         = "us-east-1"
       iterator_type  = "TRIM_HORIZON"
       authentication = "IAM_USER"
+
+      schema_registry {
+        type               = "glue"
+        glue_region        = "us-east-1"
+        glue_registry_name = "my-registry"
+      }
 
       access_key {
         access_key_id = var.aws_access_key_id
@@ -266,9 +258,50 @@ resource "clickhouse_clickpipe" "kinesis_clickpipe" {
 }
 ```
 
-<div id="kinesis-iam-role">
-  #### Kinesis avec un rôle IAM
-</div>
+#### Kinesis avec un schéma Protobuf téléversé {#kinesis-protobuf-schema}
+
+Définissez `format` sur `Protobuf` et utilisez `protobuf_schema` pour fournir un fichier `.proto` encodé en Base64 ou un `FileDescriptorSet` sérialisé. Ne configurez pas `schema_registry` si vous téléversez un schéma.
+
+```hcl
+resource "clickhouse_clickpipe" "kinesis_protobuf_clickpipe" {
+  name       = "My Kinesis Protobuf ClickPipe"
+  service_id = var.service_id
+
+  source {
+    kinesis {
+      format          = "Protobuf"
+      stream_name     = "my-stream"
+      region          = "us-east-1"
+      iterator_type   = "TRIM_HORIZON"
+      authentication  = "IAM_USER"
+      protobuf_schema = filebase64("${path.module}/event.proto")
+
+      access_key {
+        access_key_id = var.aws_access_key_id
+        secret_key    = var.aws_secret_key
+      }
+    }
+  }
+
+  destination {
+    table         = "my_table"
+    managed_table = true
+
+    table_definition {
+      engine {
+        type = "MergeTree"
+      }
+    }
+
+    columns {
+      name = "id"
+      type = "UInt64"
+    }
+  }
+}
+```
+
+#### Kinesis avec un rôle IAM {#kinesis-iam-role}
 
 L&#39;authentification via un rôle IAM nécessite un service ClickHouse exécuté sur AWS.
 
@@ -311,9 +344,7 @@ resource "clickhouse_clickpipe" "kinesis_iam_role_clickpipe" {
 }
 ```
 
-<div id="s3">
-  ### Amazon S3
-</div>
+### Amazon S3 {#s3}
 
 ```hcl
 resource "clickhouse_clickpipe" "s3_clickpipe" {
@@ -357,9 +388,7 @@ resource "clickhouse_clickpipe" "s3_clickpipe" {
 }
 ```
 
-<div id="s3-continuous">
-  #### Ingestion continue S3 avec SQS
-</div>
+#### Ingestion continue S3 avec SQS {#s3-continuous}
 
 Pour une ingestion continue à l’aide d’une file d’attente SQS (mode unordered). Voir [Configuring unordered mode](/fr/integrations/clickpipes/object-storage/amazon-s3/unordered-mode) pour les instructions de configuration.
 
@@ -407,9 +436,7 @@ resource "clickhouse_clickpipe" "s3_continuous_clickpipe" {
 }
 ```
 
-<div id="gcs">
-  ### Google Cloud Storage
-</div>
+### Google Cloud Storage {#gcs}
 
 `service_account_key` doit contenir le contenu encodé en base64 d’un fichier de clé JSON de compte de service GCP.
 
@@ -451,9 +478,7 @@ resource "clickhouse_clickpipe" "gcs_clickpipe" {
 }
 ```
 
-<div id="abs">
-  ### Azure Blob Storage
-</div>
+### Azure Blob Storage {#abs}
 
 ```hcl
 resource "clickhouse_clickpipe" "abs_clickpipe" {
@@ -494,9 +519,7 @@ resource "clickhouse_clickpipe" "abs_clickpipe" {
 }
 ```
 
-<div id="postgres">
-  ### Postgres CDC
-</div>
+### Postgres CDC {#postgres}
 
 ```hcl
 resource "clickhouse_clickpipe" "postgres_cdc_clickpipe" {
@@ -552,9 +575,7 @@ resource "clickhouse_clickpipe" "postgres_cdc_clickpipe" {
 }
 ```
 
-<div id="postgres-iam-role">
-  #### Postgres avec un rôle IAM
-</div>
+#### Postgres avec un rôle IAM {#postgres-iam-role}
 
 L&#39;authentification par rôle IAM nécessite un service ClickHouse hébergé sur AWS.
 
@@ -594,9 +615,7 @@ resource "clickhouse_clickpipe" "postgres_iam_role_clickpipe" {
 }
 ```
 
-<div id="mysql">
-  ### MySQL CDC
-</div>
+### MySQL CDC {#mysql}
 
 ```hcl
 resource "clickhouse_clickpipe" "mysql_cdc_clickpipe" {
@@ -652,9 +671,7 @@ resource "clickhouse_clickpipe" "mysql_cdc_clickpipe" {
 }
 ```
 
-<div id="mongodb">
-  ### MongoDB CDC
-</div>
+### MongoDB CDC {#mongodb}
 
 ```hcl
 resource "clickhouse_clickpipe" "mongodb_cdc_clickpipe" {
@@ -702,9 +719,7 @@ resource "clickhouse_clickpipe" "mongodb_cdc_clickpipe" {
 }
 ```
 
-<div id="bigquery">
-  ### BigQuery
-</div>
+### BigQuery {#bigquery}
 
 `service_account_file` doit correspondre au contenu, encodé en base64, d’un fichier de clé JSON de compte de service GCP.
 
@@ -755,9 +770,7 @@ resource "clickhouse_clickpipe" "bigquery_snapshot_clickpipe" {
 }
 ```
 
-<div id="scaling">
-  ## Mise à l’échelle
-</div>
+## Mise à l’échelle {#scaling}
 
 Tous les types de ClickPipe prennent en charge le bloc `scaling` pour configurer le nombre de répliques et l’allocation des ressources :
 
@@ -769,9 +782,7 @@ scaling {
 }
 ```
 
-<div id="import">
-  ## Importer des ClickPipes existants
-</div>
+## Importer des ClickPipes existants {#import}
 
 Les ClickPipes existants peuvent être importés dans le Terraform state à l’aide de l’ID du service et de l’ID du ClickPipe :
 

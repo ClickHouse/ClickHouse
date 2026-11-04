@@ -28,6 +28,10 @@ if (ENABLE_BENCHMARKS AND (OS_LINUX OR OS_FREEBSD))
     target_link_options (profile_events PRIVATE "LINKER:--undefined=FiberLocalStorageThreadStorage")
 endif ()
 
+clickhouse_add_microbenchmark(benchmark_stack_trace
+    SOURCES stack_trace.cpp
+    LIBRARIES clickhouse_common_io)
+
 clickhouse_add_microbenchmark(benchmark_sched_getcpu
     SOURCES sched_getcpu.cpp
     LIBRARIES ${CMAKE_DL_LIBS})

@@ -6,7 +6,7 @@
 #include <Disks/LocalDirectorySyncGuard.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
 #include <Interpreters/Context.h>
-#include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
+#include <Storages/MergeTree/PostingListCursor.h>
 
 #include <gtest/gtest.h>
 

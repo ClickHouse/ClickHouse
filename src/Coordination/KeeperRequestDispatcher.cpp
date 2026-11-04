@@ -350,7 +350,13 @@ bool KeeperRequestDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr
             std::chrono::milliseconds operation_timeout = saturatedWaitMilliseconds(
                 keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds());
             if (std::chrono::steady_clock::now() - start_time > operation_timeout)
-                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push request to queue within operation timeout");
+                throw Exception(
+                    ErrorCodes::TIMEOUT_EXCEEDED,
+                    "Cannot push request to queue within operation timeout ({} ms). "
+                    "The request queue may be full or keeper is overloaded: "
+                    "consider increasing operation_timeout_ms in keeper_server.coordination_settings "
+                    "or checking keeper load",
+                    operation_timeout.count());
         }
     }
 
@@ -825,7 +831,7 @@ void KeeperRequestDispatcher::dispatchThread()
                         ProfileEvents::increment(ProfileEvents::KeeperRequestRejectedDueToSoftMemoryLimitCount);
                         LOG_WARNING(
                             log,
-                            "Processing requests refused because of max_memory_usage_soft_limit {}, the total allocated memory is {}, RSS is {}, request type is {}",
+                            "Processing requests refused because of max_memory_usage_soft_limit {}, the total tracked memory is {}, RSS is {}, request type is {}",
                             ReadableSize(keeper_context->getKeeperMemorySoftLimit()),
                             ReadableSize(total_memory_tracker.get()),
                             ReadableSize(total_memory_tracker.getRSS()),

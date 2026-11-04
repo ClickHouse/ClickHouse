@@ -871,7 +871,7 @@ def test_nats_virtual_column_with_materialized_view(nats_cluster):
             SETTINGS nats_url = 'nats1:4444',
                      nats_subjects = 'virtuals_mv',
                      nats_format = 'JSONEachRow';
-        CREATE TABLE test.view (key UInt64, value UInt64, subject String) ENGINE = MergeTree()
+        CREATE TABLE test.view (key UInt64, value UInt64, subject String, table_name String) ENGINE = MergeTree()
             ORDER BY key;
         """
     )
@@ -880,7 +880,7 @@ def test_nats_virtual_column_with_materialized_view(nats_cluster):
     instance.query(
         """
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-        SELECT *, _subject as subject
+        SELECT *, _subject as subject, _table as table_name
         FROM test.nats_virtuals_mv;
         """
     )
@@ -913,6 +913,7 @@ def test_nats_virtual_column_with_materialized_view(nats_cluster):
 """
 
     assert TSV(result) == TSV(expected)
+    assert instance.query("SELECT table_name, count() FROM test.view GROUP BY table_name") == "nats_virtuals_mv\t10\n"
 
 
 def test_nats_many_consumers_to_each_queue(nats_cluster):

@@ -5,9 +5,11 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Utils.h>
 #include <Common/assert_cast.h>
 
@@ -22,6 +24,8 @@
 
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
+
+#include <Storages/MergeTree/KeyCondition.h>
 
 namespace DB
 {
@@ -141,6 +145,11 @@ bool traverseDAGFilterSingleColumn(
         if (value->type != ActionsDAG::ActionType::COLUMN)
             return false;
 
+        /// `=` compares a float with a `Decimal`, `DateTime64` or `Time64` key as `Float64`, so the float can equal keys other than its cast.
+        /// A constant of the DAG is a `ColumnConst` of 0 rows.
+        if (floatValuesMissKeyValues(value->column->cloneResized(1), value->result_type, primary_key_type, std::make_shared<DataTypeFloat64>()))
+            return false;
+
         /// The type of the literal decides how it converts: a `DateTime` literal compared with a `Date`
         /// key is a number of seconds, not a day number, so without the source type its raw value is
         /// reinterpreted in the key's unit space and the lookup probes a key that does not exist.
@@ -200,6 +209,10 @@ bool traverseDAGFilterSingleColumn(
         const auto set_column_ptr = set->getSetElements()[0];
         const auto set_data_type_ptr = set->getElementsTypes()[0];
         const ColumnWithTypeAndName set_column = {set_column_ptr, set_data_type_ptr, ""};
+
+        /// `IN` compares the key with the set elements in their own type (see `Set::execute`).
+        if (floatValuesMissKeyValues(set_column_ptr, set_data_type_ptr, primary_key_type, removeLowCardinalityAndNullable(set_data_type_ptr)))
+            return false;
 
         // In case set values can be safely casted to PK data type, simply convert them,
         // and return as filter.
@@ -311,13 +324,34 @@ bool traverseDAGFilter(
 
             // Convert each tuple element to the correct type, with the type of the element it comes
             // from: without it a date-family literal is reinterpreted in the key's unit space.
-            const auto * value_tuple_type
-                = typeid_cast<const DataTypeTuple *>(removeNullable(recursiveRemoveLowCardinality(right->result_type)).get());
+            const auto value_type = removeNullable(recursiveRemoveLowCardinality(right->result_type));
+            const auto * value_tuple_type = typeid_cast<const DataTypeTuple *>(value_type.get());
+
+            const IColumn * value_column = right->column.get();
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(value_column))
+                value_column = &column_const->getDataColumn();
+            if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(value_column))
+                value_column = &column_nullable->getNestedColumn();
+            const auto * value_tuple_column = typeid_cast<const ColumnTuple *>(value_column);
+            const DataTypePtr value_unwrapped_type = removeNullable(right->result_type);
+            const auto * value_full_tuple_type = typeid_cast<const DataTypeTuple *>(value_unwrapped_type.get());
+            const bool per_element = value_tuple_column && value_full_tuple_type && value_tuple_column->tupleSize() == tuple_value.size()
+                && value_full_tuple_type->getElements().size() == tuple_value.size();
 
             std::vector<Field> converted_values;
             converted_values.reserve(tuple_value.size());
             for (size_t i = 0; i < tuple_value.size(); ++i)
             {
+                /// `=` compares the elements one by one.
+                if (per_element ? floatValuesMissKeyValues(
+                                      value_tuple_column->getColumnPtr(i),
+                                      value_full_tuple_type->getElement(i),
+                                      primary_key_types[i],
+                                      std::make_shared<DataTypeFloat64>())
+                                : floatValuesMissKeyValues(
+                                      right->column->cloneResized(1), right->result_type, primary_key_types[i], std::make_shared<DataTypeFloat64>()))
+                    return false;
+
                 DataTypePtr element_type;
                 if (value_tuple_type && i < value_tuple_type->getElements().size())
                     element_type = removeNullable(recursiveRemoveLowCardinality(value_tuple_type->getElements()[i]));
@@ -395,6 +429,25 @@ bool traverseDAGFilter(
             if (set_elements.empty())
                 return false;
 
+            /// `IN` compares each key column with its set column in the type of that column.
+            for (size_t col = 0; col < primary_keys.size() && col < set_element_types.size(); ++col)
+            {
+                ColumnPtr elements = set_elements[col];
+                DataTypePtr elements_type = set_element_types[col];
+                /// The keys below are converted from a `Field`, which holds a `Float32` as `Float64`.
+                if (WhichDataType(removeLowCardinalityAndNullable(elements_type)).isFloat32())
+                {
+                    DataTypePtr float64_type = std::make_shared<DataTypeFloat64>();
+                    if (isNullableOrLowCardinalityNullable(elements_type))
+                        float64_type = makeNullable(float64_type);
+                    elements = castColumn({elements, elements_type, ""}, float64_type);
+                    elements_type = float64_type;
+                }
+                if (floatValuesMissKeyValues(
+                        elements, elements_type, primary_key_types[col], removeLowCardinalityAndNullable(set_element_types[col])))
+                    return false;
+            }
+
             size_t num_rows = set_elements[0]->size();
 
             for (size_t row = 0; row < num_rows; ++row)
@@ -402,30 +455,26 @@ bool traverseDAGFilter(
                 std::vector<Field> tuple_values;
                 tuple_values.reserve(primary_keys.size());
 
-                bool all_converted = true;
                 for (size_t col = 0; col < primary_keys.size(); ++col)
                 {
                     Field field;
                     set_elements[col]->get(row, field);
 
                     /// Converted with the type of the element it comes from, and with the wrappers
-                    /// stripped: without it a date-family element is reinterpreted in the key's unit
-                    /// space, and one the key type cannot represent raises instead of being skipped.
+                    /// stripped: without it a date-family element is reinterpreted in the key's unit space.
                     DataTypePtr element_type;
                     if (col < set_element_types.size())
                         element_type = removeNullable(recursiveRemoveLowCardinality(set_element_types[col]));
 
+                    /// An element that does not convert into the key type can still equal a stored key:
+                    /// the runtime comparison converts in the other direction, so this set is not a key filter.
                     auto converted = tryConvertFieldToType(field, *primary_key_types[col], element_type.get());
                     if (converted.isNull())
-                    {
-                        all_converted = false;
-                        break;
-                    }
+                        return false;
                     tuple_values.push_back(converted);
                 }
 
-                if (all_converted)
-                    res->push_back(createTupleField(tuple_values));
+                res->push_back(createTupleField(tuple_values));
             }
 
             return !res->empty();
@@ -494,6 +543,13 @@ bool traverseDAGFilter(
     return false;
 }
 
+/// `-0.` and `0.` are equal but serialize to different keys, and the readers merge equal keys before the lookup,
+/// so a key set holding a floating-point zero cannot find both.
+bool hasFloatZeroKey(const FieldVector & keys)
+{
+    return std::ranges::any_of(keys, [](const Field & key) { return anyFieldSatisfies(key, isFloatZeroField); });
+}
+
 }
 
 std::pair<FieldVectorPtr, bool> getFilterKeys(
@@ -507,7 +563,7 @@ std::pair<FieldVectorPtr, bool> getFilterKeys(
     FieldVectorPtr res = std::make_shared<FieldVector>();
     auto matched_keys = traverseDAGFilterSingleColumn(primary_key, primary_key_type, predicate, context, res);
 
-    return std::make_pair(res, !matched_keys);
+    return std::make_pair(res, !matched_keys || hasFloatZeroKey(*res));
 }
 
 std::pair<FieldVectorPtr, bool> getFilterKeys(
@@ -524,7 +580,7 @@ std::pair<FieldVectorPtr, bool> getFilterKeys(
     FieldVectorPtr res = std::make_shared<FieldVector>();
     auto matched_keys = traverseDAGFilter(primary_keys, primary_key_types, predicate, context, res);
 
-    return std::make_pair(res, !matched_keys);
+    return std::make_pair(res, !matched_keys || hasFloatZeroKey(*res));
 }
 
 std::vector<std::string> serializeKeysToRawString(

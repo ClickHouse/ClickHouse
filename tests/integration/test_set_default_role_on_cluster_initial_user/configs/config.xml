@@ -1,0 +1,13 @@
+<clickhouse>
+    <distributed_ddl_use_initial_user_and_roles>1</distributed_ddl_use_initial_user_and_roles>
+    <remote_servers>
+        <cluster>
+            <shard>
+                <replica>
+                    <host>node</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </cluster>
+    </remote_servers>
+</clickhouse>

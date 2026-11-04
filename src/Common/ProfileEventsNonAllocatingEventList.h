@@ -27,6 +27,10 @@
     M(TextIndexLazySegmentsSkippedDense) \
     M(TextIndexLazySegmentsSkippedResolved) \
     M(TextIndexLazyBlocksSkippedResolved) \
+    M(TextIndexLazyBlocksSkippedDense) \
+    M(TextIndexLazyBruteForceIntersections) \
+    M(TextIndexLazyBruteForceEarlyExits) \
+    M(TextIndexLazyLeapfrogIntersections) \
     M(DirectorySync) \
     M(DirectorySyncElapsedMicroseconds) \
     M(ParallelReplicasQueryCount) \
