@@ -2481,32 +2481,56 @@ static bool isAggregatedType(const DataTypePtr & type, bool allow_tuple_element_
 
 using ActionsDAGParents = std::unordered_map<const ActionsDAG::Node *, std::vector<const ActionsDAG::Node *>>;
 
-/// The name of the element of `tuple` that the second argument `element` of `tupleElement` names, by name or by position, or
-/// std::nullopt if it is not known.
-static std::optional<String> tryGetTupleElementName(const DataTypeTuple & tuple, const ActionsDAG::Node & element)
+/// What the second argument `selector` of `tupleElement` selects in `tuple`: an element, by name or by position, or none, so that
+/// `tupleElement` returns its third argument, the default (without it, `tupleElement` throws).
+struct TupleElementSelection
 {
-    const auto * column = typeid_cast<const ColumnConst *>(element.column.get());
+    enum class Kind : uint8_t
+    {
+        Element,
+        Default,
+        /// The selector is not a constant name or position.
+        Unknown,
+    };
+    Kind kind;
+    /// The name of the element, for `Element`.
+    String name;
+};
+
+static TupleElementSelection getTupleElementSelection(const DataTypeTuple & tuple, const ActionsDAG::Node & selector)
+{
+    using Kind = TupleElementSelection::Kind;
+    const auto * column = typeid_cast<const ColumnConst *>(selector.column.get());
     if (!column)
-        return std::nullopt;
+        return {Kind::Unknown, {}};
     const Field field = column->getField();
+    const size_t size = tuple.getElements().size();
+    std::optional<size_t> position;
     if (field.getType() == Field::Types::String)
-        return field.safeGet<String>();
-    if (field.getType() == Field::Types::UInt64)
     {
-        const UInt64 position = field.safeGet<UInt64>();
-        if (position >= 1 && position <= tuple.getElements().size())
-            return tuple.getNameByPosition(position);
+        position = tuple.tryGetPositionByName(field.safeGet<String>());
+        if (position)
+            ++*position;
     }
-    /// A negative position counts from the end, as in `tupleElement(x, -1)`.
-    if (field.getType() == Field::Types::Int64)
+    else if (field.getType() == Field::Types::UInt64)
     {
-        const Int64 size = static_cast<Int64>(tuple.getElements().size());
-        const Int64 position = field.safeGet<Int64>();
-        const Int64 resolved = position < 0 ? size + position + 1 : position;
-        if (resolved >= 1 && resolved <= size)
-            return tuple.getNameByPosition(static_cast<size_t>(resolved));
+        if (const UInt64 index = field.safeGet<UInt64>(); index >= 1 && index <= size)
+            position = index;
     }
-    return std::nullopt;
+    else if (field.getType() == Field::Types::Int64)
+    {
+        /// A negative position counts from the end, as in `tupleElement(x, -1)`.
+        const Int64 index = field.safeGet<Int64>();
+        const Int64 resolved = index < 0 ? static_cast<Int64>(size) + index + 1 : index;
+        if (resolved >= 1 && resolved <= static_cast<Int64>(size))
+            position = static_cast<size_t>(resolved);
+    }
+    else
+        return {Kind::Unknown, {}};
+
+    if (!position)
+        return {Kind::Default, {}};
+    return {Kind::Element, tuple.getNameByPosition(*position)};
 }
 
 /// Adds the flattened names of the aggregated elements of a value of type `type` with the flattened name `path`, such as `x.a` of
@@ -2528,7 +2552,7 @@ static void addAggregatedLeaves(const DataTypePtr & type, const String & path, c
 
 /// Adds the flattened names of the aggregated elements of the node `node` of a tuple type, with the flattened name `path`, that the
 /// key reads. A key can read only other elements, such as `metrics.1` (`tupleElement(metrics, 1)`, also with a default value as the
-/// third argument), which merges do not aggregate. Merges flatten the tuple and do not aggregate an element whose flattened name, such
+/// third argument, which is then not read, while the tuple is not read when the default is selected), which merges do not aggregate. Merges flatten the tuple and do not aggregate an element whose flattened name, such
 /// as `x.a`, is a column of the sorting key either. A value read as a whole reads all its aggregated elements.
 static void addAggregatedTupleElementsReadByKey(
     const KeyDescription & key, const ActionsDAGParents & parents, const ActionsDAG::Node & node, const String & path,
@@ -2555,12 +2579,43 @@ static void addAggregatedTupleElementsReadByKey(
     auto it = parents.find(&node);
     if (it == parents.end())
         return;
+    /// A parent is listed once for each of its arguments that is the node.
+    std::unordered_set<const ActionsDAG::Node *> visited_parents;
     for (const auto * parent : it->second)
     {
-        const bool is_element = parent->type == ActionsDAG::ActionType::FUNCTION && parent->function_base
+        if (!visited_parents.insert(parent).second)
+            continue;
+
+        const bool is_tuple_element = parent->type == ActionsDAG::ActionType::FUNCTION && parent->function_base
             && parent->function_base->getName() == "tupleElement" && (parent->children.size() == 2 || parent->children.size() == 3)
-            && parent->children[0] == &node
             && parent->children[1]->type == ActionsDAG::ActionType::COLUMN;
+        if (is_tuple_element)
+        {
+            /// The node is the tuple, the default (the third argument), or both, as in `tupleElement(x, 'missing', x)`.
+            const bool is_tuple = parent->children[0] == &node;
+            const bool is_default = parent->children.size() == 3 && parent->children[2] == &node;
+            const auto * selected_tuple = typeid_cast<const DataTypeTuple *>(parent->children[0]->result_type.get());
+            using Kind = TupleElementSelection::Kind;
+            auto selection = selected_tuple ? getTupleElementSelection(*selected_tuple, *parent->children[1])
+                                            : TupleElementSelection{Kind::Unknown, {}};
+            /// Without the default, `tupleElement` throws for a missing element.
+            if (selection.kind == Kind::Default && parent->children.size() != 3)
+                selection.kind = Kind::Unknown;
+
+            if (selection.kind == Kind::Unknown)
+            {
+                addAggregatedLeaves(node.result_type, path, sorting_key_columns, values);
+                return;
+            }
+            if (selection.kind == Kind::Element && is_tuple)
+                addAggregatedTupleElementsReadByKey(
+                    key, parents, *parent, Nested::concatenateName(path, selection.name), sorting_key_columns, values);
+            else if (selection.kind == Kind::Default && is_default)
+                addAggregatedTupleElementsReadByKey(key, parents, *parent, path, sorting_key_columns, values);
+            /// Otherwise the value of the node is not returned.
+            continue;
+        }
+
         const bool is_alias = parent->type == ActionsDAG::ActionType::ALIAS;
         const bool is_subcolumn = parent->type == ActionsDAG::ActionType::FUNCTION && parent->function_base
             && parent->function_base->getName() == "getSubcolumn" && parent->children.size() == 2 && parent->children[0] == &node;
@@ -2597,14 +2652,12 @@ static void addAggregatedTupleElementsReadByKey(
             continue;
         }
 
-        const auto element_name = is_element ? tryGetTupleElementName(*tuple, *parent->children[1]) : std::nullopt;
-        if ((!is_element && !is_alias) || (is_element && !element_name))
+        if (!is_alias)
         {
             addAggregatedLeaves(node.result_type, path, sorting_key_columns, values);
             return;
         }
-        const String parent_path = is_element ? Nested::concatenateName(path, *element_name) : path;
-        addAggregatedTupleElementsReadByKey(key, parents, *parent, parent_path, sorting_key_columns, values);
+        addAggregatedTupleElementsReadByKey(key, parents, *parent, path, sorting_key_columns, values);
     }
 }
 

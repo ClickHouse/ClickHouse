@@ -19,6 +19,11 @@ DROP TABLE IF EXISTS t_selector_negative;
 DROP TABLE IF EXISTS t_selector_aggregated;
 DROP TABLE IF EXISTS t_selector_path;
 DROP TABLE IF EXISTS t_selector_path_aggregated;
+DROP TABLE IF EXISTS t_selector_default;
+DROP TABLE IF EXISTS t_selector_default_name;
+DROP TABLE IF EXISTS t_selector_default_self;
+DROP TABLE IF EXISTS t_selector_default_unused;
+DROP TABLE IF EXISTS t_selector_default_aggregated;
 DROP TABLE IF EXISTS t_aggregated_tuple;
 DROP TABLE IF EXISTS t_in_sorting_key_subcolumn;
 DROP TABLE IF EXISTS t_in_sorting_key_element;
@@ -137,6 +142,27 @@ CREATE TABLE t_aggregated_tuple (k UInt8, a Tuple(Array(UInt64), Array(UInt64)))
 PARTITION BY length(tupleElement(a, 1)) ORDER BY k SETTINGS allow_tuple_element_aggregation = 1;
 ALTER TABLE t_aggregated_tuple MODIFY COLUMN a SimpleAggregateFunction(sumMap, Tuple(Array(UInt64), Array(UInt64))); -- { serverError BAD_ARGUMENTS }
 
+-- With a default as the third argument, `tupleElement` returns the element if it exists, and the default otherwise: the tuple is
+-- read only when the element exists, and the default only when it does not, also when the tuple is the default itself.
+CREATE TABLE t_selector_default (x Tuple(a SimpleAggregateFunction(sum, UInt64), b UInt64), k UInt64) ENGINE = AggregatingMergeTree
+PARTITION BY tupleElement(x, 3, k) ORDER BY k SETTINGS allow_tuple_element_aggregation = 1;
+CREATE TABLE t_selector_default_name (x Tuple(a SimpleAggregateFunction(sum, UInt64), b UInt64), k UInt64) ENGINE = AggregatingMergeTree
+PARTITION BY tupleElement(x, 'missing', k) % 2 ORDER BY k SETTINGS allow_tuple_element_aggregation = 1;
+CREATE TABLE t_selector_default_self (x Tuple(a SimpleAggregateFunction(sum, UInt64), b UInt64), k UInt64) ENGINE = AggregatingMergeTree
+PARTITION BY tupleElement(x, 'b', x) % 2 ORDER BY k SETTINGS allow_tuple_element_aggregation = 1;
+CREATE TABLE t_selector_default_unused (x Tuple(a SimpleAggregateFunction(sum, UInt64)), t Tuple(c UInt64), k UInt64)
+ENGINE = AggregatingMergeTree PARTITION BY tupleElement(t, 'c', x) % 2 ORDER BY k SETTINGS allow_tuple_element_aggregation = 1;
+SELECT 'selected defaults created';
+CREATE TABLE t_selector_default_aggregated (x Tuple(a SimpleAggregateFunction(sum, UInt64)), `x.missing.a` UInt64)
+ENGINE = AggregatingMergeTree PARTITION BY tupleElement(tupleElement(x, 'missing', x), 'a') % 2 ORDER BY `x.missing.a`
+SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_selector_default_aggregated (x Tuple(a SimpleAggregateFunction(sum, UInt64), b UInt64), k UInt64)
+ENGINE = AggregatingMergeTree PARTITION BY tupleElement(x, 'a', x) % 2 ORDER BY k
+SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_selector_default_aggregated (x Tuple(a SimpleAggregateFunction(sum, UInt64)), t Tuple(c UInt64), k UInt64)
+ENGINE = AggregatingMergeTree PARTITION BY tupleElement(tupleElement(t, 'missing', x), 'a') % 2 ORDER BY k
+SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
+
 -- A plain MergeTree does not aggregate the column, so the key is fine there.
 CREATE TABLE t_plain (c0 SimpleAggregateFunction(sum, Int64)) ENGINE = MergeTree ORDER BY intDiv(c0, 55);
 SELECT 'plain created';
@@ -156,4 +182,8 @@ DROP TABLE t_tuple_elements;
 DROP TABLE t_selector_subcolumn;
 DROP TABLE t_selector_negative;
 DROP TABLE t_selector_path;
+DROP TABLE t_selector_default;
+DROP TABLE t_selector_default_name;
+DROP TABLE t_selector_default_self;
+DROP TABLE t_selector_default_unused;
 DROP TABLE t_aggregated_tuple;
