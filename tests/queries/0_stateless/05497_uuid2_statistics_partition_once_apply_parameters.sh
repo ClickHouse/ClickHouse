@@ -26,7 +26,8 @@ CREATE TABLE t_partition (u UUID1) ENGINE = MergeTree PARTITION BY u ORDER BY tu
 "
 for _ in {1..10}
 do
-    $CLICKHOUSE_CLIENT --allow_suspicious_variant_types 1 "
+    $CLICKHOUSE_CLIENT "
+    SET allow_suspicious_variant_types = 1;
     TRUNCATE TABLE t_partition;
     INSERT INTO t_partition VALUES ('00000000-0000-0000-0000-000000000001'), ('00000000-0000-0001-0000-000000000000');
     ALTER TABLE t_partition DROP PARTITION tuple(CAST(if(randConstant() % 2,
