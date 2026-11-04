@@ -4663,7 +4663,6 @@ MutateTask::MutateTask(
 
 
 bool MutateTask::execute()
-try
 {
     Stopwatch watch;
     SCOPE_EXIT({ ctx->execute_elapsed_ns += watch.elapsedNanoseconds(); });
@@ -4700,15 +4699,11 @@ try
     }
     return false;
 }
-catch (...)
-{
-    /// Stops the other in-flight reads of this mutation: the thread group's cancellation predicates read this flag.
-    (*ctx->mutate_entry)->is_cancelled.store(true, std::memory_order_relaxed);
-    throw;
-}
 
 void MutateTask::cancel() noexcept
 {
+    (*ctx->mutate_entry)->is_cancelled.store(true, std::memory_order_relaxed);
+
     if (task)
         task->cancel();
 

@@ -12342,7 +12342,18 @@ void MergeTreeData::optimizeDryRun(
         /*parent_part=*/ nullptr,
         dry_run_suffix);
 
-    auto new_part = executeHere(merge_task);
+    MutableDataPartPtr new_part;
+    try
+    {
+        new_part = executeHere(merge_task);
+    }
+    catch (...)
+    {
+        /// A dry run reads in the thread group of its query, whose cancellation predicates observe only the query.
+        if (auto query_status = task_context->getProcessListElementSafe())
+            query_status->cancelQuery(CancelReason::CANCELLED_BY_ERROR);
+        throw;
+    }
 
     /// This commits a transcation on disk, but doesn't commit the data part.
     if (new_part->getDataPartStorage().hasActiveTransaction())
