@@ -23,6 +23,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -38,6 +39,11 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+
+namespace DB::ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 
 namespace DB::QueryPlanOptimizations
 {
@@ -704,6 +710,10 @@ struct SubcolumnsPathStep
     std::vector<SubcolumnRead> reads;
     /// The rewritten actions.
     std::optional<ActionsDAG> new_actions;
+    /// For a join: the side the column comes from, the positions of its outputs and of its columns in the side's input.
+    std::optional<JoinTableSide> join_side;
+    std::vector<size_t> join_output_positions;
+    std::vector<size_t> join_input_positions;
 };
 
 /// A column crossing the path instead of the read column.
@@ -713,6 +723,79 @@ struct CarriedColumn
     String subcolumn;
     DataTypePtr type;
 };
+
+/// The side of `join` whose column `name` the join outputs unchanged and reads for nothing else, if the join never fills
+/// that side with defaults.
+std::optional<JoinTableSide> tryGetPassThroughSide(const JoinStepLogical & join, const String & name)
+{
+    if (join.hasCorrelatedExpressions() || !join.canRemoveUnusedColumns() || hasDuplicatedNames(*join.getOutputHeader())
+        || hasDuplicatedNames(*join.getInputHeaders().at(0)) || hasDuplicatedNames(*join.getInputHeaders().at(1)))
+        return {};
+
+    const auto & actions = join.getActionsDAG();
+    const auto * output = actions.tryFindInOutputs(name);
+    if (!output || output->type != ActionsDAG::ActionType::INPUT)
+        return {};
+
+    for (const auto & node : actions.getNodes())
+        if (std::ranges::find(node.children, output) != node.children.end())
+            return {};
+
+    const auto & join_operator = join.getJoinOperator();
+    for (const auto & action : join_operator.expression)
+        if (action.getNode() == output)
+            return {};
+    for (const auto & action : join_operator.residual_filter)
+        if (action.getNode() == output)
+            return {};
+
+    const JoinActionRef ref(output, join.getExpressionActions());
+    const auto kind = join_operator.kind;
+    const bool both_sides_kept = kind == JoinKind::Inner || kind == JoinKind::Cross || kind == JoinKind::Comma;
+    if (ref.fromLeft() && !ref.fromRight() && (both_sides_kept || kind == JoinKind::Left))
+        return JoinTableSide::Left;
+    if (ref.fromRight() && !ref.fromLeft() && (both_sides_kept || kind == JoinKind::Right))
+        return JoinTableSide::Right;
+
+    return {};
+}
+
+/// Makes `join` return `carried`, read from `side`, instead of the columns at `input_positions` of that side, which it
+/// returns at `output_positions` and reads for nothing else. The carried columns go first, so that the join always keeps
+/// an output of its own. Returns whether exactly those outputs went away.
+bool replaceJoinPassThroughColumns(
+    JoinStepLogical & join, JoinTableSide side, const std::vector<size_t> & input_positions, const std::vector<size_t> & output_positions,
+    const ColumnsWithTypeAndName & carried)
+{
+    const size_t index = JoinStepLogical::getInputIndex(side);
+    for (const auto & column : carried)
+        join.addPassThroughColumn(column, side);
+
+    SharedHeaders headers = join.getInputHeaders();
+    Block header_with_carried = *headers.at(index);
+    for (const auto & column : carried)
+        header_with_carried.insert(column);
+    headers.at(index) = std::make_shared<const Block>(std::move(header_with_carried));
+    join.updateInputHeaders(headers);
+
+    std::vector<IQueryPlanStep::PrunedInput> pruned;
+    for (size_t i = 0; i < headers.size(); ++i)
+    {
+        if (i != index)
+        {
+            pruned.push_back(IQueryPlanStep::PrunedInput::unchanged(headers[i]));
+            continue;
+        }
+
+        Block header;
+        for (size_t position = 0; position < headers[i]->columns(); ++position)
+            if (!std::ranges::binary_search(input_positions, position))
+                header.insert(headers[i]->getByPosition(position));
+        pruned.push_back({input_positions, std::make_shared<const Block>(std::move(header))});
+    }
+
+    return join.removeUnusedColumns(output_positions, pruned).dropped_output_positions == output_positions;
+}
 
 const ActionsDAG::Node * tryFindInput(const ActionsDAG & actions, const String & name)
 {
@@ -863,7 +946,8 @@ size_t tryPushDownSubcolumnsToReading(QueryPlan::Node * top_node, QueryPlan::Nod
 
         /// Down: the path of steps the column passes unchanged, and the read.
         String name = candidate->result_name;
-        std::vector<QueryPlan::Node *> path;
+        /// Each step with the index of the child the column comes from.
+        std::vector<std::pair<QueryPlan::Node *, size_t>> path;
         QueryPlan::Node * node = top_node->children.front();
         ReadFromMergeTree * read_step = nullptr;
         while (true)
@@ -874,6 +958,21 @@ size_t tryPushDownSubcolumnsToReading(QueryPlan::Node * top_node, QueryPlan::Nod
                 if (read->getOutputHeader()->has(name))
                     read_step = read;
                 break;
+            }
+
+            if (const auto * join = typeid_cast<const JoinStepLogical *>(step))
+            {
+                auto side = node->children.size() == 2 ? tryGetPassThroughSide(*join, name) : std::nullopt;
+                if (!side)
+                    break;
+
+                const size_t index = JoinStepLogical::getInputIndex(*side);
+                if (!join->getInputHeaders().at(index)->has(name))
+                    break;
+
+                path.emplace_back(node, index);
+                node = node->children.at(index);
+                continue;
             }
 
             if (node->children.size() != 1 || hasDuplicatedNames(*step->getInputHeaders().front())
@@ -914,7 +1013,7 @@ size_t tryPushDownSubcolumnsToReading(QueryPlan::Node * top_node, QueryPlan::Nod
             else if (!typeid_cast<const OffsetStep *>(step))
                 break;
 
-            path.push_back(node);
+            path.emplace_back(node, 0);
             node = node->children.front();
         }
 
@@ -930,11 +1029,58 @@ size_t tryPushDownSubcolumnsToReading(QueryPlan::Node * top_node, QueryPlan::Nod
         bool ok = true;
         for (auto it = path.rbegin(); ok && it != path.rend(); ++it)
         {
-            auto * step = (*it)->step.get();
-            SubcolumnsPathStep path_step;
-            path_step.node = *it;
+            if (names.empty())
+            {
+                ok = false;
+                break;
+            }
 
-            if (auto * actions = tryGetStepActions(step))
+            auto * step = it->first->step.get();
+            SubcolumnsPathStep path_step;
+            path_step.node = it->first;
+
+            if (auto * join = typeid_cast<JoinStepLogical *>(step))
+            {
+                const auto side = tryGetPassThroughSide(*join, *names.begin());
+                const size_t index = it->second;
+                if (!side || JoinStepLogical::getInputIndex(*side) != index)
+                {
+                    ok = false;
+                    break;
+                }
+
+                const auto & actions = join->getActionsDAG();
+                const auto & input_header = *join->getInputHeaders().at(index);
+                NameSet names_above;
+                for (const auto & passing_name : names)
+                {
+                    path_step.join_input_positions.push_back(input_header.getPositionByName(passing_name));
+                    if (!actions.tryFindInOutputs(passing_name))
+                    {
+                        /// The join does not return it: nothing may read it.
+                        if (const auto * input = tryFindInput(actions, passing_name))
+                            for (const auto & join_node : actions.getNodes())
+                                if (std::ranges::find(join_node.children, input) != join_node.children.end())
+                                    ok = false;
+                        continue;
+                    }
+
+                    if (tryGetPassThroughSide(*join, passing_name) != side)
+                        ok = false;
+                    names_above.insert(passing_name);
+                }
+
+                const auto & outputs = actions.getOutputs();
+                for (size_t position = 0; position < outputs.size(); ++position)
+                    if (names_above.contains(outputs[position]->result_name))
+                        path_step.join_output_positions.push_back(position);
+
+                std::ranges::sort(path_step.join_input_positions);
+
+                path_step.join_side = side;
+                names = std::move(names_above);
+            }
+            else if (auto * actions = tryGetStepActions(step))
             {
                 auto copy = actions->clone();
                 copy.removeUnusedActions(/*allow_remove_inputs=*/false, /*allow_constant_folding=*/false);
@@ -1055,16 +1201,25 @@ size_t tryPushDownSubcolumnsToReading(QueryPlan::Node * top_node, QueryPlan::Nod
         if (!ok || !read_step->canReadSubcolumnsOfColumn(column, function_forms, index_unsafe_function_forms))
             continue;
 
-        /// A carried column must not shadow a column that exists on the way.
-        auto shadows = [&](const Block & header)
+        /// A carried column must not shadow a column that exists on the way, other than the result of a read it replaces.
+        auto shadows = [&](const Block & header, const std::vector<SubcolumnRead> & own_reads)
         {
-            return std::ranges::any_of(carried, [&](const auto & carried_column) { return header.has(carried_column.name); });
+            return std::ranges::any_of(carried, [&](const auto & carried_column)
+            {
+                return header.has(carried_column.name)
+                    && std::ranges::none_of(own_reads, [&](const auto & read) { return read.node->result_name == carried_column.name; });
+            });
         };
-        if (shadows(*read_step->getOutputHeader()) || shadows(top_input_header) || shadows(top_output_header))
+        if (shadows(*read_step->getOutputHeader(), {}) || shadows(top_input_header, {}) || shadows(top_output_header, top_path_step.reads))
             continue;
         for (const auto & path_step : steps)
-            if (shadows(*path_step.node->step->getInputHeaders().front()) || shadows(*path_step.node->step->getOutputHeader()))
+        {
+            for (const auto & input_header : path_step.node->step->getInputHeaders())
+                if (shadows(*input_header, {}))
+                    ok = false;
+            if (shadows(*path_step.node->step->getOutputHeader(), path_step.reads))
                 ok = false;
+        }
 
         if (!ok)
             continue;
@@ -1100,6 +1255,28 @@ size_t tryPushDownSubcolumnsToReading(QueryPlan::Node * top_node, QueryPlan::Nod
             carried_above_step[i - 1] = carried_above;
             for (const auto & read : steps[i - 1].reads)
                 carried_above.insert(getCarriedColumnName(read));
+        }
+
+        auto carried_columns_above = [&](size_t i)
+        {
+            ColumnsWithTypeAndName columns;
+            for (const auto & carried_column : carried)
+                if (carried_above_step[i].contains(carried_column.name))
+                    columns.push_back({carried_column.type->createColumn(), carried_column.type, carried_column.name});
+            return columns;
+        };
+
+        /// A join is changed in place, so try it on a copy first.
+        for (size_t i = 0; ok && i < steps.size(); ++i)
+        {
+            const auto & path_step = steps[i];
+            if (!path_step.join_side)
+                continue;
+
+            auto copy = path_step.node->step->clone();
+            ok = replaceJoinPassThroughColumns(
+                typeid_cast<JoinStepLogical &>(*copy), *path_step.join_side, path_step.join_input_positions,
+                path_step.join_output_positions, carried_columns_above(i));
         }
 
         for (size_t i = 0; ok && i < steps.size(); ++i)
@@ -1169,15 +1346,27 @@ size_t tryPushDownSubcolumnsToReading(QueryPlan::Node * top_node, QueryPlan::Nod
                 input->result_name == carried_column.name ? input : &read_subcolumns_actions.addAlias(*input, carried_column.name));
         }
 
-        QueryPlan::Node * read_parent = path.empty() ? top_node : path.back();
+        QueryPlan::Node * read_parent = path.empty() ? top_node : path.back().first;
+        const size_t read_child_index = path.empty() ? 0 : path.back().second;
         auto & read_subcolumns_node = nodes.emplace_back();
         read_subcolumns_node.children = {read_node};
         read_subcolumns_node.step = std::make_unique<ExpressionStep>(read_step->getOutputHeader(), std::move(read_subcolumns_actions));
         read_subcolumns_node.step->setStepDescription("Read subcolumns", settings.max_step_description_length);
-        read_parent->children = {&read_subcolumns_node};
+        read_parent->children.at(read_child_index) = &read_subcolumns_node;
 
-        for (auto & path_step : steps)
+        for (size_t i = 0; i < steps.size(); ++i)
         {
+            auto & path_step = steps[i];
+            if (auto * join = typeid_cast<JoinStepLogical *>(path_step.node->step.get()))
+            {
+                if (!replaceJoinPassThroughColumns(
+                        *join, *path_step.join_side, path_step.join_input_positions, path_step.join_output_positions, carried_columns_above(i)))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Join did not stop returning the column whose subcolumns are read instead");
+
+                join->updateInputHeaders({path_step.node->children.at(0)->step->getOutputHeader(), path_step.node->children.at(1)->step->getOutputHeader()});
+                continue;
+            }
+
             if (path_step.new_actions)
                 *tryGetStepActions(path_step.node->step.get()) = std::move(*path_step.new_actions);
             path_step.node->step->updateInputHeader(path_step.node->children.front()->step->getOutputHeader());
