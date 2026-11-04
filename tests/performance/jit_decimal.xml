@@ -1,0 +1,35 @@
+<test>
+    <settings>
+        <min_count_to_compile_expression>0</min_count_to_compile_expression>
+    </settings>
+
+    <create_query>
+        CREATE TABLE jit_decimal (d32 Decimal32(2), d64 Decimal64(4), i8 Int8, i32 Int32) Engine = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO jit_decimal
+        SELECT toDecimal32((cityHash64(number) % 2000000) / 100 - 10000, 2), toDecimal64((cityHash64(number, 1) % 2000000000) / 10000 - 100000, 4),
+            toInt8(cityHash64(number, 2)), toInt32(cityHash64(number, 3))
+        FROM numbers(50000000)
+    </fill_query>
+
+    <substitutions>
+        <substitution>
+            <name>compile</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Decimal arithmetic of two Decimal values with overflow checks, comparisons of the same scale, throwIf. -->
+    <query>SELECT sum(identity(d64 + d32)) FROM jit_decimal SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT sum(identity(d32 * toDecimal32(1.5, 1))) FROM jit_decimal SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT sum(identity(d64 / (d32 + toDecimal32(20000, 2)))) FROM jit_decimal SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT countIf(d64 > toDecimal64(0, 4) AND d32 &lt; toDecimal32(100, 2)) FROM jit_decimal SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT sum(throwIf(i8 > 200) + i32) FROM jit_decimal SETTINGS compile_expressions = {compile}</query>
+
+    <drop_query>DROP TABLE IF EXISTS jit_decimal</drop_query>
+</test>
