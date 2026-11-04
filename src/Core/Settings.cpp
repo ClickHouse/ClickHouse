@@ -4063,18 +4063,6 @@ FORMAT Null;
     DECLARE(Seconds, max_execution_time, 0, R"(
 The maximum query execution time in seconds.
 
-The `max_execution_time` parameter can be a bit tricky to understand.
-It operates based on interpolation relative to the current query execution speed
-(this behaviour is controlled by [`timeout_before_checking_execution_speed`](/reference/settings/session-settings/other#timeout_before_checking_execution_speed)).
-
-ClickHouse will interrupt a query if the projected execution time exceeds the
-specified `max_execution_time`. By default, the `timeout_before_checking_execution_speed`
-is set to 10 seconds. This means that after 10 seconds of query execution, ClickHouse
-will begin estimating the total execution time. If, for example, `max_execution_time`
-is set to 3600 seconds (1 hour), ClickHouse will terminate the query if the estimated
-time exceeds this 3600-second limit. If you set `timeout_before_checking_execution_speed`
-to 0, ClickHouse will use the clock time as the basis for `max_execution_time`.
-
 If query runtime exceeds the specified number of seconds, the behavior will be
 determined by the 'timeout_overflow_mode', which by default is set to `throw`.
 
@@ -4158,11 +4146,17 @@ expires. If the execution speed is high, the execution speed will be reduced.
     DECLARE(Seconds, timeout_before_checking_execution_speed, 10, R"(
 Checks that execution speed is not too slow (no less than `min_execution_speed`),
 after the specified time in seconds has expired.
+
+If set to `0`, the execution speed limits are checked from the start of the query,
+but [`max_estimated_execution_time`](/reference/settings/session-settings/max#max_estimated_execution_time)
+is not checked at all.
 )", 0) \
     DECLARE(Seconds, max_estimated_execution_time, 0, R"(
 Maximum query estimate execution time in seconds. Checked on every data block
 when [`timeout_before_checking_execution_speed`](/reference/settings/session-settings/other#timeout_before_checking_execution_speed)
-expires.
+expires. It operates based on extrapolation relative to the current query execution
+speed. If you set `timeout_before_checking_execution_speed` to 0, then this setting
+will not be checked.
 )", 0, \
         {"24.1", 0, 0, "Separate max_execution_time and max_estimated_execution_time"}) \
     \
