@@ -238,7 +238,6 @@ Pipe makePartPipe(
         ranges,
         std::make_shared<std::atomic<size_t>>(0),
         false,
-        false,
         false);
 
     /// keep speed limits, the caller checks sizes

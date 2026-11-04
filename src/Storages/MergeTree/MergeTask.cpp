@@ -2020,7 +2020,10 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     ctx->use_prefetch = all_parts_on_remote_disks && storage_settings[MergeTreeSetting::vertical_merge_remote_filesystem_prefetch];
 
     if (ctx->use_prefetch && ctx->it_name_and_type != global_ctx->gathering_columns.end())
+    {
         ctx->prepared_pipeline = createPipelineForReadingOneColumn(ctx->it_name_and_type->name);
+        prefetchMergeTreeSequentialSources(ctx->prepared_pipeline->pipeline);
+    }
 
     return false;
 }
@@ -2125,7 +2128,6 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
             apply_deleted_mask,
             /*filter=*/ std::nullopt,
             ctx->read_with_direct_io,
-            ctx->use_prefetch,
             global_ctx->context,
             getLogger("VerticalMergeStage"));
 
@@ -2233,6 +2235,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while preparing the next column");
         });
         ctx->prepared_pipeline.emplace(createPipelineForReadingOneColumn(next_column_it->name));
+        prefetchMergeTreeSequentialSources(ctx->prepared_pipeline->pipeline);
     }
 
     /// Dereference unique_ptr
@@ -3485,7 +3488,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             apply_deleted_mask,
             /*filter=*/ std::nullopt,
             ctx->read_with_direct_io,
-            /*prefetch=*/ false,
             global_ctx->context,
             ctx->log);
 

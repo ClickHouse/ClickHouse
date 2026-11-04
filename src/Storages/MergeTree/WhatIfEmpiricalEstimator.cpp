@@ -157,7 +157,6 @@ bool tryEstimateEmpirical(
                 MarkRanges{read_range},
                 std::make_shared<std::atomic<size_t>>(0),
                 false,
-                false,
                 false);
 
             /// Apply the query's execution-speed limits here too (size is the explicit check below)

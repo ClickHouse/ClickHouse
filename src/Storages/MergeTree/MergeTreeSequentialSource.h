@@ -30,10 +30,10 @@ Pipe createMergeTreeSequentialSource(
     std::optional<MarkRanges> mark_ranges,
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     bool apply_deleted_mask,
-    bool read_with_direct_io,
-    bool prefetch);
+    bool read_with_direct_io);
 
 class QueryPlan;
+class QueryPipeline;
 
 void createReadFromPartStep(
     MergeTreeSequentialSourceType type,
@@ -48,8 +48,10 @@ void createReadFromPartStep(
     bool apply_deleted_mask,
     std::optional<ActionsDAG> filter,
     bool read_with_direct_io,
-    bool prefetch,
     ContextPtr context,
     LoggerPtr log);
+
+/// Starts reading the first range of every `MergeTreeSequentialSource` of the pipeline in the background.
+void prefetchMergeTreeSequentialSources(const QueryPipeline & pipeline);
 
 }

@@ -31,6 +31,8 @@ FAILED_MERGE_WINDOW_SECONDS = 30
 
 SETUP_FAILPOINT = "merge_task_throw_while_preparing_next_column"
 
+SOURCE_FAILPOINT = "merge_tree_sequential_source_throw_in_constructor"
+
 
 @pytest.fixture(scope="module")
 def cluster():
@@ -607,6 +609,7 @@ def get_throttled(node):
         pytest.param("optimize", "read", id="optimize"),
         pytest.param("dry-run", "read", id="dry-run"),
         pytest.param("background", "next-column-setup", id="next-column-setup"),
+        pytest.param("background", "source-constructor", id="source-constructor"),
         pytest.param("mutation", "read", id="mutation"),
         pytest.param("mutation-probe", "read", id="mutation-probe"),
     ],
@@ -625,9 +628,11 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
     thread, which destroys a failed task without cancelling it. `dry-run` is `OPTIMIZE ... DRY RUN
     PARTS`, whose reads run in the group of its query rather than of the merge. All three fail on a
     read of `a`. `next-column-setup` fails while it sets up the pipeline of `b`, with the reads of
-    `a` in flight. `mutation` is a mutation of one part that fails on a read of `a` while another
-    of its reads is in flight (`remote_filesystem_read_method = 'threadpool'`), and
-    `mutation-probe` fails the same way in the query that counts the rows the mutation affects.
+    `a` in flight. `source-constructor` fails while it builds the pipeline of `a`, in the source of
+    the second part, after the source of the first part was created. `mutation` is a mutation of
+    one part that fails on a read of `a` while another of its reads is in flight
+    (`remote_filesystem_read_method = 'threadpool'`), and `mutation-probe` fails the same way in the
+    query that counts the rows the mutation affects.
     """
     node = cluster.instances["node"]
     via_optimize = runner in ("optimize", "dry-run")
@@ -641,7 +646,10 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
             "mutation-probe": "t_failed_read_mut_probe",
         }[runner]
     else:
-        table = "t_failed_setup_bg"
+        table = {
+            "next-column-setup": "t_failed_setup_bg",
+            "source-constructor": "t_failed_source_bg",
+        }[failure]
     # The assignee needs `min_age_to_force_merge_seconds` to pick two parts of this size, see
     # `test_shutdown_cancels_s3_read`. A mutation reads one part, so no merge competes with it.
     num_parts = 1 if is_mutation else 2
@@ -712,10 +720,17 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
                 in_flight_keys = b_keys
             broken_s3.setup_at_object_get(action="no_such_upload", key=failing_key)
             expected_error = "upload does not exist"
-        else:
+        elif failure == "next-column-setup":
             node.query(f"SYSTEM ENABLE FAILPOINT {SETUP_FAILPOINT}")
             in_flight_keys = a_keys
             expected_error = "Injected failure while preparing the next column"
+        else:
+            # Holds the horizontal stage, which reads only `id`, in the retry loop until the failpoint is
+            # enabled, so that the failpoint first fires in the sources of `a` rather than of `id`.
+            id_key = object_key(parts[0], "id.bin")
+            broken_s3.setup_at_object_get(count=1000000, action="slow_down", key=id_key)
+            in_flight_keys = a_keys[:1]
+            expected_error = "Injected failure in the constructor"
         # Retryable, so the other reads spin in the retry loop, as in the arms above.
         for key in in_flight_keys:
             broken_s3.setup_at_object_get(count=1000000, action="slow_down", key=key)
@@ -752,6 +767,10 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
             attempts=120,
             sleep_time=1,
         ), "no other read of the merge reached S3, so the assertions below would be vacuous"
+        if failure == "source-constructor":
+            # Here the read that reached the mock is the one of `id`, held above.
+            node.query(f"SYSTEM ENABLE FAILPOINT {SOURCE_FAILPOINT}")
+            broken_s3.setup_at_object_get(count=0, action="slow_down", key=id_key)
         failed_at = time.monotonic()
 
         # The oracle: the failed task leaves `system.merges` only after every read it still had in
@@ -788,6 +807,9 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
                 event = "event_type = 'MutatePart'"
             else:
                 event = "event_type = 'MergeParts' AND merge_algorithm = 'Vertical'"
+            if failure == "source-constructor":
+                # In the vertical stage: the failed attempts of the horizontal one read nothing.
+                event += " AND read_rows > 0"
             node.query("SYSTEM FLUSH LOGS part_log")
             assert int(
                 node.query(
@@ -826,6 +848,8 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
     finally:
         if failure == "next-column-setup":
             node.query(f"SYSTEM DISABLE FAILPOINT {SETUP_FAILPOINT}")
+        if failure == "source-constructor":
+            node.query(f"SYSTEM DISABLE FAILPOINT {SOURCE_FAILPOINT}")
         broken_s3.reset()
         drop_table_stopping_any_merge(node, table)
         if optimize is not None:

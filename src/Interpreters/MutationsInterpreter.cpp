@@ -2402,7 +2402,6 @@ void MutationsInterpreter::Source::read(
             mutation_settings.apply_deleted_mask,
             createFilterDAGForStage(first_stage),
             false,
-            false,
             context_,
             getLogger("MutationsInterpreter"));
     }
