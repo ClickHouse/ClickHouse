@@ -1971,7 +1971,7 @@ Possible values:
 - 0 for unlimited steps, or any positive integer.
 )", 0, \
         {"26.7", 0, 0, "New setting to limit the number of steps of the generic exclusion search over the primary key index."}) \
-    DECLARE(UInt64, merge_tree_generic_exclusion_search_min_bytes_to_split, (16 * 1024), R"(
+    DECLARE(UInt64, merge_tree_generic_exclusion_search_min_bytes_to_split, (4 * 1024), R"(
 During the generic exclusion search over the primary key index (see `merge_tree_generic_exclusion_search_max_steps`), a range of marks that may contain both matching and non-matching rows is split into `merge_tree_coarse_index_granularity` subranges only if it holds at least this many bytes of column data (uncompressed, estimated from the average size of a mark of the data part). A smaller range is read as a whole.
 
 Splitting a range costs one index check per subrange, and every subrange that is kept has to be sought to and read separately, so for a range that holds only a few kilobytes the analysis takes longer than reading the range. With the default `index_granularity` a single mark already holds more data than the default of this setting, so it only affects data parts with very small granules, for example tables created with `index_granularity = 1`, where it stops the search from descending to single rows. It is applied only to data parts with more than `merge_tree_generic_exclusion_search_exhaustive_part_marks` marks, whose exhaustive search may take a long time. The query results do not depend on this setting. The `IndexGenericExclusionSearchRangesBelowSplitThreshold` profile event counts the ranges that were accepted whole because of it.
@@ -1980,7 +1980,7 @@ Possible values:
 
 - 0 to split ranges regardless of their size, or any positive integer.
 )", 0, \
-        {"26.11", 0, (16 * 1024), "New setting to stop the generic exclusion search over the primary key index from splitting mark ranges that hold less data than the analysis of the split costs. It only bounds the analysis time and does not affect query results, so it applies regardless of `compatibility`.", CompatibilitySetting::Ignore}) \
+        {"26.11", 0, (4 * 1024), "New setting to stop the generic exclusion search over the primary key index from splitting mark ranges that hold less data than the analysis of the split costs. It only bounds the analysis time and does not affect query results, so it applies regardless of `compatibility`.", CompatibilitySetting::Ignore}) \
     DECLARE(UInt64, merge_tree_generic_exclusion_search_exhaustive_part_marks, 65536, R"(
 A data part with at most this many marks is always searched exhaustively by the generic exclusion search over the primary key index: `merge_tree_generic_exclusion_search_min_bytes_to_split` is applied only to larger data parts. The exhaustive search makes at most two checks per mark, so for a part of this size it takes a bounded time regardless of how little data its granules hold, and the analysis stays as exact as possible where it is cheap anyway.
 
