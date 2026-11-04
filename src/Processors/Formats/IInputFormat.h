@@ -130,6 +130,8 @@ public:
 
     void needOnlyCount() { need_only_count = true; }
 
+    virtual void prefetch() {}
+
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }
 
