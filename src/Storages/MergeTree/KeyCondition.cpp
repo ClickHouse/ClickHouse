@@ -1325,24 +1325,22 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
 
             /// Rewrites that are valid only for a non-inverted condition in a boolean context.
             /// They are tried in order and lazily, since each of them may add nodes to `inverted_dag`.
-            auto try_rewrite_boolean_condition = [&]() -> const ActionsDAG::Node *
+            auto try_rewrite_boolean_condition
+                = [&](const ActionsDAG::Node & condition, const String & condition_name) -> const ActionsDAG::Node *
             {
-                if (need_inversion || !boolean_context)
-                    return nullptr;
-
-                if (const auto * rewritten = tryRewriteIsTrueCondition(node, name, inverted_dag, inputs_mapping, context))
+                if (const auto * rewritten = tryRewriteIsTrueCondition(condition, condition_name, inverted_dag, inputs_mapping, context))
                     return rewritten;
-                if (const auto * rewritten = tryRewriteInTruthyCondition(node, name, inverted_dag, inputs_mapping, context))
+                if (const auto * rewritten = tryRewriteInTruthyCondition(condition, condition_name, inverted_dag, inputs_mapping, context))
                     return rewritten;
 
                 if (!context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite])
                     return nullptr;
 
-                if (const auto * rewritten = tryRewriteCoalesceComparison(node, name, inverted_dag, inputs_mapping, context))
+                if (const auto * rewritten = tryRewriteCoalesceComparison(condition, condition_name, inverted_dag, inputs_mapping, context))
                     return rewritten;
-                if (const auto * rewritten = tryRewriteCoalesceCondition(node, name, inverted_dag, inputs_mapping, context))
+                if (const auto * rewritten = tryRewriteCoalesceCondition(condition, condition_name, inverted_dag, inputs_mapping, context))
                     return rewritten;
-                if (const auto * rewritten = tryRewriteNullIfComparison(node, name, inverted_dag, inputs_mapping, context))
+                if (const auto * rewritten = tryRewriteNullIfComparison(condition, condition_name, inverted_dag, inputs_mapping, context))
                     return rewritten;
 
                 return nullptr;
@@ -1443,7 +1441,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 res = &inverted_dag.addFunction(function_builder, children, "");
                 handled_inversion = true;
             }
-            else if (const auto * rewritten = try_rewrite_boolean_condition())
+            else if (const auto * rewritten = !need_inversion && boolean_context ? try_rewrite_boolean_condition(node, name) : nullptr)
             {
                 res = rewritten;
                 handled_inversion = true;
@@ -1467,6 +1465,10 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                     const auto & func_name = need_inversion ? it->second : it->first;
                     auto function_builder = FunctionFactory::instance().get(func_name, context);
                     res = &inverted_dag.addFunction(function_builder, children, "");
+                    /// The folded inverse is a non-inverted condition; rewrite it like one so a later pass does not change the RPN layout.
+                    if (need_inversion && boolean_context)
+                        if (const auto * rewritten_inverse = try_rewrite_boolean_condition(*res, func_name))
+                            res = rewritten_inverse;
                     handled_inversion = true;
                 }
                 else
