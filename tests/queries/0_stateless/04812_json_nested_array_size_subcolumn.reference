@@ -1,0 +1,47 @@
+-- each Array(JSON) cast adds a wrapper, so sizeN with N = depth - 1 is the array sizes
+Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))	Array(Array(JSON(max_dynamic_types=8, max_dynamic_paths=64)))
+-- depth 2, at the level
+[0]
+-- depth 2, above the level: a non-existent path, returns a default
+[[]]	[[]]
+-- a non-reserved name is unaffected
+[[]]
+-- depth 1: resolved at level 0 already, must be untouched
+1	[NULL]
+-- depth 2 through an expression that also produces a constant column
+1	[0]
+-- depth 3, at the level
+[[0]]
+-- depth 3, off the level in both directions
+[[[]]]	[[[]]]
+-- fixture check: the requested type must sit in the shared variant
+[false]
+[false]
+[false]
+[true]
+-- shared variant, at the level: the extracted size is non-zero
+[0]
+[0]
+[0]
+[2]
+-- shared variant, above the level
+[[]]
+[[]]
+[[]]
+[[NULL,NULL]]
+-- plain nested arrays: sizeN is root-relative and was never broken
+UInt64	Array(UInt64)	Array(Array(UInt64))
+2	[2,1]	[[2,1],[1]]
+-- fixture check: the path must be in shared data and the parent must be non-empty
+['a','yy']	1
+-- shared data, at the level
+[1]
+-- shared data, off the level
+[[NULL]]
+-- a Map between the array wrappers and the dynamic path: its own array counts too
+Array(Array(Array(Array(JSON(max_dynamic_types=16, max_dynamic_paths=256)))))
+[[[0]]]
+-- Map, off the level
+[[[[]]]]
+-- advanced shared data: the whole path plus the subcolumn
+[['{"b":[42,43]}']]	[1]

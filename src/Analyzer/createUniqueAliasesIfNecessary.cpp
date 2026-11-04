@@ -153,9 +153,15 @@ public:
         if (!column_node || replaced_nodes_set.contains(node))
             return;
 
+        /// A column without a source can only be the virtual `__grouping_set` column, which is never an
+        /// `ARRAY JOIN` expression and therefore never needs to be renamed. Assert the invariant instead of
+        /// silently skipping every sourceless column, so that a genuinely broken query tree is still caught.
         auto column_source = column_node->getColumnSourceOrNull();
         if (!column_source)
+        {
+            chassert(column_node->mayHaveNoSource(), "Column node without a source: " + column_node->getColumnName());
             return;
+        }
 
         auto * array_join = column_source->as<ArrayJoinNode>();
         if (!array_join)

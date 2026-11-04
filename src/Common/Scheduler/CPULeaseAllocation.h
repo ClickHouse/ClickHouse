@@ -12,6 +12,7 @@
 #include <Common/ISlotControl.h>
 #include <Common/Logger.h>
 
+#include <algorithm>
 #include <condition_variable>
 #include <mutex>
 #include <chrono>
@@ -45,6 +46,9 @@ struct CPULeaseSettings
 
     /// For debugging purposes, not used in production
     String workload;
+
+    /// Park the lease during non-CPU waits (`cpu_slot_parking` server setting)
+    bool parking_enabled = true;
 
     /// Enable OpenTelemetry tracing for CPU scheduling
     bool trace_cpu_scheduling = false;
@@ -110,6 +114,9 @@ private:
         ~Lease() override;
         void startConsumption() override;
         bool renew() override;
+        bool park() override;
+        void unpark() override;
+        bool isParkingEnabled() const override;
         void reset();
 
     private:
@@ -202,6 +209,23 @@ private:
     void setPreempted(size_t thread_num);
     void resetPreempted(size_t thread_num);
 
+    /// Resume preempted threads while some allocated slot is not used by a running thread.
+    void resumePreempted();
+
+    /// Park/unpark a thread for a non-CPU wait (I/O or idle). `parkLease` returns false if it did not park.
+    bool parkLease(Lease & lease);
+    void unparkLease(Lease & lease);
+
+    /// Parked thread set management (mirrors setPreempted/resetPreempted)
+    void setParked(size_t thread_num);
+    void resetParked(size_t thread_num);
+
+    /// Slots to request: `current_max_slots` minus parked threads, clamped at 0
+    SlotCount effectiveMaxSlots() const
+    {
+        return threads.parked_count >= current_max_slots ? 0 : current_max_slots - threads.parked_count;
+    }
+
     /// Resource request failed.
     void failed(const std::exception_ptr & ptr);
 
@@ -220,6 +244,10 @@ private:
     /// Accounts consumed resource
     void consume(std::unique_lock<std::mutex> & lock, ResourceCost delta_ns);
 
+    /// Finishes every request in consumption state. Used when the last running thread is preempted:
+    /// the requests are fully consumed, and no thread would report consumption to finish them.
+    void finishConsumedRequests(std::unique_lock<std::mutex> & lock);
+
     /// Enqueue a resource request to the scheduler if necessary.
     /// Returns true if request is enqueued, false if it is noncompeting and should be granted immediately.
     bool schedule(std::unique_lock<std::mutex> & lock);
@@ -230,6 +258,9 @@ private:
     /// Configuration
     const SlotCount max_threads; /// Max number of threads (and allocated slots)
     const CPULeaseSettings settings;
+    /// Parking gives back the oldest request, which may be a master or a worker one,
+    /// so it requires the master and worker threads to use the same resource
+    const bool parking_supported;
     LoggerPtr log;
 
     /// Protects all the fields below
@@ -240,6 +271,7 @@ private:
     ///  * released: lease object was not created or was destructed, has no CPU slot
     ///  * running: lease object owns a CPU slot
     ///  * preempted: lease object does not own a CPU slot
+    ///  * parked: lease object does not own a CPU slot (thread voluntarily entered a non-CPU wait: I/O or idle)
     /// Possible transitions:
     ///  * released -> running: initial acquire() or tryAcquire() call
     ///    - thread starts execution
@@ -251,6 +283,10 @@ private:
     ///    - renew() returns false and thread should stop itself
     ///  * running -> released: lease destruction and release() of its acquired slot
     ///    - thread execution stop voluntary (query is done/aborted/canceled)
+    ///  * running -> parked: thread enters a non-CPU wait via park() and releases its slot
+    ///    - thread execution continues (doing I/O or waiting for a task), not blocked on the scheduler
+    ///  * parked -> running: thread leaves the wait via unpark() and borrows a slot back
+    ///    - thread execution resumes
     /// IMPORTANT: `CPULeaseAllocation` does not provide one-to-one a mapping between slots and threads because
     /// IMPORTANT: a thread does not have an associated slot during preemption. On resuming, it gets a new slot.
     struct Threads
@@ -258,21 +294,51 @@ private:
         explicit Threads(size_t max_threads_)
             : leased(max_threads_)
             , preempted(max_threads_)
+            , parked(max_threads_)
             , wake(max_threads_)
         {}
-        boost::dynamic_bitset<> leased; /// Thread lease object status bitmask (0=released; 1=preempted|running)
-        boost::dynamic_bitset<> preempted; /// Preempted threads bitmask (0=running|released; 1=preempted)
+        boost::dynamic_bitset<> leased; /// Thread lease object status bitmask (0=released; 1=preempted|parked|running)
+        boost::dynamic_bitset<> preempted; /// Preempted threads bitmask (0=running|parked|released; 1=preempted)
+        boost::dynamic_bitset<> parked; /// Parked threads bitmask (0=running|preempted|released; 1=parked)
         std::vector<std::condition_variable> wake; /// To wake specific preempted thread
 
-        // For optimization (could be computed based on leased and preempted fields)
-        size_t running_count = 0; /// Number of currently running threads (leased & !preempted)
+        /// A thread is "running" (holds a slot and is on CPU) iff leased and neither preempted nor parked.
+        bool isRunning(size_t thread_num) const { return leased[thread_num] && !preempted[thread_num] && !parked[thread_num]; }
+
+        /// Update running_count/last_running after the leased/preempted/parked bits are set
+        void enterRunning(size_t thread_num)
+        {
+            if (++running_count == 1)
+                last_running = thread_num;
+            else
+                last_running = std::max(last_running, thread_num);
+        }
+        void exitRunning(size_t thread_num)
+        {
+            --running_count;
+            if (last_running == thread_num)
+            {
+                while (last_running-- > 0)
+                {
+                    if (isRunning(last_running))
+                        break;
+                }
+            }
+        }
+
+        // For optimization (could be computed based on leased, preempted and parked fields)
+        size_t running_count = 0; /// Number of currently running threads (leased & !preempted & !parked)
         size_t last_running = boost::dynamic_bitset<>::npos; /// Highest thread num of a running threads
+        size_t parked_count = 0; /// Number of currently parked threads (count of set bits in `parked`)
     } threads;
 
     /// Resource accounting
     std::atomic_bool acquirable{false}; // Tracks `(granted > 0 || exception) && !shutdown` value that could be read w/o locking mutex
     SlotCount allocated = 0; /// Current number of allocated (granted and acquired) slots
-    Int64 granted = 0; /// Allocated but not acquired slots (might be negative if acquired more than allocated)
+    /// Allocated but not acquired slots; the invariant is `granted == allocated - leased.count()`.
+    /// May be negative (a thread borrows a slot before it is granted). Because `allocated <= max_threads`,
+    /// `granted > 0` implies a free slot_id exists, which `upscale()` relies on.
+    Int64 granted = 0;
     ResourceCost consumed_ns = 0; /// Real consumption accumulated from renew() calls
     ResourceCost requested_ns = 0; /// Consumption requested from the scheduler (requested <= consumed + quantum)
 
@@ -306,7 +372,8 @@ private:
         void finish();
         void granted();
         bool enqueue(ResourceCost cost, ResourceCost requested_ns_);
-        void cancel(std::unique_lock<std::mutex> & lock);
+        /// Returns true if the pending request was removed before the scheduler processed it
+        bool cancel(std::unique_lock<std::mutex> & lock);
         void scheduled();
         ResourceCost getMaxConsumed() const { return tail->max_consumed; }
         bool hasEnqueued() const { return enqueued; }
@@ -324,9 +391,9 @@ private:
         bool enqueued = false; /// True if the next request is already enqueued to the scheduler
         bool request_master_slot = true; /// The next request should use (true) master_link or (false) worker_link
 
-        // Cancellation of enqueued request
+        // Bumped on every detach; several parking threads may wait in `cancel` at once
         std::condition_variable cancel_cv;
-        bool wait_cancel = false;
+        UInt64 cancel_generation = 0;
     } requests;
 
     std::exception_ptr exception; /// Exception from the scheduler
@@ -335,6 +402,8 @@ private:
     /// Introspection
     CurrentMetrics::Increment acquired_increment;
     CurrentMetrics::Increment scheduled_increment;
+    /// Current number of threads parked for a non-CPU wait
+    CurrentMetrics::Increment parked_increment;
     /// Stable counters for wait_timer. We cannot use CurrentThread::getProfileEvents() in
     /// schedule() because it returns the calling thread's counters, which may be destroyed
     /// before the timer is flushed — storing a Timer with a dangling Counters& causes UAF.

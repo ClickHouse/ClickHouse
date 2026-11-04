@@ -8,10 +8,10 @@ of the screen via a DECSTBM scroll region. The status bar is rebuilt from the
 counters file the bash script maintains:
 
   line rows-1 : needs-attention PR list
-  line rows   : elapsed | round | ok/fail | cost | in/out/cache-in/cache-out
+  line rows   : elapsed | round | ok/fail | triage/coding cost | token totals
 
 Environment:
-  CAP_STATS  path to the counters file: "rounds ok fail in out cachein cacheout cost"
+  CAP_STATS  path to the counters file: "rounds ok fail in out cachein cacheout triage_cost coding_cost"
   CAP_NA     path to the needs-attention file (one PR number per line)
   CAP_START  epoch seconds when the run started (for elapsed time)
 """
@@ -61,17 +61,17 @@ def _fmt_elapsed(sec):
 
 def _stats_line():
     r = s = f = i = o = ci = co = 0
-    c = 0.0
+    tc = cc = 0.0
     try:
         parts = open(STATS).read().split()
-        if len(parts) >= 8:
+        if len(parts) >= 9:
             r, s, f, i, o, ci, co = (int(x) for x in parts[:7])
-            c = float(parts[7])
+            tc, cc = (float(x) for x in parts[7:9])
     except Exception:
         pass
-    return ("continue-all-prs | %s | round %d | ok %d fail %d | $%.2f | "
+    return ("continue-all-prs | %s | round %d | ok %d fail %d | triage $%.2f coding $%.2f | "
             "in %s out %s cache-in %s cache-out %s"
-            % (_fmt_elapsed(time.time() - START), r, s, f, c,
+            % (_fmt_elapsed(time.time() - START), r, s, f, tc, cc,
                _humanize(i), _humanize(o), _humanize(ci), _humanize(co)))
 
 

@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- Corner cases for GROUP BY modifiers under `make_distributed_plan`: aggregates whose serialized
 -- form carries no argument names (with parameters, several arguments, zero arguments), key types
 -- that change under `group_by_use_nulls` (`LowCardinality`), empty input, duplicate grouping sets,
@@ -26,23 +23,23 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_ex
 SELECT '-- parametrized and multi-argument aggregates over rollup';
 SELECT k1, grouping(k1) AS g, quantilesExact(0.5, 0.9)(v) AS q, argMax(k2, v) AS am, count()
 FROM t_corner GROUP BY k1 WITH ROLLUP ORDER BY ALL
-SETTINGS group_by_use_nulls = 1;
+SETTINGS group_by_use_nulls = 1, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- LowCardinality key over rollup, group_by_use_nulls = 1';
 SELECT k1, toTypeName(k1) AS t, sum(v)
 FROM t_corner GROUP BY k1 WITH ROLLUP ORDER BY ALL
-SETTINGS group_by_use_nulls = 1;
+SETTINGS group_by_use_nulls = 1, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- empty input';
-SELECT k1, sum(v), count() FROM t_corner WHERE v > 1000000 GROUP BY k1 WITH ROLLUP ORDER BY ALL;
-SELECT k1, k2, sum(v) FROM t_corner WHERE v > 1000000 GROUP BY k1, k2 WITH CUBE ORDER BY ALL;
+SELECT k1, sum(v), count() FROM t_corner WHERE v > 1000000 GROUP BY k1 WITH ROLLUP ORDER BY ALL SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT k1, k2, sum(v) FROM t_corner WHERE v > 1000000 GROUP BY k1, k2 WITH CUBE ORDER BY ALL SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- cube over three keys';
 SELECT k1, k2, k3, count() FROM t_corner WHERE v < 20 GROUP BY k1, k2, k3 WITH CUBE ORDER BY ALL
-SETTINGS group_by_use_nulls = 1;
+SETTINGS group_by_use_nulls = 1, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- duplicate grouping sets';
-SELECT k1, grouping(k1) AS g, sum(v) FROM t_corner GROUP BY GROUPING SETS ((k1), (k1)) ORDER BY ALL;
+SELECT k1, grouping(k1) AS g, sum(v) FROM t_corner GROUP BY GROUPING SETS ((k1), (k1)) ORDER BY ALL SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- distributed join below rollup, window and limit above it';
 SELECT k1, grouping(k1) AS g, sum(v * mult) AS s,
@@ -50,7 +47,8 @@ SELECT k1, grouping(k1) AS g, sum(v * mult) AS s,
 FROM t_corner AS a JOIN t_corner_dim AS d ON a.k2 = d.id
 GROUP BY k1 WITH ROLLUP
 HAVING sum(v * mult) > 0
-ORDER BY g, r, k1 LIMIT 20;
+ORDER BY g, r, k1 LIMIT 20
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- grouping over a wide cube';
 SELECT count(), sum(g), min(g), max(g) FROM
@@ -59,7 +57,7 @@ SELECT count(), sum(g), min(g), max(g) FROM
     FROM t_corner WHERE v < 2
     GROUP BY v % 2, v % 3, v % 4, v % 5, v % 6, v % 7, v % 8, v % 9, v % 10, v % 11, v % 12, v % 13
     WITH CUBE
-);
+) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- grouping over a cube with 64 keys is rejected at planning, same as at execution';
 EXPLAIN SELECT grouping(v % 2), count() FROM t_corner
@@ -75,9 +73,15 @@ GROUP BY
 WITH CUBE; -- { serverError TOO_MANY_COLUMNS }
 
 SELECT '-- WITH TOTALS and extremes stay fail-closed';
-SELECT k1, sum(v) FROM t_corner GROUP BY k1 WITH TOTALS; -- { serverError SUPPORT_IS_DISABLED }
-SELECT k1, sum(v) FROM t_corner GROUP BY k1 WITH ROLLUP WITH TOTALS; -- { serverError SUPPORT_IS_DISABLED }
-SELECT sum(v) FROM t_corner SETTINGS extremes = 1; -- { serverError SUPPORT_IS_DISABLED }
+-- These plans still cannot be distributed. With the default
+-- `distributed_plan_fallback_to_local_execution = 1` they would run single-node and succeed, so
+-- strict mode is pinned per query to keep asserting the rejection.
+SELECT k1, sum(v) FROM t_corner GROUP BY k1 WITH TOTALS
+SETTINGS distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
+SELECT k1, sum(v) FROM t_corner GROUP BY k1 WITH ROLLUP WITH TOTALS
+SETTINGS distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
+SELECT sum(v) FROM t_corner
+SETTINGS extremes = 1, distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE t_corner;
 DROP TABLE t_corner_dim;

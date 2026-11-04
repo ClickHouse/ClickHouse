@@ -283,7 +283,7 @@ struct ReplaceRegexpImpl
         {
             bool can_finish_current_string = false;
 
-            if (matcher.func(begin, end, begin + match_pos, capture_starts, capture_ends) == 1)
+            if (callJITFunction(matcher.func, begin, end, begin + match_pos, capture_starts, capture_ends) == 1)
             {
                 const size_t match_start = capture_starts[0] - begin;
                 const size_t match_end = capture_ends[0] - begin;

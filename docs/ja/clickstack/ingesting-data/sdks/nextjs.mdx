@@ -6,26 +6,21 @@ doc_type: 'guide'
 keywords: ['clickstack', 'sdk', 'ログ', 'インテグレーション', 'アプリケーション監視']
 ---
 
+import { ClickStackIntegrates } from '/snippets/ja/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 ClickStack は、Next 13.2+ の
-[Next.js serverless functions](https://nextjs.org/docs/pages/building-your-application/optimizing/open-telemetry#manual-opentelemetry-configuration)
+[Next.js サーバーレス関数](https://nextjs.org/docs/pages/building-your-application/optimizing/open-telemetry#manual-opentelemetry-configuration)
 からネイティブな OpenTelemetry トレースを取り込めます。
 
-このガイドで統合するもの:
-
-* **コンソールログ**
-* **トレース**
+<ClickStackIntegrates signals={['logs', 'traces']} />
 
 <Note>
   セッションリプレイやブラウザー側の監視が必要な場合は、代わりに [Browser インテグレーション](/ja/clickstack/ingesting-data/sdks/browser) をインストールしてください。
 </Note>
 
-<div id="installing">
-  ## インストール
-</div>
+## インストール {#installing}
 
-<div id="enable-instrumentation-hook">
-  ### インストルメンテーション フックを有効にする (v15 以下では必須)
-</div>
+### インストルメンテーション フックを有効にする (v15 以下では必須) {#enable-instrumentation-hook}
 
 まず、`next.config.js` で `experimental.instrumentationHook = true;` を設定して、Next.js のインストルメンテーション フックを有効にする必要があります。
 
@@ -52,9 +47,7 @@ const nextConfig = {
 module.exports = nextConfig;
 ```
 
-<div id="install-sdk">
-  ### ClickHouse OpenTelemetry SDK のインストール
-</div>
+### ClickHouse OpenTelemetry SDK のインストール {#install-sdk}
 
 <Tabs>
   <Tab title="NPM">
@@ -70,9 +63,7 @@ module.exports = nextConfig;
   </Tab>
 </Tabs>
 
-<div id="create-instrumentation-files">
-  ### インストルメンテーション用ファイルを作成する
-</div>
+### インストルメンテーション用ファイルを作成する {#create-instrumentation-files}
 
 Next.js プロジェクトのルートに、次の内容で `instrumentation.ts` (または `.js`) という名前のファイルを作成します。
 
@@ -81,9 +72,9 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     const { init } = await import('@hyperdx/node-opentelemetry');
     init({
-      apiKey: '<YOUR_INGESTION_API_KEY>', // `HYPERDX_API_KEY` 環境変数で設定することも可能
-      service: '<MY_SERVICE_NAME>', // `OTEL_SERVICE_NAME` 環境変数で設定することも可能
-      additionalInstrumentations: [], // 省略可能、デフォルト: []
+      apiKey: '<YOUR_INGESTION_API_KEY>', // optionally configure via `HYPERDX_API_KEY` env var
+      service: '<YOUR_SERVICE_NAME>', // optionally configure via `OTEL_SERVICE_NAME` env var
+      additionalInstrumentations: [], // optional, default: []
     });
   }
 }
@@ -91,9 +82,7 @@ export async function register() {
 
 これにより、Next.js はサーバーレス関数が呼び出されるたびに OpenTelemetry のインストルメンテーションをインポートできるようになります。
 
-<div id="configure-environment-variables">
-  ### 環境変数を設定する
-</div>
+### 環境変数を設定する {#configure-environment-variables}
 
 OpenTelemetry 経由でトレースを ClickStack に直接送信する場合は、スパンの送信先が OTel collector になるように、以下の環境変数を設定して Next.js
 サーバーを起動する必要があります。
@@ -101,8 +90,8 @@ OpenTelemetry 経由でトレースを ClickStack に直接送信する場合は
 <Tabs>
   <Tab title="Managed ClickStack">
     ```sh copy
-    OTEL_SERVICE_NAME=<MY_SERVICE_NAME> \
-    OTEL_EXPORTER_OTLP_ENDPOINT=http://your-otel-collector:4318
+    OTEL_SERVICE_NAME=<YOUR_SERVICE_NAME> \
+    OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
     npm run dev
     ```
   </Tab>
@@ -110,8 +99,8 @@ OpenTelemetry 経由でトレースを ClickStack に直接送信する場合は
   <Tab title="ClickStack Open Source">
     ```sh copy
     HYPERDX_API_KEY=<YOUR_INGESTION_API_KEY> \
-    OTEL_SERVICE_NAME=<MY_SERVICE_NAME> \
-    OTEL_EXPORTER_OTLP_ENDPOINT=http://your-otel-collector:4318
+    OTEL_SERVICE_NAME=<YOUR_SERVICE_NAME> \
+    OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
     npm run dev
     ```
   </Tab>

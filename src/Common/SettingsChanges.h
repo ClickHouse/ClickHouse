@@ -48,6 +48,9 @@ public:
     /// If element exists - removes it and returns true, otherwise returns false
     bool removeSetting(std::string_view name);
 
+    /// Removes the elements with the specified names, the missing ones are skipped.
+    void removeSettings(const Strings & names);
+
     /// Sets element to value, inserts if doesn't exist
     void setSetting(std::string_view name, const Field & value);
     void setSetting(const SettingChange & change);

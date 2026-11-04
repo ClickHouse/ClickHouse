@@ -17,6 +17,7 @@
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinOperator.h>
+#include <Interpreters/JoinUtils.h>
 
 #include <Planner/Utils.h>
 
@@ -24,6 +25,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 
+#include <ranges>
 #include <unordered_map>
 #include <vector>
 
@@ -132,35 +134,15 @@ ExpressionSide getExpressionSide(
 
 using JoinConditionParts = std::vector<ActionsDAG>;
 
-/// `and` implicitly converts its arguments to booleans and returns 0 or 1, so a conjunct that is left
-/// alone after the other conjuncts have been moved into the JOIN has to be normalized the same way.
-/// A cast to the type of the original predicate does not do it: it maps values like 256 to `false`.
-/// Only `Bool` is known to hold normalized values; a plain `UInt8` column can hold e.g. 2.
-const ActionsDAG::Node & convertToBoolIfNeeded(ActionsDAG & filter_dag, const ActionsDAG::Node * predicate_expr)
-{
-    if (isBool(removeLowCardinalityAndNullable(predicate_expr->result_type)))
-        return *predicate_expr;
-
-    auto uint8_type = std::make_shared<DataTypeUInt8>();
-    const auto & true_node = filter_dag.addColumn(uint8_type->createColumnConst(0, 1), uint8_type, "true");
-
-    FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-    return filter_dag.addFunction(func_builder_and, {predicate_expr, &true_node}, {});
-}
-
+/// A conjunct left alone once the others moved into the JOIN loses the boolean conversion the
+/// enclosing `and` gave it, so it has to be converted explicitly.
 const ActionsDAG::Node & createResultPredicate(
     ActionsDAG & filter_dag,
     const ActionsDAG::Node * original_predicate,
     const ActionsDAG::Node * new_predicate_expr)
 {
-    if (!original_predicate->result_type->equals(*new_predicate_expr->result_type))
-    {
-        return filter_dag.addCast(*new_predicate_expr, original_predicate->result_type, original_predicate->result_name, nullptr);
-    }
-    else
-    {
-        return filter_dag.addAlias(*new_predicate_expr, original_predicate->result_name);
-    }
+    const auto & node = filter_dag.addBooleanCondition(*new_predicate_expr, original_predicate->result_type, nullptr);
+    return filter_dag.addAlias(node, original_predicate->result_name);
 };
 
 
@@ -272,12 +254,36 @@ bool subtreeContainsNonDeterministicFunction(const ActionsDAG::Node * node)
     return false;
 }
 
+/// Unlike `getConjunctsList`, shared nodes are not de-duplicated: each occurrence is reported.
+ActionsDAG::NodeRawConstPtrs getConjunctsInWrittenOrder(const ActionsDAG::Node * predicate)
+{
+    ActionsDAG::NodeRawConstPtrs conjuncts;
+    std::vector<const ActionsDAG::Node *> stack{predicate};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and")
+        {
+            for (const auto * child : node->children | std::ranges::views::reverse)
+                stack.push_back(child);
+        }
+        else if (node->type == ActionsDAG::ActionType::ALIAS)
+            stack.push_back(node->children.front());
+        else
+            conjuncts.push_back(node);
+    }
+    return conjuncts;
+}
+
 std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     ActionsDAG & filter_dag,
     const std::string & filter_name,
     const Names & left_stream_available_columns,
     const Names & right_stream_available_columns,
-    const bool allow_dynamic_type_in_join_keys
+    const bool allow_dynamic_type_in_join_keys,
+    NameSet join_condition_names
 )
 {
     auto * predicate = const_cast<ActionsDAG::Node *>(filter_dag.tryFindInOutputs(filter_name));
@@ -339,6 +345,15 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
             if ((lhs_side == ExpressionSide::LEFT && rhs_side == ExpressionSide::RIGHT)
              || (lhs_side == ExpressionSide::RIGHT && rhs_side == ExpressionSide::LEFT))
             {
+                /// Such a key matches pairs `equals` rejects, so the condition also stays in the filter.
+                if (JoinCommon::keyMatchesValuesEqualsRejects(lhs->result_type) || JoinCommon::keyMatchesValuesEqualsRejects(rhs->result_type))
+                {
+                    if (join_condition_names.insert(conjunct->result_name).second)
+                        result.emplace_back(ActionsDAG::cloneSubDAG({ conjunct }, true));
+                    rejected_conjuncts.push_back(conjunct);
+                    continue;
+                }
+
                 result.emplace_back(ActionsDAG::cloneSubDAG({ conjunct }, true));
                 conjuncts_to_replace.insert(conjunct);
                 continue;
@@ -348,7 +363,7 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     }
 
     const auto trivial_filter = rejected_conjuncts.empty();
-    if (!result.empty())
+    if (!conjuncts_to_replace.empty())
     {
         /// There's a non-empty list of extracted condition parts.
         /// After JOIN step these equalities will always evaluate to true.
@@ -364,11 +379,37 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
 
         if (rejected_conjuncts.size() == 1)
         {
-            filter_dag.addOrReplaceInOutputs(createResultPredicate(
-                filter_dag, predicate, &convertToBoolIfNeeded(filter_dag, rejected_conjuncts.front())));
+            filter_dag.addOrReplaceInOutputs(createResultPredicate(filter_dag, predicate, rejected_conjuncts.front()));
         }
         else if (rejected_conjuncts.size() > 1)
         {
+            /// `and` is evaluated left to right, so a guard stays ahead of the conjunct it guards.
+            /// `getConjunctsList` de-duplicates shared nodes and can report one twice through its ALIAS branch.
+            std::unordered_map<const ActionsDAG::Node *, size_t> remaining_occurrences;
+            for (const auto * conjunct : rejected_conjuncts)
+                ++remaining_occurrences[conjunct];
+
+            ActionsDAG::NodeRawConstPtrs ordered_conjuncts;
+            ordered_conjuncts.reserve(rejected_conjuncts.size());
+            for (const auto * conjunct : getConjunctsInWrittenOrder(predicate))
+            {
+                auto it = remaining_occurrences.find(conjunct);
+                if (it != remaining_occurrences.end() && it->second != 0)
+                {
+                    --it->second;
+                    ordered_conjuncts.push_back(conjunct);
+                }
+            }
+
+            if (ordered_conjuncts.size() != rejected_conjuncts.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Reordering the residual filter lost {} of {} conjuncts. DAG:\n{}",
+                    rejected_conjuncts.size() - ordered_conjuncts.size(),
+                    rejected_conjuncts.size(),
+                    filter_dag.dumpDAG());
+
+            rejected_conjuncts = std::move(ordered_conjuncts);
+
             /// `and` of the remaining conjuncts normalizes the values itself.
             FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
             filter_dag.addOrReplaceInOutputs(createResultPredicate(
@@ -449,13 +490,18 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
 
     const bool allow_dynamic_type_in_join_keys = join_step->getJoinSettings().allow_dynamic_type_in_join_keys;
 
+    NameSet join_condition_names;
+    for (const auto & condition : join_operator.expression)
+        join_condition_names.insert(condition.getColumnName());
+
     auto & filter_dag = filter_step->getExpression();
     auto [equality_predicates, trivial_filter] = extractActionsForJoinCondition(
         filter_dag,
         filter_step->getFilterColumnName(),
         left_stream_available_columns,
         right_stream_available_columns,
-        allow_dynamic_type_in_join_keys);
+        allow_dynamic_type_in_join_keys,
+        std::move(join_condition_names));
 
     if (equality_predicates.empty())
         return 0;
@@ -472,7 +518,7 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     if (trivial_filter)
     {
         if (filter_step->removesFilterColumn())
-            filter_dag.removeUnusedResult(filter_step->getFilterColumnName());
+            filter_dag.removeFromOutputs(filter_step->getFilterColumnName());
         parent_node->step = std::make_unique<ExpressionStep>(filter_step->getInputHeaders().front(), std::move(filter_dag));
     }
 
