@@ -27,6 +27,7 @@
 #include <IO/copyData.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
+#include <Interpreters/InterpreterUseQuery.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
@@ -874,8 +875,10 @@ void MySQLHandler::comInitDB(ReadBuffer & payload)
     String database;
     readStringUntilEOF(database, payload);
     LOG_DEBUG(log, "Setting current database to {}", database);
-    /// Mirror the access check of the SQL `USE database` statement (InterpreterUseQuery).
-    session->sessionContext()->checkAccess(AccessType::SHOW_DATABASES, database);
+    /// Mirror the access check of the SQL `USE database` statement (`InterpreterUseQuery`), including a hierarchical
+    /// name (`db.ns` for the tables `ns.*` of the database `db`) checked for the database it denotes, before its
+    /// existence is reported.
+    InterpreterUseQuery::checkAccessAndExistence(database, session->sessionContext());
     /// ... and its settings-constraint check on the `database` setting.
     SettingsChanges database_change;
     database_change.setSetting("database", database);

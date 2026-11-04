@@ -12,18 +12,19 @@
 namespace DB
 {
 
+void InterpreterUseQuery::checkAccessAndExistence(const String & new_database, const ContextPtr & local_context)
+{
+    auto resolved = DatabaseCatalog::instance().tryResolveHierarchicalDatabase(new_database);
+    local_context->checkAccess(AccessType::SHOW_DATABASES, (resolved && !resolved->database_name.empty()) ? resolved->database_name : new_database);
+    if (!resolved)
+        DatabaseCatalog::instance().resolveHierarchicalDatabase(new_database); /// Throws UNKNOWN_DATABASE with a hint.
+}
+
 BlockIO InterpreterUseQuery::execute()
 {
     const String & new_database = query_ptr->as<ASTUseQuery &>().getDatabase();
 
-    /// A hierarchical name (`USE a.b`) may denote the tables `b.*` of the database `a`: the access is checked for the
-    /// database it denotes. When it is only a prefix of database names, or denotes nothing, it is checked as written.
-    /// The access is checked before a name that denotes nothing is reported, so that `USE` does not tell a user who
-    /// is not allowed to see a database whether it exists.
-    auto resolved = DatabaseCatalog::instance().tryResolveHierarchicalDatabase(new_database);
-    getContext()->checkAccess(AccessType::SHOW_DATABASES, (resolved && !resolved->database_name.empty()) ? resolved->database_name : new_database);
-    if (!resolved)
-        DatabaseCatalog::instance().resolveHierarchicalDatabase(new_database); /// Throws UNKNOWN_DATABASE with a hint.
+    checkAccessAndExistence(new_database, getContext());
 
     auto session_context = getContext()->getSessionContext();
 
