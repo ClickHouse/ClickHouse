@@ -49,20 +49,11 @@ namespace
 
 constexpr Float64 NaN = std::numeric_limits<Float64>::quiet_NaN();
 
-/// The number of vertices of a ring, not counting a closing vertex equal to the first one.
-template <typename Point>
-size_t ringVertexCount(const Ring<Point> & ring)
-{
-    size_t n = ring.size();
-    if (n >= 2 && boost::geometry::get<0>(ring.front()) == boost::geometry::get<0>(ring.back())
-        && boost::geometry::get<1>(ring.front()) == boost::geometry::get<1>(ring.back()))
-        --n;
-    return n;
-}
-
-/// The coordinates are shifted by the first point, to reduce cancellation in the cross products.
-/// `boost::geometry::centroid` does the same, but is not used: it detects zero area with an absolute epsilon, so it
-/// treats a tiny polygon as degenerate and returns its first vertex.
+/// The area and the moments of each ring are computed relative to its first vertex, to reduce cancellation in the cross
+/// products, and then shifted to a common origin, the first point of the geometry. So the rounding error depends on the
+/// size of each ring, but not on its distance from the other parts.
+/// `boost::geometry::centroid` shifts the coordinates too, but is not used: it detects zero area with an absolute
+/// epsilon, so it treats a tiny polygon as degenerate and returns its first vertex.
 class CartesianCentroid
 {
 public:
@@ -81,14 +72,19 @@ public:
             return;
         setOrigin(ring.front());
 
-        /// Shoelace formula: twice the signed area, and six times the first moments.
+        /// Shoelace formula relative to the first vertex: twice the signed area, and six times the first moments.
+        const Point & ring_origin = ring.front();
+        auto translate_to_ring = [&](const Point & point) -> std::pair<Float64, Float64>
+        {
+            return {point.x() - ring_origin.x(), point.y() - ring_origin.y()};
+        };
         Float64 ring_area2 = 0;
         Float64 ring_moment_x = 0;
         Float64 ring_moment_y = 0;
         for (size_t i = 0; i < n; ++i)
         {
-            const auto [x1, y1] = translate(ring[i]);
-            const auto [x2, y2] = translate(ring[i + 1 == n ? 0 : i + 1]);
+            const auto [x1, y1] = translate_to_ring(ring[i]);
+            const auto [x2, y2] = translate_to_ring(ring[i + 1 == n ? 0 : i + 1]);
             const Float64 cross = x1 * y2 - x2 * y1;
             ring_area2 += cross;
             ring_moment_x += cross * (x1 + x2);
@@ -102,6 +98,10 @@ public:
             ring_moment_x = -ring_moment_x;
             ring_moment_y = -ring_moment_y;
         }
+        /// Six times the first moments relative to the common origin: the area times six times the shift.
+        const auto [shift_x, shift_y] = translate(ring_origin);
+        ring_moment_x += 3 * shift_x * ring_area2;
+        ring_moment_y += 3 * shift_y * ring_area2;
         sums.area2 += ring_area2;
         sums.area_moment_x += ring_moment_x;
         sums.area_moment_y += ring_moment_y;
@@ -160,9 +160,12 @@ private:
         const size_t segments = closed ? n : n - 1;
         for (size_t i = 0; i < segments; ++i)
         {
-            const auto [x1, y1] = translate(path[i]);
-            const auto [x2, y2] = translate(path[i + 1 == n ? 0 : i + 1]);
-            const Float64 segment_length = std::hypot(x2 - x1, y2 - y1);
+            const Point & from = path[i];
+            const Point & to = path[i + 1 == n ? 0 : i + 1];
+            const auto [x1, y1] = translate(from);
+            const auto [x2, y2] = translate(to);
+            /// From the original coordinates, which are exact, unlike the shifted ones.
+            const Float64 segment_length = std::hypot(to.x() - from.x(), to.y() - from.y());
             path_length += segment_length;
             sums.line_moment_x += 0.5 * segment_length * (x1 + x2);
             sums.line_moment_y += 0.5 * segment_length * (y1 + y2);
@@ -226,7 +229,7 @@ public:
             /// The interior is the smaller of the two regions the ring bounds, whatever the winding, or the region on its
             /// right if the two are equal (`isHemisphere`). `S2::GetCentroid` is for the region on the left; the one for
             /// the region on the right is its negation.
-            const bool interior_on_right = signed_area < 0 || isHemisphere(area, n);
+            const bool interior_on_right = signed_area < 0 || isHemisphere(area, ringEdgeCount(ring, n));
             sums.area_centroid += (interior_on_right != is_hole) ? -centroid : centroid;
             sums.area += is_hole ? -area : area;
             sums.area_magnitude += area;
@@ -464,7 +467,12 @@ private:
             checkSphericalEdges(geometry, name);
         }
 
-        if constexpr (std::is_same_v<Geometry, Point>)
+        if constexpr (std::is_same_v<Geometry, SphericalPoint>)
+        {
+            /// Reduce the longitude to [−180, 180] as for the other geometries, which pass through `S2LatLng`.
+            return SphericalPoint(std::remainder(boost::geometry::get<0>(geometry), 360.0), boost::geometry::get<1>(geometry));
+        }
+        else if constexpr (std::is_same_v<Geometry, Point>)
         {
             return geometry;
         }
@@ -581,7 +589,7 @@ SELECT centroidCartesian([(0., 0.), (5., 5.), (10., 10.), (0., 0.)])
     FunctionDocumentation::Description description_spherical = R"(
 Calculates the centroid (center of mass) of a geometry on a sphere, with coordinates `(longitude, latitude)` in degrees.
 Takes any geometry type and returns a Point. Uses the true centroid (mass centroid)
-which correctly accounts for the curvature of the sphere.
+which correctly accounts for the curvature of the sphere. The longitude of the result is in [−180, 180].
 
 The interior of a ring is the smaller of the two regions it bounds, so the winding order does not matter.
 If the two regions are equal (for example, the ring is the equator), the interior is the one on the right of the ring,

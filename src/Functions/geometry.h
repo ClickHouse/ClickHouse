@@ -140,6 +140,34 @@ void checkSphericalLatitudes(const Geometry & geometry, std::string_view functio
     });
 }
 
+/// The number of vertices of a ring, not counting a closing vertex equal to the first one.
+template <typename Point>
+size_t ringVertexCount(const Ring<Point> & ring)
+{
+    size_t n = ring.size();
+    if (n >= 2 && boost::geometry::get<0>(ring.front()) == boost::geometry::get<0>(ring.back())
+        && boost::geometry::get<1>(ring.front()) == boost::geometry::get<1>(ring.back()))
+        --n;
+    return n;
+}
+
+/// The number of edges between two different vertices among the first `n` vertices of a ring, including the edge from
+/// the last vertex to the first one. An edge between equal vertices adds nothing to the area of the ring, nor to the
+/// rounding error of the area.
+template <typename Point>
+size_t ringEdgeCount(const Ring<Point> & ring, size_t n)
+{
+    size_t edges = 0;
+    for (size_t i = 0; i < n; ++i)
+    {
+        const Point & from = ring[i];
+        const Point & to = ring[i + 1 == n ? 0 : i + 1];
+        if (boost::geometry::get<0>(from) != boost::geometry::get<0>(to) || boost::geometry::get<1>(from) != boost::geometry::get<1>(to))
+            ++edges;
+    }
+    return edges;
+}
+
 /// Whether `a` and `b` are antipodal. Both latitudes must be in [−90, 90].
 inline bool areAntipodal(const SphericalPoint & a, const SphericalPoint & b)
 {
@@ -209,13 +237,14 @@ void checkSphericalEdges(const Geometry & geometry, std::string_view function_na
     }
 }
 
-/// Whether a ring of `vertices` vertices whose area, of either of the two regions it bounds, is `area` steradians splits
-/// the sphere into two equal halves up to rounding, as the equator does. Then the interior of the ring is the half on its
-/// right, as for the clockwise `Ring`. Otherwise it is the smaller region. The bound of the rounding error is the one of
-/// `S2::GetCurvatureMaxError`.
-inline bool isHemisphere(Float64 area, size_t vertices)
+/// Whether a ring of `edges` edges (`ringEdgeCount`) whose area, of either of the two regions it bounds, is `area`
+/// steradians splits the sphere into two equal halves up to rounding, as the equator does. Then the interior of the ring
+/// is the half on its right, as for the clockwise `Ring`. Otherwise it is the smaller region. The bound of the rounding
+/// error is the one of `S2::GetCurvatureMaxError`, but without the edges of zero length, so that repeating a vertex does
+/// not change the interior.
+inline bool isHemisphere(Float64 area, size_t edges)
 {
-    return std::abs(2 * std::numbers::pi - std::abs(area)) <= 11.25 * DBL_EPSILON * static_cast<Float64>(vertices);
+    return std::abs(2 * std::numbers::pi - std::abs(area)) <= 11.25 * DBL_EPSILON * static_cast<Float64>(edges);
 }
 
 /// Must match the global discriminators of the Geometry Variant type.

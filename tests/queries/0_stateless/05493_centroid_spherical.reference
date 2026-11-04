@@ -66,3 +66,10 @@ equator	false	-90	-90	0	1	1
 equator	true	90	0	90	1	1
 tilted great circle	false	-45	-90	45	1	1
 tilted great circle	true	45	-45	90	1	1
+centroidSpherical Point with a longitude outside [-180, 180]
+(-160,10)	(-160,10)	(-160,10)
+centroidSpherical and boundingBoxSpherical nearly a hemisphere, with a repeated vertex
+-1.4e-12	false	-90	-90	[(-180,-90),(180,-90),(180,0),(-180,0),(-180,-90)]	1
+-1.4e-12	true	-90	-90	[(-180,-90),(180,-90),(180,0),(-180,0),(-180,-90)]	1
+1.4e-12	false	90	90	[(-180,0),(180,0),(180,90),(-180,90),(-180,0)]	1
+1.4e-12	true	90	90	[(-180,0),(180,0),(180,90),(-180,90),(-180,0)]	1

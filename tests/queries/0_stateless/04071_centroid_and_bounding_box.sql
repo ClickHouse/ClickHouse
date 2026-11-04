@@ -240,3 +240,61 @@ SELECT boundingBoxSpherical(CAST([(0., 0.), (179., 0.)], 'LineString'));
 SELECT 'boundingBoxSpherical of a centrally symmetric ring, in both orientations';
 SELECT arrayMap(p -> (round(p.1, 6), round(p.2, 6)), boundingBoxSpherical([(0., 0.), (45., 30.), (90., 45.), (135., 30.), (180., 0.), (-135., -30.), (-90., -45.), (-45., -30.)]));
 SELECT arrayMap(p -> (round(p.1, 6), round(p.2, 6)), boundingBoxSpherical([(0., 0.), (-45., -30.), (-90., -45.), (-135., -30.), (180., 0.), (135., 30.), (90., 45.), (45., 30.)]));
+
+-- Whether a pole is inside a ring does not depend on the starting vertex or the winding, also for an irregular ring.
+SELECT 'boundingBoxSpherical irregular ring around a pole, all starting vertices and both windings';
+WITH [(133.55150700883996, -5.594781178221163), (-16.874320314874183, -4.136082718699165), (-177.39630222353685, -2.2380850832444468)] AS ring
+SELECT number, boundingBoxSpherical(arrayRotateLeft(ring, number)), boundingBoxSpherical(arrayReverse(arrayRotateLeft(ring, number)))
+FROM numbers(3)
+ORDER BY number;
+
+SELECT 'boundingBoxSpherical rings with a vertex at a pole';
+SELECT boundingBoxSpherical([(0., 90.), (0., 0.), (90., 0.)]);
+SELECT boundingBoxSpherical([(90., 0.), (0., 0.), (0., 90.)]);
+SELECT boundingBoxSpherical([(0., 90.), (0., 0.), (0., -90.), (90., 0.)]);
+SELECT boundingBoxSpherical([(0., 90.), (90., 0.), (0., -90.), (0., 0.)]);
+-- Two equal halves: the interior is the half on the right.
+SELECT boundingBoxSpherical([(0., 90.), (0., 0.), (0., -90.), (180., 0.)]);
+SELECT boundingBoxSpherical([(0., 90.), (180., 0.), (0., -90.), (0., 0.)]);
+
+SELECT 'boundingBoxSpherical ring that goes to a pole and back along the date line';
+SELECT boundingBoxSpherical([(-180., -60.), (-90., -60.), (0., -60.), (90., -60.), (180., -60.), (180., -90.), (-180., -90.)]);
+SELECT boundingBoxSpherical([(-180., -90.), (180., -90.), (180., -60.), (90., -60.), (0., -60.), (-90., -60.), (-180., -60.)]);
+
+-- The edge passes through the north pole along the meridians 0 and 180, but not across the longitudes between them.
+SELECT 'boundingBoxSpherical edge through a pole';
+SELECT boundingBoxSpherical(CAST([[(0., 80.), (180., 80.)], [(190., 0.), (200., 0.)]], 'MultiLineString'));
+SELECT boundingBoxSpherical(CAST([[(190., 0.), (200., 0.)], [(180., 80.), (0., 80.)]], 'MultiLineString'));
+
+SELECT 'boundingBoxSpherical polygon with a hole around a pole';
+SELECT arrayMap(p -> (round(p.1, 6), round(p.2, 6)), boundingBoxSpherical([[(0., 60.), (90., 60.), (180., 60.), (-90., 60.)], [(0., 80.), (90., 80.), (180., 80.), (-90., 80.)]]));
+SELECT arrayMap(p -> (round(p.1, 6), round(p.2, 6)), boundingBoxSpherical([[(-90., 60.), (180., 60.), (90., 60.), (0., 60.)], [(-90., 80.), (180., 80.), (90., 80.), (0., 80.)]]));
+
+SELECT 'boundingBoxSpherical MultiPolygon with a pole, in both orders of the parts';
+SELECT boundingBoxSpherical([[[(0., 80.), (120., 80.), (240., 80.)]], [[(10., 10.), (20., 10.), (20., 20.)]]]);
+SELECT boundingBoxSpherical([[[(10., 10.), (20., 10.), (20., 20.)]], [[(0., 80.), (240., 80.), (120., 80.)]]]);
+
+-- The edge passes a few ulp away from the south pole. Its box does not change when the longitudes are shifted by 360.
+SELECT 'boundingBoxSpherical edge near a pole';
+SELECT arrayMap(p -> (round(p.1, 6), round(p.2, 6)), boundingBoxSpherical(CAST([(146., -45.), (-34.00000000000003, -31.)], 'LineString')));
+SELECT arrayMap(p -> (round(p.1, 6), round(p.2, 6)), boundingBoxSpherical(CAST([(120., 14.), (-60.00000000000003, 71.)], 'LineString')));
+SELECT boundingBoxSpherical(CAST([(-450.0073801500112, -42.851340024819784), (-630.0073801500112, -31.425670012409892)], 'LineString'))
+    = boundingBoxSpherical(CAST([(-90.00738015001122, -42.851340024819784), (89.99261984998884, -31.425670012409892)], 'LineString'));
+
+-- The lowest point of the long edge is between its ends, 5.67e-7 degrees south of the equator.
+SELECT 'boundingBoxSpherical long edge near the equator';
+SELECT round(boundingBoxSpherical(CAST([(-130.91979848301776, -5.8858487778102766e-09), (48.556966476834276, 7.054831480445877e-10)], 'LineString'))[1].2 * 1e9, 3);
+
+-- The boxes of the edges meet at exact longitudes, so the box covers all longitudes.
+SELECT 'boundingBoxSpherical all longitudes';
+SELECT arrayMap(p -> (p.1, round(p.2, 6)), boundingBoxSpherical(CAST([(-175.794589973597, 31.049297105635784), (154.71421351483707, -5.355131697376247), (-6.150296442507331, 50.22436697904284), (177.84811019335774, -7.5178911688345575), (357.84811019335774, -13.75894558441728)], 'LineString')));
+
+-- As in `boundingBoxCartesian`, the box of a polygon without an outer ring is the box of its holes.
+SELECT 'boundingBoxSpherical polygon without an outer ring';
+SELECT arrayMap(p -> (round(p.1, 6), round(p.2, 6)), boundingBoxSpherical(CAST([[], [(1., 1.), (2., 3.), (3., 1.)]], 'Polygon')));
+SELECT boundingBoxCartesian(CAST([[], [(1., 1.), (2., 3.), (3., 1.)]], 'Polygon'));
+
+-- Each ring has its own origin, so far apart parts keep their precision and the area is not taken as zero.
+SELECT 'centroidCartesian small far apart squares, in both orders';
+WITH [[(0., 0.), (1e-6, 0.), (1e-6, 1e-6), (0., 1e-6)]] AS a, [[(100., 50.), (100.000003, 50.), (100.000003, 50.000003), (100., 50.000003)]] AS b
+SELECT round(centroidCartesian([a, b]).1, 6), round(centroidCartesian([a, b]).2, 6), centroidCartesian([a, b]) = centroidCartesian([b, a]);

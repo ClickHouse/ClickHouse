@@ -132,3 +132,24 @@ FROM
     )
 )
 ORDER BY name, reversed;
+
+SELECT 'centroidSpherical Point with a longitude outside [-180, 180]';
+SELECT centroidSpherical((200., 10.)), centroidSpherical(CAST(CAST((200., 10.), 'Point'), 'Geometry')), centroidSpherical(CAST([(200., 10.)], 'MultiPoint'));
+
+-- The ring is a hemisphere up to about 5e-14 steradians, more than the rounding error. Repeating a vertex must not make it
+-- a hemisphere, whose interior is the half on the right, instead of the smaller region.
+SELECT 'centroidSpherical and boundingBoxSpherical nearly a hemisphere, with a repeated vertex';
+SELECT
+    d,
+    reversed,
+    round(centroidSpherical(r).2, 3),
+    round(centroidSpherical(arrayConcat(arrayWithConstant(100, r[1]), r)).2, 3),
+    boundingBoxSpherical(r),
+    boundingBoxSpherical(arrayConcat(arrayWithConstant(100, r[1]), r)) = boundingBoxSpherical(r)
+FROM
+(
+    SELECT d, reversed, if(reversed, arrayReverse(ring), ring) AS r
+    FROM (SELECT d, [(0., 0.), (120., 0.), (240., d)] AS ring FROM values('d Float64', 1.4e-12, -1.4e-12))
+    ARRAY JOIN [false, true] AS reversed
+)
+ORDER BY d, reversed;
