@@ -204,6 +204,9 @@ private:
     /// The conversions of the rows from `plain_type`, where it differs.
     const ExecutableFunctionPtr to_represented;
     const ExecutableFunctionPtr to_target;
+    /// `LowCardinality` writes a header with every write, so a granule is written at once even when the blocks of the query
+    /// split it. For the other types the bytes do not depend on how the rows are split into writes.
+    const bool write_whole_granules;
     const CompressionCodecPtr default_codec;
     /// The `codec` parameter, or the default codec, as the `CODEC` clause of a column.
     const ASTPtr codec_description;
@@ -416,11 +419,12 @@ private:
         return *data_ref.buffer;
     }
 
-    /// Serializes rows in whole granules, as the writer does across the blocks it writes: the rows that do not fill one wait in
-    /// the buffer for the next rows. A sparse column is serialized as it is, since the buffer is not sparse.
+    /// Serializes rows after the rows added one at a time. With `write_whole_granules`, the rows that do not fill a granule wait
+    /// in the buffer for the next rows, as the writer completes a granule with the next block. A sparse column is serialized as
+    /// it is, since the buffer is not sparse.
     void addRows(Data & data_ref, const IColumn & rows, size_t offset, size_t limit) const
     {
-        if (rows.isSparse())
+        if (!write_whole_granules || rows.isSparse())
         {
             flushBuffer(data_ref);
             serializeRows(data_ref, rows, offset, limit);
@@ -525,6 +529,7 @@ public:
         , estimated_type(target_type ? target_type : represented_type)
         , to_represented(represented_type != plain_type ? createCast(plain_type, represented_type) : nullptr)
         , to_target(target_type && !target_type->equals(*plain_type) ? createCast(plain_type, target_type) : nullptr)
+        , write_whole_granules(represented_type != plain_type || recursiveRemoveLowCardinality(estimated_type) != estimated_type)
         , default_codec(CompressionCodecFactory::instance().getDefaultCodec())
         , codec_description(config.codec ? parseCodecDescription(*config.codec) : default_codec->getFullCodecDescription())
         , block_size_bytes(config.block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE))

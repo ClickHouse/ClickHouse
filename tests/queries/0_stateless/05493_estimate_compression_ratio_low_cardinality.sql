@@ -64,7 +64,9 @@ SELECT
     (SELECT estimateCompressionRatio('LZ4', 65536, 'LowCardinality(String)')(s) FROM t_ecr_lc SETTINGS max_block_size = 1000)
     = (SELECT estimateCompressionRatio('LZ4', 65536, 'LowCardinality(String)')(s) FROM t_ecr_lc SETTINGS max_block_size = 8192),
     (SELECT estimateCompressionRatio('LZ4', 65536)(toLowCardinality(toString(number % 16))) FROM numbers(10000) SETTINGS max_block_size = 1000)
-    = (SELECT estimateCompressionRatio('LZ4', 65536)(toLowCardinality(toString(number % 16))) FROM numbers(10000) SETTINGS max_block_size = 8192);
+    = (SELECT estimateCompressionRatio('LZ4', 65536)(toLowCardinality(toString(number % 16))) FROM numbers(10000) SETTINGS max_block_size = 8192),
+    (SELECT estimateCompressionRatio('LZ4', 65536)(s) FROM t_ecr_lc SETTINGS max_block_size = 1000)
+    = (SELECT estimateCompressionRatio('LZ4', 65536)(s) FROM t_ecr_lc SETTINGS max_block_size = 8192);
 
 SELECT 'Dynamic and JSON columns whose structure changes between blocks are written with the structure of the first block';
 
