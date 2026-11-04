@@ -1,6 +1,7 @@
 #include <FilesystemIsolationPaths.h>
 
 #include <Core/Defines.h>
+#include <Common/filesystemHelpers.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -70,10 +71,6 @@ public:
         for (const auto * path : system_paths)
             add(path, Access::ReadOnly, "system");
 
-        for (const char * variable : {"TZDIR", "SSL_CERT_FILE", "SSL_CERT_DIR"})
-            if (const char * value = std::getenv(variable); value && *value) // NOLINT(concurrency-mt-unsafe)
-                addLocation(absolute(value, working_directory), Access::ReadOnly, fmt::format("the environment variable {}", variable));
-
         /// The socket of the service manager, which the server notifies when it is ready (`systemdNotify`). Only the
         /// socket is visible, not its directory. A socket on a read-only mount can still be sent to. A name starting
         /// with `@` is an abstract socket, which is not in the filesystem.
@@ -138,11 +135,9 @@ private:
         /// The same limit on the number of links as in the kernel, against a loop.
         constexpr size_t max_links = 40;
         fs::path current = path;
-        for (size_t i = 0; i < max_links && fs::is_symlink(current, error); ++i)
+        for (size_t i = 0; i < max_links && FS::isSymlinkNoThrow(current); ++i)
         {
-            fs::path target = fs::read_symlink(current, error);
-            if (error)
-                break;
+            fs::path target = FS::readSymlink(current);
             if (target.is_relative())
                 target = current.parent_path() / target;
             current = target.lexically_normal();
