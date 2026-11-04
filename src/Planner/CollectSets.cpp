@@ -16,6 +16,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/misc.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Set.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
@@ -27,6 +28,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool in_null_as_unknown;
     extern const SettingsBool transform_null_in;
     extern const SettingsBool validate_enum_literals_in_operators;
 }
@@ -99,10 +101,15 @@ public:
         }
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {
+            auto set_element_type = in_first_argument->getResultType();
+            if (settings[Setting::in_null_as_unknown])
+                set_element_type = makeNullableOrLowCardinalityNullableSafe(set_element_type);
+
             auto set = getSetElementsForConstantValue(
-                in_first_argument->getResultType(), constant_node->getColumn(), constant_node->getResultType(),
+                set_element_type, constant_node->getColumn(), constant_node->getResultType(),
                 GetSetElementParams{
-                    .transform_null_in = settings[Setting::transform_null_in],
+                    .transform_null_in = settings[Setting::transform_null_in] || settings[Setting::in_null_as_unknown],
+                    .in_null_as_unknown = settings[Setting::in_null_as_unknown],
                     .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
                 });
 
@@ -121,7 +128,8 @@ public:
             for (const auto & elem : set)
                 set_element_types.push_back(elem.type);
 
-            set_element_types = Set::getElementTypes(std::move(set_element_types), settings[Setting::transform_null_in]);
+            set_element_types = Set::getElementTypes(
+                std::move(set_element_types), settings[Setting::transform_null_in] || settings[Setting::in_null_as_unknown]);
             auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
 
             if (sets.findTuple(set_key, set_element_types))

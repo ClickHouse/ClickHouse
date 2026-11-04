@@ -15,6 +15,7 @@
 #include <Analyzer/WindowNode.h>
 
 #include <DataTypes/DataTypeSet.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/FieldToDataType.h>
 
@@ -46,6 +47,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool in_null_as_unknown;
     extern const SettingsBool enable_named_columns_in_function_tuple;
     extern const SettingsBool transform_null_in;
     extern const SettingsInt64 optimize_const_name_size;
@@ -1157,15 +1159,20 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
 
     if (!subquery_or_table)
     {
-        set_element_types = {in_first_argument->getResultType()};
+        auto set_element_type = in_first_argument->getResultType();
+        const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+        if (settings[Setting::in_null_as_unknown])
+            set_element_type = makeNullableOrLowCardinalityNullableSafe(set_element_type);
+
+        set_element_types = {std::move(set_element_type)};
         const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
 
         /// Do not unpack if empty tuple or single element tuple
         if (left_tuple_type && left_tuple_type->getElements().size() > 1)
             set_element_types = left_tuple_type->getElements();
 
-        set_element_types
-            = Set::getElementTypes(std::move(set_element_types), planner_context->getQueryContext()->getSettingsRef()[Setting::transform_null_in]);
+        set_element_types = Set::getElementTypes(
+            std::move(set_element_types), settings[Setting::transform_null_in] || settings[Setting::in_null_as_unknown]);
         set = planner_context->getPreparedSets().findTuple(set_key, set_element_types);
     }
     else

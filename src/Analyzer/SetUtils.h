@@ -16,6 +16,7 @@ using SetPtr = std::shared_ptr<Set>;
 struct GetSetElementParams
 {
     bool transform_null_in = true;
+    bool in_null_as_unknown = false;
     bool forbid_unknown_enum_values = false;
 };
 

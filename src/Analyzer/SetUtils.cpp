@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Interpreters/Set.h>
 #include <Interpreters/castColumn.h>
@@ -653,6 +654,26 @@ bool columnCollectionHasTuple(const ColumnPtr & rhs_column, const DataTypePtr & 
 ColumnsWithTypeAndName getSetElementsForConstantValue(
     const DataTypePtr & lhs_expression_type, const ColumnPtr & rhs_column, const DataTypePtr & rhs_type, GetSetElementParams params)
 {
+    if (params.in_null_as_unknown && lhs_expression_type->onlyNull())
+    {
+        SetMembers members;
+        const WhichDataType rhs_which_type(rhs_type);
+        if (rhs_which_type.isArray())
+            members = membersFromArray(rhs_column, rhs_type);
+        else if (rhs_which_type.isTuple())
+            members = membersFromTuple(rhs_column, rhs_type);
+        else
+            members = membersFromSingleValue(rhs_column, rhs_type);
+
+        auto nested_column = ColumnUInt8::create(members.size(), UInt8{0});
+        auto null_map = ColumnUInt8::create(members.size(), UInt8{0});
+
+        ColumnsWithTypeAndName result(1);
+        result[0].type = makeNullable(std::make_shared<DataTypeUInt8>());
+        result[0].column = ColumnNullable::create(std::move(nested_column), std::move(null_map));
+        return result;
+    }
+
     DataTypes lhs_unpacked_types = {lhs_expression_type};
 
     /// Unpack `Tuple(...)` into tuple elements.
