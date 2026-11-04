@@ -884,9 +884,8 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         after_processing_settings_copy = after_processing_settings;
         add_deduplication_info = deduplication_v2;
     }
-    /// An `ALTER` publishes the action in Keeper metadata before its destination settings, so a batch can capture the new
-    /// `MOVE` together with the old, empty destination. Such a batch would read and insert its files and then fail to move
-    /// them, so it is not started; the next poll sees both.
+    /// `alter` publishes the destination settings before the action, so a batch should never capture `MOVE` without a
+    /// destination. If it does, it would read and insert its files and then fail to move them, so it is not started.
     if (after_processing == ObjectStorageQueueAction::MOVE
         && after_processing_settings_copy.after_processing_move_uri.empty()
         && after_processing_settings_copy.after_processing_move_prefix.empty()
@@ -1964,11 +1963,58 @@ void StorageObjectStorageQueue::alter(
             new_metadata.settings_changes->formatForLogging(),
             requires_detached_mv, changed_settings.size(), changed_settings.namesToString());
 
-        /// Alter settings which are stored in keeper.
-        ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+        /// The companion settings of `after_processing` are published all at once, under one lock, and before the action
+        /// itself is published in Keeper metadata. A batch that captures the new `MOVE` then also captures its whole new
+        /// destination (uri, prefix, container and credentials), never a part of it. The reverse interval, the old action
+        /// with the new destination, is what the `ALTER` asks for anyway.
+        AfterProcessingSettings previous_after_processing_settings;
         {
-            metadata->alterSettings(changed_settings, local_context);
-        });
+            std::lock_guard lock(mutex);
+            previous_after_processing_settings = after_processing_settings;
+            AfterProcessingSettings new_after_processing_settings = after_processing_settings;
+            for (const auto & change : changed_settings)
+            {
+                if (change.name == "after_processing_retries")
+                    new_after_processing_settings.after_processing_retries = static_cast<UInt32>(change.value.safeGet<UInt32>());
+                else if (change.name == "after_processing_move_uri")
+                    new_after_processing_settings.after_processing_move_uri = change.value.safeGet<String>();
+                else if (change.name == "after_processing_move_prefix")
+                    new_after_processing_settings.after_processing_move_prefix = change.value.safeGet<String>();
+                else if (change.name == "after_processing_move_preserve_path")
+                    new_after_processing_settings.after_processing_move_preserve_path = change.value.safeGet<bool>();
+                else if (change.name == "after_processing_move_preserve_tags")
+                    new_after_processing_settings.after_processing_move_preserve_tags = change.value.safeGet<bool>();
+                else if (change.name == "after_processing_move_access_key_id")
+                    new_after_processing_settings.after_processing_move_access_key_id = change.value.safeGet<String>();
+                else if (change.name == "after_processing_move_secret_access_key")
+                    new_after_processing_settings.after_processing_move_secret_access_key = change.value.safeGet<String>();
+                else if (change.name == "after_processing_move_connection_string")
+                    new_after_processing_settings.after_processing_move_connection_string = change.value.safeGet<String>();
+                else if (change.name == "after_processing_move_container")
+                    new_after_processing_settings.after_processing_move_container = change.value.safeGet<String>();
+                else if (change.name == "after_processing_tag_key")
+                    new_after_processing_settings.after_processing_tag_key = change.value.safeGet<String>();
+                else if (change.name == "after_processing_tag_value")
+                    new_after_processing_settings.after_processing_tag_value = change.value.safeGet<String>();
+            }
+            after_processing_settings = std::move(new_after_processing_settings);
+        }
+
+        /// Alter settings which are stored in keeper.
+        try
+        {
+            ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+            {
+                metadata->alterSettings(changed_settings, local_context);
+            });
+        }
+        catch (...)
+        {
+            /// The `ALTER` failed, so the table keeps its old definition, including the old destination.
+            std::lock_guard lock(mutex);
+            after_processing_settings = std::move(previous_after_processing_settings);
+            throw;
+        }
 
         /// Alter settings which are not stored in keeper.
         for (const auto & change : changed_settings)
@@ -1997,28 +2043,6 @@ void StorageObjectStorageQueue::alter(
                 list_objects_batch_size = change.value.safeGet<UInt64>();
             else if (change.name == "enable_hash_ring_filtering")
                 enable_hash_ring_filtering = change.value.safeGet<bool>();
-            else if (change.name == "after_processing_retries")
-                after_processing_settings.after_processing_retries = static_cast<UInt32>(change.value.safeGet<UInt32>());
-            else if (change.name == "after_processing_move_uri")
-                after_processing_settings.after_processing_move_uri = change.value.safeGet<String>();
-            else if (change.name == "after_processing_move_prefix")
-                after_processing_settings.after_processing_move_prefix = change.value.safeGet<String>();
-            else if (change.name == "after_processing_move_preserve_path")
-                after_processing_settings.after_processing_move_preserve_path = change.value.safeGet<bool>();
-            else if (change.name == "after_processing_move_preserve_tags")
-                after_processing_settings.after_processing_move_preserve_tags = change.value.safeGet<bool>();
-            else if (change.name == "after_processing_move_access_key_id")
-                after_processing_settings.after_processing_move_access_key_id = change.value.safeGet<String>();
-            else if (change.name == "after_processing_move_secret_access_key")
-                after_processing_settings.after_processing_move_secret_access_key = change.value.safeGet<String>();
-            else if (change.name == "after_processing_move_connection_string")
-                after_processing_settings.after_processing_move_connection_string = change.value.safeGet<String>();
-            else if (change.name == "after_processing_move_container")
-                after_processing_settings.after_processing_move_container = change.value.safeGet<String>();
-            else if (change.name == "after_processing_tag_key")
-                after_processing_settings.after_processing_tag_key = change.value.safeGet<String>();
-            else if (change.name == "after_processing_tag_value")
-                after_processing_settings.after_processing_tag_value = change.value.safeGet<String>();
             else if (change.name == "commit_on_select")
                 commit_on_select = change.value.safeGet<UInt64>();
             else if (change.name == "deduplication_v2")
