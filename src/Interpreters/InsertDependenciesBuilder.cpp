@@ -1017,17 +1017,29 @@ std::vector<SinkToStorage::HiddenPreWriteCheck> collectHiddenPreWriteChecks(
             registerHiddenPreWriteChecks(target, target_context, gates, HiddenCheckOrigin{target->getStorageID(), storage}, 1, result);
     };
 
-    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    /// The write into a proxy (e.g. a table created `AS remote(...)`, a `StorageTableFunctionProxy`) returns the
+    /// sink of the nested storage, so the forwarding is that of the nested storage. The checks are still enforced
+    /// by the sink of the proxy, which is that sink: `storage` stays the forwarding storage of the origin.
+    StoragePtr forwarding = storage;
+    for (size_t depth = 0; depth <= max_insert_forwarding_depth; ++depth)
+    {
+        const auto * proxy = dynamic_cast<const StorageProxy *>(forwarding.get());
+        if (!proxy)
+            break;
+        forwarding = proxy->getNested();
+    }
+
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(forwarding.get()))
         add_forwarded_to(alias->tryGetTargetTable(), context);
-    else if (const auto * buffer = dynamic_cast<const StorageBuffer *>(storage.get()))
+    else if (const auto * buffer = dynamic_cast<const StorageBuffer *>(forwarding.get()))
         add_forwarded_to(buffer->getDestinationTable(), buffer->getDestinationWriteContext());
-    else if (const auto * time_series = dynamic_cast<const StorageTimeSeries *>(storage.get()))
+    else if (const auto * time_series = dynamic_cast<const StorageTimeSeries *>(forwarding.get()))
     {
         for (auto kind : StorageTimeSeries::getTargetKinds())
             if (time_series->hasTarget(kind))
                 add_forwarded_to(time_series->tryGetTargetTable(kind, context), context);
     }
-    else if (const auto * distributed = dynamic_cast<const StorageDistributed *>(storage.get()))
+    else if (const auto * distributed = dynamic_cast<const StorageDistributed *>(forwarding.get()))
         add_forwarded_to(tryGetDistributedLocalTarget(*distributed, context), context);
 
     return result;
