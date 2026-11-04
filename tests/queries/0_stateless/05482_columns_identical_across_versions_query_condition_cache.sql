@@ -35,3 +35,20 @@ WHERE event_date >= yesterday() AND type = 'QueryFinish' AND current_database = 
 ORDER BY log_comment;
 
 DROP TABLE t_identical;
+
+-- The condition of `indexHint` is not among the arguments of the function, but the index on the version column uses it.
+-- The entry written without FINAL drops the new version of the row 1, so the query with FINAL must not use it.
+DROP TABLE IF EXISTS t_index_hint;
+CREATE TABLE t_index_hint (id UInt64, s UInt64, v UInt64, INDEX idx_v v TYPE minmax GRANULARITY 1)
+ENGINE = ReplacingMergeTree(v) ORDER BY id
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+SYSTEM STOP MERGES t_index_hint;
+INSERT INTO t_index_hint VALUES (1, 100, 1);
+INSERT INTO t_index_hint VALUES (1, 200, 2), (2, 300, 1);
+
+SET optimize_move_to_prewhere = 0, use_skip_indexes = 1, use_skip_indexes_if_final = 1,
+    use_skip_indexes_on_data_read = 0, use_skip_indexes_if_final_exact_mode = 1, use_query_condition_cache = 1;
+SELECT arraySort(groupArray((id, s))) FROM t_index_hint WHERE indexHint(v = 1);
+SELECT arraySort(groupArray((id, s))) FROM t_index_hint FINAL WHERE indexHint(v = 1);
+
+DROP TABLE t_index_hint;

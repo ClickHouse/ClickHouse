@@ -19,6 +19,7 @@
 #include <Formats/FormatSettings.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
+#include <Functions/indexHint.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -149,6 +150,12 @@ bool isNodeOverColumns(const ActionsDAG::Node * node, const NameSet & columns)
         return true; // constants are fine
     if (node->type == ActionsDAG::ActionType::INPUT || node->type == ActionsDAG::ActionType::PLACEHOLDER)
         return false; // already checked result_name
+    /// `indexHint` has no children: its condition is kept in its own DAG, but the index analysis uses it
+    if (node->type == ActionsDAG::ActionType::FUNCTION)
+        if (const auto * index_hint = FunctionIndexHint::tryGet(node->function_base))
+            for (const auto * output : index_hint->getActions().getOutputs())
+                if (!isNodeOverColumns(output, columns))
+                    return false;
     for (const auto * child : node->children)
         if (!isNodeOverColumns(child, columns))
             return false;
@@ -190,6 +197,13 @@ bool isNodeDeterministic(const ActionsDAG::Node * node)
     if (node->type == ActionsDAG::ActionType::COLUMN && node->column
         && !allColumnFunctions(*node->column, [](const IFunctionBase & function) { return function.isDeterministic(); }))
         return false;
+
+    /// the condition of `indexHint` is not among its children, see `isNodeOverColumns`
+    if (node->type == ActionsDAG::ActionType::FUNCTION)
+        if (const auto * index_hint = FunctionIndexHint::tryGet(node->function_base))
+            for (const auto * output : index_hint->getActions().getOutputs())
+                if (!isNodeDeterministic(output))
+                    return false;
 
     for (const auto * child : node->children)
         if (!isNodeDeterministic(child))
