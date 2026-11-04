@@ -157,9 +157,9 @@ struct TimestampStatistics
     /// In milliseconds since the epoch in UTC.
     std::optional<Int64> minimum_utc;
     std::optional<Int64> maximum_utc;
-    /// The sub-millisecond part of the nanoseconds plus one, if not zero.
-    std::optional<Int32> minimum_nanos;
-    std::optional<Int32> maximum_nanos;
+    /// The sub-millisecond part of the nanoseconds plus one, if not zero. Unvalidated when read from a file.
+    std::optional<UInt64> minimum_nanos;
+    std::optional<UInt64> maximum_nanos;
 };
 
 struct BinaryStatistics

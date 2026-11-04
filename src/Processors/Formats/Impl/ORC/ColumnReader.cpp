@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/ORC/ColumnReader.h>
 
+#include <base/arithmeticOverflow.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
@@ -388,18 +389,22 @@ public:
             if (not_null && !not_null[i])
                 continue;
 
+            const Int64 encoded_nanos = nanos[i];
             /// The lowest 3 bits are the number of the trailing zeros (minus one) that are removed.
             UInt64 zeros = nanos[i] & 0x7;
             /// An arithmetic shift, as in the reference implementation: some writers (the Arrow
             /// adapter) store negative nanoseconds for the timestamps before the epoch.
             nanos[i] >>= 3;
-            if (zeros != 0)
-                for (UInt64 j = 0; j <= zeros; ++j)
-                    nanos[i] *= 10;
+            if (zeros != 0 && common::mulOverflow(nanos[i], POWERS_OF_TEN_FOR_NANOS[zeros + 1], nanos[i]))
+                throwInvalidTimestamp(seconds[i], encoded_nanos);
+            if (nanos[i] < -999'999'999 || nanos[i] > 999'999'999)
+                throwInvalidTimestamp(seconds[i], encoded_nanos);
 
-            Int64 writer_time = static_cast<Int64>(static_cast<UInt64>(seconds[i]) + static_cast<UInt64>(epoch_offset));
-            if (writer_time < 0 && nanos[i] > 999999)
-                writer_time -= 1;
+            Int64 writer_time;
+            if (common::addOverflow(seconds[i], epoch_offset, writer_time))
+                throwInvalidTimestamp(seconds[i], encoded_nanos);
+            if (writer_time < 0 && nanos[i] > 999999 && common::subOverflow(writer_time, Int64{1}, writer_time))
+                throwInvalidTimestamp(seconds[i], encoded_nanos);
 
             if (!same_timezone)
             {
@@ -409,9 +414,12 @@ public:
                 if (writer_offset != reader_offset)
                 {
                     /// If the adjustment crosses a DST boundary, the offset has to be reevaluated.
-                    Int64 adjusted_time = writer_time + writer_offset - reader_offset;
+                    Int64 adjusted_time;
+                    if (common::addOverflow(writer_time, writer_offset - reader_offset, adjusted_time))
+                        throwInvalidTimestamp(seconds[i], encoded_nanos);
                     Int64 adjusted_reader_offset = reader_timezone.timezoneOffset(adjusted_time);
-                    writer_time = writer_time + writer_offset - adjusted_reader_offset;
+                    if (common::addOverflow(writer_time, writer_offset - adjusted_reader_offset, writer_time))
+                        throwInvalidTimestamp(seconds[i], encoded_nanos);
                 }
             }
             seconds[i] = writer_time;
@@ -427,6 +435,13 @@ public:
     }
 
 private:
+    static constexpr Int64 POWERS_OF_TEN_FOR_NANOS[9] = {1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000};
+
+    [[noreturn]] void throwInvalidTimestamp(Int64 seconds, Int64 encoded_nanos) const
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid timestamp in ORC column {}: seconds={}, encoded nanoseconds={}", column_id, seconds, encoded_nanos);
+    }
+
     const DateLUTImpl & writer_timezone;
     const DateLUTImpl & reader_timezone;
     const bool same_timezone;

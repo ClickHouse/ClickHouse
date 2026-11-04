@@ -358,8 +358,8 @@ TimestampStatistics parseTimestampStatistics(std::string_view data)
             case 2: res.maximum = readSignedVarintField(r, type); return true;
             case 3: res.minimum_utc = readSignedVarintField(r, type); return true;
             case 4: res.maximum_utc = readSignedVarintField(r, type); return true;
-            case 5: res.minimum_nanos = static_cast<Int32>(readVarintField(r, type)); return true;
-            case 6: res.maximum_nanos = static_cast<Int32>(readVarintField(r, type)); return true;
+            case 5: res.minimum_nanos = readVarintField(r, type); return true;
+            case 6: res.maximum_nanos = readVarintField(r, type); return true;
             default: return false;
         }
     });
@@ -564,8 +564,8 @@ std::string serializeTimestampStatistics(const TimestampStatistics & s)
     if (s.minimum_utc) w.writeSignedVarint(3, *s.minimum_utc);
     if (s.maximum_utc) w.writeSignedVarint(4, *s.maximum_utc);
     /// `int32` fields: negative values are sign-extended to 64 bits.
-    if (s.minimum_nanos) w.writeVarint(5, static_cast<UInt64>(static_cast<Int64>(*s.minimum_nanos)));
-    if (s.maximum_nanos) w.writeVarint(6, static_cast<UInt64>(static_cast<Int64>(*s.maximum_nanos)));
+    if (s.minimum_nanos) w.writeVarint(5, *s.minimum_nanos);
+    if (s.maximum_nanos) w.writeVarint(6, *s.maximum_nanos);
     return out;
 }
 

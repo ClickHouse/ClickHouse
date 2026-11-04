@@ -427,10 +427,12 @@ TruthValue PredicateLeaf::evaluatePredicateMinMax(const Proto::ColumnStatistics 
         case PredicateDataType::TIMESTAMP:
         {
             const auto & ts = stats.timestamp_statistics;
-            if (ts && ts->minimum_utc && ts->maximum_utc)
+            /// The stored nanoseconds are the sub-millisecond part plus one; malformed ones disable the pruning.
+            auto valid_nanos = [](const std::optional<UInt64> & nanos) { return !nanos || (*nanos >= 1 && *nanos <= 1'000'000); };
+            if (ts && ts->minimum_utc && ts->maximum_utc && valid_nanos(ts->minimum_nanos) && valid_nanos(ts->maximum_nanos))
             {
-                Int32 min_nanos = ts->minimum_nanos ? *ts->minimum_nanos - 1 : 0;
-                Int32 max_nanos = ts->maximum_nanos ? *ts->maximum_nanos - 1 : 999999;
+                Int32 min_nanos = ts->minimum_nanos ? static_cast<Int32>(*ts->minimum_nanos) - 1 : 0;
+                Int32 max_nanos = ts->maximum_nanos ? static_cast<Int32>(*ts->maximum_nanos) - 1 : 999999;
                 Literal::Timestamp min{*ts->minimum_utc / 1000, static_cast<Int32>((*ts->minimum_utc % 1000) * 1000000) + min_nanos};
                 Literal::Timestamp max{*ts->maximum_utc / 1000, static_cast<Int32>((*ts->maximum_utc % 1000) * 1000000) + max_nanos};
                 result = evaluateRange(op, literalsTo<Literal::Timestamp>(literals, [](const Literal & l) { return l.getTimestamp(); }),
