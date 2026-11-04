@@ -11,7 +11,6 @@
 #include <Storages/System/StorageSystemClusters.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/DatabaseReplicated.h>
-#include <Databases/PendingReplicasInfo.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
@@ -273,34 +272,22 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr co
                 entries.push_back({.name = all_groups_name, .cluster = std::move(cluster), .replicated = replicated});
     }
 
-    /// Keep a window of Keeper requests in flight while writing rows in cluster order. One cluster may
-    /// add several requests without `MultiRead`, so the window can exceed the limit by that cluster's requests.
-    constexpr size_t max_keeper_requests_in_flight = 512;
-    std::vector<PendingReplicasInfo> pending_replicas_info(entries.size());
-    size_t next_request = 0;
-    size_t requests_in_flight = 0;
-    for (size_t i = 0; i < entries.size(); ++i)
+    std::vector<ReplicasInfoTarget> targets;
+    if (with_replicas_info)
     {
-        if (with_replicas_info)
-        {
-            while (next_request < entries.size()
-                && (next_request <= i || requests_in_flight < max_keeper_requests_in_flight))
-            {
-                if (entries[next_request].replicated)
-                {
-                    auto & pending = pending_replicas_info[next_request];
-                    pending = entries[next_request].replicated->requestReplicasInfo(entries[next_request].cluster);
-                    requests_in_flight += pending.numKeeperRequests();
-                }
-                ++next_request;
-            }
-        }
+        for (const auto & entry : entries)
+            if (entry.replicated)
+                targets.push_back({.database = entry.replicated, .cluster = entry.cluster});
+    }
+    std::vector<ReplicasInfo> replicas_info = DatabaseReplicated::tryGetReplicasInfoBatch(targets);
 
-        const size_t current_requests = pending_replicas_info[i].numKeeperRequests();
-        const ReplicasInfo replicas_info
-            = entries[i].replicated ? entries[i].replicated->awaitReplicasInfo(std::move(pending_replicas_info[i])) : ReplicasInfo{};
-        requests_in_flight -= current_requests;
-        writeCluster(res_columns, columns_mask, entries[i].name, *entries[i].cluster, replicas_info);
+    /// `targets` follows `entries` with the same condition, so the results are consumed in the same order.
+    size_t next_replicas_info = 0;
+    for (const auto & entry : entries)
+    {
+        const bool has_replicas_info = with_replicas_info && entry.replicated;
+        writeCluster(res_columns, columns_mask, entry.name, *entry.cluster,
+            has_replicas_info ? std::move(replicas_info[next_replicas_info++]) : ReplicasInfo{});
     }
 
 #if CLICKHOUSE_CLOUD

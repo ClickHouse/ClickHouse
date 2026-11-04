@@ -105,22 +105,6 @@ struct MultiReadResponses
             responses);
     }
 
-    /// The number of Keeper requests submitted by this response, without waiting for them.
-    size_t numKeeperRequests() const
-    {
-        return std::visit(
-            []<typename TResponses>(const TResponses & resp) -> size_t
-            {
-                if constexpr (std::same_as<TResponses, ResponsesWithFutures>)
-                    return resp.size();
-                else if constexpr (std::same_as<TResponses, MultiResponseWithFuture>)
-                    return 1;
-                else
-                    return 0;
-            },
-            responses);
-    }
-
     ResponseType & operator[](size_t index)
     {
         return std::visit(
@@ -399,19 +383,6 @@ public:
         return tryGet(paths.begin(), paths.end());
     }
 
-    /// Like `tryGet` with several paths, but does not wait for the responses: the request is sent here and
-    /// awaited on the first access to the result (or in `waitForResponses`), so that the requests of several
-    /// callers can be in flight at once. A hardware error of the request is thrown on that first access;
-    /// the per-path results, a missing node included, are in the sub-responses as with `tryGet`.
-    MultiTryGetResponse asyncTryGet(const std::vector<std::string> & paths)
-    {
-        return multiRead<Coordination::GetResponse, /*try_multi=*/ true, /*async=*/ true>(
-            paths.begin(),
-            paths.end(),
-            [&](const auto & path) { return zkutil::makeGetRequest(path); },
-            [&](const auto & path) { return asyncTryGet(path); });
-    }
-
     void set(const std::string & path, const std::string & data,
              int32_t version = -1, Coordination::Stat * stat = nullptr);
 
@@ -659,6 +630,19 @@ public:
     /// Doesn't throw in the following cases:
     /// * The node doesn't exist
     FutureGet asyncTryGet(const std::string & path);
+
+    /// Like `tryGet` with several paths, but does not wait for the responses: the request is sent here and
+    /// awaited on the first access to the result (or in `waitForResponses`), so that the requests of several
+    /// callers can be in flight at once. A hardware error of the request is thrown on that first access;
+    /// the per-path results, a missing node included, are in the sub-responses as with `tryGet`.
+    MultiTryGetResponse asyncTryGet(const std::vector<std::string> & paths)
+    {
+        return multiRead<Coordination::GetResponse, /*try_multi=*/ true, /*async=*/ true>(
+            paths.begin(),
+            paths.end(),
+            [&](const auto & path) { return zkutil::makeGetRequest(path); },
+            [&](const auto & path) { return asyncTryGet(path); });
+    }
 
     /// Doesn't throw in the following cases:
     /// * The node doesn't exist

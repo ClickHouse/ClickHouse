@@ -6,7 +6,7 @@
 # this PR: `tryGetReplicasInfo`.
 #
 # `StorageSystemClusters::fillData` only requests the replica state
-# (`DatabaseReplicated::requestReplicasInfo` / `awaitReplicasInfo`) when the query
+# (`DatabaseReplicated::tryGetReplicasInfoBatch`) when the query
 # requests one of the replica-state columns: `is_active`,
 # `unsynced_after_recovery`, `replication_lag`, `recovery_time`, or
 # `is_shared_catalog_cluster`. A `SELECT count()` such as the one used by

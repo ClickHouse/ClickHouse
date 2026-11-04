@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <optional>
+#include <span>
 
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseReplicatedSettings.h>
@@ -24,8 +25,6 @@ namespace DB
 class DatabaseReplicatedDDLWorker;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 
-class PendingReplicasInfo;
-
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
@@ -46,6 +45,15 @@ struct ReplicasInfo
 {
     std::vector<ReplicaInfo> replicas;
     bool replicas_belong_to_shared_catalog = false;
+};
+
+class DatabaseReplicated;
+
+/// A cluster of a `Replicated` database whose replica state is requested by `DatabaseReplicated::tryGetReplicasInfoBatch`.
+struct ReplicasInfoTarget
+{
+    const DatabaseReplicated * database;
+    ClusterPtr cluster;
 };
 
 class DatabaseReplicated : public DatabaseAtomic
@@ -157,12 +165,11 @@ public:
 
     void restoreDatabaseInKeeper(ContextPtr ctx);
 
-    /// The replica state of one cluster of this database, see `PendingReplicasInfo`: `requestReplicasInfo` sends
-    /// the Keeper request, `awaitReplicasInfo` waits for and parses the response, `tryGetReplicasInfo` does both.
-    /// None of them throws: a failed request yields an empty `ReplicasInfo` and is logged.
-    PendingReplicasInfo requestReplicasInfo(const ClusterPtr & cluster_) const noexcept;
-    ReplicasInfo awaitReplicasInfo(PendingReplicasInfo pending) const noexcept;
-    ReplicasInfo tryGetReplicasInfo(const ClusterPtr & cluster_) const noexcept;
+    /// The replica state of one cluster of this database. A failed request yields an empty `ReplicasInfo` and is logged.
+    ReplicasInfo tryGetReplicasInfo(const ClusterPtr & cluster_) const;
+    /// `result[i]` is what `targets[i].database->tryGetReplicasInfo(targets[i].cluster)` returns, but the requests
+    /// of several targets are in flight at once instead of one round trip per target.
+    static std::vector<ReplicasInfo> tryGetReplicasInfoBatch(std::span<const ReplicasInfoTarget> targets);
 
     void renameDatabase(ContextPtr query_context, const String & new_name) override;
 
@@ -288,8 +295,10 @@ private:
 
     /// Keeper paths of the replica state of one cluster of this database: `max_log_ptr`, then `active` and `log_ptr` of every replica.
     Strings getReplicasInfoPaths(const Cluster & cluster_) const;
-    /// Parses the responses to `getReplicasInfoPaths` of a request in flight; throws when `max_log_ptr` is missing.
-    ReplicasInfo parseReplicasInfo(PendingReplicasInfo & pending) const;
+    /// Parses the responses to `getReplicasInfoPaths`, waiting for them if they are still in flight; throws when `max_log_ptr` is missing.
+    /// `MultiGetResponses` is `zkutil::ZooKeeper::MultiTryGetResponse`: a template only to keep `ZooKeeper.h` out of this header.
+    template <typename MultiGetResponses>
+    ReplicasInfo parseReplicasInfo(const Cluster & cluster_, MultiGetResponses & responses) const;
 
     std::atomic_bool is_readonly = true;
     std::atomic_bool is_probably_dropped = false;

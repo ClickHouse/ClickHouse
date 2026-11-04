@@ -231,7 +231,6 @@ TEST(ZooKeeperTest, MultiReadResponsesInFlightThrowHardwareErrorOnAccess)
     std::promise<MultiResponse> promise;
     zkutil::ZooKeeper::MultiTryGetResponse responses(promise.get_future(), /*num_requests=*/ 1);
     EXPECT_EQ(responses.size(), 1);
-    EXPECT_EQ(responses.numKeeperRequests(), 1);
 
     MultiResponse multi_response;
     multi_response.error = Error::ZSESSIONEXPIRED;

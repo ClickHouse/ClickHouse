@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <atomic>
+#include <deque>
 #include <tuple>
 #include <utility>
 
@@ -15,7 +16,6 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseReplicatedWorker.h>
 #include <Databases/LoadingStrictnessLevel.h>
-#include <Databases/PendingReplicasInfo.h>
 #include <Databases/TablesDependencyGraph.h>
 #include <Databases/enableAllExperimentalSettings.h>
 #include <IO/ReadBufferFromFile.h>
@@ -598,21 +598,33 @@ Strings DatabaseReplicated::getReplicasInfoPaths(const Cluster & cluster_) const
     return paths;
 }
 
-ReplicasInfo DatabaseReplicated::parseReplicasInfo(PendingReplicasInfo & pending) const
+template <typename MultiGetResponses>
+ReplicasInfo DatabaseReplicated::parseReplicasInfo(const Cluster & cluster_, MultiGetResponses & responses) const
 {
-    /// The first access to the responses waits for the Keeper response.
-    auto & responses = *pending.responses;
     const auto & max_log_ptr_zk = responses[0];
     if (max_log_ptr_zk.error != Coordination::Error::ZOK)
         throw Coordination::Exception(max_log_ptr_zk.error);
 
     UInt32 max_log_ptr = parse<UInt32>(max_log_ptr_zk.data);
 
+    UInt64 local_recovery_time = 0;
+    bool unsynced_after_recovery = false;
+    {
+        /// `ddl_worker` is reset under `ddl_worker_mutex` in shutdown(), so every
+        /// access to it must hold the lock. Read both members here.
+        std::lock_guard lock(ddl_worker_mutex);
+        if (ddl_worker)
+        {
+            local_recovery_time = ddl_worker->getCurrentInitializationDurationMs();
+            unsynced_after_recovery = ddl_worker->isUnsyncedAfterRecovery();
+        }
+    }
+
     std::vector<ReplicaInfo> replicas_info;
     replicas_info.resize((responses.size() - 1) / 2);
 
-    const auto & addresses_with_failover = pending.cluster->getShardsAddresses();
-    const auto & shards_info = pending.cluster->getShardsInfo();
+    const auto & addresses_with_failover = cluster_.getShardsAddresses();
+    const auto & shards_info = cluster_.getShardsInfo();
     size_t global_replica_index = 0;
     for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
     {
@@ -621,25 +633,11 @@ ReplicasInfo DatabaseReplicated::parseReplicasInfo(PendingReplicasInfo & pending
             const auto & replica_active = responses[2 * global_replica_index + 1];
             const auto & replica_log_ptr = responses[2 * global_replica_index + 2];
 
-            UInt64 recovery_time = 0;
-            bool unsynced_after_recovery = false;
-            {
-                /// `ddl_worker` is reset under `ddl_worker_mutex` in shutdown(), so every
-                /// access to it must hold the lock. Read both members here.
-                std::lock_guard lock(ddl_worker_mutex);
-                if (ddl_worker)
-                {
-                    if (replica.is_local)
-                        recovery_time = ddl_worker->getCurrentInitializationDurationMs();
-                    unsynced_after_recovery = ddl_worker->isUnsyncedAfterRecovery();
-                }
-            }
-
             replicas_info[global_replica_index] = ReplicaInfo{
                 .is_active = replica_active.error == Coordination::Error::ZOK,
                 .unsynced_after_recovery = unsynced_after_recovery,
                 .replication_lag = replica_log_ptr.error != Coordination::Error::ZNONODE ? std::optional(max_log_ptr - parse<UInt32>(replica_log_ptr.data)) : std::nullopt,
-                .recovery_time = recovery_time,
+                .recovery_time = replica.is_local ? local_recovery_time : 0,
             };
 
             ++global_replica_index;
@@ -649,69 +647,89 @@ ReplicasInfo DatabaseReplicated::parseReplicasInfo(PendingReplicasInfo & pending
     return ReplicasInfo{.replicas = std::move(replicas_info), .replicas_belong_to_shared_catalog = false};
 }
 
-/// Logs the exception being handled; `code` is its `getCurrentExceptionCode`. Same rationale
-/// as in `tryGetCluster`: the caller (e.g. `system.clusters`) treats an empty `ReplicasInfo`
-/// as "skip the replica state columns for this database", and the Keeper state of a
-/// `Replicated` database can be in flux during normal lifecycle operations. Log expected
-/// coordination/connection failures at `information` so they do not leak into the client
-/// stderr at the default `send_logs_level = warning`, but keep anything unexpected at the
-/// default `error` level.
-static void logReplicasInfoFailure(const LoggerPtr & log, int code)
+/// Logs the exception being handled. Same rationale as in `tryGetCluster`: the caller (e.g. `system.clusters`)
+/// treats an empty `ReplicasInfo` as "skip the replica state columns for this database", and the Keeper state of a
+/// `Replicated` database can be in flux during normal lifecycle operations. Log expected coordination/connection
+/// failures at `information` so they do not leak into the client stderr at the default `send_logs_level = warning`,
+/// but keep anything unexpected at the default `error` level.
+static void logReplicasInfoFailure(const LoggerPtr & log)
 {
+    const auto code = getCurrentExceptionCode();
     if (code == ErrorCodes::KEEPER_EXCEPTION || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
         tryLogCurrentException(log, "Failed to get replicas info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
     else
         tryLogCurrentException(log);
 }
 
-PendingReplicasInfo DatabaseReplicated::requestReplicasInfo(const ClusterPtr & cluster_) const noexcept
+ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_) const
+{
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::tryGetReplicasInfo");
+    try
+    {
+        auto responses = getZooKeeper()->tryGet(getReplicasInfoPaths(*cluster_));
+        return parseReplicasInfo(*cluster_, responses);
+    }
+    catch (...)
+    {
+        logReplicasInfoFailure(log);
+        return {};
+    }
+}
+
+std::vector<ReplicasInfo> DatabaseReplicated::tryGetReplicasInfoBatch(std::span<const ReplicasInfoTarget> targets)
 {
     /// The component name is the one of the method that did the whole read before, for the continuity of its metrics.
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::tryGetReplicasInfo");
-    PendingReplicasInfo pending;
-    pending.cluster = cluster_;
-    try
-    {
-        pending.responses = getZooKeeper()->asyncTryGet(getReplicasInfoPaths(*cluster_));
-    }
-    catch (...)
-    {
-        logReplicasInfoFailure(log, getCurrentExceptionCode());
-    }
-    return pending;
-}
 
-ReplicasInfo DatabaseReplicated::awaitReplicasInfo(PendingReplicasInfo pending) const noexcept
-{
-    if (!pending.responses)
-        return {};
+    /// The Keeper session is shared with everything else on the server (e.g. `ReplicatedMergeTree` tables), so the
+    /// requests of one query are bounded. With the MultiRead feature it is one request per target, a quarter of the
+    /// client request queue; without it, a target sends `1 + 2 * replicas` requests and the queue applies backpressure.
+    static constexpr size_t max_targets_in_flight = 256;
 
-    try
+    struct InFlight
     {
-        return parseReplicasInfo(pending);
-    }
-    catch (...)
-    {
-        logReplicasInfoFailure(log, getCurrentExceptionCode());
-        return {};
-    }
-}
+        size_t index;
+        zkutil::ZooKeeper::MultiTryGetResponse responses;
+    };
 
-ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_) const noexcept
-{
-    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::tryGetReplicasInfo");
-    try
+    std::vector<ReplicasInfo> result(targets.size());
+    std::deque<InFlight> in_flight;
+
+    auto wait_oldest = [&]
     {
-        PendingReplicasInfo pending;
-        pending.cluster = cluster_;
-        pending.responses = getZooKeeper()->tryGet(getReplicasInfoPaths(*cluster_));
-        return parseReplicasInfo(pending);
-    }
-    catch (...)
+        auto oldest = std::move(in_flight.front());
+        in_flight.pop_front();
+        const auto & target = targets[oldest.index];
+        try
+        {
+            result[oldest.index] = target.database->parseReplicasInfo(*target.cluster, oldest.responses);
+        }
+        catch (...)
+        {
+            logReplicasInfoFailure(target.database->log);
+        }
+    };
+
+    for (size_t i = 0; i < targets.size(); ++i)
     {
-        logReplicasInfoFailure(log, getCurrentExceptionCode());
-        return {};
+        if (in_flight.size() >= max_targets_in_flight)
+            wait_oldest();
+
+        const auto & target = targets[i];
+        try
+        {
+            in_flight.push_back({i, target.database->getZooKeeper()->asyncTryGet(target.database->getReplicasInfoPaths(*target.cluster))});
+        }
+        catch (...)
+        {
+            logReplicasInfoFailure(target.database->log);
+        }
     }
+
+    while (!in_flight.empty())
+        wait_oldest();
+
+    return result;
 }
 
 void DatabaseReplicated::fillClusterAuthInfo(String collection_name)
