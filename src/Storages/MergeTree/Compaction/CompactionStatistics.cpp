@@ -1617,6 +1617,21 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     ///    dropped from the reservation while the real merge reads and rewrites the column.
     /// The full expired set (before the required-columns exemption below) also decides which projections
     /// the merge rebuilds, so it is computed once here and reused by the projection pricing below.
+    /// Whether the merge has a due TTL (see the comment at merge_may_reduce_rows below).
+    bool need_remove_expired_values = false;
+    if (metadata_snapshot->hasAnyTTL())
+    {
+        IMergeTreeDataPart::TTLInfos merged_ttl_infos;
+        for (const auto & part : future_part.parts)
+        {
+            merged_ttl_infos.update(part->ttl_infos);
+            if (!part->checkAllTTLCalculated(metadata_snapshot))
+                need_remove_expired_values = true;
+        }
+        if (merged_ttl_infos.part_min_ttl && merged_ttl_infos.part_min_ttl <= time_of_merge)
+            need_remove_expired_values = true;
+    }
+
     NameSet expired_columns;
     std::unordered_map<String, String> pending_rename_sources;
     /// Rename targets with dynamic structure that base parts store under the new name while a selected
@@ -1731,11 +1746,20 @@ static UInt64 estimateNeededMemoryForMergeImpl(
             }
         }
 
+        /// A due `TTL ... GROUP BY ... SET` assignment can give such a column non-default values, so MergeTask
+        /// keeps it (the TTL step applies due TTLs even when TTL merges are stopped).
+        NameSet group_by_ttl_set_columns;
+        if (need_remove_expired_values)
+            for (const auto & group_by_ttl : metadata_snapshot->getGroupByTTLs())
+                for (const auto & set_part : group_by_ttl.set_parts)
+                    group_by_ttl_set_columns.insert(set_part.column_name);
+
         for (const auto & storage_column : output_columns)
             if (!columns_present_in_parts.contains(storage_column.name)
                 && !columns_present_in_patch_parts.contains(storage_column.name)
                 && !pending_rename_sources.contains(storage_column.name)
                 && !missing_columns_to_materialize.contains(storage_column.name)
+                && !group_by_ttl_set_columns.contains(storage_column.name)
                 && !columns_description.getDefault(storage_column.name))
                 expired_columns.insert(storage_column.name);
     }
@@ -1790,12 +1814,11 @@ static UInt64 estimateNeededMemoryForMergeImpl(
             for (const auto & name : metadata_snapshot->getColumnsRequiredForSortingKey())
                 required_columns.insert(
                     physical_names.contains(name) ? name : String(Nested::getColumnFromSubcolumn(name, physical_names)));
-            if (!merging_params.sign_column.empty())
-                required_columns.insert(merging_params.sign_column);
-            if (!merging_params.is_deleted_column.empty())
-                required_columns.insert(merging_params.is_deleted_column);
-            if (!merging_params.version_column.empty())
-                required_columns.insert(merging_params.version_column);
+            /// The sign, is_deleted and version columns can be subcolumns: the column that stores them is required.
+            for (const auto * name : {&merging_params.sign_column, &merging_params.is_deleted_column, &merging_params.version_column})
+                if (!name->empty())
+                    required_columns.insert(
+                        physical_names.contains(*name) ? *name : String(Nested::getColumnFromSubcolumn(*name, physical_names)));
             if (merging_params.mode == MergeTreeData::MergingParams::Graphite)
             {
                 required_columns.insert(merging_params.graphite_params.path_column_name);
@@ -1997,19 +2020,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// row-reducing TTL merge that its reservation priced as an ordinary one. The one remaining
     /// deviation - the merge skips TTL removal while a ttl_merges_blocker is held - can only make the
     /// merge rebuild fewer projections than priced here, which is the safe direction for a reservation.
-    bool need_remove_expired_values = false;
-    if (metadata_snapshot->hasAnyTTL())
-    {
-        IMergeTreeDataPart::TTLInfos merged_ttl_infos;
-        for (const auto & part : future_part.parts)
-        {
-            merged_ttl_infos.update(part->ttl_infos);
-            if (!part->checkAllTTLCalculated(metadata_snapshot))
-                need_remove_expired_values = true;
-        }
-        if (merged_ttl_infos.part_min_ttl && merged_ttl_infos.part_min_ttl <= time_of_merge)
-            need_remove_expired_values = true;
-    }
+    /// need_remove_expired_values itself is computed before the expired columns above, which depend on it.
 
     const bool has_lightweight_delete = std::any_of(
         source_and_patch_parts.begin(), source_and_patch_parts.end(),
@@ -2693,12 +2704,12 @@ static UInt64 estimateNeededMemoryForMergeImpl(
             };
             for (const auto & name : metadata_snapshot->getColumnsRequiredForSortingKey())
                 insert_storage_name(name);
-            if (!merging_params.sign_column.empty())
-                merging_names.insert(merging_params.sign_column);
-            if (!merging_params.is_deleted_column.empty())
-                merging_names.insert(merging_params.is_deleted_column);
-            if (!merging_params.version_column.empty())
-                merging_names.insert(merging_params.version_column);
+            /// The sign, is_deleted and version columns can be subcolumns. MergeTask then reads the subcolumn in the
+            /// horizontal stage and can still gather the column that stores it; pricing that whole column as merging
+            /// can only over-reserve.
+            for (const auto * name : {&merging_params.sign_column, &merging_params.is_deleted_column, &merging_params.version_column})
+                if (!name->empty())
+                    insert_storage_name(*name);
             for (const auto & index : metadata_snapshot->getSecondaryIndices())
                 for (const auto & name : index.expression->getRequiredColumns())
                     insert_storage_name(name);
