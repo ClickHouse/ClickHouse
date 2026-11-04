@@ -58,7 +58,7 @@ struct MergeTreeTemporaryPart
     void cancel();
     void startFinalization();
     /// Waits for the work started by `startFinalization`. Does nothing if it was not started.
-    void waitFinalization();
+    void waitFinalization() const;
     /// Size of the archives of the part and its projections whose finalization is started but not finished.
     size_t getPendingFinalizationBytes() const;
     void finalize();

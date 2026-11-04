@@ -513,7 +513,7 @@ size_t MergeTreeTemporaryPart::getPendingFinalizationBytes() const
     return bytes;
 }
 
-void MergeTreeTemporaryPart::waitFinalization()
+void MergeTreeTemporaryPart::waitFinalization() const
 {
     if (!finalization_started)
         return;
