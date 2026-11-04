@@ -5,6 +5,7 @@
 #include <Analyzer/Passes/DistanceTransposedPartialReadsPass.h>
 #include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -45,6 +46,13 @@ public:
         if (const auto * query_node = node->as<QueryNode>())
         {
             group_by_keys_stack.push_back(getGroupByKeys(*query_node));
+            correlated_columns_stack.push_back(query_node->getCorrelatedColumns().getNodes());
+            return;
+        }
+
+        if (const auto * union_node = node->as<UnionNode>())
+        {
+            correlated_columns_stack.push_back(union_node->getCorrelatedColumns().getNodes());
             return;
         }
 
@@ -82,6 +90,10 @@ public:
 
         /// A `GROUP BY` key is read from the aggregation result, so it is not rewritten into its subcolumns.
         if (isGroupByKeyAfterAggregation(function_arguments_nodes[0], group_by_keys_stack.back()))
+            return;
+
+        /// A correlated subquery receives a column of an outer query whole, so it is not rewritten into its subcolumns.
+        if (isCorrelatedColumn(*qbit_node))
             return;
 
         /// A Variant or Dynamic reference vector carries per-row type and null semantics: the distance function is
@@ -302,12 +314,38 @@ public:
     void leaveImpl(QueryTreeNodePtr & node)
     {
         if (node->getNodeType() == QueryTreeNodeType::QUERY)
+        {
             group_by_keys_stack.pop_back();
+            correlated_columns_stack.pop_back();
+        }
+        else if (node->getNodeType() == QueryTreeNodeType::UNION)
+        {
+            correlated_columns_stack.pop_back();
+        }
     }
 
 private:
     /// The `GROUP BY` keys of each enclosing query; the first entry is for an expression outside of any query.
     std::vector<QueryTreeNodes> group_by_keys_stack{1};
+
+    /// The correlated columns of each enclosing query or union.
+    std::vector<QueryTreeNodes> correlated_columns_stack;
+
+    bool isCorrelatedColumn(const ColumnNode & column_node) const
+    {
+        const auto column_source = column_node.getColumnSourceOrNull();
+        for (const auto & correlated_columns : correlated_columns_stack)
+        {
+            for (const auto & correlated_column : correlated_columns)
+            {
+                const auto * correlated_column_node = correlated_column->as<ColumnNode>();
+                if (correlated_column_node && correlated_column_node->getColumnName() == column_node.getColumnName()
+                    && correlated_column_node->getColumnSourceOrNull() == column_source)
+                    return true;
+            }
+        }
+        return false;
+    }
 };
 
 }

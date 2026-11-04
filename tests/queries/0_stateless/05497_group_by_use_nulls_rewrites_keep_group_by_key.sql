@@ -54,6 +54,9 @@ SELECT 'qb other key', id, L2DistanceTransposed(v, [1., 2., 3., 4.], 32) AS k, c
 SELECT 'qb nullable', L2DistanceTransposed(v, [1., 2., 3., 4.], 32) AS k, count() FROM qn GROUP BY k WITH ROLLUP ORDER BY ALL;
 -- The `QBit` column is the key.
 SELECT 'qb column key', L2DistanceTransposed(v, [1., 2., 3., 4.], 32) AS k, count() FROM q GROUP BY v ORDER BY ALL;
+-- A `QBit` column of an outer query, read by a correlated subquery.
+SELECT 'qb correlated', id, (SELECT L2DistanceTransposed(q.v, [1., 2., 3., 4.], 32)) AS k FROM q ORDER BY id;
+SELECT 'qb correlated key', toString(v) AS s, (SELECT L2DistanceTransposed(q.v, [1., 2., 3., 4.], 32)) AS k, count() FROM q GROUP BY v ORDER BY s;
 
 -- The rewrites still apply to the key and to its `Nullable` copies.
 SELECT 'ac explain',

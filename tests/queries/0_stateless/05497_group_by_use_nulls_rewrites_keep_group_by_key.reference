@@ -93,6 +93,12 @@ qb nullable	\N	3
 qb column key	0	1
 qb column key	1	1
 qb column key	5.477225575051661	1
+qb correlated	1	0
+qb correlated	2	1
+qb correlated	3	5.477225575051661
+qb correlated key	[0,0,0,0]	5.477225575051661	1
+qb correlated key	[1,2,3,4]	0	1
+qb correlated key	[1,2,3,5]	1	1
 ac explain	2	1	0
 dg explain	0	2
 qb explain	0	3
