@@ -1,4 +1,5 @@
 #include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -28,6 +29,20 @@ struct AliasedSubcolumn
     const IAST * lambda;
 };
 
+/// The parent column and the subcolumn that @identifier reads, if it reads one.
+std::optional<std::pair<String, String>> tryGetSubcolumn(const ASTIdentifier & identifier, const NamesAndTypesList & columns)
+{
+    if (columns.contains(identifier.getColumnName()))
+        return {};
+
+    auto [column_name, subcolumn_name] = Nested::splitName(identifier.getColumnName());
+    auto column = columns.tryGetByName(column_name);
+    if (!column || !column->type->hasSubcolumn(subcolumn_name))
+        return {};
+
+    return std::pair{std::move(column_name), std::move(subcolumn_name)};
+}
+
 void replaceSubcolumns(
     ASTPtr & ast,
     const NamesAndTypesList & columns,
@@ -38,14 +53,11 @@ void replaceSubcolumns(
 {
     if (auto * identifier = ast->as<ASTIdentifier>())
     {
-        if (columns.contains(identifier->getColumnName()))
+        auto subcolumn = tryGetSubcolumn(*identifier, columns);
+        if (!subcolumn)
             return;
 
-        auto [column_name, subcolumn_name] = Nested::splitName(identifier->getColumnName());
-        auto column = columns.tryGetByName(column_name);
-        if (!column || !column->type->hasSubcolumn(subcolumn_name))
-            return;
-
+        const auto & [column_name, subcolumn_name] = *subcolumn;
         auto function = makeASTFunction("getSubcolumn", make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTLiteral>(subcolumn_name));
         /// The root is named by the caller.
         if (!is_root)
@@ -104,6 +116,10 @@ bool hasIdentifierOutside(const IAST & ast, const std::unordered_set<const IAST 
         return false;
     if (const auto * identifier = ast.as<ASTIdentifier>(); identifier && identifier->getColumnName() == name)
         return true;
+    /// The old analyzer does not replace a lambda parameter by an alias of the same name.
+    if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda"
+        && std::ranges::contains(RequiredSourceColumnsMatcher::extractNamesFromLambda(*function), name))
+        return false;
     for (const auto & child : ast.children)
         if (hasIdentifierOutside(*child, scopes, name))
             return true;
@@ -112,7 +128,19 @@ bool hasIdentifierOutside(const IAST & ast, const std::unordered_set<const IAST 
 
 }
 
-void replaceSubcolumnsToGetSubcolumnFunctionInQuery(ASTPtr & ast, const NamesAndTypesList & columns)
+void collectSubcolumnParents(const IAST & ast, const NamesAndTypesList & columns, NameSet & parents)
+{
+    if (const auto * identifier = ast.as<ASTIdentifier>())
+    {
+        if (auto subcolumn = tryGetSubcolumn(*identifier, columns))
+            parents.insert(subcolumn->first);
+        return;
+    }
+    for (const auto & child : ast.children)
+        collectSubcolumnParents(*child, columns, parents);
+}
+
+void replaceSubcolumnsToGetSubcolumnFunctionInQuery(ASTPtr & ast, const NamesAndTypesList & columns, const NameSet & parents)
 {
     std::vector<UnnamedSubcolumn> unnamed;
     std::vector<AliasedSubcolumn> aliased;
@@ -131,7 +159,8 @@ void replaceSubcolumnsToGetSubcolumnFunctionInQuery(ASTPtr & ast, const NamesAnd
 
         NameSet dropped;
         for (const auto & [alias, lambdas] : scopes)
-            if (conflicting.contains(alias) || (!lambdas.contains(nullptr) && hasIdentifierOutside(*ast, lambdas, alias)))
+            if (conflicting.contains(alias) || parents.contains(alias)
+                || (!lambdas.contains(nullptr) && hasIdentifierOutside(*ast, lambdas, alias)))
                 dropped.insert(alias);
 
         for (const auto & [function, lambda] : aliased)

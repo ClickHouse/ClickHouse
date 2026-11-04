@@ -169,6 +169,65 @@ OPTIMIZE TABLE t_ttl_lambda_sibling FINAL;
 SELECT t, m FROM t_ttl_lambda_sibling;
 DROP TABLE t_ttl_lambda_sibling;
 
+-- An alias of the subcolumn has the name of a column whose subcolumn the expression also reads.
+DROP TABLE IF EXISTS t_parent;
+CREATE TABLE t_parent
+(
+    t Tuple(a UInt32),
+    u Tuple(b UInt32),
+    m_parent String MATERIALIZED concat(toString(t.a AS t), '-', toString(t.a)),
+    m_other String MATERIALIZED concat(toString(t.a AS u), '-', toString(u.b))
+)
+ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_parent (t, u) VALUES (tuple(100), tuple(5));
+SELECT t, u, m_parent, m_other FROM t_parent;
+ALTER TABLE t_parent UPDATE t = tuple(200) WHERE 1;
+SELECT t, u, m_parent, m_other FROM t_parent;
+DROP TABLE t_parent;
+
+-- Another column reads the subcolumn, and a mutation evaluates both expressions in one scope.
+DROP TABLE IF EXISTS t_parent_column;
+CREATE TABLE t_parent_column
+(
+    t Tuple(a UInt32),
+    u Tuple(b UInt32),
+    m_alias String MATERIALIZED toString(t.a AS u),
+    m_read String MATERIALIZED concat(toString(u.b), '-', toString(t))
+)
+ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_parent_column (t, u) VALUES (tuple(100), tuple(5));
+SELECT t, u, m_alias, m_read FROM t_parent_column;
+ALTER TABLE t_parent_column UPDATE t = tuple(200) WHERE 1;
+SELECT t, u, m_alias, m_read FROM t_parent_column;
+DROP TABLE t_parent_column;
+
+-- A sibling lambda has a parameter with the name of an alias set and read inside a lambda.
+DROP TABLE IF EXISTS t_lambda_parameter;
+CREATE TABLE t_lambda_parameter (t Tuple(a UInt32), z UInt32, m String MATERIALIZED concat(arrayStringConcat(arrayMap(x -> concat(toString(t.a AS r), '-', toString(r)), [1])), '/', arrayStringConcat(arrayMap(r -> toString(r), [z])))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_lambda_parameter (t, z) VALUES (tuple(100), 5);
+SELECT t, z, m FROM t_lambda_parameter;
+ALTER TABLE t_lambda_parameter UPDATE t = tuple(200) WHERE 1;
+SELECT t, z, m FROM t_lambda_parameter;
+DROP TABLE t_lambda_parameter;
+
+-- The parent and parameter cases, recomputed by a column TTL.
+DROP TABLE IF EXISTS t_ttl_parent;
+CREATE TABLE t_ttl_parent
+(
+    d DateTime,
+    t Tuple(a Int32) TTL d + INTERVAL 1 SECOND,
+    u Tuple(b Int32),
+    z Int32,
+    m_parent String MATERIALIZED concat(toString(t.a AS t), '-', toString(t.a)),
+    m_other String MATERIALIZED concat(toString(t.a AS u), '-', toString(u.b)),
+    m_parameter String MATERIALIZED concat(arrayStringConcat(arrayMap(x -> concat(toString(t.a AS r), '-', toString(r)), [1])), '/', arrayStringConcat(arrayMap(r -> toString(r), [z])))
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_ttl_parent (d, t, u, z) VALUES ('2000-01-01 00:00:00', (7), (5), 5);
+OPTIMIZE TABLE t_ttl_parent FINAL;
+SELECT t, u, z, m_parent, m_other, m_parameter FROM t_ttl_parent;
+DROP TABLE t_ttl_parent;
+
 -- A lightweight UPDATE recomputes through the same expression.
 DROP TABLE IF EXISTS t_lwu;
 CREATE TABLE t_lwu (k UInt8, t Tuple(a UInt32), z UInt32, m String MATERIALIZED concat(toString(t.a AS z), '-', toString(z)), m_name String MATERIALIZED formatRowNoNewline('JSONEachRow', t.a)) ENGINE = MergeTree ORDER BY k SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
