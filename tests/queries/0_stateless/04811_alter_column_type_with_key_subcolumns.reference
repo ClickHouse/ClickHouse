@@ -30,3 +30,21 @@ remove key subcolumn -> reject:
 widen key subcolumn enum (safe) -> allowed:
 1	x	10
 2	y	20
+add Nullable level, key subcolumn loses its Nullable -> reject:
+key subcolumn values (NULL, = 0, total):	6	1	12
+add Nullable level, key subcolumn keeps its Nullable -> allowed:
+add unrelated typed path under a kept Nullable level -> allowed:
+same, as a lazy type hint change -> allowed:
+type:	Nullable(JSON(a Nullable(Int64), b String, c String))
+key lookup (data.a = 0):	1
+key subcolumn loses its Nullable under a kept Nullable level -> reject:
+same, as a lazy type hint change -> reject:
+remove the Nullable level with a DEFAULT -> reject:
+key subcolumn values (NULL, = 0, total):	6	1	12
+partition key, add Nullable level, key subcolumn loses its Nullable -> reject:
+Tuple element gets a Nullable level, key subcolumn loses its Nullable -> reject:
+change non-key Tuple element -> allowed:
+type:	Tuple(j JSON(a Nullable(Int64)), b Int64)
+key subcolumn values (NULL, = 0, total):	6	1	12
+Array element gets a Nullable level, key subcolumn loses its Nullable -> reject:
+skip index, key subcolumn loses its Nullable under a kept Nullable level, lazy -> reject:

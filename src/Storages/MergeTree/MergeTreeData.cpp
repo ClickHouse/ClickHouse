@@ -44,6 +44,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -5875,6 +5876,57 @@ bool isSafeForKeyConversion(const IDataType * from, const IDataType * to)
     return false;
 }
 
+/// Whether converting a column from `from` to `to` keeps the values of its subcolumn `subcolumn`.
+/// The subcolumn type alone does not tell: below a Nullable level a subcolumn is Nullable either way, so
+/// `JSON(a Nullable(Int64))` -> `Nullable(JSON(a Int64))` keeps `a` a `Nullable(Int64)` but turns its NULLs into 0.
+bool conversionKeepsSubcolumnValues(const DataTypePtr & from, const DataTypePtr & to, std::string_view subcolumn)
+{
+    auto from_subcolumn = from->tryGetSubcolumnType(subcolumn);
+    auto to_subcolumn = to->tryGetSubcolumnType(subcolumn);
+    if (!from_subcolumn || !to_subcolumn || !isSafeForKeyConversion(from_subcolumn.get(), to_subcolumn.get()))
+        return false;
+
+    /// Continue below a wrapper. If neither type has the subcolumn below it, it is the wrapper's own (`null`, `size0`).
+    auto check_below = [&](const DataTypePtr & from_below, const DataTypePtr & to_below)
+    {
+        bool from_has = from_below->hasSubcolumn(subcolumn);
+        if (from_has != to_below->hasSubcolumn(subcolumn))
+            return false;
+        return !from_has || conversionKeepsSubcolumnValues(from_below, to_below, subcolumn);
+    };
+
+    bool from_nullable = isNullableOrLowCardinalityNullable(from);
+    bool to_nullable = isNullableOrLowCardinalityNullable(to);
+    if (from_nullable || to_nullable)
+    {
+        /// Only a Nullable level keeps a NULL; one that `to` adds holds no NULL yet.
+        if (!to_nullable)
+            return false;
+        return check_below(from_nullable ? removeLowCardinalityAndNullable(from) : from, removeLowCardinalityAndNullable(to));
+    }
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to.get());
+    if (from_array || to_array)
+        return from_array && to_array && check_below(from_array->getNestedType(), to_array->getNestedType());
+
+    /// The levels the name goes through, e.g. `j` of `j.a`.
+    for (size_t dot = subcolumn.find('.'); dot != std::string_view::npos; dot = subcolumn.find('.', dot + 1))
+    {
+        auto prefix = subcolumn.substr(0, dot);
+        auto rest = subcolumn.substr(dot + 1);
+        auto from_prefix = from->tryGetSubcolumnType(prefix);
+        auto to_prefix = to->tryGetSubcolumnType(prefix);
+        bool from_through = from_prefix && from_prefix->hasSubcolumn(rest);
+        bool to_through = to_prefix && to_prefix->hasSubcolumn(rest);
+        if (from_through != to_through)
+            return false;
+        if (from_through && !conversionKeepsSubcolumnValues(from_prefix, to_prefix, rest))
+            return false;
+    }
+    return true;
+}
+
 /// Comma-separated list of backquoted identifiers, for exception messages.
 String backQuotedList(const std::vector<String> & identifiers)
 {
@@ -6861,6 +6913,19 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                             backQuoteIfNeed(subcolumn),
                             old_subcolumn->type->getName(),
                             new_subcolumn ? new_subcolumn->type->getName() : "(removed)");
+
+                    auto old_column = old_columns.tryGetPhysical(command.column_name);
+                    auto new_column = new_columns.tryGetPhysical(command.column_name);
+                    if (old_column && new_column && !isSecondaryDDLReplay(local_context)
+                        && !conversionKeepsSubcolumnValues(old_column->type, new_column->type, old_subcolumn->getSubcolumnName()))
+                        throw Exception(
+                            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "ALTER of column {} from type {} to type {} is forbidden because it can change the values of its "
+                            "subcolumn {}, which is part of a key expression",
+                            backQuoteIfNeed(command.column_name),
+                            old_column->type->getName(),
+                            new_column->type->getName(),
+                            backQuoteIfNeed(subcolumn));
                 }
             }
 
@@ -6929,6 +6994,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             /// key/index/projection.
             const auto & old_columns_desc = old_metadata.getColumns();
             const auto & new_columns_desc = new_metadata.getColumns();
+            const DataTypePtr old_type = old_columns_desc.getPhysical(command.column_name).type;
+            const DataTypePtr new_type = new_columns_desc.getPhysical(command.column_name).type;
+            const bool is_secondary_replay = isSecondaryDDLReplay(local_context);
 
             auto names_use_changed_subcolumn = [&](const Names & required_columns) -> bool
             {
@@ -6942,6 +7010,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                     /// Removed or retyped after the ALTER: its on-disk bytes no longer match.
                     auto new_column = new_columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required);
                     if (!new_column || new_column->type->getName() != old_column->type->getName())
+                        return true;
+
+                    if (old_column->isSubcolumn() && !is_secondary_replay
+                        && !conversionKeepsSubcolumnValues(old_type, new_type, old_column->getSubcolumnName()))
                         return true;
                 }
                 return false;

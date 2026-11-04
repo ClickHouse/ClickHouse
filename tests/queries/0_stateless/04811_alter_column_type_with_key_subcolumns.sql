@@ -90,3 +90,72 @@ SELECT 'widen key subcolumn enum (safe) -> allowed:';
 ALTER TABLE t_alter_key_sub MODIFY COLUMN t Tuple(a Enum8('x' = 1, 'y' = 2, 'z' = 3), b Int32);
 SELECT id, t.a, t.b FROM t_alter_key_sub ORDER BY t.a, id;
 DROP TABLE t_alter_key_sub;
+
+-- ============================================================
+-- A key subcolumn below a Nullable level is Nullable either way, so its type can stay the same while
+-- the ALTER turns its NULLs into defaults. Each level on the way to the key subcolumn is checked.
+-- ============================================================
+CREATE TABLE t_alter_key_sub (id UInt32, data JSON(a Nullable(Int64))) ENGINE = MergeTree ORDER BY (data.a, id) SETTINGS index_granularity = 2, allow_nullable_key = 1;
+INSERT INTO t_alter_key_sub SELECT number, toJSONString(map('a', number)) FROM numbers(6);
+INSERT INTO t_alter_key_sub SELECT number + 6, '{}' FROM numbers(6);
+OPTIMIZE TABLE t_alter_key_sub FINAL;
+SELECT 'add Nullable level, key subcolumn loses its Nullable -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data Nullable(JSON(a Int64)); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'key subcolumn values (NULL, = 0, total):', countIf(data.a IS NULL), countIf(data.a = 0), count() FROM t_alter_key_sub;
+DROP TABLE t_alter_key_sub;
+
+-- Allowed changes first: no key lookup may run after an ALTER that left the part unsorted.
+CREATE TABLE t_alter_key_sub (id UInt32, data JSON(a Nullable(Int64))) ENGINE = MergeTree ORDER BY (data.a, id) SETTINGS index_granularity = 2, allow_nullable_key = 1;
+INSERT INTO t_alter_key_sub SELECT number, toJSONString(map('a', number)) FROM numbers(6);
+INSERT INTO t_alter_key_sub SELECT number + 6, '{}' FROM numbers(6);
+OPTIMIZE TABLE t_alter_key_sub FINAL;
+SELECT 'add Nullable level, key subcolumn keeps its Nullable -> allowed:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data Nullable(JSON(a Nullable(Int64)));
+SELECT 'add unrelated typed path under a kept Nullable level -> allowed:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data Nullable(JSON(a Nullable(Int64), b String));
+SELECT 'same, as a lazy type hint change -> allowed:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data Nullable(JSON(a Nullable(Int64), b String, c String)) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT 'type:', type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_key_sub' AND name = 'data';
+SELECT 'key lookup (data.a = 0):', count() FROM t_alter_key_sub WHERE data.a = 0;
+SELECT 'key subcolumn loses its Nullable under a kept Nullable level -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data Nullable(JSON(a Int64, b String, c String)); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'same, as a lazy type hint change -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data Nullable(JSON(a Int64, b String, c String)) SETTINGS enable_json_lazy_type_hints = 1; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'remove the Nullable level with a DEFAULT -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(a Nullable(Int64), b String, c String) DEFAULT '{"a" : 100}'; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'key subcolumn values (NULL, = 0, total):', countIf(data.a IS NULL), countIf(data.a = 0), count() FROM t_alter_key_sub;
+DROP TABLE t_alter_key_sub;
+
+-- Partition key.
+CREATE TABLE t_alter_key_sub (id UInt32, data JSON(a Nullable(Int64))) ENGINE = MergeTree PARTITION BY data.a ORDER BY id SETTINGS index_granularity = 2, allow_nullable_key = 1;
+INSERT INTO t_alter_key_sub SELECT number, if(number < 6, toJSONString(map('a', number % 3)), '{}') FROM numbers(12);
+SELECT 'partition key, add Nullable level, key subcolumn loses its Nullable -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data Nullable(JSON(a Int64)); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE t_alter_key_sub;
+
+-- Nullable level below a Tuple element.
+CREATE TABLE t_alter_key_sub (id UInt32, t Tuple(j JSON(a Nullable(Int64)), b Int32)) ENGINE = MergeTree ORDER BY (t.j.a, id) SETTINGS index_granularity = 2, allow_nullable_key = 1;
+INSERT INTO t_alter_key_sub SELECT number, (if(number < 6, toJSONString(map('a', number)), '{}'), 1) FROM numbers(12);
+OPTIMIZE TABLE t_alter_key_sub FINAL;
+SELECT 'Tuple element gets a Nullable level, key subcolumn loses its Nullable -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN t Tuple(j Nullable(JSON(a Int64)), b Int32); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'change non-key Tuple element -> allowed:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN t Tuple(j JSON(a Nullable(Int64)), b Int64);
+SELECT 'type:', type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_key_sub' AND name = 't';
+SELECT 'key subcolumn values (NULL, = 0, total):', countIf(t.j.a IS NULL), countIf(t.j.a = 0), count() FROM t_alter_key_sub;
+DROP TABLE t_alter_key_sub;
+
+-- Nullable level below an Array.
+CREATE TABLE t_alter_key_sub (id UInt32, arr Array(JSON(a Nullable(Int64)))) ENGINE = MergeTree ORDER BY (arr.a, id) SETTINGS index_granularity = 2, allow_nullable_key = 1;
+INSERT INTO t_alter_key_sub SELECT number, [if(number < 6, toJSONString(map('a', number)), '{}')] FROM numbers(12);
+OPTIMIZE TABLE t_alter_key_sub FINAL;
+SELECT 'Array element gets a Nullable level, key subcolumn loses its Nullable -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN arr Array(Nullable(JSON(a Int64))); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE t_alter_key_sub;
+
+-- Skip index on the subcolumn, lazy type hint change.
+CREATE TABLE t_alter_key_sub (id UInt32, data Nullable(JSON(a Nullable(Int64))), INDEX i data.a TYPE minmax) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 2;
+INSERT INTO t_alter_key_sub SELECT number, if(number < 6, toJSONString(map('a', number)), '{}') FROM numbers(12);
+SELECT 'skip index, key subcolumn loses its Nullable under a kept Nullable level, lazy -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data Nullable(JSON(a Int64)) SETTINGS enable_json_lazy_type_hints = 1; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE t_alter_key_sub;
