@@ -5925,9 +5925,15 @@ bool skipsJSONPath(const DataTypeObject & type, std::string_view path)
     return false;
 }
 
+using CheckedSubcolumns = std::unordered_map<String, bool>;
+
+bool conversionKeepsSubcolumnValues(
+    const DataTypePtr & from, const DataTypePtr & to, std::string_view subcolumn, CheckedSubcolumns & checked);
+
 /// The subcolumn type alone does not tell: below a Nullable level a subcolumn is Nullable either way, so
 /// `JSON(a Nullable(Int64))` -> `Nullable(JSON(a Int64))` keeps `a` a `Nullable(Int64)` but turns its NULLs into 0.
-bool conversionKeepsSubcolumnValues(const DataTypePtr & from, const DataTypePtr & to, std::string_view subcolumn)
+bool conversionKeepsSubcolumnValuesImpl(
+    const DataTypePtr & from, const DataTypePtr & to, std::string_view subcolumn, CheckedSubcolumns & checked)
 {
     auto from_subcolumn = from->tryGetSubcolumnType(subcolumn);
     auto to_subcolumn = to->tryGetSubcolumnType(subcolumn);
@@ -5955,7 +5961,7 @@ bool conversionKeepsSubcolumnValues(const DataTypePtr & from, const DataTypePtr 
         bool from_has = from_below->hasSubcolumn(subcolumn);
         if (from_has != to_below->hasSubcolumn(subcolumn))
             return false;
-        return !from_has || conversionKeepsSubcolumnValues(from_below, to_below, subcolumn);
+        return !from_has || conversionKeepsSubcolumnValues(from_below, to_below, subcolumn, checked);
     };
 
     bool from_nullable = isNullableOrLowCardinalityNullable(from);
@@ -6037,10 +6043,28 @@ bool conversionKeepsSubcolumnValues(const DataTypePtr & from, const DataTypePtr 
         bool to_through = to_prefix && to_prefix->hasSubcolumn(rest) && goes_through(to, prefix, to_info->substreams_path);
         if (from_through != to_through)
             return false;
-        if (from_through && !conversionKeepsSubcolumnValues(from_prefix, to_prefix, rest))
+        if (from_through && !conversionKeepsSubcolumnValues(from_prefix, to_prefix, rest, checked))
             return false;
     }
     return true;
+}
+
+/// Every dotted prefix of a subcolumn reaches the levels below it again, so each level is checked once.
+bool conversionKeepsSubcolumnValues(
+    const DataTypePtr & from, const DataTypePtr & to, std::string_view subcolumn, CheckedSubcolumns & checked)
+{
+    String key = fmt::format("{}\n{}\n{}", from->getName(), to->getName(), subcolumn);
+    if (auto it = checked.find(key); it != checked.end())
+        return it->second;
+    bool keeps = conversionKeepsSubcolumnValuesImpl(from, to, subcolumn, checked);
+    checked.emplace(std::move(key), keeps);
+    return keeps;
+}
+
+bool conversionKeepsSubcolumnValues(const DataTypePtr & from, const DataTypePtr & to, std::string_view subcolumn)
+{
+    CheckedSubcolumns checked;
+    return conversionKeepsSubcolumnValues(from, to, subcolumn, checked);
 }
 
 /// Comma-separated list of backquoted identifiers, for exception messages.

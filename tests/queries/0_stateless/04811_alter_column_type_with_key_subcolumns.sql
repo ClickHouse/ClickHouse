@@ -322,3 +322,11 @@ SELECT 'typed Date32 path, other paths change -> reject:';
 ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(a Date32, c String); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 SELECT 'key subcolumn values:', groupArray(toInt32(k)) FROM (SELECT data.a AS k FROM t_alter_key_sub ORDER BY id);
 DROP TABLE t_alter_key_sub;
+
+-- A key subcolumn 31 levels deep: checking the ALTER must not take time exponential in the depth.
+CREATE TABLE t_alter_key_sub (id UInt32, c Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Int64)))))))))))))))))))))))))))))), b UInt32)) ENGINE = MergeTree ORDER BY (c.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a, id) SETTINGS index_granularity = 1;
+INSERT INTO t_alter_key_sub (id) VALUES (0);
+SELECT 'key subcolumn 31 levels deep, a sibling changes -> allow:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN c Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Tuple(a Int64)))))))))))))))))))))))))))))), b UInt64);
+SELECT toTypeName(c.b), c.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a FROM t_alter_key_sub;
+DROP TABLE t_alter_key_sub;

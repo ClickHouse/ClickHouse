@@ -94,3 +94,5 @@ typed Bool path, other paths change -> reject:
 key subcolumn values:	[0,1,2]
 typed Date32 path, other paths change -> reject:
 key subcolumn values:	[0,1,2147483647]
+key subcolumn 31 levels deep, a sibling changes -> allow:
+UInt64	0
