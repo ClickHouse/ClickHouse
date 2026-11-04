@@ -44,8 +44,15 @@ using IsTableColumn = std::function<bool(const String & name)>;
 void pullUpTupleElementDefaults(
     ASTColumnDeclaration & col_decl, TupleElementDefaultStateVersion state_version, const IsTableColumn & is_table_column = {});
 
+/// Inserts into `names` the names of the physical columns a column declaration produces: its own name, or,
+/// if `flatten_nested` is set and its type is `Nested(...)`, the names of the flattened columns (`n.a`, ...),
+/// as `ColumnsDescription::flattenNested` produces them.
+void addColumnNamesOfDeclaration(const ASTColumnDeclaration & col_decl, bool flatten_nested, NameSet & names);
+
 /// Applies `pullUpTupleElementDefaults` to every column declaration of a column list (the children of
 /// `columns` must be `ASTColumnDeclaration`), with the names of all columns of the list as the table columns.
-void pullUpTupleElementDefaultsInColumnList(const IAST & columns, TupleElementDefaultStateVersion state_version);
+/// `flatten_nested` tells whether the `Nested` declarations of the list are going to be flattened.
+void pullUpTupleElementDefaultsInColumnList(
+    const IAST & columns, TupleElementDefaultStateVersion state_version, bool flatten_nested = false);
 
 }

@@ -530,11 +530,45 @@ void pullUpTupleElementDefaults(
     col_decl.default_specifier = ColumnDefaultSpecifier::Default;
 }
 
-void pullUpTupleElementDefaultsInColumnList(const IAST & columns, TupleElementDefaultStateVersion state_version)
+void addColumnNamesOfDeclaration(const ASTColumnDeclaration & col_decl, bool flatten_nested, NameSet & names)
+{
+    if (flatten_nested)
+    {
+        /// `ColumnsDescription::flattenNested` replaces a `Nested` column with a column per element.
+        const auto * data_type = col_decl.getType() ? col_decl.getType()->as<ASTDataType>() : nullptr;
+        const auto arguments = data_type && data_type->name == "Nested" ? data_type->getArguments() : nullptr;
+        if (arguments && !arguments->children.empty())
+        {
+            Names element_names;
+            for (const auto & child : arguments->children)
+            {
+                const auto * pair = child->as<ASTNameTypePair>();
+                if (!pair || pair->name.empty())
+                {
+                    /// Not flattened without explicit element names.
+                    element_names.clear();
+                    break;
+                }
+                element_names.push_back(pair->name);
+            }
+
+            if (!element_names.empty())
+            {
+                for (const auto & element_name : element_names)
+                    names.insert(col_decl.name + "." + element_name);
+                return;
+            }
+        }
+    }
+
+    names.insert(col_decl.name);
+}
+
+void pullUpTupleElementDefaultsInColumnList(const IAST & columns, TupleElementDefaultStateVersion state_version, bool flatten_nested)
 {
     NameSet table_column_names;
     for (const auto & column : columns.children)
-        table_column_names.insert(column->as<const ASTColumnDeclaration &>().name);
+        addColumnNamesOfDeclaration(column->as<const ASTColumnDeclaration &>(), flatten_nested, table_column_names);
 
     for (const auto & column : columns.children)
         pullUpTupleElementDefaults(

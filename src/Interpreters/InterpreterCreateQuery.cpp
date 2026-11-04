@@ -814,8 +814,13 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     /// Normalize DEFAULT expressions written inside Tuple data types by pulling them up to the
     /// column level, so the stored type carries no DEFAULTs (https://github.com/ClickHouse/ClickHouse/issues/2797).
+    /// The same condition as for `flattenNested` below: a default may reference a flattened column.
+    const bool flatten_nested = mode < LoadingStrictnessLevel::SECONDARY_CREATE && !already_normalized_on_initiator
+        && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested];
+
     pullUpTupleElementDefaultsInColumnList(columns_ast,
-        pin_current_state_version ? TupleElementDefaultStateVersion::PinCurrent : TupleElementDefaultStateVersion::PinOldest);
+        pin_current_state_version ? TupleElementDefaultStateVersion::PinCurrent : TupleElementDefaultStateVersion::PinOldest,
+        flatten_nested);
 
     for (const auto & ast : columns_ast.children)
     {
@@ -936,8 +941,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         res.add(std::move(column));
     }
 
-    if (mode < LoadingStrictnessLevel::SECONDARY_CREATE && !already_normalized_on_initiator
-        && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested])
+    if (flatten_nested)
         res.flattenNested();
 
     if (res.getAllPhysical().empty())
@@ -4087,11 +4091,14 @@ BlockIO InterpreterCreateQuery::execute()
             /// targets (e.g. `SAMPLES INNER COLUMNS (...)` of a TimeSeries table) are dispatched
             /// the same way, so they are normalized too. The workers replay the query as a normalized
             /// one, so an unversioned aggregate-function state in it gets version 0 there.
-            auto pull_up_tuple_element_defaults = [](const ASTColumns * columns_list)
+            /// The workers flatten `Nested` declarations of the query as configured by its settings.
+            const bool flatten_nested = getContext()->getSettingsRef()[Setting::flatten_nested];
+            auto pull_up_tuple_element_defaults = [flatten_nested](const ASTColumns * columns_list)
             {
                 if (!columns_list || !columns_list->columns)
                     return;
-                pullUpTupleElementDefaultsInColumnList(*columns_list->columns, TupleElementDefaultStateVersion::PinOldest);
+                pullUpTupleElementDefaultsInColumnList(
+                    *columns_list->columns, TupleElementDefaultStateVersion::PinOldest, flatten_nested);
             };
 
             pull_up_tuple_element_defaults(create.columns_list);

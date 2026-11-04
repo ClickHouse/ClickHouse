@@ -77,6 +77,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsBool use_legacy_to_time;
     extern const SettingsBool data_type_default_nullable;
+    extern const SettingsBool flatten_nested;
 }
 
 namespace ServerSetting
@@ -163,62 +164,98 @@ using CommandSegments = std::vector<CommandSegment>;
 void pullUpTupleElementDefaultsInAlterQuery(
     ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context, const std::function<void()> & check_access)
 {
-    bool access_checked = false;
-    std::optional<NameSet> resulting_column_names;
-    auto is_table_column = [&](const String & name)
+    const auto & commands = alter.command_list->children;
+
+    /// The columns of the table after the query, and the renames the query makes: the position of the
+    /// command, the old name and the new name.
+    struct ResultingSchema
     {
-        /// Checked even if the table does not exist, so that the outcome does not reveal whether it exists.
-        if (!access_checked)
-        {
-            check_access();
-            access_checked = true;
-        }
-
-        if (!table)
-            return false;
-
-        if (!resulting_column_names)
-        {
-            /// The columns of the table, then the commands of the query applied in order: a column dropped
-            /// or renamed by the same query does not exist in the resulting schema.
-            NameSet names;
-            auto metadata_snapshot = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
-            for (const auto & column : metadata_snapshot->getColumns())
-                names.insert(column.name);
-
-            for (const auto & child : alter.command_list->children)
-            {
-                const auto & command = child->as<const ASTAlterCommand &>();
-                if (command.type == ASTAlterCommand::ADD_COLUMN)
-                {
-                    names.insert(command.col_decl->as<const ASTColumnDeclaration &>().name);
-                }
-                else if (command.type == ASTAlterCommand::DROP_COLUMN && !command.clear_column && !command.partition)
-                {
-                    names.erase(getIdentifierName(command.column));
-                }
-                else if (command.type == ASTAlterCommand::RENAME_COLUMN)
-                {
-                    /// `RENAME COLUMN IF EXISTS` of an absent column is a no-op and must not invent the target.
-                    /// Without `IF EXISTS`, such a rename fails the query anyway.
-                    if (names.erase(getIdentifierName(command.column)))
-                        names.insert(getIdentifierName(command.rename_to));
-                }
-            }
-            resulting_column_names = std::move(names);
-        }
-        return resulting_column_names->contains(name);
+        NameSet column_names;
+        std::vector<std::tuple<size_t, String, String>> renames;
     };
 
-    for (const auto & child : alter.command_list->children)
+    bool access_checked = false;
+    std::optional<ResultingSchema> resulting_schema;
+    auto build_resulting_schema = [&]
     {
-        auto & command = child->as<ASTAlterCommand &>();
+        /// The columns of the table, then the commands of the query applied in order, as `AlterCommand::apply` does.
+        ResultingSchema result;
+        auto metadata_snapshot = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+        for (const auto & column : metadata_snapshot->getColumns())
+            result.column_names.insert(column.name);
+
+        const bool flatten_nested = context->getSettingsRef()[Setting::flatten_nested];
+        for (size_t i = 0; i < commands.size(); ++i)
+        {
+            const auto & command = commands[i]->as<const ASTAlterCommand &>();
+            if (command.type == ASTAlterCommand::ADD_COLUMN)
+            {
+                /// A `Nested` column is added as its flattened columns (see `columnsAddedByAlter`).
+                addColumnNamesOfDeclaration(command.col_decl->as<const ASTColumnDeclaration &>(), flatten_nested, result.column_names);
+            }
+            else if (command.type == ASTAlterCommand::DROP_COLUMN && !command.clear_column && !command.partition)
+            {
+                /// As `ColumnsDescription::remove`: the column with exactly this name, otherwise the whole
+                /// flattened `Nested` group with this name.
+                const String name = getIdentifierName(command.column);
+                if (!result.column_names.erase(name))
+                {
+                    const String prefix = name + ".";
+                    std::erase_if(result.column_names, [&](const String & column_name) { return column_name.starts_with(prefix); });
+                }
+            }
+            else if (command.type == ASTAlterCommand::RENAME_COLUMN)
+            {
+                /// `RENAME COLUMN IF EXISTS` of an absent column is a no-op and must not invent the target.
+                /// Without `IF EXISTS`, such a rename fails the query anyway.
+                const String from = getIdentifierName(command.column);
+                const String to = getIdentifierName(command.rename_to);
+                if (result.column_names.erase(from))
+                {
+                    result.column_names.insert(to);
+                    result.renames.emplace_back(i, from, to);
+                }
+            }
+        }
+        return result;
+    };
+
+    for (size_t i = 0; i < commands.size(); ++i)
+    {
+        auto & command = commands[i]->as<ASTAlterCommand &>();
+        if (command.type != ASTAlterCommand::ADD_COLUMN && command.type != ASTAlterCommand::MODIFY_COLUMN)
+            continue;
+
+        auto is_table_column = [&, i](const String & name)
+        {
+            /// Checked even if the table does not exist, so that the outcome does not reveal whether it exists.
+            if (!access_checked)
+            {
+                check_access();
+                access_checked = true;
+            }
+
+            if (!table)
+                return false;
+
+            if (!resulting_schema)
+                resulting_schema = build_resulting_schema();
+
+            /// A rename applied after this command rewrites the references in the defaults of all columns
+            /// (see `AlterCommand::apply`), including the default this command sets.
+            String resulting_name = name;
+            for (const auto & [position, from, to] : resulting_schema->renames)
+                if (position > i && resulting_name == from)
+                    resulting_name = to;
+            return resulting_schema->column_names.contains(resulting_name);
+        };
+
         /// `AlterCommand::parse` pins the current state version for `ADD COLUMN` (on the workers as
         /// well), while `MODIFY COLUMN` keeps the version as written.
         if (command.type == ASTAlterCommand::ADD_COLUMN)
             pullUpTupleElementDefaults(
                 command.col_decl->as<ASTColumnDeclaration &>(), TupleElementDefaultStateVersion::PinCurrent, is_table_column);
-        else if (command.type == ASTAlterCommand::MODIFY_COLUMN)
+        else
             pullUpTupleElementDefaults(
                 command.col_decl->as<ASTColumnDeclaration &>(), TupleElementDefaultStateVersion::AsWritten, is_table_column);
     }
