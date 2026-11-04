@@ -20,7 +20,7 @@ Because session replays are stored in ClickHouse alongside your logs, traces, an
 <Tabs>
 <Tab title="Fully managed">
 
-<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
+<BetaBadge label="Beta offering" />
 
 ClickHouse Observability is fully compatible with OpenTelemetry, so you can send browser telemetry (traces, exceptions) using the standard OpenTelemetry JavaScript SDK or any of the [language SDKs](/clickstack/observability/ingesting-data/sdks). However, **session replay requires the Browser SDK** (`@hyperdx/browser`), which extends the OpenTelemetry SDK with session recording, console capture, and network request capture. If you only need traces without session replay, any OTel-compatible browser SDK will work with the service.
 
@@ -209,7 +209,7 @@ The correlation works in the other direction too. When viewing a trace in the **
 <Tabs>
 <Tab title="Fully managed">
 
-<BetaBadge /> — Fully managed ClickHouse Observability is in beta.
+<BetaBadge label="Beta offering" />
 
 Session replay data is stored in a dedicated [`hyperdx_sessions`](/clickstack/self-configured/ingesting-data/schemas#sessions) table in ClickHouse, separate from logs and traces. Each session event is a row with a `Body` field containing the event payload and a `LogAttributes` map storing the event metadata. The `Body` and `LogAttributes` columns together hold the details of the actual session events that are used to reconstruct the replay.
 
