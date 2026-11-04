@@ -111,10 +111,10 @@ NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, const Names
 
 /// The columns that are equal in all rows merged into one by FINAL, so that a condition over them
 /// can be evaluated before the merge without changing which rows survive it
-NameSet getColumnsSafeBeforeFinal(const StorageSnapshotPtr & storage_snapshot)
+NameSet getColumnsSafeBeforeFinal(const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context)
 {
     if (const auto * data = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage))
-        return data->getColumnsSafeBeforeFinal(*storage_snapshot->metadata);
+        return data->getColumnsSafeBeforeFinal(*storage_snapshot->metadata, context);
     return MergeTreeData::getSortingKeyColumnsSafeBeforeFinal(storage_snapshot->metadata->getSortingKey());
 }
 
@@ -166,7 +166,7 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
     where_optimizer_context.is_final = is_final;
     if (is_final)
-        columns_safe_before_final = getColumnsSafeBeforeFinal(storage_snapshot);
+        columns_safe_before_final = getColumnsSafeBeforeFinal(storage_snapshot, context);
     where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::use_statistics] && estimator != nullptr;
     /// The decision does not depend on the columns cache: whether a column is served from the cache, written to it
     /// or read as usual is known only to the reader. The reader does not apply the string filter to a column it writes

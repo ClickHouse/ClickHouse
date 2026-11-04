@@ -1436,7 +1436,9 @@ public:
     /// from `getSortingKeyColumnsSafeBeforeFinal` and the columns declared identical in all versions of a row by the
     /// settings `columns_identical_across_versions` or `columns_varying_across_versions`. A deterministic condition
     /// over them gives the same result for all versions of a row, so it can be evaluated before the `FINAL` merge.
-    NameSet getColumnsSafeBeforeFinal(const StorageInMemoryMetadata & metadata) const;
+    /// The declared columns are not used when masking policies apply to the query: a policy can rewrite them at read time
+    /// differently for each version of a row.
+    NameSet getColumnsSafeBeforeFinal(const StorageInMemoryMetadata & metadata, const ContextPtr & query_context) const;
 
     StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override;
 

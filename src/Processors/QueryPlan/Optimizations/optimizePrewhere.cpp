@@ -198,7 +198,8 @@ static void setQueryConditionCacheAttribution(
     if (!filter_actions_dag
         || (query_info.isFinal()
             && !ReadFromMergeTree::isFilterSafeBeforeFinal(
-                query_info, read_from_merge_tree_step.getMergeTreeData(), *read_from_merge_tree_step.getStorageMetadata()))
+                query_info, read_from_merge_tree_step.getMergeTreeData(), *read_from_merge_tree_step.getStorageMetadata(),
+                read_from_merge_tree_step.getContext()))
         || ReadFromMergeTree::filterDependsOnNonDeterministicVirtuals(read_from_merge_tree_step.getStorageMetadata()->virtuals, query_info))
         return;
 

@@ -157,10 +157,11 @@ bool isNodeOverColumns(const ActionsDAG::Node * node, const NameSet & columns)
 
 /// `Graphite` FINAL rolls rows with different times into one row, so the indexes may prune only by the path,
 /// and only when the path leads the sorting key: a rollup group is a run of adjacent rows of one path
-std::optional<ActionsDAG> buildGraphiteFinalIndexFilter(const ActionsDAG & filter, const MergeTreeData & data, const StorageInMemoryMetadata & metadata)
+std::optional<ActionsDAG> buildGraphiteFinalIndexFilter(
+    const ActionsDAG & filter, const MergeTreeData & data, const StorageInMemoryMetadata & metadata, const ContextPtr & query_context)
 {
     /// virtual columns select parts and rows as for the other engines
-    NameSet safe_columns = data.getColumnsSafeBeforeFinal(metadata);
+    NameSet safe_columns = data.getColumnsSafeBeforeFinal(metadata, query_context);
     for (const auto & column : metadata.virtuals)
         safe_columns.insert(column.name);
 
@@ -3264,7 +3265,7 @@ void ReadFromMergeTree::buildIndexes(
     std::optional<ActionsDAG> graphite_final_filter;
     if (filter_actions_dag_ && query_info_.isFinal() && data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
     {
-        graphite_final_filter = buildGraphiteFinalIndexFilter(*filter_actions_dag_, data, *metadata_snapshot);
+        graphite_final_filter = buildGraphiteFinalIndexFilter(*filter_actions_dag_, data, *metadata_snapshot, query_context);
         filter_actions_dag_ = graphite_final_filter ? &*graphite_final_filter : nullptr;
     }
 
@@ -3326,7 +3327,7 @@ void ReadFromMergeTree::buildIndexes(
 
     NameSet safe_columns;
     if (query_info_.isFinal())
-        safe_columns = data.getColumnsSafeBeforeFinal(*metadata_snapshot);
+        safe_columns = data.getColumnsSafeBeforeFinal(*metadata_snapshot, query_context);
 
     for (const auto & index : all_indexes)
     {
@@ -3453,7 +3454,7 @@ bool ReadFromMergeTree::isRowPolicyDeferredAfterFinal() const
 const NameSet & ReadFromMergeTree::getColumnsSafeBeforeFinal() const
 {
     if (!columns_safe_before_final)
-        columns_safe_before_final = data.getColumnsSafeBeforeFinal(*storage_snapshot->metadata);
+        columns_safe_before_final = data.getColumnsSafeBeforeFinal(*storage_snapshot->metadata, context);
     return *columns_safe_before_final;
 }
 
@@ -3698,9 +3699,10 @@ bool ReadFromMergeTree::filterDependsOnNonDeterministicVirtuals(const VirtualCol
     return false;
 }
 
-bool ReadFromMergeTree::isFilterSafeBeforeFinal(const SelectQueryInfo & query_info_, const MergeTreeData & data, const StorageInMemoryMetadata & metadata)
+bool ReadFromMergeTree::isFilterSafeBeforeFinal(
+    const SelectQueryInfo & query_info_, const MergeTreeData & data, const StorageInMemoryMetadata & metadata, const ContextPtr & query_context)
 {
-    const NameSet safe_columns = data.getColumnsSafeBeforeFinal(metadata);
+    const NameSet safe_columns = data.getColumnsSafeBeforeFinal(metadata, query_context);
     auto is_safe = [&](const ActionsDAG::Node * node) { return isNodeSafeBeforeFinal(node, safe_columns); };
 
     if (query_info_.filter_actions_dag && !std::ranges::all_of(query_info_.filter_actions_dag->getOutputs(), is_safe))
@@ -3915,7 +3917,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     /// With FINAL, the rows of a granule that match no filter can still decide which version of a row FINAL returns,
     /// unless the filters use only the columns equal in all versions of a row.
     const bool filter_safe_before_final = query_info_.isFinal() && reader_settings.use_query_condition_cache
-        && isFilterSafeBeforeFinal(query_info_, data, *metadata_snapshot);
+        && isFilterSafeBeforeFinal(query_info_, data, *metadata_snapshot, context_);
 
     const bool filter_depends_on_non_deterministic_virtuals = filterDependsOnNonDeterministicVirtuals(metadata_snapshot->virtuals, query_info_);
     if (filter_depends_on_non_deterministic_virtuals)

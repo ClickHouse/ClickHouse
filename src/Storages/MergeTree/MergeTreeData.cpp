@@ -2708,7 +2708,7 @@ NameSet MergeTreeData::getSortingKeyColumnsSafeBeforeFinal(const KeyDescription 
     return names;
 }
 
-NameSet MergeTreeData::getColumnsSafeBeforeFinal(const StorageInMemoryMetadata & metadata) const
+NameSet MergeTreeData::getColumnsSafeBeforeFinal(const StorageInMemoryMetadata & metadata, const ContextPtr & query_context) const
 {
     const auto & sorting_key = metadata.getSortingKey();
 
@@ -2730,6 +2730,11 @@ NameSet MergeTreeData::getColumnsSafeBeforeFinal(const StorageInMemoryMetadata &
     const String & identical_columns = (*settings)[MergeTreeSetting::columns_identical_across_versions];
     const String & varying_columns = (*settings)[MergeTreeSetting::columns_varying_across_versions];
     if (identical_columns.empty() && varying_columns.empty())
+        return names;
+
+    /// A masking policy is applied before `PREWHERE` and the `FINAL` merge and can depend on other columns,
+    /// e.g. `UPDATE b = 0 WHERE v = 2`, so the values of a declared column seen by the query can differ between versions.
+    if (hasEnabledMaskingPolicies(query_context))
         return names;
 
     const auto & columns = metadata.getColumns();

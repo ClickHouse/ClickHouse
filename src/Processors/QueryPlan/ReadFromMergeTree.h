@@ -430,7 +430,8 @@ public:
     /// Whether all filters of the query (WHERE, PREWHERE, row policy) are deterministic and use only the columns equal
     /// in all versions of a row (see `MergeTreeData::getColumnsSafeBeforeFinal`). Then, with FINAL, a granule without rows
     /// matching the filters holds no version of a row that the query returns, so the query condition cache can skip it.
-    static bool isFilterSafeBeforeFinal(const SelectQueryInfo & query_info_, const MergeTreeData & data, const StorageInMemoryMetadata & metadata);
+    static bool isFilterSafeBeforeFinal(
+        const SelectQueryInfo & query_info_, const MergeTreeData & data, const StorageInMemoryMetadata & metadata, const ContextPtr & query_context);
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
