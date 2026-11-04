@@ -6,6 +6,8 @@ grant READ ON FILE
 grant READ ON FILE
 --- with the structure and the table function copied from another table
 grant READ ON FILE
+--- with the table function wrapped in loop
+grant READ ON FILE
 --- ON CLUSTER
 grant READ ON FILE
 --- ON CLUSTER with an entry format that ships the query as written

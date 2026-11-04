@@ -5,11 +5,12 @@
 
 # A table created by `CREATE TABLE ... AS file(...)` reads the file without checking the grants of the user
 # who reads the table. So creating it requires `READ ON FILE` as well as `WRITE ON FILE`, however the
-# structure of the table is obtained, and also when the table is created by the hosts of an `ON CLUSTER`
-# query, which execute it without the user, unless those hosts replace the table function with `Null`, as
-# `restore_replace_external_table_functions_to_null` makes a local `CREATE` do. A short `ATTACH` replays the
-# stored definition, which was checked when the table was created, so it does not require `READ ON FILE` again,
-# but `RESTORE` brings a definition from the backup and requires it.
+# structure of the table is obtained, also when `file` is wrapped in `loop`, which reads the same file, and
+# also when the table is created by the hosts of an `ON CLUSTER` query, which execute it without the user,
+# unless those hosts replace the table function with `Null`, as `restore_replace_external_table_functions_to_null`
+# makes a local `CREATE` do. A short `ATTACH` replays the stored definition, which was checked when the table
+# was created, so it does not require `READ ON FILE` again, but `RESTORE` brings a definition from the backup
+# and requires it.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -52,6 +53,9 @@ missing_grant -q "CREATE TABLE ${db}.t_inferred AS ${file_function}"
 
 echo '--- with the structure and the table function copied from another table'
 missing_grant -q "CREATE TABLE ${db}.t_copy AS ${db}.src"
+
+echo '--- with the table function wrapped in loop'
+missing_grant -q "CREATE TABLE ${db}.t_loop (line String) AS loop(${file_function})"
 
 echo '--- ON CLUSTER'
 missing_grant -q "CREATE TABLE ${db}.t_cluster ON CLUSTER test_shard_localhost (line String) AS ${file_function}"
