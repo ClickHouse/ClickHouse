@@ -225,6 +225,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.type_json_skip_null_typed_paths = settings[Setting::type_json_skip_null_typed_paths];
     format_settings.json.max_dynamic_subcolumns_in_json_type_parsing = settings[Setting::max_dynamic_subcolumns_in_json_type_parsing].valueOrNullopt();
     format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object = settings[Setting::type_json_allow_duplicated_key_with_literal_and_nested_object];
+    format_settings.json.type_json_skip_duplicate_key_detection = settings[Setting::type_json_skip_duplicate_key_detection];
     format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp = settings[Setting::type_json_use_partial_match_to_skip_paths_by_regexp];
     format_settings.json.pretty_print = settings[Setting::output_format_json_pretty_print];
     format_settings.json.infer_array_of_dynamic_from_array_of_different_values = settings[Setting::input_format_json_infer_array_of_dynamic_from_array_of_different_types];
@@ -294,14 +295,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
         size_t budget = static_cast<size_t>(static_cast<double>(memory_limit) * 0.9);
         format_settings.parquet.memory_high_watermark = std::min<size_t>(
             format_settings.parquet.memory_high_watermark, budget / 8);
-        /// The reader does not hold one block of `prefer_block_bytes` but a whole pipeline of them:
-        /// prefetched, decoded and ready-to-deliver row subgroups across the row groups it reads in
-        /// parallel, and downstream (for an `INSERT`) the blocks the squashing stage has accumulated
-        /// so far. Measured on a 105-column table, the default 16 MiB preferred block size costs about
-        /// 290 MiB of live reader memory, so the cap has to be a much smaller fraction of the budget
-        /// than the block size alone suggests.
         format_settings.parquet.prefer_block_bytes = std::min<size_t>(
-            format_settings.parquet.prefer_block_bytes, budget / 256);
+            format_settings.parquet.prefer_block_bytes, budget / 64);
     }
     format_settings.pretty.charset = settings[Setting::output_format_pretty_grid_charset].toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings[Setting::output_format_pretty_color].valueOr(2);

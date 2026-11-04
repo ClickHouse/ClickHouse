@@ -16,6 +16,7 @@
 #include <mutex>
 #include <optional>
 #include <unordered_set>
+#include <variant>
 
 namespace DB
 {
@@ -113,6 +114,14 @@ namespace VariantReader
 ///    distractions in Reader, which is the most complex part).
 ///  * ReadManager drives the Reader. Responsible for scheduling work to threads, thread safety,
 ///    limiting memory usage, and delivering output.
+
+struct RowGroupByteRange
+{
+    UInt64 offset = 0;
+    UInt64 length = 0;
+};
+
+using RowGroupSelection = std::variant<std::monostate, std::unordered_set<UInt64>, RowGroupByteRange>;
 
 struct Reader
 {
@@ -752,7 +761,7 @@ struct Reader
     static void fixUpColumnChunk(parq::ColumnChunk & column, bool written_by_old_duckdb);
     /// `cached_column_chunks`, by Parquet column index (nullptr = absent), were parsed from `footer`.
     void setFileFooter(std::shared_ptr<const FileFooter> footer, std::vector<FileColumnChunksPtr> cached_column_chunks_ = {});
-    void prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read);
+    void prefilterAndInitRowGroups(const RowGroupSelection & row_group_selection);
     /// Takes or parses the column chunks of `primitive_columns`; called by prefilterAndInitRowGroups.
     void parseColumnChunks();
     /// Takes from the cache or parses those of `column_indices` (sorted, unique) that are not in `column_chunks` yet.
@@ -763,6 +772,9 @@ struct Reader
     /// By Parquet column index, nullptr for the columns that are not parsed.
     const std::vector<FileColumnChunksPtr> & getColumnChunks() const { return column_chunks; }
     size_t numColumnChunks(size_t row_group_idx) const;
+    std::optional<std::unordered_set<UInt64>> selectRowGroups(const RowGroupSelection & row_group_selection);
+    static std::optional<std::unordered_set<UInt64>> selectRowGroups(
+        const FileFooter & footer, const RowGroupSelection & row_group_selection, const FileColumnChunks * first_column);
 
     struct KeyConditionColumnRanges
     {
