@@ -23,6 +23,7 @@
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <filesystem>
@@ -30,6 +31,11 @@
 
 #include <Disks/IDisk.h>
 namespace fs = std::filesystem;
+
+namespace ProfileEvents
+{
+    extern const Event DatabaseTablesEnumerated;
+}
 
 namespace DB
 {
@@ -154,7 +160,7 @@ bool DatabasePostgreSQL::empty() const
 }
 
 
-DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & /* filter_by_table_name */, bool /* skip_not_loaded */) const
+DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
     std::lock_guard lock(mutex);
     Tables tables;
@@ -166,8 +172,10 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
         auto connection_holder = pool->get();
         auto table_names = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
 
+        /// Apply the filter before `fetchTable`: it queries the remote structure of one table, so
+        /// a query that names the tables it wants must not pay for the whole schema.
         for (const auto & table_name : table_names)
-            if (!detached_or_dropped.contains(table_name))
+            if (!detached_or_dropped.contains(table_name) && (!filter_by_table_name || filter_by_table_name(table_name)))
                 tables[table_name] = fetchTable(table_name, local_context, true);
     }
     catch (...)
@@ -175,6 +183,7 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
         tryLogCurrentException(__PRETTY_FUNCTION__, "", toleratedConnectionFailureLogLevel());
     }
 
+    ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, tables.size());
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
 }
 
@@ -773,13 +782,14 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         /// Enforce the server's outbound-host policy, exactly like the table engine and the table
         /// function do in `StoragePostgreSQL::getConfiguration`: a user must not be able to reach a
         /// host through the database engine that `remote_url_allow_hosts` forbids elsewhere.
-        /// Skip it only for an internal metadata replay (server startup / restore, the same
-        /// distinction `DatabaseDataLake` uses): startup rebuilds every database from persisted
-        /// metadata with an ATTACH query and `loadMetadata` aborts on the first exception, so
-        /// enforcing the policy there would turn one database created before the whitelist was
-        /// tightened into a server that cannot boot. A user-issued `ATTACH DATABASE` is not a
-        /// replay and stays fail-closed, otherwise it would be a direct bypass of the policy.
-        const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+        /// Skip it only for the server's own replay of stored metadata (the same distinction
+        /// `DatabaseDataLake` uses): startup rebuilds every database from persisted metadata with
+        /// an ATTACH query and `loadMetadata` aborts on the first exception, so enforcing the policy
+        /// there would turn one database created before the whitelist was tightened into a server
+        /// that cannot boot. The loader flag, not `internal`, is the discriminator: wrappers such as
+        /// `PARALLEL WITH` run user statements as internal ones, and a user-issued `ATTACH DATABASE`
+        /// is not a replay and stays fail-closed, otherwise it would be a direct bypass of the policy.
+        const bool is_internal_metadata_replay = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
         if (!is_internal_metadata_replay)
         {
             for (const auto & address : configuration.addresses)
@@ -807,7 +817,7 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
             use_table_cache,
             args.uuid);
     };
-    factory.registerDatabase("PostgreSQL", create_fn, {
+    factory.registerDatabase("PostgreSQL", create_fn, mysqlPostgreSQLSecretArguments(3), {
         .supports_arguments = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::POSTGRES,

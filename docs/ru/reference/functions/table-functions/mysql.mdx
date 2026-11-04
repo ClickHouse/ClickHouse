@@ -11,13 +11,13 @@ doc_type: 'reference'
 
 Позволяет выполнять запросы `SELECT` и `INSERT` к данным, хранящимся на удаленном сервере MySQL.
 
-## Синтаксис
+## Синтаксис {#syntax}
 
 ```sql
 mysql({host:port, database, table, user, password[, replace_query, on_duplicate_clause] | named_collection[, option=value [,..]]})
 ```
 
-## Аргументы
+## Аргументы {#arguments}
 
 | Аргумент              | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -35,7 +35,7 @@ mysql({host:port, database, table, user, password[, replace_query, on_duplicate_
 
 Остальные условия и ограничение выборки `LIMIT` выполняются в ClickHouse только после завершения запроса к MySQL.
 
-## TLS/SSL
+## TLS/SSL {#tls-ssl}
 
 Учётные данные для зашифрованного подключения к MySQL передаются как ключи именованной коллекции (или как аргументы типа ключ-значение):
 
@@ -49,13 +49,21 @@ mysql({host:port, database, table, user, password[, replace_query, on_duplicate_
 
 Эти же учётные данные можно также указать как пути к файлам на сервере в `ssl_ca`, `ssl_cert` и `ssl_key` — но **только в именованной коллекции, определённой в файле конфигурации сервера**; такое значение нельзя переопределить в запросе. Сервер открывает эти файлы со своими привилегиями, поэтому приём пути из SQL позволил бы любому пользователю, способному определить источник MySQL, исследовать локальную файловую систему и проходить аутентификацию с сертификатом и ключом, к которым у него нет доступа на чтение.
 
-## Передача запроса вместо имени таблицы
+## Передача запроса вместо имени таблицы {#passing-a-query}
 
 Вместо имени таблицы в качестве третьего аргумента можно указать запрос `SELECT`, который передаётся в MySQL как есть. Структура результирующей таблицы определяется по результату запроса. Запрос можно записать либо как подзапрос, либо обернуть в функцию `query`:
 
 ```sql
 SELECT * FROM mysql('localhost:3306', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
 SELECT * FROM mysql('localhost:3306', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+Передача запроса поддерживается начиная с версии 26.7. Перед отправкой в MySQL ClickHouse оборачивает запрос в `SELECT ... FROM (<query>)`, поэтому запрос не должен заканчиваться точкой с запятой.
+
+При использовании [именованной коллекции](/ru/concepts/features/configuration/server-config/named-collections), например `creds` из [примеров](#examples), передайте запрос в ключе `query` вместо `table` — либо в самой коллекции, либо в виде аргумента ключ-значение. Указывать `query` и `table` одновременно нельзя:
+
+```sql
+SELECT * FROM mysql(creds, query = 'SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0');
 ```
 
 Это позволяет проталкивать JOIN, агрегации и любую другую обработку в MySQL. Такая таблица доступна только для чтения: `INSERT` в неё не поддерживается. Тот же синтаксис поддерживает движок таблицы [`MySQL`](/ru/reference/engines/table-engines/integrations/mysql).
@@ -78,7 +86,7 @@ SELECT name FROM mysql(`mysql{1|2|3}:3306`, 'mysql_database', 'mysql_table', 'us
 SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
 ```
 
-## Возвращаемое значение
+## Возвращаемое значение {#returned-value}
 
 Объект таблицы с теми же столбцами, что и исходная таблица MySQL.
 
@@ -90,7 +98,7 @@ SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 
   В запросе `INSERT`, чтобы отличить табличную функцию `mysql(...)` от имени таблицы со списком имён столбцов, необходимо использовать ключевые слова `FUNCTION` или `TABLE FUNCTION`. См. примеры ниже.
 </Note>
 
-## Примеры
+## Примеры {#examples}
 
 Таблица в MySQL:
 
@@ -134,7 +142,7 @@ SELECT * FROM mysql(creds, table='test');
 └────────┴───────┘
 ```
 
-### `enable_compression`
+### `enable_compression` {#enable-compression}
 
 Включает сжатие для подключения по протоколу MySQL.
 
@@ -202,7 +210,7 @@ SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password')
 WHERE id > (SELECT max(id) FROM mysql_copy);
 ```
 
-## См. также
+## См. также {#related}
 
 * [Движок таблицы &#39;MySQL&#39;](/ru/reference/engines/table-engines/integrations/mysql)
 * [Использование MySQL в качестве источника для словаря](/ru/reference/statements/create/dictionary/sources/mysql)

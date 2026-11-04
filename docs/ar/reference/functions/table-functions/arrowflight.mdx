@@ -18,7 +18,7 @@ arrowFlight('host:port', 'dataset_name' [, 'username', 'password'])
 
 **الوسيطات**
 
-* `host:port` — عنوان خادم Arrow Flight. إذا لم يُحدَّد المنفذ، فسيُستخدم المنفذ الافتراضي `8815`. [String](/ar/reference/data-types/string).
+* `host:port` — عنوان خادم Arrow Flight. إذا لم يُحدَّد المنفذ، فسيُستخدم المنفذ الافتراضي `8815`. [String](/ar/reference/data-types/string).
 * `dataset_name` — اسم مجموعة البيانات أو الواصف المتاح على خادم Arrow Flight. [String](/ar/reference/data-types/string).
 * `username` — اسم المستخدم للمصادقة الأساسية عبر HTTP. [String](/ar/reference/data-types/string).
 * `password` — كلمة المرور للمصادقة الأساسية عبر HTTP. [String](/ar/reference/data-types/string).
@@ -34,6 +34,7 @@ arrowFlight('host:port', 'dataset_name' [, 'username', 'password'])
 **الإعدادات**
 
 * `arrow_flight_request_descriptor_type` — يتحكم في كيفية إرسال اسم مجموعة البيانات إلى خادم Flight. القيم: `path` (الافتراضي) أو `command`. راجع [ArrowFlight table engine](/ar/reference/engines/table-engines/integrations/arrowflight#settings) للتفاصيل.
+* `arrow_flight_request_timeout_sec` — مهلة الانتظار بالثواني لطلب Arrow Flight واحد، والقيمة الافتراضية `300`؛ وتعني القيمة `0` عدم تعيين أي مهلة. راجع [ArrowFlight table engine](/ar/reference/engines/table-engines/integrations/arrowflight#settings) للتفاصيل.
 
 **أمثلة**
 

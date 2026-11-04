@@ -1,0 +1,16 @@
+i64_neg: has a negative value count or size INCORRECT_DATA
+i64_size_neg: has a negative value count or size INCORRECT_DATA
+str_bytes_neg: has a negative value count or size INCORRECT_DATA
+i64_neg pruned: 0	0
+wide_neg prewhere: 0	0
+nul_neg: has a negative value count or size INCORRECT_DATA
+nul: 1	15228578409069794350
+nul_huge: 1	15228578409069794350
+i64: 100	2460400835682523501
+i64_huge: 100	2460400835682523501
+str: 100	11447054719202437312
+str_bytes_huge: 100	11447054719202437312
+arr: 100	13222269476437559225
+arr_huge: 100	13222269476437559225
+wide: 100	8862718340138232044
+wide_huge: 100	8862718340138232044

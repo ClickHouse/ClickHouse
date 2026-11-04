@@ -26,6 +26,8 @@ import ConfigurableBackupsCLI from "/snippets/pt-BR/cloud/backups/_configurable_
 
     Isso abre uma guia à direita, na qual você pode escolher os valores de retenção, frequência e horário de início. Será necessário salvar as configurações escolhidas para que entrem em vigor.
 
+    A frequência de backup determina a idade máxima, no pior caso, do ponto de restauração mais recente (seu RPO). A retenção controla por quanto tempo os dados de backup são mantidos; ela não faz com que o ponto de restauração mais recente seja mais atual. Por exemplo, com uma retenção de 1 dia e backups a cada 48 horas, o ponto de restauração mais recente pode ter quase 48 horas.
+
     <Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="Selecionar retenção e frequência de backup" border />
 
     <Note>

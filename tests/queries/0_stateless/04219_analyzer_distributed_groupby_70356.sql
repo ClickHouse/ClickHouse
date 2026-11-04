@@ -29,14 +29,13 @@ SELECT tt.adid AS id
 FROM dist_table_70356 AS tt
 WHERE tt.created_at_dt = '2024-01-01'
 GROUP BY 1
-SETTINGS enable_analyzer = 1, distributed_product_mode = 'global'
+SETTINGS distributed_product_mode = 'global'
 FORMAT Null;
 
 SELECT tt.adid AS id
 FROM dist_table_70356 AS tt
 WHERE tt.created_at_dt = '2024-01-01'
 GROUP BY 1
-SETTINGS enable_analyzer = 1
 FORMAT Null;
 
 SELECT tt.adid AS id
@@ -44,28 +43,26 @@ FROM dist_table_70356 AS tt
 WHERE tt.created_at_dt = '2024-01-01'
 GROUP BY 1
 ORDER BY id
-SETTINGS enable_analyzer = 1, distributed_product_mode = 'global';
+SETTINGS distributed_product_mode = 'global';
 
 SELECT tt.adid AS id
 FROM dist_table_70356 AS tt
 WHERE tt.created_at_dt = '2024-01-01'
 GROUP BY 1
-ORDER BY id
-SETTINGS enable_analyzer = 1;
+ORDER BY id;
 
 -- Two-shard variants in the original failing shape (`FORMAT Null`, no `ORDER BY`).
 SELECT tt.adid AS id
 FROM dist_two_shards_table_70356 AS tt
 WHERE tt.created_at_dt = '2024-01-01'
 GROUP BY 1
-SETTINGS enable_analyzer = 1, distributed_product_mode = 'global'
+SETTINGS distributed_product_mode = 'global'
 FORMAT Null;
 
 SELECT tt.adid AS id
 FROM dist_two_shards_table_70356 AS tt
 WHERE tt.created_at_dt = '2024-01-01'
 GROUP BY 1
-SETTINGS enable_analyzer = 1
 FORMAT Null;
 
 -- Both shards of `test_cluster_two_shards_localhost` resolve to the same
@@ -77,14 +74,14 @@ FROM dist_two_shards_table_70356 AS tt
 WHERE tt.created_at_dt = '2024-01-01'
 GROUP BY 1
 ORDER BY id
-SETTINGS enable_analyzer = 1, distributed_product_mode = 'global', optimize_distributed_group_by_sharding_key = 0;
+SETTINGS distributed_product_mode = 'global', optimize_distributed_group_by_sharding_key = 0;
 
 SELECT tt.adid AS id
 FROM dist_two_shards_table_70356 AS tt
 WHERE tt.created_at_dt = '2024-01-01'
 GROUP BY 1
 ORDER BY id
-SETTINGS enable_analyzer = 1, optimize_distributed_group_by_sharding_key = 0;
+SETTINGS optimize_distributed_group_by_sharding_key = 0;
 
 DROP TABLE dist_two_shards_table_70356;
 DROP TABLE dist_table_70356;
