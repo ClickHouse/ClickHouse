@@ -52,6 +52,9 @@ static bool hasStableJSONPathValuesSerialization(const IDataType & type)
 {
     return !anyInTypeTree(type, [](const IDataType & current_type)
     {
+        /// The text of a `Variant` value does not identify its alternative: `42` and `'42'` give the same token.
+        if (isVariant(current_type))
+            return true;
         if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(&current_type))
             return !date_time->hasExplicitTimeZone();
         if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(&current_type))

@@ -9,6 +9,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/TypeTree.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -423,6 +424,10 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
             /// A `Set` column has no `Field`, so emitting it as a literal would give `x IN NULL`.
             if (WhichDataType(node.result_type).isSet())
                 return convertSetColumnToAST(*node.column);
+
+            /// A `Field` does not keep the type of a `Variant` alternative or a `Dynamic` value, so `CAST` cannot rebuild it.
+            if (anyInTypeTree(*node.result_type, [](const IDataType & type) { return isVariant(type) || isDynamic(type) || isObject(type); }))
+                return nullptr;
 
             return makeASTFunction(
                 "CAST",
