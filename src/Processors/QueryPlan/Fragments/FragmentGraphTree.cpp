@@ -30,7 +30,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// The text of a step box (its name and description) is cut to this many columns.
+/// The text of a step box (its name and description) is wrapped to lines of this many columns.
 constexpr size_t max_step_text_width = 40;
 /// The detail lines of a step box are cut to this many columns.
 constexpr size_t max_detail_width = 60;
@@ -40,7 +40,10 @@ constexpr size_t max_label_width = 48;
 constexpr Int64 frame_padding = 2;
 struct StepBox
 {
+    /// The whole text of the step: its name and description.
     String text;
+    /// `text` wrapped to `max_step_text_width` columns, one line per inner line of the box.
+    std::vector<String> lines;
     /// The lines `EXPLAIN` prints under the step, drawn under the text.
     std::vector<String> details;
     /// Index in `FragmentGraph::fragments`.
@@ -55,13 +58,23 @@ struct StepBox
 
     Int64 left() const { return center - static_cast<Int64>(width / 2); }
     Int64 right() const { return left() + static_cast<Int64>(width) - 1; }
-    size_t height() const { return TextCanvas::boxHeight(details.size()); }
-    /// The bottom border of the box.
+    size_t height() const { return TextCanvas::boxHeight(lines.size(), details.size()); }
+    /// The line of the bottom border.
     size_t bottom() const { return y + height() - 1; }
+
+    /// Sets `text`, wraps it into `lines` and updates `width`.
+    void setText(String new_text)
+    {
+        text = std::move(new_text);
+        lines = TextCanvas::wrapToWidth(text, max_step_text_width);
+        updateWidth();
+    }
 
     void updateWidth()
     {
-        width = TextCanvas::displayWidth(text);
+        width = 0;
+        for (const auto & line : lines)
+            width = std::max(width, TextCanvas::displayWidth(line));
         for (const auto & detail : details)
             width = std::max(width, TextCanvas::displayWidth(detail));
         width += 4;
@@ -78,13 +91,14 @@ struct FragmentFrame
 class TreeBuilder
 {
 public:
-    explicit TreeBuilder(const PreparedFragmentGraph & prepared_)
+    TreeBuilder(const PreparedFragmentGraph & prepared_, size_t max_step_description_length_)
         : prepared(prepared_)
         , graph(prepared.graph)
         , options(prepared.options)
         , frameless(prepared.single_node)
         , padding(frameless ? 0 : frame_padding)
         , sibling_gap(3 + 2 * padding)
+        , max_step_description_length(max_step_description_length_)
     {
         for (size_t i = 0; i < graph.fragments.size(); ++i)
             fragment_index_by_id[graph.fragments[i].id] = i;
@@ -112,7 +126,7 @@ public:
             for (size_t i = 0; i < frames.size(); ++i)
                 drawFrame(canvas, i);
         for (const auto & step_box : boxes)
-            canvas.box(static_cast<size_t>(step_box.left()), step_box.y, step_box.width, step_box.text, step_box.details);
+            canvas.box(static_cast<size_t>(step_box.left()), step_box.y, step_box.width, step_box.lines, step_box.details);
         for (size_t i = 0; i < boxes.size(); ++i)
             drawEdges(canvas, i);
         canvas.writeTo(buf);
@@ -128,6 +142,8 @@ private:
     const Int64 padding;
     /// Columns between the subtrees of two inputs of a step; the subtrees already include the padding.
     const Int64 sibling_gap;
+    /// A description is cut to this many bytes, as in `QueryPlan::explainPlan`; 0 means no limit.
+    const size_t max_step_description_length;
     std::unordered_map<UInt32, size_t> fragment_index_by_id;
 
     std::vector<StepBox> boxes;
@@ -167,9 +183,11 @@ private:
         String description(step.getStepDescription());
         if (options.pretty)
             description = QueryPlanFormat::trimColumnIdentifier(description);
+        if (max_step_description_length)
+            description = description.substr(0, max_step_description_length);
         if (options.description && !description.empty())
             text += fmt::format(" ({})", description);
-        return TextCanvas::cutToWidth(text, max_step_text_width);
+        return text;
     }
 
     /// The lines plain `EXPLAIN` prints under the step with the same options, each cut to `max_detail_width`.
@@ -205,10 +223,9 @@ private:
     size_t addBox(String text, std::vector<String> details, size_t fragment)
     {
         StepBox step_box;
-        step_box.text = std::move(text);
         step_box.details = std::move(details);
+        step_box.setText(std::move(text));
         step_box.fragment = fragment;
-        step_box.updateWidth();
         boxes.push_back(std::move(step_box));
         return boxes.size() - 1;
     }
@@ -319,8 +336,7 @@ private:
             else
             {
                 auto & step_box = boxes[receive_box];
-                step_box.text = TextCanvas::cutToWidth(fmt::format("{} ← F{}", step_box.text, exchange.from), max_step_text_width);
-                step_box.updateWidth();
+                step_box.setText(fmt::format("{} ← F{}", step_box.text, exchange.from));
                 frames[producer].title += fmt::format(" · also read by F{}", exchange.to);
             }
         }
@@ -335,6 +351,10 @@ private:
         lines.push_back(TextCanvas::cutToWidth(
             fmt::format("{} · {}", exchange.name, prepared.formatExchangeKind(exchange)), max_label_width));
         String mode(PreparedFragmentGraph::formatExchangeMode(exchange.mode));
+        /// A persisted exchange is written to storage before its consumer starts: `⛁` marks it next to the mode, which
+        /// still says it in words, so a terminal without the glyph loses nothing but the mark.
+        if (exchange.mode == ExchangeDescription::Kind::Persisted)
+            mode = "⛁ " + mode;
         if (exchange.source_buckets || exchange.destination_buckets)
             mode += fmt::format(" · {} → {}", exchange.source_buckets, exchange.destination_buckets);
         lines.push_back(std::move(mode));
@@ -583,12 +603,16 @@ private:
 
 }
 
-void explainAsTree(const FragmentGraph & graph, WriteBuffer & buf, const ExplainPlanOptions & options)
+void explainAsTree(
+    const FragmentGraph & graph,
+    WriteBuffer & buf,
+    const ExplainPlanOptions & options,
+    size_t max_step_description_length)
 {
     const PreparedFragmentGraph prepared(graph, options);
 
     validateFragmentGraph(graph);
-    TreeBuilder(prepared).draw(buf);
+    TreeBuilder(prepared, max_step_description_length).draw(buf);
 
     /// A plan that was not cut has no exchanges, and its one level says nothing.
     if (prepared.single_node)
