@@ -1,3 +1,4 @@
+import os
 import requests
 import time
 import uuid
@@ -17,9 +18,15 @@ from pyiceberg.types import (
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
+from helpers.mock_servers import start_mock_servers
 from helpers.test_tools import TSV, csv_compare
 
 BASE_URL = "http://lakekeeper:8181/catalog"
+# Vended credentials are cached until 60 seconds before they expire, so the ones passed
+# through this proxy stay cached for 10 seconds, well below the default cache TTL.
+PROXY_PORT = 8182
+PROXY_CREDENTIALS_EXPIRE_IN_MS = 70_000
+PROXY_URL = f"http://localhost:{PROXY_PORT}/catalog"
 CATALOG_NAME = "demo"
 WAREHOUSE_NAME = "demo"
 
@@ -114,6 +121,11 @@ def started_cluster():
         minio_ip = cluster.minio_ip
         minio_port = cluster.minio_port
         create_warehouse(cluster, minio_ip, minio_port)
+        start_mock_servers(
+            cluster,
+            os.path.dirname(__file__),
+            [("rest_catalog_proxy.py", "node1", PROXY_PORT, [str(PROXY_CREDENTIALS_EXPIRE_IN_MS)])],
+        )
 
         yield cluster
 
@@ -594,6 +606,83 @@ def test_vended_credentials_cache_cleared_on_auth_change(started_cluster):
     node.query(query, query_id=qid)
     vended, _ = get_credentials_profile_events(node, qid)
     assert vended >= 1
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+
+
+def wait_for_credentials_vend(node, query, test_ref, timeout):
+    deadline = time.monotonic() + timeout
+    attempt = 0
+    while time.monotonic() < deadline:
+        attempt += 1
+        qid = f"{test_ref}-poll-{attempt}"
+        node.query(query, query_id=qid)
+        vended, _ = get_credentials_profile_events(node, qid)
+        if vended >= 1:
+            return
+        time.sleep(1)
+    assert False, f"Credentials were not vended again within {timeout} seconds"
+
+
+def test_vended_credentials_cache_expires_after_ttl(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_vended_credentials_cache_ttl_{uuid.uuid4().hex[:8]}"
+    namespace = (f"{test_ref}_namespace",)
+    table_name = f"{test_ref}_table"
+    db_name = f"{test_ref}_database"
+
+    create_int_table(catalog, namespace, table_name)
+    create_clickhouse_iceberg_database(
+        started_cluster, node, db_name,
+        additional_settings={"vended_credentials_cache_ttl": 10},
+    )
+    query = f"SELECT count() FROM {db_name}.`{namespace[0]}.{table_name}`"
+
+    node.query(query)
+    qid = f"{test_ref}-2"
+    node.query(query, query_id=qid)
+    vended, hits = get_credentials_profile_events(node, qid)
+    assert vended == 0 and hits >= 1
+
+    wait_for_credentials_vend(node, query, test_ref, timeout=60)
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+
+
+def test_vended_credentials_cache_capped_by_token_expiry(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_vended_credentials_cache_expiry_{uuid.uuid4().hex[:8]}"
+    namespace = (f"{test_ref}_namespace",)
+    table_name = f"{test_ref}_table"
+    db_name = f"{test_ref}_database"
+
+    create_int_table(catalog, namespace, table_name)
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node.query(
+        f"""
+        CREATE DATABASE {db_name}
+        ENGINE = DataLakeCatalog('{PROXY_URL}')
+        SETTINGS
+            catalog_type = 'rest',
+            warehouse = 'demo',
+            storage_endpoint = 'http://minio1:9001/warehouse-rest'
+        """,
+        settings={"allow_experimental_database_iceberg": 1},
+    )
+    query = f"SELECT count() FROM {db_name}.`{namespace[0]}.{table_name}`"
+
+    node.query(query)
+    qid = f"{test_ref}-2"
+    node.query(query, query_id=qid)
+    vended, hits = get_credentials_profile_events(node, qid)
+    assert vended == 0 and hits >= 1
+
+    wait_for_credentials_vend(node, query, test_ref, timeout=60)
 
     node.query(f"DROP DATABASE IF EXISTS {db_name}")
 
