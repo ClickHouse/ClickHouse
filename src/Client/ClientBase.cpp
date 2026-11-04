@@ -3615,6 +3615,7 @@ bool ClientBase::receiveEndOfQueryForInsert(ASTPtr parsed_query)
     constexpr size_t min_poll_interval = 5000; /// in microseconds
     const size_t poll_interval
         = std::max(min_poll_interval, std::min<size_t>(receive_timeout.totalMicroseconds(), default_poll_interval));
+    Stopwatch receive_watch(CLOCK_MONOTONIC_COARSE);
 
     while (true)
     {
@@ -3624,8 +3625,24 @@ bool ClientBase::receiveEndOfQueryForInsert(ASTPtr parsed_query)
         if (!cancelled && query_interrupt_handler.cancelled())
             cancelQuery();
 
-        if (!connection->poll(poll_interval))
-            continue;
+        /// `LocalConnection::poll` advances the query itself and returns `false` once no query is in
+        /// flight (e.g. a failure after the query is over), while its `receivePacket` then reports
+        /// `EndOfStream` at once - so do not wait on it, and it does not block in `receivePacket`
+        /// for longer than an executor timeout anyway.
+        if (connection->getConnectionType() != IServerConnection::Type::LOCAL)
+        {
+            if (!connection->poll(poll_interval))
+            {
+                /// Keep the receive timeout that a blocking `receivePacket` would apply.
+                double elapsed = receive_watch.elapsedSeconds();
+                if (elapsed > receive_timeout.totalSeconds())
+                    throw NetException(ErrorCodes::TIMEOUT_EXCEEDED,
+                        "Timeout exceeded while receiving data from server. Waited for {} seconds, timeout is {} seconds.",
+                        static_cast<size_t>(elapsed), receive_timeout.totalSeconds());
+                continue;
+            }
+            receive_watch.restart();
+        }
 
         Packet packet = connection->receivePacket();
 
