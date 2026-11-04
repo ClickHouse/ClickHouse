@@ -382,6 +382,9 @@ private:
         RangesInDataPartsDescription & description);
 
     size_t computeConsistentHash(const std::string & part_name, size_t segment_begin, ScanMode scan_mode) const;
+    /// The replica allowed to steal the segment from its owner: one of the other replicas, so that a slow owner
+    /// cannot keep its segments to itself. Equals the owner only when there is a single replica.
+    size_t computeStealer(const std::string & part_name, size_t segment_begin) const;
 
     void tryToTakeFromDistributionQueue(
         size_t replica_num, size_t min_marks_per_request, size_t & current_marks_amount, RangesInDataPartsDescription & description);
@@ -689,7 +692,7 @@ void DefaultCoordinator::tryToStealFromQueue(
             {
                 chassert(owner >= 0);
                 const size_t segment_begin = roundDownToMultiple(range.begin, mark_segment_size);
-                can_take = computeConsistentHash(part_ranges.getPartOrProjectionName(), segment_begin, scan_mode) == replica_num;
+                can_take = computeStealer(part_ranges.getPartOrProjectionName(), segment_begin) == replica_num;
             }
             else
             {
@@ -833,10 +836,8 @@ void DefaultCoordinator::enqueueToStealerOrStealingQueue(const RangesInDataPartD
     auto && range = RangesInDataPartDescription{.info = description.info, .ranges = {segment},
                                                 .projection_name = description.projection_name,
                                                 .min_marks_per_task = description.min_marks_per_task};
-    const auto stealer_by_hash = computeConsistentHash(
-        description.getPartOrProjectionName(),
-        roundDownToMultiple(segment.begin, mark_segment_size),
-        ScanMode::TakeWhatsMineForStealing);
+    const auto stealer_by_hash
+        = computeStealer(description.getPartOrProjectionName(), roundDownToMultiple(segment.begin, mark_segment_size));
     if (possiblyCanReadPart(stealer_by_hash, description))
     {
         distribution_by_hash_queue[stealer_by_hash].insert(std::move(range));
@@ -857,6 +858,22 @@ size_t DefaultCoordinator::computeConsistentHash(const std::string & part_name, 
     hash.update(segment_begin);
     hash.update(scan_mode);
     return ConsistentHashing(hash.get64(), replicas_count);
+}
+
+size_t DefaultCoordinator::computeStealer(const std::string & part_name, size_t segment_begin) const
+{
+    const size_t owner = computeConsistentHash(part_name, segment_begin, ScanMode::TakeWhatsMineByHash);
+    if (replicas_count == 1)
+        return owner;
+
+    chassert(segment_begin % mark_segment_size == 0);
+    auto hash = SipHash();
+    hash.update(part_name);
+    hash.update(segment_begin);
+    hash.update(ScanMode::TakeWhatsMineForStealing);
+    /// Choose among the other `replicas_count - 1` replicas, skipping the owner.
+    const size_t stealer = ConsistentHashing(hash.get64(), replicas_count - 1);
+    return stealer >= owner ? stealer + 1 : stealer;
 }
 
 ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest request)
