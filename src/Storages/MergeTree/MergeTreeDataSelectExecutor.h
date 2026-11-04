@@ -103,6 +103,25 @@ public:
         const Settings & settings,
         LoggerPtr log);
 
+    /// Maps each primary-key column position to the slot of the matching column in a part's partition
+    /// minmax index (nullopt when the primary-key column is not a partition-minmax column).
+    static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
+        const StorageMetadataPtr & metadata_snapshot, const MergeTreeSettingsPtr & data_settings);
+
+    /// Works on any part description, not only on an `IMergeTreeDataPart`.
+    static MarkRanges markRangesFromPKRange(
+        const IMergeTreeDataPartInfoForReader & part,
+        const MarkRanges & part_ranges,
+        size_t part_starting_offset_in_query,
+        const StorageMetadataPtr & metadata_snapshot,
+        const KeyCondition & key_condition,
+        const KeyCondition * part_offset_condition,
+        const KeyCondition * total_offset_condition,
+        MarkRanges * exact_ranges,
+        const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
+        const Settings & settings,
+        LoggerPtr log);
+
     static MarkRanges markRangesFromPKRange(
         const RangesInDataPart & part_with_ranges,
         const StorageMetadataPtr & metadata_snapshot,
@@ -280,6 +299,9 @@ public:
     /// For every part, select mark ranges to read.
     static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats);
 
+    /// Throws if an index in `force_data_skipping_indices` is not among the useful ones.
+    static void checkForcedSkipIndexes(const UsefulSkipIndexes & skip_indexes, const Settings & settings);
+
     /// Filter parts using query condition cache.
     static void filterPartsByQueryConditionCache(
         RangesInDataParts & parts_with_ranges,
@@ -337,14 +359,20 @@ public:
         MergeTreeReaderSettings reader_settings,
         LoggerPtr log);
 
-    /// Check if a skip index can be used when there are lightweight updates.
-    /// Returns an error message if the index depends on a column that will be updated on the fly.
-    /// Per-part callers pass `AlterConversions::getColumnsInvalidatingIndexes`, which also holds the
-    /// names touched by a pending `DROP COLUMN` / `RENAME COLUMN`.
+    /// Returns an error if the index depends on a column updated on the fly. A value update
+    /// (@value_updated_columns: ALTER UPDATE / patches / pending DROP COLUMN), a pending RENAME COLUMN,
+    /// or a MATERIALIZED column the read recalculates from an updated one, always makes it stale. A
+    /// value-preserving type change is tolerated when @part records the granules were built against the
+    /// current read type. Per-part callers pass `AlterConversions::getColumnsInvalidatingIndexes` as
+    /// @all_updated_columns (it also holds the names touched by a pending DROP/RENAME COLUMN).
+    /// @part is optional: some callers aggregate updated columns across parts and decide once.
     static std::expected<void, PreformattedMessage> canUseIndex(
         const MergeTreeIndexPtr & index,
         const StorageMetadataPtr & metadata_snapshot,
-        const NameSet & all_updated_columns);
+        const NameSet & all_updated_columns,
+        const NameSet & value_updated_columns,
+        const ContextPtr & context,
+        const IMergeTreeDataPart * part = nullptr);
 
     /// Whether a pending alter mutation (e.g. `MODIFY COLUMN`) or metadata mutation (`DROP COLUMN`,
     /// `RENAME COLUMN`) applies to the part. The counters of the snapshot (`hasAlterMutations`,
