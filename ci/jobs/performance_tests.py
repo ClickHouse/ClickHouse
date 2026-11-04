@@ -2446,7 +2446,7 @@ def run_trend_gate(info, test_files, workdir):
 
     children = [
         Result(
-            name=f"{t['test']} #{t['query_index']}",
+            name=f"{t['test']} #{t['query_index']} run trend",
             status=Result.Status.FAIL,
             info=(
                 f"corr(run, time) {t['corr']:.2f}, last/first {t['growth']:.2f}. "
@@ -2458,6 +2458,8 @@ def run_trend_gate(info, test_files, workdir):
         )
         for t in trends
     ]
+    for child in children:
+        print(f"Run trend: {child.name}: {child.info}")
     subject, verb = ("1 query", "gets") if len(trends) == 1 else (f"{len(trends)} queries", "get")
     return True, f"; {subject} of the tests this PR adds or changes {verb} slower run over run", children
 
@@ -3959,8 +3961,7 @@ def main():
         # Copy slower/unstable queries into Check Results so that Praktika
         # attaches per-query CIDB history links in the report.
         check_sub_results = build_dashboard_results_children(dashboard_regressions)
-        dashboard_names = {sub.name for sub in check_sub_results}
-        check_sub_results += [sub for sub in trend_children if sub.name not in dashboard_names]
+        check_sub_results += trend_children
         # Find the "Tests" sub-result that holds per-query results
         tests_result = None
         for r in results:
