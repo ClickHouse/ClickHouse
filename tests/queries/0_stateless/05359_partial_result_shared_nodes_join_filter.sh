@@ -36,11 +36,14 @@ chain() {
 settings="SETTINGS join_use_nulls = 0, compile_expressions = 0, ast_fuzzer_runs = 0, collect_hash_table_stats_during_joins = 1"
 
 query_id="${CLICKHOUSE_DATABASE}_partial_result_shared_nodes_join_filter_$RANDOM$RANDOM"
-${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "SELECT count() FROM ($(chain 'LEFT JOIN')) AS g INNER JOIN (SELECT 0 AS val) AS k ON g.a${LEVELS}_${STEPS} >= k.val $settings"
+join_query="SELECT count() FROM ($(chain 'LEFT JOIN')) AS g INNER JOIN (SELECT 0 AS val) AS k ON g.a${LEVELS}_${STEPS} >= k.val $settings"
+${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "$join_query"
 
 # Checking whether an `ANY LEFT JOIN` under such a filter can be converted to a `SEMI` join walks the same DAG.
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ($(chain 'ANY LEFT JOIN')) WHERE a${LEVELS}_${STEPS} >= 0 $settings"
 
-# The first query has to reach the statistics cache, or it would not hash the filter at all.
+# The first query has to reach the statistics cache, or it would not hash the filter at all. It logs nothing when a
+# concurrent run of this test stores the same entry while it runs, so it runs once more, when the entry is cached.
+${CLICKHOUSE_CLIENT} --query_id="${query_id}_cached" --query "$join_query"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
-${CLICKHOUSE_CLIENT} --param_query_id="$query_id" --query "SELECT count() > 0 FROM system.text_log WHERE event_date >= yesterday() AND query_id = {query_id:String} AND logger_name = 'HashTablesStatistics'"
+${CLICKHOUSE_CLIENT} --param_first="$query_id" --param_second="${query_id}_cached" --query "SELECT count() > 0 FROM system.text_log WHERE event_date >= yesterday() AND query_id IN ({first:String}, {second:String}) AND logger_name = 'HashTablesStatistics'"
