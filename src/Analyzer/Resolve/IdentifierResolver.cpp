@@ -380,12 +380,16 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     /// keep the catalog storage so engine checks (FINAL, SAMPLE, `_shard_num`) see the real table.
     /// `replaceStorageInQueryTree` swaps the view source in for execution after the passes.
     /// The inner query of an ordinary view reads the table itself.
-    if (auto view_source = context->getViewSource();
-        view_source && !context->isViewInnerQuery()
-        && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted())
+    const auto view_source = context->getViewSource();
+    const bool is_view_source = view_source && !context->isViewInnerQuery()
+        && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted();
+    if (is_view_source)
         metadata_snapshot = view_source->getInMemoryMetadataPtr(context, false);
 
-    auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
+    /// The view source is read instead of the table, so the table's parts are not needed.
+    auto storage_snapshot = is_view_source
+        ? storage->getStorageSnapshotWithoutData(metadata_snapshot, context)
+        : storage->getStorageSnapshot(metadata_snapshot, context);
     /// Pass the user-requested storage_id explicitly instead of letting the
     /// TableNode ctor read storage->getStorageID(), which can be mutated by
     /// a concurrent renameInMemory between tryGetTable and this point.
