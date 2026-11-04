@@ -708,25 +708,27 @@ UseProjectionsResult optimizeUseNormalProjections(
         /// - the projection's sort order matches the query's ORDER BY,
         if (!relax_projection_checks && candidate.sum_marks > parent_reading_marks)
         {
-            stat.description = fmt::format(
+            auto message = PreformattedMessage::create(
                 "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
                 candidate.projection->name,
                 candidate.sum_marks,
                 parent_reading_marks);
+            stat.description = message.text;
 
             result.projection_reject_reasons.try_emplace(projection->name, stat.description);
-            LOG_DEBUG(logger, "{}", stat.description);
+            LOG_DEBUG(logger, message);
             continue;
         }
         else if (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !relax_projection_checks && !sort_order_helps)
         {
-            stat.description = fmt::format(
+            auto message = PreformattedMessage::create(
                 "Projection {} is usable but requires reading {} marks and does not help with sorting, which is not better than the original table",
                 candidate.projection->name,
                 candidate.sum_marks);
+            stat.description = message.text;
 
             result.projection_reject_reasons.try_emplace(projection->name, stat.description);
-            LOG_DEBUG(logger, "{}", stat.description);
+            LOG_DEBUG(logger, message);
             continue;
         }
 
@@ -754,23 +756,25 @@ UseProjectionsResult optimizeUseNormalProjections(
         {
             chassert(candidate.stat);
             chassert(candidate.stat->description.empty());
-            candidate.stat->description = fmt::format(
+            auto message = PreformattedMessage::create(
                 "Projection {} is selected as the best with {} marks to read, while the original table requires scanning {} marks",
                 candidate.projection->name,
                 candidate.sum_marks,
                 parent_reading_select_result->selected_marks);
-            LOG_DEBUG(logger, "{}", candidate.stat->description);
+            candidate.stat->description = message.text;
+            LOG_DEBUG(logger, message);
         }
         else if (candidate.stat && candidate.stat->description.empty())
         {
-            candidate.stat->description = fmt::format(
+            auto message = PreformattedMessage::create(
                 "Projection {} is usable but requires reading {} marks, which is less efficient than projection {} with {} marks",
                 candidate.projection->name,
                 candidate.sum_marks,
                 best_candidate->projection->name,
                 best_candidate->sum_marks);
+            candidate.stat->description = message.text;
             result.projection_reject_reasons.try_emplace(candidate.projection->name, candidate.stat->description);
-            LOG_DEBUG(logger, "{}", candidate.stat->description);
+            LOG_DEBUG(logger, message);
         }
     }
 
