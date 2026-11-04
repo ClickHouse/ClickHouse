@@ -21,7 +21,7 @@ CREATE TABLE json_path_values_skip_paths
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_skip_paths VALUES
     (1, '{"keep":"hit","skip":{"leaf":"hidden"},"skip_size":"prefix-hit","regex_token":"regex-hit","m":{"k":"v"},"items":[{"keep":"array-hit","secret":"array-secret"}],"items[].secret":["literal-secret"]}'),
@@ -80,21 +80,21 @@ CREATE TABLE json_path_values_skip_paths_invalid
     data JSON,
     INDEX tokens data TYPE text(tokenizer = jsonPathValues(skip_paths = ['']))
 )
-ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_text_index_json_path_values = 1; -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE json_path_values_skip_paths_invalid
 (
     data JSON,
     INDEX tokens data TYPE text(tokenizer = jsonPathValues(skip_paths_regexp = ['(']))
 )
-ENGINE = MergeTree ORDER BY tuple(); -- { serverError CANNOT_COMPILE_REGEXP }
+ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_text_index_json_path_values = 1; -- { serverError CANNOT_COMPILE_REGEXP }
 
 CREATE TABLE json_path_values_skip_paths_invalid
 (
     data JSON,
     INDEX tokens data TYPE text(tokenizer = jsonPathValues(64, skip_paths = []))
 )
-ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_text_index_json_path_values = 1; -- { serverError BAD_ARGUMENTS }
 SET mutations_sync = 2;
 
 DROP TABLE IF EXISTS json_path_values_include_paths;
@@ -125,7 +125,7 @@ CREATE TABLE json_path_values_include_paths
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_include_paths VALUES
     (1, '{"request_id":"req-1","request":"request-1","created_at":"time-1","private_id":"private-1","message":"message-1","ignored":[[1]],"payload":{"ids":{"primary":"primary-1","secret":"secret-1"},"updated_at":"updated-1","text":"text-1"},"items":[{"item_id":"item-1","name":"name-1"}],"m":{"k":"map-1"}}'),
@@ -199,25 +199,25 @@ CREATE TABLE json_path_values_include_paths_invalid
     data JSON,
     INDEX tokens data TYPE text(tokenizer = jsonPathValues(include_paths = 'request_id'))
 )
-ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_text_index_json_path_values = 1; -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE json_path_values_include_paths_invalid
 (
     data JSON,
     INDEX tokens data TYPE text(tokenizer = jsonPathValues(include_paths = ['']))
 )
-ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_text_index_json_path_values = 1; -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE json_path_values_include_paths_invalid
 (
     data JSON,
     INDEX tokens data TYPE text(tokenizer = jsonPathValues(include_paths_regexp = ['(']))
 )
-ENGINE = MergeTree ORDER BY tuple(); -- { serverError CANNOT_COMPILE_REGEXP }
+ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_text_index_json_path_values = 1; -- { serverError CANNOT_COMPILE_REGEXP }
 
 CREATE TABLE json_path_values_include_paths_invalid
 (
     data JSON,
     INDEX tokens data TYPE text(tokenizer = jsonPathValues(64, include_paths = []))
 )
-ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_text_index_json_path_values = 1; -- { serverError BAD_ARGUMENTS }

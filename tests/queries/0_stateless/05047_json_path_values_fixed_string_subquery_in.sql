@@ -12,7 +12,7 @@ CREATE TABLE json_path_values_fixed_string_subquery_in
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_fixed_string_subquery_in VALUES
     (1, '{"k":"a"}'),

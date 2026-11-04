@@ -15,7 +15,7 @@ CREATE TABLE json_path_values_per_part_config
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1, text_index_serialization_version = 'v2_with_positions';
+SETTINGS index_granularity = 1, text_index_serialization_version = 'v2_with_positions', allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_per_part_config VALUES (1, '{"old_path":"old","new_path":"old-hit"}');
 
@@ -67,7 +67,7 @@ CREATE TABLE json_path_values_per_part_config
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_per_part_config VALUES (1, '{"value":1}');
 

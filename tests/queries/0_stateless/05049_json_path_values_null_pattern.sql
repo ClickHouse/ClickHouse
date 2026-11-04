@@ -8,7 +8,7 @@ CREATE TABLE json_path_values_null_pattern
     INDEX tokens data TYPE text(tokenizer = jsonPathValues(64)) GRANULARITY 1
 )
 ENGINE = MergeTree
-ORDER BY tuple();
+ORDER BY tuple() SETTINGS allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_null_pattern VALUES ('{"url":"example"}');
 

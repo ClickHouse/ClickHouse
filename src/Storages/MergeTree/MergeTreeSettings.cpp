@@ -878,6 +878,11 @@ Allow creating text indexes with the experimental `support_phrase_search` argume
 which stores token positions to support exact phrase matching.
 )", EXPERIMENTAL, \
         {"26.7", false, false, "New setting"}) \
+    DECLARE(Bool, allow_experimental_text_index_json_path_values, false, R"(
+Allow creating text indexes with the experimental `jsonPathValues` tokenizer
+which indexes path-qualified values of a `JSON` column.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting"}) \
     DECLARE(MergeTreeTextIndexSerializationVersion, text_index_serialization_version, MergeTreeTextIndexSerializationVersion::V2_WithPositions, R"(
 The preferred on-disk serialization format version for writing text indexes.
 

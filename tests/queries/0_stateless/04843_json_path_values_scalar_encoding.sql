@@ -13,7 +13,7 @@ CREATE TABLE json_index_tokens_float_equality
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 SYSTEM STOP MERGES json_index_tokens_float_equality;
 INSERT INTO json_index_tokens_float_equality VALUES
@@ -67,7 +67,7 @@ CREATE TABLE json_index_tokens_tiny_limit
     INDEX json_tokens data TYPE text(tokenizer = jsonPathValues(1)) GRANULARITY 1
 )
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id SETTINGS allow_experimental_text_index_json_path_values = 1;
 INSERT INTO json_index_tokens_tiny_limit VALUES (1, '{"s":"value"}');
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_tiny_limit WHERE data.s = 'value';
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_tiny_limit WHERE data.s = 'value'
@@ -82,7 +82,7 @@ CREATE TABLE json_index_tokens_tiny_pattern_limit
     INDEX json_tokens data TYPE text(tokenizer = jsonPathValues(8)) GRANULARITY 1
 )
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id SETTINGS allow_experimental_text_index_json_path_values = 1;
 INSERT INTO json_index_tokens_tiny_pattern_limit VALUES (1, '{"s":"long pattern value"}');
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_tiny_pattern_limit WHERE startsWith(data.s, 'long');
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_tiny_pattern_limit WHERE startsWith(data.s, 'long')
@@ -104,7 +104,7 @@ CREATE TABLE json_pv_fixed_string_padding
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 SYSTEM STOP MERGES json_pv_fixed_string_padding;
 INSERT INTO json_pv_fixed_string_padding VALUES (1, '{"k":"a"}'), (2, '{"k":"ab"}'), (3, '{"k":"b"}');
@@ -131,7 +131,7 @@ CREATE TABLE json_pv_fixed_string_width
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 SYSTEM STOP MERGES json_pv_fixed_string_width;
 INSERT INTO json_pv_fixed_string_width VALUES
@@ -166,7 +166,7 @@ CREATE TABLE json_pv_fixed_string_to_string
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 SYSTEM STOP MERGES json_pv_fixed_string_to_string;
 INSERT INTO json_pv_fixed_string_to_string VALUES
@@ -216,7 +216,7 @@ CREATE TABLE json_path_values_equality_safety
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_equality_safety VALUES
     (1, '{"flag":true,"flags":[true],"i8":127,"u8":255,"d":33.3,"ds":[33.3],"ip":"1.2.3.4","implicit_dt":"2030-01-01 00:00:00","implicit_dts":["2030-01-01 00:00:00"],"implicit_dt64":"2030-01-01 00:00:00.000","explicit_dt":"2030-01-01 00:00:00","explicit_dts":["2030-01-01 00:00:00"],"tuple_i":{"x":7},"tuples_i":[{"x":7}]}'),
@@ -328,7 +328,7 @@ CREATE TABLE json_path_values_dynamic_equality_safety
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_dynamic_equality_safety VALUES
     (1, '{"bool_value":true,"float_value":0.5,"number":42,"mixed":42}'),

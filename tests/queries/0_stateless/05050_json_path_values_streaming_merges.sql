@@ -10,7 +10,7 @@ CREATE TABLE json_stream_horizontal
     INDEX tokens data TYPE text(tokenizer = jsonPathValues(64)) GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, enable_vertical_merge_algorithm = 0;
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, enable_vertical_merge_algorithm = 0, allow_experimental_text_index_json_path_values = 1;
 SYSTEM STOP MERGES json_stream_horizontal;
 INSERT INTO json_stream_horizontal VALUES (1, '{"s":"one"}'), (2, '{"s":"two"}'), (3, '{"s":"three"}');
 INSERT INTO json_stream_horizontal VALUES (4, '{"s":"four"}'), (5, '{"s":"five"}'), (6, '{"s":"six"}');
@@ -43,7 +43,8 @@ SETTINGS index_granularity = 1,
     min_bytes_for_full_part_storage = 0,
     enable_vertical_merge_algorithm = 1,
     vertical_merge_algorithm_min_rows_to_activate = 1,
-    vertical_merge_algorithm_min_columns_to_activate = 1;
+    vertical_merge_algorithm_min_columns_to_activate = 1,
+    allow_experimental_text_index_json_path_values = 1;
 SYSTEM STOP MERGES json_stream_vertical;
 INSERT INTO json_stream_vertical VALUES
     (1, 1, 'a', [1], '{"s":"one"}'),

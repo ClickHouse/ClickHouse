@@ -22,7 +22,7 @@ CREATE TABLE json_index_tokens_arrays
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 SYSTEM STOP MERGES json_index_tokens_arrays;
 INSERT INTO json_index_tokens_arrays VALUES
@@ -124,7 +124,7 @@ CREATE TABLE json_index_tokens_in
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_index_tokens_in VALUES
     (1, '{"lc":"alpha","s":"alpha"}'),
@@ -171,7 +171,7 @@ CREATE TABLE json_index_tokens_nullable_in
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 SYSTEM STOP MERGES json_index_tokens_nullable_in;
 INSERT INTO json_index_tokens_nullable_in VALUES
@@ -237,7 +237,7 @@ CREATE TABLE json_path_values_array_json_leaves
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 SYSTEM STOP MERGES json_path_values_array_json_leaves;
 INSERT INTO json_path_values_array_json_leaves VALUES
@@ -373,7 +373,7 @@ CREATE TABLE json_path_values_typed_maps
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 SYSTEM STOP MERGES json_path_values_typed_maps;
 INSERT INTO json_path_values_typed_maps VALUES

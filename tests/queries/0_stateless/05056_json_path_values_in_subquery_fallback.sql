@@ -12,7 +12,7 @@ CREATE TABLE json_path_values_in_subquery
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 SYSTEM STOP MERGES json_path_values_in_subquery;
 INSERT INTO json_path_values_in_subquery VALUES (1, '{"s":"one"}');

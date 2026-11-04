@@ -99,6 +99,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsTextIndexPostingListCodec text_index_posting_list_codec;
     extern const MergeTreeSettingsMergeTreeTextIndexSerializationVersion text_index_serialization_version;
     extern const MergeTreeSettingsBool allow_experimental_text_index_phrase_search;
+    extern const MergeTreeSettingsBool allow_experimental_text_index_json_path_values;
 }
 
 namespace Setting
@@ -2792,7 +2793,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     return std::make_shared<MergeTreeIndexText>(std::move(metadata_snapshot), index, index_params, std::move(tokenizer), std::move(posting_list_codec));
 }
 
-void textIndexValidator(const IndexDescription & index, bool /*attach*/, const MergeTreeSettings & settings)
+void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings)
 {
     auto options = convertArgumentsToOptionsMap(index.arguments);
 
@@ -2804,6 +2805,12 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
 
     if (is_json_path_values)
     {
+        /// Do not throw on attach, so that tables created with the setting enabled can still be loaded.
+        if (!attach && !settings[MergeTreeSetting::allow_experimental_text_index_json_path_values])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Tokenizer `jsonPathValues` is experimental. Enable it with the MergeTree setting "
+                "`allow_experimental_text_index_json_path_values = 1`.");
+
         const auto * declaration = index.definition_ast->as<ASTIndexDeclaration>();
         if (!declaration || !declaration->getExpression()->as<ASTIdentifier>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tokenizer `jsonPathValues` requires a direct `JSON` column");

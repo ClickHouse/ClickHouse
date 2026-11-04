@@ -8,33 +8,39 @@ DROP TABLE IF EXISTS json_index_tokens_invalid_configuration;
 CREATE TABLE json_index_tokens_invalid_configuration
 (
     data JSON,
+    INDEX tokens data TYPE text(tokenizer = jsonPathValues(64))
+)
+ENGINE = MergeTree ORDER BY tuple(); -- { serverError SUPPORT_IS_DISABLED }
+CREATE TABLE json_index_tokens_invalid_configuration
+(
+    data JSON,
     INDEX tokens data TYPE text(tokenizer = jsonPathValues(0))
 )
-ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_text_index_json_path_values = 1; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE json_index_tokens_invalid_configuration
 (
     data JSON,
     INDEX tokens data TYPE text(tokenizer = jsonPathValues(1048577))
 )
-ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_text_index_json_path_values = 1; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE json_index_tokens_invalid_configuration
 (
     data JSON,
     INDEX tokens data TYPE text(tokenizer = jsonPathValues(63 + 1))
 )
-ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_text_index_json_path_values = 1; -- { serverError INCORRECT_QUERY }
 CREATE TABLE json_index_tokens_invalid_configuration
 (
     data JSON,
     INDEX tokens data TYPE text(tokenizer = jsonPathValues('64'))
 )
-ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_text_index_json_path_values = 1; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE json_index_tokens_invalid_configuration
 (
     data JSON,
     INDEX tokens data TYPE text(tokenizer = jsonPathValues(64, 'none'))
 )
-ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_text_index_json_path_values = 1; -- { serverError BAD_ARGUMENTS }
 
 SELECT 'LowCardinality analyzer';
 DROP TABLE IF EXISTS json_index_tokens_low_cardinality;
@@ -46,7 +52,7 @@ CREATE TABLE json_index_tokens_low_cardinality
     INDEX default_tokens default_data TYPE text(tokenizer = jsonPathValues) GRANULARITY 1,
     INDEX one_arg_tokens one_arg_data TYPE text(tokenizer = jsonPathValues(64)) GRANULARITY 1
 )
-ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 INSERT INTO json_index_tokens_low_cardinality VALUES
     (1, '{"s":""}', '{"s":""}'),
     (2, '{"s":"x"}', '{"s":"x"}');
@@ -66,7 +72,7 @@ CREATE TABLE json_index_tokens
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 2;
+SETTINGS index_granularity = 2, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_index_tokens VALUES
     (1, '{"email":"alice@example.com","url":"https://example.com/docs","count":42,"flag":true}'),

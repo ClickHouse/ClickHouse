@@ -25,7 +25,7 @@ for compatibility in '26.8' '26.5'; do
         INDEX idx data TYPE text(tokenizer = jsonPathValues(64)) GRANULARITY 1
     )
     ENGINE = MergeTree ORDER BY id
-    SETTINGS index_granularity = 1;
+    SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
     INSERT INTO tab VALUES (1, '{\"a\":\"foo\"}'), (2, '{\"a\":\"bar\"}');
     INSERT INTO tab VALUES (3, '{\"a\":\"foo\"}'), (4, '{\"b\":\"foo\"}');
     SELECT arraySort(groupArray(id)) FROM tab WHERE data.a = 'foo' SETTINGS force_data_skipping_indices = 'idx';

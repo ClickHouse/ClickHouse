@@ -15,7 +15,7 @@ CREATE TABLE json_path_values_dynamic_nan
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_dynamic_nan VALUES
     (1, '{"x":"nan"}'),

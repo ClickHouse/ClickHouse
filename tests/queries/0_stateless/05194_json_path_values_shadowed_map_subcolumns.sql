@@ -7,7 +7,7 @@ CREATE TABLE json_path_values_shadowed_column
     `j.m.key_nokey` String,
     INDEX idx j TYPE text(tokenizer = jsonPathValues(64)) GRANULARITY 1
 )
-ENGINE = MergeTree ORDER BY tuple();
+ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_text_index_json_path_values = 1;
 INSERT INTO json_path_values_shadowed_column VALUES ('{"m":{"abc":"x"}}', 'hello');
 
 SELECT 'physical column', count() FROM json_path_values_shadowed_column WHERE `j.m.key_nokey` = 'hello';
@@ -20,7 +20,7 @@ CREATE TABLE json_path_values_shadowed_path
     j JSON(m Map(String, String), `m.key_nokey` String),
     INDEX idx j TYPE text(tokenizer = jsonPathValues(64)) GRANULARITY 1
 )
-ENGINE = MergeTree ORDER BY tuple();
+ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_text_index_json_path_values = 1;
 INSERT INTO json_path_values_shadowed_path VALUES ('{"m.key_nokey":"hello"}');
 
 SELECT 'typed JSON path', count() FROM json_path_values_shadowed_path WHERE j.`m.key_nokey` = 'hello';

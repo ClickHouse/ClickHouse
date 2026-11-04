@@ -19,7 +19,7 @@ CREATE TABLE json_index_tokens_cast_ilike
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 SYSTEM STOP MERGES json_index_tokens_cast_ilike;
 INSERT INTO json_index_tokens_cast_ilike VALUES
@@ -91,7 +91,7 @@ CREATE TABLE json_index_tokens_long_value
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_index_tokens_long_value VALUES
     (1, concat('{"url":"https://example.com/', repeat('a', 100), 'x","sparse_a":"one"}')),
@@ -151,7 +151,7 @@ CREATE TABLE json_index_tokens_prefix_null_replacement
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_index_tokens_prefix_null_replacement VALUES
     (1, '{"prefix":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","start_needle":"abc"}'),
@@ -178,7 +178,7 @@ CREATE TABLE json_index_tokens_positions
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS allow_experimental_text_index_phrase_search = 1; -- { serverError BAD_ARGUMENTS }
+SETTINGS allow_experimental_text_index_phrase_search = 1, allow_experimental_text_index_json_path_values = 1; -- { serverError BAD_ARGUMENTS }
 DROP TABLE IF EXISTS json_index_tokens_positions;
 
 DROP TABLE IF EXISTS json_path_values_match_exactness;
@@ -190,7 +190,7 @@ CREATE TABLE json_path_values_match_exactness
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_match_exactness VALUES
     (1, '{"url":"https://example.com/project/123/web"}'),
@@ -242,7 +242,7 @@ CREATE TABLE json_path_values_pattern_correctness
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_pattern_correctness VALUES
     (1, '{"value":"abc-value","like_pattern":"a%","ilike_pattern":"a%","start_needle":"abc","end_needle":"def","regexp":"^a"}'),
@@ -318,7 +318,7 @@ CREATE TABLE json_pv_fixed_string_patterns
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 SYSTEM STOP MERGES json_pv_fixed_string_patterns;
 INSERT INTO json_pv_fixed_string_patterns VALUES

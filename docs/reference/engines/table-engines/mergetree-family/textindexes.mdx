@@ -1319,6 +1319,11 @@ SELECT * FROM events WHERE has(data.tags::Array(String), 'bug')
 
 The `jsonPathValues` tokenizer creates opaque, path-qualified tokens for exact and fuzzy searches on JSON subcolumns. Nulls and empty strings are omitted. The token-size limit must be between 1 byte and 1 MiB. Specify it in production schemas so the schema does not depend on the default.
 
+<Warning>
+The `jsonPathValues` tokenizer is experimental and should only be used for testing.
+Creating an index with it requires the MergeTree setting [`allow_experimental_text_index_json_path_values`](/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_json_path_values) to be enabled.
+</Warning>
+
 Its arguments are:
 
 - `max_token_bytes`: maximum token size, default `1024`.
@@ -1344,7 +1349,8 @@ CREATE TABLE events
         skip_paths_regexp = ['(?:^|\\.)debug_']))
 )
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id
+SETTINGS allow_experimental_text_index_json_path_values = 1;
 ```
 
 Queries on paths that are not included or are skipped read the source `JSON` column without using this index. Changing any path filter requires rebuilding or materializing the index for existing data parts.

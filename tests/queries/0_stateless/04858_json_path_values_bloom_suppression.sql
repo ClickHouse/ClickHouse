@@ -13,7 +13,7 @@ CREATE TABLE json_path_values_bloom_suppression
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_bloom_suppression VALUES
     (1, '{"exact":"hit","presence":"present"}'),
@@ -55,7 +55,7 @@ CREATE TABLE json_path_values_bloom_partial
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_bloom_partial VALUES (1, '{"exact":"hit"}');
 ALTER TABLE json_path_values_bloom_partial

@@ -17,7 +17,7 @@ CREATE TABLE json_path_values_inexact
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_inexact VALUES
     (1, '{"s":"Äpfel","n":42,"u":2,"v":42,"vs":[42]}'),

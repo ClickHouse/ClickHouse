@@ -41,7 +41,7 @@ CREATE TABLE json_stream_materialize_wide
     id UInt64,
     data JSON(s String, max_dynamic_paths = 2)
 )
-ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, index_granularity = 1;
+ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 INSERT INTO json_stream_materialize_wide VALUES
     (1, '{"s":"one"}'), (2, '{"s":"two"}'), (3, '{"s":"three"}');
 ALTER TABLE json_stream_materialize_wide ADD INDEX tokens data TYPE text(tokenizer = jsonPathValues(64)) GRANULARITY 1;
@@ -69,7 +69,7 @@ CREATE TABLE json_stream_materialize_compact
     data JSON(s String, max_dynamic_paths = 2)
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000, index_granularity = 1;
+SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000, index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 INSERT INTO json_stream_materialize_compact VALUES
     (1, '{"s":"one"}'), (2, '{"s":"two"}'), (3, '{"s":"three"}');
 ALTER TABLE json_stream_materialize_compact ADD INDEX tokens data TYPE text(tokenizer = jsonPathValues(64)) GRANULARITY 1;
@@ -98,7 +98,7 @@ CREATE TABLE json_stream_replacing
     INDEX tokens data TYPE text(tokenizer = jsonPathValues(64)) GRANULARITY 1
 )
 ENGINE = ReplacingMergeTree(version) ORDER BY id
-SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, allow_experimental_text_index_json_path_values = 1;
 SYSTEM STOP MERGES json_stream_replacing;
 INSERT INTO json_stream_replacing VALUES
     (1, 1, '{"s":"old"}'), (2, 1, '{"s":"keep"}'), (3, 1, '{"s":"old"}');

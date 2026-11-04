@@ -13,7 +13,7 @@ CREATE TABLE json_index_tokens_dynamic_cast
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_index_tokens_dynamic_cast VALUES
     (1, '{"value":42}'),
@@ -63,7 +63,7 @@ CREATE TABLE json_path_values_special_values
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 SYSTEM STOP MERGES json_path_values_special_values;
 INSERT INTO json_path_values_special_values VALUES
@@ -117,7 +117,7 @@ CREATE TABLE json_index_tokens_ifnull
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 SYSTEM STOP MERGES json_index_tokens_ifnull;
 INSERT INTO json_index_tokens_ifnull VALUES
@@ -192,7 +192,7 @@ CREATE TABLE json_path_values_dynamic_arrays
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 SYSTEM STOP MERGES json_path_values_dynamic_arrays;
 INSERT INTO json_path_values_dynamic_arrays VALUES
@@ -300,7 +300,7 @@ CREATE TABLE json_index_tokens_dynamic
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 SYSTEM STOP MERGES json_index_tokens_dynamic;
 INSERT INTO json_index_tokens_dynamic VALUES

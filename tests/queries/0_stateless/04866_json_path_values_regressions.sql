@@ -13,7 +13,7 @@ CREATE TABLE json_path_values_in_fallback
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_in_fallback VALUES
     (1, '{"s":"alpha"}'),
@@ -46,7 +46,7 @@ CREATE TABLE json_path_values_long_in
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_long_in
 VALUES (7, concat('{"s":"', repeat('x', 200), '"}'));
@@ -73,7 +73,7 @@ CREATE TABLE json_path_values_map_keys
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_map_keys VALUES
     (1, '{"m":{"a":"x"}}'),
@@ -100,7 +100,7 @@ CREATE TABLE json_path_values_dynamic_exception
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_dynamic_exception FORMAT JSONEachRow
 {"id":1,"data":{"value":1.5}}
@@ -139,7 +139,7 @@ CREATE TABLE json_path_values_review_predicates
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_review_predicates VALUES
     (1, '{"k":"v3"}'),
@@ -190,7 +190,7 @@ CREATE TABLE json_path_values_review_map
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_review_map
 SELECT number, format('{{"attrs":{{"k":"v{0}"}}}}', number)
@@ -222,7 +222,7 @@ CREATE TABLE json_path_values_review_round_2
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_review_round_2 VALUES
     (1, '{"k":"a","s":"needle"}'),
@@ -315,7 +315,7 @@ CREATE TABLE json_index_tokens_analyzer_matrix
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 SYSTEM STOP MERGES json_index_tokens_analyzer_matrix;
 INSERT INTO json_index_tokens_analyzer_matrix VALUES

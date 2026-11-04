@@ -11,7 +11,7 @@ CREATE TABLE json_stream_direct
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 SYSTEM STOP MERGES json_stream_direct;
 INSERT INTO json_stream_direct
@@ -34,21 +34,21 @@ CREATE TABLE json_stream_invalid
     data JSON,
     INDEX tokens tuple(data) TYPE text(tokenizer = jsonPathValues(64))
 )
-ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_text_index_json_path_values = 1; -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE json_stream_invalid
 (
     data JSON,
     INDEX tokens data TYPE text(tokenizer = jsonPathValues(64), preprocessor = lower(data))
 )
-ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_text_index_json_path_values = 1; -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE json_stream_invalid
 (
     data JSON,
     INDEX tokens data TYPE text(tokenizer = jsonPathValues(64), postprocessor = lower(data))
 )
-ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_text_index_json_path_values = 1; -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE json_stream_mixed
 (
@@ -58,7 +58,7 @@ CREATE TABLE json_stream_mixed
     INDEX message_tokens message TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1,
     INDEX json_tokens data TYPE text(tokenizer = jsonPathValues(64)) GRANULARITY 1
 )
-ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 INSERT INTO json_stream_mixed VALUES
     (1, 'ordinary needle', '{"s":"json one"}'),
     (2, 'ordinary other', '{"s":"json needle"}');

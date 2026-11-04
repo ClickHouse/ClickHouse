@@ -20,7 +20,7 @@ CREATE TABLE json_path_values_skip_json_subdocuments
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_skip_json_subdocuments VALUES
     (1, '{"blocked":{"m":{"k":"v"}},"doc":{"":"empty","b":2,"m":{"k":"v"},"nested":{"x":"leaf"},"t":{"n":10,"s":"inside"},"u":42},"t":{"n":1,"s":"a"},"s":"x"}'),
@@ -128,7 +128,7 @@ CREATE TABLE json_path_values_nested_column
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_nested_column VALUES (1, ('{"s":"hit"}',));
 INSERT INTO json_path_values_nested_column VALUES (2, ('{"s":"miss"}',));
@@ -186,7 +186,7 @@ CREATE TABLE json_path_values_nested_subcolumns
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, allow_experimental_text_index_json_path_values = 1;
 
 INSERT INTO json_path_values_nested_subcolumns VALUES
     (1, '{"str":"a","arr":["x","y"],"n":1,"tuple":{"value":"x"},"map":{"k":"v"}}'),
