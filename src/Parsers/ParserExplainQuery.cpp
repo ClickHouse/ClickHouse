@@ -384,6 +384,7 @@ Settings:
 - `column_structure` — Prints also the structure of columns in headers on top of their name and type. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
 - `distributed` — Shows query plans executed on remote nodes for distributed tables or parallel replicas. Not supported together with `json`. Default: 0.
 - `fragments` — For a query executed by stateless workers (`make_distributed_plan = 1`), prints the plan of every query fragment and the exchanges between the fragments. Requires `optimize = 1`. Not supported together with `json` or `distributed`. Default: 0. See [Query fragments](#explain-plan-fragments).
+- `tree` — For a query executed by stateless workers (`make_distributed_plan = 1`), draws every step as a box, the query fragments as frames around their steps and the exchanges as edges between the fragments, followed by the exchanges and the levels. Requires `optimize = 1`. Not supported together with `fragments`, `json` or `distributed`. Default: 0. See [Query fragment tree](#explain-plan-fragments-tree).
 - `compact` — When enabled, hides expression steps and detailed action info (inputs, functions, aliases, and output positions) from the plan. Only has an effect when `actions = 1`. Default: 1.
 - `pretty` — Prints the plan tree using line-drawing characters (├──, └──, │) instead of indentation to visualize the hierarchy. Also formats join step properties inline. Default: 1.
 
@@ -907,6 +908,111 @@ Exchanges:
 Levels: [F0, F1] -> [F2] -> [F3]
 ```
 
+#### Query fragment tree {#explain-plan-fragments-tree}
+
+With `tree` = 1, a query that is executed by stateless workers is drawn as it is cut for execution. Every step of the plan is a box, connected to the boxes of its inputs as in the plan tree, so data flows upward in the drawing, downstream from the reads to the result. The steps of one query fragment are surrounded by a frame titled `F<id> · <stage name>`, and every fragment is drawn under the fragment that reads it. An exchange is an edge from the sending step of the producer up to the receiving step of the consumer, crossing both frames (`┼`), with a label: the exchange name and how the data is distributed, then the mode and the number of source and destination buckets. The edge is `│` for a `streaming` exchange and `╎` for a `persisted` one, whose consumer starts only after the producer has finished; the label of a persisted exchange also starts its second line with `⛁`.
+
+A box shows only the name of the step and, with `description` = 1, its description, where `pretty` = 1 drops the table prefix of column names, as in the labels; the options that add details under the steps, such as `header`, `actions`, `indexes`, `projections` and `sorting`, do not change the drawing, use `fragments` = 1 to see them. With `estimates` = 1, the label of an exchange also shows the estimated number of rows the producer sends (`~<N> rows`). The text of a step is wrapped to lines of 40 columns, at a space where possible, so a box shows all of it, with the description limited by `query_plan_max_step_description_length` as in `EXPLAIN` without `tree`; the first line of an exchange label is cut at 48 columns with `…`, and the `Exchanges` section after the drawing repeats the full label. The drawing does not depend on the width of the terminal. When the query is not distributed, the plan is printed as without `tree`, followed by `Not distributed: <reason>` if the query fell back to local execution. The `tree` option of `EXPLAIN PLAN` is unrelated to the `EXPLAIN QUERY TREE` statement.
+
+Example:
+
+```sql
+EXPLAIN tree = 1
+SELECT small.sid, count()
+FROM big, small
+WHERE small.sid = (big.bid + 1) % 5000
+GROUP BY small.sid
+SETTINGS make_distributed_plan = 1, distributed_plan_max_rows_to_broadcast = 0;
+```
+
+```text
+                                        ┌─ F4 · main ────────────────────┐
+                                        │                                │
+                                        │  ┌───────────────────────────┐ │
+                                        │  │ GatherSend (final_result) │ │
+                                        │  └─────────────▲─────────────┘ │
+                                        │                │               │
+                                        │ ┌──────────────┴─────────────┐ │
+                                        │ │ GatherReceive (exchange_3) │ │
+                                        │ └──────────────▲─────────────┘ │
+                                        └────────────────┼───────────────┘
+                                                         │ exchange_3 · gather
+                                                         │ streaming · 8 → 1
+                                       ┌─ F3 · stage_3 ──┼────────────────┐
+                                       │                 │                │
+                                       │    ┌────────────┴────────────┐   │
+                                       │    │ GatherSend (exchange_3) │   │
+                                       │    └────────────▲────────────┘   │
+                                       │                 │                │
+                                       │ ┌───────────────┴──────────────┐ │
+                                       │ │ Expression ((Project names + │ │
+                                       │ │ Projection))                 │ │
+                                       │ └───────────────▲──────────────┘ │
+                                       │                 │                │
+                                       │   ┌─────────────┴─────────────┐  │
+                                       │   │ MergingAggregated (merge) │  │
+                                       │   └─────────────▲─────────────┘  │
+                                       │                 │                │
+                                       │  ┌──────────────┴──────────────┐ │
+                                       │  │ ShuffleReceive (exchange_2) │ │
+                                       │  └──────────────▲──────────────┘ │
+                                       └─────────────────┼────────────────┘
+                                                         │ exchange_2 · hash(sid)
+                                                         │ streaming · 8 → 8
+     ┌─ F2 · stage_2 ────────────────────────────────────┼───────────────────────────────────────────────────┐
+     │                                                   │                                                   │
+     │                                     ┌─────────────┴────────────┐                                      │
+     │                                     │ ShuffleSend (exchange_2) │                                      │
+     │                                     └─────────────▲────────────┘                                      │
+     │                                                   │                                                   │
+     │                                       ┌───────────┴───────────┐                                       │
+     │                                       │ Aggregating (partial) │                                       │
+     │                                       └───────────▲───────────┘                                       │
+     │                                                   │                                                   │
+     │                                   ┌───────────────┴──────────────┐                                    │
+     │                                   │ Expression (Before GROUP BY) │                                    │
+     │                                   └───────────────▲──────────────┘                                    │
+     │                                                   │                                                   │
+     │                                            ┌──────┴──────┐                                            │
+     │                                            │ JoinLogical │                                            │
+     │                                            └──────▲──────┘                                            │
+     │                                                   │                                                   │
+     │                ┌──────────────────────────────────┴──────────────────────────────────┐                │
+     │ ┌──────────────┴──────────────┐                                       ┌──────────────┴──────────────┐ │
+     │ │ ShuffleReceive (exchange_0) │                                       │ ShuffleReceive (exchange_1) │ │
+     │ └──────────────▲──────────────┘                                       └──────────────▲──────────────┘ │
+     └────────────────┼─────────────────────────────────────────────────────────────────────┼────────────────┘
+                      │ exchange_0 · hash((bid + 1) MOD 5000)                               │ exchange_1 · hash(sid)
+                      │ streaming · 1 → 8                                                   │ streaming · 1 → 8
+┌─ F0 · stage_0 ──────┼─────────────────────┐                        ┌─ F1 · stage_1 ───────┼─────────────────────┐
+│                     │                     │                        │                      │                     │
+│       ┌─────────────┴────────────┐        │                        │        ┌─────────────┴────────────┐        │
+│       │ ShuffleSend (exchange_0) │        │                        │        │ ShuffleSend (exchange_1) │        │
+│       └─────────────▲────────────┘        │                        │        └─────────────▲────────────┘        │
+│                     │                     │                        │                      │                     │
+│ ┌───────────────────┴───────────────────┐ │                        │ ┌────────────────────┴───────────────────┐ │
+│ │ Filter (((Apply runtime join filter + │ │                        │ │ BuildRuntimeFilter (Build runtime join │ │
+│ │ Calculate left join keys) + Change    │ │                        │ │ filter on sid)                         │ │
+│ │ column names to column identifiers))  │ │                        │ └────────────────────▲───────────────────┘ │
+│ └───────────────────▲───────────────────┘ │                        │                      │                     │
+│                     │                     │                        │   ┌──────────────────┴─────────────────┐   │
+│    ┌────────────────┴────────────────┐    │                        │   │ Expression (Change column names to │   │
+│    │ ReadFromMergeTree (default.big) │    │                        │   │ column identifiers)                │   │
+│    └─────────────────────────────────┘    │                        │   └──────────────────▲─────────────────┘   │
+└───────────────────────────────────────────┘                        │                      │                     │
+                                                                     │    ┌─────────────────┴─────────────────┐   │
+                                                                     │    │ ReadFromMergeTree (default.small) │   │
+                                                                     │    └───────────────────────────────────┘   │
+                                                                     └────────────────────────────────────────────┘
+
+Exchanges:
+  exchange_0: hash((bid + 1) MOD 5000), streaming, F0 -> F2, buckets 1 -> 8
+  exchange_1: hash(sid), streaming, F1 -> F2, buckets 1 -> 8
+  exchange_2: hash(sid), streaming, F2 -> F3, buckets 8 -> 8
+  exchange_3: gather, streaming, F3 -> F4, buckets 8 -> 1
+Levels: [F0, F1] -> [F2] -> [F3] -> [F4]
+```
+
 ### EXPLAIN PIPELINE {#explain-pipeline}
 
 Settings:
@@ -1354,13 +1460,13 @@ Estimates the benefit a hypothetical skip index would have on a `SELECT` query, 
 
 On large tables the index estimate reads a sample of index windows (see `index_scan_budget_rows`). A window is the `GRANULARITY` granules that one index granule covers. The estimate scales the sampled count to the baseline, and `marks_span` gives the range that the sampling error allows.
 
-Hypothetical projections defined with [`CREATE HYPOTHETICAL PROJECTION`](/reference/statements/hypothetical-projection#create-hypothetical-projection) are candidates too. For a normal projection, the estimate builds its primary index in memory over the parts the query would read and prunes it as a materialized projection would be pruned.
+Hypothetical projections defined with [`CREATE HYPOTHETICAL PROJECTION`](/reference/statements/hypothetical-projection#create-hypothetical-projection) are candidates too. For a normal projection, the estimate builds its primary index in memory over the parts that the query would read. It prunes the index as the optimizer prunes a materialized projection. For an aggregate projection, the estimate first aggregates the rows of each part into one row for each group, as in a materialized projection part. It estimates an aggregate projection only from a full scan. When a part has more groups than `max_rows_to_group_by` of the query, the estimate is `unsupported`.
 
 The report gives the marks and rows it would read, a `read_ratio` against the base-table read, and a `verdict` on whether the optimizer would choose it. With `force_optimize_projection = 1` or `prefer_optimize_projection = 1` the optimizer uses any usable projection, so one it would not pick by cost is reported as `chosen (forced)`.
 
 When the result depends on how the projection part would be laid out, `marks_span` gives the range, and a decision that could go either way is reported as `too close to call`. On large tables the estimate reads a sample of granules (see `projection_scan_budget_rows`).
 
-WHATIF reports aggregate projections and projections with their own skip indexes as `not_applicable`. It also reports projections with a commit-order key, a virtual-column key or a stored `_block_number` as `not_applicable`. The same applies to projections that do not have every column that the query reads. WHATIF ignores `force_optimize_projection_name` and `preferred_optimize_projection_name`, and `force_optimize_projection` does not fail the statement.
+WHATIF reports projections with their own skip indexes, and aggregate projections without `GROUP BY` keys, as `not_applicable`. It also reports projections with a commit-order key, a virtual-column key or a stored `_block_number` as `not_applicable`. The same applies to normal projections that do not have every column that the query reads. WHATIF ignores `force_optimize_projection_name` and `preferred_optimize_projection_name`, and `force_optimize_projection` does not fail the statement.
 
 **Syntax**
 

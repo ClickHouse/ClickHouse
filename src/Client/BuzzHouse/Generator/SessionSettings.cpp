@@ -396,6 +396,15 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"enable_producing_buckets_out_of_order_in_aggregation", trueOrFalseSetting},
        {"enable_software_prefetch_in_join", trueOrFalseSetting},
        {"group_by_top_k_optimization_shared_boundary", trueOrFalseSetting},
+       {"hash_join_layout",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &)
+            {
+                static const DB::Strings choices = {"'auto'", "'serial'", "'parallel'"};
+                return rg.pickRandomly(choices);
+            },
+            {"'auto'", "'serial'", "'parallel'"},
+            false)},
        {"join_algorithm",
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
