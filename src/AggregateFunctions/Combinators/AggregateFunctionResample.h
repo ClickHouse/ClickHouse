@@ -126,10 +126,10 @@ public:
                 has_zero_sized_nested_resample |= resample->size_of_data == 0;
                 nested_elements_overflow |= common::mulOverflow(nested_elements, resample->total, nested_elements);
             }
-            else if (const auto * resample = dynamic_cast<const AggregateFunctionResample<Int64> *>(nested.get()))
+            else if (const auto * signed_resample = dynamic_cast<const AggregateFunctionResample<Int64> *>(nested.get()))
             {
-                has_zero_sized_nested_resample |= resample->size_of_data == 0;
-                nested_elements_overflow |= common::mulOverflow(nested_elements, resample->total, nested_elements);
+                has_zero_sized_nested_resample |= signed_resample->size_of_data == 0;
+                nested_elements_overflow |= common::mulOverflow(nested_elements, signed_resample->total, nested_elements);
             }
         }
 
