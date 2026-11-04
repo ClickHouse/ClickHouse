@@ -8041,8 +8041,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     query_node_typed.resolveProjectionColumns(std::move(projection_columns));
 
-    /// The planner gives the values of rows added by WITH FILL to these projection columns. They are
-    /// recorded before passes run, because a pass may rewrite the projection copy of an expression only.
+    /// Before the passes, which may rewrite only the projection copy of a sort key or INTERPOLATE target.
     linkFillColumnsWithProjection(query_node_typed);
 }
 
