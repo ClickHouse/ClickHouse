@@ -603,12 +603,24 @@ Block MergeTreeDataWriter::mergeBlock(
     IColumn::Permutation *& permutation,
     const MergeTreeData::MergingParams & merging_params)
 {
+    /// The sign, version and is_deleted columns may be subcolumns, which the merging algorithm reads as separate columns.
+    for (const auto * column_name : {&merging_params.sign_column, &merging_params.version_column, &merging_params.is_deleted_column})
+    {
+        if (!column_name->empty() && !block.has(*column_name))
+            block.insert(block.getSubcolumnByName(*column_name));
+    }
+
     SharedHeader header = std::make_shared<const Block>(std::move(block));
     OpenTelemetry::SpanHolder span("MergeTreeDataWriter::mergeBlock");
 
     size_t block_size = header->rows();
     span.addAttribute("clickhouse.rows", block_size);
     span.addAttribute("clickhouse.columns", header->columns());
+
+    /// The block can lose all its rows before this point, e.g. when insert deduplication removes
+    /// duplicate rows of a materialized view block. Merging algorithms do not expect an empty input.
+    if (block_size == 0)
+        return *header;
 
     auto get_merging_algorithm = [&]() -> std::shared_ptr<IMergingAlgorithm>
     {

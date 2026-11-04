@@ -54,12 +54,26 @@ def run_with_cpu_limit(cmd, *args):
 
 def skip_if_jemalloc_disabled():
     output = run_command_in_container(
-        """clickhouse local -q "
+        """clickhouse local --tmp -q "
         SELECT value FROM system.build_options WHERE name = 'USE_JEMALLOC'"
     """
     ).strip()
     if output != b"ON" and output != b"1":
         pytest.skip(f"Compiled without jemalloc (USE_JEMALLOC={output})")
+
+
+def skip_if_musl():
+    output = run_command_in_container(
+        """clickhouse local -q "
+        SELECT value FROM system.build_options WHERE name = 'USE_MUSL'"
+    """
+    ).strip()
+    if output == b"ON" or output == b"1":
+        # musl implements both _SC_NPROCESSORS_CONF and _SC_NPROCESSORS_ONLN via
+        # sched_getaffinity, ignoring the /sys/devices/system/cpu/online override
+        # this test plants, so the CONF/ONLN inconsistency jemalloc aborts on
+        # cannot be constructed at all.
+        pytest.skip("musl derives both CPU-count sysconf values from the affinity mask")
 
 
 # Ensure that clickhouse works even when number of online CPUs
@@ -68,6 +82,7 @@ def skip_if_jemalloc_disabled():
 # Refs: https://github.com/jemalloc/jemalloc/pull/2181
 def test_jemalloc_percpu_arena():
     skip_if_jemalloc_disabled()
+    skip_if_musl()
 
     assert multiprocessing.cpu_count() > CPU_ID
 
@@ -83,7 +98,7 @@ def test_jemalloc_percpu_arena():
 
     # implicitly disable percpu arena
     result = run_with_cpu_limit(
-        'clickhouse local -q "select 1"',
+        'clickhouse local --tmp -q "select 1"',
         # NOTE: explicitly disable, since it is enabled by default in debug build
         # (and even though debug builds are not in CI let's state this).
         "--env",
@@ -99,7 +114,7 @@ def test_jemalloc_percpu_arena():
     with pytest.raises(subprocess.CalledProcessError):
         # should fail because of abort_conf:true but:
         run_with_cpu_limit(
-            'clickhouse local -q "select 1"',
+            'clickhouse local --tmp -q "select 1"',
             "--cpuset-cpus", f"{CPU_ID}",
             "--env", "MALLOC_CONF=abort_conf:true",
         )
@@ -107,7 +122,7 @@ def test_jemalloc_percpu_arena():
     # should not fail even with abort_conf:true, due to explicit narenas
     # NOTE: abort:false to make it compatible with debug build
     run_with_cpu_limit(
-        'clickhouse local -q "select 1"',
+        'clickhouse local --tmp -q "select 1"',
         "--env", f"MALLOC_CONF=abort_conf:true,abort:false,narenas:{all_cpus}",
     )
 
