@@ -33,11 +33,12 @@ symbolizeTrace(const void * const * frame_pointers, size_t size, bool need_symbo
         {
             if (const auto * symbol = symbol_index.findSymbol(addr))
             {
-                auto demangled = tryDemangle(symbol->name);
+                const char * symbol_name = symbol_index.getSymbolNameCString(*symbol);
+                DemangleResult demangled = *symbol_name ? tryDemangle(symbol_name) : DemangleResult{};
                 if (demangled)
                     symbols.emplace_back(demangled.get(), strlen(demangled.get()));
                 else
-                    symbols.emplace_back(symbol->name, strlen(symbol->name));
+                    symbols.emplace_back(symbol_name);
             }
             else
             {
