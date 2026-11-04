@@ -19,10 +19,8 @@ enum MergeTreeSequentialSourceType
 
 /// Create stream for reading single part from MergeTree.
 /// If the part has lightweight delete mask then the deleted rows are filtered out.
-/// `prefetch_begin_of_range`: when the source is created, start prefetching the beginning of its range
-///     (`IMergeTreeReader::prefetchBeginOfRange`). The vertical merge uses it for the next column.
-/// `allow_remote_fs_prefetch`: if false, the readers of the source do not prefetch at all, also not
-///     the beginning of the range; it overrides `remote_filesystem_read_prefetch`.
+/// `prefetch_begin_of_range`: prefetch the beginning of the range when the source is created.
+/// `allow_remote_fs_prefetch`: if false, the source does not prefetch at all.
 Pipe createMergeTreeSequentialSource(
     MergeTreeSequentialSourceType type,
     const MergeTreeData & storage,
@@ -58,9 +56,8 @@ void createReadFromPartStep(
     ContextPtr context,
     LoggerPtr log);
 
-/// Whether a merge or mutation that reads `columns_to_read` of all `parts` at the same time can prefetch. The limits are
-/// the settings of the task context, as for one query: the number of prefetches, one per column of each part, must fit
-/// into `filesystem_prefetches_limit`, and their estimated memory, two buffers each, into `filesystem_prefetch_max_memory_usage`.
+/// Whether a merge or mutation reading `columns_to_read` of `parts` fits into `filesystem_prefetches_limit`
+/// and `filesystem_prefetch_max_memory_usage` of `task_context`, as a query does.
 bool canPrefetchInMergeOrMutation(
     const MergeTreeData & storage,
     const MergeTreeData::DataPartsVector & parts,

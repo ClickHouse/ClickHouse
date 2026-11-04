@@ -612,7 +612,6 @@ bool canPrefetchInMergeOrMutation(
 {
     const auto & settings = task_context->getSettingsRef();
 
-    /// One prefetch per column of each part.
     const size_t prefetches_limit = settings[Setting::filesystem_prefetches_limit];
     if (prefetches_limit && parts.size() * columns_to_read.size() > prefetches_limit)
         return false;
@@ -623,7 +622,7 @@ bool canPrefetchInMergeOrMutation(
     {
         for (const auto & column : columns_to_read)
         {
-            /// 0 means that the size is unknown, for example in a Compact part.
+            /// 0 if unknown, e.g. in a Compact part.
             const size_t column_size = part->getColumnSize(column).data_compressed;
             estimated_memory += 2 * (column_size ? std::min<size_t>(column_size, buffer_size) : buffer_size);
         }

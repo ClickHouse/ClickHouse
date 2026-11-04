@@ -1,12 +1,10 @@
 -- Tags: no-fasttest
 -- no-fasttest: needs S3
 
--- Merges limit their prefetches as queries do. A merge does not prefetch if it needs more prefetches, one per column of
--- each part, than `filesystem_prefetches_limit`, or if their estimated memory is larger than `filesystem_prefetch_max_memory_usage`.
--- `OPTIMIZE ... DRY RUN` merges with the settings of the query, a background merge with the background profile.
+-- A merge does not prefetch if it exceeds `filesystem_prefetches_limit` or `filesystem_prefetch_max_memory_usage`.
+-- `OPTIMIZE ... DRY RUN` takes them from the query.
 
 SET optimize_on_insert = 0;
--- Do not read the merged part back, only the merge reads.
 SET optimize_dry_run_check_part = 0;
 
 DROP TABLE IF EXISTS t_merge_prefetch;
@@ -20,7 +18,7 @@ SYSTEM STOP MERGES t_merge_prefetch;
 INSERT INTO t_merge_prefetch SELECT number{% for i in range(10) %}, number + {{ i }}{% endfor %} FROM numbers(100);
 INSERT INTO t_merge_prefetch SELECT number{% for i in range(10) %}, number + {{ i }}{% endfor %} FROM numbers(100, 100);
 
--- 2 parts with at least 11 columns need at least 22 prefetches.
+-- At least 2 parts x 11 columns = 22 prefetches.
 OPTIMIZE TABLE t_merge_prefetch DRY RUN PARTS 'all_1_1_0', 'all_2_2_0' SETTINGS filesystem_prefetches_limit = 1000, filesystem_prefetch_max_memory_usage = '1Gi';
 OPTIMIZE TABLE t_merge_prefetch DRY RUN PARTS 'all_1_1_0', 'all_2_2_0' SETTINGS filesystem_prefetches_limit = 10, filesystem_prefetch_max_memory_usage = '1Gi';
 OPTIMIZE TABLE t_merge_prefetch DRY RUN PARTS 'all_1_1_0', 'all_2_2_0' SETTINGS filesystem_prefetches_limit = 0, filesystem_prefetch_max_memory_usage = '1Gi';
