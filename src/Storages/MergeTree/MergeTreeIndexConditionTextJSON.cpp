@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/likePatternToRegexp.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -773,6 +774,13 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
     if (function_name == "like" || function_name == "ilike")
     {
         const bool case_insensitive = function_name == "ilike";
+
+        /// The dictionary scan folds ASCII case only, while `ilike` folds the whole of UTF-8.
+        if (case_insensitive
+            && (!isAllASCII(reinterpret_cast<const UInt8 *>(value.data()), value.size())
+                || std::ranges::any_of(value, UTF8::isASCIIReachableByCaseFolding)))
+            return false;
+
         if ((case_insensitive
                 ? Regexps::createRegexp</*like=*/ true, /*similar_to=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ true>(value).match("", 0)
                 : Regexps::createRegexp</*like=*/ true, /*similar_to=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(value).match("", 0)))
