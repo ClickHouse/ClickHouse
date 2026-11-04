@@ -83,6 +83,10 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
     , resolved_storage(std::move(resolved_storage_))
 {
     chassert(resolved_key_.empty() == (resolved_storage == nullptr));
+    if (data_manifest_file_entry_->parsed_entry->split_offsets.has_value())
+        for (Int64 offset : *data_manifest_file_entry_->parsed_entry->split_offsets)
+            if (offset >= 0)
+                split_offsets.push_back(static_cast<UInt64>(offset));
 }
 
 IcebergDataObjectInfo::IcebergDataObjectInfo(const RelativePathWithMetadata & path_)

@@ -51,6 +51,8 @@ struct ObjectInfo
     /// The exact size of the object as the table metadata records it, if it records a positive one.
     virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
 
+    virtual std::vector<UInt64> getSplitOffsetsHint() const { return {}; }
+
     virtual ObjectStoragePtr getResolvedStorage(const ObjectStoragePtr & default_storage) const { return default_storage; }
 
     /// Manifest spelling used by `_path` and cross-storage cache keys; storage keys alone are not unique.

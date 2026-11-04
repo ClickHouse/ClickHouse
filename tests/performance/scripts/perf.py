@@ -322,6 +322,13 @@ parser.add_argument(
     "with `clickhouse format` of the last --binary.",
 )
 parser.add_argument(
+    "--result-digest",
+    action="store_true",
+    help="Digest the result of every SQL query on its prewarm run and report the "
+    "queries whose results differ between the servers. Costs one more run of every "
+    "`FORMAT Null` query per server, so CI does not enable it.",
+)
+parser.add_argument(
     "--pr-number",
     type=int,
     default=0,
@@ -1469,7 +1476,7 @@ for query_index in queries_to_run:
                     conn_index, q_item["script"], args.prewarm_max_query_seconds
                 )
             else:
-                prewarm_results = []
+                prewarm_results = [] if args.result_digest else None
                 try:
                     # During the warm-up runs, we will also:
                     # * detect queries that are exceedingly long, to fail fast,
@@ -1498,7 +1505,7 @@ for query_index in queries_to_run:
             print(
                 f"prewarm\t{query_index}\t{prewarm_id}\t{conn_index}\t{prewarm_elapsed}"
             )
-            if q_item["kind"] == "sql":
+            if args.result_digest and q_item["kind"] == "sql":
                 # Outside of the prewarm time and before the measured runs.
                 digest_settings = {"max_execution_time": args.prewarm_max_query_seconds}
                 try:
