@@ -33,6 +33,17 @@ SELECT naiveBayesClassifier('no_such_dictionary', 'good')
 ACCESS_DENIED
 SELECT * FROM dictionary('no_such_dictionary')
 ACCESS_DENIED
+--- identifier, no grants
+SELECT dictGet(d, 'value', toUInt64(1))
+ACCESS_DENIED
+SELECT dictGet(no_such_dictionary, 'value', toUInt64(1))
+ACCESS_DENIED
+SELECT dictHas(no_such_dictionary, toUInt64(1))
+ACCESS_DENIED
+SELECT dictGetKeys(no_such_dictionary, 'value', 'a')
+ACCESS_DENIED
+SELECT naiveBayesClassifier(no_such_dictionary, 'good')
+ACCESS_DENIED
 --- missing dictionary, dictGet
 SELECT dictGet('no_such_dictionary', 'value', toUInt64(1))
 not found
@@ -41,4 +52,6 @@ not found
 SELECT naiveBayesClassifier('no_such_dictionary', 'good')
 not found
 SELECT * FROM dictionary('no_such_dictionary')
+not found
+SELECT dictGet(no_such_dictionary, 'value', toUInt64(1))
 not found

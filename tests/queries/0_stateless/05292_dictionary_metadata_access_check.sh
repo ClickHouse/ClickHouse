@@ -52,11 +52,20 @@ as_user "SELECT dictGetKeys('d', 'no_such_attribute', 'a')" | sed 's/^ACCESS_DEN
 as_user "SELECT naiveBayesClassifier('d', 'good')" | sed 's/^ACCESS_DENIED$/unexpected ACCESS_DENIED/' | grep -o -E "^SELECT.*|NAIVE_BAYES layout|unexpected ACCESS_DENIED" | head -2
 
 # A missing dictionary must look the same as an existing one without access.
+${CLICKHOUSE_CLIENT} --query "REVOKE dictGet ON ${CLICKHOUSE_DATABASE}.d FROM ${username}"
 echo "--- missing dictionary, no grants"
 as_user "SELECT dictGet('no_such_dictionary', 'value', toUInt64(1))"
 as_user "SELECT dictGetKeys('no_such_dictionary', 'value', 'a')"
 as_user "SELECT naiveBayesClassifier('no_such_dictionary', 'good')"
 as_user "SELECT * FROM dictionary('no_such_dictionary')"
+
+# The dictionary name can also be an identifier, which the analyzer resolves separately.
+echo "--- identifier, no grants"
+as_user "SELECT dictGet(d, 'value', toUInt64(1))"
+as_user "SELECT dictGet(no_such_dictionary, 'value', toUInt64(1))"
+as_user "SELECT dictHas(no_such_dictionary, toUInt64(1))"
+as_user "SELECT dictGetKeys(no_such_dictionary, 'value', 'a')"
+as_user "SELECT naiveBayesClassifier(no_such_dictionary, 'good')"
 
 echo "--- missing dictionary, dictGet"
 ${CLICKHOUSE_CLIENT} --query "GRANT dictGet ON ${CLICKHOUSE_DATABASE}.* TO ${username}"
@@ -64,7 +73,8 @@ for query in \
     "SELECT dictGet('no_such_dictionary', 'value', toUInt64(1))" \
     "SELECT dictGetKeys('no_such_dictionary', 'value', 'a')" \
     "SELECT naiveBayesClassifier('no_such_dictionary', 'good')" \
-    "SELECT * FROM dictionary('no_such_dictionary')"
+    "SELECT * FROM dictionary('no_such_dictionary')" \
+    "SELECT dictGet(no_such_dictionary, 'value', toUInt64(1))"
 do
     as_user "${query}" | sed 's/^ACCESS_DENIED$/unexpected ACCESS_DENIED/' | grep -o -E "^SELECT.*|not found|unexpected ACCESS_DENIED" | head -2
 done
