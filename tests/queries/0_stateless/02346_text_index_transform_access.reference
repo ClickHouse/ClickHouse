@@ -16,3 +16,7 @@
 11. An ALIAS column hiding a privileged function is denied.
 12. So is an alias renamed by an earlier command of the same ALTER.
 13. Redeclaring with a privileged function is denied.
+14. The transform preflight does not reject what a plain ALTER accepts.
+idx_pre
+15. Replacing a privileged alias in the same statement is allowed.
+idx_replaced

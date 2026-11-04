@@ -124,3 +124,33 @@ ALTER TABLE tab DROP INDEX idx,
                 ADD INDEX idx(val2) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val2)) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }
 
 DROP TABLE tab;
+
+SELECT '14. The transform preflight does not reject what a plain ALTER accepts.';
+
+CREATE TABLE tab_preflight (id UInt64, val String, num UInt64)
+ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = 'countmin';
+
+-- The preflight must drop implicit statistics too, or `ADD STATISTICS` looks like a duplicate.
+ALTER TABLE tab_preflight ADD INDEX idx_pre(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(val)) GRANULARITY 1,
+                          ADD STATISTICS num TYPE countmin;
+
+SELECT name FROM system.data_skipping_indices
+WHERE database = currentDatabase() AND table = 'tab_preflight' ORDER BY name;
+
+DROP TABLE tab_preflight;
+
+SELECT '15. Replacing a privileged alias in the same statement is allowed.';
+
+SET allow_introspection_functions = 1;
+CREATE TABLE tab_replace (id UInt64, val String, transformed String ALIAS demangle(val))
+ENGINE = MergeTree ORDER BY id;
+SET allow_introspection_functions = 0;
+
+-- The installed transform is `lower(val)`; the alias it replaces must not be demanded.
+ALTER TABLE tab_replace MODIFY COLUMN transformed String ALIAS lower(val),
+                        ADD INDEX idx_replaced(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = transformed) GRANULARITY 1;
+
+SELECT name FROM system.data_skipping_indices
+WHERE database = currentDatabase() AND table = 'tab_replace' ORDER BY name;
+
+DROP TABLE tab_replace;
