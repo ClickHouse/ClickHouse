@@ -5996,17 +5996,20 @@ bool conversionKeepsSubcolumnValues(const DataTypePtr & from, const DataTypePtr 
         if (!from_object || !is_typed_path(from_info->substreams_path) || !is_typed_path(to_info->substreams_path))
             return false;
 
-        /// The type of a `Variant` or `Dynamic` value is chosen again, `inf` and `nan` are written as `null`, and a
-        /// `Decimal` with a fraction is parsed through `Float64`.
+        /// The text is parsed with the type of `to`, so an integer type reads an `Enum` name as a number. Only these types read
+        /// every value back unchanged: `DateTime` text is local time, and a `Bool` or `Date32` value out of range is clamped.
         auto changes_on_reparse = [](const IDataType & type)
         {
-            return isVariant(type) || isDynamic(type) || isObject(type) || isFloat(type) || isDecimal(type);
+            return !((isInteger(type) && type.getName() != "Bool") || isStringOrFixedString(type) || isEnum(type) || isUUID(type)
+                || isIPv4(type) || isIPv6(type) || isDate(type) || isArray(type) || type.isNullable() || type.lowCardinality());
         };
 
         const String & path = to_info->substreams_path.front().object_path_name;
-        auto typed_path = to_object->getTypedPaths().find(path);
-        if (typed_path == to_object->getTypedPaths().end() || anyInTypeTree(*typed_path->second, changes_on_reparse)
-            || skipsJSONPath(*to_object, path))
+        auto from_typed_path = from_object->getTypedPaths().find(path);
+        auto to_typed_path = to_object->getTypedPaths().find(path);
+        if (from_typed_path == from_object->getTypedPaths().end() || to_typed_path == to_object->getTypedPaths().end()
+            || !recursiveRemoveLowCardinality(from_typed_path->second)->equals(*recursiveRemoveLowCardinality(to_typed_path->second))
+            || anyInTypeTree(*to_typed_path->second, changes_on_reparse) || skipsJSONPath(*to_object, path))
             return false;
 
         for (size_t dot = path.find('.'); dot != String::npos; dot = path.find('.', dot + 1))

@@ -86,3 +86,11 @@ typed Float64 path, other paths change -> reject:
 key subcolumn values:	[-inf,1,inf]
 typed Decimal path, other paths change -> reject:
 key subcolumn values:	[12345678901234567.81,12345678901234567.82,12345678901234567.83]
+typed Enum path to an integer type -> reject:
+key subcolumn values:	[0,1,2]
+typed DateTime path, other paths change -> reject:
+key subcolumn values:	[1729989000,1729990800,1729992600]
+typed Bool path, other paths change -> reject:
+key subcolumn values:	[0,1,2]
+typed Date32 path, other paths change -> reject:
+key subcolumn values:	[0,1,2147483647]

@@ -291,3 +291,34 @@ SELECT 'typed Decimal path, other paths change -> reject:';
 ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(a Decimal(38, 2), c String); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 SELECT 'key subcolumn values:', groupArray(k) FROM (SELECT data.a AS k FROM t_alter_key_sub ORDER BY id);
 DROP TABLE t_alter_key_sub;
+
+-- A typed Enum path is written as its names, which an integer type parses as numbers.
+CREATE TABLE t_alter_key_sub (id UInt32, data JSON(a Enum8('2' = 0, '0' = 1, '1' = 2))) ENGINE = MergeTree ORDER BY (data.a, id) SETTINGS index_granularity = 1;
+INSERT INTO t_alter_key_sub VALUES (0, '{"a" : "2"}'), (1, '{"a" : "0"}'), (2, '{"a" : "1"}');
+SELECT 'typed Enum path to an integer type -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(a Int8); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'key subcolumn values:', groupArray(toInt8(k)) FROM (SELECT data.a AS k FROM t_alter_key_sub ORDER BY id);
+DROP TABLE t_alter_key_sub;
+
+-- A typed DateTime path is written as local time: the hour repeated when the clocks go back reads back as one hour.
+CREATE TABLE t_alter_key_sub (id UInt32, data JSON(a DateTime('Europe/Berlin'))) ENGINE = MergeTree ORDER BY (data.a, id) SETTINGS index_granularity = 1;
+INSERT INTO t_alter_key_sub VALUES (0, '{"a" : 1729989000}'), (1, '{"a" : 1729990800}'), (2, '{"a" : 1729992600}');
+SELECT 'typed DateTime path, other paths change -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(a DateTime('Europe/Berlin'), c String); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'key subcolumn values:', groupArray(toUnixTimestamp(k)) FROM (SELECT data.a AS k FROM t_alter_key_sub ORDER BY id);
+DROP TABLE t_alter_key_sub;
+
+-- A typed Bool or Date32 path: a value out of range, read from a binary format, is clamped by the text round trip.
+CREATE TABLE t_alter_key_sub (id UInt32, data JSON(a Bool)) ENGINE = MergeTree ORDER BY (data.a, id) SETTINGS index_granularity = 1;
+INSERT INTO t_alter_key_sub SELECT * FROM format(RowBinary, 'id UInt32, data JSON(a Bool)', unhex('000000000101610001000000010161010200000001016102'));
+SELECT 'typed Bool path, other paths change -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(a Bool, c String); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'key subcolumn values:', groupArray(reinterpretAsUInt8(k)) FROM (SELECT data.a AS k FROM t_alter_key_sub ORDER BY id);
+DROP TABLE t_alter_key_sub;
+
+CREATE TABLE t_alter_key_sub (id UInt32, data JSON(a Date32)) ENGINE = MergeTree ORDER BY (data.a, id) SETTINGS index_granularity = 1;
+INSERT INTO t_alter_key_sub SELECT * FROM format(RowBinary, 'id UInt32, data JSON(a Date32)', unhex('0000000001016100000000010000000101610100000002000000010161ffffff7f'));
+SELECT 'typed Date32 path, other paths change -> reject:';
+ALTER TABLE t_alter_key_sub MODIFY COLUMN data JSON(a Date32, c String); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT 'key subcolumn values:', groupArray(toInt32(k)) FROM (SELECT data.a AS k FROM t_alter_key_sub ORDER BY id);
+DROP TABLE t_alter_key_sub;
