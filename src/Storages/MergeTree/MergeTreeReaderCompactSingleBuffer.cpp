@@ -42,38 +42,60 @@ catch (...)
     throw;
 }
 
+namespace
+{
+
+/// Sorts the ranges and merges those that overlap, dropping the empty ones.
+void mergeRanges(CompressedBlockRanges & ranges)
+{
+    std::sort(ranges.begin(), ranges.end());
+    size_t size = 0;
+    for (const auto & [begin, end] : ranges)
+    {
+        if (end <= begin)
+            continue;
+        if (size != 0 && begin <= ranges[size - 1].second)
+            ranges[size - 1].second = std::max(ranges[size - 1].second, end);
+        else
+            ranges[size++] = {begin, end};
+    }
+    ranges.resize(size);
+}
+
+}
+
 std::optional<size_t> MergeTreeReaderCompactSingleBuffer::takeCompressedBytesRead()
 {
     if (!count_compressed_bytes_read)
         return std::nullopt;
 
-    /// A compressed block may hold several columns, read or served from the cache, and may be loaded more than once.
-    std::sort(ranges_read.begin(), ranges_read.end());
-    CompressedBlockRanges merged;
+    /// A compressed block may hold several columns, read or served from the cache, and may be loaded more than once. In a
+    /// stripe of several granules, it may also hold the granules of consecutive steps: it is counted in the first of them.
+    /// The buffer keeps the block it loaded last until it loads another, and doesn't report it again while it reuses it.
+    if (!ranges_read.empty())
+        last_loaded_block = ranges_read.back();
+    ranges_read.insert(ranges_read.end(), ranges_served.begin(), ranges_served.end());
+    ranges_served.clear();
+    mergeRanges(ranges_read);
+
+    size_t bytes = 0;
+    auto counted = ranges_counted_before.begin();
     for (const auto & [begin, end] : ranges_read)
     {
-        if (end <= begin)
-            continue;
-        if (!merged.empty() && begin <= merged.back().second)
-            merged.back().second = std::max(merged.back().second, end);
-        else
-            merged.emplace_back(begin, end);
-    }
-    ranges_read.clear();
-
-    /// A block may also hold several granules, in a stripe of several granules, and reading keeps it loaded for the next
-    /// step: then it was counted in the previous step.
-    size_t bytes = 0;
-    auto counted = ranges_counted_in_previous_step.begin();
-    for (const auto & [begin, end] : merged)
-    {
         bytes += end - begin;
-        while (counted != ranges_counted_in_previous_step.end() && counted->second <= begin)
+        while (counted != ranges_counted_before.end() && counted->second <= begin)
             ++counted;
-        for (auto it = counted; it != ranges_counted_in_previous_step.end() && it->first < end; ++it)
+        for (auto it = counted; it != ranges_counted_before.end() && it->first < end; ++it)
             bytes -= std::min(end, it->second) - std::max(begin, it->first);
     }
-    ranges_counted_in_previous_step = std::move(merged);
+
+    ranges_counted_before = std::move(ranges_read);
+    ranges_read.clear();
+    if (last_loaded_block)
+    {
+        ranges_counted_before.push_back(*last_loaded_block);
+        mergeRanges(ranges_counted_before);
+    }
     return bytes;
 }
 
@@ -120,7 +142,7 @@ void MergeTreeReaderCompactSingleBuffer::addGranulesServedFromColumnsCache(size_
 
     for (size_t mark = from_mark; mark < to_mark; ++mark)
         for (const size_t position : positions)
-            stream->addRangeOfPosition(mark, position, ranges_read);
+            stream->addRangeOfPosition(mark, position, ranges_served);
 }
 
 void MergeTreeReaderCompactSingleBuffer::readGranule(

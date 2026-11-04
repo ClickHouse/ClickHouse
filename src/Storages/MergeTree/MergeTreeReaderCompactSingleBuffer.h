@@ -41,11 +41,14 @@ private:
 
     bool initialized = false;
     std::unique_ptr<MergeTreeReaderStreamAllOfMultipleColumns> stream;
-    /// The ranges in the file of the compressed blocks read, and of those that hold the granules served from the columns
-    /// cache, since `takeCompressedBytesRead` was called, see `CompressedReadBufferBase::setBlocksReadSink`.
+    /// Since `takeCompressedBytesRead` was called: the ranges in the file of the compressed blocks read, in the order they are
+    /// loaded, see `CompressedReadBufferBase::setBlocksReadSink`, and of the blocks that hold the granules served from the cache.
     CompressedBlockRanges ranges_read;
-    /// The union of the ranges counted by the previous call of `takeCompressedBytesRead`, sorted.
-    CompressedBlockRanges ranges_counted_in_previous_step;
+    CompressedBlockRanges ranges_served;
+    /// The block the buffer loaded last, which it keeps loaded.
+    std::optional<std::pair<size_t, size_t>> last_loaded_block;
+    /// The ranges counted by the previous call of `takeCompressedBytesRead` and the last loaded block, merged and sorted.
+    CompressedBlockRanges ranges_counted_before;
 };
 
 }
