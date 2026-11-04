@@ -407,7 +407,7 @@ public:
         const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_, bool query_cancellation_blocked_,
         bool capture_frame_pointers, ScopedDecrement available_threads_decrement_,
         std::optional<ScopedDecrement> thread_job_slot_)
-        : job(job_), priority(priority_), metric_increment(metric),
+        : job(std::move(job_)), priority(priority_), metric_increment(metric),
         available_threads_decrement(std::move(available_threads_decrement_)),
         thread_job_slot(std::move(thread_job_slot_)),
         thread_trace_context(thread_trace_context_), query_cancellation_blocked(query_cancellation_blocked_),
