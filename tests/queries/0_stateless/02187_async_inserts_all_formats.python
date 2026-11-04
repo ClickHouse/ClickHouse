@@ -244,6 +244,11 @@ print("Template", select("SELECT groupArray((a, b)) FROM (SELECT * FROM t_templa
 for file_name, _ in template_files.values():
     os.remove(os.path.join(os.environ["CLICKHOUSE_SCHEMA_FILES"], file_name))
 
+# An input whose value needs an expression, then DEFAULT in the same column.
+client.query("CREATE TABLE t_values (x UInt64 DEFAULT 42) ENGINE = Memory")
+insert_batch("t_values", "Values", [b"(1 + 1)", b"(DEFAULT)"])
+print("Values", select("SELECT groupArray(x) FROM (SELECT x FROM t_values ORDER BY x)"))
+
 # FileLog reads every line of a file as a separate input.
 file_log_dir = os.environ.get("CLICKHOUSE_USER_FILES_UNIQUE")
 os.makedirs(file_log_dir, exist_ok=True)
