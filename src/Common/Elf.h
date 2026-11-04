@@ -19,7 +19,6 @@ enum class ProgramHeaderType : uint32_t
 {
     NOTE = 4,
     DYNAMIC = 2,
-    LOAD = 1,
 };
 
 enum class NameHeaderType : uint32_t
@@ -158,11 +157,11 @@ public:
 private:
     std::string path; // just for error messages
     std::optional<MMapReadBufferFromFile> in;
-    size_t elf_size{};
-    const char * mapped{};
-    const ElfHeader * header{};
-    const ElfSectionHeader * section_headers{};
-    const ElfProgramHeader * program_headers{};
+    size_t elf_size;
+    const char * mapped;
+    const ElfHeader * header;
+    const ElfSectionHeader * section_headers;
+    const ElfProgramHeader * program_headers;
     const char * section_names = nullptr;
     size_t section_names_size = 0; // bytes available starting at `section_names`, for bounds checking
 

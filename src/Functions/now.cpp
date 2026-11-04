@@ -1,7 +1,6 @@
 #include <ctime>
 #include <Core/Field.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -28,7 +27,7 @@ namespace
 {
 
 /// Get the current time. (It is a constant, it is evaluated once for the entire query.)
-class ExecutableFunctionNow final : public IExecutableFunction
+class ExecutableFunctionNow : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionNow(time_t time_) : time_value(time_) {}
@@ -46,7 +45,7 @@ private:
     time_t time_value;
 };
 
-class FunctionBaseNow final : public IFunctionBase
+class FunctionBaseNow : public IFunctionBase
 {
 public:
     explicit FunctionBaseNow(time_t time_, DataTypes argument_types_, DataTypePtr return_type_)
@@ -85,7 +84,7 @@ private:
     DataTypePtr return_type;
 };
 
-class NowOverloadResolver final : public IFunctionOverloadResolver
+class NowOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "now";
@@ -104,17 +103,19 @@ public:
         : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
     {}
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// Same pattern as snowflakeToDateTime: const-tz captures into the return type,
-        /// non-const-tz (only when allowed by the flag) yields a tz-less DateTime.
-        if (allow_nonconst_timezone_arguments)
-            return
-                "(const tz StringOrFixedString) -> DateTime(tz)"
-                " OR ([StringOrFixedString]) -> DateTime";
-        return
-            "(const tz StringOrFixedString) -> DateTime(tz)"
-            " OR () -> DateTime";
+        FunctionArgumentDescriptors mandatory_arguments{};
+        FunctionArgumentDescriptors optional_arguments{
+            {"timezone", &isStringOrFixedString, nullptr, "String"}
+        };
+
+        validateFunctionArguments(getName(), arguments, mandatory_arguments, optional_arguments);
+        if (arguments.size() == 1)
+        {
+            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, allow_nonconst_timezone_arguments));
+        }
+        return std::make_shared<DataTypeDateTime>();
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
@@ -123,9 +124,7 @@ public:
         {
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0 or 1", getName());
         }
-        /// `getReturnTypeImpl` is called on a `LowCardinality`-stripped type, so strip it here too:
-        /// otherwise `now(toLowCardinality('UTC'))` is rejected.
-        if (arguments.size() == 1 && !isStringOrFixedString(recursiveRemoveLowCardinality(arguments[0].type)))
+        if (arguments.size() == 1 && !isStringOrFixedString(arguments[0].type))
         {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
                 getName());
@@ -191,7 +190,6 @@ SELECT NOW, CURRENT_TIMESTAMP
 
     factory.registerFunction<NowOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_timestamp", NowOverloadResolver::name, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("localtimestamp", NowOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }
 
 }
