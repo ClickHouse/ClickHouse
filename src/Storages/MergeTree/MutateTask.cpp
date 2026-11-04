@@ -831,8 +831,7 @@ static void splitAndModifyMutationCommands(
         return name;
     };
 
-    /// `nameInPart` already applied this mutation's renames. Keep a `DROP` of a destination on that
-    /// on-disk name (`DROP a, RENAME b TO a`).
+    /// `nameInPart` already applied this mutation's renames. A `DROP` of that destination keeps the on-disk name.
     NameSet rename_targets_in_mutation;
     for (const auto & command : commands)
         if (command.type == MutationCommand::Type::RENAME_COLUMN)
@@ -1824,13 +1823,8 @@ getColumnsForNewDataPart(
                             it = storage_columns.erase(it);
                         else
                         {
-                            /// Take a type from source part column.
-                            /// It may differ from column type in storage.
-                            ///
-                            /// A full rewrite re-reads this column through the interpreter, which
-                            /// applies the rename together with every type change that came after it,
-                            /// so the new part must record the type in storage - see the same-named
-                            /// case below.
+                            /// A full rewrite produces this column at the type in storage, the same
+                            /// way it does for the two cases around this one.
                             if (!rewrites_all_columns)
                                 *it = NameAndTypePair{it->name, source_col->second};
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-fasttest
-# Server-wide failpoint; pauses one insert.
+# Pauses the in-flight `INSERT` on the server-wide failpoint.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

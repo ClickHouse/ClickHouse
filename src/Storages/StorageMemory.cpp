@@ -541,7 +541,8 @@ static void eraseStoredColumn(Block & block, const String & name)
 /// `DROP` or `RENAME` of `n` also frees `n.*`.
 static bool nameOrParentWasFreed(const NameSet & freed, const String & name)
 {
-    for (String prefix = name; ; )
+    String prefix = name;
+    while (true)
     {
         if (freed.contains(prefix))
             return true;
@@ -549,6 +550,7 @@ static bool nameOrParentWasFreed(const NameSet & freed, const String & name)
         const auto dot = prefix.rfind('.');
         if (dot == String::npos)
             return false;
+
         prefix.resize(dot);
     }
 }
