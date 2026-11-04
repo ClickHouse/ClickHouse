@@ -139,6 +139,12 @@ def test_receiver_resolves_additional_table_filters_with_its_own_settings(
     )
     assert select("SELECT count() FROM dist", serialize_query_plan, **filters) == "1\n"
 
+    # Also inside a scalar subquery, which each node evaluates on its own.
+    filters["additional_table_filters"] = (
+        "{'default.m': 'x < (SELECT getSetting(\\'max_threads\\'))'}"
+    )
+    assert select("SELECT count() FROM dist", serialize_query_plan, **filters) == "1\n"
+
 
 @pytest.mark.parametrize("serialize_query_plan", [0, 1])
 def test_receiver_checks_its_own_max_columns_to_read(

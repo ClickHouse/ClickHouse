@@ -1,0 +1,8 @@
+SELECT randConstant() % 100000 rp_ss_merge sqp=1 1
+SELECT randConstant() % 100000 rp_ss_merge sqp=0 1
+SELECT randConstant() % 100000 rp_ss_leaf sqp=1 1
+SELECT randConstant() % 100000 rp_ss_leaf sqp=0 1
+SELECT rand() % 100000 rp_ss_merge sqp=1 1
+SELECT rand() % 100000 rp_ss_merge sqp=0 1
+SELECT rand() % 100000 rp_ss_leaf sqp=1 1
+SELECT rand() % 100000 rp_ss_leaf sqp=0 1
