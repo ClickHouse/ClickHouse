@@ -225,6 +225,10 @@ public:
         modifyColumnOrder(column_name, after_column, first);
     }
 
+    /// Moves a column to the place `FIRST` or `AFTER after_column` gives. A nested group moves as a whole:
+    /// for example, modifyColumnOrder("n", ...) moves `n.a` and `n.b` together, and `AFTER n` inserts after the last of them.
+    void modifyColumnOrder(const String & column_name, const String & after_column, bool first);
+
     Names getNamesOfPhysical() const;
 
     bool hasPhysical(const String & column_name) const;
@@ -306,7 +310,6 @@ private:
     /// While nested columns have form like foo.bar
     SubcolumnsContainter subcolumns;
 
-    void modifyColumnOrder(const String & column_name, const String & after_column, bool first);
     void addSubcolumnsToList(NamesAndTypesList & source_list, const GetColumnsOptions & options) const;
 
     void addSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage);
