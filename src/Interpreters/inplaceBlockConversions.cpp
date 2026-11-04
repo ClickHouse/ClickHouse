@@ -585,6 +585,12 @@ static bool isSubcolumnOfAvailableColumn(
     return requested_columns.contains(parent_name) || additional_available_columns.contains(parent_name);
 }
 
+bool mayLeaveColumnToMissingDefaults(const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column)
+{
+    /// A superset of the two cases in which `fillMissingColumns` leaves a column unfilled.
+    return hasDefault(storage_snapshot, column) || (storage_snapshot && column.isSubcolumn());
+}
+
 static String removeTupleElementsFromSubcolumn(String subcolumn_name, const Names & tuple_elements)
 {
     /// Add a dot to the end of name for convenience.

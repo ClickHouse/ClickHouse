@@ -416,6 +416,8 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     /// `NOT_FOUND_COLUMN_IN_BLOCK`.
     query_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
 
+    query_context->setQueryExecutionStartedCallback(query_execution_started_callback);
+
     if (submitting_user_context)
     {
         /// Give the query the access rights of the submitting session, as `AsynchronousInsertQueue` does. The current roles

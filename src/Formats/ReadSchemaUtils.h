@@ -132,4 +132,9 @@ std::pair<ColumnsDescription, String> detectFormatAndReadSchema(
 SchemaCache::Key getKeyForSchemaCache(const String & source, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
 SchemaCache::Keys getKeysForSchemaCache(const Strings & sources, const String & format, const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
 
+/// Whether the number of rows of a file can be taken from or stored to the schema cache (`use_cache_for_count_from_files`).
+/// With `input_format_allow_errors_num`/`_ratio` the number of read rows depends on which rows fail to parse with the
+/// requested structure, and the structure is not a part of the cache key.
+bool canUseNumRowsFromSchemaCache(const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
+
 }

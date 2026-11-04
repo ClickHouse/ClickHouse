@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel-replicas
+# Tag no-parallel-replicas: the test only checks query plans, which parallel replicas change
 # a projection that does not store parent offsets cannot serve an offset predicate, one that stores them is not pruned by its own offsets
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

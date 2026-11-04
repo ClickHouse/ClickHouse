@@ -2,7 +2,6 @@
 -- ^ creates a user defined function, which is global.
 
 -- The composition and the placeholders are resolved only in the analyzer.
-SET enable_analyzer = 1;
 
 -- The operator `f | g` and an ordinary call to a function named `__compose` are different
 -- expressions, so they must not be considered the same expression for one alias.

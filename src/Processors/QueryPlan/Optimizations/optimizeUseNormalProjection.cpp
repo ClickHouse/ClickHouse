@@ -313,7 +313,7 @@ static void recordHypotheticalOutcome(
         if (candidate.projection != &hypothetical.projection || !candidate.stat)
             continue;
         outcome.marks = candidate.sum_marks;
-        outcome.rows = candidate.selected_rows;
+        outcome.rows = candidate.selected_rows + outcome.base_table_rows;
         outcome.chosen = &candidate == best_candidate;
         if (!candidate.stat->description.empty())
             outcome.reason = candidate.stat->description;
@@ -616,6 +616,9 @@ UseProjectionsResult optimizeUseNormalProjections(
             {
                 LOG_DEBUG(logger, "Projection {} skipped: query WHERE does not imply projection WHERE", projection->name);
                 result.projection_reject_reasons.try_emplace(projection->name, "the query WHERE does not imply the projection WHERE");
+                /// the query alone decides it, so WHATIF does not read data for this projection
+                if (hypothetical && projection == &hypothetical->projection)
+                    hypothetical->outcome.rejected_for_query = true;
                 continue;
             }
         }
@@ -692,6 +695,11 @@ UseProjectionsResult optimizeUseNormalProjections(
                 || (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !sort_order_helps);
             hypothetical->outcome.forced = relax_projection_checks && (helps_nothing || worse_by_cost);
             hypothetical->outcome.serves_order = sort_order_helps;
+            UInt64 base_table_rows = 0;
+            for (const auto & part : parent_reading_select_result->parts_with_ranges)
+                if (candidate.parent_parts.contains(part.data_part.get()))
+                    base_table_rows += part.getRowsCount();
+            hypothetical->outcome.base_table_rows = base_table_rows;
         }
 
         /// Consider projections with equal read cost only if:
@@ -700,25 +708,27 @@ UseProjectionsResult optimizeUseNormalProjections(
         /// - the projection's sort order matches the query's ORDER BY,
         if (!relax_projection_checks && candidate.sum_marks > parent_reading_marks)
         {
-            stat.description = fmt::format(
+            auto message = PreformattedMessage::create(
                 "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
                 candidate.projection->name,
                 candidate.sum_marks,
                 parent_reading_marks);
+            stat.description = message.text;
 
             result.projection_reject_reasons.try_emplace(projection->name, stat.description);
-            LOG_DEBUG(logger, "{}", stat.description);
+            LOG_DEBUG(logger, message);
             continue;
         }
         else if (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !relax_projection_checks && !sort_order_helps)
         {
-            stat.description = fmt::format(
+            auto message = PreformattedMessage::create(
                 "Projection {} is usable but requires reading {} marks and does not help with sorting, which is not better than the original table",
                 candidate.projection->name,
                 candidate.sum_marks);
+            stat.description = message.text;
 
             result.projection_reject_reasons.try_emplace(projection->name, stat.description);
-            LOG_DEBUG(logger, "{}", stat.description);
+            LOG_DEBUG(logger, message);
             continue;
         }
 
@@ -746,23 +756,25 @@ UseProjectionsResult optimizeUseNormalProjections(
         {
             chassert(candidate.stat);
             chassert(candidate.stat->description.empty());
-            candidate.stat->description = fmt::format(
+            auto message = PreformattedMessage::create(
                 "Projection {} is selected as the best with {} marks to read, while the original table requires scanning {} marks",
                 candidate.projection->name,
                 candidate.sum_marks,
                 parent_reading_select_result->selected_marks);
-            LOG_DEBUG(logger, "{}", candidate.stat->description);
+            candidate.stat->description = message.text;
+            LOG_DEBUG(logger, message);
         }
         else if (candidate.stat && candidate.stat->description.empty())
         {
-            candidate.stat->description = fmt::format(
+            auto message = PreformattedMessage::create(
                 "Projection {} is usable but requires reading {} marks, which is less efficient than projection {} with {} marks",
                 candidate.projection->name,
                 candidate.sum_marks,
                 best_candidate->projection->name,
                 best_candidate->sum_marks);
+            candidate.stat->description = message.text;
             result.projection_reject_reasons.try_emplace(candidate.projection->name, candidate.stat->description);
-            LOG_DEBUG(logger, "{}", candidate.stat->description);
+            LOG_DEBUG(logger, message);
         }
     }
 

@@ -26,7 +26,6 @@ CREATE TABLE t_pfsmj_dp_right (id UInt64, b UInt64) ENGINE = MergeTree ORDER BY 
 INSERT INTO t_pfsmj_dp_left SELECT number, number % 1000 FROM numbers(20000);
 INSERT INTO t_pfsmj_dp_right SELECT number, number % 1000 FROM numbers(20000);
 
-SET enable_analyzer = 1;
 SET max_threads = 4;
 SET enable_parallel_replicas = 0;
 SET distributed_plan_execute_locally = 1;
