@@ -136,10 +136,6 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=.:./ci
-          export VERCEL_REFERENCE_BLOB_READ_WRITE_TOKEN=$(cat<<'EOF'
-          ${{ secrets.VERCEL_REFERENCE_BLOB_READ_WRITE_TOKEN }}
-          EOF
-          )
 
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}

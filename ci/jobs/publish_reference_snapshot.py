@@ -16,16 +16,16 @@ from praktika.utils import Shell, Utils
 REPO_ROOT = Path(Utils.cwd())
 ARCHIVE = REPO_ROOT / "ci" / "tmp" / "reference-snapshot.tar.zst"
 PUBLISHER = REPO_ROOT / "ci" / "jobs" / "scripts" / "docs" / "reference_snapshot" / "publish_reference_snapshot.py"
+SECRET_NAME = "clickhouse-vercel-reference-blob-read-write-token"
 TOKEN_ENV = "VERCEL_REFERENCE_BLOB_READ_WRITE_TOKEN"
-SECRET_NAME = TOKEN_ENV
 
 
 def publish_snapshot() -> bool:
     if not ARCHIVE.is_file():
         raise FileNotFoundError(f"Reference snapshot artifact is missing: {ARCHIVE}")
-    # Check the remote tip immediately before replacing the shared Head object.
-    # A GitHub Actions rerun otherwise replays its original SHA and could
-    # regress Head after master advances.
+    # Check the remote tip immediately before resolving the writer credential
+    # and replacing the shared Head object. A GitHub Actions rerun otherwise
+    # replays its original SHA and could regress Head after master advances.
     if not on_current_base_branch():
         return False
     token = Info().get_secret(SECRET_NAME).get_value()

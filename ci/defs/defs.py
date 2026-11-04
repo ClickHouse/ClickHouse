@@ -120,11 +120,12 @@ LOOM_SECRETS = [
 ]
 
 # This credential can write the private Vercel Blob store consumed as a build
-# input by the docs frontend. GitHub Actions injects it only into the final
-# publishing job, so PR runner roles can never retrieve it from SSM.
+# input by the docs frontend. Attach it only to the publishing job, rather than
+# registering it with every workflow.
 REFERENCE_SNAPSHOT_PUBLISH_SECRET = Secret.Config(
-    name="VERCEL_REFERENCE_BLOB_READ_WRITE_TOKEN",
-    type=Secret.Type.GH_SECRET,
+    name="clickhouse-vercel-reference-blob-read-write-token",
+    type=Secret.Type.AWS_SSM_PARAMETER,
+    region="us-east-1",
 )
 REFERENCE_SNAPSHOT_PUBLISH_SECRETS = [REFERENCE_SNAPSHOT_PUBLISH_SECRET]
 
