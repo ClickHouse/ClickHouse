@@ -543,7 +543,14 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
     getContext()->onQueryExecutionStarted();
     if (!truncate && database->hasReplicationThread())
+    {
         database->stopReplication();
+
+        /// An executing replicated DDL entry holds a ZooKeeperMetadataTransaction, so its digest assertion is
+        /// not covered by the drop-time exemption in DatabaseReplicated::checkDigestValid. Let it finish before
+        /// the detach below empties the table map. The detach only try-locks this mutex, so do not hold it there.
+        auto in_flight_ddl_drain = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(database_name);
+    }
 
     if (database->shouldBeEmptyOnDetach())
     {
