@@ -12,6 +12,7 @@ class SipHash;
 namespace DB
 {
 
+class AggregatingStep;
 class JoinStepLogical;
 class ReadFromMergeTree;
 
@@ -251,6 +252,14 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
 /// On a parallel replicas follower, the heap of `distributed_group_by_top_k` on the partial aggregation.
 void applyGroupByTopKOfInitiator(
     QueryPlan::Node & root, QueryPlan::Nodes & nodes, size_t limit, const Optimization::ExtraSettings & settings);
+
+/// When plan-based parallel replicas split the aggregation of `GROUP BY ... ORDER BY ... LIMIT n` below `limit_node`, gives
+/// the partial aggregation the heap `tryOptimizeGroupByTopK` would give the whole one, so that the shipped fragment runs it.
+void applyOrderedGroupByTopKToSplit(
+    QueryPlan::Node * limit_node,
+    QueryPlan::Node * aggregating_node,
+    AggregatingStep & partial_aggregating_step,
+    const Optimization::ExtraSettings & settings);
 
 /// Let an aggregation's output conversion skip the keys of the groups a HAVING count() bound above it rejects
 size_t tryPushHavingPrefilterIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);

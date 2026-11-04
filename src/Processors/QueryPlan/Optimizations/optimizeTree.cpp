@@ -273,7 +273,11 @@ void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettin
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
 void checkCascadesSupported(const QueryPlan::Node & root);
-void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void applyParallelReplicas(
+    QueryPlan & query_plan,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    const Optimization::ExtraSettings & extra_settings);
 
 /// Rule for passes under `make_distributed_plan`: a pass that can turn a serializable step into a
 /// non-serializable one, or insert one (read-in-order, distinct-in-order, aggregation-in-order,
@@ -485,7 +489,7 @@ void optimizeTreeSecondPass(
     /// alone (with `make_distributed_plan = 0`) keeps the normal single-node optimizer.
     const bool cascades_active = make_distributed_plan && optimization_settings.enable_cascades_optimizer;
 
-    applyParallelReplicas(query_plan, nodes, optimization_settings);
+    applyParallelReplicas(query_plan, nodes, optimization_settings, extra_settings);
 
     /// Lazy materialization for plans with joins works on the join expressions, so it runs while the joins
     /// are still logical. That is after PREWHERE optimization, which needs a filter right above the read,
