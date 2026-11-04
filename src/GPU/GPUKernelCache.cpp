@@ -9,12 +9,14 @@
 
 namespace CurrentMetrics
 {
+
     extern const Metric GPUExpressionKernelCacheBytes;
     extern const Metric GPUExpressionKernelCacheCount;
 }
 
 namespace DB::ErrorCodes
 {
+
     extern const int CANNOT_COMPILE_CODE;
 }
 
@@ -23,8 +25,6 @@ namespace DB::GPU
 
 namespace
 {
-
-/// Of the PTX of the kernels that the cache keeps loaded, besides those that expressions in use keep.
 constexpr size_t max_kernel_cache_bytes = 256UL << 20;
 
 void checkLoading(cudaError_t status, const std::string & what)
@@ -35,9 +35,6 @@ void checkLoading(cudaError_t status, const std::string & what)
     throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot {}: {}", what, cudaGetErrorString(status));
 }
 
-/// The threads of a block of `kernel` that keep the most threads of a multiprocessor busy, a whole number of warps, the
-/// fewest of them where several do: as `cudaOccupancyMaxPotentialBlockSize` chooses, which is a template of the CUDA
-/// headers for `nvcc`.
 uint32_t blockSizeOf(cudaKernel_t kernel, const std::string & name)
 {
     const void * function = reinterpret_cast<const void *>(kernel);
@@ -80,7 +77,6 @@ GPUKernel::~GPUKernel()
     if (!library)
         return;
 
-    /// Nothing keeps the kernel any longer, but a launch of it that a query queued may still be running.
     cudaError_t status = cudaDeviceSynchronize();
     if (status == cudaSuccess)
         status = cudaLibraryUnload(library);
