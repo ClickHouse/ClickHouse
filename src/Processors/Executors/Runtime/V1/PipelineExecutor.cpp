@@ -536,6 +536,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 {
                     /// spawnThreads can throw an exception, for example CANNOT_SCHEDULE_TASK.
                     /// We should cancel execution properly before rethrow.
+                    context.setException(std::current_exception());
                     cancel(IProcessor::CancelReason::Exception);
                     throw;
                 }
@@ -559,6 +560,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 {
                     /// renewCPULease() can throw an exception, for example RESOURCE_ACCESS_DENIED.
                     /// We should cancel execution properly before rethrow.
+                    context.setException(std::current_exception());
                     cancel(IProcessor::CancelReason::Exception);
                     throw;
                 }
@@ -575,6 +577,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 {
                     /// syncMemory() can throw an exception, for example MEMORY_RESERVATION_KILLED.
                     /// We should cancel execution properly before rethrow.
+                    context.setException(std::current_exception());
                     cancel(IProcessor::CancelReason::Exception);
                     throw;
                 }
