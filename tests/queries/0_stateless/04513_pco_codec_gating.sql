@@ -1,5 +1,5 @@
 -- Tags: no-fasttest
--- Gating of the beta PCO (pcodec) codec: the `enable_pco_codec` gate, the fact that it needs
+-- Gating of the experimental PCO (pcodec) codec: the `enable_pco_codec` gate, the fact that it needs
 -- a column type (so it is rejected in TTL RECOMPRESS), and that a codec-only ALTER can still add it.
 
 -- The gate: rejected by default, both directly and inside a chain.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-msan
+# Tags: long
 # It is a corpus of hundreds of queries, and it can take more than three minutes under sanitizers.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

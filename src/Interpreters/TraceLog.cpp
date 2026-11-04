@@ -255,18 +255,11 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
             /// lookup fails.
             if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(trace[frame])))
             {
-                const char * symbol_name = symbol_index.getSymbolNameCString(*symbol);
-                DemangleResult demangled = *symbol_name ? tryDemangle(symbol_name) : DemangleResult{};
-                if (*symbol_name && demangled)
+                auto demangled = tryDemangle(symbol->name);
+                if (demangled)
                     column_symbols_inner.insertData(demangled.get(), strlen(demangled.get()));
-                else if (*symbol_name)
-                {
-                    /// The cached entry supplies its length without decoding the compact granule again.
-                    std::string_view symbol_name_view = symbol_index.getSymbolName(*symbol);
-                    column_symbols_inner.insertData(symbol_name_view.data(), symbol_name_view.size());
-                }
                 else
-                    column_symbols_inner.insertDefault();
+                    column_symbols_inner.insertData(symbol->name, strlen(symbol->name));
             }
             else
             {
