@@ -3,6 +3,7 @@
 
 -- An exception in the thread that reads the columns of a Vertical merge fails the merge,
 -- the source parts stay, and the next merge succeeds.
+-- The failpoint throws only in that thread, so the merge fails only if the thread reads the columns.
 
 DROP TABLE IF EXISTS t_read_thread_exception;
 

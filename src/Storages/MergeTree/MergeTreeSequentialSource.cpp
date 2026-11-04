@@ -23,6 +23,7 @@
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/FailPoint.h>
+#include <Common/setThreadName.h>
 #include <Common/ThrottlerArray.h>
 #include <base/sleep.h>
 
@@ -247,9 +248,12 @@ try
     /// Used in tests to emulate a merge whose single reading step is very slow
     /// (e.g. applying huge patch parts), to check that shutdown does not wait for it.
     fiu_do_on(FailPoints::merge_tree_sequential_source_sleep_before_read, { sleepForSeconds(10); });
+    /// Used in tests to emulate a failure in the thread that reads the columns of a Vertical merge with
+    /// `vertical_merge_read_in_separate_thread`. Other reads, such as the horizontal stage of the merge, are not affected.
     fiu_do_on(FailPoints::merge_tree_sequential_source_throw_before_read,
     {
-        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before reading in MergeTreeSequentialSource");
+        if (getThreadName() == ThreadName::PULLING_ASYNC_EXECUTOR)
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before reading in MergeTreeSequentialSource");
     });
 
     /// past a gap between ranges the reader resumes at the next range, not at the next mark
