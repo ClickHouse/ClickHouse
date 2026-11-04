@@ -200,6 +200,13 @@ pip3 install clickhouse_driver scipy
 produce performance measurements or change PR test selection. The regular
 performance comparison continues to use release binaries.
 
+To collect just performance coverage on a PR branch, dispatch the existing
+workflow with `suite=performance` (the scheduled run still collects all suites):
+
+```bash
+gh workflow run nightly_coverage.yml --ref <branch> -f suite=performance
+```
+
 The collector reuses `perf.py` for parameter expansion, query groups, settings,
 setup and teardown. It runs every expanded SQL query in each non-`long` test,
 without random query sampling or the adaptive timing loop:
