@@ -245,10 +245,12 @@ bool DataPartStorageOnDiskPacked::existsFileImpl(const std::string & file_name) 
     if (isWrittenSeparately(file_name))
         return disk->existsFile(pathToGenericString(pathFromString(root_path) / pathFromString(part_dir) / pathFromString(file_name)));
 
+    /// The reader exists only for an existing archive, so probing the archive for every file it holds
+    /// only costs a metadata lookup per column stream of a wide part.
     if (!reader)
         return false;
 
-    return disk->existsFile(getRelativeDataPath()) && reader->exists(file_name);
+    return reader->exists(file_name);
 }
 
 size_t DataPartStorageOnDiskPacked::getFileSizeImpl(const String & file_name) const
@@ -269,9 +271,7 @@ size_t DataPartStorageOnDiskPacked::getFileSizeImpl(const String & file_name) co
     if (file_name == DATA_FILE_NAME)
         return disk->getFileSize(pathToGenericString(pathFromString(root_path) / pathFromString(part_dir) / pathFromString(DATA_FILE_NAME)));
 
-    if (!disk->existsFile(getRelativeDataPath()))
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist, cannot get file size of {}", getRelativeDataPath(), file_name);
-
+    /// The archive is not probed here, see existsFileImpl().
     if (!reader)
         throw Exception(ErrorCodes::NOT_INITIALIZED,
             "Cannot read file {} because reader is not initialized", file_name);
@@ -289,9 +289,7 @@ PackedFilesIO::FileOffset DataPartStorageOnDiskPacked::getFileOffsetAndSize(cons
     if (isWrittenSeparately(file_name))
         return {0, disk->getFileSize(pathToGenericString(pathFromString(root_path) / pathFromString(part_dir) / pathFromString(file_name)))};
 
-    if (!disk->existsFile(getRelativeDataPath()))
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist, cannot get file size of {}", getRelativeDataPath(), file_name);
-
+    /// The archive is not probed here, see existsFileImpl().
     if (!reader)
         throw Exception(ErrorCodes::NOT_INITIALIZED,
             "Cannot read file {} because reader is not initialized", file_name);

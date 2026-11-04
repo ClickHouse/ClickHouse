@@ -1095,6 +1095,8 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
 
+    const auto storage_id = getStorageID();
+    const Field table_name = storage_id.getTableName();
 
     Poco::Timespan max_execution_time = (*kafka_settings)[KafkaSetting::kafka_flush_interval_ms].changed
         ? (*kafka_settings)[KafkaSetting::kafka_flush_interval_ms]
@@ -1170,7 +1172,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
                 }
                 virtual_columns[6]->insert(headers_names);
                 virtual_columns[7]->insert(headers_values);
-                virtual_columns[8]->insert(getStorageID().getTableName());
+                virtual_columns[8]->insert(table_name);
 
                 if (getHandleKafkaErrorMode() == StreamingHandleErrorMode::STREAM)
                 {
@@ -1191,7 +1193,6 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
             {
                 chassert(exception_message);
                 const auto time_now = std::chrono::system_clock::now();
-                auto storage_id = getStorageID();
 
                 auto dead_letter_queue = getContext()->getDeadLetterQueue();
                 if (!dead_letter_queue)
