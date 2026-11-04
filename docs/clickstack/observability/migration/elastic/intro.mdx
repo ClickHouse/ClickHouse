@@ -14,22 +14,26 @@ import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 ## Migrating to ClickHouse Observability from Elastic {#migrating-to-clickstack-from-elastic-self-configured}
 
-This guide is intended for users migrating from the Elastic Stack — specifically those using Kibana to monitor logs, traces, and metrics collected via Elastic Agent and stored in Elasticsearch. It focuses on fully managed ClickHouse Observability and covers search queries, data collection, and application instrumentation. Self-managed instructions are included where the steps differ.
+This guide covers migration from the Elastic Stack, including deployments that use Kibana to explore logs, traces, and metrics collected through Elastic Agent and stored in Elasticsearch. It focuses on fully managed ClickHouse Observability and explains how to adapt Lucene-based searches, migrate telemetry collection, and plan the transition for your data. Self-managed instructions are included where the steps differ.
 
-Fully managed ClickHouse Observability handles schemas, storage, and scaling. You don't need to map Elasticsearch internals to ClickHouse to get started. For self-managed deployments, see [equivalent concepts](/clickstack/self-configured/migration/elastic/concepts) and [type mappings](/clickstack/self-configured/migration/elastic/types).
+ClickHouse Observability is a fully managed platform for SREs, developers, and their agents. It combines full-fidelity telemetry with fast searches, high-cardinality aggregations, and SQL to investigate failures. Send telemetry to a managed OpenTelemetry endpoint, and ClickHouse handles ingestion, schemas, infrastructure, and scaling.
 
-Before beginning a migration, it's important to understand the tradeoffs between ClickHouse Observability and the Elastic Stack.
+You don't need to map Elasticsearch internals to ClickHouse to get started. For self-managed deployments, see [equivalent concepts](/clickstack/self-configured/migration/elastic/concepts) and [type mappings](/clickstack/self-configured/migration/elastic/types).
 
-You should consider moving to ClickHouse Observability if:
+Consider moving to ClickHouse Observability if:
 
-- You're ingesting large volumes of observability data and want to evaluate alternatives to your current storage and compute costs.
-- You experience poor search performance at scale or face ingestion bottlenecks.
-- You want to correlate observability signals with business data using SQL, unifying observability and analytics workflows.
-- You're committed to OpenTelemetry and want to avoid vendor lock-in.
-- You want to take advantage of the separation of storage and compute in ClickHouse Cloud.
+- **You want to bring your own SRE agents.** Connect Claude, Codex, or your own agent harness through the [MCP server](/clickstack/observability/mcp), choosing the models and investigation workflows that fit your team.
+- **Your agents need more than predefined searches.** MCP tools support log searches, trace exploration, event patterns, and event deltas. SQL supports joins across telemetry, historical comparisons, and deeper analytical questions.
+- **Slow queries are holding back investigations.** Fast searches and aggregations across high-cardinality telemetry help engineers and agents test hypotheses and compare evidence.
+- **You need full-fidelity telemetry for root cause analysis.** Retain detailed logs, trace spans, and attributes that sampling or pre-aggregation can remove, preserving context for investigations.
+- **Growing telemetry volumes are putting pressure on costs.** ClickHouse's columnar compression and analytical engine help you store and query large volumes of telemetry efficiently.
+- **You want to spend less time operating your observability platform.** The fully managed offering handles database sizing, schemas, ingestion, and scaling.
+- **You want to build on open standards.** Use OpenTelemetry for collection, SQL for analysis, and MCP for agent access, with open source ClickStack as the foundation.
 
-However, ClickHouse Observability may not be suitable if:
+ClickHouse Observability may not be suitable if:
 
-- You use observability data primarily for security use cases and need a SIEM-focused product.
-- Universal profiling is a critical part of your workflow.
-- You require a business intelligence (BI) dashboarding platform. ClickHouse Observability intentionally has opinionated visual workflows for SREs and developers and isn't designed as a Business Intelligence (BI) tool. For equivalent capabilities, we recommend using [Grafana with the ClickHouse plugin](/integrations/connectors/data-visualization/grafana/index) or [Superset](/integrations/connectors/data-visualization/superset-and-clickhouse).
+- Your primary requirement is security analytics and you need a SIEM-focused product.
+- Universal profiling is essential to your workflow.
+- You need a general-purpose business intelligence platform rather than investigation workflows for SREs and developers. For that requirement, consider using ClickHouse with [Grafana](/integrations/connectors/data-visualization/grafana/index) or [Superset](/integrations/connectors/data-visualization/superset-and-clickhouse).
+
+If you need direct database access to join telemetry with external business data, or want to make your own database optimizations, consider [self-managed ClickHouse Observability](/clickstack/self-configured/overview). The fully managed experience is the first choice for most teams.
