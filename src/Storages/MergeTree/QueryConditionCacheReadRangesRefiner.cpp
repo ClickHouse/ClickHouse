@@ -61,7 +61,7 @@ MarkRanges QueryConditionCacheReadRangesRefiner::refine(const MergeTreeReadTaskI
         for (const auto & range : ranges)
         {
             /// The first allowed range that ends after the beginning of this one.
-            auto allowed_it = std::upper_bound(
+            const auto * allowed_it = std::upper_bound(
                 allowed.begin(), allowed.end(), range.begin, [](size_t mark, const MarkRange & r) { return mark < r.end; });
             for (; allowed_it != allowed.end() && allowed_it->begin < range.end; ++allowed_it)
             {
