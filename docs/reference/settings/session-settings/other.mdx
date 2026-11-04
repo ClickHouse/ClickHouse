@@ -877,10 +877,10 @@ Timeout in milliseconds for receiving Hello packet from replicas during handshak
 
 <SettingsInfoBlock type="HashJoinLayout" default_value="auto" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "auto"},{"label": "New setting to force the layout of a hash join for testing and debugging. `auto` keeps choosing it with `parallel_hash_join_threshold`."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "auto"},{"label": "New setting to force the layout of a hash join. `auto` keeps choosing it with `parallel_hash_join_threshold`."}]}]}/>
 
 How an `INNER`, `LEFT`, `RIGHT` or `FULL` hash join builds its hash table.
-The setting is meant for testing and debugging. Leave it at `auto` to let the planner choose the layout with `parallel_hash_join_threshold`.
+`auto`, the default, lets the planner choose the layout with `parallel_hash_join_threshold`; set `serial` or `parallel` to force one.
 
 Possible values:
 
@@ -2089,7 +2089,7 @@ Scheduling priority of the query within its workload, used by the `priority` wor
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "New setting."}]}]}/>
 
-Write full paths (including s3://) into iceberg metadata files.
+Write full paths (including s3://) into iceberg metadata files. Tables created in a `DataLakeCatalog` database always get full paths.
 
 ## zstd_window_log_max {#zstd_window_log_max}
 

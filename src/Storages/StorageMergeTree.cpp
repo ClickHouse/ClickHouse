@@ -1996,8 +1996,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
     std::unique_lock<std::mutex> & lock,
     const MergeTreeTransactionPtr & txn,
     bool optimize_skip_merged_partitions,
-    const std::function<void()> & on_wait_for_running_merges,
-    bool merge_forced_horizontal)
+    const std::function<void()> & on_wait_for_running_merges)
 {
     /// Merges are disabled for UNIQUE KEY tables: a background merge can outdate
     /// a DELETE's target part between part-resolution and marker publish (the
@@ -2133,8 +2132,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
                 /*aggressive=*/aggressive,
                 /*range_filter_=*/nullptr,
-                /*storage_id_=*/getStorageID(),
-                /*merge_forced_horizontal_=*/merge_forced_horizontal
+                /*storage_id_=*/getStorageID()
             ),
             /*partitions_hint=*/std::nullopt);
 
@@ -2315,8 +2313,7 @@ bool StorageMergeTree::merge(
                 lock,
                 txn,
                 optimize_skip_merged_partitions,
-                release_slot_before_wait,
-                /*merge_forced_horizontal=*/deduplicate || cleanup);
+                release_slot_before_wait);
         }();
 
         if (!merge_select_result.has_value())
@@ -3626,22 +3623,22 @@ void StorageMergeTree::removeRolledBackEmptyPartsAndRethrow(MutableDataPartsVect
         if (!not_removed_parts.empty())
         {
             /// Put the warning into the error returned to the client as well, because only a manual detach fixes it.
-            String warning = fmt::format("Cannot remove the rolled back empty parts {}. They stay on disk and will be loaded as covering"
+            auto warning = PreformattedMessage::create("Cannot remove the rolled back empty parts {}. They stay on disk and will be loaded as covering"
                 " parts after a restart, which can make the table fail to load. Detach them manually.",
                 fmt::join(not_removed_parts, ", "));
-            LOG_ERROR(log, "{}", warning);
+            LOG_ERROR(log, warning);
             try
             {
                 throw;
             }
             catch (Exception & e)
             {
-                e.addMessage(warning);
+                e.addMessage(warning.text);
                 throw;
             }
             catch (...)
             {
-                throw Exception(getCurrentExceptionCode(), "{}. {}", getCurrentExceptionMessage(false), warning);
+                throw Exception(getCurrentExceptionCode(), "{}. {}", getCurrentExceptionMessage(false), warning.text);
             }
         }
     }
@@ -4709,7 +4706,7 @@ MutationCommands StorageMergeTree::MutationsSnapshot::getOnFlyMutationCommandsFo
 NameSet StorageMergeTree::MutationsSnapshot::getColumnsChangedOnFly() const
 {
     NameSet res = getColumnsUpdatedInPatches();
-    if (!hasDataMutations() && !hasAlterMutations())
+    if (!hasDataMutations() && !hasAlterMutations() && !hasMetadataMutations())
         return res;
 
     for (const auto & [version, commands] : mutations_by_version)
