@@ -2177,9 +2177,9 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
         RequiredSourceColumnsVisitor::Data required_columns_data;
         RequiredSourceColumnsVisitor(required_columns_data).visit(expanded_expr);
         const auto required_columns = required_columns_data.requiredColumns();
-        bool reads_only_storage_columns = std::ranges::all_of(required_columns, [&](const auto & name)
+        bool reads_only_storage_columns = std::ranges::all_of(required_columns, [&](const auto & column_name)
         {
-            return storage_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, name);
+            return storage_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name);
         });
 
         if (reads_only_storage_columns)
