@@ -441,8 +441,8 @@ void Reader::ensureColumnChunks(const std::vector<size_t> & column_indices)
 
 std::optional<std::unordered_set<UInt64>> Reader::selectRowGroups(const RowGroupSelection & row_group_selection)
 {
-    if (!row_group_selection.byte_range.has_value())
-        return row_group_selection.row_group_ids;
+    if (!std::holds_alternative<RowGroupByteRange>(row_group_selection))
+        return selectRowGroups(*file_footer, row_group_selection, nullptr);
     ensureColumnChunks({0});
     return selectRowGroups(*file_footer, row_group_selection, column_chunks[0].get());
 }
@@ -450,8 +450,10 @@ std::optional<std::unordered_set<UInt64>> Reader::selectRowGroups(const RowGroup
 std::optional<std::unordered_set<UInt64>> Reader::selectRowGroups(
     const FileFooter & footer, const RowGroupSelection & row_group_selection, const FileColumnChunks * first_column)
 {
-    if (!row_group_selection.byte_range.has_value())
-        return row_group_selection.row_group_ids;
+    if (std::holds_alternative<std::monostate>(row_group_selection))
+        return std::nullopt;
+    if (const auto * row_group_ids = std::get_if<std::unordered_set<UInt64>>(&row_group_selection))
+        return *row_group_ids;
 
     std::vector<FileColumnChunks> parsed;
     if (!first_column)
@@ -463,12 +465,10 @@ std::optional<std::unordered_set<UInt64>> Reader::selectRowGroups(
         first_column = parsed.data();
     }
 
-    const auto [range_begin, range_size] = *row_group_selection.byte_range;
+    const auto [range_begin, range_size] = std::get<RowGroupByteRange>(row_group_selection);
     std::unordered_set<UInt64> selected;
     for (size_t row_group_idx = 0; row_group_idx < footer.metadata.row_groups.size(); ++row_group_idx)
     {
-        if (row_group_selection.row_group_ids.has_value() && !row_group_selection.row_group_ids->contains(row_group_idx))
-            continue;
         if (footer.numColumnChunks(row_group_idx) == 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group has no column chunks");
         const auto & column = first_column->chunks[row_group_idx].meta_data;

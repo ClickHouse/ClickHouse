@@ -14,6 +14,7 @@
 #include <deque>
 #include <optional>
 #include <unordered_set>
+#include <variant>
 
 namespace DB
 {
@@ -106,13 +107,13 @@ namespace DB::Parquet
 ///  * ReadManager drives the Reader. Responsible for scheduling work to threads, thread safety,
 ///    limiting memory usage, and delivering output.
 
-struct RowGroupSelection
+struct RowGroupByteRange
 {
-    std::optional<std::unordered_set<UInt64>> row_group_ids;
-    std::optional<std::pair<UInt64, UInt64>> byte_range;
-
-    bool empty() const { return !row_group_ids.has_value() && !byte_range.has_value(); }
+    UInt64 offset = 0;
+    UInt64 length = 0;
 };
+
+using RowGroupSelection = std::variant<std::monostate, std::unordered_set<UInt64>, RowGroupByteRange>;
 
 struct Reader
 {
