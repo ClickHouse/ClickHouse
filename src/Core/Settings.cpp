@@ -6886,7 +6886,7 @@ Possible values:
 
 - A float in the range `[0, 1]`.
 )", 0, \
-        {"26.10", 1.0, 0.5, "New setting controlling when projection selection applies the base table's deferred skip indexes before comparing costs: the extra pass runs only if the best projection candidate reads more than this fraction of the parent's primary-key-only mark estimate. The previous value 1.0 restores the pre-existing behavior: with ratio = 1 the refinement never runs, because it could only matter for candidates that the primary-key-only comparison rejects anyway."}) \
+        {"26.11", 1.0, 0.5, "New setting controlling when projection selection applies the base table's deferred skip indexes before comparing costs: the extra pass runs only if the best projection candidate reads more than this fraction of the parent's primary-key-only mark estimate. The previous value 1.0 restores the pre-existing behavior: with ratio = 1 the refinement never runs, because it could only matter for candidates that the primary-key-only comparison rejects anyway."}) \
     DECLARE(Bool, force_optimize_projection, false, R"(
 Enables or disables the obligatory use of [projections](/reference/engines/table-engines/mergetree-family/mergetree#projections) in `SELECT` queries, when projection optimization is enabled (see [optimize_use_projections](#optimize_use_projections) setting).
 

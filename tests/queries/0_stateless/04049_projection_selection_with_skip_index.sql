@@ -38,6 +38,7 @@ ENGINE = MergeTree
 ORDER BY id1
 SETTINGS
     index_granularity = 64, index_granularity_bytes = 0,
+    min_rows_for_wide_part = 0,
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
     max_bytes_to_merge_at_max_space_in_pool = 1,

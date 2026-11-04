@@ -26,7 +26,7 @@ CREATE TABLE tab_p1_first
 ENGINE = MergeTree
 PARTITION BY p
 ORDER BY tuple()
-SETTINGS index_granularity = 64, index_granularity_bytes = 0, use_const_adaptive_granularity = 1;
+SETTINGS index_granularity = 64, index_granularity_bytes = 0, use_const_adaptive_granularity = 1, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 
 CREATE TABLE tab_p2_first
 (
@@ -39,7 +39,7 @@ CREATE TABLE tab_p2_first
 ENGINE = MergeTree
 PARTITION BY p
 ORDER BY tuple()
-SETTINGS index_granularity = 64, index_granularity_bytes = 0, use_const_adaptive_granularity = 1;
+SETTINGS index_granularity = 64, index_granularity_bytes = 0, use_const_adaptive_granularity = 1, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 
 -- Partition 0: 100 granules, all with a = 0. Partition 1: 1000 granules, all with a = 2.
 INSERT INTO tab_p1_first SELECT 0, 0, number FROM numbers(6400);
