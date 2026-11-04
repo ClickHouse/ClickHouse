@@ -1370,10 +1370,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 pk_stat.total_parts.fetch_add(1, std::memory_order_relaxed);
                 pk_stat.total_granules.fetch_add(total_marks_count, std::memory_order_relaxed);
 
+                const auto & part_key_condition = key_condition->generateForPart(ranges.data_part);
                 ranges.ranges = markRangesFromPKRange(
                     ranges,
                     metadata_snapshot,
-                    key_condition->generateForPart(ranges.data_part),
+                    part_key_condition,
                     part_offset_condition ? &part_offset_condition->generateForPart(ranges.data_part) : nullptr,
                     total_offset_condition ? &total_offset_condition->generateForPart(ranges.data_part) : nullptr,
                     find_exact_ranges ? &ranges.exact_ranges : nullptr,
@@ -1383,6 +1384,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 pk_stat.search_algorithm.store(ranges.ranges.search_algorithm, std::memory_order_relaxed);
                 pk_stat.granules_dropped.fetch_add(total_marks_count - ranges.getMarksCount(), std::memory_order_relaxed);
+                /// with `use_primary_key = 0` the search runs only for `_part_offset` conditions
+                if (!part_key_condition.alwaysUnknownOrTrue())
+                    ProfileEvents::increment(ProfileEvents::GranulesDroppedByPrimaryKey, total_marks_count - ranges.getMarksCount());
                 if (ranges.ranges.empty())
                     pk_stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
                 pk_stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
@@ -1672,10 +1676,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             pk_stat.total_granules.load(),
             pk_stat.elapsed_us.load() / 1000,
             num_threads);
-
-        /// with `use_primary_key = 0` the search runs only for `_part_offset` conditions
-        if (!key_condition->generateUnsubstituted().alwaysUnknownOrTrue())
-            ProfileEvents::increment(ProfileEvents::GranulesDroppedByPrimaryKey, pk_stat.granules_dropped.load());
 
         auto description = key_condition->generateUnsubstituted().getDescription();
 
