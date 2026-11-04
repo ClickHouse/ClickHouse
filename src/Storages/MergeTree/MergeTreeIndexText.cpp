@@ -108,6 +108,7 @@ namespace Setting
 static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V0_Initial) == 0);
 static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V1_WithCodec) == 1);
 static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V2_WithPositions) == 2);
+static_assert(static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V3_WithDictionaryEncoding) == 3);
 static_assert(static_cast<UInt64>(IPostingListCodec::Type::None) == 0);
 static_assert(static_cast<UInt64>(IPostingListCodec::Type::Bitpacking) == 1);
 static_assert(static_cast<UInt64>(IPostingListCodec::Type::PFor) == 2);
@@ -1274,7 +1275,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
     UInt64 version = 0;
     readVarUInt(version, istr);
 
-    if (version > static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V2_WithPositions))
+    if (version > static_cast<UInt64>(MergeTreeTextIndexSerializationVersion::V3_WithDictionaryEncoding))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Unsupported version of sparse index ({})", version);
 
     TextIndexHeader header;
@@ -2487,7 +2488,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     /// If the setting contradicts the index features on the current version, the index features take precedence.
     using enum MergeTreeTextIndexSerializationVersion;
     MergeTreeTextIndexSerializationVersion min_version = V0_Initial;
-    MergeTreeTextIndexSerializationVersion max_version = V2_WithPositions;
+    MergeTreeTextIndexSerializationVersion max_version = V3_WithDictionaryEncoding;
 
     if (has_codec)
         min_version = V1_WithCodec;
@@ -2497,6 +2498,10 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
 
     const MergeTreeTextIndexSerializationVersion version_setting = settings[MergeTreeSetting::text_index_serialization_version];
     MergeTreeTextIndexSerializationVersion serialization_version = std::clamp(version_setting, min_version, max_version);
+
+    /// The encoding changes only the layout, so it is downgraded to keep parts readable by older servers.
+    if (dictionary_block_encoding == TextIndexDictionaryBlockEncoding::FrontCodingV2 && serialization_version < V3_WithDictionaryEncoding)
+        dictionary_block_encoding = TextIndexDictionaryBlockEncoding::FrontCodingV1;
 
     MergeTreeIndexTextParams index_params{
         dictionary_block_size,

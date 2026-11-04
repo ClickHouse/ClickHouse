@@ -593,6 +593,7 @@ enum class MergeTreeTextIndexSerializationVersion : uint8_t
     V0_Initial = 0,
     V1_WithCodec = 1,
     V2_WithPositions = 2,
+    V3_WithDictionaryEncoding = 3,
 };
 
 DECLARE_SETTING_ENUM(MergeTreeTextIndexSerializationVersion)

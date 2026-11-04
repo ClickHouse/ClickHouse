@@ -858,6 +858,7 @@ Obsolete, use `text_index_dictionary_block_encoding` instead. Used only if `text
 Default token layout of text index dictionary blocks. One of `none`, `frontcoding_v1`, `frontcoding_v2`.
 `frontcoding_v2` stores the prefix and suffix lengths as bit-packed columns, which is smaller and faster to decode,
 but parts written with it cannot be read by versions before 26.11.
+Requires `text_index_serialization_version` `v3_with_dictionary_encoding`, otherwise `frontcoding_v1` is written.
 Can be overridden by explicit `dictionary_block_encoding` index argument.
 )", 0, \
         {"26.11", "frontcoding_v1", "frontcoding_v1", "New setting"}) \
@@ -885,7 +886,7 @@ Allow creating text indexes with the experimental `support_phrase_search` argume
 which stores token positions to support exact phrase matching.
 )", EXPERIMENTAL, \
         {"26.7", false, false, "New setting"}) \
-    DECLARE(MergeTreeTextIndexSerializationVersion, text_index_serialization_version, MergeTreeTextIndexSerializationVersion::V2_WithPositions, R"(
+    DECLARE(MergeTreeTextIndexSerializationVersion, text_index_serialization_version, MergeTreeTextIndexSerializationVersion::V3_WithDictionaryEncoding, R"(
 The preferred on-disk serialization format version for writing text indexes.
 
 The setting is a preference rather than a hard constraint: if the configured version cannot
@@ -900,7 +901,9 @@ Possible values:
 - `v0_initial` — The original format. Does not persist the posting list codec type.
 - `v1_with_codec` — Persists the posting list codec type in the text index header.
 - `v2_with_positions` — Persists token positions for indexes with `support_phrase_search`.
+- `v3_with_dictionary_encoding` — Allows the `frontcoding_v2` dictionary block encoding. With an older version, `frontcoding_v2` is written as `frontcoding_v1`.
 )", 0, \
+        {"26.11", "v2_with_positions", "v3_with_dictionary_encoding", "Allow the 'v3_with_dictionary_encoding' text index format that permits the 'frontcoding_v2' dictionary block encoding. Reverts to 'v2_with_positions' under older compatibility so that newer servers keep writing the format that older servers can read during a rolling upgrade."}, \
         {"26.8", "v1_with_codec", "v2_with_positions", "Allow the 'v2_with_positions' text index format that persists token positions for phrase search. Reverts to 'v1_with_codec' under older compatibility so that newer servers keep writing the format that older servers can read during a rolling upgrade."}, \
         {"26.6", "v0_initial", "v1_with_codec", "New setting. Controls the on-disk format version of text indexes. Reverts to 'v0_initial' under older compatibility so that newer servers keep writing the previous format that older servers can read during a rolling upgrade."}) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
