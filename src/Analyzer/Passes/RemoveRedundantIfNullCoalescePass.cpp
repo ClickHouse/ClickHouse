@@ -26,11 +26,6 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        /// This simplification exists to let KeyCondition / index analysis see the bare argument
-        /// nested inside a key expression (e.g. sipHash64(ifNull(p, 0))). It is gated on the same
-        /// compatibility knob as the top-level coalesce/ifNull key rewrite so that
-        /// allow_key_condition_coalesce_rewrite = 0 (the pre-rewrite default recorded in
-        /// SettingsChangesHistory) keeps ifNull/coalesce predicates opaque to the planner.
         if (!getSettings()[Setting::allow_key_condition_coalesce_rewrite])
             return;
 
@@ -49,23 +44,15 @@ public:
         const auto & first_argument = arguments[0];
         const auto & first_argument_type = first_argument->getResultType();
 
-        /// When the first argument cannot be NULL, ifNull/coalesce return it unchanged: the
-        /// fallback arguments are never reached. The wrapper is then a pure identity and can be
-        /// dropped so that key-expression matching sees the bare argument even when nested inside
-        /// a larger expression (e.g. sipHash64(ifNull(p, 0))).
+        /// With a first argument that cannot be NULL, `ifNull` and `coalesce` return it unchanged.
         if (canContainNull(*first_argument_type))
             return;
 
-        /// The result type must match the argument type for a safe in-place replacement.
         if (!node->getResultType()->equals(*first_argument_type))
             return;
 
-        /// ifNull/coalesce are NOT short-circuit (unlike if/multiIf): the fallback arguments are
-        /// evaluated at execution even when the first argument is non-Nullable. Dropping them would
-        /// silently discard their side effects, e.g. `ifNull(non_nullable, throwIf(1))` must still
-        /// throw and `coalesce(x, sleepEachRow(1))` must still run. Only rewrite when every discarded
-        /// fallback argument is a constant (provably side-effect-free), mirroring the guard in
-        /// DictGetTupleElementPass for `tuple('ok', throwIf(1))`.
+        /// `ifNull` and `coalesce` are not short-circuit: every argument is evaluated, so dropping a
+        /// non-constant one would lose its side effects (e.g. `throwIf`).
         for (size_t i = 1; i < arguments.size(); ++i)
         {
             if (!arguments[i]->as<ConstantNode>())
