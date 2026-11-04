@@ -120,7 +120,7 @@ void Reader::readTail()
     std::string_view metadata_data = std::string_view(tail).substr(
         tail_size - 1 - postscript_length - postscript.footer_length - postscript.metadata_length, postscript.metadata_length);
     if (!metadata_data.empty())
-        metadata.emplace().parse(decompress(metadata_data, "metadata"));
+        metadata.emplace().parse(decompress(metadata_data, "metadata"), footer.stripes.size(), footer.types.size());
     else
         metadata.emplace();
 }
@@ -154,7 +154,7 @@ Proto::StripeFooter Reader::readStripeFooter(size_t stripe_index)
 
     auto slices = readRanges({{offset, stripe.footer_length}});
     Proto::StripeFooter result;
-    result.parse(decompress(slices[0].data, "stripe footer"));
+    result.parse(decompress(slices[0].data, "stripe footer"), footer.types.size());
     if (result.encryption_variants)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Encrypted ORC files are not supported");
     return result;
@@ -544,6 +544,8 @@ void RowReader::loadStripeIndex()
 {
     row_indexes.clear();
     bloom_filters.clear();
+    /// One extra entry is accepted from lenient writers.
+    const UInt64 max_entries = std::min<UInt64>(numberOfRowGroups(), std::numeric_limits<UInt64>::max() - 1) + 1;
     const bool use_bloom_filters = !reader.hasBadBloomFilters();
     const auto & stripe_footer = stripe_streams->getFooter();
     for (const auto & s : stripe_footer.streams)
@@ -556,7 +558,7 @@ void RowReader::loadStripeIndex()
             if (row_indexes.contains(s.column))
                 continue;
             auto data = stripe_streams->getStreamData(s.column, kind);
-            row_indexes[s.column].parse(reader.decompress(data.value_or(std::string_view{}), "row index"));
+            row_indexes[s.column].parse(reader.decompress(data.value_or(std::string_view{}), "row index"), max_entries);
         }
         else if (kind == Proto::StreamKind::BLOOM_FILTER_UTF8 && use_bloom_filters)
         {
@@ -565,7 +567,7 @@ void RowReader::loadStripeIndex()
             const auto & encoding = stripe_streams->getEncoding(s.column);
             Proto::BloomFilterIndex index;
             auto data = stripe_streams->getStreamData(s.column, kind);
-            index.parse(reader.decompress(data.value_or(std::string_view{}), "bloom filter"));
+            index.parse(reader.decompress(data.value_or(std::string_view{}), "bloom filter"), max_entries);
             auto & filters = bloom_filters[s.column];
             for (const auto & bf : index.bloom_filter)
             {
