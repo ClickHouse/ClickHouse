@@ -932,7 +932,7 @@ static bool dagReadsTemporaryTable(const ActionsDAG & dag)
 
 static bool sourceReadsTemporaryTable(const QueryPlan::Node * node)
 {
-    if (!node)
+    if (!node || !node->step)
         return false;
 
     auto * step = node->step.get();
