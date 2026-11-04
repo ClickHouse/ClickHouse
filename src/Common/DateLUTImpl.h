@@ -491,6 +491,9 @@ public:
     /// Defined in the .cpp because of the forward-declared cctz::time_zone held in a unique_ptr.
     ~DateLUTImpl();
 
+    /// The lookup table, indexed by `LUTIndex`, for code that reads it directly (JIT-compiled expressions).
+    const Values * getLUT() const { return lut; }
+
     const std::string & getTimeZone() const { return time_zone; }
 
     // Methods only for unit-testing, it makes very little sense to use it from user code.

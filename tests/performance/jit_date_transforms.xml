@@ -1,0 +1,35 @@
+<test>
+    <settings>
+        <min_count_to_compile_expression>0</min_count_to_compile_expression>
+    </settings>
+
+    <create_query>
+        CREATE TABLE jit_date_transforms (t DateTime('UTC'), t_ny DateTime('America/New_York'), d Date, x UInt32) Engine = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO jit_date_transforms
+        SELECT toDateTime('2010-01-01 00:00:00', 'UTC') + cityHash64(number) % 500000000, toDateTime('2010-01-01 00:00:00', 'UTC') + cityHash64(number, 1) % 500000000,
+            toDate('2010-01-01') + cityHash64(number, 2) % 6000, toUInt32(number % 1000)
+        FROM numbers(50000000)
+    </fill_query>
+
+    <substitutions>
+        <substitution>
+            <name>compile</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Date and time transforms fused with arithmetic: compiled code reads the lookup table of the time zone. -->
+    <query>SELECT sum(toYYYYMM(d) + x) FROM jit_date_transforms SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT sum(toYYYYMMDD(t) + x) FROM jit_date_transforms SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT sum(toMonth(t_ny) * 31 + toDayOfMonth(t_ny)) FROM jit_date_transforms SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT countIf(toYear(t) = 2015 AND toMonth(t) > 6) FROM jit_date_transforms SETTINGS compile_expressions = {compile}</query>
+    <query>SELECT sum(toQuarter(d) + toDaysInMonth(t)) FROM jit_date_transforms SETTINGS compile_expressions = {compile}</query>
+
+    <drop_query>DROP TABLE IF EXISTS jit_date_transforms</drop_query>
+</test>

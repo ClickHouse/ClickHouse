@@ -3,6 +3,14 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunctionDateOrDateTime.h>
 #include <Interpreters/castColumn.h>
+#include <Common/SipHash.h>
+
+#include "config.h"
+
+#if USE_EMBEDDED_COMPILER
+#    include <DataTypes/Native.h>
+#    include <Functions/compileDateTransform.h>
+#endif
 
 namespace DB
 {
@@ -201,6 +209,74 @@ private:
     }
 
 public:
+    /// The result depends on the session time zone when the argument has none (`DateLUT::instance`).
+    void updateHash(SipHash & hash) const override { hash.update(DateLUT::instance().getTimeZone()); }
+
+#if USE_EMBEDDED_COMPILER
+    /// The transforms whose `execute` throws for a `Date` or a `Date32`: the parts of the time of day.
+    static constexpr bool throwsOnDate()
+    {
+        constexpr std::string_view transform_name = Transform::name;
+        return transform_name == "toHour" || transform_name == "toMinute" || transform_name == "toSecond"
+            || transform_name == "toMillisecond" || transform_name == "toMicrosecond" || transform_name == "toNanosecond"
+            || transform_name == "timezoneOffset" || transform_name == "toTimeWithFixedDate";
+    }
+
+    /// The time zone `DateTimeTransformImpl::execute` uses with one argument: the one of a `DateTime` result, else the one
+    /// of a `DateTime` argument, else the session's (`extractTimeZoneFromFunctionArguments`).
+    static const DateLUTImpl & timeZoneOf(const DataTypePtr & argument_type, const DataTypePtr & result_type)
+    {
+        if (const auto * result_date_time = checkAndGetDataType<DataTypeDateTime>(result_type.get()))
+            return result_date_time->getTimeZone();
+        if (const auto * argument_date_time = checkAndGetDataType<DataTypeDateTime>(argument_type.get()))
+            return argument_date_time->getTimeZone();
+        return DateLUT::instance();
+    }
+
+    /// One `Date`, `Date32` or `DateTime` argument (no time zone argument); a number or a `DateTime` result. Only the
+    /// transforms that read the lookup table directly (`jitDateValuesField`): a call of the transform per row is slower than
+    /// the interpreted loop.
+    bool isCompilableImpl(const DataTypes & types, const DataTypePtr & result_type) const override
+    {
+        if constexpr ((!std::is_same_v<ToDataType, DataTypeDateTime> && !IsDataTypeNumber<ToDataType>)
+            || jitDateValuesField<Transform>() == JITDateValuesField::None)
+            return false;
+        else
+        {
+            const auto result_nested = removeNullable(result_type);
+            if (types.size() != 1 || !canBeNativeType(*result_nested) || (!WhichDataType(result_nested).isNativeInteger() && !isDateTime(result_nested)))
+                return false;
+            const WhichDataType from(types[0]);
+            if (from.isDateTime())
+                return true;
+            return (from.isDate() || from.isDate32()) && !throwsOnDate();
+        }
+    }
+
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
+    {
+        if constexpr ((!std::is_same_v<ToDataType, DataTypeDateTime> && !IsDataTypeNumber<ToDataType>)
+            || jitDateValuesField<Transform>() == JITDateValuesField::None)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is not compilable", this->getName());
+        else
+        {
+            using To = typename ToDataType::FieldType;
+            const auto & time_zone = timeZoneOf(arguments[0].type, removeNullable(result_type));
+            const WhichDataType from(arguments[0].type);
+            if (from.isDateTime())
+                return compileDateValuesTransform<Transform, UInt32, To>(builder, arguments[0].value, time_zone);
+            if constexpr (!throwsOnDate())
+            {
+                if (from.isDate())
+                    return compileDateValuesTransform<Transform, UInt16, To>(builder, arguments[0].value, time_zone);
+                if (from.isDate32())
+                    return compileDateValuesTransform<Transform, Int32, To>(builder, arguments[0].value, time_zone);
+            }
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} cannot be compiled for {}", this->getName(), arguments[0].type->getName());
+        }
+    }
+#endif
+
     bool hasInformationAboutPreimage() const override { return Transform::hasPreimage(); }
 
     FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override
