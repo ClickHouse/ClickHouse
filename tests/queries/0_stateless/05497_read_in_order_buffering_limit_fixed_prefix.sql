@@ -6,6 +6,8 @@
 -- with real data. A buffered input must stop reading ahead once the inputs that sort before it already cover the LIMIT.
 -- One sparse part is slow to deliver its first rows (`sleepEachRow`), which delays the merge; meanwhile the other
 -- sparse parts must not read to their own LIMIT.
+-- T1 and T2 run on one thread, which starts with the input of the last inserted part, so the dense part is inserted
+-- last. With more threads a sparse part can reach its LIMIT before the dense part delivers any rows.
 
 SET optimize_read_in_order = 1, read_in_order_use_buffering = 1, read_in_order_use_virtual_row = 1,
     read_in_order_two_level_merge_threshold = 100, max_threads = 8, max_block_size = 128,
@@ -32,11 +34,10 @@ INSERT INTO tab_desc SELECT 1, 5 * 100000 + number, number % 64 = 0 FROM numbers
 INSERT INTO tab_desc SELECT 1, 6 * 100000 + number, number % 64 = 0 FROM numbers(32768) SETTINGS max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 INSERT INTO tab_desc SELECT 1, 7 * 100000 + number, 1 FROM numbers(32768) SETTINGS max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 
--- The mirror image for ascending order.
+-- The mirror image for ascending order, with the dense part again inserted last.
 CREATE TABLE tab_asc (k UInt8, x UInt64, v UInt8) ENGINE = MergeTree ORDER BY (k, x)
 SETTINGS index_granularity = 64, index_granularity_bytes = '10Mi';
 SYSTEM STOP MERGES tab_asc;
-INSERT INTO tab_asc SELECT 1, number, 1 FROM numbers(32768) SETTINGS max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 INSERT INTO tab_asc SELECT 1, 1 * 100000 + number, number % 64 = 0 FROM numbers(32768) SETTINGS max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 INSERT INTO tab_asc SELECT 1, 2 * 100000 + number, number % 64 = 0 FROM numbers(32768) SETTINGS max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 INSERT INTO tab_asc SELECT 1, 3 * 100000 + number, number % 64 = 0 FROM numbers(32768) SETTINGS max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
@@ -44,6 +45,7 @@ INSERT INTO tab_asc SELECT 1, 4 * 100000 + number, number % 64 = 0 FROM numbers(
 INSERT INTO tab_asc SELECT 1, 5 * 100000 + number, number % 64 = 0 FROM numbers(32768) SETTINGS max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 INSERT INTO tab_asc SELECT 1, 6 * 100000 + number, number % 64 = 0 FROM numbers(32768) SETTINGS max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 INSERT INTO tab_asc SELECT 1, 7 * 100000 + number, number % 64 = 0 FROM numbers(32768) SETTINGS max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
+INSERT INTO tab_asc SELECT 1, number, 1 FROM numbers(32768) SETTINGS max_block_size = 100000, max_insert_block_size = 100000, min_insert_block_size_rows = 100000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 
 -- Overlapping inputs: A = {0} + [100000, 102000) sorts first, B = [1, 5000) second, so B may pause although the
 -- merge needs its rows; it must resume.
@@ -56,11 +58,11 @@ INSERT INTO tab_ovl SELECT 1, 500000 + number, number % 64 = 0 FROM numbers(3276
 
 -- T1, descending: the slow rows are the top 2048 rows of part 3.
 SELECT x FROM tab_desc WHERE k = 1 AND (x < 330720 OR x >= 332768 OR sleepEachRow(0.0005) = 0) AND v = 1
-ORDER BY x DESC LIMIT 100 FORMAT Null SETTINGS log_comment = '05497_t1';
+ORDER BY x DESC LIMIT 100 FORMAT Null SETTINGS max_threads = 1, log_comment = '05497_t1';
 
 -- T2, ascending: the slow rows are the bottom 2048 rows of part 4.
 SELECT x FROM tab_asc WHERE k = 1 AND (x < 400000 OR x >= 402048 OR sleepEachRow(0.0005) = 0) AND v = 1
-ORDER BY x LIMIT 100 FORMAT Null SETTINGS log_comment = '05497_t2';
+ORDER BY x LIMIT 100 FORMAT Null SETTINGS max_threads = 1, log_comment = '05497_t2';
 
 SYSTEM FLUSH LOGS query_log, processors_profile_log;
 SET max_block_size = DEFAULT;
