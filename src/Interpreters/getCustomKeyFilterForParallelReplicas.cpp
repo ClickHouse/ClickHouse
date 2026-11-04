@@ -124,9 +124,11 @@ std::optional<String> findAliasColumn(const ASTIdentifier & identifier, const Co
         return {};
 
     /// Try the longest column name first, so an `ALIAS` column whose name contains a dot is preferred
-    /// over an `ALIAS` column named by its prefix. The first name that matches any column wins: a
-    /// physical column or its subcolumn (`z.b` of `z Tuple(b ...)`) is resolved as such, and an
-    /// unrelated `ALIAS` column named like its suffix (`b`) must not replace it.
+    /// over an `ALIAS` column named by its prefix. A physical column or its subcolumn that the whole
+    /// unqualified name resolves to (`z.b` of `z Tuple(b ...)`) wins, and an unrelated `ALIAS` column
+    /// named like its suffix (`b`) must not replace it. A physical column that is only a prefix of the
+    /// name (`q` for `q.a` of `q UInt64`) does not resolve it: the analyzer then treats `q` as the table
+    /// qualifier and resolves `a`, so the search continues with more qualifiers stripped.
     for (size_t num_qualifiers = 0; num_qualifiers <= 2 && num_qualifiers < parts.size(); ++num_qualifiers)
     {
         for (size_t name_end = parts.size(); name_end > num_qualifiers; --name_end)
@@ -134,7 +136,11 @@ std::optional<String> findAliasColumn(const ASTIdentifier & identifier, const Co
             String alias_name = fmt::format("{}", fmt::join(parts.begin() + num_qualifiers, parts.begin() + name_end, "."));
             if (columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, alias_name)
                 || columns.hasColumnOrSubcolumn(GetColumnsOptions::Ephemeral, alias_name))
-                return {};
+            {
+                if (name_end == parts.size())
+                    return {};
+                break;
+            }
             if (columns.hasAlias(alias_name))
                 return alias_name;
         }
