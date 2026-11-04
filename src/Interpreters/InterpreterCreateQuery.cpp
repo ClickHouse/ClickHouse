@@ -4394,7 +4394,8 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     /// A short `ATTACH` carries no engine of its own, so `getRequiredAccess` requires no `TABLE ENGINE` grant for it, and
     /// `getTablePropertiesAndNormalizeCreateQuery` checks the grant for the converted engine only after the side effects
     /// below, which cannot be rolled back. So the converted engine is checked here, before them, as a `CREATE` with that
-    /// engine would be checked. An engine that is not registered can be neither granted nor attached.
+    /// engine would be checked. A converted engine that is not registered is refused first: a grant such as
+    /// `TABLE ENGINE ON *` would cover it, and the rewritten definition could not be attached.
     const String converted_engine_name = DatabaseOrdinary::getConvertedMergeTreeEngineName(engine_name, to_replicated);
     if (!StorageFactory::instance().getAllStorages().contains(converted_engine_name))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,

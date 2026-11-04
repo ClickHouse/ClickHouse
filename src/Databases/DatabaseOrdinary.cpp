@@ -188,6 +188,7 @@ String DatabaseOrdinary::getConvertedMergeTreeEngineName(const String & engine_n
 {
     if (replicated)
         return "Replicated" + engine_name;
+    chassert(engine_name.starts_with("Replicated"));
     return engine_name.substr(strlen("Replicated"));
 }
 
