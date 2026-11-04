@@ -808,13 +808,14 @@ void Server::createServer(
     const char * port_name,
     bool listen_try,
     bool start_server,
-    const ServerSettings & server_settings,
     std::vector<ProtocolServerAdapter> & servers,
     CreateServerFunc && func) const
 {
     /// Shift the port by the configured `port_offset` (0 by default). The offset is applied to the
     /// bound port inside `DB::createServer`; here it is used only to register the matching value.
-    const Int32 port_offset = server_settings[ServerSetting::port_offset];
+    /// `config` is the configuration the listeners are created from, so it carries the same offset as
+    /// the `ServerSettings` loaded from it.
+    const Int32 port_offset = getPortOffsetFromConfig(config);
     if (DB::createServer(config, listen_host, port_name, listen_try, start_server, servers, std::move(func), &logger(), port_offset)
         && (start_server || !servers.back().bindsOnStart()))
     {
@@ -3233,7 +3234,6 @@ try
             const char * port_name = "keeper_server.tcp_port";
             createServer(
                 config(), listen_host, port_name, listen_try, /* start_server: */ false,
-                server_settings,
                 servers_to_start_before_tables,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
@@ -3260,7 +3260,6 @@ try
             const char * secure_port_name = "keeper_server.tcp_port_secure";
             createServer(
                 config(), listen_host, secure_port_name, listen_try, /* start_server: */ false,
-                server_settings,
                 servers_to_start_before_tables,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
@@ -3296,7 +3295,6 @@ try
                 auto handler_factory = createKeeperHTTPHandlerFactory(
                     *this, config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPHandler-factory");
                 createServer(config(), listen_host, port_name, listen_try, /* start_server: */ false,
-                server_settings,
                 servers_to_start_before_tables,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
@@ -3333,7 +3331,6 @@ try
                     *this, config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPSHandler-factory");
 #endif
                 createServer(config(), listen_host, port_name, listen_try, /* start_server: */ false,
-                server_settings,
                 servers_to_start_before_tables,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
@@ -4538,7 +4535,7 @@ void Server::createServers(
             if (stack->empty())
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' stack empty", protocol);
 
-            createServer(config, host, port_name.c_str(), listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            createServer(config, host, port_name.c_str(), listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(server_settings, socket, host, port, is_secure);
@@ -4578,7 +4575,7 @@ void Server::createServers(
             if (!config.getString(port_name, "").empty())
             {
                 auto handler_factory = createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory");
-                createServer(config, listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
                 {
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(server_settings, socket, listen_host, port);
@@ -4605,7 +4602,7 @@ void Server::createServers(
 #if USE_SSL
                 auto handler_factory = createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory");
 #endif
-                createServer(config, listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
                 {
 #if USE_SSL
                     Poco::Net::SecureServerSocket socket;
@@ -4631,7 +4628,7 @@ void Server::createServers(
         {
             /// TCP
             port_name = "tcp_port";
-            createServer(config, listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(server_settings, socket, listen_host, port);
@@ -4655,7 +4652,7 @@ void Server::createServers(
         {
             /// TCP with PROXY protocol, see https://github.com/wolfeidau/proxyv2/blob/master/docs/proxy-protocol.txt
             port_name = "tcp_with_proxy_port";
-            createServer(config, listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(server_settings, socket, listen_host, port);
@@ -4680,7 +4677,7 @@ void Server::createServers(
             && std::ranges::find(grpc_listen_hosts, listen_host) != grpc_listen_hosts.end())
         {
             port_name = "arrowflight_port";
-            createServer(config, listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 /// Do not bind a Poco socket here: gRPC owns the listening socket of an Arrow Flight
                 /// server and binds it in `start`. A pre-bind would both bind the address twice and
@@ -4702,7 +4699,7 @@ void Server::createServers(
         {
             /// TCP with SSL
             port_name = "tcp_port_secure";
-            createServer(config, listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
     #if USE_SSL
                 Poco::Net::SecureServerSocket socket;
@@ -4736,7 +4733,6 @@ void Server::createServers(
                 port_name,
                 listen_try,
                 start_servers,
-                server_settings,
                 servers,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
@@ -4764,7 +4760,7 @@ void Server::createServers(
         if (server_type.shouldStart(ServerType::Type::MYSQL))
         {
             port_name = "mysql_port";
-            createServer(config, listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
@@ -4788,7 +4784,7 @@ void Server::createServers(
         if (server_type.shouldStart(ServerType::Type::POSTGRESQL))
         {
             port_name = "postgresql_port";
-            createServer(config, listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
@@ -4823,7 +4819,7 @@ void Server::createServers(
             && std::ranges::find(grpc_listen_hosts, listen_host) != grpc_listen_hosts.end())
         {
             port_name = "grpc_port";
-            createServer(config, listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 auto server_address = makeSocketAddress(listen_host, port, &logger());
                 return ProtocolServerAdapter(
@@ -4845,7 +4841,7 @@ void Server::createServers(
             if (!config.getString(port_name, "").empty())
             {
                 auto handler_factory = createHandlerFactory(*this, config, async_metrics, handler_name);
-                createServer(config, listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
                 {
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(server_settings, socket, listen_host, port);
@@ -4897,7 +4893,7 @@ void Server::createServers(
                 if (has_catalog_port)
                 {
                     port_name = "iceberg_rest_catalog.port";
-                    createServer(config, listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                    createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
                     {
                         Poco::Net::ServerSocket socket;
                         auto address = socketBindListen(server_settings, socket, listen_host, port);
@@ -4917,7 +4913,7 @@ void Server::createServers(
                 if (has_catalog_secure_port)
                 {
                     port_name = "iceberg_rest_catalog.secure_port";
-                    createServer(config, listen_host, port_name, listen_try, start_servers, server_settings, servers, [&]([[maybe_unused]] UInt16 port) -> ProtocolServerAdapter
+                    createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&]([[maybe_unused]] UInt16 port) -> ProtocolServerAdapter
                     {
 #if USE_SSL
                         Poco::Net::SecureServerSocket socket;
@@ -4968,7 +4964,7 @@ void Server::createInterserverServers(
         {
             /// Interserver IO HTTP
             port_name = "interserver_http_port";
-            createServer(config, interserver_listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            createServer(config, interserver_listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(server_settings, socket, interserver_listen_host, port);
@@ -4994,7 +4990,7 @@ void Server::createInterserverServers(
         if (server_type.shouldStart(ServerType::Type::INTERSERVER_HTTPS))
         {
             port_name = "interserver_https_port";
-            createServer(config, interserver_listen_host, port_name, listen_try, start_servers, server_settings, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            createServer(config, interserver_listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
 #if USE_SSL
                 Poco::Net::SecureServerSocket socket;
