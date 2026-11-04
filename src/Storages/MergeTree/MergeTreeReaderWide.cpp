@@ -1055,12 +1055,20 @@ void MergeTreeReaderWide::FileStreams::forEach(const std::function<void(const St
 CompressedBlockRanges & MergeTreeReaderWide::getRangesRead(const String & stream_name)
 {
     std::lock_guard lock(ranges_read_mutex);
-    return ranges_read[stream_name];
+    return ranges_read[stream_name].ranges;
 }
 
 void MergeTreeReaderWide::countCompressedBytesRead(CountedCompressedBlocksPtr counted)
 {
+    /// A reader gets the same object for each of its tasks.
+    const bool same_counted = counted == counted_compressed_blocks;
     IMergeTreeReader::countCompressedBytesRead(std::move(counted));
+    if (!same_counted)
+    {
+        std::lock_guard lock(ranges_read_mutex);
+        for (auto & [_, stream_ranges] : ranges_read)
+            stream_ranges.counted = nullptr;
+    }
     /// The streams created later get their sink in `getOrAddStream`.
     streams.forEach([&](const String & stream_name, MergeTreeReaderStream & stream) { stream.setBlocksReadSink(&getRangesRead(stream_name)); });
 }
@@ -1074,17 +1082,20 @@ std::optional<size_t> MergeTreeReaderWide::takeCompressedBytesRead()
     if (served_from_cache_without_known_streams)
     {
         /// Not measured, but the buffers of the streams keep appending the blocks they load: drop them.
-        for (auto & [_, ranges] : ranges_read)
-            ranges.clear();
+        for (auto & [_, stream_ranges] : ranges_read)
+            stream_ranges.ranges.clear();
         return std::nullopt;
     }
 
-    const auto part_path = data_part_info_for_read->getDataPartStorage()->getFullPath() + "/";
     size_t bytes = 0;
-    for (auto & [stream_name, ranges] : ranges_read)
+    for (auto & [stream_name, stream_ranges] : ranges_read)
     {
-        if (!ranges.empty())
-            bytes += counted_compressed_blocks->take(part_path + stream_name, ranges);
+        if (stream_ranges.ranges.empty())
+            continue;
+        if (!stream_ranges.counted)
+            stream_ranges.counted = &counted_compressed_blocks->getFile(
+                data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + stream_name);
+        bytes += counted_compressed_blocks->take(*stream_ranges.counted, stream_ranges.ranges);
     }
     return bytes;
 }

@@ -26,12 +26,18 @@ class CachedCompressedReadBuffer;
 class CountedCompressedBlocks
 {
 public:
+    /// The counted ranges of a file, merged, by their begin.
+    using File = std::map<size_t, size_t>;
+
+    /// The counted ranges of the file at the path, valid as long as this object. A reader looks it up once by stream.
+    File & getFile(const String & path);
+
     /// The bytes of the ranges in the file not counted yet, which become counted. Clears the ranges.
-    size_t take(const String & file, CompressedBlockRanges & ranges);
+    size_t take(File & file, CompressedBlockRanges & ranges);
 
 private:
     std::mutex mutex;
-    std::unordered_map<String, std::map<size_t, size_t>> counted TSA_GUARDED_BY(mutex);
+    std::unordered_map<String, File> counted TSA_GUARDED_BY(mutex);
 };
 
 using CountedCompressedBlocksPtr = std::shared_ptr<CountedCompressedBlocks>;

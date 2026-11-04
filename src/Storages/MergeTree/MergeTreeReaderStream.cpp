@@ -332,31 +332,51 @@ ReadBuffer * MergeTreeReaderStream::getDataBuffer()
     return data_buffer;
 }
 
-size_t CountedCompressedBlocks::take(const String & file, CompressedBlockRanges & ranges)
+CountedCompressedBlocks::File & CountedCompressedBlocks::getFile(const String & path)
 {
     std::lock_guard lock(mutex);
-    auto & counted_in_file = counted[file];
+    /// References to the elements of an unordered map stay valid when it grows.
+    return counted[path];
+}
+
+size_t CountedCompressedBlocks::take(File & file, CompressedBlockRanges & ranges)
+{
+    std::lock_guard lock(mutex);
     size_t bytes = 0;
-    for (const auto & [range_begin, range_end] : ranges)
+    for (const auto & [begin, end] : ranges)
     {
-        chassert(range_begin <= range_end);
-        /// Only the bytes of the range that are not counted already, merging it into the counted ones.
-        size_t begin = range_begin;
-        size_t end = range_end;
-        size_t covered = 0;
-        auto it = counted_in_file.upper_bound(begin);
-        if (it != counted_in_file.begin() && std::prev(it)->second >= begin)
+        chassert(begin <= end);
+        /// The first counted range that overlaps or touches the range.
+        auto it = file.upper_bound(begin);
+        if (it != file.begin() && std::prev(it)->second >= begin)
             --it;
-        while (it != counted_in_file.end() && it->first <= range_end)
+        if (it == file.end() || it->first > end)
         {
-            if (it->second > range_begin && it->first < range_end)
-                covered += std::min(range_end, it->second) - std::max(range_begin, it->first);
-            begin = std::min(begin, it->first);
-            end = std::max(end, it->second);
-            it = counted_in_file.erase(it);
+            bytes += end - begin;
+            file.emplace_hint(it, begin, end);
+            continue;
         }
-        bytes += range_end - range_begin - covered;
-        counted_in_file.emplace(begin, end);
+
+        /// Merge the range and the counted ranges it overlaps or touches into the first of them, which is extended in place,
+        /// as reading goes on from where the previous block ended.
+        const auto first = it;
+        size_t covered = 0;
+        size_t merged_end = end;
+        for (; it != file.end() && it->first <= end; ++it)
+        {
+            if (it->second > begin && it->first < end)
+                covered += std::min(end, it->second) - std::max(begin, it->first);
+            merged_end = std::max(merged_end, it->second);
+        }
+        bytes += end - begin - covered;
+        first->second = merged_end;
+        file.erase(std::next(first), it);
+        if (begin < first->first)
+        {
+            auto node = file.extract(first);
+            node.key() = begin;
+            file.insert(std::move(node));
+        }
     }
     ranges.clear();
     return bytes;

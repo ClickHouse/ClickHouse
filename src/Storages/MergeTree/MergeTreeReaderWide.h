@@ -102,8 +102,14 @@ private:
     /// The ranges in the files of the compressed blocks read, and of those that hold the granules served from the columns
     /// cache, by stream, since `takeCompressedBytesRead` was called, see `CompressedReadBufferBase::setBlocksReadSink`. Only
     /// after `countCompressedBytesRead`. The buffers of the streams append to the ranges of their own stream, the map is guarded.
+    struct StreamRangesRead
+    {
+        CompressedBlockRanges ranges;
+        /// Of `counted_compressed_blocks`, looked up at the first take.
+        CountedCompressedBlocks::File * counted = nullptr;
+    };
     std::mutex ranges_read_mutex;
-    std::unordered_map<String, CompressedBlockRanges> ranges_read;
+    std::unordered_map<String, StreamRangesRead> ranges_read;
     CompressedBlockRanges & getRangesRead(const String & stream_name);
     void addGranuleServedFromColumnsCache(size_t mark, const std::vector<bool> & from_disk);
     /// A granule served from the cache is priced by the blocks of its streams, which are not all known for some columns:

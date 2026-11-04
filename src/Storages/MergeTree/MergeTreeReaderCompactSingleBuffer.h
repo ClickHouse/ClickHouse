@@ -25,6 +25,7 @@ public:
                     MutableColumns & res_columns, Columns & shared_columns) override;
 
     std::optional<size_t> takeCompressedBytesRead() override;
+    void countCompressedBytesRead(CountedCompressedBlocksPtr counted) override;
     void addGranulesServedFromColumnsCache(size_t pos, size_t from_mark, size_t to_mark) override;
 
     void updateReadRequestMap(MarkRangesPtr request_map) override
@@ -44,6 +45,8 @@ private:
     /// The ranges in the file of the compressed blocks read, and of those that hold the granules served from the columns
     /// cache, since `takeCompressedBytesRead` was called, see `CompressedReadBufferBase::setBlocksReadSink`.
     CompressedBlockRanges ranges_read;
+    /// Of `counted_compressed_blocks`, looked up at the first take.
+    CountedCompressedBlocks::File * counted_file = nullptr;
 };
 
 }
