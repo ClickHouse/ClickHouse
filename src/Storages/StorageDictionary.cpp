@@ -237,9 +237,11 @@ std::shared_ptr<const IDictionary> StorageDictionary::getDictionary(const Contex
     auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
     const auto & external_loader = getContext()->getExternalDictionariesLoader();
 
-    /// Check access before loading the dictionary, because loading contacts the dictionary source.
-    checkDictionaryAccess(external_loader.getDictionaryID(registered_dictionary_name, query_context), query_context);
-    return external_loader.getDictionary(registered_dictionary_name, query_context);
+    /// Check access before loading the dictionary, because loading contacts the dictionary source,
+    /// and load the dictionary that passed the check.
+    auto dictionary = external_loader.resolveDictionary(registered_dictionary_name, query_context);
+    checkDictionaryAccess(dictionary.id, query_context);
+    return external_loader.getDictionary(dictionary, query_context);
 }
 
 void StorageDictionary::shutdown(bool)
@@ -429,8 +431,9 @@ void registerStorageDictionary(StorageFactory & factory)
             /// because loading contacts the dictionary source. The name is resolved with the query context,
             /// like when the table is read.
             const auto & external_loader = local_context->getExternalDictionariesLoader();
-            StorageDictionary::checkDictionaryAccess(external_loader.getDictionaryID(dictionary_name, local_context), local_context);
-            const auto & dictionary = external_loader.getDictionary(dictionary_name, local_context);
+            auto resolved_dictionary = external_loader.resolveDictionary(dictionary_name, local_context);
+            StorageDictionary::checkDictionaryAccess(resolved_dictionary.id, local_context);
+            const auto & dictionary = external_loader.getDictionary(resolved_dictionary, local_context);
             const DictionaryStructure & dictionary_structure = dictionary->getStructure();
             checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
         }

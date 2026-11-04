@@ -95,23 +95,12 @@ public:
 
     const ContextPtr & getContext() const { return context; }
 
-    /// Checks `dictGet` access to the dictionary without loading it. Must be called before the dictionary
-    /// or its definition is read, so that a user without access learns nothing about the dictionary.
-    void checkAccess(const String & dictionary_name)
-    {
-        if (access_checked)
-            return;
-
-        auto dictionary_id = context->getExternalDictionariesLoader().getDictionaryID(dictionary_name, context);
-        context->checkAccess(AccessType::dictGet, IDictionary::getDatabaseOrNoDatabaseTag(dictionary_id), dictionary_id.getTableName());
-        access_checked = true;
-    }
-
     std::shared_ptr<const IDictionary> getDictionary(const String & dictionary_name)
     {
-        /// Check access before loading the dictionary, because loading contacts the dictionary source.
-        checkAccess(dictionary_name);
-        return context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
+        /// Check access before loading the dictionary, because loading contacts the dictionary source,
+        /// and load the dictionary that passed the check.
+        const auto & external_loader = context->getExternalDictionariesLoader();
+        return external_loader.getDictionary(external_loader.resolveDictionaryCheckingAccess(dictionary_name, context), context);
     }
 
     std::shared_ptr<const IDictionary> getDictionary(const ColumnPtr & column)
@@ -173,16 +162,14 @@ public:
 
     DictionaryStructure getDictionaryStructure(const String & dictionary_name)
     {
-        checkAccess(dictionary_name);
-        return context->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, context);
+        /// Check access before reading the definition, so that a user without access learns nothing about the dictionary.
+        const auto & external_loader = context->getExternalDictionariesLoader();
+        return external_loader.getDictionaryStructure(external_loader.resolveDictionaryCheckingAccess(dictionary_name, context));
     }
 
     const ContextPtr context;
 
 private:
-    /// Access cannot be not granted, since in this case checkAccess() will throw and access_checked will not be updated.
-    std::atomic<bool> access_checked = false;
-
     /// We must not cache dictionary or dictionary's structure here, because there are places
     /// where ExpressionActionsPtr is cached (StorageDistributed caching it for sharding_key_expr and
     /// optimize_skip_unused_shards), and if the dictionary will be cached within "query" then

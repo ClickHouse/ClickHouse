@@ -1,7 +1,5 @@
-#include <atomic>
 #include <string_view>
 
-#include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
@@ -60,26 +58,13 @@ void validateArguments(
         });
 }
 
-/// Checks `dictGet` access to the dictionary without loading it. Must be called before the dictionary
-/// or its definition is read, so that a user without access learns nothing about the dictionary.
-void checkDictionaryAccess(const ContextPtr & context, std::atomic<bool> & access_checked, const String & dictionary_name)
-{
-    if (access_checked.load(std::memory_order_relaxed))
-        return;
-
-    auto dictionary_id = context->getExternalDictionariesLoader().getDictionaryID(dictionary_name, context);
-    context->checkAccess(AccessType::dictGet, IDictionary::getDatabaseOrNoDatabaseTag(dictionary_id), dictionary_id.getTableName());
-    access_checked.store(true, std::memory_order_relaxed);
-}
-
-void validateDictionaryIsNaiveBayes(
-    const ContextPtr & context, std::atomic<bool> & access_checked, const IFunction & func, const ColumnsWithTypeAndName & arguments)
+void validateDictionaryIsNaiveBayes(const ContextPtr & context, const IFunction & func, const ColumnsWithTypeAndName & arguments)
 {
     const String dictionary_name{arguments[0].column->getDataAt(0)};
 
-    checkDictionaryAccess(context, access_checked, dictionary_name);
-
-    const auto layout_type = context->getExternalDictionariesLoader().getDictionaryLayoutType(dictionary_name, context);
+    /// Check access before reading the definition, so that a user without access learns nothing about the dictionary.
+    const auto & external_loader = context->getExternalDictionariesLoader();
+    const auto layout_type = external_loader.getDictionaryLayoutType(external_loader.resolveDictionaryCheckingAccess(dictionary_name, context));
     if (layout_type != "naive_bayes")
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -92,7 +77,6 @@ void validateDictionaryIsNaiveBayes(
 template <typename ClassifyRow>
 void executeNaiveBayes(
     const ContextPtr & context,
-    std::atomic<bool> & access_checked,
     const ColumnsWithTypeAndName & arguments,
     size_t input_rows_count,
     ClassifyRow && classify_row)
@@ -102,10 +86,10 @@ void executeNaiveBayes(
 
     const String dictionary_name{arguments[0].column->getDataAt(0)};
 
-    /// Check access before loading the dictionary, because loading contacts the dictionary source.
-    checkDictionaryAccess(context, access_checked, dictionary_name);
-
-    auto dictionary = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
+    /// Check access before loading the dictionary, because loading contacts the dictionary source,
+    /// and load the dictionary that passed the check.
+    const auto & external_loader = context->getExternalDictionariesLoader();
+    auto dictionary = external_loader.getDictionary(external_loader.resolveDictionaryCheckingAccess(dictionary_name, context), context);
 
     const auto * nb_dict = typeid_cast<const NaiveBayesDictionary *>(dictionary.get());
     if (!nb_dict)
@@ -141,7 +125,6 @@ class FunctionNaiveBayesBase : public IFunction
 {
 protected:
     ContextPtr context;
-    mutable std::atomic<bool> access_checked{false};
 
 public:
     explicit FunctionNaiveBayesBase(ContextPtr context_)
@@ -196,7 +179,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         validateArguments(*this, arguments);
-        validateDictionaryIsNaiveBayes(context, access_checked, *this, arguments);
+        validateDictionaryIsNaiveBayes(context, *this, arguments);
         DataTypePtr result_type = std::make_shared<DataTypeUInt32>();
         return arguments[1].type->isNullable() ? makeNullable(result_type) : result_type;
     }
@@ -218,7 +201,6 @@ public:
 
         executeNaiveBayes(
             context,
-            access_checked,
             effective_arguments,
             input_rows_count,
             [&](const auto & model, NaiveBayesScratch & scratch, std::string_view text, size_t i)
@@ -254,7 +236,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         validateArguments(*this, arguments);
-        validateDictionaryIsNaiveBayes(context, access_checked, *this, arguments);
+        validateDictionaryIsNaiveBayes(context, *this, arguments);
         DataTypePtr result_type = makeClassProbTuple();
         return arguments[1].type->isNullable() ? makeNullable(result_type) : result_type;
     }
@@ -278,7 +260,6 @@ public:
 
         executeNaiveBayes(
             context,
-            access_checked,
             effective_arguments,
             input_rows_count,
             [&](const auto & model, NaiveBayesScratch & scratch, std::string_view text, size_t i)
@@ -331,7 +312,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         validateArguments(*this, arguments);
-        validateDictionaryIsNaiveBayes(context, access_checked, *this, arguments);
+        validateDictionaryIsNaiveBayes(context, *this, arguments);
         DataTypePtr result_type = std::make_shared<DataTypeArray>(makeClassProbTuple());
         return arguments[1].type->isNullable() ? makeNullableSafe(result_type) : result_type;
     }
@@ -356,7 +337,6 @@ public:
 
         executeNaiveBayes(
             context,
-            access_checked,
             effective_arguments,
             input_rows_count,
             [&](const auto & model, NaiveBayesScratch & scratch, std::string_view text, size_t i)

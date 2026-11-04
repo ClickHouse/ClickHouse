@@ -169,15 +169,15 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NamesAndTypesList & so
 
                 /// Do not load the dictionary for a user without access to it, because loading contacts
                 /// the dictionary source. The query fails later with the proper access error.
-                auto dictionary_id = external_loader.getDictionaryID(dict_name, context);
+                auto dictionary = external_loader.resolveDictionary(dict_name, context);
                 if (!context->getAccess()->isGranted(
-                        AccessType::dictGet, IDictionary::getDatabaseOrNoDatabaseTag(dictionary_id), dictionary_id.getTableName()))
+                        AccessType::dictGet, IDictionary::getDatabaseOrNoDatabaseTag(dictionary.id), dictionary.id.getTableName()))
                 {
                     ++i;
                     continue;
                 }
 
-                const auto & dict_ptr = external_loader.getDictionary(dict_name, context);
+                const auto & dict_ptr = external_loader.getDictionary(dictionary, context);
                 if (!dict_ptr->isInjective(attr_name))
                 {
                     ++i;

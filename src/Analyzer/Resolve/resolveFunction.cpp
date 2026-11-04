@@ -43,8 +43,6 @@
 #include <Functions/exists.h>
 #include <Columns/validateColumnType.h>
 #include <Interpreters/castColumn.h>
-#include <Access/Common/AccessFlags.h>
-#include <Dictionaries/IDictionary.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
@@ -1675,10 +1673,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// Check access before reading the dictionary definition, so that a user without access learns nothing
                 /// about the dictionary.
                 const auto & external_loader = scope.context->getExternalDictionariesLoader();
-                auto dictionary_id = external_loader.getDictionaryID(identifier.getFullName(), scope.context);
-                scope.context->checkAccess(
-                    AccessType::dictGet, IDictionary::getDatabaseOrNoDatabaseTag(dictionary_id), dictionary_id.getTableName());
-                external_loader.assertDictionaryStructureExists(identifier.getFullName(), scope.context);
+                external_loader.getDictionaryStructure(external_loader.resolveDictionaryCheckingAccess(identifier.getFullName(), scope.context));
             }
             else
             {
