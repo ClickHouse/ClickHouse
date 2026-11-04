@@ -313,7 +313,7 @@ size_t ALWAYS_INLINE Aggregator::collectCountMisses(
                 /// from the local table as well. Its fixed-width values decide it, as an empty string carries
                 /// no hash.
                 if (key.str.isEmpty() && (can_combine_partition_counts ? misses.size() != first_record : !misses.empty())
-                    && key == last_staged_key)
+                    && last_staged_key.str.isEmpty() && key.keys == last_staged_key.keys)
                 {
                     if constexpr (combine_partition_counts)
                         misses.incrementCount(last_record);
@@ -580,7 +580,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
             {
                 /// As in `collectCountMisses`: a key with an empty string that repeats the last missed key
                 /// misses as well, and its record takes that key's hash without hashing or probing it again.
-                if (key.str.isEmpty() && has_missed_key && key == last_missed_key)
+                if (key.str.isEmpty() && has_missed_key && last_missed_key.str.isEmpty() && key.keys == last_missed_key.keys)
                 {
                     if constexpr (record_places)
                         places_data[i] = nullptr;
