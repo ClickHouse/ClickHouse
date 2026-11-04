@@ -1,0 +1,6 @@
+serialized	10
+global text	10000
+global serialized	10000
+serialized	['set']	1	1	1
+global text	['set']	1	1	1
+global serialized	['set']	1	1	1

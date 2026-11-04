@@ -119,6 +119,20 @@ Le processus de fusion dépend de `settings_constraints_replace_previous` :
   chaque type de contrainte non défini est repris du profil précédent et que chaque
   type de contrainte défini est remplacé par la valeur du nouveau profil.
 
+## Contraintes et paramètre `compatibility` {#constraints-and-compatibility}
+
+Le paramètre [`compatibility`](/fr/reference/settings/session-settings/compatibility#compatibility) remplace les
+paramètres que l&#39;utilisateur n&#39;a pas définis par les valeurs par défaut d&#39;une version précédente. Il n&#39;applique jamais une valeur que les
+contraintes refusent : un paramètre conserve sa valeur par défaut lorsque l&#39;ancienne valeur par défaut se situe hors de sa plage `min`/`max`,
+fait partie de ses valeurs `disallowed`, ou lorsque le paramètre est `const`. Il en va de même pour un paramètre appartenant à un niveau
+que [`allow_feature_tier`](/fr/reference/settings/server-settings/settings/allow#allow_feature_tier) désactive.
+Le paramètre `readonly` ne restreint pas `compatibility` de cette manière : il détermine si une requête peut, ou non, définir
+`compatibility`.
+
+Les paramètres `MergeTree` ne tiennent compte que du paramètre `compatibility` du profil par défaut, qui fournit les valeurs par défaut
+de toutes les tables à l&#39;échelle du serveur. Là aussi, un paramètre conserve sa valeur par défaut lorsqu&#39;une contrainte préfixée par `merge_tree_`
+du profil par défaut, ou `allow_feature_tier`, refuse l&#39;ancienne valeur par défaut.
+
 ## Mode lecture seule {#read-only}
 
 Le mode lecture seule est activé par le paramètre `readonly`, à ne pas confondre avec le type de

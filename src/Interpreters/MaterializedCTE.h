@@ -78,6 +78,8 @@ struct MaterializedCTE
     const std::string cte_name;
     /// Temporary table name
     const std::string temporary_table_name;
+    /// The CTE is referenced from a recursive member of a recursive CTE, so it is never inlined.
+    bool is_referenced_from_recursive_cte_member = false;
     /// Query Plan for the CTE
     std::unique_ptr<QueryPlan> plan = {};
     /// If true, query plan is built for the CTE (i.e. the table is being populated, but is not ready for reads yet).

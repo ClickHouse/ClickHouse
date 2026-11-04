@@ -16,17 +16,22 @@
 #include <IO/ReadHelpers.h>
 #include <IO/copyData.h>
 
+#include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/tests/gtest_global_context.h>
 
+#include <Disks/DiskLocal.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
 #include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
-#include <Disks/DiskLocal.h>
+#include <Disks/LocalDirectorySyncGuard.h>
 
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadBufferFromFileDecorator.h>
+#include <IO/ReadSettings.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDecorator.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -34,6 +39,7 @@
 #include <Poco/Util/MapConfiguration.h>
 
 #include <base/scope_guard.h>
+#include <pcg_random.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -47,20 +53,52 @@
 #include <stdexcept>
 #include <thread>
 #include <vector>
+#include <unistd.h>
 
 namespace DB::CoordinationSetting
 {
     extern const CoordinationSettingsBool compress_snapshots_with_zstd_format;
     extern const CoordinationSettingsUInt64 snapshot_transfer_chunk_size;
+    extern const CoordinationSettingsBool snapshot_transfer_remote_disk_streaming;
+}
+
+namespace ProfileEvents
+{
+    extern const Event KeeperReadSnapshotStreamingSeeks;
 }
 
 namespace
 {
 
+class FailingSnapshotReadBuffer : public DB::ReadBufferFromFileDecorator
+{
+public:
+    FailingSnapshotReadBuffer(std::unique_ptr<DB::ReadBufferFromFileBase> impl_, const std::atomic<bool> & fail_)
+        : DB::ReadBufferFromFileDecorator(std::move(impl_))
+        , fail(fail_)
+    {
+    }
+
+    bool nextImpl() override
+    {
+        if (fail)
+            throw std::runtime_error("Injected snapshot read failure");
+        return DB::ReadBufferFromFileDecorator::nextImpl();
+    }
+
+    size_t getFileOffsetOfBufferEnd() const override { return impl->getFileOffsetOfBufferEnd(); }
+
+private:
+    const std::atomic<bool> & fail;
+};
+
 class TestLocalObjectStorage : public DB::LocalObjectStorage
 {
 public:
     mutable std::atomic<int> read_count{0};
+    /// Lets a test break one reader mid-transfer: the buffer of this `readObject` call (1-based) throws once `fail_reads` is set.
+    std::atomic<int> failing_read{0};
+    std::atomic<bool> fail_reads{false};
 
     explicit TestLocalObjectStorage(DB::LocalObjectStorageSettings settings)
         : DB::LocalObjectStorage(std::move(settings)) {}
@@ -72,8 +110,10 @@ public:
         bool use_external_buffer,
         bool restrict_seek) const override
     {
-        ++read_count;
-        return DB::LocalObjectStorage::readObject(object, read_settings, read_hint, use_external_buffer, restrict_seek);
+        auto buf = DB::LocalObjectStorage::readObject(object, read_settings, read_hint, use_external_buffer, restrict_seek);
+        if (++read_count == failing_read)
+            return std::make_unique<FailingSnapshotReadBuffer>(std::move(buf), fail_reads);
+        return buf;
     }
 };
 
@@ -399,8 +439,8 @@ void assertNoSnapshotArtifactsAndNoRegistration(Manager & manager, const std::st
     EXPECT_EQ(manager.getLatestSnapshotInfo(), nullptr);
 }
 
-std::pair<std::shared_ptr<DB::DiskObjectStorage>, std::shared_ptr<TestLocalObjectStorage>>
-createLocalObjectStorageDisk(const std::string & meta_path, const std::string & obj_path)
+std::pair<std::shared_ptr<DB::DiskObjectStorage>, std::shared_ptr<TestLocalObjectStorage>> createLocalObjectStorageDisk(
+    const std::string & meta_path, const std::string & obj_path, bool plain_metadata = false, DB::DiskPtr meta_disk = nullptr)
 {
     auto obj_storage = std::make_shared<TestLocalObjectStorage>(
         DB::LocalObjectStorageSettings("SnapshotDisk", obj_path, false));
@@ -408,10 +448,18 @@ createLocalObjectStorageDisk(const std::string & meta_path, const std::string & 
     auto cluster = std::make_shared<DB::ClusterConfiguration>("SnapshotDisk", std::move(cluster_locations));
     auto router = std::make_shared<DB::ObjectStorageRouter>(
         std::unordered_map<DB::Location, DB::ObjectStoragePtr>{{"main", obj_storage}});
-    auto meta_disk = std::make_shared<DB::DiskLocal>("SnapshotMetaDisk", meta_path);
-    DB::MetadataStoragePtr metadata_storage = std::make_shared<DB::MetadataStorageFromDisk>(
-        meta_disk, "", obj_storage->createKeyGenerator(), /*persist_removal_queue_=*/false, /*removal_log_compaction_threshold_=*/static_cast<size_t>(0));
+    DB::MetadataStoragePtr metadata_storage;
+    if (plain_metadata)
+        metadata_storage = std::make_shared<DB::MetadataStorageFromPlainObjectStorage>(obj_storage, "", 0);
+    else
+        metadata_storage = std::make_shared<DB::MetadataStorageFromDisk>(
+            meta_disk ? meta_disk : std::make_shared<DB::DiskLocal>("SnapshotMetaDisk", meta_path),
+            "",
+            obj_storage->createKeyGenerator(),
+            /*persist_removal_queue_=*/false,
+            /*removal_log_compaction_threshold_=*/static_cast<size_t>(0));
     Poco::AutoPtr<Poco::Util::MapConfiguration> config_ptr(new Poco::Util::MapConfiguration);
+    getContext().context->setConfig(config_ptr);
     auto disk = std::make_shared<DB::DiskObjectStorage>("SnapshotDisk", cluster, metadata_storage, router, /*wrapped_disk=*/nullptr, *config_ptr, "");
     return {disk, obj_storage};
 }
@@ -2122,6 +2170,95 @@ TEST_P(CoordinationTestWithCompression, TestReadSnapshotParallelMultiChunk)
     snap_disk->shutdown();
 }
 
+/// `snapshot_transfer_remote_disk_streaming` gives every transfer its own reader of the remote file: a reader
+/// error fails only its transfer, and repeated or backward objects reposition the reader.
+TEST_P(CoordinationTestWithCompression, TestReadSnapshotStreaming)
+{
+    getContext(); /// needed for `DiskObjectStorage` background threads
+
+    ChangelogDirTest snap_meta("./snapshots");
+    ChangelogDirTest snap_obj("./snapshots_obj");
+
+    constexpr uint64_t chunk_size = 384 * 1024;
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    (*settings)[DB::CoordinationSetting::snapshot_transfer_chunk_size] = chunk_size;
+    (*settings)[DB::CoordinationSetting::snapshot_transfer_remote_disk_streaming] = true;
+    auto keeper_context = this->makeKeeperContext(settings);
+    auto [snap_disk, obj_storage] = createLocalObjectStorageDisk("./snapshots", "./snapshots_obj/");
+    keeper_context->setSnapshotDisk(snap_disk);
+
+    /// Random data spans several 1 MiB read buffers; objects straddle refills, so re-reads that leave the buffer call `readObject` again.
+    DB::KeeperSnapshotManager manager(3, keeper_context, this->enable_compression);
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", keeper_context);
+    pcg64_fast rng(42);
+    for (int i = 0; i < 4; ++i)
+    {
+        std::string data(1024 * 1024, '\0');
+        for (auto & c : data)
+            c = static_cast<char>(rng());
+        addNode(*storage_ptr, fmt::format("/node{}", i), data);
+    }
+    DB::KeeperStorageSnapshot snap(storage_ptr.get(), 50, nullptr, keeper_context->getWriteSnapshotVersion());
+    auto snap_buf = manager.serializeSnapshotToBuffer(snap);
+    const auto file_info = manager.serializeSnapshotBufferToDisk(*snap_buf, 50);
+
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto leader = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, keeper_context, nullptr);
+    leader->init();
+
+    std::string file;
+    DB::readStringUntilEOF(file, *snap_disk->readFile(file_info->path, DB::getReadSettings()));
+    const uint64_t objects = (file.size() + chunk_size - 1) / chunk_size;
+    ASSERT_GT(objects, 8u);
+
+    nuraft::snapshot s(50, 0, std::make_shared<nuraft::cluster_config>());
+    auto read = [&](void *& transfer, uint64_t obj_id)
+    {
+        nuraft::ptr<nuraft::buffer> data;
+        bool is_last = false;
+        if (leader->read_logical_snp_obj(s, transfer, obj_id, data, is_last) < 0)
+            return false;
+        EXPECT_EQ(is_last, obj_id + 1 == objects);
+        EXPECT_TRUE(std::string_view(reinterpret_cast<const char *>(data->data_begin()), data->size())
+            == std::string_view(file).substr(obj_id * chunk_size, chunk_size)) << "object " << obj_id;
+        return true;
+    };
+    auto seeks = [] { return ProfileEvents::global_counters[ProfileEvents::KeeperReadSnapshotStreamingSeeks]; };
+    const auto seeks_before = seeks();
+
+    /// Transfer A gets the first reader opened, which breaks after A and B have both started.
+    const int reads_before = obj_storage->read_count.load();
+    obj_storage->failing_read = reads_before + 1;
+    void * transfer_a = nullptr;
+    void * transfer_b = nullptr;
+    ASSERT_TRUE(read(transfer_a, 0));
+    ASSERT_TRUE(read(transfer_b, 0));
+    obj_storage->fail_reads = true;
+    uint64_t obj_a = 1;
+    while (obj_a < objects && read(transfer_a, obj_a))
+        ++obj_a;
+    EXPECT_LT(obj_a, objects);
+    EXPECT_EQ(transfer_a, nullptr);
+    for (uint64_t obj = 1; obj < objects; ++obj)
+        ASSERT_TRUE(read(transfer_b, obj)) << "object " << obj;
+    leader->free_user_snp_ctx(transfer_b);
+    EXPECT_EQ(obj_storage->read_count.load() - reads_before, 2);
+    EXPECT_EQ(seeks() - seeks_before, 0u);
+
+    /// NuRaft re-requests an object after an RPC error, also the final one after the reader reached EOF.
+    std::vector<uint64_t> requests{0, 1, 2, 2, 1};
+    for (uint64_t obj = 2; obj < objects; ++obj)
+        requests.push_back(obj);
+    requests.push_back(objects - 1);
+    void * transfer_c = nullptr;
+    for (auto obj : requests)
+        ASSERT_TRUE(read(transfer_c, obj)) << "object " << obj;
+    leader->free_user_snp_ctx(transfer_c);
+    EXPECT_EQ(seeks() - seeks_before, 3u);
+
+    snap_disk->shutdown();
+}
+
 TEST_P(CoordinationTestWithCompression, TestStorageSnapshotTTLRoundTrip)
 {
     using namespace Coordination;
@@ -2663,7 +2800,8 @@ void writeSnapshotWithOrphans(
     const std::vector<std::string> & present_nodes,
     const std::vector<std::string> & orphan_nodes,
     const std::vector<std::pair<std::string, int64_t>> & present_ephemeral_nodes = {},
-    const std::vector<std::pair<std::string, int64_t>> & ephemeral_orphan_nodes = {})
+    const std::vector<std::pair<std::string, int64_t>> & ephemeral_orphan_nodes = {},
+    const DB::SnapshotMetadataPtr & snapshot_meta = nullptr)
 {
     DB::KeeperSnapshotManager manager(3, ctx, enable_compression);
     const auto storage_ptr = DB::KeeperStorage::create(500, "", ctx);
@@ -2690,11 +2828,421 @@ void writeSnapshotWithOrphans(
     }
 
     TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = static_cast<int64_t>(up_to_log_idx);
-    DB::KeeperStorageSnapshot snapshot(&storage, up_to_log_idx, nullptr, ctx->getWriteSnapshotVersion());
+    auto meta
+        = snapshot_meta ? snapshot_meta : std::make_shared<DB::SnapshotMetadata>(up_to_log_idx, 0, std::make_shared<DB::ClusterConfig>());
+    DB::KeeperStorageSnapshot snapshot(&storage, meta, snapshot_meta ? meta->get_last_config() : nullptr, ctx->getWriteSnapshotVersion());
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
     manager.serializeSnapshotBufferToDisk(*buf, up_to_log_idx);
 }
 
+}
+
+/// Recovery must persist the tree before serving a follower or restarting without the recovery setting.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalPersistsSnapshotBeforeTransferAndRestart)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    enum class SnapshotDiskType
+    {
+        Local,
+        Object,
+        Plain,
+    };
+    for (const auto & [disk_type, has_log_tail] :
+         {std::pair{SnapshotDiskType::Local, false},
+          std::pair{SnapshotDiskType::Local, true},
+          std::pair{SnapshotDiskType::Object, false},
+          std::pair{SnapshotDiskType::Object, true},
+          std::pair{SnapshotDiskType::Plain, false},
+          std::pair{SnapshotDiskType::Plain, true}})
+    {
+        SCOPED_TRACE(fmt::format("disk_type={}, has_log_tail={}", static_cast<int>(disk_type), has_log_tail));
+        ChangelogDirTest snapshots("./snapshots");
+        ChangelogDirTest objects("./snapshot_objects");
+        ChangelogDirTest logs("./logs");
+        ChangelogDirTest follower_snapshots("./follower_snapshots");
+
+        auto settings = std::make_shared<DB::CoordinationSettings>();
+        (*settings)[DB::CoordinationSetting::compress_snapshots_with_zstd_format] = this->enable_compression;
+        (*settings)[DB::CoordinationSetting::snapshot_transfer_chunk_size] = 32;
+        auto ctx = ::makeKeeperContext(false, settings);
+        ctx->setDigestEnabled(false);
+        ctx->setRemoveOrphanedNodesOnStartup(true);
+        ctx->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", "./logs"));
+        DB::DiskPtr disk = std::make_shared<DB::DiskLocal>("SnapshotDisk", "./snapshots");
+        if (disk_type != SnapshotDiskType::Local)
+        {
+            getContext();
+            disk = createLocalObjectStorageDisk("./snapshots", "./snapshot_objects/", disk_type == SnapshotDiskType::Plain).first;
+        }
+        SCOPE_EXIT({ disk->shutdown(); });
+        ctx->setSnapshotDisk(disk);
+
+        auto config = std::make_shared<DB::ClusterConfig>();
+        config->get_servers().push_back(std::make_shared<nuraft::srv_config>(1, "localhost:9234"));
+        auto meta = std::make_shared<DB::SnapshotMetadata>(2, 7, config);
+        writeSnapshotWithOrphans(ctx, this->enable_compression, 2, {"/present"}, {"/missing/child"}, {}, {}, meta);
+        DB::KeeperSnapshotManager manager(3, ctx, this->enable_compression);
+        auto original_info = manager.getLatestSnapshotInfo();
+        auto original_bytes = manager.deserializeLatestSnapshotBufferFromDisk();
+
+        DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+        changelog.init(0, 1000);
+        DB::SnapshotsQueue queue{1};
+        auto leader = std::make_shared<DB::KeeperStateMachine>(nullptr, queue, ctx, nullptr);
+        leader->init();
+        leader->setLogStore(&changelog);
+        for (size_t i = 0; i < 2; ++i)
+            appendEntry(changelog, makeSetEntry(*leader, "/present", "covered"));
+        if (has_log_tail)
+            appendEntry(changelog, makeSetEntry(*leader, "/present", "tail"));
+        changelog.end_of_append_batch(0, 0);
+        waitDurableLogs(changelog);
+
+        ASSERT_FALSE(leader->findOrphanConflictInLogTail(3, changelog.next_slot()).has_value());
+        DB::KeeperSnapshotManager repaired_manager(3, ctx, this->enable_compression);
+        auto repaired_bytes = repaired_manager.deserializeLatestSnapshotBufferFromDisk();
+        EXPECT_FALSE(nuraftBuffersEqual(original_bytes, repaired_bytes));
+        DB::SnapshotFileInfo backup("orphaned_" + original_info->path, disk);
+        EXPECT_TRUE(nuraftBuffersEqual(original_bytes, manager.deserializeSnapshotBufferFromDisk(backup)));
+        EXPECT_EQ(leader->getLatestSnapshotSize(), repaired_bytes->size());
+        ASSERT_FALSE(leader->findOrphanConflictInLogTail(3, changelog.next_slot()).has_value());
+        EXPECT_TRUE(nuraftBuffersEqual(repaired_bytes, repaired_manager.deserializeLatestSnapshotBufferFromDisk()));
+
+        /// Check the transferred bytes before applying them: the unfixed implementation must fail
+        /// this assertion rather than terminate the whole test binary inside `apply_snapshot`.
+        auto follower_ctx = makeContextForSnapshotApply(false, "./follower_snapshots");
+        DB::SnapshotsQueue follower_queue{1};
+        DB::KeeperStateMachine follower(nullptr, follower_queue, follower_ctx, nullptr);
+        follower.init();
+        auto snapshot_meta = leader->last_snapshot();
+        void * transfer_ctx = nullptr;
+        SCOPE_EXIT({
+            if (leader)
+                leader->free_user_snp_ctx(transfer_ctx);
+        });
+        bool is_last = false;
+        uint64_t obj_id = 0;
+        while (!is_last)
+        {
+            nuraft::ptr<nuraft::buffer> data;
+            const bool is_first = obj_id == 0;
+            ASSERT_GT(leader->read_logical_snp_obj(*snapshot_meta, transfer_ctx, obj_id, data, is_last), 0);
+            follower.save_logical_snp_obj(*snapshot_meta, obj_id, *data, is_first, is_last);
+        }
+        EXPECT_GT(obj_id, 1);
+        DB::KeeperSnapshotManager follower_manager(3, follower_ctx);
+        auto check_storage = DB::KeeperStorage::create(500, "", follower_ctx, false);
+        ASSERT_NO_THROW(follower_manager.restoreFromLatestSnapshot(*check_storage));
+        ASSERT_TRUE(follower.apply_snapshot(*snapshot_meta));
+        EXPECT_EQ(committedNodeData(follower.getStorageUnsafe(), "/present"), "present");
+        EXPECT_FALSE(committedNodeExists(follower.getStorageUnsafe(), "/missing/child"));
+
+        /// No graceful shutdown snapshot: only the recovery write can make this restart succeed.
+        leader->free_user_snp_ctx(transfer_ctx);
+        leader.reset();
+        ctx->setRemoveOrphanedNodesOnStartup(false);
+        ctx->setDigestEnabled(true);
+        DB::KeeperStateMachine restarted(nullptr, queue, ctx, nullptr);
+        ASSERT_NO_THROW(restarted.init());
+        EXPECT_EQ(restarted.last_commit_index(), 2);
+        EXPECT_EQ(restarted.last_snapshot()->get_last_log_term(), 7);
+        ASSERT_TRUE(restarted.getClusterConfig());
+        EXPECT_TRUE(nuraftBuffersEqual(restarted.getClusterConfig()->serialize(), config->serialize()));
+        EXPECT_EQ(committedNodeData(restarted.getStorageUnsafe(), "/present"), "present");
+        EXPECT_FALSE(committedNodeExists(restarted.getStorageUnsafe(), "/missing/child"));
+        if (has_log_tail)
+        {
+            restarted.setLogStore(&changelog);
+            restarted.pre_commit(3, changelog.entry_at(3)->get_buf());
+            restarted.commit(3, changelog.entry_at(3)->get_buf());
+            EXPECT_EQ(committedNodeData(restarted.getStorageUnsafe(), "/present"), "tail");
+        }
+    }
+}
+
+TEST_P(CoordinationTestWithCompression, OrphanRemovalArchivesSameIndexDuplicates)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest latest_snapshots("./latest_snapshots");
+    ChangelogDirTest logs("./logs");
+    auto ctx = makeContextForOrphanRemoval(false, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 2, {"/present"}, {"/missing/child"});
+    const auto original_name = snapshotFilesForIdx("./snapshots", 2).at(0);
+    const auto * const duplicate_name = "snapshot_2_duplicate.bin";
+    fs::copy_file(fs::path("./snapshots") / original_name, fs::path("./snapshots") / duplicate_name);
+    fs::copy_file(fs::path("./snapshots") / original_name, fs::path("./latest_snapshots") / original_name);
+    ctx->setLatestSnapshotDisk(std::make_shared<DB::DiskLocal>("LatestSnapshotDisk", "./latest_snapshots"));
+
+    DB::SnapshotsQueue queue{1};
+    {
+        DB::KeeperStateMachine state_machine(nullptr, queue, ctx, nullptr);
+        state_machine.init();
+        ASSERT_FALSE(state_machine.findOrphanConflictInLogTail(3, 3).has_value());
+    }
+    EXPECT_TRUE(snapshotFilesForIdx("./snapshots", 2).empty());
+    EXPECT_EQ(snapshotFilesForIdx("./latest_snapshots", 2).size(), 1);
+    size_t backups = 0;
+    for (const auto & directory : {"./snapshots", "./latest_snapshots"})
+        for (const auto & entry : fs::directory_iterator(directory))
+            backups += entry.path().filename().string().starts_with("orphaned_");
+    EXPECT_EQ(backups, 3);
+
+    ctx->setRemoveOrphanedNodesOnStartup(false);
+    for (size_t i = 0; i < 2; ++i)
+    {
+        DB::KeeperStateMachine restarted(nullptr, queue, ctx, nullptr);
+        ASSERT_NO_THROW(restarted.init());
+        EXPECT_EQ(committedNodeData(restarted.getStorageUnsafe(), "/present"), "present");
+        EXPECT_FALSE(committedNodeExists(restarted.getStorageUnsafe(), "/missing/child"));
+    }
+}
+
+TEST_P(CoordinationTestWithCompression, OrphanRemovalRewriteFailurePreservesOriginal)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    for (const auto & [prefix, mode] : std::vector<std::pair<std::string, SnapshotDiskFailureMode>>{
+             {"snapshot_2_recovered_", SnapshotDiskFailureMode::SyncFile},
+             {"orphaned_", SnapshotDiskFailureMode::SyncFile},
+             {"snapshot_", SnapshotDiskFailureMode::RemoveFileOnce}})
+    {
+        SCOPED_TRACE(prefix);
+        ChangelogDirTest snapshots("./snapshots");
+        ChangelogDirTest logs("./logs");
+        auto ctx = makeContextForOrphanRemoval(false, this->enable_compression, "./snapshots", "./logs");
+        writeSnapshotWithOrphans(ctx, this->enable_compression, 2, {"/present"}, {"/missing/child"});
+        auto disk = std::make_shared<ThrowingSnapshotDisk>("SnapshotDisk", "./snapshots", prefix, mode);
+        ctx->setSnapshotDisk(disk);
+        DB::KeeperSnapshotManager manager(3, ctx, this->enable_compression);
+        auto original_bytes = manager.deserializeLatestSnapshotBufferFromDisk();
+
+        DB::SnapshotsQueue queue{1};
+        DB::KeeperStateMachine state_machine(nullptr, queue, ctx, nullptr);
+        state_machine.init();
+        EXPECT_THROW(state_machine.findOrphanConflictInLogTail(3, 3), std::runtime_error);
+        EXPECT_FALSE(state_machine.getRemovedOrphanSubtreeRoots().empty());
+        EXPECT_TRUE(nuraftBuffersEqual(original_bytes, manager.deserializeLatestSnapshotBufferFromDisk()));
+
+        disk->disarm();
+        ASSERT_FALSE(state_machine.findOrphanConflictInLogTail(3, 3).has_value());
+        ctx->setRemoveOrphanedNodesOnStartup(false);
+        DB::KeeperStateMachine restarted(nullptr, queue, ctx, nullptr);
+        ASSERT_NO_THROW(restarted.init());
+        EXPECT_EQ(committedNodeData(restarted.getStorageUnsafe(), "/present"), "present");
+    }
+}
+
+namespace
+{
+
+class RecoveryDirectorySyncFailureDisk : public DB::DiskLocal
+{
+public:
+    RecoveryDirectorySyncFailureDisk()
+        : DB::DiskLocal("SnapshotDisk", "./snapshots")
+    {
+    }
+
+    size_t fail_at = 0;
+    mutable size_t sync_calls = 0;
+
+    DB::SyncGuardPtr getDirectorySyncGuard(const String & path) const override
+    {
+        if (fail_at && ++sync_calls == fail_at)
+        {
+            /// Exercise the real sync error path without relying on a new test-only API.
+            return std::make_unique<DB::LocalDirectorySyncGuard>(std::numeric_limits<int>::max());
+        }
+        return DB::DiskLocal::getDirectorySyncGuard(path);
+    }
+};
+
+constexpr int interrupted_recovery_exit_code = 86;
+
+class InterruptRecoveryDisk : public DB::DiskLocal
+{
+public:
+    explicit InterruptRecoveryDisk(bool on_publication_)
+        : DB::DiskLocal("SnapshotDisk", "./snapshots")
+        , on_publication(on_publication_)
+    {
+    }
+
+    bool armed = false;
+
+    void removeFile(const String & path) override
+    {
+        DB::DiskLocal::removeFile(path);
+        interruptIfNeeded(path);
+    }
+
+    void moveFile(const String & from, const String & to) override
+    {
+        DB::DiskLocal::moveFile(from, to);
+        /// Object-storage metadata removal first moves the metadata to a random name.
+        interruptIfNeeded(from);
+    }
+
+private:
+    void interruptIfNeeded(const String & path) const
+    {
+        const bool publishing = path.starts_with("tmp_snapshot_") && path.contains("_recovered_");
+        const bool archiving = path.starts_with("snapshot_") && !path.contains("_recovered_");
+        if (armed && (on_publication ? publishing : archiving))
+            ::_exit(interrupted_recovery_exit_code);
+    }
+
+    bool on_publication;
+};
+
+void checkInterruptedOrphanRecovery(bool compression, bool object_storage, bool on_publication)
+{
+    SCOPE_EXIT({
+        fs::remove_all("./snapshots");
+        fs::remove_all("./snapshot_objects");
+        fs::remove_all("./logs");
+    });
+    const auto previous_death_test_style = ::testing::FLAGS_gtest_death_test_style;
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    SCOPE_EXIT({ ::testing::FLAGS_gtest_death_test_style = previous_death_test_style; });
+
+    ASSERT_EXIT(
+        {
+            ChangelogDirTest snapshots("./snapshots");
+            ChangelogDirTest objects("./snapshot_objects");
+            ChangelogDirTest logs("./logs");
+            auto ctx = makeContextForOrphanRemoval(false, compression, "./snapshots", "./logs");
+            auto interrupt_disk = std::make_shared<InterruptRecoveryDisk>(on_publication);
+            if (object_storage)
+                ctx->setSnapshotDisk(createLocalObjectStorageDisk("./snapshots", "./snapshot_objects/", false, interrupt_disk).first);
+            else
+                ctx->setSnapshotDisk(interrupt_disk);
+            writeSnapshotWithOrphans(ctx, compression, 2, {"/present"}, {"/missing/child"});
+            DB::SnapshotsQueue queue{1};
+            DB::KeeperStateMachine state(nullptr, queue, ctx, nullptr);
+            state.init();
+            interrupt_disk->armed = true;
+            state.findOrphanConflictInLogTail(3, 3);
+            ::_exit(0);
+        },
+        ::testing::ExitedWithCode(interrupted_recovery_exit_code),
+        "");
+
+    auto ctx = makeContextForOrphanRemoval(false, compression, "./snapshots", "./logs");
+    DB::DiskPtr disk = ctx->getSnapshotDisk();
+    if (object_storage)
+        disk = createLocalObjectStorageDisk("./snapshots", "./snapshot_objects/").first;
+    SCOPE_EXIT({ disk->shutdown(); });
+    ctx->setSnapshotDisk(disk);
+    ctx->setRemoveOrphanedNodesOnStartup(false);
+    DB::SnapshotsQueue queue{1};
+    DB::KeeperStateMachine restarted(nullptr, queue, ctx, nullptr);
+    ASSERT_NO_THROW(restarted.init());
+    EXPECT_EQ(restarted.last_commit_index(), 2);
+    EXPECT_EQ(committedNodeData(restarted.getStorageUnsafe(), "/present"), "present");
+    EXPECT_FALSE(committedNodeExists(restarted.getStorageUnsafe(), "/missing/child"));
+}
+
+}
+
+TEST_P(CoordinationTestWithCompression, OrphanRemovalPropagatesDirectorySyncFailure)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    /// Marker creation, publication, backup creation, and original removal must each be durable.
+    for (size_t fail_at = 1; fail_at <= 4; ++fail_at)
+    {
+        SCOPED_TRACE(fail_at);
+        ChangelogDirTest snapshots("./snapshots");
+        ChangelogDirTest logs("./logs");
+        auto ctx = makeContextForOrphanRemoval(false, this->enable_compression, "./snapshots", "./logs");
+        auto disk = std::make_shared<RecoveryDirectorySyncFailureDisk>();
+        ctx->setSnapshotDisk(disk);
+        writeSnapshotWithOrphans(ctx, this->enable_compression, 2, {"/present"}, {"/missing/child"});
+        DB::SnapshotsQueue queue{1};
+        DB::KeeperStateMachine state(nullptr, queue, ctx, nullptr);
+        state.init();
+        disk->fail_at = fail_at;
+        EXPECT_THROW(state.findOrphanConflictInLogTail(3, 3), DB::Exception);
+        EXPECT_FALSE(state.getRemovedOrphanSubtreeRoots().empty());
+        disk->fail_at = 0;
+        ASSERT_FALSE(state.findOrphanConflictInLogTail(3, 3).has_value());
+        ctx->setRemoveOrphanedNodesOnStartup(false);
+        DB::KeeperStateMachine restarted(nullptr, queue, ctx, nullptr);
+        ASSERT_NO_THROW(restarted.init());
+        EXPECT_EQ(committedNodeData(restarted.getStorageUnsafe(), "/present"), "present");
+    }
+}
+
+TEST_P(CoordinationTestWithCompression, OrphanRemovalInterruptedLocalPublication)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+    checkInterruptedOrphanRecovery(this->enable_compression, false, true);
+}
+
+TEST_P(CoordinationTestWithCompression, OrphanRemovalInterruptedObjectPublication)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+    checkInterruptedOrphanRecovery(this->enable_compression, true, true);
+}
+
+TEST_P(CoordinationTestWithCompression, OrphanRemovalInterruptedLocalArchival)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+    checkInterruptedOrphanRecovery(this->enable_compression, false, false);
+}
+
+TEST_P(CoordinationTestWithCompression, OrphanRemovalInterruptedObjectArchival)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+    checkInterruptedOrphanRecovery(this->enable_compression, true, false);
+}
+
+TEST_P(CoordinationTestWithCompression, OrphanRemovalPrefersCompletedRecoveryGeneration)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+    auto ctx = makeContextForOrphanRemoval(false, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 2, {"/present"}, {"/missing/child"});
+    DB::KeeperSnapshotManager manager(3, ctx, this->enable_compression);
+    auto damaged = manager.deserializeLatestSnapshotBufferFromDisk();
+    auto storage = DB::KeeperStorage::create(500, "", ctx);
+    addNode(*storage, "/present", "recovered");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage->zxid) = 2;
+    DB::KeeperStorageSnapshot snapshot(storage.get(), 2, nullptr, ctx->getWriteSnapshotVersion());
+    auto repaired = manager.serializeSnapshotToBuffer(snapshot);
+    auto disk = ctx->getSnapshotDisk();
+
+    /// An older completed recovery may itself have needed repair. A newer incomplete write must
+    /// not hide the last completed generation, regardless of directory iteration order.
+    writeSnapshotBufferToFile(disk, "snapshot_2_recovered_1_aaaaaaaa.bin", damaged);
+    writeSnapshotBufferToFile(disk, "snapshot_2_recovered_2_bbbbbbbb.bin", repaired);
+    writeSnapshotBufferToFile(disk, "snapshot_2_recovered_3_cccccccc.bin", damaged);
+    disk->writeFile("tmp_snapshot_2_recovered_3_cccccccc.bin")->finalize();
+
+    ctx->setRemoveOrphanedNodesOnStartup(false);
+    DB::SnapshotsQueue queue{1};
+    DB::KeeperStateMachine state(nullptr, queue, ctx, nullptr);
+    ASSERT_NO_THROW(state.init());
+    EXPECT_EQ(state.last_commit_index(), 2);
+    EXPECT_EQ(committedNodeData(state.getStorageUnsafe(), "/present"), "recovered");
+    EXPECT_FALSE(committedNodeExists(state.getStorageUnsafe(), "/missing/child"));
+    EXPECT_FALSE(disk->existsFile("snapshot_2_recovered_3_cccccccc.bin"));
+    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 2).size(), 1);
 }
 
 /// The recorded anchor must be the *absent parent* (`/missing`), not the orphaned node itself
@@ -2735,6 +3283,9 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesConflictingLogTail)
     auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
     writeSnapshotWithOrphans(ctx, this->enable_compression, 2, {"/present"}, {"/missing/child"});
 
+    DB::KeeperSnapshotManager manager(3, ctx, this->enable_compression);
+    auto original_bytes = manager.deserializeLatestSnapshotBufferFromDisk();
+
     DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
     changelog.init(0, 1000);
     DB::SnapshotsQueue snapshots_queue{1};
@@ -2759,6 +3310,8 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesConflictingLogTail)
 
     /// The roots are kept on conflict so the caller can report them; only a clean tail clears them.
     EXPECT_FALSE(state_machine->getRemovedOrphanSubtreeRoots().empty());
+    EXPECT_TRUE(nuraftBuffersEqual(original_bytes, manager.deserializeLatestSnapshotBufferFromDisk()));
+    EXPECT_FALSE(fs::exists(fs::path("./snapshots") / ("orphaned_" + manager.getLatestSnapshotInfo()->path)));
 }
 
 /// A tail entry below a pruned node: its parent is gone, so `Create` would return `ZNONODE`.

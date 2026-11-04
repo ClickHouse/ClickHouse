@@ -188,6 +188,16 @@ const QuotaTypeInfo & QuotaTypeInfo::get(QuotaType type)
             );
             return info;
         }
+        case QuotaType::WRITTEN_ROWS:
+        {
+            static const auto info = make_info(
+                "WRITTEN_ROWS",
+                "The current total number of rows written during execution of all queries within the current period of time.",
+                "The maximum number of rows to be written during execution of all queries allowed within the specified period of time.",
+                1
+            );
+            return info;
+        }
         case QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS:
         {
             static const auto info = make_info(
@@ -292,7 +302,7 @@ const QuotaKeyTypeInfo & QuotaKeyTypeInfo::get(QuotaKeyType type)
         }
         case QuotaKeyType::NORMALIZED_QUERY_HASH:
         {
-            static const auto info = make_info("NORMALIZED_QUERY_HASH");
+            static const auto info = make_info("NORMALIZED_QUERY_HASH"); // NOLINT(misc-static-initialization-cycle)
             return info;
         }
         case QuotaKeyType::MAX: break;

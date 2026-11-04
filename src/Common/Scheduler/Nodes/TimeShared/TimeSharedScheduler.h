@@ -122,6 +122,8 @@ public:
 
             // Deactivate if required
             deactivate(&iter->second);
+            if (current == nullptr)
+                flushThroughputOnDeactivation();
 
             // Detach
             removed->setParentNode(nullptr);
@@ -141,7 +143,10 @@ public:
         while (true)
         {
             if (current == nullptr) // No active resources
+            {
+                flushThroughputOnDeactivation();
                 return {nullptr, false};
+            }
 
             // Dequeue request from current resource
             // We ask request of any kind and the nodes prioritize Release over Acquire internally (if both are supported)
@@ -156,7 +161,7 @@ public:
             if (request == nullptr) // Possible in case of request cancel, just retry
                 continue;
 
-            incrementDequeued(request->cost);
+            incrementDequeued(request->cost, current != nullptr);
             return {request, current != nullptr};
         }
     }

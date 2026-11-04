@@ -1,0 +1,8 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <automatic_parallel_replicas_mode>1</automatic_parallel_replicas_mode>
+            <automatic_parallel_replicas_min_bytes_per_replica>0</automatic_parallel_replicas_min_bytes_per_replica>
+        </default>
+    </profiles>
+</clickhouse>
