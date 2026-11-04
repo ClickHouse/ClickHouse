@@ -142,8 +142,8 @@ parser.add_argument(
     "Requires a single dedicated instrumented server; clears its coverage tables.",
 )
 parser.add_argument(
-    "--coverage-warm-runs", type=int, default=3,
-    help="Executions after the first execution in coverage mode (default 3).",
+    "--coverage-warm-runs", type=int, default=1,
+    help="Executions after the first execution in coverage mode (default 1).",
 )
 # Explicitly decode files as UTF-8 because sometimes we have Russian characters in queries, and LANG=C is set.
 parser.add_argument(

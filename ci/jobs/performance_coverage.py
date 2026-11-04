@@ -26,7 +26,6 @@ from ci.praktika.utils import Utils
 
 JOB_TIMEOUT = 6 * 3600
 EXPORT_RESERVE = 20 * 60
-TEST_TIMEOUT = 3600
 
 
 def configure(binary):
@@ -137,10 +136,15 @@ def run_tests(paths, output, deadline, warm_runs, manifest, save_manifest, clean
                     command,
                     stdout=out,
                     stderr=subprocess.STDOUT,
-                    timeout=min(TEST_TIMEOUT, remaining),
+                    # Large XML files can legitimately need more than an hour.
+                    # SQL statements have their own limits; bound the complete
+                    # runner by the shard's remaining collection budget.
+                    timeout=remaining,
                 )
             except subprocess.TimeoutExpired:
-                state.update(status="failed", reason="test timeout")
+                state.update(
+                    status="failed", reason="collection budget exhausted during test"
+                )
                 save_manifest()
                 raise
         lines = log.read_text().splitlines()
@@ -190,7 +194,7 @@ def main():
     parser.add_argument("--ch-path", default=perf.temp_dir)
     parser.add_argument("--test-options", default="1/1")
     parser.add_argument("--test", default="")
-    parser.add_argument("--warm-runs", type=int, default=3)
+    parser.add_argument("--warm-runs", type=int, default=1)
     args = parser.parse_args()
     if args.warm_runs < 1:
         parser.error("--warm-runs must be positive")

@@ -1954,10 +1954,10 @@ class JobConfigs:
     ).parametrize(
         *[
             Job.ParamSet(
-                parameter=f"{BuildTypes.PER_TEST_COVERAGE}, per_query_coverage, {batch}/8",
+                parameter=f"{BuildTypes.PER_TEST_COVERAGE}, per_query_coverage, {batch}/16",
                 requires=[ArtifactNames.CH_AMD_PER_TEST_COVERAGE_BUILD],
             )
-            for batch in range(1, 9)
+            for batch in range(1, 17)
         ],
     )
 

@@ -195,7 +195,7 @@ pip3 install clickhouse_driver scipy
 
 ### LLVM coverage collection
 
-`NightlyCoverage` runs eight separate performance coverage shards using
+`NightlyCoverage` runs 16 separate performance coverage shards using
 `amd_llvm_coverage_per_test`. These runs collect source regions; they do not
 produce performance measurements or change PR test selection. The regular
 performance comparison continues to use release binaries.
@@ -209,8 +209,9 @@ still run under coverage.
 Coverage setup and fill statements have a 30-minute execution limit. The client
 socket timeout is one minute longer than the larger of that limit and the query
 execution limit. The CI wrapper allows 10 minutes per query statement (unless
-the XML test specifies `max_query_seconds`), one hour per test, and six hours
-per shard, including a 20-minute export reserve.
+the XML test specifies `max_query_seconds`) and six hours per shard, including
+a 20-minute export reserve. Each test can use the remaining collection budget;
+there is no separate one-hour limit for an entire XML file.
 
 To collect just performance coverage on a PR branch, dispatch the existing
 workflow with `suite=performance` (the scheduled run still collects all suites):
@@ -225,7 +226,7 @@ without random query sampling or the adaptive timing loop:
 
 * `first`: one execution after test setup. This is not guaranteed to be cold:
   setup and earlier queries may have warmed OS, filesystem, or process caches.
-* `warm`: three additional executions, accumulated under one coverage identity.
+* `warm`: one additional execution under a separate coverage identity.
   This captures repeated-execution paths, without claiming that every cache or
   compilation threshold in every test has been reached. `--coverage-warm-runs`
   changes the count for standalone collection.
@@ -261,7 +262,7 @@ server, from the repository root:
 ```bash
 python3 tests/performance/scripts/perf.py tests/performance/array_sort.xml \
     --host localhost --port 9000 --coverage-output tmp/perf-coverage \
-    --coverage-warm-runs 3 --stop-merges --jemalloc-purge disabled
+    --coverage-warm-runs 1 --stop-merges --jemalloc-purge disabled
 ```
 
 The mode requires `WITH_COVERAGE=ON` and `WITH_COVERAGE_DEPTH=ON` and clears
