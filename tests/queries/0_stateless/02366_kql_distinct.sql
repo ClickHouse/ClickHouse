@@ -13,7 +13,7 @@ INSERT INTO Customers VALUES ('Theodore','Diaz','Skilled Manual','Bachelors',28)
 -- The reference relies on `distinct` keeping the input order, which a spilled DISTINCT does not
 -- (CI randomizes the external DISTINCT thresholds).
 set max_bytes_before_external_distinct = 0, max_bytes_ratio_before_external_distinct = 0;
-set allow_experimental_kusto_dialect=1;
+set enable_kusto_dialect=1;
 set dialect = 'kusto';
 
 print '--  distinct * --';

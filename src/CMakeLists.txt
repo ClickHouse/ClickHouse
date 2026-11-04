@@ -563,6 +563,7 @@ set_property(SOURCE
     Columns/IColumn.cpp                        # hashjoin_with_large_output
     Processors/Transforms/WindowTransform.cpp                        # window functions
     Processors/Transforms/Window/SlidingBlocks.cpp                   # window functions
+    Processors/Transforms/Window/SlidingArguments.cpp                # window functions
     Processors/Transforms/Window/SlidingIndexes.cpp                  # window functions
     Processors/Transforms/Window/Partition.cpp                       # window functions
     Processors/Transforms/Window/Peers.cpp                           # window functions

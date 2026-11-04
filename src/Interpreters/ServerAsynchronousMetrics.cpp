@@ -748,10 +748,6 @@ void ServerAsynchronousMetrics::updateThreadStackStats()
         getContext()->addOrUpdateWarningMessage(
             Context::WarningType::MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE,
             PreformattedMessage::create(msg));
-        static std::atomic<bool> logged{false};
-        bool expected = false;
-        if (logged.compare_exchange_strong(expected, true))
-            LOG_WARNING(log, "{}", msg);
         return;
     }
 

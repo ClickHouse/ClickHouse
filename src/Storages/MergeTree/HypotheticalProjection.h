@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/ProjectionsDescription.h>
 
 #include <optional>
@@ -25,9 +26,9 @@ struct HypotheticalProjection
         /// empty until the optimizer analyzes the projection
         std::optional<UInt64> marks;
         UInt64 rows = 0;
-        /// the rows read from the base table for the parts with no projection part
-        UInt64 base_table_rows = 0;
         bool chosen = false;
+        /// the optimizer weighed the projection for this query
+        bool weighed = false;
         /// chosen only because a forcing setting cancels a rejection
         bool forced = false;
         /// the projection order serves the ORDER BY of the query
@@ -39,6 +40,8 @@ struct HypotheticalProjection
         String reason;
         /// parent part name -> granules read from its projection part
         std::unordered_map<String, MarkRanges> ranges;
+        /// the read of the base table that the optimizer weighs an aggregate projection against
+        RangesInDataParts parent_read;
     };
     Outcome outcome;
 

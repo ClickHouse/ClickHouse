@@ -631,7 +631,7 @@ def test_hive_catalog_host_filter(start_cluster):
         "CREATE DATABASE test_hive_host_filter ENGINE = DataLakeCatalog('thrift://localhost:1') "
         "SETTINGS catalog_type = 'hive', warehouse = 'test_warehouse'"
     )
-    settings = {"allow_experimental_database_hms_catalog": 1}
+    settings = {"enable_database_hms_catalog": 1}
     try:
         # Control first: `node4` declares no `remote_url_allow_hosts` at all, so its filter stays
         # uninitialized and allows everything - the same statement gets past the check and fails at
@@ -656,7 +656,7 @@ def test_hive_catalog_host_filter_rejects_nul(start_cluster):
         return node1.query_and_get_error(
             f"CREATE DATABASE test_hive_host_filter_nul ENGINE = DataLakeCatalog('{url}') "
             "SETTINGS catalog_type = 'hive', warehouse = 'test_warehouse'",
-            settings={"allow_experimental_database_hms_catalog": 1},
+            settings={"enable_database_hms_catalog": 1},
         )
 
     try:
