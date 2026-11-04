@@ -24,8 +24,6 @@ namespace DB::ErrorCodes
 namespace
 {
 
-using TokensFormat = TextIndexSerialization::TokensFormat;
-
 /// Appends a front-coded token: common-prefix length, suffix size, suffix bytes.
 void writeFrontCodedToken(WriteBuffer & out, UInt64 lcp, UInt64 data_size, std::string_view suffix)
 {
@@ -54,7 +52,7 @@ std::vector<std::string> deserializeFrontCodedTokens(const std::string & buffer)
     ReadBufferFromMemory in(buffer.data(), buffer.size());
     auto [column, format] = TextIndexSerialization::deserializeTokens(in);
 
-    EXPECT_EQ(format, static_cast<UInt64>(TokensFormat::FrontCodedStrings));
+    EXPECT_EQ(format, static_cast<UInt64>(TextIndexDictionaryBlockEncoding::FrontCodingV1));
 
     /// Cumulative offsets, no terminating zeros: token i is the range [offsets[i - 1], offsets[i]).
     const auto & string_column = assert_cast<const ColumnString &>(*column);
@@ -78,7 +76,7 @@ std::vector<std::string> deserializeFrontCodedTokens(const std::string & buffer)
 TEST(TextIndexFrontCoding, ValidBlockIsAccepted)
 {
     WriteBufferFromOwnString out;
-    writeVarUInt(static_cast<UInt64>(TokensFormat::FrontCodedStrings), out);
+    writeVarUInt(static_cast<UInt64>(TextIndexDictionaryBlockEncoding::FrontCodingV1), out);
     writeVarUInt(3, out); /// num_tokens
 
     /// First token is stored verbatim; the rest are front-coded against the previous one.
@@ -98,7 +96,7 @@ TEST(TextIndexFrontCoding, ValidBlockIsAccepted)
 TEST(TextIndexFrontCoding, LcpPlusDataSizeOverflowIsRejected)
 {
     WriteBufferFromOwnString out;
-    writeVarUInt(static_cast<UInt64>(TokensFormat::FrontCodedStrings), out);
+    writeVarUInt(static_cast<UInt64>(TextIndexDictionaryBlockEncoding::FrontCodingV1), out);
     writeVarUInt(2, out); /// num_tokens
 
     writeVarUInt(4, out);
@@ -112,7 +110,7 @@ TEST(TextIndexFrontCoding, LcpPlusDataSizeOverflowIsRejected)
 TEST(TextIndexFrontCoding, LcpLargerThanPreviousTokenIsRejected)
 {
     WriteBufferFromOwnString out;
-    writeVarUInt(static_cast<UInt64>(TokensFormat::FrontCodedStrings), out);
+    writeVarUInt(static_cast<UInt64>(TextIndexDictionaryBlockEncoding::FrontCodingV1), out);
     writeVarUInt(2, out); /// num_tokens
 
     writeVarUInt(4, out);
@@ -126,7 +124,7 @@ TEST(TextIndexFrontCoding, LcpLargerThanPreviousTokenIsRejected)
 TEST(TextIndexFrontCoding, DataSizeOverflowIsRejected)
 {
     WriteBufferFromOwnString out;
-    writeVarUInt(static_cast<UInt64>(TokensFormat::FrontCodedStrings), out);
+    writeVarUInt(static_cast<UInt64>(TextIndexDictionaryBlockEncoding::FrontCodingV1), out);
     writeVarUInt(2, out); /// num_tokens
 
     writeVarUInt(4, out);
@@ -140,7 +138,7 @@ TEST(TextIndexFrontCoding, DataSizeOverflowIsRejected)
 TEST(TextIndexFrontCoding, RunningOffsetOverflowIsRejected)
 {
     WriteBufferFromOwnString out;
-    writeVarUInt(static_cast<UInt64>(TokensFormat::FrontCodedStrings), out);
+    writeVarUInt(static_cast<UInt64>(TextIndexDictionaryBlockEncoding::FrontCodingV1), out);
     writeVarUInt(2, out); /// num_tokens
 
     writeVarUInt(4, out);
@@ -155,7 +153,7 @@ TEST(TextIndexFrontCoding, RunningOffsetOverflowIsRejected)
 TEST(TextIndexFrontCoding, FirstTokenTooLargeIsRejected)
 {
     WriteBufferFromOwnString out;
-    writeVarUInt(static_cast<UInt64>(TokensFormat::FrontCodedStrings), out);
+    writeVarUInt(static_cast<UInt64>(TextIndexDictionaryBlockEncoding::FrontCodingV1), out);
     writeVarUInt(1, out); /// num_tokens
     writeVarUInt(SerializationString::MAX_STRING_SIZE + 1, out);
 
@@ -166,7 +164,7 @@ TEST(TextIndexFrontCoding, FirstTokenTooLargeIsRejected)
 TEST(TextIndexFrontCoding, ReconstructedTokenTooLargeIsRejected)
 {
     WriteBufferFromOwnString out;
-    writeVarUInt(static_cast<UInt64>(TokensFormat::FrontCodedStrings), out);
+    writeVarUInt(static_cast<UInt64>(TextIndexDictionaryBlockEncoding::FrontCodingV1), out);
     writeVarUInt(2, out); /// num_tokens
 
     writeVarUInt(4, out);

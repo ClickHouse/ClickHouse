@@ -578,6 +578,7 @@ enum class TextIndexDictionaryBlockEncoding : uint8_t
 {
     None = 0,
     FrontCodingV1 = 1,
+    /// Front coding with the prefix and suffix lengths stored as two bit-packed columns.
     FrontCodingV2 = 2,
 };
 

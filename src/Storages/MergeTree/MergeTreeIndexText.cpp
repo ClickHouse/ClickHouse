@@ -940,23 +940,23 @@ template <typename TokenGetter>
 void serializeTokensImpl(
     const TokenGetter & token_getter,
     WriteBuffer & ostr,
-    TextIndexSerialization::TokensFormat format,
+    TextIndexDictionaryBlockEncoding encoding,
     size_t block_begin,
     size_t block_end)
 {
     size_t num_tokens_in_block = block_end - block_begin;
-    writeVarUInt(static_cast<UInt64>(format), ostr);
+    writeVarUInt(static_cast<UInt64>(encoding), ostr);
     writeVarUInt(num_tokens_in_block, ostr);
 
-    switch (format)
+    switch (encoding)
     {
-        case TextIndexSerialization::TokensFormat::RawStrings:
+        case TextIndexDictionaryBlockEncoding::None:
             TextIndexTokensCodec::serializeRaw(token_getter, ostr, block_begin, block_end);
             break;
-        case TextIndexSerialization::TokensFormat::FrontCodedStrings:
+        case TextIndexDictionaryBlockEncoding::FrontCodingV1:
             TextIndexTokensCodec::serializeFrontCodingV1(token_getter, ostr, block_begin, block_end);
             break;
-        case TextIndexSerialization::TokensFormat::FrontCodedStringsV2:
+        case TextIndexDictionaryBlockEncoding::FrontCodingV2:
             TextIndexTokensCodec::serializeFrontCodingV2(token_getter, ostr, block_begin, block_end);
             break;
     }
@@ -1063,25 +1063,12 @@ void TextIndexSerialization::checkTokenSize(size_t token_size)
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size: {}. The maximum is: {}.", token_size, SerializationString::MAX_STRING_SIZE);
 }
 
-TextIndexSerialization::TokensFormat TextIndexSerialization::getTokensFormat(TextIndexDictionaryBlockEncoding encoding)
-{
-    switch (encoding)
-    {
-        case TextIndexDictionaryBlockEncoding::None:
-            return TokensFormat::RawStrings;
-        case TextIndexDictionaryBlockEncoding::FrontCodingV1:
-            return TokensFormat::FrontCodedStrings;
-        case TextIndexDictionaryBlockEncoding::FrontCodingV2:
-            return TokensFormat::FrontCodedStringsV2;
-    }
-}
-
-void TextIndexSerialization::serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format)
+void TextIndexSerialization::serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TextIndexDictionaryBlockEncoding encoding)
 {
     serializeTokensImpl(
         [&](size_t i) { return tokens.getDataAt(i); },
         ostr,
-        format,
+        encoding,
         /*block_begin=*/ 0,
         /*block_end=*/ tokens.size());
 }
@@ -1350,11 +1337,11 @@ std::pair<ColumnPtr, UInt64> TextIndexSerialization::deserializeTokens(ReadBuffe
 
     switch (tokens_format)
     {
-        case static_cast<UInt64>(TokensFormat::RawStrings):
+        case static_cast<UInt64>(TextIndexDictionaryBlockEncoding::None):
             return {TextIndexTokensCodec::deserializeRaw(istr, num_tokens), tokens_format};
-        case static_cast<UInt64>(TokensFormat::FrontCodedStrings):
+        case static_cast<UInt64>(TextIndexDictionaryBlockEncoding::FrontCodingV1):
             return {TextIndexTokensCodec::deserializeFrontCodingV1(istr, num_tokens), tokens_format};
-        case static_cast<UInt64>(TokensFormat::FrontCodedStringsV2):
+        case static_cast<UInt64>(TextIndexDictionaryBlockEncoding::FrontCodingV2):
             return {TextIndexTokensCodec::deserializeFrontCodingV2(istr, num_tokens), tokens_format};
         default:
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown tokens serialization format ({}) in dictionary block", tokens_format);
@@ -1424,8 +1411,6 @@ DictionarySparseIndex serializeTokensAndPostings(
     auto & sparse_index_offsets_data = sparse_index_offsets->getData();
     sparse_index_offsets_data.reserve(num_blocks);
 
-    auto tokens_format = TextIndexSerialization::getTokensFormat(params.dictionary_block_encoding);
-
     for (size_t block_idx = 0; block_idx < num_blocks; ++block_idx)
     {
         size_t block_begin = block_idx * params.dictionary_block_size;
@@ -1446,7 +1431,7 @@ DictionarySparseIndex serializeTokensAndPostings(
         serializeTokensImpl(
             [&](size_t i) { return sorted_tokens[i].token; },
             dictionary_stream.compressed_hashing,
-            tokens_format,
+            params.dictionary_block_encoding,
             block_begin,
             block_end);
 
