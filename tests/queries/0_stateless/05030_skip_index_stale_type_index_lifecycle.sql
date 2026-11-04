@@ -13,9 +13,6 @@ SET mutations_sync = 0, alter_sync = 0;
 -- Statistics part pruning is an independent mechanism that can drop a whole part before any index
 -- is read, which would make these assertions measure something other than the skip index.
 SET use_statistics_for_part_pruning = 0;
--- A TTL merge drops a column whose every value has expired together with the skip indices that read
--- it, without rewriting the part. These cases need the index files left behind, as `MATERIALIZE TTL`
--- leaves them, so TTL merges are stopped on every table with a column TTL before the insert.
 
 SELECT '-- 33. a sibling index rebuilt by MODIFY COLUMN does not keep the column absent';
 -- `MutationsInterpreter` rebuilds every index over a column whose type the mutation changes, so
@@ -25,7 +22,6 @@ CREATE TABLE t_sibling_modify_rebuilt (k UInt64, d DateTime, c String TTL d + IN
     g String, INDEX idx_old (c, g) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
 SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
-SYSTEM STOP TTL MERGES t_sibling_modify_rebuilt;
 INSERT INTO t_sibling_modify_rebuilt SELECT number, '2000-01-01 00:00:00', toString(number * 3), toString(number) FROM numbers(64);
 ALTER TABLE t_sibling_modify_rebuilt MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
@@ -65,7 +61,6 @@ CREATE TABLE t_sibling_cleared (k UInt64, d DateTime, c String TTL d + INTERVAL 
     g String, INDEX idx_old (c, g) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
 SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
-SYSTEM STOP TTL MERGES t_sibling_cleared;
 INSERT INTO t_sibling_cleared SELECT number, '2000-01-01 00:00:00', toString(number * 3), toString(number) FROM numbers(64);
 ALTER TABLE t_sibling_cleared MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
@@ -110,7 +105,6 @@ CREATE TABLE t_sibling_cleared_shadowed (k UInt64, d DateTime, a Array(UInt64),
     INDEX idx_old (c, `a.size0`) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
 SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
-SYSTEM STOP TTL MERGES t_sibling_cleared_shadowed;
 INSERT INTO t_sibling_cleared_shadowed SELECT number, '2000-01-01 00:00:00', [number, number], number + 1, toString(number * 3) FROM numbers(64);
 ALTER TABLE t_sibling_cleared_shadowed MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
@@ -145,7 +139,6 @@ CREATE TABLE t_sibling_modified_shadowed (k UInt64, d DateTime, a Array(UInt64),
     INDEX idx_old (c, `a.size0`) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
 SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
-SYSTEM STOP TTL MERGES t_sibling_modified_shadowed;
 INSERT INTO t_sibling_modified_shadowed SELECT number, '2000-01-01 00:00:00', [number, number], number + 1, toString(number * 3) FROM numbers(64);
 ALTER TABLE t_sibling_modified_shadowed MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
@@ -181,7 +174,6 @@ CREATE TABLE t_sibling_ttl_recalculate_only (k UInt64, d DateTime, c String TTL 
     g String TTL d + INTERVAL 100 YEAR, e UInt64, INDEX idx_old (c, g) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
 SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
-SYSTEM STOP TTL MERGES t_sibling_ttl_recalculate_only;
 INSERT INTO t_sibling_ttl_recalculate_only SELECT number, '2000-01-01 00:00:00', toString(number * 3), toString(number), number FROM numbers(64);
 ALTER TABLE t_sibling_ttl_recalculate_only MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
