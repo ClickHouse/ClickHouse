@@ -183,3 +183,8 @@ OK
 (NOT_IMPLEMENTED)
 (NOT_IMPLEMENTED)
 2
+--- 23. a query parameter naming the database of an INSERT is kept
+OK
+INSERT INTO {db:Identifier}.t5 SELECT 23
+
+[23]

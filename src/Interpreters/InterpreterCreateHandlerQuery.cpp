@@ -138,7 +138,7 @@ void qualifyStatement(ASTPtr & statement, const AddDefaultDatabaseVisitor & visi
 
     if (auto * insert = statement->as<ASTInsertQuery>())
     {
-        if (insert->getDatabase().empty())
+        if (!insert->database)
             insert->setDatabase(database);
         if (insert->select)
             qualify_select(insert->select);

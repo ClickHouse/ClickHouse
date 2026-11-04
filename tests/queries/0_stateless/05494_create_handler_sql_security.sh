@@ -293,3 +293,10 @@ as_default "CREATE HANDLER h22c_${DB} URL '/${DB}/h22c' DEFINER = ${U_DEF} SQL S
 request "${BASE}/${DB}/h22"
 request -u "${U_BGCALLER}:" "${BASE}/${DB}/h22c"
 request "${BASE}/${DB}/h22c"
+
+echo "--- 23. a query parameter naming the database of an INSERT is kept"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE ${DB_B}.t5 (id UInt32) ENGINE = MergeTree ORDER BY id; GRANT INSERT ON ${DB_B}.t5 TO ${U_DEF}"
+as_default "CREATE HANDLER h23_${DB} URL '/${DB}/h23' METHODS (POST) DEFINER = ${U_DEF} SQL SECURITY DEFINER AS INSERT INTO {db:Identifier}.t5 SELECT 23"
+handler_query "h23_${DB}" query
+request -X POST "${BASE}/${DB}/h23?param_db=${DB_B}"
+$CLICKHOUSE_CLIENT -q "SELECT groupArray(id) FROM ${DB_B}.t5"
