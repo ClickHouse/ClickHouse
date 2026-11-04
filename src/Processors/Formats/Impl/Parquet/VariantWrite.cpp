@@ -381,6 +381,15 @@ std::vector<String> splitVariantObjectPath(std::string_view path)
     return segments;
 }
 
+/// Path components of an object leaf. Unlike a prefix, a leaf path always names a key, so the empty
+/// path is the empty key `""` at the root rather than the root itself.
+std::vector<String> splitVariantObjectLeafPath(std::string_view path)
+{
+    if (path.empty())
+        return {String()};
+    return splitVariantObjectPath(path);
+}
+
 size_t getVariantScalarEncodedSizeFromColumn(
     const IColumn & column,
     size_t row,
@@ -913,19 +922,27 @@ std::optional<Field> tryConvertVariantScalarToShreddedField(const Field & field,
         return field;
     };
 
+    auto convert_integral = [&]<typename Leaf, typename Carrier>() -> std::optional<Field>
+    {
+        Leaf converted = 0;
+        if (!tryConvertIntegralFieldValue(field, converted))
+            return std::nullopt;
+        return Field(static_cast<Carrier>(converted));
+    };
+
     switch (normalized_type->getTypeId())
     {
+        /// The value must be representable in the selected leaf type, not only in its `Field` carrier;
+        /// otherwise it stays in the residual.
         case TypeIndex::Int8:
+            return convert_integral.template operator()<Int8, Int64>();
         case TypeIndex::Int16:
+            return convert_integral.template operator()<Int16, Int64>();
         case TypeIndex::Int32:
-        case TypeIndex::Int64:
         case TypeIndex::Date32:
-        {
-            Int64 converted = 0;
-            if (!tryConvertIntegralFieldValue(field, converted))
-                return std::nullopt;
-            return Field(converted);
-        }
+            return convert_integral.template operator()<Int32, Int64>();
+        case TypeIndex::Int64:
+            return convert_integral.template operator()<Int64, Int64>();
         /// Enums are written as their underlying signed integral values;
         /// `preparePrimitiveColumn` and `SchemaConverter` handle the enum type itself.
         /// `ColumnDynamic`'s `operator[]` materializes enum values as their name `String`s
@@ -962,17 +979,15 @@ std::optional<Field> tryConvertVariantScalarToShreddedField(const Field & field,
             return Field(Int64(converted));
         }
         case TypeIndex::UInt8:
+            return convert_integral.template operator()<UInt8, UInt64>();
         case TypeIndex::UInt16:
-        case TypeIndex::UInt32:
-        case TypeIndex::UInt64:
         case TypeIndex::Date:
+            return convert_integral.template operator()<UInt16, UInt64>();
+        case TypeIndex::UInt32:
         case TypeIndex::DateTime:
-        {
-            UInt64 converted = 0;
-            if (!tryConvertIntegralFieldValue(field, converted))
-                return std::nullopt;
-            return Field(converted);
-        }
+            return convert_integral.template operator()<UInt32, UInt64>();
+        case TypeIndex::UInt64:
+            return convert_integral.template operator()<UInt64, UInt64>();
         case TypeIndex::Float32:
         case TypeIndex::Float64:
             return passthrough_if(Field::Types::Float64);
@@ -2066,7 +2081,7 @@ void collectVariantColumnarObjectLeaves(
     {
         auto it = declared_typed_paths.find(path);
         VariantColumnarObjectLeaf leaf;
-        leaf.segments = splitVariantObjectPath(path);
+        leaf.segments = splitVariantObjectLeafPath(path);
         leaf.column = column.get();
         leaf.type = it != declared_typed_paths.end() ? it->second : dynamic_type;
         leaf.row = row;
@@ -2078,7 +2093,7 @@ void collectVariantColumnarObjectLeaves(
         if (column->isNullAt(row))
             continue;
         VariantColumnarObjectLeaf leaf;
-        leaf.segments = splitVariantObjectPath(path);
+        leaf.segments = splitVariantObjectLeafPath(path);
         leaf.column = column;
         leaf.type = dynamic_type;
         leaf.row = row;
@@ -2095,7 +2110,7 @@ void collectVariantColumnarObjectLeaves(
         chassert(context.arena);
         auto [blob_column, blob_type] = materializeVariantSharedBlob(*shared_data_values, i, *context.arena);
         VariantColumnarObjectLeaf leaf;
-        leaf.segments = splitVariantObjectPath(shared_data_paths->getDataAt(i));
+        leaf.segments = splitVariantObjectLeafPath(shared_data_paths->getDataAt(i));
         leaf.column = blob_column;
         leaf.type = blob_type;
         leaf.row = 0;
@@ -3589,6 +3604,12 @@ void analyzeVariantColumnarValue(
             {
                 checkVariantWriteDepth(context.format_settings, depth + object_level + 1);
 
+                if (lvs[pos].segments.size() <= object_level)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "`Parquet` `VARIANT` object leaf has {} path components, expected more than {}",
+                        lvs[pos].segments.size(),
+                        object_level);
                 const String & key = lvs[pos].segments[object_level];
                 size_t next = pos + 1;
                 while (next < e && lvs[next].segments.size() > object_level && lvs[next].segments[object_level] == key)

@@ -1537,8 +1537,11 @@ void insertVariantValueIntoTypedColumn(
     if (typeid_cast<const DataTypeString *>(type.get()))
     {
         String json;
-        WriteBufferFromString buffer(json);
-        writeVariantValueAsJSON(value, buffer, format_settings, depth + 1);
+        {
+            WriteBufferFromString buffer(json);
+            writeVariantValueAsJSON(value, buffer, format_settings, depth + 1);
+            buffer.finalize();
+        }
         column.insertData(json.data(), json.size());
         return;
     }

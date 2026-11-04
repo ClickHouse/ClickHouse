@@ -1,0 +1,16 @@
+-- An empty root key is written and read back
+{"":1}
+-- Keys of a JSON object inside VARIANT are not a FILE group
+{"size":1}
+-- A nested object read as String has no trailing padding
+['{"b":1}']	7
+-- A shredded array path whose residual mixes a nested array with null
+{"a":[2,3,4]}
+{"a":[[1],[]]}
+-- A value that does not fit the selected integer leaf stays in the residual
+1
+2
+256
+-1
+-2
+-1000

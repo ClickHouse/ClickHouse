@@ -108,8 +108,13 @@ DataTypePtr tryBuildExactArrayType(const std::vector<VariantValue> & elements)
     if (!element_type)
         return {};
 
+    /// No exact type when the element type cannot be inside `Nullable` (e.g. `[[1], null]`).
     if (has_nulls)
+    {
         element_type = makeVariantExactOutputTypeNullable(element_type);
+        if (!element_type)
+            return {};
+    }
 
     return std::make_shared<DataTypeArray>(element_type);
 }

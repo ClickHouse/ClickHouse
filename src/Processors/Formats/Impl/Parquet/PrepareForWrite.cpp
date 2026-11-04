@@ -976,7 +976,9 @@ void prepareColumnTuple(
     /// annotated, regardless of `output_format_parquet_string_as_string`.
     std::optional<WriteOptions> file_string_field_options;
     std::optional<WriteOptions> file_binary_field_options;
-    const std::optional<DataTypes> file_element_types = getFileLogicalTypeElementTypes(*type_tuple, name, options);
+    /// Inside `VARIANT`, tuple element names are arbitrary object keys, so they never form a `FILE` group.
+    const std::optional<DataTypes> file_element_types
+        = inside_variant ? std::nullopt : getFileLogicalTypeElementTypes(*type_tuple, name, options);
     if (file_element_types)
     {
         for (size_t i = 0; i < num_elements; ++i)
