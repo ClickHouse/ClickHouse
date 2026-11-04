@@ -2294,6 +2294,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                 auto in_header = [&](const String & name) { return input_types.contains(name); };
                 NamesAndTypesList default_input_subcolumns;
                 NameSet default_input_subcolumn_names;
+                NameSet stale_parents;
                 for (const auto & column : columns_to_compute)
                 {
                     for (const auto & name : getColumnsReadByDefault(default_columns, column.name, in_header))
@@ -2314,11 +2315,22 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                                 }
                             }
                         }
-                        if (subcolumn && subcolumn->isSubcolumn() && input_types.contains(subcolumn->getNameInStorage())
-                            && default_input_subcolumn_names.insert(subcolumn->name).second)
-                            default_input_subcolumns.push_back(*subcolumn);
+                        if (!subcolumn || !subcolumn->isSubcolumn())
+                            continue;
+                        String parent = subcolumn->getNameInStorage();
+                        if (input_types.contains(parent))
+                        {
+                            if (default_input_subcolumn_names.insert(subcolumn->name).second)
+                                default_input_subcolumns.push_back(*subcolumn);
+                        }
+                        /// A stale parent is computed together with the default, which then reads the subcolumn of it.
+                        else if (stage.stale_defaults.contains(parent) && !needed.contains(parent))
+                            stale_parents.insert(std::move(parent));
                     }
                 }
+                for (const auto & column : all_columns)
+                    if (stale_parents.contains(column.name))
+                        columns_to_compute.push_back(column);
                 std::erase_if(input_columns, [&](const auto & column) { return default_input_subcolumn_names.contains(column.name); });
 
                 Block header(input_columns);

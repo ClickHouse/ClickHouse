@@ -84,6 +84,16 @@ ALTER TABLE t_alias_subcolumn UPDATE x = 100 WHERE id = 1, MATERIALIZE COLUMN a;
 SELECT 'alias_subcolumn', id, x, a FROM t_alias_subcolumn ORDER BY id;
 DROP TABLE t_alias_subcolumn;
 
+-- The DEFAULT reads a subcolumn of another unstored DEFAULT column.
+DROP TABLE IF EXISTS t_default_subcolumn;
+CREATE TABLE t_default_subcolumn (id Int64, x Int64, y Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_default_subcolumn SELECT number, number, 0 FROM numbers(3);
+ALTER TABLE t_default_subcolumn ADD COLUMN b Tuple(p Int64) DEFAULT tuple(x);
+ALTER TABLE t_default_subcolumn ADD COLUMN a Int64 DEFAULT b.p * 10;
+ALTER TABLE t_default_subcolumn UPDATE x = tupleElement(b, 'p') + 98 WHERE 1, UPDATE y = a WHERE 1;
+SELECT 'default_subcolumn', id, x, y FROM t_default_subcolumn ORDER BY id;
+DROP TABLE t_default_subcolumn;
+
 -- DELETE predicate and the columns DELETE writes.
 DROP TABLE IF EXISTS t_delete;
 CREATE TABLE t_delete (id Int64, x Int64) ENGINE = MergeTree ORDER BY id;
