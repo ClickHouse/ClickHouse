@@ -1,33 +1,38 @@
 ---
 slug: /clickstack/observability/api-reference
 title: 'API reference'
-description: 'ClickHouse Observability API reference for managing dashboards and alerts and listing data sources'
+description: 'ClickHouse Observability API reference for dashboards, alerts, sources, webhooks, roles, and saved searches'
 doc_type: 'guide'
 keywords: ['ClickHouse Observability', 'API', 'REST API', 'dashboards', 'alerts']
 sidebarTitle: 'API reference'
 ---
 
-ClickHouse Observability uses the ClickHouse Cloud API to manage dashboards and alerts and list data sources.
+ClickHouse Observability uses the ClickHouse Cloud API to manage dashboards, alerts, webhooks, roles, and saved searches, and to access data sources.
 
 <Note>
-Sources are managed for you and cannot be edited. You can list data sources through the API.
+In the fully managed experience, sources are managed for you. Use the source read operations to inspect them; the source creation, update, and deletion operations are for deployments where you manage your own sources.
 </Note>
 
 ## API reference documentation {#api-docs}
 
-For ClickHouse Observability, the API is accessed through the **ClickHouse Cloud API**. The observability endpoints are available in the [Cloud API reference](/products/cloud/api-reference/clickstack/click-stack-list-dashboards).
+Select an endpoint in the sidebar for its parameters, request and response schemas, and interactive examples. These pages use the **ClickHouse Cloud API** specification, with Cloud service URLs and authentication.
 
 The following endpoints are available:
 
 | Resource | Operations |
 |---|---|
-| **Dashboards** | Create, list, get, update, and delete dashboards |
+| **Dashboards** | Create, list, get, update, delete, and validate dashboards |
 | **Alerts** | Create, list, get, update, and delete alerts |
-| **Sources** | List data sources |
+| **Sources** | List and get data sources; create, update, and delete sources where you manage them yourself |
+| **Webhooks** | Create, list, update, delete, and validate webhooks |
+| **Roles** | Create, list, get, update, and delete roles |
+| **Saved searches** | Create, list, get, update, and delete saved searches |
 
 ## Authentication {#authentication}
 
 ClickHouse Observability uses the **ClickHouse Cloud API key** for authentication via [HTTP Basic Authentication](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication). To create and manage API keys, see [Managing API keys](/products/cloud/features/admin-features/api/openapi).
+
+The key must have the `control-plane:service:manage-clickstack-api` permission.
 
 Include the key ID and secret using HTTP Basic Authentication:
 

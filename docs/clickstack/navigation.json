@@ -278,8 +278,74 @@
         {
           "group": "API reference",
           "pages": [
-            "clickstack/observability/api-reference"
-          ]
+            {
+              "group": "Dashboards",
+              "pages": [
+                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
+                "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
+                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                "PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/validate"
+              ]
+            },
+            {
+              "group": "Alerts",
+              "pages": [
+                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
+                "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
+                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
+                "PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
+                "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}"
+              ]
+            },
+            {
+              "group": "Sources",
+              "pages": [
+                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources",
+                "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources",
+                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources/{clickStackSourceId}",
+                "PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources/{clickStackSourceId}",
+                "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources/{clickStackSourceId}"
+              ]
+            },
+            {
+              "group": "Webhooks",
+              "pages": [
+                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks",
+                "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks",
+                "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks/validate",
+                "PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks/{clickStackWebhookId}",
+                "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks/{clickStackWebhookId}"
+              ]
+            },
+            {
+              "group": "Roles",
+              "pages": [
+                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/roles",
+                "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/roles",
+                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/roles/{clickStackRoleId}",
+                "PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/roles/{clickStackRoleId}",
+                "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/roles/{clickStackRoleId}"
+              ]
+            },
+            {
+              "group": "Saved searches",
+              "pages": [
+                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/saved-searches",
+                "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/saved-searches",
+                "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/saved-searches/{clickStackSavedSearchId}",
+                "PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/saved-searches/{clickStackSavedSearchId}",
+                "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/saved-searches/{clickStackSavedSearchId}"
+              ]
+            }
+          ],
+          "expanded": true,
+          "root": "clickstack/observability/api-reference",
+          "openapi": {
+            "source": "_specs/cloud-openapi.json",
+            "directory": "clickstack/observability/api-reference"
+          }
         },
         {
           "group": "Onboarding guides",
