@@ -165,27 +165,31 @@ def frames(data):
 
 query = "CREATE TEMPORARY TABLE native_small_frames (x UInt64); INSERT INTO native_small_frames VALUES (7); SELECT x FROM native_small_frames; SELECT toUInt64(number) FROM numbers(4096) FORMAT Null"
 for codec, method in [('ZSTD', 0x90), ('LZ4', 0x82), ('LZ4HC', 0x82)]:
-    output, streams = capture(query, [f'--network_compression_method={codec}'])
+    codec_options = [f'--network_compression_method={codec}']
+    enabled_options = [*codec_options, '--network_compression_min_bytes=128']
+    output, streams = capture(query, enabled_options)
     assert output == b'7\n'
     for stream in streams:
-        assert any(value == 2 for value, _ in frames(stream)), 'default small-frame bypass was not exercised'
-    output, streams = capture('SELECT number FROM numbers(4096)', [f'--network_compression_method={codec}'])
+        assert any(value == 2 for value, _ in frames(stream)), 'opt-in small-frame bypass was not exercised'
+    output, streams = capture('SELECT number FROM numbers(4096)', enabled_options)
     assert output == b''.join(f'{i}\n'.encode() for i in range(4096))
     server_frames = frames(streams[1])
     assert any(value == 2 for value, _ in server_frames)
     assert any(value == method for value, _ in server_frames)
     assert all(value == (2 if size < 128 else method) for value, size in server_frames)
-    for legacy, extra in [(True, []), (False, ['--network_compression_min_bytes=0']), (False, ['--compatibility=26.10'])]:
-        output, streams = capture('SELECT 7', [f'--network_compression_method={codec}', *extra], legacy=legacy)
+    for legacy, extra in [(True, ['--network_compression_min_bytes=128']), (False, []),
+                          (False, ['--network_compression_min_bytes=0']), (False, ['--compatibility=26.10'])]:
+        output, streams = capture('SELECT 7', [*codec_options, *extra], legacy=legacy)
         assert output == b'7\n'
         assert all(value == method for stream in streams for value, _ in frames(stream))
-    print(codec, 'default mixed frames and compatibility passed')
+    print(codec, 'opt-in mixed frames, disabled default and compatibility passed')
 
-output, _ = capture('SELECT 7', ['--compression=0'])
+output, _ = capture('SELECT 7', ['--compression=0', '--network_compression_min_bytes=128'])
 assert output == b'7\n'
 print('compression disabled passed')
 
-output, streams = capture('SELECT number FROM numbers(4096)', ['--network_compression_method=ZSTD', '--send_profile_events=1', '--send_logs_level=trace'])
+zstd_options = ['--network_compression_method=ZSTD', '--network_compression_min_bytes=128']
+output, streams = capture('SELECT number FROM numbers(4096)', [*zstd_options, '--send_profile_events=1', '--send_logs_level=trace'])
 assert output == b''.join(f'{i}\n'.encode() for i in range(4096))
 assert {method for method, _ in frames(streams[1])} == {2, 0x90}
 print('logs and ProfileEvents passed')
@@ -203,22 +207,22 @@ for compressible in (True, False):
         value_size = payload_size - 31
         value = b'a' * value_size if compressible else random.Random(0).randbytes(value_size)
         query = f"SELECT CAST(unhex('{value.hex()}'), 'FixedString({value_size})') AS b FORMAT RawBLOB"
-        output, streams = capture(query, ['--network_compression_method=ZSTD'])
+        output, streams = capture(query, zstd_options)
         assert output == value
         server_frames = frames(streams[1])
         assert any(size == payload_size for _, size in server_frames)
         assert all(method == (2 if size < 128 else 0x90) for method, size in server_frames)
-print('default boundary with compressible and incompressible values passed')
+print('128-byte boundary with compressible and incompressible values passed')
 
 values = ','.join(f'({i})' for i in range(4096))
 query = f'CREATE TEMPORARY TABLE native_small_frames_large (x UInt64); INSERT INTO native_small_frames_large VALUES {values}; SELECT sum(x) FROM native_small_frames_large'
-output, streams = capture(query, ['--network_compression_method=ZSTD', '--async_insert=0', '--send_table_structure_on_insert_with_inline_data=1'])
+output, streams = capture(query, [*zstd_options, '--async_insert=0', '--send_table_structure_on_insert_with_inline_data=1'])
 assert output == f'{4095 * 4096 // 2}\n'.encode()
 client_frames = frames(streams[0])
 assert {method for method, _ in client_frames} == {2, 0x90}, client_frames
 print('client mixed frames passed')
 
-output, streams = capture('SELECT number FROM numbers(131072)', ['--network_compression_method=ZSTD', '--max_block_size=131072'])
+output, streams = capture('SELECT number FROM numbers(131072)', [*zstd_options, '--max_block_size=131072'])
 assert output == b''.join(f'{i}\n'.encode() for i in range(131072))
 server_frames = frames(streams[1])
 full_frame = server_frames.index((0x90, 2**20))
@@ -226,13 +230,13 @@ assert server_frames[full_frame + 1] == (2, 29), server_frames
 assert all(method == (2 if size < 128 else 0x90) for method, size in server_frames)
 print('mixed frames within a large block passed')
 
-output, streams = capture('SELECT number FROM numbers(0)', ['--network_compression_method=ZSTD'])
+output, streams = capture('SELECT number FROM numbers(0)', zstd_options)
 assert output == b''
 assert {method for method, _ in frames(streams[1])} == {2}
 print('empty result passed')
 
 # Prefer chunking when the server supports it; Fast test's server requires `notchunked`.
-output, streams = capture('SELECT 7', ['--network_compression_method=ZSTD', '--proto_caps=chunked_optional',
+output, streams = capture('SELECT 7', [*zstd_options, '--proto_caps=chunked_optional',
                                       '--send_profile_events=1', '--send_logs_level=trace'])
 assert output == b'7\n'
 assert {method for method, _ in frames(streams[1])} == {2, 0x90}

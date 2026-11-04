@@ -2607,7 +2607,7 @@ Possible values:
         {"26.9", "LZ4", "ZSTD", "Switched the default compression method for client/server and server/server communication from `LZ4` to `ZSTD` to reduce network traffic."}) \
     \
     DECLARE(UInt64, network_compression_min_bytes, DEFAULT_NETWORK_COMPRESSION_MIN_BYTES, R"(
-Send `Native` protocol compression frames with fewer than this many uncompressed bytes using the `NONE` codec instead of [network_compression_method](#network_compression_method). The frame header and checksum are preserved. Frames at or above the threshold use the configured codec. Set to `0` to disable the bypass.
+Send `Native` protocol compression frames with fewer than this many uncompressed bytes using the `NONE` codec instead of [network_compression_method](#network_compression_method). The frame header and checksum are preserved. Frames at or above the threshold use the configured codec. The default is `0`, which disables the bypass; set a positive threshold to enable it.
 
 Requires a peer advertising `Native` protocol revision `54496` or later, which guarantees support for mixed `NONE` and compressed frames. Older peers receive the configured codec for every frame.
 
@@ -2615,7 +2615,7 @@ Applies to frames compressed by client/server and server/server `Native` connect
 
 Larger thresholds trade more network traffic for less compression CPU and allocation overhead. The best choice depends on the codec, data compressibility, and available network bandwidth.
 )", 0, \
-        {"26.11", 0, 128, "Bypass compression for small `Native` frames when both peers advertise support for mixed `NONE` and compressed frames. `0` preserves compression of every frame."}) \
+        {"26.11", 0, 0, "New setting to opt in to bypassing compression for small `Native` frames. Disabled by default."}) \
     \
     DECLARE(Int64, network_zstd_compression_level, 3, R"(
 Adjusts the level of ZSTD compression. Used only when [network_compression_method](#network_compression_method) is set to `ZSTD`. The streaming exchange of a distributed query plan uses it only when [distributed_plan_exchange_compression_method](#distributed_plan_exchange_compression_method) is empty.
