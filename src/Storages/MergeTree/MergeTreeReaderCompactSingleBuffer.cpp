@@ -49,15 +49,31 @@ std::optional<size_t> MergeTreeReaderCompactSingleBuffer::takeCompressedBytesRea
 
     /// A compressed block may hold several columns, read or served from the cache, and may be loaded more than once.
     std::sort(ranges_read.begin(), ranges_read.end());
-    size_t bytes = 0;
-    size_t counted_until = 0;
+    CompressedBlockRanges merged;
     for (const auto & [begin, end] : ranges_read)
     {
-        if (end > std::max(begin, counted_until))
-            bytes += end - std::max(begin, counted_until);
-        counted_until = std::max(counted_until, end);
+        if (end <= begin)
+            continue;
+        if (!merged.empty() && begin <= merged.back().second)
+            merged.back().second = std::max(merged.back().second, end);
+        else
+            merged.emplace_back(begin, end);
     }
     ranges_read.clear();
+
+    /// A block may also hold several granules, in a stripe of several granules, and reading keeps it loaded for the next
+    /// step: then it was counted in the previous step.
+    size_t bytes = 0;
+    auto counted = ranges_counted_in_previous_step.begin();
+    for (const auto & [begin, end] : merged)
+    {
+        bytes += end - begin;
+        while (counted != ranges_counted_in_previous_step.end() && counted->second <= begin)
+            ++counted;
+        for (auto it = counted; it != ranges_counted_in_previous_step.end() && it->first < end; ++it)
+            bytes -= std::min(end, it->second) - std::max(begin, it->first);
+    }
+    ranges_counted_in_previous_step = std::move(merged);
     return bytes;
 }
 

@@ -44,6 +44,8 @@ private:
     /// The ranges in the file of the compressed blocks read, and of those that hold the granules served from the columns
     /// cache, since `takeCompressedBytesRead` was called, see `CompressedReadBufferBase::setBlocksReadSink`.
     CompressedBlockRanges ranges_read;
+    /// The union of the ranges counted by the previous call of `takeCompressedBytesRead`, sorted.
+    CompressedBlockRanges ranges_counted_in_previous_step;
 };
 
 }
