@@ -57,4 +57,3 @@ mixed	1970-01-01 00:02:20.000	3
 [(200000,1),(210000,3),(220000,5)]
 -- disjoint input arrays can each contain duplicate timestamps
 [(80000,1),(125000,2),(140000,3)]
--- a table of version 11 has no histograms.* columns

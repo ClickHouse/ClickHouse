@@ -8,13 +8,10 @@ namespace DB
 {
 class ColumnTuple;
 
-/// Updates hints in a uniquely owned tuple column of sorted, deduplicated histograms. `original_indices` maps the samples to
-/// their input positions; `series_offsets` delimit the input series, independently of the output buckets.
-/// Stale markers always have an unknown hint. Otherwise, the first hint of each series and gauge markers are preserved.
-/// An explicit reset is trusted only if sorting and deduplication retained its original predecessor.
-void detectTimeSeriesHistogramResets(
-    ColumnTuple & histograms,
-    std::span<const size_t> original_indices,
-    std::span<const size_t> series_offsets);
+/// Sets the counter reset hints of a uniquely owned tuple column of histogram samples sorted and deduplicated by timestamp, as the sink
+/// stores them: `series_offsets` delimit the series (the input rows), independently of the output buckets. Within a series every
+/// sample but the first gets the hint of `TimeSeriesHistogramCounterResetRule::hintAfterPredecessor` against its predecessor; the first
+/// sample keeps the hint it was sent with, except a stale marker, whose hint is unknown.
+void detectTimeSeriesHistogramResets(ColumnTuple & histograms, std::span<const size_t> series_offsets);
 
 }

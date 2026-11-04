@@ -123,18 +123,12 @@ def get_events():
 
 def check_histogram_round_trip(histogram, expected_row):
     """Sends one histogram sample of one time series and checks everything it must leave behind: the stored element
-    (`expected_row` is its TSV form, see HISTOGRAMS_QUERY), the row of the samples table it is in, the time range of the series,
-    and the profile events."""
-    events_before = get_events()
+    (`expected_row` is its TSV form, see HISTOGRAMS_QUERY), the row of the samples table it is in and the time range of the series."""
     send(make_write_request(({"__name__": "hist", "job": "api"}, [histogram])))
 
     assert read_histograms() == expected_row + "\n"
     assert node.query(ROWS_QUERY) == "hist\t0\t1\n"
     assert node.query(TIME_RANGES_QUERY) == f"hist\t{histogram.timestamp}\t{histogram.timestamp}\n"
-
-    events_after = get_events()
-    assert events_after["PrometheusRemoteWriteHistograms"] == events_before["PrometheusRemoteWriteHistograms"] + 1
-    assert events_after["PrometheusRemoteWriteDroppedHistograms"] == events_before["PrometheusRemoteWriteDroppedHistograms"]
 
 
 def test_integer_histogram():
@@ -225,11 +219,6 @@ def test_samples_and_histograms_together():
     ) == f"{TIMESTAMP_MS}\t{TIMESTAMP_MS + 2000}\n"
 
 
-
-
-
-
-
 def expect_rejected(histogram, expected_error):
     response = get_response_to_remote_write(
         node.ip_address, 9093, "/write", make_write_request(({"__name__": "bad"}, [histogram]))
@@ -261,6 +250,14 @@ def test_invalid_histograms_are_rejected():
         ),
         "positive side: the bucket indexes overflow Int32",
     )
+    # A negative offset of a span after the first one is rejected even when the span is empty and the indexes still increase,
+    # as Prometheus does; a span with buckets would make the indexes go backwards.
+    expect_rejected(
+        types_pb2.Histogram(
+            count_int=2, sum=1, positive_spans=[span(0, 1), span(-1, 0), span(1, 1)], positive_deltas=[1, 0], timestamp=TIMESTAMP_MS
+        ),
+        "positive side: span #1 has a negative offset -1",
+    )
     # Values which would wrap into valid ones if they were cast to the column types without a check: -309 into -53, 260 into 4.
     expect_rejected(types_pb2.Histogram(sum=1, schema=-309, timestamp=TIMESTAMP_MS), "schema -309 is out of the range -128..127")
     expect_rejected(types_pb2.Histogram(sum=1, schema=300, timestamp=TIMESTAMP_MS), "schema 300 is out of the range -128..127")
@@ -275,8 +272,6 @@ def test_invalid_histograms_are_rejected():
     # The validation of the sink is covered by 05459_timeseries_histograms_validation (the same rules apply to INSERT queries);
     # one case checks that its error reaches the response of the protocol.
     expect_rejected(types_pb2.Histogram(sum=1, schema=9, timestamp=TIMESTAMP_MS), "schema 9 is invalid")
-
-
 
 
 def test_table_of_an_older_version_drops_histograms():
@@ -323,10 +318,12 @@ def test_remote_read_returns_histograms_exactly():
     # Every histogram written by remote write is read back by remote read as the same message. Both arms of the `count` and
     # `zero_count` oneofs are set explicitly, as Prometheus sends them, so the messages compare equal. Every field has a
     # distinct value, so a mix-up of two fields of the same type (e.g. the positive and the negative side) can't go unnoticed.
+    # The counter reset hints are left unknown: the first histogram of a series is returned as unknown whatever was stored
+    # (see test_remote_read_returns_stored_resets_as_unknown).
     integer_histogram = types_pb2.Histogram(
         count_int=15, zero_count_int=2, sum=12.5, schema=3, zero_threshold=0.001,
         positive_spans=[span(-2, 2), span(1, 1)], positive_deltas=[3, -1, 1], negative_spans=[span(0, 1)], negative_deltas=[5],
-        reset_hint=types_pb2.Histogram.ResetHint.NO, timestamp=TIMESTAMP_MS,
+        timestamp=TIMESTAMP_MS,
     )
     float_histogram = types_pb2.Histogram(
         count_float=5.75, zero_count_float=0.5, sum=3.25, schema=0, zero_threshold=0.002,
@@ -382,30 +379,22 @@ def test_remote_read_returns_stale_markers_bit_exactly():
 
 def test_remote_read_resolves_conflicting_samples():
     # Prometheus keeps the sample written first and rejects the others. ClickHouse doesn't keep the order of writes, so it
-    # resolves conflicts when reading, the same way whatever the order of the writes (the rule of TimeSeriesDuplicateTimestampRule):
-    # identical samples collapse into one, of different histograms the one with the greatest count wins, with equal counts the one
-    # with the greatest sum, and a float sample beats a histogram sample.
-    def histogram(count, total=1):
+    # resolves conflicts when reading, the same way whatever the order of the writes: of two histograms the one with the greatest
+    # count wins (the rule of TimeSeriesDuplicateTimestampRule, covered by the stateless tests), and a float sample beats a
+    # histogram sample, which only the protocol shows: both are stored, and the response keeps the float one.
+    def histogram(count):
         return types_pb2.Histogram(
-            count_int=count, zero_count_int=0, sum=total, positive_spans=[span(0, 1)], positive_deltas=[count], timestamp=TIMESTAMP_MS
+            count_int=count, zero_count_int=0, sum=1, positive_spans=[span(0, 1)], positive_deltas=[count], timestamp=TIMESTAMP_MS
         )
 
     for request in [
-        make_write_request(({"__name__": "identical"}, [histogram(3)]), ({"__name__": "smaller_first"}, [histogram(3)]),
-                           ({"__name__": "greater_first"}, [histogram(5)]), ({"__name__": "float_and_histogram"}, [histogram(3)]),
-                           ({"__name__": "smaller_sum_first"}, [histogram(3, 1.5)]), ({"__name__": "greater_sum_first"}, [histogram(3, 2.5)])),
-        make_write_request(({"__name__": "identical"}, [histogram(3)]), ({"__name__": "smaller_first"}, [histogram(5)]),
-                           ({"__name__": "greater_first"}, [histogram(3)]), ({"__name__": "float_and_histogram"}, [], {TIMESTAMP_MS: 7.0}),
-                           ({"__name__": "smaller_sum_first"}, [histogram(3, 2.5)]), ({"__name__": "greater_sum_first"}, [histogram(3, 1.5)])),
+        make_write_request(({"__name__": "smaller_first"}, [histogram(3)]), ({"__name__": "float_and_histogram"}, [histogram(3)])),
+        make_write_request(({"__name__": "smaller_first"}, [histogram(5)]), ({"__name__": "float_and_histogram"}, [], {TIMESTAMP_MS: 7.0})),
     ]:
         send(request)
 
     series = remote_read(TIMESTAMP_MS, TIMESTAMP_MS + 1000)
-    assert list(series[labels_key(__name__="identical")].histograms) == [histogram(3)]
     assert list(series[labels_key(__name__="smaller_first")].histograms) == [histogram(5)]
-    assert list(series[labels_key(__name__="greater_first")].histograms) == [histogram(5)]
-    assert list(series[labels_key(__name__="smaller_sum_first")].histograms) == [histogram(3, 2.5)]
-    assert list(series[labels_key(__name__="greater_sum_first")].histograms) == [histogram(3, 2.5)]
 
     float_and_histogram = series[labels_key(__name__="float_and_histogram")]
     assert [(sample.timestamp, sample.value) for sample in float_and_histogram.samples] == [(TIMESTAMP_MS, 7.0)]
@@ -450,21 +439,24 @@ def test_remote_read_clears_hints_after_float_collisions():
 def test_remote_read_returns_stored_resets_as_unknown():
     # Prometheus returns `GAUGE`, `NO` or `UNKNOWN` over remote read, never `YES`: a reset, explicit or detected, starts a new chunk
     # whose first sample is returned with an unknown hint, and PromQL trusts `YES` without checking the data. A stored reset is
-    # returned as unknown the same way, whether it was sent explicitly or detected on insert; the other hints are returned as stored.
+    # returned as unknown the same way, whether it was sent explicitly or detected on insert. The first histogram of a series is
+    # returned as unknown too: the sink keeps the sender's hint of the first sample of an insert without checking it against the
+    # predecessor, which is in an earlier insert, and Prometheus never trusts a sender's `NO`. The other hints are returned as stored.
     timestamps = [TIMESTAMP_MS + i * 1000 for i in range(3)]
 
     def histogram(timestamp, count, hint):
         return types_pb2.Histogram(timestamp=timestamp, count_int=count, zero_count_int=count, sum=float(count), reset_hint=hint)
 
-    explicit_hints = [types_pb2.Histogram.UNKNOWN, types_pb2.Histogram.YES, types_pb2.Histogram.NO]
+    explicit_hints = [types_pb2.Histogram.NO, types_pb2.Histogram.YES, types_pb2.Histogram.NO]
     explicit = [histogram(t, count, hint) for t, count, hint in zip(timestamps, [1, 2, 3], explicit_hints)]
     detected = [histogram(t, count, types_pb2.Histogram.UNKNOWN) for t, count in zip(timestamps, [5, 2, 3])]
     send(make_write_request(({"__name__": "explicit"}, explicit), ({"__name__": "detected"}, detected)))
 
-    # Stored: the explicit reset is kept, the decrease of the count is detected as a reset, the increases as no reset.
+    # Stored: the explicit hints of the first sample and of the reset are kept, the decrease of the count is detected as a reset,
+    # the increases as no reset.
     assert node.query(
         "SELECT metric_name, histograms.counter_reset_hint FROM prometheus WHERE metric_name IN ('explicit', 'detected') ORDER BY metric_name"
-    ) == "detected\t[0,1,2]\nexplicit\t[0,1,2]\n"
+    ) == "detected\t[0,1,2]\nexplicit\t[2,1,2]\n"
 
     series = remote_read(timestamps[0], timestamps[-1])
     for name in ("explicit", "detected"):

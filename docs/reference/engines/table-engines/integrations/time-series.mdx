@@ -176,22 +176,23 @@ The buckets of a side are pairs of the bucket index and the count sorted by inde
 A row of a float-only series has an empty `histograms` array, a row of a histogram-only series has an empty `samples` array.
 The Prometheus remote-read protocol returns both kinds of samples; a histogram with a reset hint of 1 (a counter reset) is returned with
 an unknown hint, as Prometheus itself returns the first sample of a chunk, so the reader detects the reset from the data instead of
-trusting the hint. PromQL queries evaluate the float samples only until the functions
+trusting the hint; the first histogram of a series in the response, whose predecessor isn't in it, gets an unknown hint too
+unless it is a gauge. PromQL queries evaluate the float samples only until the functions
 support native histograms: the histogram samples of the selected series are ignored, only their timestamps are read to find the
 rows with samples in the queried range.
 
-Counter reset hints are maintained in two places. On insert, after sorting and deduplication, the hint of every histogram sample but
-the first one of each series is recomputed against its predecessor in the same `INSERT`: a decrease of the total count is a reset; with
+Counter reset hints are maintained in two places with one set of rules. On insert, after sorting and deduplication, the hint of every
+histogram sample but the first one of each series is computed against its predecessor in the same `INSERT`: an explicit reset hint is
+kept (a reset can't always be told from the data, e.g. after a schema change); otherwise a decrease of the total count is a reset; with
 the same schema and zero threshold, so is a decrease of any bucket count, the disappearance of a populated bucket, or a change of the
-custom bucket bounds; a change of the schema or of the zero threshold leaves the hint unknown, unless an explicit reset hint whose
-original predecessor was kept already establishes a reset. The first sample of a series keeps the hint it was sent with: its predecessor
-is in an earlier insert, which is not consulted. Gauge markers are kept. A stale sample gets an unknown hint. A counter sample following
-a gauge sample, the sample following a stale one, and a sample of the other flavour than its predecessor (an integer histogram after a
-float one or the reverse) get an unknown hint whatever their counts, unless an explicit reset hint whose original predecessor was kept
-establishes a reset.
+custom bucket bounds; a change of the schema or of the zero threshold leaves the hint unknown. The first sample of a series keeps the
+hint it was sent with: its predecessor is in an earlier insert, which is not consulted. Gauge markers are kept. A stale sample gets an
+unknown hint. A counter sample following a gauge sample, the sample following a stale one, and a sample of the other flavour than its
+predecessor (an integer histogram after a float one or the reverse) get an unknown hint whatever their counts.
 When rows are merged by `timeSeriesGroupArrayHistograms` (in background merges, in reads with `FINAL`, and when the aggregate is called
-directly), a hint is cleared to unknown wherever the sample's predecessor is no longer the one the hint was computed against: the first
-sample of every merged array but the first, and every sample whose neighbour changed by sorting or deduplication. Gauge markers are kept.
+directly), the hint of every sample whose predecessor changed (the first sample of every merged array but the first, and every sample
+whose neighbour changed by sorting or deduplication) is computed again against the new predecessor by the same rules; explicit reset
+hints and gauge markers are kept.
 
 The _samples_ table must have columns:
 

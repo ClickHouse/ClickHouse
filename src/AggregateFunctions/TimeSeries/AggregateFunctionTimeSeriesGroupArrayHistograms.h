@@ -16,6 +16,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/TimeSeries/TimeSeriesDuplicateTimestampRule.h>
+#include <DataTypes/TimeSeries/TimeSeriesHistogramCounterResetRule.h>
 #include <DataTypes/TimeSeries/TimeSeriesHistogramsColumns.h>
 #include <DataTypes/TimeSeries/TimeSeriesHistogramsColumnsView.h>
 #include <base/sort.h>
@@ -107,8 +108,10 @@ struct AggregateFunctionTimeSeriesGroupArrayHistogramsData
 /// TimeSeriesHistogramsColumns), each sorted by timestamp: the result is sorted and deduplicated by timestamp. Of the samples with
 /// the same timestamp the greatest one under the order of `TimeSeriesDuplicateTimestampRule` wins (the greatest total count,
 /// then the greatest `sum`, then the other elements). Arrays in timestamp order are appended, and overlapping arrays are sorted
-/// and deduplicated. Counter reset hints are cleared where the preceding sample is no longer known to be the original predecessor;
-/// the gauge marker is preserved. The result type is the argument type, so the function fits `SimpleAggregateFunction`.
+/// and deduplicated. Where the predecessor of a kept sample changes (the first sample of every array but the first, a sample whose
+/// neighbour changed by sorting or deduplication), its counter reset hint is computed again against the new predecessor by
+/// TimeSeriesHistogramCounterResetRule, as on insert; explicit resets and gauge markers are kept. The result type is the argument
+/// type, so the function fits `SimpleAggregateFunction`.
 template <typename TimestampType>
 class AggregateFunctionTimeSeriesGroupArrayHistograms final
     : public IAggregateFunctionDataHelper<AggregateFunctionTimeSeriesGroupArrayHistogramsData<TimestampType>, AggregateFunctionTimeSeriesGroupArrayHistograms<TimestampType>>
@@ -277,15 +280,18 @@ private:
     }
 
     /// Every array starts after the previous one ended: the result is the concatenation, copied straight into the result column.
+    /// The first sample of every array but the first gets its hint against its new predecessor, the last sample of the previous array.
     static void appendRanges(const Data & data, ColumnTuple & tuple_to)
     {
         ProfileEvents::increment(ProfileEvents::TimeSeriesGroupArrayHistogramsAppendOnlyMerges);
+        const TimeSeriesHistogramsColumnsView view{tuple_to};
+        auto & hints = getCounterResetHints(tuple_to);
         for (const auto & range : data.ranges)
         {
             const size_t begin = tuple_to.size();
             tuple_to.insertRangeFrom(*range.source, range.offset, range.size);
             if (&range != &data.ranges.front())
-                TimeSeriesHistogramCounterResetHint::clear(getCounterResetHints(tuple_to)[begin]);
+                hints[begin] = TimeSeriesHistogramCounterResetRule::hintAfterPredecessor(view, begin - 1, begin);
         }
     }
 
@@ -329,20 +335,24 @@ private:
             }
         }
 
-        /// Decide the winners before clearing hints. Each range has its own predecessor history, including adjacent ranges
-        /// in the concatenated column. Only consecutive samples within the same input array retain their counter reset hints.
-        auto & hints = getCounterResetHints(source);
+        /// The winners are decided first; then every kept sample whose predecessor in the result isn't its predecessor in its input
+        /// array gets its hint against the new one: the first sample of every range (the ranges are adjacent in the concatenated
+        /// column, so adjacency alone doesn't tell) and the samples moved next to another one by the sort or the deduplication.
+        /// The first sample of the result keeps its hint, as the first sample of an insert does.
+        PaddedPODArray<UInt8> is_range_start(num_elements, 0);
         size_t range_begin = 0;
         for (const auto & range : data.ranges)
         {
-            if (range_begin != permutation[0])
-                TimeSeriesHistogramCounterResetHint::clear(hints[range_begin]);
+            is_range_start[range_begin] = 1;
             range_begin += range.size;
         }
+        auto & hints = getCounterResetHints(source);
         for (size_t i = 1; i < num_unique; ++i)
         {
-            if (permutation[i] != permutation[i - 1] + 1)
-                TimeSeriesHistogramCounterResetHint::clear(hints[permutation[i]]);
+            const size_t current = permutation[i];
+            const size_t previous = permutation[i - 1];
+            if ((current != previous + 1) || is_range_start[current])
+                hints[current] = TimeSeriesHistogramCounterResetRule::hintAfterPredecessor(view, previous, current);
         }
 
         /// Copy consecutive source rows together, directly into the result without materializing a permuted column.

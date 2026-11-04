@@ -38,14 +38,14 @@ INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.flags, h
     VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [1], [2], [[(0, 1), (0, 1)]]); -- { serverError INCORRECT_DATA }
 
 SELECT '-- no count is negative';
+-- The buckets of the integer cases add up to count_int, so only the rules on negative counts can fire.
 INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.count_int, histograms.positive_int)
-    VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [0], [[(0, -1)]]); -- { serverError INCORRECT_DATA }
-INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.count_int) VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [-1]); -- { serverError INCORRECT_DATA }
-INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.zero_count_int) VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [-1]); -- { serverError INCORRECT_DATA }
-INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.flags, histograms.positive_float)
-    VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [1], [[(0, -1)]]); -- { serverError INCORRECT_DATA }
+    VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [-1], [[(0, -1)]]); -- { serverError INCORRECT_DATA }
+INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.count_int, histograms.zero_count_int) VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [-1], [-1]); -- { serverError INCORRECT_DATA }
 INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.flags, histograms.count_float) VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [1], [-1]); -- { serverError INCORRECT_DATA }
 INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.flags, histograms.zero_count_float) VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [1], [-1]); -- { serverError INCORRECT_DATA }
+INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.flags, histograms.positive_float)
+    VALUES ('m', map('job', 'api'), [toDateTime64(100, 3)], [1], [[(0, -1)]]); -- { serverError INCORRECT_DATA }
 
 SELECT '-- the buckets and the zero bucket of an integer histogram add up to count_int, or to at most count_int when sum is NaN';
 INSERT INTO ts_val (metric_name, tags, histograms.timestamp, histograms.count_int, histograms.positive_int)

@@ -51,7 +51,7 @@ int TimeSeriesDuplicateTimestampRule::compareHistograms(const View & view, size_
     {
         if (column == &view.counter_reset_hint)
         {
-            /// Clearing a counter hint during merging must not change which histogram payload wins a later merge.
+            /// Changing a counter hint during merging must not change which histogram payload wins a later merge.
             const bool lhs_gauge = view.counter_reset_hint.getData()[lhs] == TimeSeriesHistogramCounterResetHint::Gauge;
             const bool rhs_gauge = view.counter_reset_hint.getData()[rhs] == TimeSeriesHistogramCounterResetHint::Gauge;
             if (lhs_gauge != rhs_gauge)
@@ -62,7 +62,8 @@ int TimeSeriesDuplicateTimestampRule::compareHistograms(const View & view, size_
             return result;
     }
 
-    /// Only identical payloads are ordered by their hints. Prefer an unknown hint so a duplicate cannot restore a cleared hint.
+    /// Only identical payloads are ordered by their hints. Prefer an unknown hint, so that a duplicate cannot replace a hint which
+    /// merging made unknown with a known one.
     const UInt8 lhs_hint = view.counter_reset_hint.getData()[lhs];
     const UInt8 rhs_hint = view.counter_reset_hint.getData()[rhs];
     if (lhs_hint == rhs_hint)

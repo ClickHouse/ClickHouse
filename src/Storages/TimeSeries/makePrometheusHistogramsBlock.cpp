@@ -218,8 +218,9 @@ namespace
     /// index after the previous span (the first one to 0), and the buckets of a span have consecutive indexes. Pairs bucket `i` with
     /// its value from `values`, read by the reader of the type of the values (deltas for `Int64`, counts for `Float64`); a bucket with
     /// a count of 0 is kept, so the spans come back as sent (`client_golang` pads gaps of one or two buckets with empty ones).
-    /// Rejects only what the pairs can't take: spans needing another number of buckets than given, and indexes outside Int32.
-    /// Prometheus's other span rules hold on the pairs, which the sink validates (a negative offset makes the indexes go backwards).
+    /// Rejects what the pairs can't take (spans needing another number of buckets than given, indexes outside Int32) and a negative
+    /// offset of a span after the first one, as Prometheus's `checkHistogramSpans` does: with buckets in the span the indexes would go
+    /// backwards, which the sink rejects anyway; without them the pairs can't tell. The other span rules hold on the pairs.
     template <typename Count>
     void appendPairs(
         const google::protobuf::RepeatedPtrField<prometheus::BucketSpan> & spans,
@@ -239,8 +240,11 @@ namespace
 
         Int64 index = 0;
         size_t bucket = 0;
-        for (const auto & span : spans)
+        for (int span_number = 0; span_number != spans.size(); ++span_number)
         {
+            const auto & span = spans[span_number];
+            if ((span_number > 0) && (span.offset() < 0))
+                fail(histogram, "{} side: span #{} has a negative offset {}", side, span_number, span.offset());
             index += span.offset();
             if (span.length() && ((index < std::numeric_limits<Int32>::min()) || (index + span.length() - 1 > std::numeric_limits<Int32>::max())))
                 fail(histogram, "{} side: the bucket indexes overflow Int32", side);

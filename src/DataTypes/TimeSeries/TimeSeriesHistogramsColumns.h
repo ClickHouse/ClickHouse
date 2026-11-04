@@ -59,11 +59,7 @@ struct TimeSeriesHistogramCounterResetHint
     static constexpr UInt8 Gauge = 3;
 
     /// A counter hint describes the relation to the preceding sample; the gauge marker describes the sample itself.
-    static void clear(UInt8 & hint)
-    {
-        if (hint != Gauge)
-            hint = Unknown;
-    }
+    /// The hints are computed by TimeSeriesHistogramCounterResetRule.
 };
 
 /// The name, the type and the codec of an element of the histogram tuple, and its description for the documentation.

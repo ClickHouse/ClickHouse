@@ -798,7 +798,7 @@ namespace
                     hints = normalized_histogram_hints;
                 else
                 {
-                    detectTimeSeriesHistogramResets(tuple, kinds[1].sorted_indices, kinds[1].sorted_offsets);
+                    detectTimeSeriesHistogramResets(tuple, kinds[1].sorted_offsets);
                     normalized_histogram_hints = hints;
                 }
                 column = std::move(mutable_column);

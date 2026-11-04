@@ -12,8 +12,9 @@ class TimeSeriesHistogramsColumnsView;
 /// duplicates within one INSERT, the aggregate functions `timeSeriesGroupArray` (through `timeseriesMaxValueForDuplicateTimestamp`)
 /// and `timeSeriesGroupArrayHistograms` to the duplicates across the rows of the samples tables, when parts are merged or read.
 /// Both must apply the same rule, or the stored result would depend on whether the duplicates arrived in one block or in two.
-/// The histogram rule compares counter reset hints only after the other payload elements, so clearing a hint during merging
-/// cannot change the winning payload (up to payloads the comparison of ClickHouse considers equal, see `compareHistograms`).
+/// The histogram rule compares counter reset hints only after the other payload elements, so changing a hint during merging
+/// (see TimeSeriesHistogramCounterResetRule) cannot change the winning payload (up to payloads the comparison of ClickHouse
+/// considers equal, see `compareHistograms`).
 class TimeSeriesDuplicateTimestampRule
 {
 public:

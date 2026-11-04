@@ -101,17 +101,17 @@ SELECT 'explicit_reset_after_stale', [0, 1], [reinterpretAsFloat64(toUInt64(9218
 UNION ALL
 SELECT 'gauge_after_stale', [0, 3], [reinterpretAsFloat64(toUInt64(9218868437227405314)), 1.], [10, 0], [0, 3];
 
--- Infer against the final sorted neighbors; a moved explicit hint cannot describe its new predecessor.
+-- Infer against the final sorted neighbors; a moved explicit reset is kept.
 INSERT INTO histogram_reset_cases (name, timestamps, hints, zeros, expected) VALUES
     ('unsorted_decrease', ['2026-01-01 00:01:41', '2026-01-01 00:01:40'], [2, 2], [1, 2], [2, 1]),
-    ('moved_explicit_reset', ['2026-01-01 00:01:41', '2026-01-01 00:01:40'], [1, 2], [2, 1], [2, 2]),
+    ('moved_explicit_reset', ['2026-01-01 00:01:41', '2026-01-01 00:01:40'], [1, 2], [2, 1], [2, 1]),
     ('bucket_boundary', ['2026-01-01 00:01:59', '2026-01-01 00:02:00'], [0, 2], [2, 1], [0, 1]);
 
--- An explicit reset is trusted only when its original predecessor survived the deduplication of equal timestamps (the sample with
--- the greatest count wins): in the first case the reset describes a dropped predecessor, in the second one the kept predecessor.
+-- An explicit reset is kept whether or not its original predecessor survived the deduplication of equal timestamps (the sample with
+-- the greatest count wins): a reset can't always be told from the data, and the counts don't decrease in either case.
 INSERT INTO histogram_reset_cases (name, timestamps, hints, schemas, thresholds, sums, zeros, positive, negative, bounds, expected) VALUES
     ('explicit_reset_after_lost_duplicate', ['2026-01-01 00:01:40', '2026-01-01 00:01:40', '2026-01-01 00:01:41'],
-     [0, 0, 1], [0, 0, 0], [0, 0, 0], [1, 1, 1], [5, 1, 6], [[], [], []], [[], [], []], [[], [], []], [0, 2]),
+     [0, 0, 1], [0, 0, 0], [0, 0, 0], [1, 1, 1], [5, 1, 6], [[], [], []], [[], [], []], [[], [], []], [0, 1]),
     ('explicit_reset_after_winning_duplicate', ['2026-01-01 00:01:40', '2026-01-01 00:01:40', '2026-01-01 00:01:41'],
      [0, 0, 1], [0, 0, 0], [0, 0, 0], [1, 1, 1], [1, 5, 6], [[], [], []], [[], [], []], [[], [], []], [0, 1]);
 

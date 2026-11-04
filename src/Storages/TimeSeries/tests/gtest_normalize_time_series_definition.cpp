@@ -417,11 +417,12 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, TypesDeclaredInInnerColumns)
         "TAGS INNER COLUMNS (id UInt64)");
 
     EXPECT_TRUE(definition.contains("`samples` Array(Tuple(DateTime64(6), Float32))")) << definition;
-    const String samples_column = "`id` UInt64, `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6), value Float32))), `bucket` DateTime64(6)";
+    const String samples_column = "`id` UInt64, `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6), value Float32))), "
+        "`histograms` " + histogramsInnerType("DateTime64(6)") + ", `bucket` DateTime64(6)";
     EXPECT_TRUE(extractInnerColumns(definition, "SAMPLES").contains(samples_column)) << definition;
     EXPECT_FALSE(extractInnerColumns(definition, "SAMPLES").contains("CODEC `samples")) << definition;
     EXPECT_TRUE(extractInnerColumns(definition, "RECENT SAMPLES").contains(samples_column)) << definition;
-    EXPECT_TRUE(extractInnerColumns(definition, "RECENT SAMPLES").ends_with(DEFAULT_SAMPLES_CODECS)) << definition;
+    EXPECT_TRUE(extractInnerColumns(definition, "RECENT SAMPLES").ends_with(DEFAULT_SAMPLES_CODECS + DEFAULT_HISTOGRAMS_CODECS)) << definition;
     EXPECT_TRUE(extractInnerColumns(definition, "TAGS").starts_with("`id` UInt64 DEFAULT sipHash64(tags), ")) << definition;
     EXPECT_EQ(extractInnerColumns(definition, "TIME RANGES"),
         "`id` UInt64, `min_time` SimpleAggregateFunction(min, DateTime64(6)), `max_time` SimpleAggregateFunction(max, DateTime64(6))");
@@ -1030,9 +1031,10 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsCopiesInnerDefinitions)
     definition = normalizeNewTableAs(
         "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SAMPLES INNER COLUMNS (samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6), value Float32))))", src);
     EXPECT_EQ(extractInnerColumns(definition, "SAMPLES"),
-        "`id` UInt64, `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6), value Float32))), `bucket` DateTime64(6)" + DEFAULT_TIMESTAMP_CODEC
+        "`id` UInt64, `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6), value Float32))), "
+        "`histograms` " + histogramsInnerType("DateTime64(6)") + ", `bucket` DateTime64(6)" + DEFAULT_TIMESTAMP_CODEC
         + ", `min_time` SimpleAggregateFunction(min, DateTime64(6))" + DEFAULT_TIMESTAMP_CODEC
-        + ", `max_time` SimpleAggregateFunction(max, DateTime64(6))" + DEFAULT_TIMESTAMP_CODEC);
+        + ", `max_time` SimpleAggregateFunction(max, DateTime64(6))" + DEFAULT_TIMESTAMP_CODEC + DEFAULT_HISTOGRAMS_CODECS);
     EXPECT_TRUE(extractInnerColumns(definition, "RECENT SAMPLES").contains("`id` UInt64, `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6), value Float32)))")) << definition;
     EXPECT_EQ(extractInnerColumns(definition, "TAGS"),
         "`id` UInt64 DEFAULT sipHash64(tags), `metric_name` LowCardinality(String), `tags` Map(LowCardinality(String), String)" + DEFAULT_TAGS_INDEX);
@@ -1317,13 +1319,13 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, SamplesSubcolumnCodecs)
     const String src = normalizeNewTable(
         "CREATE TABLE db.src ENGINE = TimeSeries SAMPLES INNER COLUMNS (samples " + DEFAULT_SAMPLES_TYPE + ", "
         "CODEC samples.timestamp (DoubleDelta, ZSTD(1)), CODEC samples.value (Gorilla, ZSTD(1)))");
-    EXPECT_TRUE(extractInnerColumns(src, "SAMPLES").contains(declared_codecs)) << src;
+    EXPECT_TRUE(extractInnerColumns(src, "SAMPLES").ends_with(declared_codecs + DEFAULT_HISTOGRAMS_CODECS)) << src;
     EXPECT_FALSE(extractInnerColumns(src, "SAMPLES").contains(DEFAULT_SAMPLES_CODECS)) << src;
 
     /// A copy keeps the declared codecs of the source, and the generated codecs are generated again without duplicates.
     definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries", src);
     const String copied_samples_columns = extractInnerColumns(definition, "SAMPLES");
-    EXPECT_TRUE(copied_samples_columns.contains(declared_codecs)) << definition;
+    EXPECT_TRUE(copied_samples_columns.ends_with(declared_codecs + DEFAULT_HISTOGRAMS_CODECS)) << definition;
     EXPECT_EQ(copied_samples_columns.find("CODEC `samples.timestamp`"), copied_samples_columns.rfind("CODEC `samples.timestamp`")) << definition;
 
     definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries", normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries"));

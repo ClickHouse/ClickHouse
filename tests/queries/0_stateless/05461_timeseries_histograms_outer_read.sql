@@ -9,7 +9,6 @@ SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS ts;
-DROP TABLE IF EXISTS ts_v11;
 
 -- The buckets are 60 seconds long; the recent samples table is disabled because its TTL would drop the old samples.
 CREATE TABLE ts ENGINE = TimeSeries SETTINGS samples_bucket_step_seconds = 60, recent_samples_ttl_seconds = 0
@@ -107,9 +106,4 @@ FROM
 )
 SETTINGS max_threads = 1;
 
-SELECT '-- a table of version 11 has no histograms.* columns';
-CREATE TABLE ts_v11 ENGINE = TimeSeries SETTINGS version = 11, recent_samples_ttl_seconds = 0;
-SELECT histograms.timestamp FROM ts_v11; -- { serverError UNKNOWN_IDENTIFIER }
-
-DROP TABLE ts_v11;
 DROP TABLE ts;

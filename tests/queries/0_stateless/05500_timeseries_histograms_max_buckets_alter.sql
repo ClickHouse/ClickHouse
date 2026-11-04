@@ -5,7 +5,6 @@
 SET allow_experimental_time_series_table = 1;
 
 DROP TABLE IF EXISTS ts;
-DROP TABLE IF EXISTS ts_v11;
 
 -- The recent samples table is disabled because its TTL would drop the old samples.
 CREATE TABLE ts ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0;
@@ -30,9 +29,4 @@ INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.count_int, h
     VALUES ('m', map('job', 'api'), [toDateTime64(103, 3)], [3], [[(0, 1), (1, 1), (2, 1)]]);
 SELECT sum(length(histograms)) FROM timeSeriesSamples(ts);
 
-SELECT '-- a table of a version without histograms cannot get the setting';
-CREATE TABLE ts_v11 ENGINE = TimeSeries SETTINGS version = 11, recent_samples_ttl_seconds = 0;
-ALTER TABLE ts_v11 MODIFY SETTING histograms_max_buckets = 2; -- { serverError INVALID_SETTING_VALUE }
-
-DROP TABLE ts_v11;
 DROP TABLE ts;

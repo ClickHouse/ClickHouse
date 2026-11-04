@@ -18,8 +18,10 @@ class IColumn;
 ///
 /// A histogram keeps its representation: an integer one with `count_int`, `zero_count_int` and bucket deltas, a float one with the
 /// float fields; the pairs of a side become spans and buckets, adjacent indexes making one span. The reset hint is `GAUGE`, `NO` or
-/// `UNKNOWN`, never `YES`, as Prometheus returns it (see `toPrometheusResetHint`). Prometheus keeps the first of conflicting samples
-/// at one timestamp, which isn't known here, so a float sample beats a histogram sample at the same timestamp.
+/// `UNKNOWN`, never `YES`, as Prometheus returns it (see `toPrometheusResetHint`); a counter hint is returned as `UNKNOWN` when the
+/// predecessor it describes isn't in the response: the first histogram of the series, and the one after a skipped histogram.
+/// Prometheus keeps the first of conflicting samples at one timestamp, which isn't known here, so a float sample beats a histogram
+/// sample at the same timestamp.
 void addPrometheusHistogramsToTimeSeries(
     const IColumn & histograms_column, size_t row, UInt32 timestamp_scale, prometheus::TimeSeries & time_series);
 

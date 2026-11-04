@@ -59,9 +59,10 @@ histogram, `count_float` for a float one; a NaN count loses to any other count),
 elements decide, the gauge marker among them: a gauge histogram beats a counter one with the same count and sum. The other counter
 reset hints only break ties between otherwise identical payloads, with unknown preferred over known hints.
 The winning histogram payload does not depend on the order of merging. Where merging changes a sample's predecessor or joins separate
-input arrays, its counter reset hint becomes unknown; gauge markers are preserved. The result type is the type of the argument, so
-the function can be used in the `SimpleAggregateFunction` data type.
-    )";
+input arrays, its counter reset hint is detected again against the new predecessor by the rules of the inserts into a `TimeSeries` table
+(a decrease of a count is a reset, a change of the schema or of the zero threshold makes the hint unknown); explicit reset hints and gauge
+markers are kept. The result type is the type of the argument, so the function can be used in the `SimpleAggregateFunction` data type.
+)";
     FunctionDocumentation::Syntax syntax = "timeSeriesGroupArrayHistograms(histograms)";
     FunctionDocumentation::Arguments arguments = {
         {"histograms", "Histogram samples of a time series sorted by timestamp, with the type of the `histograms` column of a TimeSeries table.", {"Array(Tuple(DateTime64, ...))", "Array(Tuple(DateTime, ...))", "Array(Tuple(UInt32, ...))"}},
