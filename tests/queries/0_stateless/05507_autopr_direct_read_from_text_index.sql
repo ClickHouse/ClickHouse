@@ -31,6 +31,21 @@ SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_local
 SELECT id % 10 AS k, count() FROM tab WHERE hasToken(str, 'rare') GROUP BY k ORDER BY k
 SETTINGS log_comment = '05507_direct_read';
 
+-- The plan for automatic parallel replicas must take the index conditions from the single-node plan rather
+-- than build them: building them runs the subquery of an `IN` it cannot adopt, here the set
+-- `query_plan_convert_join_to_in` keys by a random UUID.
+DROP TABLE IF EXISTS keys;
+CREATE TABLE keys (id UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO keys SELECT number * 7 FROM numbers(600);
+
+SET query_plan_convert_join_to_in = 1;
+
+SELECT count(), sum(tab.id) FROM tab JOIN keys ON tab.id = keys.id WHERE hasToken(tab.str, 'rare')
+SETTINGS log_comment = '05507_join_to_in';
+
+SELECT count(), sum(tab.id) FROM tab JOIN keys ON tab.id = keys.id WHERE hasToken(tab.str, 'rare')
+SETTINGS log_comment = '05507_join_to_in_single_node', enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 
@@ -50,4 +65,17 @@ WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDa
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
+-- The set is built once, and the query reads as many rows as without parallel replicas.
+SELECT
+    log_comment,
+    ProfileEvents['SetsBuiltFromSubquery'] AS sets_built,
+    read_rows = (
+        SELECT read_rows FROM system.query_log
+        WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
+          AND event_date >= yesterday() AND log_comment = '05507_join_to_in_single_node') AS same_rows_as_single_node
+FROM system.query_log
+WHERE type = 'QueryFinish' AND is_initial_query AND current_database = currentDatabase()
+  AND event_date >= yesterday() AND log_comment = '05507_join_to_in';
+
+DROP TABLE keys;
 DROP TABLE tab;

@@ -274,23 +274,6 @@ bool planContainsLogicalExchange(const QueryPlan::Node & root);
 void checkCascadesSupported(const QueryPlan::Node & root);
 void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
-/// Direct read from a text index takes the conditions it rewrites from the indexes built by
-/// `optimizePrimaryKeyConditionAndLimit`, so a plan optimized without that pass would still need them for such a read.
-/// Otherwise the plan of automatic parallel replicas keeps the text-search functions the single-node plan has
-/// rewritten, and the two plans never match.
-static bool readNeedsIndexesForDirectTextRead(const QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
-{
-    if (!optimization_settings.direct_read_from_text_index)
-        return false;
-
-    const auto * read = typeid_cast<const ReadFromMergeTree *>(node.step.get());
-    if (!read)
-        return false;
-
-    return std::ranges::any_of(
-        read->getStorageMetadata()->getSecondaryIndices(), [](const auto & index) { return index.type == TEXT_INDEX_NAME; });
-}
-
 /// Rule for passes under `make_distributed_plan`: a pass that can turn a serializable step into a
 /// non-serializable one, or insert one (read-in-order, distinct-in-order, aggregation-in-order,
 /// lazy materialization and lazy FINAL, the scattered full-sorting merge join), must not run while
@@ -329,13 +312,14 @@ void optimizeTreeSecondPass(
 
     while (!stack.empty())
     {
-        if (optimization_settings.query_plan_optimize_primary_key || readNeedsIndexesForDirectTextRead(*stack.back().node, optimization_settings))
+        if (optimization_settings.query_plan_optimize_primary_key)
             optimizePrimaryKeyConditionAndLimit(stack);
 
         updateQueryConditionCache(stack, optimization_settings);
 
         /// Must be executed after index analysis and before PREWHERE optimization.
-        processAndOptimizeTextIndexFunctions(stack, nodes, optimization_settings.direct_read_from_text_index, extra_settings);
+        processAndOptimizeTextIndexFunctions(
+            stack, nodes, optimization_settings.direct_read_from_text_index, optimization_settings.find_single_node_read, extra_settings);
 
         auto & frame = stack.back();
 
