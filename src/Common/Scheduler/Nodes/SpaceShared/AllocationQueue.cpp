@@ -513,6 +513,7 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
 ResourceAllocation * AllocationQueue::selectAllocationToSpill(ResourceCost at_least, String & details)
 {
     std::lock_guard lock(mutex);
+    // The least important reclaimable allocation, in the same `ByKey` order as the eviction victim.
     auto it = std::find_if(running_allocations.rbegin(), running_allocations.rend(), [](const auto & allocation)
     {
         return getAvailableReclaimable(allocation) > 0;

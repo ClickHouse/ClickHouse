@@ -171,8 +171,8 @@ struct SpaceSharedResourceHolder
 /// Lock ordering: `AllocationQueue::mutex` -> `SpillableAllocation::mutex`.
 struct SpillableAllocation : public ResourceAllocation
 {
-    SpillableAllocation(AllocationQueue * queue_, const String & name_, ResourceCost initial_size)
-        : ResourceAllocation(*queue_, name_)
+    SpillableAllocation(AllocationQueue * queue_, const String & name_, ResourceCost initial_size, Int32 eviction_score_ = 0)
+        : ResourceAllocation(*queue_, name_, eviction_score_)
     {
         real_size = initial_size;
         if (initial_size > 0)
@@ -2157,8 +2157,7 @@ TEST(SchedulerSpaceShared, MemoryEvictionScoreEvictsHighestFirst)
 }
 
 
-/// Regression guard: with a uniform `eviction_score` (the default), the largest reservation is evicted
-/// first.
+/// With a uniform `eviction_score` (the default), the largest reservation is evicted first.
 TEST(SchedulerSpaceShared, MemoryEvictionScoreEqualEvictsLargestFirst)
 {
     SpaceSharedTest t;
@@ -2186,11 +2185,10 @@ TEST(SchedulerSpaceShared, MemoryEvictionScoreEqualEvictsLargestFirst)
 }
 
 
-/// The reported score inversion (clickhouse-gh r3998593314): a running `reserve_memory = 0` requester with a
-/// high `eviction_score`, growing under the workload limit next to a lower-score memory holder, must fail its
-/// own grow rather than evict the holder. A zero-size allocation is admitted the moment it starts running, so
-/// the requester participates in `ByKey` by score and — carrying the highest score — is selected as
-/// the victim of its own increase, leaving the lower-score peer untouched.
+/// A running `reserve_memory = 0` requester with a high `eviction_score`, growing under the workload limit next
+/// to a lower-score memory holder, must fail its own grow rather than evict the holder. A zero-size allocation
+/// is admitted the moment it starts running, so the requester takes part in `ByKey` by score and, carrying the
+/// highest score, is selected as the victim of its own increase.
 TEST(SchedulerSpaceShared, MemoryEvictionScoreZeroReserveRequesterSelfKillsBeforeLowerScorePeer)
 {
     SpaceSharedTest t;
@@ -2263,6 +2261,33 @@ TEST(SchedulerSpaceShared, MemoryEvictionScoreLowerScoreGrowsFirst)
     EXPECT_EQ(lo.size(), 70) << "The lower-score allocation must be served first even with the larger fair_key";
     EXPECT_EQ(hi.killCount(), 1u) << "The higher-score allocation must fail its own grow";
     EXPECT_FALSE(hi.everIncreased()) << "The higher-score allocation must never grow — it is served last";
+}
+
+
+/// Spilling under the soft limit follows the same order as eviction: the reclaimable allocation with the
+/// highest `eviction_score` is asked to spill first, even when it is smaller. Ordering by size alone would
+/// pick `big`.
+TEST(SchedulerSpaceShared, MemoryEvictionScoreSpillsHighestFirst)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    AllocationLimit * limit = r.addLimit("/", 100000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+    r.setSoftLimit(limit, 10000);
+
+    SpillableAllocation big(queue, "big", 6000, /* eviction_score = */ 0);
+    SpillableAllocation small_hi(queue, "small_hi", 3000, /* eviction_score = */ 100);
+    big.reportReclaimable(6000);
+    small_hi.reportReclaimable(3000);
+    EXPECT_EQ(big.spillCount(), 0);
+    EXPECT_EQ(small_hi.spillCount(), 0);
+
+    big.setSize(8000); // 11000 > 10000
+    r.sync();
+    EXPECT_EQ(small_hi.spillCount(), 1);
+    EXPECT_EQ(small_hi.lastSpillAtLeast(), 1000);
+    EXPECT_EQ(big.spillCount(), 0);
 }
 
 

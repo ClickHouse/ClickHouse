@@ -88,7 +88,7 @@ private:
     /// Both actions read opposite ends of this one order:
     ///   - `increasing_allocations`: the next increase to process is the most important allocation (`begin()`);
     ///   - `running_allocations`: the eviction victim is the least important allocation (`rbegin()` — the
-    ///     highest `eviction_score`, then the largest `fair_key`).
+    ///     highest `eviction_score`, then the largest `fair_key`), and so is the spill victim among reclaimable ones.
     /// `fair_key` is a mutable key, so an allocation must be erased from the set before it changes and
     /// re-inserted afterwards. Pending and admitting allocations are structurally absent from
     /// `running_allocations`, so they are never selected as victims.
