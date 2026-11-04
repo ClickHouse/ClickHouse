@@ -212,6 +212,9 @@ public:
     /// Whether `convertToNullable` was called, also when the result type cannot be `Nullable` and did not change.
     bool isConvertedToNullable() const { return wrap_with_nullable; }
 
+    /// Compares what `isEqualImpl` compares except the result type. Children are not compared.
+    bool isEqualExceptResultType(const FunctionNode & rhs) const;
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
