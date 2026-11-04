@@ -64,6 +64,16 @@ public:
         /// the rejection of an ignored branch must not reject a sibling branch writing into the same table
         /// with different limits. Not set together with `deferred`.
         std::shared_ptr<DeferredOutcome> isolated;
+        /// For a deferred check: whether it is enforced by a sink that is created later, by a nested INSERT -
+        /// the `BufferSink` of a `Buffer` further down the forwarding chain - rather than by the forwarding sink
+        /// that registered it. Only the outcome of such a check is handed to a deferred check that is registered
+        /// after the decision (see `addCheck`). A check behind a `Buffer` runs with the context of the buffer's
+        /// destination write (and of the views behind it), whichever branch of the query has reached the buffer,
+        /// so its outcome is the outcome of the late check as well. The checks enforced by the forwarding sink
+        /// that registered them run with the context of its branch, and the same forwarding storage may be
+        /// reached by several branches with different `SQL SECURITY` contexts, so their outcome is not handed
+        /// to a check of another branch: the forwarding sink enforces it before the nested INSERT starts anyway.
+        bool enforced_later = false;
     };
 
     /// `InsertStartGates::get` moves the checks of a merged gate without allocating, so it cannot fail half way.
@@ -111,7 +121,7 @@ public:
         {
             if ((check.deferred || check.isolated) && !check.enforced_by.expired())
             {
-                const auto & failed = check.deferred ? failed_deferred : failed_isolated;
+                const auto & failed = check.deferred ? failed_deferred_enforced_later : failed_isolated;
                 auto & own_outcome = check.deferred ? check.deferred : check.isolated;
                 for (const auto & [enforced_by, outcome] : failed)
                 {
@@ -165,13 +175,16 @@ public:
         {
             /// Reserved before the checks run, so that recording a failure below cannot throw.
             size_t num_deferred = 0;
+            size_t num_deferred_enforced_later = 0;
             size_t num_isolated = 0;
             for (const auto & check : checks)
             {
                 num_deferred += check.deferred != nullptr;
+                num_deferred_enforced_later += check.deferred && check.enforced_later;
                 num_isolated += check.isolated != nullptr;
             }
             failed_deferred.reserve(num_deferred);
+            failed_deferred_enforced_later.reserve(num_deferred_enforced_later);
             failed_isolated.reserve(num_isolated);
 
             try
@@ -194,6 +207,8 @@ public:
                         {
                             check.deferred->exception = std::current_exception();
                             failed_deferred.emplace_back(check.enforced_by, check.deferred);
+                            if (check.enforced_later)
+                                failed_deferred_enforced_later.emplace_back(check.enforced_by, check.deferred);
                             /// A deferred check of a pending participant, enforced by the `Buffer` this group
                             /// write flushes: there is no `BufferSink` left to enforce it - it is this flush that
                             /// writes the rows into the destination - so it rejects the flush.
@@ -227,12 +242,14 @@ public:
             std::rethrow_exception(lent_flush_exception);
     }
 
-private:
-    friend class InsertStartGates;
-
     /// Follows `forward_to` to the gate that has made the decision, and rethrows the failure of a deferred check
     /// enforced by `storage` that failed when it was made. Called after `run` has returned, so the decision has
     /// been made. The locks of the gates are taken one at a time.
+    ///
+    /// A sink of a group write - a flush of a `Buffer` - calls it with that `Buffer` after `run`: a deferred check
+    /// enforced by the buffer that failed in the decision belongs to a query whose rows are written out by the
+    /// flush (there is no `BufferSink` left to enforce it), so it rejects the flush. This holds whatever gate the
+    /// flush got and however that gate has been merged by later group writes since, see `SinkToStorage::runPreWriteCheck`.
     void rethrowFailedDeferredCheckOf(const std::weak_ptr<const void> & storage)
     {
         std::unique_lock lock(mutex);
@@ -248,6 +265,9 @@ private:
             if (sameOwner(enforced_by, storage) && outcome->exception)
                 std::rethrow_exception(outcome->exception);
     }
+
+private:
+    friend class InsertStartGates;
 
     /// Whether a deferred check enforced by `storage` failed when the decision was made. Such a gate is not
     /// lent to a group write of `storage`, see `InsertStartGates::get`. An empty `storage` matches any
@@ -288,8 +308,12 @@ private:
     std::vector<Check> checks;
 
     /// The deferred checks that failed when the decision was made, with the forwarding storages enforcing
-    /// them. Consulted by a deferred check registered after the decision, see `addCheck`.
+    /// them. Consulted by a group write of one of these storages, see `rethrowFailedDeferredCheckOf`.
     std::vector<std::pair<std::weak_ptr<const void>, std::shared_ptr<DeferredOutcome>>> failed_deferred;
+
+    /// The subset of `failed_deferred` with `Check::enforced_later`. Consulted by a deferred check registered
+    /// after the decision, see `addCheck`.
+    std::vector<std::pair<std::weak_ptr<const void>, std::shared_ptr<DeferredOutcome>>> failed_deferred_enforced_later;
 
     /// The isolated checks with an owner (`Check::enforced_by`) that failed when the decision was made, with
     /// their owners. Consulted by an isolated check registered after the decision, see `addCheck`.
@@ -333,6 +357,9 @@ public:
         , flushed_by(std::move(flushed_by_))
     {
     }
+
+    /// For the registry of a group write: the storage whose flush it is. Empty otherwise.
+    const std::weak_ptr<const void> & getFlushedBy() const { return flushed_by; }
 
     InsertStartGatePtr get(const StorageIDMaybeEmpty & table_id)
     {

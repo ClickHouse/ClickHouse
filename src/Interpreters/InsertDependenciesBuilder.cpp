@@ -870,7 +870,8 @@ void registerHiddenDependentViewsPreWriteChecks(
             {
                 auto outcome = std::make_shared<InsertStartGate::DeferredOutcome>();
                 auto gate = gates->get(target->getStorageID());
-                gate->addCheck({view_context, merge_tree->makeTooManyPartsCheck(view_context), /*deferred=*/ nullptr, view, outcome});
+                gate->addCheck({view_context, merge_tree->makeTooManyPartsCheck(view_context), /*deferred=*/ nullptr, view, outcome,
+                                /*enforced_later=*/ false});
                 /// Not enforced by the forwarding sink: the sink of the view does it.
                 result.push_back({origin.forwarded_to, std::move(gate), std::move(outcome), /* enforced_here= */ false});
             }
@@ -972,7 +973,8 @@ void registerHiddenPreWriteChecksImpl(
         auto outcome = std::make_shared<InsertStartGate::DeferredOutcome>();
         /// The gate is keyed the same way as the gates of the sinks the nested INSERT creates, see `createSink`.
         auto gate = gates->get(storage->getStorageID());
-        gate->addCheck({context, merge_tree->makeTooManyPartsCheck(context), outcome, origin.enforced_by, /*isolated=*/ nullptr});
+        gate->addCheck({context, merge_tree->makeTooManyPartsCheck(context), outcome, origin.enforced_by, /*isolated=*/ nullptr,
+                        /*enforced_later=*/ !origin.enforced_here});
         result.push_back({origin.forwarded_to, std::move(gate), std::move(outcome), origin.enforced_here});
     }
 }
@@ -2705,6 +2707,7 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
             insert_start_gates->get(inner_storage->getStorageID()),
             isolate_check,
             isolate_check ? std::weak_ptr<const void>(storages.at(view_id)) : std::weak_ptr<const void>());
+        sink->setInsertStartGateFlushOf(insert_start_gates->getFlushedBy());
         /// A forwarding sink (`AliasSink`) threads the registry into the nested INSERT it runs, so
         /// the sinks created there share this query's gates. A no-op for the other sinks.
         sink->setInsertStartGateRegistry(insert_start_gates);

@@ -39,6 +39,12 @@ void SinkToStorage::runPreWriteCheck()
     /// the checks again against the state as it is a moment later.
     insert_start_gate->run();
 
+    /// The flush of a `Buffer` keeps its identity whatever gate it got, even when a later group write has merged
+    /// that gate into another one before the decision was made: the sinks of the flush may then reach the decision
+    /// only as forwarded participants, see `InsertStartGate::run`.
+    if (!insert_start_flush_of.expired())
+        insert_start_gate->rethrowFailedDeferredCheckOf(insert_start_flush_of);
+
     /// The outcome is written under the lock of the gate that makes the decision, which `run` acquires as well.
     if (isolated_pre_write_outcome && isolated_pre_write_outcome->exception)
         std::rethrow_exception(isolated_pre_write_outcome->exception);

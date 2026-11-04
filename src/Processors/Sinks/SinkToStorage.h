@@ -32,6 +32,11 @@ public:
     /// see `InsertStartGate::Check::enforced_by`.
     void setInsertStartGate(InsertStartGatePtr gate, bool isolate_check = false, std::weak_ptr<const void> view = {});
 
+    /// Set for a sink of a group write - a flush of a `Buffer` (see `InsertStartGates::getFlushedBy`): after the
+    /// decision of its gate has been made, the sink is rejected by a failed deferred check enforced by that buffer,
+    /// see `InsertStartGate::rethrowFailedDeferredCheckOf`.
+    void setInsertStartGateFlushOf(std::weak_ptr<const void> storage) { insert_start_flush_of = std::move(storage); }
+
     /// A sink that forwards the write through a nested INSERT running in this query's context
     /// (`AliasSink`) receives the per-query registry its gate came from and threads it into that
     /// nested INSERT, so the sinks created there share the gates of the outer query instead of
@@ -83,6 +88,7 @@ private:
 
     InsertStartGatePtr insert_start_gate;
     std::shared_ptr<InsertStartGate::DeferredOutcome> isolated_pre_write_outcome;
+    std::weak_ptr<const void> insert_start_flush_of;
     std::vector<HiddenPreWriteCheck> hidden_pre_write_checks;
 
     void onConsume(Chunk chunk) override;
