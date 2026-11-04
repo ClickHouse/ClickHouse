@@ -88,6 +88,8 @@ private:
     std::vector<std::unique_ptr<AcceptState>> accept_states;
 
     void bindAndListen();
+    /// Resolves the default of `ssh.max_sessions` and validates it against the threads for blocking work.
+    void resolveSSHMaxSessions();
     bool anySecureListener() const;
     bool anyBackendSecure() const;
 };

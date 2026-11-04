@@ -26,6 +26,11 @@ void runRelay(
     size_t buffer_size,
     UInt64 send_timeout_ms);
 
+/// Tears down every relay in flight, both of its legs, and every relay started after this call.
+/// Called at shutdown: shutting down the client socket alone is a clean end of stream for the relay,
+/// which only half-closes the backend leg, so a backend that keeps its side open would hold the relay forever.
+void abortAllRelays();
+
 }
 
 #endif

@@ -9,6 +9,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <mutex>
+#include <unordered_set>
 #include <vector>
 
 #include <fcntl.h>
@@ -49,6 +51,48 @@ void abortRelay(RelayState & state) noexcept
         ::shutdown(state.backend_fd, SHUT_RDWR);
     }
 }
+
+/// The relays in flight, so that `abortAllRelays` can tear them down at shutdown.
+struct RelayRegistry
+{
+    std::mutex mutex;
+    std::unordered_set<RelayState *> relays;
+    bool aborted = false;
+};
+
+RelayRegistry & relayRegistry()
+{
+    static RelayRegistry registry;
+    return registry;
+}
+
+/// Registers a relay for its lifetime. Its sockets stay open until it is unregistered, so `abortAllRelays`
+/// never shuts down a descriptor that may have been reused.
+class RelayRegistration
+{
+public:
+    explicit RelayRegistration(RelayState & state_) : state(state_)
+    {
+        auto & registry = relayRegistry();
+        std::lock_guard lock(registry.mutex);
+        registry.relays.insert(&state);
+        if (registry.aborted)
+            abortRelay(state);
+    }
+
+    ~RelayRegistration()
+    {
+        auto & registry = relayRegistry();
+        std::lock_guard lock(registry.mutex);
+        registry.relays.erase(&state);
+    }
+
+    RelayRegistration(const RelayRegistration &) = delete;
+    RelayRegistration & operator=(const RelayRegistration &) = delete;
+
+private:
+    RelayState & state;
+};
 
 /// One direction of the relay has ended. A clean end of stream is forwarded one way, as a half-close of
 /// the destination, so the opposite direction keeps flowing: a peer that has finished sending can still
@@ -227,6 +271,7 @@ void runRelay(
     }
 
     RelayState state{.client_fd = client.fd(), .backend_fd = backend_socket.fd()};
+    RelayRegistration registration(state);
 
     /// The zero-copy path needs a pipe per direction. Under file descriptor pressure, when they cannot
     /// be created, relay through user space instead of failing the connection.
@@ -253,6 +298,15 @@ void runRelay(
         throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Cannot allocate a fiber for the relay");
     copyLoop(&to_backend);
     future.wait();
+}
+
+void abortAllRelays()
+{
+    auto & registry = relayRegistry();
+    std::lock_guard lock(registry.mutex);
+    registry.aborted = true;
+    for (RelayState * state : registry.relays)
+        abortRelay(*state);
 }
 
 }

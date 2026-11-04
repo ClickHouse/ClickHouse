@@ -6,6 +6,7 @@
 #include <SocketIO.h>
 #include <TLSSupport.h>
 
+#include <Common/ErrnoException.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
@@ -19,7 +20,9 @@
 
 #include <base/errnoToString.h>
 
+#include <algorithm>
 #include <cerrno>
+#include <sched.h>
 #include <sys/socket.h>
 
 #if USE_SSL
@@ -31,6 +34,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int INVALID_CONFIG_PARAMETER;
     extern const int SUPPORT_IS_DISABLED;
 }
 }
@@ -254,6 +258,35 @@ bool ProxyServer::anyBackendSecure() const
     return false;
 }
 
+void ProxyServer::resolveSSHMaxSessions()
+{
+    /// libssh drives blocking I/O, so an SSH session occupies a thread of the scheduler's blocking-work pool
+    /// for its whole duration. The scheduler starts one such thread per CPU of the affinity mask of the thread
+    /// that initializes it, which is this one; the scheduler threads themselves are pinned to one CPU each later,
+    /// so this cannot be computed from a connection handler. At least one thread must stay available for
+    /// the rest of the blocking work: resolving backend host names, running hooks, health probes.
+    cpu_set_t cpus;
+    CPU_ZERO(&cpus);
+    if (0 != sched_getaffinity(0, sizeof(cpus), &cpus))
+        throw ErrnoException(ErrorCodes::INVALID_CONFIG_PARAMETER, "Cannot get the CPU affinity of the proxy");
+    const size_t blocking_threads = CPU_COUNT(&cpus);
+
+    if (blocking_threads < 2)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "An SSH listener needs at least two CPUs: every SSH session occupies one of the threads for blocking work, "
+            "of which the proxy has one per CPU ({} here), and at least one has to stay available for other work",
+            blocking_threads);
+
+    const size_t max_sessions = blocking_threads - 1;
+    if (config.ssh.max_sessions == 0)
+        config.ssh.max_sessions = std::max<size_t>(1, blocking_threads / 2);
+    else if (config.ssh.max_sessions > max_sessions)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "<proxy><ssh><max_sessions> is {}, but it can be at most {}: every SSH session occupies one of the threads "
+            "for blocking work, of which the proxy has one per CPU ({} here), and at least one has to stay available "
+            "for other work", config.ssh.max_sessions, max_sessions, blocking_threads);
+}
+
 void ProxyServer::bindAndListen()
 {
     for (const auto & listener : config.listeners)
@@ -296,6 +329,7 @@ void ProxyServer::start(const Poco::Util::AbstractConfiguration & abstract_confi
         if (listener.protocol == ListenerProtocol::SSH)
         {
             validateSSHKeys(config);
+            resolveSSHMaxSessions();
             break;
         }
     }
@@ -387,7 +421,9 @@ void ProxyServer::stop()
     /// End the connections in flight: shutting down their client sockets ends their handshakes and relays.
     /// The scheduler can only be destroyed with no fibers, so wait for their handlers to complete.
     /// The other waits of a handler (connecting to a backend, a hook, waiting for a backend) are bounded by timeouts.
+    /// A relay is torn down as a whole, as its backend may keep its side open after the client socket ends.
     connections.shutdownAll();
+    abortAllRelays();
     connections.waitAll();
 
     /// Join the health supervisor so no fiber remains scheduled, then stop the scheduler threads.

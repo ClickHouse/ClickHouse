@@ -20,7 +20,6 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <fcntl.h>
-#include <sched.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -591,18 +590,9 @@ void handleSSH(int fd, const FrontendContext & ctx)
         return;
     }
 
-    static const size_t max_sessions = [&]
-    {
-        if (ctx.config.ssh.max_sessions)
-            return static_cast<size_t>(ctx.config.ssh.max_sessions);
-        /// The scheduler has a blocking-work thread per CPU it runs on.
-        cpu_set_t cpus;
-        CPU_ZERO(&cpus);
-        size_t cpu_count = 1;
-        if (0 == sched_getaffinity(0, sizeof(cpus), &cpus))
-            cpu_count = CPU_COUNT(&cpus);
-        return std::max<size_t>(1, cpu_count / 2);
-    }();
+    /// Resolved and validated at startup (`ProxyServer::resolveSSHMaxSessions`).
+    const size_t max_sessions = ctx.config.ssh.max_sessions;
+    chassert(max_sessions > 0);
     static std::atomic<size_t> active_sessions{0};
 
     if (active_sessions.fetch_add(1, std::memory_order_relaxed) >= max_sessions)

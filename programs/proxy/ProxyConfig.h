@@ -157,6 +157,7 @@ struct SSHConfig
     /// scheduler uses for all blocking work (DNS resolution, hooks, files) for its whole duration.
     /// The number of concurrent sessions is bounded to keep threads for that work: further SSH connections
     /// are rejected. Zero means half of the CPUs available to the proxy (the pool has a thread per CPU), at least one.
+    /// At most the number of CPUs minus one, so an SSH listener needs at least two CPUs.
     UInt64 max_sessions = 0;
 };
 
