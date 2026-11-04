@@ -534,6 +534,12 @@ bool RowReader::evaluateStatistics(const std::vector<Proto::ColumnStatistics> & 
     return isNeeded(options.search_argument->evaluate(values));
 }
 
+UInt64 RowReader::numberOfRowGroups() const
+{
+    const UInt64 stride = reader.getFooter().row_index_stride;
+    return rows_in_current_stripe / stride + (rows_in_current_stripe % stride != 0);
+}
+
 void RowReader::loadStripeIndex()
 {
     row_indexes.clear();
@@ -576,9 +582,25 @@ void RowReader::loadStripeIndex()
 void RowReader::pickRowGroups()
 {
     const UInt64 stride = reader.getFooter().row_index_stride;
-    const UInt64 groups = (rows_in_current_stripe + stride - 1) / stride;
+    const UInt64 groups = numberOfRowGroups();
+    const auto & leaves = options.search_argument->getLeaves();
 
-    if (row_indexes.empty())
+    /// The number of the row groups comes from the file. Check it against the row indexes, which are already
+    /// read, before allocating memory for it.
+    bool has_leaf_index = false;
+    for (const auto & leaf : leaves)
+    {
+        auto it = row_indexes.find(leaf.getColumnId());
+        if (it == row_indexes.end())
+            continue;
+        has_leaf_index = true;
+        if (it->second.entry.size() < groups)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The row index of ORC column {} has {} entries, less than the {} row groups of stripe {}",
+                it->first, it->second.entry.size(), groups, current_stripe);
+    }
+
+    if (!has_leaf_index)
     {
         /// Without the row indexes all row groups are read.
         next_skipped_rows.clear();
@@ -586,7 +608,6 @@ void RowReader::pickRowGroups()
     }
 
     next_skipped_rows.assign(groups, 0);
-    const auto & leaves = options.search_argument->getLeaves();
     std::vector<TruthValue> values(leaves.size(), TruthValue::YES_NO_NULL);
     const UInt32 writer_version = reader.getPostScript().writer_version;
     const Proto::ColumnStatistics empty_statistics;
