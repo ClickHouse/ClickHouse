@@ -1,7 +1,7 @@
 ---
 slug: /clickstack/observability/managing/config
 title: 'Configuration options'
-description: 'Manage sources and find telemetry connection details in fully managed ClickHouse Observability.'
+description: 'Manage service access, telemetry sources, and API and agent connections in fully managed ClickHouse Observability.'
 keywords: ['ClickHouse Observability', 'managed configuration', 'sources', 'managed telemetry']
 doc_type: 'guide'
 sidebarTitle: 'Configuration options'
@@ -9,13 +9,15 @@ sidebarTitle: 'Configuration options'
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/components/Image.jsx";
-
 <BetaBadge label="Beta offering" />
 
-Open **Team Settings → Data** to manage your sources and find the connection details for sending telemetry to ClickHouse Observability.
+Open **Team Settings** in ClickHouse Observability to manage data access, API and agent connections, integrations, and query settings. The sections below follow the tabs in the application. ClickHouse manages ingestion, schemas, infrastructure, and scaling.
 
-## Sources {#datasource-settings}
+## Data {#data}
+
+Open **Team Settings → Data** to view your sources and the connection details for sending telemetry.
+
+### Sources {#datasource-settings}
 
 The **Sources** section lists the sources provided by your managed service:
 
@@ -28,9 +30,7 @@ The **Sources** section lists the sources provided by your managed service:
 
 Each source shows its associated read connection and, where applicable, its table name. Use the switch on the right of a source to enable or disable it. Disabling a source retains its configuration but hides it from source selectors and prevents it from being selected automatically. It does not stop telemetry ingestion or delete stored data. Enable it again to make it available in the selectors.
 
-<Image img="/images/clickstack/observability-managed-sources.png" alt="Team Settings Data tab showing Logs, Traces, Metrics, and Sessions with enable and disable switches" size="lg" />
-
-## Managed Telemetry {#managed-telemetry}
+### Managed Telemetry {#managed-telemetry}
 
 Below **Sources**, the **Managed Telemetry** section shows the storage and OpenTelemetry collector status, along with the connection details for sending data to your service.
 
@@ -38,9 +38,57 @@ Below **Sources**, the **Managed Telemetry** section shows the storage and OpenT
 - Use **Copy connection details** to copy the configuration. Select **Reveal key** when you need to view the masked credentials.
 - Use **Send a Test Log** to submit a sample log to the service.
 
-<Image img="/images/clickstack/getting-started/observability-managed-telemetry.png" alt="Managed Telemetry showing the masked OTLP HTTP endpoint and API key" size="lg" />
-
 For instructions on configuring your applications and collectors, see [Ingesting data](/clickstack/observability/ingesting-data/overview).
+
+### IP access list {#ip-access-list}
+
+Under **Managed Telemetry**, use **IP access list → Edit** to control which IP addresses or CIDR ranges can access your collector endpoints.
+
+### Private endpoints {#private-endpoints}
+
+Use **Set up private endpoint** to configure private connectivity to your collector. For AWS deployments, this uses AWS PrivateLink. The **private endpoints** link opens the organization's private endpoints in the Cloud console.
+
+### Danger zone {#service-settings}
+
+**Delete warehouse** deletes the Observability warehouse and all of its services. Read services are deleted first, followed by the primary service. Use this only when you no longer need the warehouse or its data.
+
+## Members & Roles {#members-and-roles}
+
+Open **Team Settings → Members & Roles** to review RBAC roles and the default role for new users. Use **Manage in Console** to manage team membership in ClickHouse Cloud. See [Role-based access control](/clickstack/observability/managing/rbac).
+
+## API & Agents {#api-and-agents}
+
+Open **Team Settings → API & Agents** to manage ingestion keys, find service identifiers, connect agents, and configure AI features.
+
+### Ingestion API keys {#ingestion-api-keys}
+
+The **API keys** section shows your **Team ID**, **Service ID**, and ingestion keys. Ingestion keys authenticate telemetry sent to the OpenTelemetry collector.
+
+Enter a name and select **Create key** to issue a key for a source or environment. Existing keys have **Reveal key**, **Copy key**, **Freeze**, and **Revoke** controls. Changes take effect within about a minute.
+
+The separate **Manage API Keys** link opens ClickHouse Cloud organization settings for keys used with the management API.
+
+### Connect an agent {#connect-an-agent}
+
+Under **Connect your AI agents**, use **Enable MCP for this service** to control the remote MCP server. Select your client and copy its generated configuration, which includes the service ID so the agent's requests target your service. **Manage sessions** opens the Cloud console to review MCP sessions. The Cloud MCP endpoint uses OAuth: sign in with your ClickHouse Cloud account when prompted by the client. See [Connect an MCP client](/clickstack/observability/mcp#managed-connecting-a-client) for setup instructions and supported clients.
+
+### Use the API {#use-the-api}
+
+Use the [ClickHouse Observability API](/clickstack/observability/api-reference) to manage dashboards, alerts, and other resources programmatically. API requests authenticate with a ClickHouse Cloud API key ID and secret, using HTTP Basic Authentication. See [API authentication](/clickstack/observability/api-reference#authentication) for the required permissions and key setup.
+
+The API credentials are separate from the ingestion API key under **Data → Managed Telemetry**. MCP clients use OAuth rather than either API key.
+
+### Export to Terraform {#export-to-terraform}
+
+**Export to Terraform** is marked **Experimental**. Select the resource types to include and use **Download import file** to add them to a Terraform project. The UI provides the command for generating resource configuration with the ClickHouse provider. Platform-managed connections are exported as reference-only locals.
+
+### Configure Generative AI {#generative-ai}
+
+Use **Configure Generative AI** to enable or disable generative AI features for the service. These include the Chart AI Assistant in Chart Explorer and [AI Notebooks](/clickstack/observability/notebooks).
+
+## Integrations {#integrations}
+
+Open **Team Settings → Integrations** to manage webhooks. Select **Add Webhook** to add an integration for alert notifications. See [Alerts](/clickstack/observability/features/alerts) for alert configuration.
 
 ## Query settings {#query-settings}
 
@@ -56,5 +104,9 @@ Open **Team Settings → Query Settings** to adjust how the application queries 
 | **Parallelize Queries When Possible** | Allows eligible windowed queries to run in parallel. This can increase peak load on ClickHouse. |
 
 The tab also includes controls for the search histogram soft-block threshold and search window durations. Use **Reset to default** to restore the query settings to their defaults.
+
+## Schema Migrations {#schema-migrations}
+
+Open **Team Settings → Schema Migrations** to view migration history.
 
 For self-managed source and schema settings, see [Self-managed source and schema settings](/clickstack/self-configured/managing/config).
