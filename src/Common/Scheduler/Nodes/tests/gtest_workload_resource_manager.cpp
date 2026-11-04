@@ -5012,16 +5012,24 @@ TEST(SchedulerWorkloadResourceManager, QuerySlotMaxConcurrentQueriesBlocksWithou
     // The third query must wait for a slot: the limit blocks admission and never evicts a running query.
     std::atomic<bool> acquired = false;
     std::unique_ptr<QuerySlot> s3;
-    auto * waiter = t.async([&]
+    // The worker captures the locals above, so it must finish before they are destroyed, including on early exits
+    SCOPE_EXIT({
+        s1.reset();
+        t.wait();
+    });
+    t.async([&]
     {
         s3 = std::make_unique<QuerySlot>(link, std::chrono::steady_clock::time_point::max(), "q3");
         acquired = true;
     });
+    // Wait until the query is waiting in the queue, so the assertion below checks the blocked state
+    while (static_cast<AllocationQueue *>(link.allocation_queue)->getQueueLengthAndSize().first == 0)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
     EXPECT_FALSE(acquired.load());
 
     s1.reset(); // Releasing a slot admits the waiting query
-    waiter->join();
+    t.wait();
     EXPECT_TRUE(acquired.load());
     s2.reset();
     s3.reset();
@@ -5096,7 +5104,12 @@ TEST(SchedulerWorkloadResourceManager, QuerySlotMaxWaitingQueries)
 
     auto holder = std::make_unique<QuerySlot>(link, std::chrono::steady_clock::time_point::max(), "holder");
     std::unique_ptr<QuerySlot> waiting;
-    auto * waiter = t.async([&] { waiting = std::make_unique<QuerySlot>(link, std::chrono::steady_clock::time_point::max(), "waiting"); });
+    // The worker captures the locals above, so it must finish before they are destroyed, including on early exits
+    SCOPE_EXIT({
+        holder.reset();
+        t.wait();
+    });
+    t.async([&] { waiting = std::make_unique<QuerySlot>(link, std::chrono::steady_clock::time_point::max(), "waiting"); });
     while (static_cast<AllocationQueue *>(link.allocation_queue)->getQueueLengthAndSize().first == 0)
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
@@ -5111,7 +5124,7 @@ TEST(SchedulerWorkloadResourceManager, QuerySlotMaxWaitingQueries)
     }
 
     holder.reset();
-    waiter->join();
+    t.wait();
     waiting.reset();
 }
 
@@ -5150,14 +5163,19 @@ std::vector<String> querySlotAdmissionOrder(bool query_slot_admission_uses_prior
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
     };
 
-    auto * t_a = t.async([&] { run(a, "a"); });
+    // Workers capture the locals above, so they must finish before the locals are destroyed, including on exceptions
+    SCOPE_EXIT({
+        holder.reset();
+        t.wait();
+    });
+
+    t.async([&] { run(a, "a"); });
     wait_pending(a);
-    auto * t_b = t.async([&] { run(b, "b"); });
+    t.async([&] { run(b, "b"); });
     wait_pending(b);
 
     holder.reset();
-    t_a->join();
-    t_b->join();
+    t.wait();
     return order;
 }
 
@@ -5180,7 +5198,7 @@ TEST(SchedulerWorkloadResourceManager, QuerySlotMaxQueriesPerSecond)
     ResourceTest t;
 
     t.query("CREATE RESOURCE query (QUERY)");
-    // One query may start right away (burst), then 20 queries per second
+    // The bucket starts full and admits while it is not in debt, then 20 queries per second
     t.query("CREATE WORKLOAD all SETTINGS max_queries_per_second = 20, max_burst_queries = 1");
 
     ClassifierPtr c = t.manager->acquire("all");
@@ -5210,15 +5228,18 @@ TEST(SchedulerWorkloadResourceManager, QuerySlotUpdateRateLimitAndConcurrency)
 
     // The next query is throttled practically forever; removing the rate limit must admit it
     std::atomic<bool> acquired = false;
-    auto * waiter = t.async([&]
+    t.async([&]
     {
         QuerySlot slot(link, std::chrono::steady_clock::time_point::max(), "third");
         acquired = true;
     });
+    // Wait until the query is waiting in the queue, so the assertion below checks the blocked state
+    while (static_cast<AllocationQueue *>(link.allocation_queue)->getQueueLengthAndSize().first == 0)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     EXPECT_FALSE(acquired.load());
 
     t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_concurrent_queries = 2");
-    waiter->join();
+    t.wait();
     EXPECT_TRUE(acquired.load());
 }

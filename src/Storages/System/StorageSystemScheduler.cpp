@@ -32,7 +32,7 @@ ColumnsDescription StorageSystemScheduler::getColumnsDescription()
         {"type", std::make_shared<DataTypeString>(), "Type of a scheduling node."},
         {"weight", std::make_shared<DataTypeFloat64>(), "Weight of a node, used by a parent node of `fair` type."},
         {"priority", std::make_shared<DataTypeInt64>(), "Priority of a node, used by a parent node of 'priority' type (Lower value means higher priority)."},
-        {"precedence", std::make_shared<DataTypeInt64>(), "Precedence of a node, used by space-shared (memory) parent nodes to order admission and eviction (Lower value means higher precedence)."},
+        {"precedence", std::make_shared<DataTypeInt64>(), "Precedence of a node, used by space-shared parent nodes (memory reservations and query slots) to order admission and eviction (Lower value means higher precedence)."},
 
         // ITimeSharedNode
         {"is_active", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
@@ -100,7 +100,7 @@ ColumnsDescription StorageSystemScheduler::getColumnsDescription()
 
         // ThrottlerConstraint
         {"max_speed", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
-            "For `bandwidth_limit` and `allocation_rate_limit` nodes only. Upper limit for bandwidth in tokens per second."
+            "For `bandwidth_limit` and `allocation_rate_limit` nodes only. Upper limit for speed in tokens per second (queries per second for a `QUERY` resource)."
         },
         {"max_burst", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()),
             "For `bandwidth_limit` and `allocation_rate_limit` nodes only. Upper limit for tokens available in token-bucket throttler."
