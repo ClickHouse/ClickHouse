@@ -4577,6 +4577,9 @@ ColumnPtr & Reader::getOrFormOutputColumn(const RowGroup & row_group, RowSubgrou
     return state.column;
 }
 
+/// Shrinking reallocates a column, so it is skipped when only a little memory would be freed.
+static constexpr size_t min_bytes_to_free_by_shrinking = 4096;
+
 void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx)
 {
     {
@@ -4643,10 +4646,27 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         if (rows_pass == filter.size())
             return;
 
-        /// Filter columns that were already read.
+        /// Columns referenced only by this subgroup can then be filtered in place.
+        block.clear();
+
+        /// Filter columns that were already read. When most rows pass, a column that only this subgroup holds
+        /// is filtered in place; a selective filter copies the few remaining rows.
+        const bool filter_in_place = rows_pass * 2 >= filter.size();
         for (auto & state : row_subgroup.output)
-            if (state.column)
+        {
+            if (!state.column)
+                continue;
+            if (filter_in_place && canInplaceFilter(state.column, filter_column))
+            {
+                auto mutable_column = IColumn::mutate(std::move(state.column));
+                mutable_column->filter(filter);
+                if (mutable_column->allocatedBytes() >= mutable_column->byteSize() + min_bytes_to_free_by_shrinking)
+                    mutable_column->shrinkToFit();
+                state.column = std::move(mutable_column);
+            }
+            else
                 state.column = state.column->filter(filter, /*result_size_hint=*/ rows_pass);
+        }
         materialize_replicated();
 
         /// Expand the filter to correspond to all column subchunk rows, rather than only rows that
@@ -4863,7 +4883,6 @@ void Reader::addToColumnsCacheWrite(
     /// which can be far off (for dictionary-encoded strings, it is the average length of the values of the
     /// dictionary, not of the rows), and an entry retains - and is charged for - all its memory.
     /// The column has just been formed and is not shared yet, so this reallocates it in place, without a copy.
-    static constexpr size_t min_bytes_to_free_by_shrinking = 4096;
     if (column->use_count() == 1 && column->allocatedBytes() >= column->byteSize() + min_bytes_to_free_by_shrinking)
     {
         auto mutable_column = IColumn::mutate(std::move(column));
