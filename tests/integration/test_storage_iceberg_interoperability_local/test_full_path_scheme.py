@@ -39,7 +39,7 @@ def write_local_table(node, table_name, table_dir, full_path):
     """
     node.query(
         f"""
-        CREATE TABLE {table_name} (id UInt64, v Int64)
+        CREATE TABLE {table_name} (id Int64, v Int64)
         ENGINE=IcebergLocal(local, path = '{table_dir}', format=Parquet)
         ORDER BY (id)
         """,

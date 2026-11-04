@@ -17,9 +17,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="حالات استخدام القاموس في ClickHouse" />
 
-<div id="speeding-up-joins-using-a-dictionary">
-  ## تسريع عمليات JOIN باستخدام قاموس
-</div>
+## تسريع عمليات JOIN باستخدام قاموس {#speeding-up-joins-using-a-dictionary}
 
 يمكن استخدام القواميس لتسريع نوع محدد من `JOIN`: [النوع `LEFT ANY`](/ar/reference/statements/select/join#supported-types-of-join)، حيث يجب أن يتطابق مفتاح الربط مع سمة المفتاح في مخزن المفتاح-القيمة الأساسي.
 
@@ -266,11 +264,13 @@ LIMIT 5
 Peak memory usage: 248.84 MiB.
 ```
 
-<div id="index-time-enrichment">
-  ## الإثراء وقت الفهرسة
-</div>
+## الإثراء وقت الفهرسة {#index-time-enrichment}
 
 في المثال أعلاه، استخدمنا قاموسًا وقت الاستعلام لتجنّب عملية join. ويمكن أيضًا استخدام القواميس لإثراء الصفوف وقت الإدراج. ويكون هذا مناسبًا عادةً إذا كانت قيمة الإثراء لا تتغير وكانت موجودة في مصدر خارجي يمكن استخدامه لتعبئة القاموس. في هذه الحالة، يؤدّي إثراء الصف وقت الإدراج إلى تجنّب عملية البحث في القاموس وقت الاستعلام.
+
+<Note>
+  تجنّب أنواع تخطيط القاموس القائمة على ذاكرة التخزين المؤقت عند الإثراء وقت الإدراج إذا كان ثبات زمن الانتقال وتوافر المصدر أمرين مهمّين. فكل خادم يحتفظ بذاكرة تخزين مؤقت محلية مستقلة، وعند إعادة تشغيله أو استبداله تصبح هذه الذاكرة فارغة، فتغدو عمليات الإدراج معتمدة على عمليات بحث في مصدر القاموس بذاكرة تخزين مؤقت باردة. ويزيد التوسّع التلقائي في ClickHouse Cloud واستبدال العُقد المُدار من احتمال حدوث ذلك. لذا اختر تخطيطًا يحمّل القاموس كاملًا على كل خادم. راجع [قواميس ذاكرة التخزين المؤقت في مسارات الإدخال](/ar/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path).
+</Note>
 
 لنفترض أن `Location` الخاص بمستخدم في Stack Overflow لا يتغير أبدًا (مع أنه يتغير في الواقع) — وتحديدًا العمود `Location` في الجدول `users`. ولنفترض أننا نريد تنفيذ استعلام تحليلي على جدول `posts` حسب الموقع. ويحتوي هذا الجدول على `UserId`.
 
@@ -362,9 +362,7 @@ Peak memory usage: 666.82 MiB.
 
 يدعم ClickHouse أيضًا قواميس [هرمية](/ar/reference/statements/create/dictionary/layouts/hierarchical) و[Polygon](/ar/reference/statements/create/dictionary/layouts/polygon) و[التعبير النمطي](/ar/reference/statements/create/dictionary/layouts/regexp-tree).
 
-<div id="more-reading">
-  ### للمزيد من القراءة
-</div>
+### للمزيد من القراءة {#more-reading}
 
 * [أفضل ممارسات القواميس](/ar/concepts/features/dictionaries/best-practices) — اختيار البنية، القواميس مقابل عبارات JOIN، المراقبة
 * [استخدام القواميس لتسريع الاستعلامات](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

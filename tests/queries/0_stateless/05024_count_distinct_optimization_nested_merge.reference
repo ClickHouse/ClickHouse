@@ -1,0 +1,14 @@
+-- { echoOn }
+SELECT uniqExact(c0) FROM merge(currentDatabase(), '^(m_inner|t_mem)$')
+    SETTINGS distributed_group_by_no_merge = 1;
+10
+SELECT uniqExact(c0) FROM merge(currentDatabase(), '^(m_inner|t_mem)$');
+10
+SELECT countDistinct(c0) FROM merge(currentDatabase(), '^(m_inner|t_mem)$')
+    SETTINGS distributed_group_by_no_merge = 1;
+10
+SELECT uniqExact(c0) FROM merge(currentDatabase(), '^(t_dist|t_mem)$')
+    SETTINGS distributed_group_by_no_merge = 1;
+10
+SELECT uniqExact(c0) FROM merge(currentDatabase(), '^t_mem$');
+10

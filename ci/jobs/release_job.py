@@ -9,6 +9,7 @@ reuse. The repo is always shallow at the start (hence the unconditional
 """
 
 import argparse
+import dataclasses
 import os
 import re
 import shlex
@@ -22,6 +23,11 @@ from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.secret import Secret
 from ci.praktika.utils import Shell, Utils
+from ci.jobs.scripts.buildx import (
+    build_rotating_apt_mirrors,
+    buildx_timeout,
+    with_timeout,
+)
 from ci.jobs.scripts.create_release import (
     ReleaseContextManager,
     ReleaseInfo,
@@ -125,6 +131,12 @@ def parse_args() -> argparse.Namespace:
 
 RELEASE_INFO_FILE = "/tmp/release_info.json"
 
+# The `timeout` of the `Create Release` job in `ci/workflows/create_release.py`.
+RELEASE_JOB_TIMEOUT = 2 * 3600
+# Kept back from the job's cap for the steps after the image builds: checking out back,
+# the deferred version bump and recording the result.
+RELEASE_DOCKER_RESERVE = 600
+
 
 def main():
     stopwatch = Utils.Stopwatch()
@@ -165,11 +177,22 @@ def main():
 
     results = []
     ok = True
+    log_files = ["/tmp/reprepro.log", "/tmp/createrepo_c.log", os.path.expanduser("~/fuse_mount.log")]
+    for log_file in log_files:
+        Path(log_file).touch()
+    log_files.append(RELEASE_INFO_FILE)
+
+    def existing_files():
+        return [p for p in log_files if os.path.isfile(p)]
 
     def step(**kwargs):
         nonlocal ok
         if not ok:
             return
+        # A timeout kill skips complete_job, so the runner uploads the files of the last checkpoint
+        Result.create_from(
+            results=results, stopwatch=stopwatch, status=Result.Status.RUNNING, files=existing_files()
+        ).dump_atomically()
         results.append(Result.from_commands_run(**kwargs))
         if results[-1].status != Result.Status.OK:
             ok = False
@@ -388,7 +411,7 @@ def main():
             f"CI=1 docker run -u {uid}:{gid} -e PYTHONUNBUFFERED=1 -e CI=1"
             f" -e GH_TOKEN --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
             f" clickhouse/style-test:latest"
-            f" ./tests/ci/changelog.py -v --debug-helpers"
+            f" ./ci/tools/changelog.py -v --debug-helpers"
             f' --gh-user-or-token "$GH_TOKEN"'
             f" --jobs=5"
             f" --output=./docs/changelogs/{release_info.release_tag}.md {release_info.release_tag}",
@@ -563,27 +586,45 @@ def main():
                     target_arg = (
                         " --target=production" if variant == "distroless" else ""
                     )
-                    Shell.check(
-                        f"docker buildx build"
-                        f" --platform=linux/amd64,linux/arm64"
-                        f" --provenance=true"
-                        # Pinned scanner: the floating stable-1 tag can move to a
-                        # version whose scan exceeds the runner's memory.
-                        f" --attest=type=sbom,generator=docker/buildkit-syft-scanner:1.11"
-                        f" --output=type=registry"
-                        f"{target_arg}"
-                        f" --label=com.clickhouse.build.version={label_version}"
-                        f" {' '.join(tags)}"
-                        f" --build-arg=VERSION={version_string}"
-                        f" --progress=plain"
-                        f" --file={dockerfile}"
-                        f" {context}"
-                        f" > {build_log} 2>&1"
+                    log_files.append(build_log)
+                    result = build_rotating_apt_mirrors(
+                        f"{image}:{label_version}",
+                        "us-east-1",
+                        # A mirror that keeps trickling bytes is not bounded by apt's
+                        # inactivity timeout, so bound each build to half of what is left,
+                        # which keeps room for the build against the next mirror. The
+                        # subshell lets `with_timeout`'s `exit` fall through to the tail.
+                        lambda apt_mirror_args: "( "
+                        + with_timeout(
+                            f"docker buildx build"
+                            f" --platform=linux/amd64,linux/arm64"
+                            f" --provenance=true"
+                            # Pinned scanner: the floating stable-1 tag can move to a
+                            # version whose scan exceeds the runner's memory.
+                            f" --attest=type=sbom,generator=docker/buildkit-syft-scanner:1.11"
+                            f" --output=type=registry"
+                            f"{target_arg}"
+                            f" --label=com.clickhouse.build.version={label_version}"
+                            f" {' '.join(tags)}"
+                            f" --build-arg=VERSION={version_string}"
+                            f" {' '.join(apt_mirror_args)}"
+                            f" --progress=plain"
+                            f" --file={dockerfile}"
+                            f" {context}"
+                            f" > {build_log} 2>&1",
+                            buildx_timeout(
+                                stopwatch.duration,
+                                RELEASE_JOB_TIMEOUT,
+                                reserve=RELEASE_DOCKER_RESERVE,
+                                attempts=2,
+                            ),
+                        )
+                        + " )"
                         f" || (echo '=== docker buildx build failed for"
                         f" {image}:{label_version}; tail of {build_log}: ==='"
                         f" >&2; tail -n 200 {build_log} >&2; exit 1)",
-                        strict=True,
                     )
+                    assert result.is_ok(), f"got [{result.info[-2000:]}]"
 
                 Shell.check("git checkout -", strict=True)
 
@@ -687,24 +728,6 @@ def main():
         workdir=REPO_PATH,
     )
 
-    # Post the final release status — but only when "Prepare Release Info" ran
-    # this attempt and produced RELEASE_INFO_FILE. If an early setup step failed
-    # before prepare, the file is absent (cleared at the top of main), so
-    # --post-status would raise FileNotFoundError trying to read it; skip it and
-    # let the aggregated job Result (praktika Slack feed) report the failing
-    # setup step instead.
-    if os.path.exists(RELEASE_INFO_FILE):
-        results.append(
-            Result.from_commands_run(
-                name="Post Slack Message",
-                command=[
-                    f"python3 ./ci/jobs/scripts/create_release.py --post-status"
-                    f" {dry_run_flag}".strip()
-                ],
-                workdir=REPO_PATH,
-            )
-        )
-
     # Always remove the publishing credentials and the signing-key home so they
     # do not persist for a later job on a reused self-hosted runner.
     def cleanup_credentials():
@@ -739,18 +762,40 @@ def main():
             workdir=REPO_PATH,
         )
     )
+    if results[-1].status != Result.Status.OK:
+        ok = False
 
-    log_files = [
-        p
-        for p in [
-            "/tmp/reprepro.log",
-            "/tmp/createrepo_c.log",
-            os.path.expanduser("~/fuse_mount.log"),
-            RELEASE_INFO_FILE,
-        ]
-        if os.path.isfile(p)
-    ]
-    Result.create_from(results=results, stopwatch=stopwatch, files=log_files).complete_job()
+    def post_slack_message():
+        release_info = ReleaseInfo.from_file()
+        title = "New release branch" if release_info.is_new_release_branch() else "New release"
+        print(f"{title}: {release_info.release_tag}")
+        # ci_buddy needs PyGithub and unidiff; importing here keeps the other steps free of them
+        from ci_buddy import CIBuddy
+        from slack_ids import LESHIKUS
+
+        buddy = CIBuddy(dry_run=args.dry_run)
+        if ok:
+            buddy.post_done(f"Completed: {title}", dataclasses.asdict(release_info))
+        else:
+            buddy.post_critical(
+                f"<@{LESHIKUS}> Failed: {title}",
+                dataclasses.asdict(release_info),
+                channels=[CIBuddy.Channels.ALERTS, CIBuddy.Channels.INFO],
+            )
+
+    # RELEASE_INFO_FILE exists only if "Prepare Release Info" ran this attempt
+    if os.path.exists(RELEASE_INFO_FILE):
+        results.append(
+            Result.from_commands_run(
+                name="Post Slack Message",
+                command=post_slack_message,
+                workdir=REPO_PATH,
+            )
+        )
+
+    Result.create_from(
+        results=results, stopwatch=stopwatch, files=existing_files()
+    ).complete_job()
 
 
 if __name__ == "__main__":

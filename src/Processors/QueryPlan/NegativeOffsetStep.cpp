@@ -55,6 +55,11 @@ void NegativeOffsetStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Negative Offset", offset);
 }
 
+QueryPlanStepPtr NegativeOffsetStep::clone() const
+{
+    return std::make_unique<NegativeOffsetStep>(*this);
+}
+
 void NegativeOffsetStep::serialize(Serialization & ctx) const
 {
     writeVarUInt(offset, ctx.out);

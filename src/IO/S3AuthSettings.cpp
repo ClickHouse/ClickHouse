@@ -5,6 +5,7 @@
 #include <IO/S3AuthSettings.h>
 #include <IO/S3Defines.h>
 #include <IO/S3Common.h>
+#include <Common/Config/ConfigurationWithUsageTracking.h>
 #include <Common/Exception.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -89,13 +90,15 @@ S3AuthSettings::S3AuthSettings(
 
     resetObsoleteSettings();
 
-    headers = getHTTPHeaders(config_prefix, config, "header");
-    access_headers = getHTTPHeaders(config_prefix, config, "access_header");
+    headers = NormalizedHTTPHeaderEntries(getHTTPHeaders(config_prefix, config, "header"));
+    access_headers = NormalizedHTTPHeaderEntries(getHTTPHeaders(config_prefix, config, "access_header"));
 
     server_side_encryption_kms_config = getSSEKMSConfig(config_prefix, config);
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
+    /// See the comment in `getHTTPHeaders`.
+    config.has(ConfigurationWithUsageTracking::getNamePrefixKey(config_prefix + ".user"));
     for (const auto & key : keys)
     {
         if (startsWith(key, "user"))
@@ -223,14 +226,14 @@ void S3AuthSettings::clearServerManagedGcpOAuth()
     impl->set("google_adc_refresh_token", "");
 }
 
-HTTPHeaderEntries S3AuthSettings::getHeaders() const
+NormalizedHTTPHeaderEntries S3AuthSettings::getHeaders() const
 {
     bool auth_settings_is_default = !impl->isChanged("access_key_id");
     if (access_headers.empty() || !auth_settings_is_default)
         return headers;
 
-    HTTPHeaderEntries result(headers);
-    result.insert(result.end(), access_headers.begin(), access_headers.end());
+    NormalizedHTTPHeaderEntries result(headers);
+    result.append(access_headers);
 
     return result;
 }
@@ -278,7 +281,7 @@ S3AuthSettings S3AuthSettings::deserialize(ReadBuffer & in, ContextPtr)
         std::string value;
         readStringBinary(name, in);
         readStringBinary(value, in);
-        result.headers.emplace_back(name, value);
+        result.headers.push_back({name, value});
     }
 
     size_t access_headers_size = 0;
@@ -289,7 +292,7 @@ S3AuthSettings S3AuthSettings::deserialize(ReadBuffer & in, ContextPtr)
         std::string value;
         readStringBinary(name, in);
         readStringBinary(value, in);
-        result.access_headers.emplace_back(name, value);
+        result.access_headers.push_back({name, value});
     }
     size_t users_size = 0;
     readVarUInt(users_size, in);

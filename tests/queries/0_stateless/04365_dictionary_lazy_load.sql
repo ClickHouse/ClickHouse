@@ -19,7 +19,7 @@ LAYOUT(HASHED())
 LIFETIME(0)
 SETTINGS(dictionary_lazy_load = 'auto');
 
-SELECT name, status FROM system.dictionaries WHERE database = currentDatabase() ORDER BY name;
+SELECT name, status, is_lazy FROM system.dictionaries WHERE database = currentDatabase() ORDER BY name;
 
 CREATE DICTIONARY dict_bad (id UInt64, val String) PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'no_such_table'))

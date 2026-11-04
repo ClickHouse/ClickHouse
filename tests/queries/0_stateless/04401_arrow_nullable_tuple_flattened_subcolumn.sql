@@ -6,7 +6,7 @@
 
 -- { echo }
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 SET engine_file_truncate_on_insert = 1;
 
 -- Single-field nullable struct, flattened subcolumn read (the reported case: expected 42, not 0)

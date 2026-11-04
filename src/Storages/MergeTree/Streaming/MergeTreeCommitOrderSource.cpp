@@ -4,7 +4,7 @@
 #include <Storages/MergeTree/Streaming/PartitionsClassification.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/ReadRoundContext.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionCursors.h>
-#include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionWatermarks.h>
+#include <Storages/MergeTree/Streaming/ReadingPlan/AlignStreams.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -35,6 +35,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <utility>
 
 namespace DB
 {
@@ -75,6 +76,9 @@ IProcessor::Status MergeTreeCommitOrderSource::handleRunningPipeline()
     auto & output = outputs.front();
     auto & input = inputs.front();
 
+    if (input.isFinished())
+        return Status::Finished;
+
     if (!output.canPush())
         return Status::PortFull;
 
@@ -93,7 +97,7 @@ IProcessor::Status MergeTreeCommitOrderSource::handleRunningPipeline()
         read_state.updateGlobalWatermark(global_watermark->watermark);
 
     if (auto partition_cursor = chunk.getChunkInfos().extract<PartitionCursorInfo>())
-        read_state.updatePartitionCursor(partition_cursor->partition_id, partition_cursor->cursor);
+        read_state.updatePartitionCursor(partition_cursor->partition_id, partition_cursor->last);
 
     if (auto partition_marker = chunk.getChunkInfos().extract<PartitionWatermarkInfo>())
         read_state.updatePartitionWatermark(partition_marker->partition_id, std::move(partition_marker->watermark));
@@ -144,7 +148,7 @@ IProcessor::Status MergeTreeCommitOrderSource::handleReconfiguration(const Class
     if (subscription_updated && read_state.hasWork(partitions))
         return Status::Ready;
 
-    if (current_round.has_value())
+    if (finished_round.has_value())
         return Status::UpdatePipeline;
 
     return Status::Async;
@@ -163,6 +167,25 @@ IProcessor::Status MergeTreeCommitOrderSource::handleBoundedReconfiguration(cons
     }
 
     return result;
+}
+
+void MergeTreeCommitOrderSource::startRound()
+{
+    current_round = std::exchange(pending_round, std::nullopt);
+    read_state.startReadRound(current_round->partitions);
+}
+
+void MergeTreeCommitOrderSource::finishRound()
+{
+    read_state.finishReadRound(current_round->partitions, current_round->safe_block_numbers);
+    finished_rounds += 1;
+
+    LOG_TEST(log, "Finished read round #{}", finished_rounds);
+
+    if (current_round->pipeline.has_value())
+        finished_round = std::exchange(current_round, std::nullopt);
+    else
+        current_round.reset();
 }
 
 void MergeTreeCommitOrderSource::surfaceFinalCursor()
@@ -214,17 +237,13 @@ IProcessor::Status MergeTreeCommitOrderSource::prepare()
     if (is_upstream_finished)
         return handleShutdown();
 
-    const bool has_running_sub_pipeline = !inputs.empty() && inputs.front().isConnected() && !inputs.front().isFinished();
-    if (has_running_sub_pipeline)
+    const bool is_round_running = current_round.has_value();
+    if (is_round_running)
+    {
         if (auto sub_pipeline_status = handleRunningPipeline(); sub_pipeline_status != Status::Finished)
             return sub_pipeline_status;
 
-    const bool has_unfinalized_pipeline = !pending_round.has_value() && read_state.readRoundInProgress();
-    if (has_unfinalized_pipeline)
-    {
-        read_state.finalizeReadRound();
-        finished_rounds += 1;
-        LOG_TEST(log, "Finished read round #{}", finished_rounds);
+        finishRound();
     }
 
     const auto [safe_block_numbers, subscription_updated] = subscription->snapshot();
@@ -248,20 +267,26 @@ void MergeTreeCommitOrderSource::work()
     auto component_guard = Coordination::setCurrentComponent("MergeTreeCommitOrderSource::work");
 
     chassert(!pending_round.has_value());
+    chassert(!current_round.has_value());
 
     if (subscription->isDisabled())
         return;
 
-    const auto [safe_block_numbers, was_updated] = subscription->snapshot();
-    const auto classification = classifyPartitions(read_state, safe_block_numbers, stream_settings);
-    chassert(was_updated);
+    auto [safe_block_numbers, was_updated] = subscription->snapshot();
+    auto classification = classifyPartitions(read_state, safe_block_numbers, stream_settings);
 
     read_state.updatePartitionSet(classification);
-    read_state.startReadRound(classification, safe_block_numbers);
+    pending_round = {
+        .pipeline = buildReadRoundPipeline(reading_context, read_state, safe_block_numbers),
+        .safe_block_numbers = std::move(safe_block_numbers),
+        .partitions = std::move(classification),
+    };
 
-    pending_round = buildReadRoundPipeline(reading_context, read_state, safe_block_numbers);
-    if (pending_round.has_value())
-        LOG_TEST(log, "Built read round pipeline:\n{}", explainPipeline(pending_round->pipe));
+    if (!pending_round->pipeline.has_value())
+    {
+        startRound();
+        finishRound();
+    }
 }
 
 std::tuple<int, uint32_t, Int64> MergeTreeCommitOrderSource::scheduleForEvent()
@@ -271,44 +296,47 @@ std::tuple<int, uint32_t, Int64> MergeTreeCommitOrderSource::scheduleForEvent()
 
 IProcessor::PipelineUpdate MergeTreeCommitOrderSource::updatePipeline()
 {
-    chassert(pending_round.has_value() || current_round.has_value());
+    chassert(finished_round.has_value() || pending_round.has_value());
+    chassert(!current_round.has_value());
 
     PipelineUpdate update;
 
-    /// Tear down the previous read round sub-pipeline.
-    if (current_round.has_value())
+    /// Tear down the finished read round sub-pipeline.
+    if (finished_round.has_value())
     {
         chassert(!inputs.empty());
         chassert(inputs.front().isConnected());
         chassert(inputs.front().isFinished());
-        LOG_TEST(log, "Tear down previous read round sub-pipeline");
+        LOG_TEST(log, "Tear down finished read round sub-pipeline");
 
         auto & input = inputs.front();
         disconnect(input.getOutputPort(), input);
 
-        update.to_remove = current_round->pipe.getProcessors();
-        current_round.reset();
+        update.to_remove = finished_round->pipeline->pipe.getProcessors();
+        finished_round.reset();
     }
 
-    /// Attach the next read round sub-pipeline if one is ready.
+    /// Attach the pending read round sub-pipeline.
     if (pending_round.has_value())
     {
-        current_round = std::exchange(pending_round, std::nullopt);
-        chassert(current_round->pipe.numOutputPorts() == 1);
-        LOG_TEST(log, "Connecting next read round sub-pipeline");
+        startRound();
+
+        auto & pipe = current_round->pipeline->pipe;
+        chassert(pipe.numOutputPorts() == 1);
+        LOG_TEST(log, "Connecting next read round sub-pipeline:\n{}", explainPipeline(pipe));
 
         if (inputs.empty())
             inputs.emplace_back(*header, this);
 
-        for (const auto & processor : current_round->pipe.getProcessors())
+        for (const auto & processor : pipe.getProcessors())
             processor->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
 
         auto & input = inputs.front();
-        connect(*current_round->pipe.getOutputPort(0), input);
+        connect(*pipe.getOutputPort(0), input);
         input.reopen();
         input.setNeeded();
 
-        update.to_add = current_round->pipe.getProcessors();
+        update.to_add = pipe.getProcessors();
     }
 
     return update;

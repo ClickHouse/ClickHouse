@@ -120,9 +120,9 @@ For example, the result of interpreting the `SELECT` query is a "pulling" `Query
 The result of the `INSERT` query is a "pushing" `QueryPipeline` with an input port to write data for insertion.
 And the result of interpreting the `INSERT SELECT` query is a "completed" `QueryPipeline` that has no inputs or outputs but copies data from `SELECT` to `INSERT` simultaneously.
 
-`InterpreterSelectQuery` uses `ExpressionAnalyzer` and `ExpressionActions` machinery for query analysis and transformations. This is where most rule-based query optimizations are performed. `ExpressionAnalyzer` is quite messy and should be rewritten: various query transformations and optimizations should be extracted into separate classes to allow for modular transformations of the query.
+`InterpreterSelectQueryAnalyzer` interprets a `SELECT` query. It introduces an additional layer of abstraction between `AST` and `QueryPipeline`, called `QueryTree`. It has been the default since version `24.3`, the only analysis a query can ask for since `26.9`, when the `enable_analyzer` setting became obsolete and frozen at `1`, and the only query analysis there is since `26.10`, when the other one was removed. Until then, `InterpreterSelectQuery` did the same job with the `ExpressionAnalyzer` and `ExpressionActions` machinery, and `enable_analyzer` chose between the two.
 
-To address problems that exist in interpreters, a new `InterpreterSelectQueryAnalyzer` has been developed. This is a new version of the `InterpreterSelectQuery`, which does not use the `ExpressionAnalyzer` and introduces an additional layer of abstraction between `AST` and `QueryPipeline`, called `QueryTree`. It is the only query analysis since version `26.9`; the `enable_analyzer` setting that used to switch back to `ExpressionAnalyzer` is obsolete and cannot be disabled anymore.
+`ExpressionAnalyzer` and `ExpressionActions` remain in use for standalone expressions - a `TTL` expression, a sharding key, a column default, a projection - which are compiled without a surrounding query.
 
 ## Functions {#functions}
 

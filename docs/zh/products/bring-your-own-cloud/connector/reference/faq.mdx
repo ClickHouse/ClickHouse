@@ -2,52 +2,112 @@
 title: '常见问题'
 sidebarTitle: '常见问题'
 description: '有关 ClickHouse 连接器的常见问题'
-keywords: ['BYOC', 'cloud', '自备 Cloud', 'connector', 'FAQ']
+keywords: ['BYOC', 'cloud', '自备 Cloud', 'connector', 'FAQ', 'managed mode', 'executor']
 doc_type: 'reference'
 ---
 
-<div id="faq">
-  ## 常见问题
-</div>
+import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 
-<div id="what-data-leaves-my-environment">
-  ### 哪些数据会离开我的环境？
-</div>
+<PrivatePreviewBadge />
 
-有两种途径会向外发送数据，二者均通过连接器自行建立的出站连接：持续传输运行元数据的抓取路径，以及由您启用并返回诊断信息的支持会话。
+## 常见问题 {#faq}
 
-抓取器会发送一组固定系统表 (默认包括 `metric_log`、`asynchronous_metric_log`、`tables`、`warnings`、`server_settings`) 的结果、运行状况和状态心跳、实例和备份状态，以及连接器自身的指标。默认抓取集特意不包含 `system.query_log`，因此原始 SQL 文本及其中的任何字面量或个人数据，除非您显式添加，否则不会通过抓取路径离开环境。在会话期间，默认表允许列表包含 `system.processes`，该表会显示实时查询文本；如果这些内容必须保持隐藏，请将其从允许列表中移除。
+### 谁可以更改我的服务，以及何时更改？ {#who-can-change-my-services}
 
-在活跃的[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)期间，故障排查工具还会返回命令输出；其范围仅限于允许列表中的 ClickHouse 表和只读 Kubernetes 视图 (包括 pod (容器组) 日志) ，并会在发送前经过脱敏处理 (使用针对 IP 地址、凭据、标记和密钥的内置模式，以及您自定义的模式) 。您的表数据、备份和查询历史 (`system.query_log`、`system.text_log`) 始终保留在您的环境中。文档中说明的例外情况包括：每次抓取都会传输允许列表中指标历史表 (`system.metric_log`、`system.asynchronous_metric_log`) 的行；除非您将其从允许列表中移除，否则可在会话中通过 `system.processes` 查看实时查询文本；以及在 Kubernetes 支持会话期间读取的 pod (容器组) 日志会在脱敏后离开环境。完整的出站连接列表请参阅[权限模型](/zh/products/bring-your-own-cloud/connector/reference/privilege-model)页面。
+在托管模式下，ClickHouse Cloud 只会更改你交由它管理的服务。任何能访问 executor 主机或 pod (容器组)  的人也可以通过本地 `clicklink clctl instances` 命令来操作这些服务；参见[服务生命周期](/zh/products/bring-your-own-cloud/connector/managed-services#service-lifecycle)。ClickHouse Cloud 通过 executor 的出站通道下发生命周期命令：
 
-<div id="how-do-i-revoke-access">
-  ### 如何撤销 ClickHouse 的访问权限？
-</div>
+* 创建，依据你提交的定义
+* 扩缩容，调整为 ClickHouse Cloud 设定的固定副本数 (上限由 ClickHouse Cloud 设置控制，默认配置为 20)
+* 停止、启动和重启
+* Backup以及删除Backup
+* 删除
+
+版本升级和配置变更也以同样的方式下发，即重新应用服务定义；这类操作没有客户审批环节，也不涉及支持会话：executor 的通道与故障排查工具的通道相互独立，不受 session state 的限制。
+
+有两件事需要你来操作。创建服务需要你执行 `clicklink clctl executor prepare` 和 `clicklink clctl instances create`，因为只有你才能创建桶和 IAM role。集群中平台组件的更新同样要等你操作。executor 会暂存每个待批的支持包；你执行 `clicklink clctl platform approve` 予以批准，并签发一个有效期 2 小时的标记。参见[平台更新](/zh/products/bring-your-own-cloud/connector/platform-updates)。
+
+executor 的所有操作都通过 Kubernetes API 完成。admission 策略将其写入限制在带服务前缀 (默认为 `ns-`) 的命名空间内。它还允许在 executor 自身命名空间中进行三项写入：续订标记、服务 registry ConfigMap，以及在 Kubernetes 上存放于 `clicklink-mtls` Secret 中的已续订客户端证书。而它对同类资源的读取则是集群级的。已批准的平台更新以独立的 `pcm-platform` 身份运行，仅限于平台命名空间。你自行运维的集群绝不会被更改：scraper 和 故障排查工具均为只读。确切的作用域参见[特权模型](/zh/products/bring-your-own-cloud/connector/reference/privilege-model)页面。
+
+### 哪些数据会离开我的环境？ {#what-data-leaves-my-environment}
+
+共有三个出口会向外发送数据，且全部通过连接器自行建立的出站连接：抓取路径、executor，以及你启用的 支持会话。
+
+抓取器会发送一组固定系统表的查询结果：默认包括 `metric_log`、`asynchronous_metric_log`、`tables`、`warnings` 和 `server_settings`。它还会发送健康与状态心跳、服务 与 Backup 状态，以及连接器自身的 metrics。默认抓取集合不包含 `system.query_log`。除非你主动添加该表，否则原始 SQL 文本及其中的任何 literals 或个人数据都不会经由抓取路径外发。在 session 期间，默认的表 允许列表 包含 `system.processes`，它会显示正在执行的查询文本；如果这些内容必须保密，请将其从 允许列表 中移除。
+
+executor 会发送它执行的每条命令的结果，以及每个 managed 服务 的 state 和副本数量。其心跳会报告命令通道是否已连接。它还会携带平台 组件 versions、最后应用的 支持包 摘要，以及最近一次平台更新的结果。在 VM 安装方式下，心跳还会报告其 Kubernetes 访问 支持包 处于 `ok`、`expiring`、`expired` 还是缺失状态。当你创建 服务 时，`clicklink clctl instances create` 会发送你的环境 ID、云与区域、服务 name，以及其存储桶名称和 IAM role ARN。它会发送 default user 密码的两个哈希值；密码本身绝不会外发。
+
+在 [支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions) 处于活跃状态时，故障排查工具 还会返回命令输出。该输出仅限于 允许列表 中的 ClickHouse 表和 只读 Kubernetes 视图，其中包括 pod (容器组) logs。输出在发送前会先经过 redaction (内置的 IP、凭证、令牌和密钥 patterns，以及你自定义的规则) 。你的表数据、Backups 和 query history (`system.query_log`、`system.text_log`) 始终保留在你的环境中。确实会外发的有三类：
+
+* 允许列表 中的 metric-history 表 (`system.metric_log`、`system.asynchronous_metric_log`) 的行，会随每次抓取一同发送
+* 在 session 中，正在执行的查询文本可通过 `system.processes` 看到，除非你将其从 允许列表 中移除
+* 在 Kubernetes 支持会话 期间读取的 pod (容器组) logs，会在 redaction 后外发
+
+完整的 outbound connection 列表请参见 [特权模型](/zh/products/bring-your-own-cloud/connector/reference/privilege-model) 页面。
+
+### 如何阻止 ClickHouse 更改我的集群？ {#stop-managed-mode}
+
+以非托管模式运行。安装时向 `clicklink clctl init` 传入 `--no-managed`，或在出现提示时选择否。这样只会部署抓取器和故障排查工具，ClickHouse 便无法创建、更改或删除 服务。连接器仍会预置只读 ClickHouse 用户和 ServiceAccount；参见[特权模型](/zh/products/bring-your-own-cloud/connector/reference/privilege-model)。
+
+对于已完成的安装，请停止 executor 并撤销其集群管理员权限。要停止它，可在 Helm values 中设置 `executor.enabled: false` 并运行 `helm upgrade`，或在 VM 上运行 `systemctl disable --now clicklink-executor`。随后撤销该授权。最后一条命令会删除 ServiceAccount 本身；VM 安装对应的命名空间为 `clicklink-system`，Kubernetes 安装则为连接器所在的命名空间：
+
+```bash
+kubectl delete validatingadmissionpolicybinding pcm-executor-prefix-guard
+kubectl delete validatingadmissionpolicy pcm-executor-prefix-guard
+kubectl delete clusterrolebinding pcm-executor-cluster
+kubectl delete clusterrole pcm-executor-cluster
+kubectl delete serviceaccount pcm-executor -n <executor-namespace>
+```
+
+ClickHouse 已创建的 服务 会继续运行，但 ClickHouse Cloud 无法再对其进行扩缩容、升级、Backup或删除，针对它们的待处理命令也会失败。平台更新同样会停止：其工作负载部分由 executor 应用，而 executor 已不再运行。
+
+### 连接器离线时会发生什么？ {#connector-down}
+
+您的 ClickHouse 服务不受影响：连接器不处于任何数据路径上，托管服务在没有 executor 的情况下也会持续运行。真正的影响是失去可观测性与控制能力。ClickHouse Cloud 将停止接收遥测数据，并且在连接器恢复之前无法使用支持会话。在托管模式下，若 5 分钟内未收到心跳，ClickHouse Cloud 会将您的环境显示为离线；收到下一次心跳后即恢复为就绪状态。
+
+在没有 executor 连接期间，生命周期命令会有两种表现。ClickHouse Cloud 已经接受的 create、delete 或平台同步会被保留并重试：create 自最后一次进度上报起最多重试 30 分钟，delete 最多重试 2 小时，平台同步最多重试 10 次；超出后该命令会被报告为失败。这两个时间上限分别由 `executor.create_retry_horizon` 和 `executor.delete_retry_horizon` 配置项控制。其他所有命令 (scale、stop、start、restart、backup、backup 删除) ，以及在没有 executor 连接时提交的任何 create 或 delete，都会在提交时直接被拒绝，而不会排队等待。executor 未能上报的结果会在其下一次建立连接时发送。参见[连接器离线时](/zh/products/bring-your-own-cloud/connector/managed-services#when-the-connector-is-offline)。
+
+在 VM 上，只要您的连接器端点不可达，抓取器就会将抓取到的数据暂存到 `/var/lib/clicklink/buffer` (默认最多保留 168 小时或 1024 MB) 。重新连接后会将暂存数据投递出去，因此端点故障不会造成遥测数据丢失。daemon 崩溃后，在 VM 上由 systemd 重启，在 Kubernetes 上由 kubelet 节点代理重启。executor 会将命令状态保存在磁盘上，因此重启后会继续执行此前处于进行中的命令。
+
+诊断时，请检查各组件的 `/livez` 端点 (判断依据是 JSON 中的 `status` 字段，而非 HTTP 状态码) ，并运行 `clicklink clctl preflight` (在 VM 主机上需加 `sudo`) 。预检会一次性检查配置、连通性、ClickHouse 可达性、访问权限和磁盘。参见[运维](/zh/products/bring-your-own-cloud/connector/operations)；如果连接器持续处于不健康状态，请联系 ClickHouse 支持团队。
+
+### 删除某个 服务 时会删除哪些内容？ {#what-is-deleted}
+
+executor 会停止该 服务、移除其 Kubernetes 资源，并删除其命名空间。命名空间被删除后，executor 即报告该 服务 已终止。Kubernetes 之外的一切都会保留：数据桶、Backup桶以及该 服务 的 IAM role。executor 不持有你的桶或 IAM 的任何 凭证，因此无法改动它们。
+
+其余部分需要你使用自己的 凭证 运行 `clicklink clctl executor teardown` 来清除。默认情况下，该命令会移除 IAM role，但保留数据和Backup；如需删除它们，必须显式指定相应 flags。参见 [delete a service](/zh/products/bring-your-own-cloud/connector/managed-services#delete-a-service)。
+
+### 我的 default 用户密码在哪里？ {#default-user-password}
+
+`clicklink clctl executor prepare` 会在本地生成该密码，并且仅打印一次。如果你不使用 `--from-prepare`，而是通过各个单独的 flag 提交，则 `clicklink clctl instances create` 会从 `--default-user-password-file` 读取密码，或者生成并打印一个新密码。提交到 ClickHouse Cloud 的只有密码的哈希，因此连接器和 ClickHouse 都无法再次向你显示该密码。请在密码显示时及时保存。
+
+### 如何撤销 ClickHouse 的访问权限？ {#how-do-i-revoke-access}
 
 按措施强度递增的顺序：
 
 1. **终止交互式访问。** 禁用会话：在 VM 主机上运行 `sudo clicklink clctl troubleshoot session disable`，或在 Kubernetes 中通过端口转发运行同一命令并添加 `--gateway-url` (具体命令请参阅[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)页面) 。没有活动会话时，即使仍处于连接状态，故障排查工具 也会拒绝执行所有命令。
-2. **阻止后续会话。** 清空 操作员 允许列表 (空允许列表会关闭 网关) ，或禁用 网关；在 VM 上，主机的 root 用户仍可进行本地会话管理。请参阅[配置指南](/zh/products/bring-your-own-cloud/connector/configuration)。
-3. **切断与 ClickHouse Cloud 的连接。** 在网络层阻止到连接器端点的出站流量，或在实施网络策略的 CNI 中清空 `networkPolicy.allowEgressCIDRs`；连接器仅发起出站连接，因此 ClickHouse Cloud 没有可用于恢复连接的入站路径。对 ClickHouse 的本地读取仍会继续，直到停止或卸载工作负载；这才是彻底停止。
-4. **撤销凭据。** 删除 `pcm_scraper` 和 `pcm_troubleshooter` 这两个 ClickHouse 用户，并删除连接器的 Secrets (Kubernetes) 或 `/etc/clicklink` 下的文件 (VM) 。
-5. **完全移除连接器。** 请参阅[操作](/zh/products/bring-your-own-cloud/connector/operations)。
+2. **停止托管模式。** 按照[如何阻止 ClickHouse 更改我的集群？](#stop-managed-mode)中的说明停止 executor 并撤销其 授权。平台更新本身就需要你的批准，因此不予批准即可使其停止。
+3. **阻止后续会话。** 清空 操作员 允许列表 (空允许列表会关闭 网关) ，或禁用 网关；在 VM 上，主机的 root 用户仍可进行本地会话管理。请参阅[配置指南](/zh/products/bring-your-own-cloud/connector/configuration)。
+4. **切断与 ClickHouse Cloud 的连接。** 在网络层阻止到连接器端点的出站流量，或在实施网络策略的 CNI 中清空 `networkPolicy.allowEgressCIDRs`。连接器仅发起出站连接，因此 ClickHouse Cloud 没有可用于恢复连接的入站路径。对 ClickHouse 的本地读取仍会继续，直到停止或卸载工作负载；这才是彻底停止。
+5. **撤销凭据。** 删除 `pcm_scraper` 和 `pcm_troubleshooter` 这两个 ClickHouse 用户，并删除连接器的 Secrets (Kubernetes) 或 `/etc/clicklink` 下的文件 (VM) 。
+6. **完全移除连接器。** 请参阅[操作](/zh/products/bring-your-own-cloud/connector/operations)。
 
-<div id="air-gapped-and-mirrors">
-  ### 我可以在隔离网络环境中运行，或使用自己的镜像吗？
-</div>
+### 能否在隔离网络中运行，或通过自有私有镜像运行？ {#air-gapped-and-mirrors}
 
-可以。所有安装时所需的制品都可以来自安全边界内部：从 `releases.clicklink.clickhouse.com` 和公网 registry 镜像 命令行客户端 tarball 和容器镜像，将 `image.repository` 指向你的镜像仓库，并通过 `--chart` 传入 `oci://` 引用、URL 或本地归档文件 (同时指定 `--chart-version`；默认使用命令行客户端自身的版本) 。如果你的 连接器 API 端点位于安全边界内部，并使用私有 CA 提供服务，`--api-private-ca` (Kubernetes) 或 `api.tls.ca_file` (VM) 会根据注册包中的证书链对其进行验证。对于无法直接连接时的注册，`init --handoff` 会使用通过带外方式获取的包；`--no-auto-sign` 配合 `init --signed-cert` 可通过带外方式完成证书签名。请参阅[私有镜像](/zh/products/bring-your-own-cloud/connector/configuration)和[onboarding](/zh/products/bring-your-own-cloud/connector/onboarding)中的隔离网络部分。请注意，连接器 在运行时仍需要一条通往你的 org 的 连接器 API 端点的路由；否则，ClickHouse Cloud 将不会收到任何 遥测数据。
+可以。所有安装阶段所需的制品都可以来自你的边界内部：
 
-<div id="connector-down">
-  ### 如果连接器宕机，会发生什么？
-</div>
+* 将命令行客户端压缩包和容器镜像从 `releases.clicklink.clickhouse.com` 及公共 registry 同步到私有镜像，然后将 `image.repository` 指向你的私有镜像。
+* 通过 `--chart` 传入 `oci://` 引用、URL 或本地归档文件。`--chart-version` 默认使用命令行客户端自身的版本。
+* 如果你的连接器端点部署在边界内部，并由 private CA 签发证书，则 `--api-private-ca` (Kubernetes) 或 `api.tls.ca_file` (VM) 会将 enrollment bundle 的 CA 证书链追加到系统信任根中。
+* 在无法直连的情况下完成 enrollment 时，`init --handoff` 会读取通过带外方式获取的 bundle，`--no-auto-sign` 配合 `init --signed-cert` 则可在带外完成证书签发。
+* 在托管模式下，你的 services 和平台组件所用的 ClickHouse 镜像可在导入自有 registry 后从该 registry 获取；ClickHouse 会为你的环境注册该 registry。
+* 平台 bundle 可通过带外方式移交，并以文件形式传递给 `clicklink clctl platform approve --bundle`。
 
-您的 ClickHouse 服务不会受到影响：连接器仅从中读取数据，不位于任何数据路径上。影响在于可观测性丢失，因此 ClickHouse Cloud 将停止接收遥测数据，支持会话也会在其恢复前不可用。在 VM 上，只要 API 端点不可达，抓取器就会将抓取的数据暂存到 `/var/lib/clicklink/buffer` (默认最多保留 168 小时或 1024 MB) ，并在重新连接后发送，因此端点中断不会导致遥测数据丢失；崩溃的守护进程会由 systemd 重启，在 Kubernetes 上则由 kubelet 节点代理重启。要进行诊断，请检查每个组件的 `/livez` 端点 (以 JSON `status` 字段为准，而非 HTTP 状态码) ，并运行 `clicklink clctl preflight` (在 VM 主机上使用 `sudo`) 。该命令会一次性检查配置、连接性、ClickHouse 可达性、访问权限和磁盘。请参阅[操作](/zh/products/bring-your-own-cloud/connector/operations)；如果连接器持续处于不健康状态，请联系 ClickHouse 支持团队。
+参见 [私有镜像](/zh/products/bring-your-own-cloud/connector/configuration) 以及 [onboarding](/zh/products/bring-your-own-cloud/connector/onboarding) 中的隔离网络章节。连接器在 runtime 仍需有通往连接器端点的网络路径；否则 ClickHouse Cloud 收不到任何遥测数据，生命周期命令也无法抵达 executor。
 
-<div id="support-session-auditing">
-  ### 如何审计支持会话？
-</div>
+### 如何审计支持会话？ {#support-session-auditing}
 
-每次网关调用和每条故障排查命令，无论获准还是被阻止，都会以以换行分隔的 JSON 格式追加写入 `/var/log/clicklink/troubleshoot-audit.log` 审计日志，并逐条记录归属信息：网关调用记录由令牌验证的操作员邮箱地址 (绝不采用自行申报的姓名) ；VM 本地会话变更记录发起调用的主机用户；会话期间执行的命令则记录已通过身份验证的通道中的 org 身份。会话本身设有时限 (默认 4 小时，最长 24 小时) ，每次启用都会记录启用者、到期时间及可选原因，`clicklink clctl troubleshoot session status` 会显示这些信息。
+会话期间执行的每条命令，无论获准还是被阻止，都会以以换行分隔的 JSON 格式追加写入 `/var/log/clicklink/troubleshoot-audit.log`。每条记录都会记录 `submitted_by` (命令通道上的 Organization ID) 、命令文本、目标 instance、执行结果，以及被拒绝命令的 `blocked_by`。网关调用 (包括被拒绝的调用) 会以结构化的 `clctl.gateway` 行记录在 故障排查工具 自身的日志中。它们归属于由标记验证的操作员邮箱地址，绝不采用自行申报的姓名。VM 上的本地会话变更会将发起调用的主机用户记录为 `/var/lib/clicklink/session.json` 中的 `enabled_by`。
 
-使用 `clicklink clctl troubleshoot audit tail` 读取日志；在 Kubernetes 上，该命令是受支持的读取方式 (运行时镜像不包含 shell) 。在默认设置 `persistence.enabled: true` 下，日志存储在 故障排查工具 的持久卷中，因此即使 pod (容器组) 被重新调度，审计记录仍会保留。禁用持久化后，审计日志和会话状态的生命周期将与 pod (容器组) 一致，chart 本身也将此配置标记为仅适用于本地开发。默认情况下，日志轮转会保留 5 个文件，每个文件最大 128 MB，保留 168 小时；如需调整，请参阅[配置参考](/zh/products/bring-your-own-cloud/connector/reference/configuration)；有关完整的信任模型，请参阅[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)。
+会话设有时限 (默认 4 小时，最长 24 小时) 。每次启用都会记录启用者、到期时间及可选原因，`clicklink clctl troubleshoot session status` 会显示这些信息。
+
+使用 `clicklink clctl troubleshoot audit tail` 读取审计日志。在 Kubernetes 上，该命令是受支持的读取方式 (运行时镜像不包含 shell) 。在默认设置 `persistence.enabled: true` 下，日志存储在 故障排查工具 的持久卷中，因此即使 pod (容器组) 被重新调度，审计记录仍会保留。禁用持久化后，审计日志和会话状态的生命周期将与 pod (容器组) 一致，chart 将此配置标记为仅适用于本地开发。默认情况下，日志轮转会保留 5 个文件，每个文件最大 128 MB，保留 168 小时；如需调整，请参阅[配置参考](/zh/products/bring-your-own-cloud/connector/reference/configuration)；有关完整的信任模型，请参阅[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)。
