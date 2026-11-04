@@ -156,6 +156,7 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
 
         filename = configuration.url;
         structure = configuration.structure;
+        is_structure_not_overridable = structure == "auto" && !named_collection->isOverridable("structure", /* default_value= */ true);
         compression_method = configuration.compression_method;
 
         format = configuration.format;
@@ -447,10 +448,7 @@ StoragePtr TableFunctionURL::getStorage(
             format_,
             compression_method_,
             StorageID(getDatabaseName(), table_name),
-            /// With a `body(...)`, every inference request sends the body. Inferring the structure here and then
-            /// the format (when it is `auto`) in the constructor would send it twice, so let the constructor infer
-            /// both from a single request.
-            configuration.body.empty() ? getActualTableStructure(context, is_insert_query) : columns,
+            is_structure_not_overridable ? ColumnsDescription{} : columns,
             ConstraintsDescription{},
             configuration);
     }
