@@ -56,9 +56,9 @@ public:
         /// private_aliases are from lambda, so these are local names.
         NameSet private_aliases;
 
-        /// The aliases the enclosing lambda bodies declare: there such a name is the alias, not a column.
+        /// How many enclosing lambda bodies declare each alias: there the name is the alias, not a column.
         /// Only with `rename_lambda_parameters`.
-        NameSet lambda_aliases;
+        std::unordered_map<String, size_t> lambda_aliases;
 
         /// Check if query is changed by this visitor.
         bool changed = false;
