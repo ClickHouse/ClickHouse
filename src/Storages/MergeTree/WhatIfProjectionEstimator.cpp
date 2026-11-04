@@ -27,6 +27,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
@@ -363,50 +364,21 @@ std::pair<size_t, size_t> calculatedBlockBytes(const Block & block)
 }
 
 /// one row for each group, with the merged states, as in a merged aggregate projection part
-Block mergeGroups(const Blocks & blocks)
+/// the same sort and merge as the writer of a projection part, see `MergeTreeDataWriter::writeProjectionPartImpl`
+Block mergeGroups(const ProjectionDescription & projection, const Blocks & blocks)
 {
-    Block all = concatenateBlocks(blocks);
-    std::vector<bool> is_state(all.columns());
-    SortDescription groups;
-    for (size_t i = 0; i < all.columns(); ++i)
-    {
-        auto & elem = all.getByPosition(i);
-        elem.column = elem.column->convertToFullColumnIfConst();
-        is_state[i] = typeid_cast<const ColumnAggregateFunction *>(elem.column.get()) != nullptr;
-        if (!is_state[i])
-            groups.emplace_back(elem.name, 1, 1);
-    }
-    IColumn::Permutation order;
-    stableGetPermutation(all, groups, order);
+    Block block = concatenateBlocks(blocks);
+    SortDescription sort_description;
+    for (const auto & column_name : projection.metadata->getSortingKeyColumns())
+        sort_description.emplace_back(column_name, 1, 1);
 
-    auto same_group = [&](size_t lhs, size_t rhs)
-    {
-        for (size_t i = 0; i < all.columns(); ++i)
-            if (!is_state[i] && all.getByPosition(i).column->compareAt(lhs, rhs, *all.getByPosition(i).column, 1) != 0)
-                return false;
-        return true;
-    };
+    IColumn::Permutation permutation;
+    stableGetPermutation(block, sort_description, permutation);
+    IColumn::Permutation * permutation_ptr = &permutation;
 
-    MutableColumns merged = all.cloneEmptyColumns();
-    for (size_t pos = 0; pos < order.size(); ++pos)
-    {
-        const size_t row = order[pos];
-        const bool new_group = pos == 0 || !same_group(row, order[pos - 1]);
-        for (size_t i = 0; i < all.columns(); ++i)
-        {
-            const auto & source = *all.getByPosition(i).column;
-            if (is_state[i])
-            {
-                auto & states = assert_cast<ColumnAggregateFunction &>(*merged[i]);
-                if (new_group)
-                    states.insertDefault();
-                states.insertMergeFrom(source, row);
-            }
-            else if (new_group)
-                merged[i]->insertFrom(source, row);
-        }
-    }
-    return all.cloneWithColumns(std::move(merged));
+    MergeTreeData::MergingParams merging_params;
+    merging_params.mode = MergeTreeData::MergingParams::Aggregating;
+    return MergeTreeDataWriter::mergeBlock(std::move(block), projection.metadata, std::move(sort_description), permutation_ptr, merging_params);
 }
 
 /// read only the key columns, returns why the estimate is unsupported or an empty string
@@ -566,7 +538,7 @@ String buildProjectionPart(
     flush();
     if (!groups.empty())
     {
-        auto merged = merged_part ? mergeGroups(groups) : std::move(groups.front());
+        auto merged = merged_part ? mergeGroups(projection, groups) : std::move(groups.front());
         /// the groups of all batches hold the groups of each batch, so a batch that stopped at the limit is over it here
         if (max_groups && merged.rows() > max_groups)
             return fmt::format(
@@ -592,7 +564,7 @@ String buildProjectionPart(
             /// the hash table of an insert keeps them apart
             out.materialized = std::make_unique<ProjectionPartData>();
             MutableColumns materialized_keys;
-            add(*out.materialized, materialized_keys, mergeGroups({mutation_projected}), true);
+            add(*out.materialized, materialized_keys, mergeGroups(projection, {mutation_projected}), true);
             finish(*out.materialized, materialized_keys);
             out.materialized->format_bytes = mutation_projected.bytes();
             /// the part does not record the settings of its insert, so the format of each block of the insert is possible
