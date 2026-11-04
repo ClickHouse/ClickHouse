@@ -326,7 +326,7 @@ parser.add_argument(
     action="store_true",
     help="Digest the result of every SQL query on its prewarm run and report the "
     "queries whose results differ between the servers. Costs one more run of every "
-    "`FORMAT Null` query per server, so it is enabled only in nightly runs.",
+    "`FORMAT Null` query per server, so CI does not enable it.",
 )
 parser.add_argument(
     "--pr-number",
