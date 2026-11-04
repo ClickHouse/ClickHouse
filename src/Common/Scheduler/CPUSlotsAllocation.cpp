@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 
 namespace ProfileEvents
 {
@@ -74,6 +75,10 @@ CPUSlotsAllocation::CPUSlotsAllocation(SlotCount master_slots_, SlotCount worker
     for (CPUSlotRequest & request : requests)
         request.allocation = this;
 
+    wait_thread_group = CurrentThread::getGroup();
+    if (wait_thread_group)
+        wait_counters = &wait_thread_group->performance_counters;
+
     std::unique_lock lock{schedule_mutex};
     while (allocated < total_slots)
     {
@@ -81,7 +86,7 @@ CPUSlotsAllocation::CPUSlotsAllocation(SlotCount master_slots_, SlotCount worker
         if (link.enqueue(current_request)) // competing slot - use scheduler (stamps scheduling pointers)
         {
             scheduled_slot_increment.emplace(CurrentMetrics::ConcurrencyControlScheduled);
-            wait_timer.emplace(CurrentThread::getProfileEvents().timer(ProfileEvents::ConcurrencyControlWaitMicroseconds));
+            wait_timer.emplace(wait_counters->timer(ProfileEvents::ConcurrencyControlWaitMicroseconds));
             break;
         }
         else // noncompeting slot - provide for free
