@@ -66,7 +66,7 @@ struct StreamLayout
     size_t block_size = 0;
 };
 
-using StreamLayouts = UnorderedMapWithMemoryTracking<UInt128, StreamLayout, ISerialization::SubstreamsCacheKeyHash>;
+using StreamLayouts = UnorderedMapWithMemoryTracking<String, StreamLayout>;
 
 /// The serialization of a column over one run: prefix, bulk writes, suffix.
 struct ColumnWriter
@@ -122,7 +122,7 @@ struct Run
 
     struct Stream
     {
-        UInt128 key;
+        String key;
         std::unique_ptr<CompressedSizeCalculator> calculator;
     };
     /// A handful of substreams: a linear search beats hashing.
@@ -148,7 +148,7 @@ struct Run
 
     WriteBuffer * streamFor(const ISerialization::SubstreamPath & path)
     {
-        const UInt128 key = ISerialization::getSubstreamsCacheKeyForStream(path);
+        const String key = ISerialization::getSubstreamsCacheKeyForStream(path);
         for (auto & stream : streams)
             if (stream.key == key)
                 return stream.calculator.get();
@@ -274,7 +274,7 @@ private:
                 if (ISerialization::isEphemeralSubcolumn(path, path.size()))
                     return;
 
-                const UInt128 key = ISerialization::getSubstreamsCacheKeyForStream(path);
+                const String key = ISerialization::getSubstreamsCacheKeyForStream(path);
                 auto it = stream_layouts.find(key);
                 const StreamLayout layout = it != stream_layouts.end() ? it->second : resolveStreamLayout(path);
                 raw->streams.push_back({key, std::make_unique<CompressedSizeCalculator>(layout.codec, layout.block_size)});
