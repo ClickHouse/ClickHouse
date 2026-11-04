@@ -699,6 +699,9 @@ def test_worker_replaced_after_downscale(with_custom_config):
             timeout=15,
         )
     finally:
-        node.query(f"kill query where query_id in ('{victim_id}', '{competitor_id}') sync")
-        victim.join()
-        competitor.join()
+        try:
+            node.query(f"kill query where query_id in ('{victim_id}', '{competitor_id}') sync")
+        finally:
+            for thread in (victim, competitor):
+                if thread.ident is not None:
+                    thread.join()

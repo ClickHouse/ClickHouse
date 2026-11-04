@@ -396,6 +396,9 @@ def test_concurrent_threads_soft_limit_upscale_after_release(started_cluster):
             timeout=8,
         )
     finally:
-        node4.query(f"KILL QUERY WHERE query_id IN ('{background_id}', '{foreground_id}') SYNC")
-        background.join()
-        foreground.join()
+        try:
+            node4.query(f"KILL QUERY WHERE query_id IN ('{background_id}', '{foreground_id}') SYNC")
+        finally:
+            for thread in (background, foreground):
+                if thread.ident is not None:
+                    thread.join()
