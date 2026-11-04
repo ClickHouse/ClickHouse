@@ -1377,10 +1377,24 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
 
     if (!server_side_encryption_customer_key_base64.empty())
     {
+        auto invalid_key = []
+        {
+            return Exception(ErrorCodes::BAD_ARGUMENTS, "`server_side_encryption_customer_key_base64` must be a base64-encoded 256-bit key");
+        };
+
+        String customer_key;
+        try
+        {
+            customer_key = base64Decode(server_side_encryption_customer_key_base64);
+        }
+        catch (const Poco::DataFormatException &)
+        {
+            throw invalid_key();
+        }
+
         /// SSE-C takes a 256-bit key; the round trip rejects anything but its canonical base64.
-        String customer_key = base64Decode(server_side_encryption_customer_key_base64);
         if (customer_key.size() != 32 || base64Encode(customer_key) != server_side_encryption_customer_key_base64)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`server_side_encryption_customer_key_base64` must be a base64-encoded 256-bit key");
+            throw invalid_key();
 
         /// See Client::GeneratePresignedUrlWithSSEC().
 
