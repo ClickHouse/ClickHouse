@@ -83,6 +83,13 @@ struct S3AuthSettings
     UnorderedSetWithMemoryTracking<std::string> users;
     ServerSideEncryptionKMSConfig server_side_encryption_kms_config;
 
+    /// Whether the Google credential (`google_service_account_key` or the ADC triple) was supplied by the query, a named
+    /// collection or a BigLake catalog rather than merged from the server `<s3>`/endpoint config. Only such a credential
+    /// is explicit for a session restricted by `s3_allow_server_credentials_in_user_queries`. The value of a credential
+    /// cannot tell its origin, so the origin is recorded when the settings are built and kept through every copy and
+    /// client rebuild; merging the server config (`updateIfChanged`) never sets it.
+    bool google_credentials_explicit = false;
+
     void serialize(WriteBuffer & out, ContextPtr context) const;
     static S3AuthSettings deserialize(ReadBuffer & in, ContextPtr context);
 

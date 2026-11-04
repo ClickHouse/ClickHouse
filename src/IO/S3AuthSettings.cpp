@@ -112,6 +112,7 @@ S3AuthSettings::S3AuthSettings(const S3AuthSettings & settings)
     , access_headers(settings.access_headers)
     , users(settings.users)
     , server_side_encryption_kms_config(settings.server_side_encryption_kms_config)
+    , google_credentials_explicit(settings.google_credentials_explicit)
     , impl(std::make_unique<S3AuthSettingsImpl>(*settings.impl))
 {
 }

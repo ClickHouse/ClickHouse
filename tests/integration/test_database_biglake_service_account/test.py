@@ -159,15 +159,18 @@ def test_token_endpoint_must_be_allowed():
 
 
 def test_server_key_not_used_by_restricted_session():
-    """A service account key of the server `<s3>` config stays the server's after an opt-in session creates a table."""
+    """A service account key of the server `<s3>` config stays the server's after an opt-in session creates a table:
+    it follows a rotation of the server config, and a restricted session never mints a token with it.
+    """
     data_url = f"http://node:{MOCK_PORT}/data"
-    server_key = service_account_key(token_host="node")
-    user_key = service_account_key(
-        client_email="user@example-project.iam.gserviceaccount.com", token_host="node"
-    )
-    server_key_node.replace_config(
-        "/etc/clickhouse-server/config.d/server_s3_service_account.xml",
-        f"""<clickhouse>
+    rotated_email = "rotated@example-project.iam.gserviceaccount.com"
+    user_email = "user@example-project.iam.gserviceaccount.com"
+    user_key = service_account_key(client_email=user_email, token_host="node")
+
+    def set_server_key(server_key):
+        server_key_node.replace_config(
+            "/etc/clickhouse-server/config.d/server_s3_service_account.xml",
+            f"""<clickhouse>
     <s3>
         <gcs_with_server_key>
             <endpoint>{data_url}/</endpoint>
@@ -183,14 +186,8 @@ def test_server_key_not_used_by_restricted_session():
         </user_key_collection>
     </named_collections>
 </clickhouse>""",
-    )
-    server_key_node.query("SYSTEM RELOAD CONFIG")
-    assert (
-        server_key_node.query(
-            "SELECT count() FROM system.named_collections WHERE name = 'user_key_collection'"
         )
-        == "1\n"
-    )
+        server_key_node.query("SYSTEM RELOAD CONFIG")
 
     def issuers_of_new_assertions(query, allow_server_credentials):
         mock_ctl("/__reset__")
@@ -205,6 +202,14 @@ def test_server_key_not_used_by_restricted_session():
             json.loads(b64url_decode(a.split(".")[1]))["iss"] for a in assertions
         ], error
 
+    set_server_key(service_account_key(token_host="node"))
+    assert (
+        server_key_node.query(
+            "SELECT count() FROM system.named_collections WHERE name = 'user_key_collection'"
+        )
+        == "1\n"
+    )
+
     server_key_node.query("DROP TABLE IF EXISTS t_server_key")
     server_key_node.query(
         f"CREATE TABLE t_server_key (x UInt8) ENGINE = S3('{data_url}/server.tsv', 'TSV')",
@@ -215,17 +220,23 @@ def test_server_key_not_used_by_restricted_session():
     issuers, _ = issuers_of_new_assertions("SELECT * FROM t_server_key", 1)
     assert SA_CLIENT_EMAIL in issuers
 
-    # A restricted session is refused and never mints a token with the server key.
+    # The table follows a rotation of the server key, because it did not supply the key itself.
+    set_server_key(service_account_key(client_email=rotated_email, token_host="node"))
+    issuers, _ = issuers_of_new_assertions("SELECT * FROM t_server_key", 1)
+    assert rotated_email in issuers
+    assert SA_CLIENT_EMAIL not in issuers
+
+    # A restricted session is refused and never mints a token with the server key, also after the reload.
     issuers, error = issuers_of_new_assertions("SELECT * FROM t_server_key", 0)
     assert issuers == []
     assert "ACCESS_DENIED" in error
 
-    # A key supplied by a named collection is still used by a restricted session.
+    # A key supplied by a named collection is explicit, so a restricted session still uses it.
     issuers, error = issuers_of_new_assertions(
         "SELECT * FROM s3(user_key_collection, format = 'TSV', structure = 'x UInt8')",
         0,
     )
     assert "ACCESS_DENIED" not in error
-    assert issuers and set(issuers) == {"user@example-project.iam.gserviceaccount.com"}
+    assert issuers and set(issuers) == {user_email}
 
     server_key_node.query("DROP TABLE t_server_key")

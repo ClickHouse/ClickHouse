@@ -333,6 +333,11 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = collection.getOrDefault<String>("google_adc_client_secret", "");
     s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = collection.getOrDefault<String>("google_adc_refresh_token", "");
     s3_settings->auth_settings[S3AuthSetting::google_service_account_key] = collection.getOrDefault<String>("google_service_account_key", "");
+    /// The Google credential of a collection (or of the query's key-value arguments) is explicit; the one merged from
+    /// the server config above has just been replaced by it.
+    s3_settings->auth_settings.google_credentials_explicit
+        = !s3_settings->auth_settings[S3AuthSetting::google_service_account_key].value.empty()
+        || !s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token].value.empty();
 
     format = collection.getOrDefault<String>("format", format);
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
@@ -1192,11 +1197,11 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     parsed_arguments.fromNamedCollection(collection, context);
     initializeFromParsedArguments(std::move(parsed_arguments));
     keys = {url.key};
-    /// A service account key is an explicit credential like a key pair: keep it pinned, so that the server's `<s3>` and
-    /// endpoint auth settings are not merged over it when the client is rebuilt.
+    /// An explicit Google credential is pinned like a key pair, so that the server's `<s3>` and endpoint auth settings are
+    /// not merged over it when the client is rebuilt.
     static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
         || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed
-        || !s3_settings->auth_settings[S3AuthSetting::google_service_account_key].value.empty();
+        || s3_settings->auth_settings.google_credentials_explicit;
 }
 
 void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
@@ -1225,7 +1230,10 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     /// The Google credential of a BigLake catalog replaces any Google credential merged from the server `<s3>` and
     /// endpoint config: keeping an inherited one would leave two credential types, which the client refuses.
     if (!biglake_adc_client_id.empty() || !biglake_service_account_key.empty())
+    {
         s3_settings->auth_settings.clearServerManagedGcpOAuth();
+        s3_settings->auth_settings.google_credentials_explicit = true;
+    }
     if (!biglake_adc_client_id.empty())
     {
         s3_settings->auth_settings[S3AuthSetting::http_client] = "gcp_oauth";
@@ -1238,11 +1246,12 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
         s3_settings->auth_settings[S3AuthSetting::http_client] = "gcp_oauth";
         s3_settings->auth_settings[S3AuthSetting::google_service_account_key] = biglake_service_account_key;
     }
-    /// A service account key is an explicit credential like a key pair: keep it pinned, so that the server's `<s3>` and
-    /// endpoint auth settings are not merged over it when the client is rebuilt.
+    /// An explicit Google credential is pinned like a key pair, so that the server's `<s3>` and endpoint auth settings are
+    /// not merged over it when the client is rebuilt. One inherited from the server config is not pinned: it follows
+    /// the server config, e.g. a rotated key.
     static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
         || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed
-        || !s3_settings->auth_settings[S3AuthSetting::google_service_account_key].value.empty();
+        || s3_settings->auth_settings.google_credentials_explicit;
 }
 
 void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
