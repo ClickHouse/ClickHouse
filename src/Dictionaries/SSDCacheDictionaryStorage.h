@@ -1378,8 +1378,8 @@ private:
                         auto key_to_update = keys_to_update[i];
                         auto * it = index.find(key_to_update);
 
-                        /// If there are no key to update or key to update not in memory
-                        if (!it || it->getMapped().state != Cell::in_memory)
+                        /// Skip absent keys and keys whose live cell is not in this partition's buffer
+                        if (!it || it->getMapped().state != Cell::in_memory || it->getMapped().in_memory_partition_index != current_partition_index)
                             continue;
 
                         /// If there were duplicated keys in memory buffer partition
@@ -1415,9 +1415,10 @@ private:
                     if (memory_buffer_partitions.size() < configuration.max_partitions_count)
                     {
                         /// Try tro create next partition without reusing old partitions
-                        ++current_partition_index;
                         file_buffer.allocateSizeForNextPartition();
                         memory_buffer_partitions.emplace_back(configuration.block_size, configuration.write_buffer_blocks_size);
+                        /// Advance only after both calls succeed, so the index stays valid if one of them throws.
+                        ++current_partition_index;
                     }
                     else
                     {
