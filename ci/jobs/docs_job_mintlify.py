@@ -11,7 +11,6 @@ from ci.jobs.scripts.docs.mintlify_docs_check import (
     QUICKSTARTS_CHECK,
     SDK_DOCS_CHECK,
 )
-from ci.jobs.reference_snapshot import export_reference_snapshot
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -193,16 +192,7 @@ if __name__ == "__main__":
     # (ci/jobs/scripts/docs/mintlify_docs_check.py). This job already runs inside
     # the docs-builder image with the docs present natively, so it runs them
     # directly. --test selects a subset by sub-check name.
-    results = []
-    if selected("Export reference snapshot"):
-        results.append(
-            Result.from_commands_run(
-                name="Export reference snapshot",
-                command=export_reference_snapshot,
-                with_info_on_failure=True,
-            )
-        )
-    results += [
+    results = [
         Result.from_commands_run(name=name, command=command, workdir=docs_dir)
         for name, command in DEFAULT_CHECKS
         if selected(name)

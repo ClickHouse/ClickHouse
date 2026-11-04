@@ -2135,18 +2135,13 @@ class JobConfigs:
         name=JobNames.DOCS_MINTLIFY,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="python3 ./ci/jobs/docs_job_mintlify.py",
-        requires=[ArtifactNames.CH_ARM_BINARY],
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./docs",
-                "./src",
                 "./ci/jobs/docs_job_mintlify.py",
-                "./ci/jobs/reference_snapshot.py",
                 "./ci/jobs/scripts/docs",
-                "./ci/jobs/scripts/docs/reference_snapshot",
                 "./utils/generate-async-metrics-docs",
                 "./utils/generate-system-tables-docs",
-                "./utils/generate-system-tables-docs-config.xml",
                 # The source of truth for the generated Open source changelog
                 # page, so a change to it alone must still run this job.
                 "./CHANGELOG.md",
