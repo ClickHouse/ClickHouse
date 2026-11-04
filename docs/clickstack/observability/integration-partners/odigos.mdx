@@ -121,12 +121,6 @@ kubectl port-forward svc/ui -n odigos-system 3000:3000
 
 To send telemetry, add an **OTLP HTTP** destination in Odigos. Select your deployment below.
 
-<Tip>
-**Alternative: write directly to ClickHouse**
-
-If ClickHouse is reachable from your Kubernetes cluster, you can skip the OTLP collector entirely and use Odigos's [native **ClickHouse** destination](#native-clickhouse-destination) instead. This option applies to self-managed deployments.
-</Tip>
-
 <Tabs>
 <Tab title="Fully managed">
 
@@ -146,7 +140,13 @@ ClickHouse Observability gives you an OTLP endpoint. ClickHouse handles ingestio
 
 <Tab title="Self-managed">
 
-For a self-managed deployment, run the [ClickStack distribution of the collector in standalone mode](/clickstack/ingesting-data/collector#configuring-the-collector) yourself and set the authentication token via the `OTLP_AUTH_TOKEN` environment variable when starting the container. Odigos then sends OTLP HTTP traffic to that collector with the same token in the `Authorization` header.
+<Tip>
+**Alternative: write directly to ClickHouse**
+
+For self-managed deployments, you can use Odigos's [native **ClickHouse** destination](#native-clickhouse-destination) instead of running an OTLP collector, provided your ClickHouse service is reachable from your Kubernetes cluster. Fully managed deployments must use the managed OTLP endpoint.
+</Tip>
+
+For a self-managed deployment, run the [ClickStack distribution of the collector in standalone mode](/clickstack/self-configured/ingesting-data/collector#configuring-the-collector-self-configured) yourself and set the authentication token via the `OTLP_AUTH_TOKEN` environment variable when starting the container. Odigos then sends OTLP HTTP traffic to that collector with the same token in the `Authorization` header.
 
 1. Start the ClickStack collector in standalone mode, pointing it at your ClickHouse Cloud service and securing it with an `OTLP_AUTH_TOKEN` of your choice:
 
@@ -166,7 +166,7 @@ For a self-managed deployment, run the [ClickStack distribution of the collector
      clickhouse/clickstack-otel-collector:latest
    ```
 
-   For TLS, dedicated ingestion users, and other production recommendations, see [Securing the collector](/clickstack/ingesting-data/collector#securing-the-collector).
+   For TLS, dedicated ingestion users, and other production recommendations, see [Securing the collector](/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured).
 2. In the Odigos UI, click **Add Destination** and select **OTLP HTTP**.
 3. Set **OTLP HTTP Endpoint** to the standalone collector you just started (for example, `http://my-collector.example.com:4318`).
 4. In **Headers**, add:
@@ -199,16 +199,51 @@ If data is missing, check collector logs: `kubectl logs deploy/odigos-gateway -n
 
 ## Advanced configuration {#advanced-configuration}
 
-### HyperDX log normalizer {#hyperdx-log-normalizer}
-
-If you export directly to ClickHouse with Odigos's native **ClickHouse** destination (instead of OTLP HTTP to ClickStack), enable **HyperDX log normalizer** (`HYPERDX_LOG_NORMALIZER: true`). It parses JSON log bodies and normalizes attributes for better querying in the ClickStack UI.
-
 ### Native ClickHouse destination {#native-clickhouse-destination}
+
+The native ClickHouse destination is available only for **self-managed** deployments. For **fully managed** deployments, use the **OTLP HTTP** destination with your managed endpoint.
+
+<Tabs>
+<Tab title="Self-managed">
 
 When ClickHouse is directly reachable from your cluster, you can use Odigos's native **ClickHouse** destination instead of OTLP HTTP. Configure the ClickHouse endpoint, database name, and schema options in the UI or with a manifest — see [Odigos ClickHouse destination](https://docs.odigos.io/backends/clickhouse).
 
 - **Production schema**: Set `CLICKHOUSE_CREATE_SCHEME` to `false` and apply your own DDL.
 - **TLS / auth**: Use `CLICKHOUSE_TLS_ENABLED`, `CLICKHOUSE_USERNAME`, and a Kubernetes Secret for the password.
+
+**Kubernetes manifest**
+
+```yaml
+apiVersion: odigos.io/v1alpha1
+kind: Destination
+metadata:
+  name: clickhouse
+  namespace: odigos-system
+spec:
+  type: clickhouse
+  destinationName: clickhouse
+  signals:
+    - TRACES
+    - METRICS
+    - LOGS
+  data:
+    CLICKHOUSE_ENDPOINT: 'http://clickstack.example.com:8123'
+    CLICKHOUSE_DATABASE_NAME: 'otel'
+    CLICKHOUSE_CREATE_SCHEME: 'true'
+```
+
+Save the manifest as `destination.yaml` and apply it:
+
+```bash
+kubectl apply -f destination.yaml
+```
+
+#### HyperDX log normalizer {#hyperdx-log-normalizer}
+
+For self-managed deployments that export directly to ClickHouse with Odigos's native **ClickHouse** destination, enable **HyperDX log normalizer** (`HYPERDX_LOG_NORMALIZER: true`). It parses JSON log bodies and normalizes attributes for better querying in the ClickStack UI. This setting does not apply to the fully managed OTLP destination.
+
+</Tab>
+</Tabs>
 
 ### Configure destinations with Kubernetes manifests {#destination-manifest}
 
@@ -232,27 +267,6 @@ spec:
     # Self-managed: OTLP_AUTH_TOKEN
     # ClickHouse Observability: Bearer <YOUR_INGESTION_API_KEY>
     OTLP_HTTP_HEADERS: 'Authorization:<YOUR_AUTHORIZATION_VALUE>'
-```
-
-**ClickHouse (direct)**
-
-```yaml
-apiVersion: odigos.io/v1alpha1
-kind: Destination
-metadata:
-  name: clickhouse
-  namespace: odigos-system
-spec:
-  type: clickhouse
-  destinationName: clickhouse
-  signals:
-    - TRACES
-    - METRICS
-    - LOGS
-  data:
-    CLICKHOUSE_ENDPOINT: 'http://clickstack.example.com:8123'
-    CLICKHOUSE_DATABASE_NAME: 'otel'
-    CLICKHOUSE_CREATE_SCHEME: 'true'
 ```
 
 Apply the manifest:
@@ -281,7 +295,7 @@ Odigos Central is available in Odigos Enterprise. See the [Central overview](htt
 
 - **Explore traces** across instrumented services in ClickStack
 - **Build dashboards** for metrics Odigos exports
-- **Tune ClickHouse schema and TTL** for your retention and query patterns
+- **For self-managed deployments, tune ClickHouse schema and TTL** for your retention and query patterns
 
 ## Read more {#read-more}
 

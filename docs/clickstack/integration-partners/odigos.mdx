@@ -152,6 +152,8 @@ If you export directly to ClickHouse with Odigos's native **ClickHouse** destina
 
 ### Native ClickHouse destination {#native-clickhouse-destination}
 
+This option applies to **ClickStack Open Source and self-managed ClickHouse Observability only**. For fully managed ClickHouse Observability, use the managed OTLP endpoint described in the [Observability guide](/clickstack/observability/integration-partners/odigos#add-destination-ui).
+
 When ClickHouse is directly reachable from your cluster, you can use Odigos's native **ClickHouse** destination instead of OTLP HTTP. Configure the ClickHouse endpoint, database name, and schema options in the UI or with a manifest — see [Odigos ClickHouse destination](https://docs.odigos.io/backends/clickhouse).
 
 - **Production schema**: Set `CLICKHOUSE_CREATE_SCHEME` to `false` and apply your own DDL.
