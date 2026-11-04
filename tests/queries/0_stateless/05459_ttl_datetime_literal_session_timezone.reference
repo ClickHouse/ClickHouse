@@ -19,3 +19,13 @@ DELETE lambda DateTime	2
 lambda tuple	WHERE arrayExists((event, tag) -> ((event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')) AND (tag = \'keep\')), arr) OR (arrayPackBitsToFixedString((tag, event) -> (event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')), 1, packed) != unhex(\'00\'))
 DELETE lambda tuple	[2,4]
 DELETE alias	[3]
+DELETE temporal alias	[2]
+event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')
+event = \'2020-01-01 00:00:00\')
+DELETE prefer column Memory	[2]
+DELETE lambda-scoped alias	[2]
+(DELETE WHERE arrayExists(x -> ((x AS event) = 1), [1]) AND (event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')))
+(DELETE WHERE arrayExists(x -> (isNotNull(toString(x) AS event) AND (event = \'2020-01-01 00:00:00\')), [id]))
+DELETE subquery-scoped alias	[1,2]
+DELETE scalar subquery alias	[1]
+s = \'2020-01-01 00:00:00\')

@@ -22,6 +22,12 @@ DROP TABLE IF EXISTS t_lambda_fixed;
 DROP TABLE IF EXISTS t_lambda_tuple;
 DROP TABLE IF EXISTS t_lambda_tuple_mutation;
 DROP TABLE IF EXISTS t_alias_mutation;
+DROP TABLE IF EXISTS t_alias_temporal;
+DROP TABLE IF EXISTS t_alias_prefer_column;
+DROP TABLE IF EXISTS t_alias_prefer_column_memory;
+DROP TABLE IF EXISTS t_alias_scoped_lambda;
+DROP TABLE IF EXISTS t_alias_scoped_subquery;
+DROP TABLE IF EXISTS t_alias_scalar_subquery;
 DROP TABLE IF EXISTS t_rollup_create;
 DROP TABLE IF EXISTS t_rollup_modify;
 
@@ -153,6 +159,52 @@ ALTER TABLE t_alias_mutation DELETE WHERE id = 1 AND has([1, 2] AS c, 1) AND arr
 ALTER TABLE t_alias_mutation DELETE WHERE (toString(id) AS event) != '' AND event = '2' SETTINGS mutations_sync = 2;
 SELECT 'DELETE alias', groupArray(id) FROM (SELECT id FROM t_alias_mutation ORDER BY id);
 
+-- An alias of a `DateTime` expression is a `DateTime`, so its comparison gets the time zone, also when the alias has the name
+-- of the column that its expression reads.
+CREATE TABLE t_alias_temporal (id UInt8, event DateTime) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_alias_temporal VALUES (1, '2020-01-01 00:00:00'), (2, '2020-01-01 09:00:00');
+ALTER TABLE t_alias_temporal DELETE WHERE isNotNull(identity(event) AS event) AND event = '2020-01-01 00:00:00' SETTINGS mutations_sync = 2;
+SELECT 'DELETE temporal alias', groupArray(id) FROM (SELECT id FROM t_alias_temporal ORDER BY id);
+SELECT extract(command, 'event = [^)]*\\)') FROM system.mutations WHERE database = currentDatabase() AND table = 't_alias_temporal';
+
+-- With `prefer_column_name_to_alias`, the identifier names the `DateTime` column rather than the `String` alias with its name,
+-- but the mutation runs with the settings of the server, where it names the alias, so the types of the aliases are not known:
+-- the comparison keeps its string and the mutation does not fail.
+CREATE TABLE t_alias_prefer_column (id UInt8, event DateTime) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_alias_prefer_column VALUES (1, '2020-01-01 00:00:00');
+ALTER TABLE t_alias_prefer_column DELETE WHERE isNotNull(toString(event) AS event) AND event = '2020-01-01 00:00:00'
+SETTINGS mutations_sync = 2, prefer_column_name_to_alias = 1;
+SELECT extract(command, 'event = [^)]*\\)') FROM system.mutations WHERE database = currentDatabase() AND table = 't_alias_prefer_column';
+
+-- A `Memory` table runs the mutation in the session, where `c` names the column with `prefer_column_name_to_alias`, so the
+-- mutation is valid, also with the session time zone.
+CREATE TABLE t_alias_prefer_column_memory (id UInt8, c UInt8) ENGINE = Memory;
+INSERT INTO t_alias_prefer_column_memory VALUES (1, 0), (2, 5);
+ALTER TABLE t_alias_prefer_column_memory DELETE WHERE has([1, 2] AS c, 1) AND c = 0 SETTINGS prefer_column_name_to_alias = 1;
+SELECT 'DELETE prefer column Memory', groupArray(id) FROM (SELECT id FROM t_alias_prefer_column_memory ORDER BY id);
+
+-- An alias inside a lambda or a subquery is visible only there, so the comparison outside gets the time zone of the column,
+-- while one inside the lambda with the `String` alias keeps its string.
+CREATE TABLE t_alias_scoped_lambda (id UInt8, event DateTime) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_alias_scoped_lambda VALUES (1, '2020-01-01 00:00:00'), (2, '2020-01-01 09:00:00'), (3, '2020-01-01 00:00:00');
+ALTER TABLE t_alias_scoped_lambda DELETE WHERE arrayExists(x -> (x AS event) = 1, [1]) AND event = '2020-01-01 00:00:00'
+SETTINGS mutations_sync = 2;
+SELECT 'DELETE lambda-scoped alias', groupArray(id) FROM (SELECT id FROM t_alias_scoped_lambda ORDER BY id);
+ALTER TABLE t_alias_scoped_lambda DELETE WHERE arrayExists(x -> isNotNull(toString(x) AS event) AND event = '2020-01-01 00:00:00', [id])
+SETTINGS mutations_sync = 2;
+SELECT command FROM system.mutations WHERE database = currentDatabase() AND table = 't_alias_scoped_lambda' ORDER BY mutation_id;
+CREATE TABLE t_alias_scoped_subquery (id UInt8, event DateTime) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_alias_scoped_subquery VALUES (1, '2020-01-01 00:00:00'), (2, '2020-01-01 09:00:00'), (3, '2020-01-01 00:00:00');
+ALTER TABLE t_alias_scoped_subquery DELETE WHERE id IN (SELECT 3 AS event) AND event = '2020-01-01 00:00:00' SETTINGS mutations_sync = 2;
+SELECT 'DELETE subquery-scoped alias', groupArray(id) FROM (SELECT id FROM t_alias_scoped_subquery ORDER BY id);
+-- The alias of a scalar subquery is seen outside it, so the identifier with its name is the `String` subquery, not the
+-- `DateTime` column, and the comparison keeps its string.
+CREATE TABLE t_alias_scalar_subquery (id UInt8, s DateTime) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_alias_scalar_subquery VALUES (1, '2020-01-01 00:00:00');
+ALTER TABLE t_alias_scalar_subquery DELETE WHERE ((SELECT 'abc') AS s) != '' AND s = '2020-01-01 00:00:00' SETTINGS mutations_sync = 2;
+SELECT 'DELETE scalar subquery alias', groupArray(id) FROM (SELECT id FROM t_alias_scalar_subquery ORDER BY id);
+SELECT extract(command, 's = [^)]*\\)') FROM system.mutations WHERE database = currentDatabase() AND table = 't_alias_scalar_subquery';
+
 DROP TABLE t_create;
 DROP TABLE t_modify;
 DROP TABLE t_source;
@@ -172,3 +224,9 @@ DROP TABLE t_lambda_fixed;
 DROP TABLE t_lambda_tuple;
 DROP TABLE t_lambda_tuple_mutation;
 DROP TABLE t_alias_mutation;
+DROP TABLE t_alias_temporal;
+DROP TABLE t_alias_prefer_column;
+DROP TABLE t_alias_prefer_column_memory;
+DROP TABLE t_alias_scoped_lambda;
+DROP TABLE t_alias_scoped_subquery;
+DROP TABLE t_alias_scalar_subquery;

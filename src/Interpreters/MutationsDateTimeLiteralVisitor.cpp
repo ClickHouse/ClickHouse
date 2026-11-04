@@ -1,12 +1,23 @@
 #include <Interpreters/MutationsDateTimeLiteralVisitor.h>
+#include <Analyzer/ListNode.h>
+#include <Core/Settings.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <Analyzer/TableNode.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTTLElement.h>
+#include <Storages/IStorage.h>
+#include <Storages/StorageSnapshot.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -20,6 +31,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool prefer_column_name_to_alias;
+}
 
 namespace
 {
@@ -83,44 +99,67 @@ std::optional<DataTypePtr> tryGetLambdaParameterType(const ASTIdentifier & ident
     return getTupleElementType(it->second, std::span(identifier.name_parts).subspan(1));
 }
 
-/// Whether `identifier` names an alias of the expression, such as `c` in `has([1, 2] AS c, 1) AND arrayExists(x -> x = 1, c)`:
-/// the analyzer resolves it to the aliased expression rather than to the column with its name, and its type is not known here.
-bool namesAlias(const ASTIdentifier & identifier, const NameSet & aliases)
+/// The types of the aliases of the expression, by name, which shadow the columns with their names, such as `c` in
+/// `has([1, 2] AS c, 1) AND arrayExists(x -> x = 1, c)`. A type that is not known is nullptr, and then the identifier with
+/// the name of the alias has no known type either.
+using AliasTypes = std::unordered_map<String, DataTypePtr>;
+
+/// The type of the alias that `identifier` names, or of its element, which is nullptr if it is not known. Returns std::nullopt
+/// if the identifier does not name an alias.
+///
+/// The mutation runs with the settings of the server or of the session, depending on the engine, which may differ from those of
+/// this query: with `prefer_column_name_to_alias` there, the identifier names the column with its name instead, if there is
+/// one, so then the type is known only if the column has the same type, which it has either way.
+std::optional<DataTypePtr> tryGetAliasType(const ASTIdentifier & identifier, const ColumnsDescription & columns, const AliasTypes & aliases)
 {
-    return aliases.contains(identifier.name_parts.front());
+    const auto it = aliases.find(identifier.name_parts.front());
+    if (it == aliases.end())
+        return std::nullopt;
+    if (!it->second)
+        return DataTypePtr{};
+    auto type = getTupleElementType(it->second, std::span(identifier.name_parts).subspan(1));
+    if (!type)
+        return DataTypePtr{};
+    const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, identifier.name());
+    if (column && !column->type->equals(*type))
+        return DataTypePtr{};
+    return type;
 }
 
 /// The same for an identifier, which may name a parameter of an enclosing lambda or an element of one, or an alias.
 DataTypePtr getDateTimeColumnType(
-    const ASTIdentifier & identifier, const ColumnsDescription & columns, const NameSet & aliases, const LambdaParameters & lambda_parameters)
+    const ASTIdentifier & identifier,
+    const ColumnsDescription & columns,
+    const AliasTypes & aliases,
+    const LambdaParameters & lambda_parameters)
 {
     if (const auto parameter_type = tryGetLambdaParameterType(identifier, lambda_parameters))
         return *parameter_type ? getZonelessDateTimeType(*parameter_type) : nullptr;
-    if (namesAlias(identifier, aliases))
-        return nullptr;
+    if (const auto alias_type = tryGetAliasType(identifier, columns, aliases))
+        return *alias_type ? getZonelessDateTimeType(*alias_type) : nullptr;
     return getDateTimeColumnType(identifier.name(), columns);
 }
 
-/// The type of `argument` of a higher-order function if it is a column, a subcolumn or a lambda parameter with a known type,
-/// or nullptr.
+/// The type of `argument` of a higher-order function if it is a column, a subcolumn, a lambda parameter or an alias with a
+/// known type, or nullptr.
 DataTypePtr getArgumentType(
-    const ASTPtr & argument, const ColumnsDescription & columns, const NameSet & aliases, const LambdaParameters & lambda_parameters)
+    const ASTPtr & argument, const ColumnsDescription & columns, const AliasTypes & aliases, const LambdaParameters & lambda_parameters)
 {
     const auto * identifier = argument->as<ASTIdentifier>();
     if (!identifier)
         return nullptr;
     if (const auto parameter_type = tryGetLambdaParameterType(*identifier, lambda_parameters))
         return *parameter_type;
-    if (namesAlias(*identifier, aliases))
-        return nullptr;
+    if (const auto alias_type = tryGetAliasType(*identifier, columns, aliases))
+        return *alias_type;
     const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, identifier->name());
     return column ? column->type : nullptr;
 }
 
-/// The type of a non-lambda argument of a higher-order function: a column, a subcolumn, a lambda parameter with a known type,
-/// or a literal. Returns nullptr if it is not known.
+/// The type of a non-lambda argument of a higher-order function: a column, a subcolumn, a lambda parameter or an alias with a
+/// known type, or a literal. Returns nullptr if it is not known.
 DataTypePtr getArgumentOrLiteralType(
-    const ASTPtr & argument, const ColumnsDescription & columns, const NameSet & aliases, const LambdaParameters & lambda_parameters)
+    const ASTPtr & argument, const ColumnsDescription & columns, const AliasTypes & aliases, const LambdaParameters & lambda_parameters)
 {
     if (const auto * literal = argument->as<ASTLiteral>())
         return applyVisitor(FieldToDataType(), literal->value);
@@ -150,7 +189,7 @@ DataTypes getLambdaParameterTypes(
     size_t lambda_position,
     size_t num_parameters,
     const ColumnsDescription & columns,
-    const NameSet & aliases,
+    const AliasTypes & aliases,
     const LambdaParameters & lambda_parameters,
     const ContextPtr & context)
 {
@@ -197,7 +236,7 @@ ASTPtr wrapWithTimezone(const ASTPtr & literal_ast, const DataTypePtr & datetime
 /// literal with an explicit timezone cast. Modifies the AST in place.
 /// Returns true if any literal was wrapped.
 bool tryWrapComparisonLiteral(
-    ASTFunction & function, const ColumnsDescription & columns, const NameSet & aliases, const LambdaParameters & lambda_parameters,
+    ASTFunction & function, const ColumnsDescription & columns, const AliasTypes & aliases, const LambdaParameters & lambda_parameters,
     const String & timezone)
 {
     if (!function.arguments || function.arguments->children.size() != 2)
@@ -239,7 +278,7 @@ bool tryWrapComparisonLiteral(
 /// For an IN expression like `column IN ('dt1', 'dt2')`, wrap each string literal.
 /// Returns true if any literal was wrapped.
 bool tryWrapInLiterals(
-    ASTFunction & function, const ColumnsDescription & columns, const NameSet & aliases, const LambdaParameters & lambda_parameters,
+    ASTFunction & function, const ColumnsDescription & columns, const AliasTypes & aliases, const LambdaParameters & lambda_parameters,
     const String & timezone)
 {
     if (!function.arguments || function.arguments->children.size() != 2)
@@ -281,19 +320,75 @@ bool tryWrapInLiterals(
 }
 
 /// Adds the aliases defined in `ast` to `aliases`, also in the assignments of `TTL ... GROUP BY ... SET`, which are not its
-/// children. An identifier aliased with its own name, as in `event AS event`, still names the column.
+/// children, as the analyzer scopes them: not those inside a lambda or a subquery, which are visible only there, nor the alias
+/// of a lambda, which names a function rather than an expression, but the alias of a subquery, as in `(SELECT ...) AS s`. An
+/// identifier aliased with its own name, as in `event AS event`, still names the column.
 void collectAliases(const ASTPtr & ast, NameSet & aliases)
 {
     if (!ast)
         return;
+    const auto * function = ast->as<ASTFunction>();
+    if ((function && function->name == "lambda") || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>())
+        return;
     if (const String alias = ast->tryGetAlias(); !alias.empty())
         if (const auto * identifier = ast->as<ASTIdentifier>(); !identifier || identifier->name() != alias)
             aliases.insert(alias);
+    /// The alias of a subquery is in this scope, the aliases inside it are not.
+    if (ast->as<ASTSubquery>())
+        return;
     if (const auto * ttl_element = ast->as<ASTTTLElement>())
         for (const auto & assignment : ttl_element->group_by_assignments)
             collectAliases(assignment, aliases);
     for (const auto & child : ast->children)
         collectAliases(child, aliases);
+}
+
+/// The aliases `names` with unknown types.
+AliasTypes getUnknownAliasTypes(const NameSet & names)
+{
+    AliasTypes alias_types;
+    for (const auto & name : names)
+        alias_types.emplace(name, nullptr);
+    return alias_types;
+}
+
+/// The types of the aliases `aliases` defined in `expressions`, which the analyzer gives them against the table with the
+/// settings of the query, as `MutationsInterpreter` resolves the expressions to validate the mutation: the type of the aliased
+/// expression, in which an identifier with the name of the alias names the column, as in `identity(event) AS event`.
+AliasTypes getAliasTypes(
+    const ASTs & expressions,
+    const NameSet & aliases,
+    const StoragePtr & table,
+    const StorageSnapshotPtr & storage_snapshot,
+    const ContextPtr & context)
+{
+    AliasTypes alias_types = getUnknownAliasTypes(aliases);
+    /// With `prefer_column_name_to_alias`, the analyzer gives an identifier the type of the column with its name rather than
+    /// of the alias, and the mutation may run with other settings, so the types of the aliases are not known.
+    if (context->getSettingsRef()[Setting::prefer_column_name_to_alias])
+        return alias_types;
+
+    const Names names(aliases.begin(), aliases.end());
+    if (names.empty())
+        return alias_types;
+
+    /// The identifiers go first, because an expression of the list, such as a matcher, may be expanded to several nodes.
+    auto list = make_intrusive<ASTExpressionList>();
+    for (const auto & name : names)
+        list->children.push_back(make_intrusive<ASTIdentifier>(name));
+    for (const auto & expression : expressions)
+        list->children.push_back(expression->clone());
+
+    auto execution_context = Context::createCopy(context);
+    auto query_tree = buildQueryTree(list, execution_context);
+    /// The expressions are only analyzed and nothing is read, so the table is not locked.
+    auto table_node = std::make_shared<TableNode>(table, TableLockHolder{}, storage_snapshot);
+    QueryAnalyzer(/*only_analyze=*/true).resolve(query_tree, table_node, execution_context);
+
+    const auto & nodes = query_tree->as<const ListNode &>().getNodes();
+    for (size_t i = 0; i < names.size(); ++i)
+        alias_types[names[i]] = nodes[i]->getResultType();
+    return alias_types;
 }
 
 const std::unordered_set<String> comparison_functions = {
@@ -311,7 +406,7 @@ public:
     {
         const ColumnsDescription & columns;
         /// The aliases of the expression, which shadow the columns with their names.
-        const NameSet & aliases;
+        const AliasTypes & aliases;
         const String & session_timezone;
         /// To find the higher-order functions that bind the parameters of a lambda.
         ContextPtr context;
@@ -386,7 +481,15 @@ public:
         const auto & parameter_asts = parameters->arguments->children;
         const auto types = getLambdaParameterTypes(
             function, lambda_position, parameter_asts.size(), data.columns, data.aliases, data.lambda_parameters, data.context);
-        Data body_data{data.columns, data.aliases, data.session_timezone, data.context, false, data.lambda_parameters};
+        /// An alias in the body shadows the columns and the outer aliases with its name in the body only, and its type is not
+        /// known.
+        NameSet body_alias_names;
+        collectAliases(lambda.arguments->children[1], body_alias_names);
+        AliasTypes body_aliases = data.aliases;
+        for (const auto & name : body_alias_names)
+            body_aliases[name] = nullptr;
+
+        Data body_data{data.columns, body_aliases, data.session_timezone, data.context, false, data.lambda_parameters};
         for (size_t i = 0; i < parameter_asts.size(); ++i)
             if (const auto * identifier = parameter_asts[i]->as<ASTIdentifier>())
                 body_data.lambda_parameters[identifier->name()] = types[i];
@@ -402,7 +505,8 @@ using RewriteDateTimeLiteralsVisitor = InDepthNodeVisitor<RewriteDateTimeLiteral
 
 ASTPtr rewriteDateTimeLiteralsWithTimezone(
     const ASTAlterCommand & alter_command,
-    const ColumnsDescription & columns,
+    const StoragePtr & table,
+    const StorageSnapshotPtr & storage_snapshot,
     const String & session_timezone,
     const ContextPtr & context)
 {
@@ -419,10 +523,21 @@ ASTPtr rewriteDateTimeLiteralsWithTimezone(
         children.erase(it);
     };
 
-    NameSet aliases;
-    collectAliases(new_command.update_assignments ? new_command.update_assignments->ptr() : nullptr, aliases);
-    collectAliases(new_command.predicate ? new_command.predicate->ptr() : nullptr, aliases);
+    /// The predicate and the values of the assignments, which `MutationsInterpreter` resolves together.
+    ASTs expressions;
+    if (new_command.predicate)
+        expressions.push_back(new_command.predicate->ptr());
+    if (new_command.update_assignments)
+        for (const auto & child : new_command.update_assignments->children)
+            if (const auto * assignment = child->as<ASTAssignment>())
+                expressions.push_back(assignment->expression());
 
+    NameSet alias_names;
+    for (const auto & expression : expressions)
+        collectAliases(expression, alias_names);
+    const AliasTypes aliases = getAliasTypes(expressions, alias_names, table, storage_snapshot, context);
+
+    const ColumnsDescription & columns = storage_snapshot->metadata->getColumns();
     RewriteDateTimeLiteralsMatcher::Data data{columns, aliases, session_timezone, context, false};
     RewriteDateTimeLiteralsVisitor visitor(data);
 
@@ -455,8 +570,10 @@ bool rewriteDateTimeLiteralsWithTimezone(
 
     /// The visitor replaces only the arguments of the functions it visits, so the root of the expression stays the same.
     ASTPtr root = expression;
-    NameSet aliases;
-    collectAliases(root, aliases);
+    /// A `TTL` does not allow aliases, so their types are not needed.
+    NameSet alias_names;
+    collectAliases(root, alias_names);
+    const AliasTypes aliases = getUnknownAliasTypes(alias_names);
     RewriteDateTimeLiteralsMatcher::Data data{columns, aliases, session_timezone, context, false};
     RewriteDateTimeLiteralsVisitor(data).visit(root);
 
