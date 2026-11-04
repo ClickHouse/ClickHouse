@@ -18,10 +18,10 @@
 
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 
-#include <deque>
 #include <optional>
 
 namespace DB
@@ -90,7 +90,7 @@ private:
     const WindowTransformParams params;
 
     std::optional<Chunk> pending_input;
-    std::deque<Chunk> pending_outputs;
+    DequeWithMemoryTracking<Chunk> pending_outputs;
     bool input_is_finished = false;
 
     /// The general functions with their states, and the aggregates; each names its output column.
