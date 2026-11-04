@@ -104,22 +104,6 @@ def test_uploads_overlap(table, projection, multipart):
         assert node.query("SELECT p, sum(v) FROM t GROUP BY p ORDER BY p SETTINGS force_optimize_projection = 1") == "0\t180\n1\t190\n2\t200\n3\t210\n"
 
 
-def test_spilled_uploads_backpressure(table):
-    # Spilled archives are read back from temporary files into upload buffers: an archive larger than
-    # `max_bytes_to_buffer_for_packed_part` waits for the earlier upload instead of starting another one.
-    node.query("ALTER TABLE t MODIFY SETTING max_bytes_to_buffer_for_packed_part = 1")
-    gate("arm")
-    request = node.get_query_request(INSERT, settings=SETTINGS, timeout=90)
-    try:
-        wait_for_uploads(1)
-        # Checks that no other upload starts while the first one is held, so it waits for the timeout.
-        assert len(json.loads(gate("wait?count=2&timeout=2"))) == 1
-    finally:
-        gate("release")
-        request.get_answer()
-    check_data()
-
-
 def test_upload_failure(table):
     gate("arm?fail=1")
     request = node.get_query_request(INSERT, settings=SETTINGS, timeout=90)

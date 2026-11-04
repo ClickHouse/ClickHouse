@@ -3,6 +3,7 @@
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
+#include <Common/FailPoint.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeDate.h>
@@ -122,6 +123,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTS;
     extern const int NOT_ENOUGH_SPACE;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char packed_part_finalization_throw_before_waiting_for_earlier_part[];
 }
 
 namespace
@@ -444,6 +451,14 @@ MergeTreeIndices collectSkipIndicesToMaterialize(
 size_t getMaxPendingBytesOfPackedFinalization(const MergeTreeData & data)
 {
     return (*data.getSettings())[MergeTreeSetting::max_bytes_to_buffer_for_packed_part];
+}
+
+void onWaitingForEarlierPackedFinalization()
+{
+    fiu_do_on(FailPoints::packed_part_finalization_throw_before_waiting_for_earlier_part,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before waiting for the finalization of an earlier packed part");
+    });
 }
 
 void MergeTreeTemporaryPart::cancel()

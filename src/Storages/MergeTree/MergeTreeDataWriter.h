@@ -71,6 +71,9 @@ using BlocksWithPartition = std::vector<BlockWithPartition>;
 /// The limit of the bytes of started but unfinished packed-part finalizations of a delayed insert batch, 0 means unlimited.
 size_t getMaxPendingBytesOfPackedFinalization(const MergeTreeData & data);
 
+/// Called by `startPackedPartsFinalization` before it waits for an earlier part, holds a failpoint for tests.
+void onWaitingForEarlierPackedFinalization();
+
 /// Starts the finalization of the packed parts of a delayed insert batch, so that their uploads overlap.
 /// If the buffered data of packed parts may be moved to temporary files (`max_bytes_to_buffer_for_packed_part`),
 /// the started archives are read back into the upload buffers: wait for the earliest started parts before
@@ -94,6 +97,7 @@ void startPackedPartsFinalization(Partitions & partitions, const MergeTreeData &
         while (max_pending_bytes && pending_bytes >= max_pending_bytes)
         {
             chassert(first_pending != it);
+            onWaitingForEarlierPackedFinalization();
             Stopwatch watch;
             ProfileEventsScope profile_events_scope(&first_pending->part_counters);
             pending_bytes -= first_pending->temp_part->getPendingFinalizationBytes();

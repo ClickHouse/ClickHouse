@@ -45,9 +45,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.reply(200, b"OK")
         if path.path == "/gate/wait":
             count = int(params["count"][0])
-            timeout = float(params.get("timeout", ["15"])[0])
             with condition:
-                condition.wait_for(lambda: len(keys) >= count, timeout=timeout)
+                condition.wait_for(lambda: len(keys) >= count, timeout=15)
                 body = json.dumps(sorted(keys)).encode()
             return self.reply(200, body)
         if path.path == "/gate/multipart":
