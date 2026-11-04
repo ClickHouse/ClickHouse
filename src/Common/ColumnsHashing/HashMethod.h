@@ -502,10 +502,6 @@ struct HashMethodKeysFixed
     bool covers_sub_range = false;
     size_t prepared_keys_begin = 0;
 
-    /// A sub-range shorter than this is packed per row: the array would cost more to allocate and fill
-    /// than the rows it saves packing.
-    static constexpr size_t min_rows_to_batch_pack_sub_range = 256;
-
     static bool usePreparedKeys(const Sizes & key_sizes)
     {
         if (has_low_cardinality || has_nullable_keys || sizeof(Key) > 16)
@@ -705,14 +701,7 @@ struct HashMethodKeysFixed
     {
         if (!usePreparedKeys(key_sizes))
             return {};
-
-        std::vector<size_t> order;
-        order.reserve(key_sizes.size());
-        for (const size_t size : {16, 8, 4, 2, 1})
-            for (size_t i = 0; i < key_sizes.size(); ++i)
-                if (key_sizes[i] == size)
-                    order.push_back(i);
-        return order;
+        return packedFixedKeysOrder(key_sizes);
     }
 
     static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
