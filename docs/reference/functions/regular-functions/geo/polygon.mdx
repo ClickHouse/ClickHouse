@@ -264,6 +264,70 @@ SELECT readWKTRing('POLYGON ((1 1, 2 2, 3 3, 1 1))');
 [(1,1),(2,2),(3,3),(1,1)]
 ```
 
+## readGeoJSON {#readgeojson}
+
+Parses a [GeoJSON](https://datatracker.ietf.org/doc/html/rfc7946) geometry object into a [`Geometry`](/reference/data-types/geo), like `ST_GeomFromGeoJSON`. Coordinates after the first two, such as an altitude, are ignored. A JSON `null`, a NULL argument and a missing field of a `JSON` column give NULL. A geometry object in a [`JSON`](/reference/data-types/newjson) column is a sub-object, so it is read as `j.^geometry`; `j.geometry` gives NULL for it.
+
+The rules are those of the [`GeoJSON`](/reference/formats/GeoJSON) input format, and the same settings apply: `format_geojson_validate_geometry` checks the shape of lines and rings. A `GeometryCollection` cannot be represented by `Geometry`, so it is an error, or NULL with `input_format_geojson_unsupported_geometry_handling = 'null'`.
+
+The function has the alias `ST_GeomFromGeoJSON`.
+
+### Syntax {#syntax-readgeojson}
+
+```sql
+readGeoJSON(geometry)
+```
+
+### Arguments {#arguments-readgeojson}
+
+- `geometry` — A GeoJSON geometry object, as text or as the value of a field of a JSON document. Schema inference gives a named `Tuple` for such a field. [String](/reference/data-types/string), [JSON](/reference/data-types/newjson) or [Tuple](/reference/data-types/tuple).
+
+### Returned value {#returned-value-readgeojson}
+
+The geometry. [Geometry](/reference/data-types/geo).
+
+### Example {#example-readgeojson}
+
+```sql
+SELECT readGeoJSON('{"type":"LineString","coordinates":[[0,0],[1,1]]}') AS g, variantType(g);
+```
+
+```response
+[(0,0),(1,1)]	LineString
+```
+
+## geoJSON {#geojson}
+
+Converts a geometry to a [GeoJSON](https://datatracker.ietf.org/doc/html/rfc7946) geometry object, like `ST_AsGeoJSON`. GeoJSON has no `Ring`, so a `Ring` becomes a `Polygon` with one ring.
+
+The rules are those of the [`GeoJSON`](/reference/formats/GeoJSON) output format, and the same setting applies: `format_geojson_validate_geometry` rejects lines and rings of a wrong shape, such as an empty `LineString`, so that the result can be read back. A coordinate that is NaN or infinite is an error, because JSON has no such numbers.
+
+The function has the alias `ST_AsGeoJSON`.
+
+### Syntax {#syntax-geojson}
+
+```sql
+geoJSON(geometry)
+```
+
+### Arguments {#arguments-geojson}
+
+- `geometry` — A geometry. [Point, MultiPoint, Ring, LineString, MultiLineString, Polygon, MultiPolygon or Geometry](/reference/data-types/geo).
+
+### Returned value {#returned-value-geojson}
+
+The GeoJSON geometry object. For a `Geometry` argument the type is `Nullable(String)`, and a NULL geometry gives NULL. [String](/reference/data-types/string).
+
+### Example {#example-geojson}
+
+```sql
+SELECT geoJSON([(0., 0.), (1.5, 1.)]::LineString);
+```
+
+```response
+{"type":"LineString","coordinates":[[0,0],[1.5,1]]}
+```
+
 ## polygonsWithinSpherical {#polygonswithinspherical}
 
 Returns true or false depending on whether or not one polygon lies completely inside another polygon. Reference https://www.boost.org/doc/libs/1_62_0/libs/geometry/doc/html/geometry/reference/algorithms/within/within_2.html

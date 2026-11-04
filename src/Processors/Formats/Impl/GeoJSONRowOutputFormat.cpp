@@ -114,14 +114,120 @@ bool emitsPropertiesColumnDirectly(const Block & header)
         && (isPropertiesObjectLike(properties_type) || WhichDataType(properties_type).isNothing());
 }
 
+void writePosition(const IColumn & tuple_column, size_t row_num, WriteBuffer & out, const FormatSettings & number_settings)
+{
+    const auto & tuple = assert_cast<const ColumnTuple &>(tuple_column);
+    const Float64 x = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData()[row_num];
+    const Float64 y = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row_num];
+
+    /// A GeoJSON position must consist of JSON numbers; NaN and infinity have no valid JSON
+    /// representation, so reject them rather than emit `null` or a quoted token that would not be a
+    /// valid coordinate.
+    if (!std::isfinite(x) || !std::isfinite(y))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The GeoJSON output format cannot write a non-finite coordinate value, but the position is [{}, {}]",
+            x,
+            y);
+
+    writeChar('[', out);
+    writeJSONNumber(x, out, number_settings);
+    writeChar(',', out);
+    writeJSONNumber(y, out, number_settings);
+    writeChar(']', out);
 }
 
-std::optional<GeoJSONRowOutputFormat::GeometryKind> GeoJSONRowOutputFormat::geometryKindFor(const String & type_name)
+/// Recursively emit `depth` nested coordinate-array levels, bottoming out at a position `[x, y]`.
+/// `kind` carries the validation rules applied when `format_geojson_validate_geometry` is enabled.
+void writeCoordinates(
+    const IColumn & column, size_t row_num, size_t depth, const GeoJSONGeometryKind & kind, WriteBuffer & out, const FormatSettings & number_settings)
+{
+    if (depth == 0)
+    {
+        writePosition(column, row_num, out, number_settings);
+        return;
+    }
+
+    const auto & array = assert_cast<const ColumnArray &>(column);
+    const IColumn & nested = array.getData();
+    const auto & offsets = array.getOffsets();
+    const size_t begin = row_num == 0 ? 0 : offsets[row_num - 1];
+    const size_t end = offsets[row_num];
+    const size_t count = end - begin;
+
+    /// When geometry validation is enabled, reject coordinate arrays that the GeoJSON input format would
+    /// reject, so a written document round-trips: a line or ring with too few points, an unclosed
+    /// ring, or an empty array of lines/rings/polygons in a multi-geometry.
+    if (number_settings.geojson.validate_geometry)
+    {
+        if (depth == 1)
+        {
+            if (count < kind.min_points)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The GeoJSON output format cannot write a {} with fewer than {} points, but one with {} was given",
+                    kind.ring ? "polygon ring" : "line",
+                    kind.min_points,
+                    count);
+            if (kind.ring && !isRingClosed(nested, begin, end))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The GeoJSON output format cannot write an unclosed polygon ring; its first and last points must be equal");
+        }
+        else if (count == 0)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The GeoJSON output format cannot write a {} geometry with an empty coordinate array",
+                kind.geojson_type);
+        }
+    }
+
+    writeChar('[', out);
+    for (size_t i = begin; i < end; ++i)
+    {
+        if (i != begin)
+            writeChar(',', out);
+        writeCoordinates(nested, i, depth - 1, kind, out, number_settings);
+    }
+    writeChar(']', out);
+}
+
+}
+
+std::optional<GeoJSONGeometryKind> getGeoJSONGeometryKind(const String & type_name)
 {
     for (const auto & entry : geo_type_table)
         if (type_name == entry.ch_name)
-            return GeometryKind{entry.geojson_type, entry.depth, entry.wrap_in_array, entry.min_points, entry.ring};
+            return GeoJSONGeometryKind{entry.geojson_type, entry.depth, entry.wrap_in_array, entry.min_points, entry.ring};
     return std::nullopt;
+}
+
+FormatSettings getGeoJSONNumberSettings(const FormatSettings & settings)
+{
+    /// Coordinates and numeric feature ids are plain JSON numbers and must never be quoted, even when
+    /// settings such as `output_format_json_quote_64bit_floats`, `output_format_json_quote_64bit_integers`,
+    /// or `output_format_json_quote_decimals` are enabled — those still apply to ordinary property
+    /// values, so numbers here are written with a separate settings copy that disables the quoting.
+    FormatSettings number_settings = settings;
+    number_settings.json.quote_64bit_floats = false;
+    number_settings.json.quote_64bit_integers = false;
+    number_settings.json.quote_decimals = false;
+    return number_settings;
+}
+
+void writeGeoJSONGeometry(
+    const GeoJSONGeometryKind & kind, const IColumn & column, size_t row_num, WriteBuffer & out, const FormatSettings & number_settings)
+{
+    writeCString(R"({"type":")", out);
+    writeCString(kind.geojson_type, out);
+    writeCString(R"(","coordinates":)", out);
+    if (kind.wrap_in_array)
+        writeChar('[', out);
+    writeCoordinates(column, row_num, kind.depth, kind, out, number_settings);
+    if (kind.wrap_in_array)
+        writeChar(']', out);
+    writeChar('}', out);
 }
 
 GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
@@ -129,14 +235,7 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
           header_, out_, settings_.json.valid_output_on_exception, settings_.json.validate_utf8)
     , settings(settings_)
 {
-    /// Coordinates and numeric feature ids are plain JSON numbers and must never be quoted, even when
-    /// settings such as `output_format_json_quote_64bit_floats`, `output_format_json_quote_64bit_integers`,
-    /// or `output_format_json_quote_decimals` are enabled — those still apply to ordinary property
-    /// values, so numbers here are written with a separate settings copy that disables the quoting.
-    number_settings = settings;
-    number_settings.json.quote_64bit_floats = false;
-    number_settings.json.quote_64bit_integers = false;
-    number_settings.json.quote_decimals = false;
+    number_settings = getGeoJSONNumberSettings(settings);
 
     /// A lone object-typed `properties` column is emitted directly as the `properties` member, which must
     /// be a JSON object: a named `Tuple` must serialize as an object rather than an array, and a `Map` as
@@ -145,8 +244,6 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
     properties_object_settings = settings;
     properties_object_settings.json.write_named_tuples_as_objects = true;
     properties_object_settings.json.write_map_as_array_of_tuples = false;
-
-    validate_geometry = settings.geojson.validate_geometry;
 
     ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
 
@@ -162,9 +259,9 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
         const auto geo_type = removeNullable(column.type);
         const String type_name = geo_type->getName();
 
-        /// `geometryKindFor` returns nullopt for the `Geometry` variant (handled separately below) and
+        /// `getGeoJSONGeometryKind` returns nullopt for the `Geometry` variant (handled separately below) and
         /// for non-geo columns.
-        const auto kind = geometryKindFor(type_name);
+        const auto kind = getGeoJSONGeometryKind(type_name);
         const bool is_geometry = type_name == "Geometry" || kind.has_value();
         if (is_geometry)
         {
@@ -313,101 +410,12 @@ void GeoJSONRowOutputFormat::writeGeometry(const IColumn & column, size_t row_nu
             writeCString("null", *ostr);
             return;
         }
-        writeGeometryObject(variant_kind[discr], variant.getVariantByGlobalDiscriminator(discr), variant.offsetAt(row_num));
+        writeGeoJSONGeometry(variant_kind[discr], variant.getVariantByGlobalDiscriminator(discr), variant.offsetAt(row_num), *ostr, number_settings);
     }
     else
     {
-        writeGeometryObject(concrete_kind, *geo, row_num);
+        writeGeoJSONGeometry(concrete_kind, *geo, row_num, *ostr, number_settings);
     }
-}
-
-void GeoJSONRowOutputFormat::writeGeometryObject(const GeometryKind & kind, const IColumn & column, size_t row_num)
-{
-    writeCString(R"({"type":")", *ostr);
-    writeCString(kind.geojson_type, *ostr);
-    writeCString(R"(","coordinates":)", *ostr);
-    if (kind.wrap_in_array)
-        writeChar('[', *ostr);
-    writeCoordinates(column, row_num, kind.depth, kind);
-    if (kind.wrap_in_array)
-        writeChar(']', *ostr);
-    writeChar('}', *ostr);
-}
-
-void GeoJSONRowOutputFormat::writeCoordinates(const IColumn & column, size_t row_num, size_t depth, const GeometryKind & kind)
-{
-    if (depth == 0)
-    {
-        writePosition(column, row_num);
-        return;
-    }
-
-    const auto & array = assert_cast<const ColumnArray &>(column);
-    const IColumn & nested = array.getData();
-    const auto & offsets = array.getOffsets();
-    const size_t begin = row_num == 0 ? 0 : offsets[row_num - 1];
-    const size_t end = offsets[row_num];
-    const size_t count = end - begin;
-
-    /// When geometry validation is enabled, reject coordinate arrays that the GeoJSON input format would
-    /// reject, so a written document round-trips: a line or ring with too few points, an unclosed
-    /// ring, or an empty array of lines/rings/polygons in a multi-geometry.
-    if (validate_geometry)
-    {
-        if (depth == 1)
-        {
-            if (count < kind.min_points)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "The GeoJSON output format cannot write a {} with fewer than {} points, but one with {} was given",
-                    kind.ring ? "polygon ring" : "line",
-                    kind.min_points,
-                    count);
-            if (kind.ring && !isRingClosed(nested, begin, end))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "The GeoJSON output format cannot write an unclosed polygon ring; its first and last points must be equal");
-        }
-        else if (count == 0)
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The GeoJSON output format cannot write a {} geometry with an empty coordinate array",
-                kind.geojson_type);
-        }
-    }
-
-    writeChar('[', *ostr);
-    for (size_t i = begin; i < end; ++i)
-    {
-        if (i != begin)
-            writeChar(',', *ostr);
-        writeCoordinates(nested, i, depth - 1, kind);
-    }
-    writeChar(']', *ostr);
-}
-
-void GeoJSONRowOutputFormat::writePosition(const IColumn & tuple_column, size_t row_num)
-{
-    const auto & tuple = assert_cast<const ColumnTuple &>(tuple_column);
-    const Float64 x = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData()[row_num];
-    const Float64 y = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row_num];
-
-    /// A GeoJSON position must consist of JSON numbers; NaN and infinity have no valid JSON
-    /// representation, so reject them rather than emit `null` or a quoted token that would not be a
-    /// valid coordinate.
-    if (!std::isfinite(x) || !std::isfinite(y))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "The GeoJSON output format cannot write a non-finite coordinate value, but the position is [{}, {}]",
-            x,
-            y);
-
-    writeChar('[', *ostr);
-    writeJSONNumber(x, *ostr, number_settings);
-    writeChar(',', *ostr);
-    writeJSONNumber(y, *ostr, number_settings);
-    writeChar(']', *ostr);
 }
 
 void GeoJSONRowOutputFormat::writeProperties(const Columns & columns, size_t row_num)
