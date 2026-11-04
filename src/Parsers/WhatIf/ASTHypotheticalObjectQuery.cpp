@@ -1,4 +1,4 @@
-#include <Parsers/ASTHypotheticalObjectQuery.h>
+#include <Parsers/WhatIf/ASTHypotheticalObjectQuery.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <IO/Operators.h>
 

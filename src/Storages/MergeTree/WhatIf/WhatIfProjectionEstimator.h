@@ -4,7 +4,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/WhatIfResult.h>
+#include <Storages/MergeTree/WhatIf/WhatIfResult.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 #include <functional>

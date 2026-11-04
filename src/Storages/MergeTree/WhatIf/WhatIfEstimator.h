@@ -2,7 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/MergeTree/WhatIfResult.h>
+#include <Storages/MergeTree/WhatIf/WhatIfResult.h>
 
 namespace DB
 {

@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/WhatIfProjectionEstimator.h>
+#include <Storages/MergeTree/WhatIf/WhatIfProjectionEstimator.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
@@ -13,7 +13,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/InterpreterHypotheticalObjectQuery.h>
+#include <Interpreters/WhatIf/InterpreterHypotheticalObjectQuery.h>
 #include <IO/NullWriteBuffer.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -22,7 +22,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/MergeTree/HypotheticalProjection.h>
+#include <Storages/MergeTree/WhatIf/HypotheticalProjection.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
@@ -34,9 +34,9 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/MergeTree/WhatIfSampling.h>
+#include <Storages/MergeTree/WhatIf/WhatIfSampling.h>
 #include <Storages/MergeTree/PartDirIntent.h>
-#include <Storages/MergeTree/WhatIfSettings.h>
+#include <Storages/MergeTree/WhatIf/WhatIfSettings.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ProjectionsDescription.h>
 

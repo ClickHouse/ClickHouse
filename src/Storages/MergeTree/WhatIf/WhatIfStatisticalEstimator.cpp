@@ -1,6 +1,6 @@
-#include <Storages/MergeTree/WhatIfStatisticalEstimator.h>
+#include <Storages/MergeTree/WhatIf/WhatIfStatisticalEstimator.h>
 
-#include <Storages/MergeTree/WhatIfFilterAnalysis.h>
+#include <Storages/MergeTree/WhatIf/WhatIfFilterAnalysis.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/StatisticsCache.h>

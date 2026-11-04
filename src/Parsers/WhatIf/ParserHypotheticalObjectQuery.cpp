@@ -1,6 +1,6 @@
-#include <Parsers/ParserHypotheticalObjectQuery.h>
+#include <Parsers/WhatIf/ParserHypotheticalObjectQuery.h>
 
-#include <Parsers/ASTHypotheticalObjectQuery.h>
+#include <Parsers/WhatIf/ASTHypotheticalObjectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTProjectionDeclaration.h>

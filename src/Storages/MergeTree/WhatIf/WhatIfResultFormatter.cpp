@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/WhatIfResult.h>
+#include <Storages/MergeTree/WhatIf/WhatIfResult.h>
 
 #include <IO/WriteHelpers.h>
 #include <Common/formatReadable.h>
