@@ -1,6 +1,6 @@
 SET in_null_as_unknown = 0;
 
-SELECT 84 IN (63, NULL), 84 NOT IN (63, NULL), NULL IN (NULL), NULL NOT IN (NULL);
+SELECT 84 IN (63, NULL), 84 NOT IN (63, NULL), NULL IN (NULL), NULL NOT IN (NULL), NULL IN (), NULL NOT IN ();
 
 SET in_null_as_unknown = 1;
 SET allow_suspicious_low_cardinality_types = 1;

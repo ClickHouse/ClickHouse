@@ -134,9 +134,12 @@ public:
         if (ignore_set || arguments.size() != 2)
             return nullptr;
 
-        /// The result must be `UInt8` or `Nullable(UInt8)`. An immutable empty set determines the
-        /// result even for a `NULL` left operand. `LowCardinality` does not affect the value.
-        if (!isUInt8(removeNullable(removeLowCardinality(result_type))))
+        /// Under the standard semantics, an immutable empty set determines the result even for a
+        /// `NULL` left operand. Under the legacy semantics, keep the default nullable wrapper so a
+        /// nullable left operand still produces `NULL`. `LowCardinality` does not affect the value.
+        const auto result_type_without_low_cardinality = removeLowCardinality(result_type);
+        if ((!in_null_as_unknown && !isUInt8(result_type_without_low_cardinality))
+            || (in_null_as_unknown && !isUInt8(removeNullable(result_type_without_low_cardinality))))
             return nullptr;
 
         const ColumnSet * column_set = tryGetColumnSet(arguments[1].column);
