@@ -14,7 +14,7 @@ $CLICKHOUSE_CLIENT -n -q "
     INSERT INTO t_access SELECT number, number FROM numbers(1000);
     DROP USER IF EXISTS ${user};
     CREATE USER ${user} NOT IDENTIFIED;
-    GRANT SELECT(a, b) ON ${CLICKHOUSE_DATABASE}.t_access TO ${user};
+    GRANT SELECT(a, b), SHOW COLUMNS ON ${CLICKHOUSE_DATABASE}.t_access TO ${user};
 "
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&session_id=${sess}&session_timeout=60" \
     --data-binary "CREATE HYPOTHETICAL INDEX i_b ON ${CLICKHOUSE_DATABASE}.t_access (b) TYPE minmax"

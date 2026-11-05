@@ -216,6 +216,9 @@ BlockIO InterpreterHypotheticalObjectQuery::execute()
     if (is_projection)
         context->checkAccess(
             AccessType::ALTER_ADD_PROJECTION, context->resolveDatabase(query.getDatabase()), query.getTable());
+    /// the `ADD INDEX` checks validate the whole table, so their errors can name any column
+    else if (query.kind == ASTHypotheticalObjectQuery::Create)
+        context->checkAccess(AccessType::SHOW_COLUMNS, context->resolveDatabase(query.getDatabase()), query.getTable());
 
     auto table_id = context->resolveStorageID(StorageID(query.getDatabase(), query.getTable()));
     auto table = DatabaseCatalog::instance().getTable(table_id, context);

@@ -221,7 +221,7 @@ The empirical `skip_ratio` is an **upper bound**: it counts each surviving granu
 
 ## Required privileges {#required-privileges}
 
-`CREATE HYPOTHETICAL INDEX` requires `SELECT` on the columns referenced by the index expression — column-level `SELECT` (for example `GRANT SELECT(b)`) is sufficient — because empirical `EXPLAIN WHATIF` reads those columns.
+`CREATE HYPOTHETICAL INDEX` requires `SELECT` on the columns referenced by the index expression — column-level `SELECT` (for example `GRANT SELECT(b)`) is sufficient — because empirical `EXPLAIN WHATIF` reads those columns. It also requires `SHOW COLUMNS` on the table, because it runs the checks of `ALTER TABLE ... ADD INDEX`, which validate the whole table and can name any of its columns in an error.
 
 `DROP HYPOTHETICAL INDEX` and `DROP ALL HYPOTHETICAL INDEXES` require no extra privilege; they only remove entries from the session-local store.
 
