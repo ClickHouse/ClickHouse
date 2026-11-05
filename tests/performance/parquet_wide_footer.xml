@@ -1,0 +1,59 @@
+<!--
+    Reads of a Parquet file with a large footer: 105 columns (the ClickBench `hits` schema) in
+    about 250 row groups, i.e. about 26000 column chunks, through the metadata cache of `file()`.
+    Queries that read few columns, or none, should not pay for the metadata of all of them.
+-->
+<test>
+    <settings>
+        <use_cache_for_count_from_files>0</use_cache_for_count_from_files>
+    </settings>
+    <fill_query><![CDATA[
+        INSERT INTO FUNCTION file('test_parquet_wide_footer.parquet', Parquet)
+        SELECT * FROM generateRandom('
+            WatchID Int64, JavaEnable Int16, Title String, GoodEvent Int16,
+            EventTime DateTime, EventDate Date, CounterID Int32, ClientIP Int32,
+            RegionID Int32, UserID Int64, CounterClass Int16, OS Int16,
+            UserAgent Int16, URL String, Referer String, IsRefresh Int16,
+            RefererCategoryID Int16, RefererRegionID Int32, URLCategoryID Int16,
+            URLRegionID Int32, ResolutionWidth Int16, ResolutionHeight Int16,
+            ResolutionDepth Int16, FlashMajor Int16, FlashMinor Int16,
+            FlashMinor2 String, NetMajor Int16, NetMinor Int16,
+            UserAgentMajor Int16, UserAgentMinor String, CookieEnable Int16,
+            JavascriptEnable Int16, IsMobile Int16, MobilePhone Int16,
+            MobilePhoneModel String, Params String, IPNetworkID Int32,
+            TraficSourceID Int16, SearchEngineID Int16, SearchPhrase String,
+            AdvEngineID Int16, IsArtifical Int16, WindowClientWidth Int16,
+            WindowClientHeight Int16, ClientTimeZone Int16,
+            ClientEventTime DateTime, SilverlightVersion1 Int16,
+            SilverlightVersion2 Int16, SilverlightVersion3 Int32,
+            SilverlightVersion4 Int16, PageCharset String, CodeVersion Int32,
+            IsLink Int16, IsDownload Int16, IsNotBounce Int16, FUniqID Int64,
+            OriginalURL String, HID Int32, IsOldCounter Int16, IsEvent Int16,
+            IsParameter Int16, DontCountHits Int16, WithHash Int16,
+            HitColor String, LocalEventTime DateTime, Age Int16, Sex Int16,
+            Income Int16, Interests Int16, Robotness Int16, RemoteIP Int32,
+            WindowName Int32, OpenerName Int32, HistoryLength Int16,
+            BrowserLanguage String, BrowserCountry String, SocialNetwork String,
+            SocialAction String, HTTPError Int16, SendTiming Int32,
+            DNSTiming Int32, ConnectTiming Int32, ResponseStartTiming Int32,
+            ResponseEndTiming Int32, FetchTiming Int32,
+            SocialSourceNetworkID Int16, SocialSourcePage String,
+            ParamPrice Int64, ParamOrderID String, ParamCurrency String,
+            ParamCurrencyID Int16, OpenstatServiceName String,
+            OpenstatCampaignID String, OpenstatAdID String,
+            OpenstatSourceID String, UTMSource String, UTMMedium String,
+            UTMCampaign String, UTMContent String, UTMTerm String,
+            FromTag String, HasGCLID Int16, RefererHash Int64, URLHash Int64,
+            CLID Int32', 1, 16, 2)
+        LIMIT 250000
+        SETTINGS output_format_parquet_row_group_size = 1000
+    ]]></fill_query>
+
+    <query><![CDATA[SELECT count() FROM file('test_parquet_wide_footer.parquet', Parquet) FORMAT Null]]></query>
+    <query><![CDATA[SELECT count() FROM file('test_parquet_wide_footer.parquet', Parquet) WHERE AdvEngineID <> 0 FORMAT Null]]></query>
+    <query><![CDATA[SELECT avg(UserID) FROM file('test_parquet_wide_footer.parquet', Parquet) FORMAT Null]]></query>
+    <query><![CDATA[SELECT UserID FROM file('test_parquet_wide_footer.parquet', Parquet) WHERE UserID = 435090932899640449 FORMAT Null]]></query>
+    <query><![CDATA[DESCRIBE file('test_parquet_wide_footer.parquet', Parquet) FORMAT Null SETTINGS schema_inference_use_cache_for_file = 0]]></query>
+    <query><![CDATA[SELECT * FROM file('test_parquet_wide_footer.parquet', Parquet) LIMIT 1 FORMAT Null]]></query>
+    <query><![CDATA[SELECT * FROM file('test_parquet_wide_footer.parquet', Parquet) WHERE UserID = 1 FORMAT Null]]></query>
+</test>
