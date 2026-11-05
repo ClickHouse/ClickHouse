@@ -49,6 +49,10 @@ void checkConnectionTarget(const std::string & server, unsigned port, const std:
             printable, meaning);
     }
 
+    if (socket.contains('\0'))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS, "MySQL socket for host '{}' contains a NUL byte, where the MySQL client library would end it", server);
+
     /// The client library uses the socket only for an empty host or `localhost`, otherwise it connects over TCP.
     const bool uses_socket = !socket.empty() && (server.empty() || server == "localhost");
     if (port == 0 && !uses_socket)

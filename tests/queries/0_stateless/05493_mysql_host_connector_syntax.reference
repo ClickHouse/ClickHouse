@@ -7,6 +7,7 @@ connection failed
 port 0: rejected
 dictionary 127.0.0.1 port 0: rejected
 dictionary localhost port 0: unix socket
+dictionary localhost port 0: rejected
 localhost: tcp
 which the MySQL client library would read as a connection string
 which the MySQL client library would read as a connection string
