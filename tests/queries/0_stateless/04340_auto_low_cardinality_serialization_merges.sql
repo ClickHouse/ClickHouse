@@ -82,12 +82,20 @@ SELECT 'alter: kind before';
 SELECT DISTINCT serialization_kind FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_auto_lc_alter' AND active AND column = 'lc';
 
+SELECT 'alter: table-level serialization hint before';
+SELECT serialization_hint FROM system.columns WHERE database = currentDatabase() AND table = 't_auto_lc_alter' AND name = 'lc';
+
 ALTER TABLE t_auto_lc_alter MODIFY COLUMN lc UInt64;
 
 SELECT 'alter: kind after (LowCardinality dropped, type is no longer String), correctness';
 SELECT DISTINCT serialization_kind FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_auto_lc_alter' AND active AND column = 'lc';
 SELECT any(toTypeName(lc)), count(), sum(lc) FROM t_auto_lc_alter;
+
+-- The table-level hint is rebuilt after the metadata change, so the `LowCardinality` kind of the old
+-- `String` parts must not leak into the hint of the `UInt64` column.
+SELECT 'alter: table-level serialization hint after has no LowCardinality';
+SELECT position(serialization_hint, 'LowCardinality') = 0 FROM system.columns WHERE database = currentDatabase() AND table = 't_auto_lc_alter' AND name = 'lc';
 
 DROP TABLE t_auto_lc_alter;
 
