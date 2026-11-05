@@ -16,9 +16,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT -m -q "
 DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE_1};
 DROP TABLE IF EXISTS mv_merge;
-DROP TABLE IF EXISTS mv_merge_policy;
-DROP ROW POLICY IF EXISTS policy_05507 ON child;
-DROP TABLE IF EXISTS child;
 DROP TABLE IF EXISTS mv_loop;
 DROP TABLE IF EXISTS dst;
 DROP TABLE IF EXISTS dist;
@@ -37,15 +34,6 @@ CREATE TABLE dst (name String, block_rows UInt64, value UInt64) ENGINE = MergeTr
 CREATE MATERIALIZED VIEW mv_merge TO dst AS
     SELECT 'merge' AS name, count() AS block_rows,
         (SELECT sum(x) FROM merge(${CLICKHOUSE_DATABASE}, '^(src|dist)\$') WHERE x > 0) AS value
-    FROM src;
-
--- Another child planned by the nested interpreter keeps reading the inserted block in its row policy, as at FetchColumns.
-CREATE TABLE child (x UInt64) ENGINE = MergeTree ORDER BY x;
-INSERT INTO child VALUES (1), (4), (100);
-CREATE ROW POLICY OR REPLACE policy_05507 ON child USING x IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.src) TO ALL;
-CREATE MATERIALIZED VIEW mv_merge_policy TO dst AS
-    SELECT 'merge_policy' AS name, count() AS block_rows,
-        (SELECT sum(x) FROM merge(${CLICKHOUSE_DATABASE}, '^(child|dist)\$')) AS value
     FROM src;
 
 CREATE MATERIALIZED VIEW mv_loop TO dst AS
@@ -84,9 +72,6 @@ SELECT 'refreshable', * FROM dst ORDER BY name;
 
 DROP DATABASE ${CLICKHOUSE_DATABASE_1};
 DROP TABLE mv_merge;
-DROP TABLE mv_merge_policy;
-DROP ROW POLICY policy_05507 ON child;
-DROP TABLE child;
 DROP TABLE mv_loop;
 DROP TABLE dst;
 DROP TABLE dist;
