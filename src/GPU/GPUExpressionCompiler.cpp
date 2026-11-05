@@ -24,6 +24,7 @@
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/InstIterator.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Intrinsics.h>
 #include <llvm/IR/IntrinsicsNVPTX.h>
@@ -76,7 +77,7 @@ const std::string & deviceArchitecture()
     return architecture;
 }
 
-std::unique_ptr<llvm::TargetMachine> nvptxTargetMachine()
+std::unique_ptr<llvm::TargetMachine> makeNVPTXTargetMachine()
 {
     initializeLLVMTargets();
 
@@ -96,11 +97,30 @@ std::unique_ptr<llvm::TargetMachine> nvptxTargetMachine()
     return machine;
 }
 
+llvm::TargetMachine & nvptxTargetMachine()
+{
+    thread_local const std::unique_ptr<llvm::TargetMachine> machine = makeNVPTXTargetMachine();
+    return *machine;
+}
+
 const ActionsDAG::Node * withoutAliases(const ActionsDAG::Node * node)
 {
     while (node->type == ActionsDAG::ActionType::ALIAS)
         node = node->children.front();
     return node;
+}
+
+bool deviceHasType(const llvm::Type * type)
+{
+    if (const auto * vector = llvm::dyn_cast<llvm::VectorType>(type))
+        return deviceHasType(vector->getElementType());
+    if (const auto * structure = llvm::dyn_cast<llvm::StructType>(type))
+        return std::ranges::all_of(structure->elements(), [](const llvm::Type * element) { return deviceHasType(element); });
+    if (type->isIntegerTy())
+        return type->getIntegerBitWidth() <= 64;
+    if (type->isFloatingPointTy())
+        return type->isFloatTy() || type->isDoubleTy();
+    return true;
 }
 
 bool deviceHasIntrinsic(llvm::StringRef name)
@@ -252,6 +272,17 @@ std::optional<std::string> emitPTX(llvm::Module & module, llvm::TargetMachine & 
 
     for (const llvm::Function & function : module)
     {
+        for (const llvm::Instruction & instruction : llvm::instructions(function))
+        {
+            const bool of_device_types = deviceHasType(instruction.getType())
+                && std::ranges::all_of(instruction.operands(), [](const llvm::Use & operand) { return deviceHasType(operand->getType()); });
+            if (!of_device_types)
+            {
+                refusal = "an expression of integers wider than 64 bits or floats other than `Float32` and `Float64`, which the device does not compute";
+                return {};
+            }
+        }
+
         if (!function.isDeclaration() || function.use_empty())
             continue;
         if (!function.isIntrinsic() || !deviceHasIntrinsic(function.getName()))
@@ -312,14 +343,14 @@ std::optional<CompiledGPUExpression> compile(const ActionsDAG & dag, const Strin
     std::shared_ptr<const GPUKernel> kernel = kernels.get(key);
     if (!kernel)
     {
-        auto machine = nvptxTargetMachine();
+        llvm::TargetMachine & machine = nvptxTargetMachine();
         llvm::LLVMContext context;
         llvm::Module module(name, context);
         module.setTargetTriple(llvm::Triple(nvptx_triple));
-        module.setDataLayout(machine->createDataLayout());
+        module.setDataLayout(machine.createDataLayout());
 
         emitKernel(module, device_dag, result_type, output, name);
-        auto ptx = emitPTX(module, *machine, refusal);
+        auto ptx = emitPTX(module, machine, refusal);
         if (!ptx)
             return {};
 
