@@ -62,6 +62,11 @@ FilterResult filterResultForMatchedRows(
     if (dagContainsNonDeterministicFunction(filter_dag) || dagContainsNonDeterministicFunction(pre_actions_dag))
         return FilterResult::UNKNOWN;
 
+    /// Pre-join constants reach the filter as full columns after the join, so a function reading representation cannot be probed.
+    if (const auto * filter = filter_dag.tryFindInOutputs(filter_column_name);
+        filter && !ActionsDAG::getInputsReadByRepresentation(*filter).empty())
+        return FilterResult::UNKNOWN;
+
     /// The filter reads the outputs of `pre_actions_dag` by name, so a name produced twice cannot be attributed.
     std::unordered_map<String, const ActionsDAG::Node *> not_null_outputs;
     for (const auto * output : pre_actions_dag.getOutputs())
@@ -254,8 +259,13 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
     if (!semi_can_be_executed && result_for_matched_rows != FilterResult::FALSE)
         return 0;
 
-    const auto & matched_side_header = *join->getInputHeaders()[matched_side == JoinTableSide::Left ? 0 : 1];
-    auto result_for_not_matched_rows = filterResultForNotMatchedRows(filter_dag, filter_column_name, matched_side_header);
+    const size_t matched_side_index = matched_side == JoinTableSide::Left ? 0 : 1;
+    auto result_for_not_matched_rows = filterResultForNotMatchedRows(
+        filter_dag,
+        filter_column_name,
+        *join->getInputHeaders()[matched_side_index],
+        /*allow_unknown_function_arguments=*/false,
+        child_node->children[matched_side_index]);
 
     if (result_for_not_matched_rows == FilterResult::FALSE && semi_can_be_executed)
     {
