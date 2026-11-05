@@ -9,7 +9,9 @@
 #include <Interpreters/MaterializedCTE.h>
 #include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
+#include <Common/quoteString.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 
@@ -62,6 +64,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_UUID_MISMATCH;
     extern const int SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED;
+    extern const int ACCESS_DENIED;
 }
 
 QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
@@ -282,6 +285,14 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
 
 /// Resolve identifier functions implementation
 
+/// Whether `storage_id` is the table whose inserted block a materialized view or `INSERT ... RETURNING` reads.
+static bool isViewSource(const StorageID & storage_id, const ContextPtr & context)
+{
+    auto view_source = context->getViewSource();
+    return view_source && !context->isViewInnerQuery()
+        && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted();
+}
+
 /// Try resolve table identifier from database catalog
 std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const Identifier & table_identifier, const ContextPtr & context)
 {
@@ -382,11 +393,9 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     /// `replaceStorageInQueryTree` swaps the view source in for execution after the passes.
     /// The inner query of an ordinary view reads the table itself.
     /// The snapshot above can be shared by every read of the table in the query, so only a copy gets the view source's types.
-    if (auto view_source = context->getViewSource();
-        view_source && !context->isViewInnerQuery()
-        && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted())
+    if (isViewSource(storage_id, context))
     {
-        auto view_source_metadata = view_source->getInMemoryMetadataPtr(context, false);
+        auto view_source_metadata = context->getViewSource()->getInMemoryMetadataPtr(context, false);
         storage_snapshot = storage_snapshot->clone(view_source_metadata, storage_snapshot->data);
     }
 
@@ -413,11 +422,14 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
 /// (e.g. by `MutationsInterpreter`) do not pass through here and keep their own access semantics.
 static void checkAccessToTableMetadata(const TableNode & table_node, const ContextPtr & context)
 {
-    /// Temporary tables of the current session are always accessible.
-    if (!table_node.getTemporaryTableName().empty())
+    const auto & storage_id = table_node.getStorageID();
+    const auto * alias = isViewSource(storage_id, context) ? nullptr : table_node.getStorage()->as<StorageAlias>();
+
+    /// Temporary tables of the current session are always accessible, except a temporary `Alias`: it shows its target's metadata.
+    const bool is_temporary = !table_node.getTemporaryTableName().empty();
+    if (is_temporary && !alias)
         return;
 
-    const auto & storage_id = table_node.getStorageID();
     if (!storage_id.hasDatabase())
         return;
 
@@ -428,11 +440,69 @@ static void checkAccessToTableMetadata(const TableNode & table_node, const Conte
     /// `SELECT` is checked in addition to `SHOW_COLUMNS` because the implicit `SELECT` on the
     /// `system` and `information_schema` databases is granted after implications are derived.
     const auto access_rights = context->getAccess()->getAccessRightsWithImplicit();
+    const auto is_visible = [&](const String & database, const String & table, const String & column_name)
+    {
+        if (column_name.empty())
+            return access_rights->isGranted(AccessType::SELECT, database, table)
+                || access_rights->isGranted(AccessType::SHOW_COLUMNS, database, table);
+        return access_rights->isGranted(AccessType::SELECT, database, table, column_name)
+            || access_rights->isGranted(AccessType::SHOW_COLUMNS, database, table, column_name);
+    };
+
+    Names visible_columns;
     for (const auto & column : table_node.getStorageSnapshot()->metadata->getColumns())
     {
-        if (access_rights->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
-            || access_rights->isGranted(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name, column.name))
+        if (is_temporary || is_visible(storage_id.database_name, storage_id.table_name, column.name))
+        {
+            if (!alias)
+                return;
+            visible_columns.push_back(column.name);
+        }
+    }
+
+    if (alias && !visible_columns.empty())
+    {
+        /// An `Alias` shows the metadata of the last table of its chain, so a column must also be visible
+        /// on every table it points to. The message names only the alias: the user may not know its target.
+        if (!alias->filterColumnsGrantedThroughChain(visible_columns, is_visible).empty())
             return;
+
+        /// That column may differ from the one visible on the alias (an `ALIAS` column reads others), and may be
+        /// a subcolumn or a virtual column. Dynamic subcolumns cannot be enumerated: those named in the grants
+        /// are tried, and a name that no grant mentions stands for all the others, because it gets its table's grant.
+        const auto & snapshot = table_node.getStorageSnapshot();
+        const auto options = GetColumnsOptions(GetColumnsOptions::All)
+                                 .withSubcolumns()
+                                 .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
+        Names candidates;
+        String unnamed_dynamic_subcolumn;
+        for (const auto & column : snapshot->getColumns(options))
+        {
+            candidates.push_back(column.name);
+            if (unnamed_dynamic_subcolumn.empty() && column.type->hasDynamicSubcolumns())
+                unnamed_dynamic_subcolumn = column.name + ".";
+        }
+        NameSet names_in_grants;
+        for (const auto & element : access_rights->getElements())
+        {
+            for (const auto & name : element.columns)
+            {
+                names_in_grants.insert(name);
+                if (!element.is_partial_revoke && snapshot->tryGetColumn(options, name))
+                    candidates.push_back(name);
+            }
+        }
+        if (!unnamed_dynamic_subcolumn.empty())
+        {
+            while (names_in_grants.contains(unnamed_dynamic_subcolumn))
+                unnamed_dynamic_subcolumn += '_';
+            candidates.push_back(std::move(unnamed_dynamic_subcolumn));
+        }
+        if (!alias->filterColumnsGrantedThroughChain(candidates, is_visible).empty())
+            return;
+
+        throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to access the table that {} points to",
+                        is_temporary ? backQuoteIfNeed(table_node.getTemporaryTableName()) : storage_id.getNameForLogs());
     }
 
     /// Not a single column of the table is visible to the user. Report the denial through the

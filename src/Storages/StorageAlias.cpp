@@ -51,6 +51,18 @@ StoragePtr resolveLazyStandIn(const StoragePtr & storage)
     return storage;
 }
 
+bool isGranted(const ContextPtr & query_context, AccessType access_type, const String & database, const String & table, const String & column_name)
+{
+    if (!query_context)
+        return false;
+
+    auto access = query_context->getAccess();
+    if (column_name.empty())
+        return access->isGranted(access_type, database, table);
+
+    return access->isGranted(access_type, database, table, column_name);
+}
+
 }
 
 StorageAlias::StorageAlias(
@@ -86,18 +98,19 @@ StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check
 
 bool StorageAlias::isDeclaredTargetGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
 {
-    if (!query_context)
-        return false;
-
-    auto access = query_context->getAccess();
-    if (column_name.empty())
-        return access->isGranted(access_type, target_database, target_table);
-
-    return access->isGranted(access_type, target_database, target_table, column_name);
+    return isGranted(query_context, access_type, target_database, target_table, column_name);
 }
 
 NameSet StorageAlias::filterColumnsGrantedThroughChain(
     ContextPtr query_context, AccessType access_type, const Names & column_names) const
+{
+    return filterColumnsGrantedThroughChain(
+        column_names,
+        [&](const String & database, const String & table, const String & column_name)
+        { return isGranted(query_context, access_type, database, table, column_name); });
+}
+
+NameSet StorageAlias::filterColumnsGrantedThroughChain(const Names & column_names, const IsGranted & is_granted) const
 {
     /// `getInMemoryMetadataPtr` forwards through nested aliases, so a caller reads the metadata of the
     /// chain's last table, and `read` authorizes every hop by re-entering `read` on each one.
@@ -112,12 +125,12 @@ NameSet StorageAlias::filterColumnsGrantedThroughChain(
         /// A table-level grant covers every column of that table, so one table-level question answers
         /// the whole per-column pass. Asking it is only a saving where it replaces more than one check.
         const bool whole_table_granted
-            = granted.size() > 1 && alias->isDeclaredTargetGranted(query_context, access_type, {});
+            = granted.size() > 1 && is_granted(alias->target_database, alias->target_table, {});
 
         if (!whole_table_granted)
         {
             std::erase_if(granted, [&](const String & column_name)
-            { return !alias->isDeclaredTargetGranted(query_context, access_type, column_name); });
+            { return !is_granted(alias->target_database, alias->target_table, column_name); });
             if (granted.empty())
                 break;
         }

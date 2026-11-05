@@ -1,0 +1,33 @@
+-- grants on the alias only
+denied
+denied
+denied
+denied
+denied
+-- an alias over an implicitly granted system table
+ok
+0
+-- a column-level grant on the alias only
+denied
+denied
+-- grants on the alias and on the target
+ok
+1
+ok
+-- grants on the alias and on a subcolumn or a virtual column of the target
+0
+1
+5
+1	0
+9
+denied
+-- a grant on an ALIAS column of the alias and on the column it reads on the target
+8
+-- a temporary alias
+ok
+denied
+-- a materialized view over the alias, defined by a user granted on the alias only
+7
+-- a view and a materialized view over the alias, created by a user granted on the alias only
+denied
+denied
