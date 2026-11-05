@@ -142,6 +142,35 @@ ASTPtr checkedConstant(ASTPtr value, const std::string & column)
         fmt::format("The value assigned to the field '{}' cannot be represented exactly by the type of its column", column));
 }
 
+/** The operand of `$inc` and `$mul`, which Mongo requires to be a number - also in an Extended
+  * JSON wrapper of one - rather than converting a string or a boolean to one, as the conversion to
+  * the type of the column would.
+  */
+ASTPtr parseArithmeticOperand(const rapidjson::Value & value, std::string_view operator_name)
+{
+    if (constantCategory(value) != ConstantCategory::Number)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The operand of '{}' must be a number", operator_name);
+    return parseUpdateValue(value, operator_name, /* documents_are_values = */ false);
+}
+
+/** The operand of `$min` and `$max`. Mongo compares values of different types in the BSON order,
+  * where any number is less than any string, for example, so the value of a field of one type is
+  * kept or replaced by an operand of another type depending on the types alone - and a field of a
+  * column cannot take a value of another type at all. Instead of converting the operand to the type
+  * of the column, which compares `"2"` with `5` as numbers, such an operand is rejected.
+  */
+ASTPtr parseComparedOperand(const rapidjson::Value & value, std::string_view operator_name, const std::string & column)
+{
+    auto operand = checkedConstant(parseUpdateValue(value, operator_name, /* documents_are_values = */ false), column);
+    auto of_another_category = makeFieldOfAnotherCategory(column, constantCategory(value));
+    if (!of_another_category)
+        return operand;
+    return withFoldedCheck(
+        std::move(operand),
+        std::move(of_another_category),
+        fmt::format("The operand of '{}' for the field '{}' is of another type than the field", operator_name, column));
+}
+
 /** `$min` and `$max` compare in the BSON order, where `null` is less than any other value, so the
   * minimum with a `null` is `null` and the maximum is the other value. `least` and `greatest` treat
   * a `NULL` the way `least_greatest_legacy_null_behavior` says, so the `NULL` cases are explicit.
@@ -202,16 +231,14 @@ void parseUpdateOperator(std::string_view name, const rapidjson::Value & argumen
         /// The operand has to fit the column, see `checkedConstant`.
         else if (name == "$inc")
             assignments.push_back(
-                makeAssignment(column, makeASTFunction("plus", field(), checkedConstant(parseUpdateValue(it->value, name, false), column))));
+                makeAssignment(column, makeASTFunction("plus", field(), checkedConstant(parseArithmeticOperand(it->value, name), column))));
         else if (name == "$mul")
             assignments.push_back(makeAssignment(
-                column, makeASTFunction("multiply", field(), checkedConstant(parseUpdateValue(it->value, name, false), column))));
+                column, makeASTFunction("multiply", field(), checkedConstant(parseArithmeticOperand(it->value, name), column))));
         else if (name == "$min")
-            assignments.push_back(
-                makeAssignment(column, makeBsonMinimum(column, checkedConstant(parseUpdateValue(it->value, name, false), column))));
+            assignments.push_back(makeAssignment(column, makeBsonMinimum(column, parseComparedOperand(it->value, name, column))));
         else if (name == "$max")
-            assignments.push_back(
-                makeAssignment(column, makeBsonMaximum(column, checkedConstant(parseUpdateValue(it->value, name, false), column))));
+            assignments.push_back(makeAssignment(column, makeBsonMaximum(column, parseComparedOperand(it->value, name, column))));
         else if (name == "$currentDate")
         {
             /// The legal forms are `true` and `{"$type": "date"}`. `{"$type": "timestamp"}` asks
@@ -411,6 +438,34 @@ ASTPtr parseMongoUpdateStatement(const rapidjson::Value & update)
     return expression_list;
 }
 
+namespace
+{
+
+/** The value of the source field `source` moved to the field `target` by `$rename`. The conversion to
+  * the type of the target column is not checked while the mutation runs - an `Int64` would wrap
+  * around in an `Int32` - and the source is reset to its default by the same mutation, so a value
+  * that does not survive the move would be lost. The move is only allowed when the type of the
+  * target holds every value of the type of the source: when it is the common type of both, which
+  * the type of an array of the two is of. The type names are constants, so the check fails while
+  * the mutation is validated, before it is submitted.
+  */
+ASTPtr makeRenamedValue(const std::string & source, const std::string & target)
+{
+    auto common_type = makeASTFunction(
+        "toTypeName", makeASTFunction("array", make_intrusive<ASTIdentifier>(source), make_intrusive<ASTIdentifier>(target)));
+    auto target_array_type = makeASTFunction(
+        "concat",
+        make_intrusive<ASTLiteral>(Field(String("Array("))),
+        makeASTFunction("toTypeName", make_intrusive<ASTIdentifier>(target)),
+        make_intrusive<ASTLiteral>(Field(String(")"))));
+    return withFoldedCheck(
+        make_intrusive<ASTIdentifier>(source),
+        makeASTFunction("notEquals", std::move(common_type), std::move(target_array_type)),
+        fmt::format("'$rename' cannot move the field '{}' to the field '{}', whose type does not hold every value of its type", source, target));
+}
+
+}
+
 void expandMongoSubtreeAssignments(
     ASTPtr & ast, const std::vector<std::string> & columns, const std::function<void(const std::vector<std::string> &)> & check_columns)
 {
@@ -503,6 +558,17 @@ void expandMongoSubtreeAssignments(
                 }
             }
             expanded.push_back(child_assignment);
+        }
+
+        /// The value moved by `$rename` must fit the type of its target, see `makeRenamedValue`.
+        for (auto & assignment : expanded)
+        {
+            const auto & target = assignment->as<const ASTAssignment &>();
+            if (const auto * source = target.children.at(0)->as<ASTIdentifier>())
+            {
+                assignment = makeAssignment(target.column_name, makeRenamedValue(source->name(), target.column_name));
+                expanded_any = true;
+            }
         }
 
         /// The columns are checked before the duplicates are reported, because the error about a

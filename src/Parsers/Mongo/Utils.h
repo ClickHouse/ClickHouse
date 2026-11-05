@@ -124,6 +124,14 @@ ASTPtr makeMongoOrderByElement(ASTPtr key, int direction);
   */
 ASTPtr makeRepresentableConstant(ASTPtr value, ASTPtr type, const String & message);
 
+/** `value`, with a check that fails with `message` when `failed` - a condition that the analyzer
+  * folds into a constant, such as one on the name of a type - is true. `throwIf` is not folded
+  * while a mutation is validated, so the error is raised by a conversion that fails instead: the
+  * `CAST` of the message to an enumeration without it. It is raised before anything is written or
+  * a mutation is submitted.
+  */
+ASTPtr withFoldedCheck(ASTPtr value, ASTPtr failed, const String & message);
+
 /** The most operands an arithmetic operator such as `$add` takes. ClickHouse has only the binary
   * operations, so the operands of one operator become a tree of them. The tree is balanced, so its
   * depth is only the logarithm of the number of operands, but each operand is still repeated in

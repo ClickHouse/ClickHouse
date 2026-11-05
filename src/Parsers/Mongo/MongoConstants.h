@@ -41,6 +41,12 @@ ConstantCategory constantCategory(const rapidjson::Value & value);
   */
 ASTPtr withTypeBracket(const std::string & field, ConstantCategory category, ASTPtr condition);
 
+/** Whether the field is of a type of another category than `category`, in the sense of
+  * `withTypeBracket`: a condition that the analyzer folds into a constant, or `nullptr` for the
+  * category `Other`, which is not restricted.
+  */
+ASTPtr makeFieldOfAnotherCategory(const std::string & field, ConstantCategory category);
+
 /** Translates a Mongo constant into a ClickHouse expression.
   *
   * A constant is either a plain JSON scalar or an Extended JSON wrapper such as

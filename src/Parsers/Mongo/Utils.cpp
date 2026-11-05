@@ -540,60 +540,107 @@ bool hasFractionalConstant(const ASTPtr & ast)
     return false;
 }
 
+/// Whether a checkable constant holds a string, which may be an element of an array.
+bool hasStringConstant(const ASTPtr & ast)
+{
+    if (const auto * literal = ast->as<ASTLiteral>())
+        return literal->value.getType() == Field::Types::String;
+    const auto * function = ast->as<ASTFunction>();
+    if (!function || !function->arguments || function->name != "array")
+        return false;
+    for (const auto & argument : function->arguments->children)
+        if (hasStringConstant(argument))
+            return true;
+    return false;
+}
+
+/// The check of `withFoldedCheck` alone, to be evaluated along with a value.
+ASTPtr makeFoldedGuard(ASTPtr failed, const String & message)
+{
+    return makeASTFunction(
+        "CAST",
+        makeASTFunction("if", std::move(failed), make_intrusive<ASTLiteral>(Field(message)), make_intrusive<ASTLiteral>(Field(String()))),
+        make_intrusive<ASTLiteral>(Field(String("Enum8('' = 0)"))));
+}
+
+}
+
+ASTPtr withFoldedCheck(ASTPtr value, ASTPtr failed, const String & message)
+{
+    return makeASTFunction(
+        "tupleElement",
+        makeASTFunction("tuple", std::move(value), makeFoldedGuard(std::move(failed), message)),
+        make_intrusive<ASTLiteral>(Field(UInt64(1))));
 }
 
 ASTPtr makeRepresentableConstant(ASTPtr value, ASTPtr type, const String & message)
 {
     if (!isCheckableConstant(value))
         return value;
+
+    /// The conversion, followed by the checks of the value that the conversion does not make.
+    auto checked = makeASTFunction("tuple");
+    auto & elements = checked->arguments->children;
+
+    /** A string is no number in Mongo, while `accurateCast` parses it into a numeric column, and the
+      * parser of decimals drops the digits past the scale: `"1.25"` would be stored as `1.2` in a
+      * `Decimal(38, 1)`. A string is a value of another type than the column holds, so it is
+      * rejected for a numeric column - also as an element of an array.
+      */
+    ASTPtr string_check;
+    if (hasStringConstant(value))
+        string_check = makeFoldedGuard(
+            makeASTFunction(
+                "match",
+                type->clone(),
+                make_intrusive<ASTLiteral>(Field(String(R"(^((Array|Nullable|LowCardinality)\()*(U?Int\d+|B?Float\d+|Decimal\d*\(.*\)|Bool)\)*$)")))),
+            message);
+
     /// A floating point column narrower than a double rounds a value rather than misrepresenting it,
-    /// the way any double is already a rounded number, so the value is only checked to be a double:
-    /// `0.1` goes into a `Float32` column, which `accurateCast` would reject as inexact.
-    type = makeASTFunction(
-        "replaceRegexpAll",
-        std::move(type),
-        make_intrusive<ASTLiteral>(Field(String("\\b(BFloat16|Float32)\\b"))),
-        make_intrusive<ASTLiteral>(Field(String("Float64"))));
+    /// the way any double is already a rounded number, so a double is only checked to be a double:
+    /// `0.1` goes into a `Float32` column, which `accurateCast` would reject as inexact. An integer is
+    /// checked against the type of the column itself, which does not hold `16777217` exactly.
+    const bool fractional = hasFractionalConstant(value);
+    if (fractional)
+        type = makeASTFunction(
+            "replaceRegexpAll",
+            std::move(type),
+            make_intrusive<ASTLiteral>(Field(String("\\b(BFloat16|Float32)\\b"))),
+            make_intrusive<ASTLiteral>(Field(String("Float64"))));
     auto converted = makeASTFunction("accurateCast", value->clone(), type->clone());
+    elements.push_back(converted);
+    if (string_check)
+        elements.push_back(std::move(string_check));
 
     /** `accurateCast` turns any number into a `Bool` - `2` becomes `true`, and in an array it even
       * keeps the `2` - so the value is also converted to the type with an enumeration of `0` and
       * `1` in place of `Bool`, which fails for any other number. For any other type that is the
       * same conversion once more.
       */
-    auto boolean_check = makeASTFunction(
+    elements.push_back(makeASTFunction(
         "accurateCast",
         value->clone(),
         makeASTFunction(
             "replaceRegexpAll",
             type->clone(),
             make_intrusive<ASTLiteral>(Field(String("\\bBool\\b"))),
-            make_intrusive<ASTLiteral>(Field(String("Enum8('false' = 0, 'true' = 1)")))));
-    if (!hasFractionalConstant(value))
-        return makeASTFunction(
-            "tupleElement",
-            makeASTFunction("tuple", std::move(converted), std::move(boolean_check)),
-            make_intrusive<ASTLiteral>(Field(UInt64(1))));
+            make_intrusive<ASTLiteral>(Field(String("Enum8('false' = 0, 'true' = 1)"))))));
 
     /** `accurateCast` truncates the digits a decimal type does not keep - `1.5` becomes `1` in an
       * `Int32` and `1.25` becomes `1.2` in a `Decimal(38, 1)` - so a value with fractional digits is
       * also checked to come back unchanged when its conversion is converted back to its own type,
       * which compares the two whatever the type of the column is. The check has to be folded while
-      * the query is analyzed, like the conversion, and `throwIf` is not folded while a mutation is
-      * validated, so the error is raised by a conversion that fails: the `CAST` of the message to an
-      * enumeration without it.
+      * the query is analyzed, like the conversion, see `withFoldedCheck`.
       */
-    auto converted_back = makeASTFunction("accurateCast", converted->clone(), makeASTFunction("toTypeName", value->clone()));
-    auto exact = makeASTFunction(
-        "or", makeASTFunction("isNull", value->clone()), makeASTFunction("equals", std::move(converted_back), value->clone()));
-    auto guard = makeASTFunction(
-        "CAST",
-        makeASTFunction("if", std::move(exact), make_intrusive<ASTLiteral>(Field(String())), make_intrusive<ASTLiteral>(Field(message))),
-        make_intrusive<ASTLiteral>(Field(String("Enum8('' = 0)"))));
-    return makeASTFunction(
-        "tupleElement",
-        makeASTFunction("tuple", std::move(converted), std::move(guard), std::move(boolean_check)),
-        make_intrusive<ASTLiteral>(Field(UInt64(1))));
+    if (fractional)
+    {
+        auto converted_back = makeASTFunction("accurateCast", converted->clone(), makeASTFunction("toTypeName", value->clone()));
+        auto exact = makeASTFunction(
+            "or", makeASTFunction("isNull", value->clone()), makeASTFunction("equals", std::move(converted_back), value->clone()));
+        elements.push_back(makeFoldedGuard(makeASTFunction("not", std::move(exact)), message));
+    }
+
+    return makeASTFunction("tupleElement", std::move(checked), make_intrusive<ASTLiteral>(Field(UInt64(1))));
 }
 
 std::optional<std::string> MongoQueryKeyNameExtractor::extractString(const char * begin, const char * end)

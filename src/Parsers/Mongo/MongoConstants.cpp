@@ -277,7 +277,7 @@ ConstantCategory constantCategory(const rapidjson::Value & value)
     return ConstantCategory::Other;
 }
 
-ASTPtr withTypeBracket(const std::string & field, ConstantCategory category, ASTPtr condition)
+ASTPtr makeFieldOfAnotherCategory(const std::string & field, ConstantCategory category)
 {
     /// The types of a category, as they are written inside the wrappers of the regular expression below.
     static constexpr std::string_view boolean_types = "Bool";
@@ -286,7 +286,7 @@ ASTPtr withTypeBracket(const std::string & field, ConstantCategory category, AST
     static constexpr std::string_view date_types = R"(Date|Date32|DateTime(64)?(\(.*\))?)";
 
     if (category == ConstantCategory::Other)
-        return condition;
+        return nullptr;
 
     /// A boolean only matches a `Bool`; a number, a string or a date matches any type that is not of
     /// another of the categories.
@@ -303,11 +303,21 @@ ASTPtr withTypeBracket(const std::string & field, ConstantCategory category, AST
     }
     auto pattern = fmt::format(R"(^((Array|Nullable|LowCardinality)\()*({})\)*$)", fmt::join(types, "|"));
 
-    ASTPtr field_is_of_category = makeASTFunction(
+    /// The types of the pattern are the ones of the category for a boolean, and the ones of the
+    /// other categories otherwise.
+    ASTPtr matches = makeASTFunction(
         "match", makeASTFunction("toTypeName", make_intrusive<ASTIdentifier>(field)), make_intrusive<ASTLiteral>(Field(pattern)));
-    if (!requires_the_types)
-        field_is_of_category = makeASTFunction("not", std::move(field_is_of_category));
-    return makeASTFunction("and", std::move(field_is_of_category), std::move(condition));
+    if (requires_the_types)
+        return makeASTFunction("not", std::move(matches));
+    return matches;
+}
+
+ASTPtr withTypeBracket(const std::string & field, ConstantCategory category, ASTPtr condition)
+{
+    auto of_another_category = makeFieldOfAnotherCategory(field, category);
+    if (!of_another_category)
+        return condition;
+    return makeASTFunction("and", makeASTFunction("not", std::move(of_another_category)), std::move(condition));
 }
 
 std::pair<std::string, rapidjson::Value> convertMongoExtendedJSONWrapper(
