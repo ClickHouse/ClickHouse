@@ -465,6 +465,26 @@ static void checkAccessToTableMetadata(const TableNode & table_node, const Conte
         /// on every table of the chain. The message names only the alias: the user may not know its target.
         if (!alias->filterColumnsGrantedThroughChain(visible_columns, is_visible).empty())
             return;
+
+        /// A query can read through the alias a subcolumn or a virtual column granted by its name, so such a grant is enough too.
+        const auto options = GetColumnsOptions(GetColumnsOptions::All)
+                                 .withSubcolumns()
+                                 .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
+        Names granted_names;
+        for (const auto & element : access_rights->getElements())
+        {
+            if (element.is_partial_revoke)
+                continue;
+            for (const auto & name : element.columns)
+            {
+                if (table_node.getStorageSnapshot()->tryGetColumn(options, name)
+                    && (is_temporary || is_visible(storage_id.database_name, storage_id.table_name, name)))
+                    granted_names.push_back(name);
+            }
+        }
+        if (!alias->filterColumnsGrantedThroughChain(granted_names, is_visible).empty())
+            return;
+
         throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to access the table that {} points to",
                         storage_id.getNameForLogs());
     }

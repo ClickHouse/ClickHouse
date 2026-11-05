@@ -14,6 +14,11 @@ denied
 ok
 1
 ok
+-- grants on the alias and on a subcolumn or a virtual column of the target
+0
+1
+5
+denied
 -- a temporary alias
 ok
 denied

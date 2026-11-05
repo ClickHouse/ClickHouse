@@ -12,6 +12,10 @@ u_col="u_col_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_showcol="u_showcol_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_both="u_both_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_show="u_show_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+u_sub="u_sub_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+u_virt="u_virt_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+u_json="u_json_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+u_bogus="u_bogus_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_tmp="u_tmp_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_mvdef="u_mvdef_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_create="u_create_${CLICKHOUSE_TEST_UNIQUE_NAME}"
@@ -21,7 +25,7 @@ db_atomic="${CLICKHOUSE_DATABASE}_atomic"
 
 drop_users()
 {
-    ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${u_alias}, ${u_col}, ${u_showcol}, ${u_both}, ${u_show}, ${u_tmp}, ${u_mvdef}, ${u_create}"
+    ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${u_alias}, ${u_col}, ${u_showcol}, ${u_both}, ${u_show}, ${u_sub}, ${u_virt}, ${u_json}, ${u_bogus}, ${u_tmp}, ${u_mvdef}, ${u_create}"
 }
 
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${db_atomic}"
@@ -33,8 +37,8 @@ ${CLICKHOUSE_CLIENT} -m --query "
     DROP TABLE IF EXISTS alias_one;
     DROP TABLE IF EXISTS hidden_target;
 
-    CREATE TABLE hidden_target (secret_column_1 UInt32, secret_column_2 String) ENGINE = MergeTree ORDER BY secret_column_1;
-    INSERT INTO hidden_target VALUES (1, 'a');
+    CREATE TABLE hidden_target (secret_column_1 UInt32, secret_column_2 Nullable(String), secret_column_3 JSON) ENGINE = MergeTree ORDER BY secret_column_1;
+    INSERT INTO hidden_target VALUES (1, 'a', '{\"k\": 5}');
     CREATE TABLE alias_t ENGINE = Alias(currentDatabase(), 'hidden_target');
     -- An Alias cannot be created over an existing Alias, so the chain is built from its first hop.
     CREATE TABLE chain_a1 ENGINE = Alias(currentDatabase(), 'chain_a2');
@@ -60,6 +64,22 @@ ${CLICKHOUSE_CLIENT} -m --query "
     CREATE USER ${u_show} NOT IDENTIFIED;
     GRANT SELECT ON alias_t TO ${u_show};
     GRANT SHOW COLUMNS ON hidden_target TO ${u_show};
+
+    CREATE USER ${u_sub} NOT IDENTIFIED;
+    GRANT SELECT ON alias_t TO ${u_sub};
+    GRANT SELECT(\`secret_column_2.null\`) ON hidden_target TO ${u_sub};
+
+    CREATE USER ${u_virt} NOT IDENTIFIED;
+    GRANT SELECT ON alias_t TO ${u_virt};
+    GRANT SELECT(_part) ON hidden_target TO ${u_virt};
+
+    CREATE USER ${u_json} NOT IDENTIFIED;
+    GRANT SELECT ON alias_t TO ${u_json};
+    GRANT SELECT(\`secret_column_3.k\`) ON hidden_target TO ${u_json};
+
+    CREATE USER ${u_bogus} NOT IDENTIFIED;
+    GRANT SELECT ON alias_t TO ${u_bogus};
+    GRANT SELECT(\`secret_column_1.no_such_subcolumn\`) ON hidden_target TO ${u_bogus};
 
     CREATE USER ${u_tmp} NOT IDENTIFIED;
     GRANT CREATE ARBITRARY TEMPORARY TABLE ON *.* TO ${u_tmp};
@@ -124,6 +144,12 @@ echo "-- grants on the alias and on the target"
 check_ok "$(as_user "${u_both}" "EXPLAIN QUERY TREE SELECT secret_column_1 FROM alias_t")"
 as_user "${u_both}" "SELECT secret_column_1 FROM alias_t"
 check_ok "$(as_user "${u_show}" "EXPLAIN QUERY TREE SELECT * FROM alias_t")"
+
+echo "-- grants on the alias and on a subcolumn or a virtual column of the target"
+as_user "${u_sub}" "SELECT secret_column_2.null FROM alias_t"
+as_user "${u_virt}" "SELECT notEmpty(_part) FROM alias_t"
+as_user "${u_json}" "SELECT secret_column_3.k FROM alias_t"
+check_denied "$(as_user "${u_bogus}" "EXPLAIN QUERY TREE SELECT * FROM alias_t")"
 
 echo "-- a temporary alias"
 session_query "CREATE TEMPORARY TABLE t_alias ENGINE = Alias('${db}', 'hidden_target')"
