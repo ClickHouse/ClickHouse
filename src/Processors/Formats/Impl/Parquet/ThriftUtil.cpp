@@ -1,6 +1,7 @@
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 
 #include <Common/Exception.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <base/defines.h>
 #include <IO/WriteBuffer.h>
 
@@ -559,5 +560,63 @@ template std::string thriftToString<parq::SchemaElement>(const parq::SchemaEleme
 template std::string thriftToString<parq::PageType::type>(const parq::PageType::type &);
 template std::string thriftToString<parq::PageLocation>(const parq::PageLocation &);
 template std::string thriftToString<parq::Type::type>(const parq::Type::type &);
+
+}
+
+namespace DB::Parquet
+{
+
+/// Kept offset indexes belong to the cache, not to the query that reads or evicts them.
+KeptOffsetIndexes::~KeptOffsetIndexes()
+{
+    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    std::unordered_map<UInt64, OffsetIndexPtr>().swap(offset_indexes);
+}
+
+KeptOffsetIndexes::OffsetIndexPtr KeptOffsetIndexes::get(size_t row_group_idx, size_t column_idx) const
+{
+    std::lock_guard lock(mutex);
+    auto it = offset_indexes.find(makeKey(row_group_idx, column_idx));
+    return it == offset_indexes.end() ? nullptr : it->second;
+}
+
+bool KeptOffsetIndexes::add(const std::vector<Entry> & entries)
+{
+    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    std::lock_guard lock(mutex);
+    bool added = false;
+    for (const auto & entry : entries)
+    {
+        size_t entry_bytes = entryBytes(*entry.offset_index);
+        if (total_bytes + entry_bytes > max_bytes)
+            continue;
+        if (offset_indexes.emplace(makeKey(entry.row_group_idx, entry.column_idx), entry.offset_index).second)
+        {
+            total_bytes += entry_bytes;
+            added = true;
+        }
+    }
+    return added;
+}
+
+size_t KeptOffsetIndexes::bytes() const
+{
+    std::lock_guard lock(mutex);
+    return total_bytes;
+}
+
+size_t KeptOffsetIndexes::remainingBytes() const
+{
+    std::lock_guard lock(mutex);
+    return max_bytes - total_bytes;
+}
+
+size_t KeptOffsetIndexes::entryBytes(const parq::OffsetIndex & offset_index)
+{
+    /// With an estimate for the node of the map and the control block of the pointer.
+    static constexpr size_t ENTRY_OVERHEAD = 64;
+    return sizeof(parq::OffsetIndex) + ENTRY_OVERHEAD + offset_index.page_locations.capacity() * sizeof(parq::PageLocation)
+        + offset_index.unencoded_byte_array_data_bytes.capacity() * sizeof(offset_index.unencoded_byte_array_data_bytes[0]);
+}
 
 }

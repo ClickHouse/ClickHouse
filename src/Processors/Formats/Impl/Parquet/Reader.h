@@ -667,8 +667,12 @@ struct Reader
     static std::shared_ptr<const FileFooter> readFileFooter(Prefetcher & prefetcher, size_t footer_read_size);
     /// Works around writer bugs in column chunk metadata.
     static void fixUpColumnChunk(parq::ColumnChunk & column, bool written_by_old_duckdb);
-    /// `cached_column_chunks`, by Parquet column index (nullptr = absent), were parsed from `footer`.
-    void setFileFooter(std::shared_ptr<const FileFooter> footer, std::vector<FileColumnChunksPtr> cached_column_chunks_ = {});
+    /// `cached_column_chunks`, by Parquet column index (nullptr = absent), were parsed from `footer`. `kept_offset_indexes_`
+    /// were read from the same file: a column chunk found there does not read its offset index.
+    void setFileFooter(
+        std::shared_ptr<const FileFooter> footer,
+        std::vector<FileColumnChunksPtr> cached_column_chunks_ = {},
+        KeptOffsetIndexesPtr kept_offset_indexes_ = nullptr);
     void prefilterAndInitRowGroups(const RowGroupSelection & row_group_selection);
     /// Takes or parses the column chunks of `primitive_columns`; called by prefilterAndInitRowGroups.
     void parseColumnChunks();
@@ -700,6 +704,12 @@ struct Reader
     /// more than `max_key_condition_column_ranges_bytes`, it drops the column whose ranges take the most.
     std::vector<size_t> collect_key_condition_column_ranges;
     size_t max_key_condition_column_ranges_bytes = 0;
+
+    /// If non-zero before `init`, the offset indexes read from the file are collected for ParquetMetadataCache, while
+    /// they take at most this many bytes (see `KeptOffsetIndexes::entryBytes`).
+    size_t max_read_offset_indexes_bytes = 0;
+    /// The offset indexes read from the file and validated so far, see `max_read_offset_indexes_bytes`.
+    std::vector<KeptOffsetIndexes::Entry> takeReadOffsetIndexes();
     void preparePrewhere();
 
     /// Deserialize bf header and determine which bf blocks to read.
@@ -768,7 +778,7 @@ struct Reader
     void applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);
     void intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group);
 
-    void decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group);
+    void decodeOffsetIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);
     /// Call after prewhere is done on row subgroup. Un-requests prefetch for fully filtered out pages,
     /// adds pages that need prefetch to `out`. Must be called in order.
     /// May assign dictionary_page_prefetch.
@@ -862,6 +872,12 @@ private:
     std::vector<FileColumnChunksPtr> column_chunks;
     /// See setFileFooter, released by prefilterAndInitRowGroups.
     std::vector<FileColumnChunksPtr> cached_column_chunks;
+    /// See setFileFooter.
+    KeptOffsetIndexesPtr kept_offset_indexes;
+
+    std::mutex read_offset_indexes_mutex;
+    std::vector<KeptOffsetIndexes::Entry> read_offset_indexes TSA_GUARDED_BY(read_offset_indexes_mutex);
+    size_t read_offset_indexes_bytes TSA_GUARDED_BY(read_offset_indexes_mutex) = 0;
 };
 
 }

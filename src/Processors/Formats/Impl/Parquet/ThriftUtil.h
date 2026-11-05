@@ -1,9 +1,13 @@
 #pragma once
 
+#include <base/defines.h>
 #include <base/types.h>
 #include <generated/parquet_types.h> // in contrib/arrow/cpp/src/ , generated from parquet.thrift
 
 #include <memory>
+#include <mutex>
+#include <unordered_map>
+#include <vector>
 
 namespace DB
 {
@@ -38,6 +42,46 @@ struct FileColumnChunks
     size_t memory_bytes = 0;
 };
 using FileColumnChunksPtr = std::shared_ptr<const FileColumnChunks>;
+
+/// Offset indexes of a file's column chunks, read from the file and validated, that ParquetMetadataCache keeps with the
+/// cached footer (see `ParquetMetadataCache::keepOffsetIndexes`), so that a later read of the file does not read them again.
+/// Only grows. Shared by the cache cells of a file version that replace each other.
+class KeptOffsetIndexes
+{
+public:
+    using OffsetIndexPtr = std::shared_ptr<const parq::OffsetIndex>;
+
+    struct Entry
+    {
+        size_t row_group_idx = 0;
+        /// Parquet column index.
+        size_t column_idx = 0;
+        OffsetIndexPtr offset_index;
+    };
+
+    explicit KeptOffsetIndexes(size_t max_bytes_) : max_bytes(max_bytes_) {}
+    ~KeptOffsetIndexes();
+    KeptOffsetIndexes(const KeptOffsetIndexes &) = delete;
+    KeptOffsetIndexes & operator=(const KeptOffsetIndexes &) = delete;
+
+    /// nullptr if not kept.
+    OffsetIndexPtr get(size_t row_group_idx, size_t column_idx) const;
+    /// Keeps the entries not kept yet, while all kept entries take at most `max_bytes`. Returns whether any was added.
+    bool add(const std::vector<Entry> & entries);
+    size_t bytes() const;
+    size_t remainingBytes() const;
+    /// What keeping `offset_index` takes.
+    static size_t entryBytes(const parq::OffsetIndex & offset_index);
+
+private:
+    static UInt64 makeKey(size_t row_group_idx, size_t column_idx) { return (UInt64(row_group_idx) << 32) | column_idx; }
+
+    const size_t max_bytes;
+    mutable std::mutex mutex;
+    std::unordered_map<UInt64, OffsetIndexPtr> offset_indexes TSA_GUARDED_BY(mutex);
+    size_t total_bytes TSA_GUARDED_BY(mutex) = 0;
+};
+using KeptOffsetIndexesPtr = std::shared_ptr<KeptOffsetIndexes>;
 
 /// Like deserializeThriftStruct<parq::FileMetaData>, but skips the elements of `RowGroup::columns`
 /// and records their offsets in `column_chunk_offsets` (see FileFooter).
