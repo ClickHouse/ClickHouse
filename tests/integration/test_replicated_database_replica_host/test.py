@@ -525,3 +525,65 @@ def test_replica_host_on_cluster_with_ddl_host_name(started_cluster):
             node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
         node1.exec_in_container(["rm", "-f", config_path], user="root")
         node1.restart_clickhouse()
+
+
+def test_host_id_migration_rejected_for_foreign_active_replica(started_cluster):
+    """Test that a server does not take over the host_id of a replica that is active on another server.
+
+    `CREATE DATABASE ... ON CLUSTER` gives every host the same database UUID, so a matching UUID does
+    not prove that the replica belongs to this server. When the `/active` node of the replica is owned by
+    a different server, the host_id rewrite must be rejected with `REPLICA_ALREADY_EXISTS` before
+    anything is changed in Keeper. The same database UUID is used on purpose: with a different one, the
+    earlier UUID mismatch check would reject the query and this ownership check would not be reached.
+    """
+    db = "test_host_id_migration_foreign_active"
+    db_uuid = "a1b2c3d4-0000-4000-8000-000000000001"
+    zk_path = f"/clickhouse/databases/{db}"
+    replicas_path = f"{zk_path}/replicas"
+
+    try:
+        node1.query(
+            f"CREATE DATABASE {db} UUID '{db_uuid}' ENGINE = Replicated('{zk_path}', 'shard1', 'node1')"
+        )
+        node1.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
+
+        node1_server_uuid = node1.query("SELECT serverUUID()").strip()
+
+        def get_active_owner():
+            # Strip `DatabaseReplicated::REPLICA_UNSYNCED_MARKER` if present.
+            return node1.query(
+                f"SELECT value FROM system.zookeeper WHERE path = '{replicas_path}/shard1|node1' AND name = 'active'"
+            ).strip().split("\\t")[0]
+
+        node1.query_with_retry(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{replicas_path}/shard1|node1' AND name = 'active'",
+            check_callback=lambda result: result.strip() == "1",
+        )
+        assert get_active_owner() == node1_server_uuid
+
+        def get_host_id():
+            return node1.query(
+                f"SELECT value FROM system.zookeeper WHERE path = '{replicas_path}' AND name = 'shard1|node1'"
+            ).strip()
+
+        host_id_before = get_host_id()
+        assert "public%2Enode1%2Ecom" in host_id_before, f"Unexpected host_id: {host_id_before}"
+        assert host_id_before.endswith(db_uuid), f"Unexpected host_id: {host_id_before}"
+
+        # node3 advertises a different host, but claims the same database UUID, Keeper path, shard and replica.
+        error = node3.query_and_get_error(
+            f"CREATE DATABASE {db} UUID '{db_uuid}' ENGINE = Replicated('{zk_path}', 'shard1', 'node1')"
+        )
+        assert "REPLICA_ALREADY_EXISTS" in error, f"Unexpected error: {error}"
+        assert "is active on another server" in error, f"Unexpected error: {error}"
+
+        # Keeper must be left untouched: the host_id and the `/active` owner are still node1's.
+        assert get_host_id() == host_id_before
+        assert get_active_owner() == node1_server_uuid
+        assert node3.query(f"EXISTS DATABASE {db}").strip() == "0"
+
+        # node1 keeps working as the owner of the replica.
+        node1.query(f"CREATE TABLE {db}.t (x UInt64) ENGINE = ReplicatedMergeTree ORDER BY x")
+        node1.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
+    finally:
+        node1.query(f"DROP DATABASE IF EXISTS {db} SYNC")
