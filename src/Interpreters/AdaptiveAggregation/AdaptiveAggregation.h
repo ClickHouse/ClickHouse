@@ -41,11 +41,11 @@ namespace DB
 /// thread's rows: a table that absorbs nearly every row in place loses little to a sliver of
 /// repeated misses.
 ///
-/// Merge phase: at the end of input every thread hands its partitions to the session and its local table converts
-/// to two-level. The merge task owning bucket b then merges the bucket's partitions a few at a time: it drains every
-/// thread's records of those partitions and the locals' cells routed to them into one table sized for them, converts
-/// that table into a chunk and frees the partitions' memory, so the table stays in the cache and the staged memory
-/// shrinks as the merge proceeds. When the aggregation feeds a descending top-K by `count`, `uniqExact` or
+/// Merge phase: at the end of input every thread hands its partitions to the session and indexes the cells of its
+/// local table by the same partitions. The merge task owning bucket b then merges the bucket's partitions a few at a
+/// time: it drains every thread's records of those partitions and the locals' cells in them into one table sized for
+/// them, converts that table into a chunk and frees the partitions' memory, so the table stays in the cache and the
+/// staged memory shrinks as the merge proceeds. When the aggregation feeds a descending top-K by `count`, `uniqExact` or
 /// `uniqExactIf`, the merge skips the partitions, records and cells whose groups provably cannot reach the top
 /// (see `AdaptiveTopKPruning`).
 ///

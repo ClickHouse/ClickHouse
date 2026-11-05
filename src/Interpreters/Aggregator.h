@@ -443,9 +443,10 @@ public:
     /// Ends a producer's production when its input ends, whatever its phase. Hands its partitions to the session with
     /// its count bins when the aggregation prunes by the top-K; the bins take the rows of `local_variants`, the
     /// producer's own table, as well. A producer that never froze has no bins and hands `local_variants` over for the
-    /// merge to count instead. Counts the producer toward the verdict of the run, and converts the table of a producer
-    /// that froze to two-level for the merge. Every producer with the adaptive context calls it before the finish
-    /// barrier, so the session holds every producer's contribution by the time the last finisher assembles the merge.
+    /// merge to count instead. Counts the producer toward the verdict of the run, and indexes the cells of its table by
+    /// the partitions of the layout for the merges, or converts a frozen table that cannot be indexed to two-level. Every
+    /// producer with the adaptive context calls it before the finish barrier, so the session holds every producer's
+    /// contribution by the time the last finisher assembles the merge.
     void finishAdaptiveProducer(AggregatedDataVariants & local_variants, AdaptiveAggregationProducer & adaptive) const;
 
     /// Serves a spill request of the memory scheduler for an adaptive producer: writes its staged records to the
@@ -1105,30 +1106,31 @@ private:
     void discardAdaptiveSourceState(AggregateDataPtr & place) const;
 
     /// Takes the source cells of a merge unit that `filter` takes into `table`, and discards the others with their
-    /// states. A cell whose key is new in `table` hands its state over, and an aggregation by a lone `count` adds the
-    /// count. Otherwise the cell's state is to merge into the table's: its place and its slot go to `task.places` and
-    /// `task.source_slots` for `mergeAdaptiveSourceStates`.
-    template <typename Method, typename Table, typename Cells, typename Filter>
-    void adoptSourceCells(Table & table, Cells & cells, const Filter & filter, AdaptiveMergeTask & task) const;
+    /// states. `for_each_cell(f)` calls `f(key, mapped, hash)` for every source cell of the unit, `mapped` being the slot
+    /// of the cell's states. A cell whose key is new in `table` hands its state over, and an aggregation by a lone
+    /// `count` adds the count. Otherwise the cell's state is to merge into the table's: its place and its slot go to
+    /// `task.places` and `task.source_slots` for `mergeSourceStates`.
+    template <typename Method, typename Table, typename ForEachCell, typename Filter>
+    void adoptSourceCells(Table & table, const ForEachCell & for_each_cell, const Filter & filter, AdaptiveMergeTask & task) const;
 
     /// The first pass of a count-first unit: counts the unit's groups exactly in `counting_table`, from its source
-    /// cells, the records in memory of every partition `for_each_in_memory_partition` hands out and the records of
-    /// every spilled block `for_each_spilled_block` reads back, in the count bins `alive_bins` keeps (all bins when
-    /// null), and puts the hashes of its best groups by the count into `task.best_hashes`. The counting table and
-    /// `top_k` copy the string-like keys of spilled records they keep into `arena`. With a descending order `top_k`
-    /// keeps the best groups up to date while they are counted, and `pruning`, if any, drops those below its
-    /// threshold; an ascending order selects them by a pass over the counted groups. Adds the records the bins
-    /// skipped to `pruned_records`. Returns the unit's group count.
+    /// cells that `for_each_cell` visits (see `adoptSourceCells`), the records in memory of every partition
+    /// `for_each_in_memory_partition` hands out and the records of every spilled block `for_each_spilled_block` reads
+    /// back, in the count bins `alive_bins` keeps (all bins when null), and puts the hashes of its best groups by the
+    /// count into `task.best_hashes`. The counting table and `top_k` copy the string-like keys of spilled records they
+    /// keep into `arena`. With a descending order `top_k` keeps the best groups up to date while they are counted, and
+    /// `pruning`, if any, drops those below its threshold; an ascending order selects them by a pass over the counted
+    /// groups. Adds the records the bins skipped to `pruned_records`. Returns the unit's group count.
     template <
         typename Method,
         typename Table,
-        typename Cells,
+        typename ForEachCell,
         typename TopK,
         typename ForEachInMemoryPartition,
         typename ForEachSpilledBlock>
     size_t selectCountFirstBestGroups(
         Table & counting_table,
-        const Cells & cells,
+        const ForEachCell & for_each_cell,
         const bool * alive_bins,
         TopK * top_k,
         const AdaptiveTopKPruning * pruning,

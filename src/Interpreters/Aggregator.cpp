@@ -2640,7 +2640,7 @@ bool Aggregator::executeOnBlock(Columns columns,
             return false;
 
         /// Unlike the baseline's table below, the table does not convert to two-level: a learning table stays within
-        /// its freeze bounds, and the merge converts the tables of an aggregation in which a producer froze. Over the
+        /// its freeze bounds, and its producer indexes its cells for the merges when it finishes. Over the
         /// external-aggregation threshold the table is written to disk once the write frees enough memory, whether it
         /// is learning or frozen, and its producer learns again.
         if (over_external_threshold && adaptiveTableWorthSpilling(result, *adaptive))
@@ -5436,6 +5436,9 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     AggregatedDataVariantsPtr & res = non_empty_data[0];
     bool no_more_keys = false;
 
+    /// The merge inserts into the first table, which may move its cells, so its cell index goes.
+    res->cell_index.reset();
+
     /// Enabled for all key types: unlike `executeImplBatch`, the merge path prefetches by the hash
     /// already stored in the source cell (`mergeToViaEmplace`), so it never rebuilds a key and
     /// `has_cheap_key_holder` does not apply here.
@@ -5660,6 +5663,9 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
 
     /// If at least one of the options is two-level, then convert all the options into two-level ones, if there are not such.
     /// Note - perhaps it would be more optimal not to convert single-level versions before the merge, but merge them separately, at the end.
+    /// The adaptive merge reads every source by bucket: a two-level table through its buckets, a single-level one through
+    /// its cell index. So it converts the single-level tables without an index, also when no table is two-level.
+    const bool adaptive_merge = adaptive_session && adaptive_session->engaged();
 
     bool has_at_least_one_two_level = false;
     for (const auto & variant : non_empty_data)
@@ -5671,11 +5677,11 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
         }
     }
 
-    if (has_at_least_one_two_level)
+    if (has_at_least_one_two_level || adaptive_merge)
     {
         std::vector<AggregatedDataVariants *> variants_to_convert;
         for (auto & variant : non_empty_data)
-            if (!variant->isTwoLevel())
+            if (!variant->isTwoLevel() && !(adaptive_merge && variant->cell_index))
                 variants_to_convert.push_back(variant.get());
 
         /// Convert in parallel. Initializing a two-level variant allocates and zeroes 256 bucket
@@ -5730,15 +5736,19 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
 
     /// The adaptive merge drains the staged records and folds the cells of every table, the largest one's included,
     /// into a fresh destination table one partition unit at a time (see `mergeAndConvertAdaptiveBucket`), so the
-    /// destination goes in front of the tables and takes over their arenas, as the largest table does otherwise.
-    if (adaptive_session && adaptive_session->engaged())
+    /// destination goes in front of the tables and takes over their arenas, as the largest table does otherwise. It reads
+    /// the cells of a bucket from a two-level table's bucket, or from the cell index of a single-level one, which its
+    /// producer built (see `finishAdaptiveProducer`).
+    if (adaptive_merge)
         non_empty_data.insert(non_empty_data.begin(), createAdaptiveMergeDestination());
 
     AggregatedDataVariantsPtr & first = non_empty_data[0];
 
     for (size_t i = 1, size = non_empty_data.size(); i < size; ++i)
     {
-        if (first->type != non_empty_data[i]->type)
+        const bool indexed_source_of_destination
+            = adaptive_merge && non_empty_data[i]->cell_index && convertToTwoLevelTypeIfPossible(non_empty_data[i]->type) == first->type;
+        if (first->type != non_empty_data[i]->type && !indexed_source_of_destination)
             throw Exception(ErrorCodes::CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS, "Cannot merge different aggregated data variants.");
 
         /** Elements from the remaining sets can be moved to the first data set.

@@ -22,6 +22,7 @@ namespace ProfileEvents
     extern const Event AdaptiveAggregationSpilledRecords;
     extern const Event AdaptiveAggregationSpilledBytes;
     extern const Event AdaptiveAggregationFrozenTableSpills;
+    extern const Event AdaptiveAggregationIndexedTables;
 }
 
 namespace DB
@@ -323,13 +324,22 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     }
 
     if (froze)
-    {
         adaptive.partitions->finishAppending();
-        /// The adaptive merge pairs a bucket's partitions with the bucket tables of its sources, so the table converts
-        /// to two-level here, in the producer's own thread. The merge preparation converts the tables of the producers
-        /// that never froze.
-        if (local_variants.isConvertibleToTwoLevel())
-            local_variants.convertToTwoLevel();
+
+    /// The merges read the cells of a table through its cell index (see `AggregatedDataVariants::indexCells`), whose
+    /// partitions are those of the layout. A unit of the adaptive merge is a run of the partitions of a bucket, and the
+    /// merge of tables that never froze merges partition by partition, so either reads its cells in place. The producer
+    /// builds the index here, in its own thread, while the table is in its cache. A table that cannot be indexed, the
+    /// string table, converts to two-level instead when it froze, and then the merge preparation converts the tables of
+    /// the producers that never froze.
+    if (local_variants.canIndexCells())
+    {
+        local_variants.indexCells(shared.layout);
+        ProfileEvents::increment(ProfileEvents::AdaptiveAggregationIndexedTables);
+    }
+    else if (froze && local_variants.isConvertibleToTwoLevel())
+    {
+        local_variants.convertToTwoLevel();
     }
 
     std::lock_guard lock(shared.producer_buffers_mutex);
