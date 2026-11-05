@@ -261,9 +261,11 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
     modified_format_settings.vortex.preserve_order = true;
 
     /// Every reader holds pages of all leaf columns of the file it reads, so all readers together read no more
-    /// leaf columns at once than the main pass does from its up to `max_threads` files.
-    const size_t lazy_read_leaf_columns = std::max<size_t>(countLeafColumns(info.format_header), 1);
-    const size_t max_streams_for_columns = std::max<size_t>(max_threads * main_read_leaf_columns / lazy_read_leaf_columns, 1);
+    /// leaf columns at once than the main pass does from its up to `max_threads` files; a lazy read of unknown width keeps one reader.
+    const auto lazy_read_leaf_columns = countLeafColumns(info.format_header);
+    const size_t max_streams_for_columns = lazy_read_leaf_columns
+        ? std::max<size_t>(max_threads * main_read_leaf_columns / std::max<size_t>(*lazy_read_leaf_columns, 1), 1)
+        : 1;
     const size_t num_streams = std::min({std::max<size_t>(max_threads, 1), max_streams_for_columns, files.size()});
     size_t total_rows = 0;
     for (const auto & file : files)

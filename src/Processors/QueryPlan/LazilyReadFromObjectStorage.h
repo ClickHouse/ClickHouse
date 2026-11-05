@@ -7,6 +7,8 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Interpreters/StorageID.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -35,9 +37,9 @@ struct LazyObjectStorageFileRegistry
 
 using LazyObjectStorageFileRegistryPtr = std::shared_ptr<LazyObjectStorageFileRegistry>;
 
-/// The number of leaf columns a columnar file stores for `header`: each Tuple element, the keys and the values
-/// of a Map, and the nested column of Array, Nullable and LowCardinality are stored as separate columns.
-size_t countLeafColumns(const Block & header);
+/// The number of leaf columns a columnar file stores for `header` (each Tuple element, Map keys and values, the nested column
+/// of Array, Nullable and LowCardinality), or nullopt for a `JSON` or `Dynamic` column, whose number depends on the file.
+std::optional<size_t> countLeafColumns(const Block & header);
 
 /// Shared state between the two branches of lazy materialization for object storage.
 struct ObjectStorageLazyMaterializingRows : public ILazyMaterializingRows
@@ -78,7 +80,8 @@ public:
         ReadFromFormatInfo info_,
         ContextPtr context_,
         size_t max_block_size_,
-        size_t main_read_leaf_columns_);
+        size_t main_read_leaf_columns_,
+        size_t max_num_streams_);
 
     void setLazyMaterializingRows(ObjectStorageLazyMaterializingRowsPtr lazy_materializing_rows_);
 
@@ -100,6 +103,9 @@ private:
     size_t max_block_size;
     /// The number of leaf columns (see countLeafColumns) read from the files by the main pass of the query.
     size_t main_read_leaf_columns;
+    /// The stream budget of the main read (`max_streams_to_max_threads_ratio`,
+    /// `max_streams_for_files_processing_in_cluster_functions`).
+    size_t max_num_streams;
 
     ObjectStorageLazyMaterializingRowsPtr lazy_materializing_rows;
 };

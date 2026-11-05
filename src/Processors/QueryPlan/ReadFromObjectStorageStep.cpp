@@ -486,7 +486,8 @@ std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnly
         std::move(*lazy_info),
         getContext(),
         max_block_size,
-        /*main_read_leaf_columns_=*/ countLeafColumns(info.format_header));
+        /*main_read_leaf_columns_=*/ countLeafColumns(info.format_header).value_or(1),
+        /*max_num_streams_=*/ max_num_streams);
 
     return lazy_step;
 }

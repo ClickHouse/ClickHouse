@@ -36,8 +36,10 @@ UInt64 LazyObjectStorageFileRegistry::registerFile(const ObjectInfoPtr & object_
 namespace
 {
 
-size_t countLeafColumnsOfType(const IDataType & type)
+std::optional<size_t> countLeafColumnsOfType(const IDataType & type)
 {
+    if (isObject(type) || isDynamic(type))
+        return std::nullopt;
     if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
         return countLeafColumnsOfType(*nullable->getNestedType());
     if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type))
@@ -45,12 +47,23 @@ size_t countLeafColumnsOfType(const IDataType & type)
     if (const auto * array = typeid_cast<const DataTypeArray *>(&type))
         return countLeafColumnsOfType(*array->getNestedType());
     if (const auto * map = typeid_cast<const DataTypeMap *>(&type))
-        return countLeafColumnsOfType(*map->getKeyType()) + countLeafColumnsOfType(*map->getValueType());
+    {
+        const auto keys = countLeafColumnsOfType(*map->getKeyType());
+        const auto values = countLeafColumnsOfType(*map->getValueType());
+        if (!keys || !values)
+            return std::nullopt;
+        return *keys + *values;
+    }
     if (const auto * tuple = typeid_cast<const DataTypeTuple *>(&type))
     {
         size_t leaves = 0;
         for (const auto & element : tuple->getElements())
-            leaves += countLeafColumnsOfType(*element);
+        {
+            const auto element_leaves = countLeafColumnsOfType(*element);
+            if (!element_leaves)
+                return std::nullopt;
+            leaves += *element_leaves;
+        }
         return std::max<size_t>(leaves, 1);
     }
     return 1;
@@ -58,11 +71,16 @@ size_t countLeafColumnsOfType(const IDataType & type)
 
 }
 
-size_t countLeafColumns(const Block & header)
+std::optional<size_t> countLeafColumns(const Block & header)
 {
     size_t leaves = 0;
     for (const auto & column : header)
-        leaves += countLeafColumnsOfType(*column.type);
+    {
+        const auto column_leaves = countLeafColumnsOfType(*column.type);
+        if (!column_leaves)
+            return std::nullopt;
+        leaves += *column_leaves;
+    }
     return leaves;
 }
 
@@ -110,7 +128,8 @@ LazilyReadFromObjectStorage::LazilyReadFromObjectStorage(
     ReadFromFormatInfo info_,
     ContextPtr context_,
     size_t max_block_size_,
-    size_t main_read_leaf_columns_)
+    size_t main_read_leaf_columns_,
+    size_t max_num_streams_)
     : ISourceStep(std::move(header))
     , storage_id(storage_id_)
     , object_storage(std::move(object_storage_))
@@ -121,6 +140,7 @@ LazilyReadFromObjectStorage::LazilyReadFromObjectStorage(
     , context(std::move(context_))
     , max_block_size(max_block_size_)
     , main_read_leaf_columns(main_read_leaf_columns_)
+    , max_num_streams(max_num_streams_)
 {
 }
 
@@ -144,7 +164,7 @@ void LazilyReadFromObjectStorage::initializePipeline(QueryPipelineBuilder & pipe
         info,
         context,
         max_block_size,
-        settings.max_threads,
+        std::min(settings.max_threads, max_num_streams),
         main_read_leaf_columns,
         lazy_materializing_rows);
 

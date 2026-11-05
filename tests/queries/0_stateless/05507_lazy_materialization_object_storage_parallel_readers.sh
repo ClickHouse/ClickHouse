@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel-replicas
-# - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
+# - no-fasttest: requires `IcebergLocal` (USE_AVRO build option) and MinIO
 # - no-parallel-replicas: asserts on the query plan, which with parallel replicas reads the table with `ReadFromCluster`
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -21,7 +21,9 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${TABLE} (
         k Int64, ts Int64, s String,
         c1 String, c2 String, c3 String, c4 String, c5 String, c6 Int64, c7 Int64, c8 Int64, c9 Int64, c10 Int64,
-        t Tuple(c1 String, c2 String, c3 String, c4 String, c5 String, c6 Int64, c7 Int64, c8 Int64, c9 Int64, c10 Int64))
+        t Tuple(c1 String, c2 String, c3 String, c4 String, c5 String, c6 Int64, c7 Int64, c8 Int64, c9 Int64, c10 Int64),
+        a Array(Tuple(c1 String, c2 String, c3 String, c4 String, c5 String, c6 Int64, c7 Int64, c8 Int64, c9 Int64, c10 Int64)),
+        m Map(String, Tuple(c1 String, c2 String, c3 String, c4 String, c5 String, c6 Int64, c7 Int64, c8 Int64, c9 Int64, c10 Int64)))
     ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet')
 "
 
@@ -31,15 +33,19 @@ for i in {0..7}; do
         INSERT INTO ${TABLE}
         SELECT number AS k, cityHash64(number) % 1000003 AS ts, concat('val_', toString(number)) AS s,
             toString(number) AS c1, concat('a', c1) AS c2, concat('b', c1) AS c3, concat('c', c1) AS c4, concat('d', c1) AS c5,
-            k * 6 AS c6, k * 7 AS c7, k * 8 AS c8, k * 9 AS c9, k * 10 AS c10, (c1, c2, c3, c4, c5, c6, c7, c8, c9, c10) AS t
+            k * 6 AS c6, k * 7 AS c7, k * 8 AS c8, k * 9 AS c9, k * 10 AS c10, (c1, c2, c3, c4, c5, c6, c7, c8, c9, c10) AS t,
+            [t] AS a, map(c1, t) AS m
         FROM numbers($((i * 2000)), 2000)
     "
 done
 
-# The main pass reads `ts` and `k`; the lazy pass reads 1 leaf column (narrow), 10 (wide) or one Tuple of 10 (nested).
+# The main pass reads `ts` and `k`; the lazy pass reads 1 leaf column (narrow), 10 (wide), one Tuple of 10 (nested),
+# an Array of that Tuple (10) or a Map with that Tuple as values (11).
 NARROW="SELECT k, s FROM ${TABLE} ORDER BY ts, k LIMIT 3000"
 WIDE="SELECT k, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10 FROM ${TABLE} ORDER BY ts, k LIMIT 100"
 NESTED="SELECT k, t FROM ${TABLE} ORDER BY ts, k LIMIT 100"
+ARRAY="SELECT k, a FROM ${TABLE} ORDER BY ts, k LIMIT 100"
+MAP="SELECT k, m FROM ${TABLE} ORDER BY ts, k LIMIT 100"
 
 # No limit on the LIMIT of lazy materialization; `max_threads` is not lowered when the server is short of free memory.
 LAZY_SETTINGS=(--query_plan_optimize_lazy_materialization=1 --query_plan_max_limit_for_lazy_materialization=0 --max_threads_min_free_memory_per_thread=0)
@@ -74,21 +80,51 @@ same_result narrow "$NARROW" 16
 same_result wide "$WIDE" 16
 same_result nested "$NESTED" 16
 
-echo '-- the number of readers'
 QUERY_ID_PREFIX="${CLICKHOUSE_DATABASE}_$(random_str 10)_readers"
+# The reader count is read from `system.processors_profile_log`.
+run_counted()
+{
+    local name=$1 threads=$2 query=$3
+    shift 3
+    ${CLICKHOUSE_CLIENT} "${LAZY_SETTINGS[@]}" --query_plan_optimize_lazy_materialization_for_object_storage=1 \
+        --log_processors_profiles=1 --max_threads="$threads" --query_id="${QUERY_ID_PREFIX}_${name}" "$@" \
+        --query "$query FORMAT Null"
+}
 for threads in 04 16; do
-    for kind in narrow wide nested; do
-        case $kind in
-            narrow) query="$NARROW" ;;
-            wide) query="$WIDE" ;;
-            nested) query="$NESTED" ;;
-        esac
-        # The reader count is read from `system.processors_profile_log`.
-        ${CLICKHOUSE_CLIENT} "${LAZY_SETTINGS[@]}" --query_plan_optimize_lazy_materialization_for_object_storage=1 \
-            --log_processors_profiles=1 --max_threads="$((10#$threads))" --query_id="${QUERY_ID_PREFIX}_${threads}_${kind}" \
-            --query "$query FORMAT Null"
-    done
+    run_counted "${threads}_narrow" "$((10#$threads))" "$NARROW"
+    run_counted "${threads}_wide" "$((10#$threads))" "$WIDE"
+    run_counted "${threads}_nested" "$((10#$threads))" "$NESTED"
 done
+run_counted 16_array 16 "$ARRAY"
+run_counted 16_map 16 "$MAP"
+# The ratio lowers the stream budget of the main read as `max_streams_for_files_processing_in_cluster_functions` does in
+# `*Cluster` functions (both arrive as the `num_streams` of the read step), so no cluster is needed.
+run_counted 16_narrow_streams 16 "$NARROW" --max_streams_to_max_threads_ratio=0.25
+
+# The leaf columns of a `JSON` or `Dynamic` column depend on the file, so their lazy read keeps one reader:
+# a Parquet struct read as `JSON`, a Parquet string read as `Dynamic`.
+echo '-- the lazy read step is in the plan of a JSON column of Parquet files'
+S3_URL="http://localhost:11111/test/${CLICKHOUSE_DATABASE}_lazy_parallel"
+for i in {0..7}; do
+    ${CLICKHOUSE_CLIENT} --query "
+        INSERT INTO FUNCTION s3('${S3_URL}/data_${i}.parquet', 'test', 'testtest', 'Parquet',
+            'k Int64, ts Int64, s String, j Tuple(c1 String, c2 String, c3 String, c4 String, c5 String)')
+        SELECT number AS k, cityHash64(number) % 1000003 AS ts, concat('val_', toString(number)) AS s,
+            (toString(number), concat('a', toString(number)), concat('b', toString(number)), concat('c', toString(number)),
+                concat('d', toString(number))) AS j
+        FROM numbers($((i * 2000)), 2000)
+        SETTINGS s3_truncate_on_insert = 1
+    "
+done
+S3_JSON="SELECT k, j FROM s3('${S3_URL}/data_*.parquet', 'test', 'testtest', 'Parquet', 'k Int64, ts Int64, j JSON') ORDER BY ts, k LIMIT 100"
+S3_DYNAMIC="SELECT k, s FROM s3('${S3_URL}/data_*.parquet', 'test', 'testtest', 'Parquet', 'k Int64, ts Int64, s Dynamic') ORDER BY ts, k LIMIT 100"
+# See 04839_parquet_lazy_materialization_object_storage_json_subcolumn for `s3_validate_etag_on_read`.
+${CLICKHOUSE_CLIENT} "${LAZY_SETTINGS[@]}" --query_plan_optimize_lazy_materialization_for_object_storage=1 --s3_validate_etag_on_read=1 \
+    --max_threads=16 --query "EXPLAIN ${S3_JSON}" | grep -c 'LazilyReadFromObjectStorage'
+run_counted 16_json 16 "$S3_JSON" --s3_validate_etag_on_read=1
+run_counted 16_dynamic 16 "$S3_DYNAMIC" --s3_validate_etag_on_read=1
+
+echo '-- the number of readers'
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS processors_profile_log"
 # The readers carry the name of the processor that creates them.
 ${CLICKHOUSE_CLIENT} --query "
