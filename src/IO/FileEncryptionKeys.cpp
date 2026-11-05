@@ -133,8 +133,8 @@ namespace
     }
 
     /// Reads the current encryption key from the configuration.
-    String getCurrentKeyFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
-                                   const KeysById & keys_by_id, const KeysWithoutId & keys_without_id)
+    const Key & getCurrentKeyFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
+                                        const KeysById & keys_by_id, const KeysWithoutId & keys_without_id)
     {
         String key_path = config_prefix + ".current_key";
         String key_hex_path = config_prefix + ".current_key_hex";
@@ -143,23 +143,23 @@ namespace
         if (config.has(key_path) + config.has(key_hex_path) + config.has(key_id_path) > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The current key is specified multiple times");
 
-        auto check_current_key_found = [&](const String & current_key_)
+        auto find_current_key = [&](const String & current_key_) -> const Key &
         {
             for (const auto & [_, key] : keys_by_id)
             {
                 if (key.plain == current_key_)
-                    return current_key_;
+                    return key;
 
                 if (std::string_view(key.encrypted.value_or("")) == std::string_view(current_key_))
-                    return key.plain;
+                    return key;
             }
             for (const auto & key : keys_without_id)
             {
                 if (key.plain == current_key_)
-                    return current_key_;
+                    return key;
 
                 if (std::string_view(key.encrypted.value_or("")) == std::string_view(current_key_))
-                    return key.plain;
+                    return key;
             }
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The current key is not found in keys");
         };
@@ -167,12 +167,12 @@ namespace
         if (config.has(key_path))
         {
             String current_key = config.getString(key_path);
-            return check_current_key_found(current_key);
+            return find_current_key(current_key);
         }
         if (config.has(key_hex_path))
         {
             String current_key = unhexKey(config.getString(key_hex_path));
-            return check_current_key_found(current_key);
+            return find_current_key(current_key);
         }
         if (config.has(key_id_path))
         {
@@ -180,12 +180,12 @@ namespace
             auto it = keys_by_id.find(current_key_id);
             if (it == keys_by_id.end())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found a key with the current ID {}", current_key_id);
-            return it->second.plain;
+            return it->second;
         }
         if (keys_by_id.size() == 1 && keys_without_id.empty() && keys_by_id.begin()->first == 0)
         {
             /// There is only a single key defined with id=0, so we can choose it as current.
-            return keys_by_id.begin()->second.plain;
+            return keys_by_id.begin()->second;
         }
 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The current key is not specified");
@@ -243,9 +243,9 @@ Keys parseKeysFromConfig(const Poco::Util::AbstractConfiguration & config, const
         res.all_keys[fingerprint] = key.plain;
     }
 
-    String current_key = getCurrentKeyFromConfig(config, config_prefix, keys_by_id, keys_without_id);
-    res.current_key = current_key;
-    res.current_key_fingerprint = calculateKeyFingerprint(current_key);
+    const Key & current_key = getCurrentKeyFromConfig(config, config_prefix, keys_by_id, keys_without_id);
+    res.current_key = current_key.plain;
+    res.current_key_fingerprint = calculateKeyFingerprint(current_key.plain);
 
     res.current_algorithm = getCurrentAlgorithmFromConfig(config, config_prefix);
 
