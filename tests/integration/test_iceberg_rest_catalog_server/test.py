@@ -736,12 +736,12 @@ def test_keeper_layout(started_cluster):
     assert zk.get(parent_path)[0] == b"{}"
     assert zk.get(child_path)[0] == b'{"owner":"asya"}'
 
-    # The uuid is in the path, so a commit cannot target a table re-created under the same name.
+    # The guard child binds the name to the uuid, so a drop or rename cannot act on a table re-created under the same name.
     table_path = f"{child_path}/tables/my%2Etable"
     table_uuid = result["metadata"]["table-uuid"]
     assert zk.get_children(f"{child_path}/tables") == ["my%2Etable"]
     assert zk.get(table_path)[0] == table_uuid.encode()
-    assert zk.get_children(table_path) == []
+    assert zk.get_children(table_path) == [table_uuid]
     assert zk.get(f"{KEEPER_ROOT}/tables_by_uuid/{table_uuid}")[0] == result["metadata-location"].encode()
 
     assert list_namespaces(parent=ns) == [[ns, "eu-west"]]

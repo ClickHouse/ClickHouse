@@ -47,9 +47,12 @@ struct UpdateNamespacePropertiesResult
 ///   <root>/namespaces/<level>/namespaces   child namespaces, same shape recursively
 ///   <root>/namespaces/<level>/tables       one child per table
 ///   <root>/namespaces/<level>/tables/<t>   data: table uuid, written once at create
+///   <root>/namespaces/<level>/tables/<t>/<uuid>  empty guard child, binds the name to the uuid
 ///   <root>/tables_by_uuid/<uuid>           data: metadata location, the node a commit updates
 /// A table commit replaces the uuid node data with a version check, so concurrent commits are serialized by Keeper.
 /// The uuid node is outside the namespace tree, so a rename moves only the name node and the version keeps counting.
+/// Drop and rename read the uuid from the name node and then remove the guard child in the same multi-request as the name node.
+/// A table re-created under the same name has another guard child, so the multi-request fails instead of acting on the wrong table.
 /// Namespace levels and table names are encoded with `escapeForFileName`.
 class KeeperIcebergRESTCatalogStore
 {
@@ -128,6 +131,7 @@ private:
     String tablesPath(const IcebergNamespaceName & name) const;
     String tablePath(const IcebergNamespaceName & name, const String & table) const;
     String tableUuidPath(const String & uuid) const;
+    String tableGuardPath(const IcebergNamespaceName & name, const String & table, const String & uuid) const;
 
     const String root_path;
     const zkutil::GetZooKeeper get_zookeeper;
