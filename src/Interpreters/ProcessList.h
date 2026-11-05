@@ -321,6 +321,8 @@ public:
 
     /// Checks the query time limits (cancelled or timeout)
     bool checkTimeLimit();
+    /// Same as checkTimeLimit but with `mode` instead of the query's `timeout_overflow_mode`
+    bool checkTimeLimit(OverflowMode mode);
     /// Same as checkTimeLimit but it never throws
     [[nodiscard]] bool checkTimeLimitSoft();
 

@@ -54,30 +54,6 @@ LoggerPtr getMergeTreeRangeReaderLogger()
     return log;
 }
 
-static bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & filter_column)
-{
-    if (!column)
-        return true;
-
-    if (filter_column == column)
-        return false;
-
-    if (column->use_count() > 1)
-        return false;
-
-    bool can_inplace = true;
-    column->forEachSubcolumn([&](const ColumnPtr & subcolumn)
-    {
-        if (!can_inplace)
-            return;
-
-        if (!canInplaceFilter(subcolumn, filter_column))
-            can_inplace = false;
-    });
-
-    return can_inplace;
-}
-
 FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
     : const_description(*column_)
 {
