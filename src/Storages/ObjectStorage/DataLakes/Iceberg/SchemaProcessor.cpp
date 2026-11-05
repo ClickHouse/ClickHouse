@@ -244,30 +244,29 @@ String canonicalizeTypeName(const String & s)
     return result;
 }
 
-/// Collects the ids of the fields, list elements and map keys/values whose type is `time`.
+/// Calls `callback(id, type)` for `field_id` and for the ids of the fields, list elements and map keys/values nested in it.
 /// `type` is a JSON string (primitive leaf) or object (complex type) describing `field_id`.
-void collectTimeFieldIds(const Poco::Dynamic::Var & type, Int64 field_id, std::unordered_set<Int64> & result)
+template <typename Callback>
+void forEachFieldId(const Poco::Dynamic::Var & type, Int64 field_id, Callback && callback)
 {
+    checkStackSize();
+    callback(field_id, type);
     if (type.isString())
-    {
-        if (canonicalizeTypeName(type.extract<String>()) == f_time)
-            result.insert(field_id);
         return;
-    }
 
     const auto & type_object = type.extract<Poco::JSON::Object::Ptr>();
     auto type_str = type_object->getValue<String>(f_type);
     if (type_str == "map")
     {
         if (type_object->has(f_key))
-            collectTimeFieldIds(type_object->get(f_key), type_object->getValue<Int64>(f_key_id), result);
+            forEachFieldId(type_object->get(f_key), type_object->getValue<Int64>(f_key_id), callback);
         if (type_object->has(f_value))
-            collectTimeFieldIds(type_object->get(f_value), type_object->getValue<Int64>(f_value_id), result);
+            forEachFieldId(type_object->get(f_value), type_object->getValue<Int64>(f_value_id), callback);
     }
     else if (type_str == "list")
     {
         if (type_object->has(f_element))
-            collectTimeFieldIds(type_object->get(f_element), type_object->getValue<Int64>(f_element_id), result);
+            forEachFieldId(type_object->get(f_element), type_object->getValue<Int64>(f_element_id), callback);
     }
     else if (type_str == "struct")
     {
@@ -276,7 +275,7 @@ void collectTimeFieldIds(const Poco::Dynamic::Var & type, Int64 field_id, std::u
         {
             auto field = fields->getObject(i);
             if (field->has(f_type))
-                collectTimeFieldIds(field->get(f_type), field->getValue<Int64>(f_id), result);
+                forEachFieldId(field->get(f_type), field->getValue<Int64>(f_id), callback);
         }
     }
 }
@@ -1017,6 +1016,20 @@ std::unordered_map<String, Int64> IcebergSchemaProcessor::traverseSchema(Poco::J
     return result;
 }
 
+Int64 IcebergSchemaProcessor::getMaxFieldId(Poco::JSON::Array::Ptr schema)
+{
+    Int64 result = 0;
+    for (UInt32 i = 0; i < schema->size(); ++i)
+    {
+        auto current_object = schema->getObject(i);
+        if (current_object->has(Iceberg::f_type))
+            forEachFieldId(
+                current_object->get(Iceberg::f_type), current_object->getValue<Int64>(Iceberg::f_id),
+                [&](Int64 field_id, const Poco::Dynamic::Var &) { result = std::max(result, field_id); });
+    }
+    return result;
+}
+
 std::unordered_set<String> IcebergSchemaProcessor::collectIcebergStringPaths(Poco::JSON::Array::Ptr schema)
 {
     std::unordered_set<String> result;
@@ -1049,7 +1062,13 @@ std::unordered_set<Int64> IcebergSchemaProcessor::collectIcebergTimeFieldIds(Poc
     {
         auto current_object = schema->getObject(i);
         if (current_object->has(Iceberg::f_type))
-            collectTimeFieldIds(current_object->get(Iceberg::f_type), current_object->getValue<Int64>(Iceberg::f_id), result);
+            forEachFieldId(
+                current_object->get(Iceberg::f_type), current_object->getValue<Int64>(Iceberg::f_id),
+                [&](Int64 field_id, const Poco::Dynamic::Var & type)
+                {
+                    if (type.isString() && canonicalizeTypeName(type.extract<String>()) == Iceberg::f_time)
+                        result.insert(field_id);
+                });
     }
     return result;
 }

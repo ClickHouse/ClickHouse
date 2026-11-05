@@ -2146,9 +2146,9 @@ Creates a ClickHouse database with tables from PostgreSQL database. Firstly, dat
 Replication is implemented with PostgreSQL Logical Replication Protocol, which does not allow to replicate DDL, but allows to know whether replication breaking changes happened (column type changes, adding/removing columns). Such changes are detected and according tables stop receiving updates. In a non-coordinated setup, use `DETACH TABLE ... PERMANENTLY` and `ATTACH TABLE` to reload the table completely. In a coordinated setup, individual table changes are unsupported because they would affect only one replica; reconcile the PostgreSQL schema and recreate the database instead. If DDL does not break replication (for example, renaming a column) table will still receive updates (insertion is done by position).
 
 <Note>
-This database engine is experimental. To use it, set `allow_experimental_database_materialized_postgresql` to 1 in your configuration files or by using the `SET` command:
+This database engine is experimental. To use it, set `enable_database_materialized_postgresql` to 1 in your configuration files or by using the `SET` command:
 ```sql
-SET allow_experimental_database_materialized_postgresql=1
+SET enable_database_materialized_postgresql=1
 ```
 The setting is required for every fresh database definition: for `CREATE DATABASE`, and also for an `ATTACH DATABASE` that spells out the full engine definition. Only replaying an already-persisted definition - server startup, and the short `ATTACH DATABASE name` syntax - does not need it, so a database created earlier keeps loading after the setting has been turned off.
 </Note>
