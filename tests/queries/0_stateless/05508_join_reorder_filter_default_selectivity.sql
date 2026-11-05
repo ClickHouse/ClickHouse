@@ -16,6 +16,7 @@ DROP TABLE IF EXISTS customer;
 DROP TABLE IF EXISTS nation;
 DROP TABLE IF EXISTS dim_big;
 DROP TABLE IF EXISTS dim_small;
+DROP TABLE IF EXISTS mid;
 
 -- Merges would build statistics on the tables of several parts.
 CREATE TABLE orders (o_orderkey Int32, o_custkey Int32, o_totalprice Decimal(15, 2), o_flag UInt8)
@@ -24,6 +25,7 @@ CREATE TABLE customer (c_custkey Int32, c_nationkey Int32) ENGINE = MergeTree OR
 CREATE TABLE nation (n_nationkey Int32, n_name String) ENGINE = MergeTree ORDER BY n_nationkey;
 CREATE TABLE dim_big (k Int32, g Int32) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
 CREATE TABLE dim_small (k Int32) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
+CREATE TABLE mid (k Int32) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
 
 -- Parts without statistics, as written before 26.8.
 SET materialize_statistics_on_insert = 0;
@@ -32,6 +34,7 @@ INSERT INTO customer SELECT number, if(number < 100, 6, 7) FROM numbers(10000);
 INSERT INTO nation VALUES (5, 'ETHIOPIA'), (6, 'FRANCE'), (7, 'GERMANY'), (100, 'UNKNOWN');
 INSERT INTO dim_big SELECT number, number % 200 FROM numbers(200000);
 INSERT INTO dim_small SELECT number FROM numbers(2000);
+INSERT INTO mid SELECT number FROM numbers(50000);
 
 SELECT avg(o_totalprice) FROM orders
 JOIN (SELECT * FROM customer JOIN nation ON c_nationkey = n_nationkey WHERE n_name = 'WAKANDA') AS cn ON c_custkey = o_custkey
@@ -87,6 +90,32 @@ SELECT count() FROM
 JOIN orders ON o_orderkey = s.k
 FORMAT Null SETTINGS log_comment = '05508 filtered_sub_join';
 
+-- The hash table statistics of a first run measure the rows of a filtered input; the second run uses them instead of the assumed
+-- 20%, as on master, where the input has no estimate. `o_flag = 0` keeps 99000 rows, assumed 20000, so `mid` becomes the build side.
+SELECT count() FROM mid JOIN (SELECT * FROM orders WHERE o_flag = 0) AS f ON f.o_orderkey = mid.k
+FORMAT Null SETTINGS log_comment = '05508 cache_read_1', collect_hash_table_stats_during_joins = 1, use_hash_table_stats_for_join_reordering = 1;
+SELECT count() FROM mid JOIN (SELECT * FROM orders WHERE o_flag = 0) AS f ON f.o_orderkey = mid.k
+FORMAT Null SETTINGS log_comment = '05508 cache_read_2', collect_hash_table_stats_during_joins = 1, use_hash_table_stats_for_join_reordering = 1;
+
+SELECT count() FROM mid JOIN (SELECT o_orderkey FROM orders WHERE o_flag = 0 GROUP BY o_orderkey) AS f ON f.o_orderkey = mid.k
+FORMAT Null SETTINGS log_comment = '05508 cache_aggregation_1', collect_hash_table_stats_during_joins = 1, use_hash_table_stats_for_join_reordering = 1;
+SELECT count() FROM mid JOIN (SELECT o_orderkey FROM orders WHERE o_flag = 0 GROUP BY o_orderkey) AS f ON f.o_orderkey = mid.k
+FORMAT Null SETTINGS log_comment = '05508 cache_aggregation_2', collect_hash_table_stats_during_joins = 1, use_hash_table_stats_for_join_reordering = 1;
+
+-- The filter above the sub-join keeps all but 90 of its 200000 rows, assumed 40000.
+SELECT count() FROM mid JOIN
+(
+    SELECT dim_big.k AS k FROM dim_big LEFT JOIN customer ON dim_big.k = c_custkey
+    WHERE c_nationkey != 6 OR dim_big.k < 10
+) AS s ON s.k = mid.k
+FORMAT Null SETTINGS log_comment = '05508 cache_sub_join_1', collect_hash_table_stats_during_joins = 1, use_hash_table_stats_for_join_reordering = 1;
+SELECT count() FROM mid JOIN
+(
+    SELECT dim_big.k AS k FROM dim_big LEFT JOIN customer ON dim_big.k = c_custkey
+    WHERE c_nationkey != 6 OR dim_big.k < 10
+) AS s ON s.k = mid.k
+FORMAT Null SETTINGS log_comment = '05508 cache_sub_join_2', collect_hash_table_stats_during_joins = 1, use_hash_table_stats_for_join_reordering = 1;
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT log_comment, ProfileEvents['JoinBuildTableRowCount'] AS build
@@ -99,3 +128,4 @@ DROP TABLE customer;
 DROP TABLE nation;
 DROP TABLE dim_big;
 DROP TABLE dim_small;
+DROP TABLE mid;

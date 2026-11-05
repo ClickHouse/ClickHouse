@@ -59,9 +59,10 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
     const auto & aggregator_params = aggregating_step.getAggregatorParameters();
     std::optional<Float64> total_number_of_distinct_values = 1;
     RelationStats aggregation_stats;
-    /// Carry imprecision and source from the input, or the annotation is lost for aggregation subqueries.
+    /// Carry imprecision, source and an assumed filter selectivity from the input, or they are lost for aggregation subqueries.
     aggregation_stats.imprecise_estimate = input_stats.imprecise_estimate;
     aggregation_stats.source = input_stats.source;
+    aggregation_stats.assumed_filter_selectivity = input_stats.assumed_filter_selectivity;
     for (const auto & key : aggregator_params.keys)
     {
         auto key_stats = input_stats.column_stats.find(key);
@@ -294,7 +295,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 .estimated_rows = applyUnestimatedFilterSelectivity(analyzed_result->selected_rows),
                 .table_name = table_display_name,
                 .imprecise_estimate = true,
-                .source = RowEstimateSource::NoStatistics};
+                .source = RowEstimateSource::NoStatistics,
+                .assumed_filter_selectivity = true};
 
         return RelationStats{
             .estimated_rows = analyzed_result->selected_rows,
@@ -354,7 +356,10 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         if (!estimate->pruned_data_files)
         {
             if (!for_runtime_filter_transport)
+            {
                 stats.estimated_rows = applyUnestimatedFilterSelectivity(rows);
+                stats.assumed_filter_selectivity = true;
+            }
             return stats;
         }
 
@@ -407,7 +412,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             .column_stats = join_step->getResultColumnStats(),
             .table_name = join_step->getReadableRelationName(),
             .imprecise_estimate = filter != nullptr || join_step->hasImpreciseEstimate(),
-            .composite = true};
+            .composite = true,
+            .assumed_filter_selectivity = filter != nullptr && rows.has_value()};
     }
 
     if (node.children.size() != 1)

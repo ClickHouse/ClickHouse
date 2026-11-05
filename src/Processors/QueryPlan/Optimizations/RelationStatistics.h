@@ -29,6 +29,9 @@ struct RelationStats
     /// Diagnostic annotation of where `estimated_rows` came from; see `RowEstimateSource`.
     /// `NoSource` means the producer of the estimate did not track it; set it wherever it is known.
     RowEstimateSource source = RowEstimateSource::NoSource;
+
+    /// `estimated_rows` is the share of rows assumed for a filter nothing could estimate, so a measured row count replaces it.
+    bool assumed_filter_selectivity = false;
 };
 
 namespace QueryPlanOptimizations

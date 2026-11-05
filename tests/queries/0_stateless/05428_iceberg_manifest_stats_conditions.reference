@@ -79,3 +79,5 @@ rows: 5
 Expect ~2000: without column statistics, a filter that prunes no file keeps 20% of the 10000 rows.
 Join: t[no_stats~2000] ⋈ dim[5]
 rows: 3143
+--- T10: has(a, 3) keeps 3143 rows, assumed 2000: after a first run the join uses the measured rows
+Join: t[cache~3143] ⋈ peer[2500]
