@@ -2,6 +2,7 @@
 
 #include <Storages/IndicesDescription.h>
 #include <Storages/ProjectionsDescription.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 
 #include <map>
@@ -19,12 +20,16 @@ struct HypotheticalBinding
 {
     /// a name that is not a column maps to an empty string
     std::map<String, String> columns;
+    /// the storage columns behind `columns`
+    NameSet storage_columns;
+    /// the ordered expansion of `*`
+    Names wildcard;
     String settings;
 
     static HypotheticalBinding of(const IAST & definition, const StorageInMemoryMetadata & metadata);
 
-    /// empty when nothing changed, otherwise what changed
-    String changeTo(const HypotheticalBinding & current) const;
+    /// empty when nothing changed, otherwise what changed; a change needs SELECT on the bound columns
+    String changeTo(const HypotheticalBinding & current, const ContextPtr & context, const StorageID & table_id) const;
 };
 
 /// Session-scoped store for hypothetical indexes and projections, used by EXPLAIN WHATIF

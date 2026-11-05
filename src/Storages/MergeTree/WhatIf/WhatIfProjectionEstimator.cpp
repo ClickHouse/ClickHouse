@@ -1310,7 +1310,8 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
         context->checkAccess(AccessType::SELECT, data.getStorageID(), hypothetical.projection.required_columns);
     context->checkAccess(AccessType::ALTER_ADD_PROJECTION, data.getStorageID());
 
-    const auto change = hypothetical.binding.changeTo(HypotheticalBinding::of(*hypothetical.projection.definition_ast, *metadata));
+    const auto change = hypothetical.binding.changeTo(
+        HypotheticalBinding::of(*hypothetical.projection.definition_ast, *metadata), context, data.getStorageID());
     if (!change.empty())
     {
         reason = "Hypothetical projection no longer matches the table: " + change + ". Run CREATE HYPOTHETICAL PROJECTION again";

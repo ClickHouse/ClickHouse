@@ -13,8 +13,7 @@ reason: EXPLAIN WHATIF does not estimate projections with their own skip indexes
 reason: Projection orders by _part_offset, which it does not store, so EXPLAIN WHATIF cannot rebuild its key
 --- retargeting an ALIAS the projection selects denies the estimate ---
 status: applicable
-status: not_applicable
-reason: Hypothetical projection no longer matches the table: column `c` was UInt64 ALIAS b + 1, now UInt64 ALIAS d + 1. Run CREATE HYPOTHETICAL PROJECTION again
+ACCESS_DENIED
 --- a _part_offset predicate does not engage a projection ---
 _part_offset = 7: with Granules: 1, without Granules: 1, from projection 0
 b = 42 AND _part_offset = 7: with Granules: 1, without Granules: 1, from projection 0

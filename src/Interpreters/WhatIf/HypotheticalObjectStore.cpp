@@ -1,5 +1,7 @@
 #include <Interpreters/WhatIf/HypotheticalObjectStore.h>
 
+#include <Access/Common/AccessFlags.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
@@ -7,6 +9,8 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -19,33 +23,62 @@ namespace ErrorCodes
 namespace
 {
 
-void bindColumn(const String & name, const ColumnsDescription & columns, std::map<String, String> & bound);
+void bindColumn(const String & name, const ColumnsDescription & columns, HypotheticalBinding & binding);
 
-void bindIdentifiers(const IAST & ast, const ColumnsDescription & columns, std::map<String, String> & bound)
+void bindIdentifiers(const IAST & ast, const ColumnsDescription & columns, HypotheticalBinding & binding)
 {
     if (const auto * identifier = ast.as<ASTIdentifier>())
-        bindColumn(identifier->name(), columns, bound);
+        bindColumn(identifier->name(), columns, binding);
     else if (ast.as<ASTAsterisk>() || ast.as<ASTColumnsRegexpMatcher>())
-        for (const auto & column : columns.getOrdinary())
-            bindColumn(column.name, columns, bound);
+    {
+        /// the order decides positional arguments such as `GROUP BY 1`
+        binding.wildcard = columns.getOrdinary().getNames();
+        for (const auto & name : binding.wildcard)
+            bindColumn(name, columns, binding);
+    }
     for (const auto & child : ast.children)
-        bindIdentifiers(*child, columns, bound);
+        bindIdentifiers(*child, columns, binding);
 }
 
-void bindColumn(const String & name, const ColumnsDescription & columns, std::map<String, String> & bound)
+void bindColumn(const String & name, const ColumnsDescription & columns, HypotheticalBinding & binding)
 {
-    auto [it, inserted] = bound.try_emplace(name);
+    auto [it, inserted] = binding.columns.try_emplace(name);
     if (!inserted)
         return;
     const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
     if (!column)
         return;
+    binding.storage_columns.insert(column->getNameInStorage());
     it->second = column->type->getName();
     if (const auto column_default = columns.getDefault(column->getNameInStorage()))
     {
         it->second += fmt::format(" {} {}", toString(column_default->kind), column_default->expression->formatForErrorMessage());
-        bindIdentifiers(*column_default->expression, columns, bound);
+        bindIdentifiers(*column_default->expression, columns, binding);
     }
+}
+
+String describeChange(const HypotheticalBinding & stored, const HypotheticalBinding & current)
+{
+    auto report = [](const String & name, const String & before, const String & after)
+    {
+        auto describe = [](const String & column) { return column.empty() ? String("absent") : column; };
+        return fmt::format("column {} was {}, now {}", backQuote(name), describe(before), describe(after));
+    };
+    /// a name on one side only is reached through a column that changed, so report the columns on both sides first
+    for (const auto & [name, before] : stored.columns)
+        if (const auto it = current.columns.find(name); it != current.columns.end() && it->second != before)
+            return report(name, before, it->second);
+    for (const auto & [name, before] : stored.columns)
+        if (!before.empty() && !current.columns.contains(name))
+            return report(name, before, {});
+    for (const auto & [name, after] : current.columns)
+        if (!after.empty() && !stored.columns.contains(name))
+            return report(name, {}, after);
+    if (stored.wildcard != current.wildcard)
+        return fmt::format("the columns under `*` were ({}), now ({})", fmt::join(stored.wildcard, ", "), fmt::join(current.wildcard, ", "));
+    if (stored.settings != current.settings)
+        return "the table settings changed";
+    return {};
 }
 
 bool sameTable(const StorageID & a, const StorageID & b)
@@ -130,32 +163,22 @@ bool eraseOrThrow(
 HypotheticalBinding HypotheticalBinding::of(const IAST & definition, const StorageInMemoryMetadata & metadata)
 {
     HypotheticalBinding binding;
-    bindIdentifiers(definition, metadata.getColumns(), binding.columns);
+    bindIdentifiers(definition, metadata.getColumns(), binding);
     if (metadata.hasSettingsChanges())
         binding.settings = metadata.getSettingsChanges()->formatWithSecretsOneLine();
     return binding;
 }
 
-String HypotheticalBinding::changeTo(const HypotheticalBinding & current) const
+String HypotheticalBinding::changeTo(const HypotheticalBinding & current, const ContextPtr & context, const StorageID & table_id) const
 {
-    auto report = [](const String & name, const String & before, const String & after)
-    {
-        auto describe = [](const String & column) { return column.empty() ? String("absent") : column; };
-        return fmt::format("column {} was {}, now {}", backQuote(name), describe(before), describe(after));
-    };
-    /// a name on one side only is reached through a column that changed, so report the columns on both sides first
-    for (const auto & [name, before] : columns)
-        if (const auto it = current.columns.find(name); it != current.columns.end() && it->second != before)
-            return report(name, before, it->second);
-    for (const auto & [name, before] : columns)
-        if (!before.empty() && !current.columns.contains(name))
-            return report(name, before, {});
-    for (const auto & [name, after] : current.columns)
-        if (!after.empty() && !columns.contains(name))
-            return report(name, {}, after);
-    if (settings != current.settings)
-        return "the table settings changed";
-    return {};
+    auto change = describeChange(*this, current);
+    if (change.empty())
+        return change;
+    /// the change describes bound columns, so it needs SELECT on them, as they were at CREATE and as they are now
+    NameSet names = storage_columns;
+    names.insert(current.storage_columns.begin(), current.storage_columns.end());
+    context->checkAccess(AccessType::SELECT, table_id, Names(names.begin(), names.end()));
+    return change;
 }
 
 bool HypotheticalObjectStore::add(
