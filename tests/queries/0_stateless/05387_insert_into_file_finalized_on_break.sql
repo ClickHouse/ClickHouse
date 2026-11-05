@@ -38,7 +38,8 @@ DROP TABLE f_05387;
 
 SET allow_experimental_time_series_table = 1;
 DROP TABLE IF EXISTS ts_05387;
-CREATE TABLE ts_05387 ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0
+-- From version 11 on, the samples table must be an AggregatingMergeTree, so the version is pinned to keep it a File.
+CREATE TABLE ts_05387 ENGINE = TimeSeries SETTINGS version = 7, recent_samples_ttl_seconds = 0
     SAMPLES ENGINE = File(Parquet) TAGS ENGINE = File(Parquet) METRIC FAMILIES ENGINE = File(Parquet);
 
 INSERT INTO ts_05387 (metric_name, tags, samples)
