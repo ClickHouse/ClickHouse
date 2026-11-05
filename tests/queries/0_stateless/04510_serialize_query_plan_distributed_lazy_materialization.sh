@@ -4,7 +4,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-base_settings="serialize_query_plan=1, query_plan_optimize_lazy_materialization=1, distributed_push_down_limit=1, skip_unavailable_shards=0, explain_query_plan_default='legacy'"
+# Parallel replicas and a small `query_plan_max_limit_for_lazy_materialization` (both randomized in CI) disable
+# distributed lazy materialization, so they are pinned.
+base_settings="serialize_query_plan=1, query_plan_optimize_lazy_materialization=1, distributed_push_down_limit=1, skip_unavailable_shards=0, explain_query_plan_default='legacy', enable_parallel_replicas=0, query_plan_max_limit_for_lazy_materialization=10000"
 query="SELECT payload FROM dlm_dist ORDER BY key DESC, tie ASC LIMIT 3 OFFSET 2"
 
 explain_query()
@@ -92,18 +94,21 @@ expect_unbounded_coordination_limit
 expect_disabled "maximum limit" "$query" "query_plan_optimize_distributed_lazy_materialization=1, query_plan_max_limit_for_lazy_materialization=4"
 expect_disabled "parallel replicas" "$query" "query_plan_optimize_distributed_lazy_materialization=1, allow_experimental_parallel_reading_from_replicas=1, max_parallel_replicas=2"
 
+
+# `shard_0` and `shard_1` are shared by all tests, so the table name is unique per test database.
+interleaved_local="dlm_local_04510_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CLIENT --multiquery --query "
     CREATE DATABASE IF NOT EXISTS shard_0;
     CREATE DATABASE IF NOT EXISTS shard_1;
-    DROP TABLE IF EXISTS shard_0.dlm_local_04510;
-    DROP TABLE IF EXISTS shard_1.dlm_local_04510;
+    DROP TABLE IF EXISTS shard_0.${interleaved_local};
+    DROP TABLE IF EXISTS shard_1.${interleaved_local};
     DROP TABLE IF EXISTS dlm_interleaved_dist;
-    CREATE TABLE shard_0.dlm_local_04510 (key UInt64, tie UInt64, payload String) ENGINE = MergeTree ORDER BY tuple();
-    CREATE TABLE shard_1.dlm_local_04510 (key UInt64, tie UInt64, payload String) ENGINE = MergeTree ORDER BY tuple();
+    CREATE TABLE shard_0.${interleaved_local} (key UInt64, tie UInt64, payload String) ENGINE = MergeTree ORDER BY tuple();
+    CREATE TABLE shard_1.${interleaved_local} (key UInt64, tie UInt64, payload String) ENGINE = MergeTree ORDER BY tuple();
     CREATE TABLE dlm_interleaved_dist (key UInt64, tie UInt64, payload String)
-        ENGINE = Distributed(test_cluster_two_shards_different_databases, '', dlm_local_04510);
-    INSERT INTO shard_0.dlm_local_04510 VALUES (9, 2, 's0-9'), (7, 1, 's0-7'), (5, 3, 's0-5');
-    INSERT INTO shard_1.dlm_local_04510 VALUES (10, 4, 's1-10'), (8, 0, 's1-8'), (6, 2, 's1-6');
+        ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ${interleaved_local});
+    INSERT INTO shard_0.${interleaved_local} VALUES (9, 2, 's0-9'), (7, 1, 's0-7'), (5, 3, 's0-5');
+    INSERT INTO shard_1.${interleaved_local} VALUES (10, 4, 's1-10'), (8, 0, 's1-8'), (6, 2, 's1-6');
 "
 
 winner_query="SELECT payload FROM dlm_interleaved_dist ORDER BY key DESC, tie ASC LIMIT 3 OFFSET 2"
@@ -126,8 +131,8 @@ echo "interleaved winners: correct"
 
 $CLICKHOUSE_CLIENT --multiquery --query "
     DROP TABLE dlm_interleaved_dist;
-    DROP TABLE shard_0.dlm_local_04510;
-    DROP TABLE shard_1.dlm_local_04510;
+    DROP TABLE shard_0.${interleaved_local};
+    DROP TABLE shard_1.${interleaved_local};
     DROP TABLE dlm_dist;
     DROP TABLE dlm_local;
 "
