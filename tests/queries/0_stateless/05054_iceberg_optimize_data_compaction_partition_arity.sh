@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
-# - no-parallel: uses DETACH/ATTACH which serializes per database
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -19,8 +18,8 @@ ${CLICKHOUSE_CLIENT} --query "
     PARTITION BY (a)
 "
 
-INSERTS=$(for i in $(seq 0 9); do echo "INSERT INTO ${TABLE} VALUES (1, ${i});"; echo "INSERT INTO ${TABLE} VALUES (2, ${i});"; done)
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --use_iceberg_metadata_files_cache=0 -m --query "${INSERTS}"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --use_iceberg_metadata_files_cache=0 \
+    --query "INSERT INTO ${TABLE} SELECT number % 2 + 1, intDiv(number, 2) FROM numbers(20)"
 
 # Data compaction only runs when the history contains a positional delete, so without one
 # the OPTIMIZE below is a no-op that never reaches the manifest writer.
