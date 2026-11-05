@@ -8,6 +8,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
@@ -22,6 +23,11 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace FailPoints
+{
+    extern const char stateless_worker_pause_before_start_task[];
 }
 
 StatelessWorkerEndpoint::StatelessWorkerEndpoint(size_t max_threads, size_t max_free_threads, size_t queue_size)
@@ -274,6 +280,9 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
         /// Read the rest of the body, otherwise the keep-alive connection is closed.
         body->ignoreAll();
         body.reset();
+
+        /// Holds a start that is on the wire, so a cancel can overtake it.
+        FailPointInjection::pauseFailPoint(FailPoints::stateless_worker_pause_before_start_task);
 
         /// Pass it to the runner to start execution
         task_runner->startTask(task_id, std::move(task_description), unique_temp_file_path, collectors);
