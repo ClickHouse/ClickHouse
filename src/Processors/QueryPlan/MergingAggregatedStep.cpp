@@ -22,7 +22,7 @@ namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const QueryPlanSerializationSettingsBool collect_hash_table_stats_during_aggregation;
-    extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_entries_for_hash_table_stats;
     extern const QueryPlanSerializationSettingsUInt64 max_size_to_preallocate_for_aggregation;
     extern const QueryPlanSerializationSettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
@@ -154,7 +154,8 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
         pipeline.resize(1);
 
         /// Now merge the aggregated blocks
-        auto transform = std::make_shared<MergingAggregatedTransform>(pipeline.getSharedHeader(), params, final, grouping_sets_params);
+        auto transform = std::make_shared<MergingAggregatedTransform>(pipeline.getSharedHeader(), params, final, grouping_sets_params,
+        should_produce_results_in_order_of_bucket_number ? 1 : max_threads);
         pipeline.addTransform(std::move(transform));
     }
     else

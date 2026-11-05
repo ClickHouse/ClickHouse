@@ -67,6 +67,7 @@ private:
 
     std::unordered_map<Int32, DB::KeyCondition> min_max_key_conditions;
     std::unordered_map<Int32, DB::NameAndTypePair> row_lineage_columns;
+    std::unordered_map<Int32, DB::DataTypePtr> min_max_column_types;
 
 public:
     ManifestFilesPruner(
@@ -78,6 +79,8 @@ public:
         DB::ContextPtr context);
 
     PruningReturnStatus canBePruned(const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const;
+
+    const std::unordered_map<Int32, DB::DataTypePtr> & getMinMaxColumnTypes() const { return min_max_column_types; }
 };
 
 }

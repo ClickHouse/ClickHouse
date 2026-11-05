@@ -25,6 +25,7 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageProxy.h>
 #include <base/EnumReflection.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
@@ -326,13 +327,29 @@ bool RefreshTask::canCreateOrDropOtherTables() const
 
 void RefreshTask::startup()
 {
-    if (start_paused || view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
-        scheduling.stop_requested = true;
-    auto inner_table_id = isAppend() ? std::nullopt : std::make_optional(view->getTargetTableId());
-    view->getContext()->getRefreshSet().emplace(view->getStorageID(), inner_table_id, initial_dependencies, shared_from_this());
+    ContextMutablePtr context;
+    StorageID view_id = StorageID::createEmpty();
+    {
+        std::lock_guard guard(mutex);
 
-    std::lock_guard guard(mutex);
-    scheduleRefresh(guard);
+        /// shutdown() is allowed to run before or during startup() (see its declaration) and nulls `view`.
+        if (!view)
+            return;
+
+        if (start_paused || view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
+            scheduling.stop_requested = true;
+        context = view->getContext();
+        view_id = view->getStorageID();
+        auto inner_table_id = isAppend() ? std::nullopt : std::make_optional(view->getTargetTableId());
+
+        /// `set_handle` is not thread safe and shutdown() resets it under `mutex`.
+        context->getRefreshSet().emplace(view_id, inner_table_id, initial_dependencies, shared_from_this());
+
+        scheduleRefresh(guard);
+    }
+
+    /// Outside `mutex`: notifying a dependent view locks that view's own task mutex.
+    context->getRefreshSet().notifyDependents(view_id);
 }
 
 void RefreshTask::finalizeRestoreFromBackup()
@@ -1330,7 +1347,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             /// truth on resume; otherwise resume from the cursor in the Keeper coordination znode.
             stream_cursor = execution.znode.cursor;
             StoragePtr target_table = view->getTargetTable();
-            if (auto * object_storage = dynamic_cast<StorageObjectStorage *>(target_table.get());
+            if (auto * object_storage = castStorage<StorageObjectStorage>(target_table, DeferredTable::Load).get();
                 object_storage && object_storage->isTransactionalRefreshTarget())
             {
                 cursor_persisted_by_target = true;

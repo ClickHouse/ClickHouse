@@ -34,12 +34,6 @@ public:
     }
 
     bool readsFromOtherTables() const override { return true; }
-    std::vector<StoragePtr> getUnderlyingStorages() const override
-    {
-        if (auto target = tryGetTargetTable())
-            return {target};
-        return {};
-    }
 
     /// An `Alias` has no data of its own, so a bulk `TRUNCATE ALL TABLES` must skip it.
     /// Only the bulk paths consult this; an explicit `TRUNCATE TABLE <alias>` still truncates the target.
@@ -74,7 +68,7 @@ public:
     /// Distributed write to target table
     std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & query, ContextPtr local_context) override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override { getTargetTable()->checkAlterIsPossible(commands, local_context); }
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
 
     /// Alter target table
     void alter(

@@ -16,7 +16,6 @@
 #if USE_AVRO
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
-#include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <base/find_symbols.h>
 #include <Core/Settings.h>
@@ -1188,10 +1187,12 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
     if (!params.empty())
         url.setQueryParameters(params);
 
-    auto create_buffer = [&](bool force_refresh)
+    auto create_buffer = [&](bool update_token)
     {
-        auto result_headers = auth_headers ? *auth_headers : getAuthHeaders(catalog_state, force_refresh);
+        auto result_headers = auth_headers ? *auth_headers : getAuthHeaders(catalog_state, update_token);
         std::move(headers.begin(), headers.end(), std::back_inserter(result_headers));
+        /// The auth headers may carry a token from the OAuth server or values from the database settings.
+        context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(result_headers);
 
         return DB::BuilderRWBufferFromHTTP(url)
             .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
@@ -1206,7 +1207,21 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
 
     LOG_DEBUG(log, "Requesting: {}", url.toString());
 
-    return requestWithTokenRefresh(update_token_if_expired, create_buffer);
+    try
+    {
+        return create_buffer(false);
+    }
+    catch (const DB::HTTPException & e)
+    {
+        const auto status = e.getHTTPStatus();
+        if (update_token_if_expired &&
+            (status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_UNAUTHORIZED
+             || status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN))
+        {
+            return create_buffer(true);
+        }
+        throw;
+    }
 }
 
 bool RestCatalog::empty() const
@@ -1773,6 +1788,7 @@ void RestCatalog::sendRequest(const CatalogState & catalog_state, const String &
     headers.emplace_back("X-Iceberg-Access-Delegation", "vended-credentials");
 
     const auto & context = getContext();
+    context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
 
     DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
     if (!body_str.empty())
@@ -2120,8 +2136,7 @@ std::pair<std::shared_ptr<IStorageCredentials>, String> RestCatalog::getCredenti
     return {nullptr, ""};
 }
 
-ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCallback(
-    const DB::StorageID & storage_id, const TableMetadata & /* table_metadata */)
+ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCallback(const DB::StorageID & storage_id)
 {
     return [this, storage_id] () -> std::shared_ptr<IStorageCredentials>
     {

@@ -58,6 +58,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_join_right_table_sorting;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 cross_join_min_bytes_to_compress;
     extern const SettingsUInt64 cross_join_min_rows_to_compress;
     extern const SettingsUInt64 default_max_bytes_in_join;
@@ -80,7 +81,6 @@ namespace Setting
     extern const SettingsBool allow_dynamic_type_in_join_keys;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool enable_software_prefetch_in_join;
-    extern const SettingsBool legacy_join_size_limits_trigger_spilling;
     extern const SettingsUInt64 max_bytes_before_external_join;
     extern const SettingsDouble max_bytes_ratio_before_external_join;
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
@@ -228,7 +228,6 @@ TableJoin::TableJoin(
     , allow_dynamic_type_in_join_keys(settings[Setting::allow_dynamic_type_in_join_keys])
     , enable_lazy_columns_replication(settings[Setting::enable_lazy_columns_replication])
     , enable_software_prefetch_in_join(settings[Setting::enable_software_prefetch_in_join])
-    , legacy_join_size_limits_trigger_spilling(settings[Setting::legacy_join_size_limits_trigger_spilling])
     , max_bytes_before_external_join(JoinSettings::getMaxBytesBeforeExternalJoin(
           settings[Setting::max_bytes_before_external_join],
           settings[Setting::max_bytes_ratio_before_external_join]))
@@ -238,6 +237,7 @@ TableJoin::TableJoin(
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
+    , enable_analyzer(settings[Setting::allow_experimental_analyzer])
     , analyze_mode(analyze_mode_)
 {
 }
@@ -265,7 +265,6 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , allow_dynamic_type_in_join_keys(settings.allow_dynamic_type_in_join_keys)
     , enable_lazy_columns_replication(settings.enable_lazy_columns_replication)
     , enable_software_prefetch_in_join(settings.enable_software_prefetch_in_join)
-    , legacy_join_size_limits_trigger_spilling(settings.legacy_join_size_limits_trigger_spilling)
     , max_bytes_before_external_join(settings.getEffectiveMaxBytesBeforeExternalJoin())
     , enable_join_fixed_hash_table_conversion(settings.enable_join_fixed_hash_table_conversion)
     , enable_join_key_only_hash_tables(settings.enable_join_key_only_hash_tables)
@@ -273,6 +272,7 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , max_memory_usage(settings.max_bytes_in_join)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
+    , enable_analyzer(true)
     , analyze_mode(settings.join_analyze_mode)
 {
 }
@@ -1280,6 +1280,8 @@ size_t TableJoin::getMaxMemoryUsage() const
 
 void TableJoin::swapSides()
 {
+    assertEnableAnalyzer();
+
     std::swap(key_asts_left, key_asts_right);
     std::swap(left_type_map, right_type_map);
     for (auto & clause : clauses)
@@ -1294,6 +1296,12 @@ void TableJoin::swapSides()
 
     JoinKind updated_kind = reverseJoinKind(kind());
     setKind(updated_kind);
+}
+
+void TableJoin::assertEnableAnalyzer() const
+{
+    if (!enable_analyzer)
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "TableJoin: analyzer is disabled");
 }
 
 TemporaryDataOnDiskScopePtr TableJoin::getTempDataOnDisk()

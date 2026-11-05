@@ -40,16 +40,10 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
-    extern const int INCORRECT_DATA;
 #if USE_ICU
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_STRING_SIZE;
 #endif
-}
-
-String ITokenizer::formatTokenForLogs(std::string_view token) const
-{
-    return doubleQuoteString(token);
 }
 
 bool NgramsTokenizer::nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
@@ -525,9 +519,9 @@ void appendToToken(String & out, UInt8 byte) { out.push_back(static_cast<char>(b
 void appendToToken(PaddedPODArray<UInt8> & out, UInt8 byte) { out.push_back(byte); }
 
 template <typename Out>
-void encodeTokenImpl(std::string_view key, std::string_view value, bool is_duplicate, Out & out)
+void encodeTokenImpl(std::string_view key, std::string_view value, bool is_rest, Out & out)
 {
-    const UInt64 packed = (static_cast<UInt64>(key.size()) << 1) | (is_duplicate ? 1ULL : 0ULL);
+    const UInt64 packed = (static_cast<UInt64>(key.size()) << 1) | (is_rest ? 1ULL : 0ULL);
 
     out.clear();
     out.reserve(key.size() + value.size() + getLengthOfVarUInt(packed));
@@ -549,65 +543,21 @@ void encodeTokenImpl(std::string_view key, std::string_view value, bool is_dupli
 
 }
 
-void KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_view value, bool is_duplicate, String & out)
+void KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_view value, bool is_rest, String & out)
 {
-    encodeTokenImpl(key, value, is_duplicate, out);
+    encodeTokenImpl(key, value, is_rest, out);
 }
 
-void KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_view value, bool is_duplicate, PaddedPODArray<UInt8> & out)
+void KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_view value, bool is_rest, PaddedPODArray<UInt8> & out)
 {
-    encodeTokenImpl(key, value, is_duplicate, out);
+    encodeTokenImpl(key, value, is_rest, out);
 }
 
-String KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_view value, bool is_duplicate)
+String KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_view value, bool is_rest)
 {
     String out;
-    encodeToken(key, value, is_duplicate, out);
+    encodeToken(key, value, is_rest, out);
     return out;
-}
-
-KeyValuePairsTokenizer::DecodedToken KeyValuePairsTokenizer::decodeToken(std::string_view token)
-{
-    /// The trailer is read backwards: the last byte of the token is the first byte of the varint,
-    /// and every byte of the varint except its last one has the continuation bit set.
-    UInt64 packed = 0;
-    size_t trailer_start = token.size();
-
-    for (size_t shift = 0;; shift += 7)
-    {
-        if (trailer_start == 0 || shift >= 64)
-        {
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Cannot decode a token of the `keyValuePairs` tokenizer: the trailer is malformed (token size: {})", token.size());
-        }
-
-        const UInt8 byte = static_cast<UInt8>(token[--trailer_start]);
-        packed |= static_cast<UInt64>(byte & 0x7F) << shift;
-
-        if (!(byte & 0x80))
-            break;
-    }
-
-    const size_t key_size = packed >> 1;
-    if (key_size > trailer_start)
-    {
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Cannot decode a token of the `keyValuePairs` tokenizer: the key length {} exceeds the {} bytes before the trailer",
-            key_size, trailer_start);
-    }
-
-    return DecodedToken
-    {
-        .key = token.substr(0, key_size),
-        .value = token.substr(key_size, trailer_start - key_size),
-        .is_duplicate = (packed & 1) != 0,
-    };
-}
-
-String KeyValuePairsTokenizer::formatTokenForLogs(std::string_view token) const
-{
-    const auto decoded = decodeToken(token);
-    return fmt::format("{{{}: {}}}", doubleQuoteString(decoded.key), doubleQuoteString(decoded.value));
 }
 
 bool KeyValuePairsTokenizer::nextInString(const char *, size_t, size_t &, size_t &, size_t &) const

@@ -20,6 +20,7 @@
 #include <Interpreters/GroupingSetsRewriterVisitor.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
+#include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
@@ -1532,7 +1533,10 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (settings[Setting::legacy_column_name_of_tuple_literal])
         markTupleLiteralsAsLegacy(query);
 
-    /// Only apply AST optimization for initial queries.
+    /// Push the predicate expression down to subqueries. The optimization should be applied to both initial and secondary queries.
+    result.rewrite_subqueries = PredicateExpressionsOptimizer(getContext(), tables_with_columns, settings).optimize(*select_query);
+
+     /// Only apply AST optimization for initial queries.
     const bool ast_optimizations_allowed =
         getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
         && !select_options.ignore_ast_optimizations;

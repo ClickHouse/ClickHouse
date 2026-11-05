@@ -34,11 +34,6 @@ public:
 
     static DatabaseFactory & instance();
 
-    /// Helper function to validate if a specific database engine supports a setting.
-    /// Used to tell whether a setting from the `SETTINGS` clause of `CREATE DATABASE` belongs to the
-    /// engine or to the query, before the start of the query interpretation.
-    using HasBuiltinSettingFn = bool(std::string_view);
-
     struct Arguments
     {
         const String & engine_name;
@@ -56,6 +51,10 @@ public:
         /// True only when the server replays a definition it stored itself, during startup metadata loading.
         /// `internal` does not imply it: wrappers such as `PARALLEL WITH` run user statements as internal ones.
         bool is_metadata_replay = false;
+
+        /// The server replays a definition it stored itself: startup metadata loading (`is_metadata_replay`,
+        /// which runs with mode `ATTACH`), `FORCE_ATTACH` or `FORCE_RESTORE`. Not a user `ATTACH DATABASE`.
+        bool isLoadingFromExistingMetadata() const;
     };
 
     struct EngineFeatures
@@ -72,9 +71,6 @@ public:
         /// `READ`/`WRITE ON <SOURCE>` grants to implicit `TABLE_ENGINE` grants.
         /// Defaults to `std::nullopt` for non-source engines.
         std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
-
-        /// Must be provided whenever `supports_settings` is set; `registerDatabase` enforces it.
-        HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
     };
 
     using CreatorFn = std::function<DatabasePtr(const Arguments & arguments)>;
@@ -96,13 +92,9 @@ public:
         .supports_table_overrides = false,
         .is_external = false,
         .source_access_type = std::nullopt,
-        .has_builtin_setting_fn = nullptr,
     }, Documentation documentation = {});
 
     const DatabaseEngines & getDatabaseEngines() const { return database_engines; }
-
-    /// Features of a registered database engine, or nullptr if the engine is not registered.
-    const EngineFeatures * tryGetDatabaseEngineFeatures(const String & engine_name) const;
 
     /// Returns true if the given database engine accesses external data sources.
     bool isDatabaseExternal(const String & engine_name) const;

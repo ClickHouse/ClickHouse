@@ -377,7 +377,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
     extern const ServerSettingsDouble merges_mutations_memory_usage_to_ram_ratio;
     extern const ServerSettingsString merge_workload;
-    extern const ServerSettingsUInt64 min_allocation_size_to_log_stack_trace;
     extern const ServerSettingsUInt64 min_allocation_size_to_throw_on_memory_limit;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsString mutation_workload;
@@ -432,6 +431,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_size;
     extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_free_size;
     extern const ServerSettingsUInt64 iceberg_manifest_decode_thread_pool_queue_size;
+    extern const ServerSettingsNonZeroUInt64 ai_function_max_thread_pool_size;
+    extern const ServerSettingsUInt64 ai_function_max_thread_pool_free_size;
+    extern const ServerSettingsUInt64 ai_function_thread_pool_queue_size;
     extern const ServerSettingsUInt64 page_cache_history_window_ms;
     extern const ServerSettingsString page_cache_policy;
     extern const ServerSettingsDouble page_cache_size_ratio;
@@ -901,7 +903,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
                 auto condition_read_buffer = ReadBufferFromString(condition);
                 auto condition_write_buffer = WriteBufferFromOwnString();
 
-                LOG_DEBUG(log, "Checking startup query condition `{}`", condition);
+                LOG_DEBUG(log, "Checking startup query condition `{}`", formatQueryForLogging(condition, startup_context->getSettingsRef()));
                 startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
                 startup_context->setCurrentQueryId("");
 
@@ -935,7 +937,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
             auto read_buffer = ReadBufferFromString(query);
             auto write_buffer = WriteBufferFromOwnString();
 
-            LOG_DEBUG(log, "Executing query `{}`", query);
+            LOG_DEBUG(log, "Executing query `{}`", formatQueryForLogging(query, startup_context->getSettingsRef()));
             startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
             startup_context->setCurrentQueryId("");
 
@@ -1389,10 +1391,6 @@ try
     {
         global_context->createTraceCollector();
 
-        /// The config reloader applies this too; the seed here covers startup, which runs before its first callback.
-        MemoryTracker::setMinAllocationSizeToLogStackTrace(
-            server_settings[ServerSetting::min_allocation_size_to_log_stack_trace]);
-
         /// Set up server-wide memory profiler (for total memory tracker).
         if (server_settings[ServerSetting::total_memory_profiler_step])
             total_memory_tracker.setProfilerStep(server_settings[ServerSetting::total_memory_profiler_step]);
@@ -1748,6 +1746,11 @@ try
         server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
         server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
         server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
+
+    getAIRequestThreadPool().initialize(
+        server_settings[ServerSetting::ai_function_max_thread_pool_size],
+        server_settings[ServerSetting::ai_function_max_thread_pool_free_size],
+        server_settings[ServerSetting::ai_function_thread_pool_queue_size]);
 
     std::string path_str = getCanonicalPath(String(server_settings[ServerSetting::path]), original_working_directory);
     fs::path path = path_str;
@@ -2582,9 +2585,6 @@ try
             CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
                 new_server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
 
-            MemoryTracker::setMinAllocationSizeToLogStackTrace(
-                new_server_settings[ServerSetting::min_allocation_size_to_log_stack_trace]);
-
             per_cpu_memory.setBudgetCapacity(new_server_settings[ServerSetting::max_per_cpu_untracked_memory]);
             per_cpu_memory.setThreadBuffer(new_server_settings[ServerSetting::per_cpu_untracked_memory_thread_buffer]);
 
@@ -2661,6 +2661,11 @@ try
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
             global_context->setUsersToIgnoreEarlyMemoryLimitCheck(new_server_settings[ServerSetting::users_to_ignore_early_memory_limit_check]);
             global_context->allowSystemAllocateMemory(config().getBool("allow_system_allocate_memory", false));
+
+            global_context->setMutationsUseAnalyzerOverride(
+                config().has("use_analyzer_for_mutations")
+                    ? std::make_optional(config().getBool("use_analyzer_for_mutations"))
+                    : std::nullopt);
 
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
             global_context->setReadThroughDistributedCache(new_server_settings[ServerSetting::enable_read_through_distributed_cache]);
@@ -2802,6 +2807,11 @@ try
                 new_server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
                 new_server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
                 new_server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
+
+            getAIRequestThreadPool().reloadConfiguration(
+                new_server_settings[ServerSetting::ai_function_max_thread_pool_size],
+                new_server_settings[ServerSetting::ai_function_max_thread_pool_free_size],
+                new_server_settings[ServerSetting::ai_function_thread_pool_queue_size]);
 
             global_context->setMergeWorkload(new_server_settings[ServerSetting::merge_workload]);
             global_context->setMutationWorkload(new_server_settings[ServerSetting::mutation_workload]);

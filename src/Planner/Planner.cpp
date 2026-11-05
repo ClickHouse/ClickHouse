@@ -65,6 +65,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -112,6 +113,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMap additional_table_filters;
+    extern const SettingsBool use_query_cache;
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
@@ -169,6 +171,7 @@ namespace Setting
     extern const SettingsBool enable_adaptive_aggregator;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
+    extern const SettingsBool use_aggregation_memory_tracker;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
@@ -274,7 +277,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         const auto * raw = storage_ptr.get();
         if (typeid_cast<const StorageDistributed *>(raw))
             return true;
-        if (parallel_replicas_estimation_enabled && std::dynamic_pointer_cast<MergeTreeData>(storage_ptr))
+        if (parallel_replicas_estimation_enabled && castStorage<MergeTreeData>(storage_ptr, DeferredTable::Load))
             return true;
         /// Every cluster engine hands paths out to replicas through `getTaskIteratorExtension`, which
         /// prunes them with this predicate. The initiator's plan for such a read stops at
@@ -445,7 +448,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
 void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const PlannerContextPtr & planner_context)
 {
     query_plan.addInterpreterContext(planner_context->getQueryContext());
-    query_plan.addDistributedPlanDecisionContext(planner_context->getMutableQueryContext());
+
     for (const auto & [table_expression, _] : planner_context->getTableExpressionNodeToData())
     {
         if (auto * table_node = table_expression->as<TableNode>())
@@ -783,7 +786,8 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::enable_packed_string_keys_in_aggregation],
         settings[Setting::enable_adaptive_aggregator],
         settings[Setting::adaptive_aggregator_freeze_threshold],
-        settings[Setting::adaptive_aggregator_freeze_threshold_bytes]);
+        settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
+        settings[Setting::use_aggregation_memory_tracker]);
 
     return aggregator_params;
 }
@@ -1206,7 +1210,6 @@ void addTotalsHavingStep(QueryPlan & query_plan,
     PlannerExpressionsAnalysisResult & expression_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
-    const SelectQueryOptions & select_query_options,
     const QueryNode & query_node,
     UsefulSets & useful_sets)
 {
@@ -1216,11 +1219,6 @@ void addTotalsHavingStep(QueryPlan & query_plan,
     auto & aggregation_analysis_result = expression_analysis_result.getAggregation();
     auto & having_analysis_result = expression_analysis_result.getHaving();
     bool need_finalize = !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
-
-    /// `TotalsHavingStep` evaluates `HAVING` itself, so a correlated subquery in `HAVING` has to be
-    /// decorrelated into the plan before the step, the same way `addFilterStep` does it.
-    for (const auto & correlated_subquery : having_analysis_result.correlated_subtrees.subqueries)
-        buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
 
     std::optional<ActionsDAG> actions;
     if (having_analysis_result.filter_actions)
@@ -1481,6 +1479,9 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         {
             ActionsDAG rename_dag;
 
+            /// A later item resolves names against every node of the DAG, so the conversions and outputs are added after all items are visited.
+            std::vector<std::tuple<const ActionsDAG::Node *, DataTypePtr, String>> interpolated_columns;
+
             for (auto & interpolate_node : interpolate_list_nodes)
             {
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
@@ -1501,16 +1502,16 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
 
                 const auto * expression_to_interpolate = expression_to_interpolate_expression_nodes[0];
                 const auto * interpolate_expression = interpolate_expression_nodes[0];
-                if (!interpolate_expression->result_type->equals(*expression_to_interpolate->result_type))
-                {
-                    interpolate_expression = &interpolate_actions_dag.addCast(*interpolate_expression,
-                        expression_to_interpolate->result_type,
-                        interpolate_expression->result_name,
-                        planner_context->getQueryContext());
-                }
+                interpolated_columns.emplace_back(interpolate_expression, expression_to_interpolate->result_type, interpolate_node_typed.getExpressionName());
+            }
 
-                const auto * alias_node = &interpolate_actions_dag.addAlias(*interpolate_expression, interpolate_node_typed.getExpressionName());
-                interpolate_actions_dag.getOutputs().push_back(alias_node);
+            for (const auto & [interpolate_expression, target_type, target_name] : interpolated_columns)
+            {
+                const auto * interpolated_column = interpolate_expression;
+                if (!interpolated_column->result_type->equals(*target_type))
+                    interpolated_column = &interpolate_actions_dag.addCast(*interpolated_column, target_type, {}, planner_context->getQueryContext());
+
+                interpolate_actions_dag.getOutputs().push_back(&interpolate_actions_dag.addAlias(*interpolated_column, target_name));
             }
 
             if (!rename_dag.getOutputs().empty())
@@ -2183,9 +2184,9 @@ void addBuildSubqueriesForSetsStepIfNeeded(
         /// Contexts should be copied into the root query plan, because some functions may
         /// be created using them while this subquery plan will be destroyed after
         /// FutureSetFromSubquery::buildSetInplace(). Otherwise, function execution may fail
-        /// with a "Context has expired" exception. The set source is not united into this plan,
-        /// so its decision contexts are copied the same way.
-        query_plan.takeContextsFrom(subquery_plan);
+        /// with a "Context has expired" exception.
+        for (const auto & context : subquery_plan.getInterpretersContexts())
+            query_plan.addInterpreterContext(context);
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
     }
 
@@ -2268,37 +2269,6 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
         filter_info.do_remove_column);
     filter_step->setStepDescription("additional result filter");
     query_plan.addStep(std::move(filter_step));
-}
-
-/// Replace a header that holds nothing but row-count-only columns (or no column at all) with one
-/// canonical materialized marker, so that the row count has a column to live in.
-void addRowCountMarkerStepIfNeeded(QueryPlan & query_plan, const PlannerContextPtr & planner_context)
-{
-    ColumnIdentifierSet row_count_only_identifiers;
-    for (const auto & [_, table_expression_data] : planner_context->getTableExpressionNodeToData())
-    {
-        if (const auto & column_identifier = table_expression_data.getRowCountOnlyColumnIdentifier())
-            row_count_only_identifiers.insert(*column_identifier);
-    }
-
-    if (row_count_only_identifiers.empty())
-        return;
-
-    const auto & header = query_plan.getCurrentHeader();
-    for (const auto & column : *header)
-    {
-        if (!row_count_only_identifiers.contains(column.name))
-            return;
-    }
-
-    ActionsDAG marker_dag(header->getNamesAndTypesList());
-    auto marker_type = std::make_shared<DataTypeUInt8>();
-    marker_dag.getOutputs()
-        = {&marker_dag.materializeNode(marker_dag.addColumn(marker_type->createColumnConst(0, 0u), marker_type, "__row_count_marker"))};
-
-    auto marker_step = std::make_unique<ExpressionStep>(header, std::move(marker_dag));
-    marker_step->setStepDescription("Row count marker for zero-column mergeable state");
-    query_plan.addStep(std::move(marker_step));
 }
 
 void addReadFromQueryResultCacheStep(
@@ -2574,7 +2544,8 @@ static bool shouldUseQueryCacheForSubquery(
         for (const auto & change : query_node.getSettingsChanges())
         {
             if (change.name == "use_query_cache")
-                return change.value.safeGet<bool>();
+                /// The node's context holds the clause as clamped and applied; the literal may be a string such as `'true'`.
+                return query_node.getContext()->getSettingsRef()[Setting::use_query_cache];
         }
     }
 
@@ -2779,9 +2750,12 @@ void Planner::buildPlanForQueryNode()
     /// applied later as a plan transformation (QueryPlanOptimizations::applyParallelReplicas). So skip the
     /// old parallel-replicas planning path here (it would emit ReadFromLocalReplica /
     /// ReadFromRemoteParallelReplicas, e.g. inside a view/union inner query) and use the normal plan.
+    /// Same for a plan that is shipped to a shard: those steps are local to the server that planned
+    /// them and have no serialized form, and the shard decides on parallel replicas on its own.
     if (planner_context->getMutableQueryContext()->canUseTaskBasedParallelReplicas()
         && planner_context->getGlobalPlannerContext()->parallel_replicas_node == &query_node
-        && !settings[Setting::parallel_replicas_plan_based])
+        && !settings[Setting::parallel_replicas_plan_based]
+        && !select_query_options.build_logical_plan)
     {
         join_tree_query_plan = buildQueryPlanForParallelReplicas(query_node, planner_context, select_query_info.storage_limits);
     }
@@ -2971,7 +2945,7 @@ void Planner::buildPlanForQueryNode()
 
             if (query_node.isGroupByWithTotals())
             {
-                addTotalsHavingStep(query_plan, expression_analysis_result, query_analysis_result, planner_context, select_query_options, query_node, useful_sets);
+                addTotalsHavingStep(query_plan, expression_analysis_result, query_analysis_result, planner_context, query_node, useful_sets);
                 having_executed = true;
             }
 
@@ -3176,11 +3150,6 @@ void Planner::buildPlanForQueryNode()
         // For additional_result_filter setting
         addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
     }
-
-    /// A header carrying nothing but row-count-only columns cannot express "N rows" across a
-    /// mergeable-stage boundary, and both sides must derive the same header.
-    if (!query_processing_info.isFinalizingStage() && query_plan.isInitialized())
-        addRowCountMarkerStepIfNeeded(query_plan, planner_context);
 
     const auto & client_info = query_context->getClientInfo();
 

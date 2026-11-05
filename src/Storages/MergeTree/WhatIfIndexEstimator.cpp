@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/HypotheticalObjectStore.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/JoinedTables.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -14,6 +15,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -33,6 +35,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_if_final;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
@@ -349,11 +352,22 @@ WhatIfResult estimateHypotheticalIndexes(
     QueryPlan plan;
     ContextPtr plan_context = local_context;
 
+    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         InterpreterSelectQueryAnalyzer interpreter(select_query_copy, local_context, query_options);
         interpreter.applyDistributedPlanFallbackIfNeeded();
         plan_context = interpreter.getContext();
         plan = std::move(interpreter).extractQueryPlan();
+    }
+    else
+    {
+        /// Verify if we need to fallback to local execution
+        InterpreterSelectWithUnionQuery interpreter(select_query_copy, local_context, query_options);
+        interpreter.buildQueryPlan(plan);
+        QueryPlanOptimizationSettings probe_settings(local_context);
+        if (plan.applyDistributedPlanFallbackToLocal(probe_settings))
+            local_context->setSetting("make_distributed_plan", false);
+        plan_context = interpreter.getContext();
     }
 
     plan.optimize(QueryPlanOptimizationSettings(plan_context));
@@ -365,7 +379,7 @@ WhatIfResult estimateHypotheticalIndexes(
     {
         auto storage = tryResolveSingleTable(select_query, local_context);
         const auto & store = local_context->getHypotheticalObjectStore();
-        if (const auto * mt = dynamic_cast<const MergeTreeData *>(storage.get()))
+        if (const auto * mt = castStorage<MergeTreeData>(storage, DeferredTable::Load).get())
         {
             /// Empty table -> ReadNothing, report a zero baseline
             if (mt->getActivePartsCount() == 0)

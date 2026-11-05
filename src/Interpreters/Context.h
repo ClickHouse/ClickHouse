@@ -176,6 +176,10 @@ class DDLWorker;
 class ITableFunction;
 using TableFunctionPtr = std::shared_ptr<ITableFunction>;
 class Block;
+/// An entry of the query scalar map: the scalar block plus whether it came from the client.
+/// Defined in Context.cpp, where `Block` is complete; here `std::map` only needs the forward
+/// declaration, the same way `Scalars` is a `std::map` over the forward-declared `Block`.
+struct ScalarEntry;
 class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
@@ -439,8 +443,13 @@ protected:
     /// History of query ids for `system.session_query_ids`, lives on the session context.
     mutable std::shared_ptr<SessionQueryIdsHistory> session_query_ids_history;
     mutable std::shared_ptr<HypotheticalObjectStore> hypothetical_object_store;
-    /// Query scalars
-    Scalars scalars;
+    /// Query scalars. Each entry carries whether it was supplied by the client over the wire (the
+    /// `Scalar` packet, i.e. the `clickhouse-client --external ... --scalar` feature or an initiator
+    /// shipping scalars to a shard) rather than computed by the server itself. The origin travels with
+    /// the block so that the analyzer's scalar-subquery cache (which keys on the query-tree hash) never
+    /// mistakes a client-supplied block for an already-computed subquery result; without this a client
+    /// could forge the result of a scalar subquery used in a row policy and bypass the policy.
+    std::map<String, ScalarEntry> scalars;
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
     Scalars special_scalars;
 
@@ -867,6 +876,7 @@ public:
         CLICKHOUSE_BUILT_WITH_COVERAGE,
         CLICKHOUSE_BUILT_WITH_SANITIZERS,
         CLICKHOUSE_LOGGING_LEVEL_TEST,
+        CUSTOM_DISK_NOT_ALLOWED_BY_REMOTE_URL_ALLOW_HOSTS,
         SERVER_CPU_OVERLOAD,
         SERVER_MEMORY_OVERLOAD,
         SERVER_RUN_UNDER_DEBUGGER,
@@ -1115,6 +1125,16 @@ public:
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
 
+    /// Add a scalar received from the client over the wire (the `Scalar` packet). Unlike `addScalar`,
+    /// the entry is marked as client-supplied so that `hasComputedScalar` will not report it as a
+    /// server-computed subquery result. Explicit readers (`__getScalar`, `_shard_num`, forwarding to
+    /// shards) still see it through `getScalar` / `hasScalar` / `getScalars`.
+    void addClientScalar(const String & name, const Block & block);
+    /// Like `hasScalar`, but returns true only for scalars the server computed itself, never for
+    /// client-supplied ones. The analyzer's scalar-subquery cache must use this so that a forged
+    /// client scalar cannot stand in for the result of a (e.g. row-policy) scalar subquery.
+    bool hasComputedScalar(const String & name) const;
+
     std::optional<Block> tryGetSpecialScalar(const String & name) const;
     void addSpecialScalar(const String & name, const Block & block);
 
@@ -1214,6 +1234,7 @@ public:
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
+    void clearViewSource();
 
     String getCurrentDatabase() const;
     String getCurrentQueryId() const { return client_info.current_query_id; }
@@ -1286,7 +1307,10 @@ public:
     void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source);
+    /// For the resets of a statement that also changes `profile`: `changes_applied_first` decides their constraints.
+    void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
+    void clampToSettingsConstraintsRejectingInvalidChanges(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     /// Reset settings to default value
@@ -1864,6 +1888,12 @@ public:
     void setConfigReloaderInterval(size_t value_ms);
     size_t getConfigReloaderInterval() const;
 
+    /// Server-wide override for the analyzer in mutations.
+    /// `std::nullopt` means there is no override (the session setting `allow_experimental_analyzer` is used).
+    /// Set from the main config reload callback.
+    void setMutationsUseAnalyzerOverride(std::optional<bool> value);
+    std::optional<bool> getMutationsUseAnalyzerOverride() const;
+
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
 
@@ -1879,6 +1909,8 @@ public:
 
     /// Provides storage politics schemes
     StoragePolicyPtr getStoragePolicy(const String & name) const;
+    /// Returns `nullptr` instead of throwing when the policy is not configured.
+    StoragePolicyPtr tryGetStoragePolicy(const String & name) const;
 
     StoragePolicyPtr getStoragePolicyFromDisk(const String & disk_name) const;
 
@@ -2146,6 +2178,7 @@ private:
     void checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
 
     void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
+    void clampToSettingsConstraintsRejectingInvalidChangesWithLock(SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source) const;
 
     void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const;

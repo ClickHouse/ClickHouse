@@ -206,6 +206,15 @@ Maximum number of idle standby threads to keep in the thread pool for decoding I
     DECLARE(UInt64, iceberg_manifest_decode_thread_pool_queue_size, 10000, R"(
 The maximum number of jobs that can be scheduled on the thread pool for decoding Iceberg data manifest files.
 )", 0) \
+    DECLARE(NonZeroUInt64, ai_function_max_thread_pool_size, 1000, R"(
+Maximum total number of threads to use for requests to AI providers. One thread holds one request, so this caps how many AI provider requests the whole server has in flight at once, across all queries. [`ai_function_max_concurrent_requests_per_thread`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) bounds each query thread's share of it.
+)", 0) \
+    DECLARE(UInt64, ai_function_max_thread_pool_free_size, 0, R"(
+Maximum number of idle standby threads to keep in the thread pool for requests to AI providers.
+)", 0) \
+    DECLARE(UInt64, ai_function_thread_pool_queue_size, 10'000, R"(
+The maximum number of jobs that can be scheduled on the thread pool for requests to AI providers.
+)", 0) \
     DECLARE(UInt64, max_format_parsing_thread_pool_free_size, 0, R"(
 Maximum number of idle standby threads to keep in the thread pool for parsing input.
 )", 0) \
@@ -437,19 +446,6 @@ Allocations made by ClickHouse's own large buffers — column data, hash tables,
 A value of `0` (default) preserves the legacy behaviour: implicit `operator new` allocations are never refused by the memory tracker, and only explicit ClickHouse allocations can raise `MEMORY_LIMIT_EXCEEDED`.
 
 Note, to avoid side effects it is recommended to set value greater then `max_untracked_memory`.
-)", 0) \
-    DECLARE(UInt64, min_allocation_size_to_log_stack_trace, 0, R"(
-Minimum size, in bytes, of a single charge to the global (server-wide) memory tracker for which a stack trace is captured, written to the server log at `Warning` level and inserted into [`system.trace_log`](/operations/system-tables/trace_log) with trace type `MemoryLargeAllocation`.
-
-The size compared against the threshold, and reported, is what one tracker call charges, which is not necessarily one allocation: a thread defers its small allocations and flushes them as a single charge, so the reported size can exceed the allocation at the top of the reported stack by up to `max_untracked_memory`. Keeping the threshold well above `max_untracked_memory` keeps that difference immaterial.
-
-This is a diagnostic for a global tracked total that has grown far beyond the process's real memory usage. In that state the server refuses every allocation, down to zero-byte ones, while using a fraction of its limit, and ordinary telemetry cannot attribute the step: allocations charged under a `MemoryTrackerBlockerInThread` skip the limit check and the traces that accompany it, and the `system.trace_log` inserts that would carry the rest fail once the server is wedged. The server log keeps being written, so the stack trace reaches it.
-
-At most 10 traces are captured per server run, because capturing and symbolizing a stack is expensive and the trigger tends to repeat. Changing this setting at runtime, in either direction, does not raise that bound.
-
-Requires `trace_log` to be configured. Without a running trace collector the value is ignored and reported as `0` in [`system.server_settings`](/operations/system-tables/server_settings), since the trace could only be captured and discarded. A trace the collector processes before that table is attached, which happens late in startup, reaches the server log only.
-
-A value of `0` (default) disables the diagnostic. Set it well above the largest allocation the server legitimately makes, otherwise ordinary large allocations are logged too and startup can spend the whole budget.
 )", 0) \
     DECLARE(Double, max_server_memory_usage_to_ram_ratio, 0.9, R"(
 The maximum amount of memory the server is allowed to use, expressed as a ratio to all available memory.
@@ -918,6 +914,11 @@ A value of `0` means no limitation.
 ```xml
 <max_named_collection_num_to_throw>400</max_named_collection_num_to_throw>
 ```
+)", 0) \
+    DECLARE(Bool, ai_function_allow_sql_named_collections, true, R"(
+Allows AI functions (such as `aiGenerate`, `aiEmbed`, `aiSimilarity`) to use named collections created with `CREATE NAMED COLLECTION`.
+When disabled, AI functions accept only named collections defined in the server configuration file, and using any other collection throws an exception.
+This applies both to the `credentials` parameter and to the `ai_function_text_default_credentials` and `ai_function_embedding_default_credentials` settings.
 )", 0) \
     DECLARE(UInt64, max_table_num_to_throw, 0lu, R"(
 If number of tables is greater than this value, server will throw an exception.
@@ -1519,6 +1520,9 @@ See [Controlling behavior on server CPU overload](/concepts/features/configurati
     DECLARE(Float, distributed_cache_keep_up_free_connections_ratio, 0.1f, "Soft limit for number of active connection distributed cache will try to keep free. After the number of free connections goes below distributed_cache_keep_up_free_connections_ratio * max_connections, connections with oldest activity will be closed until the number goes above the limit.", 0) \
     DECLARE(UInt64, tcp_close_connection_after_queries_num, 0, R"(Maximum number of queries allowed per TCP connection before the connection is closed. Set to 0 for unlimited queries.)", 0) \
     DECLARE(UInt64, tcp_close_connection_after_queries_seconds, 0, R"(Maximum lifetime of a TCP connection in seconds before it is closed. Set to 0 for unlimited connection lifetime.)", 0) \
+    DECLARE(Bool, tcp_with_proxy_allow_interserver_mode, true, R"(
+Allows clients connected through `tcp_with_proxy_port` to use the native protocol's interserver mode. Disable this setting when `tcp_with_proxy_port` is exposed to untrusted clients through a proxy. Connections to `tcp_port` and `tcp_port_secure` are not affected.
+)", 0) \
     DECLARE(UInt64, handshake_timeout_milliseconds, 30000, R"(Wall-clock timeout in milliseconds for the entire TCP handshake phase (Hello + Addendum). Limits how long an unauthenticated connection can hold a thread. Set to 0 to disable.)", 0) \
     DECLARE(Bool, skip_binary_checksum_checks, false, R"(Skips ClickHouse binary checksum integrity checks)", 0) \
     DECLARE(Bool, abort_on_logical_error, false, R"(Crash the server on LOGICAL_ERROR exceptions. Only for experts.)", 0) \
@@ -1922,7 +1926,7 @@ Configured as `named_collections_storage.type` (`<named_collections_storage><typ
     DECLARE(String, openssl_server_ca_config, "", R"(Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/). The CA certificates are reloaded without a restart when the file changes or on `SYSTEM RELOAD CONFIG`; new connections are verified against the reloaded certificates.)", 0, "openSSL.server.caConfig") \
     DECLARE(String, openssl_server_verification_mode, "relaxed", R"(The method for checking the node's certificates. Details are in the description of the [Context](https://github.com/ClickHouse/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `<none>`, `<relaxed>`, `<strict>`, `<once>`.)", 0, "openSSL.server.verificationMode") \
     DECLARE(UInt64, openssl_server_verification_depth, 9, R"(The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.)", 0, "openSSL.server.verificationDepth") \
-    DECLARE(Bool, openssl_server_load_default_ca_file, true, R"(Determines whether the default CA certificates will be used. ClickHouse looks for them in the file `</etc/ssl/cert.pem>` (resp. the directory `</etc/ssl/certs>`), in the file (resp. directory) specified by the environment variable `<SSL_CERT_FILE>` (resp. `<SSL_CERT_DIR>`), and in other well-known locations of various distributions. If no CA certificates are found on the filesystem, no explicit `caConfig` is configured, and the binary was built with embedded CA certificates (the default, controlled by the `ENABLE_EMBEDDED_CA_CERTIFICATES` build option), the embedded certificates are used instead, so TLS works even in a minimal environment without any files, e.g. in a container built "from scratch". In builds without embedded CA certificates, an error is thrown in this case.)", 0, "openSSL.server.loadDefaultCAFile") \
+    DECLARE(Bool, openssl_server_load_default_ca_file, true, R"(Determines whether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `</etc/ssl/cert.pem>` (resp. the directory `</etc/ssl/certs>`) or in file (resp. directory) specified by the environment variable `<SSL_CERT_FILE>` (resp. `<SSL_CERT_DIR>`).)", 0, "openSSL.server.loadDefaultCAFile") \
     DECLARE(String, openssl_server_chipher_list, "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH", R"(Supported OpenSSL encryptions.)", 0, "openSSL.server.cipherList") \
     DECLARE(Bool, openssl_server_cache_sessions, false, R"(Enables or disables caching sessions. Must be used in combination with `<sessionIdContext>`. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.server.cacheSessions") \
     DECLARE(String, openssl_server_session_id_context, "application.name", R"(A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `<SSL_MAX_SSL_SESSION_ID_LENGTH>`. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching.)", 0, "openSSL.server.sessionIdContext") \
@@ -1942,7 +1946,7 @@ Configured as `named_collections_storage.type` (`<named_collections_storage><typ
     DECLARE(String, openssl_client_ca_config, "", R"(Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/). The CA certificates are reloaded without a restart when the file changes or on `SYSTEM RELOAD CONFIG`; new connections are verified against the reloaded certificates.)", 0, "openSSL.client.caConfig") \
     DECLARE(String, openssl_client_verification_mode, "relaxed", R"(The method for checking the node's certificates. Details are in the description of the [Context](https://github.com/ClickHouse/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `<none>`, `<relaxed>`, `<strict>`, `<once>`.)", 0, "openSSL.client.verificationMode") \
     DECLARE(UInt64, openssl_client_verification_depth, 9, R"(The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.)", 0, "openSSL.client.verificationDepth") \
-    DECLARE(Bool, openssl_client_load_default_ca_file, true, R"(Determines whether the default CA certificates will be used. ClickHouse looks for them in the file `</etc/ssl/cert.pem>` (resp. the directory `</etc/ssl/certs>`), in the file (resp. directory) specified by the environment variable `<SSL_CERT_FILE>` (resp. `<SSL_CERT_DIR>`), and in other well-known locations of various distributions. If no CA certificates are found on the filesystem, no explicit `caConfig` is configured, and the binary was built with embedded CA certificates (the default, controlled by the `ENABLE_EMBEDDED_CA_CERTIFICATES` build option), the embedded certificates are used instead, so TLS works even in a minimal environment without any files, e.g. in a container built "from scratch". In builds without embedded CA certificates, an error is thrown in this case.)", 0, "openSSL.client.loadDefaultCAFile") \
+    DECLARE(Bool, openssl_client_load_default_ca_file, true, R"(Determines whether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `</etc/ssl/cert.pem>` (resp. the directory `</etc/ssl/certs>`) or in file (resp. directory) specified by the environment variable `<SSL_CERT_FILE>` (resp. `<SSL_CERT_DIR>`).)", 0, "openSSL.client.loadDefaultCAFile") \
     DECLARE(String, openssl_client_chipher_list, "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH", R"(Supported OpenSSL encryptions.)", 0, "openSSL.client.cipherList") \
     DECLARE(Bool, openssl_client_cache_sessions, false, R"(Enables or disables caching sessions. Must be used in combination with `<sessionIdContext>`. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.cacheSessions") \
     DECLARE(Bool, openssl_client_extended_verification, true, R"(If enabled, verify that the certificate CN or SAN matches the peer hostname.)", 0, "openSSL.client.extendedVerification") \
@@ -2364,6 +2368,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "warning_supress_regexp",
         "enable_system_unfreeze",
         "disable_insertion_and_mutation",
+        "use_analyzer_for_mutations",
         "streaming_storage_shutdown_threads",
         "local_disk_check_period_ms",
         "page_cache_size",
@@ -3577,7 +3582,6 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
         = {
             {"max_server_memory_usage", {std::to_string(total_memory_tracker.getHardLimit()), ChangeableWithoutRestart::Yes}},
             {"min_allocation_size_to_throw_on_memory_limit", {std::to_string(CurrentMemoryTracker::getMinAllocationSizeBytesToThrow()), ChangeableWithoutRestart::Yes}},
-            {"min_allocation_size_to_log_stack_trace", {std::to_string(MemoryTracker::getMinAllocationSizeToLogStackTrace()), ChangeableWithoutRestart::Yes}},
             {"max_per_cpu_untracked_memory", {std::to_string(per_cpu_memory.budgetCapacity()), ChangeableWithoutRestart::Yes}},
             {"per_cpu_untracked_memory_thread_buffer", {std::to_string(per_cpu_memory.threadBuffer()), ChangeableWithoutRestart::Yes}},
 
@@ -3734,6 +3738,12 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"iceberg_manifest_decode_thread_pool_queue_size",
              {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
+            {"ai_function_max_thread_pool_size",
+             {getAIRequestThreadPool().isInitialized() ? std::to_string(getAIRequestThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"ai_function_max_thread_pool_free_size",
+             {getAIRequestThreadPool().isInitialized() ? std::to_string(getAIRequestThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"ai_function_thread_pool_queue_size",
+             {getAIRequestThreadPool().isInitialized() ? std::to_string(getAIRequestThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
 
             {"abort_on_logical_error", {std::to_string(DB::abort_on_logical_error), ChangeableWithoutRestart::Yes}},
 

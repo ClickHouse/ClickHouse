@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <atomic>
 #include <map>
 #include <set>
@@ -66,6 +67,7 @@
 #include <IO/AsynchronousReader.h>
 #include <IO/LongConnectionLimit.h>
 #include <IO/S3Settings.h>
+#include <IO/SharedThreadPools.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -156,7 +158,7 @@
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
 #include <Interpreters/ClusterDiscovery.h>
-#include <Interpreters/TransactionManager.h>
+#include <Interpreters/TransactionLog.h>
 #include <Interpreters/ZooKeeperConnectionLog.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
 #include <filesystem>
@@ -164,6 +166,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <base/defines.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
@@ -393,6 +396,7 @@ namespace Setting
     extern const SettingsString workload;
     extern const SettingsString compatibility;
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool parallel_replicas_only_with_analyzer;
     extern const SettingsBool enable_hdfs_pread;
     extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
 }
@@ -749,6 +753,11 @@ struct ContextSharedPart : boost::noncopyable
     /// Only for system.server_settings, actually value stored in reloader itself
     std::atomic_size_t config_reload_interval_ms = ConfigReloader::DEFAULT_RELOAD_INTERVAL.count();
 
+    /// Optional server-wide override for the analyzer in mutations.
+    /// Encoded as a tri-state: -1 = unset (use session setting), 0 = force off, 1 = force on.
+    /// Refreshed on config reload.
+    std::atomic<int8_t> mutations_use_analyzer_override = -1;
+
     double min_os_cpu_wait_time_ratio_to_drop_connection = 15.0;
     double max_os_cpu_wait_time_ratio_to_drop_connection = 30.0;
 
@@ -961,6 +970,10 @@ struct ContextSharedPart : boost::noncopyable
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         }
+
+        /// A cancelled query does not wait for its AI requests. Their memory is tracked under the user trackers in
+        /// `process_list`, which is destroyed after this destructor body.
+        getAIRequestThreadPool().shutdown();
     }
 
     void setConfig(const ConfigurationPtr & config_value)
@@ -1135,7 +1148,7 @@ struct ContextSharedPart : boost::noncopyable
 
         delete_async_insert_queue.reset();
 
-        TransactionManager::shutdownIfAny();
+        TransactionLog::shutdownIfAny();
 
         // Workload entity storage must be destructed when no queries or merges are running because PipelineExecutor may access it.
         // Read the `shared_ptr` under the mutex, because `getWorkloadEntityStoragePtr` may concurrently
@@ -1416,6 +1429,15 @@ void ContextSharedMutex::lockSharedImpl()
     Base::lockSharedImpl();
     ProfileEvents::increment(ProfileEvents::ContextLockWaitMicroseconds, watch.elapsedMicroseconds());
 }
+
+/// An entry of `ContextData::scalars`. `from_client` is true when the block arrived from the client
+/// over the wire (`Context::addClientScalar`) rather than being computed by the server, so that
+/// `Context::hasComputedScalar` can keep such a block out of the analyzer's scalar-subquery cache.
+struct ScalarEntry
+{
+    Block block;
+    bool from_client = false;
+};
 
 ContextData::ContextData()
 {
@@ -2774,7 +2796,10 @@ std::pair<UInt64, String> Context::setConcurrentThreadsSoftLimit(UInt64 num, UIn
 Scalars Context::getScalars() const
 {
     std::lock_guard lock(mutex);
-    return scalars;
+    Scalars res;
+    for (const auto & [name, entry] : scalars)
+        res.emplace(name, entry.block);
+    return res;
 }
 
 
@@ -2789,7 +2814,7 @@ Block Context::getScalar(const String & name) const
         // often, so 'bad arguments' for now.
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Scalar {} doesn't exist (internal bug)", backQuoteIfNeed(name));
     }
-    return it->second;
+    return it->second.block;
 }
 
 std::optional<Block> Context::tryGetSpecialScalar(const String & name) const
@@ -2943,7 +2968,18 @@ void Context::addScalar(const String & name, const Block & block)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
 
     std::lock_guard lock(mutex);
-    scalars[name] = block;
+    /// A server-computed value overrides any client-supplied one of the same name and is trusted.
+    scalars[name] = ScalarEntry{block, /*from_client=*/ false};
+}
+
+
+void Context::addClientScalar(const String & name, const Block & block)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
+
+    std::lock_guard lock(mutex);
+    scalars[name] = ScalarEntry{block, /*from_client=*/ true};
 }
 
 
@@ -2964,6 +3000,16 @@ bool Context::hasScalar(const String & name) const
 
     std::lock_guard lock(mutex);
     return scalars.contains(name);
+}
+
+bool Context::hasComputedScalar(const String & name) const
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
+
+    std::lock_guard lock(mutex);
+    auto it = scalars.find(name);
+    return it != scalars.end() && !it->second.from_client;
 }
 
 void Context::addQueryAccessInfo(
@@ -3200,7 +3246,9 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             create.set(create.sql_security, sql_security);
 
             auto view_context = view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
-            auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
+            auto sample_block = getSettingsRef()[Setting::allow_experimental_analyzer]
+                ? InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context)
+                : InterpreterSelectWithUnionQuery::getSampleBlock(query, view_context);
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
                                                      ColumnsDescription(sample_block->getNamesAndTypesList()),
@@ -3509,6 +3557,12 @@ StoragePtr Context::getViewSource() const
     return view_source;
 }
 
+
+void Context::clearViewSource()
+{
+    view_source.reset();
+}
+
 bool Context::displaySecretsInShowAndSelect() const
 {
     return shared->server_settings[ServerSetting::display_secrets_in_show_and_select];
@@ -3518,6 +3572,41 @@ Settings Context::getSettingsCopy() const
 {
     SharedLockGuard lock(mutex);
     return *settings;
+}
+
+namespace
+{
+bool isProfileChange(const SettingChange & change)
+{
+    return change.name == "profile";
+}
+
+/// Enforces the constraints on `changes` the way `applySettingsChanges` applies them: a `profile` change
+/// installs a new constraint set for the changes after it. Each run of changes up to the next `profile`
+/// change is enforced against the constraints in force before it, then applied together with that `profile`
+/// change to a scratch copy of `context`, so a rejected list leaves `context` untouched. Returns the enforced list.
+template <typename Enforce>
+SettingsChanges enforceConstraintsAlongProfileChanges(const ContextPtr & context, const SettingsChanges & changes, Enforce && enforce)
+{
+    auto scratch_context = Context::createCopy(context);
+    SettingsChanges enforced;
+    for (auto begin = changes.begin(); begin != changes.end();)
+    {
+        auto profile = std::find_if(begin, changes.end(), isProfileChange);
+        SettingsChanges segment(begin, profile);
+        enforce(*scratch_context, segment);
+        begin = profile;
+        if (profile != changes.end())
+        {
+            segment.push_back(*profile);
+            ++begin;
+        }
+        /// `setCurrentProfile` checks the profile's own settings against the constraints in force before it.
+        scratch_context->applySettingsChanges(segment);
+        enforced.insert(enforced.end(), segment.begin(), segment.end());
+    }
+    return enforced;
+}
 }
 
 void Context::setSettings(const Settings & settings_)
@@ -3661,6 +3750,13 @@ void Context::clampToSettingsConstraintsWithLock(SettingsChanges & changes, Sett
         doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
 
+void Context::clampToSettingsConstraintsRejectingInvalidChangesWithLock(SettingsChanges & changes, SettingSource source)
+{
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.clampRejectingInvalidChanges(*settings, changes, source);
+    if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
+        doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
+}
+
 void Context::checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(merge_tree_settings, changes);
@@ -3680,6 +3776,15 @@ void Context::checkSettingsConstraints(const SettingChange & change, SettingSour
 
 void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingSource source)
 {
+    if (std::ranges::any_of(changes, isProfileChange))
+    {
+        enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
+        {
+            context.checkSettingsConstraints(std::as_const(segment), source);
+        });
+        return;
+    }
+
     SharedLockGuard lock(mutex);
     settings->checkShorthandChanges(changes);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
@@ -3692,16 +3797,63 @@ void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String>
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(*settings, names, source);
 }
 
+void Context::checkSettingsConstraintsForSettingsReset(
+    const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source)
+{
+    if (std::ranges::none_of(changes_applied_first, isProfileChange))
+    {
+        checkSettingsConstraintsForSettingsReset(names, source);
+        return;
+    }
+    /// The resets take effect after the rest of the statement, so a `profile` change in it decides the constraints.
+    auto scratch_context = Context::createCopy(shared_from_this());
+    scratch_context->applySettingsChanges(changes_applied_first);
+    scratch_context->checkSettingsConstraintsForSettingsReset(names, source);
+}
+
 void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source)
 {
+    if (std::ranges::any_of(changes, isProfileChange))
+    {
+        changes = enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
+        {
+            context.checkSettingsConstraints(segment, source);
+        });
+        return;
+    }
+
     SharedLockGuard lock(mutex);
     checkSettingsConstraintsWithLock(changes, source);
 }
 
 void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSource source)
 {
+    if (std::ranges::any_of(changes, isProfileChange))
+    {
+        changes = enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
+        {
+            context.clampToSettingsConstraints(segment, source);
+        });
+        return;
+    }
+
     SharedLockGuard lock(mutex);
     clampToSettingsConstraintsWithLock(changes, source);
+}
+
+void Context::clampToSettingsConstraintsRejectingInvalidChanges(SettingsChanges & changes, SettingSource source)
+{
+    if (std::ranges::any_of(changes, isProfileChange))
+    {
+        changes = enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
+        {
+            context.clampToSettingsConstraintsRejectingInvalidChanges(segment, source);
+        });
+        return;
+    }
+
+    SharedLockGuard lock(mutex);
+    clampToSettingsConstraintsRejectingInvalidChangesWithLock(changes, source);
 }
 
 void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
@@ -4035,15 +4187,6 @@ void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_set
     classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
     (*settings)[Setting::workload]
         = merge_tree_settings[MergeTreeSetting::mutation_workload].value.empty() ? getMutationWorkload() : merge_tree_settings[MergeTreeSetting::mutation_workload];
-
-    /// A mutation runs in the background, from a context built out of the background one rather
-    /// than from the query that submitted it, so the normalization in `executeQuery` never sees it
-    /// and a `0` written in a settings profile of the server configuration survives. The analyzer
-    /// analyzes the mutation either way, so leaving it would only make `getSetting` inside an
-    /// `UPDATE` expression report an analysis that did not happen. Every context a mutation is
-    /// analyzed and executed in comes through here.
-    if (!(*settings)[Setting::allow_experimental_analyzer])
-        (*settings)[Setting::allow_experimental_analyzer] = true;
 }
 
 void Context::makeSessionContext()
@@ -7482,6 +7625,15 @@ StoragePolicyPtr Context::getStoragePolicy(const String & name) const
     return policy_selector->get(name);
 }
 
+StoragePolicyPtr Context::tryGetStoragePolicy(const String & name) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    auto policy_selector = getStoragePolicySelector(lock);
+
+    return policy_selector->tryGet(name);
+}
+
 StoragePolicyPtr Context::getStoragePolicyFromDisk(const String & disk_name) const
 {
     std::lock_guard lock(shared->storage_policies_mutex);
@@ -7795,6 +7947,20 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
 void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size, const size_t & max_partition_size_to_drop) const
 {
     checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
+}
+
+void Context::setMutationsUseAnalyzerOverride(std::optional<bool> value)
+{
+    int8_t encoded = !value.has_value() ? int8_t{-1} : (*value ? int8_t{1} : int8_t{0});
+    shared->mutations_use_analyzer_override.store(encoded, std::memory_order_relaxed);
+}
+
+std::optional<bool> Context::getMutationsUseAnalyzerOverride() const
+{
+    int8_t encoded = shared->mutations_use_analyzer_override.load(std::memory_order_relaxed);
+    if (encoded < 0)
+        return std::nullopt;
+    return encoded != 0;
 }
 
 void Context::setConfigReloaderInterval(size_t value_ms)
@@ -8983,6 +9149,9 @@ bool Context::canUseTaskBasedParallelReplicas() const
 {
     const auto & settings_ref = getSettingsRef();
 
+    if (!settings_ref[Setting::allow_experimental_analyzer] && settings_ref[Setting::parallel_replicas_only_with_analyzer])
+        return false;
+
     return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
         && (settings_ref[Setting::max_parallel_replicas] > 1
@@ -9100,7 +9269,8 @@ AIQuotaTrackerPtr Context::getAIQuotaTracker() const
             settings_ref[Setting::ai_function_max_input_tokens_per_query],
             settings_ref[Setting::ai_function_max_output_tokens_per_query],
             settings_ref[Setting::ai_function_max_api_calls_per_query],
-            settings_ref[Setting::ai_function_throw_on_quota_exceeded]);
+            settings_ref[Setting::ai_function_throw_on_quota_exceeded],
+            query_context->process_list_elem);
     }
     return query_context->ai_quota_tracker;
 }

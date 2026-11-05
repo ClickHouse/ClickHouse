@@ -17,12 +17,15 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/DefinerDependencies.h>
+#include <Databases/DDLDependencyVisitor.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
@@ -32,6 +35,7 @@
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -59,6 +63,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 log_queries_cut_to_length;
 }
@@ -124,6 +129,17 @@ namespace
                 throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Column {} does not exist in the materialized view's inner table", column.name);
     }
 
+    bool selectReadsView(const StorageID & view_id, const ASTPtr & select_with_union, const ContextPtr & context)
+    {
+        /// Qualified as outside this session, where the name of a temporary table is a table of the view's database.
+        /// No current database: a recursive CTE stays unqualified. No `table_name`: it would be dropped from the result.
+        ASTPtr select_copy = select_with_union->clone();
+        AddDefaultDatabaseVisitor(context->getGlobalContext(), view_id.database_name).visit(select_copy);
+        auto referenced_tables = getDependenciesFromCreateQuery(
+            context, /*table_name=*/{}, select_copy, /*current_database=*/"").dependencies;
+        return referenced_tables.contains(view_id.getQualifiedName());
+    }
+
     ASTTableExpression & getIncrementalSourceTableExpression(const ASTPtr & select_with_union)
     {
         auto * union_query = select_with_union->as<ASTSelectWithUnionQuery>();
@@ -180,7 +196,7 @@ namespace
                 source->getStorageID().getNameForLogs(), source->getName());
 
         /// The cursor is expressed in _block_number/_block_offset, stable across merges only when these are persisted.
-        const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source.get());
+        const auto * merge_tree = castStorage<MergeTreeData>(source, DeferredTable::Load).get();
         if (merge_tree)
         {
             if (merge_tree->merging_params.mode != MergeTreeData::MergingParams::Ordinary)
@@ -260,6 +276,8 @@ StorageMaterializedView::StorageMaterializedView(
     mv_db_context->setCurrentDatabase(table_id_.database_name);
 
     auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), query.refresh_strategy != nullptr, mv_db_context);
+    if (mode == LoadingStrictnessLevel::CREATE && !query.refresh_strategy && selectReadsView(table_id_, select.select_query, mv_db_context))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Materialized view {} cannot select from itself", table_id_.getFullTableName());
     if (select.select_table_id)
     {
         auto select_table_dependent_views = DatabaseCatalog::instance().getDependentViews(select.select_table_id);
@@ -506,6 +524,16 @@ void StorageMaterializedView::readImpl(
     auto view_metadata = getInMemoryMetadataPtr(local_context, false);
     auto context = view_metadata->getSQLSecurityOverriddenContext(local_context);
 
+    /// When this view is being read by the old interpreter, query_info has no query tree and the
+    /// analyzer-only code paths in the target storage would dereference it. The old interpreter
+    /// keeps allow_experimental_analyzer off on local_context, but for DEFINER/NONE views the
+    /// SQL security override rebuilds the context from the global one (and clamps the caller's
+    /// settings against the definer's constraints), which can silently turn the analyzer back on.
+    /// Preserve the interpreter mode so the target storage takes the same (old) code path; reading
+    /// a materialized view over a Distributed table otherwise crashes on a null planner context.
+    if (!local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        context->setSetting("allow_experimental_analyzer", false);
+
     StoragePtr storage;
     TableLockHolder lock;
 
@@ -727,11 +755,19 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
 {
     ContextPtr table_context = getContext();
     ClientInfo client_info = table_context->getClientInfo();
-    client_info.interface = ClientInfo::Interface::BACKGROUND;
-    client_info.client_name = "refreshable materialized view";
     auto view_metadata = getInMemoryMetadataPtr(getContext(), false);
     auto refresh_context = view_metadata->getSQLSecurityOverriddenContext(table_context, &client_info);
-    refresh_context->setClientInfo(client_info);
+    /// For `SQL SECURITY DEFINER`, `getSQLSecurityOverriddenContext` fills the empty user names in
+    /// the context's `ClientInfo` with the definer. Do not assign the local `client_info` copy to
+    /// the context: `setClientInfo` replaces the whole struct and would wipe that identity out.
+    /// Re-read it instead, so that a view without SQL security (which gets a plain copy) also gets
+    /// these fields.
+    {
+        ClientInfo refresh_client_info = refresh_context->getClientInfo();
+        refresh_client_info.interface = ClientInfo::Interface::BACKGROUND;
+        refresh_client_info.client_name = "refreshable materialized view";
+        refresh_context->setClientInfo(refresh_client_info);
+    }
     refresh_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
     refresh_context->setSetting("log_comment", log_comment);
     refresh_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
@@ -774,6 +810,7 @@ StorageMaterializedView::prepareRefresh(RefreshMode mode, ContextMutablePtr refr
 
         /// Re-assert after applySettingsFromQuery so a view's own SETTINGS cannot disable what the STREAM source needs.
         refresh_context->setSetting("enable_streaming_queries", Field(UInt64{1}));
+        refresh_context->setSetting("enable_analyzer", Field(UInt64{1}));
         refresh_context->setSetting("enable_parallel_replicas", Field(UInt64{0}));
         refresh_context->setSetting("parallel_replicas_for_non_replicated_merge_tree", Field(UInt64{0}));
         refresh_context->setSetting("allow_insert_into_iceberg", Field(UInt64{1}));
@@ -832,7 +869,11 @@ StorageMaterializedView::prepareRefresh(RefreshMode mode, ContextMutablePtr refr
     insert_query->setDatabase(target_table.database_name);
     insert_query->table_id = target_table;
 
-    SharedHeader header = InterpreterSelectQueryAnalyzer::getSampleBlock(insert_query->select, refresh_context);
+    SharedHeader header;
+    if (refresh_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        header = InterpreterSelectQueryAnalyzer::getSampleBlock(insert_query->select, refresh_context);
+    else
+        header = InterpreterSelectWithUnionQuery(insert_query->select, refresh_context, SelectQueryOptions()).getSampleBlock();
 
     auto columns = make_intrusive<ASTExpressionList>(',');
     for (const String & name : header->getNames())
@@ -921,6 +962,13 @@ void StorageMaterializedView::alter(
     params.apply(new_metadata, mv_db_context);
 
     const auto & new_select = new_metadata.select;
+    bool modifies_query = std::ranges::any_of(params, [](const AlterCommand & command) { return command.type == AlterCommand::MODIFY_QUERY; });
+    /// A refreshable view is not triggered by inserts, so its query may read the view itself.
+    if (modifies_query && !new_metadata.refresh)
+    {
+        if (selectReadsView(table_id, new_select.select_query, mv_db_context))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Materialized view {} cannot select from itself", table_id.getFullTableName());
+    }
     new_metadata.setSelectQuery(new_select);
 
     /// Check the materialized view's inner table structure.

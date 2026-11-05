@@ -2514,7 +2514,8 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         progress_callback(FileProgress(0, storage->total_bytes_to_read));
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(ctx->getSettingsRef(), num_streams);
-    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+    auto format_filter_info = std::make_shared<FormatFilterInfo>(
+        info.getFormatFilter(filter_actions_dag), ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -3186,8 +3187,6 @@ void registerStorageFile(StorageFactory & factory)
         "File",
         [](const StorageFactory::Arguments & factory_args)
         {
-            checkStorageSettingNames(factory_args);
-
             auto context = factory_args.getLocalContext();
             StorageFile::CommonArguments storage_args
             {
@@ -3219,7 +3218,7 @@ void registerStorageFile(StorageFactory & factory)
             {
                 Settings settings = factory_args.getContext()->getSettingsCopy();
 
-                // Applying the changes validates the values, not the names.
+                // Apply changes from SETTINGS clause, with validation.
                 settings.applyChanges(factory_args.storage_def->settings->changes);
 
                 storage_args.format_settings = getFormatSettings(factory_args.getContext(), settings);

@@ -230,6 +230,42 @@ String canonicalizeTypeSpacing(const String & s)
     return result;
 }
 
+/// Calls `callback(id, type)` for `field_id` and for the ids of the fields, list elements and map keys/values nested in it.
+/// `type` is a JSON string (primitive leaf) or object (complex type) describing `field_id`.
+template <typename Callback>
+void forEachFieldId(const Poco::Dynamic::Var & type, Int64 field_id, Callback && callback)
+{
+    checkStackSize();
+    callback(field_id, type);
+    if (type.isString())
+        return;
+
+    const auto & type_object = type.extract<Poco::JSON::Object::Ptr>();
+    auto type_str = type_object->getValue<String>(f_type);
+    if (type_str == "map")
+    {
+        if (type_object->has(f_key))
+            forEachFieldId(type_object->get(f_key), type_object->getValue<Int64>(f_key_id), callback);
+        if (type_object->has(f_value))
+            forEachFieldId(type_object->get(f_value), type_object->getValue<Int64>(f_value_id), callback);
+    }
+    else if (type_str == "list")
+    {
+        if (type_object->has(f_element))
+            forEachFieldId(type_object->get(f_element), type_object->getValue<Int64>(f_element_id), callback);
+    }
+    else if (type_str == "struct")
+    {
+        auto fields = type_object->getArray(f_fields);
+        for (UInt32 i = 0; i < fields->size(); ++i)
+        {
+            auto field = fields->getObject(i);
+            if (field->has(f_type))
+                forEachFieldId(field->get(f_type), field->getValue<Int64>(f_id), callback);
+        }
+    }
+}
+
 /// Compare two Iceberg type descriptors for the same field. A type is either a primitive
 /// string ("long", "decimal(20, 0)", ...) or a nested object ("struct" with a fields array,
 /// or "list" / "map" wrappers whose element/key/value members are themselves types).
@@ -405,8 +441,6 @@ void IcebergSchemaProcessor::dropCachedSchema(Int32 schema_id)
 void IcebergSchemaProcessor::addIcebergTableSchema(
     Poco::JSON::Object::Ptr schema_ptr, SchemaSource source, bool tolerate_conflicting_manifest_schemas)
 {
-    std::lock_guard lock(mutex);
-
     Int32 schema_id = schema_ptr->getValue<Int32>(f_schema_id);
 
     /// Databricks UniForm writes a degenerate placeholder schema (e.g. {"schema-id":0,"fields":[]})
@@ -414,15 +448,34 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
     if (!schema_ptr->isArray(f_fields) || schema_ptr->getArray(f_fields)->size() == 0)
         return;
 
+    std::unordered_map<String, String> type_mapping;
+    if (allow_geo_parser)
+    {
+        type_mapping[f_geography] = f_binary;
+        type_mapping[f_geometry] = f_binary;
+    }
+
+    Poco::JSON::Object::Ptr registered_schema;
+    {
+        SharedLockGuard lock(mutex);
+        auto it = iceberg_table_schemas_by_ids.find(schema_id);
+        if (it != iceberg_table_schemas_by_ids.end())
+        {
+            const bool registered_from_manifest = manifest_sourced_schema_ids.contains(schema_id);
+            if (source == SchemaSource::ManifestFile && tolerate_conflicting_manifest_schemas && !registered_from_manifest)
+                return;
+            if (source == SchemaSource::ManifestFile || !registered_from_manifest)
+                registered_schema = it->second;
+        }
+    }
+    if (registered_schema && schemasAreIdentical(*registered_schema, *schema_ptr, type_mapping))
+        return;
+
+    std::lock_guard lock(mutex);
+
     if (iceberg_table_schemas_by_ids.contains(schema_id))
     {
         chassert(clickhouse_table_schemas_by_ids.contains(schema_id));
-        std::unordered_map<String, String> type_mapping;
-        if (allow_geo_parser)
-        {
-            type_mapping[f_geography] = f_binary;
-            type_mapping[f_geometry] = f_binary;
-        }
         if (schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr, type_mapping))
         {
             /// An identical metadata.json copy confirms a copy that was registered from a manifest header.
@@ -470,15 +523,7 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
         else
         {
             if (source == SchemaSource::ManifestFile && tolerate_conflicting_manifest_schemas)
-            {
-                LOG_WARNING(
-                    getLogger("IcebergSchemaProcessor"),
-                    "Manifest file header carries schema-id {} which differs from the schema already "
-                    "registered for that id from metadata.json; ignoring the manifest header copy "
-                    "(disable setting `iceberg_tolerate_conflicting_manifest_schemas` to make this an error)",
-                    schema_id);
                 return;
-            }
             /// A schema-id is immutable per the Iceberg spec: re-binding it to different fields is malformed metadata.
             throw Exception(
                 ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
@@ -933,6 +978,13 @@ bool IcebergSchemaProcessor::hasClickHouseTableSchemaById(Int32 id) const
     return clickhouse_table_schemas_by_ids.contains(id);
 }
 
+bool IcebergSchemaProcessor::isSchemaRegisteredFromMetadata(Int32 id) const
+{
+    SharedLockGuard lock(mutex);
+
+    return iceberg_table_schemas_by_ids.contains(id) && !manifest_sourced_schema_ids.contains(id);
+}
+
 std::unordered_map<String, Int64> IcebergSchemaProcessor::traverseSchema(Poco::JSON::Array::Ptr schema)
 {
     std::unordered_map<String, Int64> result;
@@ -944,6 +996,20 @@ std::unordered_map<String, Int64> IcebergSchemaProcessor::traverseSchema(Poco::J
         if (current_object->isObject(Iceberg::f_type))
             traverseComplexType(current_object->getObject(Iceberg::f_type), result, cur_name);
         result[cur_name] = field_id;
+    }
+    return result;
+}
+
+Int64 IcebergSchemaProcessor::getMaxFieldId(Poco::JSON::Array::Ptr schema)
+{
+    Int64 result = 0;
+    for (UInt32 i = 0; i < schema->size(); ++i)
+    {
+        auto current_object = schema->getObject(i);
+        if (current_object->has(Iceberg::f_type))
+            forEachFieldId(
+                current_object->get(Iceberg::f_type), current_object->getValue<Int64>(Iceberg::f_id),
+                [&](Int64 field_id, const Poco::Dynamic::Var &) { result = std::max(result, field_id); });
     }
     return result;
 }

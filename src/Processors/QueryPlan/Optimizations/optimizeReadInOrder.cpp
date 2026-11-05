@@ -1,7 +1,9 @@
 #include <Columns/ColumnConst.h>
+#include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -26,11 +28,24 @@
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <Storages/KeyDescription.h>
+#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/StorageMerge.h>
 #include <Common/typeid_cast.h>
 
 #include <stack>
+
+namespace DB
+{
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool query_plan_read_in_order;
+    extern const SettingsBool optimize_read_in_order;
+    extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
+}
+}
 
 namespace DB::QueryPlanOptimizations
 {
@@ -262,7 +277,7 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
                     const ActionsDAG::Node * maybe_injective = maybe_fixed_column;
                     while (maybe_injective->type == ActionsDAG::ActionType::FUNCTION
                         && maybe_injective->children.size() == 1
-                        && maybe_injective->function_base->isInjective({}))
+                        && maybe_injective->function_base->isInjective(getFunctionArgumentColumns(*maybe_injective)))
                     {
                         maybe_injective = maybe_injective->children.front();
                         fixed_columns.insert(maybe_injective);
@@ -1210,7 +1225,7 @@ InputOrderInfoPtr buildInputOrderInfo(
 {
     FindReadingStepContext find_reading_ctx{
         .allow_existing_order = false,
-        .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
         .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
@@ -1256,22 +1271,24 @@ InputOrderInfoPtr buildInputOrderInfo(
                 virtual_row_reader = reading;
             }
 
-            if (!uses_virtual_row)
-            {
-                /// Virtual row is required for INNER JOIN to maintain read-in-order optimization.
-                /// Without it, the sorting step after join cannot correctly determine
-                /// which input stream to read from when most rows are filtered out,
-                /// potentially reading excessive amount of data.
-                for (const auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+            /// Joins that can discard left rows need virtual rows from every selected part to avoid
+            /// excessive reading by the merge after the join. `LEFT ALL` and `LEFT ANY` preserve left rows.
+            /// `query_plan_read_in_order_through_join = 'force'` accepts the over-read.
+            const bool join_requires_virtual_rows = std::ranges::any_of(
+                find_reading_ctx.joins_to_keep_in_order,
+                [](const auto * join_step)
                 {
                     const auto & table_join = join_step->getJoin()->getTableJoin();
-                    auto strictness = table_join.strictness();
-                    if (table_join.kind() != JoinKind::Left || (strictness != JoinStrictness::All && strictness != JoinStrictness::Any))
-                    {
-                        LOG_DEBUG(getLogger("optimizeReadInOrder"), "Skip using read in order for inner join without virtual row optimization");
-                        return nullptr;
-                    }
-                }
+                    const auto strictness = table_join.strictness();
+                    return table_join.kind() != JoinKind::Left
+                        || (strictness != JoinStrictness::All && strictness != JoinStrictness::Any);
+                });
+            if (join_requires_virtual_rows && optimization_settings.read_in_order_through_join != 2
+                && (!uses_virtual_row || !reading->everyPartHasVirtualRowBound(order_info.input_order->direction < 0)))
+            {
+                LOG_DEBUG(getLogger("optimizeReadInOrder"), "Skip using read in order for inner join without virtual row optimization");
+                reading->resetVirtualRowConversions();
+                return nullptr;
             }
 
             bool can_read = reading->requestReadingInOrder(
@@ -1281,7 +1298,11 @@ InputOrderInfoPtr buildInputOrderInfo(
                 query_limit);
 
             if (!can_read)
+            {
+                /// E.g. a reverse `FINAL` read the engine does not support: the read stays as it was.
+                reading->resetVirtualRowConversions();
                 return nullptr;
+            }
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
                 join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
@@ -1336,7 +1357,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 {
     FindReadingStepContext find_reading_ctx {
         .allow_existing_order = false,
-        .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
         .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
@@ -1463,7 +1484,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
 
     FindReadingStepContext find_reading_ctx {
         .allow_existing_order = true,
-        .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
         .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
@@ -1555,7 +1576,7 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
 
     FindReadingStepContext find_reading_ctx{
         .allow_existing_order = true,
-        .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
         .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
@@ -1855,6 +1876,97 @@ void optimizeLimitByInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const Qu
         return;
 
     limit_by->applyOrder(sort_prefix);
+}
+
+/// This optimization is obsolete and will be removed.
+/// optimizeReadInOrder covers it.
+size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & /*settings*/)
+{
+    /// Find the following sequence of steps, add InputOrderInfo and apply prefix sort description to
+    /// SortingStep:
+    /// WindowStep <- SortingStep <- [Expression] <- ReadFromMergeTree
+
+    auto * window_node = parent_node;
+    auto * window = typeid_cast<WindowStep *>(window_node->step.get());
+    if (!window)
+        return 0;
+    if (window_node->children.size() != 1)
+        return 0;
+
+    auto * sorting_node = window_node->children.front();
+    auto * sorting = typeid_cast<SortingStep *>(sorting_node->step.get());
+    if (!sorting)
+        return 0;
+    if (sorting_node->children.size() != 1)
+        return 0;
+
+    auto * possible_read_from_merge_tree_node = sorting_node->children.front();
+
+    if (typeid_cast<ExpressionStep *>(possible_read_from_merge_tree_node->step.get()))
+    {
+        if (possible_read_from_merge_tree_node->children.size() != 1)
+            return 0;
+
+        possible_read_from_merge_tree_node = possible_read_from_merge_tree_node->children.front();
+    }
+
+    auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(possible_read_from_merge_tree_node->step.get());
+    if (!read_from_merge_tree)
+    {
+        return 0;
+    }
+
+    auto context = read_from_merge_tree->getContext();
+    const auto & settings = context->getSettingsRef();
+    if (!settings[Setting::query_plan_reuse_storage_ordering_for_window_functions]
+        || (settings[Setting::optimize_read_in_order] && settings[Setting::query_plan_read_in_order])
+        || context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        return 0;
+    }
+
+    const auto & query_info = read_from_merge_tree->getQueryInfo();
+    const auto * select_query = query_info.query->as<ASTSelectQuery>();
+
+    /// TODO: Analyzer syntax analyzer result
+    if (!query_info.syntax_analyzer_result)
+        return 0;
+
+    ManyExpressionActions order_by_elements_actions;
+    const auto & window_desc = window->getWindowDescription();
+
+    for (const auto & actions_dag : window_desc.partition_by_actions)
+    {
+        order_by_elements_actions.emplace_back(
+            std::make_shared<ExpressionActions>(actions_dag->clone(), ExpressionActionsSettings(context, CompileExpressions::yes)));
+    }
+
+    for (const auto & actions_dag : window_desc.order_by_actions)
+    {
+        order_by_elements_actions.emplace_back(
+            std::make_shared<ExpressionActions>(actions_dag->clone(), ExpressionActionsSettings(context, CompileExpressions::yes)));
+    }
+
+    auto order_optimizer = std::make_shared<ReadInOrderOptimizer>(
+            *select_query,
+            order_by_elements_actions,
+            window->getWindowDescription().full_sort_description,
+            query_info.syntax_analyzer_result);
+
+    /// If we don't have filtration, we can pushdown limit to reading stage for optimizations.
+    UInt64 limit = (select_query->hasFiltration() || select_query->groupBy()) ? 0 : InterpreterSelectQuery::getLimitForSorting(*select_query, context);
+
+    auto order_info = order_optimizer->getInputOrder(read_from_merge_tree->getStorageMetadata(), context, limit);
+
+    if (order_info)
+    {
+        bool can_read = read_from_merge_tree->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
+        if (!can_read)
+            return 0;
+        sorting->convertToFinishSorting(order_info->sort_description_for_merging, false, false);
+    }
+
+    return 0;
 }
 
 }

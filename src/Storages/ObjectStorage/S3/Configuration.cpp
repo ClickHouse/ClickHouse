@@ -145,7 +145,7 @@ std::string StorageS3Configuration::getPathInArchive() const
 void StorageS3Configuration::check(ContextPtr context)
 {
     validateNamespace(url.bucket);
-    context->getGlobalContext()->getRemoteHostFilter().checkURL(url.uri);
+    url.checkRemoteHostFilter(context->getGlobalContext()->getRemoteHostFilter());
     context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_from_ast);
     StorageObjectStorageConfiguration::check(context);
 }
@@ -175,7 +175,11 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     assertInitialized();
 
     if (!headers_from_ast.empty())
-        s3_settings->auth_settings.headers.append(headers_from_ast);
+    {
+        s3_settings->auth_settings.headers.insert(
+            s3_settings->auth_settings.headers.end(),
+            headers_from_ast.begin(), headers_from_ast.end());
+    }
 
     auto client = getClient(
         url, *s3_settings, context, /* for_disk_s3 */ false, /*opt_disk_name*/ {}, /*refresh_credentials_callback*/ std::nullopt,
@@ -214,7 +218,11 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     const String raw_collection_url = collection.get<String>("url");
     const String collection_url = StorageURL::resolveURLBase(raw_collection_url, settings[Setting::s3_base].value, "s3_base");
     if (collection_url != raw_collection_url)
+    {
+        /// Resolving against `s3_base` replaces the stored `url`, which could send the stored credentials to another host.
+        checkNamedCollectionOverride(collection, "url", context);
         url_overridden_by_base_setting = collection_url;
+    }
 
     auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())
