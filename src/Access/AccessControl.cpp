@@ -319,9 +319,9 @@ AccessControl::AccessControl()
       one_time_password_usage_tracker(std::make_unique<OneTimePasswordUsageTracker>()),
       custom_settings_prefixes(std::make_unique<CustomSettingsPrefixes>()),
       changes_notifier(std::make_unique<AccessChangesNotifier>()),
+      query_masking_rules_cache(std::make_unique<QueryMaskingRulesCache>(*this)),
       password_rules(std::make_unique<PasswordComplexityRules>())
 {
-    query_masking_rules_cache = std::make_unique<QueryMaskingRulesCache>(*this);
 }
 
 
