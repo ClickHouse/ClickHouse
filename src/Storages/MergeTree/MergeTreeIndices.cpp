@@ -653,7 +653,7 @@ ORDER BY id;
 
 SELECT count() FROM tab WHERE token = 'abc';)",
             ""}},
-        .introduced_in = {26, 10},
+        .introduced_in = {26, 11},
         .related = {"bloom_filter", "binary_fuse_filter"}});
     registerValidator("cuckoo_filter", cuckooFilterIndexValidator);
 
@@ -677,7 +677,7 @@ ORDER BY id;
 
 SELECT count() FROM tab WHERE token = 'abc';)",
             ""}},
-        .introduced_in = {26, 10},
+        .introduced_in = {26, 11},
         .related = {"bloom_filter", "cuckoo_filter"}});
     registerValidator("binary_fuse_filter", binaryFuseFilterIndexValidator);
 
