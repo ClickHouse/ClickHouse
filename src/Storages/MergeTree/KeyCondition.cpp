@@ -9011,7 +9011,6 @@ KeyCondition::BloomFilterData::Hashes KeyCondition::BloomFilterData::makeHashes(
 {
     std::sort(hashes.begin(), hashes.end());
     hashes.erase(std::unique(hashes.begin(), hashes.end()), hashes.end());
-    /// The result can live until the end of the query, and an element of a tuple can repeat in most rows of an `IN` set.
     if (hashes.size() < hashes.capacity() / 2)
         hashes.shrink_to_fit();
     return std::make_shared<const std::vector<uint64_t>>(std::move(hashes));

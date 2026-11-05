@@ -2493,12 +2493,12 @@ struct DictionaryValueHashes
     bool sorted = false;
     size_t scanned_probes = 0;
 
-    /// Whether any of `probes` is among the dictionary's values. `only_atom`: no other atom of the condition
-    /// probes this column chunk.
+    /// Whether any of `probes` is among the dictionary's values.
+    /// `only_atom`: no other atom of the condition probes this column chunk.
     /// Sorting costs about log2(n) scans, so the first max(8, log2(n)) probes scan the unsorted `hashes`.
     ///
-    /// `probes` are sorted and deduplicated (see `KeyCondition::BloomFilterData::makeHashes`), so once
-    /// `hashes` is sorted this is an intersection of two sorted sequences rather than a sequence of independent binary
+    /// For a sorted probe sequence - which is what `KeyCondition::BloomFilterData::makeHashes` produces -
+    /// this is an intersection of two sorted sequences rather than a sequence of independent binary
     /// searches: every probe continues where the previous one stopped. A handful of query constants
     /// then costs a binary search each, while a large probe set degrades to a linear merge of the two
     /// sequences instead of `probes.size()` full-height searches over the whole vector. That matters
@@ -2514,8 +2514,7 @@ struct DictionaryValueHashes
 
         const size_t max_scanned_probes = std::max<size_t>(8, static_cast<size_t>(std::bit_width(hashes.size())));
 
-        /// More probes than dictionary values, or too many to scan for the only atom: search the probes for each
-        /// dictionary value, which needs no sorting. Several atoms on one column share one sort instead.
+        /// Searching the probes for each dictionary value needs no sort; several atoms on one column share one sort instead.
         if (probes.size() > hashes.size() || (only_atom && probes.size() > max_scanned_probes))
         {
             for (UInt64 hash : hashes)
