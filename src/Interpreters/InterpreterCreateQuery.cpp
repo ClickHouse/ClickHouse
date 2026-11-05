@@ -55,7 +55,9 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/SubcolumnCodecs.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -64,6 +66,8 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
@@ -2351,7 +2355,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Only here is an engine inherited through `AS` known, and nothing is enqueued or created yet.
     /// A replay of a stored definition was checked when it was created.
     if (isFreshTableDefinition(mode, create.attach_short_syntax))
+    {
         checkExportAccess(create);
+        checkDictionaryEngineAccess(create);
+    }
 
     /// The definition persisted below must not depend on the session setting, because reloads and
     /// replicas re-derive the key type from the stored text. This must happen after normalization:
@@ -4266,6 +4273,26 @@ void InterpreterCreateQuery::checkExportAccess(const ASTCreateQuery & create) co
         return;
 
     getContext()->checkAccess(StorageFactory::instance().getExportAccess(create));
+}
+
+void InterpreterCreateQuery::checkDictionaryEngineAccess(const ASTCreateQuery & create) const
+{
+    /// Internal queries (initiated by the server itself) always have access to everything.
+    if (internal)
+        return;
+
+    if (!create.storage || !create.storage->engine || create.storage->engine->name != "Dictionary")
+        return;
+
+    /// A wrong number of arguments is reported when the storage is created.
+    const auto & arguments = create.storage->engine->arguments;
+    if (!arguments || arguments->children.size() != 1)
+        return;
+
+    auto argument = evaluateConstantExpressionOrIdentifierAsLiteral(arguments->children[0], getContext());
+    auto dictionary_name = checkAndGetLiteralArgument<String>(argument, "dictionary_name");
+    const auto & external_loader = getContext()->getExternalDictionariesLoader();
+    StorageDictionary::checkDictionaryAccess(external_loader.resolveDictionary(dictionary_name, getContext()).id, getContext());
 }
 
 void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const
