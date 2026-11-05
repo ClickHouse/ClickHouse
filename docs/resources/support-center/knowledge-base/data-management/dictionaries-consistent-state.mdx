@@ -21,12 +21,16 @@ As you can see, the part only arrived after the dictionary was created. This can
 
 The solution to this issue is to use a `SELECT` query instead of specifying a source table when creating the dictionary and enabling the setting `select_sequential_consistency=1`.
 
+<Note title="ClickHouse Cloud">
+When creating a dictionary that reads from a ClickHouse table, include a dedicated user's username and password in the `SOURCE` clause. That user needs `SELECT` permission on the source table. See the [ClickHouse dictionary source example](/reference/statements/create/dictionary/sources/clickhouse).
+</Note>
+
 Instead of specifying a source table:
 
 ```sql
 SOURCE(CLICKHOUSE(
     table 'test.temp_title_table_1706189903924'
-    user default password 'PASSWORD'))
+    user 'dict_reader' password 'dict_reader_password'))
 ```
 
 Use a `SELECT` query with `select_sequential_consistency=1`:
@@ -35,7 +39,7 @@ Use a `SELECT` query with `select_sequential_consistency=1`:
 SOURCE(CLICKHOUSE(QUERY
     'SELECT songTitle, mappedTitle
     FROM test.temp_title_table_1706189903924
-    SETTINGS select_sequential_consistency=1' USER default PASSWORD ''))
+    SETTINGS select_sequential_consistency=1' USER 'dict_reader' PASSWORD 'dict_reader_password'))
 ```
 
 ## Why does this issue occur? {#why-does-this-issue-occur}
