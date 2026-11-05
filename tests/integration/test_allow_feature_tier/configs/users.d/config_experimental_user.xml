@@ -1,0 +1,16 @@
+<clickhouse>
+    <!-- A user of a read-only storage which an EXPERIMENTAL setting is in effect for. It lives in its own
+         file because `test_it_is_possible_to_enable_experimental_settings_in_default_profile` rewrites
+         every value of that setting in `users.d/users.xml`. -->
+    <profiles>
+        <tier_config_experimental>
+            <allow_experimental_funnel_functions>1</allow_experimental_funnel_functions>
+        </tier_config_experimental>
+    </profiles>
+    <users>
+        <tier_config_experimental_user>
+            <no_password/>
+            <profile>tier_config_experimental</profile>
+        </tier_config_experimental_user>
+    </users>
+</clickhouse>

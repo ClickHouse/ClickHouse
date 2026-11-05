@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-replicated-database
+# Tags: zookeeper, no-parallel, no-replicated-database, no-fasttest
 # Tag no-parallel: enables a REGULAR failpoint that affects the whole server process.
 # Tag no-replicated-database: the test creates its own Replicated database and the
 #                             failpoint is enabled only on one server node.

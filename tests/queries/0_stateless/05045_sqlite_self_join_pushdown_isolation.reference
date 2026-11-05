@@ -1,0 +1,9 @@
+Self-join result:
+1	2
+1	2
+Remote queries:
+  Query: SELECT `x` FROM `t` WHERE `x` = 1
+  Query: SELECT `y`, `x` FROM `t` WHERE `y` = 2
+Both sides of the filter are still honored under external_table_strict_query:
+1	2
+1	2

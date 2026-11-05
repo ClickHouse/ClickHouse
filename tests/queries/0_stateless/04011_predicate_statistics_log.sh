@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
+# Random settings limits: index_granularity_bytes=(10485760, None)
+# Q6 compares per-reader total_selectivity: smaller granules leave a short last granule that skews one reader.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -9,7 +11,7 @@ TABLE="test_pred_ext_${CLICKHOUSE_DATABASE}"
 TABLE_MC="${TABLE}_mc"
 TABLE_OFF="${TABLE}_disabled"
 
-ENABLE_STATS="SET predicate_statistics_sample_rate = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1"
+ENABLE_STATS="SET predicate_statistics_sample_rate = 1, optimize_move_to_prewhere = 1"
 ENABLE_STATS_MULTI_STEP="$ENABLE_STATS, enable_multiple_prewhere_read_steps = 1"
 
 # Per-invocation token so that re-running against a fixed database (direct `bash`, or
@@ -79,7 +81,7 @@ CREATE TABLE $TABLE_OFF (id UInt64, status String) ENGINE = MergeTree ORDER BY i
 SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
 INSERT INTO $TABLE_OFF SELECT number, 'x' FROM numbers(1000);
 "
-$CLICKHOUSE_CLIENT --query_id="$Q5" --query "SET predicate_statistics_sample_rate = 0, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1; SELECT * FROM $TABLE_OFF WHERE status = 'x' FORMAT Null"
+$CLICKHOUSE_CLIENT --query_id="$Q5" --query "SET predicate_statistics_sample_rate = 0, optimize_move_to_prewhere = 1; SELECT * FROM $TABLE_OFF WHERE status = 'x' FORMAT Null"
 
 # Q6: conjunction split across multiple prewhere steps — total_selectivity is consistent and low
 $CLICKHOUSE_CLIENT --query_id="$Q6" --query "$ENABLE_STATS_MULTI_STEP; SELECT * FROM $TABLE WHERE status = 'active' AND category = 'cat_a' FORMAT Null"

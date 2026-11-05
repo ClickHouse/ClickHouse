@@ -1,0 +1,6 @@
+-- PromQL line comments may end at EOF
+-- PromQL doesn't require a space after '#', also at EOF
+-- A bare '#' at EOF is an empty comment
+-- A bare CR ends a PromQL comment, so the next statement is not swallowed
+next statement
+Cannot find the end of the PromQL statement
