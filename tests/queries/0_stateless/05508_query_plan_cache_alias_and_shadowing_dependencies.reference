@@ -1,0 +1,11 @@
+3
+3
+12
+100
+100
+200
+qpc_05508_alias_after_modify	1	1
+qpc_05508_alias_hit	1	0
+qpc_05508_shadow_after_add	1	1
+qpc_05508_shadow_after_unrelated_add	1	0
+qpc_05508_spill_hit	1	0
