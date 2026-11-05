@@ -16,6 +16,11 @@
 #  error "TestKeeper must not use ZooKeeper implementation"
 #endif
 
+namespace DB::ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 namespace Coordination
 {
 
@@ -1070,6 +1075,11 @@ void TestKeeper::exprireRequest(RequestInfo && request)
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
+}
+
+silk::FiberEvent & TestKeeper::getExpiredEvent()
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "TestKeeper does not support waiting for the session to expire");
 }
 
 void TestKeeper::finalize(const String &)

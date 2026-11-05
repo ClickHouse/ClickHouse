@@ -108,6 +108,12 @@
 
 #include "config.h"
 
+#if USE_AMBER
+#include <Amber/ControlPlane.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/safe_cast.h>
+#endif
+
 #if USE_PROTOBUF
 #include <Formats/ProtobufSchemas.h>
 #endif
@@ -1107,6 +1113,37 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_DATABASE_REPLICA:
             dropDatabaseReplica(query);
             break;
+#if USE_AMBER
+        case Type::DROP_AMBER_NODE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_AMBER_NODE);
+            Amber::dropNode(query.amber_node_name, query.if_exists);
+            break;
+        case Type::ALLOCATE_AMBER_VOLUME:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_ALLOCATE_AMBER_VOLUME);
+            const amber::VolumeId volume_id = Amber::allocateVolumeId(safe_cast<amber::ClusterId>(query.amber_cluster_id));
+            auto col = ColumnUInt64::create();
+            col->insert(volume_id);
+            Columns columns;
+            columns.emplace_back(std::move(col));
+            Chunk chunk(std::move(columns), 1);
+            SharedHeader header = std::make_shared<Block>(Block{ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "volume_id")});
+            result.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
+            break;
+        }
+        case Type::CREATE_AMBER_VOLUME:
+            getContext()->checkAccess(AccessType::SYSTEM_CREATE_AMBER_VOLUME);
+            Amber::createVolume(
+                safe_cast<amber::ClusterId>(query.amber_cluster_id),
+                query.amber_volume_id,
+                safe_cast<uint32_t>(query.amber_shard_count),
+                safe_cast<uint32_t>(query.amber_segment_count));
+            break;
+        case Type::DROP_AMBER_VOLUME:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_AMBER_VOLUME);
+            Amber::dropVolume(safe_cast<amber::ClusterId>(query.amber_cluster_id), query.amber_volume_id);
+            break;
+#endif
         case Type::SYNC_REPLICA:
             syncReplica(query);
             break;
@@ -3419,15 +3456,19 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM);
             break;
         }
-        /// The parser cases of the failpoint statements and of SYSTEM SET COVERAGE TEST never read an
-        /// ON CLUSTER clause, so those cluster spellings do not parse and reach no host. UNKNOWN and
-        /// END are not statements.
+        /// The parser cases of the failpoint statements, of SYSTEM SET COVERAGE TEST and of the Amber
+        /// statements never read an ON CLUSTER clause, so those cluster spellings do not parse and reach
+        /// no host. UNKNOWN and END are not statements.
         case Type::ENABLE_FAILPOINT:
         case Type::WAIT_FAILPOINT:
         case Type::NOTIFY_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::DISABLE_ALL_FAILPOINTS:
         case Type::SET_COVERAGE_TEST:
+        case Type::DROP_AMBER_NODE:
+        case Type::ALLOCATE_AMBER_VOLUME:
+        case Type::CREATE_AMBER_VOLUME:
+        case Type::DROP_AMBER_VOLUME:
         case Type::UNKNOWN:
         case Type::END: break;
     }

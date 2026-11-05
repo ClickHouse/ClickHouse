@@ -12,6 +12,11 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include "config.h"
+
+#if USE_AMBER
+#include <Amber/Node.h>
+#endif
+
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/AsyncLoader.h>
@@ -1278,6 +1283,10 @@ struct ContextSharedPart : boost::noncopyable
         });
 
         stopIntrospectionServers();
+
+#if USE_AMBER
+        Amber::shutdown();
+#endif
 
         FileCacheFactory::instance().clear();
 

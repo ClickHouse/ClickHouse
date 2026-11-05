@@ -879,7 +879,8 @@ void filterBlockWithPredicate(
         filterBlockWithExpression(buildFilterExpression(std::move(*dag), context), block);
 }
 
-std::optional<Strings> extractConstantStringValues(
+template <typename T>
+std::optional<std::vector<T>> extractConstantValues(
     const ActionsDAG::Node * predicate, const ActionsDAG::Node * column_node, const ContextPtr & context, size_t limit)
 {
     if (!predicate || !column_node)
@@ -890,7 +891,7 @@ std::optional<Strings> extractConstantStringValues(
     if (!variants)
         return {};
 
-    Strings result;
+    std::vector<T> result;
     for (const auto & block : variants.value())
     {
         // Check for unexpected number of columns in block, or absent column
@@ -898,7 +899,13 @@ std::optional<Strings> extractConstantStringValues(
             return {};
 
         // Check for unexpected column data type
-        if (!recursiveRemoveLowCardinality(block.at(0).type)->equals(DataTypeString()))
+        const auto type = recursiveRemoveLowCardinality(block.at(0).type);
+        if constexpr (std::is_same_v<T, String>)
+        {
+            if (!type->equals(DataTypeString()))
+                return {};
+        }
+        else if (!type->equals(DataTypeNumber<T>()))
             return {};
 
         const auto & column = block.at(0).column;
@@ -909,14 +916,15 @@ std::optional<Strings> extractConstantStringValues(
             /// String value, so dropping it keeps the result a valid over-approximation.
             if (field.isNull())
                 continue;
-            result.push_back(field.safeGet<String>());
+            result.push_back(static_cast<T>(field.safeGet<T>()));
         }
     }
 
     return result;
 }
 
-std::optional<Strings> extractConstantStringValuesForColumn(
+template <typename T>
+std::optional<std::vector<T>> extractConstantValuesForColumn(
     const ActionsDAG::Node * predicate, const String & column_name, const ContextPtr & context, size_t limit)
 {
     if (!predicate)
@@ -946,8 +954,17 @@ std::optional<Strings> extractConstantStringValuesForColumn(
             nodes.push(child);
     }
 
-    return extractConstantStringValues(predicate, column_node, context, limit);
+    return extractConstantValues<T>(predicate, column_node, context, limit);
 }
+
+template std::optional<std::vector<String>> extractConstantValues<String>(
+    const ActionsDAG::Node * predicate, const ActionsDAG::Node * column_node, const ContextPtr & context, size_t limit);
+template std::optional<std::vector<UInt32>> extractConstantValues<UInt32>(
+    const ActionsDAG::Node * predicate, const ActionsDAG::Node * column_node, const ContextPtr & context, size_t limit);
+template std::optional<std::vector<String>> extractConstantValuesForColumn<String>(
+    const ActionsDAG::Node * predicate, const String & column_name, const ContextPtr & context, size_t limit);
+template std::optional<std::vector<UInt32>> extractConstantValuesForColumn<UInt32>(
+    const ActionsDAG::Node * predicate, const String & column_name, const ContextPtr & context, size_t limit);
 
 std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag, ContextPtr context, size_t limit)
 {
@@ -966,7 +983,7 @@ std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag
         }
     }
 
-    return extractConstantStringValues(filter_dag->getOutputs().at(0), path_node, context, limit);
+    return extractConstantValues<String>(filter_dag->getOutputs().at(0), path_node, context, limit);
 }
 
 DataPartsVector filterDataPartsWithExpression(

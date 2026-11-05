@@ -218,7 +218,7 @@ private:
             local_settings[Setting::s3_slow_all_threads_after_network_error],
             local_settings[Setting::backup_slow_all_threads_after_retryable_s3_error],
             local_settings[Setting::enable_s3_requests_logging],
-            /* for_disk_s3 = */ false,
+            /* group = */ HTTPConnectionGroupType::STORAGE,
             /* opt_disk_name = */ {},
             request_settings.request_throttler,
             s3_uri.uri.getScheme());

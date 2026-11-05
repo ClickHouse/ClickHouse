@@ -114,6 +114,10 @@ void registerStorageSQLite(StorageFactory & factory);
 
 void registerStorageKeeperMap(StorageFactory & factory);
 
+#if USE_AMBER
+void registerStorageAmberMap(StorageFactory & factory);
+#endif
+
 void registerStorageObjectStorage(StorageFactory & factory);
 
 void registerStorages()
@@ -223,6 +227,10 @@ void registerStorages()
 #endif
 
     registerStorageKeeperMap(factory);
+
+#if USE_AMBER
+    registerStorageAmberMap(factory);
+#endif
 
     registerStorageObjectStorage(factory);
 }

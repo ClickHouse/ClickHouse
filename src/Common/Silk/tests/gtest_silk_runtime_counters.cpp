@@ -4,8 +4,8 @@
 
 #if USE_SILK
 
-#include <Common/SilkFiberScheduler.h>
-#include <Common/tests/gtest_silk_scheduler.h>
+#include <Common/Silk/FiberScheduler.h>
+#include <Common/Silk/tests/gtest_silk_scheduler.h>
 
 #include <silk/fibers/future.h>
 

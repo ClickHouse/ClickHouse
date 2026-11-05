@@ -10,6 +10,10 @@
 #include <mach/mach_time.h>
 #endif
 
+#if USE_SILK
+#include <silk/fibers/fiber.h>
+#endif
+
 /**
   * Sleep with nanoseconds precision. Tolerant to signal interruptions
   *
@@ -21,6 +25,13 @@
   */
 void sleepForNanoseconds(uint64_t nanoseconds)
 {
+#if USE_SILK
+    if (silk::FiberScheduler::getCurrentFiberId().raw != 0)
+    {
+        silk::FiberScheduler::sleep(nanoseconds);
+        return;
+    }
+#endif
 #if defined(OS_DARWIN)
     //https://developer.apple.com/library/archive/technotes/tn2169/_index.html
     //https://web.archive.org/web/20240208082627/https://dshil.github.io/blog/missed-os-x-clock-guide/
