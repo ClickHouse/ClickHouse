@@ -647,6 +647,7 @@ Two further points to keep in mind:
 
 - The name `<cte_name>_settled` is injected into the scope of the recursive members, so within them it shadows any table or `CTE` of that name.
 - Unlike the default evaluation, keyed evaluation produces no rows before it converges, so a `LIMIT` in the outer query cannot stop the recursion early.
+- A scalar subquery or `EXISTS` in a recursive member cannot read the working table or `<cte_name>_settled`, because it is evaluated once before the recursion starts; this raises `UNSUPPORTED_METHOD`. Use `IN` or a `JOIN` instead, which read the state of every step.
 
 **Example:** Reachability over a cyclic graph
 
