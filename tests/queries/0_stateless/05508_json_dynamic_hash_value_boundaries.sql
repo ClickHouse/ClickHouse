@@ -27,6 +27,13 @@ SELECT uniqExact(a), count(DISTINCT a) FROM
     UNION ALL
     SELECT [toDate32(-1)::Dynamic, toDate(12851)::Dynamic, NULL, NULL, NULL, NULL]
 );
+-- The same in the shared variant, where `Dynamic(max_types=0)` stores every value.
+SELECT uniqExact(a), count(DISTINCT a), min(arrayCount(x -> isDynamicElementInSharedData(x), a)) FROM
+(
+    SELECT [toDate(12851)::Dynamic, NULL, NULL, NULL, NULL, toDate32(-1)::Dynamic]::Array(Dynamic(max_types=0)) AS a
+    UNION ALL
+    SELECT [toDate32(-1)::Dynamic, toDate(12851)::Dynamic, NULL, NULL, NULL, NULL]::Array(Dynamic(max_types=0))
+);
 
 -- A bucketed `Map` with `JSON` keys is written in one bucket, and its keys are found.
 DROP TABLE IF EXISTS t_map_json_key_buckets;

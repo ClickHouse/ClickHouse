@@ -179,7 +179,7 @@ DataTypePtr DataTypeMap::doCloneWithChildren(const DataTypes & new_children) con
 
 /// Resolves a dynamic subcolumn like `map['key']` by parsing the key from the subcolumn name,
 /// creating a `SerializationMapKeyValue` that reads the bucket of the key (the whole Map when the key
-/// has a float zero), and optionally pre-extracting the values from an existing column.
+/// has a float zero or a `JSON` or `Dynamic` value), and optionally pre-extracting the values from an existing column.
 /// The subcolumn name must start with "key_" followed by the text-serialized key value.
 std::unique_ptr<IDataType::SubcolumnInfo> DataTypeMap::getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t /*initial_array_level*/, bool throw_if_null) const
 {
