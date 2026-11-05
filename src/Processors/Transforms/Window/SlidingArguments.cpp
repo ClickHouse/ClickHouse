@@ -17,8 +17,7 @@ SlidingArguments::SlidingArguments(const Block & input_header, const VectorWithM
         for (const String & argument_name : function.argument_names)
             positions.push_back(input_header.getPositionByName(argument_name));
 
-    views.reserve(functions.size());
-    for (const std::vector<size_t> & positions : argument_positions)
+    for (const auto & positions : argument_positions)
         views.emplace_back(positions.size());
 }
 
