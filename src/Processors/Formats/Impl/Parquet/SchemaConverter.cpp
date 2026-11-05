@@ -650,7 +650,23 @@ bool SchemaConverter::processSubtreeMap(TraversalNode & node)
     TraversalNode subnode = node.prepareToRecurse(no_map ? SchemaContext::MapTupleAsPlainTuple : SchemaContext::MapTuple, array_type_hint);
     if (!no_map)
         subnode.map_element_to_skip = node.map_element_to_skip;
+    const size_t schema_idx_before_map = schema_idx;
+    const size_t primitive_column_idx_before_map = primitive_column_idx;
+    const size_t primitive_columns_before_map = primitive_columns.size();
+    const size_t output_columns_before_map = output_columns.size();
     processSubtree(subnode);
+
+    /// The offsets of a map come from a leaf of the side that is read. If that side has no leaf in the file, read the whole map.
+    if (!no_map && node.map_element_to_skip.has_value() && subnode.output_idx.has_value()
+        && output_columns.at(*subnode.output_idx).primitive_start == output_columns.at(*subnode.output_idx).primitive_end)
+    {
+        schema_idx = schema_idx_before_map;
+        primitive_column_idx = primitive_column_idx_before_map;
+        primitive_columns.resize(primitive_columns_before_map);
+        output_columns.resize(output_columns_before_map);
+        subnode = node.prepareToRecurse(SchemaContext::MapTuple, array_type_hint);
+        processSubtree(subnode);
+    }
 
     if (!node.requested || !subnode.output_idx.has_value())
         return true;

@@ -214,6 +214,11 @@ case-insensitive name collision
 1
 0
 1
+the side that is read has no leaf in the file
+[('')]
+1
+[('')]
+[('')]	[('')]	7
 rewritten
 1
 1

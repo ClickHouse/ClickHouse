@@ -13,6 +13,7 @@ BYTES="${CLICKHOUSE_DATABASE}_05509_bytes.parquet"
 WITH_M="${CLICKHOUSE_DATABASE}_05509_d_with_m.parquet"
 WITHOUT_M="${CLICKHOUSE_DATABASE}_05509_d_without_m.parquet"
 COLLISION="${CLICKHOUSE_DATABASE}_05509_collision.parquet"
+MISSING="${CLICKHOUSE_DATABASE}_05509_missing.parquet"
 ICEBERG_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_05509_evolved"
 ICEBERG_MIXED_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_05509_mixed"
 ICEBERG_TYPES_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_05509_types"
@@ -43,6 +44,9 @@ INSERT INTO FUNCTION file('${WITH_M}') SELECT number AS id, map('a', toUInt8(num
 SETTINGS engine_file_truncate_on_insert = 1;
 INSERT INTO FUNCTION file('${WITHOUT_M}') SELECT number + 100 AS id FROM numbers(3) SETTINGS engine_file_truncate_on_insert = 1;
 INSERT INTO FUNCTION file('${COLLISION}') SELECT map('key', toUInt64(1)) AS m, ['other'] AS \`M.keys\`, [toUInt64(4)] AS \`M.values\`
+SETTINGS engine_file_truncate_on_insert = 1;
+INSERT INTO FUNCTION file('${MISSING}') SELECT map('k', tuple(toUInt8(1))) :: Map(String, Tuple(b UInt8)) AS mv,
+    map(tuple(toUInt8(1)), 'v') :: Map(Tuple(b UInt8), String) AS mk, toUInt64(7) AS id
 SETTINGS engine_file_truncate_on_insert = 1;
 "
 
@@ -120,6 +124,11 @@ SELECT count() FROM file('${COLLISION}', Parquet, 'm Map(String, UInt64), \`M.ke
 SELECT count() FROM file('${COLLISION}', Parquet, 'm Map(String, UInt64), \`M.keys\` Array(String), \`M.values\` Array(UInt64)') WHERE has(m, 'key') SETTINGS input_format_parquet_case_insensitive_column_matching = 1;
 SELECT count() FROM file('${COLLISION}', Parquet, 'm Map(String, UInt64), \`M.keys\` Array(String), \`M.values\` Array(UInt64)') WHERE mapContainsValue(m, toUInt64(4)) SETTINGS input_format_parquet_case_insensitive_column_matching = 1;
 SELECT count() FROM file('${COLLISION}', Parquet, 'm Map(String, UInt64), \`M.keys\` Array(String), \`M.values\` Array(UInt64)') WHERE mapContainsValue(m, toUInt64(1)) SETTINGS input_format_parquet_case_insensitive_column_matching = 1;
+SELECT 'the side that is read has no leaf in the file';
+SELECT mapValues(mv) FROM file('${MISSING}', Parquet, 'mv Map(String, Tuple(a String))') SETTINGS input_format_parquet_allow_missing_columns = 1;
+SELECT count() FROM file('${MISSING}', Parquet, 'mv Map(String, Tuple(a String))') WHERE mapContainsValue(mv, tuple('')) SETTINGS input_format_parquet_allow_missing_columns = 1;
+SELECT mapKeys(mk) FROM file('${MISSING}', Parquet, 'mk Map(Tuple(a String), String)') SETTINGS input_format_parquet_allow_missing_columns = 1;
+SELECT mv.values, mk.keys, id FROM file('${MISSING}', Parquet, 'mv Map(String, Tuple(a String)), mk Map(Tuple(a String), String), id UInt64') SETTINGS input_format_parquet_allow_missing_columns = 1;
 "
 
 ${CLICKHOUSE_CLIENT} -m --query "
@@ -245,4 +254,4 @@ DROP TABLE t_05509_types;
 DROP TABLE t_05509_bytes;
 "
 rm -rf "${ICEBERG_PATH}" "${ICEBERG_MIXED_PATH}" "${ICEBERG_TYPES_PATH}" "${ICEBERG_BYTES_PATH}"
-rm -f "${CLICKHOUSE_USER_FILES}/${TYPES}" "${CLICKHOUSE_USER_FILES}/${BYTES}" "${CLICKHOUSE_USER_FILES}/${WITH_M}" "${CLICKHOUSE_USER_FILES}/${WITHOUT_M}" "${CLICKHOUSE_USER_FILES}/${COLLISION}"
+rm -f "${CLICKHOUSE_USER_FILES}/${TYPES}" "${CLICKHOUSE_USER_FILES}/${BYTES}" "${CLICKHOUSE_USER_FILES}/${WITH_M}" "${CLICKHOUSE_USER_FILES}/${WITHOUT_M}" "${CLICKHOUSE_USER_FILES}/${COLLISION}" "${CLICKHOUSE_USER_FILES}/${MISSING}"
