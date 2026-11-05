@@ -1116,124 +1116,6 @@ std::optional<String> parseAdditionalFilterAstIfNeeded(const StoragePtr & storag
     return {};
 }
 
-bool hasNondeterministicConstant(const QueryTreeNodePtr & node)
-{
-    if (const auto * constant = node->as<ConstantNode>())
-        return !constant->isDeterministic();
-
-    for (const auto & child : node->getChildren())
-        if (child && hasNondeterministicConstant(child))
-            return true;
-    return false;
-}
-
-/// Whether the value of `node` can differ between nodes with the same settings: it reads a table other than `system.one`,
-/// or calls a function such as `dictGet` that is constant within a query but not deterministic. A constant keeps its value,
-/// so it is not looked into.
-bool readsServerState(const QueryTreeNodePtr & node)
-{
-    if (const auto * table = node->as<TableNode>())
-    {
-        const auto & id = table->getStorageID();
-        return id.database_name != DatabaseCatalog::SYSTEM_DATABASE || id.table_name != "one";
-    }
-    if (node->getNodeType() == QueryTreeNodeType::TABLE_FUNCTION)
-        return true;
-    if (node->getNodeType() == QueryTreeNodeType::CONSTANT)
-        return false;
-    if (const auto * function = node->as<FunctionNode>())
-        if (auto base = function->getFunction(); base && !base->isDeterministic() && base->isDeterministicInScopeOfQuery())
-            return true;
-
-    for (const auto & child : node->getChildren())
-        if (child && readsServerState(child))
-            return true;
-    return false;
-}
-
-/// Replaces each constant of `node` folded from another value in `other`, the same filter analyzed again, with its source
-/// expression, and returns whether it replaced any. A part of different shape in `other` is left as is.
-bool replaceIrreproducibleConstants(QueryTreeNodePtr & node, const QueryTreeNodePtr & other)
-{
-    if (node->getNodeType() != other->getNodeType())
-        return false;
-
-    if (const auto * constant = node->as<ConstantNode>())
-    {
-        const auto & other_constant = other->as<ConstantNode &>();
-        if (!constant->hasSourceExpression() || !other_constant.hasSourceExpression())
-            return false;
-
-        /// `randConstant() % 2` has the same value in both with probability 1/2, its argument does not.
-        auto source = constant->getSourceExpression();
-        if (isQueryOrUnionNode(source) && readsServerState(source))
-            return false;
-        if (!replaceIrreproducibleConstants(source, other_constant.getSourceExpression())
-            && constant->isEqual(other_constant, {.compare_aliases = false}))
-            return false;
-
-        node = std::move(source);
-        return true;
-    }
-
-    auto & children = node->getChildren();
-    const auto & other_children = other->getChildren();
-    if (children.size() != other_children.size())
-        return false;
-
-    bool replaced = false;
-    for (size_t i = 0; i < children.size(); ++i)
-        if (children[i] && other_children[i])
-            replaced |= replaceIrreproducibleConstants(children[i], other_children[i]);
-    return replaced;
-}
-
-/// Replaces each constant of `node` folded from a scalar subquery with its source expression, and returns whether `node`
-/// has a subquery. Each analysis of the filter on another node runs the subquery again, so `(SELECT rand())` gets another
-/// value, while one node reuses the first result. The constants folded inside the subquery stay, and so does the result
-/// of a subquery that reads server state: another node can hold other data.
-bool replaceScalarSubqueryResults(QueryTreeNodePtr & node)
-{
-    if (const auto * constant = node->as<ConstantNode>())
-    {
-        if (!constant->hasSourceExpression())
-            return false;
-
-        auto source = constant->getSourceExpression();
-        if (!replaceScalarSubqueryResults(source) || readsServerState(source))
-            return false;
-
-        node = std::move(source);
-        return true;
-    }
-
-    bool has_subquery = node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION;
-    for (auto & child : node->getChildren())
-        if (child)
-            has_subquery |= replaceScalarSubqueryResults(child);
-    return has_subquery;
-}
-
-/// Equal for two `additional_table_filters` entries only if they resolve to the same predicate, including the
-/// constants folded from settings. A constant that changes when the entry is analyzed again, such as `randConstant()`,
-/// or the result of a scalar subquery that reads no server state, is compared by its expression.
-std::pair<UInt64, UInt64> additionalFilterHash(
-    const ASTPtr & filter_ast, const TableExpressionNodePtr & table_expression, const ContextPtr & query_context)
-{
-    auto analyze = [&]
-    {
-        auto filter = buildFilterQueryTree(filter_ast, table_expression, query_context, /*check_access_rights=*/ false);
-        replaceScalarSubqueryResults(filter);
-        return filter;
-    };
-    auto filter = analyze();
-    if (hasNondeterministicConstant(filter))
-        replaceIrreproducibleConstants(filter, analyze());
-
-    auto hash = filter->getTreeHash({.compare_aliases = false});
-    return {hash.low64, hash.high64};
-}
-
 /// AST-level counterpart of `containsFunctionVolatileInScopeOfQuery`, for filters that are not part of the
 /// query tree. A function that is not found in `FunctionFactory` is treated as volatile (fail-close).
 bool astContainsFunctionVolatileInScopeOfQuery(const ASTPtr & ast, const ContextPtr & context)
@@ -2114,13 +1996,23 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         {
             additional_filter = parseAdditionalFilterAstIfNeeded(
                 storage, table_expression->getOriginalAlias(), table_expression_query_info, query_context);
-            /// A step of the shipped plan applies the sender's entry, and an entry of this node that resolves to another
-            /// predicate is applied too.
+            /// The shipped plan no longer applies the sender's entry, so this node applies it too, unless its own entry is the same.
             const auto & shipped_read = select_query_options.shipped_read;
-            if (shipped_read && table_expression_query_info.additional_filter_ast && shipped_read->additional_filter_in_plan
-                && *shipped_read->additional_filter_in_plan
-                    == additionalFilterHash(table_expression_query_info.additional_filter_ast, table_expression, query_context))
-                table_expression_query_info.additional_filter_ast = nullptr;
+            if (shipped_read && shipped_read->additional_filter)
+            {
+                ParserExpression parser;
+                ASTPtr sender_filter = parseQuery(
+                    parser,
+                    *shipped_read->additional_filter,
+                    settings[Setting::max_query_size],
+                    settings[Setting::max_parser_depth],
+                    settings[Setting::max_parser_backtracks]);
+                auto & filter_ast = table_expression_query_info.additional_filter_ast;
+                if (!filter_ast)
+                    filter_ast = sender_filter;
+                else if (filter_ast->getTreeHash(/*ignore_aliases=*/ true) != sender_filter->getTreeHash(/*ignore_aliases=*/ true))
+                    filter_ast = makeASTFunction("and", filter_ast, sender_filter);
+            }
 
             /// `pushOrderByIntoView` depends on `additional_filter_ast` being parsed
             /// above, so it must run inside the same `!only_analyze` branch — otherwise
@@ -2483,9 +2375,13 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     }
                 }
 
+                /// The filter step of `additional_table_filters` is the last of `where_filters`.
+                std::optional<String> additional_filter_column;
                 if (auto additional_filters_info = buildAdditionalFiltersIfNeeded(table_expression_query_info, prewhere_info, planner_context))
                 {
                     appendSetsFromActionsDAG(additional_filters_info->actions, useful_sets);
+                    if (additional_filters_info->do_remove_column)
+                        additional_filter_column = additional_filters_info->column_name;
                     where_filters.emplace_back(std::move(*additional_filters_info), makeDescription("additional filter"));
                 }
 
@@ -2956,9 +2852,13 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         /// A policy built for this read is a filter step of the plan unless it was pushed into the read.
                         const bool row_policy_in_plan = table_expression_data.getRowLevelFilterActions() && !row_level_filter;
                         std::optional<ReadFromTableStep::AdditionalFilter> additional_filter_in_plan;
-                        if (const auto & filter_ast = table_expression_query_info.additional_filter_ast; filter_ast && additional_filter)
+                        if (table_expression_query_info.additional_filter_ast && additional_filter && additional_filter_column
+                            && till_stage == QueryProcessingStage::FetchColumns)
+                        {
+                            const size_t alias_steps = table_expression_data.getAliasColumnExpressions().empty() ? 0 : 1;
                             additional_filter_in_plan = ReadFromTableStep::AdditionalFilter{
-                                *additional_filter, additionalFilterHash(filter_ast, table_expression, query_context)};
+                                *additional_filter, *additional_filter_column, alias_steps + where_filters.size()};
+                        }
                         auto reading_from_table = std::make_unique<ReadFromTableStep>(
                             sample_block,
                             table_name,

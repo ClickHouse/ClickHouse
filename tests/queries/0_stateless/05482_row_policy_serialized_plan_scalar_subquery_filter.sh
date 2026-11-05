@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Tags: distributed
-# The executing node plans a shipped read of a `Merge` table or of a table with a row policy again, and must not apply
-# an `additional_table_filters` entry a second time when the entry has a scalar subquery: the executing node evaluates
-# the subquery again and gets another value. A subquery that reads a table can get another value on the executing node,
-# and then the executing node must apply its own entry too.
+# The executing node plans a shipped read of a `Merge` table or of a table with a row policy again, and must apply an
+# `additional_table_filters` entry with a scalar subquery once, with the value it gets for the subquery: another
+# evaluation gets another value, and a subquery that reads a table can read other rows there.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -26,8 +25,9 @@ INSERT INTO rp_ss_lim VALUES (3) (7);
 CREATE ROW POLICY rp_ss_lim_initial ON rp_ss_lim FOR SELECT USING queryID() = initialQueryID() OR v <= 3 TO ALL;
 "
 
-# `randConstant()` is folded inside the subquery. `rand()` is not, and a second analysis on one node reuses the result.
-for subquery in "SELECT randConstant() % 100000" "SELECT rand() % 100000"; do
+# Each subquery gets another value when it is evaluated again, folded or not, over `numbers` or not.
+for subquery in "SELECT randConstant() % 100000" "SELECT rand() % 100000" "SELECT randConstant() % 100000 FROM numbers(1)" \
+    "SELECT randConstant(materialize(1)) % 100000"; do
     for table in rp_ss_merge rp_ss_leaf; do
         dist=$([ "$table" = rp_ss_merge ] && echo rp_ss_dist || echo rp_ss_dist_leaf)
         for sqp in 1 0; do
@@ -35,6 +35,16 @@ for subquery in "SELECT randConstant() % 100000" "SELECT rand() % 100000"; do
             ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${dist} SETTINGS prefer_localhost_replica = 0, serialize_query_plan = ${sqp},
                 additional_table_filters = {'${CLICKHOUSE_DATABASE}.${table}': 'x = (${subquery})'}"
         done
+    done
+done
+
+# The PREWHERE of the query is a filter step under the entry in the shipped plan.
+for table in rp_ss_merge rp_ss_leaf; do
+    dist=$([ "$table" = rp_ss_merge ] && echo rp_ss_dist || echo rp_ss_dist_leaf)
+    for sqp in 1 0; do
+        echo -n "prewhere ${table} sqp=${sqp} "
+        ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${dist} PREWHERE x < 100000 SETTINGS prefer_localhost_replica = 0, serialize_query_plan = ${sqp},
+            additional_table_filters = {'${CLICKHOUSE_DATABASE}.${table}': 'x = (SELECT randConstant() % 100000 FROM numbers(1))'}"
     done
 done
 

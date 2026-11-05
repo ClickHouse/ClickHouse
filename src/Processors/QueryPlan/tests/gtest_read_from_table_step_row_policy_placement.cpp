@@ -108,11 +108,11 @@ TEST(ReadFromTableStepRowPolicyPlacement, SelectedColumnsRoundTripAtStepVersionO
     EXPECT_EQ(selectedColumnsAfterRoundTrip(Names{"x"}, 0), std::nullopt);
 }
 
-/// The receiver checks its `max_columns_to_read` on this count and applies an `additional_table_filters` entry of its own
-/// unless it resolves to the predicate with this hash, so both arrive exactly, and an absent filter stays absent.
+/// The receiver checks its `max_columns_to_read` on this count and finds the filter step of the sender's
+/// `additional_table_filters` entry by its column and position, so both arrive exactly, and an absent filter stays absent.
 TEST(ReadFromTableStepRowPolicyPlacement, ColumnsToReadAndAdditionalFilterRoundTripAtStepVersionOne)
 {
-    const AdditionalFilter filter{"y < 5", {0x0123456789abcdefULL, 0xfedcba9876543210ULL}};
+    const AdditionalFilter filter{"y < 5", "less(y, 5_UInt8)", 3};
     for (const auto & additional_filter : {std::optional(filter), std::optional(AdditionalFilter{}), std::optional<AdditionalFilter>{}})
     {
         auto step = roundTrip(Placement::FilterStep, 1, Names{"x"}, 2, additional_filter);
@@ -124,7 +124,8 @@ TEST(ReadFromTableStepRowPolicyPlacement, ColumnsToReadAndAdditionalFilterRoundT
         if (additional_filter)
         {
             EXPECT_EQ(read.getAdditionalFilter()->text, additional_filter->text);
-            EXPECT_EQ(read.getAdditionalFilter()->hash, additional_filter->hash);
+            EXPECT_EQ(read.getAdditionalFilter()->filter_column, additional_filter->filter_column);
+            EXPECT_EQ(read.getAdditionalFilter()->steps_above, additional_filter->steps_above);
         }
     }
 

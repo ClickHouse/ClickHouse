@@ -57,12 +57,12 @@ struct SelectQueryOptions
     bool check_subquery_table_access = false;
 
     /// A read of a serialized query plan planned again (`resolveStorages.cpp`): the caller checks the grants and
-    /// `max_columns_to_read`, and the planner skips the row policy if `row_policy_in_plan` and an `additional_table_filters`
-    /// entry resolving to the tree hash `additional_filter_in_plan`. An entry the sender did not record is applied again.
+    /// `max_columns_to_read`, and the planner skips the row policy if `row_policy_in_plan`. `additional_filter` is the
+    /// entry of the sender whose filter step the caller removed from the plan, which the planner applies instead.
     struct ShippedRead
     {
         bool row_policy_in_plan = false;
-        std::optional<std::pair<UInt64, UInt64>> additional_filter_in_plan;
+        std::optional<String> additional_filter;
     };
     std::optional<ShippedRead> shipped_read;
 

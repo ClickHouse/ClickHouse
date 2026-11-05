@@ -159,8 +159,13 @@ def lookup_table():
             "SOURCE(CLICKHOUSE(TABLE 'kv')) LIFETIME(0) LAYOUT(FLAT())"
         )
         node.query("GRANT dictGet ON default.d TO u")
+        node.exec_in_container(
+            ["bash", "-c", f"printf {value} > /var/lib/clickhouse/user_files/limit.txt"]
+        )
+        node.query("GRANT READ ON FILE TO u")
     yield
     for node in (initiator, receiver):
+        node.query("REVOKE READ ON FILE FROM u")
         node.query("DROP TABLE IF EXISTS lim")
         node.query("DROP DICTIONARY IF EXISTS d")
         node.query("DROP TABLE IF EXISTS kv")
@@ -181,12 +186,13 @@ def test_receiver_evaluates_its_own_scalar_subquery_over_a_table(
     assert select("SELECT count() FROM dist", serialize_query_plan, **filters) == "3\n"
 
 
-# Also through a dictionary, and next to a constant that changes with each analysis of the entry.
+# Also through a dictionary or a file, and next to a constant that changes with each analysis of the entry.
 @pytest.mark.parametrize("serialize_query_plan", [0, 1])
 @pytest.mark.parametrize(
     "entry",
     [
         "x < (SELECT dictGet('default.d', 'v', materialize(toUInt64(1))))",
+        "x < (SELECT toUInt32(file(materialize('limit.txt'))))",
         "x < (SELECT max(v) FROM default.lim WHERE v != randConstant()) AND y != randConstant() + 10",
     ],
 )

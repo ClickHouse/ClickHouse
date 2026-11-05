@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/Sources/NullSource.h>
 
@@ -125,7 +126,46 @@ static ASTPtr wrapWithUnion(ASTPtr select)
     return select_with_union;
 }
 
-static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const ContextPtr & context)
+using ParentNodes = std::unordered_map<const QueryPlan::Node *, QueryPlan::Node *>;
+
+/// A step that computes the columns of the filter step `filter` applies on the sender, but keeps every row, if that
+/// step is where `filter` says.
+static std::unique_ptr<ExpressionStep> makeStepWithoutAdditionalFilter(
+    const QueryPlan::Node & node, const ReadFromTableStep::AdditionalFilter & filter, const ParentNodes & parents)
+{
+    const QueryPlan::Node * current = &node;
+    for (UInt64 i = 0; i < filter.steps_above; ++i)
+    {
+        if (current != &node && !typeid_cast<const ExpressionStep *>(current->step.get())
+            && !typeid_cast<const FilterStep *>(current->step.get()))
+            return {};
+        auto it = parents.find(current);
+        if (it == parents.end() || it->second->children.size() != 1)
+            return {};
+        current = it->second;
+    }
+
+    const auto * filter_step = typeid_cast<const FilterStep *>(current->step.get());
+    if (current == &node || !filter_step || !filter_step->removesFilterColumn()
+        || filter_step->getFilterColumnName() != filter.filter_column)
+        return {};
+
+    auto actions = filter_step->getExpression().clone();
+    auto & outputs = actions.getOutputs();
+    auto filter_output = std::ranges::find_if(outputs, [&](const auto * output) { return output->result_name == filter.filter_column; });
+    if (filter_output == outputs.end())
+        return {};
+    outputs.erase(filter_output);
+    actions.removeUnusedActions(/*allow_remove_inputs=*/ false);
+
+    auto step = std::make_unique<ExpressionStep>(filter_step->getInputHeaders().front(), std::move(actions));
+    if (!blocksHaveEqualStructure(*step->getOutputHeader(), *filter_step->getOutputHeader()))
+        return {};
+    return step;
+}
+
+static QueryPlanResourceHolder replaceReadingFromTable(
+    QueryPlan::Node & node, QueryPlan::Nodes & nodes, const ContextPtr & context, const ParentNodes & parents)
 {
     const auto * reading_from_table = typeid_cast<const ReadFromTableStep *>(node.step.get());
     const auto * reading_from_table_function = typeid_cast<const ReadFromTableFunctionStep *>(node.step.get());
@@ -278,6 +318,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     }
 
     QueryPlan reading_plan;
+    std::unique_ptr<ExpressionStep> step_without_additional_filter;
     if (replan_through_interpreter)
     {
         SelectQueryOptions options(QueryProcessingStage::FetchColumns);
@@ -287,6 +328,18 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         const auto placement = reading_from_table ? reading_from_table->getRowPolicyPlacement() : ReadFromTableStep::RowPolicyPlacement::Unknown;
         if (needs_row_policy || placement != ReadFromTableStep::RowPolicyPlacement::Unknown)
         {
+            /// The planner applies the entry of this node, evaluated here. So the filter step that applied the entry of the
+            /// sender there is removed, and the planner applies that entry too, unless the two entries are the same. Not over
+            /// the sender's row policy step, which must run first.
+            std::optional<String> sender_additional_filter;
+            if (const auto & additional_filter = reading_from_table->getAdditionalFilter();
+                additional_filter && placement != ReadFromTableStep::RowPolicyPlacement::FilterStep)
+            {
+                step_without_additional_filter = makeStepWithoutAdditionalFilter(node, *additional_filter, parents);
+                if (step_without_additional_filter)
+                    sender_additional_filter = additional_filter->text;
+            }
+
             /// `column_names` also has the columns of the filters above the read, so the grants and the limit are checked
             /// on the columns the query selects. A plain table is not checked, as with `storage->read()` below.
             if (read_via_interpreter)
@@ -296,7 +349,8 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
 
                 const auto & settings = context->getSettingsRef();
                 /// The filter step above the read uses the columns of this filter, so they need the grants here as well.
-                if (const auto & additional_filter = reading_from_table->getAdditionalFilter())
+                /// The planner checks them for a filter it applies itself.
+                if (const auto & additional_filter = reading_from_table->getAdditionalFilter(); additional_filter && !sender_additional_filter)
                 {
                     ParserExpression parser;
                     auto filter_ast = parseQuery(
@@ -318,8 +372,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
             }
             options.shipped_read = SelectQueryOptions::ShippedRead{
                 .row_policy_in_plan = placement == ReadFromTableStep::RowPolicyPlacement::FilterStep,
-                .additional_filter_in_plan = reading_from_table->getAdditionalFilter()
-                    ? std::optional(reading_from_table->getAdditionalFilter()->hash) : std::nullopt};
+                .additional_filter = std::move(sender_additional_filter)};
         }
 
         auto interpreter_context = context;
@@ -336,6 +389,14 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), interpreter_context, options);
         reading_plan = std::move(interpreter).extractQueryPlan();
         reading_plan.addInterpreterContext(std::move(interpreter_context));
+
+        if (step_without_additional_filter)
+        {
+            QueryPlan::Node * filter_node = &node;
+            for (UInt64 i = 0; i < reading_from_table->getAdditionalFilter()->steps_above; ++i)
+                filter_node = parents.at(filter_node);
+            filter_node->step = std::move(step_without_additional_filter);
+        }
     }
     else
     {
@@ -401,6 +462,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
 
 void QueryPlan::resolveStorages(const ContextPtr & context)
 {
+    ParentNodes parents;
     std::stack<QueryPlan::Node *> stack;
     stack.push(getRootNode());
     while (!stack.empty())
@@ -421,10 +483,13 @@ void QueryPlan::resolveStorages(const ContextPtr & context)
         }
 
         for (auto * child : node->children)
+        {
+            parents[child] = node;
             stack.push(child);
+        }
 
         if (node->children.empty())
-            addResources(replaceReadingFromTable(*node, nodes, context));
+            addResources(replaceReadingFromTable(*node, nodes, context, parents));
     }
 }
 

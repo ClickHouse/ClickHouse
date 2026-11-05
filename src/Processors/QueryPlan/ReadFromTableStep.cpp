@@ -79,8 +79,8 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
     if (flags & 64)
     {
         writeStringBinary(additional_filter->text, ctx.out);
-        writeIntBinary(additional_filter->hash.first, ctx.out);
-        writeIntBinary(additional_filter->hash.second, ctx.out);
+        writeStringBinary(additional_filter->filter_column, ctx.out);
+        writeVarUInt(additional_filter->steps_above, ctx.out);
     }
 }
 
@@ -131,8 +131,8 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
         {
             auto & filter = additional_filter.emplace();
             readStringBinary(filter.text, ctx.in);
-            readIntBinary(filter.hash.first, ctx.in);
-            readIntBinary(filter.hash.second, ctx.in);
+            readStringBinary(filter.filter_column, ctx.in);
+            readVarUInt(filter.steps_above, ctx.in);
         }
     }
 
