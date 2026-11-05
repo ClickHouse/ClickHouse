@@ -84,10 +84,10 @@ select if(number % 5 == 0, toDateOrZero(toString(number)), Null) from numbers(20
 select if(number % 5 == 0, Null, toDateOrZero(toString(number))) from numbers(20);
 select if(number % 5, Null, toDateOrZero(toString(number))) from numbers(20);
 
-select if(number % 5 == 0, toDateTimeOrZero(toString(number * 10000), 'UTC'), toDateTimeOrZero(toString((number + 1) * 10000), 'UTC')) from numbers(20);
-select if(number % 5 == 0, toDateTimeOrZero(toString(number * 10000), 'UTC'), Null) from numbers(20);
-select if(number % 5 == 0, Null, toDateTimeOrZero(toString(number * 10000), 'UTC')) from numbers(20);
-select if(number % 5, Null, toDateTimeOrZero(toString(number * 10000), 'UTC')) from numbers(20);
+select if(number % 5 == 0, toDateTimeOrZero(toString(number * 10000), 'UTC'), toDateTimeOrZero(toString((number + 1) * 10000), 'UTC')) from numbers(20) settings cast_string_to_date_time_mode = 'basic';
+select if(number % 5 == 0, toDateTimeOrZero(toString(number * 10000), 'UTC'), Null) from numbers(20) settings cast_string_to_date_time_mode = 'basic';
+select if(number % 5 == 0, Null, toDateTimeOrZero(toString(number * 10000), 'UTC')) from numbers(20) settings cast_string_to_date_time_mode = 'basic';
+select if(number % 5, Null, toDateTimeOrZero(toString(number * 10000), 'UTC')) from numbers(20) settings cast_string_to_date_time_mode = 'basic';
 
 select if(number % 5 == 0, toDecimal32OrZero(toString(number), 5), toDecimal32OrZero(toString(number + 1), 5)) from numbers(20);
 select if(number % 5 == 0, toDecimal32OrZero(toString(number), 5), Null) from numbers(20);

@@ -4595,21 +4595,39 @@ public:
         return res;
     }
 
+    template <typename FromDataType, typename ConvertToDataType>
+    ColumnPtr executeThroughParsing(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, UInt32 scale) const
+    {
+        /// Same as in ConvertImpl: toDateTimeOrNull and similar functions parse according to cast_string_to_date_time_mode, like toDateTime.
+        if constexpr (parsing_mode == ConvertFromStringParsingMode::Basic
+            && (std::is_same_v<ConvertToDataType, DataTypeDateTime> || std::is_same_v<ConvertToDataType, DataTypeDateTime64>))
+        {
+            switch (settings.cast_string_to_date_time_mode)
+            {
+                case FormatSettings::DateTimeInputFormat::Basic:
+                    break;
+                case FormatSettings::DateTimeInputFormat::BestEffort:
+                    return ConvertThroughParsing<FromDataType, ConvertToDataType, Name, exception_mode, ConvertFromStringParsingMode::BestEffort>::execute(
+                        arguments, result_type, input_rows_count, settings, scale);
+                case FormatSettings::DateTimeInputFormat::BestEffortUS:
+                    return ConvertThroughParsing<FromDataType, ConvertToDataType, Name, exception_mode, ConvertFromStringParsingMode::BestEffortUS>::execute(
+                        arguments, result_type, input_rows_count, settings, scale);
+            }
+        }
+
+        return ConvertThroughParsing<FromDataType, ConvertToDataType, Name, exception_mode, parsing_mode>::execute(
+            arguments, result_type, input_rows_count, settings, scale);
+    }
+
     template <typename ConvertToDataType>
     ColumnPtr executeInternal(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, UInt32 scale) const
     {
         const IDataType * from_type = arguments[0].type.get();
 
         if (checkAndGetDataType<DataTypeString>(from_type))
-        {
-            return ConvertThroughParsing<DataTypeString, ConvertToDataType, Name, exception_mode, parsing_mode>::execute(
-                arguments, result_type, input_rows_count, settings, scale);
-        }
+            return executeThroughParsing<DataTypeString, ConvertToDataType>(arguments, result_type, input_rows_count, scale);
         else if (checkAndGetDataType<DataTypeFixedString>(from_type))
-        {
-            return ConvertThroughParsing<DataTypeFixedString, ConvertToDataType, Name, exception_mode, parsing_mode>::execute(
-                arguments, result_type, input_rows_count, settings, scale);
-        }
+            return executeThroughParsing<DataTypeFixedString, ConvertToDataType>(arguments, result_type, input_rows_count, scale);
 
         if constexpr (support_integer_input)
         {
