@@ -282,19 +282,6 @@ bool convertLogicalJoinToPhysical(
     return true;
 }
 
-using RelationEstimates = std::unordered_map<const QueryPlan::Node *, RelationStats>;
-
-static RelationStats estimateRelation(RelationEstimates & estimates, QueryPlan::Node & node)
-{
-    if (auto it = estimates.find(&node); it != estimates.end())
-        return it->second;
-    return estimates.emplace(&node, estimateReadRowsCount(node)).first->second;
-}
-
-static void optimizeJoinLogicalImpl(
-    JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings,
-    std::shared_ptr<RelationEstimates> relation_estimates);
-
 struct QueryGraphBuilder
 {
     JoinExpressionActions expression_actions;
@@ -337,10 +324,6 @@ struct QueryGraphBuilder
         JoinSettings join_settings;
         SortingStep::Settings sorting_settings;
         String stats_hint;
-        /// Set while `joinGraphHasRelationWithoutStatistics` builds the graph only to estimate its relations.
-        bool estimate_relations_only = false;
-        /// Shared with the sub-joins optimized on their own, so that each relation is estimated once.
-        std::shared_ptr<RelationEstimates> relation_estimates;
         UInt64 effective_randomize_seed = 0;
         /// Whether the group of tables we reorder is built for DPsub with a conflict detector: semi/anti
         /// and `FULL` joins join it, and outer joins come in with both of their sides. Decided once per
@@ -622,7 +605,7 @@ static size_t addChildQueryGraph(
                 child_graph.below_null_supplying = below_null_supplying;
                 buildQueryGraph(child_graph, *join_node, nodes, join_steps_limit);
 
-                if (expression_step && !graph.context->estimate_relations_only)
+                if (expression_step)
                 {
                     ActionsDAG::NodeMapping node_mapping;
                     child_graph.expression_actions.getActionsDAG()->mergeInplace(std::move(expression_step->getExpression()), node_mapping, true);
@@ -633,7 +616,7 @@ static size_t addChildQueryGraph(
                 return count;
             }
             /// Optimize child subplan before continuing to get size estimation
-            optimizeJoinLogicalImpl(child_join_step, *join_node, nodes, graph.context->optimization_settings, graph.context->relation_estimates);
+            optimizeJoinLogicalImpl(child_join_step, *join_node, nodes, graph.context->optimization_settings);
         }
     }
 
@@ -649,12 +632,12 @@ static size_t addChildQueryGraph(
         auto * child_join_step = typeid_cast<JoinStepLogical *>(child_node->step.get());
         if (child_join_step && !child_join_step->isOptimized())
         {
-            optimizeJoinLogicalImpl(child_join_step, *child_node, nodes, graph.context->optimization_settings, graph.context->relation_estimates);
+            optimizeJoinLogicalImpl(child_join_step, *child_node, nodes, graph.context->optimization_settings);
         }
     }
 
     graph.inputs.push_back(node);
-    RelationStats stats = estimateRelation(*graph.context->relation_estimates, *node);
+    RelationStats stats = estimateReadRowsCount(*node);
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
     if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache
@@ -671,12 +654,6 @@ static size_t addChildQueryGraph(
 
     if (UInt64 seed = graph.context->effective_randomize_seed)
         stats = getRandomizedStats(seed, graph.relation_stats.size(), stats.table_name, *node->step->getOutputHeader());
-
-    if (graph.context->estimate_relations_only)
-    {
-        graph.relation_stats.push_back(stats);
-        return 1;
-    }
 
     LOG_TRACE(getLogger("optimizeJoin"), "Estimated statistics{} for {} {}",
         num_rows_from_cache.has_value() ? " (from cache)" : "",
@@ -862,9 +839,6 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     size_t total_inputs = query_graph.inputs.size();
 
     chassert(lhs_count && rhs_count && lhs_count + rhs_count == total_inputs && query_graph.relation_stats.size() == total_inputs);
-
-    if (query_graph.context->estimate_relations_only)
-        return;
 
     auto [expression_actions, join_operator] = join_step->detachExpressions();
 
@@ -1750,70 +1724,6 @@ static bool joinGraphHasOverlappingColumnNames(
     return false;
 }
 
-static bool hasChildJoinToMerge(const QueryPlan::Node & node)
-{
-    for (const auto * child : node.children)
-    {
-        const auto * join_node = child;
-        if (typeid_cast<const ExpressionStep *>(child->step.get()) && child->children.size() == 1)
-            join_node = child->children[0];
-
-        const auto * join_step = typeid_cast<const JoinStepLogical *>(join_node->step.get());
-        if (join_step && !join_step->isOptimized())
-            return true;
-    }
-    return false;
-}
-
-/// Whether a table without statistics and without a row estimate is in this relation. A join optimized
-/// on its own does not record the source of its estimate, so its inputs are checked.
-static bool hasTableWithoutStatistics(QueryPlan::Node & node, QueryPlan::Nodes & nodes, QueryGraphBuilder::BuilderContext & context)
-{
-    if (context.join_settings.use_hash_table_stats_for_join_reordering && context.statistics_context.getCachedHint(&node))
-        return false;
-
-    auto * join_node = &node;
-    while (join_node->children.size() == 1)
-        join_node = join_node->children.front();
-
-    if (auto * join_step = typeid_cast<JoinStepLogical *>(join_node->step.get()))
-    {
-        /// Optimized now rather than later in the traversal, so that its tables are estimated once.
-        if (!join_step->isOptimized())
-        {
-            optimizeJoinLogicalImpl(join_step, *join_node, nodes, context.optimization_settings, context.relation_estimates);
-            return hasTableWithoutStatistics(node, nodes, context);
-        }
-        if (join_step->getResultRowsEstimation())
-            return false;
-        return std::ranges::any_of(
-            join_node->children, [&](QueryPlan::Node * child) { return hasTableWithoutStatistics(*child, nodes, context); });
-    }
-
-    auto stats = estimateRelation(*context.relation_estimates, node);
-    return !stats.estimated_rows && stats.source == RowEstimateSource::NoStatistics;
-}
-
-static bool joinGraphHasRelationWithoutStatistics(
-    QueryGraphBuilder & query_graph_builder, QueryPlan::Node & node, QueryPlan::Nodes & nodes, int join_steps_limit)
-{
-    QueryGraphBuilder relations(query_graph_builder.context);
-    relations.context->estimate_relations_only = true;
-    buildQueryGraph(relations, node, nodes, join_steps_limit);
-    relations.context->estimate_relations_only = false;
-
-    for (size_t i = 0; i < relations.relation_stats.size(); ++i)
-    {
-        const auto & stats = relations.relation_stats[i];
-        if (stats.estimated_rows)
-            continue;
-        if (stats.source == RowEstimateSource::NoStatistics
-            || (stats.source == RowEstimateSource::NoSource && hasTableWithoutStatistics(*relations.inputs[i], nodes, *relations.context)))
-            return true;
-    }
-    return false;
-}
-
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
@@ -1828,13 +1738,6 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
 }
 
 void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
-{
-    optimizeJoinLogicalImpl(join_step, node, nodes, optimization_settings, std::make_shared<RelationEstimates>());
-}
-
-static void optimizeJoinLogicalImpl(
-    JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings,
-    std::shared_ptr<RelationEstimates> relation_estimates)
 {
     for (auto * child : node.children)
     {
@@ -1898,11 +1801,6 @@ static void optimizeJoinLogicalImpl(
     query_graph_builder.context->stats_hint = join_step->getTableStatsHint();
     query_graph_builder.context->allow_semi_anti_flattening = reorder_semi_anti;
 
-    query_graph_builder.context->relation_estimates = std::move(relation_estimates);
-    /// A relation that has no row estimate for lack of statistics keeps the written order of the joins in its graph.
-    if (query_graph_size_limit > 2 && hasChildJoinToMerge(node)
-        && joinGraphHasRelationWithoutStatistics(query_graph_builder, node, nodes, query_graph_size_limit))
-        query_graph_size_limit = 2;
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
     node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);
 }
