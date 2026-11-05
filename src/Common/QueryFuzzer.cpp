@@ -62,7 +62,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
-#include <Parsers/ASTHypotheticalObjectQuery.h>
+#include <Parsers/WhatIf/ASTHypotheticalObjectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
