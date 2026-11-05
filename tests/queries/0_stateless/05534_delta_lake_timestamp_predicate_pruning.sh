@@ -56,6 +56,20 @@ make_table() {
     done
 }
 
+# copy_table <table> <timestamp|timestamp_ntz> <parquet> <values>: a one-file table over a prepared
+# Parquet file holding <values>, with full statistics.
+copy_table() {
+    local table=$1 delta_type=$2 parquet=$3 values=$4
+    mkdir -p "${ROOT}/${table}/_delta_log"
+    cp "${parquet}" "${ROOT}/${table}/f1.parquet"
+    TABLES+=("${table}")
+    TABLE_DELTA_TYPE[$table]="${delta_type}"
+    TABLE_STATS[$table]=full
+    TABLE_PARTITIONED[$table]=data
+    TABLE_NULLABLE[$table]=true
+    TABLE_FILES[$table]="${values};"
+}
+
 # A JSON stats value: `timestamp` is an instant (`Z`), `timestamp_ntz` a wall-clock time.
 stats_value() {
     local value=$1 delta_type=$2 stats_mode=$3
@@ -142,8 +156,6 @@ record_check() {
 check() { record_check all "$@"; }
 # check_files: the same, but only the scan count goes to the reference.
 check_files() { record_check files "$@"; }
-# check_rows_match: the same, but neither the rows nor the scan count go to the reference.
-check_rows_match() { record_check none "$@"; }
 
 # expect_same_error <table> <where> [settings]: the query must fail with the same error code with the
 # engine predicate off and on, so pruning cannot hide an exception by skipping every file.
@@ -239,9 +251,7 @@ emit_results() {
         if [[ "${CHECK_PRINT[$idx]}" == all ]]; then
             printf '%s\n' "${ON_ROWS[$idx]}"
         fi
-        if [[ "${CHECK_PRINT[$idx]}" != none ]]; then
-            printf '%s\n' "${ON_DELTAS[$idx]}"
-        fi
+        printf '%s\n' "${ON_DELTAS[$idx]}"
     done
 }
 
@@ -291,11 +301,17 @@ for table in ts ntz; do
     check "${table}" "ts >= toDateTime('2026-01-01 00:00:01', 'UTC')"
     check "${table}" "ts < toDateTime('2026-01-01 05:30:01', 'Asia/Kolkata')"
     # A string finer than microseconds or outside the range is parsed by the comparison and by pruning alike.
-    check_rows_match "${table}" "ts < '2026-01-01 00:00:00.1234565'"
-    check_rows_match "${table}" "ts >= '2026-01-01 00:00:00.1234565'"
-    check_rows_match "${table}" "ts > '2300-01-01 00:00:00'"
-    check_rows_match "${table}" "ts < '1899-12-31 00:00:00'"
+    check "${table}" "ts < '2026-01-01 00:00:00.1234565'"
+    check "${table}" "ts >= '2026-01-01 00:00:00.1234565'"
+    check "${table}" "ts > '2300-01-01 00:00:00'"
+    check "${table}" "ts < '1899-12-31 00:00:00'"
 done
+
+# A string is parsed in `cast_string_to_date_time_mode`, as the comparison does, whatever
+# `date_time_input_format` says: '20260102' is 2026-01-02 in `best_effort` and 20260102 seconds after the
+# epoch in `basic`.
+check ts "ts < '20260102'" "date_time_input_format='basic'"
+check ts "ts >= '20260102'" "cast_string_to_date_time_mode='basic'"
 
 # `DateTime64` constants compare by ticks, whatever their time zone; a coarser scale converts exactly.
 check ts "ts = toDateTime64('2026-01-01 05:30:00.123456', 6, 'Asia/Kolkata')"
@@ -323,6 +339,8 @@ check ts "NOT (ts < ${NS_BETWEEN})"
 # multiplies the column and wraps around, so the file beyond stays scanned in either polarity.
 check ts "ts = ${NS_EXACT}"
 check ts "NOT (ts = ${NS_EXACT})"
+check ts "ts < ${NS_EXACT}"
+check ts "${NS_EXACT} <= ts"
 check ts "ts = ${NS_EXACT}" "decimal_check_overflow=0"
 check ts "NOT (ts = ${NS_EXACT})" "decimal_check_overflow=0"
 check ts "ts < ${NS_BETWEEN}" "decimal_check_overflow=0"
@@ -331,9 +349,17 @@ check ts "ts <= ${NS_BEFORE_EPOCH}"
 # `Int64` nanoseconds while its statistics keep the real value, so a file reaching beyond stays scanned.
 check ts "ts = '2026-01-01 00:00:00.123456'" "date_time_overflow_behavior='saturate'"
 
+# The INT96 9999-12-31 23:59:59 is read as 2262-04-11 23:47:16.854775 under 'saturate', while the statistics
+# keep 9999-12-31, so the file must not be skipped for the clamped value.
+copy_table int96 timestamp "${CUR_DIR}/data_parquet/05534_int96_beyond_int64_nanoseconds.parquet" '9999-12-31 23:59:59.000000'
+check int96 "ts = '2262-04-11 23:47:16.854775'" "date_time_overflow_behavior='saturate'"
+check int96 "ts < '2262-04-12 00:00:00'" "date_time_overflow_behavior='saturate'"
+
 # Junctions and nested negation.
 check ts "ts BETWEEN '2026-01-01 00:00:00' AND '2026-01-01 00:00:00.5'"
 check ts "NOT (ts = '2026-01-01 00:00:00.123456' AND ts > '1970-01-01')"
+# An untranslated child under negation leaves the whole conjunction undecided.
+check ts "NOT (ts = ${NS_BETWEEN} AND ts > '1970-01-01')"
 
 # Untranslated forms scan every file.
 check ts "ts < '1970-01-01' OR ts > '2100-01-01'"
@@ -355,6 +381,7 @@ check_files ts_ms "ts = '2026-01-01 00:00:00.123'"
 check_files ts_ms "ts >= '2026-01-01 00:00:01'"
 check_files ts_ns "ts = '2026-01-01 00:00:00.123456'"
 check_files ts_ns "ts >= '2026-01-01 00:00:01'"
+check_files ts_ms "NOT (ts = '2026-01-01 00:00:00.123' AND ts > '1970-01-01')"
 check ts_kolkata "ts = '2026-01-01 05:30:00.123456'"
 check ts_kolkata "ts < '2026-01-01 05:30:00.123456'"
 
@@ -394,10 +421,33 @@ for table in part part_ntz; do
     check "${table}" "ts < ${NS_BETWEEN}"
     check "${table}" "ts > ${NS_BEFORE_EPOCH}"
     check "${table}" "ts <= ${NS_BEFORE_EPOCH}"
-    check_rows_match "${table}" "ts > '2026-01-01 00:00:00.1234565'"
-    check_rows_match "${table}" "ts <= '2026-01-01 00:00:00.1234565'"
-    check_rows_match "${table}" "ts > '2300-01-01 00:00:00'"
-    check_rows_match "${table}" "ts < '1899-12-31 00:00:00'"
+    check "${table}" "ts > '2026-01-01 00:00:00.1234565'"
+    check "${table}" "ts <= '2026-01-01 00:00:00.1234565'"
+    check "${table}" "ts > '2300-01-01 00:00:00'"
+    check "${table}" "ts < '1899-12-31 00:00:00'"
 done
 
 run_all
+
+# A literal visitor that throws leaves the comparison undecided, also inside a fenced comparison: the
+# rows match the rows with the engine predicate off, and every file is scanned. The failpoint fires once,
+# so each case runs in its own launch, after a run with the engine predicate off.
+expect_failpoint_fallback() {
+    local where=$1 settings=${2:+, $2}
+    local -a lines
+    mapfile -t lines < <(run_batch 1 --query "
+        $(data_query ts "${where}" "delta_lake_enable_engine_predicate=0${settings}")
+        SELECT sumIf(value, event = 'DeltaLakeScannedFiles') FROM system.events;
+        SYSTEM ENABLE FAILPOINT delta_kernel_fail_literal_visitor;
+        $(data_query ts "${where}" "delta_lake_throw_on_engine_predicate_error=0${settings}")
+        SELECT sumIf(value, event = 'DeltaLakeScannedFiles') FROM system.events;")
+    printf 'failpoint: %s%s\n' "${where}" "${settings}"
+    diff -u <(printf '%s\n' "${lines[0]}") <(printf '%s\n' "${lines[2]}")
+    printf '%s\n' "${lines[2]}" "$(( lines[3] - lines[1] ))"
+}
+expect_failpoint_fallback "NOT (ts >= '2026-01-01 00:00:01')"
+expect_failpoint_fallback "NOT (ts < ${NS_BETWEEN})" "decimal_check_overflow=0"
+
+run_batch 1 --query "
+    SYSTEM ENABLE FAILPOINT delta_kernel_fail_literal_visitor;
+    $(data_query ts "NOT (ts >= '2026-01-01 00:00:01')")" 2>&1 | grep -c "FAULT_INJECTED"

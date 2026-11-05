@@ -10,6 +10,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDecimalBase.h>
@@ -21,6 +22,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/ComparisonNames.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Functions/FunctionsLogical.h>
@@ -40,6 +42,11 @@ namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int FAULT_INJECTED;
+}
+
+namespace DB::Setting
+{
+    extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
 }
 
 namespace DB::FailPoints
@@ -291,7 +298,7 @@ namespace
     };
 
     /// Matches a comparison of a column backed by a Delta `timestamp` / `timestamp_ntz` with a literal.
-    /// Returns nullopt when the translation is not exact.
+    /// Returns nullopt when no kernel predicate keeps every file the comparison can match.
     std::optional<TimestampComparison> matchTimestampComparison(
         const DB::ActionsDAG::Node * column,
         const DB::ActionsDAG::Node * literal,
@@ -328,6 +335,17 @@ namespace
 
         return TimestampComparison{column, kind, value->micros, visitor, fence_divisor};
     }
+}
+
+DB::FormatSettings EnginePredicate::makeComparisonFormatSettings(const DB::ContextPtr & context_)
+{
+    if (!context_)
+        return {};
+    /// As in `ComparisonParams`: a string compared with a date/time is parsed in `cast_string_to_date_time_mode`,
+    /// not in `date_time_input_format`.
+    auto settings = DB::getFormatSettings(context_);
+    settings.date_time_input_format = context_->getSettingsRef()[DB::Setting::cast_string_to_date_time_mode];
+    return settings;
 }
 
 std::shared_ptr<EnginePredicate> getEnginePredicate(

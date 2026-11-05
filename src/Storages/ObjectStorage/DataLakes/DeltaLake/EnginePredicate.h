@@ -46,7 +46,7 @@ public:
         : filter(filter_)
         , exception(exception_)
         , context(context_)
-        , format_settings(context_ ? DB::getFormatSettings(context_) : DB::FormatSettings{})
+        , format_settings(makeComparisonFormatSettings(context_))
         , timestamp_columns(std::move(timestamp_columns_))
     {
         predicate = this;
@@ -85,11 +85,14 @@ private:
     std::exception_ptr & exception;
     /// Context for accessing settings
     DB::ContextPtr context;
+    /// The settings `FunctionComparison` converts a literal with, so that pruning sees the same value.
     const DB::FormatSettings format_settings;
     /// Top-level columns backed by a Delta `timestamp` / `timestamp_ntz`, by logical name.
     const DeltaTimestampColumns timestamp_columns;
 
     static uintptr_t visitPredicate(void * data, ffi::KernelExpressionVisitorState * state);
+
+    static DB::FormatSettings makeComparisonFormatSettings(const DB::ContextPtr & context_);
 };
 
 std::shared_ptr<EnginePredicate> getEnginePredicate(
