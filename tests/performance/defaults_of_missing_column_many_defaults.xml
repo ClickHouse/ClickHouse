@@ -43,16 +43,76 @@
                 <value>37</value>
                 <value>38</value>
                 <value>39</value>
+                <value>40</value>
+                <value>41</value>
+                <value>42</value>
+                <value>43</value>
+                <value>44</value>
+                <value>45</value>
+                <value>46</value>
+                <value>47</value>
+                <value>48</value>
+                <value>49</value>
+                <value>50</value>
+                <value>51</value>
+                <value>52</value>
+                <value>53</value>
+                <value>54</value>
+                <value>55</value>
+                <value>56</value>
+                <value>57</value>
+                <value>58</value>
+                <value>59</value>
+                <value>60</value>
+                <value>61</value>
+                <value>62</value>
+                <value>63</value>
+                <value>64</value>
+                <value>65</value>
+                <value>66</value>
+                <value>67</value>
+                <value>68</value>
+                <value>69</value>
+                <value>70</value>
+                <value>71</value>
+                <value>72</value>
+                <value>73</value>
+                <value>74</value>
+                <value>75</value>
+                <value>76</value>
+                <value>77</value>
+                <value>78</value>
+                <value>79</value>
+                <value>80</value>
+                <value>81</value>
+                <value>82</value>
+                <value>83</value>
+                <value>84</value>
+                <value>85</value>
+                <value>86</value>
+                <value>87</value>
+                <value>88</value>
+                <value>89</value>
+                <value>90</value>
+                <value>91</value>
+                <value>92</value>
+                <value>93</value>
+                <value>94</value>
+                <value>95</value>
+                <value>96</value>
+                <value>97</value>
+                <value>98</value>
+                <value>99</value>
             </values>
         </substitution>
     </substitutions>
 
     <create_query>CREATE TABLE t_many_defaults (key UInt64) ENGINE = MergeTree ORDER BY key</create_query>
     <create_query>ALTER TABLE t_many_defaults ADD COLUMN m{i} UInt64 MATERIALIZED key + {i}</create_query>
-    <create_query>INSERT INTO t_many_defaults (key) SELECT number FROM numbers(5000000)</create_query>
+    <create_query>INSERT INTO t_many_defaults (key) SELECT number FROM numbers(50000000)</create_query>
     <create_query>ALTER TABLE t_many_defaults ADD COLUMN x UInt64 DEFAULT key + 1</create_query>
 
-    <query>SELECT sum(x) FROM t_many_defaults</query>
+    <query>SELECT sum(x) FROM t_many_defaults SETTINGS max_block_size = 8192</query>
 
     <drop_query>DROP TABLE IF EXISTS t_many_defaults</drop_query>
 </test>
