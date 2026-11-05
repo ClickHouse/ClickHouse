@@ -47,8 +47,10 @@ NESTED="SELECT k, t FROM ${TABLE} ORDER BY ts, k LIMIT 100"
 ARRAY="SELECT k, a FROM ${TABLE} ORDER BY ts, k LIMIT 100"
 MAP="SELECT k, m FROM ${TABLE} ORDER BY ts, k LIMIT 100"
 
-# No limit on the LIMIT of lazy materialization; `max_threads` is not lowered when the server is short of free memory.
-LAZY_SETTINGS=(--query_plan_optimize_lazy_materialization=1 --query_plan_max_limit_for_lazy_materialization=0 --max_threads_min_free_memory_per_thread=0)
+# No limit on the LIMIT of lazy materialization; `max_threads` is lowered neither when the server is short of free memory
+# nor to the fair share of CPU slots of a busy server (`max_threads = 16` is `auto` on a server with 16 cores).
+LAZY_SETTINGS=(--query_plan_optimize_lazy_materialization=1 --query_plan_max_limit_for_lazy_materialization=0 --max_threads_min_free_memory_per_thread=0
+    --use_concurrency_control_for_max_threads=0)
 
 echo '-- rows and data files of the LIMITs'
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), uniqExact(_file) FROM (SELECT k, _file FROM ${TABLE} ORDER BY ts, k LIMIT 3000)"

@@ -47,7 +47,7 @@ ICEBERG_SUBCOLUMN="SELECT k, t.c1 FROM ${TABLE} ORDER BY ts, k LIMIT 100"
 
 # See 05507_lazy_materialization_object_storage_parallel_readers for the settings.
 LAZY_SETTINGS=(--query_plan_optimize_lazy_materialization=1 --query_plan_max_limit_for_lazy_materialization=0 --max_threads_min_free_memory_per_thread=0
-    --s3_validate_etag_on_read=1 --max_threads=16)
+    --use_concurrency_control_for_max_threads=0 --s3_validate_etag_on_read=1 --max_threads=16)
 
 echo '-- the lazy read step is in the plan'
 for query in "$SUBCOLUMN" "$ICEBERG_SUBCOLUMN"; do
