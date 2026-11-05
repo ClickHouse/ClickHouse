@@ -108,10 +108,9 @@ std::optional<size_t> comparedWidth(const ActionsDAG::Node * node)
     return {};
 }
 
-/// A comparison of fixed-size values of at most 32 bytes costs a fraction of what any join algorithm
-/// spends per row, so a copy that filters nothing is a rounding error. A wider argument or a set lookup
-/// costs more, so it has to earn its place by pruning the primary key instead of being evaluated
-/// over the whole target
+/// A comparison of fixed-size values of at most 32 bytes is cheap next to the per-row work of any
+/// join algorithm. A wider argument or a set lookup is not, so it has to earn its place by pruning
+/// the primary key instead of being evaluated over the whole target
 bool atomIsCheapEnoughForAnyTarget(const ActionsDAG::Node * atom)
 {
     if (atom->function_base->getName() == "in")
@@ -120,7 +119,6 @@ bool atomIsCheapEnoughForAnyTarget(const ActionsDAG::Node * atom)
     for (const auto * child : atom->children)
     {
         const auto width = comparedWidth(child);
-        /// a nonselective copy on a `FixedString(256)` probe side costs 18%, on `FixedString(32)` 9%, on `UInt64` 7%
         if (!width || *width > 32)
             return false;
     }
