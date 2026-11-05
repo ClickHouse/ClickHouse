@@ -129,6 +129,7 @@ std::string ObjectInfo::getPathOrPathToArchiveIfArchive() const
     return getPath();
 }
 
+
 ObjectIteratorSplitByBuckets::ObjectIteratorSplitByBuckets(
     ObjectIterator iterator_,
     const String & format_,

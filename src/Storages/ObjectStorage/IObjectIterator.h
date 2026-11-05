@@ -199,4 +199,5 @@ private:
     const LoggerPtr log = getLogger("GlobIterator");
 };
 
+
 }

@@ -194,6 +194,7 @@ void checkNoUInt64(const ColumnsDescription & columns)
 }
 }
 
+
 using namespace Iceberg;
 
 namespace
@@ -518,6 +519,7 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
     if (!snapshot_object->has(f_schema_id))
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No schema id found for snapshot id `{}`", snapshot_id);
     Int32 schema_id = snapshot_object->getValue<Int32>(f_schema_id);
+
 
     return std::make_shared<IcebergDataSnapshot>(
         getManifestList(object_storage, persistent_components, local_context, manifest_list_file_path, log, *external_storages),
@@ -1239,6 +1241,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
     auto [persistent_components, latest_metadata] = initializePersistentTableComponents(object_storage, configuration_ptr, cache_ptr, local_context, log);
     return std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, std::move(persistent_components), local_context, latest_metadata);
 }
+
 
 IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_context) const
 {

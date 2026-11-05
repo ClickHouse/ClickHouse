@@ -11,6 +11,7 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
 
+
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Databases/DataLake/Common.h>
@@ -55,6 +56,7 @@
 #include <base/wide_integer_to_string.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 
+
 namespace ProfileEvents
 {
 extern const Event IcebergIteratorInitializationMicroseconds;
@@ -65,6 +67,7 @@ extern const Event IcebergMinMaxPrunedDeleteFiles;
 extern const Event IcebergPartitionPrunedFiles;
 extern const Event IcebergPartitionPrunedManifestFiles;
 };
+
 
 namespace DB
 {
@@ -78,6 +81,7 @@ namespace Setting
 extern const SettingsBool use_iceberg_partition_pruning;
 extern const SettingsBool use_iceberg_manifest_list_partition_pruning;
 };
+
 
 using namespace Iceberg;
 

@@ -1,7 +1,9 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
 #include "config.h"
+
+#if USE_AVRO
+
 #include <optional>
 #include <string>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
@@ -15,9 +17,6 @@
 #include <Poco/JSON/Parser.h>
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-
-#if USE_AVRO
-
 #include <IO/CompressedReadBufferWrapper.h>
 #include <IO/CompressionMethod.h>
 #include <Storages/ColumnsDescription.h>

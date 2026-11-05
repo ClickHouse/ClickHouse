@@ -763,6 +763,7 @@ ExpireSnapshotsResult deleteExpiredFiles(
 
 }
 
+
 // ---------------------------------------------------------------------------
 // Public: expireSnapshots orchestration
 // ---------------------------------------------------------------------------
@@ -973,6 +974,7 @@ ExpireSnapshotsResult expireSnapshots(
 
     UNREACHABLE();
 }
+
 
 // ---------------------------------------------------------------------------
 // Public: executeExpireSnapshots (entry point from ALTER TABLE ... EXECUTE)

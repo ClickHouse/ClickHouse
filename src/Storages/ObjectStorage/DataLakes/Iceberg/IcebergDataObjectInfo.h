@@ -20,6 +20,7 @@ namespace DB::Iceberg
 
 String computePartitionId(const Row & partition_key_value);
 
+
 struct IcebergObjectSerializableInfo
 {
     /// Preserve the manifest spelling for `_path` and task identity; it may differ from the resolved storage key.
@@ -62,6 +63,7 @@ private:
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 #include <base/defines.h>
+
 
 namespace DB
 {

@@ -15,7 +15,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 
-#include <atomic>
 #include <mutex>
 #include <optional>
 #include <unordered_set>

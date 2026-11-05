@@ -1,4 +1,4 @@
-#include <Poco/String.h>
+#include <Core/ProtocolDefines.h>
 #include "config.h"
 
 #include <Core/Field.h>
@@ -18,7 +18,6 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Core/ProtocolDefines.h>
 
 namespace DB::ErrorCodes
 {
@@ -27,6 +26,7 @@ extern const int NOT_IMPLEMENTED;
 extern const int UNKNOWN_PROTOCOL;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
+
 
 using namespace DB::Iceberg;
 

@@ -51,6 +51,7 @@ public:
     auto operator<=>(const IcebergPathFromMetadata & other) const { return raw_path <=> other.raw_path; }
     auto operator==(const IcebergPathFromMetadata & other) const { return raw_path == other.raw_path; }
 
+
 private:
     friend class DB::FileNamesGenerator;
 
