@@ -26,3 +26,5 @@ nested, max_threads = 16: same
 16_nested_dynamic	1
 16_nullable	6
 16_wide	3
+-- the rows of the readers are balanced
+1

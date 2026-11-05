@@ -145,4 +145,12 @@ ${CLICKHOUSE_CLIENT} --query "
     GROUP BY query_id ORDER BY query_id
 "
 
+# The files are split by rows, so no reader of the four gets more than twice its share (the readers have no input rows).
+echo '-- the rows of the readers are balanced'
+${CLICKHOUSE_CLIENT} --query "
+    SELECT max(output_rows) * count() <= 2 * sum(output_rows)
+    FROM system.processors_profile_log
+    WHERE event_date >= yesterday() AND query_id = '${QUERY_ID_PREFIX}_04_narrow' AND name = 'LazyReadFromObjectStorageSource' AND input_rows = 0
+"
+
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}"
