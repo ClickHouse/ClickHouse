@@ -26,7 +26,6 @@
 #include "Poco/Net/Session.h"
 #include "Poco/Net/SocketImpl.h"
 
-#include <memory>
 #include <mutex>
 
 namespace Poco
@@ -149,10 +148,6 @@ namespace Net
         /// The object is normally guarded by the socket's mutex; a caller that uses it
         /// directly must ensure the socket is not accessed concurrently.
 
-        void markFatalError();
-        /// Records that an external operation on the underlying `SSL` object failed fatally.
-        /// An orderly SSL shutdown must not be attempted afterwards.
-
         X509 * peerCertificate() const;
         /// Returns the peer's certificate.
 
@@ -204,33 +199,8 @@ namespace Net
         /// This method will only work if the blocking modes of
         /// the socket are changed via the setBlocking method!
 
-        bool needHandshake() const { return _needHandshake; }
-        /// Returns true while the handshake is still owed, so that a caller
-        /// can tell that any I/O it starts would run the handshake first.
-
-
-        void setBioMethod(const BIO_METHOD * method);
-        /// Optionally inject a custom BIO_METHOD for the SSL transport BIO.
-        /// Has no effect once the SSL handshake has been initiated (i.e. once
-        /// any I/O has happened). If never called, `BIO_s_socket()` is used.
-
-        struct RecursiveMutex
-        {
-            virtual ~RecursiveMutex() = default;
-            virtual void lock() = 0;
-            virtual void unlock() = 0;
-        };
-
-        void setMutex(std::unique_ptr<RecursiveMutex> mutex);
-        /// Replace the lock guarding SSL operations.
-
 
     protected:
-        int completeHandshakeImpl(bool verifyPeer);
-        /// Completes the SSL handshake, and, if verifyPeer is true, validates the
-        /// peer certificate as a part of the same handshake, so that a validation
-        /// failure is accounted as a handshake failure.
-
         void acceptSSL();
         /// Assume per-object mutex is locked.
         /// Performs a server-side SSL handshake and certificate verification.
@@ -260,23 +230,6 @@ namespace Net
         /// not become readable or writable within the sockets
         /// receive or send timeout.
 
-        /// Whether waiting for the peer is this class's job rather than the caller's.
-        bool waitHere() const { return _drivingHandshake || _pSocket->getBlocking(); }
-
-        /// Makes the socket non-blocking for one handshake, so that OpenSSL yields instead of
-        /// reading in its own loop, and restores the mode afterwards. A socket that does its
-        /// own waiting is left alone.
-        class HandshakeDriver
-        {
-        public:
-            explicit HandshakeDriver(SecureSocketImpl & impl_);
-            ~HandshakeDriver();
-
-        private:
-            SecureSocketImpl & impl;
-            const bool drives;
-        };
-
         int handleError(int rc, int sslError, int socketError, unsigned long errorCode);
         /// Handles an SSL error by throwing an appropriate exception.
 
@@ -293,20 +246,7 @@ namespace Net
         SecureSocketImpl(const SecureSocketImpl &);
         SecureSocketImpl & operator=(const SecureSocketImpl &);
 
-        const BIO_METHOD * getBioMethod() const;
-        /// Returns the BIO_METHOD to use for the SSL transport BIO.
-        /// Falls back to `BIO_s_socket()` when no custom method was set via `setBioMethod`.
-
-        struct StdRecursiveMutex final : RecursiveMutex
-        {
-            void lock() override { _m.lock(); }
-            void unlock() override { _m.unlock(); }
-            std::recursive_mutex _m;
-        };
-
-        using ScopedLock = std::lock_guard<RecursiveMutex>;
-
-        mutable std::unique_ptr<RecursiveMutex> _mutex{std::make_unique<StdRecursiveMutex>()};
+        mutable std::recursive_mutex _mutex;
         SSL * _pSSL; // GUARDED_BY _mutex
         Poco::AutoPtr<SocketImpl> _pSocket;
         Context::Ptr _pContext;
@@ -315,13 +255,8 @@ namespace Net
         bool _pendingWrite = false;
         /// Whether the last `SSL_write` returned `SSL_ERROR_WANT_WRITE`. OpenSSL keeps that record pending
         /// until `SSL_write` is retried, even after other operations change what `SSL_get_error` reports.
-        bool _drivingHandshake = false;
-        /// Set while completeHandshakeImpl runs the handshake on a socket it made non-blocking, so
-        /// that waiting for the peer stays this class's job rather than the caller's.
         std::string _peerHostName;
         Session::Ptr _pSession;
-        const BIO_METHOD * _bioMethod = nullptr;
-        /// Contract: when set, store the `SocketImpl *` in the BIO's data.
 
         friend class SecureStreamSocketImpl;
 

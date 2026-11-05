@@ -32,15 +32,6 @@ namespace
 
         const ReadBuffer & getWrappedReadBuffer() const override { return in; }
 
-        bool poll(size_t timeout_microseconds) override
-        {
-            if (hasPendingData())
-                return true;
-
-            in.position() = position();
-            return in.poll(timeout_microseconds);
-        }
-
     private:
         ReadBuffer & in;
         CustomData custom_data;
@@ -61,18 +52,10 @@ namespace
 
 void ReadBuffer::readStrict(char * to, size_t n)
 {
-    size_t read_bytes = read(to, n);
+    auto read_bytes = read(to, n);
     if (n != read_bytes)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
                         "Cannot read all data. Bytes read: {}. Bytes expected: {}.", read_bytes, std::to_string(n));
-}
-
-void ReadBuffer::readBigStrict(char * to, size_t n)
-{
-    size_t read_bytes = readBig(to, n);
-    if (n != read_bytes)
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                        "Cannot read all data with readBig. Bytes read: {}. Bytes expected: {}.", read_bytes, std::to_string(n));
 }
 
 void ReadBuffer::throwReadAfterEOF()

@@ -10,7 +10,6 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/Stopwatch.h>
-#include <Examples/clickhouse_examples.h>
 
 /**
 
@@ -21,7 +20,7 @@
 
 using namespace std;
 
-int generateStringHashMapData()
+int main()
 {
     std::string s;
     pcg64_fast rng{randomSeed()};
@@ -116,9 +115,6 @@ Best: 1 - 593010342                 Best: 1 - 503062152                 Best: 1 
 */
 
 
-namespace
-{
-
 using Value = uint64_t;
 
 template <typename Map>
@@ -149,7 +145,7 @@ void NO_INLINE bench(const std::vector<std::string_view> & data, DB::Arena &, co
         Stopwatch watch;
         Map map;
         typename Map::LookupResult it;
-        bool inserted = {};
+        bool inserted;
 
         for (const auto & value : data)
         {
@@ -165,8 +161,6 @@ void NO_INLINE bench(const std::vector<std::string_view> & data, DB::Arena &, co
                   << watch.elapsedSeconds() << std::endl;
     }
 }
-
-} /// anonymous namespace
 
 /*
 template <typename Map>
@@ -209,7 +203,7 @@ benchFromFile()
 */
 
 
-int mainEntryExampleStringHashMap(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     if (argc < 3)
     {

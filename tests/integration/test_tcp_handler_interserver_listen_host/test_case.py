@@ -1,6 +1,8 @@
 """Test Interserver responses on configured IP."""
 
+import socket
 import time
+from pathlib import Path
 
 import pytest
 import requests
@@ -48,7 +50,7 @@ def requests_get(url, attempts=10, sleep=0.5):
         attempt += 1
         try:
             return requests.get(url)
-        except requests.exceptions.ConnectionError:
+        except requests.exceptions.ConnectionError as e:
             if attempt >= attempts:
                 raise
         time.sleep(sleep)

@@ -1,6 +1,5 @@
--- Tags: no-fasttest, no-parallel-replicas
+-- Tags: no-fasttest
 -- Tag no-fasttest: Depends on S3
--- Tag no-parallel-replicas: asserts on `ProfileEvents` of the initial query, but with parallel replicas the replicas read the files
 
 SET s3_truncate_on_insert = 1,
     s3_list_object_keys_size = 100;
@@ -65,9 +64,6 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_databa
   AND log_comment like '%03741_s3_glob_table_path_pushdown%'
   AND query_kind = 'Select'
   AND type = 'QueryFinish'
-  -- Exclude the SELECT '' separators (they don't scan 03741_data). Backticks required:
-  -- tables[] stores the digit-prefixed name quoted as `03741_data`.
-  AND has(tables, currentDatabase() || '.`03741_data`')
 ORDER BY event_time_microseconds;
 
 -- Mutually exclusive filter uses glob iterator, and do some list ops, so
