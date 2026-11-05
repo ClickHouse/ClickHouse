@@ -57,6 +57,7 @@ public:
     {
         return getTargetTable()->hasAutomaticLowCardinalitySerialization(column_name, storage_snapshot);
     }
+    bool hasBucketedMapSerialization() const override { return getTargetTable()->hasBucketedMapSerialization(); }
     bool supportsColumnsWithDynamicStructure() const override;
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
 

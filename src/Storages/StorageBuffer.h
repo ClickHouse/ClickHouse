@@ -139,6 +139,7 @@ public:
     bool supportsOptimizationToTupleElementSubcolumns() const override;
     std::optional<SerializationInfoByName> tryGetSerializationHints() const override;
     bool hasAutomaticLowCardinalitySerialization(const String & column_name, const StorageSnapshotPtr & storage_snapshot) const override;
+    bool hasBucketedMapSerialization() const override;
     bool supportsFinal() const override { return true; }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;

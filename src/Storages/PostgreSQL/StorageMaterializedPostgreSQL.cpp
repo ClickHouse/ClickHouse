@@ -361,6 +361,14 @@ bool StorageMaterializedPostgreSQL::hasAutomaticLowCardinalitySerialization(cons
 }
 
 
+bool StorageMaterializedPostgreSQL::hasBucketedMapSerialization() const
+{
+    if (auto nested = tryGetNested())
+        return nested->hasBucketedMapSerialization();
+    return false;
+}
+
+
 IStorage::ColumnSizeByName StorageMaterializedPostgreSQL::getColumnSizes() const
 {
     if (auto nested = tryGetNested())
