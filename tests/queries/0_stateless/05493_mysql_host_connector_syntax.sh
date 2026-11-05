@@ -37,6 +37,27 @@ check "SELECT * FROM mysql('127.0.0.1:1', 'db', 't', 'u', 'p')"
 $CLICKHOUSE_CLIENT --send_logs_level=fatal -q "SELECT * FROM mysql('127.0.0.1:0', 'db', 't', 'u', 'p')" 2>&1 \
     | grep -q -F "MySQL port 0" && echo "port 0: rejected" || echo "port 0: connection failed"
 
+# A dictionary socket is used only for `localhost`; for another host it is ignored and port 0 is rejected.
+function check_dictionary()
+{
+    $CLICKHOUSE_CLIENT --send_logs_level=fatal -q "
+        CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.d_mysql (x UInt64, y String) PRIMARY KEY x
+        SOURCE(MYSQL(HOST '$1' PORT 0 SOCKET '/nonexistent/mysqld.sock' USER 'u' PASSWORD 'p' DB 'db' TABLE 't'))
+        LAYOUT(FLAT()) LIFETIME(0)"
+    local output
+    output=$($CLICKHOUSE_CLIENT --send_logs_level=fatal -q "SELECT * FROM ${CLICKHOUSE_DATABASE}.d_mysql" 2>&1)
+    if grep -q -F "MySQL port 0" <<< "$output"; then
+        echo "dictionary $1 port 0: rejected"
+    elif grep -q -F "through socket" <<< "$output"; then
+        echo "dictionary $1 port 0: unix socket"
+    else
+        echo "unexpected output: $output"
+    fi
+    $CLICKHOUSE_CLIENT -q "DROP DICTIONARY IF EXISTS ${CLICKHOUSE_DATABASE}.d_mysql"
+}
+check_dictionary "127.0.0.1"
+check_dictionary "localhost"
+
 # `localhost` uses TCP to the given port, not the client library's default Unix socket.
 $CLICKHOUSE_CLIENT --send_logs_level=fatal -q "SELECT * FROM mysql('localhost:1', 'db', 't', 'u', 'p')" 2>&1 \
     | grep -q -F "through socket" && echo "localhost: unix socket" || echo "localhost: tcp"
@@ -45,4 +66,4 @@ $CLICKHOUSE_CLIENT --send_logs_level=fatal -q "SELECT * FROM mysql('localhost:1'
 check "CREATE DATABASE ${CLICKHOUSE_DATABASE}_mysql ENGINE = MySQL('socket=/nonexistent/mysqld.sock', 'db', 'u', 'p')"
 check "CREATE TABLE ${CLICKHOUSE_DATABASE}.t_mysql (x UInt32) ENGINE = MySQL('socket=/nonexistent/mysqld.sock', 'db', 't', 'u', 'p'); SELECT * FROM ${CLICKHOUSE_DATABASE}.t_mysql"
 
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_mysql; DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t_mysql"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_mysql; DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t_mysql; DROP DICTIONARY IF EXISTS ${CLICKHOUSE_DATABASE}.d_mysql"

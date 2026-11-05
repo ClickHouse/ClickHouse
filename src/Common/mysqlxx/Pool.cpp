@@ -49,7 +49,9 @@ void checkConnectionTarget(const std::string & server, unsigned port, const std:
             printable, meaning);
     }
 
-    if (port == 0 && socket.empty())
+    /// The client library uses the socket only for an empty host or `localhost`, otherwise it connects over TCP.
+    const bool uses_socket = !socket.empty() && (server.empty() || server == "localhost");
+    if (port == 0 && !uses_socket)
         throw DB::Exception(
             DB::ErrorCodes::BAD_ARGUMENTS,
             "MySQL port 0 for host '{}' would be replaced by the default port of the MySQL client library. Specify the port explicitly",
