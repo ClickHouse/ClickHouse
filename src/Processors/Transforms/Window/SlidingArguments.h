@@ -23,7 +23,7 @@ public:
     void pop();
     void startPartition(Int64 closed_partition_length);
 
-    WindowArguments view(size_t function) const;
+    [[nodiscard]] WindowArguments view(size_t function) const;
 
 private:
     VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> argument_positions;

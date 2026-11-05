@@ -140,7 +140,7 @@ struct JoinSettings
 
     /// Whether `join_algorithms` is the built-in default of `join_algorithm`, whose algorithm the join order optimizer may
     /// choose per join. Any other list is a priority list the user chose, used as it is.
-    bool hasDefaultJoinAlgorithms() const;
+    [[nodiscard]] bool hasDefaultJoinAlgorithms() const;
 
     /// `join_operator` is the step the settings are serialized for: whether a downgraded plan can be
     /// handed to an older peer depends on which algorithm of the preference list that step reaches.

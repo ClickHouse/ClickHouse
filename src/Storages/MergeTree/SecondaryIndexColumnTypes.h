@@ -24,11 +24,11 @@ class SecondaryIndexColumnTypes
 public:
     using ColumnTypes = std::map<String, String>;
 
-    bool empty() const { return index_to_column_types.empty(); }
+    [[nodiscard]] bool empty() const { return index_to_column_types.empty(); }
 
     /// The type an index's granules were built against for a required column, or nullopt when nothing
     /// was recorded for it (meaning it equals the part's own column type).
-    std::optional<String> tryGetBuiltType(const String & index_name, const String & column_name) const;
+    [[nodiscard]] std::optional<String> tryGetBuiltType(const String & index_name, const String & column_name) const;
 
     void writeJSON(WriteBuffer & out) const;
     static SecondaryIndexColumnTypes readJSON(ReadBuffer & in);

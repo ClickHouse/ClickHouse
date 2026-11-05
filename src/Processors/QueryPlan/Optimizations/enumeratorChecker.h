@@ -72,14 +72,14 @@ private:
     {
         std::array<MergeInputCandidate, 2> items;
         size_t size = 0;
-        const MergeInputCandidate * begin() const { return items.data(); }
-        const MergeInputCandidate * end() const { return items.data() + size; }
+        [[nodiscard]] const MergeInputCandidate * begin() const { return items.data(); }
+        [[nodiscard]] const MergeInputCandidate * end() const { return items.data() + size; }
     };
     /// The plans of the subset that may feed a merge join on the equivalence class: its cheapest plan, and its
     /// cheapest plan sorted by the class if it is another one. Plans without a row estimate are left out.
     MergeInputCandidates mergeInputCandidates(UInt subset, Int32 key) const;
     /// The cheapest plan of the subset for -1, else its plan in `ordered`.
-    const Plan & planAt(UInt subset, Int8 index) const { return index < 0 ? dp_table[subset] : dp_table[subset].ordered[index]; }
+    [[nodiscard]] const Plan & planAt(UInt subset, Int8 index) const { return index < 0 ? dp_table[subset] : dp_table[subset].ordered[index]; }
 
     DPTable dp_table;
     Optimizer & optimizer;

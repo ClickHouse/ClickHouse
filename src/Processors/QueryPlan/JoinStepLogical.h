@@ -221,7 +221,7 @@ public:
 
     /// The algorithm the join order optimizer chose for this join, if any. `join_algorithms` stays the user's list: the
     /// physical join tries the planned algorithm first and falls back to that list.
-    std::optional<JoinAlgorithm> getPlannedAlgorithm() const { return planned_algorithm; }
+    [[nodiscard]] std::optional<JoinAlgorithm> getPlannedAlgorithm() const { return planned_algorithm; }
     void setPlannedAlgorithm(JoinAlgorithm algorithm) { planned_algorithm = algorithm; }
 
     /// Swap left and right sides
