@@ -402,6 +402,7 @@ add_object_library(clickhouse_interpreters_filecache Interpreters/FileCache)
 add_object_library(clickhouse_interpreters_hash_join Interpreters/HashJoin)
 add_object_library(clickhouse_interpreters_adaptive_aggregation Interpreters/AdaptiveAggregation)
 add_object_library(clickhouse_interpreters_access Interpreters/Access)
+add_object_library(clickhouse_interpreters_whatif Interpreters/WhatIf)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
 add_object_library(clickhouse_interpreters_jit Interpreters/JIT)
@@ -428,6 +429,7 @@ add_object_library(clickhouse_storages_mergetree_compaction_parts_collectors Sto
 add_object_library(clickhouse_storages_mergetree_compaction_parts_finders Storages/MergeTree/Compaction/PartsFinders)
 add_object_library(clickhouse_storages_mergetree_patch_parts Storages/MergeTree/PatchParts)
 add_object_library(clickhouse_storages_mergetree_projection_index Storages/MergeTree/ProjectionIndex)
+add_object_library(clickhouse_storages_mergetree_whatif Storages/MergeTree/WhatIf)
 add_object_library(clickhouse_storages_statistics Storages/Statistics)
 add_object_library(clickhouse_storages_s3queue Storages/ObjectStorageQueue)
 add_object_library(clickhouse_storages_materializedview Storages/MaterializedView)
@@ -667,6 +669,7 @@ target_link_libraries (clickhouse_compression
             clickhouse_parsers
         PRIVATE
             ch_contrib::lz4
+            ch_contrib::gdeflate
             ch_contrib::zxc
             ch_contrib::roaring
 )

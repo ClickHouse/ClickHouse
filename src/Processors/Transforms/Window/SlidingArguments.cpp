@@ -9,7 +9,7 @@
 namespace DB
 {
 
-SlidingArguments::SlidingArguments(const Block & input_header, const std::vector<WindowFunctionDescription> & functions)
+SlidingArguments::SlidingArguments(const Block & input_header, const VectorWithMemoryTracking<WindowFunctionDescription> & functions)
     : argument_positions(functions.size())
     , function_blocks(functions.size())
 {
