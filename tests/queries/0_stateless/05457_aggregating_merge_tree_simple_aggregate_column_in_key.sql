@@ -204,6 +204,32 @@ ENGINE = AggregatingMergeTree PARTITION BY tupleElement(tuple(k), 1, a.size0) OR
 CREATE TABLE t_unused_default_element (k UInt64, x Tuple(a SimpleAggregateFunction(groupArrayArray, Array(UInt64)), b UInt64))
 ENGINE = AggregatingMergeTree PARTITION BY tupleElement(tuple(k), 1, getSubcolumn(x, 'a.size0')) ORDER BY k
 SETTINGS allow_tuple_element_aggregation = 1;
+-- Also a default computed from the column, and an element of a constructed tuple that `tupleElement` does not select, also of
+-- nested tuples; but a value computed from a constructed tuple reads all its elements.
+CREATE TABLE t_unused_computed_default (k UInt64, c SimpleAggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree
+PARTITION BY tupleElement(tuple(k), 1, c + 1) ORDER BY k;
+CREATE TABLE t_unused_computed_default_alter (k UInt64, c UInt64) ENGINE = AggregatingMergeTree
+PARTITION BY tupleElement(tuple(k), 1, c + 1) ORDER BY k;
+ALTER TABLE t_unused_computed_default_alter MODIFY COLUMN c SimpleAggregateFunction(sum, UInt64);
+CREATE TABLE t_unused_computed_default_element (k UInt64, x Tuple(a SimpleAggregateFunction(sum, UInt64), b UInt64))
+ENGINE = AggregatingMergeTree PARTITION BY tupleElement(tuple(k), 1, length(toString(x))) ORDER BY k
+SETTINGS allow_tuple_element_aggregation = 1;
+CREATE TABLE t_unselected_element (k UInt64, c SimpleAggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree
+PARTITION BY tupleElement(tuple(c, k), 2) ORDER BY k;
+CREATE TABLE t_unselected_nested_element (k UInt64, c SimpleAggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree
+PARTITION BY tupleElement(tupleElement(tuple(tuple(c, k)), 1), 2) ORDER BY k;
+INSERT INTO t_unselected_element VALUES (1, 2);
+INSERT INTO t_unselected_element VALUES (1, 3);
+OPTIMIZE TABLE t_unselected_element FINAL;
+SELECT 'unselected element', _partition_id, k, c FROM t_unselected_element WHERE tupleElement(tuple(c, k), 2) = 1;
+CREATE TABLE t_used_computed_default (k UInt64, c SimpleAggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree
+PARTITION BY tupleElement(tuple(k), 2, c + 1) ORDER BY k; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_selected_element (k UInt64, c SimpleAggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree
+PARTITION BY tupleElement(tuple(c, k), 1) ORDER BY k; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_selected_nested_element (k UInt64, c SimpleAggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree
+PARTITION BY tupleElement(tupleElement(tuple(tuple(c, k)), 1), 1) ORDER BY k; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_computed_from_constructed (k UInt64, c SimpleAggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree
+PARTITION BY cityHash64(tuple(c, k)) % 2 ORDER BY k; -- { serverError BAD_ARGUMENTS }
 SELECT 'unused defaults created';
 
 -- A sorting key of a tuple type is not supported with `allow_tuple_element_aggregation`, and is reported as such.
@@ -241,3 +267,8 @@ DROP TABLE t_unused_default_alter;
 DROP TABLE t_unused_default_tuple;
 DROP TABLE t_unused_default_subcolumn;
 DROP TABLE t_unused_default_element;
+DROP TABLE t_unused_computed_default;
+DROP TABLE t_unused_computed_default_alter;
+DROP TABLE t_unused_computed_default_element;
+DROP TABLE t_unselected_element;
+DROP TABLE t_unselected_nested_element;

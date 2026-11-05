@@ -2560,12 +2560,23 @@ static bool isGetSubcolumnOf(const ActionsDAG::Node & parent, const ActionsDAG::
         && parent.children.size() == 2 && parent.children[0] == &node;
 }
 
-static bool isReadByKeyImpl(
-    const KeyDescription & key, const ActionsDAGParents & parents, const ActionsDAG::Node & node,
-    std::unordered_set<const ActionsDAG::Node *> & visited)
+static bool isTupleConstructor(const ActionsDAG::Node & node)
 {
-    /// A node visited before does not reach a column of the key: otherwise the walk would have stopped.
-    if (!visited.insert(&node).second)
+    return node.type == ActionsDAG::ActionType::FUNCTION && node.function_base && node.function_base->getName() == "tuple"
+        && typeid_cast<const DataTypeTuple *>(node.result_type.get());
+}
+
+/// The state of the walk of `isReadByKeyImpl`: a node, and where the value walked from is in it. `fields` are the names of the
+/// elements of tuples constructed by `tuple` that the value is in, the outermost last: empty when the node is the value itself or
+/// is computed from it.
+using ReadByKeyState = std::pair<const ActionsDAG::Node *, std::vector<String>>;
+
+static bool isReadByKeyImpl(
+    const KeyDescription & key, const ActionsDAGParents & parents, const ActionsDAG::Node & node, std::vector<String> & fields,
+    std::set<ReadByKeyState> & visited)
+{
+    /// A state visited before does not reach a column of the key: otherwise the walk would have stopped.
+    if (!visited.emplace(&node, fields).second)
         return false;
     /// The expression also returns its inputs, so only a column of the key counts.
     if (std::ranges::find(key.column_names, node.result_name) != key.column_names.end())
@@ -2583,30 +2594,88 @@ static bool isReadByKeyImpl(
                 return true;
             /// `tupleElement` returns its first argument (an element of it) only when the element exists, and its third argument, the
             /// default, only when it does not.
-            const bool returns_node = selection->kind == Kind::Element ? parent->children[0] == &node : parent->children[2] == &node;
-            if (returns_node && isReadByKeyImpl(key, parents, *parent, visited))
-                return true;
+            if (selection->kind == Kind::Element && parent->children[0] == &node)
+            {
+                /// Of a tuple constructed around the value, only the element the value is in.
+                if (fields.empty())
+                {
+                    if (isReadByKeyImpl(key, parents, *parent, fields, visited))
+                        return true;
+                }
+                else if (fields.back() == selection->name)
+                {
+                    auto inner_fields = fields;
+                    inner_fields.pop_back();
+                    if (isReadByKeyImpl(key, parents, *parent, inner_fields, visited))
+                        return true;
+                }
+            }
+            else if (selection->kind == Kind::Default && parent->children[2] == &node)
+            {
+                if (isReadByKeyImpl(key, parents, *parent, fields, visited))
+                    return true;
+            }
             continue;
         }
-        if (parent->type == ActionsDAG::ActionType::ALIAS || isGetSubcolumnOf(*parent, node))
+        if (parent->type == ActionsDAG::ActionType::ALIAS || (fields.empty() && isGetSubcolumnOf(*parent, node)))
         {
-            if (isReadByKeyImpl(key, parents, *parent, visited))
+            if (isReadByKeyImpl(key, parents, *parent, fields, visited))
                 return true;
             continue;
         }
-        /// Any other function is taken to read its arguments.
-        return true;
+        if (isTupleConstructor(*parent))
+        {
+            /// The value is in each element of the constructed tuple that is the node.
+            const auto & tuple = typeid_cast<const DataTypeTuple &>(*parent->result_type);
+            for (size_t i = 0; i < parent->children.size(); ++i)
+            {
+                if (parent->children[i] != &node)
+                    continue;
+                auto outer_fields = fields;
+                outer_fields.push_back(tuple.getNameByPosition(i + 1));
+                if (isReadByKeyImpl(key, parents, *parent, outer_fields, visited))
+                    return true;
+            }
+            continue;
+        }
+        /// Any other function is taken to compute its result from all its arguments: the key reads the value if it reads the result.
+        std::vector<String> no_fields;
+        if (isReadByKeyImpl(key, parents, *parent, no_fields, visited))
+            return true;
     }
     return false;
 }
 
 /// Whether the key reads the value of the node `node`, or a part of it: whether the value reaches a column of the key. It does not
 /// when it is only an argument of `tupleElement` that `tupleElement` does not return, such as the default `c` in
-/// `tupleElement(tuple(k), 1, c)`.
+/// `tupleElement(tuple(k), 1, c)` (also through other functions, as `c + 1` there), or an element of a constructed tuple that
+/// `tupleElement` does not select, such as `c` in `tupleElement(tuple(c, k), 2)`.
 static bool isReadByKey(const KeyDescription & key, const ActionsDAGParents & parents, const ActionsDAG::Node & node)
 {
-    std::unordered_set<const ActionsDAG::Node *> visited;
-    return isReadByKeyImpl(key, parents, node, visited);
+    std::vector<String> fields;
+    std::set<ReadByKeyState> visited;
+    return isReadByKeyImpl(key, parents, node, fields, visited);
+}
+
+/// Whether the key reads the value of the node `node` through its parent `parent`, a function other than `tupleElement`, an alias and
+/// `getSubcolumn`: a tuple constructed around the value, or a value computed from it.
+static bool isReadByKeyThrough(
+    const KeyDescription & key, const ActionsDAGParents & parents, const ActionsDAG::Node & node, const ActionsDAG::Node & parent)
+{
+    std::set<ReadByKeyState> visited;
+    if (isTupleConstructor(parent))
+    {
+        const auto & tuple = typeid_cast<const DataTypeTuple &>(*parent.result_type);
+        for (size_t i = 0; i < parent.children.size(); ++i)
+        {
+            std::vector<String> fields{tuple.getNameByPosition(i + 1)};
+            if (parent.children[i] == &node && isReadByKeyImpl(key, parents, parent, fields, visited))
+                return true;
+        }
+        return false;
+    }
+    std::vector<String> fields;
+    return isReadByKeyImpl(key, parents, parent, fields, visited);
 }
 
 /// Adds the flattened names of the aggregated elements of a value of type `type` with the flattened name `path`, such as `x.a` of
@@ -2716,8 +2785,13 @@ static void addAggregatedTupleElementsReadByKey(
 
         if (!is_alias)
         {
-            addAggregatedLeaves(node.result_type, path, sorting_key_columns, values);
-            return;
+            /// Any other function reads all the elements of the tuple, if the key reads its result.
+            if (isReadByKeyThrough(key, parents, node, *parent))
+            {
+                addAggregatedLeaves(node.result_type, path, sorting_key_columns, values);
+                return;
+            }
+            continue;
         }
         addAggregatedTupleElementsReadByKey(key, parents, *parent, path, sorting_key_columns, values);
     }
