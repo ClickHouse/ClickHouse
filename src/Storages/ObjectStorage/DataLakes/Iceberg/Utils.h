@@ -51,7 +51,7 @@ void writeMessageToFile(
     const std::string & write_if_match = "",
     DB::CompressionMethod compression_method = DB::CompressionMethod::None);
 
-/// Writes the metadata file with If-None-Match; false means another commit took this version (or the check after a
+/// Writes the metadata file with If-None-Match; false means a file already holds this version (or the check after a
 /// failed write could not tell), any other failure propagates.
 bool writeMetadataFile(
     const IcebergPathResolver & resolver,

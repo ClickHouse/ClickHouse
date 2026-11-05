@@ -396,7 +396,7 @@ bool writeMetadataFile(
     }
     catch (...)
     {
-        /// Only a version taken by a file is a lost race; while the file is absent, the error propagates.
+        /// While the file is absent no commit took the version, so the error is not a lost race and propagates.
         if (isKnownAbsent(object_storage, storage_metadata_path))
             throw;
         tryLogCurrentException(__PRETTY_FUNCTION__);
