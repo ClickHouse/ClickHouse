@@ -10,7 +10,7 @@ from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance("node1", with_zookeeper=True)
+node1 = cluster.add_instance("node1", with_zookeeper=True, stay_alive=True)
 node2 = cluster.add_instance("node2", with_zookeeper=True)
 
 
@@ -440,3 +440,58 @@ def test_check_replicated_does_not_block_shutdown(started_cluster, engine):
 
     node1.query("SYSTEM DISABLE FAILPOINT check_table_query_delay_for_part")
     node1.query(f"DROP TABLE {table_name} SYNC")
+
+
+NAMED_COLLECTION_CONFIG = """<clickhouse>
+    <named_collections>
+        <nc_check_table>
+            <url>http://127.0.0.1:1/x</url>
+            <format>CSV</format>
+        </nc_check_table>
+    </named_collections>
+</clickhouse>"""
+
+
+def test_check_table_access_before_table_load(started_cluster):
+    # A table whose load fails at startup: its `URL` engine refers to a named collection that is
+    # removed from the config before the restart. A user without `CHECK` on it must get `ACCESS_DENIED`
+    # and not the load error, which carries the `ATTACH` DDL of the table.
+    config_path = "/etc/clickhouse-server/config.d/named_collection_check_table.xml"
+    node1.replace_config(config_path, NAMED_COLLECTION_CONFIG)
+    assert_eq_with_retry(
+        node1,
+        "SELECT count() FROM system.named_collections WHERE name = 'nc_check_table'",
+        "1",
+    )
+    node1.query("CREATE DATABASE db_load")
+    node1.query("CREATE TABLE db_load.t_broken (s String) ENGINE = URL(nc_check_table)")
+    node1.query("CREATE TABLE db_load.t_ok (s String) ENGINE = MergeTree ORDER BY s")
+    node1.query("INSERT INTO db_load.t_ok VALUES ('x')")
+    node1.query("CREATE USER u_no_check")
+    node1.query("CREATE USER u_check_t_ok")
+    node1.query("GRANT SHOW DATABASES ON *.* TO u_check_t_ok")
+    node1.query("GRANT CHECK ON db_load.t_ok TO u_check_t_ok")
+    node1.exec_in_container(["rm", config_path])
+    node1.restart_clickhouse()
+
+    assert "ASYNC_LOAD_WAIT_FAILED" in node1.query_and_get_error(
+        "CHECK TABLE db_load.t_broken"
+    )
+    assert "ACCESS_DENIED" in node1.query_and_get_error(
+        "CHECK TABLE db_load.t_broken", user="u_no_check"
+    )
+    assert (
+        node1.query(
+            "CHECK ALL TABLES",
+            user="u_check_t_ok",
+            settings={"check_query_single_value_result": 0},
+        )
+        == "db_load\tt_ok\tall_1_1_0\t1\t\n"
+    )
+
+    # The table cannot be dropped while its load has failed: bring the collection back first.
+    node1.replace_config(config_path, NAMED_COLLECTION_CONFIG)
+    node1.restart_clickhouse()
+    node1.exec_in_container(["rm", config_path])
+    node1.query("DROP DATABASE db_load SYNC")
+    node1.query("DROP USER u_no_check, u_check_t_ok")

@@ -5,6 +5,7 @@
 #include <thread>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
@@ -227,6 +228,7 @@ private:
             auto table = getValidTable();
             if (table)
             {
+                /// Re-check in case the database engine ignored the name filter.
                 context->checkAccess(AccessType::CHECK, table->getStorageID());
                 table_check_task = std::make_shared<TableCheckTask>(table, std::monostate{}, context);
                 LOG_DEBUG(log, "Checking {} parts in table '{}'", table_check_task->size(), table_check_task->getNameForLogs());
@@ -237,7 +239,14 @@ private:
             auto database = getNextDatabase();
             if (!database)
                 break;
-            current_table_it = database->getTablesIterator(context);
+            /// Tables the user may not `CHECK` are filtered out by name before the database waits for the
+            /// remaining ones to load: a load failure of such a table must stay invisible to the user.
+            auto access = context->getAccess();
+            current_table_it = database->getTablesIterator(context,
+                [access, database_name = database->getDatabaseName()](const String & table_name)
+                {
+                    return access->isGranted(AccessType::CHECK, database_name, table_name);
+                });
         }
 
         return {};
@@ -418,11 +427,13 @@ BlockIO InterpreterCheckQuery::execute()
     bool is_table_name_in_output = false;
     if (const auto * check_query = query_ptr->as<ASTCheckTableQuery>())
     {
-        /// Check specific table. Use `ResolveAll` so that an unqualified name
-        /// prefers a `TEMPORARY` table over a permanent one of the same name,
-        /// matching the scoping precedence of `SHOW CREATE TABLE` and
-        /// `DESCRIBE TABLE` introduced in #100966.
-        auto table_id = context->resolveStorageID(*check_query);
+        /// Check specific table. An unqualified name prefers a `TEMPORARY` table over a permanent one,
+        /// matching `SHOW CREATE TABLE` and `DESCRIBE TABLE` (#100966). `Context::resolveStorageID` is
+        /// not used: it also looks the table up for its UUID, which waits for the table to load, and a
+        /// user without `CHECK` must not see a load failure or a missing database instead of `ACCESS_DENIED`.
+        auto table_id = context->tryResolveStorageID(StorageID(*check_query), Context::ResolveExternal);
+        if (!table_id)
+            table_id = StorageID(context->resolveDatabase(check_query->getDatabase()), check_query->getTable());
         context->checkAccess(AccessType::CHECK, table_id);
         auto table = DatabaseCatalog::instance().getTable(table_id, context);
         auto table_check_task = std::make_shared<TableCheckTask>(table, check_query->getPartitionOrPartitionID(), context);
