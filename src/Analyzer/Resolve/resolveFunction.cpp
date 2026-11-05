@@ -1525,7 +1525,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             type_inference_scope.projection_mask_map
                 = std::make_shared<std::map<IQueryTreeNode::Hash, size_t>>(*scope.projection_mask_map);
 
-            QueryAnalyzer type_inference_analyzer(/*only_analyze_=*/ false);
+            QueryAnalyzer type_inference_analyzer(
+                /*only_analyze_=*/ false, /*positional_arguments_already_resolved_=*/ false, replaced_storage);
             type_inference_analyzer.early_short_circuit_type_inference_in_process = true;
             type_inference_analyzer.subquery_counter = subquery_counter;
 
