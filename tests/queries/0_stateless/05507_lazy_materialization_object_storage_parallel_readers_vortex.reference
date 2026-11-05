@@ -7,5 +7,6 @@ same
 -- the number of readers
 iceberg_subcolumn	1
 narrow	8
+narrow_tuple	1
 subcolumn	1
-tuple	3
+tuple	1

@@ -1,5 +1,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Sources/LazyReadFromObjectStorageSource.h>
+#include <Processors/Formats/AggregateFunctionStatesFromValuesInputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFactory.h>
@@ -264,13 +265,17 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
     modified_format_settings.vortex.preserve_order = true;
 
     /// All readers together read no more leaf columns at once than the main pass; a lazy read of unknown width keeps one reader.
-    /// Vortex reads a `name.sub` column as the whole field `name`, whose width the header does not show.
-    const bool vortex_reads_whole_fields
-        = std::ranges::any_of(info.format_header, [](const auto & column) { return Nested::extractTableName(column.name) != column.name; })
-        && std::ranges::any_of(
-            files,
-            [&](const auto & file) { return boost::iequals(file.object->getFileFormat().value_or(configuration->format), "Vortex"); });
-    const auto lazy_read_leaf_columns = vortex_reads_whole_fields ? std::nullopt : countLeafColumns(info.format_header);
+    /// Vortex reads a struct, and the `name` of a `name.sub` column, as a whole field, whose width the header does not show.
+    const auto header_to_parse = AggregateFunctionStatesFromValuesInputFormat::getHeaderToParse(
+        info.format_header, modified_format_settings.aggregate_function_input_format);
+    const Block & parsed_header = header_to_parse ? *header_to_parse : info.format_header;
+    const bool vortex_reads_whole_fields = std::ranges::any_of(
+        files, [&](const auto & file) { return boost::iequals(file.object->getFileFormat().value_or(configuration->format), "Vortex"); });
+    const bool reads_subcolumns
+        = std::ranges::any_of(parsed_header, [](const auto & column) { return Nested::extractTableName(column.name) != column.name; });
+    const auto lazy_read_leaf_columns = vortex_reads_whole_fields && reads_subcolumns
+        ? std::nullopt
+        : countLeafColumns(parsed_header, /*tuples_of_unknown_width=*/ vortex_reads_whole_fields);
     const size_t max_streams_for_columns = lazy_read_leaf_columns
         ? std::max<size_t>(max_threads * main_read_leaf_columns / std::max<size_t>(*lazy_read_leaf_columns, 1), 1)
         : 1;

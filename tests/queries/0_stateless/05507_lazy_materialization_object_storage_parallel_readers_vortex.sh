@@ -7,8 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Vortex reads a `t.c1` column as the whole struct `t`, so the lazy read of such a column keeps one reader, while a plain
-# column or the whole Tuple is read by several readers, as in 05507_lazy_materialization_object_storage_parallel_readers.
+# Vortex reads the whole struct `t` for a `t.c1` column and for a Tuple of any of its elements, so the lazy read of such a
+# column keeps one reader, while a plain column is read by several readers, as in 05507_lazy_materialization_object_storage_parallel_readers.
 # `t.c1` is a column of an explicit schema of `s3`, or a tuple element of an Iceberg table in the `Parquet` format whose
 # data files are Vortex (only the data files tell the format then).
 
@@ -39,10 +39,11 @@ done
 
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE} ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet')"
 
-# The main pass reads `ts` and `k`; the lazy pass reads the struct `t` for `t.c1`, 1 leaf column for `s`, 10 for `t`.
+# The main pass reads `ts` and `k`; the lazy pass reads 1 leaf column for `s` and the struct `t` for the others.
 SUBCOLUMN="SELECT k, \`t.c1\` FROM s3('${S3_URL}/data_*.vortex', 'test', 'testtest', 'Vortex', 'k Int64, ts Int64, \`t.c1\` String') ORDER BY ts, k LIMIT 100"
 NARROW="SELECT k, s FROM s3('${S3_URL}/data_*.vortex', 'test', 'testtest', 'Vortex', 'k Int64, ts Int64, s String') ORDER BY ts, k LIMIT 100"
 TUPLE="SELECT k, t FROM s3('${S3_URL}/data_*.vortex', 'test', 'testtest', 'Vortex', 'k Int64, ts Int64, t ${TUPLE_TYPE}') ORDER BY ts, k LIMIT 100"
+NARROW_TUPLE="SELECT k, t FROM s3('${S3_URL}/data_*.vortex', 'test', 'testtest', 'Vortex', 'k Int64, ts Int64, t Tuple(c1 String)') ORDER BY ts, k LIMIT 100"
 ICEBERG_SUBCOLUMN="SELECT k, t.c1 FROM ${TABLE} ORDER BY ts, k LIMIT 100"
 
 # See 05507_lazy_materialization_object_storage_parallel_readers for the settings.
@@ -75,6 +76,7 @@ run_counted()
 run_counted subcolumn "$SUBCOLUMN"
 run_counted narrow "$NARROW"
 run_counted tuple "$TUPLE"
+run_counted narrow_tuple "$NARROW_TUPLE"
 run_counted iceberg_subcolumn "$ICEBERG_SUBCOLUMN"
 
 echo '-- the number of readers'
