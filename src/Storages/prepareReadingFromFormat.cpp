@@ -404,12 +404,14 @@ std::shared_ptr<const ActionsDAG> ReadFromFormatInfo::getFormatFilter(
     /// The format compares its own placeholders for missing values (the type default for a `NULL`) against the filter, but
     /// `AddingDefaultsTransform` replaces them with the `DEFAULT` expression afterwards, so the format could prune rows
     /// that match. Same reasoning as for the top-K threshold in `ReadFromFile`.
+    /// A subcolumn such as `t.x` takes its values from the `DEFAULT` of its parent `t`. `columns_description` has no
+    /// subcolumns registered, so check every prefix of the name that ends before a dot.
     auto has_default_expression = [&](const String & name)
     {
-        if (columns_description.hasDefault(name))
-            return true;
-        auto column = columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
-        return column && column->isSubcolumn() && columns_description.hasDefault(column->getNameInStorage());
+        for (size_t pos = name.find('.'); pos != String::npos; pos = name.find('.', pos + 1))
+            if (columns_description.hasDefault(name.substr(0, pos)))
+                return true;
+        return columns_description.hasDefault(name);
     };
 
     auto is_added_after_format = [&](const String & name)
