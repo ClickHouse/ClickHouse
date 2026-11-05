@@ -393,6 +393,10 @@ def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
         if test_discovery.test_requires_s3(f"{repo_path}/tests/performance/{test_file}"):
             print(f"  Skipping {test_name}: uses the job-local S3 endpoint, which profile collection does not provision")
             continue
+        # SIGKILL bypasses failpoint cleanup, and later tests reuse this server.
+        if test_discovery.test_has_failpoint(f"{repo_path}/tests/performance/{test_file}"):
+            print(f"  Skipping {test_name}: server-wide failpoints cannot be cleaned up after a hard timeout")
+            continue
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             print(
