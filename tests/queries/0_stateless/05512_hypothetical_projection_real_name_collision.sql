@@ -1,6 +1,6 @@
 -- a real projection added later under the name of a hypothetical one makes the hypothetical one not applicable
 
-SET enable_parallel_replicas = 0;
+SET enable_parallel_replicas = 0, optimize_use_projections = 1;
 
 DROP TABLE IF EXISTS t_name;
 CREATE TABLE t_name (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;

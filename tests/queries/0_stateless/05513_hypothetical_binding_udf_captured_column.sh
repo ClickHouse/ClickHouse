@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 f="${CLICKHOUSE_DATABASE}_add_b"
 
 $CLICKHOUSE_CLIENT -n -q "
-SET enable_parallel_replicas = 0;
+SET enable_parallel_replicas = 0, optimize_use_projections = 1;
 DROP FUNCTION IF EXISTS ${f};
 CREATE FUNCTION ${f} AS x -> x + b;
 

@@ -28,7 +28,7 @@ $CLICKHOUSE_CLIENT -q "DROP USER ${user}"
 
 echo "a new order of the columns under * makes a projection with positional GROUP BY not applicable"
 $CLICKHOUSE_CLIENT -n -q "
-    SET enable_positional_arguments_for_projections = 1;
+    SET enable_positional_arguments_for_projections = 1, optimize_use_projections = 1;
     CREATE TABLE t_order (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 100;
     INSERT INTO t_order SELECT number, number % 10 FROM numbers(1000);
     CREATE HYPOTHETICAL PROJECTION p ON t_order (SELECT *, count() GROUP BY 1, 2);
