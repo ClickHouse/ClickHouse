@@ -47,7 +47,7 @@ SELECT trimLeft(explain) FROM (
 
 -- A CTE estimated to fit in one block is read with one source.
 DROP TABLE IF EXISTS small;
-CREATE TABLE small (n UInt64) ENGINE = MergeTree ORDER BY n;
+CREATE TABLE small (n UInt64) ENGINE = Memory;
 INSERT INTO small SELECT number FROM numbers(10);
 
 SELECT trimLeft(explain) FROM (
