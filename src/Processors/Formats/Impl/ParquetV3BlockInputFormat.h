@@ -28,14 +28,20 @@ struct ParquetFileBucketInfo : public FileBucketInfo
         return "Parquet";
     }
     std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const override;
+    std::optional<UInt64> getByteSize() const override
+    {
+        if (byte_range.has_value())
+            return byte_range->second;
+        return std::nullopt;
+    }
 };
 using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
 
 struct ParquetBucketSplitter : public IBucketSplitter
 {
     ParquetBucketSplitter() = default;
-    std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) override;
-    std::vector<FileBucketInfoPtr> splitByByteRanges(size_t bucket_size, size_t file_size, const std::vector<UInt64> & split_offsets) override;
+    std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, size_t min_buckets, ReadBuffer & buf, const FormatSettings & format_settings_) override;
+    std::vector<FileBucketInfoPtr> splitByByteRanges(size_t bucket_size, size_t min_buckets, size_t file_size, const std::vector<UInt64> & split_offsets) override;
 };
 
 class KeyCondition;
@@ -70,6 +76,7 @@ public:
     void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
 
     std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const override;
+    std::optional<std::pair<size_t, size_t>> getRowRangeToRead() const override;
     std::vector<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override;
     bool isTopKFilterApplied() const override;
     bool isMinMaxFromStatisticsApplied() const override { return min_max_from_statistics; }

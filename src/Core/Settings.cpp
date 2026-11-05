@@ -10290,7 +10290,8 @@ Controls how data is split into tasks when executing a CLUSTER TABLE FUNCTION.
 
 This setting defines the granularity of work distribution across the cluster:
 - `file` — each task processes an entire file.
-- `bucket` — tasks are created per internal data block within a file (for example, Parquet row groups).
+- `bucket` — tasks are created per internal data block within a file (for example, Parquet row groups). A file is cut into pieces of at most `cluster_table_function_buckets_batch_size` bytes, and into more pieces when there are few files, so that there are about four tasks for every node of the cluster.
+- `auto` — `bucket` when there are fewer files than four times the number of nodes of the cluster; `file` otherwise. A whole file is already read by all threads of a node, so files are split only to balance the work between nodes.
 
 Choosing finer granularity (like `bucket`) can improve parallelism when working with a small number of large files.
 For instance, if a Parquet file contains multiple row groups, enabling `bucket` granularity allows each group to be processed independently by different workers.
@@ -10300,9 +10301,12 @@ For instance, if a Parquet file contains multiple row groups, enabling `bucket` 
 This is an internal setting that should not be used directly. The initiator of a query with a cluster table function sets it for the replicas to the serialized filter on the table, so that the replicas drop the rows that do not pass it before sending them.
 )", 0, \
         {"26.11", "", "", "New internal setting."}) \
-    DECLARE(UInt64, cluster_table_function_buckets_batch_size, 0, R"(
+    DECLARE(UInt64, cluster_table_function_buckets_batch_size, 128 * 1024 * 1024, R"(
 Defines the approximate size of a batch (in bytes) used in distributed processing of tasks in cluster table functions with `bucket` split granularity. The system accumulates data until at least this amount is reached. The actual size may be slightly larger to align with data boundaries.
+
+With `cluster_table_function_split_by_split_offsets`, when the table metadata records the file size and the row group offsets (for example, `split_offsets` in Iceberg), files are cut without reading them; otherwise the initiator reads the footer of every file. With `0`, a task is created for every row group.
 )", 0, \
+        {"26.11", 0, 128 * 1024 * 1024, "A task per row group was too fine: every task pays for a HEAD request, a footer read and a round trip to the initiator."}, \
         {"25.11", 0, 0, "New setting."}) \
     DECLARE(Bool, cluster_table_function_split_by_split_offsets, false, R"(
 With `bucket` split granularity, when the table metadata records the file size and the row group offsets (`split_offsets` in Iceberg), cut files into byte ranges on these offsets without reading them; each task reads the row groups that start in its range. Otherwise, and on a hit in the query condition cache, the initiator reads the footer of every file.

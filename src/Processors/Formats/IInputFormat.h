@@ -64,6 +64,7 @@ struct FileBucketInfo
     virtual String getIdentifier() const = 0;
     virtual String getFormatName() const = 0;
     virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const = 0;
+    virtual std::optional<UInt64> getByteSize() const { return std::nullopt; }
 
     virtual ~FileBucketInfo() = default;
 };
@@ -72,11 +73,9 @@ using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
 /// Interface for splitting a file into buckets.
 struct IBucketSplitter
 {
-    /// Splits a file into buckets using the given read buffer and format settings.
-    /// Returns information about the resulting buckets (see the structure above for details).
-    virtual std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
+    virtual std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, size_t min_buckets, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
 
-    virtual std::vector<FileBucketInfoPtr> splitByByteRanges(size_t /*bucket_size*/, size_t /*file_size*/, const std::vector<UInt64> & /*split_offsets*/)
+    virtual std::vector<FileBucketInfoPtr> splitByByteRanges(size_t /*bucket_size*/, size_t /*min_buckets*/, size_t /*file_size*/, const std::vector<UInt64> & /*split_offsets*/)
     {
         return {};
     }
@@ -154,6 +153,8 @@ public:
     virtual void prefetch() {}
 
     virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
+
+    virtual std::optional<std::pair<size_t, size_t>> getRowRangeToRead() const { return std::nullopt; }
 
     /// TopN dynamic filtering with `FormatTopKFilterInfo::track_row_group_best_values`: for the buckets
     /// which returned rows, the best value of the sort column among these rows, in the query's order.

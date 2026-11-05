@@ -149,6 +149,7 @@ public:
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data = false);
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
 
+    /// Sets of a standalone `ActionsDAG` serialized with `registry`; only sets that are ready can be serialized.
     static void serializeReadySets(SerializedSetsRegistry & registry, WriteBuffer & out);
     static void deserializeAndMakeSets(DeserializedSetsRegistry & registry, ReadBuffer & in, const ContextPtr & context);
 

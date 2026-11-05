@@ -14,13 +14,22 @@ namespace ErrorCodes
 namespace
 {
 
-size_t getTaskWeight(const ObjectInfoPtr & object_info)
+size_t getFileWeight(const ObjectInfoPtr & object_info)
 {
     if (auto size = object_info->getFileSizeHint())
         return std::max<size_t>(1, *size);
     if (auto metadata = object_info->getObjectMetadata(); metadata && metadata->is_size_known && metadata->size_bytes)
         return metadata->size_bytes;
     return 1;
+}
+
+size_t getTaskWeight(const ObjectInfoPtr & object_info)
+{
+    const size_t file_weight = getFileWeight(object_info);
+    if (object_info->file_bucket_info)
+        if (auto size = object_info->file_bucket_info->getByteSize())
+            return std::max<size_t>(1, std::min<size_t>(*size, file_weight));
+    return file_weight;
 }
 
 String getSchedulingIdentifier(const ObjectInfoPtr & object_info, bool send_over_whole_archive)

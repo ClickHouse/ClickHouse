@@ -468,7 +468,10 @@ std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat:
     for (const auto & row_group : reader->reader.row_groups)
     {
         if (!row_group.need_to_process)
+        {
+            matched.push_back(row_group.row_group_idx);
             continue;
+        }
 
         bool produced_rows = false;
         for (const auto & subgroup : row_group.subgroups)
@@ -495,6 +498,24 @@ std::vector<std::pair<size_t, Field>> ParquetV3BlockInputFormat::getTopKBestValu
         if (row_group.need_to_process && row_group.top_k_best_value)
             res.emplace_back(row_group.row_group_idx, (*row_group.top_k_best_value)[0]);
     return res;
+}
+
+std::optional<std::pair<size_t, size_t>> ParquetV3BlockInputFormat::getRowRangeToRead() const
+{
+    if (!reader)
+        return std::nullopt;
+    size_t begin = std::numeric_limits<size_t>::max();
+    size_t end = 0;
+    for (const auto & row_group : reader->reader.row_groups)
+    {
+        if (!row_group.need_to_process)
+            continue;
+        begin = std::min(begin, row_group.start_global_row_idx);
+        end = std::max(end, row_group.start_global_row_idx + size_t(row_group.meta->num_rows));
+    }
+    if (begin >= end)
+        return std::make_pair(0, 0);
+    return std::make_pair(begin, end);
 }
 
 bool ParquetV3BlockInputFormat::isTopKFilterApplied() const
@@ -694,15 +715,32 @@ void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr>
     instances.emplace("Parquet", std::make_shared<ParquetFileBucketInfo>());
 }
 
-std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_)
+namespace
+{
+
+size_t bucketSizeForMinBuckets(size_t bucket_size, size_t min_buckets, UInt64 total_size)
+{
+    if (bucket_size == 0 || min_buckets <= 1)
+        return bucket_size;
+    return std::max<size_t>(1, std::min<size_t>(bucket_size, (total_size + min_buckets - 1) / min_buckets));
+}
+
+}
+
+std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t bucket_size, size_t min_buckets, ReadBuffer & buf, const FormatSettings & format_settings_)
 {
     Parquet::ReadOptions read_options = convertReadOptions(format_settings_);
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&buf, read_options, /*parser_shared_resources_=*/ nullptr);
     auto footer = Parquet::Reader::readFileFooter(prefetcher, read_options.format.parquet.footer_read_size);
     std::vector<size_t> bucket_sizes;
+    UInt64 total_size = 0;
     for (const auto & row_group : footer->metadata.row_groups)
+    {
         bucket_sizes.push_back(size_t(row_group.total_byte_size));
+        total_size += bucket_sizes.back();
+    }
+    bucket_size = bucketSizeForMinBuckets(bucket_size, min_buckets, total_size);
 
     std::vector<std::vector<size_t>> buckets;
     size_t current_weight = 0;
@@ -732,13 +770,15 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
     return result;
 }
 
-std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitByByteRanges(size_t bucket_size, size_t file_size, const std::vector<UInt64> & split_offsets_)
+std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitByByteRanges(size_t bucket_size, size_t min_buckets, size_t file_size, const std::vector<UInt64> & split_offsets_)
 {
     std::vector<UInt64> split_offsets = split_offsets_;
     std::sort(split_offsets.begin(), split_offsets.end());
     split_offsets.erase(std::unique(split_offsets.begin(), split_offsets.end()), split_offsets.end());
     if (file_size == 0 || split_offsets.empty() || split_offsets.back() >= file_size)
         return {};
+
+    bucket_size = bucketSizeForMinBuckets(bucket_size, min_buckets, file_size);
 
     std::vector<FileBucketInfoPtr> result;
     UInt64 bucket_begin = 0;
