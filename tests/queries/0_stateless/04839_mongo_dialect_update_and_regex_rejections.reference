@@ -1,5 +1,5 @@
 -- the values an update operator cannot write
-Code: 48. The value of '$inc' must be a scalar, an array, or an Extended JSON wrapper of them
+Code: 36. The operand of '$inc' must be a number
 Code: 48. The value of '$min' must be a scalar, an array, or an Extended JSON wrapper of them
 Code: 48. Cannot assign the empty document to the field 'name': a document is stored as one column per field, so an empty one names no column
 Code: 36. A field name of the update operator '$set' must not be empty
