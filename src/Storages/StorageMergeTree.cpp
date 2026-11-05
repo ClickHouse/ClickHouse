@@ -2525,6 +2525,10 @@ void StorageMergeTree::loadDeduplicationLog()
     if ((*settings)[MergeTreeSetting::non_replicated_deduplication_window] != 0 && format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deduplication for non-replicated MergeTree in old syntax is not supported");
 
+    /// Sampled before the log is loaded: if the leadership changes during the load, the log is attributed
+    /// to the older epoch, and the operations admitted in the newer one fail closed instead of using it.
+    const UInt64 load_epoch = currentLeadershipEpoch();
+
     auto disk = getDisks()[0];
     std::string path = fs::path(relative_data_path) / DEDUPLICATION_LOGS_DIR_NAME;
 
@@ -2579,6 +2583,7 @@ void StorageMergeTree::loadDeduplicationLog()
 
         std::lock_guard lock(deduplication_log_mutex);
         deduplication_log = std::move(new_deduplication_log);
+        deduplication_log_epoch = load_epoch;
     }
 }
 
@@ -2588,13 +2593,31 @@ std::shared_ptr<MergeTreeDeduplicationLog> StorageMergeTree::getDeduplicationLog
     return deduplication_log;
 }
 
-void StorageMergeTree::dropDeduplicationLogParts(const DataPartsVector & parts)
+void StorageMergeTree::dropDeduplicationLogParts(const DataPartsVector & parts, UInt64 admission_epoch)
 {
     /// Keep the log object captured for the whole operation, including the error recovery below:
     /// a leadership reacquisition can replace `deduplication_log` concurrently.
-    auto current_deduplication_log = getDeduplicationLog();
+    std::shared_ptr<MergeTreeDeduplicationLog> current_deduplication_log;
+    UInt64 current_deduplication_log_epoch = 0;
+    {
+        std::lock_guard lock(deduplication_log_mutex);
+        current_deduplication_log = deduplication_log;
+        current_deduplication_log_epoch = deduplication_log_epoch;
+    }
     if (!current_deduplication_log)
         return;
+
+    /// The log of the admission epoch is discarded when that epoch loses the leadership, so `dropPart` below
+    /// throws for it. A log of another epoch must not be touched at all: after a takeover the new leader may
+    /// have removed the retired parts and reused their names for new data, and dropping the block ids by part
+    /// info would retire the block ids of that new data, so a retry of an acknowledged `INSERT` would create
+    /// duplicates. The covering parts committed in the admission epoch were already reconciled with the newer
+    /// log when it was loaded (see `loadDeduplicationLog`), so nothing is lost by failing here.
+    if (leader_election_ptr && current_deduplication_log_epoch != admission_epoch)
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+            "Leadership epoch changed ({} -> {}) before the deduplication log was updated for the retired parts; "
+            "leaving the log of the new epoch unchanged (leader_election)",
+            admission_epoch, current_deduplication_log_epoch);
 
     try
     {
@@ -4707,7 +4730,7 @@ DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVect
     for (auto & part : removed_parts)
         part->remove_time.store(0, std::memory_order_relaxed);
 
-    dropDeduplicationLogParts(removed_parts);
+    dropDeduplicationLogParts(removed_parts, admission_epoch);
 
     return removed_parts;
 }
@@ -5005,7 +5028,7 @@ void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool de
         clonePartsToDetached(parts_to_remove, query_context, admission_epoch);
     }
 
-    dropDeduplicationLogParts(parts_to_remove);
+    dropDeduplicationLogParts(parts_to_remove, admission_epoch);
 
     if (detach)
         LOG_INFO(log, "Detached {} parts: [{}]", parts_to_remove.size(), fmt::join(getPartsNames(parts_to_remove), ", "));
@@ -5468,7 +5491,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         /// already reached its publish phase needs the very same `lockParts()` critical section to
         /// finish — draining it while holding the lock would deadlock.
         if (replace && leader_election_ptr)
-            dropDeduplicationLogParts(covered_parts);
+            dropDeduplicationLogParts(covered_parts, admission_epoch);
 
         /// Note: same elapsed time and profile events for all parts is used
         PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
@@ -5851,7 +5874,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         /// deduplicated against block ids of a partition the source no longer contains.
         for (const auto & part : src_parts)
             part->remove_time.store(0, std::memory_order_relaxed);
-        dropDeduplicationLogParts(src_parts);
+        dropDeduplicationLogParts(src_parts, src_admission_epoch);
 
         /// Note: same elapsed time and profile events for all parts is used
         PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));

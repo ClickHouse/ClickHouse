@@ -192,6 +192,10 @@ private:
     /// Protects the pointer itself, not the log object (it has its own synchronization).
     mutable std::mutex deduplication_log_mutex;
     std::shared_ptr<MergeTreeDeduplicationLog> deduplication_log TSA_GUARDED_BY(deduplication_log_mutex);
+    /// The leadership epoch (see `currentLeadershipEpoch`) sampled when `deduplication_log` was loaded.
+    /// Under `leader_election` every leadership acquisition loads a new log, so a foreground operation
+    /// admitted in an earlier epoch can tell that the current log belongs to another epoch.
+    UInt64 deduplication_log_epoch TSA_GUARDED_BY(deduplication_log_mutex) = 0;
 
     /// For block numbers.
     SimpleIncrement increment;
@@ -326,7 +330,11 @@ private:
     /// trustworthy. `dropPart` updates its in-memory map incrementally; after a committed
     /// data retirement, an error must therefore relinquish leadership rather than leave a
     /// writable table with stale block ids that can silently deduplicate a retry.
-    void dropDeduplicationLogParts(const DataPartsVector & parts);
+    /// `admission_epoch` is the leadership epoch the caller sampled together with its admission check: the
+    /// block ids are retired only in the log loaded in that epoch. After a loss and reacquisition of the
+    /// leadership the part names can be reused by new data, so retiring them in a newer log would drop the
+    /// block ids of that data; the newer log was already reconciled with the committed covering parts on load.
+    void dropDeduplicationLogParts(const DataPartsVector & parts, UInt64 admission_epoch);
 
     /** Determines what parts should be merged and merges it.
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
