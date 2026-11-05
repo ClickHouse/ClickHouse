@@ -61,7 +61,7 @@ struct MinMaxIndexStoreFixture : public ::testing::Test
         DataPartStorageOnDiskFull part_storage(volume, "", part_dir);
 
         MergeTreeDataPartChecksums checksums;
-        auto written_files = index.store(columns, part_storage, checksums, settings);
+        auto written_files = index.store(columns, part_storage, checksums, settings, WriteSettings{});
         for (auto & file : written_files)
             file->finalize();
 
@@ -139,7 +139,7 @@ TEST_F(MinMaxIndexStoreFixture, DoesNotWriteThroughAFileTheCallerCarriedOver)
     inherited.initialized = true;
 
     DataPartStorageOnDiskFull part_storage(volume, "", "all_1_1_0_2");
-    auto written_files = inherited.store(columns, part_storage, checksums, settings);
+    auto written_files = inherited.store(columns, part_storage, checksums, settings, WriteSettings{});
     for (auto & file : written_files)
         file->finalize();
 

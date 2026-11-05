@@ -460,10 +460,10 @@ void MergeTreePartition::load(const IMergeTreeDataPart & part)
 
 std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(
     StorageMetadataPtr metadata_snapshot, ContextPtr storage_context,
-    IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums) const
+    IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const
 {
     const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, storage_context).sample_block;
-    return store(partition_key_sample, data_part_storage, checksums, storage_context->getWriteSettings());
+    return store(partition_key_sample, data_part_storage, checksums, settings);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const Block & partition_key_sample, IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const

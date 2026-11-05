@@ -20,6 +20,7 @@ struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+struct WriteSettings;
 
 /// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
 /// parts based on conditions on these columns imposed by a query.
@@ -48,8 +49,8 @@ public:
 
     using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
-    [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
-    [[nodiscard]] WrittenFiles store(const NamesAndTypesList & columns, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
+    [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings, const WriteSettings & settings) const;
+    [[nodiscard]] WrittenFiles store(const NamesAndTypesList & columns, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings, const WriteSettings & settings) const;
 
     void update(const Block & block, const NamesAndTypesList & columns);
     void merge(const MergeTreePartMinMaxIndex & other);
