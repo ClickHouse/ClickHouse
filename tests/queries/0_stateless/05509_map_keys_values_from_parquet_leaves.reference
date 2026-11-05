@@ -91,6 +91,27 @@ lazy materialization
 29	['k2','c']	[29]
 28	[]	[NULL]
 27	['k0','c']	[27]
+filter on another column
+29	['k2','c']
+28	[]
+27	['k0','c']
+6	[6]
+7	[7]
+8	[NULL]
+29	['k2','c']
+28	[]
+27	['k0','c']
+['k2','c']
+['k0','c']
+[]
+['k2','c']
+6	24
+29	['k2','c']
+28	[]
+27	['k0','c']
+6	[6]
+7	[7]
+8	[NULL]
 defaults
 0	['a','b']	0
 1	['a','b']	1
@@ -149,6 +170,13 @@ rewritten
 1
 0
 0
+0
+1
+1
 decompressed bytes
-keys	1
-values	1
+bytes_keys	1
+bytes_values	1
+bytesice_keys	1
+bytesice_values	1
+bytesurl_keys	1
+bytesurl_values	1

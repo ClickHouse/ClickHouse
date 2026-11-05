@@ -1599,10 +1599,8 @@ public:
     }
 
 private:
-    /// On a storage whose `PREWHERE` takes only top-level columns, no use of a `Map` is rewritten when `PREWHERE` reads
-    /// it or its parent tuple: `PREWHERE` drops the columns that the rest of the query does not name, so a subcolumn
-    /// extracted from the map after reading would be missing. Same when `WHERE` reads it and the query reads another
-    /// column of the table: the condition stays movable to `PREWHERE`, which can skip reading the other columns.
+    /// On a storage whose `PREWHERE` takes only top-level columns, a `Map` is read whole if `PREWHERE` reads it or its parent
+    /// tuple, or if `WHERE` or `PREWHERE` filters its table and the query reads another column of that table.
     bool mustReadWholeMap(const ColumnInSource & map) const
     {
         if (columns_in_prewhere.contains(map))
@@ -1611,7 +1609,8 @@ private:
             if (columns_in_prewhere.contains(ColumnInSource{map.source, map.column_name.substr(0, dot)}))
                 return true;
 
-        if (!maps_in_where.contains(map))
+        auto from_map_source = [&](const ColumnInSource & column) { return column.source == map.source; };
+        if (!std::ranges::any_of(columns_in_where, from_map_source) && !std::ranges::any_of(columns_in_prewhere, from_map_source))
             return false;
         for (const auto & [identifier, _] : identifiers_count)
             if (identifier.source == map.source && identifier.column_name != map.column_name)
@@ -1619,9 +1618,9 @@ private:
         return false;
     }
 
-    /// Identifiers read in `PREWHERE`, and the `Map` identifiers read in `WHERE`.
+    /// Identifiers read in `PREWHERE`, and in `WHERE`.
     ColumnInSourceSet columns_in_prewhere;
-    ColumnInSourceSet maps_in_where;
+    ColumnInSourceSet columns_in_where;
     /// `Map` identifiers with a rewrite on a storage for which storageRejectsMapSubcolumnsInPrewhere is true.
     ColumnInSourceSet maps_on_storages_rejecting_subcolumns_in_prewhere;
     /// Same as in_where_prewhere_stack, for `PREWHERE` alone.
@@ -1692,8 +1691,8 @@ private:
 
         if (!in_prewhere_stack.empty() && in_prewhere_stack.back())
             columns_in_prewhere.insert(qualified_name);
-        else if (!in_where_prewhere_stack.empty() && in_where_prewhere_stack.back() && isMap(column_node.getColumnType()))
-            maps_in_where.insert(qualified_name);
+        else if (!in_where_prewhere_stack.empty() && in_where_prewhere_stack.back())
+            columns_in_where.insert(qualified_name);
     }
 
     void enterImpl(const FunctionNode & function_node, const ColumnNode & first_argument_column_node, const QueryTreeNodePtr & column_source)

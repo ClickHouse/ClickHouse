@@ -13,7 +13,9 @@ WITH_M="${CLICKHOUSE_DATABASE}_05509_d_with_m.parquet"
 WITHOUT_M="${CLICKHOUSE_DATABASE}_05509_d_without_m.parquet"
 ICEBERG_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_05509_evolved"
 ICEBERG_MIXED_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_05509_mixed"
-rm -rf "${ICEBERG_PATH}" "${ICEBERG_MIXED_PATH}"
+ICEBERG_TYPES_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_05509_types"
+ICEBERG_BYTES_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_05509_bytes"
+rm -rf "${ICEBERG_PATH}" "${ICEBERG_MIXED_PATH}" "${ICEBERG_TYPES_PATH}" "${ICEBERG_BYTES_PATH}"
 
 ${CLICKHOUSE_CLIENT} -m --query "
 INSERT INTO FUNCTION file('${TYPES}')
@@ -68,7 +70,15 @@ SELECT id, mapKeys(ms) FROM file('${TYPES}') PREWHERE has(ms, 'k2') ORDER BY id;
 SELECT id FROM file('${TYPES}') PREWHERE has(ms, 'k2') WHERE mapContainsValue(ms, '11') ORDER BY id;
 SELECT mapKeys(ms) FROM file('${TYPES}') PREWHERE id > 25 ORDER BY id;
 SELECT 'lazy materialization';
-SELECT id, mapKeys(ms), mapValues(mn) FROM file('${TYPES}') ORDER BY id DESC LIMIT 3;
+SELECT id, mapKeys(ms), mapValues(mn) FROM file('${TYPES}') ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10;
+SELECT 'filter on another column';
+SELECT id, mapKeys(ms) FROM file('${TYPES}') WHERE id > 5 ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1;
+SELECT id, mapValues(mn) FROM file('${TYPES}') WHERE id > 5 ORDER BY id LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1;
+SELECT id, mapKeys(ms) FROM file('${TYPES}') PREWHERE id > 5 ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1;
+SELECT mapKeys(ms) FROM file('${TYPES}') WHERE id > 25 ORDER BY id SETTINGS optimize_move_to_prewhere = 1;
+SELECT countIf(has(ms, 'k1')), count() FROM file('${TYPES}') WHERE id > 5 SETTINGS optimize_move_to_prewhere = 1;
+SELECT id, mapKeys(ms) FROM t_05509_types WHERE id > 5 ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1;
+SELECT id, mapValues(mn) FROM t_05509_types WHERE id > 5 ORDER BY id LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1;
 SELECT 'defaults';
 SELECT id, mapKeys(m), n FROM file('${CLICKHOUSE_DATABASE}_05509_d_*.parquet', Parquet,
     'id UInt64, m Map(String, UInt8) DEFAULT map(\'d\', 1), n String DEFAULT toString(m[\'a\'])') ORDER BY id;
@@ -83,7 +93,7 @@ SELECT 'Iceberg, schema evolution';
 SELECT id, mapKeys(a), mapKeys(m), a, s2 FROM t_05509_evolved ORDER BY id;
 SELECT id, mapValues(a) FROM t_05509_evolved ORDER BY id;
 SELECT count() FROM t_05509_evolved WHERE has(a, 'k1');
-SELECT id, mapKeys(a) FROM t_05509_evolved ORDER BY id DESC LIMIT 3;
+SELECT id, mapKeys(a) FROM t_05509_evolved ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10;
 SELECT 'Iceberg, Parquet and ORC files';
 SELECT id, mapKeys(m) FROM t_05509_mixed ORDER BY id;
 SELECT count() FROM t_05509_mixed WHERE has(m, 'k1');
@@ -108,6 +118,20 @@ ALTER TABLE t_05509_evolved RENAME COLUMN m TO a;
 ALTER TABLE t_05509_evolved RENAME COLUMN m2 TO m;
 INSERT INTO t_05509_evolved SELECT number + 20, map('a' || toString(number), 'x'), map('z', 'y' || toString(number)), 's', number FROM numbers(2);
 
+CREATE TABLE t_05509_types (id Int64, ms Map(String, String), mn Map(String, Nullable(Int32)))
+    ENGINE = IcebergLocal('${ICEBERG_TYPES_PATH}', 'Parquet');
+INSERT INTO t_05509_types SELECT number,
+    if(number % 7 = 0, map(), map('k' || toString(number % 3), toString(number), 'c', 'v')),
+    map('k', if(number % 4 = 0, NULL, toInt32(number)))
+FROM numbers(30);
+
+CREATE TABLE t_05509_bytes (id Int64, m Map(String, String), mv Map(String, UInt8))
+    ENGINE = IcebergLocal('${ICEBERG_BYTES_PATH}', 'Parquet');
+INSERT INTO t_05509_bytes SELECT toInt64(number),
+    map('k' || toString(number % 5), repeat(toString(number % 10), 200)),
+    map(repeat(toString(number % 10), 200), toUInt8(number % 5))
+FROM numbers(1000);
+
 CREATE TABLE t_05509_mixed (id Int64, m Map(String, String)) ENGINE = IcebergLocal('${ICEBERG_MIXED_PATH}', 'Parquet');
 INSERT INTO t_05509_mixed SELECT number, map('k' || toString(number % 3), 'v' || toString(number)) FROM numbers(4);
 INSERT INTO TABLE FUNCTION icebergLocal('${ICEBERG_MIXED_PATH}', 'ORC', 'id Int64, m Map(String, String)')
@@ -131,27 +155,39 @@ SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM file('${BYTES}') WHE
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT id FROM file('${BYTES}') WHERE has(m, 'k3')) WHERE explain ILIKE '%m.keys%';
 -- Not rewritten anywhere: PREWHERE reads the whole map.
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT mapKeys(m) FROM file('${BYTES}') PREWHERE has(m, 'k3')) WHERE explain ILIKE '%m.keys%';
+-- Not rewritten: \`WHERE\` filters the table and the query reads another of its columns.
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT id, mapKeys(m) FROM file('${BYTES}') WHERE id > 5 ORDER BY id LIMIT 3) WHERE explain ILIKE '%m.keys%';
+SELECT count() FROM (EXPLAIN SELECT id, mapKeys(m) FROM file('${BYTES}') ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10) WHERE explain ILIKE '%LazilyReadFromFile%';
+SELECT count() FROM (EXPLAIN SELECT id, mapKeys(m) FROM t_05509_bytes ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10) WHERE explain ILIKE '%LazilyReadFromObjectStorage%';
 "
 
 echo "decompressed bytes"
+URL="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+%2A+FROM+file(%27${BYTES}%27)+FORMAT+Parquet"
 for setting in 0 1; do
     ${CLICKHOUSE_CLIENT} -m --query "
     SET optimize_functions_to_subcolumns = ${setting}, use_columns_cache = 0, use_query_condition_cache = 0;
     SELECT count() FROM file('${BYTES}') WHERE has(m, 'k3') SETTINGS log_comment = 'bytes_keys_${setting}' FORMAT Null;
     SELECT count() FROM file('${BYTES}') WHERE mapContainsValue(mv, 3) SETTINGS log_comment = 'bytes_values_${setting}' FORMAT Null;
+    SELECT count() FROM t_05509_bytes WHERE has(m, 'k3') SETTINGS log_comment = 'bytesice_keys_${setting}' FORMAT Null;
+    SELECT count() FROM t_05509_bytes WHERE mapContainsValue(mv, 3) SETTINGS log_comment = 'bytesice_values_${setting}' FORMAT Null;
+    SELECT count() FROM url('${URL}', Parquet, 'id UInt64, m Map(String, String), mv Map(String, UInt8)') WHERE has(m, 'k3')
+        SETTINGS parallel_replicas_for_cluster_engines = 0, log_comment = 'bytesurl_keys_${setting}' FORMAT Null;
+    SELECT count() FROM url('${URL}', Parquet, 'id UInt64, m Map(String, String), mv Map(String, UInt8)') WHERE mapContainsValue(mv, 3)
+        SETTINGS parallel_replicas_for_cluster_engines = 0, log_comment = 'bytesurl_values_${setting}' FORMAT Null;
     "
 done
 ${CLICKHOUSE_CLIENT} -m --query "
 SYSTEM FLUSH LOGS query_log;
-SELECT side, on * 4 < off
+-- The Iceberg and URL files have one row group, so one dictionary per leaf and a smaller ratio.
+SELECT side, if(startsWith(side, 'bytes_'), on * 4 < off, on * 2 < off)
 FROM
 (
     SELECT
-        splitByChar('_', log_comment)[2] AS side,
+        splitByChar('_', log_comment)[1] || '_' || splitByChar('_', log_comment)[2] AS side,
         sumIf(ProfileEvents['ParquetDecompressedBytes'], endsWith(log_comment, '_0')) AS off,
         sumIf(ProfileEvents['ParquetDecompressedBytes'], endsWith(log_comment, '_1')) AS on
     FROM system.query_log
-    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND startsWith(log_comment, 'bytes_')
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND startsWith(log_comment, 'bytes')
     GROUP BY side
 )
 ORDER BY side;
@@ -163,6 +199,8 @@ DROP TABLE t_05509_policy;
 DROP TABLE t_05509_filter;
 DROP TABLE t_05509_evolved;
 DROP TABLE t_05509_mixed;
+DROP TABLE t_05509_types;
+DROP TABLE t_05509_bytes;
 "
-rm -rf "${ICEBERG_PATH}" "${ICEBERG_MIXED_PATH}"
+rm -rf "${ICEBERG_PATH}" "${ICEBERG_MIXED_PATH}" "${ICEBERG_TYPES_PATH}" "${ICEBERG_BYTES_PATH}"
 rm -f "${CLICKHOUSE_USER_FILES}/${TYPES}" "${CLICKHOUSE_USER_FILES}/${BYTES}" "${CLICKHOUSE_USER_FILES}/${WITH_M}" "${CLICKHOUSE_USER_FILES}/${WITHOUT_M}"
