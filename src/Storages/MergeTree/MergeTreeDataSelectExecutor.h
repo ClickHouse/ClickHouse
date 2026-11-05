@@ -13,6 +13,8 @@
 #include <boost/dynamic_bitset.hpp>
 
 #include <expected>
+#include <functional>
+#include <span>
 
 struct PreformattedMessage;
 
@@ -325,6 +327,59 @@ public:
         std::atomic<size_t> parts_after_primary_key = 0;
         std::atomic<size_t> marks_after_disjunctions = 0;
     };
+
+    /// Query-level inputs of `analyzeSinglePart`, shared by all parts and threads.
+    struct SinglePartIndexAnalysisParams
+    {
+        StorageMetadataPtr metadata_snapshot;
+        ContextPtr context;
+        const Settings & settings;
+        const MergeTreeReaderSettings & reader_settings;
+        LoggerPtr log;
+
+        bool use_primary_key = true;
+        const ConditionTemplate<KeyCondition> & key_condition;
+        const ConditionTemplate<KeyCondition> * part_offset_condition = nullptr;
+        /// Only with the real `part_starting_offset_in_query` of every part.
+        const ConditionTemplate<KeyCondition> * total_offset_condition = nullptr;
+        const std::vector<std::optional<size_t>> * pk_to_minmax_slot = nullptr;
+        bool find_exact_ranges = false;
+        /// `FINAL` exact mode.
+        bool keep_ranges_after_primary_key = false;
+
+        const UsefulSkipIndexes & skip_indexes;
+        const ConditionTemplate<KeyCondition> * key_condition_rpn_template = nullptr;
+        /// The effective value.
+        bool use_skip_indexes_for_disjunctions = false;
+        bool use_skip_indexes_on_data_read = false;
+        bool query_hides_lightweight_deleted_rows = true;
+        MarkCache * mark_cache = nullptr;
+        UncompressedCache * uncompressed_cache = nullptr;
+        VectorSimilarityIndexCache * vector_similarity_index_cache = nullptr;
+    };
+
+    /// References into the caller's per-part state.
+    struct PartRangesForIndexAnalysis
+    {
+        MarkRanges & ranges;
+        RangesInDataPartReadHints & read_hints;
+        MarkRanges & exact_ranges;
+        std::optional<MarkRanges> & ranges_snapshot_after_pk_analysis;
+        size_t part_starting_offset_in_query = 0;
+    };
+
+    /// Primary key and offset conditions, then the skip indexes in `skip_index_order` (declaration order when null), then the
+    /// disjunction merge. Calls `get_part_for_skip_indexes` once, only when skip indexes run, inside the
+    /// `FilteringMarksWithSecondaryKeys` metric scope. Per-index counters go to `skip_index_stats` (the caller's slice of
+    /// `IndexAnalysisStats::skip_indexes`, by position in the order). Returns whether a skip index ran.
+    static bool analyzeSinglePart(
+        const SinglePartIndexAnalysisParams & params,
+        const IMergeTreeDataPartInfoForReader & part,
+        const std::function<MergeTreeDataPartInfoForReaderPtr()> & get_part_for_skip_indexes,
+        const std::vector<size_t> * skip_index_order,
+        PartRangesForIndexAnalysis ranges,
+        IndexAnalysisStats & stats,
+        std::span<IndexAnalysisStat> skip_index_stats);
 
     /// Filter parts using primary key and secondary indexes.
     /// For every part, select mark ranges to read.
