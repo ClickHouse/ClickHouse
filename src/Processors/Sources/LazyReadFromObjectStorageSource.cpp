@@ -260,6 +260,7 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
         parser_shared_resources,
         format_filter_info,
         /*need_only_count_=*/ false);
+    source->keepReadingOnPartialResult();
 
     auto & source_output = source->getOutputs().front();
     inputs.emplace_back(source_output.getHeader(), this);
