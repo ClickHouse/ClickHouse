@@ -800,6 +800,82 @@ def test_merge_keeps_child_table_capabilities(started_cluster):
     instance.query("DROP TABLE merge_over_matpg")
 
 
+def test_read_subcolumns_of_empty_table(started_cluster):
+    """
+    Subcolumns of a MaterializedPostgreSQL table are readable before any row is replicated.
+    """
+    table_name = "postgresql_replica_empty_subcolumns"
+    pg_manager.create_postgres_table(table_name)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip, port=started_cluster.postgres_port
+    )
+    assert_nested_table_is_created(instance, table_name)
+    table = f"test_database.{table_name}"
+
+    # No parts in the nested table, so the read takes the empty-table path.
+    assert (
+        instance.query(
+            "SELECT count() FROM system.parts "
+            f"WHERE database = 'test_database' AND table = '{table_name}' AND active"
+        )
+        == "0\n"
+    )
+
+    settings = {"optimize_functions_to_subcolumns": 1}
+    for query, expected in [
+        (f"SELECT count() FROM {table} WHERE value IS NULL", "0\n"),
+        (f"SELECT count(value) FROM {table}", "0\n"),
+        (f"SELECT value.null FROM {table}", ""),
+        (f"SELECT count() FROM {table} PREWHERE value.null = 0", "0\n"),
+        (f"SELECT _part FROM {table}", ""),
+    ]:
+        assert instance.query(query, settings=settings) == expected, query
+
+    # The row policy reads `key`, which the query does not select. The policy is applied in the
+    # read step, so `key` must be in the header of the empty source.
+    instance.query(
+        f"CREATE ROW POLICY empty_subcolumns_policy ON {table} USING key > 0 TO default"
+    )
+    try:
+        query = f"SELECT value.null FROM {table}"
+        assert instance.query(query, settings=settings) == ""
+        pipeline = [
+            line.strip()
+            for line in instance.query(
+                f"EXPLAIN PIPELINE {query}", settings=settings
+            ).splitlines()
+        ]
+        read_step = pipeline.index("(ReadFromPreparedSource)")
+        assert (
+            pipeline[read_step + 1] == "FilterTransform" and "(Filter)" not in pipeline
+        ), pipeline
+    finally:
+        instance.query(f"DROP ROW POLICY IF EXISTS empty_subcolumns_policy ON {table}")
+
+    # The same through the table engine. The name is short because the replication slot name
+    # derived from it is limited to 64 bytes.
+    engine_table = "empty_subcolumns_tbl"
+    pg_manager.create_postgres_table(engine_table)
+    instance.query(f"DROP TABLE IF EXISTS {engine_table} SYNC")
+    instance.query(
+        f"""
+        CREATE TABLE {engine_table} (key Int32, value Nullable(Int32))
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{engine_table}', 'postgres', '{pg_pass}') ORDER BY key
+        """
+    )
+    try:
+        assert_nested_table_is_created(
+            instance, engine_table, materialized_database="default"
+        )
+        for query, expected in [
+            (f"SELECT count() FROM {engine_table} WHERE value IS NULL", "0\n"),
+            (f"SELECT _part FROM {engine_table}", ""),
+        ]:
+            assert instance.query(query, settings=settings) == expected, query
+    finally:
+        instance.query(f"DROP TABLE IF EXISTS {engine_table} SYNC")
+
+
 def test_drop_database_while_enumerating_tables(started_cluster):
     """
     `DROP DATABASE` clears the map of `StorageMaterializedPostgreSQL` wrappers that
