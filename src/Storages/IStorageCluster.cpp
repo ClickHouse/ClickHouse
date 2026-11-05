@@ -79,6 +79,9 @@ namespace
 
 bool isSerializableFilterNode(const ActionsDAG::Node & node, const std::unordered_map<String, ColumnWithTypeAndName> & replica_columns)
 {
+    /// A lambda's body is built, and JIT-compiled in place, while the initiator plans the query, so a replica cannot always rebuild it.
+    if (WhichDataType(node.result_type).isFunction())
+        return false;
     if (!node.isDeterministic() || node.is_runtime_filter_id)
         return false;
     if (node.type == ActionsDAG::ActionType::INPUT)
