@@ -61,10 +61,16 @@ compare "in PREWHERE" "SELECT count() FROM jit_throw_if PREWHERE throwIf(a > 5) 
 
 # The function ran compiled.
 $CLICKHOUSE_CLIENT $JIT --log_comment "05502_compiled_$CLICKHOUSE_DATABASE" --query "SELECT sum(throwIf(a > 100) + a) FROM jit_throw_if FORMAT Null"
+# With a `Nullable` argument whose value under the NULL rows is not zero.
+$CLICKHOUSE_CLIENT $JIT --log_comment "05502_compiled_nullable_$CLICKHOUSE_DATABASE" --query "SELECT groupArray(throwIf(n + 1) + a) FROM jit_throw_if WHERE k = 0 OR k = 2 FORMAT Null"
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT --query "
     SELECT 'compiled', ProfileEvents['CompiledFunctionRows'] > 0 FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05502_compiled_$CLICKHOUSE_DATABASE'
+        AND event_date >= yesterday()"
+$CLICKHOUSE_CLIENT --query "
+    SELECT 'compiled with Nullable', ProfileEvents['CompiledFunctionRows'] > 0 FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05502_compiled_nullable_$CLICKHOUSE_DATABASE'
         AND event_date >= yesterday()"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE jit_throw_if"

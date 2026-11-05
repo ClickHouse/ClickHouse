@@ -6,6 +6,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Core/Settings.h>
 #include <Common/ErrorCodes.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -113,11 +114,12 @@ public:
 #if USE_EMBEDDED_COMPILER
     /// One argument of a native number: a row fails where its bytes are not all zero (`memoryIsZero`: `-0.0` and NaN fail
     /// too), with the error `execute` throws without a custom message. NULL rows never fail (`IFunction::compile` masks
-    /// them, as the interpreter does not execute the function on them, see `canBeExecutedOnDefaultArguments`).
+    /// them, as the interpreter does not execute the function on them, see `canBeExecutedOnDefaultArguments`). The result
+    /// type is still `Nullable` here for a `Nullable` argument.
     bool isCompilableImpl(const DataTypes & types, const DataTypePtr & result_type) const override
     {
         return types.size() == 1 && (WhichDataType(types[0]).isNativeInteger() || isNativeFloat(types[0]))
-            && WhichDataType(result_type).isUInt8();
+            && WhichDataType(removeNullable(result_type)).isUInt8();
     }
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr &) const override

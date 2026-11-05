@@ -8,3 +8,4 @@ NULL rows do not fail, non-zero value: []
 guarded in if: [1,2,3,0] 
 in PREWHERE: Code 395: Value passed to 'throwIf' function is non-zero
 compiled	1
+compiled with Nullable	1
