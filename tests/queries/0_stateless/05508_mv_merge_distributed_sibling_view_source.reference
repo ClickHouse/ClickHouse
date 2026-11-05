@@ -1,0 +1,7 @@
+RETURNING
+3	4
+4	4
+4
+materialized view
+1	1	2	3	4	4	2	2
+2	1	2	3	4	4	2	2

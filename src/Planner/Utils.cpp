@@ -733,7 +733,8 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
 
     auto filter_query_tree = buildQueryTree(filter_expression, query_context);
 
-    QueryAnalysisPass query_analysis_pass(table_expression);
+    /// The view source is swapped in below, so the analysis takes the types of its table from the view source.
+    QueryAnalysisPass query_analysis_pass(table_expression, /*only_analyze_=*/ false, query_context->getViewSource());
     query_analysis_pass.run(filter_query_tree, query_context);
 
     if (check_access_rights)

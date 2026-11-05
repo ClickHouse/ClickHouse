@@ -283,7 +283,8 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
 /// Resolve identifier functions implementation
 
 /// Try resolve table identifier from database catalog
-std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const Identifier & table_identifier, const ContextPtr & context)
+std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
+    const Identifier & table_identifier, const ContextPtr & context, const StoragePtr & replaced_storage)
 {
     size_t parts_size = table_identifier.getPartsSize();
     if (parts_size < 1 || parts_size > 2)
@@ -381,15 +382,20 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     /// `replaceStorageInQueryTree` swaps the view source in for execution after the passes.
     /// The inner query of an ordinary view reads the table itself.
     ///
-    /// The real table is needed only for its metadata, so skip taking a snapshot of its data.
-    /// For `MergeTree` tables that snapshot covers all active parts, and taking it for every
+    /// Do this only if the caller swaps the view source in (`replaced_storage`). A nested analysis also
+    /// has the view source in the context, but does not swap it in: for example, the analysis of a child
+    /// query of `merge` in `ReadFromMerge::createPlanForTable`. Such a node reads the real table, so it
+    /// needs the real metadata, with the keys and types of the table's parts.
+    ///
+    /// A node that is swapped needs the real table only for its metadata, so skip taking a snapshot of
+    /// its data. For `MergeTree` tables that snapshot covers all active parts, and taking it for every
     /// block and every view is expensive on tables with many parts.
     ///
     /// A snapshot from `getStorageSnapshot` can be shared by every read of the table in the query,
     /// so only a copy gets the view source's types.
     StorageSnapshotPtr storage_snapshot;
     if (auto view_source = context->getViewSource();
-        view_source && !context->isViewInnerQuery()
+        view_source && view_source == replaced_storage && !context->isViewInnerQuery()
         && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted())
     {
         storage_snapshot = storage->getStorageSnapshotWithoutData(metadata_snapshot, context);
@@ -450,9 +456,10 @@ static void checkAccessToTableMetadata(const TableNode & table_node, const Conte
     context->checkAccess(AccessType::SELECT, storage_id);
 }
 
-IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)
+IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
+    const Identifier & table_identifier, const ContextPtr & context, const StoragePtr & replaced_storage)
 {
-    if (auto result = tryResolveTableIdentifier(table_identifier, context))
+    if (auto result = tryResolveTableIdentifier(table_identifier, context, replaced_storage))
     {
         checkAccessToTableMetadata(*result, context);
         return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
