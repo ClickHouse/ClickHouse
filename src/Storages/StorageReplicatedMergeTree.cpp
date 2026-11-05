@@ -7405,9 +7405,6 @@ void StorageReplicatedMergeTree::alter(
         bool settings_are_changed = (ast_to_str(current_metadata->settings_changes) != ast_to_str(future_metadata.settings_changes));
         bool comment_is_changed = (current_metadata->comment != future_metadata.comment);
 
-        auto maybe_mutation_commands
-            = commands.getMutationCommands(*current_metadata, query_settings[Setting::materialize_ttl_after_modify], query_context, /*with_alters*/ false, (*old_settings)[MergeTreeSetting::share_nested_offsets]);
-
         /// Validate the mutation author before the local setting/comment change below is committed:
         /// `getMutationAuthor` can throw, and throwing after that commit would leave the local change
         /// persisted without the replicated `ALTER` and its mutation.
