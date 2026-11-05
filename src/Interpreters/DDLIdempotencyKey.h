@@ -59,6 +59,9 @@ std::optional<DDLIdempotencyKeyNode> tryReadDDLIdempotencyKeyNode(
 
 bool isDDLIdempotencyKeyNodeExpired(Int64 mtime_ms, UInt64 ttl_sec);
 
+/// Engines whose `ALTER` changes nothing but the table's metadata, which the commit of the log entry publishes.
+bool isDDLIdempotencyKeyAlterEngineSupported(const String & engine_name);
+
 /// Throws IDEMPOTENCY_KEY_MISMATCH if the node was created by another statement or user.
 void checkDDLIdempotencyKeyDigest(const DDLIdempotencyKey & key, const DDLIdempotencyKeyNode & node);
 

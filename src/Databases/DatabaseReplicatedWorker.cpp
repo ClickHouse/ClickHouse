@@ -570,7 +570,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
         }
 
         /// Earlier entries may have replaced the table since `tryEnqueueReplicatedDDL` checked it.
-        database->checkNoHiddenTablesForDDLIdempotencyKey(task->query, query_context);
+        database->checkTablesForDDLIdempotencyKey(task->query, query_context);
 
         DDLIdempotencyKeyNode key_node{
             .entry = entry_name,

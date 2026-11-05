@@ -237,9 +237,13 @@ refused "INSERT INTO $R1.t (x) VALUES (1)" --async_insert 1
 $CLICKHOUSE_CLIENT -q "CREATE DATABASE $ATOMIC ENGINE = Atomic"
 refused "CREATE TABLE $ATOMIC.r (x UInt8) ENGINE = Memory"
 refused "ALTER TABLE $R1.km ADD COLUMN x UInt8"
+plain "CREATE TABLE $ATOMIC.at (x UInt8) ENGINE = MergeTree ORDER BY x" > /dev/null
+plain "CREATE TABLE $R1.al ENGINE = Alias('$ATOMIC', 'at')" > /dev/null
+refused "ALTER TABLE $R1.al ADD COLUMN y UInt8"
 keyed k20 "SELECT 1"
 tables_named "$R1" r
 tables_named "$R1" a
+has_column "$ATOMIC" at y
 
 echo "-- a key in the settings of a statement nested in another query is refused"
 $CLICKHOUSE_CLIENT -q "GRANT CREATE TABLE ON $R1.ea TO $OTHER_USER"

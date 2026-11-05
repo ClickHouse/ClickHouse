@@ -108,9 +108,11 @@ refused
 refused
 refused
 refused
+refused
 OK
 0
 1
+0
 -- a key in the settings of a statement nested in another query is refused
 NOT_IMPLEMENTED
 NOT_IMPLEMENTED

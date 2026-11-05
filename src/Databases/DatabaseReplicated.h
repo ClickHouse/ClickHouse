@@ -280,7 +280,7 @@ private:
     /// The replicas of our replica group, without those created after the entry `created_before_entry` if it is set.
     Strings getHostsToWait(const ZooKeeperPtr & zookeeper, std::optional<UInt32> created_before_entry = {}) const;
     String getDDLIdempotencyKeyPath(const String & key) const;
-    void checkNoHiddenTablesForDDLIdempotencyKey(const ASTPtr & query, ContextPtr query_context) const;
+    void checkTablesForDDLIdempotencyKey(const ASTPtr & query, ContextPtr query_context) const;
 
     const String zookeeper_name;
     const String zookeeper_path;

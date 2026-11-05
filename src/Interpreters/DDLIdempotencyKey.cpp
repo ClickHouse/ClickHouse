@@ -370,6 +370,13 @@ BlockIO answerFromKey(
 
 }
 
+bool isDDLIdempotencyKeyAlterEngineSupported(const String & engine_name)
+{
+    /// `ReplicatedMergeTree` adds its own Keeper requests to that commit.
+    return isEngineSupported(engine_name) || (engine_name.starts_with("Replicated") && engine_name.ends_with("MergeTree"))
+        || engine_name == "Buffer" || engine_name == "View" || engine_name == "MaterializedView";
+}
+
 BlockIO executeWithDDLIdempotencyKey(IInterpreter & interpreter, const ASTPtr & ast, const ContextMutablePtr & context, bool nested)
 {
     switch (ast->getQueryKind())

@@ -1569,7 +1569,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     {
         if (idempotency_key->state != DDLIdempotencyKey::State::Pending)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "A query with idempotency_key makes more than one log entry");
-        checkNoHiddenTablesForDDLIdempotencyKey(query, query_context);
+        checkTablesForDDLIdempotencyKey(query, query_context);
         idempotency_key->state = DDLIdempotencyKey::State::Enqueued;
         getZooKeeper()->createIfNotExists(fs::path(zookeeper_path) / "idempotency", "");
     }
@@ -1676,7 +1676,7 @@ BlockIO DatabaseReplicated::getDDLIdempotencyKeyAnswer(const String & entry_name
         /* entry_may_be_removed */ true);
 }
 
-void DatabaseReplicated::checkNoHiddenTablesForDDLIdempotencyKey(const ASTPtr & query, ContextPtr query_context) const
+void DatabaseReplicated::checkTablesForDDLIdempotencyKey(const ASTPtr & query, ContextPtr query_context) const
 {
     Strings table_names;
     if (const auto * rename = query->as<ASTRenameQuery>())
@@ -1705,6 +1705,15 @@ void DatabaseReplicated::checkNoHiddenTablesForDDLIdempotencyKey(const ASTPtr & 
                 ErrorCodes::NOT_IMPLEMENTED,
                 "idempotency_key is not supported for tables that own hidden tables, like {}",
                 backQuoteIfNeed(table_name));
+
+        if (query->as<ASTAlterQuery>())
+        {
+            /// For example, `Alias` applies it to a table of another database.
+            String engine_name = unwrapStorageProxy(table)->getName();
+            if (!isDDLIdempotencyKeyAlterEngineSupported(engine_name))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED, "idempotency_key is not supported for ALTER of a table with engine {}", engine_name);
+        }
     }
 }
 
