@@ -4717,15 +4717,21 @@ const NameSet & ReadFromMergeTree::getColumnsUnsafeForSubcolumnReads() const
             return;
         }
 
+        const auto & serialization_infos = part.getSerializationInfos();
         for (const auto & column_name : read_storage_columns)
         {
-            auto part_column = part.getColumnsDescription().tryGetPhysical(column_name);
-            if (!part_column)
-                continue;
-
             auto metadata_column = metadata_columns.tryGetPhysical(column_name);
-            if (!metadata_column || !metadata_column->type->equals(*part_column->type))
+            if (auto part_column = part.getColumnsDescription().tryGetPhysical(column_name))
+            {
+                if (!metadata_column || !metadata_column->type->equals(*part_column->type))
+                    unsafe.insert(column_name);
+            }
+            /// An omitted column is read as the default of the type it had when the part was written.
+            else if (const auto * missing = serialization_infos.getMissingColumnInfo(column_name);
+                     missing && !missing->type_name.empty() && (!metadata_column || metadata_column->type->getName() != missing->type_name))
+            {
                 unsafe.insert(column_name);
+            }
         }
     };
 

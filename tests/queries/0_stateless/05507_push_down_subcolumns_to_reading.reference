@@ -249,6 +249,10 @@ N11 JSON part written before a lazy type hint
 data
 [(0),(1),(2),(3),(4),(5),(6),(7)]
 [(0),(1),(2),(3),(4),(5),(6),(7)]
+N11b JSON column omitted from a part before a lazy type hint
+data
+[(1),(1)]
+[(1),(1)]
 N12 pending mutation of the column
 tup
 [(0),(10),(20),(30)]

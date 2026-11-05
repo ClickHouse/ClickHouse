@@ -25,6 +25,7 @@ DROP VIEW IF EXISTS v;
 DROP ROW POLICY IF EXISTS rp_05507 ON trp;
 DROP TABLE IF EXISTS trp;
 DROP TABLE IF EXISTS tjh;
+DROP TABLE IF EXISTS tjo;
 DROP TABLE IF EXISTS tmu;
 DROP TABLE IF EXISTS tmu2;
 DROP TABLE IF EXISTS tmat;
@@ -111,6 +112,12 @@ SYSTEM STOP MERGES tjh;
 INSERT INTO tjh SELECT number, toJSONString(map('a', number)) FROM numbers(4);
 ALTER TABLE tjh MODIFY COLUMN data JSON(a UInt32) SETTINGS enable_json_lazy_type_hints = 1;
 INSERT INTO tjh SELECT number + 4, toJSONString(map('a', number + 4)) FROM numbers(4);
+
+CREATE TABLE tjo (id UInt64, data JSON(a UInt32)) ENGINE = MergeTree ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 0, skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns';
+SYSTEM STOP MERGES tjo;
+INSERT INTO tjo VALUES (1, '{}'), (2, '{}');
+ALTER TABLE tjo MODIFY COLUMN data JSON(a String) SETTINGS enable_json_lazy_type_hints = 1;
 
 CREATE TABLE tmu (k UInt64, id UInt64, tup Tuple(a UInt64, b String)) ENGINE = MergeTree ORDER BY k SETTINGS min_bytes_for_wide_part = 0;
 SYSTEM STOP MERGES tmu;
@@ -536,6 +543,11 @@ SELECT arrayStringConcat(arraySort(arrayFilter(x -> x != '', groupArray(arrayStr
 SELECT groupArray(r) FROM (SELECT data.a FROM (SELECT * FROM tjh) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r;
 SELECT groupArray(r) FROM (SELECT data.a FROM (SELECT * FROM tjh) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r SETTINGS query_plan_push_down_volume_reducing_functions = 0;
 
+SELECT 'N11b JSON column omitted from a part before a lazy type hint';
+SELECT arrayStringConcat(arraySort(arrayFilter(x -> x != '', groupArray(arrayStringConcat(arraySort(arrayFilter(x -> x != 'id', splitByString(', ', replaceRegexpOne(explain, '^.*Output: ', '')))), ', ')))), ' | ') FROM (EXPLAIN SELECT length(data.a) FROM (SELECT * FROM tjo)) WHERE explain LIKE '% Output:%';
+SELECT groupArray(r) FROM (SELECT length(data.a) FROM (SELECT * FROM tjo) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r;
+SELECT groupArray(r) FROM (SELECT length(data.a) FROM (SELECT * FROM tjo) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r SETTINGS query_plan_push_down_volume_reducing_functions = 0;
+
 SELECT 'N12 pending mutation of the column';
 SELECT arrayStringConcat(arraySort(arrayFilter(x -> x != '', groupArray(arrayStringConcat(arraySort(arrayFilter(x -> x != 'id', splitByString(', ', replaceRegexpOne(explain, '^.*Output: ', '')))), ', ')))), ' | ') FROM (EXPLAIN SELECT tup.a FROM (SELECT * FROM tmu) SETTINGS apply_mutations_on_fly = 1) WHERE explain LIKE '% Output:%';
 SELECT groupArray(r) FROM (SELECT tup.a FROM (SELECT * FROM tmu) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r SETTINGS apply_mutations_on_fly = 1;
@@ -801,6 +813,7 @@ DROP VIEW vtab;
 DROP VIEW vtpk;
 DROP TABLE trp;
 DROP TABLE tjh;
+DROP TABLE tjo;
 DROP TABLE tmu;
 DROP TABLE tmu2;
 DROP TABLE tmat;
