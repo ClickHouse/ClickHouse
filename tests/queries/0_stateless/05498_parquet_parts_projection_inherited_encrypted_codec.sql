@@ -4,6 +4,8 @@
 -- A projection part inherits the codec of its parent part, which may be an encryption codec from the settings
 -- the parent part was written with, even if the current settings of the table don't have it.
 -- Such a projection part is not written in `Parquet` format.
+-- The columns `_block_number` and `_block_offset` are disabled: with them `MATERIALIZE PROJECTION` rewrites
+-- the parent part with the current codec, so the projection part does not inherit the encryption codec.
 
 SET allow_experimental_parquet_parts = 1;
 
@@ -11,7 +13,8 @@ DROP TABLE IF EXISTS t_parquet_projection_inherited_codec;
 
 CREATE TABLE t_parquet_projection_inherited_codec (k UInt64, s String)
 ENGINE = MergeTree ORDER BY k
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, default_compression_codec = 'AES_128_GCM_SIV';
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, default_compression_codec = 'AES_128_GCM_SIV',
+    enable_block_number_column = 0, enable_block_offset_column = 0, min_bytes_for_full_part_storage = 0;
 
 INSERT INTO t_parquet_projection_inherited_codec VALUES (1, 'a');
 
