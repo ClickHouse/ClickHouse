@@ -15,38 +15,43 @@ SET enable_parallel_replicas = 1, parallel_replicas_for_non_replicated_merge_tre
     use_statistics_for_part_pruning = 0,
     -- parallel_replicas_plan_based = 0 - the plan-based path doubles the same analysis on its own (#118275).
     parallel_replicas_plan_based = 0,
-    -- Prewhere is pinned on so the arms below are deterministic; the third one turns it off on purpose.
+    -- Prewhere is pinned on so the arms below are deterministic; one arm turns it off on purpose.
     optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 
 -- One index analysis per MergeTree read: the outer read and the IN subquery's read.
 SELECT sum(key) FROM t_pr_in_set WHERE key IN (SELECT key FROM t_pr_in_set WHERE key > 50000)
-SETTINGS parallel_replicas_min_number_of_rows_per_replica = 1,
-         log_comment = 'pr_local_plan_adopts_in_subquery_set_estimate';
+SETTINGS parallel_replicas_min_number_of_rows_per_replica = 1, max_rows_to_read = 0,
+         log_comment = 'pr_in_subquery_read_analyzed_once_estimate';
 
--- Control: the same query with the row-count estimate off must give the same count.
+-- A read row limit makes the row estimate analyze apart from the read it plans.
 SELECT sum(key) FROM t_pr_in_set WHERE key IN (SELECT key FROM t_pr_in_set WHERE key > 50000)
-SETTINGS parallel_replicas_min_number_of_rows_per_replica = 0,
-         log_comment = 'pr_local_plan_adopts_in_subquery_set_no_estimate';
+SETTINGS parallel_replicas_min_number_of_rows_per_replica = 1, max_rows_to_read = 20000000,
+         log_comment = 'pr_in_subquery_read_analyzed_once_estimate_row_limit';
 
--- The same adoption path with prewhere off, a combination the runner draws on its own.
+-- The same with prewhere off, a combination the runner draws on its own.
 SELECT sum(key) FROM t_pr_in_set WHERE key IN (SELECT key FROM t_pr_in_set WHERE key > 50000)
 SETTINGS parallel_replicas_min_number_of_rows_per_replica = 1,
          optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0,
-         log_comment = 'pr_local_plan_adopts_in_subquery_set_estimate_no_prewhere';
+         log_comment = 'pr_in_subquery_read_analyzed_once_estimate_no_prewhere';
 
--- A GLOBAL IN still returns the right rows. Its subquery is materialized into a temporary table
--- before the local plan is built, so the re-planned set is keyed on that table and is never offered.
+-- A GLOBAL IN subquery is planned for the collected filters the same way.
 SELECT sum(key) FROM t_pr_in_set WHERE key GLOBAL IN (SELECT key FROM t_pr_in_set WHERE key > 50000)
-SETTINGS parallel_replicas_min_number_of_rows_per_replica = 1;
+SETTINGS parallel_replicas_min_number_of_rows_per_replica = 1, max_rows_to_read = 0,
+         log_comment = 'pr_in_subquery_read_analyzed_once_global_in';
+
+-- Control: the same query with the row estimate off.
+SELECT sum(key) FROM t_pr_in_set WHERE key IN (SELECT key FROM t_pr_in_set WHERE key > 50000)
+SETTINGS parallel_replicas_min_number_of_rows_per_replica = 0,
+         log_comment = 'pr_in_subquery_read_analyzed_once_no_estimate';
 
 SET enable_parallel_replicas = 0;
 SYSTEM FLUSH LOGS query_log;
 
-SELECT log_comment, ProfileEvents['IndexAnalysisRounds'], ProfileEvents['ParallelReplicasUsedCount'] > 0
+SELECT log_comment, ProfileEvents['IndexAnalysisRounds'], ProfileEvents['ParallelReplicasUsedCount'] > 0, ProfileEvents['ParallelReplicasQueryCount']
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - toIntervalMinute(15)
   AND current_database = currentDatabase() AND type = 'QueryFinish'
-  AND log_comment LIKE 'pr_local_plan_adopts_in_subquery_set_%'
+  AND log_comment LIKE 'pr_in_subquery_read_analyzed_once_%'
 ORDER BY log_comment;
 
 DROP TABLE t_pr_in_set;
