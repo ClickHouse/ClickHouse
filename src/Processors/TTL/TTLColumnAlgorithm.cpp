@@ -1,4 +1,5 @@
 #include <Processors/TTL/TTLColumnAlgorithm.h>
+#include <Columns/ColumnArray.h>
 
 namespace DB
 {
@@ -12,12 +13,14 @@ TTLColumnAlgorithm::TTLColumnAlgorithm(
     const String & column_name_,
     const ExpressionActionsPtr & default_expression_,
     const String & default_column_name_,
-    bool is_compact_part_)
+    bool is_compact_part_,
+    bool shares_nested_offsets_)
     : ITTLAlgorithm(ttl_expressions_, description_, old_ttl_info_, current_time_, force_)
     , column_name(column_name_)
     , default_expression(default_expression_)
     , default_column_name(default_column_name_)
     , is_compact_part(is_compact_part_)
+    , shares_nested_offsets(shares_nested_offsets_)
 {
     if (!isMinTTLExpired())
     {
@@ -27,6 +30,15 @@ TTLColumnAlgorithm::TTLColumnAlgorithm(
 
     if (isMaxTTLExpired())
         new_ttl_info.ttl_finished = true;
+}
+
+/// The default of a Nested subcolumn keeps the array sizes, which it shares with the other subcolumns.
+static ColumnPtr createArraysOfDefaults(const IColumn & column)
+{
+    const auto & column_array = assert_cast<const ColumnArray &>(column);
+    auto data = column_array.getData().cloneEmpty();
+    data->insertManyDefaults(column_array.getData().size());
+    return ColumnArray::create(std::move(data), column_array.getOffsetsPtr());
 }
 
 void TTLColumnAlgorithm::execute(Block & block)
@@ -56,6 +68,9 @@ void TTLColumnAlgorithm::execute(Block & block)
         result_column->reserve(block.rows());
 
         auto default_column = executeExpressionAndGetColumn(default_expression, block, default_column_name);
+        if (!default_column && shares_nested_offsets)
+            default_column = createArraysOfDefaults(*column_with_type.column);
+
         if (default_column)
         {
             default_column = default_column->convertToFullColumnIfConst();
@@ -89,6 +104,8 @@ void TTLColumnAlgorithm::execute(Block & block)
             if (!default_column_initialized)
             {
                 default_column = executeExpressionAndGetColumn(default_expression, block, default_column_name);
+                if (!default_column && shares_nested_offsets)
+                    default_column = createArraysOfDefaults(*values_column);
                 if (default_column)
                     default_column = default_column->convertToFullColumnIfConst();
                 default_column_initialized = true;

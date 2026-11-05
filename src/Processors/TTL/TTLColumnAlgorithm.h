@@ -19,7 +19,8 @@ public:
         const String & column_name_,
         const ExpressionActionsPtr & default_expression_,
         const String & default_column_name_,
-        bool is_compact_part_
+        bool is_compact_part_,
+        bool shares_nested_offsets_
     );
 
     void execute(Block & block) override;
@@ -32,6 +33,7 @@ private:
 
     bool is_fully_empty = true;
     bool is_compact_part;
+    bool shares_nested_offsets;
 };
 
 }

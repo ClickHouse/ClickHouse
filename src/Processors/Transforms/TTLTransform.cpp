@@ -7,6 +7,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Columns/ColumnConst.h>
 #include <Common/quoteString.h>
+#include <DataTypes/NestedUtils.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/Context.h>
@@ -16,6 +17,7 @@
 #include <Processors/TTL/TTLColumnAlgorithm.h>
 #include <Processors/TTL/TTLDeleteAlgorithm.h>
 #include <Processors/TTL/TTLUpdateInfoAlgorithm.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 namespace DB
 {
@@ -23,6 +25,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool share_nested_offsets;
 }
 
 static TTLExpressions getExpressions(const TTLDescription & ttl_descr, PreparedSets::Subqueries & subqueries_for_sets, const ContextPtr & context)
@@ -248,6 +255,9 @@ TTLTransform::TTLTransform(
             return;
 
         auto [default_expression, default_column_name] = build_default_expr(name);
+        bool shares_nested_offsets = (*storage_.getSettings())[MergeTreeSetting::share_nested_offsets]
+            && isArray(storage_columns.getPhysical(name).type) && Nested::extractTableName(name) != name;
+
         algorithms.emplace_back(std::make_unique<TTLColumnAlgorithm>(
             getExpressions(description, subqueries_for_sets, context),
             description,
@@ -257,7 +267,8 @@ TTLTransform::TTLTransform(
             name,
             default_expression,
             default_column_name,
-            isCompactPart(data_part)));
+            isCompactPart(data_part),
+            shares_nested_offsets));
     };
 
     /// The TTL of a column that nothing recomputes goes first: a dependent has to read the value that
