@@ -1177,7 +1177,7 @@ SkipIndexOrder MergeTreeDataSelectExecutor::computeSkipIndexOrder(
         for (const auto & substream : format.substreams)
         {
             String stream_name = idx.index->getFileName() + substream.suffix;
-            /// getFileSizeOrZeroResolved resolves the on-disk name and also sizes substreams
+            /// `getIndexStreamFileSize` resolves the on-disk name and also sizes substreams
             /// with no checksums entry (bundled in skp_idx.packed), so the cost-based
             /// reordering accounts for them instead of treating them as free.
             auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::getFileSizeOrZeroResolved");

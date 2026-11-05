@@ -3274,7 +3274,6 @@ ConditionTemplate<KeyCondition>::Ptr ReadFromMergeTree::buildPrimaryKeyCondition
         std::move(filter_dag), std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
 }
 
-/// Builds the primary-key condition and the RPN template of a filter into `indexes`.
 void ReadFromMergeTree::buildKeyConditions(
     std::optional<ReadFromMergeTree::Indexes> & indexes,
     const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag_ptr,
@@ -3294,7 +3293,6 @@ void ReadFromMergeTree::buildKeyConditions(
     }
 }
 
-/// Builds the offset conditions, the skip-index conditions and the flags derived from them into `indexes`.
 void ReadFromMergeTree::buildOffsetAndSkipIndexConditions(
     ReadFromMergeTree::Indexes & indexes,
     const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag_ptr,
