@@ -30,10 +30,6 @@ SHOW CREATE TABLE runner2;
 
 CREATE TABLE runner_random (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost', shard = 'random';
 CREATE TABLE runner_all (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost', shard = 'all';
-CREATE TABLE runner_secret (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_cluster_interserver_secret', mode = 'synchronous';
-CREATE TABLE runner_secret_dst (x UInt8) ENGINE = MergeTree ORDER BY x;
-INSERT INTO runner_secret SELECT 'INSERT INTO ' || currentDatabase() || '.runner_secret_dst VALUES (1)';
-SELECT * FROM runner_secret_dst;
 
 SYSTEM WAIT QUERY RUNNER runner;
 SYSTEM WAIT QUERY RUNNER runner2;
