@@ -18,6 +18,7 @@ from pyiceberg.transforms import DayTransform, IdentityTransform
 from helpers.config_cluster import minio_access_key, minio_secret_key
 import decimal
 from pyiceberg.types import (
+    BinaryType,
     DoubleType,
     NestedField,
     StringType,
@@ -2379,3 +2380,40 @@ def test_catalog_schema_with_empty_column_name_is_rejected(started_cluster):
     assert node.query("SELECT 1") == "1\n"
 
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_geo_types_opt_in_per_query(started_cluster):
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_glue_geo_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="geom", field_type=BinaryType(), required=False),
+    )
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER, dir=table_name)
+
+    # pyiceberg cannot create `geometry` columns, so patch the type in the current metadata file.
+    s3_client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=minio_access_key,
+        aws_secret_access_key=minio_secret_key,
+        region_name="us-east-1",
+    )
+    bucket, key = table.metadata_location.removeprefix("s3://").split("/", 1)
+    metadata = json.loads(s3_client.get_object(Bucket=bucket, Key=key)["Body"].read())
+    for table_schema in metadata["schemas"]:
+        for field in table_schema["fields"]:
+            if field["name"] == "geom":
+                field["type"] = "geometry"
+    s3_client.put_object(Bucket=bucket, Key=key, Body=json.dumps(metadata).encode())
+
+    # `allow_geo_types_in_iceberg` is disabled by default and enabled only for the query.
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    result = node.query(f"SHOW CREATE TABLE {table_ref}", settings={"allow_geo_types_in_iceberg": 1})
+    assert "`geom` Geometry" in result, result
