@@ -602,9 +602,13 @@ void registerAggregateFunctionEstimateCompressionRatio(AggregateFunctionFactory 
     FunctionDocumentation::Description description = R"(
 Estimates the compression ratio of a given column without compressing it.
 
-The estimate follows the layout of a MergeTree wide part: every substream of the column (the dictionary and the indexes of a `LowCardinality` column, the null map of a `Nullable` column, the sizes of an `Array` column, ...) is compressed on its own, the codec applies to the data substreams while the structural substreams keep only its generic codecs, as `CODEC(...)` on a table column does, and the rows are serialized one granule at a time, whatever the size of the blocks the query reads. A `LowCardinality` column is estimated with its dictionary encoding. The rows of each `GROUP BY` group and of each window frame are serialized as if they were a part of their own, so the result also depends on how the rows are split between groups, threads and frames.
+The estimate follows the layout of a MergeTree wide part. Every substream of the column (the dictionary and the indexes of a `LowCardinality` column, the null map of a `Nullable` column, the sizes of an `Array` column, the lengths of a `String` column) is compressed on its own; the codec applies to the data substreams, while the structural substreams keep only its generic codecs, as `CODEC(...)` on a table column does. The rows are serialized one granule at a time, whatever the size of the blocks the query reads, and a compressed block ends at a granule boundary once it holds `min_compress_block_size` bytes, as in a part. A `LowCardinality` column is estimated with its dictionary encoding.
 
-To estimate another representation of the data, either convert the argument, for example `toLowCardinality(s)` or `CAST(ip AS IPv6)`, which gives the ratio of that representation, or pass the type as the `target_type` parameter, which keeps the serialized size of the column as it is as the baseline, so that the ratios for different target types are directly comparable. The on-disk size of a representation is its serialized size divided by its ratio (for an existing column, `column_data_uncompressed_bytes` in `system.parts_columns`).
+The function has no table, so what the writer takes from a table it takes from the server's MergeTree settings (the `merge_tree` section of the configuration): the serialization versions of `String`, `Nullable` and `Map`, the layouts of `Dynamic`, `JSON` and `Variant` as a merged part stores them, the map buckets, `index_granularity`, `index_granularity_bytes`, `min_compress_block_size`, `max_compress_block_size`, and the adaptive buffers of the substreams of `Dynamic` and `JSON`. The codec of a column declared without `CODEC` is the one the server gives a new part (`LZ4` unless configured). From the query it takes `low_cardinality_max_dictionary_size`, `low_cardinality_use_single_dictionary_for_part`, and the compressed block sizes when the MergeTree settings leave them unset. The settings of a particular table are not known to the function, and the granule size is estimated from this column alone, while a table sizes its granules by all its columns.
+
+The rows of each `GROUP BY` group and of each window frame are serialized as if they were a part of their own, so the result also depends on how the rows are split between groups, threads and frames. Each state holds the rows of an incomplete granule and one compression buffer per substream, so a `GROUP BY` with many groups needs more memory than with most aggregate functions.
+
+To estimate another representation of the data, either convert the argument, for example `toLowCardinality(s)` or `CAST(ip AS IPv6)`, which gives the ratio of that representation, or pass the type as the `target_type` parameter, which keeps the serialized size of the column as it is as the baseline, so that the ratios for different target types are directly comparable. The rows are converted as `accurateCast` does: a value that does not fit the target type is an error, also when the target type is `Nullable`. The on-disk size of a representation is its serialized size divided by its ratio (for an existing column, `column_data_uncompressed_bytes` in `system.parts_columns`).
 
 The intermediate state records only sizes, not the type they were measured from: merging states computed from columns of different types, such as `LowCardinality(String)` and `String`, gives the ratio of both columns together.
 
@@ -619,7 +623,7 @@ See [Column Compression Codecs](/reference/statements/create/table#column_compre
     };
     FunctionDocumentation::Parameters parameters = {
         {"codec", "String containing a compression codec or multiple comma-separated codecs in a single string.", {"String"}},
-        {"block_size_bytes", "Block size of compressed data. This is similar to setting both [`max_compress_block_size`](/reference/settings/merge-tree-settings/max#max_compress_block_size) and [`min_compress_block_size`](/reference/settings/merge-tree-settings/min#min_compress_block_size). The default value is 1 MiB (1048576 bytes). Maximum allowed value is 256 MiB (268435456 bytes).", {"UInt64"}},
+        {"block_size_bytes", "Size of a compressed block in bytes. When given, a block ends when it reaches this size, as if both [`max_compress_block_size`](/reference/settings/merge-tree-settings/max#max_compress_block_size) and [`min_compress_block_size`](/reference/settings/merge-tree-settings/min#min_compress_block_size) were set to it. When omitted, the server's settings apply (1048576 and 65536 bytes by default): a block ends at a granule boundary once it holds `min_compress_block_size` bytes, and when it reaches `max_compress_block_size`. Maximum allowed value is 256 MiB (268435456 bytes).", {"UInt64"}},
         {"target_type", "Name of a data type. The column is estimated as if it were stored as this type: its rows are converted to it, as `accurateCast` does, and compressed with the codec, while the ratio keeps the serialized size of the column in its own type as the baseline. The ratios of one column for different target types are therefore directly comparable: the higher the ratio, the smaller the column would be on disk. The parameters can be given in any order: a string that names a data type is the target type, any other string is the codec.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an estimate compression ratio for the given column.", {"Float64"}};
@@ -641,9 +645,9 @@ SELECT number FROM system.numbers LIMIT 100_000;
 SELECT estimateCompressionRatio(number) AS estimate FROM compression_estimate_example
         )",
         R"(
-┌──────────estimate─┐
-│ 5.758875867430677 │
-└───────────────────┘
+┌───────────estimate─┐
+│ 1.9974133497121227 │
+└────────────────────┘
         )"
     },
     {
@@ -652,9 +656,9 @@ SELECT estimateCompressionRatio(number) AS estimate FROM compression_estimate_ex
 SELECT estimateCompressionRatio('T64')(number) AS estimate FROM compression_estimate_example
         )",
         R"(
-┌──────────estimate─┐
-│ 3.762758101688538 │
-└───────────────────┘
+┌─────────estimate─┐
+│ 4.91805294283993 │
+└──────────────────┘
         )"
     },
     {
@@ -663,9 +667,9 @@ SELECT estimateCompressionRatio('T64')(number) AS estimate FROM compression_esti
 SELECT estimateCompressionRatio('T64, ZSTD')(number) AS estimate FROM compression_estimate_example
         )",
         R"(
-┌───────────estimate─┐
-│ 143.60078980434392 │
-└────────────────────┘
+┌──────────estimate─┐
+│ 75.87253414264036 │
+└───────────────────┘
         )"
     },
     {
@@ -682,10 +686,9 @@ SETTINGS min_bytes_for_wide_part = 0;
 INSERT INTO compression_estimate_strings
 SELECT concat('category_', toString(number % 50)) FROM system.numbers LIMIT 100_000;
 
--- `as_low_cardinality` is the ratio of the `LowCardinality(String)` representation, whose serialized size is already
--- small, so it is lower than `as_string` although the column takes fewer bytes on disk. `as_low_cardinality_vs_string`
--- keeps the size of the `String` column as the baseline: `LowCardinality(String)` stores it in 1361 / 231 ≈ 6 times
--- fewer bytes than `String`.
+-- `as_low_cardinality` is the ratio of the `LowCardinality(String)` representation over its own, already small, serialized
+-- size, so it does not tell how much smaller the column would be. `as_low_cardinality_vs_string` keeps the size of the
+-- `String` column as the baseline: `LowCardinality(String)` stores it in 1985 / 49 ≈ 40 times fewer bytes than `String`.
 SELECT
     estimateCompressionRatio('LZ4')(s) AS as_string,
     estimateCompressionRatio('LZ4')(toLowCardinality(s)) AS as_low_cardinality,
@@ -693,9 +696,9 @@ SELECT
 FROM compression_estimate_strings
         )",
         R"(
-┌──────────as_string─┬─as_low_cardinality─┬─as_low_cardinality_vs_string─┐
-│ 230.69403714565004 │   116.280276816609 │           1361.0149942329874 │
-└────────────────────┴────────────────────┴──────────────────────────────┘
+┌────────as_string─┬─as_low_cardinality─┬─as_low_cardinality_vs_string─┐
+│ 49.0259994262915 │  106.4572333685322 │           1985.2164730728616 │
+└──────────────────┴────────────────────┴──────────────────────────────┘
         )"
     },
     {
@@ -703,7 +706,7 @@ FROM compression_estimate_strings
         R"(
 -- `IPv6` stores the same addresses in 16 bytes instead of 4. The `IPv6` ratios keep the size of the `IPv4` column as the
 -- baseline, so each pair compares the on-disk sizes of the two representations: with `LZ4` the 12 constant bytes of every
--- address cost space, with `ZSTD` they compress away.
+-- address cost space, with `ZSTD` they almost compress away.
 SELECT
     estimateCompressionRatio('LZ4')(ip) AS lz4_as_ipv4,
     estimateCompressionRatio('LZ4', 'IPv6')(ip) AS lz4_as_ipv6,
@@ -712,9 +715,9 @@ SELECT
 FROM (SELECT toIPv4(number * 7919) AS ip FROM numbers(100000))
         )",
         R"(
-┌────────lz4_as_ipv4─┬───────lz4_as_ipv6─┬───────zstd_as_ipv4─┬───────zstd_as_ipv6─┐
-│ 0.9960283370061879 │ 0.753694516307123 │ 1.0557822554676324 │ 1.2303679415329154 │
-└────────────────────┴───────────────────┴────────────────────┴────────────────────┘
+┌────────lz4_as_ipv4─┬────────lz4_as_ipv6─┬───────zstd_as_ipv4─┬──────zstd_as_ipv6─┐
+│ 0.9956490138096519 │ 0.7522275337844191 │ 1.0646084237141527 │ 1.053208071786662 │
+└────────────────────┴────────────────────┴────────────────────┴───────────────────┘
         )"
     },
     {
@@ -725,9 +728,9 @@ SELECT estimateCompressionRatio('T64')(n) AS estimate
 FROM (SELECT if(number % 10 = 0, NULL, toUInt32(number)) AS n FROM numbers(100000))
         )",
         R"(
-┌───────────estimate─┐
-│ 1.5993090984694611 │
-└────────────────────┘
+┌──────────estimate─┐
+│ 1.674615508279299 │
+└───────────────────┘
         )"
     }
     };
