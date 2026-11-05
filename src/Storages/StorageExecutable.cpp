@@ -202,7 +202,11 @@ void StorageExecutable::readImpl(
     {
         QueryPipelineBuilder builder;
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-            builder = InterpreterSelectQueryAnalyzer(input_query, context, {}).buildQueryPipeline();
+        {
+            /// The analyzer substitutes the inserted block of a materialized view for its source table only when given it.
+            builder = InterpreterSelectQueryAnalyzer(
+                input_query, context, {}, context->isViewInnerQuery() ? nullptr : context->getViewSource()).buildQueryPipeline();
+        }
         else
             builder = InterpreterSelectWithUnionQuery(input_query, context, {}).buildQueryPipeline();
         inputs.emplace_back(QueryPipelineBuilder::getPipe(std::move(builder), resources));
