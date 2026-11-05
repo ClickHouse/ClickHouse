@@ -6,8 +6,6 @@ title: 'User Defined Functions (UDFs)'
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
@@ -19,8 +17,6 @@ ClickHouse supports several types of user defined functions (UDFs):
 - [Experimental driver-based executable UDFs](#driver-based-executable-user-defined-functions) let an operator-supplied "driver" turn a code snippet supplied in `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` into an executable UDF at function-creation time (for example, by compiling it). They build on executable UDFs and require server-side driver configuration.
 
 ## Executable User Defined Functions {#executable-user-defined-functions}
-
-<BetaBadge/>
 
 <Note>
 In ClickHouse Cloud, executable UDFs are generally available and are created through the Cloud console, the Cloud API, or Terraform. See [User-defined functions in Cloud](/products/cloud/features/sql-console-features/user-defined-functions) for the Cloud-specific workflow, including the Native runtime for compiled binaries.
