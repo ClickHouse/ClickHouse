@@ -41,6 +41,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Functions/IFunction.h>
+#include <IO/WriteBufferFromVector.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/TargetSpecific.h>
 #include <base/IPv4andIPv6.h>
@@ -201,6 +202,16 @@ struct SipHash64Impl
 
     static UInt64 apply(const char * begin, size_t size) { return sipHash64(begin, size); }
     static UInt64 combineHashes(UInt64 h1, UInt64 h2) { return combineHashesFunc<UInt64, SipHash64Impl>(h1, h2); }
+    static void applyPaddedStrings(const char * chars, const UInt64 * offsets, size_t num_rows, UInt64 * hashes)
+    {
+        sipHash64PaddedStrings(chars, offsets, num_rows, hashes);
+    }
+    static void applyPaddedFixedStrings(const char * chars, size_t n, size_t num_rows, UInt64 * hashes)
+    {
+        sipHash64PaddedFixedStrings(chars, n, num_rows, hashes);
+    }
+    static void applyCombine(UInt64 * hashes, const UInt64 * rhs, size_t num_rows) { sipHash64Combine(hashes, rhs, num_rows); }
+    static void applyCombineWith(UInt64 * hashes, UInt64 rhs, size_t num_rows) { sipHash64CombineWith(hashes, rhs, num_rows); }
 
     static constexpr bool use_int_hash_for_pods = false;
     static constexpr bool return_bigint_instead_of_fixedstring = false;
@@ -319,6 +330,8 @@ struct SipHash128Impl
     {
         sipHash128PaddedFixedStrings(chars, n, num_rows, hashes);
     }
+    static void applyCombine(UInt128 * hashes, const UInt128 * rhs, size_t num_rows) { sipHash128Combine(hashes, rhs, num_rows); }
+    static void applyCombineWith(UInt128 * hashes, UInt128 rhs, size_t num_rows) { sipHash128CombineWith(hashes, rhs, num_rows); }
 
     static constexpr bool use_int_hash_for_pods = false;
     static constexpr bool return_bigint_instead_of_fixedstring = false;
@@ -996,6 +1009,8 @@ private:
         {
             const typename ColVecType::Container & vec_from = col_from->getData();
             const size_t size = vec_from.size();
+            if (hashManyValuesInPlace<first>(*col_from, vec_to))
+                return;
             for (size_t i = 0; i < size; ++i)
             {
                 ToType hash;
@@ -1064,7 +1079,7 @@ private:
             const size_t size = vec_to.size();
             if constexpr (first)
                 vec_to.assign(size, hash);
-            else
+            else if (!combineManyWith(vec_to, hash))
             {
                 for (size_t i = 0; i < size; ++i)
                 {
@@ -1102,6 +1117,8 @@ private:
         {
             const typename ColVecType::Container & vec_from = col_from->getData();
             size_t size = vec_from.size();
+            if (hashManyValuesInPlace<first>(*col_from, vec_to))
+                return;
             for (size_t i = 0; i < size; ++i)
             {
                 ToType hash;
@@ -1140,7 +1157,7 @@ private:
             const size_t size = vec_to.size();
             if constexpr (first)
                 vec_to.assign(size, hash);
-            else
+            else if (!combineManyWith(vec_to, hash))
             {
                 for (size_t i = 0; i < size; ++i)
                 {
@@ -1165,6 +1182,8 @@ private:
 
         SerializationPtr serialization;
         const bool contiguous = type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
+        if (hashManyGeneric<first>(*column, vec_to, *type, contiguous))
+            return;
         std::optional<WriteBufferFromOwnString> buf;
         if (!contiguous)
             buf.emplace();
@@ -1202,11 +1221,38 @@ private:
         }
     }
 
-    /// The unkeyed `sipHash128` hashes the strings of a `ColumnString` or a `ColumnFixedString` several at a time.
+    /// The unkeyed `sipHash64` and `sipHash128` hash the strings of a `ColumnString` or a `ColumnFixedString` several at a
+    /// time.
     static constexpr bool hashes_many_strings = !Keyed && requires(const char * chars, const UInt64 * offsets, size_t n, ToType * hashes) {
         Impl::applyPaddedStrings(chars, offsets, n, hashes);
         Impl::applyPaddedFixedStrings(chars, n, n, hashes);
     };
+
+    /// They also hash the values of the other types and combine hashes several rows at a time. On little-endian the bytes
+    /// they hash for a value of a number column are its bytes in the column.
+    static constexpr bool hashes_many_rows = hashes_many_strings && std::endian::native == std::endian::little
+        && requires(ToType * hashes, const ToType * rhs, size_t n) {
+               Impl::applyCombine(hashes, rhs, n);
+               Impl::applyCombineWith(hashes, ToType{}, n);
+           };
+
+    /// Where `SipHashStrings` hashes one row at a time, every row is hashed as without `hashes_many_rows`.
+    static bool hashManyRows()
+    {
+        if constexpr (hashes_many_rows)
+            return sipHashManyRowsIsVectorized();
+        else
+            return false;
+    }
+
+    /// `sipHash128` hashes many strings on every platform, `sipHash64` only where `hashManyRows`.
+    static bool hashManyStrings()
+    {
+        if constexpr (hashes_many_strings && std::is_same_v<ToType, UInt128>)
+            return true;
+        else
+            return hashManyRows();
+    }
 
     /// Calls `hash_rows` to compute one hash per row of `vec_to`. With `first` they are stored in `vec_to`, otherwise
     /// combined with the hashes already there.
@@ -1221,9 +1267,232 @@ private:
         {
             PaddedPODArray<ToType> hashes(vec_to.size());
             hash_rows(hashes.data());
+            if constexpr (hashes_many_rows)
+            {
+                if (hashManyRows())
+                {
+                    Impl::applyCombine(vec_to.data(), hashes.data(), vec_to.size());
+                    return;
+                }
+            }
             for (size_t i = 0; i < vec_to.size(); ++i)
                 vec_to[i] = combineHashes(key, vec_to[i], hashes[i]);
         }
+    }
+
+    /// `vec_to[i] = combineHashes(key, vec_to[i], hash)` for every row, many rows at a time. Returns whether it did that.
+    static bool combineManyWith(typename ColumnVector<ToType>::Container & vec_to, ToType hash)
+    {
+        if constexpr (hashes_many_rows)
+        {
+            if (hashManyRows())
+            {
+                Impl::applyCombineWith(vec_to.data(), hash, vec_to.size());
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// Hashes the values of a `ColumnVector`, a `ColumnDecimal` or a `ColumnFixedString` where they are, many at a time.
+    /// Returns whether it did that.
+    template <bool first>
+    static bool hashManyValuesInPlace(const IColumn & column, typename ColumnVector<ToType>::Container & vec_to)
+    {
+        if constexpr (hashes_many_rows)
+        {
+            if (hashManyRows() && dynamic_cast<const ColumnFixedSizeHelper *>(&column))
+            {
+                const char * data = column.getRawData().data();
+                const size_t value_size = column.sizeOfValueIfFixed();
+                setHashes<first>(KeyType{}, vec_to, [&](ToType * hashes) { Impl::applyPaddedFixedStrings(data, value_size, vec_to.size(), hashes); });
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// `executeGeneric` many rows at a time. Returns whether it did that.
+    template <bool first>
+    static bool hashManyGeneric(const IColumn & column, typename ColumnVector<ToType>::Container & vec_to, const IDataType & type, bool contiguous)
+    {
+        if constexpr (hashes_many_rows)
+        {
+            if (!hashManyRows())
+                return false;
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(&column))
+            {
+                ToType hash;
+                if (contiguous)
+                {
+                    const auto bytes = column.getDataAt(0);
+                    hash = Impl::apply(bytes.data(), bytes.size());
+                }
+                else
+                {
+                    WriteBufferFromOwnString buf;
+                    type.getDefaultSerialization()->serializeForHashCalculation(column_const->getDataColumn(), 0, buf);
+                    const auto & bytes = buf.str();
+                    hash = Impl::apply(bytes.data(), bytes.size());
+                }
+                if constexpr (first)
+                    vec_to.assign(vec_to.size(), hash);
+                else
+                    Impl::applyCombineWith(vec_to.data(), hash, vec_to.size());
+                return true;
+            }
+            if (contiguous)
+                return hashManyValuesInPlace<first>(column, vec_to);
+            hashManySerialized<first>(column, *type.getDefaultSerialization(), vec_to);
+            return true;
+        }
+        return false;
+    }
+
+    /// Serializes the rows as `executeGeneric` does, a chunk of rows into one buffer, and hashes the chunk at once.
+    template <bool first>
+    static void hashManySerialized(const IColumn & column, const ISerialization & serialization, typename ColumnVector<ToType>::Container & vec_to)
+    {
+        /// A chunk ends after `max_chunk_rows` rows, or after the row that takes it past `max_chunk_bytes`.
+        constexpr size_t max_chunk_rows = 256;
+        constexpr size_t max_chunk_bytes = 64 * 1024;
+        ColumnString::Chars chars;
+        PaddedPODArray<UInt64> offsets;
+        offsets.reserve(max_chunk_rows);
+        PaddedPODArray<ToType> hashes;
+        WriteBufferFromVector<ColumnString::Chars> out(chars);
+        for (size_t begin = 0, size = vec_to.size(); begin < size;)
+        {
+            offsets.clear();
+            /// Past the cap, the buffer of an outlier chunk is freed instead of being kept for the rest of the column.
+            out.restart(DBMS_DEFAULT_BUFFER_SIZE);
+            size_t end = begin;
+            for (; end < size && end - begin < max_chunk_rows && out.count() < max_chunk_bytes; ++end)
+            {
+                serialization.serializeForHashCalculation(column, end, out);
+                offsets.push_back(out.count());
+            }
+            out.finalize();
+            const char * data = reinterpret_cast<const char *>(chars.data());
+            if constexpr (first)
+            {
+                Impl::applyPaddedStrings(data, offsets.data(), end - begin, vec_to.data() + begin);
+            }
+            else
+            {
+                hashes.resize(end - begin);
+                Impl::applyPaddedStrings(data, offsets.data(), end - begin, hashes.data());
+                Impl::applyCombine(vec_to.data() + begin, hashes.data(), end - begin);
+            }
+            begin = end;
+        }
+    }
+
+    /// The loop of `executeArray` many rows at a time: per chunk, each element position is combined at once into the rows
+    /// that have an element there. Returns whether it did that.
+    template <bool first>
+    static bool combineManyArrays(
+        const ColumnArray::Offsets & offsets,
+        const typename ColumnVector<ToType>::Container & element_hashes,
+        typename ColumnVector<ToType>::Container & vec_to)
+    {
+        if constexpr (hashes_many_rows)
+        {
+            if (!hashManyRows())
+                return false;
+            constexpr size_t max_chunk_rows = 256;
+            /// `applyCombine` hashes fewer rows than this one by one, so they are combined here one by one.
+            constexpr size_t min_rows = 8;
+            std::array<UInt64, max_chunk_rows> starts{};
+            std::array<UInt64, max_chunk_rows> sizes{};
+            std::array<UInt32, max_chunk_rows> rows{};
+            std::array<ToType, max_chunk_rows> chains{};
+            std::array<ToType, max_chunk_rows> elements{};
+            for (size_t begin = 0; begin < offsets.size(); begin += max_chunk_rows)
+            {
+                const size_t num_rows = std::min(offsets.size() - begin, max_chunk_rows);
+                ToType * hashes = vec_to.data() + begin;
+                for (size_t i = 0; i < num_rows; ++i)
+                {
+                    starts[i] = offsets[ssize_t(begin + i) - 1];
+                    sizes[i] = offsets[begin + i] - starts[i];
+                    /// The 32-bit hash of the size for `sipHash128` is kept for compatibility, see the loop of `executeArray`.
+                    if constexpr (std::is_same_v<ToType, UInt64>)
+                        elements[i] = IntHash64Impl::apply(sizes[i]);
+                    else
+                        elements[i] = IntHash32Impl::apply(sizes[i]);
+                }
+                if constexpr (first)
+                    std::copy_n(elements.data(), num_rows, hashes);
+                else
+                    Impl::applyCombine(hashes, elements.data(), num_rows);
+
+                /// `rows` holds the rows with an element at `position`, in order, and `chains` their hashes so far.
+                size_t num_active = 0;
+                for (size_t i = 0; i < num_rows; ++i)
+                {
+                    rows[num_active] = static_cast<UInt32>(i);
+                    chains[num_active] = hashes[i];
+                    num_active += sizes[i] != 0;
+                }
+                size_t position = 0;
+                for (; num_active >= min_rows; ++position)
+                {
+                    for (size_t j = 0; j < num_active; ++j)
+                        elements[j] = element_hashes[starts[rows[j]] + position];
+                    Impl::applyCombine(chains.data(), elements.data(), num_active);
+                    size_t num_left = 0;
+                    for (size_t j = 0; j < num_active; ++j)
+                    {
+                        const UInt32 row = rows[j];
+                        hashes[row] = chains[j];
+                        rows[num_left] = row;
+                        chains[num_left] = chains[j];
+                        num_left += sizes[row] > position + 1;
+                    }
+                    num_active = num_left;
+                }
+                for (size_t j = 0; j < num_active; ++j)
+                {
+                    const UInt32 row = rows[j];
+                    ToType hash = chains[j];
+                    for (size_t e = starts[row] + position; e < starts[row] + sizes[row]; ++e)
+                        hash = Impl::combineHashes(hash, element_hashes[e]);
+                    hashes[row] = hash;
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /// The NULL rows of `executeNullable` that are combined with the hash of the previous argument, many at a time. Returns
+    /// whether it did that.
+    template <bool first>
+    static bool combineManyNulls(
+        const NullMap & null_map,
+        const typename ColumnVector<ToType>::Container & original_vec_to,
+        ToType null_hash,
+        typename ColumnVector<ToType>::Container & vec_to)
+    {
+        if constexpr (hashes_many_rows && !first)
+        {
+            if (hashManyRows())
+            {
+                PaddedPODArray<UInt64> null_rows;
+                for (size_t i = 0; i < null_map.size(); ++i)
+                    if (null_map[i])
+                        null_rows.push_back(i);
+                PaddedPODArray<ToType> hashes(null_rows.size());
+                for (size_t j = 0; j < null_rows.size(); ++j)
+                    hashes[j] = original_vec_to[null_rows[j]];
+                Impl::applyCombineWith(hashes.data(), null_hash, hashes.size());
+                for (size_t j = 0; j < null_rows.size(); ++j)
+                    vec_to[null_rows[j]] = hashes[j];
+                return true;
+            }
+        }
+        return false;
     }
 
     template <bool first>
@@ -1240,27 +1509,28 @@ private:
 
             if constexpr (hashes_many_strings)
             {
-                const char * chars = reinterpret_cast<const char *>(data.data());
-                setHashes<first>(key, vec_to, [&](ToType * hashes) { Impl::applyPaddedStrings(chars, offsets.data(), size, hashes); });
-            }
-            else
-            {
-                ColumnString::Offset current_offset = 0;
-                for (size_t i = 0; i < size; ++i)
+                if (hashManyStrings())
                 {
-                    if constexpr (Keyed)
-                        if (!key_cols.is_const && i != 0)
-                            key = Impl::getKey(key_cols, i);
-                    const ToType hash
-                        = applyPadded(key, reinterpret_cast<const char *>(&data[current_offset]), offsets[i] - current_offset);
-
-                    if constexpr (first)
-                        vec_to[i] = hash;
-                    else
-                        vec_to[i] = combineHashes(key, vec_to[i], hash);
-
-                    current_offset = offsets[i];
+                    const char * chars = reinterpret_cast<const char *>(data.data());
+                    setHashes<first>(key, vec_to, [&](ToType * hashes) { Impl::applyPaddedStrings(chars, offsets.data(), size, hashes); });
+                    return;
                 }
+            }
+            ColumnString::Offset current_offset = 0;
+            for (size_t i = 0; i < size; ++i)
+            {
+                if constexpr (Keyed)
+                    if (!key_cols.is_const && i != 0)
+                        key = Impl::getKey(key_cols, i);
+                const ToType hash
+                    = applyPadded(key, reinterpret_cast<const char *>(&data[current_offset]), offsets[i] - current_offset);
+
+                if constexpr (first)
+                    vec_to[i] = hash;
+                else
+                    vec_to[i] = combineHashes(key, vec_to[i], hash);
+
+                current_offset = offsets[i];
             }
         }
         else if (const ColumnFixedString * col_from_fixed = checkAndGetColumn<ColumnFixedString>(column))
@@ -1271,22 +1541,23 @@ private:
 
             if constexpr (hashes_many_strings)
             {
-                const char * chars = reinterpret_cast<const char *>(data.data());
-                setHashes<first>(key, vec_to, [&](ToType * hashes) { Impl::applyPaddedFixedStrings(chars, n, size, hashes); });
-            }
-            else
-            {
-                for (size_t i = 0; i < size; ++i)
+                if (hashManyStrings())
                 {
-                    if constexpr (Keyed)
-                        if (!key_cols.is_const && i != 0)
-                            key = Impl::getKey(key_cols, i);
-                    const ToType hash = applyPadded(key, reinterpret_cast<const char *>(&data[i * n]), n);
-                    if constexpr (first)
-                        vec_to[i] = hash;
-                    else
-                        vec_to[i] = combineHashes(key, vec_to[i], hash);
+                    const char * chars = reinterpret_cast<const char *>(data.data());
+                    setHashes<first>(key, vec_to, [&](ToType * hashes) { Impl::applyPaddedFixedStrings(chars, n, size, hashes); });
+                    return;
                 }
+            }
+            for (size_t i = 0; i < size; ++i)
+            {
+                if constexpr (Keyed)
+                    if (!key_cols.is_const && i != 0)
+                        key = Impl::getKey(key_cols, i);
+                const ToType hash = applyPadded(key, reinterpret_cast<const char *>(&data[i * n]), n);
+                if constexpr (first)
+                    vec_to[i] = hash;
+                else
+                    vec_to[i] = combineHashes(key, vec_to[i], hash);
             }
         }
         else if (const ColumnConst * col_from_const = checkAndGetColumnConstStringOrFixedString(column))
@@ -1305,7 +1576,7 @@ private:
 
             if constexpr (first)
                 vec_to.assign(size, hash);
-            else
+            else if (!combineManyWith(vec_to, hash))
             {
                 for (size_t i = 0; i < size; ++i)
                 {
@@ -1350,6 +1621,8 @@ private:
                 executeForArgument(key_cols, nested_type, nested_column, vec_temp, nested_is_first);
 
             const size_t size = offsets.size();
+            if (combineManyArrays<first>(offsets, vec_temp, vec_to))
+                return;
 
             ColumnArray::Offset current_offset = 0;
             KeyType key{};
@@ -1443,6 +1716,8 @@ private:
             bool is_first = first;
             executeForArgument(key_cols, nested_type, &nested_col, vec_to, is_first);
 
+            if (combineManyNulls<first>(col_from->getNullMapData(), original_vec_to, null_hash, vec_to))
+                return;
             for (size_t i = 0; i < vec_to.size(); ++i)
             {
                 if (!col_from->isNullAt(i))
