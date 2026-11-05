@@ -15,7 +15,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -52,8 +51,9 @@ namespace
 {
 
 /// Whether the bytes of a column of `type` do not depend on how its rows are split into writes, because every stream holds one
-/// value after another. Others write something with every write or every granule: `LowCardinality` a header, the shared data of
-/// `JSON` its paths, and `Dynamic` and `JSON` hold any type.
+/// value after another. Others write something with every write: `LowCardinality` a header, `Dynamic` and `JSON` their
+/// structure, `Map` its buckets, a sparse column the end of its rows. The rows of those that do not complete a granule are
+/// buffered until it is complete; the others are written as they come and only counted towards the granule.
 bool isSplitIndependent(const IDataType & type)
 {
     if (type.isValueRepresentedByNumber() || isStringOrFixedString(type))
@@ -64,8 +64,6 @@ bool isSplitIndependent(const IDataType & type)
         return isSplitIndependent(*array->getNestedType());
     if (const auto * tuple = typeid_cast<const DataTypeTuple *>(&type))
         return std::ranges::all_of(tuple->getElements(), [](const DataTypePtr & element) { return isSplitIndependent(*element); });
-    if (const auto * map = typeid_cast<const DataTypeMap *>(&type))
-        return isSplitIndependent(*map->getKeyType()) && isSplitIndependent(*map->getValueType());
     return false;
 }
 
@@ -95,6 +93,8 @@ struct AggregateFunctionEstimateCompressionRatioData
     /// Pending work: rows that do not fill a granule yet and the current run. Completed whenever the state is read, also through
     /// a const pointer (`serialize`, `merge`), which does not change what the state stands for.
     mutable MutableColumnPtr buffer;
+    /// The rows the buffered granule holds when complete, as the block that started it sizes a granule.
+    mutable size_t buffer_granule_rows = 0;
     mutable std::unique_ptr<Run> run;
     /// The type of the column the rows of `buffer` come from. A state of a `LowCardinality(String)` column has the same type as
     /// a state of a `String` column, so the function that completes it may not be the one that produced it.
@@ -134,9 +134,9 @@ private:
     /// The conversions of the rows from `plain_type`, where it differs.
     const std::optional<Conversion> to_represented;
     const std::optional<Conversion> to_target;
-    /// A granule is written at once even when the blocks of the query split it, unless the bytes do not depend on that (see
-    /// `isSplitIndependent`).
-    const bool write_whole_granules;
+    /// Whether the rows that do not complete a granule wait in the buffer for the next block, so that the granule is written at
+    /// once (see `isSplitIndependent`).
+    const bool buffer_partial_granules;
     const CompressionCodecPtr default_codec;
     /// The `codec` parameter, or the default codec, as the `CODEC` clause of a column.
     const ASTPtr codec_description;
@@ -246,77 +246,85 @@ private:
         return conversion->prepared->execute(arguments, type, rows->size(), /*dry_run=*/ false);
     }
 
-    /// Serializes the rows of [offset, offset + limit) one granule at a time, as the writer serializes a block.
-    void serializeRows(const Data & data_ref, const IColumn & rows, size_t offset, size_t limit) const
+    /// Serializes the rows of [offset, offset + limit) into the granules of the run, which hold `granule_rows` rows each, as the
+    /// writer serializes a block.
+    void serializeRows(const Data & data_ref, const IColumn & rows, size_t offset, size_t limit, size_t granule_rows) const
     {
-        const size_t granule_rows = estimator.granuleRows(rows);
         if (!to_represented && !target_type)
         {
-            for (size_t end = offset + limit; offset < end; offset += granule_rows)
-                runFor(data_ref, rows, rows).writer->write(rows, offset, std::min(granule_rows, end - offset));
+            runFor(data_ref, rows, rows).writer->write(rows, offset, limit, granule_rows);
             return;
         }
 
         /// A sparse column stays sparse through a conversion that keeps its default value the default, as a table stores the
         /// converted column (see `IExecutableFunction::executeWithoutReplicatedColumns`).
-        const ColumnPtr input = rows.getPtr();
-        for (size_t end = offset + limit; offset < end; offset += granule_rows)
+        const ColumnPtr input = (offset == 0 && limit == rows.size()) ? rows.getPtr() : rows.cut(offset, limit);
+        const ColumnPtr represented = convertRows(input, to_represented, represented_type);
+        if (!target_type)
         {
-            const size_t rows_in_granule = std::min(granule_rows, end - offset);
-            const ColumnPtr granule = (offset == 0 && rows_in_granule == input->size()) ? input : input->cut(offset, rows_in_granule);
-            const ColumnPtr represented = convertRows(granule, to_represented, represented_type);
-            if (!target_type)
-            {
-                runFor(data_ref, *represented, *represented).writer->write(*represented, 0, rows_in_granule);
-                continue;
-            }
-
-            const ColumnPtr target = convertRows(granule, to_target, target_type);
-            Run & run = runFor(data_ref, *target, *represented);
-            run.source_writer->write(*represented, 0, rows_in_granule);
-            run.writer->write(*target, 0, rows_in_granule);
+            runFor(data_ref, *represented, *represented).writer->write(*represented, 0, limit, granule_rows);
+            return;
         }
+
+        const ColumnPtr target = convertRows(input, to_target, target_type);
+        Run & run = runFor(data_ref, *target, *represented);
+        run.source_writer->write(*represented, 0, limit, granule_rows);
+        run.writer->write(*target, 0, limit, granule_rows);
     }
 
-    IColumn & bufferFor(Data & data_ref) const
+    /// The buffer of the state, of the kind of `rows`: a sparse column stays sparse.
+    IColumn & bufferFor(Data & data_ref, const IColumn & rows) const
     {
         if (!data_ref.buffer)
         {
-            data_ref.buffer = plain_type->createColumn();
+            data_ref.buffer = rows.cloneEmpty();
             data_ref.represented_type = represented_type;
         }
         return *data_ref.buffer;
     }
 
-    /// Serializes rows after the rows added one at a time. With `write_whole_granules`, the rows that do not fill a granule wait
-    /// in the buffer for the next rows, so that every granule is written at once, as in a part whose blocks hold whole granules,
-    /// whatever the blocks of the query. The writer writes the rows that complete a granule from the next block separately. A
-    /// sparse column is serialized as it is, since the buffer is not sparse.
+    /// Serializes rows after the rows added one at a time. The rows that do not complete a granule either wait in the buffer for
+    /// the next block (`buffer_partial_granules`, and a sparse column, whose serialization marks the end of every write), so that
+    /// the granule is written at once, or are written as they come and counted towards the granule, which the next block
+    /// completes. Either way the result does not depend on how the query splits the rows into blocks.
     void addRows(Data & data_ref, const IColumn & rows, size_t offset, size_t limit) const
     {
-        if (!write_whole_granules || rows.isSparse())
+        const size_t granule_rows = estimator.granuleRows(rows);
+        if (!buffer_partial_granules && !rows.isSparse())
         {
             flushBuffer(data_ref);
-            serializeRows(data_ref, rows, offset, limit);
+            serializeRows(data_ref, rows, offset, limit, granule_rows);
             return;
         }
 
-        const size_t granule_rows = estimator.granuleRows(rows);
+        /// Rows of another kind than the buffered ones start a new buffer, and a new run.
+        if (data_ref.buffer && data_ref.buffer->isSparse() != rows.isSparse())
+        {
+            flushBuffer(data_ref);
+            data_ref.buffer.reset();
+        }
+
         if (data_ref.buffer && !data_ref.buffer->empty())
         {
-            const size_t taken = std::min(limit, granule_rows - std::min(granule_rows, data_ref.buffer->size()));
+            if (data_ref.buffer_granule_rows == 0)
+                data_ref.buffer_granule_rows = granule_rows;
+            const size_t taken
+                = std::min(limit, data_ref.buffer_granule_rows - std::min(data_ref.buffer_granule_rows, data_ref.buffer->size()));
             data_ref.buffer->insertRangeFrom(rows, offset, taken);
             offset += taken;
             limit -= taken;
-            if (data_ref.buffer->size() < granule_rows)
+            if (data_ref.buffer->size() < data_ref.buffer_granule_rows)
                 return;
             flushBuffer(data_ref);
         }
 
         const size_t whole_granules_rows = limit - limit % granule_rows;
-        serializeRows(data_ref, rows, offset, whole_granules_rows);
+        serializeRows(data_ref, rows, offset, whole_granules_rows, granule_rows);
         if (whole_granules_rows < limit)
-            bufferFor(data_ref).insertRangeFrom(rows, offset + whole_granules_rows, limit - whole_granules_rows);
+        {
+            bufferFor(data_ref, rows).insertRangeFrom(rows, offset + whole_granules_rows, limit - whole_granules_rows);
+            data_ref.buffer_granule_rows = granule_rows;
+        }
     }
 
     void flushBuffer(const Data & data_ref) const
@@ -332,8 +340,10 @@ private:
             return;
         }
 
-        serializeRows(data_ref, *data_ref.buffer, 0, data_ref.buffer->size());
+        /// The buffer holds one granule: complete, or the last one of the state.
+        serializeRows(data_ref, *data_ref.buffer, 0, data_ref.buffer->size(), data_ref.buffer->size());
         data_ref.buffer = data_ref.buffer->cloneEmpty();
+        data_ref.buffer_granule_rows = 0;
     }
 
     /// Completes the pending work and returns the sizes of everything the state has seen.
@@ -406,7 +416,7 @@ public:
         , estimated_type(target_type ? target_type : represented_type)
         , to_represented(represented_type != plain_type ? std::optional(createCast(plain_type, represented_type)) : std::nullopt)
         , to_target(target_type && !target_type->equals(*plain_type) ? std::optional(createCast(plain_type, target_type)) : std::nullopt)
-        , write_whole_granules(!isSplitIndependent(*represented_type) || !isSplitIndependent(*estimated_type))
+        , buffer_partial_granules(!isSplitIndependent(*represented_type) || !isSplitIndependent(*estimated_type))
         , default_codec(CompressionCodecFactory::instance().getDefaultCodec())
         , codec_description(config.codec ? parseCodecDescription(*config.codec) : default_codec->getFullCodecDescription())
         , estimator(estimated_type, codec_description, default_codec, writerSettings(config))
@@ -422,7 +432,7 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         Data & data_ref = data(place);
-        IColumn & buffer = bufferFor(data_ref);
+        IColumn & buffer = bufferFor(data_ref, *columns[0]);
         buffer.insertFrom(*columns[0], row_num);
 
         if (buffer.size() >= estimator.granuleRows(buffer))

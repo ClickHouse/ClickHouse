@@ -60,9 +60,12 @@ public:
         Writer(const Writer &) = delete;
         Writer & operator=(const Writer &) = delete;
 
-        /// Writes rows of one granule. Rows of another dynamic structure than the first block's (`Dynamic`, `JSON`) are rebuilt
-        /// with it, as `MergeTreeDataPartWriterOnDisk::prepareBlockForWriting` does.
-        void write(const IColumn & rows, size_t offset, size_t limit);
+        /// Writes rows into the granules of the column: into the open granule first, then whole granules of `granule_rows` rows;
+        /// the rest stays open for the next rows. A complete granule ends the compressed blocks that hold at least
+        /// `min_compress_block_size` bytes, as `MergeTreeDataPartWriterWide::getCurrentMarksForColumn` does before a mark.
+        /// Rows of another dynamic structure than the first block's (`Dynamic`, `JSON`) are rebuilt with it, as
+        /// `MergeTreeDataPartWriterOnDisk::prepareBlockForWriting` does.
+        void write(const IColumn & rows, size_t offset, size_t limit, size_t granule_rows);
 
         /// The suffix (the dictionary of a `LowCardinality` column, statistics) and the last compressed block of every stream.
         Sizes finish();
@@ -72,6 +75,8 @@ public:
         Writer(DataTypePtr type_, SerializationPtr serialization_, const WriterSettings & settings_);
 
         void writePrefix(const IColumn & column);
+        void writeRows(const IColumn & rows, size_t offset, size_t limit);
+        void endGranule();
         WriteBuffer * streamFor(const ISerialization::SubstreamPath & path);
 
         struct Stream
@@ -90,6 +95,10 @@ public:
         VectorWithMemoryTracking<Stream> streams;
         /// Counting only: every substream is written into it.
         std::unique_ptr<NullWriteBuffer> counter;
+        const size_t min_compress_block_size;
+        /// The rows of the open granule, and the rows it holds when complete.
+        size_t rows_in_granule = 0;
+        size_t open_granule_rows = 0;
         bool finished = false;
     };
 

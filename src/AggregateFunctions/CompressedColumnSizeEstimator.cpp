@@ -125,6 +125,7 @@ CompressedColumnSizeEstimator::Writer::Writer(DataTypePtr type_, SerializationPt
     : type(std::move(type_))
     , serialization(std::move(serialization_))
     , settings(settings_.bulk)
+    , min_compress_block_size(settings_.min_compress_block_size)
 {
 }
 
@@ -165,7 +166,27 @@ WriteBuffer * CompressedColumnSizeEstimator::Writer::streamFor(const ISerializat
     throw Exception(ErrorCodes::LOGICAL_ERROR, "No stream for substream {}", ISerialization::getSubcolumnNameForStream(path));
 }
 
-void CompressedColumnSizeEstimator::Writer::write(const IColumn & rows, size_t offset, size_t limit)
+void CompressedColumnSizeEstimator::Writer::write(const IColumn & rows, size_t offset, size_t limit, size_t granule_rows)
+{
+    for (size_t end = offset + limit; offset < end;)
+    {
+        if (rows_in_granule == 0)
+            open_granule_rows = granule_rows;
+
+        const size_t count = std::min(open_granule_rows - rows_in_granule, end - offset);
+        writeRows(rows, offset, count);
+        offset += count;
+        rows_in_granule += count;
+
+        if (rows_in_granule >= open_granule_rows)
+        {
+            endGranule();
+            rows_in_granule = 0;
+        }
+    }
+}
+
+void CompressedColumnSizeEstimator::Writer::writeRows(const IColumn & rows, size_t offset, size_t limit)
 {
     if (sample && !rows.dynamicStructureEquals(*sample))
     {
@@ -176,6 +197,13 @@ void CompressedColumnSizeEstimator::Writer::write(const IColumn & rows, size_t o
     }
     else
         serialization->serializeBinaryBulkWithMultipleStreams(rows, offset, limit, settings, state);
+}
+
+void CompressedColumnSizeEstimator::Writer::endGranule()
+{
+    for (auto & stream : streams)
+        if (stream.calculator->blockBytes() >= min_compress_block_size)
+            stream.calculator->endBlock();
 }
 
 CompressedColumnSizeEstimator::Sizes CompressedColumnSizeEstimator::Writer::finish()
