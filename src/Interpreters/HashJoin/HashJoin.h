@@ -61,11 +61,30 @@ class JoinMask;
 ///  - `Set` is `HashJoin::MapsSet`, which stores no right row at all. It is only valid for joins whose
 ///    result never contains a value taken from a right row, so the map only has to answer whether a key
 ///    is present. See `HashJoin::canUseSetMaps` for when it is picked.
+///  - `Count` is `HashJoin::MapsCount`, which stores the number of right rows of a key and no right row.
+///    It is used by `INTERSECT ALL` and `EXCEPT ALL`, where each left row uses up one right row of its key.
+///  - `CountWithRef` is `HashJoin::MapsCountWithRef`, which also stores one right row of a key. It is used
+///    by `EXCEPT ALL` as RIGHT ANTI, which emits the right rows that are not used up.
 enum class JoinMapsKind : uint8_t
 {
     Default,
     All,
     Set,
+    Count,
+    CountWithRef,
+};
+
+/// How many right rows of a key are not used up yet.
+struct RowCount
+{
+    mutable Int64 remaining = 0;
+};
+
+/// A right row of a key and how many right rows of that key are not used up yet.
+struct RowRefWithCount
+{
+    RowRef ref;
+    mutable Int64 remaining = 0;
 };
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
@@ -570,8 +589,10 @@ public:
     using MapsAll = MapsTemplate<RowRefList>;
     using MapsAsof = MapsTemplate<AsofRowRefs>;
     using MapsSet = MapsTemplate<VoidMapped>;
+    using MapsCount = MapsTemplate<RowCount>;
+    using MapsCountWithRef = MapsTemplate<RowRefWithCount>;
 
-    using MapsVariant = std::variant<MapsOne, MapsAll, MapsAsof, MapsSet>;
+    using MapsVariant = std::variant<MapsOne, MapsAll, MapsAsof, MapsSet, MapsCount, MapsCountWithRef>;
 
     struct NullMapHolder
     {

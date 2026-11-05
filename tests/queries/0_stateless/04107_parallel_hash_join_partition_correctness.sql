@@ -1,6 +1,9 @@
 -- Joins with a Nullable right key must return the same rows with the serial and the parallel layout.
 -- Each ASOF run stores its rows in a table.
 
+-- `EXCEPT` must not run as a hash join because the test counts the hash joins.
+SET rewrite_intersect_except_all_to_join = 0;
+
 DROP TABLE IF EXISTS t_left;
 DROP TABLE IF EXISTS t_right_nullable;
 DROP TABLE IF EXISTS t_asof_left;

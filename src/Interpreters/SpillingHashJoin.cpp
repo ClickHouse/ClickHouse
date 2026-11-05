@@ -399,9 +399,11 @@ bool SpillingHashJoin::canPreserveLeftBlockOrder() const
 
     /// The spill fallback must be able to run as an order-preserving MergeJoin. `any_take_last_row`
     /// has no MergeJoin counterpart: it picks the first match in the right sort order instead.
+    /// Neither has `INTERSECT ALL`: MergeJoin emits one row per key instead of counting duplicates.
     bool merge_join_fallback_is_possible = MergeJoin::isSupported(table_join)
         && (table_join->strictness() == JoinStrictness::Any || table_join->strictness() == JoinStrictness::All)
         && isInnerOrLeft(table_join->kind()) && !(any_take_last_row && table_join->strictness() == JoinStrictness::Any)
+        && table_join->setOperation() != JoinSetOperation::IntersectAll
         && keys_preserve_hash_equality();
 
     return in_memory_join_preserves_order && merge_join_fallback_is_possible;
