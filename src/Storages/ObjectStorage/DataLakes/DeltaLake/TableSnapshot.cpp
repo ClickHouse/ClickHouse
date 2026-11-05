@@ -190,7 +190,12 @@ public:
 
     ~Iterator() override
     {
-        shutdown.store(true);
+        {
+            /// Under the mutex, so that the scanning thread does not miss the notification between checking
+            /// the condition and starting to wait.
+            std::lock_guard lock(next_mutex);
+            shutdown.store(true);
+        }
         schedule_next_batch_cv.notify_one();
         if (thread.joinable())
             thread.join();
@@ -200,8 +205,11 @@ public:
 
     const std::string & getTableLocation() const { return helper->getTableLocation(); }
 
+    /// Called on the scanning thread. Under the mutex, so that `next` does not miss the notification between
+    /// checking the condition and starting to wait, and reads `scan_exception` after it is set.
     void setScanException()
     {
+        std::lock_guard lock(next_mutex);
         if (!scan_exception)
         {
             scan_exception = std::current_exception();
