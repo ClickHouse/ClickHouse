@@ -197,9 +197,31 @@ String optimizationInfoToString(const IndexReadTasks & index_read_tasks, const N
 /// Columns changed on the fly by patches, mutations and masking policies. The index is not used for them in the
 /// whole query: the preprocessor rewrite and the on-fly mutation steps do not depend on the part. They are taken
 /// from the whole snapshot to avoid looking up the patches of each part.
-NameSet getColumnsUpdatedOnFly(const ReadFromMergeTree & read_from_merge_tree_step)
+/// Also includes every name touched by a pending `DROP COLUMN` or `RENAME COLUMN` of the parts: such a name can be
+/// reused by a new column right away, while the part still holds the index file built over the old column.
+NameSet getColumnsUpdatedOnFly(const ReadFromMergeTree & read_from_merge_tree_step, const std::unordered_set<DataPartPtr> & parts)
 {
-    NameSet updated_columns = read_from_merge_tree_step.getMutationsSnapshot()->getColumnsChangedOnFly();
+    const auto & mutations_snapshot = read_from_merge_tree_step.getMutationsSnapshot();
+    NameSet updated_columns = mutations_snapshot->getColumnsChangedOnFly();
+
+    if (mutations_snapshot->hasMetadataMutations())
+    {
+        for (const auto & part : parts)
+        {
+            for (const auto & command : mutations_snapshot->getOnFlyMutationCommandsForPart(part))
+            {
+                if (command.type == MutationCommand::DROP_COLUMN)
+                {
+                    updated_columns.insert(command.column_name);
+                }
+                else if (command.type == MutationCommand::RENAME_COLUMN)
+                {
+                    updated_columns.insert(command.column_name);
+                    updated_columns.insert(command.rename_to);
+                }
+            }
+        }
+    }
 
 #if CLICKHOUSE_CLOUD
     /// Masking policies are the same for all parts.
@@ -235,14 +257,18 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
     for (const auto & part : parts_with_ranges)
         unique_parts.insert(part.data_part);
 
-    auto updated_columns = getColumnsUpdatedOnFly(*read_from_merge_tree_step);
+    auto updated_columns = getColumnsUpdatedOnFly(*read_from_merge_tree_step, unique_parts);
 
     for (const auto & index : indexes->skip_indexes.useful_indices)
     {
         if (!index.index->isTextIndex())
             continue;
 
-        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index.index, metadata_snapshot, updated_columns); !result)
+        /// The set is query-wide, so no per-part type record can relax a type change: pass it as both sets,
+        /// so any on-the-fly change disables the index.
+        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(
+                index.index, metadata_snapshot, updated_columns, updated_columns, read_from_merge_tree_step->getContext());
+            !result)
         {
             LOG_TRACE(logger, "Cannot use direct reading from text index. Reason: {}", result.error().text);
             continue;
@@ -1054,7 +1080,7 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
     }
 
     auto logger = getLogger("processAndOptimizeTextIndexFunctions");
-    LOG_DEBUG(logger, "{}", optimizationInfoToString(result->index_read_tasks, result->removed_columns));
+    LOG_DEBUG(logger, "Text index optimization: {}", optimizationInfoToString(result->index_read_tasks, result->removed_columns));
 
     /// Log partially materialized text indexes
     for (const auto & [index_name, info] : text_index_read_infos)
@@ -1283,7 +1309,9 @@ void processAndOptimizeTextIndexFunctions(
 
             bool removes_filter_column = filter_step->removesFilterColumn();
             auto new_filter_column_name = result_filter_node->result_name;
-            node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
+            auto new_filter_step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
+            new_filter_step->setOptimizeConstantColumnsAfterFilter(filter_step->getOptimizeConstantColumnsAfterFilter());
+            node->step = std::move(new_filter_step);
             continue;
         }
 
@@ -1296,7 +1324,11 @@ void processAndOptimizeTextIndexFunctions(
 
         const SharedHeader & input_header = step->getInputHeaders().front();
         if (filter_step)
-            node->step = std::make_unique<FilterStep>(input_header, dag.clone(), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
+        {
+            auto new_filter_step = std::make_unique<FilterStep>(input_header, dag.clone(), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
+            new_filter_step->setOptimizeConstantColumnsAfterFilter(filter_step->getOptimizeConstantColumnsAfterFilter());
+            node->step = std::move(new_filter_step);
+        }
         else
             node->step = std::make_unique<ExpressionStep>(input_header, dag.clone());
     }

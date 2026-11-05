@@ -93,11 +93,24 @@ void read(std::string & s, ReadBuffer & in)
     if (size > MAX_STRING_OR_ARRAY_SIZE)
         throw Exception(Error::ZMARSHALLINGERROR,"Too large string size while reading from ZooKeeper {}", size);
 
-    s.resize(size);
-    size_t read_bytes = in.read(s.data(), size);
-    if (read_bytes != static_cast<size_t>(size))
-        throw Exception(
-            Error::ZMARSHALLINGERROR, "Buffer size read from Zookeeper is not big enough. Expected {}. Got {}", size, read_bytes);
+    /// Memory must track bytes actually read, not the declared size:
+    /// do not pre-allocate for an attacker-controlled length.
+    s.clear();
+    size_t remaining = static_cast<size_t>(size);
+    while (remaining > 0)
+    {
+        const size_t chunk = std::min<size_t>(remaining, MAX_STRING_PREALLOCATION);
+        const size_t old_size = s.size();
+        s.resize(old_size + chunk);
+        const size_t read_bytes = in.read(s.data() + old_size, chunk);
+        if (read_bytes != chunk)
+            throw Exception(
+                Error::ZMARSHALLINGERROR,
+                "Buffer size read from Zookeeper is not big enough. Expected {}. Got {}",
+                size,
+                old_size + read_bytes);
+        remaining -= chunk;
+    }
 }
 
 void read(ACL & acl, ReadBuffer & in)
@@ -126,7 +139,11 @@ void read(Error & x, ReadBuffer & in)
 {
     int32_t code = 0;
     read(code, in);
-    x = Coordination::Error(code);
+    /// A code this client does not know (e.g. QUOTAEXCEEDED from a newer ZooKeeper) becomes the generic error of its range.
+    if (magic_enum::enum_contains<Error>(code))
+        x = static_cast<Error>(code);
+    else
+        x = code < static_cast<int32_t>(Error::ZAPIERROR) ? Error::ZAPIERROR : Error::ZSYSTEMERROR;
 }
 
 }

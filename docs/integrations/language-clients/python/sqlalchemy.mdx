@@ -229,6 +229,8 @@ When SQLAlchemy inlines a bound value through `literal_binds` or `literal_execut
 
 Python `datetime` values with a ClickHouse `DateTime64` SQLAlchemy type retain their microseconds in client-side parameters and inline literals, including nullable values and values nested in arrays and tuples. ClickHouse applies the declared precision. Python `datetime` provides up to six fractional digits. Plain `DateTime` values retain whole-second formatting. For a `text()` statement, supply the type explicitly with `bindparam("ts", type_=DateTime64(6))` to preserve fractional seconds.
 
+A `pandas.Timestamp` value bound with `DateTime64(9)` retains its nanoseconds in parameters and inline literals.
+
 SQLAlchemy column types must match the server schema. Declaring `DateTime64` over a server `DateTime` column renders fractional seconds and can raise conversion errors on insert and in `IN` comparisons.
 
 On SQLAlchemy 2.x, inline literals of generic `sqlalchemy.ARRAY` types containing ClickHouse `Tuple` items need `dimensions=1`, or the appropriate higher dimension count for nested arrays, so SQLAlchemy treats each tuple as one item. SQLAlchemy 1.4 does not support inline literals for generic `ARRAY` types.
