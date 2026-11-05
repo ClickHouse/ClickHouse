@@ -347,14 +347,14 @@ def test_mysql_database_host_filter(start_cluster):
     node5.query("DROP NAMED COLLECTION test_mysql_db_filter_nc")
 
     # node1's suffix rule would match the whole string, but the connector stops at the NUL; reject it.
-    assert "Unexpected character" in node1.query_and_get_error(
+    assert "not allowed" in node1.query_and_get_error(
         "CREATE DATABASE test_mysql_db_filter ENGINE = MySQL('127.0.0.1\\0.allowed.example:1', 'db', 'u', 'p')"
     )
     node1.query(
         "CREATE NAMED COLLECTION IF NOT EXISTS test_mysql_db_filter_nul_nc AS "
         "host = '127.0.0.1\\0.allowed.example', port = 1, database = 'db', user = 'u', password = 'p'"
     )
-    assert "Unexpected character" in node1.query_and_get_error(
+    assert "not allowed" in node1.query_and_get_error(
         "CREATE DATABASE test_mysql_db_filter ENGINE = MySQL(test_mysql_db_filter_nul_nc)"
     )
     node1.query("DROP NAMED COLLECTION test_mysql_db_filter_nul_nc")

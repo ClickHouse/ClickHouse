@@ -860,7 +860,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
         if (!(args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH))
         {
             for (const auto & address : configuration.addresses)
-                args.context->getRemoteHostFilter().checkCanonicalHostAndPort(address.first, address.second, "MySQL host");
+                args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
         }
 
         mysql_settings->loadFromQueryContext(args.context, *engine_define);
