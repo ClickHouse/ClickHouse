@@ -4,8 +4,7 @@
 -- A `Date` compared with a `DateTime` is converted to the `DateTime` as the interpreter does (`castColumn`: the day limited to
 -- 2106-02-06, the start of the day in the time zone of the `DateTime`, at least the first day that starts after the epoch),
 -- whatever `date_time_overflow_behavior` is. Each query runs interpreted and compiled, and both must give the same result.
--- Each comparison is the argument of `identity`, so that it is compiled. The time zone of a `DateTime` without one of its
--- own is part of the key of the compiled code.
+-- Each comparison is the argument of `identity`, so that it is compiled.
 
 SET min_count_to_compile_expression = 0;
 
@@ -29,13 +28,14 @@ SELECT 'overflow behavior does not apply';
 SELECT countIf(identity(d < t_utc)), countIf(identity(d = t_kolkata)) FROM t_jit_date_datetime SETTINGS compile_expressions = 1, date_time_overflow_behavior = 'throw';
 SELECT countIf(identity(d < t_utc)), countIf(identity(d = t_kolkata)) FROM t_jit_date_datetime SETTINGS compile_expressions = 1, date_time_overflow_behavior = 'saturate';
 
-SELECT 'session time zone';
--- The time zone of a `DateTime` without its own depends on the environment, so only the equality is printed.
-SET session_timezone = 'Asia/Kolkata';
+SELECT 'DateTime without a time zone';
+-- It holds the session time zone of the creation of the table, which depends on the environment, so only the equality
+-- is printed. Compiled code for it is keyed by that time zone, see `05507_jit_date_time_zone_of_type`.
 SELECT (SELECT groupArray((identity(d < t), identity(d = t), identity(t >= d))) FROM (SELECT d, t FROM t_jit_date_datetime ORDER BY d, t) SETTINGS compile_expressions = 0) = (SELECT groupArray((identity(d < t), identity(d = t), identity(t >= d))) FROM (SELECT d, t FROM t_jit_date_datetime ORDER BY d, t) SETTINGS compile_expressions = 1);
-SET session_timezone = 'America/Los_Angeles';
-SELECT (SELECT groupArray((identity(d < t), identity(d = t), identity(t >= d))) FROM (SELECT d, t FROM t_jit_date_datetime ORDER BY d, t) SETTINGS compile_expressions = 0) = (SELECT groupArray((identity(d < t), identity(d = t), identity(t >= d))) FROM (SELECT d, t FROM t_jit_date_datetime ORDER BY d, t) SETTINGS compile_expressions = 1);
-SET session_timezone = 'UTC';
+
+SELECT 'constant Date';
+SELECT countIf(identity(toDate('2020-03-08') < t_kolkata)), countIf(identity(t_ny = toDate('1970-01-02'))), countIf(identity(toDate('2149-06-06') >= t_utc)) FROM t_jit_date_datetime SETTINGS compile_expressions = 0;
+SELECT countIf(identity(toDate('2020-03-08') < t_kolkata)), countIf(identity(t_ny = toDate('1970-01-02'))), countIf(identity(toDate('2149-06-06') >= t_utc)) FROM t_jit_date_datetime SETTINGS compile_expressions = 1;
 
 -- The compiled queries ran compiled: three `identity` of a comparison, 6 functions on 90 rows.
 SELECT identity(d < t_utc), identity(t_kolkata = d), identity(d >= t_ny) FROM t_jit_date_datetime
