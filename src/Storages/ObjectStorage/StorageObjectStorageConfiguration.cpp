@@ -15,6 +15,7 @@
 #include <IO/CompressionMethod.h>
 
 #include <boost/algorithm/string/replace.hpp>
+#include <Poco/URI.h>
 
 namespace DB
 {
@@ -383,6 +384,27 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
 const StorageObjectStorageConfiguration::Path & StorageObjectStorageConfiguration::getPathForRead() const
 {
     return read_path;
+}
+
+String StorageObjectStorageConfiguration::getURIForAccessCheck(const String & path) const
+{
+    /// The path is replaced in the parsed URI, not in the raw one, because the raw URI can spell the path
+    /// differently from the decoded path that is written to, e.g. `%7B_partition_id%7D` for `{_partition_id}`.
+    try
+    {
+        Poco::URI uri(getRawURI());
+        const String uri_path = uri.getPath();
+        const String raw_path = getRawPath().path;
+        if (!uri_path.ends_with(raw_path))
+            return {};
+
+        uri.setPath(uri_path.substr(0, uri_path.size() - raw_path.size()) + path);
+        return uri.toString();
+    }
+    catch (const Poco::Exception &)
+    {
+        return {};
+    }
 }
 
 StorageObjectStorageConfiguration::Path StorageObjectStorageConfiguration::getPathForWrite(const std::string & partition_id) const

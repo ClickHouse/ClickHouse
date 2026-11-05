@@ -1043,7 +1043,9 @@ SinkToStoragePtr StorageObjectStorage::write(
         configuration->update(object_storage, local_context);
     }
 
-    return createSink(configuration, object_storage, storage_id, format_settings, catalog, metadata_snapshot, local_context);
+    return createSink(
+        configuration, object_storage, storage_id, format_settings, catalog, metadata_snapshot, local_context,
+        getPartitionedWriteAccessCheck());
 }
 
 SinkToStoragePtr StorageObjectStorage::createSink(
@@ -1053,7 +1055,8 @@ SinkToStoragePtr StorageObjectStorage::createSink(
     const std::optional<FormatSettings> & format_settings,
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const StorageMetadataPtr & metadata_snapshot,
-    const ContextPtr & local_context)
+    const ContextPtr & local_context,
+    const PartitionedWriteAccessCheck & partitioned_write_access_check)
 {
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
     const auto & settings = configuration->getQuerySettings(local_context);
@@ -1084,7 +1087,8 @@ SinkToStoragePtr StorageObjectStorage::createSink(
 
     if (configuration->partition_strategy)
     {
-        return std::make_shared<PartitionedStorageObjectStorageSink>(object_storage, configuration, format_settings, sample_block, local_context);
+        return std::make_shared<PartitionedStorageObjectStorageSink>(
+            object_storage, configuration, format_settings, sample_block, local_context, partitioned_write_access_check);
     }
 
     auto paths = configuration->getPaths();
