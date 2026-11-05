@@ -19,7 +19,6 @@
 #include <rocksdb/env.h>
 #include <rocksdb/sst_file_reader.h>
 
-#include <IO/ReadSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 
 namespace DB
@@ -34,10 +33,13 @@ constexpr size_t PROBE_BATCH_SIZE = 32;
 /// Reads a part's `unique_key_index.sst` through `IDataPartStorage` via a custom
 /// RocksDB `Env`, so remote (S3 etc.) disks work as well. Block
 /// cache is disabled: load-time validation would only pollute it.
+/// Keeps no read buffer or settings: each block read opens a throwaway buffer
+/// with the reading thread's settings (`getReadSettings`), so one reader can be
+/// shared across queries (the reader cache).
 class SSTFileReader
 {
 public:
-    SSTFileReader(const DataPartStoragePtr & storage, const String & sst_file_name, const ReadSettings & read_settings);
+    SSTFileReader(const DataPartStoragePtr & storage, const String & sst_file_name);
 
     /// Single-chunk lookup of at most `PROBE_BATCH_SIZE` keys (more throws;
     /// empty is a no-op). Keys may be in any order - RocksDB sorts them
@@ -47,6 +49,10 @@ public:
 
     std::shared_ptr<const rocksdb::TableProperties> getProperties() const;
 
+    /// Resident bytes: `no_block_cache` preloads the SST's index + filter blocks
+    /// at open, so this is `index_size + filter_size`. Feeds the reader cache's weight.
+    size_t memoryUsage() const { return memory_usage; }
+
     /// Delegates to `SstFileReader::VerifyChecksum` - re-reads every block.
     rocksdb::Status verifyChecksum() const;
 
@@ -54,18 +60,14 @@ private:
     /// Declared before `index_reader` so the Env outlives the reader.
     std::unique_ptr<rocksdb::Env> sst_env;
     std::unique_ptr<rocksdb::SstFileReader> index_reader;
+    size_t memory_usage = 0;
 };
 
-using SSTFileReaderPtr = std::shared_ptr<SSTFileReader>;
+using SSTFileReaderPtr = std::shared_ptr<const SSTFileReader>;
 
-/// `read_settings` is forwarded to every `IDataPartStorage::readFile`, so the
-/// caller's filesystem-cache / remote-read policy applies to the sidecar too.
 /// Never returns null. Open failure throws `CORRUPTED_DATA` (corruption -
 /// caller may rebuild) or `CANNOT_OPEN_FILE` (possibly transient - keep file).
-SSTFileReaderPtr openSSTReaderFromStorage(
-    const DataPartStoragePtr & storage,
-    const String & sst_file_name,
-    const ReadSettings & read_settings);
+SSTFileReaderPtr openSSTReaderFromStorage(const DataPartStoragePtr & storage, const String & sst_file_name);
 
 /// `IProbeTargetPart` backed by `unique_key_index.sst`. The SST's embedded
 /// bloom filter short-circuits absent keys.

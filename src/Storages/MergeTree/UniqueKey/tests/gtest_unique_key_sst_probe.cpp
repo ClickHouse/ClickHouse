@@ -267,7 +267,7 @@ TEST_F(SSTFixture, NumEntriesDiscriminatesWrongCountSST)
               checksums, /*fsync=*/false, getContext().context),
               1u);
 
-    auto reader = openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME, ReadSettings{});
+    auto reader = openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME);
     /// Opens and every block checksum verifies - the damage is size-preserving.
     ASSERT_TRUE(reader->verifyChecksum().ok());
 
