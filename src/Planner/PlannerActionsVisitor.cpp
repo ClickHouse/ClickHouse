@@ -1512,6 +1512,13 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 PlannerActionsVisitor::PlannerActionsVisitor(
     const PlannerContextPtr & planner_context_,
     const ColumnNodePtrWithHashSet & correlated_columns_set_,
+    bool use_column_identifier_as_action_node_name_)
+    : PlannerActionsVisitor(planner_context_, correlated_columns_set_, use_column_identifier_as_action_node_name_, QueryTreeNodeToName{})
+{}
+
+PlannerActionsVisitor::PlannerActionsVisitor(
+    const PlannerContextPtr & planner_context_,
+    const ColumnNodePtrWithHashSet & correlated_columns_set_,
     bool use_column_identifier_as_action_node_name_,
     QueryTreeNodeToName node_to_name_)
     : planner_context(planner_context_)
