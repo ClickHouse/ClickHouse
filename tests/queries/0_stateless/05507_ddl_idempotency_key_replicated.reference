@@ -45,6 +45,14 @@ OK
 OK
 OK
 OK
+OK
+OK
+the retry made 0 log entries
+OK
+OK
+the retry made 0 log entries
+1
+1
 1
 1
 1
@@ -111,5 +119,5 @@ OK
 -- keys expire
 OK
 OK
-1
 OK
+1

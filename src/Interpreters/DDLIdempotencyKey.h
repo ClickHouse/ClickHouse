@@ -20,7 +20,7 @@ struct BlockIO;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 
 /// The `idempotency_key` of a client DDL query on a `Replicated` database. The multi that commits the query's log entry
-/// also creates the key node, or replaces an expired one, so the node exists exactly when a statement with this key has
+/// also creates the key node, or replaces an expired one, so a live node means that a statement with this key has
 /// committed.
 struct DDLIdempotencyKey
 {

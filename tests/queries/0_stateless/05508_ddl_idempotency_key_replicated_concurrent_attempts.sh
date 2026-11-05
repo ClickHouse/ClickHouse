@@ -5,8 +5,9 @@
 
 # Two attempts of one DDL query with the same `idempotency_key` on a Replicated database: the statement runs exactly
 # once, whatever moment the first attempt is held at (before it is enqueued, before it commits, after it commits but
-# before it answers, and while the other attempt is being validated), and an attempt whose entry the database cancelled
-# because it did not commit in time fails. An error of the statement itself is not hidden by the key.
+# before it answers, and while the other attempt is being validated), and a table replaced meanwhile by one with hidden
+# tables is refused, and an attempt whose entry the database cancelled because it did not commit in time fails. An error
+# of the statement itself is not hidden by the key.
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 
@@ -164,3 +165,17 @@ keyed k7 "CREATE TABLE $R1.q (x UInt8) ENGINE = Memory"
 release_failpoint $fp
 wait
 cat "$CLICKHOUSE_TMP/b.txt"
+
+echo "-- the table is replaced by one with hidden tables while the attempt is held before it is enqueued"
+plain "CREATE TABLE $R1.h (x UInt8) ENGINE = Memory" > /dev/null
+fp=database_replicated_idempotency_key_pause_before_enqueue
+enable_failpoint $fp
+keyed k8 "DROP TABLE $R1.h" > "$CLICKHOUSE_TMP/a.txt" &
+$CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT $fp PAUSE"
+plain "DROP TABLE $R1.h"
+plain "CREATE MATERIALIZED VIEW $R1.h ENGINE = MergeTree ORDER BY x AS SELECT x FROM $R1.a"
+release_failpoint $fp
+wait
+cat "$CLICKHOUSE_TMP/a.txt"
+$CLICKHOUSE_CLIENT -q "SELECT engine FROM system.tables WHERE database = '$R1' AND name = 'h'"
+plain "ALTER TABLE $R1.a MODIFY COMMENT 'after'"

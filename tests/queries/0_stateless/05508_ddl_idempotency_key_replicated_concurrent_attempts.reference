@@ -29,3 +29,9 @@ y2
 UNKNOWN_TABLE
 OK
 IDEMPOTENCY_KEY_MISMATCH
+-- the table is replaced by one with hidden tables while the attempt is held before it is enqueued
+OK
+OK
+NOT_IMPLEMENTED
+MaterializedView
+OK

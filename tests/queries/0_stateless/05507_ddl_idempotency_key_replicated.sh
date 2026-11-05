@@ -152,9 +152,19 @@ keyed k8 "CREATE VIEW $R1.v AS SELECT 1"
 keyed k8 "CREATE VIEW $R1.v AS SELECT 1"
 keyed k9 "CREATE MATERIALIZED VIEW $R1.mv TO $R1.dst AS SELECT x FROM $R1.t"
 keyed k9 "CREATE MATERIALIZED VIEW $R1.mv TO $R1.dst AS SELECT x FROM $R1.t"
+keyed k17 "CREATE DICTIONARY $R1.kd (k UInt64, v UInt8) PRIMARY KEY k SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0)"
+size=$(log_size)
+keyed k17 "CREATE DICTIONARY $R1.kd (k UInt64, v UInt8) PRIMARY KEY k SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0)"
+echo "the retry made $(( $(log_size) - size )) log entries"
+keyed k18 "CREATE TABLE $R1.nm (x UInt8) ENGINE = Memory"
+size=$(log_size)
+keyed k18 "CREATE TABLE $R1.nm (x UInt8) ENGINE = Memory"
+echo "the retry made $(( $(log_size) - size )) log entries"
 tables_named "$R1" n
 tables_named "$R1" v
 tables_named "$R1" mv
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.dictionaries WHERE database = '$R1' AND name = 'kd'"
+tables_named "$R1" nm
 
 echo "-- a key used by another statement or user"
 keyed k1 "EXCHANGE TABLES $R1.c AND $R1.d"
@@ -238,15 +248,16 @@ has_column "$R1" t c5
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '$ZK/r/log' AND (value LIKE '%idempotency_key = %' OR value LIKE '%enable_ddl_idempotency_key%')"
 
 echo "-- keys expire"
-$CLICKHOUSE_CLIENT -q "CREATE DATABASE $Y1 ENGINE = Replicated('$ZK/y', 's1', 'r1') SETTINGS idempotency_key_ttl_sec = 6"
+$CLICKHOUSE_CLIENT -q "CREATE DATABASE $Y1 ENGINE = Replicated('$ZK/y', 's1', 'r1') SETTINGS idempotency_key_ttl_sec = 10"
 plain "CREATE TABLE $Y1.e (x UInt8) ENGINE = Memory" > /dev/null
 keyed k13 "ALTER TABLE $Y1.e ADD COLUMN c UInt8"
 plain "ALTER TABLE $Y1.e DROP COLUMN c"
-deadline=$((SECONDS + 30))
-while [ "$(has_column "$Y1" e c)" = 0 ] && [ $SECONDS -lt $deadline ]; do
+deadline=$((SECONDS + 45))
+while [ $SECONDS -lt $deadline ]; do
     keyed k13 "ALTER TABLE $Y1.e ADD COLUMN c UInt8" > /dev/null
+    [ "$(has_column "$Y1" e c)" = 1 ] && break
     sleep 0.5
 done
-has_column "$Y1" e c
 keyed k13 "ALTER TABLE $Y1.e ADD COLUMN c UInt8"
+has_column "$Y1" e c
 

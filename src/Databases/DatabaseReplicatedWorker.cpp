@@ -569,6 +569,9 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
             return fs::path(queue_dir) / key_node->entry;
         }
 
+        /// Earlier entries may have replaced the table since `tryEnqueueReplicatedDDL` checked it.
+        database->checkNoHiddenTablesForDDLIdempotencyKey(task->query, query_context);
+
         DDLIdempotencyKeyNode key_node{
             .entry = entry_name,
             .digest = idempotency_key->digest,
