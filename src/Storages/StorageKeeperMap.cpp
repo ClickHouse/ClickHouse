@@ -1082,13 +1082,14 @@ bool StorageKeeperMap::dropTableData(
     {
         throw zkutil::KeeperException(Coordination::Error::ZOPERATIONTIMEOUT, "Manually triggered operation timeout");
     });
-    zookeeper->tryRemoveChildrenRecursive(zk_data_path_, /*probably_flat=*/ true);
+    if (auto data_code = zookeeper->tryRemoveRecursive(zk_data_path_, /*remove_nodes_limit=*/ 1000, /*probably_flat=*/ true);
+        data_code != Coordination::Error::ZOK && data_code != Coordination::Error::ZNONODE && data_code != Coordination::Error::ZNOTEMPTY)
+        throw Coordination::Exception::fromPath(data_code, zk_data_path_);
 
     bool completely_removed = false;
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeRemoveRequest(metadata_drop_lock->getPath(), -1));
     ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_path_, -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(zk_data_path_, -1));
     ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_lock_version_path_, -1));
     ops.emplace_back(zkutil::makeRemoveRequest(zk_metadata_path_, -1));
     ops.emplace_back(zkutil::makeRemoveRequest(zk_root_path_, -1));
