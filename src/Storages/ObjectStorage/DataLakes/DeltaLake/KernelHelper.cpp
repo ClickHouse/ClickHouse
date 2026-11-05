@@ -10,8 +10,12 @@
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 
+#include <IO/S3/Client.h>
+
 #include <algorithm>
 #include <filesystem>
+
+#include <boost/algorithm/string/predicate.hpp>
 
 #if USE_AZURE_BLOB_STORAGE
 #include <Storages/ObjectStorage/Azure/Configuration.h>
@@ -186,12 +190,34 @@ public:
             set_option("aws_endpoint", url.endpoint);
         }
 
+        /// The object store of the kernel is a separate client, so the request options of the S3 client that
+        /// ClickHouse uses for the data files must be passed to it as well. The extra headers of that client
+        /// already contain the SSE-C headers (see `ClientFactory::create`) and the explicit request headers.
+        /// The object store does not take arbitrary headers, only the options that it knows: the SSE-C key
+        /// (it then sends the key with every request, including the reads of `_delta_log`) and requester pays.
+        bool has_sse_customer_key = false;
+        bool request_payer = false;
+        for (const auto & header : object_storage->getS3StorageClient()->getClientConfiguration().extra_headers)
+        {
+            if (boost::iequals(header.name, "x-amz-server-side-encryption-customer-key"))
+            {
+                set_option("aws_server_side_encryption", "sse-c");
+                set_option("aws_sse_customer_key_base64", header.value);
+                has_sse_customer_key = true;
+            }
+            else if (boost::iequals(header.name, "x-amz-request-payer") && boost::iequals(header.value, "requester"))
+            {
+                set_option("aws_request_payer", "true");
+                request_payer = true;
+            }
+        }
+
         LOG_TRACE(
             log,
             "Using endpoint: {}, uri: {}, region: {}, bucket: {}, no sign: {}, "
-            "has access_key_id: {}, has secret_access_key: {}, has token: {}",
+            "has access_key_id: {}, has secret_access_key: {}, has token: {}, SSE-C: {}, requester pays: {}",
             url.endpoint, url.uri_str, region, url.bucket, no_sign,
-            !access_key_id.empty(), !secret_access_key.empty(), !token.empty());
+            !access_key_id.empty(), !secret_access_key.empty(), !token.empty(), has_sse_customer_key, request_payer);
 
         return guard.release();
     }
