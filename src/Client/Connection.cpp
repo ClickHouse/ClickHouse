@@ -875,16 +875,19 @@ bool Connection::isResolvedAddressOutdated()
     const UInt64 counter = resolver.getAddressesChangeCounter();
     if (counter == dns_addresses_change_counter)
         return false;
-    dns_addresses_change_counter = counter;
 
     try
     {
         const auto addresses = resolver.resolveHostAll(host);
+        /// Remember the counter only after the address was checked, so that a failed lookup is
+        /// retried on the next use of the connection.
+        dns_addresses_change_counter = counter;
         return std::find(addresses.begin(), addresses.end(), current_resolved_address->host()) == addresses.end();
     }
     catch (...)
     {
-        /// Keep the connection if the host cannot be resolved now.
+        /// Keep the connection while the host cannot be resolved: failing every query during a DNS
+        /// outage would be worse. The check is repeated on the next use.
         tryLogCurrentException(log_wrapper.get(), "Cannot resolve host to check the address of a pooled connection");
         return false;
     }

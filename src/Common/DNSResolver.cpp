@@ -320,7 +320,11 @@ DNSResolver::IPAddresses DNSResolver::getResolvedIPAddressesWithFiltering(const 
 
 DNSResolver::IPAddresses DNSResolver::resolveIPAddressWithCache(const std::string & host)
 {
-    auto [result, _ ] = impl->cache_host.getOrSet(host, [&host, this]() {return std::make_shared<DNSResolver::CacheEntry>(getResolvedIPAddressesWithFiltering(host), std::chrono::system_clock::now());});
+    auto [result, produced] = impl->cache_host.getOrSet(host, [&host, this]() {return std::make_shared<DNSResolver::CacheEntry>(getResolvedIPAddressesWithFiltering(host), std::chrono::system_clock::now());});
+    /// The entry can be new because it was evicted or removed, possibly with different addresses than
+    /// before. Connections opened to the old addresses have to check them again.
+    if (produced)
+        ++impl->addresses_change_counter;
     return result->addresses;
 }
 
@@ -434,6 +438,7 @@ void DNSResolver::dropCache()
 void DNSResolver::removeHostFromCache(const std::string & host)
 {
     impl->cache_host.remove(host);
+    ++impl->addresses_change_counter;
 }
 
 UInt64 DNSResolver::getAddressesChangeCounter() const
