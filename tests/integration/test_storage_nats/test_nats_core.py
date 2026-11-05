@@ -1703,7 +1703,17 @@ def test_nats_stream_error_mode_multirow_message(nats_cluster):
 
     nats_helpers.wait_query_result(instance, "SELECT count() FROM test.dst", 3)
 
-    # Good rows have no raw message and no error.
-    assert instance.query("SELECT count() FROM test.dst WHERE a > 0 AND raw IS NULL AND err IS NULL") == "2\n"
-    # The broken one keeps both.
-    assert instance.query("SELECT count() FROM test.dst WHERE a = 0 AND raw = 'this is not json' AND err IS NOT NULL") == "1\n"
+    # Check the actual values, not just the count. Good rows keep their data and have
+    # NULL in both virtual columns. The broken row gets default data, the raw message
+    # and a non-NULL error.
+    result = instance.query(
+        "SELECT a, b, raw, err IS NULL FROM test.dst ORDER BY a, b"
+    )
+    assert result == (
+        "0\t\tthis is not json\t0\n"
+        "1\tx\t\\N\t1\n"
+        "2\ty\t\\N\t1\n"
+    )
+
+    # The exact error text depends on the parser, so only check that it is not empty.
+    assert instance.query("SELECT length(err) > 0 FROM test.dst WHERE a = 0") == "1\n"
