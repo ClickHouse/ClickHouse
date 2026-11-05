@@ -43,7 +43,6 @@
 #cmakedefine01 USE_XGBOOST
 #cmakedefine01 USE_LIBURING
 #cmakedefine01 USE_SILK
-#cmakedefine01 USE_AMBER
 #cmakedefine01 USE_AVRO
 #cmakedefine01 USE_CAPNP
 #cmakedefine01 USE_PARQUET

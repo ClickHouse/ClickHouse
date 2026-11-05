@@ -607,10 +607,6 @@ if (TARGET ch_contrib::nuraft)
     add_object_library(clickhouse_coordination_storage Coordination/Storage)
 endif()
 
-if (TARGET ch_contrib::amber_client)
-    add_object_library(clickhouse_amber Amber)
-endif()
-
 add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
 
 target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon)
@@ -633,9 +629,6 @@ if (TARGET ch_contrib::jemalloc)
 endif()
 if (TARGET ch_contrib::silk_fibers)
     target_link_libraries (dbms PRIVATE ch_contrib::silk_fibers)
-endif()
-if (TARGET ch_contrib::amber_client)
-    target_link_libraries (dbms PUBLIC ch_contrib::amber_client ch_contrib::amber_control ch_contrib::amber_net)
 endif()
 
 target_include_directories (dbms PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")

@@ -168,10 +168,6 @@
 #include "config.h"
 #include <Common/config_version.h>
 
-#if USE_AMBER
-#include <Amber/Node.h>
-#endif
-
 #if defined(OS_LINUX)
 #    include <cstdlib>
 #    include <sys/un.h>
@@ -3667,16 +3663,6 @@ try
             ServerType(ServerType::Type::QUERIES_ALL),
             /* only_introspection_protocols= */ true);
     }
-
-#if USE_AMBER
-    if (config().has("amber"))
-    {
-        if (!server_settings[ServerSetting::enable_silk_runtime])
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "amber requires the enable_silk_runtime server setting");
-
-        Amber::startup(global_context, config(), "amber");
-    }
-#endif
 
     try
     {

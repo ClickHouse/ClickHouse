@@ -132,12 +132,6 @@
 #if USE_NURAFT
 #include <Storages/System/StorageSystemKeeperCluster.h>
 #endif
-#if USE_AMBER
-#include <Amber/Node.h>
-#include <Storages/System/StorageSystemAmberNode.h>
-#include <Storages/System/StorageSystemAmberTables.h>
-#include <Storages/System/StorageSystemAmberVolumes.h>
-#endif
 #include <Storages/System/StorageSystemScheduler.h>
 #include <Storages/System/StorageSystemObjectStorageQueueMetadata.h>
 #include <Storages/System/StorageSystemObjectStorageQueueMetadataCache.h>
@@ -4051,16 +4045,6 @@ SELECT code_point, code_point_value, notation FROM system.unicode WHERE code_poi
 #if USE_NURAFT
     if (has_keeper_server)
         attachSystemTablesGatedOnKeeperServer(context, system_database);
-#endif
-
-#if USE_AMBER
-    if (Amber::Node::initialized())
-    {
-        attach<StorageSystemAmberNode>(context, system_database, "amber_node", "Contains this node's amber identity and roles, the volume it mounts, its role in the volume's master election and the amber time it reads at.");
-        attach<StorageSystemAmberVolumes>(context, system_database, "amber_volumes", "Contains the volumes of amber clusters, the holder of each volume's master lease and the nodes serving each shard and segment. On a node without a volume, the query must filter on `cluster_id`.");
-        if (Amber::Node::instance().getCompute())
-            attach<StorageSystemAmberTables>(context, system_database, "amber_tables", "Contains the tables of the amber volume this node mounts, as of this node's read time: the amber table id, the root row-block number and the creator's meta bytes.");
-    }
 #endif
 
     if (context->getConfigRef().getInt("allow_experimental_transactions", 0))
