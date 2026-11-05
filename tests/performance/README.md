@@ -55,9 +55,11 @@ Test template:
 
 The drop queries also run when the test fails, and a test whose drop queries cannot be shown to have cleaned up stops the rest of its batch.
 
-Every query runs several times on the same tables, with nothing reset between the runs. The check of a pull request that adds or changes a test fails when a query of the test gets slower run over run on the tested server (at least 5 runs, correlation of run number and time above 0.8, last run over first above 1.2): each run reads what the previous runs changed. A pull request job runs at most 10 queries of a test, chosen at random, unless the test sets `run_all_queries="1"`. Make every run do the same work, for example write to `/dev/null` instead of a file, or make an `UPDATE` skip the rows it already rewrote.
-
 If your test takes more than 10 minutes, please, add tag `long` to have an opportunity to run all tests and skip long ones.
+
+### Queries whose time keeps growing with each run
+
+Every query runs several times on the same tables, with nothing reset between the runs. The check of a pull request that adds or changes a test fails when the time of a query of the test keeps growing with each run on the tested server (at least 5 runs, correlation of run number and time above 0.8, last run over first above 1.2). Usually each run reads what the previous runs changed, for example a table that grows with every timed `INSERT`. A pull request job runs at most 10 queries of a test, chosen at random, unless the test sets `run_all_queries="1"`. Make every run do the same work, for example write to `/dev/null` instead of a file, or make an `UPDATE` skip the rows it already rewrote.
 
 ### Setup queries that cannot run on the reference server
 

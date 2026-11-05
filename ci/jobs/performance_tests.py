@@ -209,6 +209,10 @@ FALLBACK_SHARED_DAYS = 7
 RUN_TREND_MIN_RUNS = 5
 RUN_TREND_MIN_CORR = 0.8
 RUN_TREND_MIN_GROWTH = 1.2
+RUN_TREND_README = (
+    "https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/README.md"
+    "#queries-whose-time-keeps-growing-with-each-run"
+)
 # A few seconds after praktika started the job's timeout: the time the job has left is counted from here.
 JOB_START = time.monotonic()
 # Kept free at the end of the job: a dashboard poll in flight at the deadline, the end of a cut
@@ -2423,9 +2427,10 @@ def run_trend_gate(info, test_files, workdir):
     `(fail, message suffix, Check Results children)`."""
     changed_files = info.get_changed_files()
     if changed_files is None:
-        print("WARNING: the changed files are unknown, skipping the run-trend check of changed tests")
+        print("WARNING: the changed files are unknown, not checking changed tests for query times that keep growing")
         info.add_workflow_warning(
-            "Performance comparison: the changed files are unknown, the run-trend check of changed tests was skipped"
+            "Performance comparison: the changed files are unknown, so the tests this PR adds or changes "
+            "were not checked for query times that keep growing with each run"
         )
         return False, "", []
     try:
@@ -2437,7 +2442,7 @@ def run_trend_gate(info, test_files, workdir):
         trends = find_run_trends(f"{workdir}/analyze/query-runs.tsv", names) if names else []
     except Exception as e:
         traceback.print_exc()
-        return True, f"; the run-trend check of the tests this PR adds or changes failed: {e}", []
+        return True, f"; could not check whether query times of the tests this PR adds or changes keep growing: {e}", []
     if not trends:
         return False, "", []
 
@@ -2446,22 +2451,24 @@ def run_trend_gate(info, test_files, workdir):
 
     children = [
         Result(
-            name=f"{t['test']} #{t['query_index']} run trend",
+            name=f"Query {t['test']} #{t['query_index']} time keeps growing with each run",
             status=Result.Status.FAIL,
             info=(
-                f"corr(run, time) {t['corr']:.2f}, last/first {t['growth']:.2f}. "
-                f"Run times, s: tested server {series(t['tested'])}"
-                + (f"; reference server {series(t['reference'])}" if t["reference"] else "")
-                + ". Each run reads state the previous runs changed (a table or file that grows); "
-                "make every run do the same work."
+                f"Run times on the tested server, s: {series(t['tested'])}"
+                + (f"; on the reference server: {series(t['reference'])}" if t["reference"] else "")
+                + f". Correlation of run number and time {t['corr']:.2f}, last run / first run {t['growth']:.2f} "
+                f"(the check fails above {RUN_TREND_MIN_CORR} and {RUN_TREND_MIN_GROWTH}). Usually each run reads "
+                "what the previous runs changed, for example a table or file that grows; make every run do the same "
+                'work. See "Queries whose time keeps growing with each run" in tests/performance/README.md.'
             ),
+            links=[RUN_TREND_README],
         )
         for t in trends
     ]
     for child in children:
-        print(f"Run trend: {child.name}: {child.info}")
-    subject, verb = ("1 query", "gets") if len(trends) == 1 else (f"{len(trends)} queries", "get")
-    return True, f"; {subject} of the tests this PR adds or changes {verb} slower run over run", children
+        print(f"{child.name}: {child.info}")
+    subject = "1 query" if len(trends) == 1 else f"{len(trends)} queries"
+    return True, f"; the time of {subject} of the tests this PR adds or changes keeps growing with each run", children
 
 
 # Outcomes of fetching one previous result artifact from S3.
