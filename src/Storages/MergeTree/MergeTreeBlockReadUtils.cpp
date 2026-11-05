@@ -142,9 +142,8 @@ bool injectRequiredColumnsRecursively(
             }
 
             /// Parent is present but the part's (older) type lacks the requested subcolumn (metadata-only
-            /// `ALTER MODIFY COLUMN T -> Nullable(T)`), or has a different one under its name (a changed `JSON` type).
-            /// Read the parent (or its path that has the subcolumn) so it can be converted and the subcolumn extracted
-            /// from it, instead of being filled from the storage-type default. The subcolumn too: a default may depend on it.
+            /// `ALTER MODIFY COLUMN T -> Nullable(T)`), or has another one under its name (a changed `JSON` type). Read the parent
+            /// (or its path with the subcolumn) to convert it and extract the subcolumn; the subcolumn too, as a default may use it.
             add_column(column_name);
             add_column(*source_of_subcolumn);
             return true;
@@ -254,9 +253,8 @@ bool hasTypedPathUnder(const DataTypeObject & type, const String & path)
     return std::ranges::any_of(type.getTypedPaths(), [&](const auto & typed_path) { return typed_path.first.starts_with(prefix); });
 }
 
-/// Whether converting an object of type @in_part to @in_storage keeps the value of the path that @substream reads: the same
-/// skip rules and the same typed paths among the path, its prefixes and, for a value that includes them, the paths under
-/// it. @hinted_path is not compared.
+/// Whether converting an object @in_part to @in_storage keeps the value of the path @substream reads: the same skip rules and
+/// typed paths on the path, its prefixes and, for a value that includes them, the paths under it, except @hinted_path.
 bool objectPathValueIsKept(
     const IDataType * in_storage, const IDataType * in_part, const Substream & substream, std::string_view hinted_path = {})
 {
@@ -359,9 +357,8 @@ bool isTypeHintCastOfPath(
     return type_in_part != typed_object_in_part.getTypedPaths().end() && !canHoldObjectValue(type_in_part->second);
 }
 
-/// The typed path of an object that has @subcolumn in its value, when the part stores the path as a dynamic path or with
-/// another type hint and its value is cast to the hinted type (see `isTypeHintCastOfPath`). The object is the column or
-/// an element of its `Array` / `Tuple` wrappers.
+/// The typed path with @subcolumn in its value when that value is cast to the hint (see `isTypeHintCastOfPath`). The path's object
+/// is the column or an element of its `Array` / `Tuple` wrappers.
 std::optional<String> tryGetCastPathOfSubcolumn(const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part)
 {
     const auto & type_in_storage = subcolumn.getTypeInStorage();
@@ -388,7 +385,6 @@ std::optional<String> tryGetCastPathOfSubcolumn(const NameAndTypePair & subcolum
         || !typeid_cast<const DataTypeObject *>(owner_in_storage))
         return std::nullopt;
 
-    /// The name of the subcolumn that is the value of the typed path.
     auto is_name_of_typed_path = [&](const String & name)
     {
         auto info = type_in_storage->tryGetSubcolumnInfo(name);
@@ -428,8 +424,7 @@ std::optional<String> tryGetCastPathOfSubcolumn(const NameAndTypePair & subcolum
     return Nested::concatenateName(subcolumn.getNameInStorage(), *path);
 }
 
-/// Whether the subcolumn of the column converted from @column_type_in_part can differ from the subcolumn of that name
-/// read from the part and converted.
+/// Whether the subcolumn of the column converted from @column_type_in_part can differ from the converted one read from the part.
 bool isSubcolumnChangedByConversion(const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part)
 {
     const auto & type_in_storage = subcolumn.getTypeInStorage();
@@ -454,7 +449,6 @@ bool isSubcolumnChangedByConversion(const NameAndTypePair & subcolumn, const Dat
     if (path_in_storage.empty() || path_in_storage.size() != path_in_part.size())
         return true;
 
-    /// The types that the substreams descend into, so that the objects owning the paths can be compared.
     const IDataType * type_of_substream_in_storage = type_in_storage.get();
     const IDataType * type_of_substream_in_part = column_type_in_part.get();
     size_t last = path_in_storage.size() - 1;

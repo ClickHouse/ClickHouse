@@ -41,8 +41,7 @@ MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeT
         if (!range_reader.getReader()->producesFilterOnly())
             columns_cache_readers.push_back(range_reader.getReader());
     }
-    /// Also the columns read by earlier steps: a step evaluating missing defaults gets them as additional columns
-    /// even when an action has projected them out.
+    /// Including the columns read by earlier steps, which reach `evaluateMissingDefaults` even when an action projects them out.
     previous_steps_columns.resize(range_readers.size());
     for (size_t i = 1; i < range_readers.size(); ++i)
     {

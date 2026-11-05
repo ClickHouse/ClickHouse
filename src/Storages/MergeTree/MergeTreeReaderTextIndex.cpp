@@ -544,7 +544,6 @@ size_t MergeTreeReaderTextIndex::readRows(
         for (size_t col_idx = 0; col_idx < columns.size(); ++col_idx)
             columns[col_idx] = fallback_cols[col_idx] ? std::move(fallback_cols[col_idx]) : fallback_shared_cols[col_idx];
 
-        /// What a read step does after reading: the columns missing from the part and the conversions to the type in the table.
         bool should_evaluate_missing_defaults = false;
         fallback_reader->fillMissingColumns(columns, should_evaluate_missing_defaults, fallback_rows);
         fallback_reader->performRequiredConversions(columns);

@@ -33,8 +33,7 @@ public:
     /// The key is back-quoted to handle special characters (dots, backticks, etc.).
     static String getCombinedSubcolumnName(const String & key);
 
-    /// The path of a prefixed subcolumn name, which always looks like "<prefix>`some`.path.path": the first path element
-    /// is back-quoted to tell it from a path like "^path". Nothing when the name is not such a subcolumn.
+    /// The path of a prefixed subcolumn name "<prefix>`some`.path.path" (back-quoted first element, unlike a path "^path"), or nothing.
     static std::optional<String> tryGetPrefixedSubcolumn(std::string_view subcolumn_name, char prefix);
 
     /// Whether a typed path of this type represents structured data parsed from a JSON object (JSON, Map, Tuple), unlike a scalar.

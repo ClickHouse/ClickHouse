@@ -21,14 +21,10 @@ NameSet injectRequiredColumns(
 /// The type of the column @name_in_part in the part, or the type the part recorded for it when it omitted the column.
 DataTypePtr tryGetColumnTypeInPart(const IMergeTreeDataPartInfoForReader & data_part_info_for_reader, const String & name_in_part);
 
-/// The column to read and convert to the type in the table to extract the subcolumn from, when the part stores the column
-/// as @column_type_in_part and the subcolumn of that name read from the part can differ: the column, or its typed path
-/// whose value is cast when the part stores it as a dynamic path or with another type hint. Nothing when the subcolumn is
-/// read from the part.
-/// A part of a `JSON` column resolves any name as one of its paths, which is not the same subcolumn when the conversion
-/// changes the paths. A key subcolumn is read from the part, which is sorted and indexed by it.
-/// The patch parts in @alter_conversions are applied to the source, so it is chosen for them as well.
-/// @column_type_in_part is null when the part has no such column; then only its patch parts decide.
+/// The column to read and convert to extract the subcolumn from, when the subcolumn read from the part (its column of type
+/// @column_type_in_part, null if absent) or from its patch parts can differ: the column, or its typed path whose value is cast
+/// to the hint. Nothing when the subcolumn is read as stored, as a key subcolumn always is: the part is sorted and indexed by it.
+/// A part of a `JSON` column resolves any name as one of its paths: not the same subcolumn when the conversion changes them.
 std::optional<String> getSourceOfSubcolumnInPart(
     const StorageSnapshotPtr & storage_snapshot,
     const NameAndTypePair & subcolumn,

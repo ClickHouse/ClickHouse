@@ -358,8 +358,7 @@ void IMergeTreeReader::fillMissingColumns(
                 }
             }
 
-            /// A subcolumn extracted from a path of its column that this or an earlier step reads is filled by
-            /// `evaluateMissingDefaults`.
+            /// Filled by `evaluateMissingDefaults` from the cast path that this or an earlier step reads.
             NameSet deferred_columns;
             size_t column_index = 0;
             for (const auto & column : original_requested_columns)
@@ -441,8 +440,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
             throw Exception(ErrorCodes::LOGICAL_ERROR, "invalid number of columns passed to MergeTreeReader::fillMissingColumns. "
                             "Expected {}, got {}", num_columns, res_columns.size());
 
-        /// A subcolumn extracted from its column or a path of it, read by this step (converted and patched) or an earlier one.
-        /// Extracted before the default expressions, which may depend on it.
+        /// Subcolumns extracted from a source read by this or an earlier step, before the defaults that may depend on them.
         auto find_read_column = [&](const String & name) -> std::optional<ColumnWithTypeAndName>
         {
             size_t pos = 0;
@@ -729,8 +727,7 @@ IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSer
 
     if (!column_in_part)
     {
-        /// A subcolumn extracted from the converted default of an omitted column (see `fillMissingColumns`) is already
-        /// in the type in the table.
+        /// An extracted subcolumn is filled from the default converted to the type in the table (see `fillMissingColumns`).
         DataTypePtr type_in_part = required_column.getTypeInStorage();
         DataTypePtr requested_type_in_part = required_column.type;
         if (const auto * missing = infos.getMissingColumnInfo(name_pair.first);

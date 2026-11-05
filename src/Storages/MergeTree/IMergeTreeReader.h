@@ -83,8 +83,7 @@ public:
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
-    /// Extracts again the subcolumns extracted from their sources (see `isSubcolumnExtractedFromConvertedColumn`) whose
-    /// sources, named in @patched_columns, were patched after `evaluateMissingDefaults`.
+    /// Re-extracts the subcolumns whose sources, named in @patched_columns, were patched after `evaluateMissingDefaults`.
     void extractSubcolumnsOfPatchedSources(Columns & res_columns, const NameSet & patched_columns) const;
 
     /// Whether `fillMissingColumns` may leave a requested column to `evaluateMissingDefaults`.
@@ -232,12 +231,10 @@ protected:
     /// Returns true if the column at position @pos in columns_to_read is a system column that was invalidated.
     bool isSystemColumnInvalidated(size_t pos) const;
 
-    /// Returns true if the column at position @pos in columns_to_read is a subcolumn extracted from its column, or a path of
-    /// it, converted to the type in the table (see `getSourceOfSubcolumnInPart`). Such a subcolumn is not read from the part.
+    /// Returns true if the subcolumn at @pos is not read from the part but extracted from its converted column or a path of it.
     bool isSubcolumnExtractedFromConvertedColumn(size_t pos) const;
 
-    /// The path of its column the subcolumn @requested_column at position @pos is extracted from, or null when it is not
-    /// extracted from a path.
+    /// The path of its column that the subcolumn at @pos is extracted from, or null.
     const String * tryGetCastPathOfSubcolumn(size_t pos, const NameAndTypePair & requested_column) const;
 
     /// Same as `IDataType::hasSubcolumn` for the column @name_in_part of the part, but without
@@ -332,11 +329,9 @@ private:
     ColumnAndSerializationInPart getColumnAndSerializationInPart(
         const NameAndTypePair & required_column, bool extracted_from_converted_column = false) const;
 
-    /// The column the subcolumn is extracted from after its conversion to the type in the table, for the column kept in
-    /// the part, or its default in the type the part recorded for it when the column is omitted from the part.
+    /// The column the subcolumn is extracted from after conversion: kept in the part, or its recorded default if omitted.
     std::optional<String> getSourceOfRequiredSubcolumn(const NameAndTypePair & required_column) const;
 
-    /// The subcolumn @requested_column at position @pos extracted from its @source (see `tryGetCastPathOfSubcolumn`).
     ColumnPtr extractSubcolumnFromSource(size_t pos, const NameAndTypePair & requested_column, ColumnWithTypeAndName source) const;
 
     /// Returns actual column name and type in part, which can differ from table metadata.
