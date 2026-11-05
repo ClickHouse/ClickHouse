@@ -66,6 +66,12 @@ namespace ErrorCodes
 
 namespace
 {
+/// The literal has the `Field`'s own type; the declared type is what a subcolumn reference such as `j.a` needs.
+ASTPtr makeTypeDefaultExpression(const DataTypePtr & type)
+{
+    return makeASTFunction("_CAST", make_intrusive<ASTLiteral>(type->getDefault()), make_intrusive<ASTLiteral>(type->getName()));
+}
+
 /// Add all required expressions for missing columns calculation
 void addDefaultRequiredExpressionsRecursively(
     const Block & block,
@@ -141,27 +147,11 @@ void addDefaultRequiredExpressionsRecursively(
         /// and this identifier will be in required columns. If such column is not in ColumnsDescription we ignore it.
 
         /// This column is required, but doesn't have default expression, so lets use "default default"
-        const auto & column = columns.get(required_column_name);
-        auto default_value = column.type->getDefault();
-        /// The literal has the `Field`'s own type; the declared type is what a subcolumn reference such as `j.a` needs.
-        ASTPtr expr = makeASTFunction("_CAST", make_intrusive<ASTLiteral>(default_value), make_intrusive<ASTLiteral>(column.type->getName()));
+        ASTPtr expr = makeTypeDefaultExpression(columns.get(required_column_name).type);
         if (is_column_in_query && convert_null_to_default)
             expr = makeASTFunction("ifNull", make_intrusive<ASTIdentifier>(required_column_name), std::move(expr));
         default_expr_list_accum->children.emplace_back(setAlias(expr, required_column_name));
         added_columns.emplace(required_column_name);
-    }
-    else
-    {
-        /// The expression reads a subcolumn (`j.a`, `arr.size0`); the column it belongs to is what has to be present.
-        for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(required_column_name))
-        {
-            const auto * column = columns.tryGet(String(column_name));
-            if (!column || !column->type->tryGetSubcolumnType(subcolumn_name))
-                continue;
-
-            addDefaultRequiredExpressionsRecursively(block, column->name, column->type, columns, default_expr_list_accum, added_columns, /*null_as_default=*/ false);
-            break;
-        }
     }
 }
 
@@ -240,7 +230,7 @@ struct ResolvedExpressionList
     std::shared_ptr<TableNode> table;
 };
 
-ResolvedExpressionList resolveExpressionList(const Block & header, const ASTPtr & expr_list, ContextPtr context)
+ResolvedExpressionList resolveExpressionList(const Block & header, const ASTPtr & expr_list, ContextPtr context, const ColumnsDescription * columns)
 {
     auto execution_context = Context::createCopy(context);
     auto expression = buildQueryTree(expr_list, execution_context);
@@ -249,6 +239,25 @@ ResolvedExpressionList resolveExpressionList(const Block & header, const ASTPtr 
     // Add columns from index to ensure names are unique in case of duplicated columns.
     for (const auto & column : header.getIndexByName())
         fake_column_descriptions.add(ColumnDescription(column.first, header.getByPosition(column.second).type), /*after_column=*/ "", /*first=*/false, /*add_subcolumns=*/false);
+
+    /// A column that is not in the block becomes an `ALIAS` of the fake table: its default expression,
+    /// or its type default. The analyzer resolves it and its subcolumns (`j.a`) from the expression,
+    /// so a default may read a subcolumn of an `EPHEMERAL`, `ALIAS` or omitted column.
+    if (columns)
+    {
+        for (const auto & column : *columns)
+        {
+            if (header.has(column.name))
+                continue;
+            ColumnDescription alias(column.name, column.type);
+            alias.default_desc.kind = ColumnDefaultKind::Alias;
+            alias.default_desc.expression = column.default_desc.expression
+                ? column.default_desc.expression->clone()
+                : makeTypeDefaultExpression(column.type);
+            fake_column_descriptions.add(std::move(alias), /*after_column=*/ "", /*first=*/ false, /*add_subcolumns=*/ false);
+        }
+    }
+
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
     auto fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
@@ -262,19 +271,21 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     const Block & header,
     ASTPtr expr_list,
     bool save_unneeded_columns,
-    ContextPtr context)
+    ContextPtr context,
+    const ColumnsDescription * columns = nullptr)
 {
     if (!expr_list)
         return {};
 
-    auto resolved = resolveExpressionList(header, expr_list, context);
+    auto resolved = resolveExpressionList(header, expr_list, context, columns);
     auto & expression = resolved.expression;
     auto & execution_context = resolved.context;
 
     GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
-    collectSetsAndSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
+    /// The fake `ALIAS` columns must be inlined; with `keep_alias_columns` the planner reads them as inputs.
+    collectSetsAndSourceColumns(expression, planner_context, false /*keep_alias_columns*/);
 
     auto actions = buildActionsDAGFromExpressionNode(expression, header.getColumnsWithTypeAndName(), planner_context, {}).first;
     chassert(expression->getChildren().size() == actions.getOutputs().size());
@@ -335,7 +346,7 @@ QueryTreeNodePtr resolveMissingDefaults(
     ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
     if (!expr_list)
         return nullptr;
-    return resolveExpressionList(header, expr_list, context).expression;
+    return resolveExpressionList(header, expr_list, context, &columns).expression;
 }
 
 std::optional<ActionsDAG> evaluateMissingDefaults(
@@ -350,7 +361,7 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
         return {};
 
     ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
-    return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context);
+    return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context, &columns);
 }
 
 /// Checks that a type-directed `enumerateStreams` walk over `column` cannot meet a column class
