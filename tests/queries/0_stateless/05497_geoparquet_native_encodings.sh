@@ -27,6 +27,9 @@ $CLICKHOUSE_LOCAL -q "SELECT multipolygon, id FROM file('$PARQUET') ORDER BY id"
 echo "--- Parquet: explicit Geometry type"
 $CLICKHOUSE_LOCAL -q "SELECT id, variantType(point), point, variantType(polygon), polygon FROM file('$PARQUET', Parquet, 'id Int32, point Geometry, polygon Geometry') ORDER BY id"
 
+echo "--- Parquet: case-insensitive column matching"
+$CLICKHOUSE_LOCAL -q "SELECT ID, variantType(POINT), POINT, POLYGON FROM file('$PARQUET', Parquet, 'ID Int32, POINT Geometry, POLYGON Polygon') ORDER BY ID SETTINGS input_format_parquet_case_insensitive_column_matching = 1"
+
 echo "--- Parquet: the parser of GeoParquet is disabled"
 $CLICKHOUSE_LOCAL -q "SELECT toTypeName(point), toTypeName(polygon) FROM file('$PARQUET') LIMIT 1 SETTINGS input_format_parquet_allow_geoparquet_parser = 0"
 
@@ -38,6 +41,9 @@ $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$ARROW') ORDER BY id FORMAT Vertical"
 
 echo "--- Arrow: explicit Geometry type"
 $CLICKHOUSE_LOCAL -q "SELECT id, variantType(point), point, variantType(polygon), polygon FROM file('$ARROW', Arrow, 'id Int32, point Geometry, polygon Geometry') ORDER BY id"
+
+echo "--- Arrow: case-insensitive column matching"
+$CLICKHOUSE_LOCAL -q "SELECT ID, variantType(POINT), POINT, POLYGON FROM file('$ARROW', Arrow, 'ID Int32, POINT Geometry, POLYGON Polygon') ORDER BY ID SETTINGS input_format_arrow_case_insensitive_column_matching = 1"
 
 # The row with NULLs is excluded, because an empty `Polygon` is written as WKB of a polygon with one empty ring.
 echo "--- Round trip through Parquet with WKB"

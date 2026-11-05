@@ -1035,7 +1035,9 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
 
         /// GeoParquet: parse the WKB/WKT binary column into the geo type (declared in the schema-level
         /// "geo" metadata, or implied by a `Geometry` header type hint).
-        auto geo_it = geo_columns.find(header_column.name);
+        /// The metadata is keyed by the name in the file, which differs from the requested one with
+        /// case-insensitive matching.
+        auto geo_it = geo_columns.find(src_field ? column.name : header_column.name);
         /// A native (GeoArrow) encoding is nested lists of `struct<x, y>` with the same layout as
         /// the geo type, so it is converted to the geo type by a cast (and then to the requested
         /// type, e.g. `Geometry`, below).

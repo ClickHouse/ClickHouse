@@ -335,7 +335,12 @@ void SchemaConverter::processSubtree(TraversalNode & node)
                     throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE, "Requested column {} is part of another requested column", node.getNameForLogging());
 
                 node.requested = true;
-                node.name = sample_block->getByPosition(pos.value()).name; // match case
+                /// Match case. Keep the name according to the parquet schema, it is used to look up
+                /// the GeoParquet metadata.
+                const String & requested_name = sample_block->getByPosition(pos.value()).name;
+                if (!node.parquet_name.has_value() && requested_name != node.name)
+                    node.parquet_name = node.name;
+                node.name = requested_name;
                 chassert(!node.type_hint);
                 node.type_hint = sample_block->getByPosition(pos.value()).type;
                 outer_type_hint = node.type_hint; // before unwrapping arrays

@@ -48,6 +48,10 @@ multipolygon:    [[[(20,20),(30,20),(30,30),(20,20)]]]
 1	Point	(1,2)	Polygon	[[(0,0),(10,0),(10,10),(0,10),(0,0)],[(2,2),(3,2),(3,3),(2,2)]]
 2	Point	(0,0)	Polygon	[]
 3	Point	(-3.5,4.25)	Polygon	[[(20,20),(30,20),(30,30),(20,20)]]
+--- Parquet: case-insensitive column matching
+1	Point	(1,2)	[[(0,0),(10,0),(10,10),(0,10),(0,0)],[(2,2),(3,2),(3,3),(2,2)]]
+2	Point	(0,0)	[]
+3	Point	(-3.5,4.25)	[[(20,20),(30,20),(30,30),(20,20)]]
 --- Parquet: the parser of GeoParquet is disabled
 Nullable(Tuple(x Nullable(Float64), y Nullable(Float64)))	Array(Array(Nullable(Tuple(x Nullable(Float64), y Nullable(Float64)))))
 --- Arrow: schema inference
@@ -92,6 +96,10 @@ multipolygon:    [[[(20,20),(30,20),(30,30),(20,20)]]]
 1	Point	(1,2)	Polygon	[[(0,0),(10,0),(10,10),(0,10),(0,0)],[(2,2),(3,2),(3,3),(2,2)]]
 2	Point	(0,0)	Polygon	[]
 3	Point	(-3.5,4.25)	Polygon	[[(20,20),(30,20),(30,30),(20,20)]]
+--- Arrow: case-insensitive column matching
+1	Point	(1,2)	[[(0,0),(10,0),(10,10),(0,10),(0,0)],[(2,2),(3,2),(3,3),(2,2)]]
+2	Point	(0,0)	[]
+3	Point	(-3.5,4.25)	[[(20,20),(30,20),(30,30),(20,20)]]
 --- Round trip through Parquet with WKB
 0
 2
