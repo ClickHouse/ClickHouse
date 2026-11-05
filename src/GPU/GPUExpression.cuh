@@ -10,8 +10,6 @@
 namespace DB::GPU
 {
 
-constexpr size_t max_expression_columns = 16;
-
 enum class GPUExpressionResult : int
 {
     Bitmask = 0,
@@ -24,7 +22,7 @@ struct GPUExpression
     GPUExpressionResult result = GPUExpressionResult::Bitmask;
     uint32_t block_size = 0;
     const char * name = nullptr;
-    GPUElementType column_types[max_expression_columns] = {};
+    const GPUElementType * column_types = nullptr;
     uint32_t num_columns = 0;
 };
 
@@ -36,7 +34,7 @@ struct GPUExpressionInput
 
 struct GPUExpressionInputs
 {
-    GPUExpressionInput columns[max_expression_columns];
+    const GPUExpressionInput * columns = nullptr;
     uint32_t count = 0;
 };
 

@@ -9,14 +9,12 @@
 
 namespace CurrentMetrics
 {
-
     extern const Metric GPUExpressionKernelCacheBytes;
     extern const Metric GPUExpressionKernelCacheCount;
 }
 
 namespace DB::ErrorCodes
 {
-
     extern const int CANNOT_COMPILE_CODE;
 }
 
@@ -25,6 +23,7 @@ namespace DB::GPU
 
 namespace
 {
+
 constexpr size_t max_kernel_cache_bytes = 256UL << 20;
 
 void checkLoading(cudaError_t status, const std::string & what)
@@ -60,10 +59,11 @@ uint32_t blockSizeOf(cudaKernel_t kernel, const std::string & name)
 
 }
 
-std::shared_ptr<GPUKernel> GPUKernel::load(const std::string & name, const std::string & ptx)
+std::shared_ptr<GPUKernel> GPUKernel::load(const std::string & name, const std::string & ptx, std::vector<GPUElementType> column_types)
 {
     auto kernel = std::make_shared<GPUKernel>();
     kernel->name = name;
+    kernel->column_types = std::move(column_types);
     kernel->ptx_size = ptx.size();
     checkLoading(
         cudaLibraryLoadData(&kernel->library, ptx.c_str(), nullptr, nullptr, 0, nullptr, nullptr, 0), "load the PTX of kernel " + name);
