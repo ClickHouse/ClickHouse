@@ -89,6 +89,15 @@ public:
             /* crc_for_crypting= */ 0,
             /* zip64= */ true);
         archive_writer_->rethrowStoredException();
+
+        /// zlib, bzip2 and liblzma accept levels -1 to 9 only, minizip-ng reports their refusal as MZ_OPEN_ERROR.
+        bool library_checks_level = compress_method == MZ_COMPRESS_METHOD_DEFLATE || compress_method == MZ_COMPRESS_METHOD_BZIP2
+            || compress_method == MZ_COMPRESS_METHOD_LZMA || compress_method == MZ_COMPRESS_METHOD_XZ;
+        if (code == MZ_OPEN_ERROR && library_checks_level
+            && (compress_level < static_cast<int>(CompressionLevels::kDefault) || compress_level > static_cast<int>(CompressionLevels::kBest)))
+            throw Exception(ErrorCodes::CANNOT_PACK_ARCHIVE, "Compression level {} is out of range for {}",
+                compress_level, intToCompressionMethod(compress_method));
+
         checkResultCode(code);
     }
 

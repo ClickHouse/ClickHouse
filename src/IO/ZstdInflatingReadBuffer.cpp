@@ -23,6 +23,9 @@ ZstdInflatingReadBuffer::ZstdInflatingReadBuffer(std::unique_ptr<ReadBuffer> in_
     }
 
     size_t ret = ZSTD_DCtx_setParameter(dctx.get(), ZSTD_d_windowLogMax, zstd_window_log_max);
+    if (ZSTD_getErrorCode(ret) == ZSTD_error_parameter_outOfBound)
+        throw Exception(ErrorCodes::ZSTD_DECODER_FAILED, "Setting zstd_window_log_max = {} is out of range for zstd", zstd_window_log_max);
+
     if (ZSTD_isError(ret))
     {
         throw Exception(ErrorCodes::ZSTD_DECODER_FAILED, "zstd_stream_decoder init failed: {}", ZSTD_getErrorName(ret));

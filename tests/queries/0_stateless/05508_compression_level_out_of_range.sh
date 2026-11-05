@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# no-fasttest: bzip2 and IcebergLocal are not in the fast-test build
+# no-fasttest: bzip2, IcebergLocal and BACKUP to a zip archive are not in the fast-test build
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,6 +12,7 @@ function cleanup()
 {
     rm -rf "${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}"_*
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}_zip"
 }
 cleanup
 trap cleanup EXIT
@@ -20,7 +21,7 @@ function check()
 {
     local out
     out=$(${CLICKHOUSE_CLIENT} --send_logs_level=fatal "$@" 2>&1) && echo "Unexpected success"
-    grep -oE 'Compression level -?[0-9]+ is out of range for [a-z0-9]+\. \([A-Z0-9_]+\)' <<< "$out"
+    grep -oE '(Compression level|Setting zstd_window_log_max =) -?[0-9]+ is out of range for [a-z0-9]+(: While executing File)?\. \([A-Z0-9_]+\)' <<< "$out"
 }
 
 check --query "INSERT INTO FUNCTION file('${CLICKHOUSE_TEST_UNIQUE_NAME}_1.csv.gz', 'CSV') SELECT 1 SETTINGS output_format_compression_level = 18"
@@ -31,3 +32,9 @@ check --query "INSERT INTO FUNCTION file('${CLICKHOUSE_TEST_UNIQUE_NAME}_4.csv.b
 # Iceberg metadata files are compressed with the same level.
 check --iceberg_metadata_compression_method=gzip --output_format_compression_level=18 \
     --query "CREATE TABLE ${TABLE} (k Int64) ENGINE = IcebergLocal('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_5/', 'Parquet')"
+
+${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION file('${CLICKHOUSE_TEST_UNIQUE_NAME}_6.csv.zst', 'CSV', 'x UInt64') SELECT 1"
+check --query "SELECT * FROM file('${CLICKHOUSE_TEST_UNIQUE_NAME}_6.csv.zst', 'CSV', 'x UInt64') SETTINGS zstd_window_log_max = 9"
+
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE}_zip (k Int64) ENGINE = MergeTree ORDER BY k"
+check --query "BACKUP TABLE ${TABLE}_zip TO Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_7.zip') SETTINGS compression_method = 'deflate', compression_level = 10"
