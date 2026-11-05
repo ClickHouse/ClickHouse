@@ -89,8 +89,6 @@ void requireArgumentCount(std::string_view operator_name, const std::vector<ASTP
 const std::unordered_map<std::string_view, std::string> direct_functions = {
     {"$strLenBytes", "length"},
     {"$strLenCP", "lengthUTF8"},
-    {"$toUpper", "upper"},
-    {"$toLower", "lower"},
     {"$abs", "abs"},
     {"$ceil", "ceil"},
     {"$floor", "floor"},
@@ -105,7 +103,6 @@ const std::unordered_map<std::string_view, std::string> direct_functions = {
     {"$range", "range"},
     {"$concat", "concat"},
     {"$mod", "modulo"},
-    {"$pow", "pow"},
     {"$ifNull", "coalesce"},
 };
 
@@ -139,7 +136,7 @@ const std::unordered_map<std::string_view, DatePartFunction> date_part_functions
     {"$isoDayOfWeek", {"toDayOfWeek", 0}},
 };
 
-/// Operators that fold their arguments into a balanced tree of binary applications, see `makeBalancedFold`.
+/// Operators that fold their arguments with a binary function, see `makeBalancedFold` and `makeSequentialFloatFold`.
 const std::unordered_map<std::string_view, std::string> folded_functions = {
     {"$add", "plus"},
     {"$multiply", "multiply"},
@@ -149,7 +146,9 @@ const std::unordered_map<std::string_view, std::string> folded_functions = {
   * into a balanced tree, keeping their order: `((a + b) + (c + d))` rather than `(((a + b) + c) + d)`.
   * The analyzer resolves an expression recursively, with a few kilobytes of stack per level, so a
   * chain of a hundred operands already exhausts the stack a query may use, while the depth of a
-  * balanced tree is the logarithm of their number.
+  * balanced tree is the logarithm of their number. The regrouping does not change the result of an
+  * exact arithmetic - of integers, whose overflow is checked, or of decimals - but it does change
+  * the rounding of a floating point one, see `makeSequentialFloatFold`.
   */
 ASTPtr makeBalancedFold(const std::string & function, const std::vector<ASTPtr> & operands, size_t begin, size_t end)
 {
@@ -157,6 +156,36 @@ ASTPtr makeBalancedFold(const std::string & function, const std::vector<ASTPtr> 
         return operands[begin]->clone();
     size_t middle = begin + (end - begin) / 2;
     return makeASTFunction(function, makeBalancedFold(function, operands, begin, middle), makeBalancedFold(function, operands, middle, end));
+}
+
+/** The operands of an operator such as `$add`, converted to `Float64` and folded with the binary
+  * `function` one after another, from the first to the last, as Mongo evaluates them: with doubles,
+  * `[1e16, 1.0, -1e16, 1.0]` add up to `1`, while `(1e16 + 1) + (-1e16 + 1)` is `0`. The fold is
+  * done by `arrayFold` over a flat array, so its depth does not grow with the number of operands,
+  * see `makeBalancedFold`. Every value is `Nullable`, so that the accumulator keeps its type when
+  * some of the operands are `Nullable` and others are not, and a `NULL` operand gives a `NULL`.
+  */
+ASTPtr makeSequentialFloatFold(const std::string & function, const std::vector<ASTPtr> & operands)
+{
+    const auto to_float = [](const ASTPtr & operand)
+    {
+        return makeASTFunction("toNullable", makeASTFunction("toFloat64", operand->clone()));
+    };
+    if (operands.size() == 1)
+        return to_float(operands.front());
+    std::vector<ASTPtr> rest;
+    rest.reserve(operands.size() - 1);
+    for (size_t i = 1; i < operands.size(); ++i)
+        rest.push_back(to_float(operands[i]));
+    auto parameters = makeASTFunction(
+        "tuple", make_intrusive<ASTIdentifier>("__mongo_fold_accumulator"), make_intrusive<ASTIdentifier>("__mongo_fold_operand"));
+    auto body = makeASTFunction(
+        function, make_intrusive<ASTIdentifier>("__mongo_fold_accumulator"), make_intrusive<ASTIdentifier>("__mongo_fold_operand"));
+    return makeASTFunction(
+        "arrayFold",
+        makeASTFunction("lambda", std::move(parameters), std::move(body)),
+        makeFunction("array", std::move(rest)),
+        to_float(operands.front()));
 }
 
 /// A member of the document of an operator such as `$regexFind` or `$dateTrunc`.
@@ -258,6 +287,28 @@ ASTPtr makeRuntimeTypeName(const ASTPtr & value)
         makeIsDynamic(value),
         makeASTFunction("dynamicType", makeASTFunction("CAST", value->clone(), makeLiteral(Field(String("Dynamic"))))),
         makeASTFunction("toTypeName", value->clone()));
+}
+
+/** Whether `value` is a date in each row: by the type of its value for a `Dynamic`, see
+  * `makeRuntimeTypeName`, and the same constant as `makeIsDate` for any other type.
+  */
+ASTPtr makeIsRuntimeDate(const ASTPtr & value)
+{
+    return makeASTFunction(
+        "match", makeRuntimeTypeName(value), makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*(Date|DateTime))"))));
+}
+
+/** `value` as a `DateTime64(3, 'UTC')`, or the epoch when it is not a date. It never throws, so it can
+  * be the branch of a dispatch on `makeIsRuntimeDate` that is evaluated for the values that are not
+  * dates too: with the old analyzer and `short_circuit_function_evaluation = 'disable'`, or for the
+  * rows of a `Dynamic` that hold a value of another type.
+  */
+ASTPtr makeDateOrEpoch(const ASTPtr & value)
+{
+    return makeASTFunction(
+        "ifNull",
+        makeASTFunction("accurateCastOrNull", value->clone(), makeLiteral(Field(String("DateTime64(3, 'UTC')")))),
+        makeASTFunction("toDateTime64", makeLiteral(Field(UInt64(0))), makeLiteral(Field(UInt64(3))), makeLiteral(Field(String("UTC")))));
 }
 
 /// `value`, which throws when the query is analyzed if `condition` - a constant - is true.
@@ -549,7 +600,7 @@ ASTPtr makeToDate(ASTPtr argument)
         auto is_a_number = makeASTFunction(
             "match",
             makeRuntimeTypeName(value),
-            makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*(U?Int|Float|Decimal))"))));
+            makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*(U?Int|B?Float|Decimal))"))));
         auto converted = makeASTFunction("if", std::move(is_a_number), std::move(milliseconds), parsed(value->clone()));
         /// A conversion of a `Dynamic` is not `Nullable`, and converts a `null` to the epoch, while
         /// `$toDate` of a `null` is `null`. For any other type the condition is true exactly when
@@ -559,23 +610,31 @@ ASTPtr makeToDate(ASTPtr argument)
 }
 
 /** The lowering of `$toInt`. `toInt32` wraps a value outside the range of a 32-bit integer around,
-  * while Mongo rejects it, so the value is checked first; the fraction of a value in the range is
-  * truncated by both. The check reads the value as a `Float64`, which holds every integer of the
-  * range exactly and is `NaN` - out of every range - for a `NaN`. A `NULL` passes the check and
-  * converts to `NULL`, as it does in Mongo.
+  * while Mongo rejects it, so the truncated value is checked first; the fraction of a value in the
+  * range is truncated by both. The truncation is done exactly by `toInt128`, as in `makeToLong`: a
+  * check through `Float64` would round a decimal such as `2147483647.999999999999999` up to
+  * `2147483648`, out of the range, although its truncation is in it. `toInt128` rejects a `NaN` and
+  * wraps a value far out of its own range, so a rough check through `Float64` comes first and
+  * bounds the magnitude. A `NULL` passes the check and converts to `NULL`, as it does in Mongo.
   */
 ASTPtr makeToInt(ASTPtr argument)
 {
     return withValue(std::move(argument), [](const ASTPtr & value)
     {
-        auto number = makeASTFunction("toFloat64", value->clone());
+        auto bounded = makeASTFunction(
+            "less", makeASTFunction("abs", makeASTFunction("toFloat64", value->clone())), makeLiteral(Field(Float64(1e19))));
+        auto truncated = makeASTFunction("toInt128", value->clone());
         auto in_range = makeASTFunction(
             "and",
-            makeASTFunction("greater", number, makeLiteral(Field(Int64(-2147483649)))),
-            makeASTFunction("less", number->clone(), makeLiteral(Field(Int64(2147483648)))));
+            makeASTFunction("greaterOrEquals", truncated, makeLiteral(Field(Int64(std::numeric_limits<Int32>::min())))),
+            makeASTFunction("lessOrEquals", truncated->clone(), makeLiteral(Field(Int64(std::numeric_limits<Int32>::max())))));
+        auto out_of_range = makeASTFunction(
+            "and",
+            makeASTFunction("isNotNull", value->clone()),
+            makeASTFunction("not", makeASTFunction("if", std::move(bounded), std::move(in_range), makeLiteral(Field(UInt64(0))))));
         auto guard = makeASTFunction(
             "throwIf",
-            makeASTFunction("not", std::move(in_range)),
+            std::move(out_of_range),
             makeLiteral(Field(String("The value of '$toInt' is out of the range of a 32-bit integer"))));
         /// The condition is never true: it throws instead.
         return makeASTFunction(
@@ -614,7 +673,8 @@ ASTPtr makeToLong(ASTPtr argument)
             "if", std::move(guard), makeASTFunction("toInt64", makeLiteral(Field(UInt64(0)))), makeASTFunction("toInt64", value->clone()));
         if (is_literal)
             return checked;
-        return makeASTFunction("if", makeIsDate(value), makeEpochMilliseconds(value), std::move(checked));
+        /// A date held by a `Dynamic` is a date too, see `makeIsRuntimeDate`.
+        return makeASTFunction("if", makeIsRuntimeDate(value), makeEpochMilliseconds(makeDateOrEpoch(value)), std::move(checked));
     });
 }
 
@@ -625,10 +685,11 @@ ASTPtr makeToDouble(ASTPtr argument)
         return makeASTFunction("toFloat64", std::move(argument));
     return withValue(std::move(argument), [](const ASTPtr & value)
     {
+        /// A date held by a `Dynamic` is a date too, see `makeIsRuntimeDate`.
         return makeASTFunction(
             "if",
-            makeIsDate(value),
-            makeASTFunction("toFloat64", makeEpochMilliseconds(value)),
+            makeIsRuntimeDate(value),
+            makeASTFunction("toFloat64", makeEpochMilliseconds(makeDateOrEpoch(value))),
             makeASTFunction("toFloat64", value->clone()));
     });
 }
@@ -647,7 +708,7 @@ ASTPtr makeToBool(ASTPtr argument)
         auto is_number = makeASTFunction(
             "match",
             makeRuntimeTypeName(value),
-            makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*(U?Int|Float|Decimal|Bool))"))));
+            makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*(U?Int|B?Float|Decimal|Bool))"))));
         auto text = makeASTFunction("toString", value->clone());
         auto number_truth = makeASTFunction(
             "toBool",
@@ -792,16 +853,14 @@ ASTPtr makeToString(ASTPtr argument)
         return makeASTFunction("toString", std::move(argument));
     return withValue(std::move(argument), [](const ASTPtr & value)
     {
-        auto as_date = makeASTFunction(
-            "ifNull",
-            makeASTFunction("accurateCastOrNull", value->clone(), makeLiteral(Field(String("DateTime64(3, 'UTC')")))),
-            makeASTFunction("toDateTime64", makeLiteral(Field(UInt64(0))), makeLiteral(Field(UInt64(3))), makeLiteral(Field(String("UTC")))));
+        auto as_date = makeDateOrEpoch(value);
         auto date_text = makeASTFunction(
             "concat",
             makeDateToString("%Y-%m-%dT%H:%M:%S.%LZ", as_date, makeLiteral(Field(String("UTC")))),
             makeASTFunction(
                 "substring", makeASTFunction("toString", value->clone()), makeLiteral(Field(UInt64(1))), makeLiteral(Field(UInt64(0)))));
-        return makeASTFunction("if", makeIsDate(value), std::move(date_text), makeASTFunction("toString", value->clone()));
+        /// A date held by a `Dynamic` is a date too, see `makeIsRuntimeDate`.
+        return makeASTFunction("if", makeIsRuntimeDate(value), std::move(date_text), makeASTFunction("toString", value->clone()));
     });
 }
 
@@ -984,10 +1043,123 @@ ASTPtr withRowGuard(ASTPtr value, ASTPtr condition, const std::string & message)
     return makeASTFunction("tupleElement", makeASTFunction("tuple", std::move(value), std::move(guard)), makeLiteral(Field(UInt64(1))));
 }
 
+/// `base` raised to the power `exponent`, multiplied out exactly, see `makePower`.
+ASTPtr makeExactIntegerPower(const ASTPtr & base, UInt64 exponent)
+{
+    const auto checked_multiply = [](const ASTPtr & left, const ASTPtr & right)
+    {
+        return withIntegerOverflowCheck(
+            makeASTFunction("multiply", left->clone(), right->clone()),
+            makeASTFunction("multiply", makeASTFunction("toFloat64", left->clone()), makeASTFunction("toFloat64", right->clone())));
+    };
+
+    /// The power of a value other than `0`, `1` and `-1` overflows a 64-bit integer at the exponent
+    /// 64, and the power of those is the same for any exponent of the same parity above it, so
+    /// the exponent is reduced, and the depth of the multiplications below stays small.
+    if (exponent > 64)
+        exponent = 64 + exponent % 2;
+    if (exponent == 0)
+        /// `1`, and `NULL` for a `NULL`.
+        return makeASTFunction("plus", makeASTFunction("multiply", base->clone(), makeLiteral(Field(UInt64(0)))), makeLiteral(Field(UInt64(1))));
+
+    /// Exponentiation by squaring.
+    ASTPtr result;
+    ASTPtr square = base->clone();
+    while (true)
+    {
+        if (exponent & 1)
+            result = result ? checked_multiply(result, square) : square->clone();
+        exponent >>= 1;
+        if (!exponent)
+            break;
+        square = checked_multiply(square, square);
+    }
+    return result;
+}
+
+/** The lowering of `$pow`. `pow` computes in `Float64`, while Mongo keeps the result of integers an
+  * integer as long as it fits a 64-bit integer, and the result of a decimal a decimal. With an
+  * integer base and a non-negative integer constant as the exponent, which is how a power is
+  * usually written, the result is multiplied out exactly, and an overflow is an error, as for
+  * `$multiply`. The type of the base is only known when the query is analyzed, so both lowerings
+  * are converted to the type of the one that the constant condition chooses. A negative exponent
+  * gives a double in Mongo, as `pow` does. Any other power of integers - with an exponent that is
+  * not a constant - is computed by `pow`, and a result that a `Float64` may not hold exactly, of
+  * `2^53` or more, is an error instead. A decimal operand is rejected.
+  */
+ASTPtr makePower(const ASTPtr & base_argument, const ASTPtr & exponent_argument)
+{
+    std::optional<UInt64> constant_exponent;
+    if (const auto * literal = exponent_argument->as<ASTLiteral>())
+    {
+        if (literal->value.getType() == Field::Types::UInt64)
+            constant_exponent = literal->value.safeGet<UInt64>();
+        else if (literal->value.getType() == Field::Types::Int64 && literal->value.safeGet<Int64>() >= 0)
+            constant_exponent = static_cast<UInt64>(literal->value.safeGet<Int64>());
+    }
+
+    return withValue(base_argument, [&](const ASTPtr & base)
+    {
+        return withValue(exponent_argument, [&](const ASTPtr & exponent)
+        {
+            const auto type_matches = [](const ASTPtr & value, const char * pattern)
+            {
+                return makeASTFunction("match", makeASTFunction("toTypeName", value->clone()), makeLiteral(Field(String(pattern))));
+            };
+            constexpr auto integer_pattern = R"(^(Nullable\(|LowCardinality\()*U?Int\d+\)*$)";
+            constexpr auto decimal_pattern = R"(^(Nullable\(|LowCardinality\()*Decimal)";
+
+            auto floating = makeASTFunction("pow", base->clone(), exponent->clone());
+            auto is_decimal = makeASTFunction("or", type_matches(base, decimal_pattern), type_matches(exponent, decimal_pattern));
+            auto are_integers = makeASTFunction("and", type_matches(base, integer_pattern), type_matches(exponent, integer_pattern));
+
+            ASTPtr result;
+            if (constant_exponent)
+            {
+                auto exact = makeExactIntegerPower(base, *constant_exponent);
+                auto type = makeASTFunction(
+                    "if", are_integers->clone(), makeASTFunction("toTypeName", exact->clone()), makeASTFunction("toTypeName", floating->clone()));
+                result = makeASTFunction(
+                    "if",
+                    std::move(are_integers),
+                    makeASTFunction("CAST", std::move(exact), type),
+                    makeASTFunction("CAST", std::move(floating), type->clone()));
+            }
+            else
+            {
+                result = withRowGuard(
+                    floating,
+                    makeASTFunction(
+                        "and",
+                        std::move(are_integers),
+                        makeASTFunction("greaterOrEquals", makeASTFunction("abs", floating->clone()), makeLiteral(Field(Float64(9007199254740992.0))))),
+                    "The result of '$pow' of integers is too large to be computed exactly: use a constant exponent");
+            }
+            return withGuard(std::move(result), std::move(is_decimal), "'$pow' of a decimal is not supported");
+        });
+    });
+}
+
 ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
 {
     if (auto it = direct_functions.find(name); it != direct_functions.end())
         return makeFunction(it->second, parseArguments(argument));
+
+    if (name == "$pow")
+    {
+        auto arguments = parseArguments(argument);
+        requireArgumentCount(name, arguments, 2);
+        return makePower(arguments[0], arguments[1]);
+    }
+
+    /// Mongo converts a `null` to the empty string, while `upper` and `lower` keep a `NULL`.
+    if (name == "$toUpper" || name == "$toLower")
+    {
+        auto arguments = parseArguments(argument);
+        requireArgumentCount(name, arguments, 1);
+        return makeASTFunction(
+            name == "$toUpper" ? "upper" : "lower", makeASTFunction("ifNull", arguments[0], makeLiteral(Field(String()))));
+    }
 
     /// Mongo rejects a division by zero and the square root of a negative number, for which
     /// `divide` and `sqrt` return an infinity and `NaN`. The checked operand is bound once (see
@@ -1100,6 +1272,23 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
             ASTPtr exact = makeBalancedFold(it->second, operands, 0, operands.size());
             ASTPtr approximate = makeBalancedFold(it->second, approximate_operands, 0, approximate_operands.size());
             auto checked = withIntegerOverflowCheck(exact, std::move(approximate));
+            /// A floating point result is computed in the order of the operands instead, see
+            /// `makeSequentialFloatFold`, and converted to the type of the balanced one. The type
+            /// name is a constant, so only one of the branches survives the analysis. The other one
+            /// is still evaluated with the old analyzer and `short_circuit_function_evaluation =
+            /// 'disable'`, where its conversion of a result of integers or decimals, computed as a
+            /// finite double close to the exact one, is in the range of the type whenever the exact
+            /// result is.
+            if (operands.size() > 2)
+            {
+                auto is_float = makeASTFunction(
+                    "match",
+                    makeASTFunction("toTypeName", exact->clone()),
+                    makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*B?Float)"))));
+                auto sequential = makeASTFunction(
+                    "CAST", makeSequentialFloatFold(it->second, operands), makeASTFunction("toTypeName", exact->clone()));
+                checked = makeASTFunction("if", std::move(is_float), std::move(sequential), std::move(checked));
+            }
             if (name != "$add")
                 return checked;
             /// The sum is a date exactly when one of the operands is, see `date_arithmetic_message`.
