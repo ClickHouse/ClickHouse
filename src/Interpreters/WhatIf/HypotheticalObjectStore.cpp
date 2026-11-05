@@ -53,6 +53,7 @@ void bindColumn(const String & name, const ColumnsDescription & columns, Hypothe
     if (const auto column_default = columns.getDefault(column->getNameInStorage()))
     {
         it->second += fmt::format(" {} {}", toString(column_default->kind), column_default->expression->formatForErrorMessage());
+        binding.defaults[name] = column_default->expression->getTreeHash(/*ignore_aliases=*/false);
         bindIdentifiers(*column_default->expression, columns, binding);
     }
 }
@@ -74,6 +75,9 @@ String describeChange(const HypotheticalBinding & stored, const HypotheticalBind
     for (const auto & [name, after] : current.columns)
         if (!after.empty() && !stored.columns.contains(name))
             return report(name, {}, after);
+    for (const auto & [name, before] : stored.defaults)
+        if (const auto it = current.defaults.find(name); it != current.defaults.end() && it->second != before)
+            return fmt::format("the default of column {} changed", backQuote(name));
     if (stored.wildcard != current.wildcard)
         return fmt::format("the columns under `*` were ({}), now ({})", fmt::join(stored.wildcard, ", "), fmt::join(current.wildcard, ", "));
     if (stored.settings != current.settings)

@@ -4,6 +4,7 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
+#include <Parsers/IASTHash.h>
 
 #include <map>
 #include <mutex>
@@ -20,6 +21,8 @@ struct HypotheticalBinding
 {
     /// a name that is not a column maps to an empty string
     std::map<String, String> columns;
+    /// tree hashes of the bound defaults, because `columns` hides what `query_masking_rules` match
+    std::map<String, IASTHash> defaults;
     /// the storage columns behind `columns`
     NameSet storage_columns;
     /// the ordered expansion of `*`
