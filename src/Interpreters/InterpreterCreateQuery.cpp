@@ -1369,14 +1369,21 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     if (!create.columns_list)
         create.set(create.columns_list, make_intrusive<ASTColumns>());
 
-    if (!isReplayedTableDefinition(mode, create, getContext()) && create.columns_list->columns)
+    /// An internal create builds a hidden inner table from a definition its parent screened, and runs in `CREATE` mode even on `RESTORE`.
+    if (!internal && !isReplayedTableDefinition(mode, create, getContext()))
     {
-        for (const auto & ast : create.columns_list->columns->children)
+        auto validate_column_settings_names = [](const ASTColumns * columns)
         {
-            const auto & col_decl = ast->as<ASTColumnDeclaration &>();
-            if (auto settings = col_decl.getSettings())
-                MergeTreeColumnSettings::validateNames(settings->as<ASTSetQuery &>());
-        }
+            if (!columns || !columns->columns)
+                return;
+            for (const auto & ast : columns->columns->children)
+                if (auto settings = ast->as<ASTColumnDeclaration &>().getSettings())
+                    MergeTreeColumnSettings::validateNames(settings->as<ASTSetQuery &>());
+        };
+        validate_column_settings_names(create.columns_list);
+        if (create.targets)
+            for (const auto & target : create.targets->targets)
+                validate_column_settings_names(target.inner_columns ? target.inner_columns->as<ASTColumns>() : nullptr);
     }
 
     /// A constraint expression is evaluated per block and read by block row, so an `arrayJoin` inside it

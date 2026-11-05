@@ -14,8 +14,12 @@ CREATE TABLE t_column_settings_unknown (x UInt64 SETTINGS (param_not_a_setting =
 CREATE TABLE t_column_settings_unknown (x UInt64 SETTINGS (param_min_compress_block_size = 1)) ENGINE = MergeTree ORDER BY x; -- { serverError UNKNOWN_SETTING }
 CREATE TABLE t_column_settings_unknown (x UInt64 SETTINGS (not_a_setting = DEFAULT)) ENGINE = Log; -- { serverError UNKNOWN_SETTING }
 
--- TimeSeries regenerates its outer columns, dropping every column clause before any name is checked.
+-- TimeSeries keeps its INNER COLUMNS, and screens them before any inner table is created.
 SET allow_experimental_time_series_table = 1;
+CREATE TABLE t_column_settings_ts ENGINE = TimeSeries TAGS INNER COLUMNS (id UUID SETTINGS (not_a_setting = DEFAULT)); -- { serverError UNKNOWN_SETTING }
+SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner%';
+
+-- TimeSeries regenerates its outer columns, dropping every column clause before any name is checked.
 CREATE TABLE t_column_settings_ts (metric_name String SETTINGS (not_a_setting = DEFAULT), tags Map(String, String)) ENGINE = TimeSeries;
 SELECT position(create_table_query, 'SETTINGS (') = 0
 FROM system.tables WHERE database = currentDatabase() AND name = 't_column_settings_ts';
