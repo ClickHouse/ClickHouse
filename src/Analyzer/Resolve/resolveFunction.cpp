@@ -1311,16 +1311,37 @@ static QueryTreeNodePtr buildScalarInComparison(
     return raw_if;
 }
 
-/// converts tuple to array with proper type handling
-QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
-    const QueryTreeNodes & tuple_args,
-    const QueryTreeNodePtr & in_first_argument,
-    IdentifierResolveScope & scope,
-    bool expand_single_tuple_value,
+/// Builds the row-wise equivalent of membership in a heterogeneous numeric value list.
+/// A single array element type cannot preserve every integer, decimal, and floating-point
+/// candidate, while the comparison functions compare each numeric pair accurately.
+static QueryTreeNodePtr buildNumericInComparison(
+    const QueryTreeNodePtr & left_argument,
+    const QueryTreeNodes & right_arguments,
+    bool is_not_in,
     bool compare_nulls)
 {
-    QueryTreeNodes array_elements = getArrayElementsForInTupleArguments(tuple_args, in_first_argument, scope, expand_single_tuple_value);
+    if (right_arguments.empty())
+        return std::make_shared<ConstantNode>(is_not_in ? Field{1u} : Field{0u}, std::make_shared<DataTypeUInt8>());
 
+    if (right_arguments.size() == 1)
+        return buildScalarInComparison(left_argument, right_arguments.front(), is_not_in, compare_nulls);
+
+    auto logical_function = std::make_shared<FunctionNode>(is_not_in ? "and" : "or");
+    auto & comparisons = logical_function->getArguments().getNodes();
+    comparisons.reserve(right_arguments.size());
+    for (const auto & right_argument : right_arguments)
+        comparisons.push_back(buildScalarInComparison(left_argument, right_argument, is_not_in, compare_nulls));
+
+    return logical_function;
+}
+
+/// converts tuple to array with proper type handling
+QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
+    const QueryTreeNodes & array_elements,
+    const QueryTreeNodePtr & in_first_argument,
+    IdentifierResolveScope & scope,
+    bool compare_nulls)
+{
     bool left_is_null = isNullConstant(in_first_argument);
 
     bool rhs_has_null = std::any_of(array_elements.begin(), array_elements.end(),
@@ -2914,8 +2935,27 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         return ProjectionNames{proj};
                     }
 
-                    /// convert tuple to array and rewrite to has()
-                    QueryTreeNodePtr array_arg = convertTupleToArray(tuple_args, in_first_argument, scope, expand_single_tuple_value, compare_nulls);
+                    QueryTreeNodes array_elements = getArrayElementsForInTupleArguments(
+                        tuple_args, in_first_argument, scope, expand_single_tuple_value);
+
+                    /// A heterogeneous numeric list with no lossless common type cannot be
+                    /// represented by one array element type without changing membership near
+                    /// precision boundaries. When the lossy numeric setting makes this list
+                    /// eligible, compare every candidate directly instead.
+                    const bool allow_lossy_numeric_supertype
+                        = scope.context->getSettingsRef()[Setting::allow_lossy_numeric_supertype];
+                    if (allow_lossy_numeric_supertype
+                        && !getLeastSupertypeForInArrayElements(array_elements, in_first_argument, false, false)
+                        && getLeastSupertypeForInArrayElements(array_elements, in_first_argument, false, true))
+                    {
+                        auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+                        node = buildNumericInComparison(in_first_argument, array_elements, is_not_in, compare_nulls);
+                        resolveFunction(node, scope);
+                        return ProjectionNames{proj};
+                    }
+
+                    /// Convert the value list to an array and rewrite to `has`.
+                    QueryTreeNodePtr array_arg = convertTupleToArray(array_elements, in_first_argument, scope, compare_nulls);
                     return buildHasExpression(
                         node,
                         array_arg,
