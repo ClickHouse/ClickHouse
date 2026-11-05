@@ -8,5 +8,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 engine=MergeTree
+part=1
 # shellcheck source=./lazy_load_tables_merge_tree_operations.lib
 . "$CUR_DIR"/lazy_load_tables_merge_tree_operations.lib
