@@ -1,5 +1,4 @@
 import argparse
-import html
 import json
 import math
 import multiprocessing
@@ -841,51 +840,6 @@ def check_failpoints_are_disabled(files):
     return "\n".join(errors)
 
 
-def check_no_failpoints_in_performance_tests(files):
-    """
-    Performance tests must not use fail points. After the first one is enabled, libfiu takes a
-    global lock in every fail point check of the server until it restarts, so all the tests that
-    run after it on the same server are slower and noisier.
-
-    The files a test pulls in with a `file` attribute (queries, includes, settings) are checked
-    too, wherever they are: `perf.py` resolves them relative to the file that declares them.
-    """
-
-    errors = []
-    pending = [os.path.normpath(path) for path in files]
-    seen = set()
-    while pending:
-        test_case = pending.pop()
-        if test_case in seen:
-            continue
-        seen.add(test_case)
-        try:
-            with open(test_case, "r", encoding="utf-8", errors="replace") as f:
-                file_content = html.unescape(f.read())
-        except Exception as e:
-            errors.append(f"Error checking {test_case}: {e}")
-            continue
-
-        for name in re.findall(r"\bfile\s*=\s*[\"']([^\"']+)[\"']", file_content):
-            path = os.path.normpath(os.path.join(os.path.dirname(test_case), name))
-            if os.path.isfile(path):
-                pending.append(path)
-
-        match = re.search(r"\bfailpoints?\b", file_content, re.IGNORECASE)
-        if not match:
-            continue
-
-        line_number = file_content.count("\n", 0, match.start()) + 1
-        errors.append(
-            f"{test_case}:{line_number} uses a fail point. Performance tests must not use fail "
-            f"points: after the first one is enabled, every fail point check in the server takes a "
-            f"global lock until the server restarts, which slows down all the tests that run after "
-            f"it on the same server."
-        )
-
-    return "\n".join(errors)
-
-
 def check_gaps_in_tests_numbers(file_paths, gap_threshold=100):
     test_numbers = set()
 
@@ -1606,12 +1560,6 @@ if __name__ == "__main__":
         file_suffixes=[".sql", ".sh", ".py", ".j2"],
     )
 
-    performance_test_files = Utils.traverse_paths(
-        include_paths=["./tests/performance"],
-        exclude_paths=["./tests/performance/scripts"],
-        file_suffixes=[".xml", ".xml.inc"],
-    )
-
     compose_files = Utils.traverse_paths(
         include_paths=["./tests/integration/compose"],
         exclude_paths=[],
@@ -1679,15 +1627,6 @@ if __name__ == "__main__":
                 check_name=testname,
                 check_function=check_failpoint_tests_are_isolated,
                 files=functional_test_files,
-            )
-        )
-    testname = "no_failpoints_in_performance_tests"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            run_check_concurrent(
-                check_name=testname,
-                check_function=check_no_failpoints_in_performance_tests,
-                files=performance_test_files,
             )
         )
     testname = "test_numbers_check"
