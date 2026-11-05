@@ -94,8 +94,7 @@ SETTINGS not_a_setting_at_all = DEFAULT; -- { serverError UNKNOWN_SETTING }
 
 SELECT '--- an ON CLUSTER create is rejected too ---';
 
--- The initiator only enqueues it, so the clause is judged on the host that runs the queue entry.
--- `FORMAT Null` keeps that host's status row, which repeats the error, out of the output.
+-- The initiator rejects it before enqueueing anything.
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ON CLUSTER test_shard_localhost ENGINE = Atomic
 SETTINGS not_a_setting_at_all = DEFAULT FORMAT Null; -- { serverError UNKNOWN_SETTING }
 

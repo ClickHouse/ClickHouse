@@ -2475,6 +2475,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!create.cluster.empty())
     {
         chassert(!ddl_guard);
+        StorageFactory::instance().checkSettingNamesOnInitiator(create, mode, getContext());
         return executeQueryOnCluster(create);
     }
 
@@ -4154,6 +4155,14 @@ BlockIO InterpreterCreateQuery::execute()
 
                 normalizeLegacyToTimeInCreateQuery(query_ptr, getContext());
             }
+
+            if (is_create_database)
+                checkDatabaseSettingNames(
+                    create,
+                    getContext(),
+                    getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, /*secondary*/ false),
+                    /*is_metadata_replay=*/ false,
+                    is_restore_from_backup);
 
             return executeQueryOnCluster(create);
         }

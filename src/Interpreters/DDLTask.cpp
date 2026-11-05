@@ -485,6 +485,16 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
 }
 
 
+ContextMutablePtr DDLTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)
+{
+    auto query_context = DDLTaskBase::makeQueryContext(from_context, zookeeper);
+    /// Format 3 is written as 2, so an entry of the older formats is still judged here.
+    if (entry.version >= DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
+        query_context->setSettingNamesCheckedOnInitiator(true);
+    return query_context;
+}
+
+
 bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const ZooKeeperPtr & zookeeper, const std::optional<std::string> & config_host_name)
 {
     bool host_in_hostlist = false;

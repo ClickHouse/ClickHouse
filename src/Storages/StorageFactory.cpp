@@ -63,6 +63,36 @@ bool isReplayedTableDefinition(
 }
 
 
+namespace
+{
+
+/// A name that is neither a setting of this engine nor a query setting of this context is no setting at
+/// all: it is the complement of what `InterpreterSetQuery::applySettingsFromQuery` moves to the query
+/// context, which counts a custom setting the context holds as a query setting.
+void checkSettingNames(
+    const ASTSetQuery & settings,
+    const String & engine_name,
+    StorageFactory::HasBuiltinSettingFn * has_builtin_setting_fn,
+    const Settings & query_settings)
+{
+    chassert(has_builtin_setting_fn != nullptr);
+    auto check = [&](std::string_view name)
+    {
+        if (!has_builtin_setting_fn(name) && !query_settings.has(name))
+            throw Exception(
+                ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}': for storage {}", name, engine_name);
+    };
+
+    for (const auto & change : settings.changes)
+        check(change.name);
+    /// `name = DEFAULT` is parsed into `default_settings`, not `changes`, and is serialized back into the stored definition.
+    for (const auto & name : settings.default_settings)
+        check(name);
+    /// `param_x = ...` lands in `query_parameters` with the prefix stripped, and only a standalone `SET` reads that payload.
+    for (const auto & parameter : settings.query_parameters)
+        check(QUERY_PARAMETER_NAME_PREFIX + parameter.first);
+}
+
 void checkStorageSettingNames(const StorageFactory::Arguments & args)
 {
     if (!args.storage_def || !args.storage_def->settings)
@@ -70,30 +100,13 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args)
 
     const auto local_context = args.getLocalContext();
 
-    if (isReplayedTableDefinition(args.mode, args.query, local_context))
+    if (isReplayedTableDefinition(args.mode, args.query, local_context) || local_context->areSettingNamesCheckedOnInitiator())
         return;
 
-    /// A name that is neither a setting of this engine nor a query setting of this context is no setting at
-    /// all: it is the complement of what `InterpreterSetQuery::applySettingsFromQuery` moves to the query
-    /// context, which counts a custom setting the context holds as a query setting.
     const auto & features = StorageFactory::instance().getStorageFeatures(args.engine_name);
-    chassert(features.has_builtin_setting_fn != nullptr);
-    const Settings & query_settings = local_context->getSettingsRef();
-    auto check = [&](std::string_view name)
-    {
-        if (!features.has_builtin_setting_fn(name) && !query_settings.has(name))
-            throw Exception(
-                ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}': for storage {}", name, args.engine_name);
-    };
+    checkSettingNames(*args.storage_def->settings, args.engine_name, features.has_builtin_setting_fn, local_context->getSettingsRef());
+}
 
-    for (const auto & change : args.storage_def->settings->changes)
-        check(change.name);
-    /// `name = DEFAULT` is parsed into `default_settings`, not `changes`, and is serialized back into the stored definition.
-    for (const auto & name : args.storage_def->settings->default_settings)
-        check(name);
-    /// `param_x = ...` lands in `query_parameters` with the prefix stripped, and only a standalone `SET` reads that payload.
-    for (const auto & parameter : args.storage_def->settings->query_parameters)
-        check(QUERY_PARAMETER_NAME_PREFIX + parameter.first);
 }
 
 
@@ -307,12 +320,16 @@ StoragePtr StorageFactory::get(
 
     chassert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 
+    const auto & creator = storages.at(name);
+    if (creator.features.checks_setting_names)
+        checkStorageSettingNames(arguments);
+
     /// The storage object and its metadata outlive the query, so route them to the table-lifetime arena instead
     /// of fragmenting the per-CPU query arenas. Settled on query end, see `MemoryTracker::settleDriftOnQueryEnd`.
     StoragePtr res;
     {
         ScopedJemallocThreadArena table_metadata_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        res = storages.at(name).creator_fn(arguments);
+        res = creator.creator_fn(arguments);
     }
 
     /// A replayed definition was checked when the table was created.
@@ -382,6 +399,31 @@ AccessRightsElements StorageFactory::getExportAccess(const ASTCreateQuery & crea
             add(*inner_engine);
     }
     return res;
+}
+
+void StorageFactory::checkSettingNamesOnInitiator(const ASTCreateQuery & create, LoadingStrictnessLevel mode, const ContextPtr & context) const
+{
+    if (isReplayedTableDefinition(mode, create, context))
+        return;
+
+    auto check = [&](const ASTStorage & storage)
+    {
+        if (!storage.engine || !storage.settings)
+            return;
+        /// An engine this server does not have is reported by the hosts that build it.
+        auto it = storages.find(storage.engine->name);
+        if (it == storages.end() || !it->second.features.checks_setting_names)
+            return;
+        checkSettingNames(*storage.settings, storage.engine->name, it->second.features.has_builtin_setting_fn, context->getSettingsRef());
+    };
+
+    if (create.storage)
+        check(*create.storage);
+    if (create.targets)
+    {
+        for (const ASTStorage * inner_engine : create.targets->getInnerEngines())
+            check(*inner_engine);
+    }
 }
 
 AccessRightsElements StorageFactory::getExportAccessOfAnyEngine(const SettingsChanges & changes) const

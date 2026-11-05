@@ -660,6 +660,8 @@ protected:
     /// Set for CREATE queries a Replicated database replays from a definition it already stored.
     /// Such a definition describes existing state, so validation that may reject a new one must not run.
     bool is_recovery_from_stored_metadata = false;
+    /// Set for a host running an `ON CLUSTER` entry whose `CREATE TABLE` the initiator normalized, and so also judged its `SETTINGS` names.
+    bool setting_names_checked_on_initiator = false;
     /// `EXPLAIN WHATIF` plans the query without the projections that it weighs, so its plans skip the forced projection check
     bool skip_forced_projection_check = false;
     /// True when this context belongs to the inner query of an expanded view.
@@ -2049,6 +2051,9 @@ public:
     void setDDLOrOnClusterInternal(bool value) { is_ddl_or_on_cluster_internal = value; }
 
     bool isRecoveryFromStoredMetadata() const { return is_recovery_from_stored_metadata; }
+
+    bool areSettingNamesCheckedOnInitiator() const { return setting_names_checked_on_initiator; }
+    void setSettingNamesCheckedOnInitiator(bool value) { setting_names_checked_on_initiator = value; }
 
     bool skipsForcedProjectionCheck() const { return skip_forced_projection_check; }
     void setSkipForcedProjectionCheck() { skip_forced_projection_check = true; }

@@ -91,7 +91,7 @@ void checkDatabaseSettingNames(
     bool is_restore_from_backup)
 {
     const auto * storage = create.storage;
-    if (!storage || !storage->engine || !storage->settings)
+    if (!storage || !storage->settings)
         return;
 
     /// Plain `ATTACH` is the mode of both a stored-definition replay and a user's own `ATTACH DATABASE`, so
@@ -103,12 +103,15 @@ void checkDatabaseSettingNames(
 #else
     const bool is_shared_catalog_replay = false;
 #endif
+    /// An ON CLUSTER initiator judges these names at every entry format.
     if (create.attach_short_syntax || (is_metadata_replay && mode >= LoadingStrictnessLevel::ATTACH) || is_restore_from_backup
-        || is_shared_catalog_replay)
+        || is_shared_catalog_replay || context->isDDLOrOnClusterInternal())
         return;
 
+    /// A clause without `ENGINE` creates an `Atomic` database.
+    const String engine_name = storage->engine ? storage->engine->name : "Atomic";
     /// An unregistered engine, and one that accepts no settings at all, are both reported by `validate`.
-    const auto * features = DatabaseFactory::instance().tryGetDatabaseEngineFeatures(storage->engine->name);
+    const auto * features = DatabaseFactory::instance().tryGetDatabaseEngineFeatures(engine_name);
     if (!features || !features->supports_settings)
         return;
 
@@ -116,7 +119,7 @@ void checkDatabaseSettingNames(
     auto reject = [&](std::string_view name)
     {
         throw Exception(
-            ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}': for database engine {}", name, storage->engine->name);
+            ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}': for database engine {}", name, engine_name);
     };
 
     /// `name = DEFAULT` is parsed into `default_settings`, not `changes`, and round-trips into the stored definition.

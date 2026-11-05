@@ -90,6 +90,8 @@ public:
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
         GetExportAccessFn * get_export_access_fn = nullptr;
+        /// `SETTINGS` names that are neither a setting of the engine nor a query setting are rejected, see `checkSettingNamesOnInitiator`.
+        bool checks_setting_names = false;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -130,6 +132,7 @@ public:
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
         .get_export_access_fn = nullptr,
+        .checks_setting_names = false,
     }, Documentation documentation = {});
 
     const Storages & getAllStorages() const
@@ -168,6 +171,8 @@ public:
     /// See `GetExportAccessFn`. For the engine of the table and the inner engines of a materialized view or a `TimeSeries`
     /// table. An unknown engine needs nothing here: creating it fails later.
     AccessRightsElements getExportAccess(const ASTCreateQuery & create) const;
+    /// Rejects the names an engine of `create` judges, on the initiator of an `ON CLUSTER` query: the hosts that run it do not judge them again.
+    void checkSettingNamesOnInitiator(const ASTCreateQuery & create, LoadingStrictnessLevel mode, const ContextPtr & context) const;
     /// The grants of every engine for which `changes` send the data elsewhere. It does not depend on the engine of the table,
     /// so `ALTER ... ON CLUSTER` can be authorized on an initiator that does not have the table or has another engine.
     AccessRightsElements getExportAccessOfAnyEngine(const SettingsChanges & changes) const;
@@ -177,9 +182,6 @@ private:
 };
 
 void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types);
-
-/// Rejects a `SETTINGS` name that is neither a setting of this engine nor a query setting. Judges only a fresh definition.
-void checkStorageSettingNames(const StorageFactory::Arguments & args);
 
 /// Whether the definition is replayed (attach, DDL replay, Keeper recovery, Shared Catalog replay)
 /// rather than written by the user now. Refusing a replayed definition would block loading or retry forever.

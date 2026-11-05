@@ -1450,12 +1450,11 @@ void registerStorageLog(StorageFactory & factory)
     StorageFactory::StorageFeatures features{
         .supports_settings = true,
         .has_builtin_setting_fn = StorageLogSettings::hasBuiltin,
+        .checks_setting_names = true,
     };
 
     auto create_fn = [](const StorageFactory::Arguments & args)
     {
-        checkStorageSettingNames(args);
-
         if (!args.engine_args.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
                 args.engine_name, args.engine_args.size());

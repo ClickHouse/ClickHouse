@@ -173,6 +173,8 @@ struct DDLTask : public DDLTaskBase
 
     String getShardID() const override;
 
+    ContextMutablePtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper) override;
+
     static bool
     isSelfHostID(LoggerPtr log, const HostID & checking_host_id, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port);
     static bool

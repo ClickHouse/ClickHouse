@@ -176,7 +176,6 @@ static void registerStorageAzure(StorageFactory & factory)
 {
     factory.registerStorage(AzureDefinition::storage_engine_name, [](const StorageFactory::Arguments & args)
     {
-        checkStorageSettingNames(args);
         auto configuration = std::make_shared<StorageAzureConfiguration>();
         return createStorageObjectStorage(args, configuration);
     },
@@ -187,6 +186,7 @@ static void registerStorageAzure(StorageFactory & factory)
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::AZURE,
         .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
+        .checks_setting_names = true,
     },
     Documentation{
         .description = R"DOCS_MD(
@@ -801,7 +801,6 @@ ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(r
 
     factory.registerStorage(name, [=](const StorageFactory::Arguments & args)
     {
-        checkStorageSettingNames(args);
         auto configuration = std::make_shared<StorageS3Configuration>();
         return createStorageObjectStorage(args, configuration);
     },
@@ -812,6 +811,7 @@ ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(r
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::S3,
         .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
+        .checks_setting_names = true,
     },
     Documentation{
         .description = description,
@@ -846,7 +846,6 @@ static void registerStorageHDFS(StorageFactory & factory)
 {
     factory.registerStorage(HDFSDefinition::storage_engine_name, [=](const StorageFactory::Arguments & args)
     {
-        checkStorageSettingNames(args);
         auto configuration = std::make_shared<StorageHDFSConfiguration>();
         return createStorageObjectStorage(args, configuration);
     },
@@ -857,6 +856,7 @@ static void registerStorageHDFS(StorageFactory & factory)
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::HDFS,
         .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
+        .checks_setting_names = true,
     },
     Documentation{
         .description = R"DOCS_MD(

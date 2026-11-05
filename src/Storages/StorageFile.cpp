@@ -3765,14 +3765,13 @@ void registerStorageFile(StorageFactory & factory)
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::FILE,
         .has_builtin_setting_fn = Settings::hasBuiltin,
+        .checks_setting_names = true,
     };
 
     factory.registerStorage(
         "File",
         [](const StorageFactory::Arguments & factory_args)
         {
-            checkStorageSettingNames(factory_args);
-
             auto context = factory_args.getLocalContext();
             StorageFile::CommonArguments storage_args
             {
