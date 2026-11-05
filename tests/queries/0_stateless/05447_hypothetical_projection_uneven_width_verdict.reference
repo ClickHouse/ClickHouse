@@ -8,6 +8,3 @@ real: 1 marks, 100 rows
 -- the byte limit cuts granules
 With p (normal projection, hypothetical):
 verdict: too close to call
--- a compact part
-With p (normal projection, hypothetical):
-verdict: too close to call

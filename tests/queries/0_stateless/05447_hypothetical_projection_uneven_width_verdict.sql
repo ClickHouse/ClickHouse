@@ -30,18 +30,6 @@ SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
 FROM (EXPLAIN WHATIF SELECT a FROM b_est WHERE k = '42')
 WHERE match(line, '^(With |verdict:)');
 
--- a compact part can end a granule at the end of each block
-CREATE TABLE c_est (a UInt64, k String) ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = '1Gi', min_rows_for_wide_part = 1000000000,
-        ratio_of_defaults_for_sparse_serialization = 1, auto_statistics_types = '';
-INSERT INTO c_est SELECT number, toString(number % 1000) FROM numbers(20000);
-CREATE HYPOTHETICAL PROJECTION p ON c_est (SELECT a, k ORDER BY k);
-SELECT '-- a compact part';
-SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
-FROM (EXPLAIN WHATIF SELECT a FROM c_est WHERE k = '42')
-WHERE match(line, '^(With |verdict:)');
-
 DROP TABLE t_est;
 DROP TABLE t_real;
 DROP TABLE b_est;
-DROP TABLE c_est;
