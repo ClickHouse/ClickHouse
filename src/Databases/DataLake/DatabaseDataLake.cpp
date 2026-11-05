@@ -4,6 +4,8 @@
 #include <array>
 #include <memory>
 #include <Databases/DataLake/DatabaseDataLake.h>
+#include <Access/ContextAccess.h>
+#include <Access/Common/AccessFlags.h>
 #include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
 #include <Databases/DataLake/HiveCatalog.h>
@@ -41,6 +43,7 @@
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageNull.h>
+#include <TableFunctions/ITableFunction.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
@@ -810,7 +813,9 @@ DatabaseDataLake::TableEngineArgs DatabaseDataLake::buildTableEngineArgs(
             static_credentials->addCredentialsToEngineArgs(result.args);
             result.static_credentials_applied = true;
         }
-        else if (!lightweight && table_metadata.requiresCredentials() && !catalogConfiguresStorageAccess(catalog))
+        /// HDFS authenticates (e.g. with Kerberos) through the server's `hdfs` configuration, not through engine arguments.
+        else if (!lightweight && table_metadata.requiresCredentials() && !catalogConfiguresStorageAccess(catalog)
+                 && result.storage_type != DatabaseDataLakeStorageType::HDFS)
         {
             throw Exception(
                ErrorCodes::BAD_ARGUMENTS,
@@ -1167,8 +1172,10 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
 
     const auto is_secondary_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
+    /// A stateful table runs background compaction, which cannot write to the read-only HDFS storage below.
     const bool want_stateful = use_stateful_tables && !lightweight
         && !can_use_parallel_replicas
+        && storage_type != DatabaseDataLakeStorageType::HDFS
         && (*storage_settings)[DataLakeStorageSetting::allow_experimental_iceberg_compaction]
         && catalog->getTableFormat(table_metadata) == DataLake::DataLakeTableFormat::ICEBERG;
     if (want_stateful)
@@ -1206,6 +1213,21 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
     StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
+
+#if USE_HDFS
+    if (auto * hdfs_configuration = dynamic_cast<StorageHDFSConfiguration *>(configuration.get()))
+    {
+        /// HDFS is read with the server's own identity, so require the same `READ ON HDFS` grant as `icebergHDFS`,
+        /// matched against the same URI: the HDFS authority, without the path.
+        context_->getAccess()->checkAccessWithFilter(
+            AccessType::READ,
+            toStringSource(AccessTypeObjects::Source::HDFS),
+            ITableFunction::normalizeURIForAccessCheck(hdfs_configuration->getRawURI()));
+        /// Writes reach HDFS through many entrypoints (`INSERT` and its cluster variant, `ALTER`, `OPTIMIZE`, `DROP`...) and
+        /// would use the server's own identity, so rather than authorizing each, catalog tables on HDFS are read-only.
+        hdfs_configuration->setReadOnly();
+    }
+#endif
 
 #if USE_AWS_S3
     /// Amazon S3 Tables rejects user-defined object metadata (`x-amz-meta-*`) in its data buckets with

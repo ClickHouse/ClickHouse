@@ -14,11 +14,12 @@ class WriteBuffer;
 /// in `FragmentGraphTree.cpp`. Both build a `PreparedFragmentGraph`, so they print the same `Exchanges` and `Levels`
 /// sections and name the exchange keys the same way.
 ///
-/// A graph with one `SingleNode` fragment (a plan that was not cut) is printed by both exactly as `QueryPlan::explainPlan`
-/// prints the plan of the fragment, followed by an empty line and `Not distributed: <reason>` when the fragment has a
-/// `fallback_reason`.
+/// A graph with one `SingleNode` fragment (a plan that was not cut) is followed in both outputs by an empty line and
+/// `Not distributed: <reason>` when the fragment has a `fallback_reason`, and has no `Exchanges` and `Levels` sections.
 
 /// `EXPLAIN PLAN fragments = 1`.
+///
+/// A single node is printed exactly as `QueryPlan::explainPlan` prints its plan.
 ///
 /// Every fragment, even of a cut plan with a single fragment, is printed as a header line
 /// `Query fragment <id> (<stage name>) · tasks=<N>`, the `QueryPlan::explainPlan` output of its plan and an empty line,
@@ -36,9 +37,12 @@ void explainAsFragments(
 /// Every step of every fragment is a box, connected to the boxes of its inputs as in a plan tree; the steps of a
 /// fragment are surrounded by a frame titled `F<id> · <stage name>`; and every exchange is an edge from the send step of
 /// the producer up to the matching receive step of the consumer, labelled with the exchange name and kind, its mode and
-/// its buckets (`│` for a streaming exchange, `╎` and a `⛁` before the mode for a persisted one). Each fragment is drawn under the fragment that
-/// reads it. The drawing is followed by the `Exchanges` and `Levels` sections of `fragments = 1`. The text of a step is
-/// wrapped to lines of 40 columns, and the first label line is cut at 48; the picture has no other width limit.
+/// its buckets (`│` for a streaming exchange, `╎` and a `⛁` before the mode for a persisted one). Each fragment is drawn
+/// under the fragment that reads it. The drawing is followed by the `Exchanges` and `Levels` sections of `fragments = 1`.
+/// The text of a step is wrapped to lines of 40 columns, and the first label line is cut at 48; the picture has no other
+/// width limit.
+///
+/// A single node is drawn too, unlike with `fragments = 1`: the boxes of its steps without a frame around them.
 void explainAsTree(
     const FragmentGraph & graph,
     WriteBuffer & buf,
