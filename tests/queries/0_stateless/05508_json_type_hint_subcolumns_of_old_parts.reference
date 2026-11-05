@@ -145,6 +145,23 @@ column added after the part, patch in the old type
 2	
 1	7	{"k":1}
 2	0	
+column added after the part with a default, patch in the old type
+1	3	3
+2	1	1
+1	3
+2	1
+1	777
+2	5
+1	3	777
+2	1	5
+1	7	7
+2	7	7
+1	7
+2	7
+1	{"k":1}
+2	{"x":2}
+1	7	{"k":1}
+2	7	{"x":2}
 text index fallback
 101	5950
 101	5950
@@ -157,7 +174,9 @@ default of another column over a subcolumn
 1	{"k":1}
 2	{}
 subcolumns from the cast path read only the path
-3
+3	3
+7	7
 7
 05508_read_cast_path_added	1
+05508_read_cast_path_array	1
 05508_read_cast_path_changed	1

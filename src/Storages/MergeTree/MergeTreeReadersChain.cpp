@@ -555,6 +555,16 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
         evaluateMissingDefaults(range_reader, result, previous_header, read_columns);
 
     apply_patches(ColumnForPatch::Order::AfterEvaluatingDefaults);
+
+    /// The subcolumns extracted from these sources by `evaluateMissingDefaults` predate the patches.
+    NameSet patched_after_defaults;
+    for (const auto & columns_for_patch : columns_for_patches)
+        for (const auto & column_for_patch : columns_for_patch)
+            if (column_for_patch.order == ColumnForPatch::Order::AfterEvaluatingDefaults)
+                patched_after_defaults.insert(column_for_patch.column_name);
+
+    if (!patched_after_defaults.empty())
+        merge_tree_reader->extractSubcolumnsOfPatchedSources(read_columns, patched_after_defaults);
 }
 
 void MergeTreeReadersChain::evaluateMissingDefaults(

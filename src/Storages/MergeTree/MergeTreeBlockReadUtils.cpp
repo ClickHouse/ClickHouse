@@ -346,34 +346,73 @@ bool isTypeHintCastOfPath(
     return type_in_part != typed_object_in_part.getTypedPaths().end() && !DataTypeObject::canParseObjectValue(type_in_part->second);
 }
 
-/// The typed path of a top-level object that has @subcolumn in its value, when the part stores the path as a dynamic path
-/// or with another type hint and its value is cast to the hinted type (see `isTypeHintCastOfPath`).
+/// The typed path of an object that has @subcolumn in its value, when the part stores the path as a dynamic path or with
+/// another type hint and its value is cast to the hinted type (see `isTypeHintCastOfPath`). The object is the column or
+/// an element of its `Array` / `Tuple` wrappers.
 std::optional<String> tryGetCastPathOfSubcolumn(const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part)
 {
     const auto & type_in_storage = subcolumn.getTypeInStorage();
-    const auto * object_in_storage = typeid_cast<const DataTypeObject *>(type_in_storage.get());
-    if (!object_in_storage || !typeid_cast<const DataTypeObject *>(column_type_in_part.get()))
-        return std::nullopt;
-
     const auto & subcolumn_name = subcolumn.getSubcolumnName();
     auto info_in_storage = type_in_storage->tryGetSubcolumnInfo(subcolumn_name);
-    if (!info_in_storage || info_in_storage->substreams_path.size() < 2)
+    if (!info_in_storage)
         return std::nullopt;
 
-    const auto & typed_path = info_in_storage->substreams_path.front();
-    const auto & path = typed_path.object_path_name;
-    if (!isTypedPathSubstream(typed_path) || !subcolumn_name.starts_with(path + "."))
+    const auto & substreams_in_storage = info_in_storage->substreams_path;
+    const IDataType * owner_in_storage = type_in_storage.get();
+    size_t depth = 0;
+    for (; depth < substreams_in_storage.size(); ++depth)
+    {
+        const auto & substream = substreams_in_storage[depth];
+        if (substream.type != Substream::ArrayElements && substream.type != Substream::TupleElement)
+            break;
+
+        owner_in_storage = getTypeOfSubstream(owner_in_storage, substream);
+        if (!owner_in_storage)
+            return std::nullopt;
+    }
+
+    if (depth + 1 >= substreams_in_storage.size() || !isTypedPathSubstream(substreams_in_storage[depth])
+        || !typeid_cast<const DataTypeObject *>(owner_in_storage))
         return std::nullopt;
 
-    auto info_in_part = column_type_in_part->tryGetSubcolumnInfo(path);
-    if (!info_in_part || info_in_part->substreams_path.size() != 1
-        || !isTypeHintCastOfPath(type_in_storage.get(), column_type_in_part.get(), typed_path, info_in_part->substreams_path.front()))
+    /// The name of the subcolumn that is the value of the typed path.
+    auto is_name_of_typed_path = [&](const String & name)
+    {
+        auto info = type_in_storage->tryGetSubcolumnInfo(name);
+        return info && info->substreams_path.size() == depth + 1
+            && std::equal(
+                   info->substreams_path.begin(), info->substreams_path.end(), substreams_in_storage.begin(), ISerialization::isSameSubstream);
+    };
+
+    std::optional<String> path;
+    for (size_t pos = subcolumn_name.find('.'); pos != String::npos && !path; pos = subcolumn_name.find('.', pos + 1))
+        if (is_name_of_typed_path(subcolumn_name.substr(0, pos)))
+            path = subcolumn_name.substr(0, pos);
+
+    if (!path)
         return std::nullopt;
 
-    if (!object_in_storage->getTypedPaths().at(path)->tryGetSubcolumnType(subcolumn_name.substr(path.size() + 1)))
+    auto info_in_part = column_type_in_part->tryGetSubcolumnInfo(*path);
+    if (!info_in_part || info_in_part->substreams_path.size() != depth + 1)
         return std::nullopt;
 
-    return Nested::concatenateName(subcolumn.getNameInStorage(), path);
+    const auto & substreams_in_part = info_in_part->substreams_path;
+    const IDataType * owner_in_part = column_type_in_part.get();
+    for (size_t i = 0; i < depth; ++i)
+    {
+        if (!ISerialization::isSameSubstream(substreams_in_storage[i], substreams_in_part[i]))
+            return std::nullopt;
+
+        owner_in_part = getTypeOfSubstream(owner_in_part, substreams_in_part[i]);
+    }
+
+    if (!isTypeHintCastOfPath(owner_in_storage, owner_in_part, substreams_in_storage[depth], substreams_in_part[depth]))
+        return std::nullopt;
+
+    if (!type_in_storage->getSubcolumnType(*path)->tryGetSubcolumnType(subcolumn_name.substr(path->size() + 1)))
+        return std::nullopt;
+
+    return Nested::concatenateName(subcolumn.getNameInStorage(), *path);
 }
 
 /// Whether the subcolumn of the column converted from @column_type_in_part can differ from the subcolumn of that name

@@ -32,10 +32,13 @@ DROP TABLE IF EXISTS t_omitted_patch_before;
 DROP TABLE IF EXISTS t_omitted_patch_after;
 DROP TABLE IF EXISTS t_absent_patch;
 DROP TABLE IF EXISTS t_absent_patch_map;
+DROP TABLE IF EXISTS t_absent_default_patch;
+DROP TABLE IF EXISTS t_absent_default_patch_map;
 DROP TABLE IF EXISTS t_text_index_typed;
 DROP TABLE IF EXISTS t_text_index_map;
 DROP TABLE IF EXISTS t_read_cast_path_added;
 DROP TABLE IF EXISTS t_read_cast_path_changed;
+DROP TABLE IF EXISTS t_read_cast_path_array;
 DROP TABLE IF EXISTS t_default_dep;
 
 SELECT 'issue 123339';
@@ -306,6 +309,35 @@ SYSTEM START MERGES t_absent_patch_map;
 OPTIMIZE TABLE t_absent_patch_map FINAL;
 SELECT id, length(data.a), data.a FROM t_absent_patch_map ORDER BY id;
 
+SELECT 'column added after the part with a default, patch in the old type';
+CREATE TABLE t_absent_default_patch (id UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
+SYSTEM STOP MERGES t_absent_default_patch;
+INSERT INTO t_absent_default_patch VALUES (1), (2);
+ALTER TABLE t_absent_default_patch ADD COLUMN data JSON(a UInt32) DEFAULT '{"a" : 5}';
+UPDATE t_absent_default_patch SET data = '{"a" : 777}' WHERE id = 1;
+ALTER TABLE t_absent_default_patch MODIFY COLUMN data JSON(a String) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT id, length(data.a), data.a.size FROM t_absent_default_patch ORDER BY id;
+SELECT id, length(data.a) FROM t_absent_default_patch ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT id, data.a FROM t_absent_default_patch ORDER BY id;
+SYSTEM START MERGES t_absent_default_patch;
+OPTIMIZE TABLE t_absent_default_patch FINAL;
+SELECT id, length(data.a), data.a FROM t_absent_default_patch ORDER BY id;
+
+CREATE TABLE t_absent_default_patch_map (id UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
+SYSTEM STOP MERGES t_absent_default_patch_map;
+INSERT INTO t_absent_default_patch_map VALUES (1), (2);
+ALTER TABLE t_absent_default_patch_map ADD COLUMN data JSON(a Map(String, UInt32)) DEFAULT '{"a" : {"x" : 2}}';
+UPDATE t_absent_default_patch_map SET data = '{"a" : {"k" : 1}}' WHERE id = 1;
+ALTER TABLE t_absent_default_patch_map MODIFY COLUMN data JSON(a String) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT id, length(data.a), data.a.size FROM t_absent_default_patch_map ORDER BY id;
+SELECT id, length(data.a) FROM t_absent_default_patch_map ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT id, data.a FROM t_absent_default_patch_map ORDER BY id;
+SYSTEM START MERGES t_absent_default_patch_map;
+OPTIMIZE TABLE t_absent_default_patch_map FINAL;
+SELECT id, length(data.a), data.a FROM t_absent_default_patch_map ORDER BY id;
+
 SELECT 'text index fallback';
 CREATE TABLE t_text_index_typed (id UInt64, doc JSON(a String)) ENGINE = MergeTree PARTITION BY id < 1000 ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0;
@@ -350,13 +382,19 @@ CREATE TABLE t_read_cast_path_added (id UInt64, j JSON) ENGINE = MergeTree ORDER
 SYSTEM STOP MERGES t_read_cast_path_added;
 INSERT INTO t_read_cast_path_added SELECT number, concat('{"a" : [', toString(number), '], "big" : "', repeat('x', 100000), '"}') FROM numbers(3);
 ALTER TABLE t_read_cast_path_added MODIFY COLUMN j JSON(a Array(UInt32)) SETTINGS enable_json_lazy_type_hints = 1;
-SELECT sum(length(j.a)) FROM t_read_cast_path_added SETTINGS log_comment = '05508_read_cast_path_added';
+SELECT sum(length(j.a)), sum(j.a.size0) FROM t_read_cast_path_added SETTINGS log_comment = '05508_read_cast_path_added';
 
 CREATE TABLE t_read_cast_path_changed (id UInt64, j JSON(a UInt32)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
 SYSTEM STOP MERGES t_read_cast_path_changed;
 INSERT INTO t_read_cast_path_changed SELECT number, concat('{"a" : ', toString(number * 100), ', "big" : "', repeat('x', 100000), '"}') FROM numbers(3);
 ALTER TABLE t_read_cast_path_changed MODIFY COLUMN j JSON(a String) SETTINGS enable_json_lazy_type_hints = 1;
-SELECT sum(length(j.a)) FROM t_read_cast_path_changed SETTINGS log_comment = '05508_read_cast_path_changed';
+SELECT sum(length(j.a)), sum(j.a.size) FROM t_read_cast_path_changed SETTINGS log_comment = '05508_read_cast_path_changed';
+
+CREATE TABLE t_read_cast_path_array (id UInt64, arr Array(JSON(a UInt32))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_read_cast_path_array;
+INSERT INTO t_read_cast_path_array SELECT number, [concat('{"a" : ', toString(number * 100), ', "big" : "', repeat('x', 100000), '"}')] FROM numbers(3);
+ALTER TABLE t_read_cast_path_array MODIFY COLUMN arr Array(JSON(a String)) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT sum(arraySum(arr.a.size)) FROM t_read_cast_path_array SETTINGS log_comment = '05508_read_cast_path_array';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, read_bytes < 50000 FROM system.query_log
@@ -390,8 +428,11 @@ DROP TABLE t_omitted_patch_before;
 DROP TABLE t_omitted_patch_after;
 DROP TABLE t_absent_patch;
 DROP TABLE t_absent_patch_map;
+DROP TABLE t_absent_default_patch;
+DROP TABLE t_absent_default_patch_map;
 DROP TABLE t_text_index_typed;
 DROP TABLE t_text_index_map;
 DROP TABLE t_read_cast_path_added;
 DROP TABLE t_read_cast_path_changed;
+DROP TABLE t_read_cast_path_array;
 DROP TABLE t_default_dep;

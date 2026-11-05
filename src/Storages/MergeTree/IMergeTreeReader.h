@@ -83,6 +83,10 @@ public:
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
+    /// Extracts again the subcolumns extracted from their sources (see `isSubcolumnExtractedFromConvertedColumn`) whose
+    /// sources, named in @patched_columns, were patched after `evaluateMissingDefaults`.
+    void extractSubcolumnsOfPatchedSources(Columns & res_columns, const NameSet & patched_columns) const;
+
     /// Whether `fillMissingColumns` may leave a requested column to `evaluateMissingDefaults`.
     bool mayEvaluateMissingDefaults() const;
 
@@ -331,6 +335,9 @@ private:
     /// The column the subcolumn is extracted from after its conversion to the type in the table, for the column kept in
     /// the part, or its default in the type the part recorded for it when the column is omitted from the part.
     std::optional<String> getSourceOfRequiredSubcolumn(const NameAndTypePair & required_column) const;
+
+    /// The subcolumn @requested_column at position @pos extracted from its @source (see `tryGetCastPathOfSubcolumn`).
+    ColumnPtr extractSubcolumnFromSource(size_t pos, const NameAndTypePair & requested_column, ColumnWithTypeAndName source) const;
 
     /// Returns actual column name and type in part, which can differ from table metadata.
     NameAndTypePair getColumnInPart(const NameAndTypePair & required_column) const;

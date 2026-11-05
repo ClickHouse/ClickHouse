@@ -462,23 +462,8 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
                 continue;
 
             const auto * cast_path = tryGetCastPathOfSubcolumn(pos, *requested_column);
-            auto path_column = find_read_column(cast_path ? *cast_path : requested_column->getNameInStorage());
-            if (!path_column)
-                continue;
-
-            if (!cast_path)
-            {
-                res_columns[pos] = tryGetSubcolumnFromBlock(Block{*path_column}, requested_column->getTypeInStorage(), *requested_column);
-                continue;
-            }
-
-            auto path = cast_path->substr(requested_column->getNameInStorage().size() + 1);
-            auto subcolumn_name = requested_column->getSubcolumnName().substr(path.size() + 1);
-            auto path_type = requested_column->getTypeInStorage()->getSubcolumnType(path);
-
-            path_column->column = path_column->column->decompress()->convertToFullColumnIfConst();
-            auto subcolumn = path_type->getSubcolumn(subcolumn_name, castColumn(*path_column, path_type));
-            res_columns[pos] = castColumn({subcolumn, path_type->getSubcolumnType(subcolumn_name), ""}, requested_column->type);
+            if (auto source = find_read_column(cast_path ? *cast_path : requested_column->getNameInStorage()))
+                res_columns[pos] = extractSubcolumnFromSource(pos, *requested_column, std::move(*source));
         }
 
         NameSet full_requested_columns_set;
@@ -559,6 +544,46 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
             + " located on disk " + part_storage->getDiskName()
             + " of type " + part_storage->getDiskType() + ")");
         throw;
+    }
+}
+
+ColumnPtr IMergeTreeReader::extractSubcolumnFromSource(size_t pos, const NameAndTypePair & requested_column, ColumnWithTypeAndName source) const
+{
+    const auto * cast_path = tryGetCastPathOfSubcolumn(pos, requested_column);
+    if (!cast_path)
+        return tryGetSubcolumnFromBlock(Block{source}, requested_column.getTypeInStorage(), requested_column);
+
+    auto path = cast_path->substr(requested_column.getNameInStorage().size() + 1);
+    auto subcolumn_name = requested_column.getSubcolumnName().substr(path.size() + 1);
+    auto path_type = requested_column.getTypeInStorage()->getSubcolumnType(path);
+
+    source.column = source.column->decompress()->convertToFullColumnIfConst();
+    auto subcolumn = path_type->getSubcolumn(subcolumn_name, castColumn(source, path_type));
+    return castColumn({subcolumn, path_type->getSubcolumnType(subcolumn_name), ""}, requested_column.type);
+}
+
+void IMergeTreeReader::extractSubcolumnsOfPatchedSources(Columns & res_columns, const NameSet & patched_columns) const
+{
+    chassert(res_columns.size() == original_requested_columns.size());
+
+    auto requested_column = original_requested_columns.begin();
+    for (size_t pos = 0; pos < res_columns.size(); ++pos, ++requested_column)
+    {
+        if (!isSubcolumnExtractedFromConvertedColumn(pos))
+            continue;
+
+        const auto * cast_path = tryGetCastPathOfSubcolumn(pos, *requested_column);
+        String source_name = cast_path ? *cast_path : requested_column->getNameInStorage();
+        if (!patched_columns.contains(source_name))
+            continue;
+
+        auto source = std::ranges::find_if(original_requested_columns, [&](const auto & column) { return column.name == source_name; });
+        if (source == original_requested_columns.end())
+            continue;
+
+        const auto & source_column = res_columns[std::distance(original_requested_columns.begin(), source)];
+        if (source_column)
+            res_columns[pos] = extractSubcolumnFromSource(pos, *requested_column, {source_column, source->type, source_name});
     }
 }
 
