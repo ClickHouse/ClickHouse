@@ -155,6 +155,11 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.csv.arrays_as_nested_csv = settings[Setting::input_format_csv_arrays_as_nested_csv];
     format_settings.csv.use_best_effort_in_schema_inference = settings[Setting::input_format_csv_use_best_effort_in_schema_inference];
     format_settings.csv.skip_first_lines = settings[Setting::input_format_csv_skip_first_lines];
+    if (settings[Setting::input_format_csv_comment_prefix].changed
+        || !settings[Setting::format_csv_comment_prefix].changed)
+        format_settings.csv.comment_prefix = settings[Setting::input_format_csv_comment_prefix];
+    else
+        format_settings.csv.comment_prefix = settings[Setting::format_csv_comment_prefix];
     format_settings.csv.try_detect_header = settings[Setting::input_format_csv_detect_header];
     format_settings.csv.skip_trailing_empty_lines = settings[Setting::input_format_csv_skip_trailing_empty_lines];
     format_settings.csv.trim_whitespaces = settings[Setting::input_format_csv_trim_whitespaces];
@@ -358,6 +363,11 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.tsv.null_representation = settings[Setting::format_tsv_null_representation];
     format_settings.tsv.use_best_effort_in_schema_inference = settings[Setting::input_format_tsv_use_best_effort_in_schema_inference];
     format_settings.tsv.skip_first_lines = settings[Setting::input_format_tsv_skip_first_lines];
+    if (settings[Setting::input_format_tsv_comment_prefix].changed
+        || !settings[Setting::format_tsv_comment_prefix].changed)
+        format_settings.tsv.comment_prefix = settings[Setting::input_format_tsv_comment_prefix];
+    else
+        format_settings.tsv.comment_prefix = settings[Setting::format_tsv_comment_prefix];
     format_settings.tsv.try_detect_header = settings[Setting::input_format_tsv_detect_header];
     format_settings.tsv.skip_trailing_empty_lines = settings[Setting::input_format_tsv_skip_trailing_empty_lines];
     format_settings.tsv.allow_variable_number_of_columns = settings[Setting::input_format_tsv_allow_variable_number_of_columns];
