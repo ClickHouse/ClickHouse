@@ -377,10 +377,9 @@ public:
     /// the row number to the key, `same(last_row, row)` tells whether the key of `row` is known to be routed already,
     /// such as when the row equals the last routed row. The rows are compared before the keys are computed, because
     /// computing a key (hashing a string) is more expensive.
-    /// With `defer`, the keys of the rows where `defer(row)` holds are computed together per batch by
+    /// With `defer`, the keys of the rows where `defer(row)` holds are computed per batch by
     /// `extract_deferred(begin, positions, count, row_keys)`, which sets `row_keys[positions[i]]` to the key of row
-    /// `begin + positions[i]`. The rows of a batch from its first deferred row on wait for them, so that the keys are
-    /// inserted in the order of the rows.
+    /// `begin + positions[i]`; the keys are still inserted in the order of the rows.
     template <typename Extract, typename Same, typename Defer = std::nullptr_t, typename ExtractDeferred = std::nullptr_t>
     ALWAYS_INLINE void routeRows(
         size_t stream_index,
@@ -397,8 +396,6 @@ public:
         size_t last_row = 0;
         bool has_last_row = false;
 
-        /// The keys of the waiting rows by their position in the batch, the positions of the waiting rows, and of the
-        /// deferred ones among them.
         [[maybe_unused]] std::array<Key, has_deferred ? KEYS_BATCH_SIZE : 0> row_keys; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - set before its read
         [[maybe_unused]] std::array<UInt32, has_deferred ? KEYS_BATCH_SIZE : 0> waiting_positions; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first num_waiting entries are read
         [[maybe_unused]] std::array<UInt32, has_deferred ? KEYS_BATCH_SIZE : 0> deferred_positions; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first num_deferred entries are read
