@@ -623,7 +623,7 @@ bool MetadataStorageFromPlainRewritableObjectStorage::loadRemoteLayout(
     std::unordered_map<std::string, std::unordered_map<std::string, FileRemoteInfo>> prelisted_files;
     std::mutex prelisted_files_mutex;
     std::vector<DirectoryLoadResult> results;
-    /// Whether some directory object did not contain a logical path, see below.
+    /// Whether some directory object did not contain a logical path or could not be read, see below.
     std::atomic<bool> has_unreadable_directories = false;
 
     /// Record the files of every directory whose name starts with `name_prefix`. Listing by prefix makes
@@ -939,9 +939,13 @@ bool MetadataStorageFromPlainRewritableObjectStorage::loadRemoteLayout(
 #if USE_AWS_S3
                 catch (const S3Exception & e)
                 {
-                    /// It is ok if a directory was removed just now.
+                    /// It is ok if a directory was removed just now. But the directory may also be still there and the
+                    /// error transient, so its references are unknown, and no blob may be reclaimed on this load.
                     if (e.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY)
+                    {
+                        has_unreadable_directories = true;
                         return;
+                    }
                     throw;
                 }
 #endif
@@ -949,7 +953,10 @@ bool MetadataStorageFromPlainRewritableObjectStorage::loadRemoteLayout(
                 catch (const Azure::Storage::StorageException & e)
                 {
                     if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+                    {
+                        has_unreadable_directories = true;
                         return;
+                    }
                     throw;
                 }
 #endif
@@ -957,7 +964,10 @@ bool MetadataStorageFromPlainRewritableObjectStorage::loadRemoteLayout(
                 {
                     /// The same for the local object storage.
                     if (e.getErrno() == ENOENT)
+                    {
+                        has_unreadable_directories = true;
                         return;
+                    }
                     throw;
                 }
                 catch (...)
@@ -1103,6 +1113,7 @@ bool MetadataStorageFromPlainRewritableObjectStorage::loadRemoteLayout(
         /// A directory object without a logical path may be a directory of a pending removal whose `prefix.path` was
         /// being rewritten when the process died (`LocalObjectStorage` writes to the final key directly). It cannot be
         /// moved back, so the pending markers stay: their removals are not known to be rolled back completely.
+        /// The same for a directory object that was listed but could not be read: its references are unknown.
         const bool keep_pending_markers = has_unreadable_directories.load();
 
         StoredObjects marker_objects;

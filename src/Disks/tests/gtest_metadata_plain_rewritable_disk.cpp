@@ -20,6 +20,7 @@
 #include <Core/ServerUUID.h>
 
 #include <Common/thread_local_rng.h>
+#include <Common/ErrnoException.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/tests/gtest_global_context.h>
@@ -48,6 +49,7 @@ using namespace DB;
 namespace DB::ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+    extern const int CANNOT_OPEN_FILE;
     extern const int INCORRECT_DATA;
 }
 
@@ -3844,6 +3846,84 @@ TEST_F(MetadataPlainRewritableDiskTest, EmptyRootMetadataKeepsBlobRemovalMarkers
     EXPECT_TRUE(metadata->existsDirectory("A"));
     EXPECT_EQ(readObject(object_storage, blob_remote_path), "shared");
     EXPECT_TRUE(object_storage->exists(StoredObject(marker_key)));
+}
+
+/// The last link to a blob is being removed when the process dies: the marker of the blob removal is written,
+/// but `prefix.path` of the directory that links the blob is not rewritten yet. On the next start, reading that
+/// directory object fails with `ENOENT` (as a transient `404` of an object storage), so the directory contributes
+/// no references. Neither the blob nor the marker may be deleted, and a later clean load must still read the blob.
+TEST_F(MetadataPlainRewritableDiskTest, UnreadableDirectoryKeepsBlobRemovalMarkers)
+{
+    class NotFoundOnReadStorage : public LocalObjectStorage
+    {
+    public:
+        using LocalObjectStorage::LocalObjectStorage;
+
+        std::string key_to_fail;
+        mutable std::atomic<size_t> injected_failures = 0;
+
+        std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
+            const StoredObject & object,
+            const ReadSettings & read_settings,
+            std::optional<size_t> read_hint = {},
+            bool use_external_buffer = false,
+            bool restrict_seek = false) const override
+        {
+            if (!key_to_fail.empty() && fs::path(object.remote_path).lexically_normal() == fs::path(key_to_fail).lexically_normal())
+            {
+                ++injected_failures;
+                throw ErrnoException(fmt::format("Injected failure to read '{}'", object.remote_path), ErrorCodes::CANNOT_OPEN_FILE, ENOENT);
+            }
+            return LocalObjectStorage::readObject(object, read_settings, read_hint, use_external_buffer, restrict_seek);
+        }
+    };
+
+    thread_local_rng.seed(42);
+
+    const std::string test = "UnreadableDirectoryKeepsBlobRemovalMarkers";
+    auto metadata = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    /// `B/f1` links the blob of `A/f1`, and stays its only link.
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("B");
+        size_t size = writeObject(object_storage, tx->generateObjectKeyForPath("A/f1").serialize(), "shared");
+        tx->createMetadataFile("A/f1", {StoredObject("f1", "f1", size)});
+        tx->createHardLink("A/f1", "B/f1");
+        tx->commit(DB::NoCommitOptions{});
+    }
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("A/f1", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto blob_remote_path = metadata->getStorageObjects("B/f1").front().remote_path;
+    const auto blob_key = fs::relative(blob_remote_path, object_storage->getCommonKeyPrefix()).string();
+    const auto b_metadata_key = createMetadataObjectPath(metadata, "B");
+    ASSERT_TRUE(parsePrefixPath(readObject(object_storage, b_metadata_key)).has_explicit_file_list);
+
+    const std::string marker_key = fmt::format("./{}/__meta/__tombstone/__removed.abcdefghijklmnop", test);
+    writeObject(object_storage, marker_key, PlainRewritableLayout::makeBlobRemovalTombstoneContent(blob_key));
+    metadata->shutdown();
+
+    {
+        auto failing_storage = std::make_shared<NotFoundOnReadStorage>(LocalObjectStorageSettings("failing", object_storage->getCommonKeyPrefix(), false));
+        failing_storage->key_to_fail = b_metadata_key;
+        auto failing_metadata = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(failing_storage, "", hard_links_enabled);
+        SCOPE_EXIT({ failing_metadata->shutdown(); });
+
+        EXPECT_GT(failing_storage->injected_failures.load(), 0u);
+        EXPECT_EQ(readObject(object_storage, blob_remote_path), "shared");
+        EXPECT_TRUE(object_storage->exists(StoredObject(marker_key)));
+    }
+
+    /// A clean load sees that the blob is still linked: it keeps the blob and removes the marker.
+    metadata = restartMetadataStorage(test);
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("B/f1").front().remote_path), "shared");
+    EXPECT_FALSE(object_storage->exists(StoredObject(marker_key)));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, HardLinksDisabled)
