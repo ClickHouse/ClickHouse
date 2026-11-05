@@ -38,6 +38,10 @@ do
     sleep 1
 done
 
+# SYSTEM FLUSH LOGS covers only the rows queued when it starts, so a row logged while the
+# last flush in the loop was blocked needs one more.
+$CLICKHOUSE_CLIENT -q "system flush logs part_log"
+
 $CLICKHOUSE_CLIENT -q "
 with (select uuid from system.tables where database = currentDatabase() and table = 'data_02491') as table_uuid_
 select

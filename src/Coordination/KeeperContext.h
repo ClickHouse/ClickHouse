@@ -52,6 +52,9 @@ public:
     int getServerID() const { return server_id; }
     bool digestEnabledOnCommit() const;
 
+    bool removeOrphanedNodesOnStartup() const;
+    void setRemoveOrphanedNodesOnStartup(bool remove_orphaned_nodes_on_startup_);
+
     DiskPtr getLatestLogDisk() const;
     DiskPtr getLogDisk() const;
     std::vector<DiskPtr> getOldLogDisks() const;
@@ -99,7 +102,8 @@ public:
     void setLocalLogsPreprocessed();
     bool localLogsPreprocessed() const;
 
-    void waitLocalLogsPreprocessedOrShutdown();
+    /// returns whether the local logs were preprocessed; false if the wait ended on its deadline or on shutdown
+    bool waitLocalLogsPreprocessedOrShutdown(uint64_t wait_timeout_ms);
 
     uint64_t lastCommittedIndex() const;
     void setLastCommitIndex(uint64_t commit_index);
@@ -160,6 +164,7 @@ private:
 
     bool digest_enabled{true};
     bool digest_enabled_on_commit{false};
+    bool remove_orphaned_nodes_on_startup{false};
 
     int server_id{-1};
 

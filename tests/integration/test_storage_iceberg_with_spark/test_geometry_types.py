@@ -102,7 +102,7 @@ def test_geometry_type(started_cluster_iceberg_with_spark, storage_type):
 
     create_iceberg_table(
         storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark,
-        settings={"allow_experimental_geo_types_in_iceberg": 1},
+        settings={"allow_geo_types_in_iceberg": 1},
     )
 
     table_function_expr = get_creation_expression(
@@ -112,7 +112,7 @@ def test_geometry_type(started_cluster_iceberg_with_spark, storage_type):
         table_function=True,
     )
 
-    geo_settings = {"allow_experimental_geo_types_in_iceberg": 1}
+    geo_settings = {"allow_geo_types_in_iceberg": 1}
 
     assert instance.query(
         f"DESCRIBE {table_function_expr} FORMAT TSV", settings=geo_settings
@@ -184,7 +184,7 @@ def test_geometry_write(started_cluster_iceberg_with_spark, storage_type):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     TABLE_NAME = "test_geometry_write_" + storage_type + "_" + get_uuid_str()
 
-    geo_settings = {"allow_experimental_geo_types_in_iceberg": 1}
+    geo_settings = {"allow_geo_types_in_iceberg": 1}
 
     create_iceberg_table(
         storage_type,

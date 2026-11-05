@@ -17,7 +17,6 @@ INSERT INTO test_proj_minmax SELECT number, number FROM numbers(100);
 
 SET force_optimize_projection = 1;
 SET optimize_use_projections = 1;
-SET enable_analyzer = 1;
 
 EXPLAIN indexes = 1, projections = 1
 SELECT a, b

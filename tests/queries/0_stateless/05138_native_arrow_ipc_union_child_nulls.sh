@@ -56,8 +56,8 @@ PYEOF
 
 for NAME in dense dense_unselected sparse; do
     for NULLABLE_TUPLES in 0 1; do
-        echo "--- ${NAME}, allow_experimental_nullable_tuple_type=${NULLABLE_TUPLES} ---"
-        ${CLICKHOUSE_LOCAL} --allow_experimental_nullable_tuple_type=${NULLABLE_TUPLES} \
+        echo "--- ${NAME}, enable_nullable_tuple_type=${NULLABLE_TUPLES} ---"
+        ${CLICKHOUSE_LOCAL} --enable_nullable_tuple_type=${NULLABLE_TUPLES} \
             --query "SELECT u, toTypeName(u) FROM file('${TMP_DIR}/${NAME}.arrows', 'ArrowStream')"
     done
 done

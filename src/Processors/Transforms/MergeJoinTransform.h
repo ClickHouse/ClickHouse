@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstddef>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -12,6 +14,7 @@
 
 #include <boost/core/noncopyable.hpp>
 
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 #include <IO/ReadBuffer.h>
@@ -19,7 +22,7 @@
 #include <Processors/Chunk.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/IMergingTransform.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <Interpreters/TableJoin.h>
 
 namespace Poco { class Logger; }
@@ -171,8 +174,8 @@ private:
         }
         return true;
     }
-    std::vector<Range> left;
-    std::vector<Range> right;
+    VectorWithMemoryTracking<Range> left;
+    VectorWithMemoryTracking<Range> right;
 
     size_t lidx = 0;
     size_t ridx = 0;
@@ -206,7 +209,7 @@ public:
     constexpr static bool has_null_maps = true;
 
     FullMergeJoinCursor() = default;
-    explicit FullMergeJoinCursor(std::vector<size_t> key_indices_, bool is_asof_);
+    explicit FullMergeJoinCursor(VectorWithMemoryTracking<size_t> key_indices_, bool is_asof_);
 
     FullMergeJoinCursor(FullMergeJoinCursor &&) = default;
     FullMergeJoinCursor & operator=(FullMergeJoinCursor &&) noexcept = default;
@@ -220,6 +223,7 @@ public:
 
     absl::InlinedVector<ColumnPtr, 4> sort_columns;
     absl::InlinedVector<ColumnPtr, 4> null_maps;
+    SortedKeyRuns key_runs;
     ColumnPtr asof_column = nullptr;
     size_t pos = 0;
     size_t rows = 0;
@@ -237,7 +241,7 @@ private:
     Chunk current_chunk;
     bool received_all_blocks = false;
 
-    std::vector<size_t> key_indices;
+    VectorWithMemoryTracking<size_t> key_indices;
     bool is_asof = false;
 };
 
@@ -293,7 +297,7 @@ private:
     SharedHeaders input_headers;
 
     /// For `USING` join key columns should have values from right side instead of defaults
-    std::unordered_map<size_t, size_t> left_to_right_key_remap;
+    UnorderedMapWithMemoryTracking<size_t, size_t> left_to_right_key_remap;
 
     std::array<FullMergeJoinCursor, 2> cursors;
     ASOFJoinInequality asof_inequality = ASOFJoinInequality::None;
