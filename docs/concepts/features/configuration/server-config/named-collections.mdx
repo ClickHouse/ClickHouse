@@ -102,12 +102,13 @@ An optional configuration parameter `update_timeout_ms` by default is equal to `
 
 Several keys can be configured, each with an `id` attribute, and `current_key_id` selects the key
 that encrypts new entries (`current_key_hex` selects it by value instead). Every configured key is
-used for decryption, so to rotate the key, add the new key, make it the current one and restart the
-server (the keys are read at startup). The existing collections stay readable through their old key
-and are re-encrypted with the current key when they are next written: by `ALTER NAMED COLLECTION`,
-`CREATE OR REPLACE NAMED COLLECTION`, or a restore from a backup. A server which lacks the key a
-collection is encrypted with reports an error naming the fingerprint of that key, so remove an old
-key from the configuration only after every collection encrypted with it has been rewritten.
+used for decryption. A running server does not pick up changes to the keys, not even with
+`SYSTEM RELOAD CONFIG`: a restart is needed. The existing collections stay readable through their
+old key and are re-encrypted with the current key when they are next written: by
+`ALTER NAMED COLLECTION`, `CREATE OR REPLACE NAMED COLLECTION`, or a restore from a backup. A server
+which lacks the key a collection is encrypted with reports an error naming the fingerprint of that
+key, so remove an old key from the configuration only after every collection encrypted with it has
+been rewritten.
 
 ```xml
 <clickhouse>
@@ -119,6 +120,13 @@ key from the configuration only after every collection encrypted with it has bee
   </named_collections_storage>
 </clickhouse>
 ```
+
+To rotate the key of a `local_encrypted` storage, add the new key, make it the current one as in the
+example above, and restart the server. The servers sharing a `keeper_encrypted` or
+`zookeeper_encrypted` storage must all know the new key before any of them writes with it: a server
+restarted with a new current key writes entries that the servers not restarted yet cannot decrypt.
+Rotate the key in two stages: first add the new key while keeping the old one current, and restart
+every server; then make the new key the current one, and restart every server again.
 
 You can inspect the active storage type through `system.server_settings` and `getServerSetting`:
 
