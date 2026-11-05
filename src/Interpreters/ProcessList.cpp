@@ -710,10 +710,15 @@ void QueryStatus::removePipelineExecutor(IExecutor * e)
 
 bool QueryStatus::checkTimeLimit()
 {
+    return checkTimeLimit(overflow_mode);
+}
+
+bool QueryStatus::checkTimeLimit(OverflowMode mode)
+{
     auto elapsed_ns = watch.elapsed();
     throwProperExceptionIfNeeded(limits.max_execution_time.totalMicroseconds(), elapsed_ns);
 
-    return limits.checkTimeLimit(elapsed_ns, overflow_mode);
+    return limits.checkTimeLimit(elapsed_ns, mode);
 }
 
 void QueryStatus::throwQueryWasCancelled() const
