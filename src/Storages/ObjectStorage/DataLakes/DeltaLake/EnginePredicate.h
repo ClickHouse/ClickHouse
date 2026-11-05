@@ -97,7 +97,7 @@ private:
 
 std::shared_ptr<EnginePredicate> getEnginePredicate(
     const DB::ActionsDAG & filter, std::exception_ptr & exception, DB::ContextPtr context,
-    DeltaTimestampColumns timestamp_columns = {});
+    DeltaTimestampColumns timestamp_columns);
 }
 
 #endif

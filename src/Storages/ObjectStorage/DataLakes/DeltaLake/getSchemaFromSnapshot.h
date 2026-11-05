@@ -29,6 +29,10 @@ struct TableSchemaResult
     std::unordered_set<String> timestamp_ntz_paths;
     /// Top-level logical names of the `timestamp_ntz` columns, partition columns included.
     std::unordered_set<String> timestamp_ntz_columns;
+    /// Top-level logical names of the `timestamp` / `timestamp_ntz` columns widened from another type
+    /// (`delta.typeChanges`, e.g. `date` -> `timestamp_ntz`). Files written before the change keep the
+    /// old physical type and statistics, which ClickHouse and delta-kernel read differently.
+    std::unordered_set<String> widened_timestamp_columns;
 };
 
 /// Get table schema and physical column map (logical name to physical name mapping).

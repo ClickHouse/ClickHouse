@@ -21,6 +21,8 @@ ComparisonParams::ComparisonParams(const ContextPtr & context)
     , format_settings(getFormatSettings(context))
     , format_settings_hash(getFormatSettingsHash(context->getSettingsRef()))
 {
+    /// Repeated by the DeltaLake engine predicate (`EnginePredicate::makeComparisonFormatSettings`), which must
+    /// convert a literal as the comparison does.
     format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
 }
 

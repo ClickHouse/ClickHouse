@@ -13,10 +13,8 @@
 #include <Core/Settings.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeDecimalBase.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/getLeastSupertype.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
@@ -32,7 +30,6 @@
 #include <Parsers/ASTHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 
-#include <algorithm>
 #include <array>
 #include <limits>
 #include <optional>
@@ -104,7 +101,8 @@ namespace
         /// Reads the comparison with its operands swapped (`literal OP column`).
         ComparisonVisitor mirrored;
         /// The same two readings against `q`, the floor of a literal that falls strictly between
-        /// two adjacent column values `q` and `q + 1`. Null for `=` and `!=`, whose result is then constant.
+        /// two adjacent column values `q` and `q + 1`. Null for `=` and `!=`: no column value equals
+        /// such a literal, and the comparison is left untranslated.
         ComparisonVisitor direct_inexact;
         ComparisonVisitor mirrored_inexact;
 
@@ -210,6 +208,16 @@ namespace
     /// Scale of the `DateTime64` that a Delta `timestamp` / `timestamp_ntz` is read as: microseconds.
     constexpr UInt32 DELTA_TIMESTAMP_SCALE = 6;
 
+    /// A row compares as its statistics say only within `[Int64 min, Int64 max] / TIMESTAMP_FENCE_DIVISOR`
+    /// microseconds, the range of `Int64` nanoseconds (about 1677 to 2262):
+    /// - with `decimal_check_overflow = 0`, a comparison at a finer scale multiplies the column by up to
+    ///   1000 and wraps around `Int64`;
+    /// - with `date_time_overflow_behavior = 'saturate'`, the Parquet reader clamps an `INT96` timestamp
+    ///   to the `Int64` nanoseconds, while the statistics keep the value as written. The reader takes this
+    ///   setting from its own format settings (for a table engine, the table's `SETTINGS` and the server's
+    ///   default profile; on a cluster, each replica's), which pruning cannot see, so it always fences.
+    constexpr Int64 TIMESTAMP_FENCE_DIVISOR = 1000;
+
     struct TimestampLiteral
     {
         /// The literal in microseconds, or its floor when the comparison runs at a finer scale.
@@ -272,14 +280,12 @@ namespace
             return TimestampLiteral{quotient, remainder == 0, multiplier};
         }
 
-        /// A `DateTime`, `Date` or `Date32` is cast to the common type, which is the column's own
-        /// `DateTime64(6)` with its time zone. Cast it the same way, saturation included.
+        /// A `DateTime`, `Date` or `Date32` is cast to the common type, which is the column type itself
+        /// (the `DateTime64` of the larger scale). Cast it the same way: in the column's time zone,
+        /// saturation included.
         if (which.isDateTime() || which.isDate() || which.isDate32())
         {
-            const auto common_type = DB::getLeastSupertype(DB::DataTypes{column_type, literal_type});
-            if (!common_type->equals(*column_type))
-                return std::nullopt;
-            const auto converted = DB::castColumn({literal_type->createColumnConst(1, field), literal_type, ""}, common_type);
+            const auto converted = DB::castColumn({literal_type->createColumnConst(1, field), literal_type, ""}, column_type);
             return TimestampLiteral{(*converted)[0].safeGet<DB::DecimalField<DB::DateTime64>>().getValue().value, true, 1};
         }
 
@@ -292,9 +298,6 @@ namespace
         DeltaTimestampKind kind;
         Int64 micros;
         ComparisonVisitor visitor;
-        /// Above 1, a row compares as its statistics say only within `[Int64 min, Int64 max] / fence_divisor`
-        /// microseconds, so the comparison is fenced to these values.
-        Int64 fence_divisor;
     };
 
     /// Matches a comparison of a column backed by a Delta `timestamp` / `timestamp_ntz` with a literal.
@@ -305,8 +308,7 @@ namespace
         bool swapped,
         DeltaTimestampKind kind,
         const ComparisonVisitors & visitors,
-        const DB::FormatSettings & format_settings,
-        bool check_decimal_overflow)
+        const DB::FormatSettings & format_settings)
     {
         /// A column declared with another type is read with a conversion that pruning does not mirror.
         const auto column_type = getTypeOrNestedType(column);
@@ -322,18 +324,11 @@ namespace
         if (!visitor)
             return std::nullopt;
 
-        /// Outside the fence a row may compare differently from its statistics:
-        /// - with `decimal_check_overflow = 0`, a comparison at a finer scale multiplies the column by
-        ///   `multiplier` and wraps around `Int64`; with the check on, it compares exactly;
-        /// - with `date_time_overflow_behavior = 'saturate'`, the Parquet reader clamps an `INT96` timestamp
-        ///   to the `Int64` nanoseconds, while the statistics keep the value as written.
-        Int64 fence_divisor = 1;
-        if (value->multiplier > 1 && !check_decimal_overflow)
-            fence_divisor = value->multiplier;
-        if (format_settings.date_time_overflow_behavior == DB::FormatSettings::DateTimeOverflowBehavior::Saturate)
-            fence_divisor = std::max(fence_divisor, DB::DecimalUtils::scaleMultiplier<Int64>(9 - DELTA_TIMESTAMP_SCALE));
+        /// The finest `DateTime64` is nanoseconds, so the comparison scales the column up by at most this:
+        /// the fence of `visitTimestampComparison` covers the scaled comparison too.
+        chassert(value->multiplier <= TIMESTAMP_FENCE_DIVISOR);
 
-        return TimestampComparison{column, kind, value->micros, visitor, fence_divisor};
+        return TimestampComparison{column, kind, value->micros, visitor};
     }
 }
 
@@ -341,8 +336,8 @@ DB::FormatSettings EnginePredicate::makeComparisonFormatSettings(const DB::Conte
 {
     if (!context_)
         return {};
-    /// As in `ComparisonParams`: a string compared with a date/time is parsed in `cast_string_to_date_time_mode`,
-    /// not in `date_time_input_format`.
+    /// As in `ComparisonParams` (keep the two in sync): a string compared with a date/time is parsed in
+    /// `cast_string_to_date_time_mode`, not in `date_time_input_format`.
     auto settings = DB::getFormatSettings(context_);
     settings.date_time_input_format = context_->getSettingsRef()[DB::Setting::cast_string_to_date_time_mode];
     return settings;
@@ -688,6 +683,15 @@ struct ColumnPredicateBuilder
         return junction(Junction::Or, left, right, "OR");
     }
 
+    /// `compared` holds for a row only while the column is within `[min, max]`. Keeps the rows outside
+    /// undecided: `(min <= column <= max AND compared) OR ((column < min OR column > max) AND unknown)`.
+    uintptr_t fenced(uintptr_t compared, Int64 min, Int64 max, uintptr_t unknown) const
+    {
+        auto in_range = andOf(compare(ffi::visit_predicate_ge, min), compare(ffi::visit_predicate_le, max));
+        auto out_of_range = orOf(compare(ffi::visit_predicate_lt, min), compare(ffi::visit_predicate_gt, max));
+        return orOf(andOf(in_range, compared), andOf(out_of_range, unknown));
+    }
+
 private:
     uintptr_t junction(
         Junction kind, uintptr_t left, uintptr_t right, std::string_view description) const
@@ -721,17 +725,7 @@ uintptr_t EngineIterator::visitComparisonOverDateConversion(
         return compared;
 
     /// `Date32` -> `Date` can wrap, saturate, or throw outside the Date domain.
-    /// Preserve outside-domain rows: (inside AND comparison) OR (outside AND Unknown).
-    auto is_date_range = predicates.andOf(
-        predicates.compare(ffi::visit_predicate_ge, 0),
-        predicates.compare(ffi::visit_predicate_le, DATE_LUT_MAX_DAY_NUM));
-    auto outside_date_range = predicates.orOf(
-        predicates.compare(ffi::visit_predicate_lt, 0),
-        predicates.compare(ffi::visit_predicate_gt, DATE_LUT_MAX_DAY_NUM));
-    auto unknown_outside_range =
-        predicates.andOf(outside_date_range, visitUntranslated(iterator_data));
-    return predicates.orOf(
-        predicates.andOf(is_date_range, compared), unknown_outside_range);
+    return predicates.fenced(compared, 0, DATE_LUT_MAX_DAY_NUM, visitUntranslated(iterator_data));
 }
 
 uintptr_t EngineIterator::visitTimestampComparison(
@@ -744,22 +738,11 @@ uintptr_t EngineIterator::visitTimestampComparison(
         comparison.kind == DeltaTimestampKind::TimestampNtz ? &visitTimestampNtzLiteral : &visitTimestampLiteral};
 
     auto compared = predicates.compare(comparison.visitor, comparison.micros);
-    if (comparison.fence_divisor == 1)
-        return compared;
-
-    /// Preserve outside-range rows: (inside AND comparison) OR (outside AND Unknown).
-    const Int64 min_micros = std::numeric_limits<Int64>::min() / comparison.fence_divisor;
-    const Int64 max_micros = std::numeric_limits<Int64>::max() / comparison.fence_divisor;
-    auto is_in_range = predicates.andOf(
-        predicates.compare(ffi::visit_predicate_ge, min_micros),
-        predicates.compare(ffi::visit_predicate_le, max_micros));
-    auto outside_range = predicates.orOf(
-        predicates.compare(ffi::visit_predicate_lt, min_micros),
-        predicates.compare(ffi::visit_predicate_gt, max_micros));
-    auto unknown_outside_range =
-        predicates.andOf(outside_range, visitUntranslated(iterator_data));
-    return predicates.orOf(
-        predicates.andOf(is_in_range, compared), unknown_outside_range);
+    return predicates.fenced(
+        compared,
+        std::numeric_limits<Int64>::min() / TIMESTAMP_FENCE_DIVISOR,
+        std::numeric_limits<Int64>::max() / TIMESTAMP_FENCE_DIVISOR,
+        visitUntranslated(iterator_data));
 }
 
 uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const DB::ActionsDAG::Node * node)
@@ -866,8 +849,7 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                     {
                         if (auto comparison = matchTimestampComparison(
                                 column_node, literal_node, isConstNode(node->children[0]), *kind, *visitors,
-                                iterator_data.predicate.getFormatSettings(),
-                                DB::decimalCheckComparisonOverflow(iterator_data.predicate.getContext())))
+                                iterator_data.predicate.getFormatSettings()))
                             return visitTimestampComparison(iterator_data, *comparison);
                         return VISITOR_FAILED_OR_UNSUPPORTED;
                     }

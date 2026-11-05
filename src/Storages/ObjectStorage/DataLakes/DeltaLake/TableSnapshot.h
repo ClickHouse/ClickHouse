@@ -112,6 +112,8 @@ private:
         std::unordered_set<String> timestamp_ntz_paths;
         /// Top-level logical names of `timestamp_ntz` columns, partition columns included.
         std::unordered_set<String> timestamp_ntz_columns;
+        /// Top-level timestamp columns widened from another type, see `TableSchemaResult`.
+        std::unordered_set<String> widened_timestamp_columns;
     };
     mutable std::optional<SchemaInfo> schema;
 
