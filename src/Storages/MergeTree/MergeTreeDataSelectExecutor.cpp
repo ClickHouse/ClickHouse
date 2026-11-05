@@ -1652,14 +1652,15 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
             auto & ranges = parts_with_ranges[part_index];
             const LoadedMergeTreeDataPartInfoForReader part_info(ranges.data_part, /*alter_conversions_=*/ nullptr);
-            auto get_part_for_skip_indexes = [&]() -> MergeTreeDataPartInfoForReaderPtr
+            /// Two references fit the inline buffer of `std::function`, so there is no allocation per part.
+            auto get_part_for_skip_indexes = [&data_part = ranges.data_part, &filter_context]() -> MergeTreeDataPartInfoForReaderPtr
             {
-                auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges.data_part, mutations_snapshot, context
+                auto alter_conversions = MergeTreeData::getAlterConversionsForPart(data_part, filter_context.mutations_snapshot, filter_context.context
 #if CLICKHOUSE_CLOUD
-                    , context->getAccess()->getEnabledMaskingPolicies()
+                    , filter_context.context->getAccess()->getEnabledMaskingPolicies()
 #endif
                 );
-                return std::make_shared<LoadedMergeTreeDataPartInfoForReader>(ranges.data_part, std::move(alter_conversions));
+                return std::make_shared<LoadedMergeTreeDataPartInfoForReader>(data_part, std::move(alter_conversions));
             };
             const size_t stats_offset = settings[Setting::per_part_index_stats] ? num_indexes * part_index : 0;
 
