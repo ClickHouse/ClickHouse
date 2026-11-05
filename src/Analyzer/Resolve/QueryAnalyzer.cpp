@@ -8565,8 +8565,14 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             std::unordered_set<std::string> replaced_column_names;
             /// The unqualified matcher arguments of `count` and similar functions are removed by `resolveFunction`.
             std::unordered_set<const IQueryTreeNode *> dropped_matchers;
-            /// The nodes with the flag whether they are inside a lambda.
-            std::vector<std::pair<const IQueryTreeNode *, bool>> nodes_to_process{{query_node_typed.getProjectionNode().get(), false}};
+            struct NodeToProcess
+            {
+                const IQueryTreeNode * node;
+                bool is_inside_lambda;
+                /// Inside the transformers of a matcher, which are resolved when the matcher is expanded.
+                bool is_inside_matcher;
+            };
+            std::vector<NodeToProcess> nodes_to_process{{query_node_typed.getProjectionNode().get(), false, false}};
             /** The matchers of a named window are expanded together with the projection expressions that refer to it,
               * as `w` in `count() OVER w ... WINDOW w AS (PARTITION BY * REPLACE (1 AS c))`, including the windows it inherits
               * from, as `w` in `WINDOW w AS (...), w2 AS (w ORDER BY ...)`. The windows that are not referred to are not expanded
@@ -8580,12 +8586,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
                 auto window_it = scope.window_name_to_window_node.find(window_name);
                 if (window_it != scope.window_name_to_window_node.end() && processed_named_windows.insert(window_it->second.get()).second)
-                    nodes_to_process.emplace_back(window_it->second.get(), false);
+                    nodes_to_process.push_back({window_it->second.get(), false, false});
             };
 
             while (!nodes_to_process.empty())
             {
-                const auto [node, is_inside_lambda] = nodes_to_process.back();
+                const auto [node, is_inside_lambda, is_inside_matcher] = nodes_to_process.back();
                 nodes_to_process.pop_back();
 
                 /// A dropped matcher is removed together with the matchers nested in its transformers.
@@ -8645,11 +8651,23 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                     }
                 }
 
-                /// The `REPLACE` transformers of a subquery do not rewrite the `GROUP BY` of this query.
+                /** The `REPLACE` transformers of a subquery do not rewrite the `GROUP BY` of this query.
+                  * Neither do the ones in the body of a lambda that is not inside the transformers of a matcher, as in
+                  * `arrayMap(x -> COLUMNS('c') REPLACE (1 AS c), [1])`: `expandMatchersInsideProjectionExpression` does not
+                  * go into lambdas, so such a lambda is resolved with the rest of the projection, after `GROUP BY`,
+                  * regardless of whether the transformers are deferred. A lambda inside the transformers of a matcher,
+                  * as in `* APPLY (x -> ...)`, is resolved when the matcher is expanded, so it is visited.
+                  */
+                const bool children_are_inside_matcher = is_inside_matcher || matcher_node;
                 for (const auto & child : node->getChildren())
                 {
-                    if (child && !child->as<QueryNode>() && !child->as<UnionNode>())
-                        nodes_to_process.emplace_back(child.get(), is_inside_lambda || node->as<LambdaNode>());
+                    if (!child || child->as<QueryNode>() || child->as<UnionNode>())
+                        continue;
+
+                    if (child->as<LambdaNode>() && !children_are_inside_matcher)
+                        continue;
+
+                    nodes_to_process.push_back({child.get(), is_inside_lambda || node->as<LambdaNode>() != nullptr, children_are_inside_matcher});
                 }
             }
 
