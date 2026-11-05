@@ -72,6 +72,8 @@ Array(Nullable(String))|arrayMap(i -> if((number + i) % 7 = 0, NULL, substring(s
 Array(Tuple(UInt64, String))|arrayMap(i -> (h + i, substring(str, i + 1)), range(number % 4))
 Map(String, UInt64)|mapFromArrays(arrayMap(i -> substring(str, 1, i), range(number % 6)), arrayMap(i -> h + i, range(number % 6)))
 Map(UInt32, Array(String))|mapFromArrays(arrayMap(i -> toUInt32(h + i), range(number % 4)), arrayMap(i -> arrayMap(j -> substring(str, j + 1), range((number + i) % 3)), range(number % 4)))
+Array(UInt32)|arrayMap(i -> toUInt32(h + i), range(multiIf(number % 97 = 0, 1000 + number % 50, number % 301)))
+Map(UInt64, String)|mapFromArrays(arrayMap(i -> h + i, range(number % 41)), arrayMap(i -> substring(str, i + 1), range(number % 41)))
 Tuple(UInt64, String, Float64)|(h, str, f64)
 Tuple(Nullable(UInt32), Nullable(String))|(nu32, nstr)
 Tuple(LowCardinality(String))|tuple(toLowCardinality(str))

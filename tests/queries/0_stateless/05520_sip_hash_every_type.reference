@@ -99,6 +99,10 @@ Map(String, UInt64) sipHash64:                              1350796917745561299
 Map(String, UInt64) sipHash128:                             13161562619502973391
 Map(UInt32, Array(String)) sipHash64:                       16149042756989058628
 Map(UInt32, Array(String)) sipHash128:                      4492079224556973586
+Array(UInt32) sipHash64:                                    7440887341613643404
+Array(UInt32) sipHash128:                                   352254484442481242
+Map(UInt64, String) sipHash64:                              9134366295966183718
+Map(UInt64, String) sipHash128:                             3898786676840614417
 Tuple(UInt64, String, Float64) sipHash64:                   12930061042991291026
 Tuple(UInt64, String, Float64) sipHash128:                  16321577523701416972
 Tuple(Nullable(UInt32), Nullable(String)) sipHash64:        4903775521299565922
@@ -248,6 +252,10 @@ Map(String, UInt64) sipHash64:                              1350796917745561299
 Map(String, UInt64) sipHash128:                             13161562619502973391
 Map(UInt32, Array(String)) sipHash64:                       16149042756989058628
 Map(UInt32, Array(String)) sipHash128:                      4492079224556973586
+Array(UInt32) sipHash64:                                    7440887341613643404
+Array(UInt32) sipHash128:                                   352254484442481242
+Map(UInt64, String) sipHash64:                              9134366295966183718
+Map(UInt64, String) sipHash128:                             3898786676840614417
 Tuple(UInt64, String, Float64) sipHash64:                   12930061042991291026
 Tuple(UInt64, String, Float64) sipHash128:                  16321577523701416972
 Tuple(Nullable(UInt32), Nullable(String)) sipHash64:        4903775521299565922
@@ -397,6 +405,10 @@ Map(String, UInt64) sipHash64:                              1350796917745561299
 Map(String, UInt64) sipHash128:                             13161562619502973391
 Map(UInt32, Array(String)) sipHash64:                       16149042756989058628
 Map(UInt32, Array(String)) sipHash128:                      4492079224556973586
+Array(UInt32) sipHash64:                                    7440887341613643404
+Array(UInt32) sipHash128:                                   352254484442481242
+Map(UInt64, String) sipHash64:                              9134366295966183718
+Map(UInt64, String) sipHash128:                             3898786676840614417
 Tuple(UInt64, String, Float64) sipHash64:                   12930061042991291026
 Tuple(UInt64, String, Float64) sipHash128:                  16321577523701416972
 Tuple(Nullable(UInt32), Nullable(String)) sipHash64:        4903775521299565922
@@ -546,6 +558,10 @@ Map(String, UInt64) sipHash64:                              1350796917745561299
 Map(String, UInt64) sipHash128:                             13161562619502973391
 Map(UInt32, Array(String)) sipHash64:                       16149042756989058628
 Map(UInt32, Array(String)) sipHash128:                      4492079224556973586
+Array(UInt32) sipHash64:                                    7440887341613643404
+Array(UInt32) sipHash128:                                   352254484442481242
+Map(UInt64, String) sipHash64:                              9134366295966183718
+Map(UInt64, String) sipHash128:                             3898786676840614417
 Tuple(UInt64, String, Float64) sipHash64:                   12930061042991291026
 Tuple(UInt64, String, Float64) sipHash128:                  16321577523701416972
 Tuple(Nullable(UInt32), Nullable(String)) sipHash64:        4903775521299565922
@@ -695,6 +711,10 @@ Map(String, UInt64) sipHash64:                              1350796917745561299
 Map(String, UInt64) sipHash128:                             13161562619502973391
 Map(UInt32, Array(String)) sipHash64:                       16149042756989058628
 Map(UInt32, Array(String)) sipHash128:                      4492079224556973586
+Array(UInt32) sipHash64:                                    7440887341613643404
+Array(UInt32) sipHash128:                                   352254484442481242
+Map(UInt64, String) sipHash64:                              9134366295966183718
+Map(UInt64, String) sipHash128:                             3898786676840614417
 Tuple(UInt64, String, Float64) sipHash64:                   12930061042991291026
 Tuple(UInt64, String, Float64) sipHash128:                  16321577523701416972
 Tuple(Nullable(UInt32), Nullable(String)) sipHash64:        4903775521299565922
@@ -844,6 +864,10 @@ Map(String, UInt64) sipHash64:                              1350796917745561299
 Map(String, UInt64) sipHash128:                             13161562619502973391
 Map(UInt32, Array(String)) sipHash64:                       16149042756989058628
 Map(UInt32, Array(String)) sipHash128:                      4492079224556973586
+Array(UInt32) sipHash64:                                    7440887341613643404
+Array(UInt32) sipHash128:                                   352254484442481242
+Map(UInt64, String) sipHash64:                              9134366295966183718
+Map(UInt64, String) sipHash128:                             3898786676840614417
 Tuple(UInt64, String, Float64) sipHash64:                   12930061042991291026
 Tuple(UInt64, String, Float64) sipHash128:                  16321577523701416972
 Tuple(Nullable(UInt32), Nullable(String)) sipHash64:        4903775521299565922
