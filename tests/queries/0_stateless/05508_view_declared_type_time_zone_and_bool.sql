@@ -15,6 +15,8 @@ DROP TABLE IF EXISTS t_dist;
 DROP TABLE IF EXISTS t_bool;
 DROP TABLE IF EXISTS t_dst;
 DROP TABLE IF EXISTS t_merge;
+DROP TABLE IF EXISTS t_var;
+DROP TABLE IF EXISTS t_var_dst;
 
 CREATE TABLE t_src (ts DateTime, ts64 DateTime64(3), u UInt8) ENGINE = Memory;
 INSERT INTO t_src VALUES (1767225600, 1767225600.123, 2);
@@ -31,6 +33,7 @@ SELECT m, t, nb, nb = true FROM v_wrap;
 
 SELECT 'inlined view';
 SELECT toTypeName(ts), ts, toHour(ts), toTypeName(u), u, a FROM v SETTINGS analyzer_inline_views = 1;
+SELECT countIf(explain LIKE '%VIEW subquery%') = 0 AS inlined, countIf(explain LIKE '%\_CAST%') > 0 AS has_cast FROM (EXPLAIN actions = 1 SELECT ts FROM v SETTINGS analyzer_inline_views = 1);
 
 SELECT 'explicit CAST and same types';
 SELECT ts, toHour(ts) FROM v_cast;
@@ -44,6 +47,7 @@ INSERT INTO t_local VALUES (1767225600, 2);
 CREATE VIEW v_dist (ts DateTime('UTC'), u Bool) AS SELECT ts, u FROM t_dist;
 SELECT ts, toHour(ts), u FROM v_dist SETTINGS optimize_trivial_view_pushdown_to_distributed = 1;
 SELECT ts, toHour(ts), u FROM v_dist SETTINGS optimize_trivial_view_pushdown_to_distributed = 0;
+SELECT countIf(explain LIKE '%VIEW subquery%') > 0 AS pushdown_suppressed FROM (EXPLAIN SELECT ts, u FROM v_dist SETTINGS optimize_trivial_view_pushdown_to_distributed = 1);
 
 SELECT 'ORDER BY LIMIT pushed into view';
 CREATE TABLE t_order (u UInt8, k UInt8) ENGINE = Memory;
@@ -65,6 +69,17 @@ INSERT INTO t_dst VALUES (1767225600);
 CREATE TABLE t_merge (x DateTime('UTC')) ENGINE = Merge(currentDatabase(), '^t_dst$');
 SELECT x, toHour(x) FROM t_merge;
 
+SELECT 'Variant';
+CREATE TABLE t_var (x Variant(DateTime, String)) ENGINE = Memory;
+INSERT INTO t_var SELECT toDateTime(1767225600)::Variant(DateTime, String);
+CREATE VIEW v_var (x Variant(DateTime('UTC'), String)) AS SELECT x FROM t_var;
+SELECT x, variantType(x) FROM v_var;
+SELECT x FROM v_var SETTINGS analyzer_inline_views = 1;
+CREATE TABLE t_var_dst (x Variant(DateTime('UTC'), String)) ENGINE = Memory;
+INSERT INTO t_var_dst SELECT x FROM t_var;
+SELECT x FROM t_var_dst;
+SELECT CAST(x AS Variant(DateTime('UTC'), String)) FROM t_var;
+
 DROP VIEW v;
 DROP VIEW v_wrap;
 DROP VIEW v_cast;
@@ -72,6 +87,7 @@ DROP VIEW v_same;
 DROP VIEW v_dist;
 DROP VIEW v_order;
 DROP VIEW v_order_same;
+DROP VIEW v_var;
 DROP TABLE t_src;
 DROP TABLE t_order;
 DROP TABLE t_local;
@@ -79,3 +95,5 @@ DROP TABLE t_dist;
 DROP TABLE t_bool;
 DROP TABLE t_merge;
 DROP TABLE t_dst;
+DROP TABLE t_var;
+DROP TABLE t_var_dst;

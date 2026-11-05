@@ -2479,7 +2479,12 @@ FunctionCast::WrapperType FunctionCast::createVariantWrapper(const DataTypePtr &
     if (const auto * from_variant = checkAndGetDataType<DataTypeVariant>(from_type.get()))
     {
         if (const auto * to_variant = checkAndGetDataType<DataTypeVariant>(to_type.get()))
+        {
+            /// Equal Variants have the same alternatives in the same order, so the column is reused.
+            if (from_variant->equals(*to_variant))
+                return createIdentityWrapper(from_type);
             return createVariantToVariantWrapper(*from_variant, *to_variant);
+        }
 
         return createVariantToColumnWrapper(*from_variant, to_type);
     }
