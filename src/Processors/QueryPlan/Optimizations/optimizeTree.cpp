@@ -1024,6 +1024,10 @@ void optimizeTreeSecondPass(
 
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
 
+    /// After every optimization that can replace the reading step: the aggregation relies on the layers of the read.
+    if (optimization_settings.aggregation_in_order && !optimization_settings.make_distributed_plan)
+        traverseQueryPlan(stack, root, [&](auto & frame_node) { optimizeUniqExactInOrderLayers(frame_node); });
+
     /// Run after every optimization that can rewrite aggregation, sorting, projections,
     /// distributed fragments, or parallel replicas. This placement makes the pass a pure
     /// admission check: no later optimization needs to retract the heap or its synthetic sort.
