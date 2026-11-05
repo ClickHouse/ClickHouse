@@ -15,6 +15,15 @@ on:
         description: Performance shards for suite=performance, either all or comma-separated numbers (e.g. 4,13)
         required: false
         default: all
+      performance_resume_from:
+        description: Reuse completed whole tests from this workflow commit SHA on the same branch
+        required: false
+        default: ''
+      performance_max_hours:
+        description: Performance collection job budget including export reserve
+        type: choice
+        options: ['6', '12']
+        default: 6
 
 concurrency:
   group: ${{ github.workflow }}
@@ -750,6 +759,7 @@ jobs:
     needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMS8xNik=') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 1/16)"
+    timeout-minutes: 725
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -786,6 +796,7 @@ jobs:
     needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMi8xNik=') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 2/16)"
+    timeout-minutes: 725
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -822,6 +833,7 @@ jobs:
     needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMy8xNik=') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 3/16)"
+    timeout-minutes: 725
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -858,6 +870,7 @@ jobs:
     needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgNC8xNik=') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 4/16)"
+    timeout-minutes: 725
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -894,6 +907,7 @@ jobs:
     needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgNS8xNik=') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 5/16)"
+    timeout-minutes: 725
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -930,6 +944,7 @@ jobs:
     needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgNi8xNik=') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 6/16)"
+    timeout-minutes: 725
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -966,6 +981,7 @@ jobs:
     needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgNy8xNik=') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 7/16)"
+    timeout-minutes: 725
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1002,6 +1018,7 @@ jobs:
     needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgOC8xNik=') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 8/16)"
+    timeout-minutes: 725
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1038,6 +1055,7 @@ jobs:
     needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgOS8xNik=') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 9/16)"
+    timeout-minutes: 725
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1074,6 +1092,7 @@ jobs:
     needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMTAvMTYp') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 10/16)"
+    timeout-minutes: 725
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1110,6 +1129,7 @@ jobs:
     needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMTEvMTYp') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 11/16)"
+    timeout-minutes: 725
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1146,6 +1166,7 @@ jobs:
     needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMTIvMTYp') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 12/16)"
+    timeout-minutes: 725
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1182,6 +1203,7 @@ jobs:
     needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMTMvMTYp') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 13/16)"
+    timeout-minutes: 725
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1218,6 +1240,7 @@ jobs:
     needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMTQvMTYp') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 14/16)"
+    timeout-minutes: 725
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1254,6 +1277,7 @@ jobs:
     needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMTUvMTYp') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 15/16)"
+    timeout-minutes: 725
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -1290,6 +1314,7 @@ jobs:
     needs: [build_amd_llvm_coverage_per_test, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'UGVyZm9ybWFuY2UgQ29tcGFyaXNvbiAoYW1kX2xsdm1fY292ZXJhZ2VfcGVyX3Rlc3QsIHBlcl9xdWVyeV9jb3ZlcmFnZSwgMTYvMTYp') }}
     name: "Performance Comparison (amd_llvm_coverage_per_test, per_query_coverage, 16/16)"
+    timeout-minutes: 725
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}

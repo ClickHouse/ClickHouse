@@ -1,6 +1,7 @@
 """Collect performance-query coverage, independently of performance measurements."""
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -13,6 +14,13 @@ from pathlib import Path
 from clickhouse_driver import Client
 
 from ci.jobs import performance_tests as perf
+from ci.jobs.performance_coverage_resume import (
+    RESUME_PROTOCOL,
+    download_archive,
+    restore_archive,
+    source_identity,
+    validate_options,
+)
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.dataset_download import (
     PERFORMANCE_DATASETS,
@@ -24,7 +32,6 @@ from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Utils
 
-JOB_TIMEOUT = 6 * 3600
 EXPORT_RESERVE = 20 * 60
 
 
@@ -85,10 +92,22 @@ def configure(binary):
     (Path(perf.perf_right) / "coordination").mkdir()
 
 
-def run_tests(paths, output, deadline, warm_runs, manifest, save_manifest, cleanup):
-    results = []
+def run_tests(
+    paths, output, deadline, warm_runs, manifest, save_manifest, cleanup, results=None
+):
+    if results is None:
+        results = []
     for path in paths:
         state = manifest["tests"][path.name]
+        if state["status"] == "collected":
+            results.append(
+                Result(
+                    name=path.stem,
+                    status=Result.Status.OK,
+                    info="Restored complete coverage; see manifest provenance",
+                )
+            )
+            continue
         if test_discovery.test_is_long(path) or test_discovery.test_has_shell_query(
             path
         ):
@@ -171,6 +190,7 @@ def run_tests(paths, output, deadline, warm_runs, manifest, save_manifest, clean
             state.update(status="skipped", reason=skipped)
         else:
             state["status"] = "collected"
+        state["wall_seconds"] = sw.duration
         results.append(
             Result.create_from(
                 name=path.stem,
@@ -195,6 +215,8 @@ def main():
     parser.add_argument("--test-options", default="1/1")
     parser.add_argument("--test", default="")
     parser.add_argument("--warm-runs", type=int, default=1)
+    parser.add_argument("--resume-from", default="")
+    parser.add_argument("--max-hours", choices=("6", "12"), default="6")
     args = parser.parse_args()
     if args.warm_runs < 1:
         parser.error("--warm-runs must be positive")
@@ -202,9 +224,17 @@ def main():
     if not 1 <= batch <= total:
         parser.error("invalid batch")
     info = Info()
+    if info.is_dispatch_event:
+        args.resume_from = (
+            info.get_workflow_input_value("performance_resume_from") or args.resume_from
+        )
+        args.max_hours = (
+            info.get_workflow_input_value("performance_max_hours") or args.max_hours
+        )
+    validate_options(args.resume_from, args.max_hours)
     sw = Utils.Stopwatch()
     check_start_time = Utils.timestamp_to_str(sw.start_time)
-    deadline = time.monotonic() + JOB_TIMEOUT - EXPORT_RESERVE
+    deadline = time.monotonic() + int(args.max_hours) * 3600 - EXPORT_RESERVE
     output = Path(perf.temp_dir) / "performance_coverage"
     output.mkdir(parents=True, exist_ok=False)
     # Continuous `%c` profiling relocates counters away from the section read
@@ -230,6 +260,9 @@ def main():
         "check_name": info.job_name,
         "warm_runs": args.warm_runs,
         "complete": False,
+        "resume_protocol": RESUME_PROTOCOL,
+        "source_identity": source_identity("HEAD"),
+        "max_hours": int(args.max_hours),
         "tests": {path.name: {"status": "not_run"} for path in paths},
     }
 
@@ -285,6 +318,10 @@ def main():
         # The build can be cached from an earlier commit; keep its actual source
         # revision alongside the workflow revision that supplies the XML tests.
         manifest["binary_sha"] = build_options["GIT_HASH"]
+        with binary.open("rb") as binary_file:
+            manifest["binary_sha256"] = hashlib.file_digest(
+                binary_file, "sha256"
+            ).hexdigest()
         save_manifest()
         perf.attach_datasets(server.port, f"{perf.perf_right}/db")
         perf.create_iceberg_databases(
@@ -299,6 +336,34 @@ def main():
         client.execute("RENAME TABLE datasets.hits_v1 TO test.hits")
         manifest["dataset_layout"] = "prebuilt"
         save_manifest()
+        if args.resume_from:
+            available = subprocess.run(
+                ["git", "cat-file", "-e", f"{args.resume_from}^{{commit}}"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            if available.returncode:
+                subprocess.run(
+                    ["git", "fetch", "--depth=1", "origin", args.resume_from],
+                    check=True,
+                )
+            if source_identity(args.resume_from) != manifest["source_identity"]:
+                raise ValueError("Resume source inputs differ from this collection")
+            resume_archive = output.parent / "performance_coverage_resume.tar.gz"
+            manifest["resume_url"] = download_archive(
+                info, args.resume_from, resume_archive
+            )
+            restored = restore_archive(
+                resume_archive,
+                output,
+                manifest,
+                args.resume_from,
+                manifest["source_identity"],
+            )
+            print(
+                f"Restored {len(restored)} complete tests; interrupted tests will run from setup"
+            )
+            save_manifest()
         user_files = Path(perf.perf_right) / "db/user_files"
         preserved = set(user_files.iterdir())
 
@@ -313,8 +378,15 @@ def main():
                 else:
                     path.unlink()
 
-        results += run_tests(
-            paths, output, deadline, args.warm_runs, manifest, save_manifest, cleanup
+        run_tests(
+            paths,
+            output,
+            deadline,
+            args.warm_runs,
+            manifest,
+            save_manifest,
+            cleanup,
+            results,
         )
         if not any(
             state["status"] == "collected" for state in manifest["tests"].values()

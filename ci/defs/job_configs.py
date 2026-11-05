@@ -1949,7 +1949,9 @@ class JobConfigs:
         runs_on=RunnerLabels.FUNC_TESTER_AMD,
         command='python3 ./ci/jobs/performance_coverage.py --test-options "{PARAMETER}"',
         run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
-        timeout=6 * 3600,
+        # The collector defaults to six hours. Manual recovery can request twelve
+        # for a large whole XML without changing its queries or shard assignment.
+        timeout=12 * 3600,
         digest_config=None,
     ).parametrize(
         *[

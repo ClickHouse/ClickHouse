@@ -232,6 +232,24 @@ only compatible snapshots: check the binary commit, query hashes, settings, and
 completion manifests. GitHub's normal failed-job rerun uses the original commit,
 so it does not pick up collector fixes pushed afterward.
 
+For a failed attempt that preserved completed test artifacts, add
+`performance_resume_from=<full workflow commit SHA>`. The collector downloads
+that shard's archive from the same branch, checks the binary revision, source
+inputs, assignment, warm-run count, complete phase identities, teardown marker,
+and nonempty region files, then reuses only completed whole XML tests. A failed
+XML always restarts from setup. The combined manifest retains each reused test's
+origin; CIDB publication still requires completion of the entire shard. New
+manifests also record the binary checksum and per-test wall times.
+
+Manual recovery can set `performance_max_hours=12` when a large whole XML does
+not fit the default six-hour job budget. This does not change the scheduled
+collector's six-hour budget, test assignment, query set, or repetition policy.
+The outer CI timeout is twelve hours to accommodate this explicit option.
+
+```bash
+gh workflow run nightly_coverage.yml --ref <branch> -f suite=performance -f performance_shards=4,13 -f performance_resume_from=<full-sha> -f performance_max_hours=12
+```
+
 The collector reuses `perf.py` for parameter expansion, query groups, settings,
 setup and teardown. It runs every expanded SQL query in each non-`long` test,
 without random query sampling or the adaptive timing loop:

@@ -2,6 +2,7 @@ from praktika import Workflow
 
 from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs
 from ci.defs.job_configs import JobConfigs
+from ci.jobs.performance_coverage_resume import validate_options
 from ci.praktika.info import Info
 
 
@@ -11,11 +12,14 @@ def filter_coverage_jobs(job_name):
         return False, ""
     suite = info.get_workflow_input_value("suite")
     shards = info.get_workflow_input_value("performance_shards")
+    resume_from = info.get_workflow_input_value("performance_resume_from") or ""
+    max_hours = info.get_workflow_input_value("performance_max_hours") or "6"
+    validate_options(resume_from, max_hours)
     # Older dispatches predate this optional input.
     shards = "all" if shards is None else shards.strip()
     if suite == "all":
-        if shards != "all":
-            raise ValueError("performance_shards requires suite=performance")
+        if shards != "all" or resume_from or max_hours != "6":
+            raise ValueError("Performance recovery inputs require suite=performance")
         return False, ""
     if suite != "performance":
         raise ValueError(f"Unknown coverage suite: {suite!r}")
@@ -72,6 +76,19 @@ workflow = Workflow.Config(
             description="Performance shards for suite=performance, either all or comma-separated numbers (e.g. 4,13)",
             is_required=False,
             default_value="all",
+        ),
+        Workflow.Config.InputConfig(
+            name="performance_resume_from",
+            description="Reuse completed whole tests from this workflow commit SHA on the same branch",
+            is_required=False,
+            default_value="",
+        ),
+        Workflow.Config.InputConfig(
+            name="performance_max_hours",
+            description="Performance collection job budget including export reserve",
+            is_required=False,
+            default_value="6",
+            options=["6", "12"],
         ),
     ],
     workflow_filter_hooks=[filter_coverage_jobs],
