@@ -617,10 +617,10 @@ void AzureObjectStorage::removeObjectImpl(
             tryLogCurrentException(__PRETTY_FUNCTION__);
             throw;
         }
-        auto elapsed = watch.elapsedMicroseconds();
-
         if (successful_objects)
             successful_objects->emplace_back(object);
+
+        auto elapsed = watch.elapsedMicroseconds();
 
         if (blob_storage_log)
             blob_storage_log->addEvent(

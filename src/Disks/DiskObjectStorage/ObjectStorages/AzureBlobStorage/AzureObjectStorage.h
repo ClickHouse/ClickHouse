@@ -4,7 +4,6 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
-#include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/MultiVersion.h>
@@ -177,7 +176,7 @@ private:
     tryRefreshDataLakeFileClient(const Azure::Core::RequestFailedException & e, const String & blob_path) const;
 
     const String name;
-    /// Client used to access the files in the Blob Storage cloud.
+    /// client used to access the files in the Blob Storage cloud
     mutable MultiVersion<AzureBlobStorage::ContainerClient> client;
     MultiVersion<AzureBlobStorage::RequestSettings> settings;
     const String object_namespace; /// container + prefix
