@@ -1070,7 +1070,7 @@ TEST_P(CoordinationTest, TestOverlappingWatchesNotifySessionOnce)
     const auto run = [&](const ZooKeeperRequestPtr & request, int64_t session_id)
     {
         int64_t new_zxid = ++zxid;
-        storage.preprocessRequest(request, session_id, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(request, session_id, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         WatchEvents events;
         for (const auto & response_for_session : storage.processRequest(request, session_id, new_zxid))
         {
@@ -1340,7 +1340,7 @@ TEST_P(CoordinationTest, TestListWithOptionsRequest)
         request->data = data;
         request->is_ephemeral = ephemeral;
         const int32_t new_zxid = ++zxid;
-        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*log_idx=*/0);
         const auto responses = storage.processRequest(request, 1, new_zxid);
         ASSERT_EQ(responses.size(), 1);
         ASSERT_EQ(responses[0].response->error, Error::ZOK);
@@ -1351,7 +1351,7 @@ TEST_P(CoordinationTest, TestListWithOptionsRequest)
         request->path = path;
         request->options = options;
         request->xid = ++zxid;
-        storage.preprocessRequest(request, 1, 0, request->xid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(request, 1, 0, request->xid, /*check_acl=*/true, /*log_idx=*/0);
         const auto responses = storage.processRequest(request, 1, request->xid);
         EXPECT_EQ(responses.size(), 1);
         return dynamic_cast<const ZooKeeperListWithOptionsResponse &>(*responses[0].response);
@@ -1464,7 +1464,7 @@ TEST_P(CoordinationTest, TestListWithOptionsAcls)
         const auto request = std::make_shared<ZooKeeperAuthRequest>();
         request->scheme = "digest";
         request->data = "test_user:test_password";
-        storage.preprocessRequest(request, authorized_session_id, 0, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(request, authorized_session_id, 0, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
         const auto responses = storage.processRequest(request, authorized_session_id, zxid);
         ASSERT_EQ(responses.size(), 1);
         ASSERT_EQ(responses[0].response->error, Error::ZOK);
@@ -1475,7 +1475,7 @@ TEST_P(CoordinationTest, TestListWithOptionsAcls)
         const auto request = std::make_shared<ZooKeeperCreateRequest>();
         request->path = path;
         request->acls = std::move(acls);
-        storage.preprocessRequest(request, authorized_session_id, 0, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        storage.preprocessRequest(request, authorized_session_id, 0, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
         const auto responses = storage.processRequest(request, authorized_session_id, zxid);
         ASSERT_EQ(responses.size(), 1);
         ASSERT_EQ(responses[0].response->error, Error::ZOK);
