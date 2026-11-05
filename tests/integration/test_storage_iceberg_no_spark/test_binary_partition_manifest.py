@@ -8,6 +8,7 @@ import avro.datafile
 import avro.io
 import pyarrow as pa
 from pyiceberg.catalog import load_catalog
+from pyiceberg.manifest import ManifestContent
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import NestedField, Schema
 from pyiceberg.transforms import IdentityTransform
@@ -137,4 +138,22 @@ SETTINGS catalog_type='rest', warehouse='demo', storage_endpoint='http://minio1:
     assert (
         instance.query(f"SELECT id, hex(p) FROM {table_expression} ORDER BY id").strip()
         == "1\tFF\n2\tFF\n3\t0102\n4\t6F6B"
+    )
+
+    # A DELETE writes a position-delete manifest.
+    instance.query(f"DELETE FROM {table_expression} WHERE id = 4", settings=WRITE_SETTINGS)
+
+    table = catalog.load_table(identifier)
+    after_delete = partition_avro_types(cluster, table)
+    delete_manifests = [
+        manifest.manifest_path
+        for manifest in table.current_snapshot().manifests(table.io)
+        if manifest.content == ManifestContent.DELETES
+    ]
+    assert len(delete_manifests) == 1 and delete_manifests[0] not in after_insert, after_delete
+    assert all(t == ["null", "bytes"] for t in after_delete.values()), after_delete
+    assert scan_rows() == expected_rows
+    assert (
+        instance.query(f"SELECT id, hex(p) FROM {table_expression} ORDER BY id").strip()
+        == "1\tFF\n2\tFF\n3\t0102"
     )
