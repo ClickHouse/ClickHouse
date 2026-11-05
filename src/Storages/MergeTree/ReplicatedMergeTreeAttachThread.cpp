@@ -184,7 +184,7 @@ void ReplicatedMergeTreeAttachThread::runImpl()
         LOG_INFO(log, "Missing metadata in keeper. Force restoring it");
         try
         {
-            storage.restoreMetadataInZooKeeper({}, true);
+            storage.restoreMetadataInZooKeeper({}, true, storage.getContext());
         }
         catch (...)
         {
