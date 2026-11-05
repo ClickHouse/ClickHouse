@@ -263,7 +263,7 @@ rm -f "$OUT_OFF" "$OUT_ON"
 $CLICKHOUSE_CLIENT -q "
     SYSTEM FLUSH LOGS query_log;
 
-    CREATE TEMPORARY TABLE used AS
+    CREATE TABLE used ENGINE = Memory AS
     SELECT splitByChar(':', log_comment)[2] AS mode, splitByChar(':', log_comment)[3] AS t,
         splitByChar(':', log_comment)[4] AS algorithm, splitByChar(':', log_comment)[5] AS kind,
         substring(log_comment, length('05460:') + length(mode) + 2) AS config,
