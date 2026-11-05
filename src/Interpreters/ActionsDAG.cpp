@@ -2998,7 +2998,8 @@ ActionsDAG ActionsDAG::makeConvertingActions(
         }
 
         /// Add CAST function to convert into result type if needed.
-        if (!res_elem.type->equals(*dst_node->result_type))
+        /// `equals` ignores the time zone and custom names such as `Bool`, which the result must carry.
+        if (!res_elem.type->equals(*dst_node->result_type) || res_elem.type->getName() != dst_node->result_type->getName())
         {
             auto string_type = std::make_shared<DataTypeString>();
             auto type_name = res_elem.type->getName();

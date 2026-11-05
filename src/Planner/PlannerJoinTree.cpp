@@ -1643,7 +1643,8 @@ void pushOrderByIntoView(
         const auto * col = node->as<SortNode>()->getExpression()->as<ColumnNode>();
         if (!inner_header->has(col->getColumnName()))
             return;
-        if (!col->getColumnType()->equals(*inner_header->getByName(col->getColumnName()).type))
+        const auto & inner_type = inner_header->getByName(col->getColumnName()).type;
+        if (!col->getColumnType()->equals(*inner_type) || col->getColumnType()->getName() != inner_type->getName())
             return;
     }
 
@@ -2539,7 +2540,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                     continue;
                                 }
                                 auto it = inner_types.find(name);
-                                if (it == inner_types.end() || !view_columns.get(name).type->equals(*it->second))
+                                const auto & view_type = view_columns.get(name).type;
+                                if (it == inner_types.end() || !view_type->equals(*it->second) || view_type->getName() != it->second->getName())
                                 {
                                     column_checks_passed = false;
                                     break;

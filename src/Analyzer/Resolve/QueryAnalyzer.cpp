@@ -6880,12 +6880,18 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     else if (const auto * union_node = view_query_tree->as<UnionNode>())
         subquery_columns = union_node->computeProjectionColumns();
 
+    /// `equals` ignores the time zone and custom names such as `Bool`, which the view column must carry.
+    auto needs_cast = [](const DataTypePtr & view_type, const DataTypePtr & subquery_type)
+    {
+        return !view_type->equals(*subquery_type) || view_type->getName() != subquery_type->getName();
+    };
+
     bool needs_type_conversion = false;
     if (view_columns.size() == subquery_columns.size())
     {
         for (size_t i = 0; i < view_columns.size(); ++i)
         {
-            if (!view_columns[i].type->equals(*subquery_columns[i].type))
+            if (needs_cast(view_columns[i].type, subquery_columns[i].type))
             {
                 needs_type_conversion = true;
                 break;
@@ -6908,7 +6914,7 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
             auto column_node = std::make_shared<ColumnNode>(subquery_columns[i], static_pointer_cast<ITableExpressionNode>(view_query_tree));
             QueryTreeNodePtr projection_node;
 
-            if (!view_columns[i].type->equals(*subquery_columns[i].type))
+            if (needs_cast(view_columns[i].type, subquery_columns[i].type))
             {
                 projection_node = buildCastFunction(column_node, view_columns[i].type, scope.context);
                 projection_node->setAlias(view_columns[i].name);
