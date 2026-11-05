@@ -30,6 +30,8 @@ SHOW CREATE TABLE runner2;
 
 CREATE TABLE runner_random (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost', shard = 'random';
 CREATE TABLE runner_all (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost', shard = 'all';
+CREATE TABLE runner_secret (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_cluster_interserver_secret', mode = 'synchronous';
+INSERT INTO runner_secret VALUES ('SELECT 1');
 
 SYSTEM WAIT QUERY RUNNER runner;
 SYSTEM WAIT QUERY RUNNER runner2;
