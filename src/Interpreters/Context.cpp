@@ -128,7 +128,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
-#include <Interpreters/HypotheticalObjectStore.h>
+#include <Interpreters/WhatIf/HypotheticalObjectStore.h>
 #include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/SessionQueryIdsHistory.h>
 #include <Interpreters/Session.h>
@@ -154,9 +154,11 @@
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Analyzer/Utils.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -342,7 +344,6 @@ namespace Setting
     extern const SettingsBool enable_blob_storage_log;
     extern const SettingsBool enable_blob_storage_log_for_read_operations;
     extern const SettingsUInt64 filesystem_cache_boundary_alignment;
-    extern const SettingsUInt64 filesystem_cache_max_download_size;
     extern const SettingsUInt64 filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_wait_for_concurrent_download_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_segments_batch_size;
@@ -381,6 +382,8 @@ namespace Setting
     extern const SettingsBool page_cache_inject_eviction;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsString parallel_replicas_custom_key;
+    extern const SettingsUInt64 parallel_replicas_count;
+    extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsUInt64 prefetch_buffer_size;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
@@ -395,7 +398,6 @@ namespace Setting
     extern const SettingsUInt64 remote_fs_read_backoff_max_tries;
     extern const SettingsUInt64 remote_read_min_bytes_for_seek;
     extern const SettingsBool throw_on_error_from_cache_on_write_operations;
-    extern const SettingsBool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit;
     extern const SettingsBool s3_allow_parallel_part_upload;
     extern const SettingsBool s3_allow_server_credentials_in_user_queries;
     extern const SettingsBool use_reader_executor;
@@ -464,8 +466,11 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_distributed_cache_write_bandwidth_for_server;
     extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsBool message_queue_disable_insertion;
+    extern const ServerSettingsUInt64 stream_kafka_locks_refresh_polls;
     extern const ServerSettingsBool enable_read_through_distributed_cache;
     extern const ServerSettingsBool enable_write_through_distributed_cache;
+    extern const ServerSettingsDistributedCachePoolBehaviourOnLimit distributed_cache_temporary_data_pool_behaviour_on_limit;
+    extern const ServerSettingsUInt64 distributed_cache_temporary_data_max_connections_bypassing_pool;
     extern const ServerSettingsUInt64 tables_loader_background_pool_size;
     extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
     extern const ServerSettingsNonZeroUInt64 prefetch_threadpool_pool_size;
@@ -1527,7 +1532,7 @@ struct ContextSharedPart : boost::noncopyable
     void addOrUpdateWarningMessage(Context::WarningType warning, const PreformattedMessage & message) TSA_REQUIRES(mutex)
     {
         /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
-        LOG_WARNING(log, "{}", message.text);
+        LOG_WARNING(log, message);
         warnings[warning] = message;
     }
 
@@ -1691,6 +1696,7 @@ ContextData::ContextData(const ContextData &o) :
     is_recovery_from_stored_metadata(o.is_recovery_from_stored_metadata),
     skip_forced_projection_check(o.skip_forced_projection_check),
     is_view_inner_query(o.is_view_inner_query),
+    is_sql_security_overridden_body(o.is_sql_security_overridden_body),
     join_analyze_mode(o.join_analyze_mode),
     is_automatic_parallel_replicas_probe(o.is_automatic_parallel_replicas_probe),
     temp_data_on_disk(o.temp_data_on_disk),
@@ -3527,22 +3533,25 @@ static bool findIdentifier(const ASTFunction * function)
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint)
 {
     ASTFunction * function = assert_cast<ASTFunction *>(table_expression.get());
-    String database_name = getCurrentDatabase();
-    String table_name = function->name;
+    /// Same split as the analyzer: a stored `` `db.view`(...) `` has no compound-name flag.
+    auto [database_name, table_name] = extractDatabaseAndTableNameForParameterizedView(function->name, shared_from_this());
 
-    if (function->isCompoundName())
+    auto is_parameterized_view = [](const StoragePtr & storage)
     {
-        std::vector<std::string> parts;
-        splitInto<'.'>(parts, function->name);
+        const auto * view = storage ? storage->as<StorageView>() : nullptr;
+        return view && view->isParameterizedView();
+    };
 
-        if (parts.size() == 2)
-        {
-            database_name = std::move(parts[0]);
-            table_name = std::move(parts[1]);
-        }
+    StoragePtr table;
+    if (!table_name.empty())
+        table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
+    /// A view whose own name has a dot: `` `v.x`(...) ``.
+    if (!is_parameterized_view(table) && !function->isCompoundName() && table_name != function->name)
+    {
+        database_name = getCurrentDatabase();
+        table_name = function->name;
+        table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
     }
-
-    StoragePtr table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
     if (table)
     {
         if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
@@ -3609,6 +3618,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
             const auto & insert_column_names = hasInsertionTableColumnNames() ? *getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
             DB::ColumnsDescription structure_hint;
+            NameToNameSetMap insertion_columns_by_hint_column;
 
             bool use_columns_from_insert_query = true;
 
@@ -3649,6 +3659,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                           * A source column has a single type, so the hint is usable only if all the
                           * insert table columns that it is mapped to agree on the type.
                           */
+                        insertion_columns_by_hint_column[column.name].insert(*insert_column_name_it);
                         if (const auto * already_hinted = structure_hint.tryGet(column.name))
                         {
                             if (!already_hinted->type->equals(*column.type))
@@ -3743,12 +3754,16 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
                             /// Change ephemeral columns to default columns.
                             column.default_desc.kind = ColumnDefaultKind::Default;
 
+                            insertion_columns_by_hint_column[column.name].insert(column.name);
                             structure_hint.add(std::move(column));
                         }
                     }
 
                     if (!structure_hint.empty())
+                    {
+                        removeMisboundDefaultsFromStructureHint(structure_hint, insertion_columns_by_hint_column, insert_columns);
                         table_function_ptr->setStructureHint(structure_hint);
+                    }
                 }
                 else if (use_structure_from_insertion_table_in_table_functions == 1)
                     throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns in insert table less than required by SELECT expression.");
@@ -4074,6 +4089,13 @@ void Context::clampToSettingsConstraintsWithLock(SettingsChanges & changes, Sett
         doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
 
+void Context::clampToSettingsConstraintsRejectingInvalidChangesWithLock(SettingsChanges & changes, SettingSource source)
+{
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.clampRejectingInvalidChanges(*settings, changes, source);
+    if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
+        doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
+}
+
 void Context::checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
 {
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(merge_tree_settings, changes);
@@ -4211,6 +4233,21 @@ void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSourc
 
     SharedLockGuard lock(mutex);
     clampToSettingsConstraintsWithLock(changes, source);
+}
+
+void Context::clampToSettingsConstraintsRejectingInvalidChanges(SettingsChanges & changes, SettingSource source)
+{
+    if (std::ranges::any_of(changes, isProfileChange))
+    {
+        changes = enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
+        {
+            context.clampToSettingsConstraintsRejectingInvalidChanges(segment, source);
+        });
+        return;
+    }
+
+    SharedLockGuard lock(mutex);
+    clampToSettingsConstraintsRejectingInvalidChangesWithLock(changes, source);
 }
 
 void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
@@ -6829,6 +6866,8 @@ void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker, const LoadTask
         getGoals(startup_after),
         TablesLoaderBackgroundStartupPoolId,
         "startup ddl worker",
+        /// A table that failed to load must not stop distributed DDL on the whole server.
+        ignoreDependencyFailure,
         [this] (AsyncLoader &, const LoadJobPtr &)
         {
             std::lock_guard lock2(shared->mutex);
@@ -7782,6 +7821,18 @@ void Context::setS3QueueDisableStreaming(bool s3queue_disable_streaming) const
     shared->server_settings.set("s3queue_disable_streaming", s3queue_disable_streaming);
 }
 
+UInt64 Context::getKafkaLocksRefreshPolls() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->server_settings[ServerSetting::stream_kafka_locks_refresh_polls];
+}
+
+void Context::setKafkaLocksRefreshPolls(UInt64 stream_kafka_locks_refresh_polls) const
+{
+    std::lock_guard lock(shared->mutex);
+    shared->server_settings.set("stream_kafka_locks_refresh_polls", stream_kafka_locks_refresh_polls);
+}
+
 bool Context::getMessageQueueDisableInsertion() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -7811,6 +7862,31 @@ void Context::setWriteThroughDistributedCache(bool write_through_distributed_cac
 {
     std::lock_guard lock(shared->mutex);
     shared->server_settings.set("enable_write_through_distributed_cache", write_through_distributed_cache);
+}
+
+DistributedCachePoolBehaviourOnLimit Context::getDistributedCacheTemporaryDataPoolBehaviourOnLimit() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->server_settings[ServerSetting::distributed_cache_temporary_data_pool_behaviour_on_limit];
+}
+
+void Context::setDistributedCacheTemporaryDataPoolBehaviourOnLimit(DistributedCachePoolBehaviourOnLimit value) const
+{
+    std::lock_guard lock(shared->mutex);
+    shared->server_settings.set(
+        "distributed_cache_temporary_data_pool_behaviour_on_limit", SettingFieldDistributedCachePoolBehaviourOnLimit(value).toString());
+}
+
+UInt64 Context::getDistributedCacheTemporaryDataMaxConnectionsBypassingPool() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->server_settings[ServerSetting::distributed_cache_temporary_data_max_connections_bypassing_pool];
+}
+
+void Context::setDistributedCacheTemporaryDataMaxConnectionsBypassingPool(UInt64 value) const
+{
+    std::lock_guard lock(shared->mutex);
+    shared->server_settings.set("distributed_cache_temporary_data_max_connections_bypassing_pool", value);
 }
 
 bool Context::resolveReadThroughDistributedCache() const
@@ -9993,10 +10069,6 @@ ReadSettings Context::getReadSettings() const
     if (settings_ref[Setting::filesystem_cache_boundary_alignment])
         res.filesystem_cache_settings.boundary_alignment = settings_ref[Setting::filesystem_cache_boundary_alignment];
 
-    res.filesystem_cache_settings.max_download_size_per_query = settings_ref[Setting::filesystem_cache_max_download_size];
-    res.filesystem_cache_settings.skip_download_if_exceeds_per_query_cache_write_limit
-        = settings_ref[Setting::filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit];
-
     res.use_page_cache_for_disks_without_file_cache = settings_ref[Setting::use_page_cache_for_disks_without_file_cache];
     res.use_page_cache_with_distributed_cache = settings_ref[Setting::use_page_cache_with_distributed_cache];
     res.use_page_cache_for_local_disks = settings_ref[Setting::use_page_cache_for_local_disks];
@@ -10177,7 +10249,8 @@ bool Context::canReplaceClusterEngineWithClusterVariant() const
 
 bool Context::canUseParallelReplicasOnInitiator() const
 {
-    return canUseTaskBasedParallelReplicas() && !getClientInfo().collaborate_with_initiator;
+    return canUseTaskBasedParallelReplicas() && !getClientInfo().collaborate_with_initiator
+        && (!is_sql_security_overridden_body || getSettingsRef()[Setting::parallel_replicas_plan_based]);
 }
 
 bool Context::canUseParallelReplicasOnFollower() const
@@ -10200,7 +10273,8 @@ bool Context::canUseParallelReplicasCustomKey() const
 
 bool Context::canUseParallelReplicasCustomKeyForCluster(const Cluster & cluster) const
 {
-    return canUseParallelReplicasCustomKey() && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
+    return canUseParallelReplicasCustomKey() && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1
+        && !is_sql_security_overridden_body;
 }
 
 bool Context::canUseOffsetParallelReplicas() const
@@ -10222,6 +10296,45 @@ bool Context::canUseOffsetParallelReplicas() const
            has_enough_servers &&
            parallel_replicas_enabled &&
            is_parallel_replicas_with_custom_key_or_native_sampling_key;
+}
+
+void Context::restrictParallelReplicasInSQLSecurityOverriddenBody()
+{
+    chassert(is_sql_security_overridden_body);
+
+    /// The body is read locally unless plan-based parallel replicas ship its already resolved plan, see `canUseParallelReplicasOnInitiator`.
+    /// Turn the other modes off in the body itself, so that the checks rejecting what parallel replicas do not support
+    /// (`FINAL`, `JOIN` with a custom key, ...) do not fire for a body that does not use them.
+    /// A follower keeps task-based parallel replicas to read its part.
+    if (getClientInfo().collaborate_with_initiator)
+        return;
+
+    const auto & settings_ref = getSettingsRef();
+
+    /// A `sampling_key` follower reads the slice it is assigned by `parallel_replicas_count` / `parallel_replica_offset`.
+    /// Without the setting it would read the whole table, and the result would be multiplied by the number of replicas.
+    /// The body cannot fan out on its own: `updateSettingsAndClientInfoForCluster` keeps only the assigned slice for its shards.
+    if (isSamplingKeyParallelReplicasFollower())
+        return;
+
+    if (!settings_ref[Setting::parallel_replicas_custom_key].value.empty())
+    {
+        setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        setSetting("parallel_replicas_custom_key", String{});
+    }
+
+    if (settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
+        && !(canUseTaskBasedParallelReplicas() && settings_ref[Setting::parallel_replicas_plan_based]))
+        setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+}
+
+bool Context::isSamplingKeyParallelReplicasFollower() const
+{
+    const auto & settings_ref = getSettingsRef();
+    return getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
+        && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::SAMPLING_KEY
+        && settings_ref[Setting::parallel_replicas_count] > 1;
 }
 
 void Context::disableOffsetParallelReplicas()

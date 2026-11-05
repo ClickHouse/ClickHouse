@@ -18,6 +18,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/checkHyperscanRegexp.h>
+#include <Functions/indexHint.h>
 #include <Functions/logical.h>
 
 #include <Interpreters/Context.h>
@@ -569,7 +570,7 @@ public:
                 index_hint_arg = std::move(original_or);
             }
 
-            auto index_hint_resolver = FunctionFactory::instance().get("indexHint", context);
+            auto index_hint_resolver = FunctionIndexHint::createImplied();
             auto index_hint_fn = std::make_shared<FunctionNode>("indexHint");
             index_hint_fn->getArguments().getNodes().push_back(std::move(index_hint_arg));
             index_hint_fn->resolveAsFunction(index_hint_resolver);
