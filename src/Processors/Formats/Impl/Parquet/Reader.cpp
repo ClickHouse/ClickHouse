@@ -72,6 +72,7 @@ namespace DB::ErrorCodes
     extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -555,7 +556,7 @@ void Reader::getHyperrectangleForRowGroup(size_t row_group_idx, Hyperrectangle &
             /// query's own output or WHERE columns) - malformed helper stats must fail closed
             /// (skip pruning for this row group) rather than aborting the whole read, and
             /// "input_format_parquet_filter_push_down=0" would not even disable this path.
-            if (column_info.is_spatial_bbox_column)
+            if (column_info.is_spatial_bbox_column && e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
                 continue;
             e.addMessage("in column chunk statistics for column '{}'; use input_format_parquet_filter_push_down=0 to ignore", column_info.name);
             throw;
@@ -927,7 +928,8 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
             }
             catch (...)
             {
-                if (options.format.parquet.allow_geoparquet_parser)
+                /// Only malformed metadata disables pruning; running out of memory is not a property of the file.
+                if (options.format.parquet.allow_geoparquet_parser || getCurrentExceptionCode() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
                     throw;
                 LOG_WARNING(getLogger("ParquetReader"), "Failed to parse GeoParquet metadata, spatial pruning and geo type resolution disabled: {}", getCurrentExceptionMessage(false));
             }
@@ -2935,10 +2937,11 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
         /// Malformed page statistics for it must fail closed (no page pruning for this column)
         /// rather than abort the read, matching `getHyperrectangleForRowGroup`. A bbox column the
         /// query itself reads or filters on has non-spatial conditions too and keeps throwing.
+        /// Running out of memory is not malformed statistics and keeps throwing too.
         const bool only_spatial_conditions = std::all_of(
             column_info.column_index_conditions.begin(), column_info.column_index_conditions.end(),
             [](const PrimitiveColumnInfo::ColumnIndexCondition & c) { return c.spatial_key_condition_idx != SIZE_MAX; });
-        if (column_info.is_spatial_bbox_column && only_spatial_conditions)
+        if (column_info.is_spatial_bbox_column && only_spatial_conditions && e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
         {
             column.row_ranges_after_column_index.clear();
             if (row_group.meta->num_rows > 0)
