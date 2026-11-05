@@ -26,9 +26,6 @@ enum class JITErrorCode : uint16_t
     DivisionByZero,
     DivisionOfMinimalSignedNumberByMinusOne,
     DivisionByTheMostNegativeNumber,
-    /// Lifting a `Decimal` to a larger scale overflows. The parameters of its site are the family name of the result and
-    /// the multiplier, and its operand is the value being lifted.
-    DecimalConvertOverflow,
 };
 
 /** The error of the function being compiled on the current row, built with `addJITError`: whether the row fails (an `i1`
