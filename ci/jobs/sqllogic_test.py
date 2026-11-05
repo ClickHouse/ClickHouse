@@ -346,6 +346,15 @@ def save_current_failures(failures_dict, output_path):
     print(f"Saved {len(failures_dict)} current failures to {output_path}")
 
 
+def check_compatibility_baseline(new_failures, fixed_tests):
+    failures = []
+    if new_failures:
+        failures.append(f"FAILED: {len(new_failures):,} new failures detected")
+    if fixed_tests:
+        failures.append(f"FAILED: {len(fixed_tests):,} stale exclusions now pass")
+    return not failures, "; ".join(failures)
+
+
 def generate_html_report(
     all_reports,
     report_path,
@@ -446,7 +455,7 @@ def generate_html_report(
             f.write("\n")
 
         # New failures section (shown first, as it's the most actionable)
-        if new_failures is not None and known_failures_count > 0:
+        if new_failures is not None:
             num_new = len(new_failures)
             if num_new > 0:
                 f.write(
@@ -530,7 +539,7 @@ def generate_html_report(
             f.write("\n")
 
         # Fixed tests section
-        if fixed_tests and known_failures_count > 0:
+        if fixed_tests:
             num_fixed = len(fixed_tests)
             if num_fixed > 0:
                 f.write(
@@ -875,17 +884,12 @@ def main():
                         displayed += 1
 
             # Finalize pass/fail verdict before rendering HTML report
-            final_ok = threshold_ok
-            if known_count > 0 and len(new_failures) > 0:
-                threshold_info += (
-                    f"; FAILED: {len(new_failures):,} new failures detected"
-                )
-                final_ok = False
-            if len(fixed_tests) > 0:
-                threshold_info += (
-                    f"; FAILED: {len(fixed_tests):,} stale exclusions now pass"
-                )
-                final_ok = False
+            baseline_ok, baseline_info = check_compatibility_baseline(
+                new_failures, fixed_tests
+            )
+            final_ok = threshold_ok and baseline_ok
+            if baseline_info:
+                threshold_info += f"; {baseline_info}"
 
             generate_html_report(
                 all_reports,
