@@ -237,6 +237,11 @@ UInt64 parallelReplicasBoundarySettingsHash(const Settings & settings)
         hash.update(name);
         hash.update(value);
     }
+    /// A leaf timeout that the local replica cannot honour removes the local branch from the replicas plan (see
+    /// `ClusterProxy::executeQueryWithParallelReplicas`). Hash that decision rather than the timeouts themselves,
+    /// so that only the sessions it applies to get a key of their own.
+    if (ClusterProxy::leafTimeoutRequiresRemoteOnlyLeafReading(settings))
+        hash.update("leaf_timeout_requires_remote_only_leaf_reading");
     return hash.get64();
 }
 

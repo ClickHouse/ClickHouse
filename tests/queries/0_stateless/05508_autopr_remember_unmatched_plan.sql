@@ -42,6 +42,14 @@ FORMAT Null SETTINGS log_comment = 'remember_unmatched_limit_off_1', automatic_p
 SELECT l_orderkey, l_price FROM t_remember_unmatched_l WHERE l_price > 10 LIMIT 10
 FORMAT Null SETTINGS log_comment = 'remember_unmatched_limit_off_2', automatic_parallel_replicas_remember_boundary = 0;
 
+-- A leaf timeout stricter than `max_execution_time` removes the local branch from the plan with parallel replicas,
+-- so that plan cannot be compared. Without the leaf timeout the same query matches: the remembered verdict must not
+-- reach it.
+SELECT l_orderkey % 7 AS g, sum(l_price) FROM t_remember_unmatched_l GROUP BY g
+FORMAT Null SETTINGS log_comment = 'remember_unmatched_leaf_timeout_1', max_execution_time = 600, max_execution_time_leaf = 300;
+SELECT l_orderkey % 7 AS g, sum(l_price) FROM t_remember_unmatched_l GROUP BY g
+FORMAT Null SETTINGS log_comment = 'remember_unmatched_leaf_timeout_2', max_execution_time = 600, max_execution_time_leaf = 0;
+
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
 SYSTEM FLUSH LOGS query_log;

@@ -110,7 +110,7 @@ private:
 
     struct UnmatchedEntry
     {
-        Unmatched reason;
+        Unmatched reason = Unmatched::PlansNotComparable;
         std::chrono::steady_clock::time_point expires_at;
     };
     using UnmatchedCache = DB::CacheBase<UInt64, UnmatchedEntry>;
