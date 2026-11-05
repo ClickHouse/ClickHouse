@@ -929,6 +929,76 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
 
     auto & table_expression_data = scope.getTableExpressionDataOrThrow(table_expression_node);
 
+    const auto & table_name = table_expression_data.table_name;
+    const auto & database_name = table_expression_data.database_name;
+    const bool prefix_matches_table_name = !table_name.empty() && path_start == table_name;
+    const bool prefix_matches_alias
+        = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
+    const bool prefix_matches_database_and_table = identifier.getPartsSize() > 1
+        && !database_name.empty() && path_start == database_name && identifier[1] == table_name;
+
+    String materialized_cte_name;
+    if (table_expression_node_type == QueryTreeNodeType::TABLE)
+    {
+        const auto * table_node = table_expression_node->as<TableNode>();
+        if (table_node->isMaterializedCTE())
+            materialized_cte_name = table_node->getMaterializedCTE()->cte_name;
+    }
+    const bool prefix_matches_cte_name = !materialized_cte_name.empty() && path_start == materialized_cte_name;
+
+    /** ClickHouse allows the original table name to remain a qualifier after an alias is declared.
+      * With `prefer_outer_table_name_for_correlated_identifier`, defer that extension if the same qualifier
+      * is visible in a parent scope. In that case the correlation name hides the local table name and the
+      * identifier has to be resolved as a correlated reference.
+      * Example: `SELECT (SELECT count() FROM test AS inner_table WHERE inner_table.x < test.x) FROM test`;
+      */
+    bool table_name_qualifier_binds_in_parent_scope = false;
+    const bool qualifier_matches_original_name
+        = prefix_matches_table_name || prefix_matches_database_and_table || prefix_matches_cte_name;
+    if (scope.context->getSettingsRef()[Setting::prefer_outer_table_name_for_correlated_identifier]
+        && qualifier_matches_original_name && table_expression_node->hasAlias() && !prefix_matches_alias)
+    {
+        for (const IdentifierResolveScope * parent_scope = scope.parent_scope;
+             parent_scope && !table_name_qualifier_binds_in_parent_scope;
+             parent_scope = parent_scope->parent_scope)
+        {
+            for (const auto & [parent_table_expression, parent_table_expression_data] : parent_scope->table_expression_node_to_data)
+            {
+                if (isTableExpressionHiddenBySemiAntiJoin(parent_table_expression.get(), *parent_scope))
+                    continue;
+
+                bool qualifier_matches_parent = false;
+                if (prefix_matches_database_and_table)
+                {
+                    qualifier_matches_parent = !parent_table_expression->hasAlias()
+                        && path_start == parent_table_expression_data.database_name
+                        && identifier[1] == parent_table_expression_data.table_name;
+                }
+                else
+                {
+                    qualifier_matches_parent = (parent_table_expression->hasAlias()
+                        && path_start == parent_table_expression->getAlias())
+                        || (!parent_table_expression->hasAlias()
+                            && path_start == parent_table_expression_data.table_name);
+
+                    if (!qualifier_matches_parent && !parent_table_expression->hasAlias()
+                        && parent_table_expression->getNodeType() == QueryTreeNodeType::TABLE)
+                    {
+                        const auto * parent_table_node = parent_table_expression->as<TableNode>();
+                        qualifier_matches_parent = parent_table_node->isMaterializedCTE()
+                            && path_start == parent_table_node->getMaterializedCTE()->cte_name;
+                    }
+                }
+
+                if (qualifier_matches_parent)
+                {
+                    table_name_qualifier_binds_in_parent_scope = true;
+                    break;
+                }
+            }
+        }
+    }
+
     if (identifier_lookup.isTableExpressionLookup())
     {
         size_t parts_size = identifier_lookup.identifier.getPartsSize();
@@ -938,8 +1008,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
                 identifier_lookup.identifier.getFullName(),
                 table_expression_node->formatASTForErrorMessage());
 
-        const auto & table_name = table_expression_data.table_name;
-        const auto & database_name = table_expression_data.database_name;
+        if (table_name_qualifier_binds_in_parent_scope)
+            return {};
 
         if (parts_size == 1 && path_start == table_name)
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
@@ -962,37 +1032,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         return {};
     }
 
-    const auto & table_name = table_expression_data.table_name;
-    const bool prefix_matches_table_name = !table_name.empty() && path_start == table_name;
-    const bool prefix_matches_alias
-        = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
-
-    /** ClickHouse allows the original table name to remain a qualifier after an alias is declared.
-      * With `prefer_outer_table_name_for_correlated_identifier`, defer that extension if the same qualifier
-      * is visible in a parent scope. In that case the correlation name hides the local table name and the
-      * identifier has to be resolved as a correlated reference.
-      * Example: `SELECT (SELECT count() FROM test AS inner_table WHERE inner_table.x < test.x) FROM test`;
-      */
-    bool table_name_qualifier_binds_in_parent_scope = false;
-    if (scope.context->getSettingsRef()[Setting::prefer_outer_table_name_for_correlated_identifier]
-        && prefix_matches_table_name && table_expression_node->hasAlias() && !prefix_matches_alias)
-    {
-        for (const IdentifierResolveScope * parent_scope = scope.parent_scope;
-             parent_scope && !table_name_qualifier_binds_in_parent_scope;
-             parent_scope = parent_scope->parent_scope)
-        {
-            for (const auto & [parent_table_expression, parent_table_expression_data] : parent_scope->table_expression_node_to_data)
-            {
-                if ((parent_table_expression->hasAlias() && path_start == parent_table_expression->getAlias())
-                    || (!parent_table_expression->hasAlias() && path_start == parent_table_expression_data.table_name))
-                {
-                    table_name_qualifier_binds_in_parent_scope = true;
-                    break;
-                }
-            }
-        }
-    }
-
     /** Compatibility setting: when enabled, multi-part identifiers prefer the alias-prefix
       * strip path over `hasFullIdentifierName` / subcolumn lookup. This restores the
       * old-analyzer convention where `b.id` against a table aliased `b` resolves to the
@@ -1008,15 +1047,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
           * `cte.id` prefers a same-named subcolumn of the CTE while the equivalent shape with a regular CTE
           * or a table alias prefers the qualified column.
           */
-        bool prefix_matches_cte_name = false;
-        if (table_expression_node_type == QueryTreeNodeType::TABLE)
-        {
-            const auto * table_node = table_expression_node->as<TableNode>();
-            prefix_matches_cte_name
-                = table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name;
-        }
-        if ((prefix_matches_table_name && !table_name_qualifier_binds_in_parent_scope)
-            || prefix_matches_alias || prefix_matches_cte_name)
+        if (((prefix_matches_table_name || prefix_matches_cte_name) && !table_name_qualifier_binds_in_parent_scope)
+            || prefix_matches_alias)
         {
             auto alias_prefix_result = tryResolveIdentifierFromStorage(
                 identifier_lookup, table_expression_node, table_expression_data, scope,
@@ -1051,8 +1083,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
 
     if (identifier.getPartsSize() == 1)
         return {};
-
-    const auto & database_name = table_expression_data.database_name;
 
     /** The identifier first part can match a table name or an alias of one table expression and at the same
       * time be the database name of some table expression in the scope. Then the identifier as a whole can be
@@ -1125,7 +1155,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     if (table_expression_node_type == QueryTreeNodeType::TABLE)
     {
         auto * table_node = table_expression_node->as<TableNode>();
-        if (table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name)
+        if (table_node->isMaterializedCTE() && prefix_matches_cte_name && !table_name_qualifier_binds_in_parent_scope)
         {
             auto lookup_result = tryResolveIdentifierFromStorage(
                 identifier_lookup,
@@ -1151,7 +1181,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     if (identifier.getPartsSize() == 2)
         return {};
 
-    if (!database_name.empty() && path_start == database_name && identifier[1] == table_name)
+    if (prefix_matches_database_and_table && !table_name_qualifier_binds_in_parent_scope)
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 2 /*identifier_column_qualifier_parts*/);
 
     return {};
