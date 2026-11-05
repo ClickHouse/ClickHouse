@@ -14,6 +14,7 @@ namespace DB
 
 class Block;
 class NamesAndTypesList;
+struct NameAndTypePair;
 class ColumnsDescription;
 
 class IColumn;
@@ -83,5 +84,8 @@ ColumnPtr reconcileEvaluatedDefaultWithSharedOffsets(
     const ColumnPtr & evaluated_column,
     const DataTypePtr & type,
     const Columns & shared_offsets);
+
+/// Whether `fillMissingColumns` may leave `column` unfilled for `evaluateMissingDefaults`.
+bool mayLeaveColumnToMissingDefaults(const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column);
 
 }
