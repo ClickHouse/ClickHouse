@@ -185,13 +185,31 @@ void pullUpTupleElementDefaultsInAlterQuery(
             result.column_names.insert(column.name);
 
         const bool flatten_nested = context->getSettingsRef()[Setting::flatten_nested];
+        bool share_nested_offsets = true;
+        if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
+            share_nested_offsets = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
+        auto has_nested = [&](const String & name)
+        {
+            const String prefix = name + ".";
+            return std::ranges::any_of(result.column_names, [&](const String & column_name) { return column_name.starts_with(prefix); });
+        };
+
         for (size_t i = 0; i < commands.size(); ++i)
         {
             const auto & command = commands[i]->as<const ASTAlterCommand &>();
             if (command.type == ASTAlterCommand::ADD_COLUMN)
             {
-                /// A `Nested` column is added as its flattened columns (see `columnsAddedByAlter`).
-                addColumnNamesOfDeclaration(command.col_decl->as<const ASTColumnDeclaration &>(), flatten_nested, result.column_names);
+                /// The same columns as `columnsAddedByAlter`: a `Nested` column is added as its flattened
+                /// columns, and `IF NOT EXISTS` skips the whole command if the column (or, with
+                /// `share_nested_offsets`, the `Nested` group) exists, otherwise each existing flattened column.
+                const auto & col_decl = command.col_decl->as<const ASTColumnDeclaration &>();
+                if (command.if_not_exists
+                    && (result.column_names.contains(col_decl.name) || (share_nested_offsets && has_nested(col_decl.name))))
+                    continue;
+
+                /// With `IF NOT EXISTS`, the names which exist already are not added, which keeps the set unchanged.
+                addColumnNamesOfDeclaration(col_decl, flatten_nested, result.column_names);
             }
             else if (command.type == ASTAlterCommand::DROP_COLUMN && !command.clear_column && !command.partition)
             {
