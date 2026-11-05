@@ -1,0 +1,58 @@
+<test>
+    <settings>
+        <min_count_to_compile_expression>0</min_count_to_compile_expression>
+    </settings>
+
+    <create_query>
+        CREATE TABLE jit_prewhere_mt (k UInt64, ts DateTime('UTC'), value UInt32, x Float64) Engine = MergeTree ORDER BY k
+    </create_query>
+    <create_query>
+        CREATE TABLE jit_prewhere_memory (k UInt64, ts DateTime('UTC'), value UInt32, x Float64) Engine = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO jit_prewhere_mt
+        SELECT number, toDateTime(1640000000 + number * 13 % 200000000, 'UTC'), number % 1000, number % 977 / 7
+        FROM numbers(50000000)
+    </fill_query>
+    <fill_query>INSERT INTO jit_prewhere_memory SELECT * FROM jit_prewhere_mt</fill_query>
+    <fill_query>OPTIMIZE TABLE jit_prewhere_mt FINAL</fill_query>
+
+    <substitutions>
+        <substitution>
+            <name>table</name>
+            <values>
+                <value>jit_prewhere_mt</value>
+                <value>jit_prewhere_memory</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>compile</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Arithmetic on one column: one PREWHERE step, fused when compiled. -->
+    <query>
+        SELECT count() FROM {table} WHERE bitAnd(value * 2654435761, 1023) &lt; 500 AND value * 3 + 7 &gt; 100
+        SETTINGS compile_expressions = {compile}
+    </query>
+
+    <!-- Two conditions on the same two columns. -->
+    <query>
+        SELECT count() FROM {table} WHERE value * x &gt; 100 AND x - value &lt; 50
+        SETTINGS compile_expressions = {compile}
+    </query>
+
+    <!-- A simple time range: reading dominates, so it must not get slower. -->
+    <query>
+        SELECT count() FROM {table} WHERE ts >= toDateTime(1700000000, 'UTC') AND ts &lt; toDateTime(1750000000, 'UTC') AND value &gt; 500
+        SETTINGS compile_expressions = {compile}
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS jit_prewhere_mt</drop_query>
+    <drop_query>DROP TABLE IF EXISTS jit_prewhere_memory</drop_query>
+</test>
