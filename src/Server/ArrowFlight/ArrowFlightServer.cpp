@@ -64,6 +64,7 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsString query_rules;
 }
 
 
@@ -1565,6 +1566,11 @@ arrow::Status ArrowFlightServer::DoAction(
                     result.session_options[name_chunk.GetString(i)] = value_chunk.GetString(i);
                 }
             }
+
+            /// The `system.settings` query above is synthesized SQL, so it runs with `query_rules`
+            /// cleared (see `clearQueryRulesIfSynthesized`) and reports an empty value for it. Report
+            /// the rule list that is actually active for the client's queries in this session instead.
+            result.session_options["query_rules"] = String{session->makeQueryContext()->getSettingsRef()[Setting::query_rules]};
 
             ARROW_ASSIGN_OR_RAISE(auto serialized, result.SerializeToString())
             ARROW_ASSIGN_OR_RAISE(auto packed_result, arrow::Result<arrow::flight::Result>{arrow::flight::Result{arrow::Buffer::FromString(std::move(serialized))}})

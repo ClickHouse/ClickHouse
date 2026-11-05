@@ -152,6 +152,9 @@ def test_metadata_commands_do_not_apply_rewrite_rules():
         # ... and GetSessionOptions, which reads `system.settings`.
         result = client.get_session_options()
         assert "max_threads" in result.session_options
+        # It reports the rules that are active in the session, even though its own synthesized
+        # query runs without them.
+        assert result.session_options["query_rules"] == active_rules
     finally:
         for name, _ in rules:
             node.query(f"DROP RULE {name}", ignore_error=True)
