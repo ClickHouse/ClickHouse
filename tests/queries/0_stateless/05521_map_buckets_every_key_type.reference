@@ -1,0 +1,65 @@
+m_array_float64	[7]
+m_array_uint8	[7]
+m_bool	[7]
+m_date	[7]
+m_date32	[7]
+m_datetime	[7]
+m_datetime64	[7]
+m_decimal64	[7]
+m_dynamic	[7]
+m_enum8	[7]
+m_fixed_string	[7]
+m_float32	[7]
+m_float64	[7]
+m_int16	[7]
+m_int256	[7]
+m_int32	[7]
+m_int64	[7]
+m_int8	[7]
+m_ipv4	[7]
+m_ipv6	[7]
+m_json	[7]
+m_low_cardinality	[7]
+m_string	[7]
+m_tuple	[7]
+m_tuple_float64	[7]
+m_uint128	[7]
+m_uint16	[7]
+m_uint32	[7]
+m_uint64	[7]
+m_uint8	[7]
+m_uuid	[7]
+m_variant	[7]
+UInt8	0	4500
+UInt16	0	4500
+UInt32	0	4500
+UInt64	0	4500
+Int8	0	4500
+Int16	0	4500
+Int32	0	4500
+Int64	0	4500
+Float32	0	4500
+Float64	0	4500
+String	0	4500
+FixedString(4)	0	4500
+UInt128	0	4500
+Int256	0	4500
+UUID	0	4500
+IPv4	0	4500
+IPv6	0	4500
+Date	0	4500
+Date32	0	4500
+DateTime	0	4500
+DateTime64(3)	0	4500
+Enum8	0	450
+Decimal64(4)	0	4500
+Bool	0	90
+LowCardinality(String)	0	4500
+Array(UInt8)	0	4500
+Array(Float64)	0	4500
+Tuple(String, UInt64)	0	4500
+Tuple(Float64, UInt8)	0	4500
+Variant(UInt64, String)	0	4500
+Dynamic	0	4500
+JSON	0	4500
+1

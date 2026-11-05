@@ -1,4 +1,7 @@
 import os
+import re
+import time
+import uuid
 
 import cassandra.cluster
 import pytest
@@ -401,3 +404,112 @@ def test_invalid_partition_key_prefix(started_cluster, partition_key_prefix):
         assert "INVALID_CONFIG_PARAMETER" in error
     finally:
         node.query("DROP DICTIONARY invalid_prefix_dict")
+
+
+# The partitions `(k1, k2)` of `routing.t` with the hash that sends their keys to one query: `get64` of the SipHash of
+# the `updateHashWithValue` bytes of `k1` and `k2` (the 8 bytes of the Int64, then the length + 1 as UInt64, the bytes
+# and a zero byte). The values were computed by the code that hashes one row at a time, so they must not change.
+ROUTING_PARTITION_HASHES = {
+    (1, "a"): 6659716417393878069,
+    (-2, "bb"): 2973480198240565102,
+    (9223372036854775807, "c c"): 16890912786943037693,
+    (3, "dddddddddddddddddddd"): 15708851682939948434,
+    # Not in the table.
+    (4, "missing"): 5394984076608505435,
+}
+
+
+@pytest.fixture(scope="module")
+def routing_table(started_cluster):
+    client = cassandra.cluster.Cluster(
+        [started_cluster.cassandra_ip], port=started_cluster.cassandra_port
+    )
+    session = client.connect()
+    session.execute(
+        "CREATE KEYSPACE IF NOT EXISTS routing WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}"
+    )
+    session.execute("DROP TABLE IF EXISTS routing.t")
+    session.execute(
+        "CREATE TABLE routing.t (k1 bigint, k2 text, c bigint, value text, PRIMARY KEY ((k1, k2), c))"
+    )
+    insert = session.prepare(
+        "INSERT INTO routing.t (k1, k2, c, value) VALUES (?, ?, ?, ?)"
+    )
+    for k1, k2 in ROUTING_PARTITION_HASHES:
+        if k2 != "missing":
+            for c in range(3):
+                session.execute(insert, (k1, k2, c, f"v_{k1}_{k2}_{c}"))
+    client.shutdown()
+
+
+def test_partition_key_prefix_routing(started_cluster, routing_table):
+    """
+    `COMPLEX_KEY_DIRECT` with `partition_key_prefix 2` groups the requested keys by the hash of the first two key
+    columns and sends one query per group, which it logs with the hash.
+    """
+    node.query(f"""
+        CREATE DICTIONARY routing_dict (k1 Int64, k2 String, c Int64, value String)
+        PRIMARY KEY k1, k2, c
+        SOURCE(CASSANDRA(
+            host '{started_cluster.cassandra_host}'
+            port {started_cluster.cassandra_port}
+            keyspace 'routing'
+            column_family 't'
+            partition_key_prefix 2))
+        LAYOUT(COMPLEX_KEY_DIRECT())
+        """)
+    try:
+        partitions = sorted(ROUTING_PARTITION_HASHES)
+        partitions_sql = ", ".join(f"({k1}, '{k2}')" for k1, k2 in partitions)
+        # The same bytes hashed by `sipHash64`.
+        assert (
+            node.query(f"""
+            SELECT k1, k2, sipHash64(concat(reinterpretAsFixedString(k1), reinterpretAsFixedString(toUInt64(length(k2) + 1)), k2, '\\0'))
+            FROM values('k1 Int64, k2 String', {partitions_sql})
+            ORDER BY k1
+            """)
+            == "".join(
+                f"{k1}\t{k2}\t{ROUTING_PARTITION_HASHES[(k1, k2)]}\n"
+                for k1, k2 in partitions
+            )
+        )
+
+        # The clustering keys 0 and 2 are in every partition of the table, 5 is in none.
+        keys = [(k1, k2, c) for k1, k2 in partitions for c in (0, 2, 5)]
+        keys_sql = ", ".join(f"({k1}, '{k2}', {c})" for k1, k2, c in keys)
+        values = [
+            "missing" if k2 == "missing" or c == 5 else f"v_{k1}_{k2}_{c}"
+            for k1, k2, c in keys
+        ]
+        query_id = f"cassandra_routing_{uuid.uuid4().hex}"
+        assert (
+            node.query(
+                f"""
+            SELECT k1, k2, c, dictGetOrDefault('routing_dict', 'value', (k1, k2, c), 'missing')
+            FROM values('k1 Int64, k2 String, c Int64', {keys_sql})
+            ORDER BY k1, c
+            """,
+                query_id=query_id,
+            )
+            == "".join(
+                f"{k1}\t{k2}\t{c}\t{value}\n"
+                for (k1, k2, c), value in zip(keys, values)
+            )
+        )
+
+        # The server log is written asynchronously.
+        expected_hashes = set(ROUTING_PARTITION_HASHES.values())
+        for _ in range(100):
+            logged_hashes = set(
+                int(h)
+                for h in re.findall(
+                    r"Loading keys for partition hash (\d+) using query",
+                    node.grep_in_log(query_id),
+                )
+            )
+            if logged_hashes >= expected_hashes:
+                break
+            time.sleep(0.1)
+        assert logged_hashes == expected_hashes
+    finally:
+        node.query("DROP DICTIONARY routing_dict")
