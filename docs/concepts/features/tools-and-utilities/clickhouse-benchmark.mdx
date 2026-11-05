@@ -156,7 +156,7 @@ With open-loop arrivals QPS follows the arrival rate, so it says little about th
 
 The CPU time is the sum of the `UserTimeMicroseconds` and `SystemTimeMicroseconds` profile events that the server sends for every query, so it covers the threads executing the query and is an approximation of its total CPU cost. If the server sends no profile events (for example with `--send_profile_events=0`), the status string shows `CPU: not reported by the server`.
 
-To run a mixed workload, run several `clickhouse-benchmark` processes at the same time, one per class of queries. Each process reports the statistics of its own class, and the combined arrivals of all processes are a Poisson process too.
+To run a mixed workload, run several `clickhouse-benchmark` processes at the same time, one per class of queries. Each process reports the statistics of its own class. Give every process its own `--seed`, or none: processes with the same seed draw the same random sequence, so their arrivals coincide (or, with different rates, are scaled copies of each other). With independent seeds the combined arrivals of all processes are a Poisson process too.
 
 Examples:
 
