@@ -11,6 +11,7 @@ SET query_plan_direct_read_from_text_index = 1;
 
 DROP TABLE IF EXISTS tab;
 
+-- Bucketed, so that `m['key']` is rewritten to the key subcolumn when optimize_functions_to_subcolumns is on.
 CREATE TABLE tab
 (
     id UInt32,
@@ -19,7 +20,8 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0,
+    map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
 
 -- Three granules: rows (1, 2), (3, 4) and (5, 6). Row 6 has no pairs at all.
 INSERT INTO tab VALUES (1, {'level':'error','service':'api'}), (2, {'level':'warn','service':'api'}), (3, {'level':'error','service':'web'}), (4, {'level':'info','service':'web'}), (5, {'level':'debug','service':'api'}), (6, {});
