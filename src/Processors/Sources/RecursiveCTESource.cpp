@@ -421,6 +421,8 @@ private:
         Arena keys_arena;
         VectorWithMemoryTracking<std::string_view> row_keys;
         UnorderedMapWithMemoryTracking<std::string_view, size_t> last_row_for_key;
+        /// The number of rows in `columns` superseded by a later row with the same key.
+        size_t superseded_rows = 0;
     };
 
     /// Serializes the key columns of the row into a contiguous chunk of the arena. Lookups use the
@@ -452,6 +454,10 @@ private:
             {
                 candidates.keys_arena.rollback(key.size());
                 key = last_row_it->first;
+
+                /// The previously stored candidate for the key is superseded by this row, whether or not this row is stored.
+                if (last_row_it->second != StepCandidates::UNCHANGED)
+                    ++candidates.superseded_rows;
             }
 
             /// A row identical to the accumulated one does not change the state and is not propagated
@@ -484,6 +490,40 @@ private:
             candidates.row_keys.push_back(key);
             last_row_it->second = new_row_index;
         }
+
+        compactStepCandidatesIfNeeded(candidates);
+    }
+
+    /// Reclaims the rows superseded within the step, so that the storage of the candidates is bounded
+    /// by the number of distinct keys rather than by the number of produced rows. Compacting only when
+    /// at least half of the rows are superseded keeps the amortized cost linear in the produced rows.
+    void compactStepCandidatesIfNeeded(StepCandidates & candidates) const
+    {
+        size_t rows = candidates.row_keys.size();
+        if (candidates.superseded_rows == 0 || candidates.superseded_rows * 2 < rows)
+            return;
+
+        size_t columns_size = candidates.columns.size();
+        MutableColumns compacted_columns = header->cloneEmptyColumns();
+        VectorWithMemoryTracking<std::string_view> compacted_row_keys;
+        compacted_row_keys.reserve(rows - candidates.superseded_rows);
+
+        for (size_t row = 0; row < rows; ++row)
+        {
+            std::string_view key = candidates.row_keys[row];
+            auto & last_row = candidates.last_row_for_key.at(key);
+            if (last_row != row)
+                continue;
+
+            last_row = compacted_row_keys.size();
+            for (size_t i = 0; i < columns_size; ++i)
+                compacted_columns[i]->insertFrom(*candidates.columns[i], row);
+            compacted_row_keys.push_back(key);
+        }
+
+        candidates.columns = std::move(compacted_columns);
+        candidates.row_keys = std::move(compacted_row_keys);
+        candidates.superseded_rows = 0;
     }
 
     void applyStepCandidates(const StepCandidates & candidates, MutableColumns & delta_columns)
