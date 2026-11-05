@@ -826,70 +826,74 @@ static void replaceFieldsOfLambdaArguments(ASTPtr & ast, const NameSet & lambda_
         replaceFieldsOfLambdaArguments(child, lambda_arguments);
 }
 
+/// The columns the default expression of `column_name` reads directly, named as by getColumnsReadByDefault.
+static Names getColumnsReadByDefaultExpression(const ColumnsDescription & columns, const String & column_name)
+{
+    auto column_default = columns.getDefault(column_name);
+    if (!column_default || !column_default->expression)
+        return {};
+
+    RequiredSourceColumnsVisitor::Data required_columns;
+    auto expression = column_default->expression->clone();
+    /// A dictionary or table name (`dictGet(db.dict, ...)`, `x IN t`) is not a column.
+    Aliases aliases;
+    MarkTableIdentifiersVisitor::Data identifiers_data{aliases};
+    MarkTableIdentifiersVisitor(identifiers_data).visit(expression);
+    replaceFieldsOfLambdaArguments(expression, {});
+    RequiredSourceColumnsVisitor(required_columns).visit(expression);
+
+    Names reads;
+    for (const auto & required : required_columns.requiredColumns())
+    {
+        reads.push_back(required);
+        if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required))
+        {
+            if (column->isSubcolumn())
+                reads.push_back(column->getNameInStorage());
+        }
+        else if (columns.hasNested(required))
+        {
+            /// A flattened `Nested` column `n` is built from the columns `n.*`.
+            for (const auto & element : columns)
+                if (element.name.starts_with(required + "."))
+                    reads.push_back(element.name);
+        }
+        else
+        {
+            /// An ALIAS column registers no subcolumns, so `p.q` reads the column `p` whose type has the subcolumn `q`.
+            String prefix = Nested::splitName(required).first;
+            for (const auto & [name_in_storage, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(required))
+            {
+                const auto * description = columns.tryGet(String(name_in_storage));
+                if (description && description->type->tryGetSubcolumnType(subcolumn_name))
+                {
+                    prefix = name_in_storage;
+                    break;
+                }
+            }
+            reads.push_back(std::move(prefix));
+        }
+    }
+    return reads;
+}
+
 NameSet MutationsInterpreter::getColumnsReadByDefault(
     const ColumnsDescription & columns,
-    const String & column_name,
+    const Names & column_names,
     const std::function<bool(const String &)> & is_stored)
 {
     NameSet result;
-    NameSet visited{column_name};
-    std::vector<String> to_visit{column_name};
+    NameSet visited(column_names.begin(), column_names.end());
+    std::vector<String> to_visit(column_names.begin(), column_names.end());
     while (!to_visit.empty())
     {
         String name = std::move(to_visit.back());
         to_visit.pop_back();
-        if (name != column_name && is_stored(name))
-            continue;
-
-        auto column_default = columns.getDefault(name);
-        if (!column_default || !column_default->expression)
-            continue;
-
-        RequiredSourceColumnsVisitor::Data required_columns;
-        auto expression = column_default->expression->clone();
-        /// A dictionary or table name (`dictGet(db.dict, ...)`, `x IN t`) is not a column.
-        Aliases aliases;
-        MarkTableIdentifiersVisitor::Data identifiers_data{aliases};
-        MarkTableIdentifiersVisitor(identifiers_data).visit(expression);
-        replaceFieldsOfLambdaArguments(expression, {});
-        RequiredSourceColumnsVisitor(required_columns).visit(expression);
-        for (const auto & required : required_columns.requiredColumns())
+        for (auto & read : getColumnsReadByDefaultExpression(columns, name))
         {
-            Names reads{required};
-            if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required))
-            {
-                if (column->isSubcolumn())
-                    reads.push_back(column->getNameInStorage());
-            }
-            else if (columns.hasNested(required))
-            {
-                /// A flattened `Nested` column `n` is built from the columns `n.*`.
-                for (const auto & element : columns)
-                    if (element.name.starts_with(required + "."))
-                        reads.push_back(element.name);
-            }
-            else
-            {
-                /// An ALIAS column registers no subcolumns, so `p.q` reads the column `p` whose type has the subcolumn `q`.
-                String prefix = Nested::splitName(required).first;
-                for (const auto & [name_in_storage, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(required))
-                {
-                    const auto * description = columns.tryGet(String(name_in_storage));
-                    if (description && description->type->tryGetSubcolumnType(subcolumn_name))
-                    {
-                        prefix = name_in_storage;
-                        break;
-                    }
-                }
-                reads.push_back(std::move(prefix));
-            }
-
-            for (const auto & read : reads)
-            {
-                result.insert(read);
-                if (visited.insert(read).second)
-                    to_visit.push_back(read);
-            }
+            result.insert(read);
+            if (visited.insert(read).second && !is_stored(read))
+                to_visit.push_back(std::move(read));
         }
     }
     return result;
@@ -2013,28 +2017,55 @@ void MutationsInterpreter::prepare(bool dry_run)
                 return column && part_stores(column->getNameInStorage());
             };
 
-            std::unordered_map<String, NameSet> columns_read_by_default;
-            NameSet not_computed_by_reader;
-            for (const auto & name : unstored_defaults)
+            /// A name -> the columns whose default expression reads it directly, for the expressions that
+            /// getColumnsReadByDefault looks into for `unstored_defaults`.
+            std::unordered_map<String, Names> readers;
+            NameSet analysed;
+            std::vector<String> to_visit(unstored_defaults.begin(), unstored_defaults.end());
+            while (!to_visit.empty())
             {
-                const auto & inputs = columns_read_by_default[name] = getColumnsReadByDefault(columns_desc, name, is_stored);
-                if (!std::ranges::all_of(inputs, reader_reads))
-                    not_computed_by_reader.insert(name);
+                String name = std::move(to_visit.back());
+                to_visit.pop_back();
+                if (!analysed.insert(name).second)
+                    continue;
+                for (const auto & read : getColumnsReadByDefaultExpression(columns_desc, name))
+                {
+                    readers[read].push_back(name);
+                    if (!analysed.contains(read) && !is_stored(read))
+                        to_visit.push_back(read);
+                }
             }
+
+            /// Adds to `marked` every column whose getColumnsReadByDefault result contains `name`.
+            auto mark_readers = [&](const String & name, NameSet & marked)
+            {
+                std::vector<const String *> to_mark{&name};
+                while (!to_mark.empty())
+                {
+                    auto it = readers.find(*to_mark.back());
+                    to_mark.pop_back();
+                    if (it == readers.end())
+                        continue;
+                    for (const auto & reader : it->second)
+                        if (marked.insert(reader).second)
+                            to_mark.push_back(&reader);
+                }
+            };
+
+            NameSet not_computed_by_reader;
+            for (const auto & [read, _] : readers)
+                if (!reader_reads(read))
+                    mark_readers(read, not_computed_by_reader);
 
             /// An unstored ordinary column is received as its DEFAULT over the part's values, so a stage after one
             /// that changed an input of that DEFAULT computes the column itself, as does every stage if the reader cannot.
-            NameSet changed;
+            NameSet reads_changed;
             NameSet stored;
             for (auto & stage : stages)
             {
                 for (const auto & name : unstored_defaults)
                 {
-                    if (stored.contains(name))
-                        continue;
-
-                    if (not_computed_by_reader.contains(name)
-                        || std::ranges::any_of(columns_read_by_default.at(name), [&](const auto & input) { return changed.contains(input); }))
+                    if (!stored.contains(name) && (not_computed_by_reader.contains(name) || reads_changed.contains(name)))
                         stage.stale_defaults.insert(name);
                 }
 
@@ -2045,7 +2076,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 {
                     for (const auto & [name, _] : stage.column_to_updated)
                     {
-                        changed.insert(name);
+                        mark_readers(name, reads_changed);
                         stored.insert(name);
                     }
                 }
@@ -2335,42 +2366,39 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                 NamesAndTypesList default_input_subcolumns;
                 NameSet default_input_subcolumn_names;
                 NameSet computed_parents;
-                for (const auto & column : columns_to_compute)
+                for (const auto & name : getColumnsReadByDefault(default_columns, columns_to_compute.getNames(), in_header))
                 {
-                    for (const auto & name : getColumnsReadByDefault(default_columns, column.name, in_header))
+                    auto subcolumn = storage_snapshot->tryGetColumn(col_options, name);
+                    /// An ALIAS column registers no subcolumns, so a subcolumn of one is found by the type of the column.
+                    if (!subcolumn)
                     {
-                        auto subcolumn = storage_snapshot->tryGetColumn(col_options, name);
-                        /// An ALIAS column registers no subcolumns, so a subcolumn of one is found by the type of the column.
-                        if (!subcolumn)
+                        for (const auto & [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
                         {
-                            for (const auto & [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+                            DataTypePtr type;
+                            if (auto it = input_types.find(String(column_name)); it != input_types.end())
+                                type = it->second;
+                            else if (is_alias(String(column_name)))
+                                type = table_columns.get(String(column_name)).type;
+                            else
+                                continue;
+                            if (auto subcolumn_type = type->tryGetSubcolumnType(subcolumn_name))
                             {
-                                DataTypePtr type;
-                                if (auto it = input_types.find(String(column_name)); it != input_types.end())
-                                    type = it->second;
-                                else if (is_alias(String(column_name)))
-                                    type = table_columns.get(String(column_name)).type;
-                                else
-                                    continue;
-                                if (auto subcolumn_type = type->tryGetSubcolumnType(subcolumn_name))
-                                {
-                                    subcolumn.emplace(String(column_name), String(subcolumn_name), type, subcolumn_type);
-                                    break;
-                                }
+                                subcolumn.emplace(String(column_name), String(subcolumn_name), type, subcolumn_type);
+                                break;
                             }
                         }
-                        if (!subcolumn || !subcolumn->isSubcolumn())
-                            continue;
-                        String parent = subcolumn->getNameInStorage();
-                        if (input_types.contains(parent))
-                        {
-                            if (default_input_subcolumn_names.insert(subcolumn->name).second)
-                                default_input_subcolumns.push_back(*subcolumn);
-                        }
-                        /// A stale or ALIAS parent is computed together with the default, which then reads the subcolumn of it.
-                        else if ((stage.stale_defaults.contains(parent) || is_alias(parent)) && !needed.contains(parent))
-                            computed_parents.insert(std::move(parent));
                     }
+                    if (!subcolumn || !subcolumn->isSubcolumn())
+                        continue;
+                    String parent = subcolumn->getNameInStorage();
+                    if (input_types.contains(parent))
+                    {
+                        if (default_input_subcolumn_names.insert(subcolumn->name).second)
+                            default_input_subcolumns.push_back(*subcolumn);
+                    }
+                    /// A stale or ALIAS parent is computed together with the default, which then reads the subcolumn of it.
+                    else if ((stage.stale_defaults.contains(parent) || is_alias(parent)) && !needed.contains(parent))
+                        computed_parents.insert(std::move(parent));
                 }
                 for (const auto & column : table_columns)
                     if (computed_parents.contains(column.name))

@@ -890,7 +890,7 @@ static void splitAndModifyMutationCommands(
                 });
                 for (const auto & name : assigned)
                     if (is_ordinary(name))
-                        updated_ordinary_columns[name] = MutationsInterpreter::getColumnsReadByDefault(table_columns, name, part_stores);
+                        updated_ordinary_columns[name] = MutationsInterpreter::getColumnsReadByDefault(table_columns, {name}, part_stores);
                 break;
             }
             case MutationCommand::Type::MATERIALIZE_COLUMN:
@@ -905,7 +905,7 @@ static void splitAndModifyMutationCommands(
                     stored_by_materialize.insert(name);
                     for (auto & [column, inputs] : updated_ordinary_columns)
                         if (inputs.contains(name))
-                            inputs = MutationsInterpreter::getColumnsReadByDefault(table_columns, column, part_stores);
+                            inputs = MutationsInterpreter::getColumnsReadByDefault(table_columns, {column}, part_stores);
                 }
                 else if (!is_ordinary(name))
                 {
