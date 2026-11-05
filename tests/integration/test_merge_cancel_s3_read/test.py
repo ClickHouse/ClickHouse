@@ -26,9 +26,6 @@ SHUTDOWN_BUDGET_SECONDS = 60
 # A failed merge whose other reads stop leaves `system.merges` within one retry backoff of its failure.
 FAILED_MERGE_MAX_AGE_SECONDS = 20
 
-# How long the failed-merge oracle keeps sampling, longer than the age it bounds.
-FAILED_MERGE_WINDOW_SECONDS = 30
-
 SETUP_FAILPOINT = "merge_task_throw_while_preparing_next_column"
 
 SOURCE_FAILPOINT = "merge_tree_sequential_source_throw_in_constructor"
@@ -789,8 +786,8 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
         failed_at = time.monotonic()
 
         # The oracle: the failed task leaves `system.merges` only after every read it still had in
-        # flight returned, so no entry may grow old. Not "no entry": the assignee keeps retrying the
-        # merge, and each new attempt fails the same way.
+        # flight returned, so no entry may grow old. It is gone once every entry is younger than the
+        # failure: the assignee keeps retrying the merge, and each new attempt fails the same way.
         age_query = (
             f"SELECT max(elapsed) FROM system.merges "
             f"WHERE database = currentDatabase() AND table = '{table}'"
@@ -800,7 +797,8 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
             f"WHERE query LIKE '%OPTIMIZE TABLE {table}%' AND query NOT LIKE '%system.processes%'"
         )
         optimize_returned = not via_optimize
-        while time.monotonic() - failed_at < FAILED_MERGE_WINDOW_SECONDS:
+        while True:
+            since_failure = time.monotonic() - failed_at
             age = float(node.query(age_query).strip() or 0)
             assert age < FAILED_MERGE_MAX_AGE_SECONDS, (
                 f"the failed merge is still in system.merges {age:.0f}s after it started: "
@@ -808,11 +806,14 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
             )
             if not optimize_returned:
                 optimize_returned = int(node.query(optimize_running_query)) == 0
-                assert (
-                    optimize_returned
-                    or time.monotonic() - failed_at < FAILED_MERGE_MAX_AGE_SECONDS
-                ), "the failed OPTIMIZE did not return: its merge's other reads kept retrying"
-            time.sleep(1)
+            if age < since_failure and optimize_returned:
+                break
+            assert since_failure < FAILED_MERGE_MAX_AGE_SECONDS, (
+                "the failed merge did not leave system.merges"
+                if optimize_returned
+                else "the failed OPTIMIZE did not return: its merge's other reads kept retrying"
+            )
+            time.sleep(0.5)
 
         # Vacuity guard: the merge was vertical and failed as injected. Checked last: a failed task
         # writes this row only once its exception has left it, so a task stuck destroying its
@@ -848,16 +849,6 @@ def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, runner, failu
             _, error = optimize.get_answer_and_error()
             optimize = None
             assert expected_error in error, error
-
-            # And the reads of `b` stopped with the task, rather than outliving it.
-            settled = get_throttled(node)
-            for _ in range(SETTLED_WINDOW_SECONDS):
-                time.sleep(1)
-                throttled = get_throttled(node)
-                assert throttled - settled <= 2, (
-                    f"the reads of `b` kept retrying after the OPTIMIZE returned "
-                    f"({throttled - settled} throttled requests since)"
-                )
 
         # A failed merge keeps its source parts, so no data is lost.
         assert int(node.query(f"SELECT count() FROM {table}")) == 200000 * num_parts

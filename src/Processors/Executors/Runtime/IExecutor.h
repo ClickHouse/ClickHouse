@@ -39,7 +39,8 @@ public:
     /// Set the profiler of EXPLAIN ANALYZE.
     virtual void setStepProfiler(StepProfilerPtr step_profiler) = 0;
 
-    /// Set a callback called from the thread whose exception cancels the execution, before the other threads are waited for.
+    /// Set a callback called once, from the first thread whose exception cancels the execution, before the other threads are waited for.
+    /// It must not throw: a throw skips waking up the idle threads, and the execution never finishes.
     virtual void setExceptionCallback(std::function<void()> callback) = 0;
 };
 

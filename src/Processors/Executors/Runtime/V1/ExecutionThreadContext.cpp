@@ -266,24 +266,13 @@ bool ExecutionThreadContext::executeTask(ISpillable * spill_target)
 
 void ExecutionThreadContext::setException(std::exception_ptr exception_)
 {
-    static std::atomic<UInt64> next_exception_order = 0;
-
     if (!exception)
-    {
         exception = std::move(exception_);
-        exception_order = next_exception_order.fetch_add(1);
-    }
 }
 
 std::exception_ptr ExecutionThreadContext::getException()
 {
     return exception;
-}
-
-void ExecutionThreadContext::rethrowExceptionIfHas()
-{
-    if (exception)
-        std::rethrow_exception(exception);
 }
 
 void ExecutionThreadContext::flushWorkIntervals()
