@@ -20,3 +20,5 @@
 idx_pre
 15. Replacing a privileged alias in the same statement is allowed.
 idx_replaced
+16. A statement without a transform is not analyzed at all.
+idx_minmax

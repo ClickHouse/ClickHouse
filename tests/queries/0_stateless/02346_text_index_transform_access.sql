@@ -154,3 +154,14 @@ SELECT name FROM system.data_skipping_indices
 WHERE database = currentDatabase() AND table = 'tab_replace' ORDER BY name;
 
 DROP TABLE tab_replace;
+
+SELECT '16. A statement without a transform is not analyzed at all.';
+
+SET allow_statistics = 1;
+CREATE TABLE tab_plain (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS auto_statistics_types = 'basic';
+
+ALTER TABLE tab_plain ADD INDEX idx_minmax(x) TYPE minmax GRANULARITY 1, ADD STATISTICS x TYPE basic;
+
+SELECT name FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab_plain';
+
+DROP TABLE tab_plain;

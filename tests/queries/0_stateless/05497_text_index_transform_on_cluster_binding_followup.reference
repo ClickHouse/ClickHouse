@@ -1,8 +1,0 @@
-1. An index kept by IF NOT EXISTS on the initiator is sent as the statement declares it.
-1	0	0
-2. An ADD INDEX with a transform between commands of different segments is rejected.
-QUERY_IS_PROHIBITED
-3. A SQL UDF in a transform is expanded before CREATE ... ON CLUSTER is sent as written.
-1	0	0
-4. ADD STATISTICS replaces an implicit statistic in a statement that also adds an index.
-idx_minmax
