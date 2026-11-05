@@ -84,6 +84,8 @@ private:
     void resetVimForNewInput();
     void vimCharwise(int & pos, std::u32string & text, int oldpos, bool allow_empty = false);
     void vimLinewise(int & pos, std::u32string & text, int oldpos);
+    /// `dvd` and `cvc`.
+    void vimForcedDoubledOperator(int & pos, std::u32string & text);
     /// `cc`, also used by `S`.
     void vimChangeLines(int & pos, std::u32string & text);
     /// The `$` motion, also used by `D` and `C`.

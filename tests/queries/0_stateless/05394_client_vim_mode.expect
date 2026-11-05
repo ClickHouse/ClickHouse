@@ -791,5 +791,59 @@ submit
 expect "7445"
 expect ":) "
 
+# A forced characterwise motion that ends in the first column ends at the end of the previous line.
+send -- "SELECT 7200 -- note\r+ 234"
+escape
+send -- "gg\$dvG"
+submit
+expect "7434"
+expect ":) "
+
+# `v` also forces the doubled operators: up to the first non-blank of the line.
+send -- "SELECT 7300 +\r1 + 234"
+escape
+send -- "G4ldvd"
+submit
+expect "7534"
+expect ":) "
+
+send -- "SELECT 7400 +\r1 + 234"
+escape
+send -- "G4lcvc9"
+escape
+submit
+expect "16634"
+expect ":) "
+
+# `dvl` on the last character of a line deletes nothing, also not the line break.
+send -- "SELECT 7500 -- note\r+ 234"
+escape
+send -- "gg\$dvl"
+submit
+expect "7734"
+expect ":) "
+
+send -- "SELECT 7600+123"
+escape
+send -- "dvl"
+submit
+expect "7723"
+expect ":) "
+
+# `dvl` within the line is inclusive, and exclusive when the count reaches past the end of the line.
+send -- "SELECT 7700+1956"
+escape
+send -- "hhhdvl"
+submit
+expect "7756"
+expect ":) "
+
+send -- "SELECT 7800+1234"
+escape
+send -- "h5dvl"
+submit
+expect "7924"
+expect ":) "
+
 send -- "\4"
 expect eof

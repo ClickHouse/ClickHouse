@@ -927,12 +927,31 @@ void ReplxxLineReader::vimCharwise(int & pos, std::u32string & text, int oldpos,
 
 void ReplxxLineReader::vimLinewise(int & pos, std::u32string & text, int oldpos)
 {
-    /* Like vim, `v` after the operator forces a linewise motion to be characterwise exclusive, e.g. `dvj`. */
+    /* Like vim, `v` after the operator forces a linewise motion to be characterwise exclusive, e.g. `dvj`.
+     * Like for an empty exclusive range, `c` still enters insert mode. */
     if (op && inclusivity_flip)
     {
         inclusivity_flip = 0;
-        vimCharwise(pos, text, oldpos);
-        return;
+        int start = std::min(oldpos, pos);
+        int end = std::max(oldpos, pos);
+        if (end <= start || text[end - 1] != '\n')
+        {
+            vimCharwise(pos, text, oldpos, /* allow_empty = */ true);
+            return;
+        }
+        /* Like vim, an exclusive motion that ends in the first column of a line ends at the end
+         * of the previous line instead, e.g. `dvG`. It becomes linewise, through the previous
+         * line, if it starts at or before the first non-blank of its line. */
+        int start_line = start;
+        for (; start_line > 0 && text[start_line - 1] != '\n'; start_line--)
+            ;
+        pos = start;
+        oldpos = end - 1;
+        if (start > firstNonBlank(text, start_line))
+        {
+            vimCharwise(pos, text, oldpos, /* allow_empty = */ true);
+            return;
+        }
     }
     if (op)
     {
@@ -972,6 +991,40 @@ void ReplxxLineReader::vimLinewise(int & pos, std::u32string & text, int oldpos)
         rx.set_editing_mode(MODE_NORMAL);
         resetVim(&pos, &text);
     }
+}
+
+void ReplxxLineReader::vimForcedDoubledOperator(int & pos, std::u32string & text)
+{
+    /* Like vim, `v` forces a doubled operator, e.g. `dvd` or `cvc`, to be characterwise exclusive:
+     * from the cursor to the first non-blank of the last line of the count. */
+    int oldpos = pos;
+    int length = static_cast<int>(text.length());
+    int line_start = pos;
+    for (; line_start > 0 && text[line_start - 1] != '\n'; line_start--)
+        ;
+    int reps = vimReps();
+    for (int rep = 1; rep < reps; rep++)
+    {
+        int end = line_start;
+        for (; end < length && text[end] != '\n'; end++)
+            ;
+        if (end >= length)
+        {
+            /* Like vim, a count fails on the last line, and stops there otherwise. */
+            if (rep == 1)
+            {
+                resetVim(&pos, &text);
+                return;
+            }
+            break;
+        }
+        line_start = end + 1;
+    }
+    pos = firstNonBlank(text, line_start);
+    /* On a line of blanks, the last blank, like vim. */
+    if (pos > line_start && (pos == length || text[pos] == '\n'))
+        pos--;
+    vimLinewise(pos, text, oldpos);
 }
 
 void ReplxxLineReader::vimChangeLines(int & pos, std::u32string & text)
@@ -1360,6 +1413,22 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
             int oldpos = pos;
             int length = static_cast<int>(text.length());
             int reps = vimReps();
+            if (op && inclusivity_flip)
+            {
+                /* Like vim, `l` stops on the last character of the line. When it stops short of the
+                 * count, the motion is inclusive, and `v` makes it exclusive, e.g. `dvl` on the last
+                 * character deletes nothing. Otherwise `v` makes it inclusive. */
+                int line_end = pos;
+                for (; line_end < length && text[line_end] != '\n'; line_end++)
+                    ;
+                int rep = 0;
+                for (; rep < reps && pos + 1 < line_end; rep++)
+                    pos++;
+                if (rep < reps)
+                    inclusivity_flip = 0;
+                vimCharwise(pos, text, oldpos, /* allow_empty = */ true);
+                return;
+            }
             /* With an operator, `l` may select up to the end of the line, e.g. `dl` on the last character. */
             int limit = op ? length : length - 1;
             for (int rep = 0; rep < reps && pos < limit && text[pos] != '\n' && (op || text[pos + 1] != '\n'); rep++)
@@ -1731,6 +1800,8 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
             {
                 op = OPERATOR_D;
             }
+            else if (op == OPERATOR_D && inclusivity_flip)
+                vimForcedDoubledOperator(pos, text);
             else if (op == OPERATOR_D)
             {
                 int reps = vimReps();
@@ -1774,6 +1845,8 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
             {
                 op = OPERATOR_C;
             }
+            else if (op == OPERATOR_C && inclusivity_flip)
+                vimForcedDoubledOperator(pos, text);
             else if (op == OPERATOR_C)
                 vimChangeLines(pos, text);
             else
