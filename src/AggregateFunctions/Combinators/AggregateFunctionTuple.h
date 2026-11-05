@@ -68,6 +68,12 @@ public:
 
     String getName() const override { return nested_func_name + "Tuple"; }
 
+    void forEachNestedFunction(const std::function<void(const AggregateFunctionPtr &)> & callback) const override
+    {
+        for (const auto & nested_function : nested_functions)
+            callback(nested_function);
+    }
+
     bool isVersioned() const override;
     size_t getDefaultVersion() const override;
     size_t getVersionFromRevision(size_t revision) const override;

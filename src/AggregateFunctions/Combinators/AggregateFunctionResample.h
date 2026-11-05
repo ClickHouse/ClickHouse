@@ -116,27 +116,36 @@ public:
         /// `countResampleIfResampleIfResampleIfResample(0, 0, 1, 0, 1048576, 1, 0, 1048576, 1, 0, 1048576, 1)`.
         /// Bound the number of nested states directly in that case; chains without a zero-sized
         /// -Resample state remain bounded by `sizeOfData` / `max_state_size` alone.
-        size_t nested_elements = total;
-        bool nested_elements_overflow = false;
-        bool has_zero_sized_nested_resample = size_of_data == 0;
-        for (auto nested = nested_function; nested; nested = nested->getNestedFunction())
+        const auto check_nested_resamples = [&](const auto & self, const AggregateFunctionPtr & nested,
+                                                size_t parent_elements, bool has_zero_sized_resample) -> void
         {
+            size_t nested_elements = parent_elements;
+            bool nested_elements_overflow = false;
+
             if (const auto * resample = dynamic_cast<const AggregateFunctionResample<UInt64> *>(nested.get()))
             {
-                has_zero_sized_nested_resample |= resample->size_of_data == 0;
+                has_zero_sized_resample |= resample->size_of_data == 0;
                 nested_elements_overflow |= common::mulOverflow(nested_elements, resample->total, nested_elements);
             }
             else if (const auto * signed_resample = dynamic_cast<const AggregateFunctionResample<Int64> *>(nested.get()))
             {
-                has_zero_sized_nested_resample |= signed_resample->size_of_data == 0;
+                has_zero_sized_resample |= signed_resample->size_of_data == 0;
                 nested_elements_overflow |= common::mulOverflow(nested_elements, signed_resample->total, nested_elements);
             }
-        }
 
-        if (has_zero_sized_nested_resample && (nested_elements_overflow || nested_elements > max_elements))
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                "The nested -Resample combinators of function {} would iterate over too many "
-                "zero-sized nested states", getName());
+            if (has_zero_sized_resample && (nested_elements_overflow || nested_elements > max_elements))
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "The nested -Resample combinators of function {} would iterate over too many "
+                    "zero-sized nested states", getName());
+
+            nested->forEachNestedFunction(
+                [&](const AggregateFunctionPtr & child)
+                {
+                    self(self, child, nested_elements, has_zero_sized_resample);
+                });
+        };
+
+        check_nested_resamples(check_nested_resamples, nested_function, total, size_of_data == 0);
     }
 
     String getName() const override

@@ -16,3 +16,5 @@ SELECT countResampleIfResample(0, 0, 1, 0, 1024, 1)(number, 1, number) FROM numb
 SELECT nothingResampleIfResample(0, 2048, 1, 0, 2048, 1)(number, 1, number) FROM numbers(1); -- { serverError ARGUMENT_OUT_OF_BOUND }
 -- Wrappers that add their own state bytes must not hide a zero-sized nested -Resample state.
 SELECT nothingResampleDistinctResample(0, 1048576, 1, 0, 1048576, 1)(number, number) FROM numbers(1); -- { serverError ARGUMENT_OUT_OF_BOUND }
+-- Multi-child wrappers must expose every nested function to the bound check.
+SELECT nothingResampleTupleResample(0, 1048576, 1, 0, 1048576, 1)(tuple(number), number) FROM numbers(1); -- { serverError ARGUMENT_OUT_OF_BOUND }
