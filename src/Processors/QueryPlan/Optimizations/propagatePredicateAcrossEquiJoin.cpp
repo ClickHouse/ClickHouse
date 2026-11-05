@@ -83,17 +83,15 @@ const FilterStep * findFilterBelow(const QueryPlan::Node * node)
     return found ? typeid_cast<const FilterStep *>(found->step.get()) : nullptr;
 }
 
-/// Primary key of the MergeTree the target reads from. `std::nullopt` when it reads from something else
-std::optional<NameSet> getTargetPrimaryKeyColumns(const QueryPlan::Node * target_root)
+/// The `MergeTree` read below the target's `Expression`/`Filter` chain, `nullptr` when the chain ends
+/// elsewhere (a remote read, an aggregation, a nested join): the pass does not copy onto such targets
+const ReadFromMergeTree * findTargetMergeTreeRead(const QueryPlan::Node * target_root)
 {
     const auto * read = walkDown(target_root, [](const auto * n)
     {
         return typeid_cast<const ReadFromMergeTree *>(n->step.get()) != nullptr;
     });
-    if (!read)
-        return {};
-    const auto & primary_key = typeid_cast<const ReadFromMergeTree &>(*read->step).getStorageMetadata()->getPrimaryKey();
-    return NameSet(primary_key.column_names.begin(), primary_key.column_names.end());
+    return read ? typeid_cast<const ReadFromMergeTree *>(read->step.get()) : nullptr;
 }
 
 /// Bytes a comparison reads from this argument per row, `std::nullopt` when they are not bounded
@@ -257,11 +255,16 @@ size_t tryPropagateToSide(
     auto * target_root = join_node->children[target_idx];
     if (!source_filter)
         return 0;
-    const auto primary_key_columns = getTargetPrimaryKeyColumns(target_root);
-    if (!primary_key_columns)
+    const auto * target_read = findTargetMergeTreeRead(target_root);
+    if (!target_read)
         return 0;
     /// With index analysis off a key column prunes nothing, so an expensive atom has nothing to earn
-    const NameSet prunable_columns = index_analysis_enabled ? *primary_key_columns : NameSet{};
+    NameSet prunable_columns;
+    if (index_analysis_enabled)
+    {
+        const auto & primary_key = target_read->getStorageMetadata()->getPrimaryKey();
+        prunable_columns.insert(primary_key.column_names.begin(), primary_key.column_names.end());
+    }
 
     SubstitutionMap filter_level_sub;
     for (const auto & [join_name, target_col] : substitution)
