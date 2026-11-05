@@ -85,7 +85,9 @@ DPJoinEntryPtr GreedyJoinOrderOptimizer::solve()
                 if (!connected && best_plan)
                     continue;
 
-                auto selectivity = computeSelectivity(query_graph, dp_table, expression_selectivity, edges, left->relations, right->relations);
+                auto selectivity = computeSelectivity(
+                    query_graph, dp_table, expression_selectivity, edges, left->relations, right->relations,
+                    left->estimated_rows, right->estimated_rows);
                 auto current_cost = computeJoinCost(left, right, selectivity);
                 /// An equi-connected pair always supersedes one without an equi key, regardless of
                 /// cost: without an equi predicate the cost estimate is essentially a cross product
