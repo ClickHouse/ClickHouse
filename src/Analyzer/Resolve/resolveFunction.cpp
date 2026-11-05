@@ -1312,9 +1312,9 @@ static QueryTreeNodePtr buildScalarInComparison(
 }
 
 /// Builds exact equality for a heterogeneous numeric pair. Native float/integer comparisons are
-/// already exact. For a float/decimal pair, serialize the float first so conversion to the decimal
-/// scale does not round during floating-point multiplication, then require a round trip through
-/// the original floating type. The exact-type comparison preserves decimals above 2^53.
+/// already exact. Decimal comparisons normalize integers and integral floats to `Int256`, avoiding
+/// narrower signed intermediates and floating-point decimal scaling. Non-integral floats keep the
+/// regular ClickHouse float/decimal comparison semantics.
 static QueryTreeNodePtr buildNumericEquality(
     const QueryTreeNodePtr & left_argument,
     const QueryTreeNodePtr & right_argument)
@@ -1328,52 +1328,42 @@ static QueryTreeNodePtr buildNumericEquality(
 
     const auto left_type = removeLowCardinalityAndNullable(left_argument->getResultType());
     const auto right_type = removeLowCardinalityAndNullable(right_argument->getResultType());
-    const bool left_is_float = isFloat(left_type);
-    const bool right_is_float = isFloat(right_type);
+    const bool left_is_decimal = isDecimal(left_type);
+    const bool right_is_decimal = isDecimal(right_type);
 
-    if (left_is_float == right_is_float)
+    if (left_is_decimal == right_is_decimal)
     {
         auto equals_function = std::make_shared<FunctionNode>("equals");
         equals_function->getArguments().getNodes() = {left_argument, right_argument};
         return equals_function;
     }
 
-    const auto & float_argument = left_is_float ? left_argument : right_argument;
-    const auto & exact_argument = left_is_float ? right_argument : left_argument;
-    const auto & float_type = left_is_float ? left_type : right_type;
-    const auto & exact_type = left_is_float ? right_type : left_type;
+    const auto & decimal_argument = left_is_decimal ? left_argument : right_argument;
+    const auto & numeric_argument = left_is_decimal ? right_argument : left_argument;
+    const auto & numeric_type = left_is_decimal ? right_type : left_type;
 
-    if (!isDecimal(exact_type))
-    {
-        auto equals_function = std::make_shared<FunctionNode>("equals");
-        equals_function->getArguments().getNodes() = {left_argument, right_argument};
-        return equals_function;
-    }
-
-    auto serialized_float = std::make_shared<FunctionNode>("toString");
-    serialized_float->getArguments().getNodes().push_back(float_argument);
-
-    auto exact_type_name = std::make_shared<ConstantNode>(exact_type->getName(), std::make_shared<DataTypeString>());
-    auto converted_float = std::make_shared<FunctionNode>("accurateCastOrNull");
-    converted_float->getArguments().getNodes() = {std::move(serialized_float), std::move(exact_type_name)};
-
-    auto nullable_float_type = makeNullable(float_type);
-    auto float_type_name = std::make_shared<ConstantNode>(nullable_float_type->getName(), std::make_shared<DataTypeString>());
-    auto round_trip = std::make_shared<FunctionNode>("CAST");
-    round_trip->getArguments().getNodes() = {converted_float, std::move(float_type_name)};
-
-    auto round_trip_equals = std::make_shared<FunctionNode>("equals");
-    round_trip_equals->getArguments().getNodes() = {float_argument, std::move(round_trip)};
-    auto round_trip_matches = std::make_shared<FunctionNode>("ifNull");
-    round_trip_matches->getArguments().getNodes() = {std::move(round_trip_equals), std::make_shared<ConstantNode>(Field{0u})};
+    auto int256_type_name = std::make_shared<ConstantNode>("Int256", std::make_shared<DataTypeString>());
+    auto converted_integer = std::make_shared<FunctionNode>("accurateCastOrNull");
+    converted_integer->getArguments().getNodes() = {numeric_argument, std::move(int256_type_name)};
 
     auto exact_equals = std::make_shared<FunctionNode>("equals");
-    exact_equals->getArguments().getNodes() = {exact_argument, std::move(converted_float)};
+    exact_equals->getArguments().getNodes() = {decimal_argument, converted_integer};
     auto exact_matches = std::make_shared<FunctionNode>("ifNull");
     exact_matches->getArguments().getNodes() = {std::move(exact_equals), std::make_shared<ConstantNode>(Field{0u})};
 
-    auto result = std::make_shared<FunctionNode>("and");
-    result->getArguments().getNodes() = {std::move(round_trip_matches), std::move(exact_matches)};
+    if (isInteger(numeric_type))
+        return exact_matches;
+
+    auto approximate_equals = std::make_shared<FunctionNode>("equals");
+    approximate_equals->getArguments().getNodes() = {decimal_argument, numeric_argument};
+    auto approximate_matches = std::make_shared<FunctionNode>("ifNull");
+    approximate_matches->getArguments().getNodes() = {std::move(approximate_equals), std::make_shared<ConstantNode>(Field{0u})};
+
+    auto conversion_failed = std::make_shared<FunctionNode>("isNull");
+    conversion_failed->getArguments().getNodes().push_back(std::move(converted_integer));
+
+    auto result = std::make_shared<FunctionNode>("if");
+    result->getArguments().getNodes() = {std::move(conversion_failed), std::move(approximate_matches), std::move(exact_matches)};
     return result;
 }
 
