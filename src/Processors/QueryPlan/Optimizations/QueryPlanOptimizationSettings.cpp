@@ -9,6 +9,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <QueryPipeline/DistributedPlanExecutor.h>
 
 #include <Common/SipHash.h>
 
@@ -130,6 +131,7 @@ namespace Setting
     extern const SettingsDouble join_runtime_filter_pass_ratio_threshold_for_disabling;
     extern const SettingsJoinOrderAlgorithm query_plan_optimize_join_order_algorithm;
     extern const SettingsJoinOrderConflictDetector query_plan_optimize_join_order_conflict_detector;
+    extern const SettingsBool query_plan_join_order_use_interesting_orders;
     extern const SettingsBool join_use_nulls;
     extern const SettingsUInt64 query_plan_min_columns_for_join_lazy_indexing;
     extern const SettingsMaxThreads max_threads;
@@ -147,7 +149,9 @@ namespace Setting
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
     extern const SettingsString cluster_for_parallel_replicas;
-    extern const SettingsNonZeroUInt64 distributed_plan_default_reader_bucket_count;
+    extern const SettingsUInt64 distributed_plan_default_reader_bucket_count;
+    extern const SettingsNonZeroUInt64 distributed_plan_min_rows_per_reader;
+    extern const SettingsUInt64 distributed_plan_workers_num;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
     extern const SettingsBool distributed_plan_read_in_order;
@@ -189,6 +193,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int INVALID_SETTING_VALUE;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -388,6 +393,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     distributed_plan_execute_locally = from[Setting::distributed_plan_execute_locally];
     distributed_plan_default_shuffle_join_bucket_count = from[Setting::distributed_plan_default_shuffle_join_bucket_count];
     distributed_plan_default_reader_bucket_count = from[Setting::distributed_plan_default_reader_bucket_count];
+    distributed_plan_min_rows_per_reader = from[Setting::distributed_plan_min_rows_per_reader];
     distributed_plan_optimize_exchanges = from[Setting::distributed_plan_optimize_exchanges];
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     distributed_plan_force_exchange_kind = from[Setting::distributed_plan_force_exchange_kind].value;
@@ -441,6 +447,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     use_top_k_dynamic_filtering_for_single_string_sort_column = from[Setting::use_top_k_dynamic_filtering_for_single_string_sort_column];
     max_limit_for_top_k_optimization = from[Setting::query_plan_max_limit_for_top_k_optimization];
     use_skip_indexes_on_data_read = from[Setting::use_skip_indexes_on_data_read];
+    use_skip_indexes_on_data_read_at_execution = use_skip_indexes_on_data_read;
     prepared_sets_cache = std::move(prepared_sets_cache_);
 
     /// These settings comes from EXPLAIN settings not query settings and outside of the scope of this class
@@ -469,6 +476,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     query_plan_optimize_join_order_algorithm = from[Setting::query_plan_optimize_join_order_algorithm];
     query_plan_optimize_join_order_conflict_detector = from[Setting::query_plan_optimize_join_order_conflict_detector];
+    query_plan_join_order_use_interesting_orders = from[Setting::query_plan_join_order_use_interesting_orders];
     join_use_nulls = from[Setting::join_use_nulls];
     if (query_plan_optimize_join_order_algorithm.empty())
         query_plan_optimize_join_order_algorithm.push_back(JoinOrderAlgorithm::GREEDY); /// Use greedy by default
@@ -523,6 +531,26 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
         distributed_plan_force_exchange_kind = streaming_listener_configured ? "Streaming" : "Persisted";
     }
 #endif
+
+    if (make_distributed_plan && !enable_cascades_optimizer && distributed_plan_default_reader_bucket_count == 0)
+    {
+        /// Local execution runs in-process and needs no worker provider.
+        if (distributed_plan_execute_locally)
+        {
+            const size_t workers = from->getSettingsRef()[Setting::distributed_plan_workers_num];
+            get_distributed_plan_worker_count = [workers] { return workers; };
+        }
+        else
+        {
+            get_distributed_plan_worker_count = [weak_context = ContextWeakPtr(from)]
+            {
+                const auto context = weak_context.lock();
+                if (!context)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "The context of a distributed plan has expired");
+                return getCascadesPlanningNodeCount(context);
+            };
+        }
+    }
 
     /// A foreign shard scope is declined later, in `ClusterProxy::canUseParallelReplicasOnInitiator`,
     /// so it has to be declined here as well: otherwise the optimizations that only run for a local read
