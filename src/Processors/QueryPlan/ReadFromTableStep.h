@@ -19,7 +19,8 @@ public:
     };
 
     /// An `additional_table_filters` entry that a filter step above this read applies, and the tree hash of the
-    /// predicate it resolved to on the sender.
+    /// predicate it resolved to on the sender. The table alias is not stored. The query text also names the table
+    /// `__tableN` on the executing node, thus an entry there keyed by the initial alias does not match in either mode.
     struct AdditionalFilter
     {
         String text;
