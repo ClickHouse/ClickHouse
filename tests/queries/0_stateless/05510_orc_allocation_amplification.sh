@@ -19,3 +19,9 @@ orc_check compression_block "$DATA/malformed_compression_block_1g.orc" '' "SELEC
 # The declared dictionary size is 2^32 - 1, the stream has a few entries.
 orc_check dictionary_size "$DATA/malformed_dictionary_size_max.orc" 's Nullable(String)' "SELECT count(), sum(length(s)) FROM SOURCE" \
     'Unexpected end of ORC stream column 1 kind 2' "$LIMIT"
+
+# The sizes stored in the snappy and zstd chunks are 1 GiB, the chunks have a few bytes.
+orc_check snappy_chunk_size "$DATA/malformed_snappy_chunk_size.orc" 'x Int64' "SELECT count() FROM SOURCE" \
+    'snappy-compressed chunk of ORC file decompresses to 1073741824 bytes' "$LIMIT"
+orc_check zstd_chunk_size "$DATA/malformed_zstd_chunk_size.orc" 'x Int64' "SELECT count() FROM SOURCE" \
+    'Malformed zstd-compressed data in ORC file' "$LIMIT"
