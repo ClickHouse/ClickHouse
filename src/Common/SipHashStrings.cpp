@@ -105,7 +105,7 @@ void storeLittleEndian(char * pos, UInt128 hash)
     unalignedStoreLittleEndian<UInt64>(pos + 8, hash.items[UInt128::_impl::little(1)]);
 }
 
-/// Sets `hashes[i]` to the hash of `hashes[i]` and `rhs(i)`: the pairs are copied to a buffer and hashed as fixed strings.
+/// Sets `hashes[i]` to the hash of `hashes[i]` and `rhs(i)`.
 template <typename T, typename Rhs>
 void combine(T * hashes, Rhs && rhs, size_t num_rows)
 {
