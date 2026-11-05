@@ -29,6 +29,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageMaterializedView.h>
@@ -44,7 +45,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSQLSecurity.h>
-#include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/SubcolumnCodecs.h>
@@ -170,6 +170,12 @@ void parseModifyColumnSettings(const ASTSetQuery & set_query, AlterCommand & com
     parseSettingsChangesAndResets(set_query, command.settings_changes, command.settings_resets);
     for (const auto & parameter : set_query.query_parameters)
         command.settings_names_to_check.push_back(QUERY_PARAMETER_NAME_PREFIX + parameter.first);
+}
+
+/// A server re-executing a definition another server already judged must not refuse it: it would retry its queue entry forever.
+bool isReplayOfJudgedDefinition(const ContextPtr & context)
+{
+    return isSecondaryDDLReplay(context) || context->isRecoveryFromStoredMetadata();
 }
 
 /// Rebuilds the implicit minmax indices from the `SETTINGS` clause. A setting dropped from it falls

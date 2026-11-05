@@ -1369,8 +1369,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     if (!create.columns_list)
         create.set(create.columns_list, make_intrusive<ASTColumns>());
 
-    if (isFreshTableDefinition(mode, create.attach_short_syntax) && !isReplayOfJudgedDefinition(getContext())
-        && create.columns_list->columns)
+    if (!isReplayedTableDefinition(mode, create, getContext()) && create.columns_list->columns)
     {
         for (const auto & ast : create.columns_list->columns->children)
         {
