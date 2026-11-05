@@ -114,6 +114,9 @@ SELECT length(sets), arrayUniq(sets) FROM (SELECT extractAll(command, '\\[[^\\]]
 ALTER TABLE t_once DELETE WHERE k IN (SELECT number + throwIf(number >= 1000000) FROM numbers(2000000) SETTINGS max_block_size = 8192, max_threads = 1) SETTINGS mutations_sync = 2;
 -- Empty tuples take no bytes, so only the number of rows stops it.
 ALTER TABLE t_once DELETE WHERE e IN (SELECT tuple() FROM numbers(2000000) WHERE throwIf(number >= 1000000) = 0 SETTINGS max_block_size = 8192, max_threads = 1) SETTINGS mutations_sync = 2;
+-- Under a raised limit only the 1000000-row bound stops it: the row 999000 is read, the row 1200000 is not.
+ALTER TABLE t_once DELETE WHERE k IN (SELECT number + throwIf(number = 999000) FROM numbers(2000000) SETTINGS max_block_size = 8192, max_threads = 1) SETTINGS mutations_max_literal_size_to_replace = 100000000, mutations_sync = 2; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+ALTER TABLE t_once DELETE WHERE k IN (SELECT number + throwIf(number >= 1200000) FROM numbers(2000000) SETTINGS max_block_size = 8192, max_threads = 1) SETTINGS mutations_max_literal_size_to_replace = 100000000, mutations_sync = 2;
 SELECT replaceRegexpAll(replaceAll(command, currentDatabase(), 'default'), '\\[[^\\]]+\\]', '[...]'), is_done FROM system.mutations WHERE database = currentDatabase() AND table = 't_once' ORDER BY length(mutation_id), mutation_id;
 
 SELECT '-- ReplicatedMergeTree';

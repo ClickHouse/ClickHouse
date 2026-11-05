@@ -62,6 +62,7 @@
 (UPDATE v = 1 WHERE (k IN (SELECT arrayJoin(_CAST([...], \'Array(UInt64)\')))) OR (v IN (SELECT arrayJoin(_CAST([...], \'Array(UInt64)\')))))	1
 (DELETE WHERE k IN (SELECT number + throwIf(number >= 1000000) FROM numbers(2000000) SETTINGS max_block_size = 8192, max_threads = 1))	1
 (DELETE WHERE e IN (SELECT tuple() FROM numbers(2000000) WHERE throwIf(number >= 1000000) = 0 SETTINGS max_block_size = 8192, max_threads = 1))	1
+(DELETE WHERE k IN (SELECT number + throwIf(number >= 1200000) FROM numbers(2000000) SETTINGS max_block_size = 8192, max_threads = 1))	1
 -- ReplicatedMergeTree
 0	1
 1	1
