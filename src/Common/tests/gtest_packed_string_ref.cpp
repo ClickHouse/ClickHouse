@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cstring>
@@ -37,7 +38,8 @@ struct FixedHash
     uint32_t operator()(const char *, size_t) const { return value; }
 };
 
-std::array<uint8_t, 16> rawBytesOf(PackedStringRef ref)
+template <typename Ref>
+std::array<uint8_t, 16> rawBytesOf(Ref ref)
 {
     std::array<uint8_t, 16> bytes{};
     std::memcpy(bytes.data(), &ref, sizeof(ref));
@@ -226,13 +228,6 @@ struct GarbagePaddedString
     size_t size = 0;
 };
 
-std::array<uint8_t, 16> rawBytesOf(UnhashedPackedStringRef ref)
-{
-    std::array<uint8_t, 16> bytes{};
-    std::memcpy(bytes.data(), &ref, sizeof(ref));
-    return bytes;
-}
-
 std::array<uint8_t, 16> unhashedSmallImage(std::string_view s)
 {
     std::array<uint8_t, 16> bytes{};
@@ -366,29 +361,15 @@ TEST(UnhashedPackedStringRef, SizeAndCopyTo)
 {
     for (size_t len : {0ul, 1ul, 7ul, 15ul, 16ul, 40ul})
     {
-        const std::string s(len, 'q');
-        const GarbagePaddedString padded(s);
-        const UnhashedPackedStringRef ref = UnhashedPackedStringRef::build(padded.data(), padded.size);
+        /// The buffers are as small as the contract allows, so that AddressSanitizer reports any wider access.
+        /// A small string needs 16 bytes at both ends, the empty string too.
+        const std::vector<char> src(std::max<size_t>(len, 16), 'q');
+        const UnhashedPackedStringRef ref = UnhashedPackedStringRef::build(src.data(), len);
         EXPECT_EQ(ref.size(), len) << "len=" << len;
 
-        /// A small value is copied as the whole ref, so the destination needs 16 writable bytes.
-        std::array<char8_t, 64> dst{};
-        char8_t * end = ref.copyTo(dst.data());
+        std::vector<char8_t> dst(std::max<size_t>(len, 16));
+        const char8_t * end = ref.copyTo(dst.data());
         EXPECT_EQ(static_cast<size_t>(end - dst.data()), len) << "len=" << len;
-        EXPECT_EQ(std::string_view(reinterpret_cast<const char *>(dst.data()), len), std::string_view(s)) << "len=" << len;
-    }
-}
-
-TEST(UnhashedPackedStringRef, SmallValuesTouchExactlySixteenBytes)
-{
-    /// Heap buffers of exactly 16 bytes: AddressSanitizer reports an access past them, for the empty string too.
-    for (size_t len = 0; len <= UnhashedPackedStringRef::MAX_SMALL_LEN; ++len)
-    {
-        const std::vector<char> src(16, 'q');
-        const UnhashedPackedStringRef ref = UnhashedPackedStringRef::buildShort(src.data(), len);
-
-        std::vector<char8_t> dst(16);
-        EXPECT_EQ(static_cast<size_t>(ref.copyTo(dst.data()) - dst.data()), len) << "len=" << len;
         EXPECT_EQ(std::string_view(reinterpret_cast<const char *>(dst.data()), len), std::string_view(src.data(), len)) << "len=" << len;
     }
 }
@@ -408,10 +389,14 @@ TEST(UnhashedPackedStringRef, FourByteAligned)
 TEST(UnhashedPackedStringRef, BuildChoosesTheLayoutByLength)
 {
     const GarbagePaddedString small("abcdefghijklmno");
-    EXPECT_EQ(rawBytesOf(UnhashedPackedStringRef::build(small.data(), small.size)), rawBytesOf(UnhashedPackedStringRef::buildShort(small.data(), small.size)));
+    EXPECT_EQ(
+        rawBytesOf(UnhashedPackedStringRef::build(small.data(), small.size)),
+        rawBytesOf(UnhashedPackedStringRef::buildShort(small.data(), small.size)));
 
     const std::string large(16, 'x');
-    EXPECT_EQ(rawBytesOf(UnhashedPackedStringRef::build(large.data(), large.size())), rawBytesOf(UnhashedPackedStringRef::buildLong(large.data(), large.size())));
+    EXPECT_EQ(
+        rawBytesOf(UnhashedPackedStringRef::build(large.data(), large.size())),
+        rawBytesOf(UnhashedPackedStringRef::buildLong(large.data(), large.size())));
 }
 
 TEST(UnhashedPackedStringRef, Equality)

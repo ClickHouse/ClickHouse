@@ -9,6 +9,22 @@
 #include <base/StringViewHash.h>
 #include <base/defines.h>
 
+/// The two words of a value. Without a hash they are 4-byte aligned, so that a row can hold the value at any multiple
+/// of 4 bytes. `PackedStringRef` keeps the 8-byte alignment of its hash table cells.
+template <size_t HASH_BYTES>
+struct PackedStringRefWords
+{
+    uint64_t low;
+    uint64_t high;
+};
+
+template <>
+struct __attribute__((packed, aligned(4))) PackedStringRefWords<0>
+{
+    uint64_t low;
+    uint64_t high;
+};
+
 /// `PackedStringRefT` is a compact, 16-byte string representation that encodes
 /// payload and tag bits inside two 64-bit words. `HASH_BYTES` is the size of the content
 /// hash that starts a small or medium value: 4 in `PackedStringRef`, 0 in `UnhashedPackedStringRef`.
@@ -59,22 +75,6 @@
 /// Two small values are equal as 16 bytes if and only if their strings are equal.
 /// A large value holds the address of its string, so the values of equal strings at
 /// different addresses differ.
-/// The two words of a value. Without a hash they are 4-byte aligned, so that a row can hold the value at any multiple
-/// of 4 bytes. `PackedStringRef` keeps the 8-byte alignment of its hash table cells.
-template <size_t HASH_BYTES>
-struct PackedStringRefWords
-{
-    uint64_t low;
-    uint64_t high;
-};
-
-template <>
-struct __attribute__((packed, aligned(4))) PackedStringRefWords<0>
-{
-    uint64_t low;
-    uint64_t high;
-};
-
 template <size_t HASH_BYTES>
 struct PackedStringRefT : PackedStringRefWords<HASH_BYTES>
 {
