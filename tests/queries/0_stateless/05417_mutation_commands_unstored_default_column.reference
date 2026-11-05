@@ -61,6 +61,11 @@ default_subcolumns_wide	2	220
 default_subcolumns_input	0	0	0
 default_subcolumns_input	1	101	11110
 default_subcolumns_input	2	2	220
+rewrite_parts	0	0
+rewrite_parts	1	111
+rewrite_parts	2	222
+apply_deleted_mask	0	0
+apply_deleted_mask	2	20
 delete	0	0	0
 delete	1	1	10
 delete	3	100	1000

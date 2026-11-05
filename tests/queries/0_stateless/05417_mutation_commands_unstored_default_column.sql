@@ -177,6 +177,28 @@ ALTER TABLE t_default_subcolumns_input UPDATE a = -1 WHERE id = 99, UPDATE x = x
 SELECT 'default_subcolumns_input', id, x, a FROM t_default_subcolumns_input ORDER BY id;
 DROP TABLE t_default_subcolumns_input;
 
+-- REWRITE PARTS, the DEFAULT reading subcolumns of other unstored DEFAULT columns and a flattened Nested column.
+DROP TABLE IF EXISTS t_rewrite_parts;
+CREATE TABLE t_rewrite_parts (id Int64, x Int64, n Nested(e Int64)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_rewrite_parts SELECT number, number, range(number) FROM numbers(3);
+ALTER TABLE t_rewrite_parts ADD COLUMN b Tuple(p Int64) DEFAULT tuple(x);
+ALTER TABLE t_rewrite_parts ADD COLUMN arr Array(Int64) DEFAULT range(x);
+ALTER TABLE t_rewrite_parts ADD COLUMN a Int64 DEFAULT b.p * 100 + arr.size0 * 10 + length(n);
+ALTER TABLE t_rewrite_parts REWRITE PARTS;
+SELECT 'rewrite_parts', id, a FROM t_rewrite_parts ORDER BY id;
+DROP TABLE t_rewrite_parts;
+
+-- APPLY DELETED MASK of rows deleted before the DEFAULT columns were added.
+DROP TABLE IF EXISTS t_apply_deleted_mask;
+CREATE TABLE t_apply_deleted_mask (id Int64, x Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_apply_deleted_mask SELECT number, number FROM numbers(3);
+DELETE FROM t_apply_deleted_mask WHERE id = 1;
+ALTER TABLE t_apply_deleted_mask ADD COLUMN b Tuple(p Int64) DEFAULT tuple(x);
+ALTER TABLE t_apply_deleted_mask ADD COLUMN a Int64 DEFAULT b.p * 10;
+ALTER TABLE t_apply_deleted_mask APPLY DELETED MASK;
+SELECT 'apply_deleted_mask', id, a FROM t_apply_deleted_mask ORDER BY id;
+DROP TABLE t_apply_deleted_mask;
+
 -- DELETE predicate and the columns DELETE writes.
 DROP TABLE IF EXISTS t_delete;
 CREATE TABLE t_delete (id Int64, x Int64) ENGINE = MergeTree ORDER BY id;

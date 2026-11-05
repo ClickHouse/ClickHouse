@@ -2581,13 +2581,21 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
         ///    the identity DAG and cause reading unnecessary columns.
         if (i == 0 && actions_chain.getStepsSize() == 0)
         {
-            ColumnsWithTypeAndName initial_columns;
-            for (const auto & col : input_columns)
-                if (stage.output_columns.contains(col.name))
-                    initial_columns.push_back(col);
-
             auto initial_actions = std::make_shared<ActionsAndProjectInputsFlag>();
-            initial_actions->dag = ActionsDAG(initial_columns);
+            if (stale_defaults_dag)
+            {
+                initial_actions->dag = make_step_dag();
+                std::erase_if(initial_actions->dag.getOutputs(),
+                    [&](const auto * output) { return !stage.output_columns.contains(output->result_name); });
+            }
+            else
+            {
+                ColumnsWithTypeAndName initial_columns;
+                for (const auto & col : input_columns)
+                    if (stage.output_columns.contains(col.name))
+                        initial_columns.push_back(col);
+                initial_actions->dag = ActionsDAG(initial_columns);
+            }
             actions_chain.addStep(
                 std::make_unique<ActionsChainStep>(std::move(initial_actions)));
         }
