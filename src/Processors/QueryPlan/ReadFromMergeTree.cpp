@@ -4776,6 +4776,10 @@ bool ReadFromMergeTree::canReadSubcolumnsOfColumn(const String & column, bool fu
     if (data.hasEnabledMaskingPolicies(context))
         return false;
 
+    /// A stream also reads the parts committed after planning, which the part check below does not see.
+    if (query_info.isStream())
+        return false;
+
     if (getColumnsUnsafeForSubcolumnReads().contains(storage_column))
         return false;
 
