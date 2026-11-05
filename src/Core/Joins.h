@@ -75,6 +75,21 @@ JoinLocality deserializeJoinLocality(ReadBuffer & in);
 
 const char * toString(JoinLocality locality);
 
+/// The set operation that a join executes.
+enum class JoinSetOperation : uint8_t
+{
+    None = 0,
+    IntersectDistinct,
+    ExceptDistinct,
+};
+
+constexpr uint8_t JoinSetOperationMax = static_cast<uint8_t>(JoinSetOperation::ExceptDistinct);
+
+void serializeJoinSetOperation(JoinSetOperation set_operation, WriteBuffer & out);
+JoinSetOperation deserializeJoinSetOperation(ReadBuffer & in);
+
+const char * toString(JoinSetOperation set_operation);
+
 /// ASOF JOIN inequality type
 enum class ASOFJoinInequality : uint8_t
 {

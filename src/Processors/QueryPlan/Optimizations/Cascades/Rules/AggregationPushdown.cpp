@@ -169,6 +169,10 @@ void addJoinCandidate(std::vector<MatchedJoin> & result, GroupExpressionPtr join
     if (!join_step || join_expression->inputs.size() != 2)
         return;
 
+    /// Aggregating an arm before a set-operation join would aggregate the duplicate rows that the join removes.
+    if (join_step->getJoinOperator().set_operation != JoinSetOperation::None)
+        return;
+
     MatchedJoin match;
     match.join_expression = std::move(join_expression);
     match.join_step = join_step;

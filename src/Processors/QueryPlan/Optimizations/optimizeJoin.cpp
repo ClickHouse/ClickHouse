@@ -500,8 +500,14 @@ static bool canMergeExpressionIntoJoinGraph(const ActionsDAG & dag, bool merge_e
 /// Whether a child join step may be flattened into the group of tables to reorder. Without a
 /// conflict detector only plain inner and one-sided outer joins can. For the conflict detector,
 /// which describes each operator by its two whole subtrees, semi/anti and `FULL` joins can too.
-static bool isFlattenableChildJoin(JoinKind kind, JoinStrictness strictness, bool for_conflict_detector)
+static bool isFlattenableChildJoin(const JoinOperator & join_operator, bool for_conflict_detector)
 {
+    /// A set-operation join must see the whole rows of its arms.
+    if (join_operator.set_operation != JoinSetOperation::None)
+        return false;
+
+    const auto kind = join_operator.kind;
+    const auto strictness = join_operator.strictness;
     const bool kind_allowed = isInnerOrCross(kind) || isLeft(kind) || isRight(kind) || (for_conflict_detector && isFull(kind));
     const bool strictness_allowed = strictness == JoinStrictness::All
         || (for_conflict_detector && (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti));
@@ -590,8 +596,7 @@ static size_t addChildQueryGraph(
             /// Normally only plain joins enter the group of tables we reorder. For the conflict
             /// detector semi/anti and `FULL` joins come along too, so DPsub can reorder them as well.
             bool allow_child_join_kind = isFlattenableChildJoin(
-                child_join_step->getJoinOperator().kind, child_join_step->getJoinOperator().strictness,
-                graph.context->allow_semi_anti_flattening);
+                child_join_step->getJoinOperator(), graph.context->allow_semi_anti_flattening);
             /// Do not flatten joins that have type-changing sides (e.g., LEFT JOIN
             /// with `join_use_nulls` making right-side columns Nullable). Flattening
             /// such joins allows the optimizer to reorder them, which can separate
@@ -1149,7 +1154,7 @@ static std::vector<QueryGraph::ReadInOrder> findReadInOrderPrefixes(
     return prefixes;
 }
 
-static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
+static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness, JoinSetOperation set_operation)
 {
     const bool disjunctions_optimization_applied = query_graph_builder.disjunctions_optimization_applied;
 
@@ -1346,6 +1351,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             node_stack.pop();
 
             auto join_operator = std::move(entry->join_operator);
+            /// The join operator is rebuilt, and a set-operation join is always the only join of its graph.
+            join_operator.set_operation = set_operation;
             /// See `graph_has_mixed_strictness` above: keep each entry's own strictness in a mixed
             /// graph, otherwise stamp the graph's single strictness.
             if (!graph_has_mixed_strictness)
@@ -1677,8 +1684,7 @@ static void collectJoinGraphRelationHeaders(
         child_join_step && !child_join_step->isOptimized())
     {
         /// Keep in sync with `addChildQueryGraph`.
-        const bool allow_child_join_kind = isFlattenableChildJoin(
-                child_join_step->getJoinOperator().kind, child_join_step->getJoinOperator().strictness, allow_semi_anti_children)
+        const bool allow_child_join_kind = isFlattenableChildJoin(child_join_step->getJoinOperator(), allow_semi_anti_children)
             && child_join_step->typeChangingSides().empty();
 
         if (child_join_step->getJoinSettings() == join_settings && join_steps_limit > 1 && allow_child_join_kind)
@@ -1749,6 +1755,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     auto strictness = join_operator.strictness;
     auto kind = join_operator.kind;
     auto locality = join_operator.locality;
+    const auto set_operation = join_operator.set_operation;
     if (!optimization_settings.query_plan_optimize_join_order_limit
         || (strictness != JoinStrictness::All && !isSwapOnlyJoinStrictness(strictness))
         || locality != JoinLocality::Unspecified
@@ -1767,7 +1774,9 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     /// group, and it turns down more tables than `DPSUB_MAX_RELATIONS`. So count the tables the group
     /// would end up with, and build it the ordinary way when there are too many: greedy can then take
     /// it over, whole, instead of it being cut down to a size DPsub accepts.
-    bool reorder_semi_anti = conflictDetectorReordersSemiAnti(optimization_settings);
+    /// A set-operation join must see the whole rows of its arms, so it is not flattened together with the joins inside
+    /// the arms: with ANY and ANTI strictness it can only be swapped.
+    bool reorder_semi_anti = set_operation == JoinSetOperation::None && conflictDetectorReordersSemiAnti(optimization_settings);
     if (reorder_semi_anti)
     {
         std::vector<SharedHeader> flattened_relations;
@@ -1802,7 +1811,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     query_graph_builder.context->allow_semi_anti_flattening = reorder_semi_anti;
 
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
-    node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);
+    node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness, set_operation);
 }
 
 }

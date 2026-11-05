@@ -16,6 +16,7 @@
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Columns/ColumnConst.h>
+#include <utility>
 
 namespace DB
 {
@@ -417,6 +418,11 @@ void Pipe::addExtremesSource(ProcessorPtr source)
 
     extremes_port = &source->getOutputs().front();
     processors->emplace_back(std::move(source));
+}
+
+OutputPort * Pipe::detachTotalsPort()
+{
+    return std::exchange(totals_port, nullptr);
 }
 
 void Pipe::dropTotals()

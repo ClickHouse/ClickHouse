@@ -196,6 +196,14 @@ bool DistinctStep::tryScatterStreams(QueryPipelineBuilder & pipeline) const
 
 void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
+    if (skip_deduplication)
+    {
+        if (settings.set_size_limits.max_rows)
+            pipeline.addTransform(std::make_shared<DistinctLimitsCheckingTransform>(
+                pipeline.getSharedHeader(), settings.set_size_limits, pipeline.getNumStreams(), /*input_is_distinct_=*/ true));
+        return;
+    }
+
     const size_t external_threshold = getMaxBytesBeforeExternalProcessing(
         settings.max_bytes_before_external_distinct,
         settings.max_bytes_ratio_before_external_distinct,
@@ -339,6 +347,8 @@ void DistinctStep::describeActions(FormatSettings & format_settings) const
         format_settings.out << prefix << "Skip stream merging: 1\n";
     if (preserve_input_order)
         format_settings.out << prefix << "Preserve input order: 1\n";
+    if (skip_deduplication)
+        format_settings.out << prefix << "Skip deduplication: 1\n";
 }
 
 void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -352,6 +362,8 @@ void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
         map.add("Skip stream merging", true);
     if (preserve_input_order)
         map.add("Preserve input order", true);
+    if (skip_deduplication)
+        map.add("Skip deduplication", true);
 }
 
 void DistinctStep::updateOutputHeader()

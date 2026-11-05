@@ -9,9 +9,11 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
-DistinctLimitsCheckingTransform::DistinctLimitsCheckingTransform(const SharedHeader & header, const SizeLimits & size_limits_, size_t num_streams)
+DistinctLimitsCheckingTransform::DistinctLimitsCheckingTransform(
+    const SharedHeader & header, const SizeLimits & size_limits_, size_t num_streams, bool input_is_distinct_)
     : IProcessor(InputPorts(num_streams, header), OutputPorts(num_streams, header))
     , size_limits(size_limits_)
+    , input_is_distinct(input_is_distinct_)
 {
     port_pairs.reserve(num_streams);
     port_to_pair.reserve(2 * num_streams);
@@ -99,11 +101,12 @@ IProcessor::Status DistinctLimitsCheckingTransform::preparePair(PortPair & pair)
 
     auto data_chunk = input.pullData(true);
     auto memory_usage = data_chunk.chunk.getChunkInfos().extract<DistinctSetMemoryUsage>();
-    chassert(!data_chunk.chunk.hasRows() || memory_usage);
-    if (memory_usage)
+    chassert(input_is_distinct || !data_chunk.chunk.hasRows() || memory_usage);
+    if (memory_usage || (input_is_distinct && data_chunk.chunk.hasRows()))
     {
         rows += data_chunk.chunk.getNumRows();
-        limit_reached = !size_limits.check(rows, memory_usage->total_bytes, "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+        const UInt64 bytes = memory_usage ? memory_usage->total_bytes : 0;
+        limit_reached = !size_limits.check(rows, bytes, "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
     }
     if (!data_chunk.exception && !data_chunk.chunk.hasRows() && data_chunk.chunk.getChunkInfos().empty())
     {
