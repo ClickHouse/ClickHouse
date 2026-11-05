@@ -95,7 +95,7 @@ void QueryPlan::serializeForQueryPlanCache(WriteBuffer & out) const
     /// them, so a cache-private version scale would reject any plan using a newer step feature.
     writeVarUInt(DBMS_QUERY_PLAN_SERIALIZATION_VERSION, out);
 
-    SerializationFlags flags{.version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION};
+    SerializationFlags flags{.version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION, .for_query_plan_cache = true};
     serialize(out, flags);
 }
 
@@ -193,6 +193,7 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         IQueryPlanStep::Serialization ctx{out, registry};
         ctx.version = flags.version;
         ctx.step_version = step_version;
+        ctx.for_query_plan_cache = flags.for_query_plan_cache;
         node->step->serialize(ctx);
     }
 
@@ -249,6 +250,7 @@ QueryPlanAndSets QueryPlan::deserializeForQueryPlanCache(ReadBuffer & in, const 
 
     SerializationFlags flags;
     flags.version = version;
+    flags.for_query_plan_cache = true;
     /// Cache plans are produced and consumed locally by this server, so binary type decoding is trusted (unlimited).
     return deserialize(in, context, flags, /*max_type_complexity=*/ 0);
 }
@@ -323,7 +325,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
 
         IQueryPlanStep::Deserialization ctx{
             in, sets_registry, {}, context, input_headers, output_header, settings,
-            max_type_complexity, flags.version, step_version, flags.skip_data};
+            max_type_complexity, flags.version, step_version, flags.skip_data, flags.for_query_plan_cache};
         auto step = step_registry.createStep(step_name, ctx);
 
         if (step->hasOutputHeader())

@@ -313,6 +313,9 @@ private:
         SizeLimits sets_transfer_limits = {};
         /// The nesting depth of plans for sets from subqueries, used on deserialize to limit the recursion.
         size_t subquery_nesting_depth = 0;
+        /// The stream is a query plan cache entry, written and read by the same server process and never
+        /// sent to another server. See `serializeForQueryPlanCache`.
+        bool for_query_plan_cache = false;
     };
 
     void serialize(WriteBuffer & out, const SerializationFlags & flags) const;

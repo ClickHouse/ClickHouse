@@ -34,6 +34,10 @@ struct IQueryPlanStep::Serialization
     /// `serialize` on it. Zero for a step that has never changed its format.
     UInt64 step_version = 0;
 
+    /// The stream is a query plan cache entry: it is read back only by the same server process, never by
+    /// another server, so a step may write cache-only payloads without changing its wire format.
+    bool for_query_plan_cache = false;
+
     /// The step's input header, set only when serializing for a cache key (see
     /// `calculateHashTableCacheKeys`). It is what gives a column name in a payload an identity beyond
     /// its text - see `writeCacheKeyColumnName`.
@@ -78,6 +82,8 @@ struct IQueryPlanStep::Deserialization
     /// Steps that are expensive or need execution-only context (index analysis, parallel-replicas
     /// callbacks) may read their bytes but build a lightweight placeholder instead of a real step.
     bool skipping = false;
+    /// The stream is a query plan cache entry written by `serializeForQueryPlanCache` of this process.
+    bool for_query_plan_cache = false;
 };
 
 }

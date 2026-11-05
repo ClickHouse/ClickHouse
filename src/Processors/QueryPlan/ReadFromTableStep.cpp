@@ -51,8 +51,11 @@ static constexpr UInt8 FLAG_PARALLEL_REPLICAS = 1 << 3;
 static constexpr UInt8 FLAG_HAS_PREWHERE = 1 << 4;
 static constexpr UInt8 FLAG_HAS_ROW_LEVEL_FILTER = 1 << 5;
 static constexpr UInt8 FLAG_HAS_NODE_NAME_TO_INPUT_COLUMN = 1 << 6;
-static constexpr UInt64 READ_FROM_TABLE_FILTERS_SERIALIZATION_VERSION = 1;
-static constexpr UInt64 READ_FROM_TABLE_NODE_NAME_MAPPING_SERIALIZATION_VERSION = 2;
+
+/// The PREWHERE, row-level filter and node-name mapping payloads are written only into query plan cache
+/// entries (`for_query_plan_cache`), which are read back by the same server process. Every stream that
+/// can reach another server keeps the original layout, so the step stays at step version 0 and peers of
+/// any version read it correctly.
 
 void ReadFromTableStep::serialize(Serialization & ctx) const
 {
@@ -72,11 +75,11 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
         flags |= FLAG_HAS_SAMPLE_OFFSET;
     if (use_parallel_replicas)
         flags |= FLAG_PARALLEL_REPLICAS;
-    if (prewhere_info && ctx.version >= READ_FROM_TABLE_FILTERS_SERIALIZATION_VERSION)
+    if (prewhere_info && ctx.for_query_plan_cache)
         flags |= FLAG_HAS_PREWHERE;
-    if (row_level_filter && ctx.version >= READ_FROM_TABLE_FILTERS_SERIALIZATION_VERSION)
+    if (row_level_filter && ctx.for_query_plan_cache)
         flags |= FLAG_HAS_ROW_LEVEL_FILTER;
-    if (!node_name_to_input_node_column.empty() && ctx.version >= READ_FROM_TABLE_NODE_NAME_MAPPING_SERIALIZATION_VERSION)
+    if (!node_name_to_input_node_column.empty() && ctx.for_query_plan_cache)
         flags |= FLAG_HAS_NODE_NAME_TO_INPUT_COLUMN;
 
     writeIntBinary(flags, ctx.out);
@@ -86,16 +89,17 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
     if (table_expression_modifiers.hasSampleOffsetRatio())
         serializeRational(*table_expression_modifiers.getSampleOffsetRatio(), ctx.out);
 
-    if (ctx.version == 0 && use_parallel_replicas)
+    /// Legacy payload: readers of every version consume this byte whenever the parallel-replicas flag is set.
+    if (use_parallel_replicas)
         writeIntBinary(use_parallel_replicas, ctx.out);
 
-    if (prewhere_info && ctx.version >= READ_FROM_TABLE_FILTERS_SERIALIZATION_VERSION)
+    if (flags & FLAG_HAS_PREWHERE)
         prewhere_info->serialize(ctx);
 
-    if (row_level_filter && ctx.version >= READ_FROM_TABLE_FILTERS_SERIALIZATION_VERSION)
+    if (flags & FLAG_HAS_ROW_LEVEL_FILTER)
         row_level_filter->serialize(ctx);
 
-    if (!node_name_to_input_node_column.empty() && ctx.version >= READ_FROM_TABLE_NODE_NAME_MAPPING_SERIALIZATION_VERSION)
+    if (flags & FLAG_HAS_NODE_NAME_TO_INPUT_COLUMN)
     {
         writeVarUInt(node_name_to_input_node_column.size(), ctx.out);
         std::vector<const std::pair<const std::string, ColumnWithTypeAndName> *> sorted_columns;
@@ -134,7 +138,7 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
         sample_offset_ratio = deserializeRational(ctx.in);
 
     bool use_parallel_replicas = (flags & FLAG_PARALLEL_REPLICAS) != 0;
-    if (ctx.version == 0 && use_parallel_replicas)
+    if (use_parallel_replicas)
     {
         UInt8 serialized_use_parallel_replicas = 0;
         readIntBinary(serialized_use_parallel_replicas, ctx.in);
@@ -144,27 +148,27 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
     PrewhereInfoPtr prewhere_info;
     if (flags & FLAG_HAS_PREWHERE)
     {
-        if (ctx.version < READ_FROM_TABLE_FILTERS_SERIALIZATION_VERSION)
+        if (!ctx.for_query_plan_cache)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Unexpected PREWHERE payload flag in ReadFromTableStep serialization version {}", ctx.version);
+                "Unexpected PREWHERE payload flag in ReadFromTableStep outside of a query plan cache entry");
         prewhere_info = std::make_shared<PrewhereInfo>(PrewhereInfo::deserialize(ctx));
     }
 
     FilterDAGInfoPtr row_level_filter;
     if (flags & FLAG_HAS_ROW_LEVEL_FILTER)
     {
-        if (ctx.version < READ_FROM_TABLE_FILTERS_SERIALIZATION_VERSION)
+        if (!ctx.for_query_plan_cache)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Unexpected row-level filter payload flag in ReadFromTableStep serialization version {}", ctx.version);
+                "Unexpected row-level filter payload flag in ReadFromTableStep outside of a query plan cache entry");
         row_level_filter = std::make_shared<FilterDAGInfo>(FilterDAGInfo::deserialize(ctx));
     }
 
     std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
     if (flags & FLAG_HAS_NODE_NAME_TO_INPUT_COLUMN)
     {
-        if (ctx.version < READ_FROM_TABLE_NODE_NAME_MAPPING_SERIALIZATION_VERSION)
+        if (!ctx.for_query_plan_cache)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Unexpected node-name mapping payload flag in ReadFromTableStep serialization version {}", ctx.version);
+                "Unexpected node-name mapping payload flag in ReadFromTableStep outside of a query plan cache entry");
 
         UInt64 size = 0;
         readVarUInt(size, ctx.in);
