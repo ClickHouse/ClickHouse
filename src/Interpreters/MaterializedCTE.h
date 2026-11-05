@@ -76,7 +76,8 @@ struct MaterializedCTE
     std::optional<TemporaryTableHolder> table_holder = {};
     /// Name of the CTE.
     const std::string cte_name;
-    /// If true, the CTE query or one of its subqueries has ORDER BY, so the stored blocks can be in that order.
+    /// If true, the plan of the CTE, or of a view or a CTE that it reads, has a sorting step,
+    /// so the stored blocks can be in that order. Set when its plan is optimized.
     bool has_order_by = false;
     /// Estimated number of rows of the CTE, set when its plan is optimized. Empty if unknown.
     std::optional<UInt64> estimated_rows;

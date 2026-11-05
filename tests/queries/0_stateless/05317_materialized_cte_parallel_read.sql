@@ -45,6 +45,24 @@ SELECT trimLeft(explain) FROM (
     SELECT count() FROM b WHERE n IN (SELECT n FROM b) AND n IN (SELECT n FROM a)
 ) WHERE explain LIKE '%AggregatingTransform%';
 
+-- A CTE that reads a sorted view keeps one source.
+CREATE VIEW sorted_view AS SELECT number AS n FROM numbers_mt(100000) ORDER BY n DESC SETTINGS max_block_size = 1000;
+WITH t AS MATERIALIZED (SELECT n FROM sorted_view)
+SELECT groupArray(n) = arrayReverseSort(groupArray(n)) FROM (SELECT n FROM t WHERE n IN (SELECT n FROM t));
+DROP VIEW sorted_view;
+
+CREATE VIEW sorted_parameterized_view AS
+SELECT number AS n FROM numbers_mt(100000) WHERE n < {max_n:UInt64} ORDER BY n DESC SETTINGS max_block_size = 1000;
+WITH t AS MATERIALIZED (SELECT n FROM sorted_parameterized_view(max_n = 100000))
+SELECT groupArray(n) = arrayReverseSort(groupArray(n)) FROM (SELECT n FROM t WHERE n IN (SELECT n FROM t));
+DROP VIEW sorted_parameterized_view;
+
+CREATE VIEW sorted_definer_view DEFINER = CURRENT_USER SQL SECURITY DEFINER AS
+SELECT number AS n FROM numbers_mt(100000) ORDER BY n DESC SETTINGS max_block_size = 1000;
+WITH t AS MATERIALIZED (SELECT n FROM sorted_definer_view)
+SELECT groupArray(n) = arrayReverseSort(groupArray(n)) FROM (SELECT n FROM t WHERE n IN (SELECT n FROM t));
+DROP VIEW sorted_definer_view;
+
 -- A CTE estimated to fit in one block is read with one source.
 DROP TABLE IF EXISTS small;
 CREATE TABLE small (n UInt64) ENGINE = Memory;
