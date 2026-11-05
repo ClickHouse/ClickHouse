@@ -449,7 +449,7 @@ void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const 
     }
 }
 
-bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
+bool shouldIgnoreQuota(const TableNode & table_node)
 {
     const auto & storage_id = table_node.getStorageID();
     if (!storage_id.hasDatabase())
@@ -3788,13 +3788,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     if (is_single_table_expression)
     {
         auto * table_node = table_expressions_stack[0]->as<TableNode>();
-        if (table_node && shouldIgnoreQuotaAndLimits(*table_node))
-        {
+        if (table_node && shouldIgnoreQuota(*table_node))
             select_query_options.ignore_quota = true;
-            /// `system.one` keeps the limits, because queries without FROM read it.
-            if (table_node->getStorageID().table_name != "one")
-                select_query_options.ignore_limits = true;
-        }
     }
 
     size_t joins_count = 0;

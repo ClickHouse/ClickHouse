@@ -505,8 +505,8 @@ ASTPtr parseAdditionalFilterConditionForTable(
     return nullptr;
 }
 
-/// Returns true if we should ignore quotas and limits for a specified table in the system database.
-bool shouldIgnoreQuotaAndLimits(const StorageID & table_id)
+/// Returns true if we should ignore quotas for a specified table in the system database.
+bool shouldIgnoreQuota(const StorageID & table_id)
 {
     if (table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
     {
@@ -1093,14 +1093,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             checkAccessRightsForFilter(
                 context, table_id, storage, storage_snapshot, metadata_snapshot, filter_tables_with_columns, parallel_replicas_custom_key_ast_to_check);
 
-        /// Remove quota and limits for some tables in the `system` database.
-        /// `system.one` keeps the limits, because queries without FROM read it.
-        if (shouldIgnoreQuotaAndLimits(table_id) && (joined_tables.tablesCount() <= 1))
-        {
+        /// Remove quota for some tables in the `system` database.
+        if (shouldIgnoreQuota(table_id) && (joined_tables.tablesCount() <= 1))
             options.ignore_quota = true;
-            if (table_id.table_name != "one")
-                options.ignore_limits = true;
-        }
     }
 
     /// Add prewhere actions with alias columns and record needed columns from storage.
