@@ -11,6 +11,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Core/ConstantValue.h>
+#include <Interpreters/convertColumnToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
@@ -132,9 +133,9 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
         const auto step_value = evaluateConstantExpressionAsColumn(args[argument_index++], context);
 
         mode = PrometheusQueryEvaluationMode::QUERY_RANGE;
-        start_time = parseTimeSeriesTimestamp(start_time_value, time_scale);
-        end_time = parseTimeSeriesTimestamp(end_time_value, time_scale);
-        step = parseTimeSeriesDuration(step_value, time_scale);
+        start_time = parseTimeSeriesTimestamp(resolveActiveAlternative(start_time_value), time_scale);
+        end_time = parseTimeSeriesTimestamp(resolveActiveAlternative(end_time_value), time_scale);
+        step = parseTimeSeriesDuration(resolveActiveAlternative(step_value), time_scale);
         time_parameter_types = {start_time_value.getType(), end_time_value.getType()};
     }
     else
@@ -142,7 +143,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
         const auto time_value = evaluateConstantExpressionAsColumn(args[argument_index++], context);
 
         mode = PrometheusQueryEvaluationMode::QUERY;
-        start_time = parseTimeSeriesTimestamp(time_value, time_scale);
+        start_time = parseTimeSeriesTimestamp(resolveActiveAlternative(time_value), time_scale);
         end_time = start_time;
         step = 0;
         time_parameter_types = {time_value.getType()};

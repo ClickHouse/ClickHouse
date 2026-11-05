@@ -23,6 +23,10 @@ SELECT timestamp, value FROM prometheusQuery('ts_time_arguments', '7', '2024-01-
 SELECT timestamp, value FROM prometheusQuery('ts_time_arguments', '7', toNullable(1000));
 SELECT timestamp, value FROM prometheusQuery('ts_time_arguments', '7', toLowCardinality('1000'));
 SELECT timestamp, value FROM prometheusQuery('ts_time_arguments', '7', toFixedString('1000', 4));
+-- `Variant` and `Dynamic` hold the value of their active alternative.
+SELECT timestamp, value FROM prometheusQuery('ts_time_arguments', '7', CAST(toUInt64(1000) AS Variant(UInt64, String)));
+SELECT timestamp, value FROM prometheusQuery('ts_time_arguments', '7', CAST('2024-01-01 00:00:00' AS Variant(UInt64, String)));
+SELECT timestamp, value FROM prometheusQuery('ts_time_arguments', '7', CAST(1000 AS Dynamic));
 -- A comparison is a `UInt8`, not a `Bool`.
 SELECT timestamp, value FROM prometheusQuery('ts_time_arguments', '7', 1 = 1);
 
@@ -31,6 +35,7 @@ SELECT * FROM prometheusQueryRange('ts_time_arguments', '7', 1000, 1060, INTERVA
 SELECT * FROM prometheusQueryRange('ts_time_arguments', '7', 1000, 1001, INTERVAL 500 MILLISECOND);
 SELECT * FROM prometheusQueryRange('ts_time_arguments', '7', 1000, 1060, '30s');
 SELECT * FROM prometheusQueryRange('ts_time_arguments', '7', 1000, 1060, toFloat64(30));
+SELECT * FROM prometheusQueryRange('ts_time_arguments', '7', CAST(1000 AS Dynamic), 1060, CAST(toFloat64(30) AS Dynamic));
 
 SELECT '-- timeSeriesSelector';
 SELECT count() FROM timeSeriesSelector('ts_time_arguments', 'up', toDateTime64('2024-01-01 00:00:00', 3, 'UTC'), toDateTime64('2024-01-02 00:00:00', 3, 'UTC'), 'samples');
@@ -39,6 +44,8 @@ SELECT count() FROM timeSeriesSelector('ts_time_arguments', 'up', 1000, toFloat3
 SELECT '-- rejected';
 SELECT timestamp FROM prometheusQuery('ts_time_arguments', '7', true); -- { serverError BAD_ARGUMENTS }
 SELECT timestamp FROM prometheusQuery('ts_time_arguments', '7', toBool(1)); -- { serverError BAD_ARGUMENTS }
+SELECT timestamp FROM prometheusQuery('ts_time_arguments', '7', CAST(true AS Variant(Bool, String))); -- { serverError BAD_ARGUMENTS }
+SELECT timestamp FROM prometheusQuery('ts_time_arguments', '7', CAST(NULL AS Dynamic)); -- { serverError BAD_ARGUMENTS }
 SELECT timestamp FROM prometheusQuery('ts_time_arguments', '7', CAST(NULL AS Nullable(UInt32))); -- { serverError BAD_ARGUMENTS }
 SELECT timestamp FROM prometheusQuery('ts_time_arguments', '7', nan); -- { serverError BAD_ARGUMENTS }
 SELECT timestamp FROM prometheusQuery('ts_time_arguments', '7', toUUID('00000000-0000-0000-0000-000000000000')); -- { serverError BAD_ARGUMENTS }

@@ -11,3 +11,15 @@ SELECT * FROM v_typed_parameters(b = (1 = 1), f = 0.1, d = '2024-01-01 00:00:00.
 SELECT * FROM v_typed_parameters(b = false, f = toFloat32(-0.25), d = toDateTime64('1970-01-02 00:00:00', 3, 'UTC') + INTERVAL 1500 MILLISECOND, n = 7, s = concat('a', 'b'), a = []);
 
 DROP VIEW v_typed_parameters;
+
+-- `EXPLAIN SYNTAX` and `DESCRIBE` of an `SQL SECURITY INVOKER` view substitute the arguments through
+-- `analyzeFunctionParamValues`; `EXPLAIN SYNTAX` shows each argument as the value it was serialized to.
+DROP VIEW IF EXISTS v_typed_parameters_invoker;
+CREATE VIEW v_typed_parameters_invoker SQL SECURITY INVOKER AS
+    SELECT {b:Bool} AS b, {f:Float32} AS f, {d:DateTime64(3, 'UTC')} AS d, {n:Nullable(Int32)} AS n, {s:String} AS s, {a:Array(UInt8)} AS a;
+
+EXPLAIN SYNTAX SELECT * FROM v_typed_parameters_invoker(b = toBool(1), f = toFloat32(1.5), d = toDateTime64('2024-01-01 00:00:00.123', 3, 'UTC'), n = NULL, s = toLowCardinality('lc'), a = [1, 2]);
+EXPLAIN SYNTAX SELECT * FROM v_typed_parameters_invoker(b = false, f = 0.1, d = toDateTime64('1970-01-02 00:00:00', 3, 'UTC') + INTERVAL 1500 MILLISECOND, n = toNullable(-5), s = concat('a', 'b'), a = range(3));
+DESCRIBE TABLE v_typed_parameters_invoker(b = true, f = toFloat32(-0.25), d = '2024-01-01 00:00:00.5', n = 7, s = 'x', a = []);
+
+DROP VIEW v_typed_parameters_invoker;

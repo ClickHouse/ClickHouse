@@ -19,6 +19,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Core/ConstantValue.h>
+#include <Interpreters/convertColumnToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -297,8 +298,8 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
 
     UInt32 table_timestamp_scale = tryGetDecimalScale(*table_timestamp_type).value_or(0);
     UInt32 parameters_scale = getTimeScale(table_timestamp_scale, min_time_value.getType(), max_time_value.getType());
-    auto min_time = parseTimeSeriesTimestamp(min_time_value, parameters_scale);
-    auto max_time = parseTimeSeriesTimestamp(max_time_value, parameters_scale);
+    auto min_time = parseTimeSeriesTimestamp(resolveActiveAlternative(min_time_value), parameters_scale);
+    auto max_time = parseTimeSeriesTimestamp(resolveActiveAlternative(max_time_value), parameters_scale);
 
     /// The argument `return_columns` chooses the columns returning the samples: 'samples' or 'timestamp_and_value'.
     String return_columns_str = getStringConstArgument(args[argument_index++], context, "return_columns");
