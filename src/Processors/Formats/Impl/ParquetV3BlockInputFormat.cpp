@@ -185,7 +185,8 @@ void ParquetV3BlockInputFormat::prefetch(const InputFormatStreamMemoryPtr & stre
         readFileFooterIfNeeded();
 
         /// Not with TopN dynamic filtering (previous files may still tighten its threshold), nor for files below `min_bytes_for_seek`.
-        if (!start_reading_data || !read_options.is_remote_fs || format_filter_info->top_k_filter
+        /// Nor with the columns cache: the initialization takes the cached columns of all row groups of the file.
+        if (!start_reading_data || !read_options.is_remote_fs || format_filter_info->top_k_filter || read_options.columns_cache
             || parser_shared_resources->parsing_runner.isManual())
             return;
         {

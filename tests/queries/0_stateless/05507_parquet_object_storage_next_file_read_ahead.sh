@@ -113,6 +113,8 @@ ${CLICKHOUSE_CLIENT} --query "$ROW_GROUPS SETTINGS $SETTINGS, use_parquet_metada
 ${CLICKHOUSE_CLIENT} --query "$ROW_GROUPS SETTINGS $SETTINGS, use_parquet_metadata_cache = 0, input_format_parquet_max_block_size = 1000, remote_filesystem_read_prefetch = 0, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_u_row_groups_refused_control' FORMAT Null"
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(y), sum(sleepEachRow(0.00004)) FROM s3(s3_conn, filename = '${DIR}/prewhere/*.parquet', structure = 'x UInt64, y UInt64') PREWHERE x % 2 = 0
     SETTINGS $SETTINGS, input_format_parquet_page_filter_push_down = 0, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_v_prewhere_refused'"
+# Nor with the columns cache, whose entries the initialization of the next file would hold.
+read_files w_columns_cache "s3(s3_conn, filename = '${DIR}/good/*.parquet')" "use_columns_cache = 1, enable_reads_from_columns_cache = 1, enable_writes_to_columns_cache = 1,"
 
 # The error of the fourth file is reported with its name, as when it is not read ahead.
 for prefetch in 1 0; do

@@ -14,6 +14,7 @@
 100000	4999950000	0
 60000	1799970000	1799970000	0
 12000	35988000	0
+150000	11249925000	0
 THERE_IS_NO_COLUMN 1
 THERE_IS_NO_COLUMN 1
 INCORRECT_DATA 1
@@ -41,6 +42,7 @@ s_handed_back	0
 t_row_groups_refused	0
 u_row_groups_refused_control	0
 v_prewhere_refused	0
+w_columns_cache	0
 2
 1
 1
