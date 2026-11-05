@@ -2117,11 +2117,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             /// A step of the shipped plan applies the sender's entry, and an entry of this node that resolves to another
             /// predicate is applied too.
             const auto & shipped_read = select_query_options.shipped_read;
-            if (shipped_read && table_expression_query_info.additional_filter_ast
-                && (!shipped_read->additional_filter_recorded
-                    || (shipped_read->additional_filter_in_plan
-                        && *shipped_read->additional_filter_in_plan
-                            == additionalFilterHash(table_expression_query_info.additional_filter_ast, table_expression, query_context))))
+            if (shipped_read && table_expression_query_info.additional_filter_ast && shipped_read->additional_filter_in_plan
+                && *shipped_read->additional_filter_in_plan
+                    == additionalFilterHash(table_expression_query_info.additional_filter_ast, table_expression, query_context))
                 table_expression_query_info.additional_filter_ast = nullptr;
 
             /// `pushOrderByIntoView` depends on `additional_filter_ast` being parsed
