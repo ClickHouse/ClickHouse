@@ -2,12 +2,12 @@
 #include <memory>
 #include <optional>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/CompressedColumnSizeEstimator.h>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
-#include <Compression/CompressedSizeCalculator.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/Defines.h>
@@ -21,23 +21,21 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/ISerialization.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
+#include <Formats/MarkInCompressedFile.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
-#include <IO/NullWriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/VarInt.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <base/defines.h>
 #include <base/types.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Poco/String.h>
 
@@ -56,7 +54,6 @@ namespace ErrorCodes
 extern const int BAD_QUERY_PARAMETER;
 extern const int UNKNOWN_QUERY_PARAMETER;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -80,107 +77,22 @@ bool isSplitIndependent(const IDataType & type)
     return false;
 }
 
-/// The codec and the compressed block size of a substream, as `MergeTreeDataPartWriterWide` sets up the streams of a column.
-struct StreamLayout
-{
-    CompressionCodecPtr codec;
-    size_t block_size = 0;
-};
-
-using StreamLayouts = UnorderedMapWithMemoryTracking<String, StreamLayout>;
-
-/// The serialization of a column over one run: prefix, bulk writes, suffix.
-struct ColumnWriter
-{
-    DataTypePtr type;
-    SerializationPtr serialization;
-    ISerialization::SerializeBinaryBulkSettings settings;
-    ISerialization::SerializeBinaryBulkStatePtr state;
-    /// For a column whose streams depend on its content (`Dynamic`, `JSON`): the structure of the first block, which every block
-    /// is written with.
-    ColumnPtr sample;
-
-    void writePrefix(const IColumn & column)
-    {
-        if (column.hasDynamicStructure())
-        {
-            auto first = column.cloneEmpty();
-            first->takeExactDynamicStructureFrom(column);
-            sample = std::move(first);
-        }
-        serialization->serializeBinaryBulkStatePrefix(column, settings, state);
-    }
-
-    /// As `MergeTreeDataPartWriterOnDisk::prepareBlockForWriting`: rows of another structure than the first block's are rebuilt
-    /// with it.
-    void write(const IColumn & rows, size_t offset, size_t limit)
-    {
-        if (sample && !rows.dynamicStructureEquals(*sample))
-        {
-            auto rebuilt = type->createColumn();
-            rebuilt->takeExactDynamicStructureFrom(*sample);
-            rebuilt->insertRangeFrom(rows, offset, limit);
-            serialization->serializeBinaryBulkWithMultipleStreams(*rebuilt, 0, limit, settings, state);
-        }
-        else
-            serialization->serializeBinaryBulkWithMultipleStreams(rows, offset, limit, settings, state);
-    }
-
-    void writeSuffix()
-    {
-        serialization->serializeBinaryBulkStateSuffix(settings, state);
-        state.reset();
-    }
-};
-
-/// One run of a state, as MergeTree writes a column of one part, with a size calculator per substream. Heap-allocated: the
-/// stream getter holds its address.
+/// One run of a state, as MergeTree writes a column of one part. A sparse column after a dense one, or vice versa, starts a new
+/// run; with a target type, of either of the two columns.
 struct Run
 {
-    /// A sparse column after a dense one, or vice versa, starts a new run; with a target type, of either of the two columns.
+    using Writer = CompressedColumnSizeEstimator::Writer;
+
     ISerialization::KindStack kind_stack;
     ISerialization::KindStack source_kind_stack;
-    ColumnWriter writer;
-
-    struct Stream
-    {
-        String key;
-        std::unique_ptr<CompressedSizeCalculator> calculator;
-    };
-    /// A handful of substreams: a linear search beats hashing.
-    VectorWithMemoryTracking<Stream> streams;
-
-    /// With a target type: the rows in the type of the column are serialized into a buffer that only counts bytes, the numerator.
-    std::optional<ColumnWriter> source_writer;
-    std::unique_ptr<NullWriteBuffer> source_counter;
+    std::unique_ptr<Writer> writer;
+    /// With a target type: the rows in the type of the column, only counted, the numerator.
+    std::unique_ptr<Writer> source_writer;
 
     bool finished = false;
     /// The sizes of this run and of the finished runs before it since the state was last read.
     UInt64 uncompressed_bytes = 0;
     UInt64 compressed_bytes = 0;
-
-    ~Run()
-    {
-        /// Left over by an exception; the finalized ones are gone already.
-        for (auto & stream : streams)
-            stream.calculator->cancel();
-        if (source_counter)
-            source_counter->cancel();
-    }
-
-    WriteBuffer * streamFor(const ISerialization::SubstreamPath & path)
-    {
-        const String key = ISerialization::getSubstreamsCacheKeyForStream(path);
-        for (auto & stream : streams)
-            if (stream.key == key)
-                return stream.calculator.get();
-
-        /// The writer has no stream for an ephemeral subcolumn either.
-        if (ISerialization::isEphemeralSubcolumn(path, path.size()))
-            return nullptr;
-
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No stream for substream {}", ISerialization::getSubcolumnNameForStream(path));
-    }
 };
 
 struct AggregateFunctionEstimateCompressionRatioData
@@ -219,10 +131,6 @@ class AggregateFunctionEstimateCompressionRatio final
     : public IAggregateFunctionDataHelper<AggregateFunctionEstimateCompressionRatioData, AggregateFunctionEstimateCompressionRatio>
 {
 private:
-    /// The defaults of `index_granularity` and `index_granularity_bytes`.
-    static constexpr size_t rows_per_granule = 8192;
-    static constexpr size_t bytes_per_granule = 10 * 1024 * 1024;
-
     const EstimateCompressionRatioConfig config;
     /// The type of the column, `LowCardinality` included, which the function is created from (see
     /// `AggregateFunctionProperties::created_with_low_cardinality_types`), and the type its rows arrive as.
@@ -242,9 +150,8 @@ private:
     /// The `codec` parameter, or the default codec, as the `CODEC` clause of a column.
     const ASTPtr codec_description;
     const size_t block_size_bytes;
-    /// The layout of every substream of the default serialization of the estimated type; building it validates the codec against
-    /// the type. A substream only a column reveals (sparse offsets, the variants of `Dynamic`) is resolved when a run starts.
-    const StreamLayouts stream_layouts;
+    /// Writes the rows as the MergeTree writer would; building it validates the codec against the estimated type.
+    const CompressedColumnSizeEstimator estimator;
 
     static ASTPtr parseCodecDescription(const String & codec)
     {
@@ -265,123 +172,50 @@ private:
         return conversion;
     }
 
-    /// As `MergeTreeDataPartWriterOnDisk::getSubstreamCodec` and `MergeTreeDataPartWriterWide::addStreams`: the codec applies to the
-    /// data substreams, a structural substream (null map, array sizes, dictionary indexes) keeps only its generic codecs, and a
-    /// compressed block holds whole values.
-    StreamLayout resolveStreamLayout(const ISerialization::SubstreamPath & path) const
+    /// As `MergeTreeDataPartWriterWide::getSerializationSettings`, with the parameters of the function.
+    CompressedColumnSizeEstimator::WriterSettings makeWriterSettings() const
     {
-        const DataTypePtr & substream_type = path.back().data.type;
-        const bool is_data_substream = ISerialization::isSpecialCompressionAllowed(path);
-
-        StreamLayout layout;
-        layout.codec = CompressionCodecFactory::instance().get(
-            codec_description, is_data_substream ? substream_type.get() : nullptr, default_codec, /*only_generic=*/ !is_data_substream);
-        layout.block_size = substream_type ? roundCompressBlockSizeToWholeValues(block_size_bytes, *substream_type) : block_size_bytes;
-        return layout;
-    }
-
-    StreamLayouts buildStreamLayouts(const DataTypePtr & type) const
-    {
-        StreamLayouts layouts;
-        type->getDefaultSerialization()->enumerateStreams(
-            [&](const ISerialization::SubstreamPath & path)
-            {
-                if (!ISerialization::isEphemeralSubcolumn(path, path.size()))
-                    layouts.emplace(ISerialization::getSubstreamsCacheKeyForStream(path), resolveStreamLayout(path));
-            },
-            type);
-        return layouts;
-    }
-
-    /// As `MergeTreeDataPartWriterWide::getSerializationSettings`.
-    void setWriterSettings(ISerialization::SerializeBinaryBulkSettings & settings) const
-    {
-        settings.data_part_type = MergeTreeDataPartType::Wide;
-        settings.low_cardinality_max_dictionary_size = config.low_cardinality_max_dictionary_size;
-        settings.low_cardinality_use_single_dictionary_for_part = config.low_cardinality_use_single_dictionary_for_part;
-        settings.write_statistics = ISerialization::SerializeBinaryBulkSettings::StatisticsMode::SUFFIX;
+        CompressedColumnSizeEstimator::WriterSettings settings;
+        settings.bulk.data_part_type = MergeTreeDataPartType::Wide;
+        settings.bulk.low_cardinality_max_dictionary_size = config.low_cardinality_max_dictionary_size;
+        settings.bulk.low_cardinality_use_single_dictionary_for_part = config.low_cardinality_use_single_dictionary_for_part;
+        settings.bulk.write_statistics = ISerialization::SerializeBinaryBulkSettings::StatisticsMode::SUFFIX;
         /// The serializations that end compressed blocks themselves (the shared data of `JSON`) do so from this size on.
+        settings.bulk.min_compress_block_size = block_size_bytes;
+        settings.bulk.stream_mark_getter = [](const ISerialization::SubstreamPath &) { return MarkInCompressedFile(); };
         settings.min_compress_block_size = block_size_bytes;
-        settings.stream_mark_getter = [](const ISerialization::SubstreamPath &) { return MarkInCompressedFile(); };
+        settings.max_compress_block_size = block_size_bytes;
+        return settings;
     }
 
-    /// As `computeIndexGranularity` with the default settings for this column alone: a granule holds `rows_per_granule` rows,
-    /// fewer when they would exceed `bytes_per_granule`. The writer counts the bytes of all columns of the table, so the granules
-    /// of a table with wide rows are smaller.
-    static size_t granuleRows(const IColumn & column)
-    {
-        const size_t bytes_per_row = std::max<size_t>(column.byteSize() / std::max<size_t>(column.size(), 1), 1);
-        return std::clamp<size_t>(bytes_per_granule / bytes_per_row, 1, rows_per_granule);
-    }
-
-    /// Starts a run for `column` (and for `source`, the same rows in the type of the column, with a target type): its
-    /// serialization, its streams and the prefix.
-    std::unique_ptr<Run> startRun(const IColumn & column, const IColumn & source, ISerialization::KindStack kind_stack) const
+    /// Starts a run for `column` (and for `source`, the same rows in the type of the column, with a target type).
+    std::unique_ptr<Run> startRun(
+        const IColumn & column, const IColumn & source, ISerialization::KindStack kind_stack, ISerialization::KindStack source_kind_stack) const
     {
         auto run = std::make_unique<Run>();
         run->kind_stack = std::move(kind_stack);
-        run->writer.type = estimated_type;
-        run->writer.serialization = estimated_type->getSerialization(*estimated_type->getSerializationInfo(column));
-        setWriterSettings(run->writer.settings);
-
-        Run * raw = run.get();
-        run->writer.serialization->enumerateStreams(
-            [&](const ISerialization::SubstreamPath & path)
-            {
-                if (ISerialization::isEphemeralSubcolumn(path, path.size()))
-                    return;
-
-                const String key = ISerialization::getSubstreamsCacheKeyForStream(path);
-                auto it = stream_layouts.find(key);
-                const StreamLayout layout = it != stream_layouts.end() ? it->second : resolveStreamLayout(path);
-                raw->streams.push_back({key, std::make_unique<CompressedSizeCalculator>(layout.codec, layout.block_size)});
-            },
-            estimated_type,
-            column.getPtr());
-        run->writer.settings.getter = [raw](const ISerialization::SubstreamPath & path) { return raw->streamFor(path); };
-        run->writer.writePrefix(column);
-
+        run->source_kind_stack = std::move(source_kind_stack);
+        run->writer = estimator.startWriter(column);
         if (target_type)
-        {
-            run->source_counter = std::make_unique<NullWriteBuffer>();
-            auto & source_writer = run->source_writer.emplace();
-            source_writer.type = represented_type;
-            source_writer.serialization = represented_type->getSerialization(*represented_type->getSerializationInfo(source));
-            setWriterSettings(source_writer.settings);
-            source_writer.settings.getter
-                = [counter = run->source_counter.get()](const ISerialization::SubstreamPath &) -> WriteBuffer * { return counter; };
-            source_writer.writePrefix(source);
-        }
-
+            run->source_writer = CompressedColumnSizeEstimator::startCounting(represented_type, estimator.getSettings(), source);
         return run;
     }
 
-    /// Ends the run as the writer ends a part: the suffix (the dictionary of a `LowCardinality` column, statistics) and the last
-    /// compressed block of every stream. Idempotent.
+    /// Ends the run as the writer ends a part. Idempotent.
     void finishRun(Run & run) const
     {
         if (run.finished)
             return;
 
-        run.writer.writeSuffix();
-        for (auto & stream : run.streams)
-        {
-            stream.calculator->finalize();
-            run.compressed_bytes += stream.calculator->getCompressedBytes();
-            if (!run.source_writer)
-                run.uncompressed_bytes += stream.calculator->getUncompressedBytes();
-        }
-
+        const auto sizes = run.writer->finish();
+        run.compressed_bytes += sizes.compressed;
         if (run.source_writer)
-        {
-            run.source_writer->writeSuffix();
-            run.source_counter->finalize();
-            run.uncompressed_bytes += run.source_counter->count();
-            run.source_counter.reset();
-            run.source_writer.reset();
-        }
+            run.uncompressed_bytes += run.source_writer->finish().uncompressed;
+        else
+            run.uncompressed_bytes += sizes.uncompressed;
 
-        run.streams.clear();
+        run.writer.reset();
+        run.source_writer.reset();
         run.finished = true;
     }
 
@@ -394,8 +228,7 @@ private:
             && data_ref.run->source_kind_stack == source_kind_stack)
             return *data_ref.run;
 
-        auto run = startRun(rows, source, std::move(kind_stack));
-        run->source_kind_stack = std::move(source_kind_stack);
+        auto run = startRun(rows, source, std::move(kind_stack), std::move(source_kind_stack));
         if (data_ref.run)
         {
             finishRun(*data_ref.run);
@@ -421,11 +254,11 @@ private:
     /// Serializes the rows of [offset, offset + limit) one granule at a time, as the writer serializes a block.
     void serializeRows(const Data & data_ref, const IColumn & rows, size_t offset, size_t limit) const
     {
-        const size_t granule_rows = granuleRows(rows);
+        const size_t granule_rows = estimator.granuleRows(rows);
         if (!to_represented && !target_type)
         {
             for (size_t end = offset + limit; offset < end; offset += granule_rows)
-                runFor(data_ref, rows, rows).writer.write(rows, offset, std::min(granule_rows, end - offset));
+                runFor(data_ref, rows, rows).writer->write(rows, offset, std::min(granule_rows, end - offset));
             return;
         }
 
@@ -439,14 +272,14 @@ private:
             const ColumnPtr represented = convertRows(granule, to_represented, represented_type);
             if (!target_type)
             {
-                runFor(data_ref, *represented, *represented).writer.write(*represented, 0, rows_in_granule);
+                runFor(data_ref, *represented, *represented).writer->write(*represented, 0, rows_in_granule);
                 continue;
             }
 
             const ColumnPtr target = convertRows(granule, to_target, target_type);
             Run & run = runFor(data_ref, *target, *represented);
             run.source_writer->write(*represented, 0, rows_in_granule);
-            run.writer.write(*target, 0, rows_in_granule);
+            run.writer->write(*target, 0, rows_in_granule);
         }
     }
 
@@ -473,7 +306,7 @@ private:
             return;
         }
 
-        const size_t granule_rows = granuleRows(rows);
+        const size_t granule_rows = estimator.granuleRows(rows);
         if (data_ref.buffer && !data_ref.buffer->empty())
         {
             const size_t taken = std::min(limit, granule_rows - std::min(granule_rows, data_ref.buffer->size()));
@@ -575,7 +408,7 @@ public:
         , default_codec(CompressionCodecFactory::instance().getDefaultCodec())
         , codec_description(config.codec ? parseCodecDescription(*config.codec) : default_codec->getFullCodecDescription())
         , block_size_bytes(config.block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE))
-        , stream_layouts(buildStreamLayouts(estimated_type))
+        , estimator(estimated_type, codec_description, default_codec, makeWriterSettings())
     {
     }
 
@@ -589,7 +422,7 @@ public:
         IColumn & buffer = bufferFor(data_ref);
         buffer.insertFrom(*columns[0], row_num);
 
-        if (buffer.size() >= granuleRows(buffer))
+        if (buffer.size() >= estimator.granuleRows(buffer))
             flushBuffer(data_ref);
     }
 
