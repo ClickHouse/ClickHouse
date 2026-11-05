@@ -8,13 +8,23 @@
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
+#include <algorithm>
+#include <array>
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int UNKNOWN_SETTING;
+    extern const int BAD_ARGUMENTS;
 }
+
+/// These settings control the dictionary-source lookup path only. The `YTsaurus` table engine and the `ytsaurus`
+/// table function perform full-table reads and never issue lookups, so accepting these settings there would be a
+/// silent no-op. They are loaded for the dictionary source via the config / named collection, not via a SQL query,
+/// so they are rejected only when they appear in a query `SETTINGS` clause (`loadFromQuery`).
+static constexpr std::array<std::string_view, 2> dictionary_only_setting_names{"lookup_throttler_max_requests_per_second", "lookup_max_rows_per_query"};
 
 #define LIST_OF_YTSAURUS_SETTINGS(DECLARE, ALIAS) \
     DECLARE(Bool, check_table_schema, true, "Check the ClickHouse and YTsaurus table schema for compatibility", 0) \
@@ -26,6 +36,8 @@ namespace ErrorCodes
     DECLARE(Milliseconds, transaction_timeout_ms, 150000, "Timeout for YTSaurus transaction.", 0) \
     DECLARE(UInt64, min_rows_for_spawn_stream, 1000, "Min number of rows to spawn the new stream. To use 8 streams the table must hold at least 8 * `min_rows_for_spawn_stream` rows.", 0) \
     DECLARE(UInt64, max_streams, 4, "Max number of streams to read from static table.", 0) \
+    DECLARE(UInt64, lookup_throttler_max_requests_per_second, 200000, "Maximum number of lookup requests per second to YTsaurus. Set to 0 to disable throttling.", 0) \
+    DECLARE(UInt64, lookup_max_rows_per_query, 0, "Maximum number of rows per YTsaurus lookup request. 0 (the default) is unlimited: a selective load is sent as a single request.", 0) \
 
 DECLARE_SETTINGS_TRAITS(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS, YTSAURUS_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS, YTsaurusSettings, YTsaurusSetting)
@@ -46,6 +58,19 @@ YTSAURUS_SETTINGS_SUPPORTED_TYPES(YTsaurusSettings, IMPLEMENT_SETTING_SUBSCRIPT_
 
 void YTsaurusSettings::loadFromQuery(const ASTSetQuery & settings_def)
 {
+    /// Reject the setting whenever its name is present in the `SETTINGS` clause, even if the value equals the default:
+    /// `isChanged` would only tell whether the final value differs from the default.
+    for (const auto & change : settings_def.changes)
+    {
+        const std::string_view resolved_name = YTsaurusSettingsTraits::resolveName(change.name);
+        if (std::ranges::find(dictionary_only_setting_names, resolved_name) != dictionary_only_setting_names.end())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `{}` is only applicable to YTsaurus dictionary sources; "
+                "it has no effect on the YTsaurus table engine or the `ytsaurus` table function",
+                change.name);
+    }
+
     impl->applyChanges(settings_def.changes);
 }
 

@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソース](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="query_cache_compress_entries">
-  ## query_cache_compress_entries
-</div>
+## query_cache_compress_entries {#query_cache_compress_entries}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -26,9 +24,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 * 0 - 無効
 * 1 - 有効
 
-<div id="query_cache_for_subqueries">
-  ## query_cache_for_subqueries
-</div>
+## query_cache_for_subqueries {#query_cache_for_subqueries}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -41,33 +37,31 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 * 0 - 無効
 * 1 - 有効
 
-<div id="query_cache_max_entries">
-  ## query_cache_max_entries
-</div>
+## query_cache_max_entries {#query_cache_max_entries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-現在のユーザーが [クエリキャッシュ](/ja/concepts/features/performance/caches/query-cache) に保存できるクエリ結果の最大件数です。0 は無制限を意味します。
+現在のユーザーがインメモリの [query cache](/ja/concepts/features/performance/caches/query-cache) に保存できるクエリ結果の最大件数です。0 は無制限を意味します。
+
+この制限は、ディスク上のquery cache (設定 `query_cache_on_disk_cache_name`) には適用されません。ディスク上のquery cacheのエントリは、この設定ではなく、基盤となるファイルシステムキャッシュのサイズによって制限されます。
 
 設定可能な値:
 
 * 0 以上の整数。
 
-<div id="query_cache_max_size_in_bytes">
-  ## query_cache_max_size_in_bytes
-</div>
+## query_cache_max_size_in_bytes {#query_cache_max_size_in_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-現在のユーザーが [クエリキャッシュ](/ja/concepts/features/performance/caches/query-cache) に割り当てられるメモリの最大量 (バイト単位) 。0 は無制限を意味します。
+現在のユーザーがインメモリの [query cache](/ja/concepts/features/performance/caches/query-cache) に割り当てられるメモリの最大量 (バイト単位) 。0 は無制限を意味します。
+
+この制限は、ディスク上のquery cache (設定 `query_cache_on_disk_cache_name`) には適用されません。ディスク上のquery cacheのエントリは、基盤となるファイルシステムキャッシュのサイズによって上限が決まります。
 
 設定可能な値:
 
 * 0 以上の整数。
 
-<div id="query_cache_min_query_duration">
-  ## query_cache_min_query_duration
-</div>
+## query_cache_min_query_duration {#query_cache_min_query_duration}
 
 <SettingsInfoBlock type="Milliseconds" default_value="0" />
 
@@ -77,9 +71,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 * 0 以上の整数。
 
-<div id="query_cache_min_query_runs">
-  ## query_cache_min_query_runs
-</div>
+## query_cache_min_query_runs {#query_cache_min_query_runs}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -89,9 +81,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 * 0 以上の整数。
 
-<div id="query_cache_nondeterministic_function_handling">
-  ## query_cache_nondeterministic_function_handling
-</div>
+## query_cache_nondeterministic_function_handling {#query_cache_nondeterministic_function_handling}
 
 <SettingsInfoBlock type="QueryResultCacheNondeterministicFunctionHandling" default_value="throw" />
 
@@ -103,9 +93,26 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 * `'save'` - クエリ結果を cache します。
 * `'ignore'` - クエリ結果を cache せず、例外もスローしません。
 
-<div id="query_cache_share_between_users">
-  ## query_cache_share_between_users
-</div>
+## query_cache_on_disk_cache_name {#query_cache_on_disk_cache_name}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "query cacheのエントリを、指定した名前のファイルシステムキャッシュを使ってディスク上に保存するための新しい設定。"}]}]} />
+
+[query cache](/ja/concepts/features/performance/caches/query-cache)のエントリをディスク上に保存するファイルシステムキャッシュ (サーバー設定の `filesystem_caches` セクション内のエントリ) の名前です。名前が指定されている場合 (かつ [use&#95;query&#95;cache](/ja/reference/settings/session-settings/use-query#use_query_cache) が有効な場合) 、クエリ結果は指定されたファイルシステムキャッシュにも追加でキャッシュされ、そこからも結果が返されます。ディスク上のquery cacheは、インメモリのquery cacheより大きな容量を確保でき、サーバーを再起動しても失われず、インメモリのquery cacheとは独立して動作します。具体的には、設定 [enable&#95;reads&#95;from&#95;query&#95;cache&#95;on&#95;disk](/ja/reference/settings/session-settings/enable#enable_reads_from_query_cache_on_disk) および [enable&#95;writes&#95;to&#95;query&#95;cache&#95;on&#95;disk](/ja/reference/settings/session-settings/enable#enable_writes_to_query_cache_on_disk) によって、インメモリのquery cacheとは別に制御されます。ファイルシステムキャッシュ内のこれらのエントリは、ファイルシステムキャッシュの通常のエントリとして扱われます。つまり、削除から保護されることはなく、キャッシュ内の他のデータと同じルールで追い出されます。`SYSTEM CLEAR FILESYSTEM CACHE '<name>'` を実行すると、これらのエントリはファイルシステムキャッシュ内の他のすべてのデータとともに削除されます。一方、`SYSTEM CLEAR QUERY CACHE` は、この設定で指定されたファイルシステムキャッシュからディスク上のquery cacheのエントリのみを削除し、その他のデータはそのまま残します。クエリ結果専用のファイルシステムキャッシュを用意することを推奨します。
+
+設定可能な値:
+
+* 空文字列 - ディスク上のquery cacheは無効になります
+* 事前に設定済みのファイルシステムキャッシュの名前
+
+## query_cache_on_disk_codec {#query_cache_on_disk_codec}
+
+<SettingsInfoBlock type="String" default_value="ZSTD(3)" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "ZSTD(3)"},{"label": "ディスク上の query cacheエントリの圧縮コーデックを制御する新しい設定です。"}]}]} />
+
+ディスク上の[query cache](/ja/concepts/features/performance/caches/query-cache)のエントリに使用する圧縮コーデックです ([query&#95;cache&#95;on&#95;disk&#95;cache&#95;name](/ja/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name) を参照) 。この設定が影響するのは書き込みのみです。圧縮データは自己記述的であるため、読み取りはこの設定とは無関係に行われます。
+
+## query_cache_share_between_users {#query_cache_share_between_users}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -117,9 +124,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 * 0 - 無効
 * 1 - 有効
 
-<div id="query_cache_squash_partial_results">
-  ## query_cache_squash_partial_results
-</div>
+## query_cache_squash_partial_results {#query_cache_squash_partial_results}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -130,9 +135,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 * 0 - 無効
 * 1 - 有効
 
-<div id="query_cache_system_table_handling">
-  ## query_cache_system_table_handling
-</div>
+## query_cache_system_table_handling {#query_cache_system_table_handling}
 
 <SettingsInfoBlock type="QueryResultCacheSystemTableHandling" default_value="throw" />
 
@@ -146,9 +149,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 * `'save'` - クエリ結果をキャッシュします。
 * `'ignore'` - クエリ結果をキャッシュせず、例外もスローしません。
 
-<div id="query_cache_tag">
-  ## query_cache_tag
-</div>
+## query_cache_tag {#query_cache_tag}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": ""},{"label": "query cache にラベルを付けるための新しい設定。"}]}]} />
 
@@ -159,9 +160,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 * 任意の文字列
 
-<div id="query_cache_ttl">
-  ## query_cache_ttl
-</div>
+## query_cache_ttl {#query_cache_ttl}
 
 <SettingsInfoBlock type="Seconds" default_value="60" />
 

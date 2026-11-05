@@ -120,6 +120,10 @@ private:
     /// Recalculates the number of rows stored in this table.
     void updateTotalRows(const WriteLock &);
 
+    /// Whether this table holds nothing on disk: no recorded bytes, and no rows according to the
+    /// engine's row signal. Must be called under the rwlock, after loadMarks().
+    bool hasNothingToBackUp() const;
+
     /// Restores the data of this table from backup.
     void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, std::chrono::seconds lock_timeout);
 

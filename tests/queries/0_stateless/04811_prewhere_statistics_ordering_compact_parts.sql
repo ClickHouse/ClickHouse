@@ -4,10 +4,9 @@
 -- collapsing every condition to the same cost and keeping the original WHERE order.
 -- See https://github.com/ClickHouse/ClickHouse/pull/110695
 
-SET enable_analyzer = 1;
 SET use_statistics = 1;
 SET materialize_statistics_on_insert = 1;
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1; -- CI may inject False, preventing statistics-based reordering
 SET explain_query_plan_default = 'legacy';
 

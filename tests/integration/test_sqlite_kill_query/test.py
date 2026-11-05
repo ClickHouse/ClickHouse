@@ -148,11 +148,12 @@ BUSY_WAIT_SECONDS = 3
 
 
 def test_kill_query_while_sqlite_busy(started_cluster):
-    # Take an exclusive lock on the SQLite database from a separate connection so that
-    # sqlite3_step in SQLiteSource::generate returns SQLITE_BUSY. Before the fix the
-    # retry loop did a bare `continue`, busy-spinning a full CPU core. The fix sleeps
-    # briefly and checks isCancelled() between retries, so the read idles at ~0 CPU
-    # and stays cancellable.
+    # Take an exclusive lock on the SQLite database from a separate connection so that the read blocks with
+    # SQLITE_BUSY. Each read runs on its own fresh SQLite connection, so the first thing it does under the lock
+    # is sqlite3_prepare_v2, which needs a shared lock to read sqlite_master; both prepare (SQLiteSource) and
+    # sqlite3_step (SQLiteStatementReader) retry on SQLITE_BUSY. Before the fix the retry loop did a bare
+    # `continue`, busy-spinning a full CPU core. The fix sleeps briefly and checks isCancelled() between
+    # retries, so the read idles at ~0 CPU and stays cancellable.
     #
     # This test asserts BOTH properties:
     #  1) no-busy-spin: the OS CPU time the query burns while blocked on the lock is a
@@ -161,11 +162,6 @@ def test_kill_query_while_sqlite_busy(started_cluster):
     #     The test would still pass on `master` (which is already cancellable) if it only
     #     checked cancellation, so this CPU bound is what actually protects the fix.
     #  2) cancellable: KILL cancels the read promptly even while the lock is held.
-
-    # Warm the pooled SQLite connection so its schema is cached. Otherwise the first
-    # sqlite3_prepare_v2 needs a shared lock to read sqlite_master and fails immediately
-    # under the exclusive lock below, before generate() (and the busy-retry loop) runs.
-    node1.query("SELECT count() FROM test_sqlite.big_data_table")
 
     conn = sqlite3.connect(DB_FILE_ON_HOST, isolation_level=None)
     conn.execute("BEGIN EXCLUSIVE")
@@ -186,8 +182,8 @@ def test_kill_query_while_sqlite_busy(started_cluster):
         query_thread.start()
 
         # Wait until the read is running and blocked on the lock. Poll system.processes
-        # rather than the server log: with the fix the read logs "Generate a chunk" only
-        # once and then blocks silently in the retry loop, so a log tail would race.
+        # rather than the server log: the read blocks silently inside the prepare/step
+        # retry loop while the lock is held, so a log tail would race.
         assert_eq_with_retry(
             node1,
             f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
@@ -230,20 +226,28 @@ def test_kill_query_while_sqlite_busy(started_cluster):
     # Read the CPU the query consumed from query_log. OSCPUVirtualTimeMicroseconds is the
     # OS-level CPU time for the query; while blocked on the lock the fix consumes almost
     # none, whereas the old bare-continue loop consumes ~one core (CPU ~= wall time).
-    node1.query("SYSTEM FLUSH LOGS")
-    cpu_us, duration_ms = (
-        node1.query(
+    #
+    # The server sends the cancellation error to the client before it finalizes the query
+    # and pushes the query_log entry, so the row can still be missing right after the
+    # client thread joined. Flush and retry until it appears instead of reading once.
+    row = ""
+    for _ in range(60):
+        node1.query("SYSTEM FLUSH LOGS")
+        row = node1.query(
             f"""SELECT
                     ProfileEvents['OSCPUVirtualTimeMicroseconds'],
                     query_duration_ms
                 FROM system.query_log
-                WHERE query_id = '{query_id}' AND type = 'ExceptionWhileProcessing'
+                WHERE query_id = '{query_id}' AND type != 'QueryStart'
                 ORDER BY event_time_microseconds DESC
                 LIMIT 1"""
-        )
-        .strip()
-        .split("\t")
-    )
+        ).strip()
+        if row:
+            break
+        time.sleep(0.5)
+
+    assert row, f"no query_log entry for the cancelled query {query_id}"
+    cpu_us, duration_ms = row.split("\t")
     cpu_us = int(cpu_us)
     duration_ms = int(duration_ms)
     # The query waited on the lock for essentially its whole lifetime. If the retry loop

@@ -23,13 +23,9 @@ doc_type: 'reference'
 
 `clickhousectl` 可帮助开发者和 AI 智能体使用 ClickHouse 进行开发。
 
-<div id="installation">
-  ## 安装
-</div>
+## 安装 {#installation}
 
-<div id="quick-install">
-  ### 快速安装
-</div>
+### 快速安装 {#quick-install}
 
 ```bash
 curl https://clickhouse.com/cli | sh
@@ -37,20 +33,14 @@ curl https://clickhouse.com/cli | sh
 
 安装脚本会下载适用于你所用操作系统的正确版本，并将其安装到 `~/.local/bin/clickhousectl`。为方便使用，还会自动创建一个 `chctl` 别名。
 
-<div id="requirements">
-  ## 要求
-</div>
+## 要求 {#requirements}
 
 * macOS (aarch64、x86&#95;64) 或 Linux (aarch64、x86&#95;64)
 * Cloud 命令需要 [ClickHouse Cloud API 密钥](/zh/products/cloud/features/admin-features/api/api-overview)
 
-<div id="local">
-  ## 本地
-</div>
+## 本地 {#local}
 
-<div id="installing-versions">
-  ### 安装和管理 ClickHouse 版本
-</div>
+### 安装和管理 ClickHouse 版本 {#installing-versions}
 
 `clickhousectl` 会从 `builds.clickhouse.com` 下载 ClickHouse 二进制文件；如果该站点没有可用构建，则会回退到 `packages.clickhouse.com` (Linux) 或 [GitHub Releases](https://github.com/ClickHouse/ClickHouse/releases) (macOS) 。
 
@@ -77,9 +67,7 @@ clickhousectl local remove 26.5.2.39
 
 `local use` 还会在 `~/.local/bin/clickhouse` 创建一个指向所选版本二进制文件的符号链接，从而让普通的 `clickhouse` 命令 (例如 `clickhouse local`、`clickhouse client`) 可通过 `PATH` 直接使用。传入 `--no-global` 可跳过此步骤。如果该路径处已存在普通文件，则会保留原状并发出警告。对当前启用的默认版本执行 `local remove` 也会清除此符号链接。
 
-<div id="binary-storage">
-  #### ClickHouse 二进制文件存储
-</div>
+#### ClickHouse 二进制文件存储 {#binary-storage}
 
 ClickHouse 二进制文件存放在全局存储库中，因此可供多个项目共享使用，无需重复占用存储空间。二进制文件存放在 `~/.clickhouse/` 中：
 
@@ -91,9 +79,7 @@ ClickHouse 二进制文件存放在全局存储库中，因此可供多个项目
 └── default              # tracks the active version
 ```
 
-<div id="initializing-project">
-  ### 初始化项目
-</div>
+### 初始化项目 {#initializing-project}
 
 ```bash
 clickhousectl local init
@@ -118,9 +104,7 @@ postgres/
 └── seed/                   # Seed data / INSERT statements
 ```
 
-<div id="running-queries">
-  ### 执行查询
-</div>
+### 执行查询 {#running-queries}
 
 ```bash
 # 使用 clickhouse-client 连接到正在运行的服务器
@@ -131,9 +115,7 @@ clickhousectl local client --queries-file schema.sql # 从文件执行查询
 clickhousectl local client --host remote-host --port 9000  # 连接到指定主机/端口
 ```
 
-<div id="managing-servers">
-  ### 创建和管理 ClickHouse 服务器
-</div>
+### 创建和管理 ClickHouse 服务器 {#managing-servers}
 
 启动并管理 ClickHouse 服务器实例。每个服务器都会在 `.clickhouse/servers/<name>/data/` 下拥有各自独立的数据目录。
 
@@ -170,9 +152,7 @@ clickhousectl local server dotenv --local                 # Write to .env.local 
 
 **全局服务器管理：**将 `--global` 与 `list`、`stop` 和 `stop-all` 一起使用，即可在整个系统范围内跨所有项目执行操作。`server list --global` 会显示所有正在运行的 ClickHouse 服务器，并包含一个 Project 列，用于标明每个服务器所属的目录。
 
-<div id="custom-config-files">
-  #### 本地服务器的自定义配置文件
-</div>
+#### 本地服务器的自定义配置文件 {#custom-config-files}
 
 本地服务器启动时会采用合理的默认设置，但有时你可能需要修改某项设置。将配置文件放入 `~/.clickhouse/configs/`，并在启动服务器时按名称应用：
 
@@ -193,9 +173,7 @@ clickhousectl local server start --config-file querylog
 
 这个指定名称的文件会**叠加在 ClickHouse 的内置默认配置之上** (通过 `config.d`) ，因此它只需包含你想更改的设置，无需提供完整的配置。文件可以是 `.xml`、`.yaml` 或 `.yml`，你可以按名称引用它们，带或不带扩展名均可。
 
-<div id="project-local-data">
-  #### 项目本地数据目录
-</div>
+#### 项目本地数据目录 {#project-local-data}
 
 所有服务器数据都存放在项目目录中的 `.clickhouse/` 内：
 
@@ -212,9 +190,7 @@ clickhousectl local server start --config-file querylog
 
 每个具名服务器都有各自的数据目录，因此服务器之间完全隔离。数据会在重启后保留。按名称停止并重新启动服务器，即可从上次离开的地方继续。使用 `clickhousectl local server remove <name>` 可永久删除某个服务器的数据。
 
-<div id="local-postgres">
-  ### 运行本地 Postgres
-</div>
+### 运行本地 Postgres {#local-postgres}
 
 除了 ClickHouse，`clickhousectl` 还可以运行和管理本地 Postgres 实例。本地 Postgres 基于 Docker，因此必须先安装并启动 Docker。每个实例通过名称和主版本号进行标识，因此可以让多个 Postgres 版本并行运行，并分别使用独立的数据目录。
 
@@ -240,17 +216,13 @@ clickhousectl local postgres stop dev
 clickhousectl local postgres remove dev
 ```
 
-<div id="authentication">
-  ## 身份验证
-</div>
+## 身份验证 {#authentication}
 
 使用 API 密钥 (推荐) 或 OAuth (基于浏览器) 对 ClickHouse Cloud 进行身份验证。
 
 如果您还没有 ClickHouse Cloud 账户，`clickhousectl cloud auth signup` 会在浏览器中打开注册页面。
 
-<div id="api-key">
-  ### API 密钥/Secret (推荐)
-</div>
+### API 密钥/Secret (推荐) {#api-key}
 
 API 密钥是推荐的身份验证方式，尤其是在通过 AI 智能体驱动命令行客户端时。你可以[创建有范围限制的 API 密钥](/zh/products/cloud/features/admin-features/api/openapi)，只授予你选择的权限 (只读或读/写) ，并且每个密钥都绑定到单个组织。这使其成为一种安全且遵循最小权限原则的方式，可为命令行客户端提供访问权限。
 
@@ -284,9 +256,7 @@ CLICKHOUSE_CLOUD_API_SECRET=your-secret
 clickhousectl cloud --api-key KEY --api-secret SECRET ...
 ```
 
-<div id="oauth-login">
-  ### OAuth 登录
-</div>
+### OAuth 登录 {#oauth-login}
 
 ```bash
 clickhousectl cloud auth login
@@ -298,9 +268,7 @@ clickhousectl cloud auth login
   OAuth 访问当前仅为 **只读**，并且可访问 **你所属的所有组织**。如果需要写入权限，或希望将命令行客户端限定为单个组织，请改为[创建一个有作用域的 API 密钥](#api-key)。
 </Note>
 
-<div id="auth-status">
-  ### 认证状态与退出登录
-</div>
+### 认证状态与退出登录 {#auth-status}
 
 ```bash
 clickhousectl cloud auth status    # Show current auth state
@@ -309,9 +277,7 @@ clickhousectl cloud auth logout    # Clear all saved credentials (credentials.js
 
 凭据解析顺序：CLI 参数 &gt; `.clickhouse/credentials.json` &gt; 已导出的环境变量 &gt; `.env` 文件 &gt; OAuth 令牌。
 
-<div id="debug-credentials">
-  ### 调试所使用的凭证来源
-</div>
+### 调试所使用的凭证来源 {#debug-credentials}
 
 为任意 `cloud` 命令添加 `--debug`，即可在命令运行前将解析后的凭证来源 (以及 API URL) 打印到 stderr。
 
@@ -322,15 +288,11 @@ clickhousectl cloud --debug service list
 # ... normal output ...
 ```
 
-<div id="cloud">
-  ## Cloud
-</div>
+## Cloud {#cloud}
 
 通过 API 管理 ClickHouse Cloud 服务。
 
-<div id="organizations">
-  ### 组织
-</div>
+### 组织 {#organizations}
 
 ```bash
 clickhousectl cloud org list              # 列出组织
@@ -345,9 +307,7 @@ clickhousectl cloud org usage <org-id> \
   --to-date 2024-01-31
 ```
 
-<div id="services">
-  ### 服务
-</div>
+### 服务 {#services}
 
 ```bash
 # List services
@@ -426,9 +386,7 @@ clickhousectl cloud service delete <service-id>
 clickhousectl cloud service delete <service-id> --force
 ```
 
-<div id="service-create-options">
-  #### 服务创建选项
-</div>
+#### 服务创建选项 {#service-create-options}
 
 | 选项                                         | 描述                                  |
 | ------------------------------------------ | ----------------------------------- |
@@ -455,9 +413,7 @@ clickhousectl cloud service delete <service-id> --force
 | `--private-preview-terms-checked`          | 在需要时接受私有预览条款                        |
 | `--enable-core-dumps`                      | 启用或禁用服务 core dump 收集                |
 
-<div id="query-api-auth-modes">
-  #### Query API 认证模式
-</div>
+#### Query API 认证模式 {#query-api-auth-modes}
 
 `cloud service query` 是通过 HTTP 对云服务运行 SQL 的标准方式，无需 `clickhouse` 可执行文件，也无需服务密码。它支持两种凭据模式：
 
@@ -466,9 +422,7 @@ clickhousectl cloud service delete <service-id> --force
 
 对处于 **休眠** 状态的服务发起查询时，这两种认证模式都会自动将其唤醒 (首次查询可能需要一分钟) 。**已停止** 的服务永远不会被唤醒：查询会失败，并提示运行 `cloud service start`。设置 `CLICKHOUSE_CLOUD_QUERY_HOST` 可覆盖自动推导出的 Query API host。
 
-<div id="query-endpoints">
-  #### 查询端点管理
-</div>
+#### 查询端点管理 {#query-endpoints}
 
 ```bash
 clickhousectl cloud service query-endpoint get <service-id>
@@ -479,18 +433,14 @@ clickhousectl cloud service query-endpoint create <service-id> \
 clickhousectl cloud service query-endpoint delete <service-id>
 ```
 
-<div id="private-endpoints">
-  #### 专用终结点管理
-</div>
+#### 专用终结点管理 {#private-endpoints}
 
 ```bash
 clickhousectl cloud service private-endpoint create <service-id> --endpoint-id vpce-123
 clickhousectl cloud service private-endpoint get-config <service-id>
 ```
 
-<div id="backup-config">
-  #### Backup 配置
-</div>
+#### Backup 配置 {#backup-config}
 
 ```bash
 clickhousectl cloud service backup-config get <service-id>
@@ -500,11 +450,9 @@ clickhousectl cloud service backup-config update <service-id> \
   --backup-start-time 02:00
 ```
 
-<div id="postgres-services">
-  ### Postgres 服务
-</div>
+### Postgres 服务 {#postgres-services}
 
-`clickhousectl` 还可以创建和管理 [ClickHouse Cloud Postgres](/zh/products/managed-postgres/overview) 服务，其用法与上面的 ClickHouse 服务命令类似。
+`clickhousectl` 还可以创建和管理 [ClickHouse Cloud Postgres](/zh/products/managed-postgres/overview) 服务，其用法与上面的 ClickHouse 服务命令类似。GCP 目前处于[私有预览](https://clickhouse.com/cloud/postgres#gcp-waitlist)阶段；请传入 `--provider gcp`，并指定 GCP 区域和实例规格。
 
 ```bash
 # List and inspect
@@ -512,13 +460,21 @@ clickhousectl cloud postgres list
 clickhousectl cloud postgres list --filter state=running
 clickhousectl cloud postgres get <pg-id>
 
-# Create a service
+# Create a service on AWS (the default provider)
 clickhousectl cloud postgres create \
   --name my-pg \
   --region us-east-1 \
   --size m7i.2xlarge \
   --pg-version 17 \
   --ha-type sync
+
+# Create a service on GCP (private preview); region and size use GCP names
+clickhousectl cloud postgres create \
+  --name my-pg \
+  --provider gcp \
+  --region us-central1 \
+  --size c4-standard-4 \
+  --pg-version 18
 
 # Update and delete
 clickhousectl cloud postgres update <pg-id> --size m7i.4xlarge
@@ -547,34 +503,28 @@ clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
 clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
 ```
 
-<div id="postgres-create-options">
-  #### Postgres 服务创建选项
-</div>
+#### Postgres 服务创建选项 {#postgres-create-options}
 
-| 选项                         | 描述                                 |
-| -------------------------- | ---------------------------------- |
-| `--name`                   | 服务名称 (必填)                          |
-| `--region`                 | 区域，例如 `us-east-1` (必填)             |
-| `--size`                   | 实例规格，例如 `m7i.2xlarge` (必填)         |
-| `--provider`               | 云提供商 (默认：`aws`)                    |
-| `--pg-version`             | 主版本：`18`、`17`                      |
-| `--ha-type`                | 高可用性：`none`、`async`、`sync`         |
-| `--tag`                    | 资源标签 `key` 或 `key=value` (可重复)     |
-| `--pg-config-file`         | 包含 `PgConfig` 对象的 JSON 文件路径        |
-| `--pg-bouncer-config-file` | 包含 `PgBouncerConfig` 对象的 JSON 文件路径 |
+| 选项                         | 描述                                                         |
+| -------------------------- | ---------------------------------------------------------- |
+| `--name`                   | 服务名称 (必填)                                                  |
+| `--region`                 | 区域，例如 AWS 上的 `us-east-1` 或 GCP 上的 `us-central1` (必填)       |
+| `--size`                   | 实例规格，例如 AWS 上的 `m7i.2xlarge` 或 GCP 上的 `c4-standard-4` (必填) |
+| `--provider`               | 云提供商：`aws`、`gcp` (默认：`aws`)                                |
+| `--pg-version`             | 主版本：`18`、`17`                                              |
+| `--ha-type`                | 高可用性：`none`、`async`、`sync`                                 |
+| `--tag`                    | 资源标签 `key` 或 `key=value` (可重复)                             |
+| `--pg-config-file`         | 包含 `PgConfig` 对象的 JSON 文件路径                                |
+| `--pg-bouncer-config-file` | 包含 `PgBouncerConfig` 对象的 JSON 文件路径                         |
 
-<div id="backups">
-  ### Backup
-</div>
+### Backup {#backups}
 
 ```bash
 clickhousectl cloud backup list <service-id>
 clickhousectl cloud backup get <service-id> <backup-id>
 ```
 
-<div id="clickpipes">
-  ### ClickPipes
-</div>
+### ClickPipes {#clickpipes}
 
 管理用于将外部来源的数据摄取到 ClickHouse Cloud 的 ClickPipes。
 
@@ -603,9 +553,7 @@ clickhousectl cloud clickpipe settings update <service-id> <clickpipe-id> \
   --streaming-max-insert-wait-ms 10000
 ```
 
-<div id="creating-clickpipes">
-  #### 创建 ClickPipes
-</div>
+#### 创建 ClickPipes {#creating-clickpipes}
 
 每种源类型在 `clickpipe create` 下都有对应的子命令：
 
@@ -680,9 +628,7 @@ clickhousectl cloud clickpipe create bigquery <service-id> \
 
 如需查看每种源类型的完整选项列表，请使用 `clickhousectl cloud clickpipe create <source> --help`。
 
-<div id="members">
-  ### 成员
-</div>
+### 成员 {#members}
 
 ```bash
 clickhousectl cloud member list
@@ -691,9 +637,7 @@ clickhousectl cloud member update <user-id> --role-id <role-id>
 clickhousectl cloud member remove <user-id>
 ```
 
-<div id="invitations">
-  ### 邀请
-</div>
+### 邀请 {#invitations}
 
 ```bash
 clickhousectl cloud invitation list
@@ -702,9 +646,7 @@ clickhousectl cloud invitation get <invitation-id>
 clickhousectl cloud invitation delete <invitation-id>
 ```
 
-<div id="keys">
-  ### 键
-</div>
+### 键 {#keys}
 
 ```bash
 clickhousectl cloud key list
@@ -718,18 +660,14 @@ clickhousectl cloud key update <key-id> \
 clickhousectl cloud key delete <key-id>
 ```
 
-<div id="activity">
-  ### 活动
-</div>
+### 活动 {#activity}
 
 ```bash
 clickhousectl cloud activity list --from-date 2024-01-01 --to-date 2024-12-31
 clickhousectl cloud activity get <activity-id>
 ```
 
-<div id="json-output">
-  ### JSON 输出
-</div>
+### JSON 输出 {#json-output}
 
 使用 `--json` 标志输出 JSON 格式的响应。
 
@@ -740,9 +678,7 @@ clickhousectl cloud --json service get <service-id>
 
 `clickhousectl` 会自动检测编码 agent 上下文 (Claude Code、Cursor、Codex、Gemini CLI、Goose、Devin，以及任何设置了标准 `AGENT` 环境变量的工具) ，并自动将 JSON 输出到 stdout，无需设置 `--json`。
 
-<div id="exit-codes">
-  ### 退出代码
-</div>
+### 退出代码 {#exit-codes}
 
 退出代码遵循 `gh` 命令行客户端的约定：
 
@@ -753,9 +689,7 @@ clickhousectl cloud --json service get <service-id>
 | `2` | 已取消 (用户中止)                      |
 | `4` | 需要认证 (无凭据、401/403、仅限 OAuth 写入)  |
 
-<div id="skills">
-  ## 技能
-</div>
+## 技能 {#skills}
 
 从 [ClickHouse/agent-skills](https://github.com/ClickHouse/agent-skills) 安装 ClickHouse 官方 Agent Skills。
 
@@ -776,9 +710,7 @@ clickhousectl skills --global --all
 clickhousectl skills --agent claude --agent codex
 ```
 
-<div id="non-interactive-flags">
-  ### 非交互式标志
-</div>
+### 非交互式标志 {#non-interactive-flags}
 
 | 标志                | 描述                   |
 | ----------------- | -------------------- |
@@ -787,9 +719,7 @@ clickhousectl skills --agent claude --agent codex
 | `--all`           | 为所有受支持的智能体安装技能       |
 | `--detected-only` | 为系统中已检测到的受支持智能体安装技能  |
 
-<div id="self-update">
-  ## 自行更新
-</div>
+## 自行更新 {#self-update}
 
 `clickhousectl` 可以自行更新到最新版本：
 
@@ -803,9 +733,7 @@ clickhousectl update --check
 
 命令行客户端还会在后台检查更新 (最多每 24 小时检查一次) ，并在有新版本可用时显示通知。
 
-<div id="telemetry">
-  ## 遥测
-</div>
+## 遥测 {#telemetry}
 
 `clickhousectl` 会收集匿名使用遥测数据，以帮助我们了解命令行客户端的使用方式。该功能默认启用，但在通知您之前绝不会发送任何数据：首次运行时，命令行客户端会显示一则说明，告知会收集哪些信息以及如何关闭此功能，并且不会发送任何数据。仅从后续运行开始收集，因此您始终可以在收集任何信息前选择退出。
 
