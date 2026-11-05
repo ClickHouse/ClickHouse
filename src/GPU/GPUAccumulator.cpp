@@ -379,10 +379,10 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
 
     for (const auto & value : derived)
     {
-        for (uint32_t i = 0; i < value.num_columns; ++i)
+        for (const uint32_t column : value.columns)
         {
-            if (value.columns[i] >= values.size() || values[value.columns[i]] != GPUElementType::Float64)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "A value the GPU derives from value {} of {}", value.columns[i], values.size());
+            if (column >= values.size() || values[column] != GPUElementType::Float64)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "A value the GPU derives from value {} of {}", column, values.size());
         }
     }
 

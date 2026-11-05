@@ -15,8 +15,7 @@ namespace DB::GPU
 struct GPUDerivedValue
 {
     GPUExpression expression;
-    uint32_t columns[max_expression_columns];
-    uint32_t num_columns = 0;
+    GPUSpan<uint32_t> columns;
 };
 
 /// A `GROUP BY` on the device through one `cudf::groupby::streaming_groupby`, which keeps the groups on the device across

@@ -287,18 +287,15 @@ struct CudfGroupBy::State
     /// Sets the bits of `filter_mask` of the rows `filter` holds for, and returns how many of the rows it leaves out.
     __host__ cudf::size_type evaluateFilter(size_t rows, GPUSpan<DeviceFixedColumn> filter_columns, const GPUExpression & filter)
     {
-        if (filter_columns.size() > max_expression_columns)
-            throwGPUError(("a `WHERE` over " + std::to_string(filter_columns.size()) + " columns").c_str());
-
-        GPUExpressionInputs inputs;
-        inputs.count = static_cast<uint32_t>(filter_columns.size());
-        for (size_t i = 0; i < filter_columns.size(); ++i)
+        std::vector<GPUExpressionInput> inputs;
+        inputs.reserve(filter_columns.size());
+        for (const auto & column : filter_columns)
         {
-            if (filter_columns[i].rows != rows)
-                throwGPUError(("a column of a `WHERE` of " + std::to_string(filter_columns[i].rows) + " rows in a batch of " + std::to_string(rows)).c_str());
-            inputs.columns[i] = {.data = filter_columns[i].data, .type = filter_columns[i].element_type};
+            if (column.rows != rows)
+                throwGPUError(("a column of a `WHERE` of " + std::to_string(column.rows) + " rows in a batch of " + std::to_string(rows)).c_str());
+            inputs.push_back({.data = column.data, .type = column.element_type});
         }
-        return evaluateFilter(rows, inputs, filter);
+        return evaluateFilter(rows, GPUExpressionInputs{.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())}, filter);
     }
 
     __host__ cudf::size_type evaluateFilter(size_t rows, const GPUExpressionInputs & inputs, const GPUExpression & filter)
@@ -474,21 +471,20 @@ struct CudfGroupBy::State
     }
 
     /// The value columns of a batch of `rows` rows that `derived` is computed from.
-    __host__ static GPUExpressionInputs inputsOf(const GPUDerivedValue & derived, const std::vector<DeviceFixedColumn> & values, size_t rows)
+    __host__ static std::vector<GPUExpressionInput> inputsOf(const GPUDerivedValue & derived, const std::vector<DeviceFixedColumn> & values, size_t rows)
     {
-        if (derived.expression.result != GPUExpressionResult::Float64 || derived.num_columns > max_expression_columns)
-            throwGPUError(("a derived value of " + std::to_string(derived.num_columns) + " columns, or not into a `Float64`").c_str());
+        if (derived.expression.result != GPUExpressionResult::Float64)
+            throwGPUError("a derived value not into a `Float64`");
 
-        GPUExpressionInputs inputs;
-        inputs.count = derived.num_columns;
-        for (uint32_t i = 0; i < derived.num_columns; ++i)
+        std::vector<GPUExpressionInput> inputs;
+        inputs.reserve(derived.columns.size());
+        for (const uint32_t column : derived.columns)
         {
-            const uint32_t column = derived.columns[i];
             if (column >= values.size())
                 throwGPUError(("a derived value of value column " + std::to_string(column) + " of " + std::to_string(values.size())).c_str());
             if (values[column].rows < rows)
                 throwGPUError(("a derived value of " + std::to_string(rows) + " rows over a column of " + std::to_string(values[column].rows)).c_str());
-            inputs.columns[i] = {.data = values[column].data, .type = values[column].element_type};
+            inputs.push_back({.data = values[column].data, .type = values[column].element_type});
         }
         return inputs;
     }
@@ -513,7 +509,9 @@ struct CudfGroupBy::State
             rmm::device_buffer & out = derived_values[j];
             if (out.size() < rows * sizeof(double))
                 out.resize(rows * sizeof(double), stream);
-            evaluateGPUExpression(derived[j].expression, inputsOf(derived[j], batch_values, rows), rows, out.data(), stream);
+            const std::vector<GPUExpressionInput> inputs = inputsOf(derived[j], batch_values, rows);
+            evaluateGPUExpression(
+                derived[j].expression, {.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())}, rows, out.data(), stream);
             columns.emplace_back(cudf::data_type{cudf::type_id::FLOAT64}, static_cast<cudf::size_type>(rows), out.data(), nullptr, 0);
         }
     }
@@ -548,10 +546,10 @@ __host__ CudfGroupBy::CudfGroupBy(
     {
         if (values[values.size() - derived.size() + j] != GPUElementType::Float64)
             throwGPUError("a derived value of other than a `Float64`");
-        for (uint32_t i = 0; i < derived[j].num_columns; ++i)
+        for (const uint32_t column : derived[j].columns)
         {
-            if (derived[j].columns[i] >= values.size() - derived.size())
-                throwGPUError(("a derived value of value " + std::to_string(derived[j].columns[i]) + ", which is not of a batch").c_str());
+            if (column >= values.size() - derived.size())
+                throwGPUError(("a derived value of value " + std::to_string(column) + ", which is not of a batch").c_str());
         }
     }
 
@@ -785,17 +783,13 @@ __host__ size_t CudfGroupBy::filterGroups(const GPUExpression & expression, GPUS
     if (!state->groups || state->groups->num_rows() == 0)
         return 0;
 
-    if (columns.size() > max_expression_columns)
-        throwGPUError(("a filter of the groups over " + std::to_string(columns.size()) + " columns").c_str());
-
     const cudf::table_view groups = state->groups->view();
     const auto rows = static_cast<size_t>(groups.num_rows());
 
-    GPUExpressionInputs inputs;
-    inputs.count = static_cast<uint32_t>(columns.size());
-    for (size_t i = 0; i < columns.size(); ++i)
+    std::vector<GPUExpressionInput> inputs;
+    inputs.reserve(columns.size());
+    for (const uint32_t column : columns)
     {
-        const uint32_t column = columns[i];
         const GPUElementType element_type = column < state->keys.size()
             ? state->keys[column]
             : (column - state->keys.size() < state->aggregates.size() ? state->aggregates[column - state->keys.size()].result_type
@@ -804,10 +798,11 @@ __host__ size_t CudfGroupBy::filterGroups(const GPUExpression & expression, GPUS
             throwGPUError(("a filter of the groups over column " + std::to_string(column) + ", which is not of a fixed width").c_str());
         const cudf::column_view view = groups.column(static_cast<cudf::size_type>(column));
         checkNoNulls(view);
-        inputs.columns[i] = {.data = view.head<char>(), .type = element_type};
+        inputs.push_back({.data = view.head<char>(), .type = element_type});
     }
 
-    const cudf::size_type left_out = state->evaluateFilter(rows, inputs, expression);
+    const cudf::size_type left_out
+        = state->evaluateFilter(rows, {.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())}, expression);
     if (left_out == 0)
         return rows;
     state->groups = state->compact(std::vector<cudf::column_view>(groups.begin(), groups.end()), rows, left_out);

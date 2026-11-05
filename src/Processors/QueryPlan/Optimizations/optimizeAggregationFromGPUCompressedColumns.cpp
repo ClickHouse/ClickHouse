@@ -363,7 +363,7 @@ std::optional<ReadColumns> matchReducedColumns(
                         .result_type = read_column->type,
                         .aggregation = aggregation,
                     });
-                derived.columns.push_back(position->second);
+                derived.columns.push_back(static_cast<uint32_t>(position->second));
             }
 
             matched.aggregates.push_back({

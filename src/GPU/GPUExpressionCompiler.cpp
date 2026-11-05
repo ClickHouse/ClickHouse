@@ -46,7 +46,6 @@
 
 namespace DB::ErrorCodes
 {
-
     extern const int CANNOT_COMPILE_CODE;
     extern const int LOGICAL_ERROR;
 }
@@ -146,8 +145,6 @@ std::optional<DeviceDAG> deviceDAGOf(const ActionsDAG::Node & root, String & ref
             refusal = "a constant of type " + node.result_type->getName() + ", which does not compile";
         else if (const auto type = filterElementTypeOf(*node.result_type); !type || *type == GPUElementType::String)
             refusal = "a column of type " + node.result_type->getName() + ", which the device does not read";
-        else if (result.columns.size() >= max_expression_columns)
-            refusal = "an expression of more columns than the device takes";
         else
         {
             result.columns.emplace_back(node.result_name, node.result_type);
@@ -326,7 +323,10 @@ std::optional<CompiledGPUExpression> compile(const ActionsDAG & dag, const Strin
         if (!ptx)
             return {};
 
-        kernel = kernels.getOrSet(key, [&] { return GPUKernel::load(name, *ptx); }).first;
+        std::vector<GPUElementType> column_types;
+        for (const auto & column : device_dag.columns)
+            column_types.push_back(*filterElementTypeOf(*column.type));
+        kernel = kernels.getOrSet(key, [&] { return GPUKernel::load(name, *ptx, std::move(column_types)); }).first;
     }
 
     CompiledGPUExpression compiled;
@@ -334,9 +334,8 @@ std::optional<CompiledGPUExpression> compile(const ActionsDAG & dag, const Strin
     compiled.expression.result = output;
     compiled.expression.block_size = kernel->block_size;
     compiled.expression.name = kernel->name.c_str();
-    compiled.expression.num_columns = static_cast<uint32_t>(device_dag.columns.size());
-    for (size_t i = 0; i < device_dag.columns.size(); ++i)
-        compiled.expression.column_types[i] = *filterElementTypeOf(*device_dag.columns[i].type);
+    compiled.expression.column_types = kernel->column_types.data();
+    compiled.expression.num_columns = static_cast<uint32_t>(kernel->column_types.size());
     compiled.columns = std::move(device_dag.columns);
     compiled.kernel = std::move(kernel);
     return compiled;

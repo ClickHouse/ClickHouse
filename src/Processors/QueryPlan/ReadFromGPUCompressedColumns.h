@@ -47,7 +47,7 @@ public:
         /// Keeps the kernel of `expression` loaded.
         std::shared_ptr<const GPU::GPUKernel> kernel;
         /// Of `columns`, what it loads as its column `i`.
-        std::vector<size_t> columns;
+        std::vector<uint32_t> columns;
         /// The expression as the plan names it.
         String description;
     };

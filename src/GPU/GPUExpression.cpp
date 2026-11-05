@@ -11,10 +11,10 @@
 #include <cuda_runtime_api.h>
 
 #include <string>
+#include <vector>
 
 namespace DB::ErrorCodes
 {
-
     extern const int GPU_ERROR;
 }
 
@@ -37,9 +37,9 @@ void evaluateGPUExpression(
             throw Exception(ErrorCodes::GPU_ERROR, "Kernel {} run over column {} of another type than it was compiled for", expression.name, i);
     }
 
-    const void * columns[max_expression_columns];
+    std::vector<const void *> columns(inputs.count);
     uint64_t num_rows = rows;
-    void * arguments[max_expression_columns + 2];
+    std::vector<void *> arguments(inputs.count + 2);
     for (uint32_t i = 0; i < inputs.count; ++i)
     {
         columns[i] = inputs.columns[i].data;
@@ -50,7 +50,7 @@ void evaluateGPUExpression(
 
     const dim3 blocks(static_cast<unsigned>((rows + expression.block_size - 1) / expression.block_size));
     checkCuda(
-        cudaLaunchKernel(reinterpret_cast<const void *>(expression.kernel), blocks, dim3(expression.block_size), arguments, 0, stream.get()),
+        cudaLaunchKernel(reinterpret_cast<const void *>(expression.kernel), blocks, dim3(expression.block_size), arguments.data(), 0, stream.get()),
         ("Cannot run kernel " + std::string(expression.name)).c_str());
 }
 

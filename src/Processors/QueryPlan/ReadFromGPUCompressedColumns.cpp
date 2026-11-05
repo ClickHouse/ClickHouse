@@ -420,14 +420,7 @@ private:
         result.reserve(derived.size());
         for (const auto & column : derived)
         {
-            if (column.columns.size() > GPU::max_expression_columns)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "A value the GPU derives from {} columns", column.columns.size());
-            GPU::GPUDerivedValue value;
-            value.expression = column.expression;
-            for (size_t i = 0; i < column.columns.size(); ++i)
-                value.columns[i] = static_cast<uint32_t>(column.columns[i]);
-            value.num_columns = static_cast<uint32_t>(column.columns.size());
-            result.push_back(value);
+            result.push_back({.expression = column.expression, .columns = GPU::GPUSpan<uint32_t>(column.columns)});
         }
         return result;
     }
