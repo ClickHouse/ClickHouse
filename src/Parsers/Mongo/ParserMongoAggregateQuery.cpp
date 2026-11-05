@@ -854,10 +854,14 @@ ASTPtr makeArrayMap(const std::string & parameter, ASTPtr body, ASTPtr array)
     return makeASTFunction("arrayMap", makeASTFunction("lambda", std::move(parameters), std::move(body)), std::move(array));
 }
 
+/// The index of `$unwind` replaces a field of the same name, with everything under it.
 void addUnwindIndexField(SelectChain & chain, const std::string & index_name)
 {
     if (chain.fields.kind == StreamFields::Kind::Names)
+    {
+        std::erase_if(chain.fields.names, [&](const std::string & name) { return isInFieldSubtree(name, index_name); });
         chain.fields.names.push_back(index_name);
+    }
     else
         chain.fields = {};
 }
@@ -916,7 +920,12 @@ void translateUnwindPreservingEmpty(SelectChain & chain, const std::string & pat
     auto replace_transformer = make_intrusive<ASTColumnsReplaceTransformer>();
     replace_transformer->children.push_back(std::move(replacement));
 
-    auto asterisk = makeAsterisk(helper_columns);
+    /// The index replaces a field of the same name, as in Mongo: the field is not carried along with
+    /// the other ones, or the next select would read it rather than the index.
+    std::vector<std::string> excluded = helper_columns;
+    if (!index_name.empty())
+        excluded.push_back(index_name);
+    auto asterisk = makeAsterisk(excluded);
     asterisk->as<ASTAsterisk &>().transformers->children.push_back(std::move(replace_transformer));
 
     auto select_list = make_intrusive<ASTExpressionList>();
@@ -928,7 +937,7 @@ void translateUnwindPreservingEmpty(SelectChain & chain, const std::string & pat
     }
     chain.select_list = std::move(select_list);
     /// The join keeps the order of the documents, and every field but the unwound one keeps its value.
-    chain.select_list_preserves_order_keys = exclusionPreservesOrderKeys(chain.order, {path});
+    chain.select_list_preserves_order_keys = exclusionPreservesOrderKeys(chain.order, {path, index_name});
 
     /// The stages that follow see documents in which the field is one element of the array.
     chain.wrap();
@@ -969,6 +978,12 @@ void translateUnwind(SelectChain & chain, const rapidjson::Value & stage)
     if (!path.starts_with("$") || path.size() == 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The path of '$unwind' must be a non-empty field name starting with '$'");
     path = path.substr(1);
+    if (index_name.starts_with("$"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'includeArrayIndex' of '$unwind' must not start with '$'");
+    /// The index replaces the field of its name, which cannot be the unwound one or around it.
+    if (!index_name.empty() && (isInFieldSubtree(path, index_name) || isInFieldSubtree(index_name, path)))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED, "The 'includeArrayIndex' of '$unwind' must not be the unwound field, nor a field around or under it");
 
     /** An `ARRAY JOIN` applies to the rows the select reads, so everything collected so far has to
       * be below it - including a `WHERE`, which in the pipeline filters the documents before they
@@ -986,6 +1001,9 @@ void translateUnwind(SelectChain & chain, const rapidjson::Value & stage)
     auto expressions = make_intrusive<ASTExpressionList>();
     expressions->children.push_back(make_intrusive<ASTIdentifier>(path));
 
+    /// The index is joined under a name of its own, so that a field of the name it is given is not
+    /// confused with it in the select that joins it.
+    static constexpr auto index_column = "__mongo_unwind_index";
     if (!index_name.empty())
     {
         /// A second array of the same length is joined element by element with the first one.
@@ -993,7 +1011,7 @@ void translateUnwind(SelectChain & chain, const rapidjson::Value & stage)
         auto body = makeASTFunction("minus", make_intrusive<ASTIdentifier>("__mongo_index"), makeLiteral(Field(UInt64(1))));
         auto positions = makeASTFunction("arrayEnumerate", make_intrusive<ASTIdentifier>(path));
         auto indexes = makeArrayMap("__mongo_index", std::move(body), std::move(positions));
-        expressions->children.push_back(withAlias(std::move(indexes), index_name));
+        expressions->children.push_back(withAlias(std::move(indexes), index_column));
     }
 
     /// Mongo drops a document whose array is empty or missing, which is what an inner `ARRAY JOIN` does.
@@ -1002,11 +1020,13 @@ void translateUnwind(SelectChain & chain, const rapidjson::Value & stage)
     if (!index_name.empty())
     {
         /// A `*` does not expand to the columns an `ARRAY JOIN` introduces, so the index has to be
-        /// named in the list of the select that produces it.
+        /// named in the list of the select that produces it. It replaces a field of the same name,
+        /// as in Mongo, so that field is not carried along.
         auto select_list = make_intrusive<ASTExpressionList>();
-        select_list->children.push_back(makeAsterisk({}));
-        select_list->children.push_back(make_intrusive<ASTIdentifier>(index_name));
+        select_list->children.push_back(makeAsterisk({index_name}));
+        select_list->children.push_back(withAlias(make_intrusive<ASTIdentifier>(index_column), index_name));
         chain.select_list = std::move(select_list);
+        chain.select_list_preserves_order_keys = exclusionPreservesOrderKeys(chain.order, {path, index_name});
         addUnwindIndexField(chain, index_name);
     }
 
