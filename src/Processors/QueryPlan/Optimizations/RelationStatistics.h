@@ -30,7 +30,7 @@ struct RelationStats
     /// `NoSource` means the producer of the estimate did not track it; set it wherever it is known.
     RowEstimateSource source = RowEstimateSource::NoSource;
 
-    /// `estimated_rows` is the share of rows assumed for a filter nothing could estimate, so a measured row count replaces it.
+    /// `estimated_rows` is, or is derived from, the share of rows assumed for a filter nothing could estimate, so a measured row count replaces it.
     bool assumed_filter_selectivity = false;
 };
 

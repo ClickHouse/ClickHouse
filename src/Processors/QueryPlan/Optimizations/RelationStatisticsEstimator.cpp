@@ -403,17 +403,19 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         /// The name is already a chain of the sub-joins with their own estimates, so mark it composite
         /// to keep the parent from appending a second estimate to it.
         /// A filter above the join (`filter`, from the `FilterStep` branch) cannot be estimated, so like a storage read with such a
-        /// filter it keeps the default share of the rows; the runtime-filter transport gets no estimate.
+        /// filter it keeps the default share of the rows; the runtime-filter transport gets no estimate assumed here or by a leaf.
         std::optional<UInt64> rows = join_step->getResultRowsEstimation();
         if (filter)
             rows = rows && !for_runtime_filter_transport ? std::optional<UInt64>(applyUnestimatedFilterSelectivity(*rows)) : std::nullopt;
+        else if (for_runtime_filter_transport && join_step->hasAssumedFilterSelectivity())
+            rows.reset();
         return RelationStats{
             .estimated_rows = rows,
             .column_stats = join_step->getResultColumnStats(),
             .table_name = join_step->getReadableRelationName(),
             .imprecise_estimate = filter != nullptr || join_step->hasImpreciseEstimate(),
             .composite = true,
-            .assumed_filter_selectivity = filter != nullptr && rows.has_value()};
+            .assumed_filter_selectivity = rows.has_value() && (filter != nullptr || join_step->hasAssumedFilterSelectivity())};
     }
 
     if (node.children.size() != 1)

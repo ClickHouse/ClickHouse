@@ -647,6 +647,7 @@ static size_t addChildQueryGraph(
         stats.estimated_rows = num_rows_from_cache;
         stats.imprecise_estimate = false;
         stats.source = RowEstimateSource::HashTableCache;
+        stats.assumed_filter_selectivity = false;
     }
 
     if (!label.empty())
@@ -1195,10 +1196,12 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     Strings relations_without_statistics;
     Strings relations_estimated_from_data_lake_metadata;
     std::vector<UInt8> leaf_imprecise(query_graph.relation_stats.size());
+    std::vector<UInt8> leaf_assumed_filter_selectivity(query_graph.relation_stats.size());
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
         leaf_imprecise[i] = rel.imprecise_estimate;
+        leaf_assumed_filter_selectivity[i] = rel.assumed_filter_selectivity;
 
         relation_infos[BitSet().set(i)] = RelationEstimateInfo{
             .name = rel.table_name.empty() ? fmt::format("R{}", i) : rel.table_name,
@@ -1567,9 +1570,14 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
             /// Diagnostic only: a join is imprecise if any of its leaves was (see `leaf_imprecise` above).
             bool imprecise_estimate = false;
+            /// A join estimate derived from a leaf of assumed filter selectivity is replaced by a measured row count, as the leaf's is.
+            bool assumed_filter_selectivity = false;
             for (size_t i = 0; i < leaf_imprecise.size(); ++i)
                 if (entry->relations.test(i))
+                {
                     imprecise_estimate |= leaf_imprecise[i];
+                    assumed_filter_selectivity |= leaf_assumed_filter_selectivity[i];
+                }
 
             join_step->setInputRelations(relation_infos[left_rels], relation_infos[right_rels]);
             relation_infos[entry->relations] = RelationEstimateInfo{
@@ -1578,7 +1586,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 .imprecise_estimate = imprecise_estimate,
                 .composite = true};
 
-            join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
+            join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id, assumed_filter_selectivity);
 
             auto & new_node = nodes.emplace_back();
 

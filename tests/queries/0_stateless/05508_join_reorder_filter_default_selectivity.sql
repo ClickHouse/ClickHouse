@@ -116,6 +116,19 @@ SELECT count() FROM mid JOIN
 ) AS s ON s.k = mid.k
 FORMAT Null SETTINGS log_comment = '05508 cache_sub_join_2', collect_hash_table_stats_during_joins = 1, use_hash_table_stats_for_join_reordering = 1;
 
+-- Inside the aggregation `orders` (assumed 20000) is the probe side, so only the sub-join `s` gets hash table statistics, measured
+-- 99000 rows; its estimate comes from the assumed share, so the second run uses the measured rows and `mid` becomes the build side.
+SELECT count() FROM mid JOIN
+(
+    SELECT o_orderkey AS k FROM orders JOIN customer ON o_custkey = c_custkey WHERE o_flag = 0 GROUP BY o_orderkey
+) AS s ON s.k = mid.k
+FORMAT Null SETTINGS log_comment = '05508 cache_grouped_join_1', collect_hash_table_stats_during_joins = 1, use_hash_table_stats_for_join_reordering = 1;
+SELECT count() FROM mid JOIN
+(
+    SELECT o_orderkey AS k FROM orders JOIN customer ON o_custkey = c_custkey WHERE o_flag = 0 GROUP BY o_orderkey
+) AS s ON s.k = mid.k
+FORMAT Null SETTINGS log_comment = '05508 cache_grouped_join_2', collect_hash_table_stats_during_joins = 1, use_hash_table_stats_for_join_reordering = 1;
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT log_comment, ProfileEvents['JoinBuildTableRowCount'] AS build
