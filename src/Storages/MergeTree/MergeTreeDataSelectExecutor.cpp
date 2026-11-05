@@ -873,7 +873,7 @@ std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseInde
     const NameSet & all_updated_columns,
     const NameSet & value_updated_columns,
     const ContextPtr & context,
-    const IMergeTreeDataPart * part)
+    const SecondaryIndexColumnTypes * index_column_types)
 {
     if (all_updated_columns.empty() && value_updated_columns.empty())
         return {};
@@ -935,11 +935,11 @@ std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseInde
             continue;
 
         /// A value-preserving type change keeps the values, so the index still prunes when its granules
-        /// were built against the current read type, which the part records. Without a part, stay
+        /// were built against the current read type, which the part records. Without a record, stay
         /// conservative and reject.
-        if (part)
+        if (index_column_types)
         {
-            auto built_type_name = part->getSecondaryIndexColumnTypes().tryGetBuiltType(index->index.name, required_column.name);
+            auto built_type_name = index_column_types->tryGetBuiltType(index->index.name, required_column.name);
             if (built_type_name && *built_type_name == required_column.type->getName())
                 continue;
         }
@@ -1204,7 +1204,7 @@ static bool partHasStaleTopKIndex(
         /// DROP COLUMN / RENAME COLUMN of its name, makes its minmax stale. Reuse the same overlap check
         /// the regular skip-index path uses (canUseIndex), so the top-k path is consistent with it.
         /// Changes to other columns leave the index valid.
-        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getColumnsInvalidatingIndexes(), alter_conversions->getValueUpdatedColumns(), context, part.get()))
+        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getColumnsInvalidatingIndexes(), alter_conversions->getValueUpdatedColumns(), context, &part->getSecondaryIndexColumnTypes()))
             return true;
     }
 
@@ -1525,7 +1525,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
                 {
-                    auto check_result = canUseIndex(index, metadata_snapshot, all_updated_columns, value_updated_columns, context, ranges.data_part.get());
+                    auto check_result = canUseIndex(index, metadata_snapshot, all_updated_columns, value_updated_columns, context, &ranges.data_part->getSecondaryIndexColumnTypes());
                     if (!check_result)
                     {
                         return std::unexpected(PreformattedMessage::create(
