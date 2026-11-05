@@ -71,6 +71,7 @@ INSERT INTO t_dst VALUES (1767225600);
 CREATE TABLE t_merge (x DateTime('UTC')) ENGINE = Merge(currentDatabase(), '^t_dst$');
 SELECT x, toHour(x) FROM t_merge;
 SELECT count() FROM t_merge WHERE toHour(x) = 0;
+SELECT count() FROM t_merge PREWHERE toHour(x) = 0; -- { serverError ILLEGAL_PREWHERE }
 
 SELECT 'Variant';
 CREATE TABLE t_var (x Variant(DateTime, String)) ENGINE = Memory;
