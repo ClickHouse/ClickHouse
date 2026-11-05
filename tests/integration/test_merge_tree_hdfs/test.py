@@ -6,6 +6,7 @@ import pytest
 from pyhdfs import HdfsClient
 
 from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.config_manager import ConfigManager
 from helpers.utility import generate_values
 from helpers.wait_for_helpers import (
     wait_for_delete_empty_parts,
@@ -85,7 +86,14 @@ def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
-            "node", main_configs=["configs/config.d/storage_conf.xml"], with_hdfs=True
+            "node",
+            main_configs=[
+                "configs/config.d/storage_conf.xml",
+                "configs/config.d/hdfs_locations.xml",
+            ],
+            macros={"hdfs_host": "hdfs1"},
+            with_hdfs=True,
+            stay_alive=True,
         )
         logging.info("Starting cluster...")
         cluster.start()
@@ -451,3 +459,86 @@ def test_move_replace_partition_to_another_table(cluster):
         - FILES_OVERHEAD_METADATA_VERSION * 2
         + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 2,
     )
+
+
+def test_sql_hdfs_disk_remote_host_filter(cluster):
+    node = cluster.instances["node"]
+    fs = HdfsClient(hosts=cluster.hdfs_ip, user_name="root")
+    include_settings = {
+        "dynamic_disk_allow_include": 1,
+        "s3_allow_server_credentials_in_user_queries": 1,
+    }
+
+    def hdfs_disk(path, host="hdfs1"):
+        return f"disk(type = 'hdfs', endpoint = 'hdfs://{host}:9000/sql_disk_filter/{path}/')"
+
+    existing_disk = hdfs_disk("filter_existing")
+    macro_disk = hdfs_disk("filter_macro", host="{hdfs_host}")
+    locations_disk = "disk(type = 'object_storage', include = 'hdfs_locations')"
+    named_disk = (
+        "disk(name = 'old_hdfs', type = 'hdfs', "
+        "endpoint = 'hdfs://hdfs1:9000/sql_disk_filter/filter_named/')"
+    )
+    wrapper_disks = [
+        "disk(type = 'encrypted', disk = 'old_hdfs', key = '0123456789abcdef', path = 'bypass/')",
+        "disk(type = 'cache', disk = 'old_hdfs', path = 'hdfs_bypass_cache/', max_size = '1Mi')",
+    ]
+
+    def create(table, disk, settings=None):
+        node.query(
+            f"CREATE TABLE {table} (x UInt32) ENGINE = MergeTree ORDER BY x SETTINGS disk = {disk}",
+            settings=settings,
+        )
+        node.query(f"INSERT INTO {table} VALUES (1)")
+
+    def assert_rejected(disk, settings=None):
+        error = node.query_and_get_error(
+            f"CREATE TABLE t_rejected_hdfs_disk (x UInt32) ENGINE = MergeTree ORDER BY x SETTINGS disk = {disk}",
+            settings=settings,
+        )
+        assert "UNACCEPTABLE_URL" in error, error
+
+    def assert_reuse_rejected():
+        assert_rejected(existing_disk)
+        assert_rejected(locations_disk, settings=include_settings)
+        # A new wrapper takes the old custom disk by name, without building an HDFS object storage.
+        for wrapper in wrapper_disks:
+            assert_rejected(wrapper)
+
+    # Created before the list excludes hdfs1: loaded from metadata on restart, so they are only reported.
+    create("t_existing_hdfs_disk", existing_disk)
+    create("t_locations_hdfs_disk", locations_disk, settings=include_settings)
+    create("t_named_hdfs_disk", named_disk)
+    create("t_macro_hdfs_disk", macro_disk)
+
+    with ConfigManager() as cm:
+        cm.add_main_config(node, "configs/remote_url_allow_hosts.xml")
+
+        assert_rejected(hdfs_disk("filter_blocked"))
+        # Rejected before HDFSObjectStorage connects, so the access check wrote nothing.
+        assert not fs.exists("/sql_disk_filter/filter_blocked")
+        # Identical definitions reuse the disks created before the list was tightened.
+        assert_reuse_rejected()
+
+        # The macro now expands to an allowed host, but the reused disk still points at hdfs1.
+        cm.add_main_config(node, "configs/macros_override.xml")
+        assert node.query("SELECT getMacro('hdfs_host')") == "allowed.example.com\n"
+        assert_rejected(macro_disk)
+        # On restart the macro would point the table at a nonexistent host.
+        node.query("DROP TABLE t_macro_hdfs_disk SYNC")
+
+        node.restart_clickhouse()
+        assert node.query("SELECT x FROM t_existing_hdfs_disk") == "1\n"
+        assert node.query("SELECT x FROM t_locations_hdfs_disk") == "1\n"
+        assert node.query("SELECT x FROM t_named_hdfs_disk") == "1\n"
+        assert node.contains_in_log("is not allowed by `remote_url_allow_hosts`")
+        # Identical definitions reuse the disks loaded from metadata with only a warning.
+        assert_reuse_rejected()
+
+        # A short ATTACH reuses the disk of its stored definition, so it is not checked.
+        node.query("DETACH TABLE t_existing_hdfs_disk")
+        node.query("ATTACH TABLE t_existing_hdfs_disk")
+        assert node.query("SELECT x FROM t_existing_hdfs_disk") == "1\n"
+
+    for table in ["t_existing_hdfs_disk", "t_locations_hdfs_disk", "t_named_hdfs_disk"]:
+        node.query(f"DROP TABLE {table} SYNC")

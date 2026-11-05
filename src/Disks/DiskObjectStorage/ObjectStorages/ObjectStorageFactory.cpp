@@ -28,6 +28,8 @@
 
 #include <Common/Macros.h>
 
+#include <Poco/URI.h>
+
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 
@@ -110,6 +112,29 @@ ObjectStoragePtr ObjectStorageFactory::create(
     return it->second(name, config, config_prefix, context, run_access_check, run_local_paths_check, remote_host_filter_check);
 }
 
+/// Reports a custom disk whose endpoint `remote_url_allow_hosts` does not allow, in the log and `system.warnings`.
+[[maybe_unused]] static void warnAboutDiskNotAllowedByRemoteHostFilter(
+    const std::string & disk_name, const std::string & allow_list_entry, const ContextPtr & global_context)
+{
+    LOG_WARNING(
+        getLogger("ObjectStorageFactory"),
+        "Custom disk `{}` uses an endpoint that is not allowed by `remote_url_allow_hosts`. The disk was created before "
+        "this check and is kept while loading existing metadata (server start or UNDROP). Add `{}` "
+        "to the list or recreate the tables that use it.",
+        disk_name, allow_list_entry);
+
+    /// One message per warning type, so it lists all disks; no lock as `Context::getOrCreateDisk` holds `storage_policies_mutex`.
+    static std::set<std::string> disks;
+    disks.insert(fmt::format("`{}` -> `{}`", disk_name, allow_list_entry));
+    global_context->addOrUpdateWarningMessage(
+        Context::WarningType::CUSTOM_DISK_NOT_ALLOWED_BY_REMOTE_URL_ALLOW_HOSTS,
+        PreformattedMessage::create(
+            "Custom disks with endpoints that are not allowed by `remote_url_allow_hosts` were kept while loading existing "
+            "metadata (server start or UNDROP): {}. Add the listed entries to `remote_url_allow_hosts` or recreate "
+            "the tables that use them.",
+            fmt::join(disks, ", ")));
+}
+
 #if USE_AWS_S3
 namespace
 {
@@ -140,35 +165,15 @@ static std::string getEndpoint(
     return context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
 }
 
-/// A custom disk with an endpoint that remote_url_allow_hosts does not allow: a log line per disk
-/// and one system.warnings entry that lists all such disks.
-static void warnAboutDiskNotAllowedByRemoteHostFilter(const std::string & disk_name, const S3::URI & uri, const ContextPtr & global_context)
+/// The `<s3_bucket>host[:port]/bucket</s3_bucket>` entry that allows the disk.
+static std::string getS3BucketAllowListEntry(const S3::URI & uri)
 {
     Poco::URI endpoint_uri(uri.endpoint);
     /// host[:port], as in an <s3_bucket> entry.
     std::string host_and_port = endpoint_uri.getAuthority();
     if (auto at = host_and_port.rfind('@'); at != std::string::npos)
         host_and_port.erase(0, at + 1);
-    const std::string s3_bucket_entry = host_and_port + "/" + uri.bucket;
-
-    LOG_WARNING(
-        getLogger("ObjectStorageFactory"),
-        "Custom disk `{}` uses endpoint `{}` that is not allowed by `remote_url_allow_hosts`. The disk was created before "
-        "this check and is kept while loading existing metadata (server start or UNDROP). Add `<s3_bucket>{}</s3_bucket>` "
-        "to the list or recreate the tables that use it.",
-        disk_name, s3_bucket_entry, s3_bucket_entry);
-
-    /// system.warnings keeps one message per type, so the message lists all disks seen so far.
-    /// No lock: disk creation runs under storage_policies_mutex in Context::getOrCreateDisk.
-    static std::set<std::string> disks;
-    disks.insert(fmt::format("`{}` -> `{}`", disk_name, s3_bucket_entry));
-    global_context->addOrUpdateWarningMessage(
-        Context::WarningType::CUSTOM_DISK_NOT_ALLOWED_BY_REMOTE_URL_ALLOW_HOSTS,
-        PreformattedMessage::create(
-            "Custom disks with endpoints that are not allowed by `remote_url_allow_hosts` were kept while loading existing "
-            "metadata (server start or UNDROP): {}. Add `<s3_bucket>host/bucket</s3_bucket>` entries for them or recreate "
-            "the tables that use them.",
-            fmt::join(disks, ", ")));
+    return fmt::format("<s3_bucket>{}/{}</s3_bucket>", host_and_port, uri.bucket);
 }
 
 static void registerS3ObjectStorage(ObjectStorageFactory & factory)
@@ -195,7 +200,7 @@ static void registerS3ObjectStorage(ObjectStorageFactory & factory)
             && !uri.checkRemoteHostFilter(
                 context->getGlobalContext()->getRemoteHostFilter(),
                 /* throw_on_error */ remote_host_filter_check == RemoteHostFilterCheck::Enforce))
-            warnAboutDiskNotAllowedByRemoteHostFilter(name, uri, context->getGlobalContext());
+            warnAboutDiskNotAllowedByRemoteHostFilter(name, getS3BucketAllowListEntry(uri), context->getGlobalContext());
         auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */ true, name);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
@@ -221,12 +226,22 @@ static void registerHDFSObjectStorage(ObjectStorageFactory & factory)
            const ContextPtr & context,
            bool /* run_access_check */,
            bool /* run_local_paths_check */,
-        RemoteHostFilterCheck /* remote_host_filter_check */) -> ObjectStoragePtr
+           RemoteHostFilterCheck remote_host_filter_check) -> ObjectStoragePtr
         {
             auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
             checkHDFSURL(uri);
             if (uri.back() != '/')
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS path must ends with '/', but '{}' doesn't.", uri);
+
+            /// Checked before `HDFSObjectStorage` connects; a disk loaded from existing metadata is only reported.
+            if (remote_host_filter_check != RemoteHostFilterCheck::None)
+            {
+                const Poco::URI endpoint_uri(uri);
+                if (!context->getGlobalContext()->getRemoteHostFilter().checkURL(
+                        endpoint_uri, /* throw_on_error */ remote_host_filter_check == RemoteHostFilterCheck::Enforce))
+                    warnAboutDiskNotAllowedByRemoteHostFilter(
+                        name, fmt::format("<host>{}</host>", endpoint_uri.getHost()), context->getGlobalContext());
+            }
 
             std::unique_ptr<HDFSObjectStorageSettings> settings = std::make_unique<HDFSObjectStorageSettings>(
                 config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024), context->getSettingsRef()[Setting::hdfs_replication]);

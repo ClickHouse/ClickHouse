@@ -1,8 +1,10 @@
 #include <Disks/DiskFromAST.h>
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/SipHash.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Parsers/ASTExpressionList.h>
@@ -16,6 +18,8 @@
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 
+#include <Poco/URI.h>
+
 #include <algorithm>
 #include <memory>
 
@@ -27,11 +31,31 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+/// Checks the endpoints a custom disk and the custom disks it wraps were built with, in every location:
+/// macros in a definition may expand to another host by now. Disks from the server config are exempt.
+static void checkCustomDiskRemoteHosts(DiskPtr disk, const ContextPtr & context)
+{
+    const auto & filter = context->getGlobalContext()->getRemoteHostFilter();
+    for (; disk && disk->isCustomDisk(); disk = disk->getDelegateDiskIfExists())
+    {
+        const auto * object_disk = dynamic_cast<const DiskObjectStorage *>(disk.get());
+        if (!object_disk)
+            continue;
+
+        for (const auto & [_, storage] : object_disk->getObjectStorages())
+        {
+            if (storage->getType() == ObjectStorageType::HDFS)
+                filter.checkURL(Poco::URI(storage->getDescription()));
+        }
+    }
+}
+
 static std::string getOrCreateCustomDisk(
     const ASTs & disk_args,
     const std::string & serialization,
     ContextPtr context,
     bool attach,
+    bool stored_definition,
     bool for_system_database)
 {
     const auto & server_config = context->getConfigRef();
@@ -105,7 +129,20 @@ static std::string getOrCreateCustomDisk(
     if (!attach && (disk_name.empty() || disk_name == "." || disk_name == ".." || disk_name.contains('/')))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk name cannot be empty, `.`, `..` or contain `/` ({})", disk_name);
 
+    /// A wrapper (`encrypted`, `cache`) takes the disk it names from the map, so no object storage is built for it.
+    const bool is_wrapper = config->has("disk");
+    const auto check_wrapped_disk = [&](const DisksMap & disks_map)
+    {
+        if (auto it = disks_map.find(config->getString("disk")); it != disks_map.end())
+            checkCustomDiskRemoteHosts(it->second, context);
+    };
+
+    bool created = false;
     auto disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
+        created = true;
+        /// Before the wrapper is built: `cache` starts the wrapped disk, which writes to it.
+        if (!attach && is_wrapper)
+            check_wrapped_disk(disks_map);
         auto result = DiskFactory::instance().create(
             disk_name, *config, /* config_path */"", context, disks_map, /* attach */attach, /* custom_disk */true);
         /// Mark that disk can be used without storage policy.
@@ -124,6 +161,16 @@ static std::string getOrCreateCustomDisk(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The disk `{}` is already configured as a custom disk in another table. It can't be redefined with different settings.",
                 disk_name);
+
+    /// A reused disk was checked against an older `remote_url_allow_hosts` or only warned about on load.
+    /// A short `ATTACH` reuses the disk of its own stored definition, which is exempt like loading at start.
+    if (!created && !attach && !stored_definition)
+    {
+        if (is_wrapper)
+            check_wrapped_disk(context->getDisksMap());
+        else
+            checkCustomDiskRemoteHosts(disk, context);
+    }
 
     return disk_name;
 }
@@ -144,6 +191,7 @@ public:
     {
         ContextPtr context;
         bool attach;
+        bool stored_definition;
         bool for_system_database;
     };
 
@@ -155,7 +203,8 @@ public:
             const auto * function_args_expr = assert_cast<const ASTExpressionList *>(function->arguments.get());
             const auto & function_args = function_args_expr->children;
             auto disk_setting_string = function->formatWithSecretsOneLine();
-            auto disk_name = getOrCreateCustomDisk(function_args, disk_setting_string, data.context, data.attach, data.for_system_database);
+            auto disk_name = getOrCreateCustomDisk(
+                function_args, disk_setting_string, data.context, data.attach, data.stored_definition, data.for_system_database);
             ast = make_intrusive<ASTLiteral>(disk_name);
         }
     }
@@ -232,7 +281,8 @@ public:
 };
 
 
-std::string DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, ContextPtr context, bool attach, bool for_system_database)
+std::string DiskFromAST::createCustomDisk(
+    const ASTPtr & disk_function_ast, ContextPtr context, bool attach, bool stored_definition, bool for_system_database)
 {
     if (!isDiskFunction(disk_function_ast))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a disk function");
@@ -251,7 +301,7 @@ std::string DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, Cont
 
     auto ast = disk_function_ast->clone();
 
-    DiskConfigurationFlattener::Data data{context, attach, for_system_database};
+    DiskConfigurationFlattener::Data data{context, attach, stored_definition, for_system_database};
     visitBottomUp<DiskConfigurationFlattener>(ast, data);
 
     return assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>();
