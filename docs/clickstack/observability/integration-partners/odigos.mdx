@@ -1,8 +1,8 @@
 ---
 slug: /clickstack/observability/integration-partners/odigos
-title: 'Sending OpenTelemetry to ClickStack with Odigos'
+title: 'Sending OpenTelemetry to ClickHouse Observability with Odigos'
 sidebarTitle: 'Odigos'
-description: 'Auto-instrument Kubernetes workloads with Odigos and export telemetry to ClickStack over OTLP'
+description: 'Auto-instrument Kubernetes workloads with Odigos and export telemetry to ClickHouse Observability over OTLP'
 doc_type: 'guide'
 keywords: ['Odigos', 'ClickStack', 'ClickHouse', 'OpenTelemetry', 'eBPF', 'auto-instrumentation']
 ---
@@ -18,14 +18,14 @@ import { PartnerBadge } from "/snippets/components/PartnerBadge/PartnerBadge.jsx
 <Info>
 **TL;DR**
 
-This guide shows you how to export Odigos telemetry to ClickStack. You'll learn how to:
+This guide shows you how to export Odigos telemetry to ClickHouse Observability. You'll learn how to:
 
 - Deploy Odigos on Kubernetes with Helm
 - Add sources in the Odigos UI
-- Add an OTLP HTTP destination pointed at ClickStack
-- Verify logs, metrics, and traces in ClickStack
+- Add an OTLP HTTP destination pointed at ClickHouse Observability
+- Verify logs, metrics, and traces in ClickHouse Observability
 
-Odigos auto-instruments applications without code changes nor restarts; ClickStack stores and queries the data in ClickHouse.
+Odigos auto-instruments applications without code changes or restarts; ClickHouse Observability stores and queries the data in ClickHouse.
 
 Time required: 10–20 minutes
 </Info>
@@ -47,16 +47,16 @@ That eBPF layer is what makes deep, consistent telemetry possible at scale. Odig
 Behind the scenes, Odigos creates and manages a full OpenTelemetry pipeline for your cluster: collectors that scale with load, routing to the backends you choose, and pipeline logic you control in the UI. Define **sampling** to manage volume, **PII masking** to keep sensitive data out of exports, and **OTTL rules** to filter, transform, or enrich telemetry before it leaves the cluster.
 
 {/* vale off */}
-## Why Odigos + ClickStack? {#why-odigos-clickstack}
+## Why Odigos + ClickHouse Observability? {#why-odigos-clickstack}
 {/* vale on */}
 
-Rolling out OpenTelemetry across many services is often time consuming and only provides surface-level visibility in applications. Odigos handles eBPF instrumentation for deeper telemetry and collector operations on Kubernetes; ClickStack provides ClickHouse-backed storage and the ClickStack UI for querying telemetry at scale.
+Rolling out OpenTelemetry across many services is often time consuming and only provides surface-level visibility in applications. Odigos handles eBPF instrumentation for deeper telemetry and collector operations on Kubernetes; ClickHouse Observability provides ClickHouse-backed storage and the ClickStack UI for querying telemetry at scale.
 
 <Tip>
 **Key takeaways**
 
 - **Odigos** auto-instruments any Kubernetes workload without requiring restarts and manages OpenTelemetry pipelines automatically.
-- **ClickStack** stores logs, metrics, and traces in ClickHouse and surfaces them in the ClickStack UI.
+- **ClickHouse Observability** stores logs, metrics, and traces in ClickHouse and surfaces them in the ClickStack UI.
 </Tip>
 
 ## Prerequisites {#prerequisites}
@@ -68,7 +68,7 @@ Rolling out OpenTelemetry across many services is often time consuming and only 
 - An **Odigos Enterprise on-prem token** — contact the [Odigos team](https://odigos.io/) for access
 
 {/* vale off */}
-## Integrate ClickStack with Odigos {#integrate-odigos-clickstack}
+## Integrate ClickHouse Observability with Odigos {#integrate-odigos-clickstack}
 {/* vale on */}
 
 <Steps>
@@ -117,7 +117,7 @@ kubectl port-forward svc/ui -n odigos-system 3000:3000
 5. Verify workloads have been instrumented successfully in the sources column.
 
 </Step>
-<Step title="Add ClickStack as a destination in the Odigos UI" id="add-destination-ui">
+<Step title="Add ClickHouse Observability as a destination in the Odigos UI" id="add-destination-ui">
 
 To send telemetry, add an **OTLP HTTP** destination in Odigos. Select your deployment below.
 
@@ -129,7 +129,7 @@ To send telemetry, add an **OTLP HTTP** destination in Odigos. Select your deplo
 ClickHouse Observability gives you an OTLP endpoint. ClickHouse handles ingestion, schemas, and compute. Point Odigos at that endpoint. You do not deploy a collector.
 
 1. In the Odigos UI, click **Add Destination** and select **OTLP HTTP**.
-2. Set **OTLP HTTP Endpoint** to the HTTPS endpoint from ClickHouse Cloud, including port `4318`. For example, `https://<your-endpoint>.otel.<region>.aws.clickhouse.cloud:4318`.
+2. Set **OTLP HTTP Endpoint** to the HTTPS endpoint from ClickHouse Cloud, including port `4318`. For example, `https://<service-id>.otel.<region>.aws.clickhouse.com:4318`.
 3. In **Headers**, add:
    - **Key**: `Authorization`
    - **Value**: `Bearer <YOUR_INGESTION_API_KEY>`
@@ -185,11 +185,11 @@ You can configure the same destination with a `Destination` manifest instead of 
 </Tabs>
 
 </Step>
-<Step title="Verify telemetry in ClickStack" id="verify-telemetry">
+<Step title="Verify telemetry in ClickHouse Observability" id="verify-telemetry">
 
 1. Open the ClickStack UI:
    - **Self-managed**: open your service in the [ClickHouse Cloud console](https://console.clickhouse.cloud), then click **Launch ClickStack**. See [Navigate to the ClickStack UI](/clickstack/self-configured/deployment/managed) for details.
-   - **ClickHouse Observability**: open the observability view for your ClickHouse Cloud service.
+   - **Fully managed**: open the observability view for your ClickHouse Cloud service.
 2. Check **Logs**, **Metrics**, and **Traces** for data from your instrumented services.
 3. Filter traces by `odigos.version` to validate end-to-end export.
 
@@ -279,7 +279,7 @@ kubectl apply -f destination.yaml
 ### Odigos VM Agent {#odigos-vm-agent}
 {/* vale on */}
 
-The [Odigos VM Agent](https://docs.odigos.io/vmagent/overview) instruments Linux processes, systemd services, and/or docker containers using eBPF. Telemetry exports to the same destinations as cluster-based Odigos, including ClickStack over OTLP HTTP.
+The [Odigos VM Agent](https://docs.odigos.io/vmagent/overview) instruments Linux processes, systemd services, and/or docker containers using eBPF. Telemetry exports to the same destinations as cluster-based Odigos, including ClickHouse Observability over OTLP HTTP.
 
 The VM Agent is part of Odigos Pro. See the [VM Agent overview](https://docs.odigos.io/vmagent/overview) for setup, sources, and destination configuration.
 
@@ -293,7 +293,7 @@ Odigos Central is available in Odigos Enterprise. See the [Central overview](htt
 
 ## Next steps {#next-steps}
 
-- **Explore traces** across instrumented services in ClickStack
+- **Explore traces** across instrumented services in ClickHouse Observability
 - **Build dashboards** for metrics Odigos exports
 - **For self-managed deployments, tune ClickHouse schema and TTL** for your retention and query patterns
 

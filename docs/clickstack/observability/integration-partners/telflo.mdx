@@ -88,7 +88,7 @@ Choose the exporter for your deployment. Fully managed ClickHouse Observability 
 Use the managed OTLP endpoint. ClickHouse handles ingestion, schemas, storage, and scaling; the collectors managed by Telflo collect and forward telemetry from your environment.
 
 1. Drag the **OTLP/HTTP** exporter onto the canvas.
-2. Set **Endpoint** to your managed OTLP HTTP endpoint, including port `4318`, for example `https://<your-endpoint>.otel.<region>.aws.clickhouse.cloud:4318`.
+2. Set **Endpoint** to your managed OTLP HTTP endpoint, including port `4318`, for example `https://<service-id>.otel.<region>.aws.clickhouse.com:4318`.
 3. Under **HTTP Headers**, click **Add header**, then enter `Authorization` as the **Header name** and `Bearer ${env:CLICKSTACK_INGESTION_KEY}` as the **Header value**. Telflo asks for the environment variable value when you install the collectors. Supply your ingestion API key as `CLICKSTACK_INGESTION_KEY`, without the `Bearer` prefix.
 
 Use the OTLP exporter, not the direct ClickHouse exporter, for fully managed deployments.

@@ -244,7 +244,7 @@ Time required: about 10 minutes
 
 The HackerNews Analyzer is a Node.js app that queries the HackerNews dataset hosted in the public ClickHouse demo. Every chart, table, and search box is a real ClickHouse query, so every interaction produces a trace whose main span is the HTTPS call from the backend out to ClickHouse.
 
-This is a different job from the [session replay demo](/clickstack/example-datasets/session-replay), which instruments a browser-only app against local Docker ClickStack. Here you get backend auto-instrumentation, ClickHouse query spans, and session replay from the same app.
+This is a different job from the [session replay demo](/clickstack/observability/example-datasets/session-replay), which instruments a browser-only app and sends telemetry to ClickHouse Observability. Here you get backend auto-instrumentation, ClickHouse query spans, and session replay from the same app.
 
 ## Prerequisites {#prerequisites-self-configured}
 
@@ -272,7 +272,7 @@ You'll fill `.env` in the next steps, then instrument from this directory.
 
 - [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer): the demo repository this guide instruments.
 - [Session Replay](/clickstack/observability/features/session-replay): feature overview, SDK options, and privacy controls.
-- [Session Replay Demo](/clickstack/example-datasets/session-replay): a self-contained demo with a local ClickStack instance.
+- [Session Replay Demo](/clickstack/observability/example-datasets/session-replay): a browser-only demo that sends telemetry to ClickHouse Observability.
 - [Getting started with Self-managed](/clickstack/self-configured/getting-started/managed): set up your service and ingest your first data.
 - [All Sample Datasets](/clickstack/observability/example-datasets): other example datasets and guides.
 
