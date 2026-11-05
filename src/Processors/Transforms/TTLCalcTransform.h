@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/PreparedSets.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -39,7 +40,7 @@ protected:
     void finalize();
 
 private:
-    std::vector<TTLAlgorithmPtr> algorithms;
+    VectorWithMemoryTracking<TTLAlgorithmPtr> algorithms;
     /// Physically dropped as fully expired; rules reading them evaluate over defaults, as in TTLTransform.
     NamesAndTypesList expired_columns;
     struct ExpiredColumnData
