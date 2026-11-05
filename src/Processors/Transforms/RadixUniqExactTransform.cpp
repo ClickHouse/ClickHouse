@@ -15,9 +15,7 @@
 #include <Common/PODArray.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/SipHash.h>
-#if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(__AVX2__)
-#    include <Common/SipHashStringsImpl.h>
-#endif
+#include <Common/SipHashStrings.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/assert_cast.h>
@@ -377,9 +375,9 @@ public:
     /// the row number to the key, `same(last_row, row)` tells whether the key of `row` is known to be routed already,
     /// such as when the row equals the last routed row. The rows are compared before the keys are computed, because
     /// computing a key (hashing a string) is more expensive.
-    /// With `defer`, the keys of the rows where `defer(row)` holds are computed per batch by
+    /// With `defer`, the keys of the rows where `defer(row)` holds are computed after the other rows of a batch by
     /// `extract_deferred(begin, positions, count, row_keys)`, which sets `row_keys[positions[i]]` to the key of row
-    /// `begin + positions[i]`; the keys are still inserted in the order of the rows.
+    /// `begin + positions[i]`.
     template <typename Extract, typename Same, typename Defer = std::nullptr_t, typename ExtractDeferred = std::nullptr_t>
     ALWAYS_INLINE void routeRows(
         size_t stream_index,
@@ -395,9 +393,9 @@ public:
         std::array<Key, KEYS_BATCH_SIZE> keys; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first num_keys entries are read
         size_t last_row = 0;
         bool has_last_row = false;
+        bool has_routed = false;
 
         [[maybe_unused]] std::array<Key, has_deferred ? KEYS_BATCH_SIZE : 0> row_keys; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - set before its read
-        [[maybe_unused]] std::array<UInt32, has_deferred ? KEYS_BATCH_SIZE : 0> waiting_positions; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first num_waiting entries are read
         [[maybe_unused]] std::array<UInt32, has_deferred ? KEYS_BATCH_SIZE : 0> deferred_positions; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first num_deferred entries are read
 
         /// The keys repeated within a few rows are skipped by a cache of the recent keys, as in `routeValues`, while they are
@@ -412,14 +410,15 @@ public:
             const size_t end = std::min(begin + keys.size(), num_rows);
             size_t num_keys = 0;
             size_t num_computed = 0;
+            [[maybe_unused]] size_t num_deferred = 0;
 
-            /// `first` is whether the key is the first one that is routed.
-            auto add = [&](const Key & key, bool first) ALWAYS_INLINE
+            auto add = [&](const Key & key) ALWAYS_INLINE
             {
                 ++num_computed;
-                if (first)
+                if (!has_routed)
                 {
                     /// Every slot holds a key that is routed, so that a key is never skipped without being routed.
+                    has_routed = true;
                     recent.fill(key);
                     keys[num_keys++] = key;
                 }
@@ -436,41 +435,6 @@ public:
                 }
             };
 
-            /// Routes the rows of the batch from its first deferred row `first_row` on.
-            [[maybe_unused]] auto route_deferred = [&](size_t first_row) ALWAYS_INLINE
-            {
-                if constexpr (has_deferred)
-                {
-                    const bool routed_before = has_last_row;
-                    has_last_row = true;
-                    size_t num_waiting = 0;
-                    size_t num_deferred = 0;
-                    waiting_positions[num_waiting++] = static_cast<UInt32>(first_row - begin);
-                    deferred_positions[num_deferred++] = static_cast<UInt32>(first_row - begin);
-                    for (size_t row = first_row + 1; row < end; ++row)
-                    {
-                        if (null_map && null_map[row])
-                            continue;
-
-                        if (same(last_row, row))
-                            continue;
-                        last_row = row;
-
-                        const auto position = static_cast<UInt32>(row - begin);
-                        waiting_positions[num_waiting++] = position;
-                        if (defer(row))
-                            deferred_positions[num_deferred++] = position;
-                        else
-                            row_keys[position] = extract(row);
-                    }
-
-                    extract_deferred(begin, deferred_positions.data(), num_deferred, row_keys.data());
-                    add(row_keys[waiting_positions[0]], !routed_before);
-                    for (size_t i = 1; i < num_waiting; ++i)
-                        add(row_keys[waiting_positions[i]], false);
-                }
-            };
-
             for (size_t row = begin; row < end; ++row)
             {
                 if (null_map && null_map[row])
@@ -479,18 +443,28 @@ public:
                 if (has_last_row && same(last_row, row))
                     continue;
                 last_row = row;
+                has_last_row = true;
 
                 if constexpr (has_deferred)
                 {
                     if (defer(row))
                     {
-                        route_deferred(row);
-                        break;
+                        deferred_positions[num_deferred++] = static_cast<UInt32>(row - begin);
+                        continue;
                     }
                 }
 
-                add(extract(row), !has_last_row);
-                has_last_row = true;
+                add(extract(row));
+            }
+
+            if constexpr (has_deferred)
+            {
+                if (num_deferred)
+                {
+                    extract_deferred(begin, deferred_positions.data(), num_deferred, row_keys.data());
+                    for (size_t i = 0; i < num_deferred; ++i)
+                        add(row_keys[deferred_positions[i]]);
+                }
             }
 
             if (skip_recent)
@@ -1616,85 +1590,47 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
         auto start_of = [offsets](size_t row) { return offsets[static_cast<ssize_t>(row) - 1]; };
         auto size_of = [offsets, start_of](size_t row) { return offsets[row] - start_of(row); };
         bool & routed_empty_string = streams[stream].routed_empty_string;
-        auto extract = [&](size_t row)
-        {
-            const size_t size = size_of(row);
-            routed_empty_string |= size == 0;
-            if (size >= sizeof(UInt128)) [[unlikely]]
-                return sipHash128Padded(chars + start_of(row), size) | LONG_STRING_KEY_BIT;
-            return mixKey(packShortString(chars + start_of(row), size));
-        };
-        auto same = [&](size_t lhs, size_t rhs)
-        {
-            const size_t size = size_of(rhs);
-            if (size == 0)
-                return routed_empty_string || size_of(lhs) == 0;
-            if (size != size_of(lhs))
-                return false;
-            if (size < sizeof(UInt128))
-                return packShortString(chars + start_of(lhs), size) == packShortString(chars + start_of(rhs), size);
-            return memcmp(chars + start_of(lhs), chars + start_of(rhs), size) == 0;
-        };
-#if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(__AVX2__)
-        /// `hashRows` ORs the high bits into `items[1]`, the high half of the key.
-        constexpr UInt64 long_string_high_bits = UInt64(1) << 63;
-        static_assert(LONG_STRING_KEY_BIT == UInt128(long_string_high_bits) << 64);
-        static_assert(KEYS_BATCH_SIZE <= SipHashStrings::chunk_rows);
         routeRows(
-            stream, column.size(), null_map, extract, same,
+            stream, column.size(), null_map,
+            [&](size_t row)
+            {
+                const size_t size = size_of(row);
+                routed_empty_string |= size == 0;
+                if (size >= sizeof(UInt128)) [[unlikely]]
+                    return sipHash128Padded(chars + start_of(row), size) | LONG_STRING_KEY_BIT;
+                return mixKey(packShortString(chars + start_of(row), size));
+            },
+            [&](size_t lhs, size_t rhs)
+            {
+                const size_t size = size_of(rhs);
+                if (size == 0)
+                    return routed_empty_string || size_of(lhs) == 0;
+                if (size != size_of(lhs))
+                    return false;
+                if (size < sizeof(UInt128))
+                    return packShortString(chars + start_of(lhs), size) == packShortString(chars + start_of(rhs), size);
+                return memcmp(chars + start_of(lhs), chars + start_of(rhs), size) == 0;
+            },
             [size_of](size_t row) { return size_of(row) >= sizeof(UInt128); },
-            /// Out of line and capturing by value, so that its vector code does not hold registers across the routing loops.
+            /// Out of line, so that its code does not take registers from the routing loop.
             [chars, offsets](size_t begin, const UInt32 * positions, size_t count, UInt128 * row_keys) NO_INLINE
             {
-                const IColumn::Offset * batch_offsets = offsets + begin - 1;
-                uint8_t buckets[KEYS_BATCH_SIZE + 32];
+                sipHash128PaddedStringRows(chars, offsets + begin, positions, count, row_keys);
                 for (size_t i = 0; i < count; ++i)
-                {
-                    const UInt64 words = (batch_offsets[positions[i] + 1] - batch_offsets[positions[i]]) / 8;
-                    buckets[i] = static_cast<uint8_t>(std::min<UInt64>(words, SipHashStrings::exact_buckets));
-                }
-                SipHashStrings::hashRows<long_string_high_bits>(chars, batch_offsets, positions, buckets, count, row_keys);
-#    ifndef NDEBUG
-                for (size_t i = 0; i < count; ++i)
-                {
-                    const UInt64 start = batch_offsets[positions[i]];
-                    const UInt64 size = batch_offsets[positions[i] + 1] - start;
-                    chassert(row_keys[positions[i]] == (sipHash128Padded(chars + start, size) | LONG_STRING_KEY_BIT));
-                }
-#    endif
+                    row_keys[positions[i]] |= LONG_STRING_KEY_BIT;
             });
-#else
-        routeRows(stream, column.size(), null_map, extract, same);
-#endif
     }
     else if (const auto * column_fixed_string = typeid_cast<const ColumnFixedString *>(&column))
     {
         const char * chars = reinterpret_cast<const char *>(column_fixed_string->getChars().data());
         const size_t n = column_fixed_string->getN();
-        auto extract = [&](size_t row) { return sipHash128Padded(chars + row * n, n); };
-        auto same = [&](size_t lhs, size_t rhs) { return memcmp(chars + lhs * n, chars + rhs * n, n) == 0; };
-#if (defined(__aarch64__) && defined(__ARM_NEON)) || defined(__AVX2__)
         routeRows(
-            stream, column.size(), null_map, extract, same,
+            stream, column.size(), null_map,
+            [&](size_t row) { return sipHash128Padded(chars + row * n, n); },
+            [&](size_t lhs, size_t rhs) { return memcmp(chars + lhs * n, chars + rhs * n, n) == 0; },
             [](size_t) { return true; },
             [chars, n](size_t begin, const UInt32 * positions, size_t count, UInt128 * row_keys) NO_INLINE
-            {
-                const char * batch_chars = chars + begin * n;
-                size_t i = 0;
-                for (; i + SipHashStrings::group_size <= count; i += SipHashStrings::group_size)
-                    SipHashStrings::hashGroup<0>(
-                        [&](size_t j) ALWAYS_INLINE { return std::pair{batch_chars + positions[i + j] * n, n}; },
-                        [&](size_t j) ALWAYS_INLINE { return row_keys + positions[i + j]; });
-                for (; i < count; ++i)
-                    row_keys[positions[i]] = sipHash128Padded(batch_chars + positions[i] * n, n);
-#    ifndef NDEBUG
-                for (size_t k = 0; k < count; ++k)
-                    chassert(row_keys[positions[k]] == sipHash128Padded(batch_chars + positions[k] * n, n));
-#    endif
-            });
-#else
-        routeRows(stream, column.size(), null_map, extract, same);
-#endif
+            { sipHash128PaddedFixedStringRows(chars + begin * n, n, positions, count, row_keys); });
     }
     else
     {

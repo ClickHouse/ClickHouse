@@ -16,11 +16,6 @@
 
     <create_query>CREATE TABLE radix_low_cardinality (s LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <fill_query>INSERT INTO radix_low_cardinality SELECT toString(number % 100000) FROM numbers(50000000)</fill_query>
-    <!-- Distinct strings of 16 to 64 bytes, and the same strings each repeated in 64 consecutive rows. -->
-    <create_query>CREATE TABLE radix_strings_16_64 (s String, repeated String) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <fill_query>INSERT INTO radix_strings_16_64 SELECT substring(repeat(hex(cityHash64(number)), 4), 1, 16 + number % 49), substring(repeat(hex(cityHash64(intDiv(number, 64))), 4), 1, 16 + intDiv(number, 64) % 49) FROM numbers(20000000)</fill_query>
-    <create_query>CREATE TABLE radix_strings_0_300 (s String) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <fill_query>INSERT INTO radix_strings_0_300 SELECT substring(repeat(hex(cityHash64(number)), 19), 1, number % 301) FROM numbers(5000000)</fill_query>
     <create_query>CREATE TABLE radix_fixed_strings_64 (s FixedString(64)) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <fill_query>INSERT INTO radix_fixed_strings_64 SELECT toFixedString(substring(repeat(hex(cityHash64(number)), 4), 1, 64), 64) FROM numbers(5000000)</fill_query>
 
@@ -33,14 +28,9 @@
     <!-- Strings of up to 15 bytes are keyed by their bytes. -->
     <query>SELECT uniqExact(toString(number % 1000)) FROM numbers_mt(50000000) SETTINGS optimize_injective_functions_inside_uniq = 0 FORMAT Null</query>
     <query>SELECT uniqExact(s) FROM radix_low_cardinality FORMAT Null</query>
-    <!-- Strings of 16 bytes or more and `FixedString` longer than 16 bytes are hashed several at a time. -->
-    <query>SELECT uniqExact(s) FROM radix_strings_16_64 FORMAT Null</query>
-    <query>SELECT uniqExact(repeated) FROM radix_strings_16_64 FORMAT Null</query>
-    <query>SELECT uniqExact(s) FROM radix_strings_0_300 FORMAT Null</query>
+    <!-- `FixedString(64)` values are hashed several at a time, as the `URL` values above. -->
     <query>SELECT uniqExact(s) FROM radix_fixed_strings_64 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS radix_low_cardinality</drop_query>
-    <drop_query>DROP TABLE IF EXISTS radix_strings_16_64</drop_query>
-    <drop_query>DROP TABLE IF EXISTS radix_strings_0_300</drop_query>
     <drop_query>DROP TABLE IF EXISTS radix_fixed_strings_64</drop_query>
 </test>
