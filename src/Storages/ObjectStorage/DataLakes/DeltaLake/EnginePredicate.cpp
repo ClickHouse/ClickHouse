@@ -220,6 +220,13 @@ namespace
     constexpr Int64 TIMESTAMP_FENCE_MIN = std::numeric_limits<Int64>::min() / 1000;
     constexpr Int64 TIMESTAMP_FENCE_MAX = std::numeric_limits<Int64>::max() / 1000;
 
+    /// Before the epoch, a value finer than microseconds (`INT96`, `TIMESTAMP(NANOS)`) is read rounded
+    /// towards zero, that is up, while the statistics hold its floor truncated to milliseconds. The read
+    /// value can then exceed the maximum by a full millisecond, one microsecond more than the slack that
+    /// delta-kernel allows. Only a negative value is affected, so a literal at or before the epoch keeps
+    /// the rows below it undecided.
+    constexpr Int64 TIMESTAMP_ROUNDING_FENCE_MIN = 0;
+
     struct TimestampLiteral
     {
         /// The literal in microseconds, or its floor when the comparison runs at a finer scale.
@@ -300,8 +307,9 @@ namespace
         DeltaTimestampKind kind;
         Int64 micros;
         ComparisonVisitor visitor;
-        /// Whether the rows outside the fence are kept undecided.
+        /// Whether the rows outside `[fence_min, TIMESTAMP_FENCE_MAX]` are kept undecided.
         bool fenced;
+        Int64 fence_min;
     };
 
     /// Matches a comparison of a column backed by a Delta `timestamp` / `timestamp_ntz` with a literal.
@@ -335,9 +343,11 @@ namespace
         /// The finest `DateTime64` is nanoseconds, so the comparison scales the column up by at most 1000:
         /// the fence covers the scaled comparison too.
         chassert(value->multiplier <= 1000);
-        const bool fenced = value->multiplier > 1 || value->micros <= TIMESTAMP_FENCE_MIN || value->micros >= TIMESTAMP_FENCE_MAX;
+        const bool before_epoch = value->micros <= TIMESTAMP_ROUNDING_FENCE_MIN;
+        const bool fenced = before_epoch || value->multiplier > 1 || value->micros >= TIMESTAMP_FENCE_MAX;
+        const Int64 fence_min = before_epoch ? TIMESTAMP_ROUNDING_FENCE_MIN : TIMESTAMP_FENCE_MIN;
 
-        return TimestampComparison{column, delta_column.kind, value->micros, visitor, fenced};
+        return TimestampComparison{column, delta_column.kind, value->micros, visitor, fenced, fence_min};
     }
 }
 
@@ -748,7 +758,7 @@ uintptr_t EngineIterator::visitTimestampComparison(
     auto compared = predicates.compare(comparison.visitor, comparison.micros);
     if (!comparison.fenced)
         return compared;
-    return predicates.fenced(compared, TIMESTAMP_FENCE_MIN, TIMESTAMP_FENCE_MAX, visitUntranslated(iterator_data));
+    return predicates.fenced(compared, comparison.fence_min, TIMESTAMP_FENCE_MAX, visitUntranslated(iterator_data));
 }
 
 uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const DB::ActionsDAG::Node * node)
