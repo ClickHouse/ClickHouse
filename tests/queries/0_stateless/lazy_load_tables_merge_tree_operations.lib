@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2154
+# shellcheck disable=SC2154,SC2034
 
 # The body of the `lazy_load_tables_merge_tree_operations` tests, which run it for `MergeTree` and
 # `ReplicatedMergeTree`. The operations are split into two halves, `lazy_load_tables_merge_tree_operations_part_1.lib`
