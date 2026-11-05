@@ -215,7 +215,6 @@ void S3RequestSettings::validateUploadSettings()
             ErrorCodes::INVALID_SETTING_VALUE,
             "Setting max_part_number cannot be zero");
 
-    /// The maximum part size also bounds the fixed part size.
     if ((*this)[S3RequestSetting::strict_upload_part_size] > (*this)[S3RequestSetting::max_upload_part_size])
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
