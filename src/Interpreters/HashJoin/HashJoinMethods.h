@@ -92,7 +92,7 @@ class HashJoinMethods
 {
 public:
     /// Inserts clause `map_idx` of a block into `maps`. Each slot inserts its rows of `per_slot` under its own lock.
-    /// If set, `prebuilt_keys` are the keys of all rows of the block, built by the slot scatter with the key getter's
+    /// If set, `prebuilt_keys[row]` is the key of each row that the slot scatter routed, built with the key getter's
     /// `buildAllKeys`.
     static BuildResult insertFromBlockImpl(
         HashJoin & join,
