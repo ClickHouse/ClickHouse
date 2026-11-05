@@ -8,7 +8,7 @@ CREATE TABLE small (sid String) ENGINE = MergeTree ORDER BY sid;
 INSERT INTO big SELECT toString(number), number FROM numbers(100000);
 INSERT INTO small SELECT toString(number * 5) FROM numbers(20000);
 
-SET enable_analyzer = 1, enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0;
+SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0;
 SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0;
 SET max_rows_to_group_by = 0, query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0;
 -- Four build tasks, so the merge stage merges several exact partials.

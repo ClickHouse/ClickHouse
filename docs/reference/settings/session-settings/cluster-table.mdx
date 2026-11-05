@@ -21,6 +21,12 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 Defines the approximate size of a batch (in bytes) used in distributed processing of tasks in cluster table functions with `bucket` split granularity. The system accumulates data until at least this amount is reached. The actual size may be slightly larger to align with data boundaries.
 
+## cluster_table_function_pushed_down_filter {#cluster_table_function_pushed_down_filter}
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": ""},{"label": "New internal setting."}]}]}/>
+
+This is an internal setting that should not be used directly. The initiator of a query with a cluster table function sets it for the replicas to the serialized filter on the table, so that the replicas drop the rows that do not pass it before sending them.
+
 ## cluster_table_function_split_granularity {#cluster_table_function_split_granularity}
 
 <SettingsInfoBlock type="ObjectStorageGranularityLevel" default_value="file" />

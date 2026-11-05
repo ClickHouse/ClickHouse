@@ -1,7 +1,9 @@
+#include <Compression/CompressionInfo.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/PlainRewritableSnapshotFile.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/PrefixPath.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Disks/WriteMode.h>
@@ -9,12 +11,17 @@
 #include <IO/ReadSettings.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #include <Core/ServerUUID.h>
 
 #include <Common/thread_local_rng.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
+#include <Common/tests/gtest_global_context.h>
 
 #include <base/scope_guard.h>
 
@@ -28,11 +35,17 @@
 #include <ranges>
 #include <thread>
 
+namespace DB::ErrorCodes
+{
+    extern const int NETWORK_ERROR;
+}
+
 using namespace DB;
 
 namespace DB::ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+    extern const int INCORRECT_DATA;
 }
 
 namespace ProfileEvents
@@ -54,6 +67,8 @@ public:
         {
             ServerUUID::setRandomForUnitTests();
             getIOThreadPool().initializeWithDefaultSettingsIfNotInitialized();
+            /// The metadata storage writes snapshots of its state in a task of the schedule pool of the global context.
+            getContext();
             initialized = true;
         }
     }
@@ -72,7 +87,7 @@ public:
     {
         std::unique_lock<std::mutex> lock(active_metadatas_mutex);
         auto object_storage = active_object_storages.at(key_prefix);
-        active_metadatas[key_prefix] = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", hard_links_enabled);
+        active_metadatas[key_prefix] = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", hard_links_enabled, snapshot_settings);
         return active_metadatas.at(key_prefix);
     }
 
@@ -100,7 +115,7 @@ private:
         fs::remove_all("./" + key_prefix);
         LocalObjectStorageSettings settings("test", "./" + key_prefix, /*read_only_=*/false);
         auto object_storage = std::make_shared<LocalObjectStorage>(std::move(settings));
-        auto metadata_storage = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", hard_links_enabled);
+        auto metadata_storage = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", hard_links_enabled, snapshot_settings);
 
         active_metadatas.emplace(key_prefix, metadata_storage);
         active_object_storages.emplace(key_prefix, object_storage);
@@ -109,6 +124,9 @@ private:
     }
 
     static inline bool initialized = false;
+
+    /// The snapshot is written right after every commit, so that the readers see it right away.
+    static constexpr PlainRewritableSnapshotSettings snapshot_settings{.enabled = true, .write_delay_ms = 0};
 
     std::mutex active_metadatas_mutex;
     std::unordered_map<std::string, std::shared_ptr<IMetadataStorage>> active_metadatas;
@@ -164,6 +182,8 @@ static std::vector<std::string> sorted(std::vector<std::string> array)
     return array;
 }
 
+/// All objects of the disk except the snapshot of the metadata (`__meta/snapshot.bin`): it is a derived copy of
+/// the state, rewritten after every commit, and the tests check the layout of the data and the `prefix.path` objects.
 static std::vector<std::string> listAllBlobs(std::string test)
 {
     if (!std::filesystem::exists(fmt::format("./{}", test)))
@@ -172,6 +192,7 @@ static std::vector<std::string> listAllBlobs(std::string test)
     return sorted(std::filesystem::recursive_directory_iterator(fmt::format("./{}", test))
                     | std::views::filter([](const auto & inode) { return inode.is_regular_file(); })
                     | std::views::transform([](const auto & file) { return file.path(); })
+                    | std::views::filter([](const std::string & path) { return !path.ends_with("/__meta/" + PlainRewritableLayout::SNAPSHOT_FILE_NAME); })
                     | std::ranges::to<std::vector<std::string>>());
 }
 
@@ -257,7 +278,8 @@ TEST_F(MetadataPlainRewritableDiskTest, RefreshSkipsUnchangedDirectoryReads)
 
     auto object_storage = std::make_shared<CountingStorage>(LocalObjectStorageSettings(
         "reader", getObjectStorage("RefreshSkipsUnchangedDirectoryReads")->getCommonKeyPrefix(), false));
-    MetadataStorageFromPlainRewritableObjectStorage reader(object_storage, "", hard_links_enabled);
+    /// The reader does not use the snapshot file: the test counts the reads of `prefix.path` objects by the listing.
+    MetadataStorageFromPlainRewritableObjectStorage reader(object_storage, "", hard_links_enabled, PlainRewritableSnapshotSettings{.enabled = false});
     ASSERT_EQ(object_storage->reads, 2);
     reader.refresh(0);
     EXPECT_EQ(object_storage->reads, 2);
@@ -786,6 +808,57 @@ TEST_F(MetadataPlainRewritableDiskTest, RewriteFileUpdatesSize)
 
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("A/file").front().remote_path), "Hello world!");
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("root_file").front().remote_path), "Hello world!");
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, WriterIgnoresStaleSnapshot)
+{
+    const std::string test = "WriterIgnoresStaleSnapshot";
+    auto metadata = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    auto write_file = [&](const std::string & path, const std::string & data)
+    {
+        auto tx = metadata->createTransaction();
+        size_t size = writeObject(object_storage, tx->generateObjectKeyForPath(path).serialize(), data);
+        tx->createMetadataFile(path, {StoredObject(path, path, size)});
+        tx->commit(DB::NoCommitOptions{});
+    };
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->commit(DB::NoCommitOptions{});
+    }
+    write_file("A/file", "test");
+    write_file("A/removed", "test");
+
+    const auto snapshot_files = std::filesystem::recursive_directory_iterator(fmt::format("./{}", test))
+        | std::views::filter([](const auto & inode) { return inode.path().string().ends_with("/__meta/" + PlainRewritableLayout::SNAPSHOT_FILE_NAME); })
+        | std::views::transform([](const auto & inode) { return inode.path(); })
+        | std::ranges::to<std::vector<std::filesystem::path>>();
+    ASSERT_EQ(snapshot_files.size(), 1u);
+    const auto stale_snapshot = fmt::format("./{}.stale_snapshot", test);
+    std::filesystem::copy_file(snapshot_files.front(), stale_snapshot, std::filesystem::copy_options::overwrite_existing);
+    SCOPE_EXIT({ std::filesystem::remove(stale_snapshot); });
+
+    /// The files of `A` change, but its `prefix.path` stays the same.
+    write_file("A/file", "Hello world!");
+    write_file("A/new", "test");
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("A/removed", /*if_exists=*/ false, /*should_remove_objects=*/ true);
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// Simulate a server that crashed before writing the latest snapshot.
+    /// The writer does not read the snapshot, it lists the object storage.
+    std::filesystem::copy_file(stale_snapshot, snapshot_files.front(), std::filesystem::copy_options::overwrite_existing);
+    metadata = restartMetadataStorage(test);
+
+    EXPECT_EQ(metadata->getFileSize("A/file"), 12u);
+    EXPECT_TRUE(metadata->existsFile("A/new"));
+    EXPECT_FALSE(metadata->existsFile("A/removed"));
+    EXPECT_EQ(sorted(metadata->listDirectory("A")), std::vector<std::string>({"file", "new"}));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, MoveFileUndo)
@@ -2440,6 +2513,393 @@ TEST_F(MetadataPlainRewritableDiskTest, HardLinkAcrossDirectories)
     EXPECT_EQ(metadata->getHardlinkCount("B/own"), 0);
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("B/f1").front().remote_path), "shared");
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("B/own").front().remote_path), "own");
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, SnapshotKeepsExplicitFileList)
+{
+    const std::string test = "SnapshotKeepsExplicitFileList";
+    auto metadata = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("B");
+        size_t size = writeObject(object_storage, tx->generateObjectKeyForPath("A/f1").serialize(), "shared");
+        tx->createMetadataFile("A/f1", {StoredObject("f1", "f1", size)});
+        size_t size_own = writeObject(object_storage, tx->generateObjectKeyForPath("B/own").serialize(), "own");
+        tx->createMetadataFile("B/own", {StoredObject("own", "own", size_own)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createHardLink("A/f1", "B/f1");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// The explicit list of the files of the moved directory is in the snapshot,
+    /// although the blob of the hard link is not under the prefix of the directory.
+    {
+        auto tx = metadata->createTransaction();
+        tx->moveDirectory("B", "C");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto shared_remote_path = metadata->getStorageObjects("A/f1").front().remote_path;
+
+    auto reader_storage = std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings("reader", object_storage->getCommonKeyPrefix(), /*read_only_=*/ true));
+    MetadataStorageFromPlainRewritableObjectStorage reader(reader_storage, "", hard_links_enabled);
+    EXPECT_EQ(sorted(reader.listDirectory("A")), std::vector<std::string>({"f1"}));
+    EXPECT_EQ(sorted(reader.listDirectory("C")), std::vector<std::string>({"f1", "own"}));
+    EXPECT_EQ(reader.getStorageObjects("C/f1").front().remote_path, shared_remote_path);
+    EXPECT_EQ(reader.getFileSize("C/f1"), 6u);
+    EXPECT_EQ(reader.getHardlinkCount("A/f1"), 1);
+    EXPECT_EQ(reader.getHardlinkCount("C/f1"), 1);
+    EXPECT_EQ(reader.getHardlinkCount("C/own"), 0);
+    EXPECT_EQ(readObject(object_storage, reader.getStorageObjects("C/f1").front().remote_path), "shared");
+    EXPECT_EQ(readObject(object_storage, reader.getStorageObjects("C/own").front().remote_path), "own");
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, ReaderTrustsSnapshot)
+{
+    class CountingStorage : public LocalObjectStorage
+    {
+    public:
+        using LocalObjectStorage::LocalObjectStorage;
+        mutable std::atomic<size_t> reads = 0;
+        /// The listing of the markers of unfinished operations, which a reader of the snapshot does on every load, is not counted.
+        mutable std::atomic<size_t> listings = 0;
+        mutable std::atomic<size_t> marker_listings = 0;
+
+        std::unique_ptr<ReadBufferFromFileBase> readObject(
+            const StoredObject & object, const ReadSettings & settings, std::optional<size_t> hint,
+            bool external_buffer, bool restrict_seek) const override
+        {
+            ++reads;
+            return LocalObjectStorage::readObject(object, settings, hint, external_buffer, restrict_seek);
+        }
+
+        /// `iterate` lists through this too.
+        void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override
+        {
+            if (path.contains(PlainRewritableLayout::TOMBSTONE_DIRECTORY_TOKEN))
+                ++marker_listings;
+            else
+                ++listings;
+            LocalObjectStorage::listObjects(path, children, max_keys);
+        }
+    };
+
+    const std::string test = "ReaderTrustsSnapshot";
+    auto writer = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    auto write_file = [&](const std::string & path, const std::string & data)
+    {
+        auto tx = writer->createTransaction();
+        size_t size = writeObject(object_storage, tx->generateObjectKeyForPath(path).serialize(), data);
+        tx->createMetadataFile(path, {StoredObject(path, path, size)});
+        tx->commit(DB::NoCommitOptions{});
+    };
+
+    {
+        auto tx = writer->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("B");
+        tx->commit(DB::NoCommitOptions{});
+    }
+    write_file("A/file", "test");
+
+    /// The reader loads the whole state from the snapshot: a single read and no listings.
+    auto reader_storage = std::make_shared<CountingStorage>(LocalObjectStorageSettings("reader", object_storage->getCommonKeyPrefix(), /*read_only_=*/ true));
+    MetadataStorageFromPlainRewritableObjectStorage reader(reader_storage, "", hard_links_enabled);
+    EXPECT_EQ(reader_storage->reads, 1);
+    EXPECT_EQ(reader_storage->listings, 0);
+    EXPECT_EQ(reader_storage->marker_listings, 1);
+    EXPECT_EQ(sorted(reader.listDirectory("")), std::vector<std::string>({"A", "B"}));
+    EXPECT_EQ(reader.getFileSize("A/file"), 4u);
+
+    /// Nothing changed: the snapshot is not read again.
+    reader.refresh(0);
+    EXPECT_EQ(reader_storage->reads, 1);
+    EXPECT_EQ(reader_storage->listings, 0);
+
+    /// The changes of the writer come with the next snapshot.
+    write_file("A/new", "Hello world!");
+    {
+        auto tx = writer->createTransaction();
+        tx->moveDirectory("B", "C");
+        tx->commit(DB::NoCommitOptions{});
+    }
+    reader.refresh(0);
+    EXPECT_EQ(reader_storage->reads, 2);
+    EXPECT_EQ(reader_storage->listings, 0);
+    EXPECT_EQ(sorted(reader.listDirectory("")), std::vector<std::string>({"A", "C"}));
+    EXPECT_EQ(sorted(reader.listDirectory("A")), std::vector<std::string>({"file", "new"}));
+    EXPECT_EQ(reader.getFileSize("A/new"), 12u);
+
+    /// The reader trusts the snapshot even if it lags behind the object storage, as if the writer had not written it yet.
+    const auto snapshot_key = fmt::format("{}/__meta/{}", object_storage->getCommonKeyPrefix(), PlainRewritableLayout::SNAPSHOT_FILE_NAME);
+    const auto stale_snapshot = fmt::format("./{}.stale_snapshot", test);
+    std::filesystem::copy_file(snapshot_key, stale_snapshot, std::filesystem::copy_options::overwrite_existing);
+    SCOPE_EXIT({ std::filesystem::remove(stale_snapshot); });
+    write_file("A/later", "test");
+    std::filesystem::copy_file(stale_snapshot, snapshot_key, std::filesystem::copy_options::overwrite_existing);
+
+    MetadataStorageFromPlainRewritableObjectStorage stale_reader(reader_storage, "", hard_links_enabled);
+    EXPECT_EQ(reader_storage->listings, 0);
+    EXPECT_FALSE(stale_reader.existsFile("A/later"));
+    EXPECT_EQ(sorted(stale_reader.listDirectory("A")), std::vector<std::string>({"file", "new"}));
+
+    /// Without the snapshot, the reader lists the object storage.
+    std::filesystem::remove(snapshot_key);
+    MetadataStorageFromPlainRewritableObjectStorage listing_reader(reader_storage, "", hard_links_enabled);
+    EXPECT_GT(reader_storage->listings, 0);
+    EXPECT_TRUE(listing_reader.existsFile("A/later"));
+    EXPECT_EQ(sorted(listing_reader.listDirectory("")), std::vector<std::string>({"A", "C"}));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, ReadOnlyDiskOverWritableStorageDoesNotWriteSnapshot)
+{
+    /// A disk attached with `read_only` is wrapped with `ReadOnlyDiskWrapper`, but its object storage is writable.
+    const std::string test = "ReadOnlyDiskOverWritableStorageDoesNotWriteSnapshot";
+    auto writer = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    auto write_file = [&](const std::string & path, const std::string & data)
+    {
+        auto tx = writer->createTransaction();
+        size_t size = writeObject(object_storage, tx->generateObjectKeyForPath(path).serialize(), data);
+        tx->createMetadataFile(path, {StoredObject(path, path, size)});
+        tx->commit(DB::NoCommitOptions{});
+    };
+
+    {
+        auto tx = writer->createTransaction();
+        tx->createDirectory("A");
+        tx->commit(DB::NoCommitOptions{});
+    }
+    write_file("A/file", "test");
+
+    /// The snapshot of the writer lags behind the object storage, as if the writer had not written the latest one yet.
+    const auto snapshot_key = fmt::format("{}/__meta/{}", object_storage->getCommonKeyPrefix(), PlainRewritableLayout::SNAPSHOT_FILE_NAME);
+    const auto stale_snapshot = fmt::format("./{}.stale_snapshot", test);
+    std::filesystem::copy_file(snapshot_key, stale_snapshot, std::filesystem::copy_options::overwrite_existing);
+    SCOPE_EXIT({ std::filesystem::remove(stale_snapshot); });
+    write_file("A/later", "test");
+    std::filesystem::copy_file(stale_snapshot, snapshot_key, std::filesystem::copy_options::overwrite_existing);
+    const auto snapshot_contents = readObject(object_storage, snapshot_key);
+
+    {
+        MetadataStorageFromPlainRewritableObjectStorage reader(
+            object_storage, "", hard_links_enabled, PlainRewritableSnapshotSettings{.enabled = true, .write_delay_ms = 0}, /*read_only_disk_=*/ true);
+
+        /// It loads the state from the snapshot as a reader instead of listing the object storage as a writer.
+        EXPECT_TRUE(reader.existsFile("A/file"));
+        EXPECT_FALSE(reader.existsFile("A/later"));
+
+        reader.refresh(0);
+        reader.shutdown();
+    }
+
+    /// And it does not publish its own state over the snapshot of the writer.
+    EXPECT_EQ(readObject(object_storage, snapshot_key), snapshot_contents);
+
+    /// Nor does it remove the snapshot when the snapshots are disabled for it.
+    {
+        MetadataStorageFromPlainRewritableObjectStorage reader(
+            object_storage, "", hard_links_enabled, PlainRewritableSnapshotSettings{.enabled = false}, /*read_only_disk_=*/ true);
+        EXPECT_TRUE(reader.existsFile("A/later"));
+        reader.shutdown();
+    }
+    EXPECT_EQ(readObject(object_storage, snapshot_key), snapshot_contents);
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, ReaderDoesNotRollBackAfterFailedSnapshotRead)
+{
+    class FailingStorage : public LocalObjectStorage
+    {
+    public:
+        using LocalObjectStorage::LocalObjectStorage;
+        mutable std::atomic<size_t> snapshot_read_failures_left = 0;
+
+        std::unique_ptr<ReadBufferFromFileBase> readObject(
+            const StoredObject & object, const ReadSettings & settings, std::optional<size_t> hint,
+            bool external_buffer, bool restrict_seek) const override
+        {
+            if (object.remote_path.ends_with("/" + PlainRewritableLayout::SNAPSHOT_FILE_NAME) && snapshot_read_failures_left > 0)
+            {
+                --snapshot_read_failures_left;
+                throw Exception(ErrorCodes::NETWORK_ERROR, "Injected failure of reading the snapshot");
+            }
+            return LocalObjectStorage::readObject(object, settings, hint, external_buffer, restrict_seek);
+        }
+    };
+
+    const std::string test = "ReaderDoesNotRollBackAfterFailedSnapshotRead";
+    auto writer = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    auto write_file = [&](const std::string & path, const std::string & data)
+    {
+        auto tx = writer->createTransaction();
+        size_t size = writeObject(object_storage, tx->generateObjectKeyForPath(path).serialize(), data);
+        tx->createMetadataFile(path, {StoredObject(path, path, size)});
+        tx->commit(DB::NoCommitOptions{});
+    };
+
+    {
+        auto tx = writer->createTransaction();
+        tx->createDirectory("A");
+        tx->commit(DB::NoCommitOptions{});
+    }
+    write_file("A/file", "test");
+
+    /// The snapshot lags behind the object storage.
+    const auto snapshot_key = fmt::format("{}/__meta/{}", object_storage->getCommonKeyPrefix(), PlainRewritableLayout::SNAPSHOT_FILE_NAME);
+    const auto stale_snapshot = fmt::format("./{}.stale_snapshot", test);
+    std::filesystem::copy_file(snapshot_key, stale_snapshot, std::filesystem::copy_options::overwrite_existing);
+    SCOPE_EXIT({ std::filesystem::remove(stale_snapshot); });
+    write_file("A/later", "test");
+    std::filesystem::copy_file(stale_snapshot, snapshot_key, std::filesystem::copy_options::overwrite_existing);
+
+    /// The snapshot cannot be read once, so the reader lists the object storage and gets a fresher state.
+    auto reader_storage = std::make_shared<FailingStorage>(LocalObjectStorageSettings("reader", object_storage->getCommonKeyPrefix(), /*read_only_=*/ true));
+    reader_storage->snapshot_read_failures_left = 1;
+    MetadataStorageFromPlainRewritableObjectStorage reader(reader_storage, "", hard_links_enabled);
+    EXPECT_TRUE(reader.existsFile("A/later"));
+
+    /// The same snapshot is not applied on the next refresh: it would roll the state back.
+    reader.refresh(0);
+    EXPECT_TRUE(reader.existsFile("A/later"));
+
+    /// A newer snapshot is applied.
+    write_file("A/new", "test");
+    reader.refresh(0);
+    EXPECT_EQ(sorted(reader.listDirectory("A")), std::vector<std::string>({"file", "later", "new"}));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, ReaderListsWithMalformedMarker)
+{
+    const std::string test = "ReaderListsWithMalformedMarker";
+    auto writer = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    auto write_file = [&](const std::string & path, const std::string & data)
+    {
+        auto tx = writer->createTransaction();
+        size_t size = writeObject(object_storage, tx->generateObjectKeyForPath(path).serialize(), data);
+        tx->createMetadataFile(path, {StoredObject(path, path, size)});
+        tx->commit(DB::NoCommitOptions{});
+    };
+
+    {
+        auto tx = writer->createTransaction();
+        tx->createDirectory("A");
+        tx->commit(DB::NoCommitOptions{});
+    }
+    write_file("A/file", "test");
+
+    /// The snapshot lags behind the object storage.
+    const auto snapshot_key = fmt::format("{}/__meta/{}", object_storage->getCommonKeyPrefix(), PlainRewritableLayout::SNAPSHOT_FILE_NAME);
+    const auto stale_snapshot = fmt::format("./{}.stale_snapshot", test);
+    std::filesystem::copy_file(snapshot_key, stale_snapshot, std::filesystem::copy_options::overwrite_existing);
+    SCOPE_EXIT({ std::filesystem::remove(stale_snapshot); });
+    write_file("A/later", "test");
+    std::filesystem::copy_file(stale_snapshot, snapshot_key, std::filesystem::copy_options::overwrite_existing);
+
+    /// A torn marker of an unfinished operation: the snapshot cannot tell whether it matters, so the reader lists the object storage.
+    const PlainRewritableLayout layout(object_storage->getCommonKeyPrefix());
+    writeObject(object_storage, layout.constructTombstoneMarkerKey(PlainRewritableLayout::REMOVED_NAME_PREFIX + "abcdefghijklmnop"), "torn");
+
+    auto reader_storage = std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings("reader", object_storage->getCommonKeyPrefix(), /*read_only_=*/ true));
+    MetadataStorageFromPlainRewritableObjectStorage reader(reader_storage, "", hard_links_enabled);
+    EXPECT_TRUE(reader.existsFile("A/later"));
+    reader.refresh(0);
+    EXPECT_TRUE(reader.existsFile("A/later"));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, SnapshotWithMalformedBlockIsNotRead)
+{
+    /// A snapshot file with a single compressed block whose header declares the given sizes, followed by `payload_size` bytes.
+    auto make_snapshot = [](UInt32 compressed_size, UInt32 decompressed_size, size_t payload_size)
+    {
+        std::string data;
+        WriteBufferFromString out(data);
+        writeVarUInt(SNAPSHOT_FORMAT_VERSION, out);
+        out.write(std::string(16, '\0').data(), 16); /// The checksum.
+        writeBinary(static_cast<UInt8>(CompressionMethodByte::ZSTD), out);
+        writeBinaryLittleEndian(compressed_size, out);
+        writeBinaryLittleEndian(decompressed_size, out);
+        out.write(std::string(payload_size, '\0').data(), payload_size);
+        out.finalize();
+        return data;
+    };
+
+    auto expect_rejected = [](const std::string & data, const std::string & reason)
+    {
+        ReadBufferFromString in(data);
+        try
+        {
+            readPlainRewritableSnapshot(in);
+            FAIL() << "The malformed snapshot was read";
+        }
+        catch (const Exception & e)
+        {
+            /// Rejected by the header of the block, before any memory is allocated for it.
+            EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA) << e.message();
+            EXPECT_THAT(e.message(), testing::HasSubstr(reason));
+        }
+    };
+
+    const auto huge_compressed_block = make_snapshot(512 * 1024 * 1024, 1, 0);
+    expect_rejected(huge_compressed_block, "Invalid size 536870912 of a compressed block");
+    expect_rejected(make_snapshot(9 + 10, 512 * 1024 * 1024, 10), "Invalid decompressed size 536870912");
+
+    /// A reader does not use such a snapshot and lists the object storage.
+    const std::string test = "SnapshotWithMalformedBlockIsNotRead";
+    auto writer = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+    {
+        auto tx = writer->createTransaction();
+        tx->createDirectory("A");
+        size_t size = writeObject(object_storage, tx->generateObjectKeyForPath("A/file").serialize(), "test");
+        tx->createMetadataFile("A/file", {StoredObject("A/file", "A/file", size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto snapshot_key = fmt::format("{}/__meta/{}", object_storage->getCommonKeyPrefix(), PlainRewritableLayout::SNAPSHOT_FILE_NAME);
+    {
+        WriteBufferFromFile out(snapshot_key);
+        out.write(huge_compressed_block.data(), huge_compressed_block.size());
+        out.finalize();
+    }
+
+    auto reader_storage = std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings("reader", object_storage->getCommonKeyPrefix(), /*read_only_=*/ true));
+    MetadataStorageFromPlainRewritableObjectStorage reader(reader_storage, "", hard_links_enabled);
+    EXPECT_EQ(reader.listDirectory("A"), std::vector<std::string>({"file"}));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, WriterWithSnapshotsDisabledRemovesSnapshot)
+{
+    const std::string test = "WriterWithSnapshotsDisabledRemovesSnapshot";
+    auto writer = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    {
+        auto tx = writer->createTransaction();
+        tx->createDirectory("A");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto snapshot_key = fmt::format("{}/__meta/{}", object_storage->getCommonKeyPrefix(), PlainRewritableLayout::SNAPSHOT_FILE_NAME);
+    ASSERT_TRUE(std::filesystem::exists(snapshot_key));
+
+    /// The readers would trust the snapshot forever, as it is not rewritten anymore.
+    MetadataStorageFromPlainRewritableObjectStorage writer_without_snapshots(object_storage, "", hard_links_enabled, PlainRewritableSnapshotSettings{.enabled = false});
+    EXPECT_FALSE(std::filesystem::exists(snapshot_key));
+    EXPECT_TRUE(writer_without_snapshots.existsDirectory("A"));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, UnlinkKeepsSharedBlob)

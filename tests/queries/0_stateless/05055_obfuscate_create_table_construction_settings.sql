@@ -6,8 +6,6 @@
 -- only for a directly executed query, not for a `CREATE` whose source is a table function. `obfuscate`
 -- therefore rejects that DDL form, the same way `eval` does.
 
-SET allow_experimental_analyzer = 1;
-
 DROP TABLE IF EXISTS t_obfuscate_persisted;
 DROP VIEW IF EXISTS v_obfuscate;
 

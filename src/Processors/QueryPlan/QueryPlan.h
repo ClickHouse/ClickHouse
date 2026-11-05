@@ -81,6 +81,9 @@ struct ExplainPlanOptions
     /// followed by the exchanges between the fragments.
     /// Not sent to remote shards by `toSettingsChanges`, because it cannot be combined with `distributed`.
     bool fragments = false;
+    /// Draw a plan executed by stateless workers as boxes: one box per step, a frame per query fragment, and the
+    /// exchanges as edges between the fragments. Not sent to remote shards by `toSettingsChanges`, like `fragments`.
+    bool tree = false;
     /// Add input headers to step.
     bool input_headers = false;
     /// Print structure of columns instead of just their names and types.
@@ -145,6 +148,9 @@ public:
     void serializeForDistributedTask(WriteBuffer & out, size_t max_supported_version, const SizeLimits & sets_transfer_limits) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data = false);
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
+
+    static void serializeReadySets(SerializedSetsRegistry & registry, WriteBuffer & out);
+    static void deserializeAndMakeSets(DeserializedSetsRegistry & registry, ReadBuffer & in, const ContextPtr & context);
 
     /// Serializes the query plan and store the result
     void ensureSerialized(size_t max_supported_version) const;
@@ -435,13 +441,22 @@ struct DistributedQueryStage
     bool filter_only = false;
 };
 
+/// A stage that another stage reads from, and the exchange between them.
+struct StageDependency
+{
+    String stage;
+    String exchange;
+};
+
+using StageDependencies = std::vector<StageDependency>;
+
 /// Represents a graph of stages
 /// A stage typically contains a fragment of the query plan that can be executed by multiple workers in parallel on different partitions of data
 struct DistributedQueryPlan
 {
     std::unordered_map<String, DistributedQueryStage> stages;
-    /// Maps stage name to stages it depends on and the corresponding exchange_id
-    std::unordered_map<String, std::unordered_map<String, String>> stage_depends_on;
+    /// Maps stage name to the stages it reads from, in the order to start them.
+    std::unordered_map<String, StageDependencies> stage_depends_on;
     /// Maps exchange_id to exchange description
     ExchangeDescriptions exchange_descriptions;
     String final_result_stream_name;

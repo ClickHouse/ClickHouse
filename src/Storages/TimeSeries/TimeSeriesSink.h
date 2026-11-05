@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/IColumn.h>
 #include <Common/Logger_fwd.h>
 #include <Core/Block.h>
 #include <DataTypes/IDataType.h>
@@ -8,11 +9,9 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Storages/TimeSeries/TimeSeriesDeduplicationCache.h>
+#include <base/Decimal.h>
 
-#include <string_view>
-#include <unordered_map>
-#include <utility>
-#include <vector>
+#include <optional>
 
 
 namespace DB
@@ -44,20 +43,6 @@ public:
     void consume(Chunk & chunk) override;
     void onFinish() override;
 
-    /// Sorts tags by name, removes exact duplicates and tags with empty values,
-    /// and throws if the `__name__` tag is missing or appears with conflicting values.
-    static void sortTagsAndRemoveDuplicates(std::vector<std::pair<std::string_view, std::string_view>> & tags);
-
-    /// Dispatches one row of already-sorted tags into the appropriate output columns.
-    /// Every tag goes to `out_tags_names`/`out_tags_values`; tags matching a key in `columns_by_tag_name`
-    /// are also copied to the corresponding column.
-    static void insertSortedTagsToColumns(
-        const std::vector<std::pair<std::string_view, std::string_view>> & sorted_tags,
-        IColumn & out_tags_names,
-        IColumn & out_tags_values,
-        IColumn & out_tags_offsets,
-        std::unordered_map<std::string_view, IColumn *> & columns_by_tag_name);
-
 private:
     /// A persistent pipeline for inserting blocks into one target table.
     struct TargetPipeline
@@ -78,8 +63,18 @@ private:
     void consumeTagsAndSamples(const Block & block);
     void consumeMetricFamilies(const Block & block);
 
-    /// Calculates the "id" column by applying id_generator defaults and type conversion to the tags block.
-    ColumnPtr calculateId(const Block & tags_block) const;
+    /// Makes the tags block from the time series marked in `filter` (`num_time_series` of them): the `id` column calculated
+    /// by the id generator, the columns `metric_name` and the columns from the `tags_to_columns` setting, `tags`,
+    /// and `min_time`, `max_time` if the tags table stores them (tables of earlier versions).
+    Block makeTagsBlock(
+        const IColumn::Filter & filter,
+        size_t num_time_series,
+        const IColumn & metric_name_column,
+        const IColumn::Offsets & tags_offsets,
+        const IColumn & tags_keys,
+        const IColumn & tags_values,
+        const IColumn::Offsets & ts_offsets,
+        const IColumn & ts_timestamps) const;
 
     StorageTimeSeries & time_series_storage;
     TimeSeriesSettingsPtr time_series_settings;
@@ -95,12 +90,23 @@ private:
     /// Type of the `id` column in the tags target table.
     DataTypePtr id_type;
 
+    /// Types of the timestamps and the values of the samples, taken from the input header (see initTagsAndSamplesPipelines).
+    DataTypePtr timestamp_type;
+    DataTypePtr value_type;
+
     /// True when the resolved id-generator references the `all_tags` identifier.
     bool id_generator_uses_all_tags = false;
 
     /// Precomputed ExpressionActions for calculating the "id" column from a tags block.
     std::shared_ptr<ExpressionActions> calculate_id_actions;
     std::shared_ptr<ExpressionActions> convert_id_actions;
+
+    /// The steps of the buckets of the samples table and of the recent samples table
+    /// with the scale of `timestamp_type`, e.g. in milliseconds for `DateTime64(3)`.
+    /// Here zero means a table of an earlier version storing one sample per row;
+    /// and std::nullopt means there is no `recent_samples` table.
+    Decimal64 samples_bucket_step{0};
+    std::optional<Decimal64> recent_samples_bucket_step;
 
     std::unique_ptr<TargetPipeline> tags_pipeline;
     std::unique_ptr<TargetPipeline> time_ranges_pipeline;
