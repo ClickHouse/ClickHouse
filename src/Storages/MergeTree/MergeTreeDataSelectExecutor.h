@@ -381,6 +381,13 @@ public:
         MergeTreeReaderSettings reader_settings,
         LoggerPtr log);
 
+    /// Orders the useful indices for one part: vector similarity first, then minmax, then coarser granularity, then smaller index files.
+    /// `index_sizes_scratch` is a buffer the caller reuses across parts.
+    static SkipIndexOrder computeSkipIndexOrder(
+        const IMergeTreeDataPartInfoForReader & part,
+        const std::vector<MergeTreeIndexWithCondition> & useful_indices,
+        std::vector<size_t> & index_sizes_scratch);
+
     /// Returns an error if the index depends on a column updated on the fly. A value update
     /// (@value_updated_columns: ALTER UPDATE / patches / pending DROP COLUMN), a pending RENAME COLUMN,
     /// or a MATERIALIZED column the read recalculates from an updated one, always makes it stale. A
