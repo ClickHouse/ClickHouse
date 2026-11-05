@@ -2400,7 +2400,8 @@ public:
         auto * past_highest = llvm::ConstantFP::get(float_type, integer_is_signed ? 9223372036854775808.0 : 18446744073709551616.0);
         auto * above = b.CreateFCmpOGE(f, past_highest);
         auto * below = b.CreateFCmpOLT(f, lowest);
-        auto * in_range = b.CreateNot(b.CreateOr(above, below));
+        /// Ordered comparisons, false for NaN.
+        auto * in_range = b.CreateAnd(b.CreateFCmpOLT(f, past_highest), b.CreateFCmpOGE(f, lowest));
 
         /// Out of range (and NaN) the value is replaced by 0, so that the conversion is defined.
         auto * f_in_range = b.CreateSelect(in_range, f, llvm::ConstantFP::get(float_type, 0.0));
