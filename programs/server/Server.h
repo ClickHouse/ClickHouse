@@ -74,6 +74,8 @@ protected:
 
     std::string getDefaultCorePath() const override;
 
+    std::vector<std::string> getCommandLineForConfig() override;
+
 private:
     ContextMutablePtr global_context;
     /// Updated/recent config, to compare http_handlers

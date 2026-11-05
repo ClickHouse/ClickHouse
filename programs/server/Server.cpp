@@ -991,6 +991,17 @@ std::string Server::getDefaultCorePath() const
     return getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH), original_working_directory) + "cores";
 }
 
+/// The server settings are registered as direct options, and `Poco` takes the value of such an option from the
+/// next argument, also when it starts with `-` (`--os_threads_nice_value_merge_mutate -5`, `--default_replica_name
+/// -replica`). The raw `argsToConfig` would take that value for another option and store `1` for the setting in a
+/// layer above the `Poco` binding, so import the canonicalized command line instead, same as on a config reload.
+std::vector<std::string> Server::getCommandLineForConfig()
+{
+    Poco::Util::OptionSet builtin_options;
+    defineBuiltinOptions(builtin_options);
+    return ServerSettings::canonicalizeCommandLine(argv(), builtin_options);
+}
+
 void Server::defineBuiltinOptions(Poco::Util::OptionSet & options)
 {
     options.addOption(
