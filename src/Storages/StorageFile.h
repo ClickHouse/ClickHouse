@@ -138,6 +138,7 @@ public:
     /// Unlike `.null`/`.size0`, a tuple element is a real leaf in the file, so the format can serve
     /// `t.x` on its own and prune on it.
     bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
+    bool supportsOptimizationToMapKeysAndValuesSubcolumns() const override { return true; }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
@@ -457,6 +458,8 @@ private:
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
     SerializationInfoByName serialization_hints;
+    NameSet map_columns_read_by_keys;
+    NameSet map_columns_read_by_values;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
     UInt64 max_block_size;

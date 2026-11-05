@@ -331,7 +331,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
             std::optional<size_t> pos = sample_block->findPositionByName(node.name, options.format.parquet.case_insensitive_column_matching);
             if (pos.has_value())
             {
-                if (node.requested)
+                if (node.requested || node.inside_skipped_map_element)
                     throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE, "Requested column {} is part of another requested column", node.getNameForLogging());
 
                 node.requested = true;
@@ -339,6 +339,11 @@ void SchemaConverter::processSubtree(TraversalNode & node)
                 chassert(!node.type_hint);
                 node.type_hint = sample_block->getByPosition(pos.value()).type;
                 outer_type_hint = node.type_hint; // before unwrapping arrays
+
+                if (options.map_columns_read_by_keys.contains(node.name))
+                    node.map_element_to_skip = 1;
+                else if (options.map_columns_read_by_values.contains(node.name))
+                    node.map_element_to_skip = 0;
 
                 for (size_t i = 1; i < levels.size(); ++i)
                 {
@@ -643,7 +648,25 @@ bool SchemaConverter::processSubtreeMap(TraversalNode & node)
     /// (MapTupleAsPlainTuple is needed to skip a level in the column name: it changes
     /// `my_map.key_value.key` to `my_map.key`.
     TraversalNode subnode = node.prepareToRecurse(no_map ? SchemaContext::MapTupleAsPlainTuple : SchemaContext::MapTuple, array_type_hint);
+    if (!no_map)
+        subnode.map_element_to_skip = node.map_element_to_skip;
+    const size_t schema_idx_before_map = schema_idx;
+    const size_t primitive_column_idx_before_map = primitive_column_idx;
+    const size_t primitive_columns_before_map = primitive_columns.size();
+    const size_t output_columns_before_map = output_columns.size();
     processSubtree(subnode);
+
+    /// The offsets of a map come from a leaf of the side that is read. If that side has no leaf in the file, read the whole map.
+    if (!no_map && node.map_element_to_skip.has_value() && subnode.output_idx.has_value()
+        && output_columns.at(*subnode.output_idx).primitive_start == output_columns.at(*subnode.output_idx).primitive_end)
+    {
+        schema_idx = schema_idx_before_map;
+        primitive_column_idx = primitive_column_idx_before_map;
+        primitive_columns.resize(primitive_columns_before_map);
+        output_columns.resize(output_columns_before_map);
+        subnode = node.prepareToRecurse(SchemaContext::MapTuple, array_type_hint);
+        processSubtree(subnode);
+    }
 
     if (!node.requested || !subnode.output_idx.has_value())
         return true;
@@ -1057,14 +1080,16 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
                 throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Parquet tuple {} has multiple elements with name `{}`", node.getNameForLogging(), element_name);
         }
 
-        DataTypePtr element_type_hint;
-        if (tuple_type_hint && idx_in_output_tuple.has_value())
-            element_type_hint = tuple_type_hint->getElement(idx_in_output_tuple.value());
+        const bool skip_map_element = node.schema_context == SchemaContext::MapTuple && node.map_element_to_skip == i;
+        const bool element_requested = node.requested && idx_in_output_tuple.has_value() && !skip_map_element;
 
-        const bool element_requested = node.requested && idx_in_output_tuple.has_value();
+        DataTypePtr element_type_hint;
+        if (tuple_type_hint && idx_in_output_tuple.has_value() && element_requested)
+            element_type_hint = tuple_type_hint->getElement(idx_in_output_tuple.value());
 
         TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, element_type_hint);
         subnode.requested = element_requested;
+        subnode.inside_skipped_map_element |= skip_map_element;
         if (node.schema_context == SchemaContext::MapTuple && idx_in_output_tuple == 0)
             subnode.schema_context = SchemaContext::MapKey;
 
@@ -1124,7 +1149,9 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
         {
             if (elements[i] != UINT64_MAX)
                 continue;
-            if (!options.format.parquet.allow_missing_columns)
+            /// A map element that is not read is filled with defaults, sized by the offsets of the other one.
+            const bool skipped_map_element = node.schema_context == SchemaContext::MapTuple && node.map_element_to_skip == i;
+            if (!options.format.parquet.allow_missing_columns && !skipped_map_element)
                 throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Requested tuple element {} of column {} was not found in parquet schema ({})", tuple_type_hint->getNameByPosition(i + 1), node.getNameForLogging(), element_names_in_file);
 
             elements[i] = output_columns.size();

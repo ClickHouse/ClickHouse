@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
 
 -- A case-insensitive file reader can resolve m.values to a physical M.values column.
--- Do not rewrite mapContainsValue() when such a column shadows the Map subcolumn.
+-- The rewrite asks such a reader for the whole map m, so mapContainsValue() still reads the Map's own values.
 INSERT INTO FUNCTION file(currentDatabase() || '_05210_map_contains_value_ci.orc', ORC, 'm Map(String, UInt64), `M.values` Array(UInt64)')
 SELECT map('key', toUInt64(1)), [toUInt64(4)]
 SETTINGS engine_file_truncate_on_insert = 1;

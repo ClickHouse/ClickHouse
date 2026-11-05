@@ -1772,6 +1772,8 @@ StorageFileSource::StorageFileSource(
     , requested_virtual_columns(info.requested_virtual_columns)
     , block_for_format(info.format_header)
     , serialization_hints(info.serialization_hints)
+    , map_columns_read_by_keys(info.map_columns_read_by_keys)
+    , map_columns_read_by_values(info.map_columns_read_by_values)
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
@@ -2366,6 +2368,7 @@ Chunk StorageFileSource::generate()
 
             input_format->setBucketsToRead(buckets_to_read);
             input_format->setSerializationHints(serialization_hints);
+            input_format->setMapColumnsReadByOneSide(map_columns_read_by_keys, map_columns_read_by_values);
 
             if (need_only_count)
                 input_format->needOnlyCount();
@@ -3224,6 +3227,7 @@ public:
                         /*need_only_count=*/ false);
                 }
                 input_format->setSerializationHints(info.serialization_hints);
+                input_format->setMapColumnsReadByOneSide(info.map_columns_read_by_keys, info.map_columns_read_by_values);
 
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(input_format));

@@ -38,6 +38,10 @@ namespace DB
         /// Hints for the serialization of columns.
         /// For example can be retrieved from the destination table in INSERT SELECT query.
         SerializationInfoByName serialization_hints{{}};
+        /// `Map` columns of `format_header` whose every requested use is `keys` (resp. `values`) and that no default expression
+        /// reads: the format may read only that side and fill the other with defaults. Not serialized: without them the whole map is read.
+        NameSet map_columns_read_by_keys;
+        NameSet map_columns_read_by_values;
 
         void serialize(IQueryPlanStep::Serialization & ctx) const;
         static ReadFromFormatInfo deserialize(IQueryPlanStep::Deserialization & ctx);
