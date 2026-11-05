@@ -25,6 +25,6 @@ upload_dataset multi_frag.lance 'hash%23data.lance'
 upload_dataset basic.lance hash
 
 for url in "${PREFIX}/hash%23data.lance" "${PREFIX}/hash%23data.lance/" "${PREFIX}/hash"; do
-    $CLICKHOUSE_CLIENT --allow_experimental_lance 1 -q "
+    $CLICKHOUSE_CLIENT --enable_lance 1 -q "
         SELECT count(), any(_file) FROM lanceS3('${url}', 'test', 'testtest')"
 done

@@ -69,7 +69,7 @@ for port in "${REDIRECTING_PORT}" "${TARGET_PORT}"; do
 done
 : > "${TARGET_LOG}"
 
-${CLICKHOUSE_CLIENT} --allow_experimental_lance=1 --query "
+${CLICKHOUSE_CLIENT} --enable_lance=1 --query "
     SELECT * FROM lanceS3('http://127.0.0.1:${REDIRECTING_PORT}/bucket/dataset.lance', NOSIGN)
 " 2>&1 | grep -c -m1 '307 Temporary Redirect'
 

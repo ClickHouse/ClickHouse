@@ -11531,7 +11531,7 @@ Sets the evaluation time to be used with promql dialect, as a Unix timestamp in 
 )", PRIVATE_PREVIEW, evaluation_time, \
         {"25.9", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."}, \
         {"25.8", Field{"auto"}, Field{"auto"}, "New experimental setting. At the time the setting was named `evaluation_time`, which is now an alias of it."}) \
-    DECLARE(Bool, allow_experimental_lance, false, R"(
+    DECLARE(Bool, enable_lance, false, R"(
 Allow creating tables with the `LanceLocal` and `LanceS3` table engines and using the `lanceLocal`, `lanceS3`, and `lanceS3Cluster` table functions.
 )", EXPERIMENTAL, \
         {"26.11", false, false, "New setting to enable the experimental `Lance` table engines and table functions."}) \

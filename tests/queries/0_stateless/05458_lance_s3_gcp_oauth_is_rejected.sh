@@ -21,6 +21,6 @@ $CLICKHOUSE_CLIENT -q "
         google_adc_client_secret = 'secret',
         google_adc_refresh_token = 'token'"
 
-$CLICKHOUSE_CLIENT --allow_experimental_lance 1 -q "SELECT count() FROM lanceS3(${COLLECTION})" 2>&1 | grep -o -m1 'NOT_IMPLEMENTED'
+$CLICKHOUSE_CLIENT --enable_lance 1 -q "SELECT count() FROM lanceS3(${COLLECTION})" 2>&1 | grep -o -m1 'NOT_IMPLEMENTED'
 
 $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION ${COLLECTION}"

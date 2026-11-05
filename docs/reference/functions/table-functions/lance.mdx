@@ -16,7 +16,7 @@ The `lanceLocal` and `lanceS3` table functions provide a read-only interface to 
 Enable the experimental table functions before using them, including `lanceS3Cluster`:
 
 ```sql
-SET allow_experimental_lance = 1;
+SET enable_lance = 1;
 ```
 
 The setting defaults to `0` and must also be enabled for queries executed on cluster workers.

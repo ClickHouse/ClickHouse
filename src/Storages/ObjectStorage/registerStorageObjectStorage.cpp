@@ -40,7 +40,7 @@ namespace Setting
 {
     extern const SettingsBool write_full_path_in_iceberg_metadata;
     extern const SettingsBool enable_paimon_storage_engine;
-    extern const SettingsBool allow_experimental_lance;
+    extern const SettingsBool enable_lance;
 }
 
 namespace DataLakeStorageSetting
@@ -2704,11 +2704,11 @@ void registerStorageLance(StorageFactory & factory)
     {
         /// A full-definition `ATTACH TABLE ... ENGINE = Lance...` is a fresh definition too, so it is gated as well.
         if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext())
-            && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_lance])
+            && !args.getLocalContext()->getSettingsRef()[Setting::enable_lance])
         {
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "`Lance` table engines are experimental. Set `allow_experimental_lance` to enable them");
+                "`Lance` table engines are experimental. Set `enable_lance` to enable them");
         }
     };
 
@@ -2751,7 +2751,7 @@ void registerStorageLance(StorageFactory & factory)
         },
         Documentation{
             .description = "Provides a read-only integration with existing Lance datasets stored in Amazon S3 or S3-compatible object storage. "
-                "This engine is experimental: enable it with the `allow_experimental_lance` setting.",
+                "This engine is experimental: enable it with the `enable_lance` setting.",
             .syntax = "ENGINE = LanceS3(url [, NOSIGN | access_key_id, secret_access_key [, session_token]])",
             .related = {"LanceLocal", "IcebergS3", "DeltaLakeS3", "PaimonS3"}});
 #endif
@@ -2794,7 +2794,7 @@ void registerStorageLance(StorageFactory & factory)
         },
         Documentation{
             .description = "Provides a read-only integration with existing Lance datasets stored on the local filesystem. "
-                "This engine is experimental: enable it with the `allow_experimental_lance` setting.",
+                "This engine is experimental: enable it with the `enable_lance` setting.",
             .syntax = "ENGINE = LanceLocal(path)",
             .related = {"LanceS3", "IcebergLocal", "DeltaLakeLocal", "PaimonLocal"}});
 }

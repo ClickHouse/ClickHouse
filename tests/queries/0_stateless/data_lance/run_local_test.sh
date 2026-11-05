@@ -19,7 +19,7 @@ run_lance_local_test()
     local random_uuid
     random_uuid=$(${CLICKHOUSE_CLIENT} --query "SELECT generateUUIDv4()")
     sed -e "s|tests/queries/0_stateless/data_lance|${fixture_dir}|g" -e "s|__RANDOM_UUID__|${random_uuid}|g" "${sql_file}" \
-        | ${CLICKHOUSE_CLIENT} --allow_experimental_lance=1 --multiquery
+        | ${CLICKHOUSE_CLIENT} --enable_lance=1 --multiquery
 
     case "${test_name}" in
         04545_lance_local_schema_validation)

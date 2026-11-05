@@ -7,7 +7,7 @@
 -- the registration of the engine and the table function, so `Lance` must be included in the build.
 -- The queries fail before reaching the storage (`Lance` is experimental), but they are still logged.
 
-SET allow_experimental_lance = 0;
+SET enable_lance = 0;
 
 CREATE TABLE t_05331 (id UInt64) ENGINE = LanceS3('http://localhost:11111/test/05331.lance', 'ak', 'SEKRIT_ENGINE_05331'); -- { serverError SUPPORT_IS_DISABLED }
 SELECT * FROM lanceS3('http://localhost:11111/test/05331.lance', 'ak', 'SEKRIT_FUNCTION_05331'); -- { serverError SUPPORT_IS_DISABLED }

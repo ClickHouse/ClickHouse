@@ -38,7 +38,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_lance;
+    extern const SettingsBool enable_lance;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
@@ -215,10 +215,10 @@ void TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::parseA
         || std::is_same_v<Definition, LanceS3Definition>
         || std::is_same_v<Definition, LanceS3ClusterDefinition>)
     {
-        if (!context->getSettingsRef()[Setting::allow_experimental_lance])
+        if (!context->getSettingsRef()[Setting::enable_lance])
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "`Lance` table functions are experimental. Set `allow_experimental_lance` to enable them");
+                "`Lance` table functions are experimental. Set `enable_lance` to enable them");
     }
 #endif
 

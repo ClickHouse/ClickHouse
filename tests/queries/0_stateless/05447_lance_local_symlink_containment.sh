@@ -25,6 +25,6 @@ cp -R "${CUR_DIR}/data_lance/basic.lance" "${inside_dir}/contained.lance"
 mv "${inside_dir}/contained.lance/data" "${inside_dir}/contained.lance/real_data"
 ln -s "${inside_dir}/contained.lance/real_data" "${inside_dir}/contained.lance/data"
 
-${CLICKHOUSE_CLIENT} --allow_experimental_lance=1 --query "DESCRIBE lanceLocal('${inside_dir}/escaping.lance')" 2>&1 | grep -o -m1 'ACCESS_DENIED'
-${CLICKHOUSE_CLIENT} --allow_experimental_lance=1 --query "SELECT count() FROM lanceLocal('${inside_dir}/escaping.lance')" 2>&1 | grep -o -m1 'ACCESS_DENIED'
-${CLICKHOUSE_CLIENT} --allow_experimental_lance=1 --query "SELECT count() FROM lanceLocal('${inside_dir}/contained.lance')"
+${CLICKHOUSE_CLIENT} --enable_lance=1 --query "DESCRIBE lanceLocal('${inside_dir}/escaping.lance')" 2>&1 | grep -o -m1 'ACCESS_DENIED'
+${CLICKHOUSE_CLIENT} --enable_lance=1 --query "SELECT count() FROM lanceLocal('${inside_dir}/escaping.lance')" 2>&1 | grep -o -m1 'ACCESS_DENIED'
+${CLICKHOUSE_CLIENT} --enable_lance=1 --query "SELECT count() FROM lanceLocal('${inside_dir}/contained.lance')"

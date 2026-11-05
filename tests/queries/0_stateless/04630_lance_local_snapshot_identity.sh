@@ -11,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # `Lance` is experimental: every client call in this test has to opt in explicitly.
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_lance=1"
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_lance=1"
 
 SOURCE_DIR="${CUR_DIR}/data_lance"
 FIXTURE_DIR="${CLICKHOUSE_USER_FILES_UNIQUE}/data_lance"
