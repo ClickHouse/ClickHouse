@@ -23,6 +23,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/PODArray.h>
 #include <Common/isValidUTF8.h>
 
 #include <Poco/JSON/Array.h>
@@ -41,6 +42,42 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// The size of a `LowCardinality` column with the values that its rows refer to, whether it owns the dictionary or not.
+/// `byteSize` does not count a shared dictionary at all and counts the whole of an owned dictionary even for a `cut`.
+size_t lowCardinalityBytes(const ColumnLowCardinality & column)
+{
+    const auto & indexes = column.getIndexes();
+    const auto & dictionary = *column.getDictionary().getNestedColumn();
+    PODArray<UInt8> used(dictionary.size(), 0);
+    size_t bytes = indexes.byteSize();
+    for (size_t row = 0; row < indexes.size(); ++row)
+    {
+        const UInt64 key = indexes.getUInt(row);
+        if (!used[key])
+        {
+            used[key] = 1;
+            bytes += dictionary.byteSizeAt(key);
+        }
+    }
+    return bytes;
+}
+
+/// The uncompressed size of a column in a part, which does not depend on the ownership of the dictionaries of
+/// `LowCardinality` columns, including the nested ones, e.g. the dictionary of a column read from a `Wide` part is shared.
+size_t columnUncompressedBytes(const IColumn & column)
+{
+    if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column))
+        return lowCardinalityBytes(*low_cardinality);
+
+    size_t bytes = column.byteSize();
+    column.forEachSubcolumnRecursively([&](const IColumn & subcolumn)
+    {
+        if (const auto * nested_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&subcolumn))
+            bytes = bytes - nested_low_cardinality->byteSize() + lowCardinalityBytes(*nested_low_cardinality);
+    });
+    return bytes;
+}
 
 /// Whether the type is stored as a Parquet column without definition and repetition levels, i.e. without nulls and arrays.
 bool isRequiredWithoutArrays(const IDataType & type)
@@ -547,7 +584,8 @@ void MergeTreeDataPartWriterParquet::writeColumnChunks(size_t column_idx, const 
     /// The uncompressed size of a column is its size in memory, but for a binary column it is the size of the serialized
     /// values: the size in memory may not count the data at all, e.g. a `cut` of a column of aggregate states shares
     /// the arena with the whole column, so its `byteSize` counts only the pointers to the states.
-    columns_to_write[column_idx].uncompressed_bytes += column_in_file->byteSize();
+    /// Likewise, a `LowCardinality` column counts the values that it refers to, even if it shares the dictionary.
+    columns_to_write[column_idx].uncompressed_bytes += columnUncompressedBytes(*column_in_file);
 
     size_t start = data_hashing->count();
     chassert(start == file_state.offset);
