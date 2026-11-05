@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <filesystem>
 #include <memory>
 #include <DataTypes/DataTypeArray.h>
@@ -79,6 +80,25 @@ inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings
     return CompressionCodecFactory::instance().get(settings.compression_codec);
 }
 
+[[noreturn]] void throwNotEnoughSpace(size_t reserve_size, const Disks & disks)
+{
+    Strings disks_info;
+    for (const auto & d : disks)
+    {
+        auto to_double = [](auto x) { return static_cast<double>(x); };
+        disks_info.push_back(fmt::format("{}: available: {} unreserved: {}, total: {}, keeping: {}",
+            d->getName(),
+            ReadableSize(d->getAvailableSpace().transform(to_double).value_or(NaNOrZero<double>())),
+            ReadableSize(d->getUnreservedSpace().transform(to_double).value_or(NaNOrZero<double>())),
+            ReadableSize(d->getTotalSpace().transform(to_double).value_or(NaNOrZero<double>())),
+            ReadableSize(d->getKeepingFreeSpace())));
+    }
+
+    throw Exception(ErrorCodes::NOT_ENOUGH_SPACE,
+        "Not enough space on temporary disk, cannot reserve {} bytes on [{}]",
+        reserve_size, fmt::join(disks_info, ", "));
+}
+
 }
 
 TemporaryFileHolder::TemporaryFileHolder(const TemporaryDataMetrics & metrics)
@@ -87,6 +107,12 @@ TemporaryFileHolder::TemporaryFileHolder(const TemporaryDataMetrics & metrics)
     ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
     if (metrics.num_files)
         ProfileEvents::increment(metrics.num_files.value());
+}
+
+const DiskPtr & TemporaryFileHolder::getDisk() const
+{
+    static const DiskPtr no_disk;
+    return no_disk;
 }
 
 
@@ -260,24 +286,7 @@ public:
         {
             auto reservation = volume->reserve(reserve_size);
             if (!reservation)
-            {
-                auto disks = volume->getDisks();
-                Strings disks_info;
-                for (const auto & d : disks)
-                {
-                    auto to_double = [](auto x) { return static_cast<double>(x); };
-                    disks_info.push_back(fmt::format("{}: available: {} unreserved: {}, total: {}, keeping: {}",
-                        d->getName(),
-                        ReadableSize(d->getAvailableSpace().transform(to_double).value_or(NaNOrZero<double>())),
-                        ReadableSize(d->getUnreservedSpace().transform(to_double).value_or(NaNOrZero<double>())),
-                        ReadableSize(d->getTotalSpace().transform(to_double).value_or(NaNOrZero<double>())),
-                        ReadableSize(d->getKeepingFreeSpace())));
-                }
-
-                throw Exception(ErrorCodes::NOT_ENOUGH_SPACE,
-                    "Not enough space on temporary disk, cannot reserve {} bytes on [{}]",
-                    reserve_size, fmt::join(disks_info, ", "));
-            }
+                throwNotEnoughSpace(reserve_size, volume->getDisks());
             disk = reservation->getDisk();
         }
         else
@@ -305,6 +314,11 @@ public:
     String describeFilePath() const override
     {
         return fmt::format("disk({})://{}/{}", disk->getName(), disk->getPath(), path_to_file);
+    }
+
+    const DiskPtr & getDisk() const override
+    {
+        return disk;
     }
 
     ~TemporaryFileOnLocalDisk() override
@@ -428,6 +442,11 @@ void TemporaryDataBuffer::nextImpl()
 String TemporaryDataBuffer::describeFilePath() const
 {
     return file_holder->describeFilePath();
+}
+
+const DiskPtr & TemporaryDataBuffer::getDisk() const
+{
+    return file_holder->getDisk();
 }
 
 void TemporaryDataBuffer::cancelImpl() noexcept
@@ -580,6 +599,17 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
     stat.uncompressed_size += uncompressed_delta;
     if (compressed_delta > 0)
         spilled_bytes.fetch_add(compressed_delta, std::memory_order_relaxed);
+}
+
+void TemporaryAppendSpaceCheck::beforeAppend(const TemporaryDataBuffer & buffer, size_t reserve_size)
+{
+    const auto & disk = buffer.getDisk();
+    if (!disk || std::ranges::find(checked_disks, disk) != checked_disks.end())
+        return;
+
+    if (!disk->reserve(reserve_size))
+        throwNotEnoughSpace(reserve_size, {disk});
+    checked_disks.push_back(disk);
 }
 
 TemporaryBlockStreamHolder::TemporaryBlockStreamHolder(SharedHeader header_, std::shared_ptr<TemporaryDataOnDiskScope> parent_, size_t reserve_size)

@@ -627,7 +627,8 @@ void StorageMaterializedView::drop()
 {
     auto table_id = getStorageID();
 
-    auto view_metadata = getInMemoryMetadataPtr(getContext(), false);
+    /// The override also looks up the target table, which may be unreachable.
+    auto view_metadata = IStorage::getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
     if (view_metadata->sql_security_type == SQLSecurityType::DEFINER)
         DefinerDependencies::instance().removeDependencies(table_id);
 
@@ -740,11 +741,19 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
 {
     ContextPtr table_context = getContext();
     ClientInfo client_info = table_context->getClientInfo();
-    client_info.interface = ClientInfo::Interface::BACKGROUND;
-    client_info.client_name = "refreshable materialized view";
     auto view_metadata = getInMemoryMetadataPtr(getContext(), false);
     auto refresh_context = view_metadata->getSQLSecurityOverriddenContext(table_context, &client_info);
-    refresh_context->setClientInfo(client_info);
+    /// For `SQL SECURITY DEFINER`, `getSQLSecurityOverriddenContext` fills the empty user names in
+    /// the context's `ClientInfo` with the definer. Do not assign the local `client_info` copy to
+    /// the context: `setClientInfo` replaces the whole struct and would wipe that identity out.
+    /// Re-read it instead, so that a view without SQL security (which gets a plain copy) also gets
+    /// these fields.
+    {
+        ClientInfo refresh_client_info = refresh_context->getClientInfo();
+        refresh_client_info.interface = ClientInfo::Interface::BACKGROUND;
+        refresh_client_info.client_name = "refreshable materialized view";
+        refresh_context->setClientInfo(refresh_client_info);
+    }
     refresh_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
     refresh_context->setSetting("log_comment", log_comment);
     refresh_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
@@ -1118,7 +1127,8 @@ void StorageMaterializedView::flushAndPrepareForShutdown()
 
 void StorageMaterializedView::shutdown(bool)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    /// The override also looks up the target table, which may be unreachable.
+    auto metadata_snapshot = IStorage::getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
     const auto & select_query = metadata_snapshot->getSelectQuery();
     /// Make sure the dependency is removed after DETACH TABLE
     if (!select_query.select_table_id.empty())

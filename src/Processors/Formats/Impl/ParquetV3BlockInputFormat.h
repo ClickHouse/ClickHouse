@@ -15,11 +15,13 @@ namespace DB
 struct ParquetFileBucketInfo : public FileBucketInfo
 {
     std::vector<size_t> row_group_ids;
+    std::optional<std::pair<UInt64, UInt64>> byte_range;
 
     ParquetFileBucketInfo() = default;
     explicit ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_);
-    void serialize(WriteBuffer & buffer) override;
-    void deserialize(ReadBuffer & buffer) override;
+    ParquetFileBucketInfo(UInt64 offset, UInt64 length);
+    void serialize(WriteBuffer & buffer, size_t protocol_version) const override;
+    void deserialize(ReadBuffer & buffer, size_t protocol_version) override;
     String getIdentifier() const override;
     String getFormatName() const override
     {
@@ -33,6 +35,7 @@ struct ParquetBucketSplitter : public IBucketSplitter
 {
     ParquetBucketSplitter() = default;
     std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) override;
+    std::vector<FileBucketInfoPtr> splitByByteRanges(size_t bucket_size, size_t file_size, const std::vector<UInt64> & split_offsets) override;
 };
 
 class KeyCondition;
@@ -48,7 +51,8 @@ public:
         FormatFilterInfoPtr format_filter_info_,
         size_t min_bytes_for_seek,
         ParquetMetadataCachePtr metadata_cache_ = nullptr,
-        const std::optional<RelativePathWithMetadata> & object_with_metadata_ = std::nullopt);
+        const std::optional<RelativePathWithMetadata> & object_with_metadata_ = std::nullopt,
+        bool is_remote_fs_ = false);
 
     void resetParser() override;
 
@@ -78,6 +82,8 @@ public:
 private:
     Chunk read() override;
 
+    void prefetch() override;
+
     void onCancel() noexcept override;
 
     const FormatSettings format_settings;
@@ -87,12 +93,17 @@ private:
     ParquetMetadataCachePtr metadata_cache;
     const std::optional<RelativePathWithMetadata> object_with_metadata;
 
-    /// (This mutex is not important. It protects `reader.emplace` in a weird case where onCancel()
+    /// (This mutex is not important. It protects setting `reader` in a weird case where onCancel()
     ///  may be called in parallel with first read(). ReadManager itself is thread safe for that,
-    ///  but initializing vs checking the std::optional would race without this mutex.)
+    ///  but initializing vs checking the pointer would race without this mutex.)
     std::mutex reader_mutex;
 
-    std::optional<Parquet::ReadManager> reader;
+    std::unique_ptr<Parquet::ReadManager> reader;
+    /// Has the file footer, but is not initialized: initializing it starts reading and decoding the column chunks.
+    std::unique_ptr<Parquet::ReadManager> reader_with_footer;
+    std::optional<ParquetMetadataCacheKey> footer_cache_key;
+    ParquetMetadataCache::MappedPtr footer_cache_cell;
+    bool footer_cache_hit = false;
     bool reported_count = false; // if need_only_count
 
     /// The rows were replaced by min / max from column chunk statistics; no row groups were read.
@@ -101,8 +112,10 @@ private:
     BlockMissingValues previous_block_missing_values;
     size_t previous_approx_bytes_read_for_chunk = 0;
 
+    void readFileFooterIfNeeded();
     void initializeIfNeeded();
     std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
+    Parquet::RowGroupSelection rowGroupSelection() const;
 
     /// nullopt if the metadata cache is not used.
     std::optional<ParquetMetadataCacheKey> getMetadataCacheKey() const;

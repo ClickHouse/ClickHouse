@@ -980,6 +980,7 @@ void ReadFromRemote::addPipe(
         // Several connections to a shard are correct only when every replica reads its own part of the data,
         // which is the case only for the offset based modes (`SAMPLING_KEY`, `CUSTOM_KEY_SAMPLING`,
         // `CUSTOM_KEY_RANGE`), where the query sent to a replica carries the corresponding filter.
+        // The replicas then share one port, so a read whose consumer needs stream order uses one replica.
         //
         // In every other case a replica executes the whole query, so there should be a single connection
         // to a shard, otherwise the result of the shard is multiplied by the number of the connections:
@@ -989,7 +990,7 @@ void ReadFromRemote::addPipe(
         //   * with parallel replicas disabled, or not applicable for any other reason (e.g. by
         //     `automatic_parallel_replicas_mode`), a replica just executes the query over all of its
         //     data.
-        if (context->canUseOffsetParallelReplicas())
+        if (context->canUseOffsetParallelReplicas() && allow_reading_shard_from_several_replicas)
             remote_query_executor->setPoolMode(PoolMode::GET_MANY);
         else
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
@@ -1025,6 +1026,9 @@ Pipes ReadFromRemote::addPipes(
 
 void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    if (context->canUseOffsetParallelReplicas() && !allow_reading_shard_from_several_replicas)
+        LOG_DEBUG(log, "Reading every shard from one replica, the consumers of the read may depend on the order of its streams");
+
     Pipes pipes = addPipes(shards, output_header, unavailable_shard_tracker);
 
     /// One pipe per executor, so the built pipes are this query's complete unit count.

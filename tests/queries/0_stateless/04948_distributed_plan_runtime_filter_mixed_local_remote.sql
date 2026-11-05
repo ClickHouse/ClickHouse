@@ -13,7 +13,7 @@ INSERT INTO dim SELECT number FROM numbers(10);
 INSERT INTO local_probe SELECT number FROM numbers(100000);
 INSERT INTO remote_probe SELECT number FROM numbers(100000);
 
-SET enable_analyzer = 1, enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0;
+SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0;
 SET enable_join_runtime_filters_index_analysis = 0;
 SET make_distributed_plan = 1, distributed_plan_execute_locally = 1;
 SET query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0;
