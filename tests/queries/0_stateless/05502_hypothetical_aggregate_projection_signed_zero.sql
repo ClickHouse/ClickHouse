@@ -4,8 +4,10 @@
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_optimize_projection = 0, force_optimize_projection = 0,
     enable_parallel_replicas = 0, optimize_aggregation_in_order = 0;
 
+-- the implicit minmax indices of add_minmax_index_for_numeric_columns would prune the marks of the base table and change
+-- the estimates and the real reads this test compares, so the tables opt out
 CREATE TABLE z_est (id UInt16, k Float64, v UInt8) ENGINE = MergeTree ORDER BY id
-    SETTINGS index_granularity = 200, index_granularity_bytes = 10485760, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 200, index_granularity_bytes = 10485760, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
         enable_block_number_column = 0, enable_block_offset_column = 0;
 CREATE TABLE z_inserted AS z_est;
 CREATE TABLE z_materialized AS z_est;
