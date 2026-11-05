@@ -208,15 +208,17 @@ namespace
     /// Scale of the `DateTime64` that a Delta `timestamp` / `timestamp_ntz` is read as: microseconds.
     constexpr UInt32 DELTA_TIMESTAMP_SCALE = 6;
 
-    /// A row compares as its statistics say only within `[Int64 min, Int64 max] / TIMESTAMP_FENCE_DIVISOR`
-    /// microseconds, the range of `Int64` nanoseconds (about 1677 to 2262):
+    /// Outside `[TIMESTAMP_FENCE_MIN, TIMESTAMP_FENCE_MAX]` microseconds, the range of `Int64` nanoseconds
+    /// (about 1677 to 2262), a row may compare otherwise than its statistics say:
     /// - with `decimal_check_overflow = 0`, a comparison at a finer scale multiplies the column by up to
     ///   1000 and wraps around `Int64`;
     /// - with `date_time_overflow_behavior = 'saturate'`, the Parquet reader clamps an `INT96` timestamp
-    ///   to the `Int64` nanoseconds, while the statistics keep the value as written. The reader takes this
-    ///   setting from its own format settings (for a table engine, the table's `SETTINGS` and the server's
-    ///   default profile; on a cluster, each replica's), which pruning cannot see, so it always fences.
-    constexpr Int64 TIMESTAMP_FENCE_DIVISOR = 1000;
+    ///   to these bounds, while the statistics keep the value as written. The reader takes this setting
+    ///   from its own format settings (for a table engine, the table's `SETTINGS` and the server's default
+    ///   profile; on a cluster, each replica's), which pruning cannot see. Clamping keeps the order with a
+    ///   literal strictly between the bounds, so only a literal on or beyond a bound is fenced for it.
+    constexpr Int64 TIMESTAMP_FENCE_MIN = std::numeric_limits<Int64>::min() / 1000;
+    constexpr Int64 TIMESTAMP_FENCE_MAX = std::numeric_limits<Int64>::max() / 1000;
 
     struct TimestampLiteral
     {
@@ -298,6 +300,8 @@ namespace
         DeltaTimestampKind kind;
         Int64 micros;
         ComparisonVisitor visitor;
+        /// Whether the rows outside the fence are kept undecided.
+        bool fenced;
     };
 
     /// Matches a comparison of a column backed by a Delta `timestamp` / `timestamp_ntz` with a literal.
@@ -306,7 +310,7 @@ namespace
         const DB::ActionsDAG::Node * column,
         const DB::ActionsDAG::Node * literal,
         bool swapped,
-        DeltaTimestampKind kind,
+        const DeltaTimestampColumn & delta_column,
         const ComparisonVisitors & visitors,
         const DB::FormatSettings & format_settings)
     {
@@ -314,6 +318,10 @@ namespace
         const auto column_type = getTypeOrNestedType(column);
         const auto * date_time64 = typeid_cast<const DB::DataTypeDateTime64 *>(column_type.get());
         if (!date_time64 || date_time64->getScale() != DELTA_TIMESTAMP_SCALE)
+            return std::nullopt;
+
+        /// The statistics leave out NULLs, which a column declared not `Nullable` reads as the default value.
+        if (delta_column.nullable && !column->result_type->isNullable())
             return std::nullopt;
 
         const auto value = convertTimestampLiteral(column_type, *literal, format_settings);
@@ -324,11 +332,12 @@ namespace
         if (!visitor)
             return std::nullopt;
 
-        /// The finest `DateTime64` is nanoseconds, so the comparison scales the column up by at most this:
-        /// the fence of `visitTimestampComparison` covers the scaled comparison too.
-        chassert(value->multiplier <= TIMESTAMP_FENCE_DIVISOR);
+        /// The finest `DateTime64` is nanoseconds, so the comparison scales the column up by at most 1000:
+        /// the fence covers the scaled comparison too.
+        chassert(value->multiplier <= 1000);
+        const bool fenced = value->multiplier > 1 || value->micros <= TIMESTAMP_FENCE_MIN || value->micros >= TIMESTAMP_FENCE_MAX;
 
-        return TimestampComparison{column, kind, value->micros, visitor};
+        return TimestampComparison{column, delta_column.kind, value->micros, visitor, fenced};
     }
 }
 
@@ -336,8 +345,7 @@ DB::FormatSettings EnginePredicate::makeComparisonFormatSettings(const DB::Conte
 {
     if (!context_)
         return {};
-    /// As in `ComparisonParams` (keep the two in sync): a string compared with a date/time is parsed in
-    /// `cast_string_to_date_time_mode`, not in `date_time_input_format`.
+    /// The same as `ComparisonParams` of the comparisons in the filter.
     auto settings = DB::getFormatSettings(context_);
     settings.date_time_input_format = context_->getSettingsRef()[DB::Setting::cast_string_to_date_time_mode];
     return settings;
@@ -738,11 +746,9 @@ uintptr_t EngineIterator::visitTimestampComparison(
         comparison.kind == DeltaTimestampKind::TimestampNtz ? &visitTimestampNtzLiteral : &visitTimestampLiteral};
 
     auto compared = predicates.compare(comparison.visitor, comparison.micros);
-    return predicates.fenced(
-        compared,
-        std::numeric_limits<Int64>::min() / TIMESTAMP_FENCE_DIVISOR,
-        std::numeric_limits<Int64>::max() / TIMESTAMP_FENCE_DIVISOR,
-        visitUntranslated(iterator_data));
+    if (!comparison.fenced)
+        return compared;
+    return predicates.fenced(compared, TIMESTAMP_FENCE_MIN, TIMESTAMP_FENCE_MAX, visitUntranslated(iterator_data));
 }
 
 uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const DB::ActionsDAG::Node * node)
@@ -845,10 +851,10 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                 {
                     /// A Delta timestamp column never takes the non-accurate cast below,
                     /// which would truncate a literal finer than microseconds.
-                    if (auto kind = iterator_data.predicate.getTimestampKind(column_node->result_name))
+                    if (const auto * delta_column = iterator_data.predicate.getTimestampColumn(column_node->result_name))
                     {
                         if (auto comparison = matchTimestampComparison(
-                                column_node, literal_node, isConstNode(node->children[0]), *kind, *visitors,
+                                column_node, literal_node, isConstNode(node->children[0]), *delta_column, *visitors,
                                 iterator_data.predicate.getFormatSettings()))
                             return visitTimestampComparison(iterator_data, *comparison);
                         return VISITOR_FAILED_OR_UNSUPPORTED;

@@ -6,11 +6,9 @@
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Formats/FormatFactory.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 
 #include <delta_kernel_ffi.hpp>
-
-#include <optional>
-#include <unordered_map>
 
 namespace DB
 {
@@ -21,15 +19,6 @@ using ContextPtr = std::shared_ptr<const Context>;
 
 namespace DeltaLake
 {
-
-/// Delta type behind a top-level column that ClickHouse reads as `DateTime64(6)`;
-/// selects the kernel literal a comparison with that column is translated to.
-enum class DeltaTimestampKind : uint8_t
-{
-    Timestamp,
-    TimestampNtz,
-};
-using DeltaTimestampColumns = std::unordered_map<String, DeltaTimestampKind>;
 
 /// EnginePredicate used in ffi::scan.
 /// A predicate which allows to implement internal delta-kernel-rs filtering
@@ -66,12 +55,12 @@ public:
     DB::ContextPtr getContext() const { return context; }
     const DB::FormatSettings & getFormatSettings() const { return format_settings; }
 
-    std::optional<DeltaTimestampKind> getTimestampKind(const String & column_name) const
+    const DeltaTimestampColumn * getTimestampColumn(const String & column_name) const
     {
         auto it = timestamp_columns.find(column_name);
         if (it == timestamp_columns.end())
-            return std::nullopt;
-        return it->second;
+            return nullptr;
+        return &it->second;
     }
 
 private:
@@ -87,7 +76,7 @@ private:
     DB::ContextPtr context;
     /// The settings `FunctionComparison` converts a literal with, so that pruning sees the same value.
     const DB::FormatSettings format_settings;
-    /// Top-level columns backed by a Delta `timestamp` / `timestamp_ntz`, by logical name.
+    /// See `TableSchemaResult`.
     const DeltaTimestampColumns timestamp_columns;
 
     static uintptr_t visitPredicate(void * data, ffi::KernelExpressionVisitorState * state);

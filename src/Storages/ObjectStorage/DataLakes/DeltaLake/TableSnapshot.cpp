@@ -10,7 +10,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Field.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeNullable.h>
 
 #include <Columns/IColumn.h>
 #include <Common/CurrentThread.h>
@@ -129,8 +128,7 @@ public:
         const TableSchema & table_schema_,
         const DB::NameToNameMap & physical_names_map_,
         const DB::Names & partition_columns_,
-        const std::unordered_set<String> & timestamp_ntz_columns_,
-        const std::unordered_set<String> & widened_timestamp_columns_,
+        const DeltaTimestampColumns & timestamp_columns_,
         const DB::ActionsDAG * filter_,
         DB::IDataLakeMetadata::FileProgressCallback callback_,
         size_t list_batch_size_,
@@ -158,15 +156,7 @@ public:
         if (filter_)
         {
             filter = filter_->clone();
-            for (const auto & [name, type] : table_schema_)
-            {
-                /// The old files of a widened column hold another type, which the row and its statistics
-                /// do not convert alike: its comparisons stay untranslated.
-                if (DB::isDateTime64(DB::removeNullable(type)) && !widened_timestamp_columns_.contains(name))
-                    timestamp_columns.emplace(
-                        name,
-                        timestamp_ntz_columns_.contains(name) ? DeltaTimestampKind::TimestampNtz : DeltaTimestampKind::Timestamp);
-            }
+            timestamp_columns = timestamp_columns_;
             pruner.emplace(
                 *filter,
                 table_schema_,
@@ -677,7 +667,7 @@ private:
     KernelScanDataIterator scan_data_iterator;
     std::optional<PartitionPruner> pruner;
     std::optional<DB::ActionsDAG> filter;
-    /// Delta type of every top-level `DateTime64` column of the logical schema, for the engine predicate.
+    /// For the engine predicate, see `TableSchemaResult`.
     DeltaTimestampColumns timestamp_columns;
 
     KernelHelperPtr helper;
@@ -1038,8 +1028,7 @@ DB::ObjectIterator TableSnapshot::iterate(
         schema->table_schema,
         schema->physical_names_map,
         schema->partition_columns,
-        schema->timestamp_ntz_columns,
-        schema->widened_timestamp_columns,
+        schema->timestamp_columns,
         filter_dag,
         callback,
         list_batch_size,
@@ -1056,7 +1045,7 @@ void TableSnapshot::initOrUpdateSchemaIfChanged() const
     if (!schema.has_value())
     {
         auto state = getKernelSnapshotState();
-        auto [table_schema, physical_names_map, timestamp_ntz_paths, timestamp_ntz_columns, widened_timestamp_columns]
+        auto [table_schema, physical_names_map, timestamp_ntz_paths, timestamp_columns]
             = getTableSchemaFromSnapshot(state->snapshot.get(), state->engine.get());
 
         if (table_schema.empty())
@@ -1085,8 +1074,7 @@ void TableSnapshot::initOrUpdateSchemaIfChanged() const
             .physical_names_map = std::move(physical_names_map),
             .partition_columns = std::move(partition_columns),
             .timestamp_ntz_paths = std::move(timestamp_ntz_paths),
-            .timestamp_ntz_columns = std::move(timestamp_ntz_columns),
-            .widened_timestamp_columns = std::move(widened_timestamp_columns),
+            .timestamp_columns = std::move(timestamp_columns),
         });
     }
 }
