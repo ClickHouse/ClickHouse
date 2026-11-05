@@ -355,7 +355,7 @@ Field decodeFieldImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexi
         case FieldBinaryTypeIndex::String:
         {
             String value;
-            readStringBinary(value, buf);
+            readStringBinaryGrowing(value, buf);
             return value;
         }
         case FieldBinaryTypeIndex::UUID:
@@ -406,7 +406,7 @@ Field decodeFieldImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexi
             for (size_t i = 0; i != size; ++i)
             {
                 String name;
-                readStringBinary(name, buf);
+                readStringBinaryGrowing(name, buf);
                 value[name] = decodeFieldImpl(buf, complexity, max_complexity);
             }
             return value;
@@ -414,9 +414,9 @@ Field decodeFieldImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexi
         case FieldBinaryTypeIndex::AggregateFunctionState:
         {
             String name;
-            readStringBinary(name, buf);
+            readStringBinaryGrowing(name, buf);
             String data;
-            readStringBinary(data, buf);
+            readStringBinaryGrowing(data, buf);
             return AggregateFunctionStateData{.name = name, .data = data};
         }
     }
