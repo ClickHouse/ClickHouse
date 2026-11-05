@@ -62,6 +62,16 @@ for sqp in 1 0; do
     ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM rp_mf_dist_leaf SETTINGS ${SETTINGS}, serialize_query_plan = ${sqp},
         additional_table_filters = {'${CLICKHOUSE_DATABASE}.rp_mf_leaf': 'y = randConstant() % 100000'}"
 done
+
+# An `arrayJoin` in the entry doubles each row once.
+for table in rp_mf_merge rp_mf_leaf; do
+    dist=$([ "$table" = rp_mf_merge ] && echo rp_mf_dist || echo rp_mf_dist_leaf)
+    for sqp in 1 0; do
+        echo -n "arrayJoin atf on ${table} sqp=${sqp} "
+        ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${dist} SETTINGS ${SETTINGS}, serialize_query_plan = ${sqp},
+            additional_table_filters = {'${CLICKHOUSE_DATABASE}.${table}': 'x < 100 AND arrayJoin([1, 1])'}"
+    done
+done
 ${CLICKHOUSE_CLIENT} -m -q "
 DROP ROW POLICY rp_mf_all ON rp_mf_leaf;
 DROP TABLE rp_mf_dist_leaf;

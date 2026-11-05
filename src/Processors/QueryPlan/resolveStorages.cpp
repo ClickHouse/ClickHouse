@@ -156,7 +156,15 @@ static std::unique_ptr<ExpressionStep> makeStepWithoutAdditionalFilter(
     if (filter_output == outputs.end())
         return {};
     outputs.erase(filter_output);
+    /// The read applies the filter with its `arrayJoin`, which `removeUnusedActions` would keep here as well.
+    std::unordered_set<const ActionsDAG::Node *> array_joins;
+    for (const auto & action : actions.getNodes())
+        if (action.type == ActionsDAG::ActionType::ARRAY_JOIN)
+            array_joins.insert(&action);
+    actions.removeNodes(array_joins);
     actions.removeUnusedActions(/*allow_remove_inputs=*/ false);
+    if (actions.hasArrayJoin())
+        return {};
 
     auto step = std::make_unique<ExpressionStep>(filter_step->getInputHeaders().front(), std::move(actions));
     if (!blocksHaveEqualStructure(*step->getOutputHeader(), *filter_step->getOutputHeader()))
