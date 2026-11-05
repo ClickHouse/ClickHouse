@@ -115,6 +115,19 @@ ClickHouse에서는 몇 가지 유형의 제약 조건을 지원합니다:
   설정되지 않은 각 제약 조건 유형은 이전 프로필에서 가져오고,
   설정된 각 제약 조건 유형은 새 프로필의 값으로 대체됩니다.
 
+## 제약 조건과 `compatibility` 설정 {#constraints-and-compatibility}
+
+[`compatibility`](/ko/reference/settings/session-settings/compatibility#compatibility) 설정은 사용자가
+직접 지정하지 않은 설정을 이전 버전의 기본값으로 변경합니다. 단, 제약 조건이 허용하지 않는 값은 절대
+적용하지 않습니다. 이전 기본값이 `min`/`max`
+범위를 벗어나거나, `disallowed` 값 중 하나이거나, 설정이 `const`이면 해당 설정은 현재 기본값을 유지합니다. [`allow_feature_tier`](/ko/reference/settings/server-settings/settings/allow#allow_feature_tier)로 비활성화된 등급(tier)의
+설정에도 동일한 규칙이 적용됩니다.
+`readonly` 설정은 이러한 방식으로 `compatibility`를 제한하지 않습니다. 대신 쿼리에서 `compatibility`를
+설정할 수 있는지 여부 자체를 결정합니다.
+
+`MergeTree` 설정은 모든 테이블의 서버 전체 기본값을 정하는 기본 프로필(default profile)의 `compatibility`만 따릅니다. 이때도 마찬가지로, 기본 프로필의 `merge_tree_` 접두사가 붙은
+제약 조건이나 `allow_feature_tier`가 이전 기본값을 허용하지 않으면 해당 설정은 현재 기본값을 유지합니다.
+
 ## 읽기 전용 모드 {#read-only}
 
 읽기 전용 모드는 `readonly` 설정으로 활성화되며, `readonly` 제약 조건 유형과 혼동하지 않도록 주의해야 합니다. `readonly = 1`일 때는 원래라면 변경이 거부될 설정이라도 `changeable_in_readonly` 제약 조건이 허용하면 변경할 수 있습니다. 이 설정의 각 값이 의미하는 바는 [설정 참고](/ko/reference/settings/session-settings/other#readonly)를 참조하십시오. 각 값이 허용하는 쿼리 클래스와 HTTP 인터페이스가 이 값을 설정하는 방식은 [쿼리 권한](/ko/concepts/features/configuration/settings/permissions-for-queries#readonly)을 참조하십시오.

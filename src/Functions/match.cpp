@@ -77,6 +77,7 @@ Alternative operator syntax: `haystack REGEXP pattern` or `haystack ~ pattern` (
 
     factory.registerFunction<FunctionMatch>(documentation);
     factory.registerAlias("REGEXP_MATCHES", NameMatch::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("REGEXP_LIKE", NameMatch::name, FunctionFactory::Case::Insensitive);
 }
 
 }

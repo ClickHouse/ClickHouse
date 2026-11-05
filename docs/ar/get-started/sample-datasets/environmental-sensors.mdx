@@ -13,8 +13,12 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 تُعد [Sensor.Community](https://sensor.community/en/) شبكة عالمية من المستشعرات يقودها المساهمون، وتُنتج بيانات بيئية مفتوحة. وتُجمع هذه البيانات من مستشعرات منتشرة في أنحاء العالم كافة. ويمكن لأي شخص شراء مستشعر ووضعه في أي مكان يريده. وتتوفر واجهات برمجة التطبيقات لتنزيل البيانات على [GitHub](https://github.com/opendata-stuttgart/meta/wiki/APIs)، كما أن البيانات متاحة بحرية بموجب [Database Contents License (DbCL)](https://opendatacommons.org/licenses/dbcl/1-0/).
 
 <Warning>
-  تحتوي مجموعة البيانات على أكثر من 20 مليار سجل، لذا توخَّ الحذر عند مجرد نسخ الأوامر أدناه ولصقها، ما لم تكن مواردك قادرة على التعامل مع هذا الحجم. نُفِّذت الأوامر أدناه على مثيل **الإنتاج** من [ClickHouse Cloud](https://clickhouse.cloud).
+  تحتوي مجموعة البيانات على أكثر من 20 مليار سجل، لذا توخَّ الحذر عند مجرد نسخ الأوامر أدناه ولصقها، ما لم تكن مواردك قادرة على التعامل مع هذا الحجم. نُفِّذت هذه الأوامر على خدمة [ClickHouse Cloud](/ar/products/cloud/getting-started/intro) ذات حجم مناسب.
 </Warning>
+
+<Tip>
+  لتجربة هذه الأوامر بنفسك، يمكنك التسجيل للحصول على [فترة تجريبية مجانية من ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-environmental-sensors) أو إعداد [ClickHouse مستضاف ذاتيًا](/ar/get-started/setup/install).
+</Tip>
 
 1. البيانات موجودة في S3، لذا يمكننا استخدام الدالة الجدولية `s3` لإنشاء جدول من الملفات. ويمكننا أيضًا استعلام البيانات في موضعها مباشرةً. لنلقِ نظرة على بعض الصفوف قبل محاولة إدراجها في ClickHouse:
 
@@ -74,7 +78,7 @@ ENGINE = MergeTree
 ORDER BY (timestamp, sensor_id);
 ```
 
-3. تتضمن خدمات ClickHouse Cloud عنقودًا باسم `default`. سنستخدم دالة الجدول `s3Cluster`، التي تقرأ ملفات S3 بالتوازي من العقد في عنقودك. (إذا لم يكن لديك عنقود، فاستخدم الدالة `s3` فقط وأزل اسم العنقود.)
+3. سنستخدم دالة الجدول [`s3Cluster`](/ar/reference/functions/table-functions/s3Cluster)، التي توزّع ملفات S3 على العقد في عنقودك لتُقرأ بالتوازي. في ClickHouse Cloud، يحمل عنقودك الاسم `default`، ويمكنك تشغيل الاستعلام كما هو موضّح. أما على خادم مُدار ذاتيًا، فاستبدل `default` باسم عنقودك — أو إذا كنت تشغّل خادمًا واحدًا، فاستخدم بدلًا منها دالة الجدول [`s3`](/ar/reference/functions/table-functions/s3)، مع حذف الوسيط الأول ليبدأ الاستدعاء بعنوان URL.
 
 سيستغرق هذا الاستعلام بعض الوقت - إذ يبلغ حجم البيانات غير المضغوطة نحو 1.67 تيرابايت:
 
@@ -173,4 +177,4 @@ ORDER BY day ASC;
 
 فيما يلي تصور للنتيجة:
 
-<Image img="/images/getting-started/example-datasets/sensors_02.webp" size="md" alt="أيام حارة ورطبة" />
+<Image img="/images/getting-started/example-datasets/sensors_02.webp" size="md" alt="الأيام الحارة والرطبة" />

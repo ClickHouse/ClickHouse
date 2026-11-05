@@ -12,16 +12,18 @@ integration:
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-ClickPipes 支持与 Schema Registry 集成，以解码采用 Avro 和 Protobuf 编码的记录值以及[结构化 Kafka key](/zh/integrations/clickpipes/kafka/reference#structured-message-keys)。
+ClickPipes 支持与 Schema Registry 集成，以解码采用 Avro 和 Protobuf 编码的记录值。Kafka ClickPipes 还支持[结构化 Kafka 键](/zh/integrations/clickpipes/kafka/reference#structured-message-keys)。
 
 对于 Protobuf 记录值，你也可以在不配置 Schema Registry 的情况下[直接上传 schema](/zh/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic)。
 
-## Kafka ClickPipes 支持的 Schema Registry {#supported-schema-registries}
+## 流式 ClickPipes 支持的 Schema Registry {#supported-schema-registries}
 
 Kafka ClickPipes 支持两类 schema registry：
 
 * [兼容 Confluent 的 Schema Registry](#confluent-compatible-registries)：任何与 Confluent Schema Registry API 兼容的 registry，例如 Confluent Schema Registry 本身和 Redpanda Schema Registry。支持 Avro 和 Protobuf。
 * [AWS Glue Schema Registry](#aws-glue-schema-registry)：适用于使用 AWS Glue SerDe 序列化的 Avro 数据，通常来自亚马逊 MSK。
+
+Kinesis ClickPipes 支持 AWS Glue Schema Registry，适用于 Avro 和 Protobuf 数据。
 
 ClickPipes 目前尚不支持 Azure Schema Registry。如需支持，请[联系我们的团队](https://clickhouse.com/company/contact?loc=clickpipes)。
 
@@ -61,17 +63,17 @@ ClickPipes 会动态从已配置的 Schema Registry 获取并应用 schema。
 
 ## AWS Glue Schema Registry {#aws-glue-schema-registry}
 
-如果您的 producer 使用 AWS Glue SerDe 序列化 Avro (例如，对亚马逊 MSK topic 使用 `AWSKafkaAvroSerializer`) ，ClickPipes 可以直接从 AWS Glue Schema Registry 解析这些 schema。Glue 使用的传输格式和 API 与兼容 Confluent 的 registry 不同，因此需要单独配置。
+如果您的 producer 使用 AWS Glue SerDe 序列化 Avro (例如，对亚马逊 MSK topic 使用 `AWSKafkaAvroSerializer`) ，ClickPipes 可以直接从 AWS Glue Schema Registry 解析这些 schema。Glue 使用的传输格式和 API 与兼容 Confluent 的 Schema Registry 不同，因此需要单独配置。
 
-目前，AWS Glue Schema Registry configuration 只能通过 ClickHouse Cloud 控制台进行配置，不支持通过 ClickPipes API 或 Terraform provider 配置。
+AWS Glue Schema Registry configuration 均可通过 ClickHouse Cloud 控制台、ClickPipes API 和 Terraform provider 进行配置。
 
 <Note>
-  **仅支持 Avro。** AWS Glue registry 仅支持 Avro 格式。Glue SerDe 也可以封装 JSON 和 Protobuf，但 ClickPipes 不支持这些格式，创建管道时会被拒绝。
+  **Kafka：** AWS Glue registry 仅支持 Avro 格式。**Kinesis：** AWS Glue registry 支持 `AvroConfluent` 和 `Protobuf`。Glue SerDe 不支持 JSON。
 </Note>
 
 ### 配置 {#glue-configuration}
 
-在 ClickPipe 创建向导的 Kafka 连接步骤中，启用**Schema Registry**，并将**Registry type**设为**AWS Glue**：
+在 ClickPipe 创建向导的 Kafka 或 Kinesis 连接步骤中，启用**Schema Registry**，并将**Registry type**设为**AWS Glue**：
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png" alt="已选择 AWS Glue 的 Schema Registry 面板" size="lg" border />
 
@@ -79,10 +81,10 @@ ClickPipes 会动态从已配置的 Schema Registry 获取并应用 schema。
 | ------------- | --- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
 | Registry type | 是   | 选择**AWS Glue**                                                                           | `AWS Glue`                                                 |
 | AWS 区域        | 是   | Glue registry 所在的区域。必须与 registry 的区域完全一致。                                                | `us-east-1`                                                |
-| Registry name | 是   | Glue registry 的名称。解析到其他 registry 的 schema 会被拒绝，因此 ClickPipes 解析 schema version 时会发现拼写错误。 | `my-glue-registry`                                         |
-| IAM 角色 ARN  | 有条件 | 用于访问 registry 的专用角色。如果 broker 使用 IAM 身份验证，则为可选；否则必填。                                     | `arn:aws:iam::123456789012:role/ClickHouseAccessRole-glue` |
+| Registry 名称 | 是   | Glue registry 的名称。解析到其他 registry 的 schema 会被拒绝，因此 ClickPipes 解析 schema version 时会发现拼写错误。 | `my-glue-registry`                                         |
+| IAM role ARN    | 有条件 | 用于访问 registry 的专用角色。如果 broker 使用 IAM 身份验证，则为可选；否则必填。                                     | `arn:aws:iam::123456789012:role/ClickHouseAccessRole-glue` |
 
-无需配置 registry URL。Glue SerDe 生成的每条记录都携带自身 schema version 的 ID。ClickPipes 使用 `glue:GetSchemaVersion` 解析并缓存这些 schema；每个不同的 schema version 仅需一次 API 调用。schema evolution 会自动处理：当记录在 stream 中途切换到新的 schema version 时，会在首次遇到该版本时进行解析。
+无需配置 registry URL。Glue SerDe 生成的每条记录都携带自身 schema version 的 ID。ClickPipes 使用 `glue:GetSchemaVersion` 解析并缓存这些 schema；每个不同的 schema version 仅需一次 API 调用。schema evolution 会自动处理：当记录在 stream 中途切换到新的 schema version 时，会在首次遇到该版本时进行解析。对于 Kinesis，请通过 [OpenAPI](/zh/integrations/clickpipes/programmatic-access/openapi) 或 [Terraform](/zh/integrations/clickpipes/programmatic-access/terraform) 配置相同的字段。
 
 ### IAM 设置 {#glue-iam-setup}
 
@@ -186,8 +188,8 @@ ClickPipes 会动态从已配置的 Schema Registry 获取并应用 schema。
 
 ### 限制 {#glue-limitations}
 
-* 仅支持 Avro。不支持通过 Glue SerDe 使用 JSON Schema 或 Protobuf。
-* 仅支持 Kafka 源。Kinesis ClickPipes 无法使用 Glue registry。
+* Kafka 仅支持 Avro。不支持通过 Glue SerDe 使用 JSON Schema 或 Protobuf。
+* Kinesis 支持通过 AWS Glue Schema Registry 使用 `AvroConfluent` 和 `Protobuf`。上传的 Protobuf schema 不能与 Schema Registry 结合使用。
 
 ## Schema 映射 {#schema-mapping}
 

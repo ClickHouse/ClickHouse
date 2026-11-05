@@ -17,7 +17,6 @@
 -- 04209_top_k_through_join_read_in_order_gate: the stateless test runner randomizes them, and
 -- each of them can defeat the deferral check.
 
-SET enable_analyzer = 1;
 SET query_plan_top_k_through_join = 1;
 SET optimize_read_in_order = 1;
 SET query_plan_read_in_order_through_join = 1;
