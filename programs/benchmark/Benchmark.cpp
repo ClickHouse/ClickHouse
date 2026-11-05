@@ -839,7 +839,10 @@ private:
     bool runOpenLoop(double rate, InterruptListener & interrupt_listener)
     {
         arrival_rate = rate;
-        pcg64 generator(seed);
+        /// Separate streams for the arrival times and for the choice of query and host, so the arrival
+        /// schedule with a given seed does not depend on the list of queries or hosts.
+        pcg64 arrival_generator(seed, 0);
+        pcg64 choice_generator(seed, 1);
         std::exponential_distribution<double> interarrival_distribution(rate);
         std::uniform_int_distribution<size_t> query_distribution(0, queries.size() - 1);
         std::uniform_int_distribution<size_t> connection_distribution(0, connections.size() - 1);
@@ -870,7 +873,7 @@ private:
         double arrival_time = 0;
         for (size_t i = 0; !max_iterations || i < max_iterations; ++i)
         {
-            arrival_time += interarrival_distribution(generator);
+            arrival_time += interarrival_distribution(arrival_generator);
             if (max_time > 0 && arrival_time >= max_time)
             {
                 /// Wait until the time limit to report the right arrival rate.
@@ -882,8 +885,8 @@ private:
             }
 
             Task task;
-            task.query_index = randomize ? query_distribution(generator) : i % queries.size();
-            task.connection_index = connection_distribution(generator);
+            task.query_index = randomize ? query_distribution(choice_generator) : i % queries.size();
+            task.connection_index = connection_distribution(choice_generator);
             const UInt64 arrival_ns = start_ns + static_cast<UInt64>(arrival_time * 1e9);
 
             if (!waitUntil(arrival_ns, interrupt_listener, interrupted))
