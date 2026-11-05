@@ -6,6 +6,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/DataFileStatistics.h>
 
+#include <deque>
+
 namespace DB
 {
 
@@ -13,6 +15,28 @@ namespace DB
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
+
+/// Finished data files of one INSERT stream whose upload has been started by `preFinalize`, oldest first, so that
+/// the stream writes the next file while they are uploaded. Shared by the partition writers of a sink.
+class DataFileUploads
+{
+public:
+    explicit DataFileUploads(size_t max_files_in_upload_);
+
+    /// Takes the buffer of a finished file after `preFinalize`; finalizes the oldest ones while more than
+    /// `max_files_in_upload` are left.
+    void add(std::unique_ptr<WriteBufferFromFileBase> && buffer);
+    /// Waits for all uploads.
+    void finalize();
+    /// For S3, waits for the uploads in flight, so that their objects can be removed afterwards.
+    void cancel() noexcept;
+
+private:
+    void finalizeUntilAtMost(size_t max_files);
+
+    const size_t max_files_in_upload;
+    std::deque<std::unique_ptr<WriteBufferFromFileBase>> buffers;
+};
 
 class MultipleFileWriter
 {
@@ -22,6 +46,7 @@ public:
         UInt64 max_data_file_num_bytes_,
         Poco::JSON::Array::Ptr schema,
         FileNamesGenerator & filename_generator_,
+        DataFileUploads & data_file_uploads_,
         const Iceberg::IcebergPathResolver & path_resolver_,
         ObjectStoragePtr object_storage_,
         ContextPtr context_,
@@ -31,6 +56,7 @@ public:
 
     void consume(const Chunk & chunk);
     void startNewFile();
+    /// Writes the footer of the current file and hands its buffer to `data_file_uploads`, which waits for the upload.
     void finalize();
     void release();
     void cancel();
@@ -81,6 +107,7 @@ private:
     std::unique_ptr<WriteBufferFromFileBase> buffer;
     OutputFormatPtr output_format;
     FileNamesGenerator & filename_generator;
+    DataFileUploads & data_file_uploads;
     const Iceberg::IcebergPathResolver & path_resolver;
     ObjectStoragePtr object_storage;
     ContextPtr context;
