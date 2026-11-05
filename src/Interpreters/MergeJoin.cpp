@@ -1,24 +1,28 @@
+#include <Interpreters/MergeJoin.h>
+
 #include <atomic>
 #include <limits>
-
-#include <Columns/ColumnNullable.h>
+#include <optional>
 #include <Columns/ColumnLowCardinality.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/logger_useful.h>
-#include <Interpreters/IJoin.h>
+#include <Columns/ColumnNullable.h>
+#include <Core/Defines.h>
 #include <Core/SortCursor.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/MergeJoin.h>
-#include <Interpreters/TableJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/JoinUsedFlags.h>
+#include <Interpreters/IJoin.h>
 #include <Interpreters/JoinUtils.h>
+#include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/sortBlock.h>
-#include <Processors/Sources/BlocksListSource.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Sources/BlocksListSource.h>
+#include <Processors/Transforms/MergeSortingTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 
 
 namespace CurrentMetrics
@@ -530,6 +534,46 @@ void copyRightRange(const Columns & columns_to_add, MutableColumns & columns, si
     }
 }
 
+/// Contiguous flavor of `copyRightRange`: appends the right rows [start, start + rows_to_add)
+/// as they are instead of repeating one row.
+void copyRightRangeContiguous(const Columns & columns_to_add, MutableColumns & columns, size_t start, size_t rows_to_add)
+{
+    for (size_t i = 0; i < columns_to_add.size(); ++i)
+    {
+        const auto & src_column = columns_to_add[i];
+        auto & dst_column = columns[i];
+        auto * dst_nullable = typeid_cast<ColumnNullable *>(dst_column.get());
+
+        if (dst_nullable && !isColumnNullable(*src_column))
+            dst_nullable->insertRangeFromNotNullable(*src_column, start, rows_to_add);
+        else
+            dst_column->insertRangeFrom(*src_column, start, rows_to_add);
+    }
+}
+
+/// The bytes `copyRightRangeContiguous` would append for the right rows
+/// [start, start + rows_to_add), measured WITHOUT copying anything: the gather budget of the
+/// order-preserving probe is a hard bound, so a range which would cross it is never copied.
+size_t byteSizeOfRightRange(const Columns & columns_to_add, const MutableColumns & columns, size_t start, size_t rows_to_add)
+{
+    size_t bytes = 0;
+    for (size_t i = 0; i < columns_to_add.size(); ++i)
+    {
+        const auto & src_column = columns_to_add[i];
+
+        /// A nullable destination over a non-nullable source grows its null map too.
+        if (typeid_cast<const ColumnNullable *>(columns[i].get()) && !isColumnNullable(*src_column))
+            bytes += rows_to_add * sizeof(UInt8);
+
+        if (src_column->valuesHaveFixedSize())
+            bytes += rows_to_add * src_column->sizeOfValueIfFixed();
+        else
+            for (size_t row = start; row < start + rows_to_add; ++row)
+                bytes += src_column->byteSizeAt(row);
+    }
+    return bytes;
+}
+
 void joinEqualsAnyLeft(const Columns & columns_to_add, MutableColumns & right_columns, const MergeJoinEqualRange & range)
 {
     copyRightRange(columns_to_add, right_columns, range.right_start, range.left_length);
@@ -597,9 +641,9 @@ void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns,
 }
 
 
-MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block_)
+MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block_, std::optional<SizeLimits> size_limits_override)
     : table_join(table_join_)
-    , size_limits(table_join->sizeLimits())
+    , size_limits(size_limits_override ? *size_limits_override : table_join->sizeLimits())
     , right_sample_block(*right_sample_block_)
     , is_any_join(table_join->strictness() == JoinStrictness::Any)
     , is_all_join(table_join->strictness() == JoinStrictness::All)
@@ -608,7 +652,9 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_
     , is_left(isLeft(table_join->kind()))
     , is_right(isRight(table_join->kind()))
     , is_full(isFull(table_join->kind()))
+    , prune_left_columns(HashJoin::canRemoveColumnsFromLeftBlock(*table_join))
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
+    , max_joined_block_bytes(table_join->maxJoinedBlockBytes())
     , max_rows_in_right_block(table_join->maxRowsInRightBlock())
     , max_files_to_merge(table_join->maxFilesToMerge())
     , log(getLogger("MergeJoin"))
@@ -708,6 +754,15 @@ void MergeJoin::runPostBuildPhase()
 
     if (is_right || is_full || (is_all_join && table_join->collectExactMatches()))
         used_rows_bitmap = std::make_shared<RowBitmaps>(getRightBlocksCount());
+
+    /// INNER ANY: the claim-once flags over the final sorted right blocks (see the member doc).
+    if (is_inner && is_any_join)
+    {
+        inner_any_used_flags = std::make_shared<JoinStuff::JoinUsedFlags>();
+        inner_any_used_flags->reinitPerRowFlags(right_blocks_row_counts);
+        right_blocks_row_counts.clear();
+        right_blocks_row_counts.shrink_to_fit();
+    }
 }
 
 void MergeJoin::mergeRightBlocks()
@@ -757,9 +812,10 @@ void MergeJoin::mergeInMemoryRightBlocks()
         if (!block.rows()) // NOLINT(clang-analyzer-cplusplus.Move)
             continue;
 
-        if (skip_not_intersected)
-            min_max_right_blocks.emplace_back(extractMinMax(block, right_table_keys));
+        min_max_right_blocks.emplace_back(extractMinMax(block, right_table_keys));
         right_blocks.countBlockSize(block);
+        if (is_inner && is_any_join)
+            right_blocks_row_counts.push_back(block.rows());
         loaded_right_blocks.emplace_back(std::make_shared<Block>(std::move(block)));
     }
 }
@@ -770,9 +826,10 @@ void MergeJoin::mergeFlushedRightBlocks()
 
     auto callback = [&](const Block & block)
     {
-        if (skip_not_intersected)
-            min_max_right_blocks.emplace_back(extractMinMax(block, right_table_keys));
+        min_max_right_blocks.emplace_back(extractMinMax(block, right_table_keys));
         right_blocks.countBlockSize(block);
+        if (is_inner && is_any_join)
+            right_blocks_row_counts.push_back(block.rows());
     };
 
     {
@@ -781,6 +838,11 @@ void MergeJoin::mergeFlushedRightBlocks()
         flushed_right_blocks = disk_writer->finishMerge(callback);
         disk_writer.reset();
     }
+
+    /// An empty right side: nothing was spilled, the probe loops see zero right blocks. Skip the
+    /// cache sizing below, whose row-limit branch divides by the right row count.
+    if (flushed_right_blocks.empty())
+        return;
 
     if (table_join->collectAnalyzeStats())
         for (const auto & file : flushed_right_blocks)
@@ -792,6 +854,12 @@ void MergeJoin::mergeFlushedRightBlocks()
     if (!memory_limit && rows_limit)
         memory_limit = right_blocks.bytes * rows_limit / right_blocks.row_count;
 
+    /// The memory usage can still overshoot the memory limit, because the gather_bytes are per probe stream, but it
+    /// is only used when read in order through join is used.
+    /// TODO(antaljanosbenjamin): In the future make the streams aware of each other's gathered blocks size, thus
+    /// keeping the whole memory under the limit.
+    /// Basically max right block size = max total gathered block bytes = memory limit / 2
+    gather_max_bytes = memory_limit / 2;
     cached_right_blocks = std::make_unique<Cache>(CurrentMetrics::MergeJoinBlocksCacheBytes, CurrentMetrics::MergeJoinBlocksCacheCount, memory_limit);
 }
 
@@ -876,12 +944,41 @@ JoinResultPtr MergeJoin::joinBlock(Block block)
     return std::make_unique<MergeJoinResult>(std::move(block), *this);
 }
 
+bool MergeJoin::canPreserveLeftBlockOrder() const
+{
+    /// The order-preserving probe covers what the read-in-order-through-join optimization can
+    /// ask for: INNER and LEFT joins with ALL and ANY strictness.
+    return (is_all_join || is_any_join) && (is_inner || is_left);
+}
+
+void MergeJoin::keepLeftPipelineInOrder()
+{
+    /// The callers must check `canPreserveLeftBlockOrder` first (see IJoin::keepLeftPipelineInOrder).
+    /// In particular, RIGHT and FULL joins can never keep the left order: the non-joined right
+    /// rows are emitted out of band and have no position in the left order.
+    if (!canPreserveLeftBlockOrder())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "MergeJoin cannot preserve the left block order for {} {} JOIN",
+            toString(table_join->strictness()),
+            toString(table_join->kind()));
+    keep_left_block_order = true;
+}
+
 void MergeJoin::joinBlock(Block & block, std::optional<MergeJoin::NotProcessed> & not_processed)
 {
+    if (keep_left_block_order)
+    {
+        joinBlockInOrder(block, not_processed);
+        return;
+    }
+
     Names lowcard_keys = lowcard_right_keys;
     if (!block.empty())
     {
-        /// We need to check type of masks before `addConditionJoinColumn`, because it assumes that types is correct
+        /// Check the types of the mask columns before `addConditionJoinColumn` consumes them: the
+        /// check throws the proper INVALID_JOIN_ON_EXPRESSION error for a non-boolean condition,
+        /// while the conversion assumes the types are already valid.
         JoinCommon::checkTypesOfMasks(block, mask_column_name_left, right_sample_block, mask_column_name_right);
 
         if (!not_processed)
@@ -889,7 +986,8 @@ void MergeJoin::joinBlock(Block & block, std::optional<MergeJoin::NotProcessed> 
             /// We do not need to add it twice when we are continuing to process the block from the previous iteration
             addConditionJoinColumn(block, JoinTableSide::Left);
 
-        /// Types of keys can be checked only after `checkTypesOfKeys`
+        /// The key names include the auxiliary condition column, so the key types can be
+        /// checked only after `addConditionJoinColumn`.
         JoinCommon::checkTypesOfKeys(block, key_names_left, right_table_keys, key_names_right);
 
         materializeBlockInplace(block);
@@ -935,6 +1033,418 @@ void MergeJoin::joinBlock(Block & block, std::optional<MergeJoin::NotProcessed> 
         block.erase(deriveTempName(mask_column_name_left, JoinTableSide::Left));
 }
 
+/// The order-preserving probe. The classic probe re-sorts the left block by the join key and
+/// emits matches in that order, per right block, so equal left keys are re-emitted for every
+/// right block and the original row order is lost. Here the block itself is never reordered:
+/// `matchInOrder` runs the same merge over a sorted COPY of the key columns and only records
+/// per-row match ranges, then `emitInOrder` walks the rows in their original order and
+/// materializes the output, splitting it into continuation chunks.
+void MergeJoin::joinBlockInOrder(Block & block, std::optional<NotProcessed> & not_processed)
+{
+    /// The mode can only be set for the supported kinds; in particular, never for RIGHT/FULL
+    /// joins, whose out-of-band non-joined right rows this probe could not emit.
+    chassert(canPreserveLeftBlockOrder());
+
+    std::shared_ptr<OrderedProbeState> state;
+
+    if (not_processed)
+    {
+        state = not_processed->ordered_state;
+        chassert(state);
+        not_processed.reset();
+    }
+    else if (!block.empty())
+    {
+        /// Check the types of the mask columns before `addConditionJoinColumn` consumes them: the
+        /// check throws the proper INVALID_JOIN_ON_EXPRESSION error for a non-boolean condition,
+        /// while the conversion assumes the types are already valid.
+        JoinCommon::checkTypesOfMasks(block, mask_column_name_left, right_sample_block, mask_column_name_right);
+
+        /// Add an auxiliary column, which will be removed after joining
+        addConditionJoinColumn(block, JoinTableSide::Left);
+
+        /// The key names include the auxiliary condition column, so the key types can be
+        /// checked only after `addConditionJoinColumn`.
+        JoinCommon::checkTypesOfKeys(block, key_names_left, right_table_keys, key_names_right);
+
+        materializeBlockInplace(block);
+
+        total_left_rows.fetch_add(block.rows(), std::memory_order_relaxed);
+        state = matchInOrder(block);
+    }
+
+    if (state)
+        emitInOrder(block, state, not_processed);
+
+    if (needConditionJoinColumn())
+        block.erase(deriveTempName(mask_column_name_left, JoinTableSide::Left));
+}
+
+std::shared_ptr<MergeJoin::OrderedProbeState> MergeJoin::matchInOrder(const Block & block)
+{
+    auto state = std::make_shared<OrderedProbeState>();
+    const size_t rows = block.rows();
+    state->row_groups.assign(rows, OrderedProbeState::no_group);
+    if (rows == 0)
+        return state;
+
+    /// Sort a copy of the key columns for the merge cursor. The block itself keeps the original
+    /// row order; the permutation maps sorted positions back to the original row numbers.
+    /// An empty permutation means identity (the block is already sorted by the join key).
+    IColumn::Permutation sort_permutation;
+    Block sorted_keys;
+    {
+        ScopedSortTimer sort_timer(table_join->collectAnalyzeStats(), probe_sort_time_ns);
+
+        NameSet added_keys;
+        for (const auto & column_desc : left_merge_description)
+            if (added_keys.insert(column_desc.column_name).second)
+                sorted_keys.insert(block.getByName(column_desc.column_name));
+
+        if (!isAlreadySorted(block, left_sort_description))
+        {
+            stableGetPermutation(block, left_sort_description, sort_permutation);
+            if (!sort_permutation.empty() && isIdentityPermutation(sort_permutation, 0))
+                sort_permutation.clear();
+            if (!sort_permutation.empty())
+                for (auto & column : sorted_keys)
+                    column.column = column.column->permute(sort_permutation, 0);
+        }
+    }
+
+    /// One recorded run: the left rows [left_start, left_start + left_length) of the SORTED view
+    /// all match the right rows [right_start, right_start + right_length) of `right_block`.
+    struct MatchRun
+    {
+        size_t left_start;
+        size_t left_length;
+        size_t right_block;
+        size_t right_start;
+        size_t right_length;
+    };
+    std::vector<MatchRun> runs;
+
+    MergeJoinCursor left_cursor(sorted_keys, left_merge_description);
+    size_t dummy_skip = 0;
+    const size_t right_blocks_count = getRightBlocksCount();
+
+    /// External mode: gather the output columns of the matched right rows while the block is
+    /// loaded for the matching anyway, so `emitInOrder` does not have to load right blocks at
+    /// all - its access order follows the original left rows and can hop between blocks
+    /// arbitrarily, thrashing the block cache. `gather_max_bytes` is a hard bound, enforced per
+    /// run by measuring before copying: the spilled right blocks are capped by rows, not bytes,
+    /// so a block-granular check would let a single wide block overshoot the budget we switched
+    /// to the external join to respect.
+    const bool gather_matched_rows = !is_in_memory && gather_max_bytes > 0;
+    bool gather_budget_exhausted = false;
+    MutableColumns gathered_columns;
+    size_t gathered_rows = 0;
+    size_t gathered_bytes = 0;
+    if (gather_matched_rows)
+        gathered_columns = makeMutableColumns(right_columns_to_add);
+
+    /// The matched-left-rows statistic of INNER ANY counts every left row whose key has a match,
+    /// like the other probes do - the runs cannot provide it, they keep only the claimed keys.
+    size_t any_inner_matched = 0;
+
+    for (size_t i = 0; i < right_blocks_count; ++i)
+    {
+        if (left_cursor.atEnd())
+            break;
+
+        int intersection = left_cursor.intersect(min_max_right_blocks[i], key_names_right);
+        if (intersection < 0)
+            break; /// (left) ... (right)
+        if (intersection > 0)
+            continue; /// (right) ... (left)
+
+        RightBlockInfo right_block_info(getRightBlock(i), i, dummy_skip, used_rows_bitmap.get());
+        MergeJoinCursor right_cursor(*right_block_info.block, right_merge_description);
+        left_cursor.setCompareNullability(right_cursor);
+
+        const size_t block_runs_begin = runs.size();
+
+        while (!left_cursor.atEnd() && !right_cursor.atEnd())
+        {
+            MergeJoinEqualRange range = left_cursor.getNextEqualRange(right_cursor);
+            if (range.empty())
+                break;
+
+            if (is_all_join)
+            {
+                right_block_info.setUsed(range.right_start, range.right_length);
+                runs.push_back({range.left_start, range.left_length, i, range.right_start, range.right_length});
+                right_cursor.nextN(range.right_length);
+                /// Do not run over the last left keys: the same key may continue in the next
+                /// right block (possible duplicates across right block boundaries).
+                if (right_cursor.atEnd())
+                    break;
+                left_cursor.nextN(range.left_length);
+            }
+            else if (inner_any_used_flags)
+            {
+                /// INNER ANY: one output row per key
+                any_inner_matched += range.left_length;
+                if (inner_any_used_flags->setUsedOnce</*use_flags=*/true, /*flag_per_row=*/true>(
+                        static_cast<UInt32>(i), range.right_start, /*offset=*/0))
+                    runs.push_back({range.left_start, /*left_length=*/1, i, range.right_start, /*right_length=*/1});
+                right_cursor.nextN(range.right_length);
+                left_cursor.nextN(range.left_length);
+            }
+            else
+            {
+                /// LEFT ANY: the first match wins, one right row per left row.
+                runs.push_back({range.left_start, range.left_length, i, range.right_start, /*right_length=*/1});
+                right_cursor.nextN(range.right_length);
+                left_cursor.nextN(range.left_length);
+            }
+        }
+
+        /// Gather this block's matched rows (see above) and re-point the runs into the gathered
+        /// storage. The recorded right ranges of one block are ascending and disjoint, and the
+        /// left rows of one run share one range, so every matched row is copied exactly once.
+        if (gather_matched_rows && !gather_budget_exhausted && runs.size() > block_runs_begin)
+        {
+            auto source_columns = extractColumnsByNames(*right_block_info.block, right_columns_to_add);
+            for (size_t run_index = block_runs_begin; run_index < runs.size(); ++run_index)
+            {
+                auto & run = runs[run_index];
+
+                /// Gathering stops at the first run that would cross the budget: it and all
+                /// later runs keep their block references and the emission falls back to the
+                /// block cache - a capacity fallback that changes where the right rows are
+                /// read from, never where they are emitted.
+                const size_t run_bytes = byteSizeOfRightRange(source_columns, gathered_columns, run.right_start, run.right_length);
+                if (gathered_bytes + run_bytes > gather_max_bytes)
+                {
+                    gather_budget_exhausted = true;
+                    break;
+                }
+
+                copyRightRangeContiguous(source_columns, gathered_columns, run.right_start, run.right_length);
+                gathered_bytes += run_bytes;
+                run.right_block = OrderedProbeState::gathered_block;
+                run.right_start = gathered_rows;
+                gathered_rows += run.right_length;
+            }
+        }
+    }
+
+    if (gathered_rows > 0)
+    {
+        state->gathered_right_columns.reserve(gathered_columns.size());
+        for (auto & column : gathered_columns)
+        {
+            /// Release the over-allocation of the doubling growth: the gathered columns live for
+            /// the whole emission of the left block, across all its continuation chunks.
+            column->shrinkToFit();
+            state->gathered_right_columns.push_back(std::move(column));
+        }
+    }
+
+    /// Build the groups: all left rows of one sorted equal-key span match the same right ranges
+    /// and share one list (see OrderedProbeState). The runs of one span are consecutive - the
+    /// matcher revisits a span only through the key-tail continuation into the next right block -
+    /// so `ranges` is simply the right-side projection of the runs in the recording order, and a
+    /// new group starts where `left_start` changes. Expanding a run per left row instead would
+    /// make L equal-key rows matching ranges in B right blocks allocate L * B entries.
+    auto original_row = [&](size_t sorted_pos) { return sort_permutation.empty() ? sorted_pos : sort_permutation[sorted_pos]; };
+
+    state->ranges.reserve(runs.size());
+    size_t matched = 0;
+    for (size_t run_index = 0; run_index < runs.size(); ++run_index)
+    {
+        const auto & run = runs[run_index];
+        /// A repeated span is the tail continuation of the previous run: the same equal-key run.
+        chassert(run_index == 0 || run.left_start != runs[run_index - 1].left_start || run.left_length == runs[run_index - 1].left_length);
+        if (run_index == 0 || run.left_start != runs[run_index - 1].left_start)
+        {
+            /// Start of a new group
+            state->group_offsets.push_back(state->ranges.size());
+
+            const size_t group = state->group_offsets.size() - 1;
+            for (size_t pos = run.left_start; pos < run.left_start + run.left_length; ++pos)
+                state->row_groups[original_row(pos)] = group;
+            matched += run.left_length;
+        }
+        state->ranges.push_back({run.right_block, run.right_start, run.right_length});
+    }
+    state->group_offsets.push_back(state->ranges.size());
+    matched_left_rows.fetch_add(inner_any_used_flags ? any_inner_matched : matched, std::memory_order_relaxed);
+
+    return state;
+}
+
+void MergeJoin::emitInOrder(Block & block, const std::shared_ptr<OrderedProbeState> & state, std::optional<NotProcessed> & not_processed)
+{
+    const size_t rows = block.rows();
+    /// LEFT ANY reuses the left columns of the block as-is: the output has exactly one row per
+    /// input row, in the input order (see `changeLeftColumns`).
+    const bool reuse_left_columns = is_left && is_any_join;
+
+    MutableColumns left_columns;
+    if (!reuse_left_columns)
+        left_columns = makeMutableColumns(block, rows);
+    MutableColumns right_columns = makeMutableColumns(right_columns_to_add, rows);
+
+    /// The output chunks are capped by rows and bytes, like the chunks of a hash join
+    /// (`HashJoinResult`); the byte cap works through the average row width of each source, the
+    /// same estimation the hash join uses. With `max_joined_block_size_rows = 0` the row cap
+    /// falls back to DEFAULT_BLOCK_SIZE instead of materializing the whole output of the left
+    /// block at once. LEFT ANY cannot split at all: the block's own columns are reused
+    /// unchanged, so the output must be exactly one chunk (it is bounded by the input block).
+    size_t max_rows = std::numeric_limits<size_t>::max();
+    size_t max_bytes = 0;
+    if (!reuse_left_columns)
+    {
+        max_rows = max_joined_block_rows ? max_joined_block_rows : DEFAULT_BLOCK_SIZE;
+        max_bytes = max_joined_block_bytes;
+    }
+
+    const size_t left_row_bytes = rows ? block.bytes() / rows : 0;
+    std::optional<size_t> gathered_row_bytes;
+    size_t cached_row_bytes = 0;
+
+    const auto columns_avg_row_bytes = [](const Columns & columns) -> size_t
+    {
+        if (columns.empty() || columns.front()->empty())
+            return 0;
+        size_t bytes = 0;
+        for (const auto & column : columns)
+            bytes += column->byteSize();
+        return bytes / columns.front()->size();
+    };
+
+    size_t emitted = 0;
+    size_t emitted_bytes = 0;
+    size_t row = state->next_row;
+    size_t range_idx = state->next_range;
+    size_t range_offset = state->range_offset;
+
+    /// Rows of one group share the ranges, so `range_idx` must rewind to the group's start for
+    /// every fresh row; only the row a previous chunk stopped inside continues from the stored
+    /// position. A stored position of (0, 0) can also mean "start of the row's list" - the
+    /// rewind then computes the same value, so treating it as fresh is harmless.
+    bool resume_mid_row = range_idx != 0 || range_offset != 0;
+
+    /// "No block cached" coincides with `gathered_block`, which is harmless: gathered ranges are
+    /// routed before the cached-block path is consulted.
+    size_t cached_block_number = std::numeric_limits<size_t>::max();
+    std::shared_ptr<Block> cached_block;
+    Columns cached_columns;
+
+    while (row < rows)
+    {
+        const size_t group = state->row_groups[row];
+
+        if (group == OrderedProbeState::no_group)
+        {
+            /// A left row without matches: LEFT joins emit it once with default right values.
+            if (is_left)
+            {
+                if (emitted >= max_rows || (max_bytes && emitted_bytes >= max_bytes))
+                    break;
+                if (reuse_left_columns)
+                    joinInequalsLeft<false>(block, left_columns, right_columns_to_add, right_columns, row, row + 1);
+                else
+                    joinInequalsLeft<true>(block, left_columns, right_columns_to_add, right_columns, row, row + 1);
+                ++emitted;
+                /// The right side of the row holds default values; count the left part only.
+                emitted_bytes += left_row_bytes;
+            }
+            ++row;
+            resume_mid_row = false;
+            continue;
+        }
+
+        const size_t row_ranges_end = state->group_offsets[group + 1];
+        if (!resume_mid_row)
+            range_idx = state->group_offsets[group];
+        resume_mid_row = false;
+
+        bool row_completed = true;
+        while (range_idx < row_ranges_end)
+        {
+            const auto & range = state->ranges[range_idx];
+
+            /// Resolve the source of the right rows first: its average row width feeds the byte
+            /// cap. The matched rows gathered at match time need no block load.
+            const Columns * source_columns = nullptr;
+            size_t right_row_bytes = 0;
+            if (range.right_block == OrderedProbeState::gathered_block)
+            {
+                if (!gathered_row_bytes)
+                    gathered_row_bytes = columns_avg_row_bytes(state->gathered_right_columns);
+                source_columns = &state->gathered_right_columns;
+                right_row_bytes = *gathered_row_bytes;
+            }
+            else
+            {
+                if (range.right_block != cached_block_number)
+                {
+                    cached_block = getRightBlock(range.right_block);
+                    cached_columns = extractColumnsByNames(*cached_block, right_columns_to_add);
+                    cached_block_number = range.right_block;
+                    cached_row_bytes = columns_avg_row_bytes(cached_columns);
+                }
+                source_columns = &cached_columns;
+                right_row_bytes = cached_row_bytes;
+            }
+
+            const size_t output_row_bytes = std::max<size_t>(left_row_bytes + right_row_bytes, 1);
+            size_t take = std::min(range.right_length - range_offset, max_rows - emitted);
+            if (max_bytes)
+            {
+                const size_t bytes_left = max_bytes > emitted_bytes ? max_bytes - emitted_bytes : 0;
+                take = std::min(take, bytes_left / output_row_bytes);
+            }
+            /// We need progress: emit at least one row into an empty chunk even over the caps.
+            if (take == 0 && emitted == 0)
+                take = 1;
+            if (take == 0)
+            {
+                row_completed = false;
+                break;
+            }
+
+            /// TODO(antaljanosbenjamin): Use `ColumnReplicated` with shared indexes to avoid copying left values for each match.
+            if (!reuse_left_columns)
+                for (size_t i = 0; i < block.columns(); ++i)
+                    left_columns[i]->insertManyFrom(*block.getByPosition(i).column, row, take);
+
+            copyRightRangeContiguous(*source_columns, right_columns, range.right_start + range_offset, take);
+
+            emitted += take;
+            emitted_bytes += take * output_row_bytes;
+            range_offset += take;
+            if (range_offset == range.right_length)
+            {
+                ++range_idx;
+                range_offset = 0;
+            }
+        }
+
+        if (!row_completed)
+            break;
+        ++row;
+    }
+
+    if (row < rows)
+    {
+        /// Budget exhausted: hand the tail of the block to the next continuation chunk.
+        chassert(!reuse_left_columns);
+        state->next_row = row;
+        state->next_range = range_idx;
+        state->range_offset = range_offset;
+
+        not_processed = NotProcessed{block.cloneEmpty(), 0, 0, 0, 0, state};
+        not_processed->block.swap(block);
+    }
+
+    changeLeftColumns(block, std::move(left_columns));
+    addRightColumns(block, std::move(right_columns));
+}
+
 template <bool in_memory, bool is_all>
 void MergeJoin::joinSortedBlock(Block & block, std::optional<NotProcessed> & not_processed)
 {
@@ -971,16 +1481,13 @@ void MergeJoin::joinSortedBlock(Block & block, std::optional<NotProcessed> & not
             if (left_cursor.atEnd())
                 break;
 
-            if (skip_not_intersected)
+            int intersection = left_cursor.intersect(min_max_right_blocks[i], key_names_right);
+            if (intersection < 0)
+                break; /// (left) ... (right)
+            if (intersection > 0)
             {
-                int intersection = left_cursor.intersect(min_max_right_blocks[i], key_names_right);
-                if (intersection < 0)
-                    break; /// (left) ... (right)
-                if (intersection > 0)
-                {
-                    skip_right = 0;
-                    continue; /// (right) ... (left)
-                }
+                skip_right = 0;
+                continue; /// (right) ... (left)
             }
 
             /// Use skip_right as ref. It would be updated in join.
@@ -1008,16 +1515,13 @@ void MergeJoin::joinSortedBlock(Block & block, std::optional<NotProcessed> & not
             if (left_cursor.atEnd())
                 break;
 
-            if (skip_not_intersected)
+            int intersection = left_cursor.intersect(min_max_right_blocks[i], key_names_right);
+            if (intersection < 0)
+                break; /// (left) ... (right)
+            if (intersection > 0)
             {
-                int intersection = left_cursor.intersect(min_max_right_blocks[i], key_names_right);
-                if (intersection < 0)
-                    break; /// (left) ... (right)
-                if (intersection > 0)
-                {
-                    skip_right = 0;
-                    continue; /// (right) ... (left)
-                }
+                skip_right = 0;
+                continue; /// (right) ... (left)
             }
 
             /// Use skip_right as ref. It would be updated in join.
@@ -1190,8 +1694,23 @@ bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_b
         if (range.empty())
             break;
 
+        /// The whole range MATCHED for the statistics, whatever gets emitted below.
         matched_rows += range.left_length;
-        joinEquals<false>(left_block, r_columns_to_add, left_columns, right_columns, range, 0);
+
+        if (inner_any_used_flags)
+        {
+            /// INNER ANY: one output row per key.
+            if (inner_any_used_flags->setUsedOnce</*use_flags=*/true, /*flag_per_row=*/true>(
+                    static_cast<UInt32>(right_block_info.block_number), range.right_start, /*offset=*/0))
+            {
+                MergeJoinEqualRange one_row_range{range.left_start, range.right_start, /*left_length=*/1, /*right_length=*/1};
+                joinEquals<false>(left_block, r_columns_to_add, left_columns, right_columns, one_row_range, 0);
+            }
+        }
+        else
+        {
+            joinEquals<false>(left_block, r_columns_to_add, left_columns, right_columns, range, 0);
+        }
 
         right_cursor.nextN(range.right_length);
         left_cursor.nextN(range.left_length);
@@ -1207,8 +1726,45 @@ void MergeJoin::changeLeftColumns(Block & block, MutableColumns && columns) cons
     block.setColumns(std::move(columns));
 }
 
+/// Erase the left columns the join does not output. `HashJoin` prunes them since the plan
+/// computes one join output header for a spill-capable hash join and its MergeJoin fallback
+/// (`JoiningTransform::transformHeader` consults the hash join), so this join must emit exactly
+/// the same set - and the standalone `partial_merge` then also stops materializing columns a
+/// `ColumnPermuteTransform` would drop right after. Mirrors `HashJoinResult`: keep the output
+/// left columns by name AND multiplicity; the auxiliary condition column survives too, its
+/// dedicated `erase` in the probe tails runs after this.
+void MergeJoin::removeNonOutputLeftColumns(Block & block) const
+{
+    std::unordered_map<std::string_view, size_t> left_output_remaining;
+    for (const auto & out_column : table_join->getOutputColumns(JoinTableSide::Left))
+        ++left_output_remaining[out_column.name];
+
+    String mask_column_temp_name;
+    if (needConditionJoinColumn())
+    {
+        mask_column_temp_name = deriveTempName(mask_column_name_left, JoinTableSide::Left);
+        ++left_output_remaining[mask_column_temp_name];
+    }
+
+    std::set<size_t> positions_to_erase;
+    for (size_t i = 0; i < block.columns(); ++i)
+    {
+        auto it = left_output_remaining.find(block.getByPosition(i).name);
+        if (it != left_output_remaining.end() && it->second > 0)
+            --it->second;
+        else
+            positions_to_erase.insert(i);
+    }
+    block.erase(positions_to_erase);
+}
+
 void MergeJoin::addRightColumns(Block & block, MutableColumns && right_columns)
 {
+    /// The block holds only the left columns at this point, so this is the one choke point of
+    /// every probe flavor (classic, ordered, the LEFT ANY column reuse, `extraBlock`).
+    if (prune_left_columns)
+        removeNonOutputLeftColumns(block);
+
     for (size_t i = 0; i < right_columns_to_add.columns(); ++i)
     {
         const auto & column = right_columns_to_add.getByPosition(i);
@@ -1272,8 +1828,21 @@ void MergeJoin::initRightTableWriter()
 {
     disk_writer = std::make_unique<SortedBlocksWriter>(size_limits, table_join->getTempDataOnDisk(),
                     right_sample_block, right_sort_description, max_rows_in_right_block, max_files_to_merge);
-    disk_writer->addBlocks(right_blocks);
+    /// `spillRightBlocksToDisk` switches to the writer before the first block arrives.
+    if (!right_blocks.empty())
+        disk_writer->addBlocks(right_blocks);
     right_blocks.clear();
+}
+
+void MergeJoin::spillRightBlocksToDisk()
+{
+    std::lock_guard lock(rwlock);
+
+    if (!is_in_memory)
+        return;
+
+    initRightTableWriter();
+    is_in_memory = false;
 }
 
 /// Stream from not joined earlier rows of the right table.
@@ -1344,6 +1913,10 @@ IBlocksStreamPtr MergeJoin::getNonJoinedBlocks(
     if (table_join->strictness() == JoinStrictness::All && (is_right || is_full))
     {
         size_t left_columns_count = left_sample_block.columns();
+        /// The probe emits only the output left columns (see `removeNonOutputLeftColumns`), and
+        /// the non-joined rows must have the same layout.
+        if (prune_left_columns)
+            left_columns_count = table_join->getOutputColumns(JoinTableSide::Left).size();
         chassert(left_columns_count == result_sample_block.columns() - right_columns_to_add.columns());
         auto non_joined = std::make_unique<NotJoinedMerge>(*this, max_block_size);
         return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
