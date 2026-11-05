@@ -34,6 +34,15 @@ private:
     bool lg_k_explicit;
     bool type_explicit;
 
+    /// Configuration of the empty input sketches seen so far (only tracked when lg_k or type
+    /// were not given explicitly). `hll_union::update` ignores empty sketches, so a union fed
+    /// only with empty sketches would otherwise re-emit an empty sketch with the default
+    /// configuration, rewriting valid empty upstream sketches. Combined order-independently
+    /// (smallest lg_k, widest type), so a single empty input round-trips unchanged.
+    bool has_empty_input = false;
+    uint8_t empty_input_lg_k = 0;
+    datasketches::target_hll_type empty_input_type = DEFAULT_HLL_TYPE;
+
     datasketches::hll_sketch * getHLLUpdate()
     {
         if (!sk_update)
@@ -52,6 +61,39 @@ private:
     {
         if (!type_explicit && !sk.is_empty())
             type = std::max(type, sk.get_target_type());
+        if (sk.is_empty())
+            noteEmptyInput(sk.get_lg_config_k(), sk.get_target_type());
+    }
+
+    void noteEmptyInput(uint8_t input_lg_k, datasketches::target_hll_type input_type)
+    {
+        if (lg_k_explicit && type_explicit)
+            return;
+        if (!has_empty_input)
+        {
+            has_empty_input = true;
+            empty_input_lg_k = input_lg_k;
+            empty_input_type = input_type;
+        }
+        else
+        {
+            empty_input_lg_k = std::min(empty_input_lg_k, input_lg_k);
+            empty_input_type = std::max(empty_input_type, input_type);
+        }
+    }
+
+    /// Serialized result of the union: an empty union fed with empty input sketches
+    /// reproduces their configuration for the parameters that were not given explicitly.
+    datasketches::hll_sketch::vector_bytes serializeUnionResult() const
+    {
+        if (has_empty_input && sk_union->is_empty())
+        {
+            datasketches::hll_sketch empty(
+                lg_k_explicit ? lg_k : empty_input_lg_k,
+                type_explicit ? type : std::max(type, empty_input_type));
+            return empty.serialize_compact();
+        }
+        return sk_union->get_result(type).serialize_compact();
     }
 
 public:
@@ -150,7 +192,7 @@ public:
             /// Respect the configured target HLL type for the output sketch.
             /// This matters for users who explicitly request a specific representation (HLL_4/6/8)
             /// and keeps mergeSerializedHLL output consistent with serializedHLL settings.
-            auto bytes = sk_union->get_result(type).serialize_compact();
+            auto bytes = serializeUnionResult();
             return String(bytes.begin(), bytes.end());
         }
         if (sk_update)
@@ -165,6 +207,8 @@ public:
     {
         if (!type_explicit)
             type = std::max(type, rhs.type);
+        if (rhs.has_empty_input)
+            noteEmptyInput(rhs.empty_input_lg_k, rhs.empty_input_type);
 
         /// Do not materialize a union when the other state holds no data. Otherwise a group
         /// consisting only of logically empty states would return a serialized empty sketch
@@ -212,7 +256,7 @@ public:
             /// `get_result` defaults to `HLL_4`, which would lose an inferred `HLL_6`/`HLL_8`
             /// representation across an aggregate-state round-trip (`read` re-adopts the type
             /// from the deserialized sketch), making the final sketch plan-dependent.
-            auto bytes = sk_union->get_result(type).serialize_compact();
+            auto bytes = serializeUnionResult();
             writeVectorBinary(bytes, out);
         }
         else
