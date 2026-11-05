@@ -71,6 +71,7 @@
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
 #include <Parsers/Trino/ParserTrinoQuery.h>
+#include <Parsers/Trino/TrinoSyntaxTranslator.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 #include <Parsers/LogsQL/LogsQLLexer.h>
 #include <Parsers/LogsQL/ParserLogsQLQuery.h>
@@ -4082,7 +4083,7 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
             if (dialect == Dialect::promql)
                 return std::make_unique<ParserPrometheusQuery>(effective_settings[Setting::promql_database], effective_settings[Setting::promql_table], Field{effective_settings[Setting::promql_evaluation_time]});
             if (dialect == Dialect::polyglot)
-                return std::make_unique<ParserPolyglotQuery>(0, effective_settings[Setting::max_parser_depth], effective_settings[Setting::max_parser_backtracks], effective_settings[Setting::polyglot_dialect], end, effective_settings[Setting::allow_experimental_polyglot_dialect]);
+                return std::make_unique<ParserPolyglotQuery>(0, effective_settings[Setting::max_parser_depth], effective_settings[Setting::max_parser_backtracks], effective_settings[Setting::polyglot_dialect], end, effective_settings[Setting::enable_polyglot_dialect]);
             /// LogsQL is parsed from the raw text, which runs to the end of the buffer (`max_query_size`
             /// is 0 like in the rest of the probe, so the raw begin used for its budget does not matter).
             if (dialect == Dialect::logsql)
@@ -4197,6 +4198,40 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
 
         unsigned max_parser_depth = static_cast<unsigned>(effective_settings[Setting::max_parser_depth]);
         unsigned max_parser_backtracks = static_cast<unsigned>(effective_settings[Setting::max_parser_backtracks]);
+
+        /// True if the ClickHouse SQL statement in `[sql_begin, sql_end)` stops parsing because the
+        /// input ends, i.e. it is still being typed. Probed on its own tokens, so the shared parse
+        /// position is left alone.
+        ///
+        /// With `implicit_select`, `ParserQuery` falls back to an implicit `SELECT` when the explicit
+        /// statement fails, and that `SELECT` can succeed on a prefix of it: `SET max_threads =`
+        /// parses as `SELECT SET AS max_threads` with the `=` left over, which hides that the `SET`
+        /// failed at the end of input. So a parse that stops short of the end is repeated without
+        /// `implicit_select`, which gives the verdict of the explicit statement. (A statement parsed
+        /// in full is complete either way: e.g. a lone `show` is a valid implicit `SELECT`.)
+        auto sql_needs_more_input = [&](const char * sql_begin, const char * sql_end, bool allow_implicit_select)
+        {
+            auto probe = [&](bool implicit_select, bool & parsed_in_full)
+            {
+                Tokens sql_tokens(sql_begin, sql_end, 0, true);
+                IParser::Pos sql_pos(sql_tokens, max_parser_depth, max_parser_backtracks);
+                ParserQuery sql_parser(sql_end, effective_settings[Setting::allow_settings_after_format_in_insert], implicit_select);
+                ASTPtr sql_ast;
+                Expected sql_expected;
+                parsed_in_full = false;
+                if (!sql_parser.parse(sql_pos, sql_ast, sql_expected))
+                    return sql_pos.max().type == TokenType::EndOfStream;
+                parsed_in_full = sql_pos->isEnd();
+                return false;
+            };
+
+            bool parsed_in_full = false;
+            if (probe(allow_implicit_select, parsed_in_full))
+                return true;
+            if (!allow_implicit_select || parsed_in_full)
+                return false;
+            return probe(/*implicit_select=*/ false, parsed_in_full);
+        };
 
         Tokens tokens(begin, end, 0, true);
         /// Token streams restarted at a statement boundary by `resume_at` (see below).
@@ -4449,6 +4484,9 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
             /// this statement is parsed, and the catch and the tail of the loop still need
             /// that after a `SET dialect = ...` has been applied.
             const bool kql_statement = effective_settings[Setting::dialect] == Dialect::kusto;
+            /// Likewise: whether this statement is parsed by `ParserQuery` with `implicit_select`.
+            const bool implicit_select_statement = effective_settings[Setting::implicit_select]
+                && dynamic_cast<const ParserQuery *>(parser.get()) != nullptr;
             try
             {
                 if (kql_statement)
@@ -4487,7 +4525,8 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                 if (kql_statement)
                 {
                     /// `KQLParser::failAt` ends the message with what it found at the point
-                    /// of failure -- "end of query" exactly when that is the end of input --
+                    /// of failure -- "end of query" exactly when that is the end of input, and the
+                    /// SQL `SET` fast path of `parseKQLQuery` says the same, e.g. for `SET x =` --
                     /// which substitutes for the `token_iterator.max()` signal of the SQL
                     /// parser (the PRQL probe below recognizes end of input by the
                     /// compiler's message the same way). The terminator scan is not
@@ -4566,25 +4605,39 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
 
                 /// `ParserTrinoQuery` reports a syntax error in the translated statement by
                 /// throwing, so the end-of-input signal of `token_iterator.max()` is lost (and its
-                /// statement scan has advanced it to the end anyway). Trino SQL is close to
-                /// ClickHouse SQL -- it is parsed by `ParserQuery` after a token-level rewrite --
-                /// so judge where the statement stops parsing by probing it with `ParserQuery`.
-                /// With the dialect disabled, every statement but `SET` throws, which is an
-                /// error for the executor to report.
+                /// statement scan has advanced it to the end anyway). Trino SQL is parsed by
+                /// `ParserQuery` after a token-level rewrite, so do the same here: translate the
+                /// statement with `translateTrinoSyntax` and judge where the result stops parsing.
+                /// The original text would not do, e.g. `SET SESSION max_threads =` is the
+                /// unfinished `SET max_threads =` only after the rewrite. With the dialect
+                /// disabled, every statement but `SET` throws, which is an error for the executor
+                /// to report.
                 if (effective_settings[Setting::dialect] == Dialect::trino)
                 {
                     if (!effective_settings[Setting::enable_trino_dialect])
                         return false;
                     if (has_unclosed_opener(statement_begin))
                         return unless_terminated(true);
-                    Tokens sql_tokens(statement_begin, end, 0, true);
-                    IParser::Pos sql_pos(sql_tokens, max_parser_depth, max_parser_backtracks);
-                    ParserQuery sql_parser(end, effective_settings[Setting::allow_settings_after_format_in_insert], effective_settings[Setting::implicit_select]);
-                    ASTPtr sql_ast;
-                    Expected sql_expected;
-                    if (sql_parser.parse(sql_pos, sql_ast, sql_expected))
+
+                    /// No `;` follows (see `has_statement_terminator` above), so the statement
+                    /// runs to the end of input. A lexer error is for the executor to report.
+                    Tokens trino_tokens(statement_begin, end, 0, true);
+                    std::vector<Token> statement_tokens;
+                    for (TokenIterator it(trino_tokens); !it->isEnd(); ++it)
+                    {
+                        if (it->isError())
+                            return false;
+                        statement_tokens.push_back(*it);
+                    }
+                    if (statement_tokens.empty())
                         return false;
-                    return unless_terminated(sql_pos.max().type == TokenType::EndOfStream);
+
+                    const std::optional<String> translated
+                        = translateTrinoSyntax(statement_tokens, statement_begin, statement_tokens.back().end);
+                    const bool needs_more_input = translated
+                        ? sql_needs_more_input(translated->data(), translated->data() + translated->size(), effective_settings[Setting::implicit_select])
+                        : sql_needs_more_input(statement_begin, end, effective_settings[Setting::implicit_select]);
+                    return unless_terminated(needs_more_input);
                 }
 
                 /// PRQL validates its entire statement with an external compiler and
@@ -4645,9 +4698,14 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
             /// loop resumes on.
             if (kql_statement)
                 continue;
-            /// Tokens remain after a fully parsed statement that are not a new
-            /// statement (e.g. INSERT data, or a real syntax error). Submit and
-            /// let the normal query-processing path handle it.
+            /// Tokens remain after a parsed statement that are not a new statement. With
+            /// `implicit_select`, the parsed statement can be an implicit `SELECT` over a prefix
+            /// of an explicit statement that is still being typed, e.g. `SET max_threads =`
+            /// (see `sql_needs_more_input`); judge that statement without the fallback.
+            if (implicit_select_statement && sql_needs_more_input(statement_begin, end, /*allow_implicit_select=*/ false))
+                return unless_terminated(true);
+            /// Otherwise this is a real syntax error. Submit and let the normal
+            /// query-processing path handle it.
             return false;
         }
     }

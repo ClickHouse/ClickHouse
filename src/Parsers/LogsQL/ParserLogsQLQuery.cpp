@@ -47,8 +47,12 @@ bool ParserLogsQLQuery::isIncompleteAtEOF(
     catch (const Exception & e)
     {
         /// Other errors, e.g. `NOT_IMPLEMENTED` for a valid query, are not about missing input.
-        /// `parse` stops at a `;`, so a failure at the end of input means no `;` follows.
-        return e.code() == ErrorCodes::SYNTAX_ERROR && parser && parser->isAtEnd();
+        /// `parse` stops at a `;`, so a failure at the end of input means no `;` follows. A syntax
+        /// error after the lexer has reached the end is not enough: validating a construct read in
+        /// full, e.g. the argument count of `re(a,b)` or the value of `limit abc`, fails there too,
+        /// and no further input can repair it. Only an error raised while the parser was looking
+        /// at the end of input as the next token says that input is missing.
+        return e.code() == ErrorCodes::SYNTAX_ERROR && parser && parser->hasExaminedEnd();
     }
     catch (...) /// Ok: any other failure is not an unfinished query.
     {

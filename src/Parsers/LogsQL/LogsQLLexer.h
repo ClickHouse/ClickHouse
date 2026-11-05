@@ -34,22 +34,30 @@ public:
     void nextToken();
 
     /// The decoded text of the current token (for quoted tokens - the unquoted and unescaped content).
-    const String & getToken() const { return token; }
+    const String & getToken() const { noteInspection(); return token; }
 
     /// The raw text of the current token as it appears in the query.
-    std::string_view getRawToken() const { return raw_token; }
+    std::string_view getRawToken() const { noteInspection(); return raw_token; }
 
     /// The raw text of the previous token.
     const String & getPrevRawToken() const { return prev_raw_token; }
 
     /// Whether the current token was quoted. Quoted tokens are never keywords.
-    bool isQuoted() const { return quoted; }
+    bool isQuoted() const { noteInspection(); return quoted; }
 
     /// Whether there was whitespace (or a comment) between the previous and the current token.
-    bool skippedSpace() const { return skipped_space; }
+    bool skippedSpace() const { noteInspection(); return skipped_space; }
 
     /// True if there are no more tokens.
-    bool isEnd() const { return raw_token.empty() && current == end; }
+    bool isEnd() const { noteInspection(); return isAtEndOfInput(); }
+
+    /// True if the end of input was examined as the current token: some caller asked whether it
+    /// is a keyword, a trailer, the end and so on, since the lexer last moved to it. A syntax error
+    /// thrown in this state is about the input missing at the end, e.g. after `error and`, while
+    /// one thrown without it is about tokens that have already been read, e.g. the argument count
+    /// of a complete `re(a,b)`, even though the lexer has reached the end of input by then.
+    /// Reading this does not count as an examination itself.
+    bool hasExaminedEnd() const { return examined_end; }
 
     /// Case-insensitive comparison of the current token with the given keywords.
     /// Quoted tokens never match keywords.
@@ -109,6 +117,18 @@ private:
     String prev_raw_token;
     bool quoted = false;
     bool skipped_space = false;
+
+    /// Set by `noteInspection` and cleared when the lexer moves (see `hasExaminedEnd`).
+    mutable bool examined_end = false;
+
+    bool isAtEndOfInput() const { return raw_token.empty() && current == end; }
+
+    /// Called by the accessors of the current token.
+    void noteInspection() const
+    {
+        if (isAtEndOfInput())
+            examined_end = true;
+    }
 
     bool isAllowedCompoundToken(const std::vector<std::string_view> & stop_tokens) const;
 

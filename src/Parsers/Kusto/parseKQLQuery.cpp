@@ -68,6 +68,11 @@ ASTPtr parseSetStatement(const char *& pos, const char * end, size_t max_query_s
             ++pos;
         return node;
     }
+    /// Say so when the statement fails because it ends too early, e.g. `SET max_threads =`, in the
+    /// words `KQLParser::failAt` uses: the interactive client looks for them to keep an unfinished
+    /// statement open on <ENTER> instead of submitting it.
+    if (token_iterator.max().type == TokenType::EndOfStream)
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse the SET statement, found end of query");
     throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse the SET statement");
 }
 
