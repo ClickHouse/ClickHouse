@@ -71,12 +71,19 @@ template <> struct MapGetter<JoinKind::Left, JoinStrictness::Semi, JoinMapsKind:
 /// to find a key sets the used flag of its cell, and later rows with that key are dropped.
 template <> struct MapGetter<JoinKind::Inner, JoinStrictness::Any, JoinMapsKind::Set> { using Map = HashJoin::MapsSet; static constexpr bool flagged = true; };
 
+template <> struct MapGetter<JoinKind::Inner, JoinStrictness::Any, JoinMapsKind::Count> { using Map = HashJoin::MapsCount; static constexpr bool flagged = false; };
+template <> struct MapGetter<JoinKind::Left, JoinStrictness::Anti, JoinMapsKind::Count> { using Map = HashJoin::MapsCount; static constexpr bool flagged = false; };
+template <> struct MapGetter<JoinKind::Right, JoinStrictness::Anti, JoinMapsKind::CountWithRef> { using Map = HashJoin::MapsCountWithRef; static constexpr bool flagged = false; };
+
 /// Constrain the pairs of routines that differ only in whether a right row can be read from the map.
 template <typename Maps>
 concept SetJoinMaps = std::is_same_v<std::decay_t<Maps>, HashJoin::MapsSet>;
 
 template <typename Maps>
-concept MappedJoinMaps = !SetJoinMaps<Maps>;
+concept CountJoinMaps = std::is_same_v<std::decay_t<Maps>, HashJoin::MapsCount> || std::is_same_v<std::decay_t<Maps>, HashJoin::MapsCountWithRef>;
+
+template <typename Maps>
+concept MappedJoinMaps = !SetJoinMaps<Maps> && !CountJoinMaps<Maps>;
 
 /// The maps flavour a given maps type belongs to, for the templates that are handed the type rather than
 /// the flavour (see `JoinFeatures`).
@@ -87,6 +94,10 @@ constexpr JoinMapsKind mapsKindOf()
         return JoinMapsKind::All;
     else if constexpr (std::is_same_v<std::decay_t<Map>, HashJoin::MapsSet>)
         return JoinMapsKind::Set;
+    else if constexpr (std::is_same_v<std::decay_t<Map>, HashJoin::MapsCount>)
+        return JoinMapsKind::Count;
+    else if constexpr (std::is_same_v<std::decay_t<Map>, HashJoin::MapsCountWithRef>)
+        return JoinMapsKind::CountWithRef;
     else
         return JoinMapsKind::Default;
 }
@@ -121,6 +132,12 @@ inline void dispatchOnMapsKind(JoinMapsKind maps_kind, Func && func)
             return;
         case JoinMapsKind::Set:
             func.template operator()<JoinMapsKind::Set>();
+            return;
+        case JoinMapsKind::Count:
+            func.template operator()<JoinMapsKind::Count>();
+            return;
+        case JoinMapsKind::CountWithRef:
+            func.template operator()<JoinMapsKind::CountWithRef>();
             return;
     }
 }

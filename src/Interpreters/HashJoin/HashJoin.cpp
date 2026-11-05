@@ -532,6 +532,11 @@ HashJoin::HashJoin(
         strictness,
         right_sample_block.dumpStructure());
 
+    /// A count map without a right row serves `INTERSECT ALL` only when it outputs no right column.
+    if (kind == JoinKind::Inner && sample_block_with_columns_to_add.columns() != 0
+        && table_join->setOperation() == JoinSetOperation::IntersectAll)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The join that executes `INTERSECT ALL` outputs right columns");
+
     use_set_maps = canUseSetMaps();
     if (use_set_maps)
         LOG_TRACE(log, "Using key-only hash tables: the join never reads a right row");
@@ -765,6 +770,11 @@ bool HashJoin::canUseSetMaps() const
     if (table_join->isSpecialStorage())
         return false;
 
+    /// `INTERSECT ALL` and `EXCEPT ALL` count the rows of each key.
+    const auto set_operation = table_join->setOperation();
+    if (set_operation == JoinSetOperation::IntersectAll || set_operation == JoinSetOperation::ExceptAll)
+        return false;
+
     /// INNER ANY emits one left row per key, so it needs only the keys when no right column is selected. With several
     /// disjuncts two left rows can reach the same right row through different keys, so the join marks the row itself.
     if (kind == JoinKind::Inner && strictness == JoinStrictness::Any)
@@ -798,7 +808,7 @@ bool HashJoin::mustKeepRightBlocks() const
 /// settled on this join, they are dead weight for the whole probe phase, so it says so and they go.
 void HashJoin::dropRightBlocksKeptForAnotherAlgorithm()
 {
-    if (!data || getMapsKind() != JoinMapsKind::Set)
+    if (!data || (getMapsKind() != JoinMapsKind::Set && getMapsKind() != JoinMapsKind::Count))
         return;
 
     /// A nullmap holds a raw pointer into a stored block, and the non-joined stream reads the block
@@ -821,6 +831,10 @@ void HashJoin::dropRightBlocksKeptForAnotherAlgorithm()
 
 JoinMapsKind HashJoin::getMapsKind() const
 {
+    const auto set_operation = table_join->setOperation();
+    /// Only RIGHT ANTI emits right rows, the ones that are not used up.
+    if (set_operation == JoinSetOperation::IntersectAll || set_operation == JoinSetOperation::ExceptAll)
+        return kind == JoinKind::Right ? JoinMapsKind::CountWithRef : JoinMapsKind::Count;
     if (preferUseMapsAll())
         return JoinMapsKind::All;
     if (use_set_maps)
@@ -1334,10 +1348,10 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
             }
 
             /// Whether anything that outlives the build phase still points into the block. Per-row used
-            /// flags are keyed by the stored block, so they keep it alive - except on a set map, which is
-            /// never `flagged` (see `MapGetter`), so there are no such flags to begin with.
-            const bool block_is_referenced
-                = is_inserted || nullmap_stored_for_block || (flag_per_row && maps_kind != JoinMapsKind::Set);
+            /// flags are keyed by the stored block, so they keep it alive - except on a set or count map,
+            /// which is never `flagged` (see `MapGetter`), so there are no such flags to begin with.
+            const bool block_is_referenced = is_inserted || nullmap_stored_for_block
+                || (flag_per_row && maps_kind != JoinMapsKind::Set && maps_kind != JoinMapsKind::Count);
             /// Every clause reads its keys out of the block before it goes. Only a set map gets here with
             /// more than one clause: several clauses always mean `flag_per_row`.
             const bool last_clause = onexpr_idx + 1 == onexprs.size();
@@ -1347,9 +1361,9 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
                 doDebugAsserts();
                 LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
                 data->subBytes(data->allocated_size, data_allocated_bytes);
-                /// A set map references no block at all, so every block is dropped here even though its
-                /// rows did take part in the join and must stay counted.
-                if (maps_kind != JoinMapsKind::Set)
+                /// A set map references no block at all, and a count map none it reads, so every block is
+                /// dropped here even though its rows did take part in the join and must stay counted.
+                if (maps_kind != JoinMapsKind::Set && maps_kind != JoinMapsKind::Count)
                     data->rows_to_join.fetch_sub(rows, std::memory_order_relaxed);
                 /// Nothing was inserted, so no refs to this block exist; null the index entry so
                 /// that a stale ref trips the chassert in `StoredColumnsIndex::at` in debug builds
@@ -1680,6 +1694,16 @@ JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block)
                 res = HashJoinMethods<kind_, strictness_, MapsSet>::joinBlockImpl(
                     *this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
             }
+            else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsCount *>>)
+            {
+                res = HashJoinMethods<kind_, strictness_, MapsCount>::joinBlockImpl(
+                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
+            }
+            else if constexpr (std::is_same_v<std::decay_t<decltype(maps_vector_)>, std::vector<const MapsCountWithRef *>>)
+            {
+                res = HashJoinMethods<kind_, strictness_, MapsCountWithRef>::joinBlockImpl(
+                    *this, std::move(block), sample_block_with_columns_to_add, maps_vector_);
+            }
             else
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown maps type");
@@ -1872,7 +1896,7 @@ bool allKeysUsed(const Map & map, const JoinStuff::JoinUsedFlags & used_flags, s
 template <typename Mapped>
 size_t collectNonJoinedRefWords([[maybe_unused]] const Mapped & mapped, [[maybe_unused]] PaddedPODArray<UInt64> & words)
 {
-    if constexpr (std::is_same_v<Mapped, AsofRowRefs>)
+    if constexpr (std::is_same_v<Mapped, AsofRowRefs> || std::is_same_v<Mapped, RowCount> || std::is_same_v<Mapped, RowRefWithCount>)
     {
         return 0;
     }
@@ -1968,6 +1992,8 @@ private:
     std::any position;
     std::optional<HashJoin::NullmapList::const_iterator> nulls_position;
     std::optional<HashJoin::StoredBlocksList::const_iterator> used_position;
+    /// The copies of the current key of a count map that were emitted before the block filled up.
+    size_t copies_emitted = 0;
 
     std::vector<GatherColumn> emit_gather;
     std::optional<size_t> emit_row_store_row_length;
@@ -2042,11 +2068,25 @@ private:
         {
             using Mapped = typename Map::mapped_type;
             using Iterator = typename Map::const_iterator;
+            constexpr bool is_count = std::is_same_v<Mapped, RowRefWithCount>;
 
+            /// A count map emits a row once per right row its key did not use up. Returns whether all of them fit.
+            auto take_remaining_copies = [&](const auto & mapped) -> bool
+            {
+                const auto remaining = static_cast<size_t>(std::max<Int64>(mapped.remaining, 0));
+                const size_t take = std::min(remaining - copies_emitted, max_block_size - rows_added);
+                words.resize_fill(words.size() + take, mapped.ref.encode());
+                rows_added += take;
+                copies_emitted += take;
+                if (copies_emitted < remaining)
+                    return false;
+                copies_emitted = 0;
+                return true;
+            };
 
             if (!position.has_value())
             {
-                const bool all_keys_used = allKeysUsed(map, *parent.used_flags, bucket_idx, num_buckets);
+                const bool all_keys_used = !is_count && allKeysUsed(map, *parent.used_flags, bucket_idx, num_buckets);
                 ProfileEvents::increment(
                     all_keys_used ? ProfileEvents::JoinNonJoinedHashTableScansSkipped : ProfileEvents::JoinNonJoinedHashTableScans);
                 position = std::make_any<Iterator>(all_keys_used ? map.end() : map.begin());
@@ -2078,9 +2118,17 @@ private:
 
                 while (it != end && rows_added < max_block_size)
                 {
-                    size_t offset = map.offsetInternal(it.getPtr());
-                    if (!parent.isUsed(offset))
-                        rows_added += collectNonJoinedRefWords<Mapped>(it->getMapped(), words);
+                    if constexpr (is_count)
+                    {
+                        if (!take_remaining_copies(it->getMapped()))
+                            break;
+                    }
+                    else
+                    {
+                        size_t offset = map.offsetInternal(it.getPtr());
+                        if (!parent.isUsed(offset))
+                            rows_added += collectNonJoinedRefWords<Mapped>(it->getMapped(), words);
+                    }
 
                     ++it;
 
@@ -2097,11 +2145,19 @@ private:
                     if (!isBucketInRange(it.getBucket()))
                         continue;
 
-                    size_t offset = map.offsetInternal(it.getPtr());
-                    if (parent.isUsed(offset))
-                        continue;
+                    if constexpr (is_count)
+                    {
+                        if (!take_remaining_copies(it->getMapped()))
+                            break;
+                    }
+                    else
+                    {
+                        size_t offset = map.offsetInternal(it.getPtr());
+                        if (parent.isUsed(offset))
+                            continue;
 
-                    rows_added += collectNonJoinedRefWords<Mapped>(it->getMapped(), words);
+                        rows_added += collectNonJoinedRefWords<Mapped>(it->getMapped(), words);
+                    }
 
                     if (rows_added >= max_block_size)
                     {
@@ -2240,7 +2296,7 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     /// A set map stores the right blocks only for the algorithm that says it may take them. Asking
     /// for them without having said so would hand back an empty list and silently lose the right
     /// side, so say plainly that the join was built for a different contract.
-    if (getMapsKind() == JoinMapsKind::Set && !right_blocks_may_be_taken)
+    if ((getMapsKind() == JoinMapsKind::Set || getMapsKind() == JoinMapsKind::Count) && !right_blocks_may_be_taken)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Right blocks of a key-only join were asked for, but no algorithm said it would take them");
