@@ -35,6 +35,9 @@ public:
 
         int ret = BZ2_bzCompressInit(&stream, compression_level, 0, 0);
 
+        if (ret == BZ_PARAM_ERROR)
+            throw Exception(ErrorCodes::BZIP2_STREAM_ENCODER_FAILED, "Compression level {} is out of range for bz2", compression_level);
+
         if (ret != BZ_OK)
             throw Exception(
                 ErrorCodes::BZIP2_STREAM_ENCODER_FAILED,

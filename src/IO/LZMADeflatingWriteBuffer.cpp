@@ -20,7 +20,7 @@ void LZMADeflatingWriteBuffer::initialize(int compression_level)
     // options for further compression
     lzma_options_lzma opt_lzma2;
     if (lzma_lzma_preset(&opt_lzma2, compression_level))
-        throw Exception(ErrorCodes::LZMA_STREAM_ENCODER_FAILED, "lzma preset failed: lzma version: {}", LZMA_VERSION_STRING);
+        throw Exception(ErrorCodes::LZMA_STREAM_ENCODER_FAILED, "Compression level {} is out of range for xz", compression_level);
 
 
     // LZMA_FILTER_X86 -
