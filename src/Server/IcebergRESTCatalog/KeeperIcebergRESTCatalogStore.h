@@ -84,6 +84,17 @@ public:
 
     bool dropTable(const IcebergNamespaceName & ns, const String & table);
 
+    enum class UnregisterTableResult
+    {
+        Unregistered,
+        /// The uuid node changed since `expected` was read.
+        VersionMismatch,
+        TableMissing,
+    };
+
+    /// Removes the table only if its uuid node still has `expected.version`. The caller then knows `expected` is the final pointer.
+    UnregisterTableResult unregisterTable(const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & expected);
+
     enum class UpdateTableResult
     {
         Updated,

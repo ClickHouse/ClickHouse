@@ -46,6 +46,8 @@ public:
     bool tableExists(const IcebergNamespaceName & ns, const String & table) const;
     std::optional<Strings> listTables(const IcebergNamespaceName & ns) const;
     bool dropTable(const IcebergNamespaceName & ns, const String & table) const;
+    using UnregisterTableResult = KeeperIcebergRESTCatalogStore::UnregisterTableResult;
+    UnregisterTableResult unregisterTable(const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & expected) const;
     using UpdateTableResult = KeeperIcebergRESTCatalogStore::UpdateTableResult;
     UpdateTableResult updateTable(
         const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & expected, const IcebergTablePointer & new_pointer) const;

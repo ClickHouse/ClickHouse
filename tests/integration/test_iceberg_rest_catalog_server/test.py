@@ -2,6 +2,7 @@
 
 import base64
 import gzip
+import io
 import json
 import time
 import uuid
@@ -209,6 +210,23 @@ def drop_table(ns, table, expected_code=204, auth=None):
     )
 
 
+def register_table(ns, name, metadata_location, expected_code=200, auth=None, **extra):
+    body = {"name": name, "metadata-location": metadata_location, **extra}
+    return catalog_request(
+        "POST",
+        f"/v1/my_warehouse/namespaces/{ns}/register",
+        json=body,
+        expected_code=expected_code,
+        auth=auth,
+    )
+
+
+def unregister_table(ns, table, expected_code=200, auth=None):
+    return catalog_request(
+        "POST", tables_url(ns, table) + "/unregister", expected_code=expected_code, auth=auth
+    )
+
+
 def metadata_key(metadata_location):
     prefix = f"s3://{BUCKET}/"
     assert metadata_location.startswith(prefix), metadata_location
@@ -309,6 +327,8 @@ def test_config(started_cluster):
         "HEAD /v1/{prefix}/namespaces/{namespace}/tables/{table}",
         "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}",
         "DELETE /v1/{prefix}/namespaces/{namespace}/tables/{table}",
+        "POST /v1/{prefix}/namespaces/{namespace}/register",
+        "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/unregister",
     ]
 
     response = catalog_request("GET", "/v1/config", expected_code=400)
@@ -483,11 +503,6 @@ def test_not_implemented(started_cluster):
     )
     assert_error_shape(response, "UnsupportedOperationException")
 
-    response = catalog_request(
-        "POST", "/v1/my_warehouse/namespaces/sales/register", expected_code=406
-    )
-    assert_error_shape(response, "UnsupportedOperationException")
-
     response = requests.head(catalog_url("/v1/my_warehouse/namespaces/sales/views/v"))
     assert response.status_code == 406
 
@@ -630,6 +645,12 @@ def test_table_ddl_rejects_readonly(started_cluster):
         response = create_table(ns, "forbidden", auth=auth, expected_code=403)
         assert_error_shape(response, "ForbiddenException")
         response = drop_table(ns, "existing", auth=auth, expected_code=403)
+        assert_error_shape(response, "ForbiddenException")
+        response = register_table(
+            ns, "forbidden", f"{BASE_LOCATION}/x/metadata/v1.metadata.json", auth=auth, expected_code=403
+        )
+        assert_error_shape(response, "ForbiddenException")
+        response = unregister_table(ns, "existing", auth=auth, expected_code=403)
         assert_error_shape(response, "ForbiddenException")
 
     response = commit_table(ns, "existing", [], [], auth=("readonly_user", ""), expected_code=403)
@@ -985,7 +1006,13 @@ def test_pyiceberg_client(started_cluster):
     assert catalog.list_tables(ns) == [(ns, "events")]
     assert catalog.table_exists(f"{ns}.events")
 
+    registered = catalog.register_table(f"{ns}.copy", table.metadata_location)
+    assert registered.metadata_location == table.metadata_location
+    assert registered.schema().as_struct() == schema.as_struct()
+    assert sorted(catalog.list_tables(ns)) == [(ns, "copy"), (ns, "events")]
+
     catalog.drop_table(f"{ns}.events")
+    catalog.drop_table(f"{ns}.copy")
     assert catalog.list_tables(ns) == []
     assert not catalog.table_exists(f"{ns}.events")
 
@@ -1111,6 +1138,90 @@ def test_commit_append(started_cluster):
     table_path = f"{KEEPER_ROOT}/namespaces/{ns}/tables/events"
     table_uuid = zk.get(table_path)[0].decode()
     assert zk.get(f"{table_path}/{table_uuid}")[0] == second["metadata-location"].encode()
+
+
+def test_register_and_unregister_table(started_cluster):
+    ns = f"register_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    created = create_table(ns, "t").json()
+    table_uuid = created["metadata"]["table-uuid"]
+    location = created["metadata"]["location"]
+    committed = commit_table(
+        ns,
+        "t",
+        [{"type": "assert-ref-snapshot-id", "ref": "main"}],
+        append_updates(fake_snapshot(100, 1)),
+    ).json()
+    loc1 = committed["metadata-location"]
+
+    # Unregister returns the final metadata and leaves the files in place.
+    result = unregister_table(ns, "t").json()
+    assert result["metadata-location"] == loc1
+    assert result["metadata"]["current-snapshot-id"] == 100
+    assert not table_exists(ns, "t")
+    cluster.minio_client.stat_object(BUCKET, metadata_key(loc1))
+    assert len(list_metadata_files(location)) == 2
+
+    response = commit_table(ns, "t", assert_main_at(100), append_updates(fake_snapshot(200, 2)), expected_code=404)
+    assert_error_shape(response, "NoSuchTableException")
+
+    # Register the same file under a new name. The table keeps its uuid and history.
+    registered = register_table(ns, "t2", loc1).json()
+    assert registered["metadata-location"] == loc1
+    assert registered["metadata"]["table-uuid"] == table_uuid
+    assert registered["config"] == {}
+    loaded = catalog_request("GET", tables_url(ns, "t2")).json()
+    assert loaded["metadata-location"] == loc1
+    assert loaded["metadata"]["current-snapshot-id"] == 100
+    assert list_tables(ns) == ["t2"]
+
+    zk = get_keeper()
+    table_path = f"{KEEPER_ROOT}/namespaces/{ns}/tables/t2"
+    assert zk.get(table_path)[0] == table_uuid.encode()
+    assert zk.get(f"{table_path}/{table_uuid}")[0] == loc1.encode()
+
+    # The registered table accepts commits like a created one.
+    second = commit_table(ns, "t2", assert_main_at(100), append_updates(fake_snapshot(200, 2))).json()
+    assert second["metadata"]["current-snapshot-id"] == 200
+    assert len(list_metadata_files(location)) == 3
+
+    response = register_table(ns, "t2", loc1, expected_code=409)
+    assert_error_shape(response, "TableAlreadyExistsException")
+    response = register_table(f"{ns}_missing", "t3", loc1, expected_code=404)
+    assert_error_shape(response, "NoSuchNamespaceException")
+
+    # The file must be in the warehouse bucket and hold Iceberg metadata.
+    response = register_table(ns, "t3", "s3://other-bucket/x/metadata/v1.metadata.json", expected_code=400)
+    assert_error_shape(response, "BadRequestException")
+    response = register_table(ns, "t3", f"{BASE_LOCATION}/{ns}/missing/metadata/v1.metadata.json", expected_code=400)
+    assert_error_shape(response, "BadRequestException")
+    assert "does not exist" in response.json()["error"]["message"]
+
+    text_key = f"my_warehouse/{ns}/text/metadata/v1.metadata.json"
+    cluster.minio_client.put_object(BUCKET, text_key, io.BytesIO(b"not json"), 8)
+    response = register_table(ns, "t3", f"s3://{BUCKET}/{text_key}", expected_code=400)
+    assert_error_shape(response, "BadRequestException")
+
+    json_key = f"my_warehouse/{ns}/json/metadata/v1.metadata.json"
+    cluster.minio_client.put_object(BUCKET, json_key, io.BytesIO(b'{"a": 1}'), 8)
+    response = register_table(ns, "t3", f"s3://{BUCKET}/{json_key}", expected_code=400)
+    assert_error_shape(response, "BadRequestException")
+    assert "table-uuid" in response.json()["error"]["message"]
+
+    response = register_table(ns, "t3", loc1, overwrite=True, expected_code=400)
+    assert_error_shape(response, "UnsupportedOperationException")
+    register_table(ns, "t3", loc1, overwrite=False)
+    assert sorted(list_tables(ns)) == ["t2", "t3"]
+
+    response = catalog_request(
+        "POST", f"/v1/my_warehouse/namespaces/{ns}/register", json={"name": "t4"}, expected_code=400
+    )
+    assert_error_shape(response, "BadRequestException")
+    response = register_table(ns, 42, loc1, expected_code=400)
+    assert_error_shape(response, "BadRequestException")
+
+    response = unregister_table(ns, "missing", expected_code=404)
+    assert_error_shape(response, "NoSuchTableException")
 
 
 def test_commit_empty(started_cluster):

@@ -359,6 +359,27 @@ bool KeeperIcebergRESTCatalogStore::dropTable(const IcebergNamespaceName & ns, c
     return true;
 }
 
+KeeperIcebergRESTCatalogStore::UnregisterTableResult KeeperIcebergRESTCatalogStore::unregisterTable(
+    const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & expected)
+{
+    auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::unregisterTable");
+    auto zookeeper = getZooKeeper();
+
+    /// The version check on the uuid node makes a concurrent commit fail the remove, so the metadata the caller read is final.
+    /// A table re-created under the same name has another uuid, so the remove misses it and the table reads as missing.
+    Coordination::Requests ops;
+    ops.emplace_back(zkutil::makeRemoveRequest(tableUuidPath(ns, table, expected.uuid), expected.version.toInt32()));
+    ops.emplace_back(zkutil::makeRemoveRequest(tablePath(ns, table), -1));
+    Coordination::Responses responses;
+    const auto code = zookeeper->tryMulti(ops, responses);
+    if (code == Coordination::Error::ZBADVERSION)
+        return UnregisterTableResult::VersionMismatch;
+    if (code == Coordination::Error::ZNONODE)
+        return UnregisterTableResult::TableMissing;
+    zkutil::KeeperMultiException::check(code, ops, responses);
+    return UnregisterTableResult::Unregistered;
+}
+
 KeeperIcebergRESTCatalogStore::UpdateTableResult KeeperIcebergRESTCatalogStore::updateTable(
     const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & expected, const IcebergTablePointer & new_pointer)
 {

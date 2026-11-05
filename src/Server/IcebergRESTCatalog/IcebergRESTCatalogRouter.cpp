@@ -42,8 +42,8 @@ const std::vector<IcebergRESTRoute> & getIcebergRESTRoutes()
         {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}"}, IcebergRESTOperation::UpdateTable, true},
         {HTTPRequest::HTTP_DELETE, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}"}, IcebergRESTOperation::DropTable, true},
 
-        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "register"}, IcebergRESTOperation::RegisterTable, false},
-        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}", "unregister"}, IcebergRESTOperation::UnregisterTable, false},
+        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "register"}, IcebergRESTOperation::RegisterTable, true},
+        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}", "unregister"}, IcebergRESTOperation::UnregisterTable, true},
         {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}", "metrics"}, IcebergRESTOperation::ReportMetrics, false},
         {HTTPRequest::HTTP_GET, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}", "credentials"}, IcebergRESTOperation::LoadCredentials, false},
         {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "namespaces", "{namespace}", "tables", "{table}", "sign"}, IcebergRESTOperation::SignRequest, false},

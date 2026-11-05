@@ -53,6 +53,7 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
     extern const int METADATA_MISMATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_IS_PROHIBITED;
@@ -71,6 +72,8 @@ namespace
 
 constexpr size_t MAX_REQUEST_BODY_SIZE = 1_MiB;
 constexpr size_t MAX_TABLE_NAME_LENGTH = 256;
+/// Cap on re-reads of the pointer while commits keep landing between the read and the remove. Same value as the store.
+constexpr size_t MAX_UNREGISTER_RETRIES = 10;
 
 /// The Iceberg table property that names the codec of metadata files.
 constexpr auto METADATA_COMPRESSION_CODEC_PROPERTY = "write.metadata.compression-codec";
@@ -361,6 +364,12 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
                 return;
             case IcebergRESTOperation::UpdateTable:
                 handleUpdateTable(*warehouse, *match, request, response, *context);
+                return;
+            case IcebergRESTOperation::RegisterTable:
+                handleRegisterTable(*warehouse, *match, request, response, *context);
+                return;
+            case IcebergRESTOperation::UnregisterTable:
+                handleUnregisterTable(*warehouse, *match, response, *context);
                 return;
             default:
                 sendError(
@@ -956,7 +965,7 @@ void IcebergRESTCatalogHandler::handleUpdateTable(
         /// Do not write a new metadata version for an empty commit.
         if (updates->size() == 0)
         {
-            sendCommitTableResult(pointer->metadata_location, metadata, response);
+            sendTableMetadataResult(pointer->metadata_location, metadata, response);
             return;
         }
 
@@ -1032,7 +1041,7 @@ void IcebergRESTCatalogHandler::commitTableMetadata(
     {
         case UpdateTableResult::Updated:
             LOG_INFO(log, "Committed table {}.{}: {} -> {}", joinNamespace(ns), table, pointer.metadata_location, new_location);
-            sendCommitTableResult(new_location, metadata, response);
+            sendTableMetadataResult(new_location, metadata, response);
             return;
         case UpdateTableResult::VersionMismatch:
             sendError(
@@ -1054,7 +1063,7 @@ void IcebergRESTCatalogHandler::commitTableMetadata(
     }
 }
 
-void IcebergRESTCatalogHandler::sendCommitTableResult(
+void IcebergRESTCatalogHandler::sendTableMetadataResult(
     const String & metadata_location, const Poco::JSON::Object::Ptr & metadata, HTTPServerResponse & response)
 {
     Poco::JSON::Object result;
@@ -1073,6 +1082,179 @@ void IcebergRESTCatalogHandler::sendCommitRequestError(HTTPServerResponse & resp
             Poco::Net::HTTPResponse::HTTP_BAD_REQUEST,
             "BadRequestException",
             fmt::format("Malformed commit request: {}", message));
+}
+
+/// Points a new table name at a metadata file that another catalog or engine wrote. Files are never touched.
+void IcebergRESTCatalogHandler::handleRegisterTable(
+    const IcebergRESTCatalogWarehouse & warehouse,
+    const IcebergRESTRouteMatch & match,
+    HTTPServerRequest & request,
+    HTTPServerResponse & response,
+    const Context & context) const
+{
+    checkDDLAllowed(context, "register table");
+
+    /// Read the body before any early return, so a keep-alive connection has no unread bytes left.
+    const auto body = readRequestBody(request, response, MAX_REQUEST_BODY_SIZE);
+    if (!body)
+        return;
+
+    const auto ns = getNamespaceOrSendNotFound(warehouse, match, response);
+    if (!ns)
+        return;
+
+    String name;
+    String metadata_location;
+    String object_key;
+    bool overwrite = false;
+    try
+    {
+        const auto json = Poco::JSON::Parser().parse(*body).extract<Poco::JSON::Object::Ptr>();
+
+        name = getString(*json, "name");
+        validateTableName(name);
+        metadata_location = getString(*json, "metadata-location");
+        if (json->has("overwrite"))
+        {
+            validateBoolean(*json, "overwrite");
+            overwrite = json->getValue<bool>("overwrite");
+        }
+
+        /// The location must be in the warehouse bucket, so the catalog can read it with its own credentials.
+        object_key = warehouse.objectKey(metadata_location);
+    }
+    /// `Exception` derives from `Poco::Exception`, so it goes first.
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::BAD_ARGUMENTS)
+            throw;
+        sendError(
+            response,
+            Poco::Net::HTTPResponse::HTTP_BAD_REQUEST,
+            "BadRequestException",
+            fmt::format("Malformed register table request: {}", e.message()));
+        return;
+    }
+    catch (const Poco::Exception & e)
+    {
+        sendError(
+            response,
+            Poco::Net::HTTPResponse::HTTP_BAD_REQUEST,
+            "BadRequestException",
+            fmt::format("Malformed register table request: {}", e.displayText()));
+        return;
+    }
+
+    /// TODO: `overwrite` needs an atomic replace of the uuid node under the existing name.
+    if (overwrite)
+    {
+        sendError(response, Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "UnsupportedOperationException", "overwrite is not supported");
+        return;
+    }
+
+    /// The existence check runs first, so a wrong path gets a 400 before any storage read.
+    if (!warehouse.object_storage->exists(StoredObject(object_key)))
+    {
+        sendError(
+            response,
+            Poco::Net::HTTPResponse::HTTP_BAD_REQUEST,
+            "BadRequestException",
+            fmt::format("Metadata file does not exist: {}", metadata_location));
+        return;
+    }
+
+    /// The file was written by another catalog, and the load path does not validate either.
+    /// The uuid and the format version are enough to tell Iceberg metadata from a random JSON object.
+    Poco::JSON::Object::Ptr metadata;
+    String uuid;
+    try
+    {
+        metadata = readTableMetadata(warehouse, {.uuid = {}, .metadata_location = metadata_location});
+        uuid = getString(*metadata, Iceberg::f_table_uuid);
+        getInteger(*metadata, Iceberg::f_format_version);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::INCORRECT_DATA && e.code() != ErrorCodes::BAD_ARGUMENTS)
+            throw;
+        sendError(
+            response,
+            Poco::Net::HTTPResponse::HTTP_BAD_REQUEST,
+            "BadRequestException",
+            fmt::format("Metadata file {} is not Iceberg table metadata: {}", metadata_location, e.message()));
+        return;
+    }
+
+    using CreateTableResult = IcebergRESTCatalogWarehouse::CreateTableResult;
+    const auto created = warehouse.createTable(*ns, name, {.uuid = uuid, .metadata_location = metadata_location});
+    if (created == CreateTableResult::TableExists)
+    {
+        sendError(
+            response,
+            Poco::Net::HTTPResponse::HTTP_CONFLICT,
+            "TableAlreadyExistsException",
+            fmt::format("Table already exists: {}.{}", joinNamespace(*ns), name));
+        return;
+    }
+    if (created == CreateTableResult::NamespaceMissing)
+    {
+        sendNoSuchNamespace(response, *ns);
+        return;
+    }
+
+    LOG_INFO(log, "Registered table {}.{} at {}", joinNamespace(*ns), name, metadata_location);
+    sendLoadTableResult(metadata_location, metadata, response);
+}
+
+/// Removes the table pointer and returns the metadata it pointed at. Files are never touched.
+void IcebergRESTCatalogHandler::handleUnregisterTable(
+    const IcebergRESTCatalogWarehouse & warehouse,
+    const IcebergRESTRouteMatch & match,
+    HTTPServerResponse & response,
+    const Context & context) const
+{
+    checkDDLAllowed(context, "unregister table");
+
+    const auto ns = getNamespaceOrSendNotFound(warehouse, match, response);
+    if (!ns)
+        return;
+
+    const auto & table = match.path_params.at("table");
+    validateTableName(table);
+
+    /// The spec requires the returned metadata to include every commit before the unregister.
+    /// The remove checks the version read here, so a commit that lands in between restarts the loop.
+    using UnregisterTableResult = IcebergRESTCatalogWarehouse::UnregisterTableResult;
+    for (size_t attempt = 0; attempt < MAX_UNREGISTER_RETRIES; ++attempt)
+    {
+        const auto pointer = warehouse.getTable(*ns, table);
+        if (!pointer)
+        {
+            sendNoSuchTable(response, *ns, table);
+            return;
+        }
+        const auto metadata = readTableMetadata(warehouse, *pointer);
+
+        switch (warehouse.unregisterTable(*ns, table, *pointer))
+        {
+            case UnregisterTableResult::Unregistered:
+                LOG_INFO(log, "Unregistered table {}.{} at {}", joinNamespace(*ns), table, pointer->metadata_location);
+                sendTableMetadataResult(pointer->metadata_location, metadata, response);
+                return;
+            case UnregisterTableResult::TableMissing:
+                sendNoSuchTable(response, *ns, table);
+                return;
+            case UnregisterTableResult::VersionMismatch:
+                continue;
+        }
+    }
+
+    /// `handleRequest` maps this to 503, the same answer as for too many concurrent namespace updates.
+    throw Exception(
+        ErrorCodes::ICEBERG_CATALOG_CONCURRENT_UPDATE,
+        "Cannot unregister table {}.{}: too many concurrent commits",
+        joinNamespace(*ns),
+        table);
 }
 
 void IcebergRESTCatalogHandler::handleDropTable(
