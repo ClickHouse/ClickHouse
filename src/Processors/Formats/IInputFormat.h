@@ -56,8 +56,12 @@ struct ChunkInfoRowNumbers : public ChunkInfo
 /// Structure for storing information about buckets that IInputFormat needs to read.
 struct FileBucketInfo
 {
-    virtual void serialize(WriteBuffer & buffer) = 0;
-    virtual void deserialize(ReadBuffer & buffer) = 0;
+    FileBucketInfo() = default;
+    FileBucketInfo(const FileBucketInfo &) = default;
+    FileBucketInfo & operator=(const FileBucketInfo &) = default;
+
+    virtual void serialize(WriteBuffer & buffer, size_t protocol_version) const = 0;
+    virtual void deserialize(ReadBuffer & buffer, size_t protocol_version) = 0;
     virtual String getIdentifier() const = 0;
     virtual String getFormatName() const = 0;
     virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const VectorWithMemoryTracking<size_t> & matching_row_groups) const = 0;
@@ -72,6 +76,11 @@ struct IBucketSplitter
     /// Splits a file into buckets using the given read buffer and format settings.
     /// Returns information about the resulting buckets (see the structure above for details).
     virtual VectorWithMemoryTracking<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
+
+    virtual VectorWithMemoryTracking<FileBucketInfoPtr> splitByByteRanges(size_t /*bucket_size*/, size_t /*file_size*/, const VectorWithMemoryTracking<UInt64> & /*split_offsets*/)
+    {
+        return {};
+    }
 
     virtual ~IBucketSplitter() = default;
 };

@@ -443,6 +443,50 @@ void Reader::ensureColumnChunks(const VectorWithMemoryTracking<size_t> & column_
     }
 }
 
+std::optional<UnorderedSetWithMemoryTracking<UInt64>> Reader::selectRowGroups(const RowGroupSelection & row_group_selection)
+{
+    if (!std::holds_alternative<RowGroupByteRange>(row_group_selection))
+        return selectRowGroups(*file_footer, row_group_selection, nullptr);
+    ensureColumnChunks({0});
+    return selectRowGroups(*file_footer, row_group_selection, column_chunks[0].get());
+}
+
+std::optional<UnorderedSetWithMemoryTracking<UInt64>> Reader::selectRowGroups(
+    const FileFooter & footer, const RowGroupSelection & row_group_selection, const FileColumnChunks * first_column)
+{
+    if (std::holds_alternative<std::monostate>(row_group_selection))
+        return std::nullopt;
+    if (const auto * row_group_ids = std::get_if<UnorderedSetWithMemoryTracking<UInt64>>(&row_group_selection))
+        return *row_group_ids;
+
+    VectorWithMemoryTracking<FileColumnChunks> parsed;
+    if (!first_column)
+    {
+        deserializeColumnChunks(footer.serialized.data(), footer.serialized.size(), footer.column_chunk_offsets, {0}, parsed);
+        const bool written_by_old_duckdb = footer.metadata.created_by == "DuckDB";
+        for (auto & column : parsed[0].chunks)
+            fixUpColumnChunk(column, written_by_old_duckdb);
+        first_column = parsed.data();
+    }
+
+    const auto [range_begin, range_size] = std::get<RowGroupByteRange>(row_group_selection);
+    UnorderedSetWithMemoryTracking<UInt64> selected;
+    for (size_t row_group_idx = 0; row_group_idx < footer.metadata.row_groups.size(); ++row_group_idx)
+    {
+        if (footer.numColumnChunks(row_group_idx) == 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Row group has no column chunks");
+        const auto & column = first_column->chunks[row_group_idx].meta_data;
+        Int64 offset = column.data_page_offset;
+        if (column.__isset.dictionary_page_offset && column.dictionary_page_offset > 0 && column.dictionary_page_offset < offset)
+            offset = column.dictionary_page_offset;
+        if (offset < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative column chunk offset in row group: {}", offset);
+        if (range_begin <= UInt64(offset) && UInt64(offset) - range_begin < range_size)
+            selected.insert(row_group_idx);
+    }
+    return selected;
+}
+
 void Reader::getHyperrectangleForRowGroup(size_t row_group_idx, Hyperrectangle & hyperrectangle, bool only_spatial_bbox) const
 {
     for (const PrimitiveColumnInfo & column_info : primitive_columns)
@@ -852,7 +896,7 @@ static size_t heapBytesOfField(const Field & field)
     return field.getType() == Field::Types::String ? field.safeGet<String>().size() : 0;
 }
 
-void Reader::prefilterAndInitRowGroups(const std::optional<UnorderedSetWithMemoryTracking<UInt64>> & row_groups_to_read)
+void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selection)
 {
     extended_sample_block = *sample_block;
     for (const auto & col : format_filter_info->additional_columns)
@@ -1083,6 +1127,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<UnorderedSetWithMemor
     total_primitive_columns_in_file = schemer.primitive_column_idx;
     output_columns = std::move(schemer.output_columns);
     parseColumnChunks();
+    const auto row_groups_to_read = selectRowGroups(row_group_selection);
 
     /// Precalculate some column index mappings.
 
@@ -4581,6 +4626,9 @@ ColumnPtr & Reader::getOrFormOutputColumn(const RowGroup & row_group, RowSubgrou
     return state.column;
 }
 
+/// Shrinking reallocates a column, so it is skipped when only a little memory would be freed.
+static constexpr size_t min_bytes_to_free_by_shrinking = 4096;
+
 void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx)
 {
     {
@@ -4647,10 +4695,26 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         if (rows_pass == filter.size())
             return;
 
+        /// Columns referenced only by this subgroup can then be filtered in place.
+        block.clear();
+
         /// Filter columns that were already read.
+        const bool filter_in_place = rows_pass * 2 >= filter.size();
         for (auto & state : row_subgroup.output)
-            if (state.column)
+        {
+            if (!state.column)
+                continue;
+            if (filter_in_place && canInplaceFilter(state.column, filter_column))
+            {
+                auto mutable_column = IColumn::mutate(std::move(state.column));
+                mutable_column->filter(filter);
+                if (mutable_column->allocatedBytes() >= mutable_column->byteSize() + min_bytes_to_free_by_shrinking)
+                    mutable_column->shrinkToFit();
+                state.column = std::move(mutable_column);
+            }
+            else
                 state.column = state.column->filter(filter, /*result_size_hint=*/ rows_pass);
+        }
         materialize_replicated();
 
         /// Expand the filter to correspond to all column subchunk rows, rather than only rows that
@@ -4867,7 +4931,6 @@ void Reader::addToColumnsCacheWrite(
     /// which can be far off (for dictionary-encoded strings, it is the average length of the values of the
     /// dictionary, not of the rows), and an entry retains - and is charged for - all its memory.
     /// The column has just been formed and is not shared yet, so this reallocates it in place, without a copy.
-    static constexpr size_t min_bytes_to_free_by_shrinking = 4096;
     if (column->use_count() == 1 && column->allocatedBytes() >= column->byteSize() + min_bytes_to_free_by_shrinking)
     {
         auto mutable_column = IColumn::mutate(std::move(column));
