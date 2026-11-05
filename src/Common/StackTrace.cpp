@@ -553,7 +553,7 @@ void StackTrace::forEachFrame(
             }
         }
 
-        if (const auto * symbol = symbol_index.findSymbol(current_frame.physical_addr))
+        if (const auto * symbol = symbol_index.findSymbolByAddress(current_frame.virtual_addr))
         {
             if (const char * symbol_name = symbol_index.getSymbolNameCString(*symbol); *symbol_name)
                 current_frame.symbol = demangle(symbol_name);
