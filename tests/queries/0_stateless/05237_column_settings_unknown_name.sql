@@ -23,7 +23,7 @@ DROP TABLE t_column_settings_ts;
 
 -- Naming the column distinctly keeps the assertion off the table-level clause, which carries the same
 -- two setting names and may hold a randomization-injected entry.
-CREATE TABLE t_column_settings_unknown (x UInt64, y UInt64, c_with_settings UInt64 SETTINGS (min_compress_block_size = 100))
+CREATE TABLE t_column_settings_unknown (x UInt64, y UInt64, p Tuple(a UInt64), c_with_settings UInt64 SETTINGS (min_compress_block_size = 100))
 ENGINE = MergeTree ORDER BY x;
 SELECT create_table_query LIKE '%`c_with_settings` UInt64 SETTINGS (min_compress_block_size = 100)%'
 FROM system.tables WHERE database = currentDatabase() AND name = 't_column_settings_unknown';
@@ -41,6 +41,9 @@ ALTER TABLE t_column_settings_unknown MODIFY COLUMN y MODIFY SETTING not_a_setti
 ALTER TABLE t_column_settings_unknown MODIFY COLUMN y MODIFY SETTING not_a_setting = DEFAULT; -- { serverError UNKNOWN_SETTING }
 ALTER TABLE t_column_settings_unknown MODIFY COLUMN y MODIFY SETTING param_not_a_setting = 1; -- { serverError UNKNOWN_SETTING }
 ALTER TABLE t_column_settings_unknown MODIFY COLUMN y RESET SETTING not_a_setting; -- { serverError UNKNOWN_SETTING }
+-- A subcolumn takes only a CODEC, so it refuses a SETTINGS clause in every spelling.
+SET enable_subcolumn_codecs = 1;
+ALTER TABLE t_column_settings_unknown MODIFY COLUMN p.a CODEC(ZSTD) SETTINGS (param_not_a_setting = 1); -- { serverError BAD_ARGUMENTS }
 
 -- An ignored IF [NOT] EXISTS command stays a no-op, but one that does take effect is screened even
 -- next to an ignored one in the same statement.

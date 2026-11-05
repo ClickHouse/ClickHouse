@@ -2238,8 +2238,9 @@ void validateSubcolumnCodecCommand(
     const AlterCommand & command, const NameAndTypePair & subcolumn, const ColumnsDescription & columns, const StoragePtr & table, const ContextPtr & context)
 {
     const bool only_codec = !command.data_type && !command.default_expression && !command.comment && !command.ttl
-        && command.settings_changes.empty() && command.settings_resets.empty() && !command.column_statistics_decl
-        && !command.add_enum_values && command.after_column.empty() && !command.first
+        && command.settings_changes.empty() && command.settings_resets.empty()
+        && (command.settings_names_to_check.empty() || isReplayOfJudgedDefinition(context))
+        && !command.column_statistics_decl && !command.add_enum_values && command.after_column.empty() && !command.first
         && (command.to_remove == AlterCommand::RemoveProperty::NO_PROPERTY || command.to_remove == AlterCommand::RemoveProperty::CODEC)
         && (command.codec || command.to_remove == AlterCommand::RemoveProperty::CODEC);
     if (!only_codec)
