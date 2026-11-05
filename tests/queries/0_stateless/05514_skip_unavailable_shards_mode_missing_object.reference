@@ -1,0 +1,6 @@
+all present	4
+tolerant	2
+tolerant db	2
+target table missing	2
+target table missing, engine	2
+target database missing	2

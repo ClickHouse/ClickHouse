@@ -70,8 +70,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int SYSTEM_ERROR;
-    extern const int UNKNOWN_TABLE;
-    extern const int UNKNOWN_DATABASE;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -1427,11 +1425,18 @@ bool RemoteQueryExecutor::shouldIgnoreShardException(int exception_code) const
     switch (skip_unavailable_shards_mode)
     {
         case SkipUnavailableShardsMode::UNAVAILABLE:
-            /// Connection-related failures are skipped while establishing the connection, not here,
-            /// so at this point (a server `Exception` packet) this mode ignores nothing.
-            return false;
         case SkipUnavailableShardsMode::UNAVAILABLE_OR_TABLE_MISSING:
-            return exception_code == ErrorCodes::UNKNOWN_TABLE || exception_code == ErrorCodes::UNKNOWN_DATABASE;
+            /// Both conditions are decided while the connection is established, before the query is sent:
+            /// a replica that cannot be reached, or one where the Distributed table's own remote table (or its
+            /// database) does not exist, yields no usable connection (see `ConnectionEstablisher`, which asks
+            /// for the table with `TablesStatusRequest`, and `SelectStreamFactory` for a local replica), and
+            /// the shard is skipped in `sendQuery`. So at this point (a server `Exception` packet) these modes
+            /// ignore nothing. In particular an `UNKNOWN_TABLE` / `UNKNOWN_DATABASE` exception comes from a
+            /// shard that is up and accepted the query, and may name any object the query references there
+            /// (a table behind a view, the table of a non-GLOBAL `IN` subquery, a dictionary, ...): it says
+            /// nothing about the shard's availability, and skipping it would silently turn an error into a
+            /// wrong result.
+            return false;
         case SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING:
             /// Ignore only an exception that arrived before the shard returned any data; once some data
             /// was returned, an exception means partial results and must not be silently accepted.
