@@ -11,7 +11,6 @@
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
-#include <Common/HiddenSecret.h>
 #include <Core/Settings.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
@@ -61,7 +60,7 @@ static String hideSecretsInCommand(const ContextPtr & context, const String & co
             && e.code() != ErrorCodes::TOO_DEEP_RECURSION
             && e.code() != ErrorCodes::TOO_SLOW_PARSING)
             throw;
-        return String(HIDDEN_SECRET);
+        return "[HIDDEN]";
     }
 
     return ast->formatWithPossiblyHidingSensitiveData(
