@@ -187,66 +187,76 @@ std::optional<DeviceDAG> deviceDAGOf(const ActionsDAG::Node & root, String & ref
 void emitKernel(llvm::Module & module, const DeviceDAG & device_dag, const DataTypePtr & result_type, GPUExpressionResult output, const std::string & name)
 {
     llvm::LLVMContext & context = module.getContext();
-    llvm::IRBuilder<> b(context);
+    llvm::IRBuilder<> builder(context);
 
-    std::vector<llvm::Type *> parameters(device_dag.columns.size() + 1, b.getPtrTy());
-    parameters.push_back(b.getInt64Ty());
-    auto * kernel = llvm::Function::Create(llvm::FunctionType::get(b.getVoidTy(), parameters, false), llvm::Function::ExternalLinkage, name, module);
+    /// `void name(ptr column_0, ..., ptr result, i64 rows)`, as `evaluateGPUExpression` passes the arguments.
+    std::vector<llvm::Type *> parameters(device_dag.columns.size() + 1, builder.getPtrTy());
+    parameters.push_back(builder.getInt64Ty());
+    auto * kernel = llvm::Function::Create(llvm::FunctionType::get(builder.getVoidTy(), parameters, false), llvm::Function::ExternalLinkage, name, module);
+    /// An entry of PTX, which the host launches, rather than a function of the device.
     kernel->setCallingConv(llvm::CallingConv::PTX_Kernel);
 
     auto * entry = llvm::BasicBlock::Create(context, "entry", kernel);
     auto * body = llvm::BasicBlock::Create(context, "body", kernel);
     auto * done = llvm::BasicBlock::Create(context, "done", kernel);
 
-    b.SetInsertPoint(entry);
-    auto read = [&](llvm::Intrinsic::ID id) { return b.CreateZExt(b.CreateIntrinsic(id, {}), b.getInt64Ty()); };
+    builder.SetInsertPoint(entry);
+    auto read = [&](llvm::Intrinsic::ID id) { return builder.CreateZExt(builder.CreateIntrinsic(id, {}), builder.getInt64Ty()); };
     llvm::Value * thread = read(llvm::Intrinsic::nvvm_read_ptx_sreg_tid_x);
-    llvm::Value * row = b.CreateAdd(b.CreateMul(read(llvm::Intrinsic::nvvm_read_ptx_sreg_ctaid_x), read(llvm::Intrinsic::nvvm_read_ptx_sreg_ntid_x)), thread);
+    // row = block_id * block_size + thread_id
+    llvm::Value * row = builder.CreateAdd(builder.CreateMul(read(llvm::Intrinsic::nvvm_read_ptx_sreg_ctaid_x), read(llvm::Intrinsic::nvvm_read_ptx_sreg_ntid_x)), thread);
     llvm::Value * rows = kernel->getArg(static_cast<unsigned>(device_dag.columns.size() + 1));
     llvm::Value * result = kernel->getArg(static_cast<unsigned>(device_dag.columns.size()));
-    llvm::Value * in_range = b.CreateICmpULT(row, rows);
-    b.CreateCondBr(in_range, body, done);
+    /// The last block has threads past the last row, as the grid is a whole number of blocks.
+    llvm::Value * in_range = builder.CreateICmpULT(row, rows);
+    builder.CreateCondBr(in_range, body, done);
 
-    b.SetInsertPoint(body);
+    /// The values of the row in each column, which the expression is computed of.
+    builder.SetInsertPoint(body);
     ValuesWithType values;
     for (size_t i = 0; i < device_dag.columns.size(); ++i)
     {
         const DataTypePtr & type = device_dag.columns[i].type;
-        llvm::Type * element = toNativeType(b, type);
-        values.emplace_back(b.CreateLoad(element, b.CreateInBoundsGEP(element, kernel->getArg(static_cast<unsigned>(i)), row)), type);
+        llvm::Type * element = toNativeType(builder, type);
+        values.emplace_back(builder.CreateLoad(element, builder.CreateInBoundsGEP(element, kernel->getArg(static_cast<unsigned>(i)), row)), type);
     }
-    llvm::Value * value = device_dag.dag.compile(b, values).value;
+    /// The same code that the CPU's JIT emits for one row.
+    llvm::Value * value = device_dag.dag.compile(builder, values).value;
 
     if (output == GPUExpressionResult::Float64)
     {
-        b.CreateStore(nativeCast(b, result_type, value, std::make_shared<DataTypeFloat64>()), b.CreateInBoundsGEP(b.getDoubleTy(), result, row));
-        b.CreateBr(done);
-        b.SetInsertPoint(done);
-        b.CreateRetVoid();
+        builder.CreateStore(nativeCast(builder, result_type, value, std::make_shared<DataTypeFloat64>()), builder.CreateInBoundsGEP(builder.getDoubleTy(), result, row));
+        builder.CreateBr(done);
+        builder.SetInsertPoint(done);
+        builder.CreateRetVoid();
         return;
     }
 
-    llvm::Value * holds = b.CreateICmpNE(value, llvm::Constant::getNullValue(value->getType()));
-    llvm::BasicBlock * body_end = b.GetInsertBlock();
-    b.CreateBr(done);
+    llvm::Value * holds = builder.CreateICmpNE(value, llvm::Constant::getNullValue(value->getType()));
+    /// The expression may have ended `body` in blocks of its own, as `if` does.
+    llvm::BasicBlock * body_end = builder.GetInsertBlock();
+    builder.CreateBr(done);
 
-    b.SetInsertPoint(done);
-    llvm::PHINode * passes = b.CreatePHI(b.getInt1Ty(), 2);
-    passes->addIncoming(b.getFalse(), entry);
+    builder.SetInsertPoint(done);
+    /// A thread past the last row passes nothing, so that it votes as the others of its warp do.
+    llvm::PHINode * passes = builder.CreatePHI(builder.getInt1Ty(), 2);
+    passes->addIncoming(builder.getFalse(), entry);
     passes->addIncoming(holds, body_end);
-    llvm::Value * word = b.CreateIntrinsic(llvm::Intrinsic::nvvm_vote_ballot_sync, {}, {b.getInt32(0xffffffffU), passes});
+    /// Bit `i` of the word is whether the row of the warp's thread `i` passes: a word of the mask for 32 rows.
+    llvm::Value * word = builder.CreateIntrinsic(llvm::Intrinsic::nvvm_vote_ballot_sync, {}, {builder.getInt32(0xffffffffU), passes});
 
     auto * write = llvm::BasicBlock::Create(context, "write", kernel);
     auto * exit = llvm::BasicBlock::Create(context, "exit", kernel);
-    llvm::Value * first_of_warp = b.CreateICmpEQ(b.CreateAnd(thread, b.getInt64(31)), b.getInt64(0));
-    b.CreateCondBr(b.CreateAnd(in_range, first_of_warp), write, exit);
+    /// The first thread of a warp writes its word, at the row of the warp divided by 32.
+    llvm::Value * first_of_warp = builder.CreateICmpEQ(builder.CreateAnd(thread, builder.getInt64(31)), builder.getInt64(0));
+    builder.CreateCondBr(builder.CreateAnd(in_range, first_of_warp), write, exit);
 
-    b.SetInsertPoint(write);
-    b.CreateStore(word, b.CreateInBoundsGEP(b.getInt32Ty(), result, b.CreateLShr(row, b.getInt64(5))));
-    b.CreateBr(exit);
+    builder.SetInsertPoint(write);
+    builder.CreateStore(word, builder.CreateInBoundsGEP(builder.getInt32Ty(), result, builder.CreateLShr(row, builder.getInt64(5))));
+    builder.CreateBr(exit);
 
-    b.SetInsertPoint(exit);
-    b.CreateRetVoid();
+    builder.SetInsertPoint(exit);
+    builder.CreateRetVoid();
 }
 
 std::optional<std::string> emitPTX(llvm::Module & module, llvm::TargetMachine & machine, String & refusal)
