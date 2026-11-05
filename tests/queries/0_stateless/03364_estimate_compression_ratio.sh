@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-random-merge-tree-settings
-# no-random-merge-tree-settings: the estimates are compared with the parts of a table, which the function estimates as a table with the server's settings stores a column.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
@@ -15,6 +13,9 @@ codecs=("ZSTD(1)" "LZ4")
 block_sizes=(65536 1048576)
 num_rows_list=(1_000 50_000)
 
+# The function estimates a column as a table with the server's MergeTree settings stores it; it cannot see the settings of
+# this table. The layout of `String` columns is pinned to the server's default, so that a randomized one does not move the
+# actual ratio away from the estimate; the other randomized settings stay within the tolerance.
 create_table() {
     local num_rows=$1
 
@@ -29,7 +30,9 @@ create_table() {
         sparse_col Int64,
         tuple_col Tuple(Int64, Tuple(Int64, Int64)),
     ) ENGINE = MergeTree ORDER BY number_col
-    SETTINGS min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization=1, index_granularity=8128"
+    SETTINGS min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization=1, index_granularity=8128,
+        serialization_info_version = 'with_types', string_serialization_version = 'with_size_stream',
+        propagate_types_serialization_versions_to_nested_types = 1"
 
     $CLICKHOUSE_CLIENT -q "$query"
 
