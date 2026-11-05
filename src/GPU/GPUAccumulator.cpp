@@ -228,9 +228,10 @@ std::vector<GPUGroupByAggregate> aggregatesOrThrow(size_t num_columns, std::vect
     return aggregates;
 }
 
-std::vector<GPUElementType> withDerived(std::vector<GPUElementType> values, size_t num_derived)
+std::vector<GPUElementType> withDerived(std::vector<GPUElementType> values, const std::vector<GPUDerivedValue> & derived)
 {
-    values.insert(values.end(), num_derived, GPUElementType::Float64);
+    for (const auto & value : derived)
+        values.push_back(value.expression.value_type);
     return values;
 }
 
@@ -375,13 +376,13 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
 {
     group_stream = createStream();
     group_by = std::make_unique<CudfGroupBy>(
-        group_keys, withDerived(values, derived.size()), derived, aggregates, cuda::stream_ref{group_stream.get()});
+        group_keys, withDerived(values, derived), derived, aggregates, cuda::stream_ref{group_stream.get()});
 
     for (const auto & value : derived)
     {
         for (const uint32_t column : value.columns)
         {
-            if (column >= values.size() || values[column] != GPUElementType::Float64)
+            if (column >= values.size() || columnKindOf(values[column]) != GPUColumnKind::Fixed)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "A value the GPU derives from value {} of {}", column, values.size());
         }
     }

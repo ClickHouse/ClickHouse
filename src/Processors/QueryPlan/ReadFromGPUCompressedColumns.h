@@ -48,6 +48,8 @@ public:
         std::shared_ptr<const GPU::GPUKernel> kernel;
         /// Of `columns`, what it loads as its column `i`.
         std::vector<uint32_t> columns;
+        /// Of the values it computes.
+        DataTypePtr type;
         /// The expression as the plan names it.
         String description;
     };

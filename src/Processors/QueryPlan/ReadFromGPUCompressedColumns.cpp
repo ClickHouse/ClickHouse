@@ -222,7 +222,7 @@ public:
         , accumulator(
               typesOf(state->keys),
               argumentTypesOf(state->columns),
-              groupByAggregatesOf(state->columns, state->aggregates),
+              groupByAggregatesOf(state->columns, state->derived, state->aggregates),
               state->batch_bytes,
               /*compressed=*/true,
               num_readers,
@@ -386,11 +386,11 @@ private:
     }
 
     static std::vector<GPU::GPUGroupByAggregate>
-    groupByAggregatesOf(const std::vector<ColumnToReduce> & columns, const std::vector<AggregateToCompute> & aggregates)
+    groupByAggregatesOf(
+        const std::vector<ColumnToReduce> & columns, const std::vector<DerivedColumn> & derived, const std::vector<AggregateToCompute> & aggregates)
     {
         std::vector<GPU::GPUGroupByAggregate> result;
         result.reserve(aggregates.size());
-        static const DataTypePtr derived_type = std::make_shared<DataTypeFloat64>();
         for (const auto & aggregate : aggregates)
         {
             const IDataType * argument_type = nullptr;
@@ -402,7 +402,7 @@ private:
             }
             else if (aggregate.derived)
             {
-                argument_type = derived_type.get();
+                argument_type = derived.at(*aggregate.derived).type.get();
                 column = static_cast<uint32_t>(columns.size() + *aggregate.derived);
             }
             result.push_back({

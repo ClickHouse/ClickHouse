@@ -329,14 +329,15 @@ std::optional<ReadColumns> matchReducedColumns(
 
         if (const auto computed_argument = computed.find(aggregate.argument_names.front()); computed_argument != computed.end())
         {
-            static const DataTypePtr float64 = std::make_shared<DataTypeFloat64>();
-            if (!GPU::canGroupByOnDevice(float64.get(), *result_type, aggregation))
+            const DataTypePtr & computed_type = computed_argument->second.compiled.result_type;
+            if (!GPU::canGroupByOnDevice(computed_type.get(), *result_type, aggregation))
                 GPU_COMPRESSED_REFUSE("an aggregate of a computed argument the device does not group by");
 
             ReadFromGPUCompressedColumns::DerivedColumn derived{
                 .expression = computed_argument->second.compiled.expression,
                 .kernel = computed_argument->second.compiled.kernel,
                 .columns = {},
+                .type = computed_type,
                 .description = aggregate.argument_names.front(),
             };
             for (const auto & input_key : computed_argument->second.input_keys)
@@ -349,8 +350,9 @@ std::optional<ReadColumns> matchReducedColumns(
                 const ColumnWithTypeAndName * read_column = read_header.findByName(name);
                 if (!read_column || metadata->virtuals.has(name) || !table_columns.hasPhysical(name))
                     GPU_COMPRESSED_REFUSE("a column of a computed argument that is not a stored column the read produces");
-                if (!table_columns.getPhysical(name).type->equals(*read_column->type) || !read_column->type->equals(*float64))
-                    GPU_COMPRESSED_REFUSE("a column of a computed argument that is not a stored `Float64`");
+                if (!table_columns.getPhysical(name).type->equals(*read_column->type) || !GPU::columnTypeOf(*read_column->type)
+                    || GPU::isStringKey(*read_column->type))
+                    GPU_COMPRESSED_REFUSE("a column of a computed argument that is not a stored column of a fixed width");
                 if (!deviceExpandsColumnCodec(table_columns, name))
                     GPU_COMPRESSED_REFUSE("a column of a computed argument with a CODEC of its own the device does not expand");
                 if (key_position_by_read_name.contains(name))
@@ -448,9 +450,9 @@ std::optional<ReadColumns> matchReducedColumns(
             key_types.push_back(key.type);
         for (const auto & aggregate : matched.aggregates)
         {
-            static const DataTypePtr float64 = std::make_shared<DataTypeFloat64>();
             argument_types.push_back(
-                aggregate.column ? matched.columns[*aggregate.column].column.type : (aggregate.derived ? float64 : nullptr));
+                aggregate.column ? matched.columns[*aggregate.column].column.type
+                                 : (aggregate.derived ? matched.derived[*aggregate.derived].type : nullptr));
             result_types.push_back(aggregate.result_type);
             aggregate_kinds.push_back(aggregate.aggregation);
         }

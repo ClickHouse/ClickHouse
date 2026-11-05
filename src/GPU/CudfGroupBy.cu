@@ -473,8 +473,8 @@ struct CudfGroupBy::State
     /// The value columns of a batch of `rows` rows that `derived` is computed from.
     __host__ static std::vector<GPUExpressionInput> inputsOf(const GPUDerivedValue & derived, const std::vector<DeviceFixedColumn> & values, size_t rows)
     {
-        if (derived.expression.result != GPUExpressionResult::Float64)
-            throwGPUError("a derived value not into a `Float64`");
+        if (derived.expression.result != GPUExpressionResult::Value)
+            throwGPUError("a derived value of an expression that is a predicate");
 
         std::vector<GPUExpressionInput> inputs;
         inputs.reserve(derived.columns.size());
@@ -507,12 +507,13 @@ struct CudfGroupBy::State
         for (size_t j = 0; j < derived.size(); ++j)
         {
             rmm::device_buffer & out = derived_values[j];
-            if (out.size() < rows * sizeof(double))
-                out.resize(rows * sizeof(double), stream);
+            const GPUElementType type = derived[j].expression.value_type;
+            if (out.size() < rows * sizeOf(type))
+                out.resize(rows * sizeOf(type), stream);
             const std::vector<GPUExpressionInput> inputs = inputsOf(derived[j], batch_values, rows);
             evaluateGPUExpression(
                 derived[j].expression, {.columns = inputs.data(), .count = static_cast<uint32_t>(inputs.size())}, rows, out.data(), stream);
-            columns.emplace_back(cudf::data_type{cudf::type_id::FLOAT64}, static_cast<cudf::size_type>(rows), out.data(), nullptr, 0);
+            columns.emplace_back(cudfTypeOf(type), static_cast<cudf::size_type>(rows), out.data(), nullptr, 0);
         }
     }
 };
@@ -544,8 +545,8 @@ __host__ CudfGroupBy::CudfGroupBy(
 
     for (size_t j = 0; j < derived.size(); ++j)
     {
-        if (values[values.size() - derived.size() + j] != GPUElementType::Float64)
-            throwGPUError("a derived value of other than a `Float64`");
+        if (values[values.size() - derived.size() + j] != derived[j].expression.value_type)
+            throwGPUError("a derived value of another type than its expression's");
         for (const uint32_t column : derived[j].columns)
         {
             if (column >= values.size() - derived.size())

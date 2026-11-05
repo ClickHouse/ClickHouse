@@ -22,6 +22,7 @@ struct CompiledGPUExpression
 {
     GPUExpression expression;
     std::vector<NameAndTypePair> columns;
+    DataTypePtr result_type;
     std::shared_ptr<const GPUKernel> kernel;
 };
 

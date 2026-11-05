@@ -223,9 +223,10 @@ void emitKernel(llvm::Module & module, const DeviceDAG & device_dag, const DataT
     /// The same code that the CPU's JIT emits for one row.
     llvm::Value * value = device_dag.dag.compile(builder, values).value;
 
-    if (output == GPUExpressionResult::Float64)
+    if (output == GPUExpressionResult::Value)
     {
-        builder.CreateStore(nativeCast(builder, result_type, value, std::make_shared<DataTypeFloat64>()), builder.CreateInBoundsGEP(builder.getDoubleTy(), result, row));
+        llvm::Type * native = toNativeType(builder, result_type);
+        builder.CreateStore(value, builder.CreateInBoundsGEP(native, result, row));
         builder.CreateBr(done);
         builder.SetInsertPoint(done);
         builder.CreateRetVoid();
@@ -335,9 +336,10 @@ std::optional<CompiledGPUExpression> compile(const ActionsDAG & dag, const Strin
         refusal = "a predicate of type " + result_type->getName();
         return {};
     }
-    if (output == GPUExpressionResult::Float64 && !which.isFloat64())
+    const auto value_type = filterElementTypeOf(*result_type);
+    if (output == GPUExpressionResult::Value && (!value_type || *value_type == GPUElementType::String))
     {
-        refusal = "an expression of type " + result_type->getName() + " instead of a `Float64`";
+        refusal = "an expression of type " + result_type->getName() + ", which the device does not write";
         return {};
     }
 
@@ -373,6 +375,9 @@ std::optional<CompiledGPUExpression> compile(const ActionsDAG & dag, const Strin
     CompiledGPUExpression compiled;
     compiled.expression.kernel = kernel->kernel;
     compiled.expression.result = output;
+    if (output == GPUExpressionResult::Value)
+        compiled.expression.value_type = *value_type;
+    compiled.result_type = result_type;
     compiled.expression.block_size = kernel->block_size;
     compiled.expression.name = kernel->name.c_str();
     compiled.expression.column_types = kernel->column_types.data();
@@ -391,7 +396,7 @@ std::optional<CompiledGPUExpression> compileGPUFilter(const ActionsDAG & dag, co
 
 std::optional<CompiledGPUExpression> compileGPUExpression(const ActionsDAG & dag, const String & output_name, String & refusal)
 {
-    return compile(dag, output_name, GPUExpressionResult::Float64, refusal);
+    return compile(dag, output_name, GPUExpressionResult::Value, refusal);
 }
 
 }

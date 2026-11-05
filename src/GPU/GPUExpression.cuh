@@ -12,14 +12,18 @@ namespace DB::GPU
 
 enum class GPUExpressionResult : int
 {
+    // return the bitmask of the expression result, where each bit represents the result of the expression for a row
     Bitmask = 0,
-    Float64 = 1,
+    // return the value of the expression result for each row, where each value is stored in the result buffer
+    // for example, if the expression is "column1 + column2", the result buffer will contain the sum of column1 and column2 for each row
+    Value = 1,
 };
 
 struct GPUExpression
 {
     cudaKernel_t kernel = nullptr;
     GPUExpressionResult result = GPUExpressionResult::Bitmask;
+    GPUElementType value_type = GPUElementType::UInt8;
     uint32_t block_size = 0;
     const char * name = nullptr;
     const GPUElementType * column_types = nullptr;
