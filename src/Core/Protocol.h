@@ -97,7 +97,8 @@ namespace Protocol
             MergeTreeReadTaskRequest = 16,  /// Request from a MergeTree replica to a coordinator
             TimezoneUpdate = 17,            /// Receive server's (session-wide) default timezone
             SSHChallenge = 18,              /// Return challenge for SSH signature signing
-            MAX = SSHChallenge,
+            QueryCoordinationRequest = 19,
+            MAX = QueryCoordinationRequest,
 
         };
 
@@ -137,8 +138,9 @@ namespace Protocol
             MergeTreeAllRangesAnnouncementResponse = 14,
                                             /// Initiator's reply to a follower's announcement,
                                             /// carrying the authoritative parts list for the stream.
+            QueryCoordinationResponse = 15,
 
-            MAX = MergeTreeAllRangesAnnouncementResponse,
+            MAX = QueryCoordinationResponse,
         };
 
         /// See the note on Server::toString: returns the numeric value for out-of-range packets.

@@ -1,0 +1,66 @@
+-- Limit copied into the per-shard plan: shard Limit 10 (= 7 + 3), initiator keeps Limit 7 Offset 3
+Expression ((Project names + (Projection + Change column names to column identifiers)))
+Actions: INPUT : 0 -> x UInt64 : 0
+         ALIAS x :: 0 -> __table1.x UInt64 : 1
+         ALIAS __table1.x :: 1 -> x UInt64 : 0
+Positions: 0
+  Limit (preliminary LIMIT)
+  Limit 7
+  Offset 3
+    ReadFromRemote (Read from remote replica)
+      Limit
+      Limit 10
+      Offset 0
+        ReadFromTable
+      Limit
+      Limit 10
+      Offset 0
+        ReadFromTable
+-- WITH TIES is not copied down (per-shard ties are not composable)
+Expression (Project names)
+  Limit (LIMIT WITH TIES)
+    Sorting (Sorting for ORDER BY)
+      ReadFromRemote (Read from remote replica)
+        Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+          ReadFromTable
+        Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+          ReadFromTable
+-- exact_rows_before_limit keeps the shard reading everything (no per-shard Limit)
+Expression ((Project names + (Projection + Change column names to column identifiers)))
+  Limit (preliminary LIMIT)
+    ReadFromRemote (Read from remote replica)
+      ReadFromTable
+      ReadFromTable
+-- Correctness: LIMIT with OFFSET returns the same number of rows as without the distributed plan
+7
+7
+-- Correctness: ORDER BY with LIMIT returns identical rows
+[0,0,1,1,2,2,3]
+[0,0,1,1,2,2,3]
+-- Correctness: LIMIT larger than the data set
+200	9900
+-- Correctness: exact rows_before_limit_at_least is preserved (200 = both shards read fully)
+{
+	"meta":
+	[
+		{
+			"name": "1",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+		[1],
+		[1],
+		[1],
+		[1],
+		[1],
+		[1],
+		[1]
+	],
+
+	"rows": 7,
+
+	"rows_before_limit_at_least": 200
+}

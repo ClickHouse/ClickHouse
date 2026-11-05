@@ -243,6 +243,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDI
 /// which the initiator's merge, sort and limit handle correctly - the safe direction.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K = 20;
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MIN_BYTES_BEFORE_EXTERNAL_GROUP_BY = 21;
+/// First global query-plan version that writes version 1 of `Limit`, which carries the shard-limit and the
+/// distributed top-K candidate markers. A peer below it cannot take part in distributed lazy materialization,
+/// so the initiator does not choose that plan for it.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SHARD_LIMIT = 21;
 /// First query-plan serialization version that carries the `hash_join_layout` plan setting. Gates writing it in
 /// `JoinSettings::updatePlanSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HASH_JOIN_LAYOUT = 21;
@@ -373,6 +377,10 @@ static constexpr auto DBMS_MIN_REVISION_WITH_MERGE_COMBINATOR_STATE_VERSION = 54
 /// while it sends the data of the INSERT, and before `EndOfStream`.
 static constexpr auto DBMS_MIN_REVISION_WITH_INSERT_RETURNING = 54495;
 
+/// The initiator and a shard exchange `QueryCoordinationRequest` / `QueryCoordinationResponse` packets
+/// during the query, used by distributed lazy materialization of Top-K queries.
+static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_QUERY_COORDINATION = 54496;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -381,5 +389,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_INSERT_RETURNING = 54495;
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54495;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54496;
 }

@@ -1,0 +1,18 @@
+<clickhouse>
+    <remote_servers>
+        <distributed_lazy_materialization>
+            <shard>
+                <replica>
+                    <host>shard1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>shard2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </distributed_lazy_materialization>
+    </remote_servers>
+</clickhouse>

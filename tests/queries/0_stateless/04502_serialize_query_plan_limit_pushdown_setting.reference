@@ -1,0 +1,16 @@
+-- default (distributed_push_down_limit = 1): shard plans get a Limit copy
+Expression ((Project names + (Projection + Change column names to column identifiers)))
+  Limit (preliminary LIMIT)
+    ReadFromRemote (Read from remote replica)
+      Limit
+        ReadFromTable
+      Limit
+        ReadFromTable
+-- distributed_push_down_limit = 0: no per-shard Limit
+Expression ((Project names + (Projection + Change column names to column identifiers)))
+  Limit (preliminary LIMIT)
+    ReadFromRemote (Read from remote replica)
+      ReadFromTable
+      ReadFromTable
+-- correctness with the copy disabled
+5
