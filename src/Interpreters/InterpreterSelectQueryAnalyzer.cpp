@@ -4,6 +4,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -211,7 +212,8 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     /// The automatic mode decides with its own cost model, and the row estimate that
     /// `parallel_replicas_min_number_of_rows_per_replica` asks for is a full index analysis of the read, repeated on
     /// every build of this plan. Every context of the plan inherits this mark, and the planner skips the estimate there.
-    ctx->setIsAutomaticParallelReplicasProbe(true);
+    auto probe = std::make_shared<AutomaticParallelReplicasProbe>();
+    ctx->setAutomaticParallelReplicasProbe(probe);
 
     /// Building the plan below re-analyzes and re-plans the query from scratch, and for a query parallel
     /// replicas cannot read at all the result is the single-node plan again, recognized as such only
@@ -229,7 +231,8 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
         eligibility_context->setSetting("automatic_parallel_replicas_mode", Field{0});
         eligibility_context->setSetting("enable_parallel_replicas", Field{1});
 
-        if (!eligibility_context->canUseParallelReplicasOnInitiator())
+        /// The cluster's own check too: with a single node in the cluster the planner would build the single-node plan.
+        if (!ClusterProxy::canUseParallelReplicasOnInitiator(eligibility_context))
         {
             LOG_TRACE(logger, "Parallel replicas cannot be used for this query. Skipping building query plan with parallel replicas.");
             return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::Settings};
@@ -304,7 +307,9 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     reuseBuiltSets(plan, built_sets);
     plan.optimize(optimization_settings);
     return PlanWithParallelReplicas{
-        .plan = std::make_unique<QueryPlan>(std::move(plan)), .skip_reason = PlanWithParallelReplicas::SkipReason::None};
+        .plan = std::make_unique<QueryPlan>(std::move(plan)),
+        .skip_reason = PlanWithParallelReplicas::SkipReason::None,
+        .without_parallel_replicas_for_now = probe->without_parallel_replicas_for_now};
 }
 }
 

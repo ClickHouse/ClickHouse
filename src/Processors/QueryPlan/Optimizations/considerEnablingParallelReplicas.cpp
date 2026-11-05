@@ -1112,11 +1112,13 @@ void considerEnablingParallelReplicas(
     auto plan_with_parallel_replicas = std::move(build_result.plan);
 
     /// The ways the plan just built can turn out unusable whatever the statistics say. They depend only on the two
-    /// plans, so remember them, as a matched boundary is remembered, and spare the next executions the build.
+    /// plans, so remember them, as a matched boundary is remembered, and spare the next executions the build - unless
+    /// the build fell back for a reason that can pass and that the key does not see, such as a replica being down.
+    const bool remember_unmatched = remember_boundary && !build_result.without_parallel_replicas_for_now;
     auto skip_unmatched = [&](RuntimeDataflowStatisticsCache::Unmatched reason)
     {
         countUnmatched(reason);
-        if (remember_boundary)
+        if (remember_unmatched)
             stats_cache.setUnmatched(root_key, reason);
     };
 

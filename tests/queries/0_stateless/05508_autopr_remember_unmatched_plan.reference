@@ -7,3 +7,5 @@ remember_unmatched_limit_1	1	0	0	1
 remember_unmatched_limit_2	0	1	0	1
 remember_unmatched_limit_off_1	1	0	0	1
 remember_unmatched_limit_off_2	1	0	0	1
+remember_unmatched_one_replica_1	0	0	0	0
+remember_unmatched_one_replica_2	0	0	0	0

@@ -50,6 +50,13 @@ FORMAT Null SETTINGS log_comment = 'remember_unmatched_leaf_timeout_1', max_exec
 SELECT l_orderkey % 7 AS g, sum(l_price) FROM t_remember_unmatched_l GROUP BY g
 FORMAT Null SETTINGS log_comment = 'remember_unmatched_leaf_timeout_2', max_execution_time = 600, max_execution_time_leaf = 0;
 
+-- A cluster with only the initiator in it: replicas can be added without the query or its settings changing, so this
+-- must not be remembered. It is not even built.
+SELECT l_orderkey % 7 AS g, sum(l_price) FROM t_remember_unmatched_l GROUP BY g
+FORMAT Null SETTINGS log_comment = 'remember_unmatched_one_replica_1', cluster_for_parallel_replicas = 'test_shard_localhost';
+SELECT l_orderkey % 7 AS g, sum(l_price) FROM t_remember_unmatched_l GROUP BY g
+FORMAT Null SETTINGS log_comment = 'remember_unmatched_one_replica_2', cluster_for_parallel_replicas = 'test_shard_localhost';
+
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
 SYSTEM FLUSH LOGS query_log;
