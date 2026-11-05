@@ -1996,7 +1996,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         {
             additional_filter = parseAdditionalFilterAstIfNeeded(
                 storage, table_expression->getOriginalAlias(), table_expression_query_info, query_context);
-            /// The shipped plan no longer applies the sender's entry, so this node applies it too, unless its own entry is the same.
+            /// If the shipped plan still applies the sender's entry, its step stands for an entry of this node that is the same.
+            /// If not, this node applies the sender's entry too, unless its own entry is the same.
             const auto & shipped_read = select_query_options.shipped_read;
             if (shipped_read && shipped_read->additional_filter)
             {
@@ -2008,9 +2009,16 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     settings[Setting::max_parser_depth],
                     settings[Setting::max_parser_backtracks]);
                 auto & filter_ast = table_expression_query_info.additional_filter_ast;
-                if (!filter_ast)
+                const bool same = filter_ast
+                    && filter_ast->getTreeHash(/*ignore_aliases=*/ true) == sender_filter->getTreeHash(/*ignore_aliases=*/ true);
+                if (shipped_read->additional_filter_in_plan)
+                {
+                    if (same)
+                        filter_ast = nullptr;
+                }
+                else if (!filter_ast)
                     filter_ast = sender_filter;
-                else if (filter_ast->getTreeHash(/*ignore_aliases=*/ true) != sender_filter->getTreeHash(/*ignore_aliases=*/ true))
+                else if (!same)
                     filter_ast = makeASTFunction("and", filter_ast, sender_filter);
             }
 

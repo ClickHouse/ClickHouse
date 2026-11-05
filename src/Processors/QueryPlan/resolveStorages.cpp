@@ -338,14 +338,16 @@ static QueryPlanResourceHolder replaceReadingFromTable(
         {
             /// The planner applies the entry of this node, evaluated here. So the filter step that applied the entry of the
             /// sender there is removed, and the planner applies that entry too, unless the two entries are the same. Not over
-            /// the sender's row policy step, which must run first.
+            /// the sender's row policy step, which must run first: then that step stays and stands for an entry of this
+            /// node that is the same, as the sender's policy step stands for the policy of this node.
             std::optional<String> sender_additional_filter;
-            if (const auto & additional_filter = reading_from_table->getAdditionalFilter();
-                additional_filter && placement != ReadFromTableStep::RowPolicyPlacement::FilterStep)
+            bool additional_filter_in_plan = false;
+            if (const auto & additional_filter = reading_from_table->getAdditionalFilter())
             {
-                step_without_additional_filter = makeStepWithoutAdditionalFilter(node, *additional_filter, parents);
-                if (step_without_additional_filter)
-                    sender_additional_filter = additional_filter->text;
+                sender_additional_filter = additional_filter->text;
+                if (placement != ReadFromTableStep::RowPolicyPlacement::FilterStep)
+                    step_without_additional_filter = makeStepWithoutAdditionalFilter(node, *additional_filter, parents);
+                additional_filter_in_plan = !step_without_additional_filter;
             }
 
             /// `column_names` also has the columns of the filters above the read, so the grants and the limit are checked
@@ -358,7 +360,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(
                 const auto & settings = context->getSettingsRef();
                 /// The filter step above the read uses the columns of this filter, so they need the grants here as well.
                 /// The planner checks them for a filter it applies itself.
-                if (const auto & additional_filter = reading_from_table->getAdditionalFilter(); additional_filter && !sender_additional_filter)
+                if (const auto & additional_filter = reading_from_table->getAdditionalFilter(); additional_filter && additional_filter_in_plan)
                 {
                     ParserExpression parser;
                     auto filter_ast = parseQuery(
@@ -380,7 +382,8 @@ static QueryPlanResourceHolder replaceReadingFromTable(
             }
             options.shipped_read = SelectQueryOptions::ShippedRead{
                 .row_policy_in_plan = placement == ReadFromTableStep::RowPolicyPlacement::FilterStep,
-                .additional_filter = std::move(sender_additional_filter)};
+                .additional_filter = std::move(sender_additional_filter),
+                .additional_filter_in_plan = additional_filter_in_plan};
         }
 
         auto interpreter_context = context;
