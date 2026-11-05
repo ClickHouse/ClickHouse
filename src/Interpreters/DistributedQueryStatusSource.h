@@ -21,7 +21,8 @@ public:
         SharedHeader block,
         ContextPtr context_,
         const Strings & hosts_to_wait,
-        const char * logger_name);
+        const char * logger_name,
+        bool entry_may_be_removed_ = false);
 
     Chunk generate() override;
     Status prepare() override;
@@ -83,5 +84,7 @@ protected:
 
     bool timeout_exceeded = false;
     bool stop_waiting_offline_hosts = false;
+    /// The entry is known to be committed, so its removal by the cleaner ends the result instead of being an error.
+    const bool entry_may_be_removed = false;
 };
 }

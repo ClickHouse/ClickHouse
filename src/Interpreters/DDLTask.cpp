@@ -149,7 +149,9 @@ void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
             "database", "select", "order", "sort", "filter", "additional_result_filter",
             "limit", "offset", "page", "format", "input_format", "output_format", "default_format", "compression",
             "http_allow_database_as_path", "http_allow_table_as_file", "http_allow_filters_as_path",
-            "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level"};
+            "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level",
+            /// The idempotency key is checked by the initiator only (see `DDLIdempotencyKey.h`).
+            "idempotency_key", "enable_ddl_idempotency_key"};
         for (const auto * name : initiator_only_settings)
             settings->removeSetting(name);
     }

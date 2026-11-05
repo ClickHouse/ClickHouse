@@ -1,6 +1,7 @@
 #include <Databases/IDatabase.h>
 #include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLIdempotencyKey.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -82,7 +83,8 @@ static DatabasePtr tryGetDatabase(const String & database_name, bool if_exists)
 }
 
 
-InterpreterDropQuery::InterpreterDropQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_)
+InterpreterDropQuery::InterpreterDropQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
+    : WithMutableContext(context_), query_ptr(query_ptr_), current_query_ptr(query_ptr_)
 {
 }
 
@@ -221,7 +223,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         /// table drops can break dependency invariants (e.g., a dependent table's drop is ignored
         /// while the table it depends on is dropped, since DROP DATABASE skips same-database
         /// dependency checks), leaving orphaned tables that prevent server restart.
-        if (!secondary_query && !internal && !is_refreshable_view && !is_drop_or_detach_database
+        if (!secondary_query && !internal && !is_refreshable_view && !is_drop_or_detach_database && !context_->getDDLIdempotencyKey()
             && settings[Setting::ignore_drop_queries_probability] != 0 && ast_drop_query.kind == ASTDropQuery::Kind::Drop
             && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= static_cast<double>(settings[Setting::ignore_drop_queries_probability]))
         {
@@ -288,6 +290,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, QueryFlags{ .internal = internal }, std::move(ddl_guard));
         }
+        throwIfDDLIdempotencyKeyIsSet(context_);
 
         if (query.kind == ASTDropQuery::Kind::Detach)
         {

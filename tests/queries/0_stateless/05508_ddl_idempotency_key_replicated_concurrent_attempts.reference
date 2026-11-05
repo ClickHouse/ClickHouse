@@ -1,0 +1,31 @@
+-- the first attempt is held before it is enqueued
+OK
+OK
+b
+-- the second attempt waits in the log for the first one, which is held before it commits
+OK
+OK
+a
+-- the database cancels the entry of the first attempt, which is held before it commits
+OK
+KEEPER_EXCEPTION
+b
+-- the first attempt committed, but its answer is held
+OK
+OK
+b
+-- the second attempt fails its own validation because the first one committed meanwhile
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+a
+b
+y2
+-- errors of the statement itself
+UNKNOWN_TABLE
+OK
+IDEMPOTENCY_KEY_MISMATCH

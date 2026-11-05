@@ -63,6 +63,7 @@
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLIdempotencyKey.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -2178,6 +2179,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             guard->releaseTableLock();
             return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), QueryFlags{ .internal = internal, .distributed_backup_restore = is_restore_from_backup }, std::move(guard));
         }
+        throwIfDDLIdempotencyKeyIsSet(getContext());
 
         if (!create.cluster.empty())
             return executeQueryOnCluster(create);
@@ -2469,6 +2471,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), QueryFlags{ .internal = internal, .distributed_backup_restore = is_restore_from_backup }, std::move(guard));
     }
+    throwIfDDLIdempotencyKeyIsSet(getContext());
 
     if (!create.cluster.empty())
     {

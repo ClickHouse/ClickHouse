@@ -28,7 +28,8 @@ DistributedQueryStatusSource::DistributedQueryStatusSource(
     SharedHeader block,
     ContextPtr context_,
     const Strings & hosts_to_wait,
-    const char * logger_name)
+    const char * logger_name,
+    bool entry_may_be_removed_)
     : ISource(block)
     , zookeeper_name(zookeeper_name_)
     , node_path(zk_node_path)
@@ -36,6 +37,7 @@ DistributedQueryStatusSource::DistributedQueryStatusSource(
     , context(context_)
     , watch(CLOCK_MONOTONIC_COARSE)
     , log(getLogger(logger_name))
+    , entry_may_be_removed(entry_may_be_removed_)
 {
     auto output_mode = context->getSettingsRef()[Setting::distributed_ddl_output_mode];
     throw_on_timeout = output_mode == DistributedDDLOutputMode::THROW || output_mode == DistributedDDLOutputMode::NONE;
@@ -243,6 +245,9 @@ Chunk DistributedQueryStatusSource::generate()
 
         if (!node_exists)
         {
+            if (entry_may_be_removed)
+                return {};
+
             /// Paradoxically, this exception will be throw even in case of "never_throw" mode.
 
             if (!first_exception)

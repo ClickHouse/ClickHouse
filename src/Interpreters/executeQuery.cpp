@@ -71,6 +71,7 @@
 #include <Access/EnabledQuota.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLIdempotencyKey.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -176,6 +177,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsString idempotency_key;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_ast_dialect;
     extern const SettingsBool enable_polyglot_dialect;
@@ -3088,6 +3090,8 @@ static BlockIO executeQueryImpl(
                 reason = "asynchronous insert queue is not configured";
             else if (insert_query->returning)
                 reason = "the query has RETURNING";
+            else if (!settings[Setting::idempotency_key].value.empty())
+                reason = "the query has idempotency_key";
             /// `INSERT ... SELECT` (including `FROM input()`) is routed through
             /// `InterpreterInsertQuery::execute` instead, so it must not reach `pushQueryWithInlinedData`.
             else if (!insert_query->select && insert_query->hasInlinedData())
@@ -3383,7 +3387,11 @@ static BlockIO executeQueryImpl(
                         span = std::make_unique<OpenTelemetry::SpanHolder>(class_name + "::execute()");
                     }
 
-                    res = interpreter->execute();
+                    if (!settings[Setting::idempotency_key].value.empty() && !internal && !flags.distributed_backup_restore
+                        && !context->isDDLOrOnClusterInternal() && client_info.query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+                        res = executeWithDDLIdempotencyKey(*interpreter, out_ast, context);
+                    else
+                        res = interpreter->execute();
                     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
                     /// top of the pipeline which stores the result in the query cache.
                     if (checkCanWriteQueryResultCache(out_ast, context, query_result_cache_on_disk))

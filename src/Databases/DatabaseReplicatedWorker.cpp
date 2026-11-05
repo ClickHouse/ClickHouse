@@ -8,6 +8,7 @@
 #include <Core/UUID.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLIdempotencyKey.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageMaterializedView.h>
@@ -37,6 +38,7 @@ namespace DatabaseReplicatedSetting
     extern const DatabaseReplicatedSettingsUInt64 max_retries_before_automatic_recovery;
     extern const DatabaseReplicatedSettingsUInt64 wait_entry_commited_timeout_sec;
     extern const DatabaseReplicatedSettingsBool allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views;
+    extern const DatabaseReplicatedSettingsUInt64 idempotency_key_ttl_sec;
 }
 
 namespace ErrorCodes
@@ -54,6 +56,8 @@ namespace FailPoints
     extern const char database_replicated_delay_recovery[];
     extern const char database_replicated_delay_entry_execution[];
     extern const char database_replicated_stop_entry_execution[];
+    extern const char database_replicated_idempotency_key_pause_before_commit[];
+    extern const char database_replicated_idempotency_key_pause_after_commit[];
 }
 
 namespace
@@ -549,6 +553,37 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     if (entry.parent_table_uuid.has_value() && !checkParentTableExists(entry.parent_table_uuid.value()))
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Parent table doesn't exist");
 
+    auto idempotency_key = query_context->getDDLIdempotencyKey();
+    if (idempotency_key)
+    {
+        /// Every earlier entry has either committed or can no longer commit, and a later attempt with the key waits
+        /// for this entry, so this read decides whether the statement has already committed.
+        String key_path = database->getDDLIdempotencyKeyPath(idempotency_key->key);
+        std::optional<int32_t> expired_version;
+        if (auto key_node = tryReadDDLIdempotencyKeyNode(zookeeper, key_path, &expired_version))
+        {
+            checkDDLIdempotencyKeyDigest(*idempotency_key, *key_node);
+            idempotency_key->state = DDLIdempotencyKey::State::Answered;
+            /// `try_node` removes our `/try`, so every replica skips our entry.
+            return fs::path(queue_dir) / key_node->entry;
+        }
+
+        if (expired_version)
+        {
+            auto code = zookeeper->tryRemove(key_path, *expired_version);
+            if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE && code != Coordination::Error::ZBADVERSION)
+                throw Coordination::Exception::fromPath(code, key_path);
+        }
+
+        /// Committed by the same multi as the entry.
+        DDLIdempotencyKeyNode key_node{
+            .entry = entry_name,
+            .digest = idempotency_key->digest,
+            .ttl_sec = database->db_settings[DatabaseReplicatedSetting::idempotency_key_ttl_sec]};
+        task->ops.emplace_back(zkutil::makeCreateRequest(key_path, key_node.toString(), zkutil::CreateMode::Persistent));
+        FailPointInjection::pauseFailPoint(FailPoints::database_replicated_idempotency_key_pause_before_commit);
+    }
+
     processTask(*task, zookeeper, flags.internal);
 
     if (!task->was_executed)
@@ -562,6 +597,9 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     }
 
     try_node->setAlreadyRemoved();
+
+    if (idempotency_key)
+        FailPointInjection::pauseFailPoint(FailPoints::database_replicated_idempotency_key_pause_after_commit);
 
     return entry_path;
 }
@@ -839,6 +877,31 @@ bool DatabaseReplicatedDDLWorker::canRemoveQueueEntry(const String & entry_name,
     UInt32 entry_number = DDLTaskBase::getLogEntryNumber(entry_name);
     UInt32 max_log_ptr = parse<UInt32>(getZooKeeper()->get(fs::path(database->zookeeper_path) / "max_log_ptr"));
     return isBeyondRetention(entry_number, max_log_ptr, logs_to_keep);
+}
+
+void DatabaseReplicatedDDLWorker::cleanupAuxiliaryNodes(const ZooKeeperPtr & zookeeper)
+{
+    /// Expired keys are already treated as absent, this only bounds the space they take.
+    String keys_path = fs::path(database->zookeeper_path) / "idempotency";
+    Strings names;
+    if (zookeeper->tryGetChildren(keys_path, names) != Coordination::Error::ZOK || names.empty())
+        return;
+
+    Strings paths;
+    for (const auto & name : names)
+        paths.push_back(fs::path(keys_path) / name);
+    auto nodes = zookeeper->tryGet(paths);
+
+    for (size_t i = 0; i < paths.size(); ++i)
+    {
+        if (nodes[i].error != Coordination::Error::ZOK)
+            continue;
+        if (!isDDLIdempotencyKeyNodeExpired(nodes[i].stat.ctime, DDLIdempotencyKeyNode::parse(nodes[i].data).ttl_sec))
+            continue;
+        auto code = zookeeper->tryRemove(paths[i], nodes[i].stat.version);
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE && code != Coordination::Error::ZBADVERSION)
+            throw Coordination::Exception::fromPath(code, paths[i]);
+    }
 }
 
 bool DatabaseReplicatedDDLWorker::isBeyondRetention(UInt32 entry_number, UInt32 max_log_ptr, UInt32 logs_to_keep)
