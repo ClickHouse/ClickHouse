@@ -1,0 +1,5 @@
+<clickhouse>
+    <!-- The test copies the files in only after the server has started. -->
+    <path_to_regions_hierarchy_file>/etc/clickhouse-server/geo/regions_hierarchy.txt</path_to_regions_hierarchy_file>
+    <path_to_regions_names_files>/etc/clickhouse-server/geo/</path_to_regions_names_files>
+</clickhouse>
