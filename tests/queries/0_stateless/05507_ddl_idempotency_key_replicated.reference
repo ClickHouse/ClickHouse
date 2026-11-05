@@ -111,11 +111,23 @@ refused
 OK
 0
 1
+-- a key in the settings of a statement nested in another query is refused
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+0
+0
 -- the key travels neither with the settings of the log entry nor with its text
 OK
 OK
 1
+OK
+OK
+OK
 0
+1
+-- the key is not sent to the shards of a distributed query
+1
+1	0
 -- keys expire
 OK
 OK

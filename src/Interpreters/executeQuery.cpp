@@ -3387,9 +3387,10 @@ static BlockIO executeQueryImpl(
                         span = std::make_unique<OpenTelemetry::SpanHolder>(class_name + "::execute()");
                     }
 
-                    if (!settings[Setting::idempotency_key].value.empty() && !internal && !flags.distributed_backup_restore
-                        && !context->isDDLOrOnClusterInternal() && client_info.query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
-                        res = executeWithDDLIdempotencyKey(*interpreter, out_ast, context);
+                    if (!settings[Setting::idempotency_key].value.empty() && (!internal || flags.user_initiated)
+                        && !flags.distributed_backup_restore && !context->isDDLOrOnClusterInternal()
+                        && client_info.query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+                        res = executeWithDDLIdempotencyKey(*interpreter, out_ast, context, /* nested */ internal);
                     else
                         res = interpreter->execute();
                     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on

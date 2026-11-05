@@ -370,7 +370,7 @@ BlockIO answerFromKey(
 
 }
 
-BlockIO executeWithDDLIdempotencyKey(IInterpreter & interpreter, const ASTPtr & ast, const ContextMutablePtr & context)
+BlockIO executeWithDDLIdempotencyKey(IInterpreter & interpreter, const ASTPtr & ast, const ContextMutablePtr & context, bool nested)
 {
     switch (ast->getQueryKind())
     {
@@ -385,6 +385,9 @@ BlockIO executeWithDDLIdempotencyKey(IInterpreter & interpreter, const ASTPtr & 
         default:
             break;
     }
+
+    if (nested)
+        throwNotSupported("statements nested in another query, like PARALLEL WITH or EXECUTE AS");
 
     Target target = getTarget(*ast, context);
 

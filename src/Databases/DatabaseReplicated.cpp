@@ -41,10 +41,10 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTRenameQuery.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/stripQuerySettings.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageKeeperMap.h>
@@ -1578,15 +1578,8 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     LOG_DEBUG(log, "Proposing query: {}", query->formatForLogging());
 
     /// The settings of the entry do not carry the key (see `DDLLogEntry::setSettingsIfRequired`), so its text must not either.
-    if (auto * query_with_output = dynamic_cast<ASTQueryWithOutput *>(query.get());
-        idempotency_key && query_with_output && query_with_output->settings_ast)
-    {
-        auto & changes = query_with_output->settings_ast->as<ASTSetQuery &>().changes;
-        changes.removeSetting("idempotency_key");
-        changes.removeSetting("enable_ddl_idempotency_key");
-        if (changes.empty())
-            query_with_output->reset(query_with_output->settings_ast);
-    }
+    static constexpr std::string_view idempotency_key_settings[] = {"idempotency_key", "enable_ddl_idempotency_key"};
+    removeSettingsFromQuery(query, idempotency_key_settings);
 
     DDLLogEntry entry;
     entry.query = query->formatWithSecretsOneLine();

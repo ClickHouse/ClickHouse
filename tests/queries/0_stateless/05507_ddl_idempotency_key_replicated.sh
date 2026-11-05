@@ -241,11 +241,33 @@ keyed k20 "SELECT 1"
 tables_named "$R1" r
 tables_named "$R1" a
 
+echo "-- a key in the settings of a statement nested in another query is refused"
+$CLICKHOUSE_CLIENT -q "GRANT CREATE TABLE ON $R1.ea TO $OTHER_USER"
+$CLICKHOUSE_CLIENT -q "GRANT TABLE ENGINE ON MergeTree TO $OTHER_USER"
+plain "ALTER TABLE $R1.t ADD COLUMN p UInt8 SETTINGS idempotency_key = 'k21', enable_ddl_idempotency_key = 1 PARALLEL WITH ALTER TABLE $R1.dst MODIFY COMMENT 'p'"
+plain "EXECUTE AS $OTHER_USER CREATE TABLE $R1.ea (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS idempotency_key = 'k22', enable_ddl_idempotency_key = 1"
+has_column "$R1" t p
+tables_named "$R1" ea
+
 echo "-- the key travels neither with the settings of the log entry nor with its text"
 plain "ALTER TABLE $R1.t ADD COLUMN c5 UInt8 SETTINGS idempotency_key = 'k12', enable_ddl_idempotency_key = 1"
 plain "ALTER TABLE $R1.t ADD COLUMN c5 UInt8 SETTINGS idempotency_key = 'k12', enable_ddl_idempotency_key = 1"
 has_column "$R1" t c5
+plain "ALTER TABLE $R1.t ADD COLUMN c6 UInt8 SETTINGS idempotency_key = 'k19', idempotency_key = 'k19', enable_ddl_idempotency_key = 1"
+plain "ALTER TABLE $R1.t ADD COLUMN c7 UInt8 SETTINGS idempotency_key = 'k24', enable_ddl_idempotency_key = 1, max_threads = DEFAULT"
+plain "ALTER TABLE $R1.t MODIFY COMMENT 'no key' SETTINGS enable_ddl_idempotency_key = 1"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '$ZK/r/log' AND (value LIKE '%idempotency_key = %' OR value LIKE '%enable_ddl_idempotency_key%')"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '$ZK/r/log' AND value LIKE '%ADD COLUMN \`c7\` UInt8) SETTINGS max_threads = DEFAULT%'"
+
+echo "-- the key is not sent to the shards of a distributed query"
+qid="${CLICKHOUSE_DATABASE}_remote_${RANDOM}"
+$CLICKHOUSE_CLIENT --enable_ddl_idempotency_key 1 --idempotency_key k23 --prefer_localhost_replica 0 --log_queries 1 --query_id "$qid" -q "SELECT count() FROM remote('127.0.0.2', system.one)"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+$CLICKHOUSE_CLIENT -q "
+    SELECT count() > 0, countIf(Settings['idempotency_key'] != '' OR Settings['enable_ddl_idempotency_key'] != '')
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND type = 'QueryFinish' AND NOT is_initial_query
+        AND initial_query_id = (SELECT any(query_id) FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '$qid')"
 
 echo "-- keys expire"
 $CLICKHOUSE_CLIENT -q "CREATE DATABASE $Y1 ENGINE = Replicated('$ZK/y', 's1', 'r1') SETTINGS idempotency_key_ttl_sec = 10"

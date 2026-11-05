@@ -63,8 +63,9 @@ bool isDDLIdempotencyKeyNodeExpired(Int64 mtime_ms, UInt64 ttl_sec);
 void checkDDLIdempotencyKeyDigest(const DDLIdempotencyKey & key, const DDLIdempotencyKeyNode & node);
 
 /// Executes a client query with a non-empty `idempotency_key`: a DDL statement on a `Replicated` database that has
-/// already committed with the key is answered from it instead of running again. Throws for statements it cannot honour.
-BlockIO executeWithDDLIdempotencyKey(IInterpreter & interpreter, const ASTPtr & ast, const ContextMutablePtr & context);
+/// already committed with the key is answered from it instead of running again. Throws for statements it cannot honour,
+/// including any statement `nested` in another query (`PARALLEL WITH`, `EXECUTE AS`).
+BlockIO executeWithDDLIdempotencyKey(IInterpreter & interpreter, const ASTPtr & ast, const ContextMutablePtr & context, bool nested);
 
 /// Called by interpreters on the branch that executes a statement locally instead of through the log of a `Replicated`
 /// database: such a statement cannot be made idempotent, so a query with a key is refused before anything is executed.
