@@ -43,7 +43,7 @@ void ITableFunction::checkSourceAccess(ContextPtr context, bool is_insert_query)
         if (is_insert_query)
             type_to_check = AccessType::WRITE;
 
-        context->getAccess()->checkAccessWithFilter(type_to_check, toStringSource(*access_object), getFunctionURINormalized());
+        context->getAccess()->checkAccessWithFilter(type_to_check, toStringSource(*access_object), getFunctionURI());
     }
 }
 
@@ -114,25 +114,6 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
     return std::make_shared<StorageTableFunctionProxy>(StorageID(getDatabaseName(), table_name), std::move(get_storage),
                                                        std::move(cached_columns), needStructureConversion(),
                                                        hasUnreplicatedTableDataOnDisk());
-}
-
-String ITableFunction::getFunctionURINormalized() const
-{
-    return normalizeURIForAccessCheck(getFunctionURI());
-}
-
-String ITableFunction::normalizeURIForAccessCheck(const String & uri)
-{
-    try
-    {
-        Poco::URI parsed(uri);
-        parsed.normalize();
-        return parsed.toString();
-    }
-    catch (const Poco::Exception &)
-    {
-        return "";
-    }
 }
 
 }

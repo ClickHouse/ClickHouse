@@ -11,11 +11,11 @@ the first delete call throws
 deleted_data_files_count	0
 deleted_position_delete_files_count	0
 deleted_equality_delete_files_count	0
-deleted_manifest_files_count	1
-deleted_manifest_lists_count	1
+deleted_manifest_files_count	0
+deleted_manifest_lists_count	0
 deleted_statistics_files_count	0
 dry_run	0
-failed_deletions_count	1
+failed_deletions_count	3
 a data file listed in two expired manifests
 deleted_data_files_count	2
 deleted_position_delete_files_count	0

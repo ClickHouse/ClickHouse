@@ -53,6 +53,14 @@ struct ObjectInfo
 
     virtual std::vector<UInt64> getSplitOffsetsHint() const { return {}; }
 
+    virtual ObjectStoragePtr getResolvedStorage(const ObjectStoragePtr & default_storage) const { return default_storage; }
+
+    /// Manifest spelling used by `_path` and cross-storage cache keys; storage keys alone are not unique.
+    virtual std::optional<String> getPathInDataLakeMetadata() const { return std::nullopt; }
+
+    /// Returns a local dependency that cannot be handed to another replica, including attached delete files.
+    virtual std::optional<String> getExternalLocalPath() const { return std::nullopt; }
+
     /// The number of rows of the object as the table metadata records it, before applying deletes, if known.
     /// It is only an estimate used to report the progress of a query, not to compute any result.
     virtual std::optional<size_t> getNumRowsHint() const
@@ -71,6 +79,8 @@ struct ObjectInfo
     /// which row groups of the whole file match.
     bool file_bucket_info_from_query_condition_cache = false;
 
+    virtual std::shared_ptr<ObjectInfo> clone() const { return std::make_shared<ObjectInfo>(*this); }
+
     /// Lazy materialization: if set, read only these rows of the file.
     /// Sorted absolute row indexes within the file, see FormatFilterInfo::rows_to_read.
     std::shared_ptr<const PaddedPODArray<UInt64>> rows_to_read;
@@ -80,6 +90,10 @@ struct ObjectInfo
 
     String getIdentifier(bool include_file_bucket_info = true) const;
     String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
+
+    /// The identifier of the object in the query condition cache. A data lake file is identified by its metadata path
+    /// with the userinfo and query replaced by a hash of the complete identifier, plus its storage if outside `base_storage`.
+    String getQueryConditionCacheIdentifier(const ObjectStoragePtr & base_storage) const;
 };
 
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
@@ -100,6 +114,11 @@ struct IObjectIterator
 
     /// Set `emit_profile_events` flag, propagating to nested iterators if any.
     virtual void setEmitProfileEvents(bool value) { emit_profile_events = value; }
+
+    bool tasks_go_to_other_replicas = false;
+
+    /// Call before the first `next`; propagates to nested iterators.
+    virtual void setTasksGoToOtherReplicas(bool value) { tasks_go_to_other_replicas = value; }
 };
 
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
@@ -126,6 +145,12 @@ public:
         iterator->setEmitProfileEvents(value);
     }
 
+    void setTasksGoToOtherReplicas(bool value) override
+    {
+        tasks_go_to_other_replicas = value;
+        iterator->setTasksGoToOtherReplicas(value);
+    }
+
 private:
     const ObjectIterator iterator;
     const StorageObjectStorageConfigurationPtr configuration;
@@ -150,6 +175,12 @@ public:
     ObjectInfoPtr next(size_t) override;
     size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
     std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
+
+    void setTasksGoToOtherReplicas(bool value) override
+    {
+        tasks_go_to_other_replicas = value;
+        iterator->setTasksGoToOtherReplicas(value);
+    }
 
 private:
     const ObjectIterator iterator;

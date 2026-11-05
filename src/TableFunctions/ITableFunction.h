@@ -163,9 +163,6 @@ public:
     /// Check the `TABLE ENGINE` grant, for engines that opt in via `requiresTableEngineGrant`.
     void checkEngineAccess(ContextPtr context) const;
 
-    /// Normalizes `uri` as source grant filters are matched against; an unparsable URI becomes empty.
-    static String normalizeURIForAccessCheck(const String & uri);
-
     virtual ~ITableFunction() = default;
 
 protected:
@@ -202,8 +199,6 @@ private:
     /// privileges as if it was S3.
     virtual const char * getNonClusteredStorageEngineName() const;
 
-protected:
-    String getFunctionURINormalized() const;
 };
 
 /// Properties of table function that are independent of argument types and parameters.

@@ -43,7 +43,6 @@
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageNull.h>
-#include <TableFunctions/ITableFunction.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
@@ -815,6 +814,7 @@ DatabaseDataLake::TableEngineArgs DatabaseDataLake::buildTableEngineArgs(
         }
         /// HDFS authenticates (e.g. with Kerberos) through the server's `hdfs` configuration, not through engine arguments.
         else if (!lightweight && table_metadata.requiresCredentials() && !catalogConfiguresStorageAccess(catalog)
+                 && table_metadata.getStorageType() != DatabaseDataLakeStorageType::Local
                  && result.storage_type != DatabaseDataLakeStorageType::HDFS)
         {
             throw Exception(
@@ -1221,7 +1221,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         context_->getAccess()->checkAccessWithFilter(
             AccessType::READ,
             toStringSource(AccessTypeObjects::Source::HDFS),
-            ITableFunction::normalizeURIForAccessCheck(hdfs_configuration->getRawURI()));
+            hdfs_configuration->getRawURI());
         /// Writes reach HDFS through many entrypoints (`INSERT` and its cluster variant, `ALTER`, `OPTIMIZE`, `DROP`...) and
         /// would use the server's own identity, so rather than authorizing each, catalog tables on HDFS are read-only.
         hdfs_configuration->setReadOnly();
