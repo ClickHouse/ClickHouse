@@ -1300,6 +1300,182 @@ SkipIndexOrder MergeTreeDataSelectExecutor::computeSkipIndexOrder(
     return index_order;
 }
 
+bool MergeTreeDataSelectExecutor::analyzeSinglePart(
+    const SinglePartIndexAnalysisParams & params,
+    const IMergeTreeDataPartInfoForReader & part,
+    const std::function<MergeTreeDataPartInfoForReaderPtr()> & get_part_for_skip_indexes,
+    const std::vector<size_t> * skip_index_order,
+    PartRangesForIndexAnalysis ranges,
+    IndexAnalysisStats & stats,
+    std::span<IndexAnalysisStat> skip_index_stats)
+{
+    const auto & metadata_snapshot = params.metadata_snapshot;
+    const auto & skip_indexes = params.skip_indexes;
+    const auto & reader_settings = params.reader_settings;
+    const auto & log = params.log;
+
+    auto is_index_supported_on_data_read = [&](const MergeTreeIndexPtr & index) -> bool
+    {
+        /// Vector similarity indexes are not applicable on data reads.
+        if (index->isVectorSimilarityIndex())
+            return false;
+
+        return params.use_skip_indexes_on_data_read;
+    };
+
+    bool skip_index_used = false;
+
+    if (params.use_primary_key && (metadata_snapshot->hasPrimaryKey() || params.part_offset_condition || params.total_offset_condition))
+    {
+        CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithPrimaryKey);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithPrimaryKeyMicroseconds);
+
+        const size_t total_marks_count = ranges.ranges.getNumberOfMarks();
+        ProfileEvents::increment(ProfileEvents::FilteringMarksWithPrimaryKeyProcessedMarks, total_marks_count);
+        stats.primary_key.total_parts.fetch_add(1, std::memory_order_relaxed);
+        stats.primary_key.total_granules.fetch_add(total_marks_count, std::memory_order_relaxed);
+
+        ranges.ranges = markRangesFromPKRange(
+            part,
+            ranges.ranges,
+            ranges.part_starting_offset_in_query,
+            metadata_snapshot,
+            params.key_condition.generateForPart(part),
+            params.part_offset_condition ? &params.part_offset_condition->generateForPart(part) : nullptr,
+            params.total_offset_condition ? &params.total_offset_condition->generateForPart(part) : nullptr,
+            params.find_exact_ranges ? &ranges.exact_ranges : nullptr,
+            params.pk_to_minmax_slot,
+            params.settings,
+            log);
+
+        stats.primary_key.search_algorithm.store(ranges.ranges.search_algorithm, std::memory_order_relaxed);
+        stats.primary_key.granules_dropped.fetch_add(total_marks_count - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
+        if (ranges.ranges.empty())
+            stats.primary_key.parts_dropped.fetch_add(1, std::memory_order_relaxed);
+        stats.primary_key.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
+    }
+
+    stats.marks_after_primary_key.fetch_add(ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
+
+    if (!ranges.ranges.empty())
+        stats.parts_after_primary_key.fetch_add(1, std::memory_order_relaxed);
+
+    if (params.keep_ranges_after_primary_key)
+    {
+        ranges.ranges_snapshot_after_pk_analysis = ranges.ranges;
+    }
+
+    /// Do not build alter conversions (linear in the number of patches) for a part dropped by the primary key.
+    if (!skip_indexes.empty() && !ranges.ranges.empty())
+    {
+        CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
+        const auto part_for_skip_indexes = get_part_for_skip_indexes();
+        const auto alter_conversions = part_for_skip_indexes->getAlterConversions();
+        const auto all_updated_columns = alter_conversions->getColumnsInvalidatingIndexes();
+        const auto & value_updated_columns = alter_conversions->getValueUpdatedColumns();
+
+        auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
+        {
+            auto check_result = canUseIndex(index, metadata_snapshot, all_updated_columns, value_updated_columns, params.context, &part.getSecondaryIndexColumnTypes());
+            if (!check_result)
+            {
+                return std::unexpected(PreformattedMessage::create(
+                    "Index {} is not used for part {}. Reason: {}",
+                    index->index.name, part.getPartName(), check_result.error().text));
+            }
+
+            /// A vector similarity index returns exactly as many candidates as the `LIMIT` asks for. A delete
+            /// that the index does not know about (a lightweight delete, materialized or in a patch part, or a
+            /// pending `ALTER DELETE` applied on the fly) does not shrink that shortlist: the deleted candidates
+            /// are dropped after the read with nothing to take their place, and the query returns fewer rows
+            /// than its `LIMIT`. Read such a part in full until a merge or a mutation rebuilds the index.
+            /// With `apply_deleted_mask = 0` lightweight-deleted rows are returned and the read sees exactly
+            /// the rows the index was built on, unless the query filters by `_row_exists` explicitly, which
+            /// drops the deleted candidates in the same way. A pending `ALTER DELETE` is applied regardless.
+            const bool has_deleted_rows = (params.query_hides_lightweight_deleted_rows
+                    && (part.hasLightweightDelete() || alter_conversions->hasLightweightDelete()))
+                || alter_conversions->hasDeleteMutation();
+            if (index->isVectorSimilarityIndex() && has_deleted_rows)
+            {
+                return std::unexpected(PreformattedMessage::create(
+                    "Index {} is not used for part {}. Reason: the part has deleted rows that the index still returns",
+                    index->index.name, part.getPartName()));
+            }
+            return {};
+        };
+
+        const auto num_indexes = skip_indexes.useful_indices.size();
+
+        /// The same RPN template must be used for sizing the bitset, recording and merging the partial results.
+        const KeyCondition * rpn_template_for_part
+            = params.use_skip_indexes_for_disjunctions ? &params.key_condition_rpn_template->generateForPart(part) : nullptr;
+
+        PartialDisjunctionResult partial_eval_results;
+        if (rpn_template_for_part)
+            partial_eval_results.resize(
+                part.getIndexGranularity().getMarksCountWithoutFinal() * rpn_template_for_part->getRPN().size(), true);
+
+        for (size_t idx = 0; idx < num_indexes; ++idx)
+        {
+            if (ranges.ranges.empty())
+                break;
+
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
+
+            const auto index_idx = skip_index_order ? (*skip_index_order)[idx] : idx;
+            const auto & index_and_condition = skip_indexes.useful_indices[index_idx];
+
+            auto & stat = skip_index_stats[idx];
+
+            stat.total_parts.fetch_add(1, std::memory_order_relaxed);
+            size_t total_granules = ranges.ranges.getNumberOfMarks();
+            stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
+
+            if (auto index_result = can_use_index(index_and_condition.index); !index_result)
+            {
+                LOG_TRACE(log, index_result.error());
+                continue;
+            }
+
+            if (!is_index_supported_on_data_read(index_and_condition.index))
+            {
+                std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
+                    index_and_condition.index,
+                    index_and_condition.condition_template->generateForPart(part),
+                    rpn_template_for_part,
+                    part_for_skip_indexes,
+                    ranges.ranges,
+                    ranges.read_hints,
+                    reader_settings,
+                    params.mark_cache,
+                    params.uncompressed_cache,
+                    params.vector_similarity_index_cache,
+                    params.use_skip_indexes_for_disjunctions,
+                    partial_eval_results,
+                    log);
+            }
+
+            stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
+            if (ranges.ranges.empty())
+                stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
+            stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
+            skip_index_used = true;
+        }
+
+        if (rpn_template_for_part)
+        {
+            ranges.ranges = mergePartialResultsForDisjunctions(*part_for_skip_indexes,
+                                ranges.ranges, *rpn_template_for_part,
+                                partial_eval_results, reader_settings, log);
+
+            stats.marks_after_disjunctions.fetch_add(ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
+        }
+
+    }
+
+    return skip_index_used;
+}
+
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats)
 {
     auto & metadata_snapshot = filter_context.metadata_snapshot;
@@ -1405,15 +1581,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     bool use_skip_indexes_for_disjunctions = useSkipIndexesForDisjunctions(
         use_skip_indexes_for_disjunctions_, use_skip_indexes_on_data_read_, key_condition_rpn_template.get(), settings);
 
-    auto is_index_supported_on_data_read = [&](const MergeTreeIndexPtr & index) -> bool
-    {
-        /// Vector similarity indexes are not applicable on data reads.
-        if (index->isVectorSimilarityIndex())
-            return false;
-
-        return use_skip_indexes_on_data_read_;
-    };
-
     /// Whether the read drops lightweight-deleted rows: by the deleted mask or by an explicit filter on `_row_exists`.
     bool query_hides_lightweight_deleted_rows = settings[Setting::apply_deleted_mask];
     if (!query_hides_lightweight_deleted_rows)
@@ -1452,6 +1619,30 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 metadata_snapshot, parts_with_ranges.front().data_part->storage.getSettings());
         const auto * pk_to_minmax_slot_ptr = pk_to_minmax_slot.empty() ? nullptr : &pk_to_minmax_slot;
 
+        const SinglePartIndexAnalysisParams params{
+            .metadata_snapshot = metadata_snapshot,
+            .context = context,
+            .settings = settings,
+            .reader_settings = reader_settings,
+            .log = log,
+            .use_primary_key = use_primary_key,
+            .key_condition = *key_condition,
+            .part_offset_condition = part_offset_condition.get(),
+            .total_offset_condition = total_offset_condition.get(),
+            .pk_to_minmax_slot = pk_to_minmax_slot_ptr,
+            .find_exact_ranges = find_exact_ranges,
+            .keep_ranges_after_primary_key = is_final_query && use_skip_indexes_if_final_exact_mode_,
+            .skip_indexes = skip_indexes,
+            .key_condition_rpn_template = key_condition_rpn_template.get(),
+            .use_skip_indexes_for_disjunctions = use_skip_indexes_for_disjunctions,
+            .use_skip_indexes_on_data_read = use_skip_indexes_on_data_read_,
+            .query_hides_lightweight_deleted_rows = query_hides_lightweight_deleted_rows,
+            .mark_cache = mark_cache.get(),
+            .uncompressed_cache = uncompressed_cache.get(),
+            .vector_similarity_index_cache = vector_similarity_index_cache.get(),
+        };
+        const size_t num_indexes = skip_indexes.useful_indices.size();
+
         auto process_part = [&](size_t part_index)
         {
             fiu_do_on(FailPoints::slowdown_index_analysis_per_part, { sleepForMilliseconds(3000); });
@@ -1460,159 +1651,28 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 query_status->checkTimeLimit();
 
             auto & ranges = parts_with_ranges[part_index];
-            if (use_primary_key && (metadata_snapshot->hasPrimaryKey() || part_offset_condition || total_offset_condition))
+            const LoadedMergeTreeDataPartInfoForReader part_info(ranges.data_part, /*alter_conversions_=*/ nullptr);
+            auto get_part_for_skip_indexes = [&]() -> MergeTreeDataPartInfoForReaderPtr
             {
-                CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithPrimaryKey);
-                ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithPrimaryKeyMicroseconds);
-
-                const size_t total_marks_count = ranges.getMarksCount();
-                ProfileEvents::increment(ProfileEvents::FilteringMarksWithPrimaryKeyProcessedMarks, total_marks_count);
-                stats.primary_key.total_parts.fetch_add(1, std::memory_order_relaxed);
-                stats.primary_key.total_granules.fetch_add(total_marks_count, std::memory_order_relaxed);
-
-                ranges.ranges = markRangesFromPKRange(
-                    ranges,
-                    metadata_snapshot,
-                    key_condition->generateForPart(ranges.data_part),
-                    part_offset_condition ? &part_offset_condition->generateForPart(ranges.data_part) : nullptr,
-                    total_offset_condition ? &total_offset_condition->generateForPart(ranges.data_part) : nullptr,
-                    find_exact_ranges ? &ranges.exact_ranges : nullptr,
-                    pk_to_minmax_slot_ptr,
-                    settings,
-                    log);
-
-                stats.primary_key.search_algorithm.store(ranges.ranges.search_algorithm, std::memory_order_relaxed);
-                stats.primary_key.granules_dropped.fetch_add(total_marks_count - ranges.getMarksCount(), std::memory_order_relaxed);
-                if (ranges.ranges.empty())
-                    stats.primary_key.parts_dropped.fetch_add(1, std::memory_order_relaxed);
-                stats.primary_key.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
-            }
-
-            stats.marks_after_primary_key.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
-
-            if (!ranges.ranges.empty())
-                stats.parts_after_primary_key.fetch_add(1, std::memory_order_relaxed);
-
-            if (is_final_query && use_skip_indexes_if_final_exact_mode_)
-            {
-                ranges.ranges_snapshot_after_pk_analysis = ranges.ranges;
-            }
-
-            /// Do not build alter conversions (linear in the number of patches) for a part dropped by the primary key.
-            if (!skip_indexes.empty() && !ranges.ranges.empty())
-            {
-                CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
                 auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges.data_part, mutations_snapshot, context
 #if CLICKHOUSE_CLOUD
                     , context->getAccess()->getEnabledMaskingPolicies()
 #endif
                 );
-                const auto all_updated_columns = alter_conversions->getColumnsInvalidatingIndexes();
-                const auto & value_updated_columns = alter_conversions->getValueUpdatedColumns();
-                auto part_info_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(ranges.data_part, alter_conversions);
+                return std::make_shared<LoadedMergeTreeDataPartInfoForReader>(ranges.data_part, std::move(alter_conversions));
+            };
+            const size_t stats_offset = settings[Setting::per_part_index_stats] ? num_indexes * part_index : 0;
 
-                auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
-                {
-                    auto check_result = canUseIndex(index, metadata_snapshot, all_updated_columns, value_updated_columns, context, &ranges.data_part->getSecondaryIndexColumnTypes());
-                    if (!check_result)
-                    {
-                        return std::unexpected(PreformattedMessage::create(
-                            "Index {} is not used for part {}. Reason: {}",
-                            index->index.name, ranges.data_part->name, check_result.error().text));
-                    }
-
-                    /// A vector similarity index returns exactly as many candidates as the `LIMIT` asks for. A delete
-                    /// that the index does not know about (a lightweight delete, materialized or in a patch part, or a
-                    /// pending `ALTER DELETE` applied on the fly) does not shrink that shortlist: the deleted candidates
-                    /// are dropped after the read with nothing to take their place, and the query returns fewer rows
-                    /// than its `LIMIT`. Read such a part in full until a merge or a mutation rebuilds the index.
-                    /// With `apply_deleted_mask = 0` lightweight-deleted rows are returned and the read sees exactly
-                    /// the rows the index was built on, unless the query filters by `_row_exists` explicitly, which
-                    /// drops the deleted candidates in the same way. A pending `ALTER DELETE` is applied regardless.
-                    const bool has_deleted_rows = (query_hides_lightweight_deleted_rows
-                            && (ranges.data_part->hasLightweightDelete() || alter_conversions->hasLightweightDelete()))
-                        || alter_conversions->hasDeleteMutation();
-                    if (index->isVectorSimilarityIndex() && has_deleted_rows)
-                    {
-                        return std::unexpected(PreformattedMessage::create(
-                            "Index {} is not used for part {}. Reason: the part has deleted rows that the index still returns",
-                            index->index.name, ranges.data_part->name));
-                    }
-                    return {};
-                };
-
-                const auto num_indexes = skip_indexes.useful_indices.size();
-
-                /// The same RPN template must be used for sizing the bitset, recording and merging the partial results.
-                const KeyCondition * rpn_template_for_part
-                    = use_skip_indexes_for_disjunctions ? &key_condition_rpn_template->generateForPart(ranges.data_part) : nullptr;
-
-                PartialDisjunctionResult partial_eval_results;
-                if (rpn_template_for_part)
-                    partial_eval_results.resize(
-                        ranges.data_part->index_granularity->getMarksCountWithoutFinal() * rpn_template_for_part->getRPN().size(), true);
-
-                for (size_t idx = 0; idx < num_indexes; ++idx)
-                {
-                    if (ranges.ranges.empty())
-                        break;
-
-                    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
-
-                    const auto index_idx = index_order_at(part_index, idx);
-                    const auto & index_and_condition = skip_indexes.useful_indices[index_idx];
-
-                    auto index_stat_idx = idx;
-                    if (settings[Setting::per_part_index_stats])
-                        index_stat_idx += num_indexes * part_index;
-
-                    auto & stat = stats.skip_indexes[index_stat_idx];
-
-                    stat.total_parts.fetch_add(1, std::memory_order_relaxed);
-                    size_t total_granules = ranges.getMarksCount();
-                    stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
-
-                    if (auto index_result = can_use_index(index_and_condition.index); !index_result)
-                    {
-                        LOG_TRACE(log, index_result.error());
-                        continue;
-                    }
-
-                    if (!is_index_supported_on_data_read(index_and_condition.index))
-                    {
-                        std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
-                            index_and_condition.index,
-                            index_and_condition.condition_template->generateForPart(ranges.data_part),
-                            rpn_template_for_part,
-                            part_info_for_reader,
-                            ranges.ranges,
-                            ranges.read_hints,
-                            reader_settings,
-                            mark_cache.get(),
-                            uncompressed_cache.get(),
-                            vector_similarity_index_cache.get(),
-                            use_skip_indexes_for_disjunctions,
-                            partial_eval_results,
-                            log);
-                    }
-
-                    stat.granules_dropped.fetch_add(total_granules - ranges.getMarksCount(), std::memory_order_relaxed);
-                    if (ranges.ranges.empty())
-                        stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
-                    stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
-                    skip_index_used_in_part[part_index] = 1; /// thread-safe
-                }
-
-                if (rpn_template_for_part)
-                {
-                    ranges.ranges = mergePartialResultsForDisjunctions(*part_info_for_reader,
-                                        ranges.ranges, *rpn_template_for_part,
-                                        partial_eval_results, reader_settings, log);
-
-                    stats.marks_after_disjunctions.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
-                }
-
-            }
+            if (analyzeSinglePart(
+                    params,
+                    part_info,
+                    get_part_for_skip_indexes,
+                    per_part_index_orders.empty() ? nullptr : per_part_index_orders[part_index].get(),
+                    {ranges.ranges, ranges.read_hints, ranges.exact_ranges, ranges.ranges_snapshot_after_pk_analysis,
+                     ranges.part_starting_offset_in_query},
+                    stats,
+                    std::span(stats.skip_indexes).subspan(stats_offset, num_indexes)))
+                skip_index_used_in_part[part_index] = 1; /// thread-safe
 
             /// Optimize ORDER BY <col> LIMIT n - if <col> is scalar numeric / date / datetime and has a minmax index
             if (perform_top_k_optimization
