@@ -36,32 +36,30 @@ UInt64 LazyObjectStorageFileRegistry::registerFile(const ObjectInfoPtr & object_
 namespace
 {
 
-std::optional<size_t> countLeafColumnsOfType(const IDataType & type, bool tuples_of_unknown_width)
+std::optional<size_t> countLeafColumnsOfType(const IDataType & type)
 {
     if (isObject(type) || isDynamic(type))
         return std::nullopt;
     if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
-        return countLeafColumnsOfType(*nullable->getNestedType(), tuples_of_unknown_width);
+        return countLeafColumnsOfType(*nullable->getNestedType());
     if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type))
-        return countLeafColumnsOfType(*low_cardinality->getDictionaryType(), tuples_of_unknown_width);
+        return countLeafColumnsOfType(*low_cardinality->getDictionaryType());
     if (const auto * array = typeid_cast<const DataTypeArray *>(&type))
-        return countLeafColumnsOfType(*array->getNestedType(), tuples_of_unknown_width);
+        return countLeafColumnsOfType(*array->getNestedType());
     if (const auto * map = typeid_cast<const DataTypeMap *>(&type))
     {
-        const auto keys = countLeafColumnsOfType(*map->getKeyType(), tuples_of_unknown_width);
-        const auto values = countLeafColumnsOfType(*map->getValueType(), tuples_of_unknown_width);
+        const auto keys = countLeafColumnsOfType(*map->getKeyType());
+        const auto values = countLeafColumnsOfType(*map->getValueType());
         if (!keys || !values)
             return std::nullopt;
         return *keys + *values;
     }
     if (const auto * tuple = typeid_cast<const DataTypeTuple *>(&type))
     {
-        if (tuples_of_unknown_width)
-            return std::nullopt;
         size_t leaves = 0;
         for (const auto & element : tuple->getElements())
         {
-            const auto element_leaves = countLeafColumnsOfType(*element, tuples_of_unknown_width);
+            const auto element_leaves = countLeafColumnsOfType(*element);
             if (!element_leaves)
                 return std::nullopt;
             leaves += *element_leaves;
@@ -73,12 +71,12 @@ std::optional<size_t> countLeafColumnsOfType(const IDataType & type, bool tuples
 
 }
 
-std::optional<size_t> countLeafColumns(const Block & header, bool tuples_of_unknown_width)
+std::optional<size_t> countLeafColumns(const Block & header)
 {
     size_t leaves = 0;
     for (const auto & column : header)
     {
-        const auto column_leaves = countLeafColumnsOfType(*column.type, tuples_of_unknown_width);
+        const auto column_leaves = countLeafColumnsOfType(*column.type);
         if (!column_leaves)
             return std::nullopt;
         leaves += *column_leaves;
