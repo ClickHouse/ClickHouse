@@ -1097,7 +1097,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (shouldIgnoreQuotaAndLimits(table_id) && (joined_tables.tablesCount() <= 1))
         {
             options.ignore_quota = true;
-            options.ignore_limits = true;
+            /// A query without FROM reads `system.one`, its result must still obey `max_result_rows` and `max_result_bytes`.
+            if (table_id.table_name != "one")
+                options.ignore_limits = true;
         }
     }
 

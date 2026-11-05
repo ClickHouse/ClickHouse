@@ -3791,7 +3791,9 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         if (table_node && shouldIgnoreQuotaAndLimits(*table_node))
         {
             select_query_options.ignore_quota = true;
-            select_query_options.ignore_limits = true;
+            /// A query without FROM reads `system.one`, its result must still obey `max_result_rows` and `max_result_bytes`.
+            if (table_node->getStorageID().table_name != "one")
+                select_query_options.ignore_limits = true;
         }
     }
 
