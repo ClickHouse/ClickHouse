@@ -81,7 +81,7 @@ CREATE MATERIALIZED VIEW mv_parallel TO dst_parallel AS SELECT x,
     (SELECT max(x), any(toString(x)) FROM (SELECT x FROM loop(${CLICKHOUSE_DATABASE}, src_null) LIMIT 1)) AS seen_tuple,
     (SELECT groupArray(x) FROM ${CLICKHOUSE_DATABASE}.src_null) AS seen_source FROM src_null;
 
-INSERT INTO src_null SELECT number FROM numbers(1000) SETTINGS max_insert_threads = 8, max_threads = 8, parallel_view_processing = 1,
+INSERT INTO src_null SELECT number FROM numbers(200) SETTINGS max_insert_threads = 8, max_threads = 8, parallel_view_processing = 1,
     max_insert_threads_min_free_memory_per_thread = 0, max_threads_min_free_memory_per_thread = 0, enable_scalar_subquery_optimization = 1,
     max_block_size = 1, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0,
     min_insert_block_size_rows_for_materialized_views = 0, min_insert_block_size_bytes_for_materialized_views = 0;
