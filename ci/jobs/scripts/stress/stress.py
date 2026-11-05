@@ -346,7 +346,8 @@ class RandomDisruptor:
         timeout = self._SYSTEM_STATEMENT_TIMEOUT if timeout is None else timeout
         # Keep the subprocess cap above --receive_timeout so the client's own timeout is the one
         # that governs, as in the mutation kill above.
-        command = ["clickhouse", "client", f"--receive_timeout={max(timeout - 5, 5)}"]
+        # No AST fuzzing: the stress profile enables it, and a fuzzed `STOP` run after a successful `START` would undo it.
+        command = ["clickhouse", "client", f"--receive_timeout={max(timeout - 5, 5)}", "--ast_fuzzer_runs=0"]
         # Values are passed as query parameters instead of interpolating them, as in the kills above.
         for name, value in (params or {}).items():
             command += [f"--param_{name}", value]
