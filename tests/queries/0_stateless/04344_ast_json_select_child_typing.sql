@@ -72,12 +72,10 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT 1 ORDER BY 1'), '"ty
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('WITH x AS (SELECT 1) SELECT 1'), '"subquery":{"type":"Subquery"', '"subquery":{"type":"ExpressionList"')); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
--- `ASTColumnsApplyTransformer` lambda must carry the parser shape (argument tuple + body), because
--- `applyColumnsApplyTransformer` reads `arguments->children.at(1)` from it. The payload renames the
--- lambda's argument list away and drops `is_lambda_function`, so it reaches this guard rather than
--- the boundary check on that flag.
+-- `ASTColumnsApplyTransformer` lambda must carry the parser shape (argument tuple + body).
+-- Emptying the lambda's `arguments` makes `transform`'s `arguments->children.at(1)` invalid.
 -- ---------------------------------------------------------------------------
-SELECT formatQueryFromJSON(replace(replace(replace(parseQueryToJSON('SELECT * APPLY(x -> (x + 1)) FROM t'), '"name":"lambda","arguments":{"type":"ExpressionList","children":[', '"name":"lambda","unused":{"type":"ExpressionList","children":['), ',"is_lambda_function":true', ''), ',"kind":"LAMBDA_FUNCTION"', '')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * APPLY(x -> (x + 1)) FROM t'), '"name":"lambda","arguments":{"type":"ExpressionList","children":[', '"name":"lambda","arguments":{"type":"ExpressionList","children":[]},"unused":[')); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
 -- `ASTDictionaryAttributeDeclaration`: `attr_type` must be a data type, `name` non-empty.

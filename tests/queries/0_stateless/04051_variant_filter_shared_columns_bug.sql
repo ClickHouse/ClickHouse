@@ -6,6 +6,7 @@
 -- leading to a LOGICAL_ERROR in compress().
 
 SET cross_join_min_rows_to_compress = 1;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS test_variant_filter;
 CREATE TABLE test_variant_filter (`id` UInt64, `d` Dynamic) ENGINE = Memory;

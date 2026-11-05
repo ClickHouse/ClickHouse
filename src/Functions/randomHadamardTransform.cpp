@@ -304,16 +304,6 @@ private:
                     }
                     else
                         kroneckerScalar<Compute>(buffer.data(), kron_blocks, kron_m, hm);
-#elif defined(__AVX2__)
-                    if constexpr (std::is_same_v<Compute, float>)
-                    {
-                        if (kernel == FwhtKernel::Avx2)
-                            kroneckerAvx2(buffer.data(), kron_blocks, kron_m, hm);
-                        else
-                            kroneckerScalar<Compute>(buffer.data(), kron_blocks, kron_m, hm);
-                    }
-                    else
-                        kroneckerScalar<Compute>(buffer.data(), kron_blocks, kron_m, hm);
 #else
                     kroneckerScalar<Compute>(buffer.data(), kron_blocks, kron_m, hm);
 #endif

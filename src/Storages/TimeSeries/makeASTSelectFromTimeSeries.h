@@ -10,7 +10,6 @@ namespace DB
 {
 class StorageTimeSeries;
 struct SelectQueryInfo;
-struct TimeSeriesSettings;
 
 /// Builds an internal `SELECT` query that produces the requested outer columns of a TimeSeries table
 /// by reading from its target tables "tags", "samples", "metric families". Only the target tables required by
@@ -31,7 +30,6 @@ ASTPtr makeASTSelectFromTimeSeries(
 
 /// The settings the generated read query must run with, independent of the caller's session/profile.
 /// Apply them to the (child) context that runs `makeASTSelectFromTimeSeries`.
-/// `final` is whether the outer query uses the `FINAL` keyword (see `SelectQueryInfo::isFinal`).
-SettingsChanges getSettingsForSelectFromTimeSeries(const TimeSeriesSettings & storage_settings, bool final);
+SettingsChanges getSettingsForSelectFromTimeSeries();
 
 }

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Port.h>
 
 #include <vector>
@@ -42,8 +41,8 @@ public:
 private:
     size_t num_streams;
 
-    VectorWithMemoryTracking<InputPort *> data_inputs;
-    VectorWithMemoryTracking<OutputPort *> data_outputs;
+    std::vector<InputPort *> data_inputs;
+    std::vector<OutputPort *> data_outputs;
 
     InputPort * totals_input = nullptr;
     InputPort * extremes_input = nullptr;

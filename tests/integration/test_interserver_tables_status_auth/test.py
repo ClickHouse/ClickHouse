@@ -21,10 +21,10 @@ cluster = ClickHouseCluster(__file__)
 node_a = cluster.add_instance("node_a", main_configs=["configs/secret_a.xml"])
 node_b = cluster.add_instance("node_b", main_configs=["configs/secret_b.xml"])
 
-# Old revision: the lowest one accepted in interserver mode (DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2),
-# below DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS (no hash) and below
-# DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS (simple framing).
-OLD_REVISION = 54462
+# Old revision: below DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS (no hash),
+# below DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS (simple framing) and below
+# DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2 (no nonce in the server Hello).
+OLD_REVISION = 54449
 USER_INTERSERVER_MARKER = " INTERSERVER SECRET "
 
 # A type name no other test can produce, so the log assertions below cannot be crossed.
@@ -83,15 +83,6 @@ def read_varstring(sock):
     return recv_exact(sock, read_varuint(sock))
 
 
-def read_server_hello_tail(sock):
-    """Consume the rest of the server Hello and send the client addendum."""
-    for _ in range(read_varuint(sock)):  # password complexity rules
-        read_varstring(sock)
-        read_varstring(sock)
-    recv_exact(sock, 8)  # nonce
-    sock.sendall(varstring(""))  # addendum: quota key
-
-
 def open_interserver_connection(node):
     """Connect and complete an interserver handshake that the server accepts. The Hello
     names cluster `mismatch` (which has a secret) so the handshake is accepted into
@@ -111,7 +102,7 @@ def open_interserver_connection(node):
     sock = socket.create_connection((node.ip_address, 9000), timeout=20)
     sock.settimeout(20)
     sock.sendall(hello)
-    # Consume the server Hello (old-revision layout: no chunking).
+    # Consume the server Hello (old-revision layout: no nonce, no chunking).
     read_varuint(sock)      # packet type (Hello)
     read_varstring(sock)    # server name
     read_varuint(sock)      # version major
@@ -120,7 +111,6 @@ def open_interserver_connection(node):
     read_varstring(sock)    # timezone
     read_varstring(sock)    # display name
     read_varuint(sock)      # version patch
-    read_server_hello_tail(sock)
     return sock
 
 
@@ -163,7 +153,7 @@ def test_old_protocol_unauthenticated_request_is_rejected(started_cluster):
     sock.settimeout(20)
     try:
         sock.sendall(hello)
-        # Consume the server Hello (old-revision layout: no chunking).
+        # Consume the server Hello (old-revision layout: no nonce, no chunking).
         read_varuint(sock)      # packet type (Hello)
         read_varstring(sock)    # server name
         read_varuint(sock)      # version major
@@ -172,7 +162,6 @@ def test_old_protocol_unauthenticated_request_is_rejected(started_cluster):
         read_varstring(sock)    # timezone
         read_varstring(sock)    # display name
         read_varuint(sock)      # version patch
-        read_server_hello_tail(sock)
         sock.sendall(tsr)
         try:
             data = sock.recv(4096)

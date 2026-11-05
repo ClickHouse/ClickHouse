@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 SET optimize_and_compare_chain = 1;
 SET optimize_and_compare_chain_max_hash_work = 0;
 SET allow_experimental_time_time64_type = 1;
