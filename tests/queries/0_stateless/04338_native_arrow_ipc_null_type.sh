@@ -3,9 +3,7 @@
 # no-fasttest: Arrow format and pyarrow are not available in fasttest builds
 
 # An Arrow column of the `null` type (every value is NULL) must be readable into a provided
-# `Nullable` target and must behave as an unsupported type in schema inference (skippable with
-# `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference`), matching the
-# Apache Arrow library based reader.
+# `Nullable` target, and schema inference infers it as `Nullable(Nothing)`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -34,10 +32,10 @@ ${CLICKHOUSE_LOCAL} -q "SELECT x, n FROM file('${FILE_PREFIX}.arrow', 'Arrow', '
 echo 'stream, explicit structure'
 ${CLICKHOUSE_LOCAL} -q "SELECT x, n FROM file('${FILE_PREFIX}.arrows', 'ArrowStream', 'x Nullable(String), n UInt64') ORDER BY n"
 
-echo 'schema inference skips the null column'
-${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('${FILE_PREFIX}.arrow', 'Arrow') ORDER BY n SETTINGS input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference = 1"
+echo 'schema inference'
+${CLICKHOUSE_LOCAL} -q "DESC file('${FILE_PREFIX}.arrow', 'Arrow'); SELECT * FROM file('${FILE_PREFIX}.arrow', 'Arrow') ORDER BY n"
 
-echo 'schema inference fails without the skip setting'
-${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('${FILE_PREFIX}.arrow', 'Arrow')" 2>&1 | grep -c 'UNKNOWN_TYPE'
+echo 'schema inference with the skip setting keeps the null column'
+${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('${FILE_PREFIX}.arrow', 'Arrow') ORDER BY n SETTINGS input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference = 1"
 
 rm -f "${FILE_PREFIX}.arrow" "${FILE_PREFIX}.arrows"

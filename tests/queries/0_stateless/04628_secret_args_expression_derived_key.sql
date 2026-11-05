@@ -6,7 +6,6 @@
 -- key must be hidden, not just a direct literal, so no fragment of the key leaks. The mask is a
 -- display flag, so it hides the value identically in the query-tree dump and the result column name.
 
-SET enable_analyzer = 1;
 SET format_display_secrets_in_show_and_select = 0;
 
 -- Query-tree dump: the literal inside the key-deriving expression must show as [HIDDEN].
