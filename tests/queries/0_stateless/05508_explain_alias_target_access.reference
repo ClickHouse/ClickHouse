@@ -1,0 +1,19 @@
+-- grants on the alias only
+denied
+denied
+denied
+denied
+denied
+-- an alias over an implicitly granted system table
+ok
+0
+-- a column-level grant on the alias only
+denied
+denied
+-- grants on the alias and on the target
+ok
+1
+ok
+-- a temporary alias
+ok
+denied

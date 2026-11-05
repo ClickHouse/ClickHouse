@@ -10,6 +10,7 @@
 #include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 
@@ -62,6 +63,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_UUID_MISMATCH;
     extern const int SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED;
+    extern const int ACCESS_DENIED;
 }
 
 QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
@@ -413,8 +415,12 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
 /// (e.g. by `MutationsInterpreter`) do not pass through here and keep their own access semantics.
 static void checkAccessToTableMetadata(const TableNode & table_node, const ContextPtr & context)
 {
-    /// Temporary tables of the current session are always accessible.
-    if (!table_node.getTemporaryTableName().empty())
+    const auto * alias = table_node.getStorage()->as<StorageAlias>();
+
+    /// Temporary tables of the current session are always accessible, but a temporary `Alias` still
+    /// shows the metadata of its target.
+    const bool is_temporary = !table_node.getTemporaryTableName().empty();
+    if (is_temporary && !alias)
         return;
 
     const auto & storage_id = table_node.getStorageID();
@@ -428,11 +434,34 @@ static void checkAccessToTableMetadata(const TableNode & table_node, const Conte
     /// `SELECT` is checked in addition to `SHOW_COLUMNS` because the implicit `SELECT` on the
     /// `system` and `information_schema` databases is granted after implications are derived.
     const auto access_rights = context->getAccess()->getAccessRightsWithImplicit();
+    const auto is_visible = [&](const String & database, const String & table, const String & column_name)
+    {
+        if (column_name.empty())
+            return access_rights->isGranted(AccessType::SELECT, database, table)
+                || access_rights->isGranted(AccessType::SHOW_COLUMNS, database, table);
+        return access_rights->isGranted(AccessType::SELECT, database, table, column_name)
+            || access_rights->isGranted(AccessType::SHOW_COLUMNS, database, table, column_name);
+    };
+
+    Names visible_columns;
     for (const auto & column : table_node.getStorageSnapshot()->metadata->getColumns())
     {
-        if (access_rights->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
-            || access_rights->isGranted(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name, column.name))
+        if (is_temporary || is_visible(storage_id.database_name, storage_id.table_name, column.name))
+        {
+            if (!alias)
+                return;
+            visible_columns.push_back(column.name);
+        }
+    }
+
+    if (alias && !visible_columns.empty())
+    {
+        /// An `Alias` shows the metadata of the last table of its chain, so a column must also be visible
+        /// on every table of the chain. The message names only the alias: the user may not know its target.
+        if (!alias->filterColumnsGrantedThroughChain(visible_columns, is_visible).empty())
             return;
+        throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to access the table that {} points to",
+                        storage_id.getNameForLogs());
     }
 
     /// Not a single column of the table is visible to the user. Report the denial through the
