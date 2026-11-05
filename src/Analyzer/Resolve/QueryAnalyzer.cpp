@@ -5448,7 +5448,12 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is not an ALIAS column", alias_column_to_resolve->getColumnName());
 
             data.alias_columns_in_resolution.push_back(alias_column_to_resolve->getColumnName());
-            SCOPE_EXIT({ data.alias_columns_in_resolution.pop_back(); });
+            bool alias_column_resolved = false;
+            SCOPE_EXIT({
+                data.alias_columns_in_resolution.pop_back();
+                if (!alias_column_resolved)
+                    alias_column_to_resolve->setExpression(nullptr);
+            });
 
             alias_column_to_resolve->setExpression(buildQueryTree(column_default->expression, scope.context));
 
@@ -5467,6 +5472,7 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
             auto & resolved_expression = alias_column_to_resolve->getExpression();
             if (resolved_expression->getResultType()->getName() != alias_column_to_resolve->getResultType()->getName())
                 resolved_expression = buildCastFunction(resolved_expression, alias_column_to_resolve->getResultType(), scope.context, true);
+            alias_column_resolved = true;
         };
 
         data.setColumnNodeMapPopulator(std::move(populator), std::move(alias_column_resolver));

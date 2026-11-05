@@ -62,11 +62,12 @@ ColumnNodePtr AnalysisTableExpressionData::tryGetColumnNode(std::string_view col
     auto unresolved_it = unresolved_alias_columns.find(column_name);
     if (unresolved_it != unresolved_alias_columns.end())
     {
-        unresolved_alias_columns.erase(unresolved_it);
         /// A copy of this data shares the nodes of the map, and could have resolved this column already.
         /// `node_map` is not changed by the resolution (only the nodes in it), so `it` remains valid.
         if (!it->second->hasExpression())
             resolve_alias_column(it->second);
+        /// Erased after resolving, so the column stays unresolved when its resolution throws.
+        unresolved_alias_columns.erase(unresolved_it);
     }
 
     return it->second;

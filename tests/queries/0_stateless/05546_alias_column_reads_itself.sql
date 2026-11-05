@@ -9,6 +9,11 @@ SELECT c0 FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_direct; -- { serverError CYC
 ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_self (x UInt8, c0 Nullable(IPv6) ALIAS c0.null) ENGINE = Memory;
 SELECT c0 FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_self; -- { serverError CYCLIC_ALIASES }
 SELECT c0 FROM remote('127.0.0.1', {CLICKHOUSE_DATABASE_1:Identifier}, t_self); -- { serverError CYCLIC_ALIASES }
+SELECT if(0, c0, NULL), c0 FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_self; -- { serverError CYCLIC_ALIASES }
+SELECT multiIf(0, c0, NULL), c0 FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_self; -- { serverError CYCLIC_ALIASES }
+SELECT c5 FROM format(CSV, 'c0 Int32, c5 String ALIAS c5.size', '1'); -- { serverError CYCLIC_ALIASES }
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.r (x UInt8, k Nullable(IPv6)) ENGINE = Memory;
+SELECT x, c0 AS k FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_self JOIN {CLICKHOUSE_DATABASE_1:Identifier}.r USING (x, k) SETTINGS analyzer_compatibility_join_using_top_level_identifier = 1; -- { serverError CYCLIC_ALIASES }
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.m (x UInt8, c0 Nullable(IPv6)) ENGINE = Merge({CLICKHOUSE_DATABASE_1:Identifier}, '^t_self$');
 SELECT c0 FROM {CLICKHOUSE_DATABASE_1:Identifier}.m; -- { serverError CYCLIC_ALIASES }
 
