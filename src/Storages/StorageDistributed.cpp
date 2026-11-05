@@ -71,6 +71,7 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/WindowFunctionsUtils.h>
+#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/Utils.h>
 
 #include <Planner/CollectSets.h>
@@ -704,10 +705,30 @@ bool queryTreeContainsShardDependentFunctions(const QueryTreeNodePtr & root)
     return false;
 }
 
+/// The plan-level read pushes only expressions, filters and limits to the shards and finishes the rest
+/// of the query on the initiator. An aggregation or a window function would then receive every row of
+/// every shard instead of the partially aggregated states, so such queries keep the legacy path that
+/// runs them on the shards up to `WithMergeableState`. The same holds for a JOIN or ARRAY JOIN, which the
+/// legacy path also handles by its own rules.
+bool queryTreeIsPlainRead(const QueryTreeNodePtr & root)
+{
+    const auto * query_node = root ? root->as<QueryNode>() : nullptr;
+    if (!query_node)
+        return false;
+
+    if (query_node->hasGroupBy() || query_node->isGroupByAll() || query_node->hasWindow())
+        return false;
+
+    const auto & join_tree = query_node->getJoinTree();
+    if (!join_tree.as<TableNode>() && !join_tree.as<TableFunctionNode>())
+        return false;
+
+    return !hasAggregateFunctionNodes(root) && !hasWindowFunctionNodes(root);
 }
 
-bool StorageDistributed::useDistributedPlanForReading(
-    const ContextPtr & local_context, const ClusterPtr & cluster, const SelectQueryInfo & query_info) const
+}
+
+bool StorageDistributed::useDistributedPlanForReading(const ContextPtr & local_context, const SelectQueryInfo & query_info) const
 {
     const auto & settings = local_context->getSettingsRef();
 
@@ -717,10 +738,12 @@ bool StorageDistributed::useDistributedPlanForReading(
         && !settings[Setting::distributed_group_by_no_merge]
         /// `distributed_product_mode = 'local'` requires per-shard subquery rewriting.
         && settings[Setting::distributed_product_mode] != DistributedProductMode::LOCAL
-        && !local_context->canUseParallelReplicasCustomKeyForCluster(*cluster)
+        /// The shared per-shard plan carries no replica slice, so with offset-based parallel replicas
+        /// (`sampling_key`, `custom_key_sampling`, `custom_key_range`) every replica would read the whole shard.
+        && !local_context->canUseOffsetParallelReplicas()
         && !local_context->canUseTaskBasedParallelReplicas()
         && !remote_table_function_ptr
-        && query_info.query_tree
+        && queryTreeIsPlainRead(query_info.query_tree)
         && !queryTreeContainsShardDependentFunctions(query_info.query_tree);
 }
 
@@ -763,9 +786,8 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     }
 
     /// The plan-level read sends a serialized per-shard plan and finishes the query on the initiator.
-    /// This path currently bypasses `optimize_distributed_group_by_sharding_key` and returns exact totals.
-    /// TODO: add per-shard-complete aggregation pushdown.
-    const auto stage = nodes > 1 && useDistributedPlanForReading(local_context, cluster, query_info)
+    /// It is used only for plain reads without aggregation, see `queryTreeIsPlainRead`.
+    const auto stage = nodes > 1 && useDistributedPlanForReading(local_context, query_info)
         ? QueryProcessingStage::FetchColumns
         : chooseQueryProcessingStage(to_stage, settings, nodes, query_info);
 
@@ -1303,7 +1325,7 @@ void StorageDistributed::read(
     if (ClusterPtr query_cluster = query_info.getCluster();
         processed_stage == QueryProcessingStage::FetchColumns
         && getClusterQueriedNodes(local_context, query_cluster) > 1
-        && useDistributedPlanForReading(local_context, query_cluster, query_info))
+        && useDistributedPlanForReading(local_context, query_info))
     {
         readWithDistributedPlan(query_plan, column_names, storage_snapshot, query_info, local_context, query_cluster);
         return;

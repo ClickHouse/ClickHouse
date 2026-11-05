@@ -157,8 +157,7 @@ public:
 private:
     void renameOnDisk(const String & new_path_to_table_data);
 
-    bool useDistributedPlanForReading(
-        const ContextPtr & local_context, const ClusterPtr & cluster, const SelectQueryInfo & query_info) const;
+    bool useDistributedPlanForReading(const ContextPtr & local_context, const SelectQueryInfo & query_info) const;
 
     void readWithDistributedPlan(
         QueryPlan & query_plan,
