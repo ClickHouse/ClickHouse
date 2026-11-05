@@ -1,0 +1,58 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>i</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+                <value>2</value>
+                <value>3</value>
+                <value>4</value>
+                <value>5</value>
+                <value>6</value>
+                <value>7</value>
+                <value>8</value>
+                <value>9</value>
+                <value>10</value>
+                <value>11</value>
+                <value>12</value>
+                <value>13</value>
+                <value>14</value>
+                <value>15</value>
+                <value>16</value>
+                <value>17</value>
+                <value>18</value>
+                <value>19</value>
+                <value>20</value>
+                <value>21</value>
+                <value>22</value>
+                <value>23</value>
+                <value>24</value>
+                <value>25</value>
+                <value>26</value>
+                <value>27</value>
+                <value>28</value>
+                <value>29</value>
+                <value>30</value>
+                <value>31</value>
+                <value>32</value>
+                <value>33</value>
+                <value>34</value>
+                <value>35</value>
+                <value>36</value>
+                <value>37</value>
+                <value>38</value>
+                <value>39</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE t_many_defaults (key UInt64) ENGINE = MergeTree ORDER BY key</create_query>
+    <create_query>ALTER TABLE t_many_defaults ADD COLUMN m{i} UInt64 MATERIALIZED key + {i}</create_query>
+    <create_query>INSERT INTO t_many_defaults (key) SELECT number FROM numbers(5000000)</create_query>
+    <create_query>ALTER TABLE t_many_defaults ADD COLUMN x UInt64 DEFAULT key + 1</create_query>
+
+    <query>SELECT sum(x) FROM t_many_defaults</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_many_defaults</drop_query>
+</test>
