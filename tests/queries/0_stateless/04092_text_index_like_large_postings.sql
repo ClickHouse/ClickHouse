@@ -5,8 +5,6 @@
 -- multi-block posting lists were not getting their reading streams initialized,
 -- resulting in incorrectly empty posting lists and false filtering of all rows.
 
-SET enable_analyzer = 1;
-
 -- Force the direct read from the text index. CI may inject these as False, in which case
 -- the query would just scan 's' and the comparison below would pass without exercising the
 -- index reader at all. The multi-block reading bug under test only manifests on the direct

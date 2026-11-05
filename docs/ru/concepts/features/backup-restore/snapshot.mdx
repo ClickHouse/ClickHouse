@@ -11,9 +11,7 @@ keywords: ['снимок', 'резервное копирование', 'вос�
 
 Облегчённый режим применяется к таблицам [SharedMergeTree](/ru/products/cloud/features/infrastructure/shared-merge-tree), SharedSet и SharedJoin. Для всех остальных типов движков — например, Log или Memory — резервное копирование автоматически возвращается к стандартному режиму с копированием данных.
 
-<div id="create-a-snapshot">
-  ## Создание снимка
-</div>
+## Создание снимка {#create-a-snapshot}
 
 Для резервного копирования снимков используется стандартная команда [`BACKUP`](/ru/concepts/features/backup-restore/overview#syntax) с параметром `experimental_lightweight_snapshot = true`. Параметр `id` обязателен — он задаёт имя снимка и используется для обращения к нему в командах разблокировки и обсервабилити:
 
@@ -50,6 +48,15 @@ TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/full/', 'ACCESS_KE
 SETTINGS experimental_lightweight_snapshot = true, id = 'full_snapshot_1'
 ```
 
+Создайте резервную копию DDL таблицы без данных (при восстановлении создаётся пустая таблица с правильной схемой):
+
+```sql
+BACKUP TABLE mydb.events
+EXCEPT DATA FROM TABLE mydb.events
+TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events_schema/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS experimental_lightweight_snapshot = true, id = 'events_schema_snapshot'
+```
+
 Те же команды подходят и для Azure Blob Storage:
 
 ```sql
@@ -58,9 +65,7 @@ TO AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=myaccount;Accoun
 SETTINGS experimental_lightweight_snapshot = true, id = 'events_snapshot_1'
 ```
 
-<div id="restore-to-same-service">
-  ## Восстановление в тот же сервис
-</div>
+## Восстановление в тот же сервис {#restore-to-same-service}
 
 Поскольку снимок хранит ссылки на файлы в Объектном хранилище, а не копии данных, для восстановления в новый или другой сервис ClickHouse нужен доступ к исходному Объектному хранилищу. Поэтому межсервисное восстановление через SQL не поддерживается — оно доступно только через интерфейс. Через SQL можно восстановить снимок в тот же сервис из бакета с внешней резервной копией, используя `snapshot_from_current_service = 1`. В этом случае объекты считываются напрямую через диск пункта назначения, а не через механизм чтения удалённого снимка:
 
@@ -80,9 +85,7 @@ FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCES
 SETTINGS snapshot_from_current_service = 1
 ```
 
-<div id="unlock-snapshot">
-  ## Разблокировка снимка
-</div>
+## Разблокировка снимка {#unlock-snapshot}
 
 Каждый снимок удерживает блокировки в ClickHouse Keeper, из-за которых файлы объектного хранилища, на которые он ссылается, не удаляются сборщиком мусора. После завершения восстановления — или когда снимок больше не нужен — разблокируйте его, чтобы снять эти блокировки.
 
@@ -113,13 +116,9 @@ ALTER TABLE mydb.events UNLOCK SNAPSHOT '<snapshot_id>'
 
 После разблокировки соответствующая строка исчезает из `system.snapshot_locks`, а части, на которые больше не ссылаются другие снимки, пропадают из `system.snapshot_parts`.
 
-<div id="observability">
-  ## Обсервабилити
-</div>
+## Обсервабилити {#observability}
 
-<div id="system-backups">
-  ### system.backups
-</div>
+### system.backups {#system-backups}
 
 Все операции со снимками появляются в [`system.backups`](/ru/reference/system-tables/backups) наряду с обычными операциями резервного копирования и восстановления. Выполните запрос к этой таблице по заданному `id` (или по UUID, возвращённому командой):
 
@@ -144,9 +143,7 @@ uncompressed_size: 1073741824
 compressed_size:   0
 ```
 
-<div id="system-snapshot-locks">
-  ### system.snapshot_locks
-</div>
+### system.snapshot_locks {#system-snapshot-locks}
 
 `system.snapshot_locks` показывает зафиксированные снимки, которые в данный момент зарегистрированы в Keeper. Когда снимок фиксируется, в Keeper создаётся узел по пути `/clickhouse/snapshot/committed/{snapshot_id}`. Перед удалением любой части данных сервер проверяет, не удерживает ли какой-либо зафиксированный снимок блокировку на эту часть. Если удерживает, удаление не выполняется. Блокировка сохраняется, пока вы явно не разблокируете снимок.
 
@@ -172,9 +169,7 @@ FROM system.snapshot_locks
 WHERE id = 'events_snapshot_1'
 ```
 
-<div id="system-snapshot-parts">
-  ### system.snapshot_parts
-</div>
+### system.snapshot_parts {#system-snapshot-parts}
 
 `system.snapshot_parts` показывает части данных, которые в данный момент закреплены как минимум одной блокировкой снимка. Для каждой заблокированной части в Keeper существует узел по пути `/clickhouse/snapshot/{table_uuid}/{part_name}`, содержащий размер части в сжатом и несжатом виде. Эта таблица читает эти узлы, чтобы показать, какие части в настоящее время защищены от удаления.
 
@@ -229,9 +224,7 @@ WHERE (name, table_id) NOT IN (
 
 Это полезно для оценки дополнительных затрат на хранение снимков после изменения или удаления исходных данных.
 
-<div id="server-settings">
-  ## Настройки сервера
-</div>
+## Настройки сервера {#server-settings}
 
 Следующие параметры конфигурации сервера управляют поведением снимков. Они задаются в файле конфигурации сервера, а не в SQL.
 
