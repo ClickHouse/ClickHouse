@@ -49,7 +49,6 @@ private:
     ContextPtr context;
     size_t max_block_size;
     size_t max_threads;
-    /// The number of leaf columns (see countLeafColumns) read from the files by the main pass of the query.
     size_t main_read_leaf_columns;
 
     ObjectStorageLazyMaterializingRowsPtr lazy_materializing_rows;

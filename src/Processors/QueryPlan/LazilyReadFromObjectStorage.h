@@ -101,10 +101,8 @@ private:
     ReadFromFormatInfo info;
     ContextPtr context;
     size_t max_block_size;
-    /// The number of leaf columns (see countLeafColumns) read from the files by the main pass of the query.
     size_t main_read_leaf_columns;
-    /// The stream budget of the main read (`max_streams_to_max_threads_ratio`,
-    /// `max_streams_for_files_processing_in_cluster_functions`).
+    /// The stream limit of the main read (`max_streams_to_max_threads_ratio`, `max_streams_for_files_processing_in_cluster_functions`).
     size_t max_num_streams;
 
     ObjectStorageLazyMaterializingRowsPtr lazy_materializing_rows;
