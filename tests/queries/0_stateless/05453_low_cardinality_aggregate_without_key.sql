@@ -4,7 +4,8 @@
 -- Without GROUP BY, the functions that ignore repeated values add each value of a LowCardinality argument once:
 -- the results must be the same as for the same rows in ordinary columns.
 
-SET allow_suspicious_low_cardinality_types = 1, max_threads = 1;
+-- count_distinct_optimization would rewrite a lone uniqExact to a GROUP BY.
+SET allow_suspicious_low_cardinality_types = 1, max_threads = 1, count_distinct_optimization = 0;
 
 DROP VIEW IF EXISTS agg_lc;
 DROP VIEW IF EXISTS agg_mem;
