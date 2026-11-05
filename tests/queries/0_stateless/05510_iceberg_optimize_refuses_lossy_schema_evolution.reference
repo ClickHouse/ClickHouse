@@ -1,0 +1,38 @@
+--- local: dropped column
+OPTIMIZE refused
+1
+1	a	x1
+2	b	x2
+3	c	x3
+--- local: dropped column, nothing to compact
+OPTIMIZE accepted
+1	a
+2	b
+3	c
+--- s3: dropped column
+OPTIMIZE refused
+1
+1	a	x1
+2	b	x2
+3	c	x3
+--- s3: dropped column, nothing to compact
+OPTIMIZE accepted
+1	a
+2	b
+3	c
+--- local: added column
+OPTIMIZE refused
+1	a	\N
+3	c	\N
+--- local: required column made optional
+OPTIMIZE refused
+1	a
+3	c
+--- local: format version 3
+OPTIMIZE refused
+next-row-id before and after OPTIMIZE: [5] [5]
+1	a
+2	b
+3	c
+4	d
+5	e
