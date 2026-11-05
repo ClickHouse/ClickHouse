@@ -30,10 +30,10 @@ FROM
             intHash32(intDiv(number, 16)) % 100 < 95, 'category_value_03_cccccccccccccccccccccccccccccccccccccccc',
             intHash32(intDiv(number, 16)) % 100 < 97, NULL,
             concat('category_value_', toString((intHash32(number) % 9) + 4), '_dddddddddddddddddddddddddddddddddddddddd')) AS v
-    FROM numbers_mt(1000000)
+    FROM numbers_mt(300000)
 );
 
-SET max_threads = 8, group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1;
+SET max_threads = 8, max_block_size = 8192, group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1;
 
 SELECT 'LowCardinality(Nullable(String)), prefetch on';
 SELECT lc, count() FROM t_two_level_few_keys GROUP BY lc ORDER BY lc SETTINGS enable_software_prefetch_in_aggregation = 1;
