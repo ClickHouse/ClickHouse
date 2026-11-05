@@ -316,6 +316,8 @@ public:
     /// committed state. Produce triggered watch notifications, and the response for the request
     /// itself if produce_response is set (the response is only needed on the server that owns the
     /// request's client session; other servers would discard it in their response threads).
+    /// The `Close` response is always produced, because `sessionCleanerTask` on the leader sends
+    /// `Close` for sessions whose connection is on another server.
     /// Caller must call endProcessBatch at the end of batch.
     virtual KeeperResponsesForSessions processOneRequest(
         const Coordination::ZooKeeperRequestPtr & request,

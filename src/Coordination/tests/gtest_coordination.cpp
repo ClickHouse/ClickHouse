@@ -1248,6 +1248,30 @@ TEST_P(CoordinationTest, TestRequestBatchLogEntry)
     EXPECT_EQ(follower->last_commit_index(), 3);
     EXPECT_EQ(committedNodeData(follower_storage, "/d"), "after rollback");
     EXPECT_EQ(follower->getNodesDigest().value, state_machine->getNodesDigest().value);
+
+    /// 6. A `Close` request in a batch owned by another server's dispatcher, as `sessionCleanerTask`
+    ///    on the leader sends it for a session whose connection is on a follower. The `Close`
+    ///    response must be produced anyway, otherwise the follower's connection never exits.
+    {
+        SCOPED_TRACE("6. Close from another server's dispatcher");
+        auto close_request = std::make_shared<ZooKeeperCloseRequest>();
+        close_request->xid = CLOSE_XID;
+        std::vector<KeeperRequestForSession> requests_6;
+        requests_6.push_back(KeeperRequestForSession{.session_id = 2, .request = close_request});
+        auto entry_6 = make_batch_entry(requests_6, other_server_id);
+        const size_t responses_before_6 = responses.size();
+        leader_pre_append(*state_machine, *entry_6);
+        state_machine->pre_commit(4, *entry_6);
+        state_machine->commit(4, *entry_6);
+        EXPECT_EQ(state_machine->last_commit_index(), 4);
+        ASSERT_EQ(responses.size(), responses_before_6 + 1);
+        {
+            const auto & close = responses.back();
+            EXPECT_EQ(close.session_id, 2);
+            EXPECT_EQ(close.response->xid, CLOSE_XID);
+            EXPECT_NE(dynamic_cast<const ZooKeeperCloseResponse *>(close.response.get()), nullptr);
+        }
+    }
 }
 
 

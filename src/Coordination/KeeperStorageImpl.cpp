@@ -2178,13 +2178,13 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processOneRequest(
         /// Finish connection
         session_expiry_queue.remove(session_id);
         session_and_timeout.erase(session_id);
-        if (produce_response)
-        {
-            auto response = std::make_shared<Coordination::ZooKeeperCloseResponse>();
-            response->xid = zk_request->xid;
-            response->zxid = commit_zxid;
-            results.push_back(KeeperResponseForSession{session_id, response});
-        }
+        /// Always produce the `Close` response, regardless of `produce_response`: it is needed on the server
+        /// that has the session's connection, which is not always the server whose dispatcher sent the `Close`
+        /// (`sessionCleanerTask` on the leader closes sessions of clients connected to followers).
+        auto response = std::make_shared<Coordination::ZooKeeperCloseResponse>();
+        response->xid = zk_request->xid;
+        response->zxid = commit_zxid;
+        results.push_back(KeeperResponseForSession{session_id, response});
     }
     else if (zk_request->getOpNum() == Coordination::OpNum::Heartbeat) /// Heartbeat request is also special
     {

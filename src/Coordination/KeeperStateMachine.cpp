@@ -1433,7 +1433,8 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     /// Responses are only needed on the server that owns the batch's client sessions (the one
     /// whose dispatcher produced the batch); other servers would just discard them in their
     /// response threads. -1 means the owner is unknown (e.g. a legacy log entry), then produce
-    /// responses everywhere.
+    /// responses everywhere. `Close` is the exception: `sessionCleanerTask` on the leader sends
+    /// it for sessions whose connection is on another server, so its response is always produced.
     const bool produce_responses = batch->dispatcher_server_id == -1
         || batch->dispatcher_server_id == keeper_context->getServerID();
 

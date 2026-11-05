@@ -91,8 +91,9 @@ struct KeeperRequestBatch
 {
     KeeperRequestsForSessions requests;
     /// Which server's Keeper[Request]Dispatcher produced this batch. That dispatcher owns the
-    /// sessions of all requests in the batch, so only that server produces responses to these
-    /// requests when committing this batch (see produce_responses in KeeperStateMachine::commit).
+    /// sessions of all requests in the batch, except `Close` requests sent by `sessionCleanerTask`.
+    /// So only that server produces responses to these requests when committing this batch (see
+    /// produce_responses in KeeperStateMachine::commit); the `Close` response is produced everywhere.
     /// -1 if unknown (e.g. if parsed from log entry in old format); then all servers produce
     /// responses, and the ones that don't own the session discard them in their response threads.
     /// (TODO: the per-request-type `process` functions still construct the response object even
