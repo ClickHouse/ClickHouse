@@ -2447,7 +2447,7 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
 NameSet ReplicatedMergeTreeQueue::MutationsSnapshot::getColumnsChangedOnFly() const
 {
     NameSet res = getColumnsUpdatedInPatches();
-    if (!hasDataMutations() && !hasAlterMutations())
+    if (!hasDataMutations() && !hasAlterMutations() && !hasMetadataMutations())
         return res;
 
     for (const auto & [partition_id, mutations] : mutations_by_partition)

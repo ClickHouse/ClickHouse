@@ -1,5 +1,9 @@
 -- Tags: long
 
+-- The test checks the query text that query-based parallel replicas send to the replicas;
+-- plan-based send a plan fragment instead.
+SET parallel_replicas_plan_based = 0;
+
 -- Three-level view nesting mirroring a customer's schema:
 -- Archive + current tables (different column names) -> D_SSP/D_DSP views
 --   (inner UNION ALL subquery with column renames + outer SELECT * with backward-compat aliases)
