@@ -175,7 +175,6 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int TABLE_IS_DROPPED;
     extern const int OBJECT_STORAGE_QUEUE_POST_PROCESSING_FAILED;
-    extern const int METADATA_MISMATCH;
 }
 
 namespace
@@ -337,7 +336,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     std::optional<FormatSettings> format_settings_,
     ASTStorage * engine_args,
     LoadingStrictnessLevel mode,
-    bool is_fresh_definition,
     bool keep_data_in_keeper_)
     : IStreamingStorage(table_id_)
     , WithContext(context_)
@@ -496,16 +494,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         context_,
         is_attach,
         log);
-
-    /// Older replicas compare the action, so a new, restored or replayed definition must agree with Keeper.
-    if ((is_fresh_definition || mode == LoadingStrictnessLevel::SECONDARY_CREATE)
-        && (*queue_settings_)[ObjectStorageQueueSetting::after_processing].value != table_metadata.after_processing)
-        throw Exception(
-            ErrorCodes::METADATA_MISMATCH,
-            "Existing table metadata in ZooKeeper differs "
-            "in action after processing. Stored in ZooKeeper: {}, local: {}",
-            DB::toString(table_metadata.after_processing.load()),
-            DB::toString((*queue_settings_)[ObjectStorageQueueSetting::after_processing].value));
 
     if (table_metadata.getMode() == ObjectStorageQueueMode::EXCLUSIVE)
     {
@@ -1895,7 +1883,8 @@ void StorageObjectStorageQueue::alter(
             metadata->alterSettings(changed_settings, local_context);
         });
 
-        /// Alter settings which are not stored in keeper, and this table's own copy of `after_processing`.
+        /// Alter settings which are not stored in keeper, and `after_processing`: the copy in Keeper is shared with the
+        /// other tables on the same `keeper_path`, so each table applies its own.
         for (const auto & change : changed_settings)
         {
             std::lock_guard lock(mutex);

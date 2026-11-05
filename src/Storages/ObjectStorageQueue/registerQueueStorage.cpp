@@ -183,7 +183,6 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         format_settings,
         args.storage_def,
         args.mode,
-        isFreshTableDefinition(args.mode, args.query.attach_short_syntax),
         /* keep_data_in_keeper */ false);
 }
 

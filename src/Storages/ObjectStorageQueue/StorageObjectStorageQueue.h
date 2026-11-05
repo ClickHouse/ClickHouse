@@ -38,7 +38,6 @@ public:
         std::optional<FormatSettings> format_settings_,
         ASTStorage * engine_args,
         LoadingStrictnessLevel mode,
-        bool is_fresh_definition,
         bool keep_data_in_keeper_);
 
     String getName() const override { return engine_name; }
@@ -151,8 +150,8 @@ private:
     UInt64 list_objects_batch_size TSA_GUARDED_BY(mutex);
     bool enable_hash_ring_filtering TSA_GUARDED_BY(mutex);
     CommitSettings commit_settings TSA_GUARDED_BY(mutex);
-    /// The `after_processing` action is also kept in the Keeper metadata for older server versions, but tables
-    /// sharing a `keeper_path` share that metadata, so a table applies its own action to the files it reads.
+    /// Includes this table's own `after_processing`: tables sharing a `keeper_path` share the Keeper metadata, whose
+    /// copy of the action is kept only for older server versions.
     AfterProcessingSettings after_processing_settings TSA_GUARDED_BY(mutex);
     bool commit_on_select TSA_GUARDED_BY(mutex);
     bool deduplication_v2 TSA_GUARDED_BY(mutex);
@@ -217,7 +216,8 @@ private:
     void threadFunc(size_t streaming_tasks_index);
     /// A subset of logic executed by threadFunc.
     bool streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch);
-    /// Apply after_processing action to successfully processed files.
+    /// Apply this table's `after_processing` action to successfully processed files.
+    /// Returns early for `keep`, because the post processor reports the objects it leaves in place as failed.
     void postProcess(
         const StoredObjects & successful_objects,
         UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths) const;
