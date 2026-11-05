@@ -28,16 +28,16 @@ done
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION s3(s3_conn, filename = '${DIR}/bad/3.parquet', format = Parquet) SELECT number AS y FROM numbers($ROWS) SETTINGS $WRITE"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION s3(s3_conn, filename = '${DIR}/not_parquet/0.parquet', format = Parquet) SELECT 1 AS x SETTINGS s3_truncate_on_insert = 1"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION s3(s3_conn, filename = '${DIR}/not_parquet/1.parquet', format = RawBLOB) SELECT 'not a parquet file' SETTINGS s3_truncate_on_insert = 1"
-ROWS_BIG=62500
-for i in 0 1; do
-    ${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION s3(s3_conn, filename = '${DIR}/share/${i}.parquet', format = Parquet) SELECT number + ${i} * $ROWS_BIG AS x FROM numbers($ROWS_BIG)
-        SETTINGS s3_truncate_on_insert = 1, output_format_parquet_row_group_size = $ROWS_BIG, output_format_parquet_compression_method = 'none', output_format_parquet_write_page_index = 0"
-done
-${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION s3(s3_conn, filename = '${DIR}/share/2.parquet', format = Parquet) SELECT number + 2 * $ROWS_BIG AS x FROM numbers($ROWS) SETTINGS $WRITE"
 for i in 0 1 2; do
     ${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION s3(s3_conn, filename = '${DIR}/small/${i}.parquet', format = Parquet) SELECT number % 10 AS x FROM numbers($ROWS) SETTINGS s3_truncate_on_insert = 1, output_format_parquet_row_group_size = $ROWS"
 done
 PLAIN="$WRITE, output_format_parquet_max_dictionary_size = 0, output_format_parquet_write_bloom_filter = 0"
+# share/: two small files, then two without page index, whose chunks of 240 KB and 80 KB are each read in one request.
+SHARE_ROWS=(1000 1000 30000 10000)
+for i in 0 1 2 3; do
+    ${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION s3(s3_conn, filename = '${DIR}/share/${i}.parquet', format = Parquet) SELECT number + ${i} * 30000 AS x FROM numbers(${SHARE_ROWS[$i]})
+        SETTINGS $PLAIN, output_format_parquet_row_group_size = 30000, output_format_parquet_write_page_index = 0"
+done
 # In wide/, the unread column pad keeps the column data too far from the offset index to be read with it.
 for i in 0 1 2 3; do
     ${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION s3(s3_conn, filename = '${DIR}/plain/${i}.parquet', format = Parquet) SELECT number + ${i} * $ROWS AS x FROM numbers($ROWS) SETTINGS $PLAIN"
@@ -80,10 +80,12 @@ read_files c_larger_than_read_task "s3(s3_conn, filename = '${DIR}/good/{0,1,2,3
 read_files d_larger_than_memory_share "s3(s3_conn, filename = '${DIR}/good/{0,1,2,3}.parquet')" "input_format_parquet_memory_high_watermark = 500000,"
 read_files e_two_files "s3(s3_conn, filename = '${DIR}/good/{0,1}.parquet')" ""
 read_files f_local_object_storage "t_local" ""
-# The 625 KB chunk of the current file (no page index: one read) counts against the next file's share: g 300 KB, h default.
-SHARE="input_format_parquet_max_block_size = 8192, use_parquet_metadata_cache = 0,"
-read_files g_shared_share_refused "s3(s3_conn, filename = '${DIR}/share/*.parquet')" "$SHARE input_format_parquet_memory_high_watermark = 1500000,"
-read_files h_shared_share_control "s3(s3_conn, filename = '${DIR}/share/*.parquet')" "$SHARE"
+# The third file is read ahead before the source switches to it, so its 240 KB chunk counts against the share of the
+# fourth file: g 300 KB, which refuses it, h default. The third file's rows are read slowly, so it holds that chunk.
+SHARE="SELECT count(), sum(x), sum(sleepEachRow(0.00004)) FROM s3(s3_conn, filename = '${DIR}/share/*.parquet')
+    SETTINGS $SETTINGS, input_format_parquet_max_block_size = 4096, use_parquet_metadata_cache = 0"
+${CLICKHOUSE_CLIENT} --query "$SHARE, input_format_parquet_memory_high_watermark = 1500000, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_g_shared_share_refused'"
+${CLICKHOUSE_CLIENT} --query "$SHARE, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_h_shared_share_control'"
 # Not read ahead: without a decoder thread pool, for files smaller than remote_read_min_bytes_for_seek, with TopN filtering.
 read_files i_manual_parsing "s3(s3_conn, filename = '${DIR}/good/{0,1,2}.parquet')" "max_parsing_threads = 1, input_format_parquet_max_block_size = 8192,"
 read_files j_small_files "s3(s3_conn, filename = '${DIR}/small/{0,1,2}.parquet')" ""
@@ -142,8 +144,10 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 LOG="FROM system.query_log
     WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish'
         AND startsWith(log_comment, '${CLICKHOUSE_TEST_UNIQUE_NAME}_')"
+# The number of files read ahead for g and h, whether any is for the others.
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT substring(log_comment, length('${CLICKHOUSE_TEST_UNIQUE_NAME}_') + 1) AS read, ProfileEvents['ParquetColumnDataReadAheadOfNextFile'] > 0
+    SELECT substring(log_comment, length('${CLICKHOUSE_TEST_UNIQUE_NAME}_') + 1) AS read,
+        if(read IN ('g_shared_share_refused', 'h_shared_share_control'), ProfileEvents['ParquetColumnDataReadAheadOfNextFile'] AS files, files > 0)
     $LOG
     ORDER BY read
     SETTINGS enable_parallel_replicas = 0"
