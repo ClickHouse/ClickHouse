@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/makeColumnNamesUnique.h>
 #include <IO/Operators.h>
 #include <IO/PeekableReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
@@ -110,6 +111,8 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
 
     if (!with_names && !with_types && try_detect_header)
         tryDetectHeader(column_names, type_names);
+
+    makeColumnNamesUnique(column_names);
 
     if (!column_names.empty())
     {
@@ -472,6 +475,8 @@ NamesAndTypesList FormatWithNamesAndTypesSchemaReader::readSchema()
 
     if (!with_names && !with_types && try_detect_header)
         tryDetectHeader(column_names, data_type_names);
+
+    makeColumnNamesUnique(column_names);
 
     if (!data_type_names.empty())
     {
