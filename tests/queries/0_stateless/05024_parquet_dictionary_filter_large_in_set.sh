@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
 # no-fasttest: needs the Parquet format which is not built in fasttest.
+# Random settings limits: max_bytes_before_external_set=(0, 0); max_bytes_ratio_before_external_set=(0, 0)
+# A set of `IN` spilled to disk keeps no elements, so the dictionary filter could not prune with it.
 
 # `IN` sets larger than the bloom filter's set-size cap (`bloom_filter_max_set_size`, 100) are hashed
 # only for the exact dictionary filter of the native Parquet reader, so `findAnyHash` gets thousands of
