@@ -1,0 +1,111 @@
+<test>
+    <!-- A single-level aggregation whose result is smaller than `max_block_size` feeds a join.
+         The `Resize` after `AggregatingStep` hands out whole chunks, so if the serial single-level
+         merge converts the result into one chunk, only one of the downstream `JoiningTransform`s
+         gets any rows and the probe runs in one thread. The result must be split into several
+         chunks instead. Both aggregations below the final `GROUP BY cid` produce 60000 groups,
+         below `group_by_two_level_threshold`, so they stay single-level. The parallel partition
+         merge and the adaptive aggregator are disabled, as `compatibility` before 26.8 does,
+         because both split the result on their own; the last query restores their defaults.
+         See issue #121086. -->
+    <settings>
+        <max_threads>8</max_threads>
+        <enable_parallel_single_level_merge>0</enable_parallel_single_level_merge>
+        <enable_adaptive_aggregator>0</enable_adaptive_aggregator>
+    </settings>
+
+    <create_query>CREATE TABLE single_level_fanout_t1 (oid UInt64, cid Int32, cr DateTime, h String, s1 Int32) ENGINE = MergeTree ORDER BY oid</create_query>
+    <create_query>CREATE TABLE single_level_fanout_t2 (oid UInt64) ENGINE = MergeTree ORDER BY oid</create_query>
+    <create_query>CREATE TABLE single_level_fanout_t3 (cid Int32, h String, ref DateTime, s2 Float64) ENGINE = MergeTree ORDER BY (cid, h, ref)</create_query>
+
+    <fill_query>
+        INSERT INTO single_level_fanout_t1
+        SELECT
+            intDiv(number, 5),
+            toInt32(intDiv(number, 5) % 4),
+            toDateTime('2026-09-08 00:00:00') + toIntervalMinute(intDiv(number, 5) % 1440) + toIntervalSecond(number % 5),
+            toString(intDiv(number, 5) % 200),
+            toInt32(number % 300)
+        FROM numbers(300000)
+    </fill_query>
+    <fill_query>INSERT INTO single_level_fanout_t2 SELECT number FROM numbers(60000)</fill_query>
+    <fill_query>
+        INSERT INTO single_level_fanout_t3
+        SELECT
+            toInt32(number % 4),
+            toString(intDiv(number, 4) % 200),
+            toDateTime('2026-09-08 00:00:00') + toIntervalMinute(intDiv(number, 800)),
+            toFloat64(number % 5) / 2
+        FROM numbers(1152000)
+    </fill_query>
+
+    <substitutions>
+        <substitution>
+            <name>join_algorithm</name>
+            <values>
+                <value>hash</value>
+                <value>parallel_hash</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query><![CDATA[
+        SELECT cid, count() AS n, round(avg(m), 3) AS a
+        FROM
+        (
+            SELECT e.cid AS cid, e.h AS h, e.s AS s, argMin(p.s2, abs(p.s2 - e.s)) AS m
+            FROM
+            (
+                SELECT
+                    e.oid AS oid,
+                    e.cid AS cid,
+                    argMax(toStartOfMinute(e.cr), e.cr) AS t0,
+                    argMax(e.h, e.cr) AS h,
+                    argMax(least(4., greatest(1., 1. + (e.s1 / 100.))), e.cr) AS s
+                FROM single_level_fanout_t1 AS e
+                INNER JOIN single_level_fanout_t2 AS k ON e.oid = k.oid
+                WHERE e.cid IN (0, 1, 2, 3)
+                GROUP BY e.oid, e.cid
+            ) AS e
+            LEFT JOIN single_level_fanout_t3 AS p ON p.h = e.h AND p.cid = e.cid
+                AND p.ref >= e.t0 - toIntervalMinute(3) AND p.ref <= e.t0 + toIntervalMinute(1)
+            GROUP BY e.oid, e.cid, e.h, e.s
+        )
+        GROUP BY cid
+        FORMAT Null
+        SETTINGS join_algorithm = '{join_algorithm}'
+    ]]></query>
+
+    <!-- The same shape with default settings: grouping by a single `UInt16` key selects a fixed hash
+         map, which the partition merge and the adaptive aggregator do not handle, and its parallel
+         merge also converts the result in `mergeSingleLevel`. -->
+    <query><![CDATA[
+        SELECT cid, count() AS n, round(avg(m), 3) AS a
+        FROM
+        (
+            SELECT e.cid AS cid, e.h AS h, e.s AS s, argMin(p.s2, abs(p.s2 - e.s)) AS m
+            FROM
+            (
+                SELECT
+                    toUInt16(e.oid) AS oid,
+                    any(e.cid) AS cid,
+                    argMax(toStartOfMinute(e.cr), e.cr) AS t0,
+                    argMax(e.h, e.cr) AS h,
+                    argMax(least(4., greatest(1., 1. + (e.s1 / 100.))), e.cr) AS s
+                FROM single_level_fanout_t1 AS e
+                INNER JOIN single_level_fanout_t2 AS k ON e.oid = k.oid
+                GROUP BY oid
+            ) AS e
+            LEFT JOIN single_level_fanout_t3 AS p ON p.h = e.h AND p.cid = e.cid
+                AND p.ref >= e.t0 - toIntervalMinute(3) AND p.ref <= e.t0 + toIntervalMinute(1)
+            GROUP BY e.oid, e.cid, e.h, e.s
+        )
+        GROUP BY cid
+        FORMAT Null
+        SETTINGS enable_parallel_single_level_merge = 1, enable_adaptive_aggregator = 1
+    ]]></query>
+
+    <drop_query>DROP TABLE IF EXISTS single_level_fanout_t1</drop_query>
+    <drop_query>DROP TABLE IF EXISTS single_level_fanout_t2</drop_query>
+    <drop_query>DROP TABLE IF EXISTS single_level_fanout_t3</drop_query>
+</test>

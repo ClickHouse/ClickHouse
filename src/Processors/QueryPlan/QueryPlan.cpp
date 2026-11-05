@@ -651,7 +651,7 @@ void QueryPlan::explainPlan(
     PrettyNamesPerPlan local_pretty_names;
     if (options.pretty && !precomputed_pretty_names)
     {
-        local_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this);
+        local_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this, options.show_secrets);
         precomputed_pretty_names = &local_pretty_names;
     }
 
@@ -671,6 +671,7 @@ void QueryPlan::explainPlan(
         .compact = options.compact,
         .pretty = options.pretty,
         .inside_explain_analyze = steps_to_stats != nullptr,
+        .show_secrets = options.show_secrets,
         .pretty_names = plan_pretty_names ? plan_pretty_names->pretty_names : empty_pretty_names.pretty_names,
         .runtime_filter_names = plan_pretty_names ? plan_pretty_names->runtime_filter_names : empty_pretty_names.runtime_filter_names
     };
@@ -822,7 +823,7 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 namespace QueryPlanOptimizations
 {
 
-std::optional<PreformattedMessage> getReasonPlanUnsupportedForRemoteExecution(const QueryPlan::Node & root);
+const IQueryPlanStep * findStepUnsupportedForRemoteExecution(const QueryPlan::Node & root);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
 DistributedQueryPlan
 makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
@@ -933,10 +934,10 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
     /// A non-serializable step found here
     /// means either a caller skipped the call to `applyDistributedPlanFallbackToLocal`  or an optimization pass created the step after
     /// the plan was accepted. Neither may silently fall back, so abort the plan.
-    if (auto reason = QueryPlanOptimizations::getReasonPlanUnsupportedForRemoteExecution(*root); reason.has_value())
+    if (const auto * step = QueryPlanOptimizations::findStepUnsupportedForRemoteExecution(*root))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan error: plan became unsupported for distributed execution after optimization: {}.",
-            reason->text);
+            step->getName());
 
     /// Take the IN-subquery sets out of the plan before it is split into fragments, so the
     /// fragments never carry their placeholder steps; the sets are added back below.

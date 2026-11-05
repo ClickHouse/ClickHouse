@@ -36,6 +36,7 @@
 
 #include <Parsers/getInsertQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -204,7 +205,7 @@ public:
             /// reject any outer filter under external_table_strict_query.
             rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, context);
             query = buildQueryForExternalDatabaseSubquery(
-                remote_table_or_query.getQuery(), required_source_columns, IdentifierQuotingStyle::DoubleQuotesPostgreSQL);
+                remote_table_or_query.getQuery(), required_source_columns, IdentifierQuotingStyle::DoubleQuotes);
         }
         else
         {
@@ -218,7 +219,7 @@ public:
                 query_info,
                 required_source_columns,
                 storage_snapshot->metadata->getColumns().getOrdinary(),
-                IdentifierQuotingStyle::DoubleQuotesPostgreSQL,
+                IdentifierQuotingStyle::DoubleQuotes,
                 LiteralEscapingStyle::PostgreSQL,
                 remote_table_schema,
                 remote_table_or_query.getTableName(),
@@ -537,7 +538,7 @@ private:
             , statement_name("insert_" + getHexUIntLowercase(thread_local_rng()))
         {
             WriteBufferFromOwnString buf;
-            buf << getInsertQuery(schema, table, columns, IdentifierQuotingStyle::DoubleQuotesPostgreSQL);
+            buf << getInsertQuery(schema, table, columns, IdentifierQuotingStyle::DoubleQuotes);
             buf << " (";
             for (size_t i = 1; i <= columns.size(); ++i)
             {
@@ -806,10 +807,13 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     return configuration;
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id)
+StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(
+    ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings,
+    const StorageID * table_id, const ASTSetQuery * settings)
 {
     StoragePostgreSQL::Configuration configuration;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(
+            engine_args, context, /*throw_unknown_collection=*/ true, /*complex_args=*/ nullptr, table_id, settings))
     {
         configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, storage_settings, context, /*require_table=*/ true);
     }
@@ -833,7 +837,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
 
         /// The 3rd argument is either a table name, or a query passed to PostgreSQL as is - `(SELECT ...)` or `query('SELECT ...')`.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[2], context, IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL);
+            engine_args[2], context, IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 2 && maybe_query)
@@ -881,7 +885,8 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         PostgreSQLSettings postgresql_settings;
         postgresql_settings.loadFromQueryContext(*args.getLocalContext());
 
-        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id);
+        auto configuration = StoragePostgreSQL::getConfiguration(
+            args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id, args.storage_def->settings);
 
         if (args.storage_def)
             postgresql_settings.loadFromQuery(*args.storage_def);

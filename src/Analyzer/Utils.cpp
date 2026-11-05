@@ -33,6 +33,7 @@
 #include <Columns/validateColumnType.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 
 #include <base/unit.h>
@@ -1416,6 +1417,9 @@ namespace
 /// literal instead: `Variant`, `Dynamic`, dynamic `JSON` paths, shared data and `JSON` object names.
 Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool is_inside_object, bool datetime64_as_numbers, bool date_time_as_numbers)
 {
+    /// Nesting is part of the value rather than of the query text, so no parser limit bounds it.
+    checkStackSize();
+
     if (isColumnConst(*column))
         return getFieldFromColumnForASTLiteralImpl(assert_cast<const ColumnConst& >(*column).getDataColumnPtr(), 0, data_type, is_inside_object, datetime64_as_numbers, date_time_as_numbers);
 
@@ -1601,16 +1605,16 @@ Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, cons
     return getFieldFromColumnForASTLiteralImpl(column, row, data_type, false, false, date_time_as_numbers);
 }
 
-/// True if a value of this type cannot be printed as a plain literal and re-parsed into the same type:
-/// a static `Decimal`/`DateTime64`/`Time64` anywhere (all scaled decimals), a `Variant` anywhere (a literal
-/// does not keep the active member type), or a `Dynamic` whose value's type is not visible in the type.
-bool typeNeedsExactLiteralSerialization(const IDataType & type)
+/// True if a value of this type may contain a decimal-backed leaf that needs exact serialization:
+/// a static Decimal/DateTime64/Time64 anywhere (all scaled decimals), or a Dynamic whose runtime
+/// value can be a decimal not visible in the type.
+bool typeMayContainDecimal(const IDataType & type)
 {
     bool result = false;
     auto check = [&](const IDataType & nested)
     {
         WhichDataType which(nested);
-        result |= which.isDecimal() || which.isDateTime64() || which.isTime64() || which.isVariant() || which.isDynamic();
+        result |= which.isDecimal() || which.isDateTime64() || which.isTime64() || which.isDynamic();
     };
     check(type);
     type.forEachChild(check);
@@ -1692,8 +1696,11 @@ ASTPtr makeExactDecimalCarrierAST(const Field & field)
 
 ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row, const DataTypePtr & type, bool date_time_as_numbers)
 {
-    /// Subtrees the default literal path already serializes exactly are left unchanged.
-    if (!typeNeedsExactLiteralSerialization(*type))
+    /// Nesting is part of the value rather than of the query text, so no parser limit bounds it.
+    checkStackSize();
+
+    /// Decimal-free subtrees are serialized exactly by the default literal path, unchanged.
+    if (!typeMayContainDecimal(*type))
         return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(column, row, type, date_time_as_numbers));
 
     if (isColumnConst(*column))
@@ -1756,14 +1763,6 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             const auto & values = map_column.getNestedData().getColumnPtr(1);
             size_t start = offsets[static_cast<ssize_t>(row) - 1];
             size_t end = offsets[row];
-            /// An empty map has no leaf to serialize, and an argumentless `map` is inferred as
-            /// `Map(Nothing, Nothing)`, which cannot be converted to a map type carrying a `Variant`. The
-            /// empty literal is inferred as `Array(Nothing)`, so name the map type on it as well, or a
-            /// non-empty sibling in the same parent resolves against an array instead of a map.
-            if (start == end)
-                return makeCastToTypeNameAST(
-                    make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(column, row, type, date_time_as_numbers)),
-                    type->getName());
             ASTs elements;
             for (size_t i = start; i < end; ++i)
             {
@@ -1777,25 +1776,18 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             const auto & variant_types = assert_cast<const DataTypeVariant &>(*type).getVariants();
             const auto & variant_column = assert_cast<const ColumnVariant &>(*column);
             auto global_discr = variant_column.globalDiscriminatorAt(row);
-            /// Conversion to `Variant` is allowed only from a type equal by name to one of its members, and a
-            /// literal does not keep that name (a `Point` is inferred back as `Tuple(Float64, Float64)`, an
-            /// `Array(UInt64)` as `Array(UInt8)`), so name the member type. Name the whole `Variant` too:
-            /// `array` and `map` resolve their result type from their arguments before an enclosing cast runs.
             if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
-                return makeCastToTypeNameAST(make_intrusive<ASTLiteral>(Null()), type->getName());
+                return make_intrusive<ASTLiteral>(Null());
             const auto & member_type = variant_types[global_discr];
-            auto member_ast = makeCastToTypeNameAST(
-                columnConstantToExactLiteralASTImpl(
-                    variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row), member_type,
-                    date_time_as_numbers),
-                member_type->getName());
-            /// A string-like member needs more: conversion of a string to a `Variant` with several members
-            /// parses the text and picks whichever member it parses as, so `'42'` under
-            /// `Variant(String, UInt64)` would arrive as a `UInt64`. A single-member `Variant` is not parsed.
-            if (variant_types.size() > 1 && isStringOrFixedString(removeNullable(removeLowCardinality(member_type))))
-                member_ast = makeCastToTypeNameAST(
-                    std::move(member_ast), std::make_shared<DataTypeVariant>(DataTypes{member_type})->getName());
-            return makeCastToTypeNameAST(std::move(member_ast), type->getName());
+            auto member_ast = columnConstantToExactLiteralASTImpl(
+                variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row), member_type,
+                date_time_as_numbers);
+            /// Conversion to `Variant` is allowed only from a type equal by name to one of its members, and a
+            /// literal does not keep the member type (a `Point` is inferred back as `Tuple(Float64, Float64)`,
+            /// an `Array(UInt64)` as `Array(UInt8)`), so name the member type explicitly. This mirrors the
+            /// `Variant` branch of `ConstantNode::toASTImpl`, which the exact path bypasses. The wrapping is
+            /// skipped for a scalar decimal member, which already casts itself to its own type.
+            return makeCastToTypeNameAST(std::move(member_ast), member_type->getName());
         }
         case TypeIndex::Dynamic:
         {
@@ -1805,17 +1797,24 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
                 return make_intrusive<ASTLiteral>(Null());
 
+            /// A literal alone loses the member type (an `Enum8` is inferred back as its number): name it and the `Dynamic` type.
+            /// A consumer that clears `date_time_as_numbers` has no `Dynamic` and gets the bare member literal.
+            auto name_member = [&](ASTPtr member_ast, const DataTypePtr & member_type)
+            {
+                if (!date_time_as_numbers)
+                    return member_ast;
+                return makeCastToTypeNameAST(makeCastToTypeNameAST(std::move(member_ast), member_type->getName()), type->getName());
+            };
+
             if (global_discr != dynamic_column.getSharedVariantDiscriminator())
             {
-                /// Recurse into the active member itself rather than through the `Variant` branch above:
-                /// `Dynamic` accepts a value of any type, so its member type must not be named, and doing so
-                /// would change the stored subtype of values whose literal is inferred back as a wider or
-                /// narrower type than the initiator's.
                 const auto & variant_types
                     = assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type).getVariants();
-                return columnConstantToExactLiteralASTImpl(
-                    variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row),
-                    variant_types[global_discr], /*date_time_as_numbers=*/false);
+                return name_member(
+                    columnConstantToExactLiteralASTImpl(
+                        variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row),
+                        variant_types[global_discr], date_time_as_numbers),
+                    variant_types[global_discr]);
             }
 
             /// Value stored in the shared binary variant (e.g. Dynamic(max_types=0)): decode its type
@@ -1827,7 +1826,8 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             auto tmp_column = decoded_type->createColumn();
             tmp_column->reserve(1);
             decoded_type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, FormatSettings{});
-            return columnConstantToExactLiteralASTImpl(std::move(tmp_column), 0, decoded_type, /*date_time_as_numbers=*/false);
+            return name_member(
+                columnConstantToExactLiteralASTImpl(std::move(tmp_column), 0, decoded_type, date_time_as_numbers), decoded_type);
         }
         case TypeIndex::Object:
         {

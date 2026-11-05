@@ -37,7 +37,6 @@ namespace Setting
 {
     extern const SettingsString preferred_optimize_projection_name;
     extern const SettingsBool force_optimize_projection;
-    extern const SettingsBool prefer_optimize_projection;
     extern const SettingsBool optimize_use_projection_filtering;
 }
 
@@ -445,9 +444,9 @@ UseProjectionsResult optimizeUseNormalProjections(
             query.dag->removeUnusedActions();
     }
 
-    const bool relax_projection_checks = context->getSettingsRef()[Setting::force_optimize_projection] || context->getSettingsRef()[Setting::prefer_optimize_projection];
+    const bool force_optimize_projection = context->getSettingsRef()[Setting::force_optimize_projection];
 
-    if (!relax_projection_checks)
+    if (!force_optimize_projection)
     {
         /// A normal projection can help in two ways:
         ///     1. Pruning rows via a filter
@@ -489,7 +488,7 @@ UseProjectionsResult optimizeUseNormalProjections(
         parent_reading_select_result->selected_ranges = parts.size();
     }
 
-    if (!relax_projection_checks)
+    if (!force_optimize_projection)
     {
         /// /// Nothing to read. Ignore projections.
         if (parent_reading_select_result->parts_with_ranges.empty())
@@ -615,10 +614,10 @@ UseProjectionsResult optimizeUseNormalProjections(
         bool sort_order_helps = projection_sort_order_useful(projection);
 
         /// Consider projections with equal read cost only if:
-        /// - `force_optimize_projection` or `prefer_optimize_projection` is enabled, or
+        /// - `force_optimize_projection` is enabled, or
         /// - the parent reading's `selected_marks` becomes zero, or
         /// - the projection's sort order matches the query's ORDER BY,
-        if (!relax_projection_checks && candidate.sum_marks > parent_reading_marks)
+        if (candidate.sum_marks > parent_reading_marks)
         {
             stat.description = fmt::format(
                 "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
@@ -630,7 +629,7 @@ UseProjectionsResult optimizeUseNormalProjections(
             LOG_DEBUG(logger, "{}", stat.description);
             continue;
         }
-        else if (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !relax_projection_checks && !sort_order_helps)
+        else if (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !force_optimize_projection && !sort_order_helps)
         {
             stat.description = fmt::format(
                 "Projection {} is usable but requires reading {} marks and does not help with sorting, which is not better than the original table",

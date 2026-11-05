@@ -26,7 +26,7 @@ node2 = cluster.add_instance(
     ],
     with_zookeeper=True,
 )
-node4 = cluster.add_instance("node4", main_configs=["configs/encryption_codec.xml"])
+node4 = cluster.add_instance("node4")
 
 node5 = cluster.add_instance(
     "node5",
@@ -872,58 +872,6 @@ def test_default_codec_recovered_from_lz4hc_part(start_cluster):
     )
 
     node4.query("DROP TABLE lz4hc_default_codec SYNC")
-
-
-@pytest.mark.parametrize(
-    "default", ["AES_128_GCM_SIV", "AES_128_GCM_SIV, AES_256_GCM_SIV"]
-)
-def test_default_codec_recovered_from_encryption_only_default(start_cluster, default):
-    # With an encryption-only default every stream is an encryption frame or chain, which the recovery must accept as proof of the default.
-    node4.query(
-        f"""
-    CREATE TABLE encryption_only_default (n Nullable(UInt64))
-    ENGINE MergeTree ORDER BY tuple()
-    SETTINGS min_bytes_for_wide_part = 0, default_compression_codec = '{default}'
-    """
-    )
-    node4.query(
-        "INSERT INTO encryption_only_default SELECT if(number % 3 = 0, NULL, number) FROM numbers(1000)"
-    )
-
-    part_name, codec = (
-        node4.query(
-            "SELECT name, default_compression_codec FROM system.parts "
-            "WHERE database='default' AND table='encryption_only_default' AND active"
-        )
-        .strip()
-        .split("\t")
-    )
-    assert codec == default
-
-    node4.query(f"ALTER TABLE encryption_only_default DETACH PART '{part_name}'")
-
-    data_path = node4.query(
-        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='encryption_only_default'"
-    ).strip()
-    node4.exec_in_container(
-        ["rm", f"{data_path}detached/{part_name}/default_compression_codec.txt"]
-    )
-
-    node4.query(f"ALTER TABLE encryption_only_default ATTACH PART '{part_name}'")
-
-    assert (
-        node4.query("SELECT count(), countIf(n IS NULL) FROM encryption_only_default")
-        == "1000\t334\n"
-    )
-    assert (
-        node4.query(
-            "SELECT default_compression_codec FROM system.parts "
-            "WHERE database='default' AND table='encryption_only_default' AND active"
-        ).strip()
-        == "UNKNOWN"
-    )
-
-    node4.query("DROP TABLE encryption_only_default SYNC")
 
 
 def test_mixed_codec_compact_part_fails_closed_without_codec_file(start_cluster):

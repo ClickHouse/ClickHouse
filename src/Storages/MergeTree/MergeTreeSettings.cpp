@@ -575,6 +575,33 @@ Limit the number of part mutations per replica to the specified amount.
 Zero means no limit on the number of mutations per replica (the execution can
 still be constrained by other settings).
 )", 0) \
+    DECLARE(Bool, enable_row_mask_update_coalescing, true, R"(
+Coalesce adjacent singleton `UPDATE _row_exists = 0` commands while mutating a
+Wide part with Full storage. The persisted mutation commands and their
+versions are unchanged.
+Set to false to execute each command separately.
+)", 0) \
+    DECLARE(UInt64, max_row_mask_update_coalescing_keys, 256, R"(
+Maximum number of keys in one coalesced row-mask update. The effective limit
+also respects `max_rows_in_set` in the background query settings. Values below
+2 disable coalescing.
+)", 0) \
+    DECLARE(UInt64, max_row_mask_update_coalescing_key_bytes, 64 * 1024, R"(
+Maximum total number of key-literal bytes in one coalesced row-mask update.
+This bounds the size of the generated `IN` predicate. Set to 0 to disable
+coalescing.
+)", 0) \
+    DECLARE(UInt64, max_row_mask_update_coalescing_commands, 4096, R"(
+Maximum number of part-local mutation commands eligible for row-mask update
+coalescing. This bounds the extra command-list copy made by the optimization;
+the value is a resource guard, not a semantic limit. Values below 2 disable
+coalescing.
+)", 0) \
+    DECLARE(UInt64, max_row_mask_update_coalescing_ast_bytes, 1024 * 1024, R"(
+Maximum sum of the original commands' `ast_text` bytes eligible for row-mask
+update coalescing. The command-count limit alone cannot bound this copy when
+commands contain large literals. Set to 0 to disable coalescing.
+)", 0) \
     DECLARE(UInt64, max_number_of_merges_with_ttl_in_pool, 2, R"(When there is
     more than specified number of merges with TTL entries in pool, do not assign
     new merge with TTL. This is to leave free threads for regular merges and
@@ -725,7 +752,7 @@ Maximum number of processed tokens accumulated by a text index builder before fl
 Maximum estimated memory retained by a text index builder before flushing a temporary segment.
 )", 0) \
     DECLARE(TextIndexPostingListCodec, text_index_posting_list_codec, TextIndexPostingListCodec::None, R"(
-Default posting list codec for text indexes. One of `none`, `bitpacking`, `pfor`.
+Default posting list codec for text indexes.
 Can be overridden by explicit `posting_list_codec` index argument.
 )", 0) \
     DECLARE(Bool, allow_experimental_text_index_phrase_search, false, R"(
@@ -1842,9 +1869,8 @@ column during merge
 If true, lightweight delete is optimized on vertical merge.
 )", 0) \
     DECLARE(Bool, vertical_merge_optimize_ttl_delete, true, R"(
-If true, rows TTL delete is optimized on vertical merge only for `MergeTree` tables. Instead of
-forcing horizontal merge, the TTL filter is evaluated and passed to the merging algorithm which
-sets skip flags in row sources.
+If true, rows TTL delete is optimized on vertical merge. Instead of forcing horizontal merge,
+the TTL filter is evaluated and passed to the merging algorithm which sets skip flags in row sources.
 )", 0) \
     DECLARE(UInt64, max_postpone_time_for_failed_mutations_ms, 5ULL * 60 * 1000, R"(
 The maximum postpone time for failed mutations.

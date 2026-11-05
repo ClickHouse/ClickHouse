@@ -137,22 +137,6 @@ spec:
 Ensure your Kubernetes cluster has enough nodes in different zones to satisfy the spread constraints.
 </Note>
 
-With a node autoscaler (Karpenter, Cluster Autoscaler) the spread constraint alone cannot
-provision a zone that has no nodes yet — the scheduler settles for the zones it can see.
-Set `topologyMinDomains` to the number of availability zones to force spreading:
-
-```yaml
-spec:
-  podTemplate:
-    topologyZoneKey: topology.kubernetes.io/zone
-    topologyMinDomains: 3   # number of availability zones
-```
-
-<Note>
-`topologyMinDomains` requires `topologyZoneKey`. Pods stay `Pending` while fewer zones than
-requested are available, so keep it within the zones your cluster can provide.
-</Note>
-
 ### Manual configuration {#manual-configuration}
 
 Arbitrary pod affinity/anti-affinity rules and topology spread constraints can be specified.

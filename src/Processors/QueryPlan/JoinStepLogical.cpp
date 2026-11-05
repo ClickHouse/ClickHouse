@@ -50,7 +50,6 @@
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -202,7 +201,7 @@ JoinStepLogical::JoinStepLogical(
     for (const auto * node_after_join : actions_after_join)
     {
         if (!all_nodes_set.contains(node_after_join))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} is not in the expression actions dag", fmt::ptr(node_after_join));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A node after join is not in the expression actions dag");
     }
 #endif
 }
@@ -2523,9 +2522,9 @@ std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
 }
 
 
-void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
+void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
 {
-    join_settings.updatePlanSettings(settings, version, join_operator);
+    join_settings.updatePlanSettings(settings);
     sorting_settings.updatePlanSettings(settings);
 }
 
@@ -2621,7 +2620,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     auto actions_after_join = deserializeNodeList(ctx.in, id_to_node);
 
     SortingStep::Settings sort_settings(ctx.settings);
-    JoinSettings join_settings(ctx.settings, ctx.version);
+    JoinSettings join_settings(ctx.settings);
 
     auto step = std::make_unique<JoinStepLogical>(
         std::move(left_header),

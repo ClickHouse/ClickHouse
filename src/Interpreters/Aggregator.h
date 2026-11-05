@@ -153,6 +153,8 @@ public:
         UInt64 adaptive_aggregator_freeze_threshold = 0;
         UInt64 adaptive_aggregator_freeze_threshold_bytes = 0;
 
+        bool use_aggregation_memory_tracker = true;
+
         /// Bucket-local Top-K of the final conversion, set by the `aggregation_bucket_top_k`
         /// plan optimization (never by users) when the plan proves this aggregation feeds
         /// `ORDER BY <the lone count() output> LIMIT n`: each two-level bucket materializes
@@ -234,7 +236,8 @@ public:
             bool enable_packed_string_keys_,
             bool enable_adaptive_aggregator_,
             UInt64 adaptive_aggregator_freeze_threshold_,
-            UInt64 adaptive_aggregator_freeze_threshold_bytes_);
+            UInt64 adaptive_aggregator_freeze_threshold_bytes_,
+            bool use_aggregation_memory_tracker_);
 
         /// Only parameters that matter during merge.
         Params(
@@ -292,6 +295,15 @@ public:
         AggregatedDataVariants & table,
         const std::vector<StagedChunkPtr> & chunks,
         std::atomic<bool> & is_cancelled,
+        PaddedPODArray<AggregateDataPtr> & places_scratch) const;
+
+    /// `drainStagedBatch` into the session's shared table, called under `pressure_sweep_mutex`.
+    /// A drain that throws midway (a memory limit hit while creating states, say) leaves keys
+    /// in the shared table whose states are null; the session is cancelled before the lock is
+    /// released, so no other producer drains into that table or writes it.
+    size_t drainStagedBatchIntoSharedTable(
+        AdaptiveAggregationSession & shared,
+        const std::vector<StagedChunkPtr> & chunks,
         PaddedPODArray<AggregateDataPtr> & places_scratch) const;
 
     /// A fresh drain destination of the session's method type, with one arena per bucket.
@@ -460,8 +472,15 @@ public:
       * If final = false, then ColumnAggregateFunction is created as the aggregation columns with the state of the calculations,
       *  which can then be combined with other states (for distributed query processing).
       * If final = true, then columns with ready values are created as aggregate columns.
+      * A non-zero `max_rows_per_block` caps the size of the emitted single-level chunks below `max_block_size`.
       */
-    AggregatedChunks convertToChunks(AggregatedDataVariants & data_variants, bool final) const;
+    AggregatedChunks convertToChunks(AggregatedDataVariants & data_variants, bool final, size_t max_rows_per_block = 0) const;
+
+    /// A single-level result smaller than `max_block_size` is converted to one chunk, and a `Resize`
+    /// hands out whole chunks, so everything downstream of it runs in one thread. Returns a chunk size
+    /// that splits `rows` into about one chunk per output stream, never below 512 rows per chunk, or 0
+    /// to leave the result as is.
+    static size_t singleLevelChunkRowsForFanOut(size_t rows, size_t output_streams);
 
     /// `adaptive_session` (or nullptr when the adaptive aggregation is off) feeds the
     /// thaw verdict into the hash-table statistics next to the observed sizes.
@@ -1035,13 +1054,13 @@ private:
     template <typename Method, typename Table>
     requires MapAggregationMethod<Method>
     Chunks
-    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block) const;
+    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block, size_t max_rows_per_block = 0) const;
 
     /// A set method skips the inline-count and compiled-function paths; it only emits keys.
     template <typename Method, typename Table>
     requires SetAggregationMethod<Method>
     Chunks
-    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block) const;
+    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block, size_t max_rows_per_block = 0) const;
 
     template <typename Mapped>
     void insertAggregatesIntoColumns(
@@ -1061,7 +1080,7 @@ private:
     template <typename Method, typename Table>
     requires SetAggregationMethod<Method>
     Chunks convertToBlockImplKeysOnly(
-        Method & method, Table & data, Arenas & aggregates_pools, bool final, bool return_single_block) const;
+        Method & method, Table & data, Arenas & aggregates_pools, bool final, bool return_single_block, size_t max_rows_per_block) const;
 
     template <typename Method, typename Table>
     Chunks convertToBlockImplFinal(
@@ -1070,11 +1089,12 @@ private:
         Arena * arena,
         Arenas & aggregates_pools,
         bool use_compiled_functions,
-        bool return_single_block) const;
+        bool return_single_block,
+        size_t max_rows_per_block) const;
 
     template <typename Method, typename Table>
     Chunks
-    convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows, bool return_single_block) const;
+    convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows, bool return_single_block, size_t max_rows_per_block) const;
 
     /// `topk_full_key_bytes`, when non-null and the bucket goes through the Top-K conversion,
     /// receives the byte size all of the bucket's keys would occupy materialized: the runtime
@@ -1125,9 +1145,10 @@ private:
     AggregatedChunk prepareChunkAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
     AggregatedChunks prepareChunksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;
 
+    /// A non-zero `max_rows_per_block` caps the size of the emitted chunks below `max_block_size`.
     template <bool return_single_block>
     std::conditional_t<return_single_block, AggregatedChunk, AggregatedChunks>
-    prepareChunkAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
+    prepareChunkAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final, size_t max_rows_per_block = 0) const;
 
     template <typename Method>
     AggregatedChunks prepareChunksAndFillTwoLevelImpl(AggregatedDataVariants & data_variants, Method & method, bool final) const;

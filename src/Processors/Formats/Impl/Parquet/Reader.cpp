@@ -432,16 +432,25 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     /// i.e. the very same raw name `geo_meta` already carries. Translating them to the query-side
     /// name (as an earlier version of this code did) breaks the match against
     /// `primitive_columns[i].name` for any bbox sub-column that was itself renamed.
-    std::unordered_map<String, String> clickhouse_to_parquet_name;
-    const auto * query_side_column_mapper = format_filter_info->current_schema_column_mapper
-        ? format_filter_info->current_schema_column_mapper.get()
-        : format_filter_info->column_mapper.get();
-    if (query_side_column_mapper && format_filter_info->column_mapper)
-        clickhouse_to_parquet_name =
-            query_side_column_mapper->makeMapping(format_filter_info->column_mapper->getFieldIdToClickHouseName()).first;
+    std::optional<std::unordered_map<String, String>> clickhouse_to_parquet_name;
+    auto get_clickhouse_to_parquet_name = [&]() -> const std::unordered_map<String, String> &
+    {
+        if (!clickhouse_to_parquet_name)
+        {
+            clickhouse_to_parquet_name.emplace();
+            const auto * query_side_column_mapper = format_filter_info->current_schema_column_mapper
+                ? format_filter_info->current_schema_column_mapper.get()
+                : format_filter_info->column_mapper.get();
+            if (query_side_column_mapper && format_filter_info->column_mapper)
+                *clickhouse_to_parquet_name
+                    = query_side_column_mapper->makeMapping(format_filter_info->column_mapper->getFieldIdToClickHouseName()).first;
+        }
+        return *clickhouse_to_parquet_name;
+    };
     auto resolve_geo_meta = [&](const String & ch_name) -> std::unordered_map<String, DB::GeoColumnMetadata>::const_iterator
     {
-        if (auto it = clickhouse_to_parquet_name.find(ch_name); it != clickhouse_to_parquet_name.end())
+        const auto & mapping = get_clickhouse_to_parquet_name();
+        if (auto it = mapping.find(ch_name); it != mapping.end())
             return geo_meta->find(it->second);
         return geo_meta->find(ch_name);
     };
@@ -453,7 +462,8 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     /// pruning.
     auto to_raw_geometry_name = [&](const String & ch_name) -> String
     {
-        if (auto it = clickhouse_to_parquet_name.find(ch_name); it != clickhouse_to_parquet_name.end())
+        const auto & mapping = get_clickhouse_to_parquet_name();
+        if (auto it = mapping.find(ch_name); it != mapping.end())
             return it->second;
         return ch_name;
     };

@@ -22,6 +22,7 @@
 #include <IO/ConcatReadBufferFromFile.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
+#include <IO/StdStreamFromReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
@@ -31,6 +32,7 @@
 #if CLICKHOUSE_CLOUD && USE_SSL
 #include <Backups/BackupEncryptionSidecar.h>
 #endif
+#include <Poco/SAX/InputSource.h>
 #include <Poco/SAX/SAXParser.h>
 #include <Poco/SAX/XMLReader.h>
 
@@ -331,7 +333,20 @@ void BackupImpl::openArchive()
         if (!reader->fileExists(archive_name))
             throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name_for_logging);
         size_t archive_size = reader->getFileSize(archive_name);
-        archive_reader = createArchiveReader(archive_name, [my_reader = reader, archive_name]{ return my_reader->readFile(archive_name); }, archive_size);
+        /// The archive is reopened through this factory as many times as it is read - the `tar` and
+        /// `7z` readers reopen it for every `fileExists` and every `readFile`, and the `zip` reader
+        /// whenever it needs another handle - so the size alone does not keep the session on one
+        /// archive: a blob replaced in place by another archive of the same size would be read as
+        /// the first archive for one file and as the second for the next. The generation of the
+        /// archive is therefore named once here, and every reopen is pinned to it: an archive
+        /// replaced under the open backup is refused (`FILE_CHANGED_DURING_READ` on Azure,
+        /// `S3_OBJECT_CHANGED_DURING_READ` on S3) instead of being read as two archives.
+        String archive_generation = reader->getFileGeneration(archive_name);
+        archive_reader = createArchiveReader(
+            archive_name,
+            [my_reader = reader, archive_name, archive_size, archive_generation]
+            { return my_reader->readFilePinnedToGeneration(archive_name, archive_size, archive_generation); },
+            archive_size);
         archive_reader->setPassword(archive_params.password);
     }
     else
@@ -382,6 +397,9 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
         }
 
         BackupFactory::CreateParams base_params = params.getCreateParamsForBaseBackup(std::move(effective_base_backup_info), archive_params.password);
+        /// A backup being written only looks up the sizes and checksums of the files of its base, to skip the files the base
+        /// already has. For a base of millions of files, the rest of the information about its files takes gigabytes.
+        base_params.for_file_lookups_only = (open_mode == OpenMode::WRITE);
         base_backup = BackupFactory::instance().createBackup(base_params);
 
         if ((open_mode == OpenMode::READ) && (base_backup_uuid != base_backup->getUUID()))
@@ -669,11 +687,8 @@ void BackupImpl::readBackupMetadata()
     {
         if (!reader->fileExists(".backup"))
             throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name_for_logging);
-        in = reader->readFile(".backup");
+        in = reader->readFile(".backup", /*expected_file_size=*/ std::nullopt);
     }
-
-    String str;
-    readStringUntilEOF(str, *in);
 
     num_files = 0;
     total_size = 0;
@@ -754,8 +769,20 @@ void BackupImpl::readBackupMetadata()
         contents_seen = true;
     };
 
+    /// Many files of a backup have the same size and checksum (e.g. `columns.txt` of the parts of a table), so the keys
+    /// are deduplicated while they are read, whenever their number doubles since the previous time: this keeps the vector
+    /// at about twice the number of distinct keys, however many duplicates there are.
+    static constexpr size_t min_num_sizes_and_checksums_to_deduplicate = 65536;
+    size_t num_sizes_and_checksums_after_deduplication = 0;
+    auto deduplicate_sizes_and_checksums = [&]() TSA_NO_THREAD_SAFETY_ANALYSIS
+    {
+        std::ranges::sort(sizes_and_checksums);
+        sizes_and_checksums.erase(std::ranges::unique(sizes_and_checksums).begin(), sizes_and_checksums.end());
+        num_sizes_and_checksums_after_deduplication = sizes_and_checksums.size();
+    };
+
     /// `readBackupMetadata` runs under `mutex` (TSA_REQUIRES), and `on_file` is invoked synchronously from
-    /// `parseMemoryNP` below while that lock is held, so the guarded members are safe to touch here. TSA cannot
+    /// `parse` below while that lock is held, so the guarded members are safe to touch here. TSA cannot
     /// see through the lambda boundary, hence the explicit suppression.
     handler.on_file = [&](const BackupMetadataHandler::Fields & f) TSA_NO_THREAD_SAFETY_ANALYSIS
     {
@@ -854,7 +881,17 @@ void BackupImpl::readBackupMetadata()
         {
             file_names.emplace(info.file_name, size_and_checksum);
             if (info.size)
-                file_infos.try_emplace(size_and_checksum, std::move(info));
+            {
+                if (params.for_file_lookups_only)
+                {
+                    sizes_and_checksums.push_back(size_and_checksum);
+                    if (sizes_and_checksums.size()
+                        >= std::max(min_num_sizes_and_checksums_to_deduplicate, 2 * num_sizes_and_checksums_after_deduplication))
+                        deduplicate_sizes_and_checksums();
+                }
+                else
+                    file_infos.try_emplace(size_and_checksum, std::move(info));
+            }
         }
     };
 
@@ -865,9 +902,18 @@ void BackupImpl::readBackupMetadata()
     /// ordinary element; with it the handler sees "x:contents" and ignores it (writeBackupMetadata never
     /// emits namespaces, so this only rejects hand-crafted manifests).
     xml_parser.setFeature(Poco::XML::XMLReader::FEATURE_NAMESPACE_PREFIXES, true);
+    /// The metadata is parsed while it is read, in chunks, instead of being read into one string first: it has
+    /// a record per file and can take gigabytes for a backup of many files.
+    ReadBuffer & metadata_in = *in;
+    /// The parser reads the stream from start to end and never seeks, so the stream doesn't need the size.
+    StdIStreamFromReadBuffer metadata_stream(std::move(in), /*size=*/ 0);
+    /// `std::istream` swallows an exception thrown by the buffer and only sets `badbit`, which the parser takes
+    /// for the end of the data. Rethrow it instead, so a read error isn't reported as a malformed manifest.
+    metadata_stream.exceptions(std::ios::badbit);
+    Poco::XML::InputSource metadata_source(metadata_stream);
     try
     {
-        xml_parser.parseMemoryNP(str.data(), str.size());
+        xml_parser.parse(&metadata_source);
     }
     catch (...)
     {
@@ -887,7 +933,10 @@ void BackupImpl::readBackupMetadata()
     if (!contents_seen)
         throw Exception(ErrorCodes::BACKUP_DAMAGED, "Backup {}: Metadata has no <contents>", backup_name_for_logging);
 
-    uncompressed_size = size_of_entries + str.size();
+    deduplicate_sizes_and_checksums();
+    sizes_and_checksums.shrink_to_fit();
+
+    uncompressed_size = size_of_entries + metadata_in.count();
 
 #if CLICKHOUSE_CLOUD && USE_SSL
     /// A backup written with an encryption config file next to it carries the TDE key information of that
@@ -1157,6 +1206,8 @@ bool BackupImpl::fileExists(const SizeAndChecksum & size_and_checksum) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     std::lock_guard lock{mutex};
+    if (params.for_file_lookups_only)
+        return std::ranges::binary_search(sizes_and_checksums, size_and_checksum);
     return file_infos.contains(size_and_checksum);
 }
 
@@ -1209,7 +1260,7 @@ std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFileByObjectKey(const Ba
     if (info.object_key.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Object key of {} is empty string", info.data_file_name);
 
-    return lightweight_snapshot_reader->readFile(info.object_key);
+    return lightweight_snapshot_reader->readFile(info.object_key, /*expected_file_size=*/ std::nullopt);
 }
 
 std::unique_ptr<ReadBufferFromFileBase>
@@ -1218,6 +1269,9 @@ BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_
 {
     if (open_mode == OpenMode::WRITE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
+
+    if (params.for_file_lookups_only)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup {}: Opened only to look up its files, it can't be read from", backup_name_for_logging);
 
     // Zero-sized files are not inserted into `file_infos` during metadata load,
     // but they are present in `file_names`. Short-circuit them here and return
@@ -1262,7 +1316,7 @@ BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_
         if (use_archive)
             read_buffer = archive_reader->readFile(info.data_file_name, /*throw_on_not_found=*/true);
         else
-            read_buffer = reader->readFile(info.data_file_name);
+            read_buffer = reader->readFile(info.data_file_name, /*expected_file_size=*/ info.size - info.base_size);
     }
 
     if (info.base_size)
@@ -1395,6 +1449,9 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
 {
     if (open_mode == OpenMode::WRITE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
+
+    if (params.for_file_lookups_only)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup {}: Opened only to look up its files, it can't be read from", backup_name_for_logging);
 
     if (size_and_checksum.first == 0)
     {

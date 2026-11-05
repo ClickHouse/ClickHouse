@@ -26,9 +26,9 @@ function count_tables_like()
     $CLIENT -q "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '$1'"
 }
 
-echo '--- a new table: the METRIC FAMILIES keyword, the .inner_id.metricfamilies inner table ---'
+echo '--- a new table: the METRIC FAMILIES keyword, version 4, the .inner_id.metricfamilies inner table ---'
 $CLIENT -q "CREATE TABLE ts_new ENGINE = TimeSeries METRIC FAMILIES INNER ENGINE = ReplacingMergeTree"
-get_create_query ts_new | grep -o "METRIC FAMILIES INNER COLUMNS\|METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name"
+get_create_query ts_new | grep -o "METRIC FAMILIES INNER COLUMNS\|METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name\|version = [0-9]*"
 count_tables_like '.inner\_id.metricfamilies.%'
 count_tables_like '.inner\_id.metrics.%'
 $CLIENT -q "INSERT INTO ts_new (metric_name, tags, samples, metric_family, type, unit, help) VALUES
@@ -68,16 +68,16 @@ ORD="${CLICKHOUSE_DATABASE}_ord"
 $CLIENT -q "DROP DATABASE IF EXISTS ${ORD} SYNC"
 $CLIENT --send_logs_level=fatal --allow_deprecated_database_ordinary=1 -q "CREATE DATABASE ${ORD} ENGINE = Ordinary"
 $CLIENT -q "CREATE TABLE ${ORD}.ts_v3 ENGINE = TimeSeries SETTINGS version = 3"
-$CLIENT -q "CREATE TABLE ${ORD}.ts_latest ENGINE = TimeSeries"
+$CLIENT -q "CREATE TABLE ${ORD}.ts_v4 ENGINE = TimeSeries"
 $CLIENT -q "SELECT name FROM system.tables WHERE database = '${ORD}' AND name LIKE '.inner.metric%' ORDER BY name"
 $CLIENT -q "INSERT INTO ${ORD}.ts_v3 (metric_family, type, unit, help) VALUES ('up', 'gauge', '', 'v3')"
-$CLIENT -q "INSERT INTO ${ORD}.ts_latest (metric_family, type, unit, help) VALUES ('up', 'gauge', '', 'latest')"
+$CLIENT -q "INSERT INTO ${ORD}.ts_v4 (metric_family, type, unit, help) VALUES ('up', 'gauge', '', 'v4')"
 echo 'the inner tables are renamed together with the table and keep the version-specific name:'
-$CLIENT -q "RENAME TABLE ${ORD}.ts_v3 TO ${ORD}.ts_v3_renamed, ${ORD}.ts_latest TO ${ORD}.ts_latest_renamed"
+$CLIENT -q "RENAME TABLE ${ORD}.ts_v3 TO ${ORD}.ts_v3_renamed, ${ORD}.ts_v4 TO ${ORD}.ts_v4_renamed"
 $CLIENT -q "SELECT name FROM system.tables WHERE database = '${ORD}' AND name LIKE '.inner.metric%' ORDER BY name"
 $CLIENT -q "SELECT help FROM timeSeriesMetricFamilies(${ORD}.ts_v3_renamed)"
-$CLIENT -q "SELECT help FROM timeSeriesMetricFamilies(${ORD}.ts_latest_renamed)"
+$CLIENT -q "SELECT help FROM timeSeriesMetricFamilies(${ORD}.ts_v4_renamed)"
 $CLIENT -q "DROP TABLE ${ORD}.ts_v3_renamed"
-$CLIENT -q "DROP TABLE ${ORD}.ts_latest_renamed"
+$CLIENT -q "DROP TABLE ${ORD}.ts_v4_renamed"
 $CLIENT -q "SELECT count() FROM system.tables WHERE database = '${ORD}'"
 $CLIENT -q "DROP DATABASE ${ORD} SYNC"

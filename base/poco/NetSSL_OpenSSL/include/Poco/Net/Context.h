@@ -109,9 +109,6 @@ namespace Net
             std::string caDefaultDir;
             std::string caDefaultFile;
             std::string caLocation;
-            bool caEmbedded = false;
-            /// Whether the CA certificates embedded into the binary were added to the store
-            /// because none were found on the filesystem.
         };
 
         struct NetSSL_API Params

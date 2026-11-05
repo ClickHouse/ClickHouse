@@ -100,6 +100,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool use_strict_insert_block_limits;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
@@ -511,7 +512,7 @@ static DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, 
 {
     auto constraints = metadata->getConstraints();
 
-    auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+    auto storage_merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load);
     if (storage_merge_tree
         && (storage_merge_tree->merging_params.mode == MergeTreeData::MergingParams::Collapsing
             || storage_merge_tree->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
@@ -626,7 +627,7 @@ private:
     {
         /// We create a table with the same name as original table and the same alias columns,
         ///  but it will contain single block (that is INSERT-ed into main table).
-        /// The interpreter will do processing of alias columns.
+        /// InterpreterSelectQuery will do processing of alias columns.
         auto local_context = Context::createCopy(context);
 
         local_context->addViewSource(std::make_shared<StorageValues>(
@@ -635,9 +636,19 @@ private:
             std::move(data_block),
             source_metadata->virtuals));
 
-        InterpreterSelectQueryAnalyzer interpreter(
-            select_query, local_context, SelectQueryOptions().ignoreAccessCheck(), local_context->getViewSource());
-        QueryPipelineBuilder pipeline = interpreter.buildQueryPipeline();
+        QueryPipelineBuilder pipeline;
+
+        if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        {
+            InterpreterSelectQueryAnalyzer interpreter(
+                select_query, local_context, SelectQueryOptions().ignoreAccessCheck(), local_context->getViewSource());
+            pipeline = interpreter.buildQueryPipeline();
+        }
+        else
+        {
+            InterpreterSelectQuery interpreter(select_query, local_context, SelectQueryOptions().ignoreAccessCheck());
+            pipeline = interpreter.buildQueryPipeline();
+        }
         pipeline.resize(1);
         pipeline.dropTotalsAndExtremes();
 
@@ -681,7 +692,7 @@ private:
                 local_context);
 
             bool inner_share_nested_offsets = true;
-            if (auto * merge_tree = dynamic_cast<MergeTreeData *>(inner_storage.get()))
+            if (auto * merge_tree = castStorage<MergeTreeData>(inner_storage, DeferredTable::Load).get())
                 inner_share_nested_offsets = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
             auto adding_missing_defaults_dag = addMissingDefaults(
@@ -749,7 +760,7 @@ bool InsertDependenciesBuilder::storageDeduplicatesBlocksOnInsert(const StorageP
     /// MergeTree-family engines deduplicate inserted blocks when their (synchronous) deduplication
     /// window is enabled. This mirrors how `MergeTreeSink` / `ReplicatedMergeTreeSink` compute their
     /// own `deduplicate` flag.
-    if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
+    if (const auto * merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load).get())
     {
         const auto merge_tree_settings = merge_tree->getSettings();
         if (storage->supportsReplication())
@@ -1407,7 +1418,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
     const auto & parent = path.parent(1);
     const auto & current = path.current();
 
-    auto storage = current == init_table_id ? init_storage : DatabaseCatalog::instance().tryGetTable(current, init_context);
+    auto storage = current == init_table_id ? init_storage : resolveStorageProxyLoading(DatabaseCatalog::instance().tryGetTable(current, init_context));
     auto lock = storage ? storage->tryLockForShare(init_context->getInitialQueryId(), init_context->getSettingsRef()[Setting::lock_acquire_timeout]) : nullptr;
     if (!lock)
     {
@@ -1710,7 +1721,7 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDMaybeEmpty view_id) cons
     auto insert_context = insert_contexts.at(view_id);
 
     bool inner_share_nested_offsets = true;
-    if (auto * merge_tree = dynamic_cast<MergeTreeData *>(storages.at(inner_table_id).get()))
+    if (auto * merge_tree = castStorage<MergeTreeData>(storages.at(inner_table_id), DeferredTable::Load).get())
         inner_share_nested_offsets = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
     /// Widen Enum columns to their target type before adding defaults, so the valid Enum-widening
@@ -1804,7 +1815,7 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
     /// but currently we don't have methods for serialization of nested structures "as a whole".
     {
         bool skip_nested_validation = false;
-        if (auto * merge_tree = dynamic_cast<MergeTreeData *>(inner_storage.get()))
+        if (auto * merge_tree = castStorage<MergeTreeData>(inner_storage, DeferredTable::Load).get())
             skip_nested_validation = !(*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
         if (!skip_nested_validation)
             result.addSink(std::make_shared<NestedElementsValidationTransform>(header));

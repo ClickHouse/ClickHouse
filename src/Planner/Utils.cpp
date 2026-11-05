@@ -28,6 +28,7 @@
 #include <Storages/StorageDummy.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -620,6 +621,29 @@ NameSet checkAccessRights(
     return {};
 }
 
+NameSet collectReferencedColumnNames(const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression)
+{
+    NameSet column_names;
+    traverseQueryTree(
+        node,
+        [](const QueryTreeNodePtr & parent, const QueryTreeNodePtr &)
+        {
+            /// Don't go inside an ALIAS column expression: a grant on the alias name is sufficient.
+            const auto * column_node = parent->as<ColumnNode>();
+            if (!column_node || !column_node->hasExpression())
+                return true;
+            const auto & column_source = column_node->getColumnSourceOrNull();
+            return !(column_source && column_source->getNodeType() == QueryTreeNodeType::TABLE);
+        },
+        [&](const QueryTreeNodePtr & current)
+        {
+            const auto * column_node = current->as<ColumnNode>();
+            if (column_node && column_node->getColumnSourceOrNull().get() == table_expression.get())
+                column_names.insert(column_node->getColumnName());
+        });
+    return column_names;
+}
+
 static void checkAccessRightsForFilter(const QueryTreeNodePtr & filter_query_tree,
     const QueryTreeNodePtr & table_expression,
     const ContextPtr & query_context)
@@ -650,24 +674,7 @@ static void checkAccessRightsForFilter(const QueryTreeNodePtr & filter_query_tre
         return;
     }
 
-    NameSet column_names;
-    traverseQueryTree(
-        filter_query_tree,
-        [](const QueryTreeNodePtr & parent, const QueryTreeNodePtr &)
-        {
-            /// Don't go inside an ALIAS column expression: a grant on the alias name is sufficient.
-            const auto * column_node = parent->as<ColumnNode>();
-            if (!column_node || !column_node->hasExpression())
-                return true;
-            const auto & column_source = column_node->getColumnSourceOrNull();
-            return !(column_source && column_source->getNodeType() == QueryTreeNodeType::TABLE);
-        },
-        [&](const QueryTreeNodePtr & node)
-        {
-            const auto * column_node = node->as<ColumnNode>();
-            if (column_node && column_node->getColumnSourceOrNull().get() == table_expression.get())
-                column_names.insert(column_node->getColumnName());
-        });
+    NameSet column_names = collectReferencedColumnNames(filter_query_tree, table_expression);
     if (column_names.empty())
         return;
 
@@ -704,6 +711,10 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
 
     if (check_access_rights)
         checkAccessRightsForFilter(filter_query_tree, table_expression, query_context);
+
+    /// The inner query of an ordinary view reads the table itself, not the inserted block.
+    if (auto view_source = query_context->getViewSource(); view_source && !query_context->isViewInnerQuery())
+        replaceStorageInQueryTree(filter_query_tree, query_context, view_source);
 
     return filter_query_tree;
 }

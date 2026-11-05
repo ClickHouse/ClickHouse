@@ -1,4 +1,5 @@
 #include <Storages/StorageAlias.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -19,6 +20,7 @@
 #include <Access/ContextAccess.h>
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -250,6 +252,26 @@ SinkToStoragePtr StorageAlias::write(
     return std::make_shared<AliasSink>(*this, local_context, target_metadata, async_insert);
 }
 
+void StorageAlias::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
+{
+    /// `InterpreterAlterQuery` checks the export grants (`SELECT` on the table and its row policy) on the name in the query,
+    /// which is the alias, not the target. The refusal does not need the user, so it also holds on the hosts of `ON CLUSTER`.
+    for (const auto & command : commands)
+    {
+        if (command.type == AlterCommand::MODIFY_SETTING && !StorageFactory::instance().getExportAccessOfAnyEngine(command.settings_changes).empty())
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Changing the settings that send the data of a table elsewhere through an alias is not supported. "
+                "Execute the ALTER directly on the target table: {}.{}",
+                backQuoteIfNeed(target_database),
+                backQuoteIfNeed(target_table));
+        }
+    }
+
+    getTargetTable()->checkAlterIsPossible(commands, local_context);
+}
+
 void StorageAlias::alter(
     const AlterCommands & params,
     ContextPtr local_context,
@@ -441,19 +463,12 @@ std::optional<QueryPipeline> StorageAlias::distributedWrite(const ASTInsertQuery
 
 StorageSnapshotPtr StorageAlias::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
-    /// Bind the target to a named local so that one owning pointer spans both calls, and hand it to the
-    /// snapshot: getTargetTable resolves through DatabaseCatalog and returns a temporary, while our
-    /// caller owns and share-locks this alias rather than the target the snapshot refers to.
-    StoragePtr target = getTargetTable();
-    auto snapshot = target->getStorageSnapshot(metadata_snapshot, query_context);
-    return snapshot->withStorageHolder(std::move(target));
+    return getTargetTable()->getStorageSnapshot(metadata_snapshot, query_context);
 }
 
 StorageSnapshotPtr StorageAlias::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
-    StoragePtr target = getTargetTable();
-    auto snapshot = target->getStorageSnapshotWithoutData(metadata_snapshot, query_context);
-    return snapshot->withStorageHolder(std::move(target));
+    return getTargetTable()->getStorageSnapshotWithoutData(metadata_snapshot, query_context);
 }
 
 bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const

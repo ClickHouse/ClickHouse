@@ -65,6 +65,10 @@ EXCLUDE=(
     # malformed on purpose, so loading it here would print an exception.
     05035_delta_byte_array_zero_values.parquet
     05035_delta_byte_array_decimal.parquet
+    # `INT96` timestamps outside the `DateTime64(9)` range (throws with the default `date_time_overflow_behavior`), tested by 05443.
+    05443_int96_out_of_range.parquet
+    # `INT96` timestamp on the lower boundary day of the `DateTime64(9)` range, tested by 05444.
+    05444_int96_lower_boundary.parquet
 )
 
 for NAME in $(find "$DATA_DIR" -type f \( -iname '*.parquet' -o -iname '*.parquet.gz' \) -print0 | xargs -0 -n 1 basename | LC_ALL=C sort | grep -vFf <(printf '%s\n' "${EXCLUDE[@]}")); do

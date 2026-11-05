@@ -787,7 +787,13 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
         ASTs & arguments = engine->arguments->children;
         auto mysql_settings = std::make_unique<MySQLSettings>();
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(arguments, args.context))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(
+                arguments,
+                args.context,
+                /*throw_unknown_collection=*/ true,
+                /*complex_args=*/ nullptr,
+                /*dependent_table_id=*/ nullptr,
+                engine_define->settings))
         {
             configuration = StorageMySQL::processNamedCollectionResult(*named_collection, *mysql_settings, args.context, false);
         }
@@ -854,7 +860,6 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
         .supports_settings = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::MYSQL,
-        .has_builtin_setting_fn = MySQLSettings::hasBuiltin,
     }, Documentation{
         .description = R"DOCS_MD(
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

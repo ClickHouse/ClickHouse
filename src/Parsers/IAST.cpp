@@ -380,14 +380,6 @@ void IAST::FormatSettings::writeIdentifier(WriteBuffer & ostr, const String & na
                 writeProbablyBackQuotedStringMySQL(name, ostr);
             break;
         }
-        case IdentifierQuotingStyle::DoubleQuotesPostgreSQL:
-        {
-            if (must_quote)
-                writeDoubleQuotedStringPostgreSQL(name, ostr);
-            else
-                writeProbablyDoubleQuotedStringPostgreSQL(name, ostr);
-            break;
-        }
     }
 }
 
@@ -410,9 +402,7 @@ void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const
 {
     checkStackSize();
     String indent_str(indent, '-');
-    ostr << indent_str << getID() << ", ";
-    writePointerHex(this, ostr);
-    writeChar('\n', ostr);
+    ostr << indent_str << getID() << '\n';
     for (const auto & child : children)
     {
         if (!child)

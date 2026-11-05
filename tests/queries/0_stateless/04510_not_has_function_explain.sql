@@ -1,6 +1,5 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
 -- no-random-settings, no-random-merge-tree-settings: EXPLAIN output may differ with random settings.
--- Disable implicit `basic` statistics: this test asserts key-condition pruning, not statistics pruning.
 
 SET explain_query_plan_default = 'legacy';
 
@@ -9,7 +8,7 @@ SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS test_not_has;
 CREATE TABLE test_not_has (x UInt64) ENGINE = MergeTree
 ORDER BY x
-SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0, auto_statistics_types = '';
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO test_not_has SELECT intDiv(number, 4) FROM numbers(24);
 
@@ -41,7 +40,7 @@ DROP TABLE test_not_has;
 DROP TABLE IF EXISTS test_null_set;
 CREATE TABLE test_null_set (x UInt64) ENGINE = MergeTree
 ORDER BY x
-SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0, auto_statistics_types = '';
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO test_null_set SELECT intDiv(number, 4) FROM numbers(24);
 
@@ -68,7 +67,7 @@ DROP TABLE test_null_set;
 DROP TABLE IF EXISTS test_nullable_null_set;
 CREATE TABLE test_nullable_null_set (x Nullable(UInt64)) ENGINE = MergeTree
 ORDER BY x
-SETTINGS allow_nullable_key = 1, index_granularity = 1, add_minmax_index_for_numeric_columns = 0, auto_statistics_types = '';
+SETTINGS allow_nullable_key = 1, index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO test_nullable_null_set VALUES (NULL), (1), (2);
 
@@ -86,7 +85,7 @@ DROP TABLE test_nullable_null_set;
 DROP TABLE IF EXISTS test_string_null_set;
 CREATE TABLE test_string_null_set (k String) ENGINE = MergeTree
 ORDER BY k
-SETTINGS index_granularity = 1, auto_statistics_types = '';
+SETTINGS index_granularity = 1;
 
 -- The empty string is the default value of the key type. Without such a row the pure-NULL
 -- assertions below cannot fail: a NULL that decayed into the default would match no row either,
@@ -131,7 +130,7 @@ DROP TABLE test_string_null_set;
 DROP TABLE IF EXISTS test_dynamic_null_set;
 CREATE TABLE test_dynamic_null_set (k String) ENGINE = MergeTree
 ORDER BY k
-SETTINGS index_granularity = 1, auto_statistics_types = '';
+SETTINGS index_granularity = 1;
 
 SYSTEM STOP MERGES test_dynamic_null_set;
 
@@ -169,7 +168,7 @@ DROP TABLE test_dynamic_null_set;
 DROP TABLE IF EXISTS test_dynamic_prune;
 CREATE TABLE test_dynamic_prune (k String) ENGINE = MergeTree
 ORDER BY k
-SETTINGS index_granularity = 1, auto_statistics_types = '';
+SETTINGS index_granularity = 1;
 
 INSERT INTO test_dynamic_prune SELECT toString(number) FROM numbers(16);
 
@@ -183,7 +182,7 @@ DROP TABLE test_dynamic_prune;
 DROP TABLE IF EXISTS test_array_null_set;
 CREATE TABLE test_array_null_set (a Array(String)) ENGINE = MergeTree
 ORDER BY a
-SETTINGS index_granularity = 1, auto_statistics_types = '';
+SETTINGS index_granularity = 1;
 
 INSERT INTO test_array_null_set SELECT [toString(number)] FROM numbers(16);
 
@@ -203,7 +202,7 @@ DROP TABLE test_array_null_set;
 DROP TABLE IF EXISTS test_map_null_set;
 CREATE TABLE test_map_null_set (m Map(String, String)) ENGINE = MergeTree
 ORDER BY m
-SETTINGS index_granularity = 1, auto_statistics_types = '';
+SETTINGS index_granularity = 1;
 
 INSERT INTO test_map_null_set SELECT map('k', toString(number)) FROM numbers(16);
 
@@ -221,7 +220,7 @@ DROP TABLE test_map_null_set;
 DROP TABLE IF EXISTS test_tuple_array_key;
 CREATE TABLE test_tuple_array_key (t Tuple(Array(String))) ENGINE = MergeTree
 ORDER BY t
-SETTINGS index_granularity = 1, auto_statistics_types = '';
+SETTINGS index_granularity = 1;
 
 INSERT INTO test_tuple_array_key VALUES ((['a'])), ((['b']));
 
@@ -240,7 +239,7 @@ DROP TABLE test_tuple_array_key;
 DROP TABLE IF EXISTS test_tuple_array_numeric_key;
 CREATE TABLE test_tuple_array_numeric_key (t Tuple(Array(UInt8))) ENGINE = MergeTree
 ORDER BY t
-SETTINGS index_granularity = 1, auto_statistics_types = '';
+SETTINGS index_granularity = 1;
 
 INSERT INTO test_tuple_array_numeric_key VALUES (([1])), (([2]));
 
@@ -254,7 +253,7 @@ DROP TABLE test_tuple_array_numeric_key;
 DROP TABLE IF EXISTS test_tuple_scalar_key;
 CREATE TABLE test_tuple_scalar_key (a String, b String) ENGINE = MergeTree
 ORDER BY (a, b)
-SETTINGS index_granularity = 1, auto_statistics_types = '';
+SETTINGS index_granularity = 1;
 
 INSERT INTO test_tuple_scalar_key SELECT toString(number), toString(number) FROM numbers(16);
 
@@ -270,7 +269,7 @@ DROP TABLE test_tuple_scalar_key;
 DROP TABLE IF EXISTS test_tuple_array_expr_key;
 CREATE TABLE test_tuple_array_expr_key (t Tuple(Array(String))) ENGINE = MergeTree
 ORDER BY tupleElement(t, 1)
-SETTINGS index_granularity = 1, auto_statistics_types = '';
+SETTINGS index_granularity = 1;
 
 INSERT INTO test_tuple_array_expr_key VALUES ((['a'])), ((['b']));
 
@@ -288,7 +287,7 @@ DROP TABLE test_tuple_array_expr_key;
 DROP TABLE IF EXISTS test_scalar_expr_key;
 CREATE TABLE test_scalar_expr_key (k String) ENGINE = MergeTree
 ORDER BY concat(k, 'x')
-SETTINGS index_granularity = 1, auto_statistics_types = '';
+SETTINGS index_granularity = 1;
 
 INSERT INTO test_scalar_expr_key SELECT toString(number) FROM numbers(16);
 
@@ -302,7 +301,7 @@ DROP TABLE test_scalar_expr_key;
 DROP TABLE IF EXISTS test_chain_null_set;
 CREATE TABLE test_chain_null_set (k String) ENGINE = MergeTree
 ORDER BY lower(k)
-SETTINGS index_granularity = 1, auto_statistics_types = '';
+SETTINGS index_granularity = 1;
 
 INSERT INTO test_chain_null_set VALUES ('A'), ('B');
 
@@ -316,7 +315,7 @@ DROP TABLE test_chain_null_set;
 DROP TABLE IF EXISTS test_nullable_string_key;
 CREATE TABLE test_nullable_string_key (k Nullable(String)) ENGINE = MergeTree
 ORDER BY k
-SETTINGS allow_nullable_key = 1, index_granularity = 1, auto_statistics_types = '';
+SETTINGS allow_nullable_key = 1, index_granularity = 1;
 
 INSERT INTO test_nullable_string_key VALUES (NULL), ('a');
 
@@ -332,7 +331,7 @@ DROP TABLE test_nullable_string_key;
 DROP TABLE IF EXISTS test_nullable_key_prune;
 CREATE TABLE test_nullable_key_prune (k Nullable(String)) ENGINE = MergeTree
 ORDER BY k
-SETTINGS allow_nullable_key = 1, index_granularity = 1, auto_statistics_types = '';
+SETTINGS allow_nullable_key = 1, index_granularity = 1;
 
 INSERT INTO test_nullable_key_prune SELECT toString(number) FROM numbers(16);
 
@@ -355,7 +354,7 @@ DROP TABLE IF EXISTS test_nullable_key_null_elem;
 DROP TABLE IF EXISTS test_nullable_key_null_elem_mem;
 CREATE TABLE test_nullable_key_null_elem (k Nullable(String)) ENGINE = MergeTree
 ORDER BY k
-SETTINGS allow_nullable_key = 1, index_granularity = 1, auto_statistics_types = '';
+SETTINGS allow_nullable_key = 1, index_granularity = 1;
 CREATE TABLE test_nullable_key_null_elem_mem (k Nullable(String)) ENGINE = Memory;
 
 SYSTEM STOP MERGES test_nullable_key_null_elem;
@@ -393,7 +392,7 @@ DROP TABLE test_nullable_key_null_elem_mem;
 DROP TABLE IF EXISTS test_mono_container_key;
 CREATE TABLE test_mono_container_key (t Tuple(Array(String))) ENGINE = MergeTree
 ORDER BY materialize(t)
-SETTINGS index_granularity = 1, auto_statistics_types = '';
+SETTINGS index_granularity = 1;
 
 INSERT INTO test_mono_container_key VALUES ((['a'])), ((['b']));
 
@@ -410,7 +409,7 @@ DROP TABLE IF EXISTS test_not_has_enum;
 CREATE TABLE test_not_has_enum (x Enum8('a' = 1, 'b' = 2, 'c' = 3, 'd' = 4, 'e' = 5, 'f' = 6, 'g' = 7, 'h' = 8))
 ENGINE = MergeTree
 ORDER BY x
-SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0, auto_statistics_types = '';
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO test_not_has_enum SELECT toInt8(number + 1) FROM numbers(8);
 
