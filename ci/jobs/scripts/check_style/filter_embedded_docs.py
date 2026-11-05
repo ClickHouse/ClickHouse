@@ -35,19 +35,25 @@ def embedded_doc_lines(path):
         with open(path, "r", encoding="utf-8", errors="replace") as fh:
             in_raw = False
             for lineno, line in enumerate(fh, start=1):
-                if not in_raw:
-                    idx = line.find(OPEN)
-                    if idx != -1:
-                        exempt.add(lineno)
-                        # may also close on the same line
-                        if CLOSE in line[idx + len(OPEN):]:
-                            pass  # single-line raw string, stays closed
-                        else:
-                            in_raw = True
-                else:
+                if in_raw:
                     exempt.add(lineno)
-                    if CLOSE in line:
+                # A line may open and close raw strings several times, e.g. when a value is
+                # spliced into the documentation: `...)DOCS_MD" + version + R"DOCS_MD(...`.
+                pos = 0
+                while True:
+                    if not in_raw:
+                        idx = line.find(OPEN, pos)
+                        if idx == -1:
+                            break
+                        exempt.add(lineno)
+                        in_raw = True
+                        pos = idx + len(OPEN)
+                    else:
+                        idx = line.find(CLOSE, pos)
+                        if idx == -1:
+                            break
                         in_raw = False
+                        pos = idx + len(CLOSE)
     except OSError:
         pass
     _cache[path] = exempt
