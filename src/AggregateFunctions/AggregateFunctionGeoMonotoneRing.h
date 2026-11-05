@@ -101,18 +101,49 @@ struct GeoMonotoneRingImpl
         return result;
     }
 
+    /// `margin` must be `geoSeparationMargin` of a bound on every coordinate of both rings.
     template <typename OtherChain>
-    bool canAppend(const GeoMonotoneRingImpl<OtherChain> & other) const
+    bool canAppend(const GeoMonotoneRingImpl<OtherChain> & other, Float64 margin) const
     {
         const auto left_x = other.lower.front().template get<0>();
         const auto right_x = lower.back().template get<0>();
         /// The overlap is confined to the constant-width end slabs of the two valid rings.
-        /// A positive vertical overlap keeps their union one simple, monotone ring.
-        return left_x < right_x && other.lower.back().template get<0>() > right_x
-            && left_x >= std::max(lower[lower.size() - 2].template get<0>(), upper[upper.size() - 2].template get<0>())
-            && right_x <= std::min(other.lower[1].template get<0>(), other.upper[1].template get<0>())
-            && std::max(lower.back().template get<1>(), other.lower.front().template get<1>())
-                < std::min(upper.back().template get<1>(), other.upper.front().template get<1>());
+        /// A positive vertical overlap keeps their union one simple, monotone ring. Every gap
+        /// introduced by the junction must exceed the tolerance of the geometry validator: a
+        /// nonzero gap within it would create a spike or a self-touching boundary.
+        if (!geoSeparatedBy(left_x, right_x, margin) || !geoSeparatedBy(right_x, other.lower.back().template get<0>(), margin)
+            || !geoSeparatedBy(
+                std::max(lower.back().template get<1>(), other.lower.front().template get<1>()),
+                std::min(upper.back().template get<1>(), other.upper.front().template get<1>()),
+                margin))
+            return false;
+
+        auto equal_or_separated = [margin](Float64 first, Float64 second)
+        {
+            return first == second || std::abs(first - second) > margin;
+        };
+        /// `extend` replaces the end vertex of a chain by a vertical step from `old_y` to `new_y`, placed at
+        /// `left_x` when it moves outwards (down for the lower chain) and at `right_x` otherwise. The step may
+        /// meet the neighbouring vertical edge exactly, and the merged edge must not be shorter than `margin`.
+        auto junction_fits = [&](const auto & chain, const auto & other_chain, bool lower_chain)
+        {
+            const auto & previous = chain[chain.size() - 2];
+            const auto & next = other_chain[1];
+            const auto old_y = chain.back().template get<1>();
+            const auto new_y = other_chain.front().template get<1>();
+            if (!equal_or_separated(old_y, new_y) || previous.template get<0>() > left_x || next.template get<0>() < right_x
+                || !equal_or_separated(previous.template get<0>(), left_x) || !equal_or_separated(right_x, next.template get<0>()))
+                return false;
+            if (new_y == old_y)
+                return true;
+            const bool step_at_left = lower_chain ? new_y < old_y : new_y > old_y;
+            if (step_at_left)
+                return previous.template get<0>() != left_x || chain.size() < 3
+                    || equal_or_separated(chain[chain.size() - 3].template get<1>(), new_y);
+            return next.template get<0>() != right_x || other_chain.size() < 3
+                || equal_or_separated(old_y, other_chain[2].template get<1>());
+        };
+        return junction_fits(lower, other.lower, true) && junction_fits(upper, other.upper, false);
     }
 
     template <typename OtherChain>

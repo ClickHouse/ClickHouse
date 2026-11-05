@@ -82,11 +82,11 @@ struct GeoMonotoneComponents
         }
 
         auto second = std::next(first);
-        const bool append = first->second.canAppend(incoming);
-        const bool prepend = incoming.canAppend(first->second);
+        const bool append = first->second.canAppend(incoming, margin);
+        const bool prepend = incoming.canAppend(first->second, margin);
         /// Check both bridge junctions before changing either old component. Touching,
         /// containment and internal overlaps do not satisfy these local certificates.
-        if (neighbours == 1 ? !append && !prepend : !append || !incoming.canAppend(second->second))
+        if (neighbours == 1 ? !append && !prepend : !append || !incoming.canAppend(second->second, margin))
             return false;
 
         size_t removed_points = first->second.points();

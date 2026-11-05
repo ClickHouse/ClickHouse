@@ -146,14 +146,15 @@ struct GroupPolygonIntersectData
         {
             if (components)
                 return components->insert(incoming);
-            if (hole.canAppend(incoming))
+            /// Holes are strictly inside the exterior, so its bounds bound every coordinate.
+            const auto margin = geoSeparationMargin(bounds.magnitude());
+            if (hole.canAppend(incoming, margin))
             {
                 hole.append(incoming);
                 return true;
             }
             /// Avoid copying an old ring just to discover an unsupported internal overlap.
-            const auto margin = geoSeparationMargin(bounds.magnitude());
-            if (!(incoming.canAppend(hole)
+            if (!(incoming.canAppend(hole, margin)
                     || geoSeparatedBy(incoming.lower.back().template get<0>(), hole.lower.front().get<0>(), margin)
                     || geoSeparatedBy(hole.lower.back().get<0>(), incoming.lower.front().template get<0>(), margin)))
                 return false;
