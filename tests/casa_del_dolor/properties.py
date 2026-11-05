@@ -1144,6 +1144,7 @@ def add_single_disk(
     disk_type: str,
     created_disks_types: list[tuple[int, str]],
     is_private_binary: bool,
+    readonly_disks: set[int],
 ) -> tuple[int, str, str, str]:
     prev_disk = 0
     if disk_type in ("cache", "encrypted"):
@@ -1289,10 +1290,11 @@ def add_single_disk(
             path_xml.text = f"/var/lib/clickhouse/disk{i}/"
             allowed_path_xml = ET.SubElement(backups_element, "allowed_path")
             allowed_path_xml.text = f"/var/lib/clickhouse/disk{i}/"
-        elif random.randint(1, 2) == 1:
+        elif random.randint(1, 2) == 1 and iter_prev_disk not in readonly_disks:
             # The path of an encrypted disk is relative to the disk it wraps (`DiskEncrypted` uses
             # `wrapped_disk->getPath() + path`). An absolute path is rejected by object storage disks
-            # with `PATH_ACCESS_DENIED`, and the server refuses to start.
+            # with `PATH_ACCESS_DENIED`, and the server refuses to start. A readonly disk cannot
+            # create the directory, so the server would not start either.
             path_xml = ET.SubElement(next_disk, "path")
             path_xml.text = f"disk{i}/"
 
@@ -1355,6 +1357,7 @@ class DiskPropertiesGroup(PropertiesGroup):
         allowed_disk_xml = ET.SubElement(backups_element, "allowed_disk")
         allowed_disk_xml.text = "default"
         created_disks_types = []
+        readonly_disks = set()
         created_cache_disks = []
         created_keeper_disks = []
         safe_for_database_disk = []
@@ -1380,8 +1383,11 @@ class DiskPropertiesGroup(PropertiesGroup):
                 random.choice(possible_types),
                 created_disks_types,
                 is_private_binary,
+                readonly_disks,
             )
             created_disks_types.append(next_created_disk_pair)
+            if disk_xml_elem.findtext("readonly") == "1":
+                readonly_disks.add(i)
             if next_created_disk_pair[1] == "cache":
                 created_cache_disks.append(i)
             elif (
