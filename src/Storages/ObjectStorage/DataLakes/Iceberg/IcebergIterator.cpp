@@ -302,13 +302,22 @@ Iceberg::ManifestIteratorPtr IcebergIterator::createManifestIterator(
 
 Iceberg::ProcessedManifestFileEntryPtr IcebergIterator::nextDataFileEntry()
 {
-    /// The threads calling `next` share the data manifests: each one continues an idle partially read
-    /// manifest, or else parses the next one, so with one thread the files come in the manifests' order.
+    /// The threads calling `next` share the data manifests: a thread continues an idle partially read
+    /// manifest, or else parses the next one, until the file of its call is produced. The n-th call gets
+    /// the n-th file produced, so with one thread the files come in the manifests' order.
     UniqueLock lock(data_files_mutex);
+    const size_t request = data_file_requests++;
     while (true)
     {
         if (data_files_exception)
             std::rethrow_exception(copyMutableException(data_files_exception));
+
+        if (auto it = produced_data_files.find(request); it != produced_data_files.end())
+        {
+            auto entry = std::move(it->second);
+            produced_data_files.erase(it);
+            return entry;
+        }
 
         Iceberg::ManifestIteratorPtr manifest;
         Iceberg::ManifestFilesPrefetcher::FetchPtr fetch;
@@ -340,30 +349,48 @@ Iceberg::ProcessedManifestFileEntryPtr IcebergIterator::nextDataFileEntry()
         }
 
         ++data_manifests_in_use;
-        lock.unlock();
-
-        Iceberg::ProcessedManifestFileEntryPtr entry;
         std::exception_ptr error;
-        try
+        while (true)
         {
-            if (fetch)
+            lock.unlock();
+            Iceberg::ProcessedManifestFileEntryPtr entry;
+            try
             {
-                manifest = createManifestIterator(fetch->key(), fetch->get());
-                fetch.reset();
+                if (fetch)
+                {
+                    manifest = createManifestIterator(fetch->key(), fetch->get());
+                    fetch.reset();
+                }
+                entry = manifest->next();
             }
-            entry = manifest->next();
-        }
-        catch (...)
-        {
-            error = std::current_exception();
-        }
-        fetch.reset();
-        if (!entry)
-            manifest.reset();
+            catch (...)
+            {
+                error = std::current_exception();
+            }
+            fetch.reset();
+            if (!entry)
+                manifest.reset();
 
-        lock.lock();
+            lock.lock();
+            if (!error && entry)
+            {
+                try
+                {
+                    produced_data_files.emplace(produced_data_files_count, std::move(entry));
+                    ++produced_data_files_count;
+                }
+                catch (...)
+                {
+                    error = std::current_exception();
+                }
+            }
+            if (error || !manifest || produced_data_files_count > request)
+                break;
+            data_manifest_released.notify_all();
+        }
+
         --data_manifests_in_use;
-        if (!error && entry)
+        if (!error && manifest)
         {
             try
             {
@@ -377,9 +404,6 @@ Iceberg::ProcessedManifestFileEntryPtr IcebergIterator::nextDataFileEntry()
         if (error && !data_files_exception)
             data_files_exception = error;
         data_manifest_released.notify_all();
-
-        if (!error && entry)
-            return entry;
     }
 }
 
