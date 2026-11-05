@@ -135,6 +135,9 @@ public:
     /// in custom serializations (e.g. Sparse) for parsing and avoid extra conversion.
     virtual void setSerializationHints(const SerializationInfoByName & /*hints*/) {}
 
+    /// See ReadFromFormatInfo::map_columns_read_by_keys. A format may ignore it and read the whole maps.
+    virtual void setMapColumnsReadByOneSide(const NameSet & /*by_keys*/, const NameSet & /*by_values*/) {}
+
     /// `FormatFilterInfo::column_mapper`, for a format whose creator does not receive the `FormatFilterInfo`.
     virtual void setColumnMapper(const ColumnMapperPtr & /*column_mapper*/) {}
 

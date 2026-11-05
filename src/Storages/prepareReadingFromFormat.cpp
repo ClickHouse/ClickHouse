@@ -39,6 +39,61 @@ namespace Setting
     extern const SettingsBool enable_parsing_to_custom_serialization;
 }
 
+namespace
+{
+
+bool isSameOrNestedColumn(const String & lhs, const String & rhs)
+{
+    auto is_nested_in = [](const String & name, const String & parent)
+    { return name.size() > parent.size() && name.starts_with(parent) && name[parent.size()] == '.'; };
+    return lhs == rhs || is_nested_in(lhs, rhs) || is_nested_in(rhs, lhs);
+}
+
+void setMapColumnsReadByOneSide(ReadFromFormatInfo & info, const ColumnsDescription & columns)
+{
+    /// The side of each map that the requested columns use, or nullopt if they use the whole map or both sides.
+    std::unordered_map<String, std::optional<String>> side_of_map;
+    for (const auto & column : info.requested_columns)
+    {
+        if (!isMap(column.getTypeInStorage()))
+            continue;
+        std::optional<String> side;
+        if (column.isSubcolumn() && (column.getSubcolumnName() == "keys" || column.getSubcolumnName() == "values"))
+            side = column.getSubcolumnName();
+        auto [it, inserted] = side_of_map.try_emplace(column.getNameInStorage(), side);
+        if (!inserted && it->second != side)
+            it->second.reset();
+    }
+
+    for (const auto & [name, side] : side_of_map)
+    {
+        if (!side || !info.format_header.has(name))
+            continue;
+
+        /// `AddingDefaultsTransform` evaluates the default of a column missing in a file from the columns read.
+        bool read_by_default = false;
+        for (const auto & [_, column_default] : columns.getDefaults())
+        {
+            if (!column_default.expression)
+                continue;
+            RequiredSourceColumnsVisitor::Data columns_context;
+            auto expression = column_default.expression->clone();
+            RequiredSourceColumnsVisitor(columns_context).visit(expression);
+            for (const auto & input : columns_context.requiredColumns())
+                read_by_default |= isSameOrNestedColumn(name, input);
+        }
+        if (read_by_default)
+            continue;
+
+        if (*side == "keys")
+            info.map_columns_read_by_keys.insert(name);
+        else
+            info.map_columns_read_by_values.insert(name);
+    }
+}
+
+}
+
 ReadFromFormatInfo prepareReadingFromFormat(
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
@@ -141,6 +196,9 @@ ReadFromFormatInfo prepareReadingFromFormat(
             info.format_header.insert(ColumnWithTypeAndName{column.type, column.name});
 
     info.serialization_hints = getSerializationHintsForFileLikeStorage(storage_snapshot->metadata, context);
+
+    if (supports_subset_of_columns && supports_tuple_elements)
+        setMapColumnsReadByOneSide(info, storage_snapshot->metadata->getColumns());
 
     return info;
 }
@@ -342,6 +400,21 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
         new_info.source_header.insert(position, {column.type->createColumn(), column.type, column.name});
         ++position;
     }
+
+    /// PREWHERE reads the whole map.
+    auto copy_maps_not_read_by_prewhere = [&](const NameSet & maps, NameSet & result)
+    {
+        for (const auto & map : maps)
+        {
+            bool read_by_prewhere = false;
+            for (const auto & input : prewhere_info->prewhere_actions.getRequiredColumns())
+                read_by_prewhere |= isSameOrNestedColumn(map, input.name);
+            if (!read_by_prewhere && new_info.format_header.has(map))
+                result.insert(map);
+        }
+    };
+    copy_maps_not_read_by_prewhere(info.map_columns_read_by_keys, new_info.map_columns_read_by_keys);
+    copy_maps_not_read_by_prewhere(info.map_columns_read_by_values, new_info.map_columns_read_by_values);
 
     return new_info;
 }
@@ -795,6 +868,18 @@ std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromF
     info.source_header = std::move(main_source_header);
     info.format_header = std::move(main_format_header);
     info.requested_columns = std::move(main_requested_columns);
+
+    auto split_maps = [&](NameSet & main_maps, NameSet & lazy_maps)
+    {
+        for (auto it = main_maps.begin(); it != main_maps.end();)
+        {
+            if (lazy_info.format_header.has(*it))
+                lazy_maps.insert(*it);
+            it = info.format_header.has(*it) ? std::next(it) : main_maps.erase(it);
+        }
+    };
+    split_maps(info.map_columns_read_by_keys, lazy_info.map_columns_read_by_keys);
+    split_maps(info.map_columns_read_by_values, lazy_info.map_columns_read_by_values);
 
     return lazy_info;
 }

@@ -72,6 +72,7 @@ struct SubcolumnSupportAnswers
 {
     bool all_transformers;
     std::optional<bool> tuple_element_only;
+    std::optional<bool> map_keys_and_values;
 };
 
 using SubcolumnSupportCache = std::unordered_map<const IStorage *, SubcolumnSupportAnswers>;
@@ -80,7 +81,7 @@ SubcolumnSupportAnswers & getSubcolumnSupportAnswers(const IStorage & storage, S
 {
     auto it = cache.find(&storage);
     if (it == cache.end())
-        it = cache.emplace(&storage, SubcolumnSupportAnswers{storage.supportsOptimizationToSubcolumns(), std::nullopt}).first;
+        it = cache.emplace(&storage, SubcolumnSupportAnswers{storage.supportsOptimizationToSubcolumns(), std::nullopt, std::nullopt}).first;
     return it->second;
 }
 
@@ -639,10 +640,9 @@ bool optimizeMapFunctionToKeys(FunctionNode & function_node, ColumnContext & ctx
 {
     const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
 
-    /// No case-insensitive check here: only the format readers (`File`, `URL`, object storage, `Hive`) bind
-    /// column names up to case, and every one of them reports supportsOptimizationToSubcolumns() = false,
-    /// so storageAllowsTransformer never lets a Map rewrite reach them. On every storage that gets here
-    /// name resolution is case-sensitive, so a top-level `M.keys` cannot shadow `m.keys`.
+    /// No case-insensitive check here: a format reader that binds column names up to case is asked for the whole
+    /// map `m` and `m.keys` is extracted from it (see filterTupleColumnsToRead), so a top-level `M.keys` cannot
+    /// shadow it. On the other storages name resolution is case-sensitive.
     NameAndTypePair column{ctx.column.name + ".keys", std::make_shared<DataTypeArray>(data_type_map.getKeyType())};
     if (sourceHasColumn(ctx.column_source, column.name)
         || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isKeysSubcolumn, column.type))
@@ -1268,19 +1268,41 @@ ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
     return column_node;
 }
 
-/// A storage may permit only tuple element rewrites while still refusing every other transformer
-/// (see IStorage::supportsOptimizationToTupleElementSubcolumns). Applied by both passes through
-/// getTypedNodesForOptimization, so their decisions cannot diverge.
+/// The Map transformers that read only `keys` or only `values`, not `size0` or the bucket of a key.
+const std::unordered_set<std::string_view> map_keys_or_values_transformers =
+{
+    "mapKeys", "mapValues", "mapContainsKey", "has", "notHas", "mapContainsValue", "mapContainsKeyLike", "mapContainsValueLike",
+};
+
+/// A storage may permit only tuple element rewrites (see IStorage::supportsOptimizationToTupleElementSubcolumns)
+/// and the rewrites to the keys or the values of a `Map` (see IStorage::supportsOptimizationToMapKeysAndValuesSubcolumns)
+/// while still refusing every other transformer. Applied by both passes through getTypedNodesForOptimization, so their
+/// decisions cannot diverge.
 bool storageAllowsTransformer(
     const IStorage & storage, const IDataType & type, const String & function_name, SubcolumnSupportCache & cache)
 {
     auto & answers = getSubcolumnSupportAnswers(storage, cache);
     if (answers.all_transformers)
         return true;
+    if (isMap(type) && map_keys_or_values_transformers.contains(function_name))
+    {
+        if (!answers.map_keys_and_values)
+            answers.map_keys_and_values = storage.supportsOptimizationToMapKeysAndValuesSubcolumns();
+        return *answers.map_keys_and_values;
+    }
     if (!answers.tuple_element_only)
         answers.tuple_element_only = storage.supportsOptimizationToTupleElementSubcolumns();
     /// A `Nullable(Tuple(...))` element is a tuple element as well; `QBit` is not.
     return *answers.tuple_element_only && function_name == "tupleElement" && isTuple(removeNullable(type.getPtr()));
+}
+
+/// A storage that admits the Map rewrites only through IStorage::supportsOptimizationToMapKeysAndValuesSubcolumns
+/// and whose PREWHERE takes only top-level columns (see IStorage::supportedPrewhereColumnsIncludeSubcolumns).
+bool storageRejectsMapSubcolumnsInPrewhere(const QueryTreeNodePtr & column_source, SubcolumnSupportCache & cache)
+{
+    auto storage = getStorageForColumnSource(column_source);
+    return storage && !getSubcolumnSupportAnswers(*storage, cache).all_transformers
+        && !storage->supportedPrewhereColumnsIncludeSubcolumns() && storage->supportedPrewhereColumns().has_value();
 }
 
 std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr>
@@ -1468,6 +1490,7 @@ public:
             /// Push a placeholder for this query level; needChildVisit will update it
             /// to true when we descend into WHERE or PREWHERE.
             in_where_prewhere_stack.push_back(false);
+            in_prewhere_stack.push_back(false);
             correlated_columns.enter(query_node->getCorrelatedColumns());
             return;
         }
@@ -1487,6 +1510,7 @@ public:
         if (node->as<QueryNode>())
         {
             in_where_prewhere_stack.pop_back();
+            in_prewhere_stack.pop_back();
             correlated_columns.leave();
         }
         else if (node->as<UnionNode>())
@@ -1504,6 +1528,7 @@ public:
                 bool is_where = query_node->hasWhere() && child.get() == query_node->getWhere().get();
                 bool is_prewhere = query_node->hasPrewhere() && child.get() == query_node->getPrewhere().get();
                 in_where_prewhere_stack.back() = is_where || is_prewhere;
+                in_prewhere_stack.back() = is_prewhere;
             }
         }
         return true;
@@ -1561,6 +1586,9 @@ public:
             if (it == identifiers_count.end())
                 continue;
 
+            if (maps_on_storages_rejecting_subcolumns_in_prewhere.contains(identifier) && mustReadWholeMap(identifier))
+                continue;
+
             if (it->second == count)
                 result.everywhere.insert(identifier);
             else if (identifiers_with_filter_optimization.contains(identifier))
@@ -1571,6 +1599,34 @@ public:
     }
 
 private:
+    /// On a storage whose PREWHERE takes only top-level columns, no use of a `Map` is rewritten when PREWHERE reads it
+    /// or its parent tuple: PREWHERE drops the columns that the rest of the query does not name, so a subcolumn
+    /// extracted from the map after reading would be missing. Same when WHERE reads it and the query reads another
+    /// column of the table: the condition stays movable to PREWHERE, which can skip reading the other columns.
+    bool mustReadWholeMap(const ColumnInSource & map) const
+    {
+        if (columns_in_prewhere.contains(map))
+            return true;
+        for (size_t dot = map.column_name.find('.'); dot != String::npos; dot = map.column_name.find('.', dot + 1))
+            if (columns_in_prewhere.contains(ColumnInSource{map.source, map.column_name.substr(0, dot)}))
+                return true;
+
+        if (!maps_in_where.contains(map))
+            return false;
+        for (const auto & [identifier, _] : identifiers_count)
+            if (identifier.source == map.source && identifier.column_name != map.column_name)
+                return true;
+        return false;
+    }
+
+    /// Identifiers read in PREWHERE, and the `Map` identifiers read in WHERE.
+    ColumnInSourceSet columns_in_prewhere;
+    ColumnInSourceSet maps_in_where;
+    /// `Map` identifiers with a rewrite on a storage for which storageRejectsMapSubcolumnsInPrewhere is true.
+    ColumnInSourceSet maps_on_storages_rejecting_subcolumns_in_prewhere;
+    /// Same as in_where_prewhere_stack, for PREWHERE alone.
+    std::vector<bool> in_prewhere_stack;
+
     ColumnInSourceSet all_key_columns;
     ColumnInSourceMap<UInt64> identifiers_count;
     ColumnInSourceMap<UInt64> optimized_identifiers_count;
@@ -1631,7 +1687,13 @@ private:
         if (!column_source->as<TableNode>() && !column_source->as<TableFunctionNode>())
             return;
 
-        ++identifiers_count[makeColumnInSource(column_source, column_node.getColumnName())];
+        auto qualified_name = makeColumnInSource(column_source, column_node.getColumnName());
+        ++identifiers_count[qualified_name];
+
+        if (!in_prewhere_stack.empty() && in_prewhere_stack.back())
+            columns_in_prewhere.insert(qualified_name);
+        else if (!in_where_prewhere_stack.empty() && in_where_prewhere_stack.back() && isMap(column_node.getColumnType()))
+            maps_in_where.insert(qualified_name);
     }
 
     void enterImpl(const FunctionNode & function_node, const ColumnNode & first_argument_column_node, const QueryTreeNodePtr & column_source)
@@ -1658,6 +1720,10 @@ private:
         auto transformer_key = std::make_pair(column.type->getTypeId(), function_node.getFunctionName());
         if (node_transformers.contains(transformer_key))
         {
+            if (isMap(column.type) && !maps_on_storages_rejecting_subcolumns_in_prewhere.contains(qualified_name)
+                && storageRejectsMapSubcolumnsInPrewhere(column_source, subcolumn_support_cache))
+                maps_on_storages_rejecting_subcolumns_in_prewhere.insert(qualified_name);
+
             ++optimized_identifiers_count[qualified_name];
             if (transformers_safe_with_indexes.contains(transformer_key))
                 ++optimized_identifiers_index_safe_count[qualified_name];

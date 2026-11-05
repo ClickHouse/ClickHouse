@@ -803,6 +803,7 @@ StorageURLSource::StorageURLSource(
                 need_only_count);
 
             input_format->setSerializationHints(info.serialization_hints);
+            input_format->setMapColumnsReadByOneSide(info.map_columns_read_by_keys, info.map_columns_read_by_values);
             input_format->setBucketsToRead(buckets_to_read);
 
             if (need_only_count)

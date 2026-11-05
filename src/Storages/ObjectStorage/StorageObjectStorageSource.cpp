@@ -1938,6 +1938,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         input_format->setBucketsToRead(object_info->file_bucket_info);
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
+        /// The header of a file with another schema has the names of that schema.
+        if (!schema_changed)
+            input_format->setMapColumnsReadByOneSide(
+                read_from_format_info.map_columns_read_by_keys, read_from_format_info.map_columns_read_by_values);
 
         if (need_only_count)
             input_format->needOnlyCount();

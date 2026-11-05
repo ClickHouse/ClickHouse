@@ -79,6 +79,12 @@ public:
     /// Use the columns cache, see `Parquet::ColumnsCacheOptions`. Must be called before the first read.
     void setColumnsCacheOptions(std::shared_ptr<const Parquet::ColumnsCacheOptions> options) { read_options.columns_cache = std::move(options); }
 
+    void setMapColumnsReadByOneSide(const NameSet & by_keys, const NameSet & by_values) override
+    {
+        read_options.map_columns_read_by_keys = by_keys;
+        read_options.map_columns_read_by_values = by_values;
+    }
+
 private:
     Chunk read() override;
 
