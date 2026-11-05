@@ -193,9 +193,13 @@ ColumnsDescription TableFunctionGenerateRandom::getActualTableStructure(ContextP
     return parseColumnsListFromString(structure, context);
 }
 
-StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
+StoragePtr TableFunctionGenerateRandom::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
-    ColumnsDescription columns = getActualTableStructure(context, is_insert_query);
+    /// A table created from this function gets its stored columns as `cached_columns`. Without a structure argument they
+    /// are the table's only structure: `getActualTableStructure` would generate another random one each time.
+    ColumnsDescription columns = structure == "auto" && !cached_columns.empty()
+        ? std::move(cached_columns)
+        : getActualTableStructure(context, is_insert_query);
     auto res = std::make_shared<StorageGenerateRandom>(
         StorageID(getDatabaseName(), table_name), columns, String{}, options, random_seed);
     res->startup();

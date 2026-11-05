@@ -15,9 +15,7 @@ doc_type: 'reference'
 | ------- | ----- | ----- |
 | ✔       | ✔     |       |
 
-<div id="description">
-  ## Descrição
-</div>
+## Descrição {#description}
 
 A especificação oficial completa do formato `Native` está disponível [aqui](/pt-BR/resources/develop-contribute/native-protocol/format), e a especificação complementar do protocolo `Native` — o protocolo TCP wire que o transporta — está disponível [aqui](/pt-BR/resources/develop-contribute/native-protocol/protocol).
 
@@ -38,9 +36,7 @@ Esse é o formato usado na interface nativa para a interação entre servidores,
   Talvez não seja prático trabalhar diretamente com esse formato.
 </Tip>
 
-<div id="data-types-wire-format">
-  ## Formato wire dos tipos de dados
-</div>
+## Formato wire dos tipos de dados {#data-types-wire-format}
 
 Os dados são enviados via wire em formato colunar, o que significa que cada coluna é enviada separadamente,
 e todos os valores de uma coluna são enviados juntos como um único array.
@@ -53,9 +49,7 @@ Cada coluna em um bloco contém um cabeçalho semelhante a [RowBinaryWithNamesAn
   a interface HTTP simples, sem versão de protocolo, o que omite `BlockInfo`.
 </Note>
 
-<div id="block-structure">
-  ### Estrutura do bloco
-</div>
+### Estrutura do bloco {#block-structure}
 
 A consulta a seguir retorna duas colunas, `number` e `str`, com três linhas:
 
@@ -97,9 +91,7 @@ const data = new Uint8Array([
 ])
 ```
 
-<div id="multiple-blocks">
-  ### Múltiplos blocos
-</div>
+### Múltiplos blocos {#multiple-blocks}
 
 No entanto, em muitos casos, os dados não cabem em um único bloco, e o ClickHouse os enviará em vários blocos.
 Considere a seguinte consulta, que busca duas linhas com o tamanho do bloco reduzido para forçar a divisão dos dados em uma linha por bloco:
@@ -153,9 +145,7 @@ const data = new Uint8Array([
 ]);
 ```
 
-<div id="simple-data-types">
-  ### Tipos de dados simples
-</div>
+### Tipos de dados simples {#simple-data-types}
 
 O formato wire de um valor individual de um dos tipos de dados mais simples é semelhante ao de `RowBinary`/`RowBinaryWithNamesAndTypes`.
 A lista completa de tipos que correspondem a essa descrição inclui:
@@ -175,9 +165,7 @@ A lista completa de tipos que correspondem a essa descrição inclui:
 
 Consulte as descrições dos tipos acima em [&quot;formato wire dos tipos de dados do RowBinary&quot;](/pt-BR/reference/formats/RowBinary/RowBinary#data-types-wire-format) para obter mais detalhes.
 
-<div id="complex-data-types">
-  ### Tipos de dados complexos
-</div>
+### Tipos de dados complexos {#complex-data-types}
 
 A codificação dos tipos abaixo é diferente da de `RowBinary` e `RowBinaryWithNamesAndTypes`.
 
@@ -189,9 +177,7 @@ A codificação dos tipos abaixo é diferente da de `RowBinary` e `RowBinaryWith
 * Dynamic
 * JSON
 
-<div id="nullable">
-  #### Nullable
-</div>
+#### Nullable {#nullable}
 
 No formato `Native`, uma coluna Nullable terá uma quantidade de bytes igual ao número de linhas no bloco antes dos dados propriamente ditos. Cada um desses bytes indica se o valor é `NULL` ou não. Por exemplo, com esta consulta, cada número ímpar será `NULL`:
 
@@ -311,9 +297,7 @@ const data = new Uint8Array([
 ])
 ```
 
-<div id="lowcardinality">
-  #### LowCardinality
-</div>
+#### LowCardinality {#lowcardinality}
 
 Diferentemente do [RowBinary](/pt-BR/reference/formats/RowBinary/RowBinary#lowcardinality), em que `LowCardinality` é transparente, o formato Native usa uma codificação colunar baseada em dicionário. Uma coluna é codificada com um prefixo de versão, seguido de um dicionário de valores únicos e de um array de índices inteiros nesse dicionário.
 
@@ -361,9 +345,7 @@ Com `LowCardinality(Nullable(String))`, o índice 0 é `NULL`:
 02 00 02 00 02              // índices → "yes", NULL, "yes", NULL, "yes"
 ```
 
-<div id="array">
-  #### Array
-</div>
+#### Array {#array}
 
 Ao contrário de [RowBinary](/pt-BR/reference/formats/RowBinary/RowBinary#array), em que cada array é precedido por uma contagem de elementos em LEB128, o formato Native codifica arrays como dois subfluxos colunares:
 
@@ -402,9 +384,7 @@ Um array vazio tem o mesmo offset da linha anterior. Por exemplo, `Array(String)
 01 32                       // "2"
 ```
 
-<div id="map">
-  #### Map
-</div>
+#### Map {#map}
 
 Um `Map(K, V)` é codificado como `Array(Tuple(K, V))` — offsets do array seguidos por todas as chaves e, em seguida, todos os valores. Isso difere de [RowBinary](/pt-BR/reference/formats/RowBinary/RowBinary#map), em que chaves e valores são intercalados em cada entrada.
 
@@ -433,9 +413,7 @@ Por exemplo, `Map(String, UInt64)` com 3 linhas `[{'a':0,'b':10}, {'a':1,'b':11}
 0c 00 00 00 00 00 00 00    // 12
 ```
 
-<div id="variant">
-  #### Variant
-</div>
+#### Variant {#variant}
 
 Ao contrário de [RowBinary](/pt-BR/reference/formats/RowBinary/RowBinary#variant), em que cada linha traz seu próprio byte discriminante seguido do valor inline, o formato Native separa os discriminantes dos dados.
 
@@ -464,9 +442,7 @@ Por exemplo, `Variant(String, UInt32)` com 5 linhas `[0::UInt32, 'hello', NULL, 
 03 00 00 00                 // 3
 ```
 
-<div id="dynamic">
-  #### Dynamic
-</div>
+#### Dynamic {#dynamic}
 
 Ao contrário de [RowBinary](/pt-BR/reference/formats/RowBinary/RowBinary#dynamic), em que cada valor é autodescritivo (prefixo do tipo + valor), o formato Native serializa `Dynamic` como um prefixo de estrutura seguido de uma coluna [Variant](#variant).
 
@@ -493,9 +469,7 @@ Por exemplo, `Dynamic` com 5 linhas `[0::UInt32, 'hello', NULL, 3::UInt32, 'hell
 03 00 00 00                 // UInt32: 3
 ```
 
-<div id="json">
-  #### JSON
-</div>
+#### JSON {#json}
 
 Ao contrário do [RowBinary](/pt-BR/reference/formats/RowBinary/RowBinary#json), em que cada linha é autodescritiva com nomes de caminhos e valores, o formato Native serializa `JSON` em uma estrutura colunar. A codificação é complexa e depende da versão: consiste em um prefixo de estrutura com a versão de serialização, nomes de caminhos dinâmicos e o layout de dados compartilhados, seguido por caminhos tipados (cada um como uma coluna em bloco), caminhos dinâmicos (cada um como uma coluna [Dynamic](#dynamic)) e dados compartilhados para caminhos de overflow.
 

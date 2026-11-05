@@ -5,7 +5,6 @@
 -- per part before checking the part's MinMax hyperrectangle. The aggregate result must stay
 -- correct regardless of how much pruning the folding enables.
 
-SET enable_analyzer = 1;
 SET use_constant_folding_in_index_analysis = 1;
 SET optimize_use_implicit_projections = 1;
 SET use_statistics_for_part_pruning=0;
