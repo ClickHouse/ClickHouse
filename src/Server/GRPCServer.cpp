@@ -931,6 +931,7 @@ namespace
         void addTotalsToResult(const Block & totals);
         void addExtremesToResult(const Block & extremes);
         void addProfileInfoToResult(const ProfileInfo & info);
+        void addOutputToResult(bool final);
         void sendResult();
         void throwIfFailedToSendResult();
         void sendException(const Exception & exception);
@@ -1907,6 +1908,43 @@ namespace
         stats.set_rows_before_aggregation(info.getRowsBeforeAggregation());
     }
 
+    void Call::addOutputToResult(bool final)
+    {
+        /// The output format can write to the buffer from another thread, and a failed write cancels the buffer,
+        /// so the buffer is checked and copied under the format's writing lock.
+        std::unique_lock<std::mutex> writing_lock;
+        if (output_format_processor)
+            writing_lock = output_format_processor->lockWriting();
+
+        /// A canceled buffer holds incomplete output which can be neither finalized nor sent.
+        if (!write_buffer || write_buffer->isCanceled())
+            return;
+
+        size_t output_size = 0;
+        if (final)
+        {
+            if (compressing_write_buffer)
+                LOG_DEBUG(log, "Compressing final {} bytes", compressing_write_buffer->offset());
+            write_buffer->finalize();
+            output_size = output.size();
+        }
+        else
+        {
+            if (compressing_write_buffer && compressing_write_buffer->offset())
+            {
+                LOG_DEBUG(log, "Compressing {} bytes", compressing_write_buffer->offset());
+                compressing_write_buffer->sync();
+            }
+            output_size = nested_write_buffer->position() - output.data();
+        }
+
+        if (output_size)
+        {
+            result.mutable_output()->assign(output.data(), output_size);
+            nested_write_buffer->restart(); /// We're going to reuse the same buffer again for next block of data.
+        }
+    }
+
     void CallResponder::addLogsToResult(InternalTextLogsQueue & logs_queue, GRPCResult & result)
     {
         static_assert(::clickhouse::grpc::LOG_NONE        == 0);
@@ -1963,42 +2001,7 @@ namespace
         if (!send_final_message && !isOutputStreaming(call_type))
             return;
 
-        {
-            /// Until the output format is finalized, it can write to the buffer from another thread.
-            /// A final message is sent only after the format is finalized or destroyed, so it does not take the lock.
-            std::unique_lock<std::mutex> writing_lock;
-            if (!send_final_message && output_format_processor)
-                writing_lock = output_format_processor->lockWriting();
-
-            /// Copy output to `result.output`, with optional compressing.
-            /// A canceled buffer holds incomplete output which can be neither finalized nor sent.
-            if (write_buffer && !write_buffer->isCanceled())
-            {
-                size_t output_size = 0;
-                if (send_final_message)
-                {
-                    if (compressing_write_buffer)
-                        LOG_DEBUG(log, "Compressing final {} bytes", compressing_write_buffer->offset());
-                    write_buffer->finalize();
-                    output_size = output.size();
-                }
-                else
-                {
-                    if (compressing_write_buffer && compressing_write_buffer->offset())
-                    {
-                        LOG_DEBUG(log, "Compressing {} bytes", compressing_write_buffer->offset());
-                        compressing_write_buffer->sync();
-                    }
-                    output_size = nested_write_buffer->position() - output.data();
-                }
-
-                if (output_size)
-                {
-                    result.mutable_output()->assign(output.data(), output_size);
-                    nested_write_buffer->restart(); /// We're going to reuse the same buffer again for next block of data.
-                }
-            }
-        }
+        addOutputToResult(send_final_message);
 
         if (!send_final_message && result.output().empty() && result.totals().empty() && result.extremes().empty() && !call_responder->hasUnsentLogs()
             && !result.has_progress() && !result.has_stats() && !result.has_exception() && !result.cancelled())
