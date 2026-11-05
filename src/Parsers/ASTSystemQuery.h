@@ -33,6 +33,7 @@ public:
         PREWARM_PRIMARY_INDEX_CACHE,
         CLEAR_MARK_CACHE,
         CLEAR_PRIMARY_INDEX_CACHE,
+        CLEAR_STATISTICS_CACHE,
         CLEAR_UNCOMPRESSED_CACHE,
         CLEAR_INDEX_MARK_CACHE,
         CLEAR_INDEX_UNCOMPRESSED_CACHE,
@@ -156,6 +157,7 @@ public:
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
         RESET_DDL_WORKER,
+        RESET_FILELOG,
         STOP_ALL_BACKGROUND,
         START_ALL_BACKGROUND,
         PAUSE_ALL_BACKGROUND,
@@ -192,6 +194,12 @@ public:
     String replica_zk_path;
     bool is_drop_whole_replica{};
     bool with_tables{false};
+
+    /// SYSTEM RESET FILELOG ... FILE 'name' [OFFSET n | TO END]
+    bool filelog_to_end = false;
+    std::optional<String> filelog_file;
+    std::optional<UInt64> filelog_offset;
+
     String storage_policy;
     String volume;
     String disk;

@@ -774,6 +774,7 @@ void registerStorageSQLite(StorageFactory & factory)
                                      table_or_query, columns, args.constraints, args.comment, args.getContext(),
                                      generated_columns_reclassification_pending);
     },
+    SecretArgumentsSpec{},
     {
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::SQLITE,
@@ -802,6 +803,10 @@ The engine allows to import and export data to SQLite and supports queries to SQ
 
 - `db_path` — Path to SQLite file with a database.
 - `table` — Name of a table in the SQLite database, or a query passed to SQLite as is (see [Passing a query instead of a table name](#passing-a-query)).
+
+## Query push-down {#query-push-down}
+
+When reading a SQLite table by name, simple `WHERE` conditions are executed on the SQLite side. The `LIMIT` clause is pushed to SQLite only when it is safe and [external_storage_push_down_limit](/reference/settings/session-settings/external-storage#external_storage_push_down_limit) is enabled; otherwise, it is executed in ClickHouse. Joins, aggregations and sorting are always executed in ClickHouse.
 
 ## Passing a query instead of a table name {#passing-a-query}
 

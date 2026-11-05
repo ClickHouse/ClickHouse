@@ -1,6 +1,6 @@
 # nvcomp, NVIDIA's GPU compression library, which libcudf names unconditionally. Not vendored
 # here: its license only grants redistribution as part of an application, so the tree is expected
-# under contrib/nvcomp and the error below says how to get it. 5.3.0.16 is what cuDF 26.08 pins.
+# under contrib/nvcomp and the error below says how to get it. 6.0.0.12 is what cuDF 26.12 pins.
 
 if (NOT ENABLE_GPU)
     message (STATUS "Not using nvcomp")
@@ -19,7 +19,7 @@ if (NOT EXISTS "${NVCOMP_INCLUDE_DIR}/nvcomp.h" OR NOT EXISTS "${NVCOMP_LIBRARY}
         "${NVCOMP_LIBRARY}. It is not redistributed in this repository - see "
         "contrib/nvcomp-cmake/CMakeLists.txt. Unpack "
         "https://developer.download.nvidia.com/compute/nvcomp/redist/nvcomp/linux-x86_64/"
-        "nvcomp-linux-x86_64-5.3.0.16_cuda13-archive.tar.xz there, or set GPU_NVCOMP_ROOT to an "
+        "nvcomp-linux-x86_64-6.0.0.12_cuda13-archive.tar.xz there, or set GPU_NVCOMP_ROOT to an "
         "existing install.")
 endif ()
 

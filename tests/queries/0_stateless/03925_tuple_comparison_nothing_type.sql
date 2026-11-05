@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 -- Tuple comparison involving Nullable(Nothing) elements should return Nullable(UInt8), not Nullable(Nothing).
 -- This previously caused a type mismatch assertion in MergingSortedAlgorithm when merging streams from GROUPING SETS.
 

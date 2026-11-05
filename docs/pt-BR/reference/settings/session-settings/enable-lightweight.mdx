@@ -14,9 +14,7 @@ import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="enable_lightweight_delete">
-  ## enable_lightweight_delete
-</div>
+## enable_lightweight_delete {#enable_lightweight_delete}
 
 **Aliases**: `allow_experimental_lightweight_delete`
 
@@ -24,9 +22,7 @@ Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 Habilita mutações de DELETE por exclusão leve em tabelas MergeTree.
 
-<div id="enable_lightweight_update">
-  ## enable_lightweight_update
-</div>
+## enable_lightweight_update {#enable_lightweight_update}
 
 <BetaBadge />
 
@@ -34,7 +30,7 @@ Habilita mutações de DELETE por exclusão leve em tabelas MergeTree.
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "As atualizações leves passaram para Beta. Foi adicionado um alias para a configuração 'allow_experimental_lightweight_update'."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "As atualizações leves passaram para Beta. Foi adicionado um alias para a configuração 'allow_experimental_lightweight_update'."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "0"},{"label": "Uma nova configuração. Na época, a configuração se chamava `allow_experimental_lightweight_update`, que agora é um alias para ela."}]}]} />
 
 Permite usar atualizações leves.
 

@@ -8,7 +8,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/readDecimalText.h>
 #include <IO/readIntText.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 
 
 namespace DB
@@ -329,18 +329,8 @@ bool PrometheusQueryParsingUtil::tryParseStringLiteral(
 
     /// A string literal enclosed in quotes or double quotes: escape sequences need to be parsed.
     std::string_view unquoted = input.substr(1, input.length() - 2);
-    const size_t newline_pos = unquoted.find('\n');
     size_t unescape_error_pos = 0;
-    const bool unescape_succeeded = tryUnescapeStringLiteral(unquoted, quote_char, res_string, error_message, &unescape_error_pos);
-
-    if (newline_pos != String::npos && (unescape_succeeded || newline_pos < unescape_error_pos))
-    {
-        setErrorMessage(error_message, "unterminated quoted string");
-        setErrorPos(error_pos, 0);
-        return false;
-    }
-
-    if (!unescape_succeeded)
+    if (!tryUnescapeStringLiteral(unquoted, quote_char, res_string, error_message, &unescape_error_pos))
     {
         setErrorPos(error_pos, unescape_error_pos + 1);
         return false;

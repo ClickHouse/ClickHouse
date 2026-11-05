@@ -89,6 +89,7 @@
               "pages": [
                 "ru/concepts/features/operations/insert/inserting-data",
                 "ru/concepts/features/operations/insert/asyncinserts",
+                "ru/concepts/features/operations/insert/async-insert-select",
                 "ru/concepts/features/operations/insert/bulkinserts",
                 "ru/concepts/features/operations/insert/deduplication",
                 "ru/concepts/features/operations/insert/deduplicating-inserts-on-retries",
@@ -240,6 +241,7 @@
             "ru/concepts/features/interfaces/sql-console",
             "ru/concepts/features/interfaces/web-ui-color-coding",
             "ru/concepts/features/interfaces/web-ui-pinned-columns",
+            "ru/concepts/features/interfaces/web-ui-notebook",
             "ru/concepts/features/interfaces/web-ui-result-shaping",
             "ru/concepts/features/interfaces/web-terminal",
             {

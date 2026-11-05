@@ -32,8 +32,15 @@ public:
 
     /// `row_exists_column_kind` distinguishes the hidden lightweight-delete marker from an ordinary
     /// physical column. An unknown kind requires both `ALTER DELETE` and `ALTER UPDATE` for `_row_exists = 0`.
+    /// `context_` resolves the source table of `ATTACH`/`REPLACE PARTITION ... FROM`, so that a session
+    /// temporary table is checked under `TEMPORARY_DATABASE` rather than the current database. Pass null
+    /// to keep the source as written (e.g. for `ON CLUSTER`, where temporary tables are not visible).
     static AccessRightsElements getRequiredAccessForCommand(
-        const ASTAlterCommand & command, const String & database, const String & table, RowExistsColumnKind row_exists_column_kind);
+        const ASTAlterCommand & command,
+        const String & database,
+        const String & table,
+        RowExistsColumnKind row_exists_column_kind,
+        const ContextPtr & context_);
 
     /// Returns unknown when the target storage is not available on the submitting host.
     static RowExistsColumnKind getRowExistsColumnKind(const StoragePtr & storage, const ContextPtr & context_);
