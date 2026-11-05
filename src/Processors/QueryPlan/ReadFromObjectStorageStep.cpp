@@ -107,6 +107,7 @@ void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
     // at this stage enables the KeyCondition class to apply more efficient optimizations than for unordered sets.
     /// Idempotent — sets already built above are skipped via !future_set->get() check.
     VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(*filter_actions_dag, getContext());
+    VirtualColumnUtils::buildGlobalInSetsOfExternalTables(*filter_actions_dag, getContext());
 }
 
 bool ReadFromObjectStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const

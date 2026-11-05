@@ -67,6 +67,10 @@ void buildSetsForDAGKeepingElements(const ActionsDAG & dag, const ContextPtr & c
 /// Those sets need external tables set up by ReadFromRemote before they can be built.
 void buildSetsForDAGExcludingGlobalIn(const ActionsDAG & dag, const ContextPtr & context);
 
+/// Builds, with their explicit elements, the sets of GLOBAL IN functions that read an external table of the
+/// query, e.g. `x GLOBAL IN _data_...` on a shard. ReadFromRemote attaches no other external table to such a set.
+void buildGlobalInSetsOfExternalTables(const ActionsDAG & dag, const ContextPtr & context);
+
 /// Builds ordered sets used by ActionsDAG inplace.
 void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
