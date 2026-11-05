@@ -53,7 +53,7 @@ struct CRCImpl
             size -= sizeof(UInt64);
         }
 
-        while (size--)
+        for (; size > 0; --size)
             crc = base.tab[0][(crc ^ *(buf++)) & 0xff] ^ (crc >> 8);
 
         return crc;
