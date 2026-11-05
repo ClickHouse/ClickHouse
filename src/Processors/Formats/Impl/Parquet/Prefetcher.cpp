@@ -300,6 +300,28 @@ std::optional<size_t> Prefetcher::startPrefetchWithinLimit(
     return charged;
 }
 
+bool Prefetcher::hasIncidentalRangesNear(const std::vector<std::pair<size_t, size_t>> & own_ranges)
+{
+    chassert(ranges_finalized.load(std::memory_order_relaxed));
+    std::lock_guard lock(mutex);
+    for (const RangeState & range : range_sets.at(0).ranges)
+    {
+        if (range.request->state.load(std::memory_order_relaxed) != RequestState::State::HasRange
+            || !range.request->allow_incidental_read.load(std::memory_order_relaxed))
+            continue;
+        bool own = false;
+        bool near = false;
+        for (const auto & [start, end] : own_ranges)
+        {
+            own |= range.start >= start && range.end <= end;
+            near |= range.start < end + min_bytes_for_seek && start < range.end + min_bytes_for_seek;
+        }
+        if (near && !own)
+            return true;
+    }
+    return false;
+}
+
 bool Prefetcher::extendsAdjacentRanges(const AdjacentRanges & run, const AdjacentRanges & next) const
 {
     return next.first_range_idx == run.last_range_idx + 1 && (next.begin <= run.end || next.begin - run.end < min_bytes_for_seek);

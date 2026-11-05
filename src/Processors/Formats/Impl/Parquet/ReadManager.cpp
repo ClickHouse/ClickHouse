@@ -1180,15 +1180,10 @@ void ReadManager::readAheadFirstRowGroup()
         has_short_chunk |= column.data_pages_bytes < reader.options.min_bytes_for_seek;
         chunk_ranges.emplace_back(start, start + bytes);
     }
-    /// A short chunk's read also takes the likely-to-be-used ranges near it, so the round must be all that is left of the file.
-    if (has_short_chunk)
-    {
-        if (row_group_idx + 1 < reader.row_groups.size())
-            return;
-        for (size_t i = 0; i < row_group.columns.size(); ++i)
-            if (!counted[i] && !row_group.columns[i].served_from_cache)
-                return;
-    }
+    /// Admission reads a short chunk with the ranges near it (later row groups, PREWHERE steps), so reading it ahead
+    /// would take those uncharged or split that read.
+    if (has_short_chunk && reader.prefetcher.hasIncidentalRangesNear(chunk_ranges))
+        return;
     /// A short chunk's read spans the gaps less than `min_bytes_for_seek` to the other chunks, see `Prefetcher::splitRange`.
     size_t bound = chunks_bytes;
     if (has_short_chunk)

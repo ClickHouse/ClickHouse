@@ -65,6 +65,10 @@ public:
         const std::vector<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff, size_t max_memory,
         std::vector<size_t> * created_task_first_handle = nullptr);
 
+    /// Whether a range that may be read incidentally and has no read task yet lies outside `own_ranges`, less than
+    /// `min_bytes_for_seek` from one of them, so that startPrefetch would read it together with them.
+    bool hasIncidentalRangesNear(const std::vector<std::pair<size_t, size_t>> & own_ranges);
+
     /// Consecutive (in sorted order) ranges registered before finalizeRanges(), with gaps below min_bytes_for_seek between them (as in a read task).
     struct AdjacentRanges
     {

@@ -7,8 +7,8 @@
 # its first row group, without decoding it, if its whole column chunks fit (with the gaps between them when a chunk is
 # shorter than remote_read_min_bytes_for_seek) within the size of one read task (4 x remote_read_min_bytes_for_seek) and
 # in what the stream's ColumnData memory share leaves free. With such a short chunk, whose read takes the ranges near it,
-# only the file's last row group without PREWHERE steps is read ahead. Each file in good/ is one row group of ~247 KB. The
-# rows are read slowly, so that the next file's reader has done its reads before the source switches to it.
+# the row group is not read ahead if a later row group or PREWHERE step has ranges near it. Each file in good/ is one row
+# group of ~247 KB. The rows are read slowly, so that the next file's reader has done its reads before the source switches to it.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -48,6 +48,8 @@ for i in 0 1 2 3; do
         SETTINGS s3_truncate_on_insert = 1, output_format_parquet_row_group_size = 3000, output_format_parquet_compression_method = 'none', output_format_parquet_write_page_index = 1,
             output_format_parquet_max_dictionary_size = 0, output_format_parquet_write_bloom_filter = 0"
     ${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION s3(s3_conn, filename = '${DIR}/prewhere/${i}.parquet', format = Parquet) SELECT number + ${i} * 6000 AS x, number AS y FROM numbers(6000) SETTINGS $PLAIN"
+    ${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION s3(s3_conn, filename = '${DIR}/far/${i}.parquet', format = Parquet) SELECT number + ${i} * 15000 AS x, repeat('p', 50) AS pad FROM numbers(15000)
+        SETTINGS $PLAIN, output_format_parquet_row_group_size = 5000, output_format_parquet_write_page_index = 0"
 done
 
 ICEBERG_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_TEST_UNIQUE_NAME}"
@@ -109,7 +111,7 @@ ${CLICKHOUSE_CLIENT} --query "$SPANS SETTINGS $SETTINGS, use_parquet_metadata_ca
 # The pages of a first row group whose chunks fit in one read task, but whose read task over an unread column does not, are handed back.
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(x), sum(z), sum(sleepEachRow(0.000008)) FROM s3(s3_conn, filename = '${DIR}/handback/*.parquet', structure = 'x UInt64, pad UInt16, z UInt64')
     SETTINGS $SETTINGS, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_s_handed_back'"
-# A short chunk's read takes the ranges near it, so a first row group with one is not read ahead when a later row group or PREWHERE step reads more of the file.
+# A short chunk's read takes the ranges near it, so a first row group with one is not read ahead when a later row group or PREWHERE step has ranges near it.
 ROW_GROUPS="SELECT x, sleepEachRow(0.00001) FROM s3(s3_conn, filename = '${DIR}/rowgroups/*.parquet', structure = 'x UInt64') LIMIT 64000"
 ${CLICKHOUSE_CLIENT} --query "$ROW_GROUPS SETTINGS $SETTINGS, use_parquet_metadata_cache = 0, input_format_parquet_max_block_size = 1000, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_t_row_groups_refused' FORMAT Null"
 ${CLICKHOUSE_CLIENT} --query "$ROW_GROUPS SETTINGS $SETTINGS, use_parquet_metadata_cache = 0, input_format_parquet_max_block_size = 1000, remote_filesystem_read_prefetch = 0, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_u_row_groups_refused_control' FORMAT Null"
@@ -117,6 +119,8 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(y), sum(sleepEachRow(0.00004))
     SETTINGS $SETTINGS, input_format_parquet_page_filter_push_down = 0, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_v_prewhere_refused'"
 # Nor with the columns cache, whose entries the initialization of the next file would hold.
 read_files w_columns_cache "s3(s3_conn, filename = '${DIR}/good/*.parquet')" "use_columns_cache = 1, enable_reads_from_columns_cache = 1, enable_writes_to_columns_cache = 1,"
+# In far/, the unread column pad keeps the 40 KB chunks of the later row groups far from that of the first, which is read ahead.
+read_files x_far_row_groups "s3(s3_conn, filename = '${DIR}/far/*.parquet', structure = 'x UInt64')" "use_parquet_metadata_cache = 0,"
 
 # The error of the fourth file is reported with its name, as when it is not read ahead.
 for prefetch in 1 0; do
