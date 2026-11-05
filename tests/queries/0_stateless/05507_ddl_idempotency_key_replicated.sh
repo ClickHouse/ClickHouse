@@ -119,6 +119,11 @@ keyed k3 "ALTER TABLE $R1.t ADD COLUMN c UInt8"
 echo "the retry made $(( $(log_size) - size )) log entries"
 has_column "$R1" rmt c
 has_column "$R1" t c
+echo "-- the IF EXISTS of an ALTER command is not refused"
+keyed k15 "ALTER TABLE $R1.t DROP COLUMN IF EXISTS missing"
+size=$(log_size)
+keyed k15 "ALTER TABLE $R1.t DROP COLUMN IF EXISTS missing"
+echo "the retry made $(( $(log_size) - size )) log entries"
 
 echo "-- RENAME and DROP"
 plain "RENAME TABLE $R1.x TO $R1.x0"
@@ -170,6 +175,11 @@ $CLICKHOUSE_CLIENT -q "CREATE USER $DROP_USER IDENTIFIED WITH no_password"
 $CLICKHOUSE_CLIENT -q "GRANT DROP VIEW ON $R1.dt TO $DROP_USER"
 keyed k14 "DROP TABLE $R1.dt" --user "$DROP_USER"
 keyed k14 "DROP TABLE $R1.dt" --user "$DROP_USER"
+plain "CREATE DICTIONARY $R1.dd (k UInt64, v UInt8) PRIMARY KEY k SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0)" > /dev/null
+plain "CREATE TABLE $R1.de (k UInt64, v UInt8) ENGINE = Dictionary($R1.dd)" > /dev/null
+$CLICKHOUSE_CLIENT -q "GRANT DROP DICTIONARY ON $R1.de TO $DROP_USER"
+keyed k16 "DROP TABLE $R1.de" --user "$DROP_USER"
+keyed k16 "DROP TABLE $R1.de" --user "$DROP_USER"
 echo "-- a recreated user with the same name is another user"
 $CLICKHOUSE_CLIENT -q "DROP USER $OTHER_USER"
 $CLICKHOUSE_CLIENT -q "CREATE USER $OTHER_USER IDENTIFIED WITH no_password"
@@ -201,6 +211,7 @@ refused "ALTER TABLE $R1.t UPDATE x = 1 WHERE 1"
 refused "DELETE FROM $R1.t WHERE 1"
 refused "UPDATE $R1.t SET x = 1 WHERE 1"
 refused "ALTER TABLE $R1.rmt DROP PARTITION ID 'all'"
+refused "ALTER TABLE $R1.rmt CLEAR COLUMN c IN PARTITION ID 'all'"
 refused "CREATE TABLE $R1.r ENGINE = MergeTree ORDER BY x AS SELECT 1 AS x"
 refused "CREATE MATERIALIZED VIEW $R1.r TO $R1.dst POPULATE AS SELECT x FROM $R1.t"
 refused "CREATE MATERIALIZED VIEW $R1.r ENGINE = MergeTree ORDER BY x AS SELECT x FROM $R1.t"

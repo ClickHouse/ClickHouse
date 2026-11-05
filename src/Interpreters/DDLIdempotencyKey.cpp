@@ -230,8 +230,11 @@ Target getTarget(const IAST & ast, const ContextPtr & context)
         if (alter->alter_object != ASTAlterQuery::AlterObjectType::TABLE)
             throwNotSupported("ALTER of anything but a table");
         for (const auto & child : alter->command_list->children)
-            if (!AlterCommand::parse(child->as<ASTAlterCommand>()))
+        {
+            const auto * command = child->as<ASTAlterCommand>();
+            if (command->partition || !AlterCommand::parse(command))
                 throwNotSupported("ALTER commands that change data or partitions");
+        }
         database_name = alter->getDatabase();
         table_name = alter->getTable();
     }
@@ -335,13 +338,16 @@ void checkRequiredAccess(const IInterpreter & interpreter, const IAST & ast, con
         return;
     }
 
-    /// A DROP checks the flag of the kind of the object, which may be gone now: `DROP TABLE` also drops a view.
+    /// A DROP checks the flag of the kind of the object, which may be gone now: `DROP TABLE` also drops a view or an
+    /// `ENGINE = Dictionary` table.
     const String & database_name = target.database->getDatabaseName();
+    const auto access = context->getAccess();
     if (drop->is_dictionary)
         context->checkAccess(AccessType::DROP_DICTIONARY, database_name, target.table);
     else if (drop->is_view)
         context->checkAccess(AccessType::DROP_VIEW, database_name, target.table);
-    else if (!context->getAccess()->isGranted(AccessType::DROP_VIEW, database_name, target.table))
+    else if (!access->isGranted(AccessType::DROP_VIEW, database_name, target.table)
+             && !access->isGranted(AccessType::DROP_DICTIONARY, database_name, target.table))
         context->checkAccess(AccessType::DROP_TABLE, database_name, target.table);
 }
 

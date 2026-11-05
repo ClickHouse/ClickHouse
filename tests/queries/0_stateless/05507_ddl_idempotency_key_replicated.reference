@@ -17,6 +17,10 @@ OK
 the retry made 0 log entries
 1
 1
+-- the IF EXISTS of an ALTER command is not refused
+OK
+OK
+the retry made 0 log entries
 -- RENAME and DROP
 OK
 TABLE_ALREADY_EXISTS
@@ -57,6 +61,8 @@ OK
 ACCESS_DENIED
 OK
 OK
+OK
+OK
 -- a recreated user with the same name is another user
 IDEMPOTENCY_KEY_MISMATCH
 -- a failed attempt records nothing
@@ -65,6 +71,7 @@ OK
 OK
 1
 -- refused statements
+refused
 refused
 refused
 refused
