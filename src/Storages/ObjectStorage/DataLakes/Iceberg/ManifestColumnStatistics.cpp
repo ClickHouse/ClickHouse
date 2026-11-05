@@ -268,6 +268,12 @@ std::optional<UInt64> ManifestColumnStatistics::estimateDistinctValues(
     return std::clamp<UInt64>(num_distinct_values, 1, std::max<UInt64>(non_null_rows, 1));
 }
 
+void ManifestColumnStatistics::subtractDeletedRows(UInt64 rows)
+{
+    chassert(rows <= total_rows);
+    total_rows -= std::min(rows, total_rows);
+}
+
 void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate)
 {
     estimate.rows = total_rows;
