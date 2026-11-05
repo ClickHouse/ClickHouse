@@ -177,9 +177,8 @@ Chunk IRowInputFormat::read()
                 if (columns.empty())
                     ++num_rows;
 
-                /// Only account bytes for a row that was actually appended. Some row formats return `true`
-                /// without appending (e.g. `Regexp` with `format_regexp_skip_unmatched` on an unmatched line);
-                /// `byteSizeAt(size() - 1)` on an unchanged (possibly empty) column would underflow to `SIZE_MAX`.
+                /// Account bytes only for a row that was actually appended: `readRow` can return true without
+                /// appending (e.g. `Regexp` skips an unmatched line), which would make `byteSizeAt(size() - 1)` underflow.
                 if ((min_block_size_bytes || max_block_size_bytes) && !columns.empty()
                     && columns.front()->size() > num_rows_before_read)
                 {
