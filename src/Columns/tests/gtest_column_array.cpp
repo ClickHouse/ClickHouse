@@ -15,6 +15,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/scope_guard_safe.h>
 
+#include <algorithm>
 #include <limits>
 #include <thread>
 
@@ -559,3 +560,167 @@ TEST(ColumnArrayDeathTest, ConstNestedColumnIsRejected)
 }
 
 #endif
+
+namespace
+{
+
+/// 100 full 64-row blocks and a 50-row tail. Every 100th row (row 0, and row 6400 in the tail) is short and is the
+/// one filtered out, so the passing rows are longer than average.
+constexpr size_t filter_rows = 6450;
+constexpr size_t filter_dropped_rows = 65;
+
+bool isShortRow(size_t i)
+{
+    return i % 100 == 0;
+}
+
+IColumn::Filter dropShortRows()
+{
+    IColumn::Filter filt(filter_rows);
+    for (size_t i = 0; i < filter_rows; ++i)
+        filt[i] = !isShortRow(i);
+    return filt;
+}
+
+ssize_t passingRows(const IColumn::Filter & filt)
+{
+    return std::count_if(filt.begin(), filt.end(), [](UInt8 x) { return x != 0; });
+}
+
+/// Arrays of length 1 in the short rows and 10 in the others, values distinct per element.
+std::pair<std::vector<UInt64>, std::vector<ColumnArray::Offset>> shortAndLongArrays()
+{
+    std::vector<UInt64> values;
+    std::vector<ColumnArray::Offset> offsets;
+    for (size_t i = 0; i < filter_rows; ++i)
+    {
+        for (size_t j = 0; j < (isShortRow(i) ? 1 : 10); ++j)
+            values.push_back(i * 10 + j);
+        offsets.push_back(values.size());
+    }
+    return {values, offsets};
+}
+
+}
+
+TEST(ColumnString, FilterReservesExactlyWhenShortRowsAreDropped)
+{
+    /// Short rows of length 1, then empty ones (the `s != ''` filter).
+    for (size_t short_length : {1, 0})
+    {
+        auto column = ColumnString::create();
+        for (size_t i = 0; i < filter_rows; ++i)
+        {
+            const String s(isShortRow(i) ? short_length : 100, static_cast<char>('a' + i % 26));
+            column->insertData(s.data(), s.size());
+        }
+
+        const auto filt = dropShortRows();
+        const auto res = column->filter(filt, passingRows(filt));
+        const auto & res_string = assert_cast<const ColumnString &>(*res);
+
+        /// Control, asserted first: the filter itself is right.
+        ASSERT_EQ(res_string.size(), filter_rows - filter_dropped_rows);
+        size_t row = 0;
+        size_t kept_bytes = 0;
+        for (size_t i = 0; i < filter_rows; ++i)
+        {
+            if (!filt[i])
+                continue;
+            ASSERT_EQ(res_string.getDataAt(row), column->getDataAt(i)) << "row " << i;
+            kept_bytes += column->getDataAt(i).size();
+            ++row;
+        }
+        ASSERT_EQ(res_string.getChars().size(), kept_bytes);
+
+        /// A reservation proportional to the passing row count is too small here, and the buffer grows to a power of two.
+        EXPECT_EQ(res_string.getChars().capacity(), res_string.getChars().size()) << "short_length " << short_length;
+    }
+}
+
+TEST(ColumnArray, FilterReservesExactlyWhenShortArraysAreDropped)
+{
+    auto [values, offsets] = shortAndLongArrays();
+    const auto column = createArray(values, offsets);
+
+    const auto filt = dropShortRows();
+    const auto res = column->filter(filt, passingRows(filt));
+    const auto & res_data = assert_cast<const ColumnUInt64 &>(assert_cast<const ColumnArray &>(*res).getData()).getData();
+
+    ASSERT_EQ(res->size(), filter_rows - filter_dropped_rows);
+    size_t row = 0;
+    for (size_t i = 0; i < filter_rows; ++i)
+    {
+        if (!filt[i])
+            continue;
+        ASSERT_EQ((*res)[row], (*column)[i]) << "row " << i;
+        ++row;
+    }
+    ASSERT_EQ(res_data.size(), (filter_rows - filter_dropped_rows) * 10);
+
+    EXPECT_EQ(res_data.capacity(), res_data.size());
+}
+
+TEST(ColumnArray, FilterNullableReservesExactlyWhenShortArraysAreDropped)
+{
+    auto [values, offsets] = shortAndLongArrays();
+    auto nested = ColumnUInt64::create();
+    auto null_map = ColumnUInt8::create();
+    for (UInt64 value : values)
+    {
+        nested->getData().push_back(value);
+        null_map->getData().push_back(value % 3 == 0);
+    }
+    auto offsets_column = ColumnArray::ColumnOffsets::create();
+    for (auto offset : offsets)
+        offsets_column->getData().push_back(offset);
+    const auto column = ColumnArray::create(ColumnNullable::create(std::move(nested), std::move(null_map)), std::move(offsets_column));
+
+    const auto filt = dropShortRows();
+    const auto res = column->filter(filt, passingRows(filt));
+    const auto & res_nullable = assert_cast<const ColumnNullable &>(assert_cast<const ColumnArray &>(*res).getData());
+    const auto & res_data = assert_cast<const ColumnUInt64 &>(res_nullable.getNestedColumn()).getData();
+    const auto & res_null_map = res_nullable.getNullMapData();
+
+    ASSERT_EQ(res->size(), filter_rows - filter_dropped_rows);
+    size_t row = 0;
+    for (size_t i = 0; i < filter_rows; ++i)
+    {
+        if (!filt[i])
+            continue;
+        ASSERT_EQ((*res)[row], (*column)[i]) << "row " << i;
+        ++row;
+    }
+    ASSERT_EQ(res_data.size(), (filter_rows - filter_dropped_rows) * 10);
+    ASSERT_EQ(res_null_map.size(), res_data.size());
+
+    EXPECT_EQ(res_data.capacity(), res_data.size());
+    EXPECT_EQ(res_null_map.capacity(), res_null_map.size());
+}
+
+TEST(ColumnArray, FilterNestedArraysWithApproximateHint)
+{
+    /// The outer row 0 holds 6000 of the 6064 inner arrays and is filtered out. The inner column gets the hint
+    /// 64 * 6064 / 65 = 5970 while 6000 of its rows are filtered out.
+    constexpr size_t inner_rows = 6064;
+    std::vector<UInt64> values(inner_rows);
+    std::vector<ColumnArray::Offset> inner_offsets(inner_rows);
+    for (size_t i = 0; i < inner_rows; ++i)
+    {
+        values[i] = i;
+        inner_offsets[i] = i + 1;
+    }
+    auto outer_offsets = ColumnArray::ColumnOffsets::create();
+    outer_offsets->getData().push_back(6000);
+    for (size_t i = 1; i <= 64; ++i)
+        outer_offsets->getData().push_back(6000 + i);
+    const auto column = ColumnArray::create(createArray(values, inner_offsets), std::move(outer_offsets));
+
+    IColumn::Filter filt(65, 1);
+    filt[0] = 0;
+    const auto res = column->filter(filt, 64);
+
+    ASSERT_EQ(res->size(), 64u);
+    for (size_t i = 0; i < 64; ++i)
+        ASSERT_EQ((*res)[i], (*column)[i + 1]) << "row " << i;
+}
