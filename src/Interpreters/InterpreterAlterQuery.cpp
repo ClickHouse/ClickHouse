@@ -106,11 +106,10 @@ namespace ErrorCodes
 namespace
 {
 
-/// `ON CLUSTER` and `Replicated`-database hosts run the query without the submitting user.
-/// With `bind_transforms`, the `preprocessor` and `postprocessor` arguments of the declared text indices
-/// are replaced in `alter` by the alias-expanded expressions authorized here, so that an `ON CLUSTER`
-/// host, which expands aliases against its own schema and with full access, installs exactly them.
-void checkAddedIndexPermissions(ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context, bool bind_transforms)
+/// A `Replicated`-database host applies the statement without the submitting user, so the declared text
+/// index transforms are authorized here, against the schema the whole statement produces.
+/// `ON CLUSTER` does not reach this: it is refused unless its hosts run as the initiating user.
+void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)
 {
     /// A host without the table cannot expand aliases.
     StorageMetadataHandle metadata;
@@ -125,18 +124,8 @@ void checkAddedIndexPermissions(ASTAlterQuery & alter, const StoragePtr & table,
             continue;
 
         if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
-        {
             if (hasTextIndexPreOrPostProcessor(*declaration))
                 adds_transform = true;
-
-            /// Without the schema an `ALIAS` column in a transform stays unexpanded here, while the
-            /// hosts that have the table expand it and resolve its functions with full access.
-            if (!metadata && hasTextIndexPreOrPostProcessor(*declaration))
-                throw Exception(ErrorCodes::UNKNOWN_TABLE,
-                    "Table {}.{} does not exist on this host. A text index with a preprocessor or a postprocessor "
-                    "is authorized on the host the query is submitted to, so it must be run from a host that has the table",
-                    backQuoteIfNeed(alter.getDatabase()), backQuoteIfNeed(alter.getTable()));
-        }
     }
 
     /// Authorize against the schema the whole statement produces, not the one before it: a command of
@@ -167,21 +156,11 @@ void checkAddedIndexPermissions(ASTAlterQuery & alter, const StoragePtr & table,
         previous_is_metadata = command.has_value();
     }
 
-    /// The analysis below applies all metadata commands at once, while the executor validates and commits
-    /// every segment separately, so for several segments it would reject statements the executor accepts,
-    /// e.g. a rename in each of two segments, and a later segment can fail after an earlier one installed
-    /// an index. Only a single segment is authorized exactly as it is installed. With several segments, the
-    /// local executor authorizes every segment as the user in `AlterCommands::apply`, and a `Replicated`
-    /// database rejects such a statement, see `validateReplicatedDatabaseSegments`, so only the hosts of
-    /// an `ON CLUSTER` query would install the transforms without the user.
+    /// This applies every metadata command at once, while the executor commits each segment separately,
+    /// so with several segments it would reject statements the executor accepts. `AlterCommands::apply`
+    /// authorizes each segment as the user there, and a `Replicated` database refuses such a statement.
     if (metadata_segments > 1)
-    {
-        if (bind_transforms)
-            throw Exception(ErrorCodes::QUERY_IS_PROHIBITED,
-                "`ALTER TABLE ... ON CLUSTER` that adds a text index with a preprocessor or a postprocessor "
-                "must not interleave its metadata commands with mutation or partition commands. Run them as separate queries");
         return;
-    }
 
     /// The same sequence as `runCommandSegments`: `apply` relies on the checks before it, e.g. that
     /// a renamed column exists.
@@ -198,45 +177,6 @@ void checkAddedIndexPermissions(ASTAlterQuery & alter, const StoragePtr & table,
     removeImplicitStatistics(metadata_copy.columns);
     commands.apply(metadata_copy, context, share_nested);
 
-    /// The indices this statement installs, as `apply` built and authorized them against the final schema.
-    /// An index kept by `IF NOT EXISTS` is not one of them, even though `metadata_copy` has it.
-    const NameSet added_indices = commands.getAddedIndexNames(metadata->secondary_indices);
-    std::unordered_map<String, ASTPtr> installed_arguments;
-    for (const auto & index : metadata_copy.secondary_indices)
-    {
-        if (added_indices.contains(index.name) && index.arguments)
-            installed_arguments[index.name] = index.arguments;
-    }
-
-    for (const auto & child : alter.command_list->children)
-    {
-        const auto & command = child->as<const ASTAlterCommand &>();
-        if (command.type != ASTAlterCommand::ADD_INDEX || !command.index_decl)
-            continue;
-
-        const auto * declaration = command.index_decl->as<ASTIndexDeclaration>();
-        if (!declaration || !hasTextIndexPreOrPostProcessor(*declaration))
-            continue;
-
-        auto type = declaration->getType();
-        ASTPtr bound;
-        if (auto it = installed_arguments.find(declaration->name); it != installed_arguments.end())
-        {
-            bound = it->second->clone();
-        }
-        else
-        {
-            /// Skipped here by `IF NOT EXISTS`, but a host without the index installs the requested
-            /// definition against the schema the statement produces there, including its column changes.
-            /// So expand and authorize it against the final schema, not the one before the statement.
-            checkTextIndexPreAndPostProcessorPermissions(*declaration, metadata_copy.columns, context);
-            bound = type->arguments->clone();
-            expandTextIndexTransformAliases(bound, metadata_copy.columns);
-        }
-
-        if (bind_transforms)
-            type->arguments->children = bound->children;
-    }
 }
 
 void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
@@ -738,16 +678,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(table);
 
-        /// The text index transforms are authorized and bound before `executeDDLQueryOnCluster` serializes
-        /// the query, see `checkAddedIndexPermissions`. The privileges of the statement itself go first,
-        /// so that the analysis of the commands discloses nothing about the table to a user without them.
-        if (table)
-        {
-            getContext()->checkAccess(params.access_to_check);
-            checkAddedIndexPermissions(query_ptr->as<ASTAlterQuery &>(), table, getContext(), /*bind_transforms=*/ true);
-        }
-
-        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext(), table](const String & cluster_default_database, bool throw_if_unresolved)
+        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database, bool throw_if_unresolved)
         {
             const auto & captured_alter = captured_query_ptr->as<const ASTAlterQuery &>();
             const auto default_database = captured_alter.getDatabase().empty() ? cluster_default_database : captured_alter.getDatabase();
@@ -772,10 +703,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                     if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
                         rejectTextIndexTransformWithoutInitiatorUser(*declaration);
                 }
-
-            /// A host without the table cannot authorize a text index transform, see `checkAddedIndexPermissions`.
-            if (!table)
-                checkAddedIndexPermissions(captured_query_ptr->as<ASTAlterQuery &>(), table, context, /*bind_transforms=*/ false);
         };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
@@ -801,7 +728,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         }
     }
 
-    checkAddedIndexPermissions(query_ptr->as<ASTAlterQuery &>(), table, getContext(), /*bind_transforms=*/ false);
+    checkAddedIndexPermissions(alter, table, getContext());
 
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
