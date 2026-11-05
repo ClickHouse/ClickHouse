@@ -1,0 +1,11 @@
+HTTP GET and POST: OK
+HTTP full query, escaping and compression: OK
+HTTP syntax error: OK
+HTTP original parameterized query: OK
+HTTP output format and stack trace: OK
+HTTP framed errors: OK
+HTTP late and buffered execution errors: OK
+TCP exception and connection reuse: OK
+TCP legacy exception layout: OK
+TCP new exception fields: OK
+TCP handshake exception layout: OK

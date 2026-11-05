@@ -66,7 +66,12 @@ public:
 
     void setExceptionCode(int code);
 
-    bool cancelWithException(HTTPServerRequest & request, int exception_code_, const std::string & message, WriteBuffer * compression_buffer) noexcept;
+    bool cancelWithException(
+        HTTPServerRequest & request,
+        int exception_code_,
+        const std::string & message,
+        WriteBuffer * compression_buffer,
+        bool structured_exception = false) noexcept;
 
 private:
     /// Send at least HTTP headers if no data has been sent yet.

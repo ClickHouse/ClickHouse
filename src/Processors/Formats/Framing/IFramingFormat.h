@@ -94,7 +94,11 @@ public:
     void onProgress(const Progress & progress);
 
     /// Remember an exception to be written as the last packet on `finalize`.
-    void setException(const String & message) { exception_message = message; }
+    void setException(const String & message, bool structured = false)
+    {
+        exception_message = message;
+        exception_is_structured = structured;
+    }
 
     /// Whether an exception was recorded (see `setException`), which makes the stream terminal:
     /// the output format must not contribute any more payload bytes (see
@@ -134,7 +138,7 @@ protected:
     virtual void writeLogsPacket(const Block & block) = 0;
     /// The block has the structure of `ProfileEvents::getSampleBlock` (see ProfileEventsExt.h).
     virtual void writeProfileEventsPacket(const Block & block) = 0;
-    virtual void writeExceptionPacket(const String & message) = 0;
+    virtual void writeExceptionPacket(const String & message, bool structured) = 0;
     virtual void finalizeImpl() {}
 
     static std::string_view getPacketKindName(FramedPacketKind kind);
@@ -191,6 +195,7 @@ private:
     ProfileEvents::ThreadIdToCountersSnapshot profile_events_snapshots;
 
     String exception_message;
+    bool exception_is_structured = false;
 
     /// The final progress, deferred to `finalize` (see `setFinalProgress`).
     Progress final_progress;
