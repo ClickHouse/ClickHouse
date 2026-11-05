@@ -1861,7 +1861,12 @@ InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement(
 
 QueryCoordinationRequest Connection::receiveQueryCoordinationRequest() const
 {
-    return QueryCoordinationRequest::deserialize(*in, server_revision);
+    /// The candidate block carries table data (the sort keys), so it counts against the network limits.
+    size_t prev_bytes = in->count();
+    auto request = QueryCoordinationRequest::deserialize(*in, server_revision);
+    if (throttler)
+        throttler->throttle(in->count() - prev_bytes);
+    return request;
 }
 
 

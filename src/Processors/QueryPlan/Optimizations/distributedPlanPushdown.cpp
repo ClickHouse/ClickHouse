@@ -1,7 +1,9 @@
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
 #include <Columns/ColumnSet.h>
 #include <Core/Settings.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Interpreters/PreparedSets.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
@@ -62,6 +64,7 @@ static void finalizeNode(QueryPlan::Node & node, ReadFromRemotePlanStep & placeh
     const size_t shard_count = cluster->getShardCount();
 
     /// All shards must share one unavailable-shard budget.
+    /// Needed even with no limit set: it is also what notices that every shard was skipped.
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     {
         const auto & settings = remote_context->getSettingsRef();
@@ -69,8 +72,7 @@ static void finalizeNode(QueryPlan::Node & node, ReadFromRemotePlanStep & placeh
         {
             size_t max_num = settings[Setting::max_skip_unavailable_shards_num];
             Float64 max_ratio = static_cast<double>(settings[Setting::max_skip_unavailable_shards_ratio]);
-            if (max_num > 0 || max_ratio > 0)
-                unavailable_shard_tracker = std::make_shared<UnavailableShardTracker>(shard_count, max_num, max_ratio);
+            unavailable_shard_tracker = std::make_shared<UnavailableShardTracker>(shard_count, max_num, max_ratio);
         }
     }
 
@@ -208,26 +210,51 @@ static void tryCopyLimitToRemotePlan(
     placeholder.absorbLimitCopy(limit);
 }
 
+static bool dagReferencesOnlyInlineSets(const ActionsDAG & dag);
+
+static bool columnReferencesOnlyInlineSets(const IColumn & column)
+{
+    const IColumn * inner = &column;
+    if (const auto * column_const = checkAndGetColumn<const ColumnConst>(inner))
+        inner = &column_const->getDataColumn();
+
+    if (const auto * column_set = checkAndGetColumn<const ColumnSet>(inner))
+    {
+        const auto & future_set = column_set->getData();
+        return future_set && typeid_cast<const FutureSetFromTuple *>(future_set.get());
+    }
+
+    /// A constant-folded lambda keeps the sets it uses in its captured columns and in its body,
+    /// and `ActionsDAG::serialize` sends both to the shards.
+    if (const auto * column_function = checkAndGetColumn<const ColumnFunction>(inner))
+    {
+        for (const auto & captured : column_function->getCapturedColumns())
+        {
+            if (captured.column && !columnReferencesOnlyInlineSets(*captured.column))
+                return false;
+        }
+
+        if (const auto * function_expression = typeid_cast<const FunctionExpression *>(column_function->getFunction().get()))
+            return dagReferencesOnlyInlineSets(function_expression->getAcionsDAG());
+    }
+
+    return true;
+}
+
 /// Only literal `IN` sets are self-contained. Subquery sets would run once per shard, and `Set`
-/// storage names would resolve in the shard's catalog.
+/// storage names would resolve in the shard's catalog. Lambda bodies are inspected as well.
 static bool dagReferencesOnlyInlineSets(const ActionsDAG & dag)
 {
     for (const auto & dag_node : dag.getNodes())
     {
-        if (!dag_node.column)
-            continue;
-
-        const IColumn * inner = dag_node.column.get();
-        if (const auto * column_const = checkAndGetColumn<const ColumnConst>(inner))
-            inner = &column_const->getDataColumn();
-
-        const auto * column_set = checkAndGetColumn<const ColumnSet>(inner);
-        if (!column_set)
-            continue;
-
-        const auto & future_set = column_set->getData();
-        if (!future_set || !typeid_cast<const FutureSetFromTuple *>(future_set.get()))
+        if (dag_node.column && !columnReferencesOnlyInlineSets(*dag_node.column))
             return false;
+
+        if (const auto * function_capture = typeid_cast<const FunctionCapture *>(dag_node.function_base.get()))
+        {
+            if (!dagReferencesOnlyInlineSets(function_capture->getAcionsDAG()))
+                return false;
+        }
     }
     return true;
 }

@@ -2665,17 +2665,21 @@ QueryCoordinationResponse TCPHandler::receiveQueryCoordinationResponse(
     QueryState & state, UInt64 expected_request_id, size_t candidate_rows)
 {
     UInt64 packet_type = 0;
+    state.at_packet_boundary = false;
     readVarUInt(packet_type, *in);
 
     switch (packet_type)
     {
         case Protocol::Client::Cancel:
+            state.at_packet_boundary = true;  /// no body, and `processCancel` throws
             processCancel(state);
             throw Exception(ErrorCodes::ABORTED, "Query coordination request was cancelled");
 
         case Protocol::Client::QueryCoordinationResponse:
         {
             auto response = QueryCoordinationResponse::deserialize(*in, candidate_rows);
+            /// The whole packet is consumed, so the connection stays usable even if the response is rejected below.
+            state.at_packet_boundary = true;
             if (response.request_id != expected_request_id)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
