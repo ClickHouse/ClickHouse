@@ -212,13 +212,24 @@ namespace Net
         void setBioMethod(const BIO_METHOD * method);
         /// Optionally inject a custom BIO_METHOD for the SSL transport BIO.
         /// Has no effect once the SSL handshake has been initiated (i.e. once
-        /// any I/O has happened). If never called, `BIO_s_socket()` is used.
+        /// any I/O has happened). If never called, a BIO over the socket descriptor
+        /// is used whose reads and writes never block, whatever the blocking mode of
+        /// the socket. A custom method must not block either: the `SocketImpl *` is
+        /// stored in the BIO's data, and waiting for the peer is done by this class
+        /// through that socket's `pollImpl`, outside of any OpenSSL call and without
+        /// the SSL lock held.
 
         struct RecursiveMutex
         {
             virtual ~RecursiveMutex() = default;
             virtual void lock() = 0;
             virtual void unlock() = 0;
+            virtual int unlockAll() = 0;
+            /// Releases the lock at every level the caller holds it and returns that
+            /// number of levels, so that `relockAll` can restore them. This is what lets
+            /// a method that was itself called under the lock wait for the peer without it.
+            virtual void relockAll(int levels) = 0;
+            /// Acquires the lock again, `levels` times; zero is a no-op.
         };
 
         void setMutex(std::unique_ptr<RecursiveMutex> mutex);
@@ -256,26 +267,15 @@ namespace Net
         /// In case of an SSL_ERROR_WANT_WRITE error, and if the socket is
         /// blocking, waits for the underlying socket to become writable.
         ///
+        /// The wait is done with the SSL lock released at every level, so the
+        /// caller must not rely on state read under the lock before the call.
+        ///
         /// Can also throw a Poco::TimeoutException if the socket does
         /// not become readable or writable within the sockets
         /// receive or send timeout.
 
         /// Whether waiting for the peer is this class's job rather than the caller's.
-        bool waitHere() const { return _drivingHandshake || _pSocket->getBlocking(); }
-
-        /// Makes the socket non-blocking for one handshake, so that OpenSSL yields instead of
-        /// reading in its own loop, and restores the mode afterwards. A socket that does its
-        /// own waiting is left alone.
-        class HandshakeDriver
-        {
-        public:
-            explicit HandshakeDriver(SecureSocketImpl & impl_);
-            ~HandshakeDriver();
-
-        private:
-            SecureSocketImpl & impl;
-            const bool drives;
-        };
+        bool waitHere() const { return _pSocket->getBlocking(); }
 
         int handleError(int rc, int sslError, int socketError, unsigned long errorCode);
         /// Handles an SSL error by throwing an appropriate exception.
@@ -294,17 +294,58 @@ namespace Net
         SecureSocketImpl & operator=(const SecureSocketImpl &);
 
         const BIO_METHOD * getBioMethod() const;
-        /// Returns the BIO_METHOD to use for the SSL transport BIO.
-        /// Falls back to `BIO_s_socket()` when no custom method was set via `setBioMethod`.
+        /// Returns the BIO_METHOD to use for the SSL transport BIO: the one set via
+        /// `setBioMethod`, or else the built-in non-blocking descriptor BIO.
 
         struct StdRecursiveMutex final : RecursiveMutex
         {
-            void lock() override { _m.lock(); }
-            void unlock() override { _m.unlock(); }
+            void lock() override
+            {
+                _m.lock();
+                ++_levels;
+            }
+            void unlock() override
+            {
+                --_levels;
+                _m.unlock();
+            }
+            int unlockAll() override
+            {
+                const int levels = _levels;
+                for (int i = 0; i < levels; ++i)
+                    unlock();
+                return levels;
+            }
+            void relockAll(int levels) override
+            {
+                for (int i = 0; i < levels; ++i)
+                    lock();
+            }
             std::recursive_mutex _m;
+            int _levels = 0;
+            /// How many times the owning thread holds `_m`; only that thread reads or writes it.
         };
 
         using ScopedLock = std::lock_guard<RecursiveMutex>;
+
+        /// Gives the SSL lock up, at every level the thread holds it, for the lifetime of the
+        /// object. The lock only serialises calls into the `SSL` object, which is shared by the
+        /// reading and the writing side of one connection; it must never be held while waiting
+        /// for the socket to become ready, or a writer waiting for a peer that does not read
+        /// until it has written would keep this side's reader out, and neither side would move.
+        class ScopedUnlockAll
+        {
+        public:
+            explicit ScopedUnlockAll(RecursiveMutex & mutex_) : mutex(mutex_), levels(mutex_.unlockAll()) { }
+            ~ScopedUnlockAll() { mutex.relockAll(levels); }
+
+            ScopedUnlockAll(const ScopedUnlockAll &) = delete;
+            ScopedUnlockAll & operator=(const ScopedUnlockAll &) = delete;
+
+        private:
+            RecursiveMutex & mutex;
+            const int levels;
+        };
 
         mutable std::unique_ptr<RecursiveMutex> _mutex{std::make_unique<StdRecursiveMutex>()};
         SSL * _pSSL; // GUARDED_BY _mutex
@@ -315,13 +356,10 @@ namespace Net
         bool _pendingWrite = false;
         /// Whether the last `SSL_write` returned `SSL_ERROR_WANT_WRITE`. OpenSSL keeps that record pending
         /// until `SSL_write` is retried, even after other operations change what `SSL_get_error` reports.
-        bool _drivingHandshake = false;
-        /// Set while completeHandshakeImpl runs the handshake on a socket it made non-blocking, so
-        /// that waiting for the peer stays this class's job rather than the caller's.
         std::string _peerHostName;
         Session::Ptr _pSession;
         const BIO_METHOD * _bioMethod = nullptr;
-        /// Contract: when set, store the `SocketImpl *` in the BIO's data.
+        /// Null means the built-in non-blocking descriptor BIO; see `setBioMethod`.
 
         friend class SecureStreamSocketImpl;
 

@@ -163,6 +163,27 @@ public:
         }
     }
 
+    int unlockAll() override
+    {
+        chassert(owner.load(std::memory_order_relaxed) == silk::FiberScheduler::getCurrentFiber());
+        chassert(count > 0);
+        const int levels = static_cast<int>(count);
+        count = 0;
+        owner.store(nullptr, std::memory_order_relaxed);
+        mutex.unlock();
+        return levels;
+    }
+
+    void relockAll(int levels) override
+    {
+        if (levels == 0)
+            return;
+        mutex.lock();
+        owner.store(silk::FiberScheduler::getCurrentFiber(), std::memory_order_relaxed);
+        chassert(count == 0);
+        count = static_cast<std::size_t>(levels);
+    }
+
 private:
     silk::FiberMutex mutex;
     std::atomic<silk::Fiber *> owner{nullptr};

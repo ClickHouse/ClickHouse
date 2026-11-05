@@ -124,8 +124,16 @@ TEST(SSLSocketError, SendFailureDoesNotConsumePendingApplicationData)
 
     /// `SSL_peek` processes the incoming TLS record without consuming its first application-data byte.
     /// Because the server sends the payload in one call, the complete payload must then be visible in `SSL_pending`.
+    /// The transport `BIO` never blocks, so wait for the record on the socket while OpenSSL asks for more data.
     char first_byte = 0;
-    const int peek_result = SSL_peek(ssl, &first_byte, 1);
+    int peek_result = 0;
+    for (int attempt = 0; attempt < 50; ++attempt)
+    {
+        peek_result = SSL_peek(ssl, &first_byte, 1);
+        if (peek_result > 0 || SSL_get_error(ssl, peek_result) != SSL_ERROR_WANT_READ)
+            break;
+        client.poll(Poco::Timespan(0, 100'000), Poco::Net::Socket::SELECT_READ);
+    }
 
     /// Wait until the server has completed its single write and propagate any server-side exception.
     server_thread.join();
