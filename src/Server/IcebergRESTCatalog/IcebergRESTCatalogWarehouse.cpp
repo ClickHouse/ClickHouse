@@ -95,10 +95,11 @@ std::vector<IcebergNamespaceName> IcebergRESTCatalogWarehouse::listNamespaces(co
     return store->listNamespaces(parent);
 }
 
-IcebergRESTCatalogWarehouse::CreateTableResult
-IcebergRESTCatalogWarehouse::createTable(const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & pointer) const
+IcebergRESTCatalogWarehouse::CreateTableOutcome IcebergRESTCatalogWarehouse::createTable(
+    const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & pointer, const String & table_root) const
 {
-    return store->createTable(ns, table, pointer);
+    validateLocation(table_root);
+    return store->createTable(ns, table, pointer, table_root);
 }
 
 std::optional<IcebergTablePointer> IcebergRESTCatalogWarehouse::getTable(const IcebergNamespaceName & ns, const String & table) const

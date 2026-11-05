@@ -814,19 +814,21 @@ void IcebergRESTCatalogHandler::handleCreateTable(
         if (json->optValue<bool>("stage-create", false))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "stage-create is not supported");
 
-        /// The catalog owns every table path, so two tables can never share a directory.
-        /// TODO: Allow the ClickHouse client to send no location, so that the catalog can assign it.
-        /// Currently the ClickHouse client always sends `location`. This needs a refactor of the client:
-        /// create through the catalog first, then load the table from the answer.
-        /// TODO: External tables need a per-table no-purge flag and an atomic location guard in Keeper.
+        /// The client may pick the location.
         if (json->has("location") && !json->isNull("location"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'location' is not supported, the catalog chooses the table location");
-
-        if (const auto it = namespace_properties->find("location"); it != namespace_properties->end())
+        {
+            if (!json->get("location").isString())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'location' must be a string");
+            location = stripTrailingSlashes(json->getValue<String>("location"));
+            warehouse.validateLocation(location);
+        }
+        /// Otherwise the namespace may carry a base location in its properties.
+        else if (const auto it = namespace_properties->find("location"); it != namespace_properties->end())
         {
             /// The uuid suffix keeps a dropped and recreated table away from the old files.
             location = fmt::format("{}/{}-{}", stripTrailingSlashes(it->second), name, uuid);
         }
+        /// Otherwise the location is built from the warehouse base location and the namespace.
         else
         {
             location = fmt::format("{}/{}/{}-{}", warehouse.base_location, fmt::join(ns, "/"), name, uuid);
@@ -886,7 +888,8 @@ void IcebergRESTCatalogHandler::handleCreateTable(
 
     /// A Keeper exception (timeout, session loss) leaves the file. The node may exist, so deleting could leave a dangling pointer.
     using CreateTableResult = IcebergRESTCatalogWarehouse::CreateTableResult;
-    const auto created = warehouse.createTable(ns, name, pointer);
+    const auto outcome = warehouse.createTable(ns, name, pointer, location);
+    const auto created = outcome.result;
     if (created != CreateTableResult::Created)
     {
         LOG_INFO(log, "Removing metadata file {} because table {}.{} was not registered", object_key, joinNamespace(ns), name);
@@ -905,6 +908,15 @@ void IcebergRESTCatalogHandler::handleCreateTable(
     if (created == CreateTableResult::NamespaceMissing)
     {
         sendNoSuchNamespace(response, ns);
+        return;
+    }
+    if (created == CreateTableResult::LocationOverlaps)
+    {
+        sendError(
+            response,
+            Poco::Net::HTTPResponse::HTTP_BAD_REQUEST,
+            "BadRequestException",
+            fmt::format("Location {} overlaps location {} of another table", location, outcome.conflicting_location));
         return;
     }
 
