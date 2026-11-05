@@ -101,6 +101,7 @@ public:
         DB::NamesAndTypesList names_and_types;
         DB::NameToNameMap physical_names_map;
         std::unordered_set<String> timestamp_ntz_paths;
+        std::unordered_set<String> timestamp_ntz_columns;
         /// A Delta field name may contain a dot, so two leaves can flatten to one writer path: a path
         /// that a Delta `timestamp` leaf also takes is ambiguous and keeps the default annotation.
         std::unordered_set<String> timestamp_writer_paths;
@@ -596,6 +597,8 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             result.timestamp_ntz_paths.insert(field_writer_path);
         else if (in_data_file && field.type == DB::TypeIndex::DateTime64)
             result.timestamp_writer_paths.insert(field_writer_path);
+        if (parent_logical_path.empty() && field.is_timestamp_ntz)
+            result.timestamp_ntz_columns.insert(field.name);
 
         if (!field.physical_name.empty())
         {
@@ -621,7 +624,11 @@ TableSchemaResult getTableSchemaFromSnapshot(
     SchemaVisitor::visitTableSchema(snapshot, data);
     SchemaVisitor::visitPartitionColumns(snapshot, data);
     auto result = data.getSchemaResult();
-    return {std::move(result.names_and_types), std::move(result.physical_names_map), std::move(result.timestamp_ntz_paths)};
+    return {
+        std::move(result.names_and_types),
+        std::move(result.physical_names_map),
+        std::move(result.timestamp_ntz_paths),
+        std::move(result.timestamp_ntz_columns)};
 }
 
 DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan, ffi::SharedExternEngine * engine)

@@ -9,6 +9,9 @@
 
 #include <delta_kernel_ffi.hpp>
 
+#include <optional>
+#include <unordered_map>
+
 namespace DB
 {
 class ActionsDAG;
@@ -18,6 +21,15 @@ using ContextPtr = std::shared_ptr<const Context>;
 
 namespace DeltaLake
 {
+
+/// Delta type behind a top-level column that ClickHouse reads as `DateTime64(6)`;
+/// selects the kernel literal a comparison with that column is translated to.
+enum class DeltaTimestampKind : uint8_t
+{
+    Timestamp,
+    TimestampNtz,
+};
+using DeltaTimestampColumns = std::unordered_map<String, DeltaTimestampKind>;
 
 /// EnginePredicate used in ffi::scan.
 /// A predicate which allows to implement internal delta-kernel-rs filtering
@@ -29,11 +41,13 @@ public:
     explicit EnginePredicate( // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         const DB::ActionsDAG & filter_,
         std::exception_ptr & exception_,
-        DB::ContextPtr context_)
+        DB::ContextPtr context_,
+        DeltaTimestampColumns timestamp_columns_)
         : filter(filter_)
         , exception(exception_)
         , context(context_)
         , format_settings(context_ ? DB::getFormatSettings(context_) : DB::FormatSettings{})
+        , timestamp_columns(std::move(timestamp_columns_))
     {
         predicate = this;
         visitor = &visitPredicate;
@@ -52,6 +66,14 @@ public:
     DB::ContextPtr getContext() const { return context; }
     const DB::FormatSettings & getFormatSettings() const { return format_settings; }
 
+    std::optional<DeltaTimestampKind> getTimestampKind(const String & column_name) const
+    {
+        auto it = timestamp_columns.find(column_name);
+        if (it == timestamp_columns.end())
+            return std::nullopt;
+        return it->second;
+    }
+
 private:
     const LoggerPtr log = getLogger("EnginePredicate");
 
@@ -64,12 +86,15 @@ private:
     /// Context for accessing settings
     DB::ContextPtr context;
     const DB::FormatSettings format_settings;
+    /// Top-level columns backed by a Delta `timestamp` / `timestamp_ntz`, by logical name.
+    const DeltaTimestampColumns timestamp_columns;
 
     static uintptr_t visitPredicate(void * data, ffi::KernelExpressionVisitorState * state);
 };
 
 std::shared_ptr<EnginePredicate> getEnginePredicate(
-    const DB::ActionsDAG & filter, std::exception_ptr & exception, DB::ContextPtr context);
+    const DB::ActionsDAG & filter, std::exception_ptr & exception, DB::ContextPtr context,
+    DeltaTimestampColumns timestamp_columns = {});
 }
 
 #endif
