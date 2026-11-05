@@ -9,6 +9,7 @@
 #include <Interpreters/MaterializedCTE.h>
 #include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
+#include <Common/quoteString.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/MaterializedView/RefreshSet.h>
@@ -466,27 +467,32 @@ static void checkAccessToTableMetadata(const TableNode & table_node, const Conte
         if (!alias->filterColumnsGrantedThroughChain(visible_columns, is_visible).empty())
             return;
 
-        /// A query can read through the alias a subcolumn or a virtual column granted by its name, so such a grant is enough too.
+        /// A query can also read a subcolumn or a virtual column through the alias. Dynamic subcolumns
+        /// cannot be enumerated, so the column names in the user's grants are tried too.
+        const auto & snapshot = table_node.getStorageSnapshot();
         const auto options = GetColumnsOptions(GetColumnsOptions::All)
                                  .withSubcolumns()
                                  .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
-        Names granted_names;
+        Names candidates;
+        for (const auto & column : snapshot->getColumns(options))
+            candidates.push_back(column.name);
         for (const auto & element : access_rights->getElements())
         {
             if (element.is_partial_revoke)
                 continue;
             for (const auto & name : element.columns)
             {
-                if (table_node.getStorageSnapshot()->tryGetColumn(options, name)
-                    && (is_temporary || is_visible(storage_id.database_name, storage_id.table_name, name)))
-                    granted_names.push_back(name);
+                if (snapshot->tryGetColumn(options, name))
+                    candidates.push_back(name);
             }
         }
-        if (!alias->filterColumnsGrantedThroughChain(granted_names, is_visible).empty())
+        std::erase_if(candidates, [&](const String & name)
+        { return !is_temporary && !is_visible(storage_id.database_name, storage_id.table_name, name); });
+        if (!alias->filterColumnsGrantedThroughChain(candidates, is_visible).empty())
             return;
 
         throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to access the table that {} points to",
-                        storage_id.getNameForLogs());
+                        is_temporary ? backQuoteIfNeed(table_node.getTemporaryTableName()) : storage_id.getNameForLogs());
     }
 
     /// Not a single column of the table is visible to the user. Report the denial through the

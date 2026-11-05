@@ -15,6 +15,7 @@ u_show="u_show_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_sub="u_sub_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_virt="u_virt_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_json="u_json_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+u_revoke="u_revoke_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_bogus="u_bogus_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_tmp="u_tmp_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_mvdef="u_mvdef_${CLICKHOUSE_TEST_UNIQUE_NAME}"
@@ -25,7 +26,7 @@ db_atomic="${CLICKHOUSE_DATABASE}_atomic"
 
 drop_users()
 {
-    ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${u_alias}, ${u_col}, ${u_showcol}, ${u_both}, ${u_show}, ${u_sub}, ${u_virt}, ${u_json}, ${u_bogus}, ${u_tmp}, ${u_mvdef}, ${u_create}"
+    ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${u_alias}, ${u_col}, ${u_showcol}, ${u_both}, ${u_show}, ${u_sub}, ${u_virt}, ${u_json}, ${u_revoke}, ${u_bogus}, ${u_tmp}, ${u_mvdef}, ${u_create}"
 }
 
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${db_atomic}"
@@ -76,6 +77,11 @@ ${CLICKHOUSE_CLIENT} -m --query "
     CREATE USER ${u_json} NOT IDENTIFIED;
     GRANT SELECT ON alias_t TO ${u_json};
     GRANT SELECT(\`secret_column_3.k\`) ON hidden_target TO ${u_json};
+
+    CREATE USER ${u_revoke} NOT IDENTIFIED;
+    GRANT SELECT ON alias_t TO ${u_revoke};
+    GRANT SELECT ON hidden_target TO ${u_revoke};
+    REVOKE SELECT(secret_column_1, secret_column_2, secret_column_3) ON hidden_target FROM ${u_revoke};
 
     CREATE USER ${u_bogus} NOT IDENTIFIED;
     GRANT SELECT ON alias_t TO ${u_bogus};
@@ -149,6 +155,7 @@ echo "-- grants on the alias and on a subcolumn or a virtual column of the targe
 as_user "${u_sub}" "SELECT secret_column_2.null FROM alias_t"
 as_user "${u_virt}" "SELECT notEmpty(_part) FROM alias_t"
 as_user "${u_json}" "SELECT secret_column_3.k FROM alias_t"
+as_user "${u_revoke}" "SELECT notEmpty(_part), secret_column_2.null FROM alias_t"
 check_denied "$(as_user "${u_bogus}" "EXPLAIN QUERY TREE SELECT * FROM alias_t")"
 
 echo "-- a temporary alias"
@@ -170,6 +177,7 @@ ${CLICKHOUSE_CLIENT} -m --query "
     CREATE USER ${u_create} NOT IDENTIFIED;
     GRANT SELECT ON ${db_atomic}.alias_t TO ${u_create};
     GRANT CREATE VIEW ON ${db_atomic}.* TO ${u_create};
+    GRANT SELECT, INSERT ON ${db_atomic}.mv_dst TO ${u_create};
 "
 
 echo "-- a materialized view over the alias, defined by a user granted on the alias only"
@@ -177,8 +185,9 @@ ${CLICKHOUSE_CLIENT} --query "CREATE MATERIALIZED VIEW ${db_atomic}.mv TO ${db_a
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO ${db_atomic}.alias_t SETTINGS async_insert = 0 VALUES (7, 'x')"
 ${CLICKHOUSE_CLIENT} --query "SELECT secret_column_1 FROM ${db_atomic}.mv_dst"
 
-echo "-- a view over the alias, created by a user granted on the alias only"
+echo "-- a view and a materialized view over the alias, created by a user granted on the alias only"
 check_denied "$(as_user "${u_create}" "CREATE VIEW ${db_atomic}.v AS SELECT * FROM ${db_atomic}.alias_t")"
+check_denied "$(as_user "${u_create}" "CREATE MATERIALIZED VIEW ${db_atomic}.mv_create TO ${db_atomic}.mv_dst AS SELECT secret_column_1 FROM ${db_atomic}.alias_t")"
 
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${db_atomic}"
 drop_users
