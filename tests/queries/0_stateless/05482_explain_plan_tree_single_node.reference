@@ -83,6 +83,30 @@
 │ Parts: 1 | Granules: 13 │
 │ Output: bid             │
 └─────────────────────────┘
+-- nested plans
+┌────────────────────────┐
+│ ReadFromMerge ← N1, N2 │
+├────────────────────────┤
+│ Output: x              │
+└────────────────────────┘
+
+N1 · nested plan of ReadFromMerge
+┌─────────────────────────────────────────┐
+│ ReadFromMergeTree (db_XXXXXXXX.merge_a) │
+├─────────────────────────────────────────┤
+│ Read type: Default                      │
+│ Parts: 1 | Granules: 1                  │
+│ Output: materialize(x)                  │
+└─────────────────────────────────────────┘
+
+N2 · nested plan of ReadFromMerge
+┌─────────────────────────────────────────┐
+│ ReadFromMergeTree (db_XXXXXXXX.merge_b) │
+├─────────────────────────────────────────┤
+│ Read type: Default                      │
+│ Parts: 1 | Granules: 1                  │
+│ Output: materialize(x)                  │
+└─────────────────────────────────────────┘
 -- fallback to local execution
    ┌──────────────────────────────┐
    │ TotalsHaving                 │

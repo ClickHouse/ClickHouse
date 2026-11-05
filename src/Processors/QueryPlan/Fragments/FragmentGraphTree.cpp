@@ -81,6 +81,17 @@ struct StepBox
     }
 };
 
+/// A nested plan of a step (`IQueryPlanStep::getChildPlans`), drawn after the main drawing as a plan of its own. Its id
+/// is `N<index + 1>`.
+struct NestedPlan
+{
+    const QueryPlan * plan = nullptr;
+    /// The name and description of the step that owns the plan.
+    String owner;
+};
+
+using NestedPlans = std::vector<NestedPlan>;
+
 struct FragmentFrame
 {
     String title;
@@ -91,11 +102,14 @@ struct FragmentFrame
 class TreeBuilder
 {
 public:
-    TreeBuilder(const PreparedFragmentGraph & prepared_, size_t max_step_description_length_)
+    /// The nested plans of the drawn steps are appended to `nested_plans_`, which is shared by the builders of the main
+    /// drawing and of the nested plans, so that the ids are unique in the whole output.
+    TreeBuilder(const PreparedFragmentGraph & prepared_, size_t max_step_description_length_, NestedPlans & nested_plans_, bool frameless_)
         : prepared(prepared_)
         , graph(prepared.graph)
         , options(prepared.options)
-        , frameless(prepared.single_node)
+        , nested_plans(nested_plans_)
+        , frameless(frameless_)
         , padding(frameless ? 0 : frame_padding)
         , sibling_gap(3 + 2 * padding)
         , max_step_description_length(max_step_description_length_)
@@ -104,12 +118,28 @@ public:
             fragment_index_by_id[graph.fragments[i].id] = i;
     }
 
-    void draw(WriteBuffer & buf)
+    /// Draws the fragments of the graph and the exchanges between them.
+    void drawGraph(WriteBuffer & buf)
     {
         buildBoxes();
         attachProducers();
+        drawFrom(rootFragment(), buf);
+    }
 
-        const size_t root_fragment = rootFragment();
+    /// Draws a nested plan as bare boxes. Must be built with `frameless`.
+    void drawNestedPlan(const QueryPlan & plan, WriteBuffer & buf)
+    {
+        chassert(frameless);
+        if (!plan.getRootNode())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A nested plan to draw has no root node");
+        frames.resize(1);
+        frames[0].root_box = addPlanBoxes(*plan.getRootNode(), 0, getPrettyNames(plan));
+        drawFrom(0, buf);
+    }
+
+private:
+    void drawFrom(size_t root_fragment, WriteBuffer & buf)
+    {
         const size_t root = frames[root_fragment].root_box;
         layoutColumns(root, 0);
         Int64 min_left = 0;
@@ -132,10 +162,10 @@ public:
         canvas.writeTo(buf);
     }
 
-private:
     const PreparedFragmentGraph & prepared;
     const FragmentGraph & graph;
     const ExplainPlanOptions & options;
+    NestedPlans & nested_plans;
     /// A plan that was not cut is one fragment, drawn as bare boxes: no frame, no title, no padding for the frame.
     const bool frameless;
     /// Columns between a step box and the frame of its fragment: `frame_padding`, or 0 without a frame.
@@ -177,7 +207,21 @@ private:
         return fragmentIndex(roots.front());
     }
 
-    String stepText(IQueryPlanStep & step) const
+    /// The names of the columns and runtime filters in a nested plan. Without `pretty`, empty maps.
+    const PrettyNames & getPrettyNames(const QueryPlan & plan) const
+    {
+        static const PrettyNames no_names;
+        if (!options.pretty)
+            return no_names;
+        auto it = prepared.pretty_names.names.find(&plan);
+        if (it == prepared.pretty_names.names.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A nested plan to draw has no pretty names");
+        return it->second;
+    }
+
+    /// The name of the step and its description. The nested plans of the step are registered in `nested_plans`, to be
+    /// drawn after the main drawing, and the text ends with their ids: `← N1, N2`. Called once per step, so the ids are stable.
+    String stepText(IQueryPlanStep & step)
     {
         String text = step.getName();
         String description(step.getStepDescription());
@@ -187,6 +231,18 @@ private:
             description = description.substr(0, max_step_description_length);
         if (options.description && !description.empty())
             text += fmt::format(" ({})", description);
+
+        std::vector<String> ids;
+        for (const auto * child_plan : step.getChildPlans(/*for_explain=*/ true))
+        {
+            /// `QueryPlanFormat::buildPrettyNamesPerPlan` skips such plans too.
+            if (!child_plan || !child_plan->getRootNode())
+                continue;
+            nested_plans.push_back({child_plan, text});
+            ids.push_back(fmt::format("N{}", nested_plans.size()));
+        }
+        if (!ids.empty())
+            text += fmt::format(" ← {}", fmt::join(ids, ", "));
         return text;
     }
 
@@ -612,7 +668,17 @@ void explainAsTree(
     const PreparedFragmentGraph prepared(graph, options);
 
     validateFragmentGraph(graph);
-    TreeBuilder(prepared, max_step_description_length).draw(buf);
+    NestedPlans nested_plans;
+    TreeBuilder(prepared, max_step_description_length, nested_plans, prepared.single_node).drawGraph(buf);
+
+    /// Drawing a nested plan can register the nested plans of its own steps: they are appended and drawn in turn.
+    for (size_t i = 0; i < nested_plans.size(); ++i)
+    {
+        /// Copy: drawing appends to `nested_plans`, which invalidates references to its elements.
+        const NestedPlan nested_plan = nested_plans[i];
+        buf << "\nN" << i + 1 << " · nested plan of " << TextCanvas::replaceControlCharacters(nested_plan.owner) << '\n';
+        TreeBuilder(prepared, max_step_description_length, nested_plans, /*frameless=*/ true).drawNestedPlan(*nested_plan.plan, buf);
+    }
 
     /// A plan that was not cut has no exchanges, and its one level says nothing.
     if (prepared.single_node)

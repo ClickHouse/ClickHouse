@@ -45,6 +45,10 @@ void explainAsFragments(
 /// picture has no other width limit.
 ///
 /// A single node is drawn too, unlike with `fragments = 1`: the boxes of its steps without a frame around them.
+///
+/// The nested plans of a step (`IQueryPlanStep::getChildPlans`) are numbered `N1`, `N2`, ..., the box of the step ends
+/// with `← N1, N2`, and every nested plan is drawn after the main drawing, without a frame, under `N<id> · nested plan
+/// of <step>`, without `Expression` steps either.
 void explainAsTree(
     const FragmentGraph & graph,
     WriteBuffer & buf,
