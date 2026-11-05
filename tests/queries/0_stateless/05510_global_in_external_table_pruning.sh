@@ -27,12 +27,13 @@ $CLICKHOUSE_CLIENT --query "CREATE TABLE ${TABLE}_avro ENGINE = IcebergLocal('${
 $CLICKHOUSE_CLIENT --query "CREATE TABLE ${TABLE}_file (id Int64) ENGINE = File(Parquet) SETTINGS output_format_parquet_row_group_size = 1000"
 $CLICKHOUSE_CLIENT --query "INSERT INTO ${TABLE}_file SELECT number FROM numbers(4000)"
 
+# A serialized query plan gives the shard its sets without their source, so they are not built early there.
 function remote_query()
 {
     $CLICKHOUSE_CLIENT --query "
         SELECT count(), sum(id) FROM remote('127.0.0.{1,2}', currentDatabase(), $1)
         WHERE id GLOBAL IN (SELECT 1500 UNION ALL SELECT 1501)
-        SETTINGS prefer_localhost_replica = $2, log_comment = '${CLICKHOUSE_DATABASE}_$3'"
+        SETTINGS prefer_localhost_replica = $2, serialize_query_plan = 0, log_comment = '${CLICKHOUSE_DATABASE}_$3'"
 }
 
 remote_query "${TABLE}" 0 iceberg_r0
