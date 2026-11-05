@@ -46,7 +46,9 @@
 
 #if USE_EMBEDDED_COMPILER
 #    include <DataTypes/Native.h>
+#    include <Functions/DateTimeTransforms.h>
 #    include <Functions/castTypeToEither.h>
+#    include <Functions/compileDateTransform.h>
 #    include <llvm/IR/IRBuilder.h>
 #endif
 
@@ -2303,8 +2305,9 @@ public:
     /// The pairs of date and time types `executeImpl` compares by their stored integers: two values of the same kind
     /// (`DateTime` values with any time zones, which are absolute timestamps), `Date` vs `Date32` (both day numbers from
     /// the same epoch), and a `DateTime` vs a `DateTime64`, converted to the `DateTime64` by a multiplication that cannot
-    /// overflow. `Date` vs `DateTime` needs the time zone, and `DateTime64` values of different scales are rescaled
-    /// with an overflow check that can throw, so they stay interpreted. `Time` and `Time64` are not compiled yet.
+    /// overflow; and a `Date` vs a `DateTime`, see `isDateAndDateTimePair`. `Date32` vs `DateTime` is compared as
+    /// `DateTime64`, and `DateTime64` values of different scales are rescaled with an overflow check that can throw, so
+    /// they stay interpreted. `Time` and `Time64` are not compiled yet.
     static bool isCompilableDateOrTimePair(const IDataType & left, const IDataType & right)
     {
         WhichDataType which_left(left);
@@ -2320,9 +2323,19 @@ public:
             return which_left.isDateTime() || which_right.isDateTime();
 
         if (isDateOrTimeType(which_left) && isDateOrTimeType(which_right) && which_left.idx != which_right.idx)
-            return which_left.isDateOrDate32() && which_right.isDateOrDate32();
+            return (which_left.isDateOrDate32() && which_right.isDateOrDate32()) || isDateAndDateTimePair(left, right);
 
         return true;
+    }
+
+    /// A `Date` and a `DateTime`: `executeImpl` converts the `Date` to the `DateTime` with `castColumn`, which is
+    /// `ToDateTimeImpl` in the `Saturate` mode (`createInternalCast` without a context) in the time zone of the `DateTime`
+    /// (their supertype), whatever `date_time_overflow_behavior` is; then compares the `UInt32` values.
+    static bool isDateAndDateTimePair(const IDataType & left, const IDataType & right)
+    {
+        WhichDataType which_left(left);
+        WhichDataType which_right(right);
+        return (which_left.isDate() && which_right.isDateTime()) || (which_left.isDateTime() && which_right.isDate());
     }
 
     /// An integer type compiled code holds: its width in bits and whether it is signed.
@@ -2445,6 +2458,9 @@ public:
         if (isFloatAnd64BitIntegerPair(*arguments[0], *arguments[1]))
             return Op<Float64, Int64>::compilable;
 
+        if (isDateAndDateTimePair(*arguments[0], *arguments[1]))
+            return Op<UInt32, UInt32>::compilable;
+
         return castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
         {
             using LeftDataType = std::decay_t<decltype(left)>;
@@ -2504,6 +2520,17 @@ public:
                 auto * left_value = b.CreateSExtOrTrunc(arguments[0].value, b.getIntNTy(bits));
                 auto * right_value = b.CreateSExtOrTrunc(arguments[1].value, b.getIntNTy(bits));
                 return b.CreateSelect(CompileOp<Op>::compile(b, left_value, right_value, /*is_signed=*/ true), b.getInt8(1), b.getInt8(0));
+            }
+
+            if (isDateAndDateTimePair(left_type, right_type))
+            {
+                const bool date_is_left = WhichDataType(left_type).isDate();
+                const auto & date_time_type = assert_cast<const DataTypeDateTime &>(date_is_left ? right_type : left_type);
+                auto * date = compileDateToDateTimeSaturated(
+                    b, arguments[date_is_left ? 0 : 1].value, date_time_type.getTimeZone(), MAX_DATETIME_DAY_NUM);
+                auto * left_value = date_is_left ? date : arguments[0].value;
+                auto * right_value = date_is_left ? arguments[1].value : date;
+                return b.CreateSelect(CompileOp<Op>::compile(b, left_value, right_value, /*is_signed=*/ false), b.getInt8(1), b.getInt8(0));
             }
 
             if (isSameEnumPair(left_type, right_type))
