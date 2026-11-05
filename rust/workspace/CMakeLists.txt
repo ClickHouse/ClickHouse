@@ -222,6 +222,69 @@ if (ENABLE_LANCE)
             localize_rust_c__ch_rust_lance _lz4 _zstd)
         add_dependencies(_ch_rust_lance localize_rust_contrib_symbols__ch_rust_lance)
     endif()
+
+    # Then keep only the FFI entry points of the Lance static library global, the same as for Vortex below.
+    #
+    # The localization above did not take effect in the ARM release build (there the C code of the crates
+    # goes through ThinLTO, so it is likely LLVM bitcode, which `llvm-objcopy` does not rewrite): the
+    # bundled zstd 1.5.7 won over `contrib/zstd`, and the whole server used it. The `ZSTD` codec then
+    # lacked the NEON overlap copy of `contrib/zstd`, which made reading `ZSTD`-compressed columns about
+    # 2x slower on ARM (`vectorize_aggregation_combinators` in the performance tests). A partial link
+    # handles bitcode.
+    if (NOT CMAKE_AR MATCHES "dummy_compiler_linker" AND NOT SANITIZE AND NOT OS_DARWIN
+        AND NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "ppc64le")
+        find_program(_LLD_FOR_STRIP NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
+        if (_LLD_FOR_STRIP)
+            # Every exported function is declared as `ch_lance_<name>(` in the FFI header, which stays
+            # the only place that defines the ABI surface. Comment lines are skipped.
+            set(_lance_ffi_header "${CMAKE_CURRENT_SOURCE_DIR}/lance/include/ch_lance.h")
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_lance_ffi_header}")
+
+            file(STRINGS "${_lance_ffi_header}" _lance_ffi_declarations REGEX "ch_lance_[a-z0-9_]+[ \t]*\\(")
+            set(_lance_ffi_symbols "")
+            foreach (_declaration IN LISTS _lance_ffi_declarations)
+                if (_declaration MATCHES "^[ \t]*(//|\\*)")
+                    continue()
+                endif()
+                string(REGEX MATCHALL "ch_lance_[a-z0-9_]+[ \t]*\\(" _matches "${_declaration}")
+                foreach (_match IN LISTS _matches)
+                    string(REGEX REPLACE "[ \t]*\\($" "" _symbol "${_match}")
+                    list(APPEND _lance_ffi_symbols "${_symbol}")
+                endforeach()
+            endforeach()
+            list(REMOVE_DUPLICATES _lance_ffi_symbols)
+
+            # Fail closed: an empty keep list would leave nothing to link against.
+            if (NOT _lance_ffi_symbols)
+                message(FATAL_ERROR "No ch_lance_* entry points found in ${_lance_ffi_header}. "
+                    "Either the header moved or its declaration style changed; "
+                    "stripping the library against an empty keep list would leave nothing to link against.")
+            endif()
+
+            list(LENGTH _lance_ffi_symbols _lance_ffi_symbol_count)
+            message(STATUS "Lance: keeping ${_lance_ffi_symbol_count} FFI entry points when stripping")
+
+            get_target_property(_lance_lib _ch_rust_lance IMPORTED_LOCATION)
+            if (NOT _lance_lib OR _lance_lib MATCHES "NOTFOUND")
+                set(_lance_lib "${CMAKE_CURRENT_BINARY_DIR}/lib_ch_rust_lance.a")
+            endif()
+            add_custom_target(strip_lance_symbols
+                COMMAND bash "${ClickHouse_SOURCE_DIR}/cmake/strip_rust_symbols.sh"
+                    "${_lance_lib}" "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${_LLD_FOR_STRIP}"
+                    ${_lance_ffi_symbols}
+                DEPENDS cargo-build__ch_rust_lance
+                COMMENT "Stripping internal symbols from Lance library"
+                VERBATIM
+            )
+            add_dependencies(_ch_rust_lance strip_lance_symbols)
+            # Ensure localize runs before strip (they all modify the same .a)
+            if (TARGET localize_rust_contrib_symbols__ch_rust_lance)
+                add_dependencies(strip_lance_symbols localize_rust_contrib_symbols__ch_rust_lance)
+            elseif (TARGET localize_rust_c__ch_rust_lance)
+                add_dependencies(strip_lance_symbols localize_rust_c__ch_rust_lance)
+            endif()
+        endif()
+    endif()
 endif()
 
 if (ENABLE_VORTEX AND TARGET ch_contrib::arrow)
