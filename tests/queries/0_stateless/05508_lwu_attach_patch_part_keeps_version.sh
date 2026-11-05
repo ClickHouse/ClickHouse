@@ -95,9 +95,13 @@ echo "MOVE PART TO SHARD"
 $CLIENT --query "
     CREATE TABLE t_src (id UInt64, a UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_src', 'r1') ORDER BY id
     SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, part_moves_between_shards_enable = 1, assign_part_uuids = 1;
+    CREATE TABLE t_src_r2 (id UInt64, a UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_src', 'r2') ORDER BY id
+    SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, part_moves_between_shards_enable = 1, assign_part_uuids = 1;
     CREATE TABLE t_dst (id UInt64, a UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_dst', 'r1') ORDER BY id
     SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, part_moves_between_shards_enable = 1, assign_part_uuids = 1;
     INSERT INTO t_src VALUES (1, 0);
+    SYSTEM SYNC REPLICA t_src_r2;
+    SYSTEM STOP FETCHES t_src_r2;
     UPDATE t_src SET a = 5 WHERE id = 1;
 "
 
@@ -105,12 +109,17 @@ patch=$($CLIENT --query "SELECT name FROM system.parts WHERE database = currentD
 $CLIENT --query "ALTER TABLE t_src MOVE PART '$patch' TO SHARD '/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_dst'" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
 part=$($CLIENT --query "SELECT name FROM system.parts WHERE database = currentDatabase() AND table = 't_src' AND active AND NOT startsWith(name, 'patch-')")
 $CLIENT --query "ALTER TABLE t_src MOVE PART '$part' TO SHARD '/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_dst'" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED'
+# t_src_r2 has not fetched the patch, so the patches of the other replicas are checked as well.
+$CLIENT --query "SELECT 'replica without the patch', count() FROM system.parts WHERE database = currentDatabase() AND table = 't_src_r2' AND active AND startsWith(name, 'patch-')"
+$CLIENT --query "ALTER TABLE t_src_r2 MOVE PART '$part' TO SHARD '/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_dst'" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED'
 $CLIENT --query "
     SELECT id, a FROM t_src ORDER BY id;
     SELECT count() FROM system.part_moves_between_shards WHERE database = currentDatabase();
 "
 $CLIENT --query "KILL PART_MOVE_TO_SHARD WHERE database = currentDatabase()" > /dev/null
 $CLIENT --query "
+    SYSTEM START FETCHES t_src_r2;
     DROP TABLE t_src SYNC;
+    DROP TABLE t_src_r2 SYNC;
     DROP TABLE t_dst SYNC;
 "
