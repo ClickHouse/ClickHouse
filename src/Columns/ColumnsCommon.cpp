@@ -473,8 +473,9 @@ void filterArraysImpl(
     PaddedPODArray<T> & res_elems, IColumn::Offsets & res_offsets,
     const IColumn::Filter & filt, ssize_t result_size_hint)
 {
-    /// When at least 7/8 of the rows pass, this is faster than copying row by row, even for short rows. A hint of at
-    /// least the row count does not count the passing rows (some callers pass the row count), so it keeps the row-by-row copy.
+    /// When at least 7/8 of the rows pass, this is faster than copying row by row, even for short rows, unless the rows
+    /// are long and almost every block of 64 rows passes whole. A hint of at least the row count does not count the
+    /// passing rows (some callers pass the row count), so it keeps the row-by-row copy.
     if (result_size_hint > 0 && static_cast<size_t>(result_size_hint) < src_offsets.size()
         && static_cast<size_t>(result_size_hint) * 8 >= src_offsets.size() * 7)
         return filterArraysImplDense<T>(src_elems, src_offsets, res_elems, res_offsets, filt, result_size_hint);
