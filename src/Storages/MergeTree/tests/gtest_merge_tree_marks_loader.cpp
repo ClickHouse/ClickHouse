@@ -46,6 +46,7 @@ public:
     [[nodiscard]] MergeTreeSettingsPtr getStorageSettings() const override { unexpectedCall(); }
     [[nodiscard]] std::shared_ptr<const IMergeTreeDataPart> getDataPart() const override { unexpectedCall(); }
     [[nodiscard]] const MergeTreeDataPartChecksums & getChecksums() const override { unexpectedCall(); }
+    [[nodiscard]] const SecondaryIndexColumnTypes & getSecondaryIndexColumnTypes() const override { unexpectedCall(); }
     [[nodiscard]] AlterConversionsPtr getAlterConversions() const override { unexpectedCall(); }
     [[nodiscard]] size_t getMarksCount() const override { unexpectedCall(); }
     [[nodiscard]] size_t getFileSizeOrZero(const std::string &) const override { unexpectedCall(); }

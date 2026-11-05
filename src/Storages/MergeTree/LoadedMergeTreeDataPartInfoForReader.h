@@ -88,6 +88,8 @@ public:
 
     [[nodiscard]] const MergeTreeDataPartChecksums & getChecksums() const override { return data_part->checksums; }
 
+    const SecondaryIndexColumnTypes & getSecondaryIndexColumnTypes() const override { return data_part->getSecondaryIndexColumnTypes(); }
+
     void reportBroken() override { data_part->storage.reportBrokenPart(data_part); }
 
     [[nodiscard]] size_t getMarksCount() const override { return data_part->getMarksCount(); }

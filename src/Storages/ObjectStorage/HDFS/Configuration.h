@@ -72,6 +72,9 @@ public:
 
     [[nodiscard]] String getNamespace() const override { return ""; }
     [[nodiscard]] String getDataSourceDescription() const override { return url; }
+
+    /// The object storages created from now on reject writes and removals.
+    void setReadOnly() { read_only = true; }
     [[nodiscard]] StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
     void check(ContextPtr context) override;
@@ -91,6 +94,7 @@ private:
     String url;
     Path path;
     Paths paths;
+    bool read_only = false;
 };
 }
 
