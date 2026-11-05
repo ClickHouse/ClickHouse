@@ -85,7 +85,7 @@ StoragePtr getIndexStorage(const StoragePtr & storage, const ContextPtr & contex
         return storage;
 
     auto local_table = DatabaseCatalog::instance().tryGetTable(local_id, context);
-    if (!local_table || local_table.get() == storage.get())
+    if (!local_table)
         return storage;
 
     return local_table;
@@ -168,19 +168,14 @@ QueryTreeNodePtr projectionAt(const IQueryTreeNode & source, size_t position, co
 /// Not only a passed-through column: `SELECT lower(s) AS x` exposes the indexed `lower(s)` as `x`.
 QueryTreeNodePtr findProjection(const IQueryTreeNode & source, const String & name, const ContextPtr & context, size_t & substitutions)
 {
+    std::optional<size_t> position;
+
     if (const auto * query_node = source.as<QueryNode>())
-    {
-        auto position = projectionPosition(query_node->getProjectionColumns(), name);
-        return position ? projectionAt(source, *position, context, substitutions) : QueryTreeNodePtr{};
-    }
+        position = projectionPosition(query_node->getProjectionColumns(), name);
+    else if (const auto * union_node = source.as<UnionNode>())
+        position = projectionPosition(union_node->computeProjectionColumns(), name);
 
-    if (const auto * union_node = source.as<UnionNode>())
-    {
-        auto position = projectionPosition(union_node->computeProjectionColumns(), name);
-        return position ? findAgreedUnionProjection(*union_node, *position, context, substitutions) : QueryTreeNodePtr{};
-    }
-
-    return nullptr;
+    return position ? projectionAt(source, *position, context, substitutions) : QueryTreeNodePtr{};
 }
 
 /// Null unless the expression reads one table occurrence, because otherwise no index describes it.
@@ -398,8 +393,12 @@ public:
     void enterImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || !function_node->isOrdinaryFunction()
-            || !doesTextSearchFunctionAcceptTokenizer(function_node->getFunctionName()))
+        if (!function_node || !function_node->isOrdinaryFunction())
+            return;
+
+        /// By value: resolving the node below assigns the member this would otherwise alias.
+        const String function_name = function_node->getFunctionName();
+        if (!doesTextSearchFunctionAcceptTokenizer(function_name))
             return;
 
         /// Two arguments means no explicit tokenizer, which is the only case the index decides.
@@ -407,12 +406,12 @@ public:
         if (arguments.size() != 2)
             return;
 
-        auto tokenizer = findTextIndexTokenizer(arguments.front(), function_node->getFunctionName());
+        auto tokenizer = findTextIndexTokenizer(arguments.front(), function_name);
         if (tokenizer.empty())
             return;
 
         arguments.push_back(std::make_shared<ConstantNode>(std::move(tokenizer), std::make_shared<DataTypeString>()));
-        resolveOrdinaryFunctionNodeByName(*function_node, function_node->getFunctionName(), getContext());
+        resolveOrdinaryFunctionNodeByName(*function_node, function_name, getContext());
     }
 
 private:
@@ -466,8 +465,9 @@ private:
             return it->second;
 
         const auto is_shadowing_column = getMapSubcolumnShadowingCheck(metadata);
-        const Carriers carriers = map_only_name.empty() ? carrierNames(resolved, name, is_shadowing_column)
-                                                        : Carriers{.names = {name}, .json_subcolumn = {}};
+        const Carriers carriers = map_only_name.empty()
+            ? carrierNames(resolved, name, is_shadowing_column)
+            : Carriers{.names = {name}, .json_subcolumn = {}};
 
         for (const auto & index : indices)
         {
@@ -492,7 +492,7 @@ private:
             const bool describes = std::ranges::any_of(carriers.names, [&](const String & carrier)
             {
                 return carrier == index.column_names.front()
-                    || normalized_name == std::optional<String>(carrier)
+                    || (normalized_name && *normalized_name == carrier)
                     || matches_json(carrier);
             }) || (!carriers.json_subcolumn.empty() && matches_json(carriers.json_subcolumn));
 
