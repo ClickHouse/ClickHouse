@@ -6,7 +6,8 @@
 #include <unordered_set>
 #include <Common/CurrentMetrics.h>
 #include <Common/ErrorCodes.h>
-#include <Common/re2.h>
+#include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/config_version.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -65,15 +66,12 @@ void writeMetricLine(DB::WriteBuffer & wb, const std::string & key, const std::s
     writeOutLine(wb, std::forward<T>(value));
 }
 
-/// Returns false if name is not valid
-bool replaceInvalidChars(std::string & metric_name)
+/// Escapes a metric or label name, see `writePrometheusLabelName`.
+std::string escapeName(std::string_view name)
 {
-    /// dirty solution:
-    static const re2::RE2 regexp1("[^a-zA-Z0-9_:]");
-    static const re2::RE2 regexp2("^[^a-zA-Z]*");
-    re2::RE2::GlobalReplace(&metric_name, regexp1, "_");
-    re2::RE2::GlobalReplace(&metric_name, regexp2, "");
-    return !metric_name.empty();
+    DB::WriteBufferFromOwnString out;
+    DB::writePrometheusLabelName(name, out);
+    return out.str();
 }
 
 void convertHelpToSingleLine(std::string & help)
@@ -97,8 +95,7 @@ void writeEvent(DB::WriteBuffer & wb, ProfileEvents::Event event, const std::str
 
     convertHelpToSingleLine(metric_doc);
 
-    if (!replaceInvalidChars(metric_name))
-        return;
+    metric_name = escapeName(metric_name);
 
     std::string key{profile_events_prefix + metric_name};
 
@@ -116,33 +113,13 @@ void writeMetric(DB::WriteBuffer & wb, size_t metric, const std::string & labels
 
     convertHelpToSingleLine(metric_doc);
 
-    if (!replaceInvalidChars(metric_name))
-        return;
+    metric_name = escapeName(metric_name);
 
     std::string key{current_metrics_prefix + metric_name};
 
     writeOutLine(wb, "# HELP", key, metric_doc);
     writeOutLine(wb, "# TYPE", key, "gauge");
     writeMetricLine(wb, key, labels_suffix, value);
-}
-
-void writeLabelValueEscaped(DB::WriteBuffer & wb, const std::string & value)
-{
-    for (char c : value)
-    {
-        if (c == '\\' || c == '"')
-        {
-            DB::writeChar('\\', wb);
-            DB::writeChar(c, wb);
-        }
-        else if (c == '\n')
-        {
-            DB::writeChar('\\', wb);
-            DB::writeChar('n', wb);
-        }
-        else
-            DB::writeChar(c, wb);
-    }
 }
 
 void writeAsyncMetrics(DB::WriteBuffer & wb, const DB::AsynchronousMetricValues & values,
@@ -152,8 +129,7 @@ void writeAsyncMetrics(DB::WriteBuffer & wb, const DB::AsynchronousMetricValues 
     {
         std::string key{asynchronous_metrics_prefix + name_value.first};
 
-        if (!replaceInvalidChars(key))
-            continue;
+        key = escapeName(key);
 
         const auto & value = name_value.second;
 
@@ -168,8 +144,7 @@ void writeAsyncMetrics(DB::WriteBuffer & wb, const DB::AsynchronousMetricValues 
             /// A key-value metric is exported as one line per key, with the key as a label,
             /// e.g. `ClickHouseAsyncMetrics_BlockReadBytes{device="sda"} 123`.
             std::string label_name{value.key_label};
-            if (!replaceInvalidChars(label_name))
-                continue;
+            label_name = escapeName(label_name);
 
             for (const auto & [map_key, map_value] : value.key_values)
             {
@@ -180,7 +155,7 @@ void writeAsyncMetrics(DB::WriteBuffer & wb, const DB::AsynchronousMetricValues 
                     DB::writeChar(',', labels_wb);
                 DB::writeText(label_name, labels_wb);
                 DB::writeText("=\"", labels_wb);
-                writeLabelValueEscaped(labels_wb, map_key);
+                DB::writePrometheusLabelValue(map_key, labels_wb);
                 DB::writeText("\"}", labels_wb);
 
                 writeMetricLine(wb, key, labels_wb.str(), map_value);
@@ -196,6 +171,38 @@ void writeAsyncMetrics(DB::WriteBuffer & wb, const DB::AsynchronousMetricValues 
 
 namespace DB
 {
+
+void writePrometheusLabelName(std::string_view name, WriteBuffer & out)
+{
+    for (size_t pos = 0; pos < name.size();)
+    {
+        char first_byte = name[pos];
+        bool valid = isAlphaASCII(first_byte) || (first_byte == '_') || (first_byte == ':') || (isNumericASCII(first_byte) && pos > 0);
+        writeChar(valid ? first_byte : '_', out);
+
+        /// A multi-byte character is replaced as a whole; a sequence cut off at the end of the name is not read past it.
+        pos += std::min<size_t>(UTF8::seqLength(static_cast<UInt8>(first_byte)), name.size() - pos);
+    }
+}
+
+void writePrometheusLabelValue(std::string_view value, WriteBuffer & out)
+{
+    for (char c : value)
+    {
+        if (c == '\\' || c == '"')
+        {
+            writeChar('\\', out);
+            writeChar(c, out);
+        }
+        else if (c == '\n')
+        {
+            writeChar('\\', out);
+            writeChar('n', out);
+        }
+        else
+            writeChar(c, out);
+    }
+}
 
 PrometheusMetricsWriter::PrometheusMetricsWriter(const std::map<std::string, std::string> & constant_labels_)
 {
@@ -267,8 +274,7 @@ void PrometheusMetricsWriter::writeErrors(WriteBuffer & wb) const
 void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const HistogramMetrics::MetricFamily & family, const std::string & extra_labels)
 {
     std::string base_name = histogram_prefix + family.getName();
-    if (!replaceInvalidChars(base_name))
-        return;
+    base_name = escapeName(base_name);
 
     std::string help_text = family.getDocumentation();
     convertHelpToSingleLine(help_text);
@@ -358,8 +364,7 @@ void PrometheusMetricsWriter::writeHistogramMetrics(WriteBuffer & wb) const
 void PrometheusMetricsWriter::writeDimensionalMetric(WriteBuffer & wb, const DimensionalMetrics::MetricFamily & family, const std::string & extra_labels)
 {
     std::string base_name = dimensional_metrics_prefix + family.getName();
-    if (!replaceInvalidChars(base_name))
-        return;
+    base_name = escapeName(base_name);
 
     std::string help_text = family.getDocumentation();
     convertHelpToSingleLine(help_text);
