@@ -16,6 +16,7 @@ u_sub="u_sub_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_virt="u_virt_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_json="u_json_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_revoke="u_revoke_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+u_dyn="u_dyn_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_bogus="u_bogus_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_tmp="u_tmp_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_mvdef="u_mvdef_${CLICKHOUSE_TEST_UNIQUE_NAME}"
@@ -26,7 +27,7 @@ db_atomic="${CLICKHOUSE_DATABASE}_atomic"
 
 drop_users()
 {
-    ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${u_alias}, ${u_col}, ${u_showcol}, ${u_both}, ${u_show}, ${u_sub}, ${u_virt}, ${u_json}, ${u_revoke}, ${u_bogus}, ${u_tmp}, ${u_mvdef}, ${u_create}"
+    ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${u_alias}, ${u_col}, ${u_showcol}, ${u_both}, ${u_show}, ${u_sub}, ${u_virt}, ${u_json}, ${u_revoke}, ${u_dyn}, ${u_bogus}, ${u_tmp}, ${u_mvdef}, ${u_create}"
 }
 
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${db_atomic}"
@@ -36,7 +37,9 @@ ${CLICKHOUSE_CLIENT} -m --query "
     DROP TABLE IF EXISTS chain_a1;
     DROP TABLE IF EXISTS chain_a2;
     DROP TABLE IF EXISTS alias_one;
+    DROP TABLE IF EXISTS alias_dynamic;
     DROP TABLE IF EXISTS hidden_target;
+    DROP TABLE IF EXISTS dynamic_target;
 
     CREATE TABLE hidden_target (secret_column_1 UInt32, secret_column_2 Nullable(String), secret_column_3 JSON) ENGINE = MergeTree ORDER BY secret_column_1;
     INSERT INTO hidden_target VALUES (1, 'a', '{\"k\": 5}');
@@ -45,6 +48,9 @@ ${CLICKHOUSE_CLIENT} -m --query "
     CREATE TABLE chain_a1 ENGINE = Alias(currentDatabase(), 'chain_a2');
     CREATE TABLE chain_a2 ENGINE = Alias(currentDatabase(), 'hidden_target');
     CREATE TABLE alias_one ENGINE = Alias('system', 'one');
+    CREATE TABLE dynamic_target (j JSON) ENGINE = Memory;
+    INSERT INTO dynamic_target VALUES ('{\"k\": 9}');
+    CREATE TABLE alias_dynamic ENGINE = Alias(currentDatabase(), 'dynamic_target');
 
     CREATE USER ${u_alias} NOT IDENTIFIED;
     GRANT SELECT ON alias_t TO ${u_alias};
@@ -82,6 +88,11 @@ ${CLICKHOUSE_CLIENT} -m --query "
     GRANT SELECT ON alias_t TO ${u_revoke};
     GRANT SELECT ON hidden_target TO ${u_revoke};
     REVOKE SELECT(secret_column_1, secret_column_2, secret_column_3) ON hidden_target FROM ${u_revoke};
+
+    CREATE USER ${u_dyn} NOT IDENTIFIED;
+    GRANT SELECT ON alias_dynamic TO ${u_dyn};
+    GRANT SELECT ON dynamic_target TO ${u_dyn};
+    REVOKE SELECT(j, _table, _database) ON dynamic_target FROM ${u_dyn};
 
     CREATE USER ${u_bogus} NOT IDENTIFIED;
     GRANT SELECT ON alias_t TO ${u_bogus};
@@ -156,6 +167,7 @@ as_user "${u_sub}" "SELECT secret_column_2.null FROM alias_t"
 as_user "${u_virt}" "SELECT notEmpty(_part) FROM alias_t"
 as_user "${u_json}" "SELECT secret_column_3.k FROM alias_t"
 as_user "${u_revoke}" "SELECT notEmpty(_part), secret_column_2.null FROM alias_t"
+as_user "${u_dyn}" "SELECT j.k FROM alias_dynamic"
 check_denied "$(as_user "${u_bogus}" "EXPLAIN QUERY TREE SELECT * FROM alias_t")"
 
 echo "-- a temporary alias"
@@ -196,5 +208,7 @@ ${CLICKHOUSE_CLIENT} -m --query "
     DROP TABLE chain_a1;
     DROP TABLE chain_a2;
     DROP TABLE alias_one;
+    DROP TABLE alias_dynamic;
     DROP TABLE hidden_target;
+    DROP TABLE dynamic_target;
 "

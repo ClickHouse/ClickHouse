@@ -468,23 +468,35 @@ static void checkAccessToTableMetadata(const TableNode & table_node, const Conte
             return;
 
         /// A query can also read a subcolumn or a virtual column through the alias. Dynamic subcolumns
-        /// cannot be enumerated, so the column names in the user's grants are tried too.
+        /// cannot be enumerated: the ones named in the user's grants are tried, and a name that no grant
+        /// mentions stands for all the others, because such a name gets the grant of its table.
         const auto & snapshot = table_node.getStorageSnapshot();
         const auto options = GetColumnsOptions(GetColumnsOptions::All)
                                  .withSubcolumns()
                                  .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
         Names candidates;
+        String unnamed_dynamic_subcolumn;
         for (const auto & column : snapshot->getColumns(options))
+        {
             candidates.push_back(column.name);
+            if (unnamed_dynamic_subcolumn.empty() && column.type->hasDynamicSubcolumns())
+                unnamed_dynamic_subcolumn = column.name + ".";
+        }
+        NameSet names_in_grants;
         for (const auto & element : access_rights->getElements())
         {
-            if (element.is_partial_revoke)
-                continue;
             for (const auto & name : element.columns)
             {
-                if (snapshot->tryGetColumn(options, name))
+                names_in_grants.insert(name);
+                if (!element.is_partial_revoke && snapshot->tryGetColumn(options, name))
                     candidates.push_back(name);
             }
+        }
+        if (!unnamed_dynamic_subcolumn.empty())
+        {
+            while (names_in_grants.contains(unnamed_dynamic_subcolumn))
+                unnamed_dynamic_subcolumn += '_';
+            candidates.push_back(std::move(unnamed_dynamic_subcolumn));
         }
         std::erase_if(candidates, [&](const String & name)
         { return !is_temporary && !is_visible(storage_id.database_name, storage_id.table_name, name); });
