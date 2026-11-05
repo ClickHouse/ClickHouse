@@ -178,6 +178,8 @@ protected:
     const ColumnsDescription & part_columns;
     /// Actual column names and types of columns in part, which may differ from table metadata.
     NamesAndTypes columns_to_read;
+    /// See `isSubcolumnExtractedFromConvertedColumn`, one entry per element of `columns_to_read`.
+    std::vector<bool> subcolumns_extracted_from_converted_column;
     /// Actual serialization of columns in part.
     Serializations serializations;
     SerializationByName serializations_of_full_columns;
@@ -225,6 +227,10 @@ protected:
 
     /// Returns true if the column at position @pos in columns_to_read is a system column that was invalidated.
     bool isSystemColumnInvalidated(size_t pos) const;
+
+    /// Returns true if the column at position @pos in columns_to_read is a subcolumn extracted from its column converted
+    /// to the type in the table (see `isSubcolumnReadFromConvertedColumn`). Such a subcolumn is not read from the part.
+    bool isSubcolumnExtractedFromConvertedColumn(size_t pos) const;
 
     /// Same as `IDataType::hasSubcolumn` for the column @name_in_part of the part, but without
     /// building a serialization of it when the part already holds one.
@@ -315,7 +321,12 @@ private:
 
     /// Resolves both at once: they share the lookup of the column in the part and, for a subcolumn, the
     /// enumeration of its parent.
-    ColumnAndSerializationInPart getColumnAndSerializationInPart(const NameAndTypePair & required_column) const;
+    ColumnAndSerializationInPart getColumnAndSerializationInPart(
+        const NameAndTypePair & required_column, bool extracted_from_converted_column = false) const;
+
+    /// Whether the subcolumn is extracted from its column of the part converted to the type in the table: the column kept in
+    /// the part, or its default in the type the part recorded for it when the column is omitted from the part.
+    bool isSubcolumnExtractedFromConvertedColumnInPart(const NameAndTypePair & required_column) const;
 
     /// Returns actual column name and type in part, which can differ from table metadata.
     NameAndTypePair getColumnInPart(const NameAndTypePair & required_column) const;

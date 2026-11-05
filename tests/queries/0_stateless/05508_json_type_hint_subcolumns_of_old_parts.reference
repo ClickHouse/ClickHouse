@@ -1,0 +1,80 @@
+issue 123339
+1	3	1	{'k1':1,'k2':2}
+2	1	0	{'k3':3}
+3	0	1	{}
+2
+4
+1	3	1	{'k1':1,'k2':2}
+2	1	0	{'k3':3}
+3	0	1	{}
+2
+4
+wide
+1	2	2	0	2
+2	5	5	0	0
+1	42	42
+2	12345	12345
+1
+1
+1	2
+compact
+1	2	2	0	2
+2	5	5	0	0
+1	42	42
+2	12345	12345
+1
+1
+omitted
+1	1	0
+2	1	0
+1	0	{"a":"0"}
+2	0	{"a":"0"}
+pending modify
+1	2
+2	5
+1	42
+2	12345
+1	8
+2	11
+1	{"a":42}
+2	{"a":12345}
+mutation
+1	42
+2	12345
+array
+1	[2,1]
+2	[]
+1	['42','7']
+2	[]
+single stream
+1	2	42
+2	5	12345
+hint removed
+1	\N	0
+2	\N	1
+1	\N	0
+2	\N	1
+typed hint changed
+{"k":1}
+{"k":1}
+hint added
+1	42	1	{"d":1}	1
+2	str	0	{}	\N
+\N
+\N
+1	\N
+patch before alter
+1	3
+2	5
+1	777
+2	12345
+patch before alter, part merged without it
+1	777
+2	12345
+1	3
+2	5
+patch after alter
+1	4
+2	5
+1	xyz7
+2	12345

@@ -2397,7 +2397,7 @@ private:
                 bool skip_typed = types.acceptedMoreThanOne()
                     && value_element_type == JSONElementType::OBJECT
                     && typed_path_nodes.contains(current_path)
-                    && !canParseObjectValue(typed_paths_types.at(current_path));
+                    && !DataTypeObject::canParseObjectValue(typed_paths_types.at(current_path));
 
                 bool ok = traverseAndInsert(column_object, value, current_path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false, depth + 1, skip_typed);
                 current_path.resize(parent_size);
@@ -2974,16 +2974,6 @@ private:
             default:
                 return JSONElementType::LITERAL;
         }
-    }
-
-    /// Check if the type of a typed path can naturally parse a JSON object value.
-    /// Types like JSON, Map, Tuple represent structured data and should receive
-    /// the object value when there is a literal+object duplicate key.
-    /// Scalar types (Int, String, etc.) should receive the literal value instead.
-    bool canParseObjectValue(const DataTypePtr & type) const
-    {
-        auto id = removeNullable(removeLowCardinality(type))->getTypeId();
-        return id == TypeIndex::Object || id == TypeIndex::Map || id == TypeIndex::Tuple;
     }
 };
 

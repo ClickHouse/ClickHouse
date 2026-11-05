@@ -254,7 +254,7 @@ SELECT 'p_w nested path added', count(), uniqExact(json.q.r), (SELECT json.^q FR
 OPTIMIZE TABLE p_w FINAL;
 SELECT 'p_w merged', count(), sum(json.a), sum(json.b), uniqExact(json.q.r), uniqExact(_part) FROM p_w SETTINGS max_threads = 1;
 ALTER TABLE p_w MODIFY COLUMN json JSON(SHARED a UInt64, SHARED c String) SETTINGS enable_json_lazy_type_hints = 1;
-SELECT '-- the removed path is a dynamic path again; its typed subcolumn over the old Wide part reads as NULL, a pre-existing limitation of lazy type hints that the plain type shares (Compact parts give the values)';
+SELECT '-- the removed path is a dynamic path again; its typed subcolumn reads the values of the old parts';
 SELECT 'p_w removed', count(), sum(json.a), argMin(json.c, x), toTypeName(json.b), sum(json.b.:Int64), (SELECT sum(json.b.:Int64) FROM (SELECT json FROM p_w)) FROM p_w SETTINGS max_threads = 1;
 ALTER TABLE p_w MODIFY COLUMN json JSON(SHARED a String, SHARED c String) SETTINGS mutations_sync = 2;
 SELECT 'p_w mutations', count() FROM system.mutations WHERE database = currentDatabase() AND table = 'p_w';
@@ -279,7 +279,7 @@ SELECT 'p_cn nested path added', count(), uniqExact(json.q.r), (SELECT json.^q F
 OPTIMIZE TABLE p_cn FINAL;
 SELECT 'p_cn merged', count(), sum(json.a), sum(json.b), uniqExact(json.q.r), uniqExact(_part) FROM p_cn SETTINGS max_threads = 1;
 ALTER TABLE p_cn MODIFY COLUMN json JSON(SHARED a UInt64, SHARED c String) SETTINGS enable_json_lazy_type_hints = 1;
-SELECT '-- the removed path is a dynamic path again; its typed subcolumn over the old Wide part reads as NULL, a pre-existing limitation of lazy type hints that the plain type shares (Compact parts give the values)';
+SELECT '-- the removed path is a dynamic path again; its typed subcolumn reads the values of the old parts';
 SELECT 'p_cn removed', count(), sum(json.a), argMin(json.c, x), toTypeName(json.b), sum(json.b.:Int64), (SELECT sum(json.b.:Int64) FROM (SELECT json FROM p_cn)) FROM p_cn SETTINGS max_threads = 1;
 ALTER TABLE p_cn MODIFY COLUMN json JSON(SHARED a String, SHARED c String) SETTINGS mutations_sync = 2;
 SELECT 'p_cn mutations', count() FROM system.mutations WHERE database = currentDatabase() AND table = 'p_cn';

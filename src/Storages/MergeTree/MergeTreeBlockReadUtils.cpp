@@ -1,4 +1,9 @@
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/TypeTree.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -121,16 +126,18 @@ bool injectRequiredColumnsRecursively(
             /// Resolved against the serialization the part holds for the column - which it always does, the column
             /// comes from its own list - instead of a newly built one.
             if (!column_in_storage->isSubcolumn()
-                || column_in_part->type->tryGetSubcolumnType(
-                       column_in_storage->getSubcolumnName(), data_part_info_for_reader.getSerialization(*column_in_part)))
+                || (column_in_part->type->tryGetSubcolumnType(
+                        column_in_storage->getSubcolumnName(), data_part_info_for_reader.getSerialization(*column_in_part))
+                    && !isSubcolumnReadFromConvertedColumn(storage_snapshot, *column_in_storage, column_in_part->type)))
             {
                 add_column(column_name);
                 return true;
             }
 
             /// Parent is present but the part's (older) type lacks the requested subcolumn (metadata-only
-            /// `ALTER MODIFY COLUMN T -> Nullable(T)`). Read the parent so it can be converted and the
-            /// subcolumn extracted from it, instead of being filled from the storage-type default.
+            /// `ALTER MODIFY COLUMN T -> Nullable(T)`), or has a different one under its name (a changed `JSON` type).
+            /// Read the parent so it can be converted and the subcolumn extracted from it, instead of being filled
+            /// from the storage-type default.
             add_column(column_in_storage->getNameInStorage());
             return true;
         }
@@ -171,6 +178,204 @@ bool injectRequiredColumnsRecursively(
     return result;
 }
 
+using Substream = ISerialization::Substream;
+
+bool isObjectPathSubstream(const Substream & substream)
+{
+    switch (substream.type)
+    {
+        case Substream::ObjectTypedPath:
+        case Substream::ObjectTypedSharedDataPath:
+        case Substream::ObjectDynamicPath:
+        case Substream::ObjectSubObject:
+        case Substream::ObjectCombinedPath:
+        case Substream::ObjectDistinctPaths:
+            return true;
+        default:
+            return false;
+    }
+}
+
+/// The type that a substream of a subcolumn path descends into from @type, or null when it is not tracked.
+const IDataType * getTypeOfSubstream(const IDataType * type, const Substream & substream)
+{
+    if (!type)
+        return nullptr;
+
+    switch (substream.type)
+    {
+        case Substream::ArrayElements:
+            if (const auto * array = typeid_cast<const DataTypeArray *>(type))
+                return array->getNestedType().get();
+            return nullptr;
+        case Substream::NullableElements:
+            if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type))
+                return nullable->getNestedType().get();
+            return nullptr;
+        case Substream::TupleElement:
+            if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type))
+                if (auto position = tuple->tryGetPositionByName(substream.name_of_substream))
+                    return tuple->getElement(*position).get();
+            return nullptr;
+        case Substream::ObjectTypedPath:
+        case Substream::ObjectTypedSharedDataPath:
+            if (const auto * object = typeid_cast<const DataTypeObject *>(type))
+                if (auto it = object->getTypedPaths().find(substream.object_path_name); it != object->getTypedPaths().end())
+                    return it->second.get();
+            return nullptr;
+        default:
+            return nullptr;
+    }
+}
+
+bool hasTypedPathUnder(const DataTypeObject & type, const String & path)
+{
+    String prefix = path + ".";
+    return std::ranges::any_of(type.getTypedPaths(), [&](const auto & typed_path) { return typed_path.first.starts_with(prefix); });
+}
+
+/// Whether converting an object of type @in_part to @in_storage keeps the value of the path that @substream reads: the same
+/// skip rules and the same typed paths among the path, its prefixes and, for a value that includes them, the paths under
+/// it. @hinted_path is not compared.
+bool objectPathValueIsKept(
+    const IDataType * in_storage, const IDataType * in_part, const Substream & substream, std::string_view hinted_path = {})
+{
+    const auto * object_in_storage = typeid_cast<const DataTypeObject *>(in_storage);
+    const auto * object_in_part = typeid_cast<const DataTypeObject *>(in_part);
+    if (!object_in_storage || !object_in_part || object_in_storage->getPathsToSkip() != object_in_part->getPathsToSkip()
+        || object_in_storage->getPathRegexpsToSkip() != object_in_part->getPathRegexpsToSkip())
+        return false;
+
+    const auto & typed_paths_in_storage = object_in_storage->getTypedPaths();
+    const auto & typed_paths_in_part = object_in_part->getTypedPaths();
+    auto typed_path_is_kept = [&](const String & typed_path)
+    {
+        auto it_in_storage = typed_paths_in_storage.find(typed_path);
+        auto it_in_part = typed_paths_in_part.find(typed_path);
+        if (typed_path == hinted_path || (it_in_storage == typed_paths_in_storage.end() && it_in_part == typed_paths_in_part.end()))
+            return true;
+        return it_in_storage != typed_paths_in_storage.end() && it_in_part != typed_paths_in_part.end()
+            && it_in_storage->second->equals(*it_in_part->second);
+    };
+
+    std::optional<String> path;
+    bool value_includes_paths_under = true;
+    if (substream.type == Substream::ObjectSubObject)
+        path = DataTypeObject::tryGetPrefixedSubcolumn(substream.name_of_substream, DataTypeObject::SUB_OBJECT_SUBCOLUMN_PREFIX);
+    else if (substream.type == Substream::ObjectCombinedPath)
+        path = DataTypeObject::tryGetPrefixedSubcolumn(substream.name_of_substream, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX);
+    else if (substream.type != Substream::ObjectDistinctPaths)
+    {
+        path = substream.object_path_name;
+        value_includes_paths_under = false;
+    }
+
+    /// The distinct paths depend on all paths.
+    if (!path)
+        return std::ranges::all_of(typed_paths_in_storage, [&](const auto & typed_path) { return typed_path_is_kept(typed_path.first); })
+            && std::ranges::all_of(typed_paths_in_part, [&](const auto & typed_path) { return typed_path_is_kept(typed_path.first); });
+
+    for (size_t pos = path->find('.'); pos != String::npos; pos = path->find('.', pos + 1))
+        if (!typed_path_is_kept(path->substr(0, pos)))
+            return false;
+
+    if (!typed_path_is_kept(*path))
+        return false;
+
+    if (!value_includes_paths_under)
+        return true;
+
+    String prefix = *path + ".";
+    auto is_kept_under_path = [&](const auto & typed_path) { return !typed_path.first.starts_with(prefix) || typed_path_is_kept(typed_path.first); };
+    return std::ranges::all_of(typed_paths_in_storage, is_kept_under_path) && std::ranges::all_of(typed_paths_in_part, is_kept_under_path);
+}
+
+/// A type hint added to a path that the part stores as a dynamic path, read as a whole: it is applied by casting the
+/// path's value, which is how type hints are documented to apply to old parts. Hints of the types parsed from objects
+/// are not, because such a part stores an object as separate paths, not as the value of the path.
+bool isTypeHintCastFromDynamicPath(
+    const IDataType * object_in_storage,
+    const IDataType * object_in_part,
+    const Substream & substream_in_storage,
+    const Substream & substream_in_part,
+    const DataTypePtr & hinted_type)
+{
+    if ((substream_in_storage.type != Substream::ObjectTypedPath && substream_in_storage.type != Substream::ObjectTypedSharedDataPath)
+        || substream_in_part.type != Substream::ObjectDynamicPath || substream_in_storage.object_path_name != substream_in_part.object_path_name)
+        return false;
+
+    const auto & path = substream_in_storage.object_path_name;
+    if (!objectPathValueIsKept(object_in_storage, object_in_part, substream_in_part, path))
+        return false;
+
+    /// `objectPathValueIsKept` has checked that both are objects.
+    if (hasTypedPathUnder(typeid_cast<const DataTypeObject &>(*object_in_storage), path)
+        || hasTypedPathUnder(typeid_cast<const DataTypeObject &>(*object_in_part), path))
+        return false;
+
+    return !DataTypeObject::canParseObjectValue(hinted_type);
+}
+
+/// Whether the subcolumn of the column converted from @column_type_in_part can differ from the subcolumn of that name
+/// read from the part and converted.
+bool isSubcolumnChangedByConversion(const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part)
+{
+    const auto & type_in_storage = subcolumn.getTypeInStorage();
+    if (!subcolumn.isSubcolumn() || type_in_storage->equals(*column_type_in_part))
+        return false;
+
+    auto has_object = [](const IDataType & type) { return anyInTypeTree(type, [](const IDataType & nested) { return isObject(nested); }); };
+    if (!has_object(*type_in_storage) && !has_object(*column_type_in_part))
+        return false;
+
+    auto info_in_storage = type_in_storage->tryGetSubcolumnInfo(subcolumn.getSubcolumnName());
+    if (!info_in_storage)
+        return false;
+
+    /// Reading the subcolumn missing from the part with the type in the table could read the part's streams of another type.
+    auto info_in_part = column_type_in_part->tryGetSubcolumnInfo(subcolumn.getSubcolumnName());
+    if (!info_in_part)
+        return true;
+
+    const auto & path_in_storage = info_in_storage->substreams_path;
+    const auto & path_in_part = info_in_part->substreams_path;
+    if (path_in_storage.empty() || path_in_storage.size() != path_in_part.size())
+        return true;
+
+    /// The types that the substreams descend into, so that the objects owning the paths can be compared.
+    const IDataType * type_of_substream_in_storage = type_in_storage.get();
+    const IDataType * type_of_substream_in_part = column_type_in_part.get();
+    size_t last = path_in_storage.size() - 1;
+    for (size_t i = 0; i <= last; ++i)
+    {
+        if (!ISerialization::isSameSubstream(path_in_storage[i], path_in_part[i]))
+            return i != last
+                || !isTypeHintCastFromDynamicPath(
+                       type_of_substream_in_storage, type_of_substream_in_part, path_in_storage[i], path_in_part[i], info_in_storage->data.type);
+
+        if (isObjectPathSubstream(path_in_storage[i])
+            && !objectPathValueIsKept(type_of_substream_in_storage, type_of_substream_in_part, path_in_storage[i]))
+            return true;
+
+        type_of_substream_in_storage = getTypeOfSubstream(type_of_substream_in_storage, path_in_storage[i]);
+        type_of_substream_in_part = getTypeOfSubstream(type_of_substream_in_part, path_in_part[i]);
+    }
+
+    /// The same path in both: a cast of the value is not the conversion of the column unless the types are the same.
+    return !info_in_storage->data.type->equals(*info_in_part->data.type);
+}
+
+}
+
+bool isSubcolumnReadFromConvertedColumn(
+    const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part)
+{
+    if (!isSubcolumnChangedByConversion(subcolumn, column_type_in_part))
+        return false;
+
+    const auto & metadata = storage_snapshot->metadata;
+    return !std::ranges::contains(metadata->getColumnsRequiredForSortingKey(), subcolumn.name)
+        && !std::ranges::contains(metadata->getColumnsRequiredForPartitionKey(), subcolumn.name);
 }
 
 bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions)
@@ -404,6 +609,7 @@ PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column)
 
 void addPatchPartsColumns(
     MergeTreeReadTaskColumns & result,
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const GetColumnsOptions & options,
     const PatchPartsForReader & patch_parts,
@@ -416,6 +622,23 @@ void addPatchPartsColumns(
     NameSet required_key_columns;
     result.patch_columns.resize(patch_parts.size());
 
+    const NameSet all_columns_to_read_set(all_columns_to_read.begin(), all_columns_to_read.end());
+    const auto part_alter_conversions = data_part_info_for_reader.getAlterConversions();
+
+    /// The part extracts such a subcolumn from its column after the patches are applied to that column.
+    auto is_extracted_from_patched_column = [&](const NameAndTypePair & column)
+    {
+        if (!column.isSubcolumn() || !all_columns_to_read_set.contains(column.getNameInStorage()))
+            return false;
+
+        auto column_name_in_part = column.getNameInStorage();
+        if (part_alter_conversions && part_alter_conversions->isColumnRenamed(column_name_in_part))
+            column_name_in_part = part_alter_conversions->getColumnOldName(column_name_in_part);
+
+        auto column_in_part = data_part_info_for_reader.getColumns().tryGetByName(column_name_in_part);
+        return column_in_part && isSubcolumnReadFromConvertedColumn(storage_snapshot, column, column_in_part->type);
+    };
+
     for (size_t i = 0; i < patch_parts.size(); ++i)
     {
         NameSet patch_columns_to_read_set;
@@ -426,6 +649,9 @@ void addPatchPartsColumns(
         for (const auto & column_name : all_columns_to_read)
         {
             auto column_in_storage = storage_snapshot->getColumn(options, column_name);
+            if (is_extracted_from_patched_column(column_in_storage))
+                continue;
+
             auto column_name_in_patch = column_in_storage.getNameInStorage();
 
             if (alter_conversions && alter_conversions->isColumnRenamed(column_name_in_patch))

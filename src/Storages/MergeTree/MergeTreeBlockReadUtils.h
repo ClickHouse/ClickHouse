@@ -18,6 +18,13 @@ NameSet injectRequiredColumns(
     bool with_subcolumns,
     Names & columns);
 
+/// Whether the subcolumn has to be extracted from its column converted from @column_type_in_part to the type in the table,
+/// instead of being read from the part as the subcolumn of that name. A part of a `JSON` column resolves any name as
+/// one of its paths, which is not the same subcolumn when the conversion changes the paths.
+/// A key subcolumn is read from the part, which is sorted and indexed by it.
+bool isSubcolumnReadFromConvertedColumn(
+    const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part);
+
 /// Whether the virtual columns of a text index can be read from the index in a part (direct read).
 /// Otherwise they are computed by their default expressions.
 bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions);
@@ -26,6 +33,7 @@ PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column);
 
 void addPatchPartsColumns(
     MergeTreeReadTaskColumns & result,
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const GetColumnsOptions & options,
     const PatchPartsForReader & patch_parts,

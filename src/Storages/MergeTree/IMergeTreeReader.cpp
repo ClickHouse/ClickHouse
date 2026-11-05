@@ -2,6 +2,7 @@
 #include <vector>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/ColumnsCache.h>
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
@@ -24,6 +25,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/Context.h>
@@ -86,11 +88,15 @@ IMergeTreeReader::IMergeTreeReader(
     CurrentMemoryTracker::check();
 
     columns_to_read.reserve(getColumns().size());
+    subcolumns_extracted_from_converted_column.reserve(getColumns().size());
     serializations.reserve(getColumns().size());
 
     for (const auto & column : getColumns())
     {
-        auto column_and_serialization_in_part = getColumnAndSerializationInPart(column);
+        bool extracted_from_converted_column = isSubcolumnExtractedFromConvertedColumnInPart(column);
+        subcolumns_extracted_from_converted_column.push_back(extracted_from_converted_column);
+
+        auto column_and_serialization_in_part = getColumnAndSerializationInPart(column, extracted_from_converted_column);
         const auto & column_to_read = columns_to_read.emplace_back(std::move(column_and_serialization_in_part.column));
         auto & serialization = column_and_serialization_in_part.serialization;
         if (data_part_info_for_read->isCompactPart()
@@ -203,6 +209,28 @@ bool IMergeTreeReader::isSystemColumnInvalidated(size_t pos) const
     return data_part_info_for_read->isSystemColumnInvalidated(columns_to_read[pos].getNameInStorage());
 }
 
+bool IMergeTreeReader::isSubcolumnExtractedFromConvertedColumn(size_t pos) const
+{
+    return subcolumns_extracted_from_converted_column[pos];
+}
+
+bool IMergeTreeReader::isSubcolumnExtractedFromConvertedColumnInPart(const NameAndTypePair & required_column) const
+{
+    /// A patch part provides a subcolumn as stored, or not at all when the patched part extracts it (see `addPatchPartsColumns`).
+    if (!required_column.isSubcolumn() || data_part_info_for_read->getPartInfo().isPatch())
+        return false;
+
+    auto name_in_part = getStorageAndSubcolumnNameInPart(required_column).first;
+    DataTypePtr type_in_part;
+    if (auto column_in_part = data_part_info_for_read->getColumnsDescription().tryGetPhysical(name_in_part))
+        type_in_part = column_in_part->type;
+    else if (const auto * missing = data_part_info_for_read->getSerializationInfos().getMissingColumnInfo(name_in_part);
+             missing && !missing->type_name.empty())
+        type_in_part = DataTypeFactory::instance().get(missing->type_name);
+
+    return type_in_part && isSubcolumnReadFromConvertedColumn(storage_snapshot, required_column, type_in_part);
+}
+
 void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
 {
     chassert(columns.size() == getColumns().size());
@@ -312,7 +340,12 @@ void IMergeTreeReader::fillMissingColumns(
                         {
                             auto frozen_type = DataTypeFactory::instance().get(missing_info->type_name);
                             auto frozen_column = frozen_type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
-                            if (column.isSubcolumn())
+                            if (isSubcolumnExtractedFromConvertedColumn(column_index))
+                            {
+                                frozen_column = castColumn({frozen_column, frozen_type, column.getNameInStorage()}, column.getTypeInStorage());
+                                frozen_column = column.getTypeInStorage()->getSubcolumn(column.getSubcolumnName(), frozen_column);
+                            }
+                            else if (column.isSubcolumn())
                                 frozen_column = frozen_type->getSubcolumn(column.getSubcolumnName(), frozen_column);
                             res_columns[column_index] = std::move(frozen_column);
                         }
@@ -603,7 +636,8 @@ SerializationPtr IMergeTreeReader::tryGetSerializationFromPart(const NameAndType
     return serialization->supportsPooling() ? serialization : nullptr;
 }
 
-IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSerializationInPart(const NameAndTypePair & required_column) const
+IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSerializationInPart(
+    const NameAndTypePair & required_column, bool extracted_from_converted_column) const
 {
     auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
     auto column_in_part = tryGetColumnInPart(name_pair.first, name_pair.second);
@@ -612,9 +646,12 @@ IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSer
 
     if (!column_in_part)
     {
+        /// A subcolumn extracted from the converted default of an omitted column (see `fillMissingColumns`) is already
+        /// in the type in the table.
         DataTypePtr type_in_part = required_column.getTypeInStorage();
         DataTypePtr requested_type_in_part = required_column.type;
-        if (const auto * missing = infos.getMissingColumnInfo(name_pair.first); missing && !missing->type_name.empty())
+        if (const auto * missing = infos.getMissingColumnInfo(name_pair.first);
+            missing && !missing->type_name.empty() && !extracted_from_converted_column)
         {
             type_in_part = DataTypeFactory::instance().get(missing->type_name);
             requested_type_in_part = name_pair.second.empty()
