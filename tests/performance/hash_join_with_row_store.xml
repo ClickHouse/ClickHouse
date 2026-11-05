@@ -27,6 +27,7 @@
     <create_query>CREATE TABLE rs_right_wide_1m (k UInt64, i0 Int64, i1 Int64, i2 Int64, i3 Int64, i4 Int64, i5 Int64, i6 Int64, i7 Int64, f0 Float64, f1 Float64, f2 Float64, f3 Float64, f4 Float64, f5 Float64, f6 Float64, f7 Float64, s0 FixedString(32), s1 FixedString(32), s2 FixedString(32), s3 FixedString(32), s4 FixedString(32), s5 FixedString(32), s6 FixedString(32), s7 FixedString(32), s8 FixedString(32), s9 FixedString(32), s10 FixedString(32), s11 FixedString(32), s12 FixedString(32), s13 FixedString(32), s14 FixedString(32), s15 FixedString(32)) ENGINE = MergeTree ORDER BY tuple()</create_query>
 
     <create_query>CREATE TABLE rs_probe_30m (k UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE rs_probe_10m (k UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
 
     <fill_query>INSERT INTO rs_right_100k SELECT number, number, number, number, number, number, number, reinterpret(number, 'FixedString(16)'), number FROM numbers(100000) ORDER BY rand()</fill_query>
     <fill_query>INSERT INTO rs_right_3m SELECT number, number, number, number, number, number, number, reinterpret(number, 'FixedString(16)'), number FROM numbers(3000000) ORDER BY rand()</fill_query>
@@ -41,6 +42,7 @@
     <fill_query>INSERT INTO rs_right_wide_1m SELECT number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)'), reinterpret(number, 'FixedString(32)') FROM numbers(1000000) ORDER BY rand()</fill_query>
 
     <fill_query>INSERT INTO rs_probe_30m SELECT rand64() FROM numbers(30000000)</fill_query>
+    <fill_query>INSERT INTO rs_probe_10m SELECT rand64() FROM numbers(10000000)</fill_query>
 
     <!-- Unique keys + non-nullable payload -->
     <query disabled="1">SELECT * FROM rs_probe_100m l JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null</query>
@@ -71,9 +73,10 @@
     <query>SELECT * FROM (SELECT * FROM rs_probe_30m LIMIT 6000000) l JOIN rs_right_300k_x10 r ON (l.k % toUInt64(300000 / {match_rate})) = r.k FORMAT Null</query>
     <query>SELECT * FROM (SELECT * FROM rs_probe_30m LIMIT 6000000) l JOIN rs_right_300k_nullable_x10 r ON (l.k % toUInt64(300000 / {match_rate})) = r.k FORMAT Null</query>
     <query>SELECT * FROM rs_probe_30m l JOIN rs_right_mixed_3m r ON (l.k % toUInt64(3000000 / {match_rate})) = r.k FORMAT Null</query>
-    <query>SELECT * FROM (SELECT * FROM rs_probe_30m LIMIT 10000000) l JOIN rs_right_wide_1m r ON (l.k % toUInt64(1000000 / {match_rate})) = r.k FORMAT Null SETTINGS max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0</query>
+    <query>SELECT * FROM rs_probe_10m l JOIN rs_right_wide_1m r ON (l.k % toUInt64(1000000 / {match_rate})) = r.k FORMAT Null SETTINGS max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0</query>
 
     <drop_query>DROP TABLE IF EXISTS rs_probe_30m</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rs_probe_10m</drop_query>
     <drop_query>DROP TABLE IF EXISTS rs_right_100k</drop_query>
     <drop_query>DROP TABLE IF EXISTS rs_right_3m</drop_query>
     <drop_query>DROP TABLE IF EXISTS rs_right_300k_x10</drop_query>
