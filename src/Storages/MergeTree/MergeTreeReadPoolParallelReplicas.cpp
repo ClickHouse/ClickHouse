@@ -35,7 +35,7 @@ size_t chooseSegmentSize(
     /// billions of rows and 1024 - is a reasonable point in between. We limit our choice to only these three options because when we change segment size
     /// we essentially change distribution of data between replicas and of course we don't want to use simultaneously tens of different distributions, because
     /// it would be a huge waste of cache space.
-    constexpr std::array<size_t, 3> borders{128, 1024, 16384};
+    constexpr auto borders = DB::MergeTreeReadPoolParallelReplicas::mark_segment_size_borders;
 
     LOG_TRACE(
         log,
