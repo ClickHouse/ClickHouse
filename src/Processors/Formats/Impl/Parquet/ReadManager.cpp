@@ -72,19 +72,14 @@ std::optional<size_t> AtomicBitSet::findNextAndNot(const AtomicBitSet & mask, si
     return std::nullopt;
 }
 
-void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, const std::optional<std::vector<size_t>> & buckets_to_read_)
+void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, RowGroupSelection row_groups_to_read_)
 {
     parser_shared_resources = parser_shared_resources_;
 
     if (!reader.file_footer)
         reader.setFileFooter(Reader::readFileFooter(reader.prefetcher, reader.options.format.parquet.footer_read_size));
 
-    if (buckets_to_read_)
-    {
-        row_groups_to_read = std::unordered_set<UInt64>{};
-        for (auto rg : *buckets_to_read_)
-            row_groups_to_read->insert(rg);
-    }
+    row_groups_to_read = std::move(row_groups_to_read_);
     reader.memory_fraction_per_reader = SharedResourcesExt::getMemoryFractionPerReader(*parser_shared_resources, 1.);
     reader.prefilterAndInitRowGroups(row_groups_to_read);
     reader.preparePrewhere();
@@ -179,7 +174,10 @@ void ReadManager::admitTopKRowGroups(MemoryUsageDiff & diff)
         if (!row_group.need_to_process || skipped_by_threshold)
         {
             if (skipped_by_threshold)
+            {
+                row_group.skipped_by_top_k.store(true);
                 ProfileEvents::increment(ProfileEvents::ParquetTopKSkippedRowGroups);
+            }
             {
                 std::lock_guard lock(top_k_admission.mutex);
                 --top_k_admission.outstanding;
@@ -353,6 +351,7 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
                 /// filtered out (empty subgroups below).
                 if (reader.topKShouldSkipRowGroup(row_group))
                 {
+                    row_group.skipped_by_top_k.store(true);
                     if (row_group.need_to_process)
                         ProfileEvents::increment(ProfileEvents::ParquetTopKSkippedRowGroups);
                     stage = ReadStage::Deliver;
