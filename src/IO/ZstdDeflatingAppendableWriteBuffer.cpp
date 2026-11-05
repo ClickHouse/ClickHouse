@@ -66,7 +66,7 @@ void ZstdDeflatingAppendableWriteBuffer::nextImpl()
             if (ZSTD_isError(compression_result))
                 throw Exception(
                                 ErrorCodes::ZSTD_ENCODER_FAILED,
-                                "ZSTD stream decoding failed: error code: {}; ZSTD version: {}",
+                                "ZSTD stream encoding failed: {}; ZSTD version: {}",
                                 ZSTD_getErrorName(compression_result), ZSTD_VERSION_STRING);
 
             first_write = false;

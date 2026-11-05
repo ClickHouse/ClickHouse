@@ -39,7 +39,7 @@ void LZMADeflatingWriteBuffer::initialize(int compression_level)
         throw Exception(
             ErrorCodes::LZMA_STREAM_ENCODER_FAILED,
             "lzma stream encoder init failed: {}; lzma version: {}",
-            lzmaErrorToString(ret),
+            lzmaErrorToString(ret, /* is_encoder= */ true),
             LZMA_VERSION_STRING);
 }
 
@@ -76,7 +76,7 @@ void LZMADeflatingWriteBuffer::nextImpl()
                 throw Exception(
                     ErrorCodes::LZMA_STREAM_ENCODER_FAILED,
                     "lzma stream encoding failed: {}; lzma version: {}",
-                    lzmaErrorToString(ret),
+                    lzmaErrorToString(ret, /* is_encoder= */ true),
                     LZMA_VERSION_STRING);
 
         } while (lstr.avail_in > 0 || lstr.avail_out == 0);
@@ -115,7 +115,7 @@ void LZMADeflatingWriteBuffer::finalFlushBefore()
             throw Exception(
                 ErrorCodes::LZMA_STREAM_ENCODER_FAILED,
                 "lzma stream encoding failed: {}; lzma version: {}",
-                lzmaErrorToString(ret),
+                lzmaErrorToString(ret, /* is_encoder= */ true),
                 LZMA_VERSION_STRING);
 
     } while (lstr.avail_out == 0);

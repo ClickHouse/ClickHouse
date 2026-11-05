@@ -90,7 +90,8 @@ public:
             /* zip64= */ true);
         archive_writer_->rethrowStoredException();
 
-        /// zlib, bzip2 and liblzma accept levels -1 to 9 only, minizip-ng reports their refusal as MZ_OPEN_ERROR.
+        /// minizip-ng stores an entry at level 0 and maps -1 to the default level, so zlib, bzip2 and liblzma
+        /// refuse only levels outside -1..9. minizip-ng reports the refusal as MZ_OPEN_ERROR.
         bool library_checks_level = compress_method == MZ_COMPRESS_METHOD_DEFLATE || compress_method == MZ_COMPRESS_METHOD_BZIP2
             || compress_method == MZ_COMPRESS_METHOD_LZMA || compress_method == MZ_COMPRESS_METHOD_XZ;
         if (code == MZ_OPEN_ERROR && library_checks_level

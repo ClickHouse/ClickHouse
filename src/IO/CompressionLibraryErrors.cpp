@@ -31,7 +31,7 @@ std::string bzip2ErrorToString(int code)
 }
 #endif
 
-std::string lzmaErrorToString(int code)
+std::string lzmaErrorToString(int code, bool is_encoder)
 {
     switch (code)
     {
@@ -41,8 +41,11 @@ std::string lzmaErrorToString(int code)
         case LZMA_MEMLIMIT_ERROR: return "Memory usage limit reached (LZMA_MEMLIMIT_ERROR)";
         case LZMA_FORMAT_ERROR: return "Not an xz stream (LZMA_FORMAT_ERROR)";
         case LZMA_OPTIONS_ERROR: return "Unsupported options (LZMA_OPTIONS_ERROR)";
-        case LZMA_DATA_ERROR: return "Compressed data is corrupt (LZMA_DATA_ERROR)";
-        case LZMA_BUF_ERROR: return "Unexpected end of input (LZMA_BUF_ERROR)";
+        case LZMA_DATA_ERROR:
+            return is_encoder ? "Data exceeds the size limits of the xz format (LZMA_DATA_ERROR)"
+                              : "Compressed data is corrupt (LZMA_DATA_ERROR)";
+        case LZMA_BUF_ERROR:
+            return is_encoder ? "No progress is possible (LZMA_BUF_ERROR)" : "Unexpected end of input (LZMA_BUF_ERROR)";
         case LZMA_PROG_ERROR: return "Invalid arguments (LZMA_PROG_ERROR)";
         default: return fmt::format("Unknown error code {}", code);
     }

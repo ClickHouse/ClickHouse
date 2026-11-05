@@ -27,7 +27,7 @@ LZMAInflatingReadBuffer::LZMAInflatingReadBuffer(std::unique_ptr<ReadBuffer> in_
         throw Exception(
             ErrorCodes::LZMA_STREAM_DECODER_FAILED,
             "lzma_stream_decoder initialization failed: {}; lzma version: {}",
-            lzmaErrorToString(ret),
+            lzmaErrorToString(ret, /* is_encoder= */ false),
             LZMA_VERSION_STRING);
 }
 
@@ -86,9 +86,7 @@ bool LZMAInflatingReadBuffer::nextImpl()
 
         throw Exception(
             ErrorCodes::LZMA_STREAM_DECODER_FAILED,
-            "lzma decoder finished, but input stream has not exceeded: error code: {}; lzma version: {}{}",
-            ret,
-            LZMA_VERSION_STRING,
+            "Trailing data after the end of the xz stream{}",
             getExceptionEntryWithFileName(*in));
     }
 
@@ -96,7 +94,7 @@ bool LZMAInflatingReadBuffer::nextImpl()
         throw Exception(
             ErrorCodes::LZMA_STREAM_DECODER_FAILED,
             "lzma_stream_decoder failed: {}; lzma version: {}{}",
-            lzmaErrorToString(ret),
+            lzmaErrorToString(ret, /* is_encoder= */ false),
             LZMA_VERSION_STRING,
             getExceptionEntryWithFileName(*in));
 
