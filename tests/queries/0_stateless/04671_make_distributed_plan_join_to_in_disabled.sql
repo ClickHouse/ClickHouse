@@ -8,7 +8,7 @@ INSERT INTO tj1 SELECT number, number FROM numbers(100);
 INSERT INTO tj2 SELECT number * 2, number FROM numbers(50);
 
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1, join_algorithm = 'hash', query_plan_convert_join_to_in = 1;
+SET join_algorithm = 'hash', query_plan_convert_join_to_in = 1;
 SET enable_parallel_replicas = 0, max_rows_to_group_by = 0, query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0;
 
 SELECT '-- without make_distributed_plan the join converts to IN';

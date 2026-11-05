@@ -78,6 +78,11 @@ static void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const Stri
 
 }
 
+bool DatabaseFactory::Arguments::isLoadingFromExistingMetadata() const
+{
+    return DB::isLoadingFromExistingMetadata(mode) || is_metadata_replay;
+}
+
 void checkDatabaseSettingNames(
     const ASTCreateQuery & create,
     ContextPtr context,

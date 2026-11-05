@@ -20,6 +20,7 @@ private:
 
 public:
     static constexpr auto name = "URLPathHierarchy";
+    static constexpr auto signature = "(String) -> Array(String)";
 
     static bool isVariadic() { return false; }
     static size_t getNumberOfArguments() { return 1; }

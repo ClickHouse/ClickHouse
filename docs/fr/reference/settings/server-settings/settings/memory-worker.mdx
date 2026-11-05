@@ -12,25 +12,25 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres configurent le serveur ClickHouse et sont générés automatiquement à partir du code source de ClickHouse.
 
-<div id="memory_worker_correct_memory_tracker">
-  ## memory_worker_correct_memory_tracker
-</div>
+## memory_worker_correct_memory_tracker {#memory_worker_correct_memory_tracker}
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Non" />
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
-Indique si le worker mémoire en arrière-plan doit corriger le memory tracker interne à partir d’informations provenant de sources externes telles que jemalloc et les cgroups
+Indique si le worker mémoire en arrière-plan corrige le memory tracker global, à chaque tick, à partir d&#39;une mesure externe de la mémoire réellement utilisée par le processus : la consommation mémoire du cgroup lorsque les cgroups sont disponibles (voir `memory_worker_use_cgroup`), sinon la valeur `stats.resident` de jemalloc.
 
-<div id="memory_worker_decay_adjustment_period_ms">
-  ## memory_worker_decay_adjustment_period_ms
-</div>
+Le memory tracker global est un compteur : les allocations l&#39;incrémentent et les désallocations le décrémentent. Toute asymétrie de comptabilisation y persiste pendant toute la durée de vie du processus, car rien d&#39;autre ne le fait diminuer, et une dérive à la hausse ne se résorbe jamais, puisque la mémoire qu&#39;elle représente a déjà été libérée. Dès que la dérive dépasse à elle seule `max_server_memory_usage`, toutes les allocations échouent, y compris la vérification de zéro octet effectuée à l&#39;ouverture d&#39;une connexion, et le serveur rejette toutes les requêtes alors qu&#39;il n&#39;utilise qu&#39;une fraction de sa limite. La correction à partir d&#39;une mesure limite la durée de vie d&#39;une telle dérive à un seul tick du worker (`memory_worker_period_ms`, par défaut 50 ms en cas de lecture depuis les cgroups et 100 ms en cas de lecture depuis jemalloc).
+
+La correction ne masque pas la dérive. `MemoryTrackingUncorrected` conserve la valeur qu&#39;aurait eue le tracker si aucune correction n&#39;avait été appliquée (un snapshot du compteur brut, rafraîchi à chaque tick du worker) ; ainsi, `MemoryTrackingUncorrected - MemoryTracking` correspond à la dérive accumulée jusqu&#39;ici.
+
+Définir ce paramètre sur `0` rétablit le comportement des versions précédentes : le tracker n&#39;est alors corrigé qu&#39;au premier tick du worker et chaque fois qu&#39;il devient négatif.
+
+## memory_worker_decay_adjustment_period_ms {#memory_worker_decay_adjustment_period_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" changeable_without_restart="No" />
 
 Durée, en millisecondes, pendant laquelle la pression mémoire doit persister avant qu’un ajustement dynamique de `dirty_decay_ms` de jemalloc ne soit appliqué. Lorsque l’utilisation de la mémoire reste au-dessus du seuil de purge pendant cette période, l’expiration automatique des pages sales est désactivée (`dirty_decay_ms=0`) afin de récupérer la mémoire de manière agressive. Lorsque l’utilisation reste en dessous du seuil pendant cette période, le comportement d’expiration par défaut est rétabli. Définissez cette valeur sur 0 pour désactiver l’ajustement dynamique et utiliser les paramètres d’expiration par défaut de jemalloc.
 
-<div id="memory_worker_dynamic_hard_limit">
-  ## memory_worker_dynamic_hard_limit
-</div>
+## memory_worker_dynamic_hard_limit {#memory_worker_dynamic_hard_limit}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Non" />
 
@@ -40,33 +40,25 @@ Lorsqu&#39;il est désactivé, `max_server_memory_usage_to_ram_ratio` ne plafonn
 
 N&#39;a aucun effet lorsque `max_server_memory_usage_to_ram_ratio` vaut `0`.
 
-<div id="memory_worker_period_ms">
-  ## memory_worker_period_ms
-</div>
+## memory_worker_period_ms {#memory_worker_period_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Non" />
 
 Période de tick du worker mémoire en arrière-plan, qui corrige l’utilisation mémoire du memory tracker et nettoie les pages inutilisées en cas d’utilisation mémoire élevée. Si elle est définie sur 0, la valeur par défaut sera utilisée en fonction de la source de l’utilisation mémoire
 
-<div id="memory_worker_purge_dirty_pages_threshold_ratio">
-  ## memory_worker_purge_dirty_pages_threshold_ratio
-</div>
+## memory_worker_purge_dirty_pages_threshold_ratio {#memory_worker_purge_dirty_pages_threshold_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.2" changeable_without_restart="Non" />
 
 Le ratio seuil des pages sales de jemalloc par rapport à la mémoire disponible pour le serveur ClickHouse. Lorsque la taille des pages sales dépasse ce ratio, le worker mémoire en arrière-plan force leur purge. Si cette valeur est définie sur 0, la purge forcée en fonction du ratio de pages sales est désactivée.
 
-<div id="memory_worker_purge_total_memory_threshold_ratio">
-  ## memory_worker_purge_total_memory_threshold_ratio
-</div>
+## memory_worker_purge_total_memory_threshold_ratio {#memory_worker_purge_total_memory_threshold_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.9" changeable_without_restart="Non" />
 
 Le ratio de seuil de purge de jemalloc par rapport à la mémoire disponible pour le serveur ClickHouse. Lorsque l&#39;utilisation totale de la mémoire dépasse ce ratio, le worker mémoire en arrière-plan force la purge des pages sales. S&#39;il est défini sur 0, la purge forcée basée sur la mémoire totale est désactivée.
 
-<div id="memory_worker_rss_speculative_reserve_ratio">
-  ## memory_worker_rss_speculative_reserve_ratio
-</div>
+## memory_worker_rss_speculative_reserve_ratio {#memory_worker_rss_speculative_reserve_ratio}
 
 <SettingsInfoBlock type="Double" default_value="1" changeable_without_restart="Non" />
 
@@ -87,9 +79,7 @@ les sanitizers (`ASan`, `UBSan`, `MSan`, `TSan`), la valeur par défaut est `0`,
 `resident - tracked` est principalement dû au surcoût du shadow / runtime des sanitizers
 plutôt qu’au décalage de comptabilisation du tracker.
 
-<div id="memory_worker_use_cgroup">
-  ## memory_worker_use_cgroup
-</div>
+## memory_worker_use_cgroup {#memory_worker_use_cgroup}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Utilise les informations actuelles sur l&#39;utilisation de la mémoire du cgroup pour corriger le suivi de la mémoire.
 
