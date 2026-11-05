@@ -760,20 +760,22 @@ public:
     template <typename DateOrTime>
     LUTIndex toFirstDayOfQuarterIndex(DateOrTime v) const
     {
-        LUTIndex index = toLUTIndex(v);
+        UInt32 index = toLUTIndex(v).toUnderType();
         size_t month_inside_quarter = (lut[index].month - 1) % 3;
 
         /// Step to the first day of each month, never to the day before it, because that day is not in the LUT
-        /// for the first month of the LUT.
-        index = index - (lut[index].day_of_month - 1);
+        /// for the first month of the LUT. The LUT begins on January 1, the first day of a quarter, so the walk stays
+        /// inside the LUT, and plain arithmetic on the underlying index is enough: the saturating operators of
+        /// `LUTIndex` make this hot loop measurably slower.
+        index -= lut[index].day_of_month - 1;
         while (month_inside_quarter)
         {
-            index = index - 1;
-            index = index - (lut[index].day_of_month - 1);
+            --index;
+            index -= lut[index].day_of_month - 1;
             --month_inside_quarter;
         }
 
-        return index;
+        return LUTIndex(index);
     }
 
     template <typename DateOrTime>
