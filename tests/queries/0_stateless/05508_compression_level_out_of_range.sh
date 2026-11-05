@@ -45,7 +45,10 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO FUNCTION file('${CLICKHOUSE_TEST_UNIQU
 check --query "SELECT * FROM file('${CLICKHOUSE_TEST_UNIQUE_NAME}_6.csv.zst', 'CSV', 'x UInt64') SETTINGS zstd_window_log_max = 9"
 
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE}_zip (k Int64) ENGINE = MergeTree ORDER BY k"
-check --query "BACKUP TABLE ${TABLE}_zip TO Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_7.zip') SETTINGS compression_method = 'deflate', compression_level = 10"
+for method in deflate bzip2 lzma xz; do
+    check --query "BACKUP TABLE ${TABLE}_zip TO Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_7_${method}.zip') SETTINGS compression_method = '${method}', compression_level = 10"
+done
+check --query "BACKUP TABLE ${TABLE}_zip TO Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_7_low.zip') SETTINGS compression_method = 'bzip2', compression_level = -2"
 
 # A library status other than an invalid value is described too.
 for ext in bz2 xz; do
