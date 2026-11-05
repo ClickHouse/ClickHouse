@@ -1149,7 +1149,6 @@ void ReadManager::readAheadFirstRowGroup()
         return;
     first_row_group_read_ahead_done = true;
 
-    /// At most `bytes_per_read_task`, within what the stream's `ColumnData` share leaves free.
     auto limits = SharedResourcesExt::getLimitsPerReader(*parser_shared_resources, stage.memory_target_fraction);
     size_t budget = limits.memory_high_watermark;
     if (auto available = getCurrentQueryAvailableMemory())
@@ -1161,8 +1160,6 @@ void ReadManager::readAheadFirstRowGroup()
     RowGroup & row_group = reader.row_groups[row_group_idx];
     const auto & tasks = stage.row_group_tasks_to_schedule[row_group_idx];
 
-    /// Handing out the pages of a chunk shorter than `min_bytes_for_seek` starts reading it with the ranges less than
-    /// `min_bytes_for_seek` away, see `Prefetcher::splitRange`, so then the gaps between the chunks count too.
     size_t limit = std::min(budget - memory_usage, reader.options.bytes_per_read_task);
     size_t chunks_bytes = 0;
     bool has_short_chunk = false;
@@ -1183,8 +1180,7 @@ void ReadManager::readAheadFirstRowGroup()
         has_short_chunk |= column.data_pages_bytes < reader.options.min_bytes_for_seek;
         chunk_ranges.emplace_back(start, start + bytes);
     }
-    /// The read of a short chunk also takes the likely-to-be-used ranges near it, so then the round must be all that is
-    /// left to read of the file: its last row group, with no column left for a later PREWHERE step.
+    /// A short chunk's read also takes the likely-to-be-used ranges near it, so the round must be all that is left of the file.
     if (has_short_chunk)
     {
         if (row_group_idx + 1 < reader.row_groups.size())
@@ -1193,6 +1189,7 @@ void ReadManager::readAheadFirstRowGroup()
             if (!counted[i] && !row_group.columns[i].served_from_cache)
                 return;
     }
+    /// A short chunk's read spans the gaps less than `min_bytes_for_seek` to the other chunks, see `Prefetcher::splitRange`.
     size_t bound = chunks_bytes;
     if (has_short_chunk)
     {
@@ -1209,8 +1206,7 @@ void ReadManager::readAheadFirstRowGroup()
     if (bound > limit)
         return;
 
-    /// `addColumnDataPrefetches` hands out each page of an offset-index chunk once. The pages of reads that do not fit are
-    /// handed back to admission, which is exact only if the row filter skipped no page.
+    /// `addColumnDataPrefetches` hands out pages once; a refused round hands them back, exact only if the row filter skipped no page.
     std::vector<std::pair<size_t, size_t>> pages_prefetch_idx;
     for (const Task & task : tasks)
     {

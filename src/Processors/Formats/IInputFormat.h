@@ -24,8 +24,7 @@ using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
 using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;
 using IColumnFilter = PaddedPODArray<UInt8>;
 
-/// Memory held by the input formats of the files that one source reads one after another, so that the format of the next
-/// file, which may read data ahead (see `IInputFormat::prefetch`), and the current one stay within one stream's limits.
+/// Memory held by the input formats of the files one source reads in turn, so the current and next file share one stream's limits.
 struct InputFormatStreamMemory
 {
     std::atomic<size_t> bytes {0};

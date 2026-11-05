@@ -184,8 +184,7 @@ void ParquetV3BlockInputFormat::prefetch(const InputFormatStreamMemoryPtr & stre
     {
         readFileFooterIfNeeded();
 
-        /// Not with TopN dynamic filtering, whose threshold the previous files may still tighten. Not for a file smaller
-        /// than `min_bytes_for_seek`: decoding the previous file is too short to hide its one request.
+        /// Not with TopN dynamic filtering (previous files may still tighten its threshold), nor for files below `min_bytes_for_seek`.
         if (!start_reading_data || !read_options.is_remote_fs || format_filter_info->top_k_filter
             || parser_shared_resources->parsing_runner.isManual())
             return;
