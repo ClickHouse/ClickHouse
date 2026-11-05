@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-random-merge-tree-settings
+# no-random-merge-tree-settings: the estimates are compared with the parts of a table, which the function estimates as a table with the server's settings stores a column.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh

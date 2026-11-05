@@ -1,6 +1,21 @@
 Estimate of a part
 lc	1
 s	1
+Default compressed block sizes: a block ends at a granule boundary once it holds min_compress_block_size bytes
+arr	1
+lc	1
+n	1
+plain	1
+s	1
+1	1	1	1	1
+Dynamic and JSON are estimated with the layouts of a merged part, Map and Variant as a part stores them
+d	1
+j	1
+js	1
+1	1	1
+m	1
+v	1
+1	1
 A converted argument is estimated as the target type
 1	1	1	1
 The rows of a block are serialized one granule at a time, whatever the block size
@@ -12,7 +27,10 @@ Dynamic and JSON columns whose structure changes between blocks are written with
 0	1
 1	1
 2	1
-1
+8191	1
+8192	1
+10000	1
+16384	1
 GROUP BY: each group is estimated as the part it would be
 0	1
 1	1
@@ -57,4 +75,5 @@ s	1
 2	1
 m	Sparse	1
 n	Sparse	1
+1	1
 1

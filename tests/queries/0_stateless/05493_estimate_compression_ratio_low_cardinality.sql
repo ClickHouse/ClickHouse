@@ -1,10 +1,13 @@
 -- Tags: no-random-merge-tree-settings
--- no-random-merge-tree-settings: the estimates are compared with the sizes of parts written with a fixed granularity and block size.
+-- no-random-merge-tree-settings: the estimates are compared with the sizes of parts written with the server's MergeTree settings,
+-- which the function mirrors, and with a fixed granularity and fixed compressed block sizes.
 
 -- `estimateCompressionRatio` knows that its argument is `LowCardinality` and estimates its dictionary encoding, with one
 -- compressed stream per substream, as MergeTree writes a wide part.
 
 SET max_threads = 1, max_block_size = 8192, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
+-- A table takes the compressed block sizes from the query when its own are not set, and so does the estimate.
+SET min_compress_block_size = 65536, max_compress_block_size = 1048576;
 
 DROP TABLE IF EXISTS t_ecr_lc;
 DROP TABLE IF EXISTS t_ecr_lc_parts;
@@ -13,8 +16,7 @@ DROP TABLE IF EXISTS t_ecr_lc_parts;
 CREATE TABLE t_ecr_lc (k UInt32, s String CODEC(LZ4), lc LowCardinality(String) CODEC(LZ4))
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 0,
-         min_compress_block_size = 65536, max_compress_block_size = 65536, ratio_of_defaults_for_sparse_serialization = 1,
-         string_serialization_version = 'single_stream';
+         min_compress_block_size = 65536, max_compress_block_size = 65536, ratio_of_defaults_for_sparse_serialization = 1;
 
 INSERT INTO t_ecr_lc SELECT number % 3, concat('value_', toString(number % 16)), concat('value_', toString(number % 16)) FROM numbers(3 * 8192);
 
@@ -22,8 +24,7 @@ INSERT INTO t_ecr_lc SELECT number % 3, concat('value_', toString(number % 16)),
 CREATE TABLE t_ecr_lc_parts (k UInt32, s String CODEC(LZ4), lc LowCardinality(String) CODEC(LZ4))
 ENGINE = MergeTree PARTITION BY k ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 0,
-         min_compress_block_size = 65536, max_compress_block_size = 65536, ratio_of_defaults_for_sparse_serialization = 1,
-         string_serialization_version = 'single_stream';
+         min_compress_block_size = 65536, max_compress_block_size = 65536, ratio_of_defaults_for_sparse_serialization = 1;
 
 INSERT INTO t_ecr_lc_parts SELECT * FROM t_ecr_lc;
 
@@ -41,6 +42,126 @@ INNER JOIN
 ) AS estimates USING (column)
 WHERE database = currentDatabase() AND table = 't_ecr_lc' AND active
 ORDER BY column;
+
+SELECT 'Default compressed block sizes: a block ends at a granule boundary once it holds min_compress_block_size bytes';
+
+DROP TABLE IF EXISTS t_ecr_default;
+-- `plain` has no CODEC: the server gives it the codec of a new part, and so does the estimate without a codec parameter.
+CREATE TABLE t_ecr_default (s String CODEC(LZ4), lc LowCardinality(String) CODEC(LZ4), n Nullable(UInt32) CODEC(LZ4), arr Array(UInt32) CODEC(LZ4), plain UInt64)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 0, ratio_of_defaults_for_sparse_serialization = 1;
+
+INSERT INTO t_ecr_default
+SELECT concat('value_', toString(number % 16)), concat('value_', toString(number % 16)), if(number % 7 = 0, NULL, number), [number, number + 1], number * 7919
+FROM numbers(3 * 8192);
+
+SELECT
+    column,
+    column_data_compressed_bytes = toUInt64(round(column_data_uncompressed_bytes / ratio)) AS matches_on_disk_size
+FROM system.parts_columns
+INNER JOIN
+(
+    SELECT 's' AS column, estimateCompressionRatio('LZ4')(s) AS ratio FROM t_ecr_default
+    UNION ALL
+    SELECT 'lc' AS column, estimateCompressionRatio('LZ4')(lc) AS ratio FROM t_ecr_default
+    UNION ALL
+    SELECT 'n' AS column, estimateCompressionRatio('LZ4')(n) AS ratio FROM t_ecr_default
+    UNION ALL
+    SELECT 'arr' AS column, estimateCompressionRatio('LZ4')(arr) AS ratio FROM t_ecr_default
+    UNION ALL
+    SELECT 'plain' AS column, estimateCompressionRatio(plain) AS ratio FROM t_ecr_default
+) AS estimates USING (column)
+WHERE database = currentDatabase() AND table = 't_ecr_default' AND active
+ORDER BY column;
+
+-- Whatever the blocks of the query: a granule that a block leaves incomplete is completed by the next block.
+SELECT
+    (SELECT estimateCompressionRatio('LZ4')(s) FROM t_ecr_default SETTINGS max_block_size = 1000) = (SELECT estimateCompressionRatio('LZ4')(s) FROM t_ecr_default),
+    (SELECT estimateCompressionRatio('LZ4')(lc) FROM t_ecr_default SETTINGS max_block_size = 1000) = (SELECT estimateCompressionRatio('LZ4')(lc) FROM t_ecr_default),
+    (SELECT estimateCompressionRatio('LZ4')(n) FROM t_ecr_default SETTINGS max_block_size = 1000) = (SELECT estimateCompressionRatio('LZ4')(n) FROM t_ecr_default),
+    (SELECT estimateCompressionRatio('LZ4')(arr) FROM t_ecr_default SETTINGS max_block_size = 1000) = (SELECT estimateCompressionRatio('LZ4')(arr) FROM t_ecr_default),
+    (SELECT estimateCompressionRatio('LZ4', 'LowCardinality(String)')(s) FROM t_ecr_default SETTINGS max_block_size = 1000) = (SELECT estimateCompressionRatio('LZ4', 'LowCardinality(String)')(s) FROM t_ecr_default);
+
+DROP TABLE t_ecr_default;
+
+SELECT 'Dynamic and JSON are estimated with the layouts of a merged part, Map and Variant as a part stores them';
+
+-- A part merged from two parts: its JSON shared data has the layout of merged parts, which a part written by one insert has not.
+-- Few dynamic paths: a part with min_columns_to_activate_adaptive_write_buffer streams gives every stream an adaptive buffer,
+-- which the estimate of one column cannot know.
+DROP TABLE IF EXISTS t_ecr_layouts;
+CREATE TABLE t_ecr_layouts (d Dynamic CODEC(LZ4), j JSON CODEC(LZ4), js JSON(max_dynamic_paths = 4) CODEC(LZ4))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 0, ratio_of_defaults_for_sparse_serialization = 1;
+
+INSERT INTO t_ecr_layouts
+SELECT
+    if(number % 3 = 0, number::Dynamic, toString(number)::Dynamic),
+    concat('{"a":', toString(number), ',"b":"', toString(number % 100), '","c', toString(number % 10), '":1}')::JSON,
+    concat('{"a":', toString(number), ',"b":"', toString(number % 100), '","c', toString(number % 10), '":1}')::JSON(max_dynamic_paths = 4)
+FROM numbers(2 * 8192);
+
+INSERT INTO t_ecr_layouts
+SELECT
+    if(number % 3 = 0, number::Dynamic, toString(number)::Dynamic),
+    concat('{"a":', toString(number), ',"b":"', toString(number % 100), '","c', toString(number % 10), '":1}')::JSON,
+    concat('{"a":', toString(number), ',"b":"', toString(number % 100), '","c', toString(number % 10), '":1}')::JSON(max_dynamic_paths = 4)
+FROM numbers(2 * 8192, 8192);
+
+OPTIMIZE TABLE t_ecr_layouts FINAL;
+
+SELECT
+    column,
+    column_data_compressed_bytes = toUInt64(round(column_data_uncompressed_bytes / ratio)) AS matches_on_disk_size
+FROM system.parts_columns
+INNER JOIN
+(
+    SELECT 'd' AS column, estimateCompressionRatio('LZ4')(d) AS ratio FROM t_ecr_layouts
+    UNION ALL
+    SELECT 'j' AS column, estimateCompressionRatio('LZ4')(j) AS ratio FROM t_ecr_layouts
+    UNION ALL
+    SELECT 'js' AS column, estimateCompressionRatio('LZ4')(js) AS ratio FROM t_ecr_layouts
+) AS estimates USING (column)
+WHERE database = currentDatabase() AND table = 't_ecr_layouts' AND active
+ORDER BY column;
+
+SELECT
+    (SELECT estimateCompressionRatio('LZ4')(d) FROM t_ecr_layouts SETTINGS max_block_size = 1000) = (SELECT estimateCompressionRatio('LZ4')(d) FROM t_ecr_layouts),
+    (SELECT estimateCompressionRatio('LZ4')(j) FROM t_ecr_layouts SETTINGS max_block_size = 1000) = (SELECT estimateCompressionRatio('LZ4')(j) FROM t_ecr_layouts),
+    (SELECT estimateCompressionRatio('LZ4')(js) FROM t_ecr_layouts SETTINGS max_block_size = 1000) = (SELECT estimateCompressionRatio('LZ4')(js) FROM t_ecr_layouts);
+
+DROP TABLE t_ecr_layouts;
+
+-- Map and Variant match the part one insert writes; a part merged from several is a few hundred bytes larger.
+DROP TABLE IF EXISTS t_ecr_layouts0;
+CREATE TABLE t_ecr_layouts0 (m Map(String, UInt64) CODEC(LZ4), v Variant(UInt64, String) CODEC(LZ4))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 0, ratio_of_defaults_for_sparse_serialization = 1;
+
+INSERT INTO t_ecr_layouts0
+SELECT
+    map(concat('k', toString(number % 7)), number, concat('k', toString(number % 11)), number * 2),
+    if(number % 2 = 0, number::Variant(UInt64, String), toString(number)::Variant(UInt64, String))
+FROM numbers(3 * 8192);
+
+SELECT
+    column,
+    column_data_compressed_bytes = toUInt64(round(column_data_uncompressed_bytes / ratio)) AS matches_on_disk_size
+FROM system.parts_columns
+INNER JOIN
+(
+    SELECT 'm' AS column, estimateCompressionRatio('LZ4')(m) AS ratio FROM t_ecr_layouts0
+    UNION ALL
+    SELECT 'v' AS column, estimateCompressionRatio('LZ4')(v) AS ratio FROM t_ecr_layouts0
+) AS estimates USING (column)
+WHERE database = currentDatabase() AND table = 't_ecr_layouts0' AND active
+ORDER BY column;
+
+SELECT
+    (SELECT estimateCompressionRatio('LZ4')(m) FROM t_ecr_layouts0 SETTINGS max_block_size = 1000) = (SELECT estimateCompressionRatio('LZ4')(m) FROM t_ecr_layouts0),
+    (SELECT estimateCompressionRatio('LZ4')(v) FROM t_ecr_layouts0 SETTINGS max_block_size = 1000) = (SELECT estimateCompressionRatio('LZ4')(v) FROM t_ecr_layouts0);
+
+DROP TABLE t_ecr_layouts0;
 
 SELECT 'A converted argument is estimated as the target type';
 
@@ -87,8 +208,12 @@ GROUP BY k ORDER BY k
 SETTINGS max_block_size = 1000;
 
 -- The serialization of the shared typed paths of JSON ends the data stream of every granule with `next` itself. With NONE, a
--- compressed block is never smaller than its data.
-SELECT estimateCompressionRatio('NONE')(CAST(concat('{"a":', toString(number), '}'), 'JSON(SHARED a UInt64)')) < 1 FROM numbers(10000);
+-- compressed block is never smaller than its data, also when `next` finds the buffer exactly full (8192 rows of 8 bytes).
+SELECT rows, estimateCompressionRatio('NONE')(CAST(concat('{"a":', toString(number), '}'), 'JSON(SHARED a UInt64)')) < 1
+FROM (SELECT number, arrayJoin([8191, 8192, 10000, 16384]) AS rows FROM numbers(16384))
+WHERE number < rows
+GROUP BY rows
+ORDER BY rows;
 
 SELECT 'GROUP BY: each group is estimated as the part it would be';
 
@@ -235,8 +360,7 @@ DROP TABLE IF EXISTS t_ecr_t64;
 CREATE TABLE t_ecr_t64 (lc LowCardinality(UInt32) CODEC(T64), n Nullable(UInt32) CODEC(T64), arr Array(UInt32) CODEC(T64))
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 0,
-         min_compress_block_size = 65536, max_compress_block_size = 65536, ratio_of_defaults_for_sparse_serialization = 1,
-         string_serialization_version = 'single_stream';
+         min_compress_block_size = 65536, max_compress_block_size = 65536, ratio_of_defaults_for_sparse_serialization = 1;
 
 INSERT INTO t_ecr_t64 SELECT number % 1000, if(number % 7 = 0, NULL, number), [number, number + 1] FROM numbers(3 * 8192);
 
@@ -302,7 +426,8 @@ INNER JOIN (SELECT partition, column_data_compressed_bytes FROM system.parts_col
 INNER JOIN (SELECT partition, column_data_uncompressed_bytes FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_ecr_lc_parts' AND active AND column = 's') AS s_parts ON toUInt32(s_parts.partition) = k
 ORDER BY k;
 
--- A sparse column is measured sparse, also when it is converted to a target type that a table would store sparse too.
+-- A sparse column is measured sparse, also when it is converted to a target type that a table would store sparse too, and
+-- whatever the blocks of the query.
 DROP TABLE IF EXISTS t_ecr_sparse;
 CREATE TABLE t_ecr_sparse (n UInt64 CODEC(LZ4), m Int64 CODEC(LZ4))
 ENGINE = MergeTree ORDER BY tuple()
@@ -332,6 +457,10 @@ INNER JOIN
 ) AS estimates USING (column)
 WHERE database = currentDatabase() AND table = 't_ecr_sparse' AND active
 ORDER BY column;
+
+SELECT
+    (SELECT estimateCompressionRatio('LZ4', 65536)(n) FROM t_ecr_sparse SETTINGS max_block_size = 1000) = (SELECT estimateCompressionRatio('LZ4', 65536)(n) FROM t_ecr_sparse),
+    (SELECT estimateCompressionRatio('LZ4', 65536, 'Int64')(n) FROM t_ecr_sparse SETTINGS max_block_size = 1000) = (SELECT estimateCompressionRatio('LZ4', 65536, 'Int64')(n) FROM t_ecr_sparse);
 
 DROP TABLE t_ecr_sparse;
 
