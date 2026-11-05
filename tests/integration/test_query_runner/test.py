@@ -130,7 +130,7 @@ def test_cluster_query_log():
         node_cluster,
         "SELECT is_initial_query, user, initial_user, authenticated_user, client_name FROM system.query_log "
         "WHERE log_comment = 'qr_cluster_log' AND NOT is_internal AND type = 'QueryFinish' LIMIT 1",
-        "0\tcluster_user\tdefault\tcluster_user\tClickHouse QueryRunner",
+        "1\tcluster_user\tcluster_user\tcluster_user\tClickHouse QueryRunner",
     )
 
 

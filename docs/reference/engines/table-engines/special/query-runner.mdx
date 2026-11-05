@@ -96,8 +96,8 @@ cluster has a `secret`:
 - With a `secret`, the `SQL SECURITY` clause determines the user.
   This user must exist on the remote servers.
 
-On the remote servers, the queries run as secondary queries and are recorded in `system.query_log` with `is_initial_query = 0`.
-The remote servers clamp the settings that violate their constraints instead of rejecting them.
+On the remote servers, the queries run as ordinary initial queries: they are recorded in `system.query_log`
+with `is_initial_query = 1` and their own `query_id` (not linked to the INSERT that produced them).
 On the initiating server, the dispatched queries are recorded in `system.query_log` with `is_internal = 1`.
 
 Because the engine discards query results, it always runs the dispatched queries with

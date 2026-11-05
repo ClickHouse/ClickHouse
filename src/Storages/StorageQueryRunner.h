@@ -6,8 +6,6 @@
 namespace DB
 {
 
-class Cluster;
-using ClusterPtr = std::shared_ptr<Cluster>;
 class QueryRunnerDispatcher;
 enum class QueryRunnerMode : uint8_t;
 struct QueryRunnerSettings;
@@ -24,7 +22,6 @@ public:
         const String & comment,
         const ASTPtr & sql_security_,
         const QueryRunnerSettings & settings,
-        ClusterPtr cluster_,
         ContextPtr context_);
 
     ~StorageQueryRunner() override;
@@ -42,7 +39,6 @@ public:
 
 private:
     QueryRunnerMode mode;
-    ClusterPtr cluster;
     std::unique_ptr<QueryRunnerDispatcher> dispatcher;
     LoggerPtr log;
 };
