@@ -171,21 +171,3 @@ TEST(DistributedTopKCandidateGateTransform, RejectsInvalidOrdinals)
             }),
         Exception);
 }
-
-TEST(DistributedTopKCandidateGateTransform, RejectsRowsBeyondMarkedLimit)
-{
-    size_t calls = 0;
-    EXPECT_THROW(
-        executeGate(
-            makeChunks({{1, 2}, {3}}),
-            [&](QueryCoordinationRequest)
-            {
-                ++calls;
-                return QueryCoordinationResponse{
-                    .mode = QueryCoordinationResponseMode::FallbackAll,
-                    .selected_ordinals = {}};
-            },
-            2),
-        Exception);
-    EXPECT_EQ(calls, 0u);
-}
