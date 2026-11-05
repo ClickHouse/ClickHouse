@@ -216,7 +216,7 @@ public:
     virtual size_t getMaxBuildThreads() const { return 0; }
 
     /// Request widening a narrow probe to `max_streams` after `parallel_hash_join_threshold`
-    /// selected a serial build. Subject to the same ordering and right-side totals restrictions
+    /// selected the serial layout. Subject to the same ordering and right-side totals restrictions
     /// as the parallel-build path. Only for joins whose `joinBlock` supports concurrent calls.
     virtual bool resizeProbeSideToMaxStreams() const { return false; }
 
@@ -255,8 +255,14 @@ public:
     /// this to keep the left sort property, so the default is fail-closed: a join has to opt in.
     virtual bool preservesLeftBlockOrder() const { return false; }
 
-    /// Notify the join that the query plan requires left-side read-in-order preservation.
-    /// SpillingHashJoin overrides this to forbid switching to GraceHashJoin at runtime.
+    /// Whether the join can guarantee the left stream order if `keepLeftPipelineInOrder` is
+    /// called. Joins that preserve the order only on request override this. The default also
+    /// excludes delayed blocks: they interleave with the main output and break the order
+    /// unconditionally.
+    virtual bool canPreserveLeftBlockOrder() const { return preservesLeftBlockOrder() && !hasDelayedBlocks(); }
+
+    /// Notify the join that the query plan requires the left stream's row order. Must be called
+    /// only when `canPreserveLeftBlockOrder` is true.
     virtual void keepLeftPipelineInOrder() {}
 
     /// Called by `FillingRightJoinSideTransform` after all data is inserted in join.

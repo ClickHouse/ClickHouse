@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas
--- A `hash` join chosen over `parallel_hash` by `parallel_hash_join_threshold` must keep the probe
--- width the `parallel_hash` join would have had: the probe side is resized to `max_threads`.
+-- A hash join whose serial layout `parallel_hash_join_threshold` chose must keep the probe
+-- width of the parallel layout: the probe side is resized to `max_threads`.
 -- https://github.com/ClickHouse/ClickHouse/issues/127983
 
 SET enable_analyzer = 1;
@@ -10,7 +10,9 @@ SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_optimize_join_order_randomize = 0;
 SET enable_join_runtime_filters = 0;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
-SET join_algorithm = 'direct,parallel_hash,hash';
+SET join_algorithm = 'direct,hash';
+SET hash_join_layout = 'auto';
+SET join_probe_resize_to_max_threads = 1;
 SET parallel_hash_join_threshold = 100000;
 SET collect_hash_table_stats_during_joins = 1, use_hash_table_stats_for_join_reordering = 1;
 SET max_threads = 4;
@@ -21,67 +23,74 @@ DROP TABLE IF EXISTS t_probe_width_dim;
 CREATE TABLE t_probe_width_dim (k UInt64, v String) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_probe_width_dim SELECT number, toString(number) FROM numbers(1000);
 
--- Check the algorithm as well as the number of `JoiningTransform` processors
--- (a `× N` group counts N), so an unexpected `parallel_hash` cannot pass unnoticed.
+-- Each query prints the algorithm, the number of `JoiningTransform` processors and the number of
+-- `FillingRightJoinSide` processors (a `× N` group counts N). The second tells the serial layout (1)
+-- from the parallel layout (up to `max_threads`), so a join that did not take the serial layout cannot pass unnoticed.
 -- The probe side is `numbers`, a single stream.
 
--- The right side has an estimate of 1000 rows, below the threshold: `hash` is chosen.
+-- The right side has an estimate of 1000 rows, below the threshold: the layout is serial.
 SELECT trim(explain)
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k)
 WHERE trim(explain) LIKE 'Algorithm:%';
-SELECT 'hash below threshold', sum(if(explain LIKE '%JoiningTransform × %', toUInt64(extract(explain, 'JoiningTransform × (\\d+)')), 1))
-FROM (EXPLAIN PIPELINE SELECT count() FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k)
-WHERE explain LIKE '%JoiningTransform%';
+SELECT 'serial layout below threshold',
+    sumIf(if(explain LIKE '%JoiningTransform × %', toUInt64(extract(explain, 'JoiningTransform × (\\d+)')), 1), explain LIKE '%JoiningTransform%') AS joining,
+    sumIf(if(explain LIKE '%FillingRightJoinSide × %', toUInt64(extract(explain, 'FillingRightJoinSide × (\\d+)')), 1), explain LIKE '%FillingRightJoinSide%') AS filling
+FROM (EXPLAIN PIPELINE SELECT count() FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k);
 
--- The same with spilling allowed: `SpillingHashJoin` wraps the single-threaded build.
+-- The same with spilling allowed: `SpillingHashJoin` wraps the join.
 SELECT trim(explain)
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k SETTINGS max_bytes_before_external_join = 1000000000)
 WHERE trim(explain) LIKE 'Algorithm:%';
-SELECT 'spilling hash below threshold', sum(if(explain LIKE '%JoiningTransform × %', toUInt64(extract(explain, 'JoiningTransform × (\\d+)')), 1))
-FROM (EXPLAIN PIPELINE SELECT count() FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k SETTINGS max_bytes_before_external_join = 1000000000)
-WHERE explain LIKE '%JoiningTransform%';
+SELECT 'spilling serial layout below threshold',
+    sumIf(if(explain LIKE '%JoiningTransform × %', toUInt64(extract(explain, 'JoiningTransform × (\\d+)')), 1), explain LIKE '%JoiningTransform%') AS joining,
+    sumIf(if(explain LIKE '%FillingRightJoinSide × %', toUInt64(extract(explain, 'FillingRightJoinSide × (\\d+)')), 1), explain LIKE '%FillingRightJoinSide%') AS filling
+FROM (EXPLAIN PIPELINE SELECT count() FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k SETTINGS max_bytes_before_external_join = 1000000000);
 
--- With the threshold at 0 the same query uses `parallel_hash`: the reference width.
+-- With the threshold at 0 the same query uses the parallel layout: the reference width.
 SELECT trim(explain)
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k SETTINGS parallel_hash_join_threshold = 0)
 WHERE trim(explain) LIKE 'Algorithm:%';
-SELECT 'parallel_hash', sum(if(explain LIKE '%JoiningTransform × %', toUInt64(extract(explain, 'JoiningTransform × (\\d+)')), 1))
-FROM (EXPLAIN PIPELINE SELECT count() FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k SETTINGS parallel_hash_join_threshold = 0)
-WHERE explain LIKE '%JoiningTransform%';
+SELECT 'parallel layout',
+    sumIf(if(explain LIKE '%JoiningTransform × %', toUInt64(extract(explain, 'JoiningTransform × (\\d+)')), 1), explain LIKE '%JoiningTransform%') AS joining,
+    sumIf(if(explain LIKE '%FillingRightJoinSide × %', toUInt64(extract(explain, 'FillingRightJoinSide × (\\d+)')), 1), explain LIKE '%FillingRightJoinSide%') AS filling
+FROM (EXPLAIN PIPELINE SELECT count() FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k SETTINGS parallel_hash_join_threshold = 0);
 
--- An explicit `join_algorithm = 'hash'` is not affected: nothing chose it over `parallel_hash`.
+-- An explicit serial layout is not affected: the threshold did not choose it.
 SELECT trim(explain)
-FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k SETTINGS join_algorithm = 'hash')
+FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k SETTINGS hash_join_layout = 'serial')
 WHERE trim(explain) LIKE 'Algorithm:%';
-SELECT 'explicit hash', sum(if(explain LIKE '%JoiningTransform × %', toUInt64(extract(explain, 'JoiningTransform × (\\d+)')), 1))
-FROM (EXPLAIN PIPELINE SELECT count() FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k SETTINGS join_algorithm = 'hash')
-WHERE explain LIKE '%JoiningTransform%';
+SELECT 'explicit serial layout',
+    sumIf(if(explain LIKE '%JoiningTransform × %', toUInt64(extract(explain, 'JoiningTransform × (\\d+)')), 1), explain LIKE '%JoiningTransform%') AS joining,
+    sumIf(if(explain LIKE '%FillingRightJoinSide × %', toUInt64(extract(explain, 'FillingRightJoinSide × (\\d+)')), 1), explain LIKE '%FillingRightJoinSide%') AS filling
+FROM (EXPLAIN PIPELINE SELECT count() FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k SETTINGS hash_join_layout = 'serial');
 
--- The compatibility switch retains the previous width in both build modes.
+-- The setting restores the previous width in both modes, and keeps the serial layout.
 SELECT trim(explain)
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k SETTINGS join_probe_resize_to_max_threads = 0)
 WHERE trim(explain) LIKE 'Algorithm:%';
-SELECT 'resize disabled', sum(if(explain LIKE '%JoiningTransform × %', toUInt64(extract(explain, 'JoiningTransform × (\\d+)')), 1))
-FROM (EXPLAIN PIPELINE SELECT count() FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k SETTINGS join_probe_resize_to_max_threads = 0)
-WHERE explain LIKE '%JoiningTransform%';
+SELECT 'resize disabled',
+    sumIf(if(explain LIKE '%JoiningTransform × %', toUInt64(extract(explain, 'JoiningTransform × (\\d+)')), 1), explain LIKE '%JoiningTransform%') AS joining,
+    sumIf(if(explain LIKE '%FillingRightJoinSide × %', toUInt64(extract(explain, 'FillingRightJoinSide × (\\d+)')), 1), explain LIKE '%FillingRightJoinSide%') AS filling
+FROM (EXPLAIN PIPELINE SELECT count() FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k SETTINGS join_probe_resize_to_max_threads = 0);
 
 SELECT trim(explain)
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k SETTINGS max_bytes_before_external_join = 1000000000, join_probe_resize_to_max_threads = 0)
 WHERE trim(explain) LIKE 'Algorithm:%';
-SELECT 'spilling resize disabled', sum(if(explain LIKE '%JoiningTransform × %', toUInt64(extract(explain, 'JoiningTransform × (\\d+)')), 1))
-FROM (EXPLAIN PIPELINE SELECT count() FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k SETTINGS max_bytes_before_external_join = 1000000000, join_probe_resize_to_max_threads = 0)
-WHERE explain LIKE '%JoiningTransform%';
+SELECT 'spilling resize disabled',
+    sumIf(if(explain LIKE '%JoiningTransform × %', toUInt64(extract(explain, 'JoiningTransform × (\\d+)')), 1), explain LIKE '%JoiningTransform%') AS joining,
+    sumIf(if(explain LIKE '%FillingRightJoinSide × %', toUInt64(extract(explain, 'FillingRightJoinSide × (\\d+)')), 1), explain LIKE '%FillingRightJoinSide%') AS filling
+FROM (EXPLAIN PIPELINE SELECT count() FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k SETTINGS max_bytes_before_external_join = 1000000000, join_probe_resize_to_max_threads = 0);
 
 -- The case from the issue: the right side is a remote read with no estimate, so the first run uses
--- `parallel_hash`, and its cached build size makes the next run pick `hash`. A `String` key, so the
--- build uses a two-level map, which is when `ConcurrentHashJoin` records its size.
+-- the parallel layout, and its cached build size makes the next run pick the serial layout.
 SELECT count() FROM numbers(1000000) AS l JOIN (SELECT * FROM remote('127.0.0.1', currentDatabase(), t_probe_width_dim)) AS r ON toString(l.number) = r.v FORMAT Null;
 SELECT trim(explain)
 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(1000000) AS l JOIN (SELECT * FROM remote('127.0.0.1', currentDatabase(), t_probe_width_dim)) AS r ON toString(l.number) = r.v)
 WHERE trim(explain) LIKE 'Algorithm:%';
-SELECT 'hash from cached stats', sum(if(explain LIKE '%JoiningTransform × %', toUInt64(extract(explain, 'JoiningTransform × (\\d+)')), 1))
-FROM (EXPLAIN PIPELINE SELECT count() FROM numbers(1000000) AS l JOIN (SELECT * FROM remote('127.0.0.1', currentDatabase(), t_probe_width_dim)) AS r ON toString(l.number) = r.v)
-WHERE explain LIKE '%JoiningTransform%';
+SELECT 'serial layout from cached stats',
+    sumIf(if(explain LIKE '%JoiningTransform × %', toUInt64(extract(explain, 'JoiningTransform × (\\d+)')), 1), explain LIKE '%JoiningTransform%') AS joining,
+    sumIf(if(explain LIKE '%FillingRightJoinSide × %', toUInt64(extract(explain, 'FillingRightJoinSide × (\\d+)')), 1), explain LIKE '%FillingRightJoinSide%') AS filling
+FROM (EXPLAIN PIPELINE SELECT count() FROM numbers(1000000) AS l JOIN (SELECT * FROM remote('127.0.0.1', currentDatabase(), t_probe_width_dim)) AS r ON toString(l.number) = r.v);
 
 -- Cover the default algorithm list with `LIMIT BY` pushed into the sort above the widened join.
 SET query_plan_push_limit_by_into_sort = 1;
