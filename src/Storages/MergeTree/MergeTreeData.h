@@ -1236,6 +1236,10 @@ public:
         AlterLockHolder & table_lock_holder,
         bool run_sanity_checks = true);
 
+    /// Sets the escape fields of `metadata` and of its indices from the current settings. `changeSettings`
+    /// does it only for the live metadata, so a copy taken before it must be synced before it is published.
+    void syncEscapeIndexFilenamesWithSettings(StorageInMemoryMetadata & metadata) const;
+
     std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
     static void verifySortingKey(const KeyDescription & sorting_key);
 

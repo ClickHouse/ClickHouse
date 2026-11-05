@@ -7792,19 +7792,20 @@ void MergeTreeData::changeSettings(
         new_metadata.setSettingsChanges(new_settings);
 
         if (has_escape_index_filenames_changed)
-        {
-            /// We need to update the metadata fields and indices so we use the new setting when reading indices
-            bool new_value = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames];
-            new_metadata.escape_index_filenames = new_value;
-            for (auto & idx : new_metadata.secondary_indices)
-                idx.escape_filenames = new_value;
-        }
+            syncEscapeIndexFilenamesWithSettings(new_metadata);
 
         setInMemoryMetadata(new_metadata);
 
         if (has_storage_policy_changed)
             startBackgroundMovesIfNeeded();
     }
+}
+
+void MergeTreeData::syncEscapeIndexFilenamesWithSettings(StorageInMemoryMetadata & metadata) const
+{
+    metadata.escape_index_filenames = (*getSettings())[MergeTreeSetting::escape_index_filenames];
+    for (auto & index : metadata.secondary_indices)
+        index.escape_filenames = metadata.escape_index_filenames;
 }
 
 std::pair<String, bool> MergeTreeData::getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const
