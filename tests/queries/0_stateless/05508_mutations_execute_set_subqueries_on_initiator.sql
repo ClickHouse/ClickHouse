@@ -102,6 +102,20 @@ ALTER TABLE t_large UPDATE v = v + 1000 WHERE k IN (SELECT x FROM t_variant_src)
 SELECT sum(v), countIf(v = 1), countIf(v = 1000), anyIf(v, k = 199) FROM t_large;
 SELECT replaceRegexpAll(replaceAll(command, currentDatabase(), 'default'), '\\[[^\\]]+\\]', '[...]'), is_done FROM system.mutations WHERE database = currentDatabase() AND table = 't_large' ORDER BY length(mutation_id), mutation_id;
 
+SELECT '-- The same subquery is executed once, and pulling stops at the limit';
+DROP TABLE IF EXISTS t_once;
+-- Empty on purpose: the mutations below never execute a kept subquery.
+CREATE TABLE t_once (k UInt64, e Tuple(), v UInt64) ENGINE = MergeTree ORDER BY k;
+
+ALTER TABLE t_once UPDATE v = 1 WHERE k IN (SELECT rand64()) OR v IN (SELECT rand64()) SETTINGS mutations_sync = 2;
+SELECT length(sets), arrayUniq(sets) FROM (SELECT extractAll(command, '\\[[^\\]]+\\]') AS sets FROM system.mutations WHERE database = currentDatabase() AND table = 't_once' AND command LIKE '%v = 1%');
+
+-- A subquery that is read past one million rows throws, so these are accepted only if pulling stops at the limit.
+ALTER TABLE t_once DELETE WHERE k IN (SELECT number + throwIf(number >= 1000000) FROM numbers(2000000) SETTINGS max_block_size = 8192, max_threads = 1) SETTINGS mutations_sync = 2;
+-- Empty tuples take no bytes, so only the number of rows stops it.
+ALTER TABLE t_once DELETE WHERE e IN (SELECT tuple() FROM numbers(2000000) WHERE throwIf(number >= 1000000) = 0 SETTINGS max_block_size = 8192, max_threads = 1) SETTINGS mutations_sync = 2;
+SELECT replaceRegexpAll(replaceAll(command, currentDatabase(), 'default'), '\\[[^\\]]+\\]', '[...]'), is_done FROM system.mutations WHERE database = currentDatabase() AND table = 't_once' ORDER BY length(mutation_id), mutation_id;
+
 SELECT '-- ReplicatedMergeTree';
 DROP TABLE IF EXISTS t_replicated SYNC;
 DROP TABLE IF EXISTS t_replicated_src;
@@ -125,5 +139,6 @@ DROP TABLE t_snapshot;
 DROP TABLE t_large;
 DROP TABLE t_large_src;
 DROP TABLE t_variant_src;
+DROP TABLE t_once;
 DROP TABLE t_replicated SYNC;
 DROP TABLE t_replicated_src;
