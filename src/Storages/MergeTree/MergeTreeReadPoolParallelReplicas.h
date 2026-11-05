@@ -63,11 +63,8 @@ private:
     /// use the value from the initial announcement instead.
     size_t min_marks_per_request{0};
     size_t mark_segment_size{0};
-    const size_t min_read_task_size;
 
     RangesInDataPartsDescription buffered_ranges;
-    /// Upper bound for the size of a task cut from `buffered_ranges`, see `cutRangesToRead`.
-    size_t max_marks_per_task{0};
     /// `buffered_ranges.front()` as assigned, before any cut.
     MarkRangesPtr front_read_request_map;
     bool no_more_tasks_available{false};

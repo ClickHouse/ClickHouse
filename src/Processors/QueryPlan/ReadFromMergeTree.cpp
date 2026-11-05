@@ -741,8 +741,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
     if (pool_settings.total_query_nodes > 1)
     {
         const size_t replicas = pool_settings.total_query_nodes;
-        /// Not a tuning knob: the batch being read by the threads (see `MergeTreeReadPoolParallelReplicas::cutRangesToRead`
-        /// for why it is at most one) plus the batch in the buffer.
+        /// Not a tuning knob: the batch the threads are still reading plus the next one in the buffer.
         const size_t batches = 2;
         const size_t max_marks_per_replica = std::max<size_t>(
             pool_settings.sum_marks / (replicas * replicas), MergeTreeReadPoolParallelReplicas::mark_segment_size_borders.front());
