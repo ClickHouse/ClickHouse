@@ -85,6 +85,8 @@ SELECT id, mapKeys(m), n FROM file('${CLICKHOUSE_DATABASE}_05509_d_*.parquet', P
     'id UInt64, m Map(String, UInt8) DEFAULT map(\'d\', 1), n String DEFAULT toString(m[\'a\'])') ORDER BY id;
 SELECT id, mapValues(m) FROM file('${CLICKHOUSE_DATABASE}_05509_d_*.parquet', Parquet,
     'id UInt64, m Map(String, UInt8) DEFAULT map(\'d\', 1)') ORDER BY id;
+SELECT id, m.keys, n FROM file('${CLICKHOUSE_DATABASE}_05509_d_*.parquet', Parquet,
+    'id UInt64, m Map(String, UInt8) DEFAULT map(\'d\', 1), n String DEFAULT toString(m[\'a\'])') ORDER BY id;
 SELECT 'row policy, additional_table_filters';
 SELECT id, mapKeys(m) FROM t_05509_policy ORDER BY id;
 SELECT count() FROM t_05509_policy WHERE has(m, 'a');
@@ -92,6 +94,7 @@ SELECT id, mapKeys(m) FROM t_05509_filter ORDER BY id SETTINGS additional_table_
 SELECT count() FROM t_05509_filter WHERE has(m, 'b') SETTINGS additional_table_filters = {'t_05509_filter': 'm[\'a\'] = 2'};
 SELECT 'Iceberg, schema evolution';
 SELECT id, mapKeys(a), mapKeys(m), a, s2 FROM t_05509_evolved ORDER BY id;
+SELECT id, m.keys, a FROM t_05509_evolved ORDER BY id;
 SELECT id, mapValues(a) FROM t_05509_evolved ORDER BY id;
 SELECT count() FROM t_05509_evolved WHERE has(a, 'k1');
 SELECT id, mapKeys(a) FROM t_05509_evolved ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10;
@@ -106,6 +109,7 @@ SELECT id, mapKeys(m) FROM t_05509_filter ORDER BY id DESC LIMIT 3 SETTINGS quer
 SELECT a.id, mapKeys(a.ms) FROM file('${TYPES}') AS a INNER JOIN (SELECT number AS n FROM numbers(30) WHERE number % 2 = 0) AS b ON a.id = b.n ORDER BY a.id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1, enable_join_runtime_filters = 1, join_algorithm = 'hash';
 SELECT a.id, mapKeys(a.ms) FROM file('${TYPES}') AS a INNER JOIN numbers(30) AS b ON a.id = b.number WHERE b.number > 5 ORDER BY a.id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1, join_algorithm = 'hash';
 SELECT id, k FROM (SELECT id, mapKeys(ms) AS k FROM t_05509_types) WHERE id > 5 ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1;
+SELECT length(mapKeys(m)) FROM t_05509_filter ORDER BY rand() LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1, additional_table_filters = {'t_05509_filter': 'id > 1'};
 "
 
 ${CLICKHOUSE_CLIENT} -m --query "
