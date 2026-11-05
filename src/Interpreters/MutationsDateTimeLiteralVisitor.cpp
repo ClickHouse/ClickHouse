@@ -120,7 +120,8 @@ std::optional<DataTypePtr> tryGetAliasType(const ASTIdentifier & identifier, con
     return getTupleElementType(it->second, std::span(identifier.name_parts).subspan(1));
 }
 
-/// The same for an identifier, which may name a parameter of an enclosing lambda or an element of one, or an alias.
+/// The same for an identifier, which may name a parameter of an enclosing lambda or an element of one, an alias, a column or a
+/// subcolumn.
 DataTypePtr getDateTimeColumnType(
     const ASTIdentifier & identifier,
     const ColumnsDescription & columns,
@@ -142,7 +143,9 @@ DataTypePtr getDateTimeColumnType(
             return nullptr;
         return datetime_type;
     }
-    return getDateTimeColumnType(identifier.name(), columns);
+    /// A subcolumn too, such as `n.ts` of `n Tuple(ts DateTime)`.
+    const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, identifier.name());
+    return column ? getZonelessDateTimeType(column->type) : nullptr;
 }
 
 /// The type of `argument` of a higher-order function if it is a column, a subcolumn, a lambda parameter or an alias with a

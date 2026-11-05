@@ -12,6 +12,12 @@ DROP TABLE IF EXISTS t_copy;
 DROP TABLE IF EXISTS t_modify_column;
 DROP TABLE IF EXISTS t_add_column;
 DROP TABLE IF EXISTS t_clear_column;
+DROP TABLE IF EXISTS t_nested;
+DROP TABLE IF EXISTS t_nested_to_string;
+DROP TABLE IF EXISTS t_nested_modify;
+DROP TABLE IF EXISTS t_tuple_create;
+DROP TABLE IF EXISTS t_tuple_modify;
+DROP TABLE IF EXISTS t_tuple_mutation;
 DROP TABLE IF EXISTS t_untyped;
 DROP TABLE IF EXISTS t_lambda_create;
 DROP TABLE IF EXISTS t_lambda_modify;
@@ -71,6 +77,39 @@ SELECT 'ADD COLUMN, MODIFY TTL', extract(engine_full, 'WHERE [^)]*\\)') FROM sys
 CREATE TABLE t_clear_column (event DateTime, id UInt8) ENGINE = MergeTree ORDER BY id;
 ALTER TABLE t_clear_column CLEAR COLUMN event, MODIFY TTL event + INTERVAL 1 SECOND DELETE WHERE event = '2020-01-01 00:00:00';
 SELECT 'CLEAR COLUMN, MODIFY TTL', extract(engine_full, 'WHERE [^)]*\\)') FROM system.tables WHERE database = currentDatabase() AND name = 't_clear_column';
+
+-- The preceding commands are applied as the `ALTER` applies them, also to the flattened columns of a `Nested` column, such
+-- as `n.ts`: replacing `n` changes the type of `n.ts`, in both directions.
+CREATE TABLE t_nested (event DateTime, id UInt8, n Nested(ts String)) ENGINE = MergeTree ORDER BY id SETTINGS merge_with_ttl_timeout = 86400;
+ALTER TABLE t_nested DROP COLUMN n, ADD COLUMN n Nested(ts DateTime),
+    MODIFY TTL event + INTERVAL 1 SECOND DELETE WHERE arrayExists(x -> x = '2020-01-01 00:00:00', n.ts);
+INSERT INTO t_nested VALUES (0, 1, [1577804400]), (0, 2, [1577836800]);
+OPTIMIZE TABLE t_nested FINAL SETTINGS session_timezone = '';
+SELECT 'Nested DROP, ADD, MODIFY TTL', groupArray(id) FROM (SELECT id FROM t_nested ORDER BY id);
+CREATE TABLE t_nested_to_string (event DateTime, id UInt8, n Nested(ts DateTime)) ENGINE = MergeTree ORDER BY id;
+ALTER TABLE t_nested_to_string DROP COLUMN n, ADD COLUMN n Nested(ts String),
+    MODIFY TTL event + INTERVAL 1 SECOND DELETE WHERE arrayExists(x -> x = 'keep', n.ts);
+SELECT 'Nested to String', extract(engine_full, 'WHERE .* SETTINGS') FROM system.tables WHERE database = currentDatabase() AND name = 't_nested_to_string';
+CREATE TABLE t_nested_modify (event DateTime, id UInt8) ENGINE = MergeTree ORDER BY id;
+ALTER TABLE t_nested_modify ADD COLUMN n Nested(ts DateTime), MODIFY COLUMN n.ts Array(String),
+    MODIFY TTL event + INTERVAL 1 SECOND DELETE WHERE arrayExists(x -> x = 'keep', n.ts);
+SELECT 'Nested ADD, MODIFY COLUMN', extract(engine_full, 'WHERE .* SETTINGS') FROM system.tables WHERE database = currentDatabase() AND name = 't_nested_modify';
+
+-- A subcolumn, such as the element `n.ts` of a tuple, in `CREATE`, in `MODIFY TTL` and in a mutation.
+CREATE TABLE t_tuple_create (event DateTime, id UInt8, n Tuple(ts DateTime)) ENGINE = MergeTree ORDER BY id
+TTL event + INTERVAL 1 SECOND DELETE WHERE n.ts = '2020-01-01 00:00:00' SETTINGS merge_with_ttl_timeout = 86400;
+INSERT INTO t_tuple_create VALUES (0, 1, (1577804400)), (0, 2, (1577836800));
+OPTIMIZE TABLE t_tuple_create FINAL SETTINGS session_timezone = '';
+SELECT 'Tuple element, CREATE', groupArray(id) FROM (SELECT id FROM t_tuple_create ORDER BY id);
+CREATE TABLE t_tuple_modify (event DateTime, id UInt8, n Tuple(ts DateTime)) ENGINE = MergeTree ORDER BY id SETTINGS merge_with_ttl_timeout = 86400;
+ALTER TABLE t_tuple_modify MODIFY TTL event + INTERVAL 1 SECOND DELETE WHERE n.ts = '2020-01-01 00:00:00';
+INSERT INTO t_tuple_modify VALUES (0, 1, (1577804400)), (0, 2, (1577836800));
+OPTIMIZE TABLE t_tuple_modify FINAL SETTINGS session_timezone = '';
+SELECT 'Tuple element, MODIFY TTL', groupArray(id) FROM (SELECT id FROM t_tuple_modify ORDER BY id);
+CREATE TABLE t_tuple_mutation (id UInt8, n Tuple(ts DateTime)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_tuple_mutation VALUES (1, (1577804400)), (2, (1577836800));
+ALTER TABLE t_tuple_mutation DELETE WHERE n.ts = '2020-01-01 00:00:00' SETTINGS mutations_sync = 2;
+SELECT 'Tuple element, DELETE', groupArray(id) FROM (SELECT id FROM t_tuple_mutation ORDER BY id);
 
 -- A command that the statement is rejected for is not applied before the validation.
 CREATE TABLE t_untyped (event DateTime, id UInt8) ENGINE = MergeTree ORDER BY id;
@@ -242,3 +281,9 @@ DROP TABLE t_alias_prefer_column_memory;
 DROP TABLE t_alias_scoped_lambda;
 DROP TABLE t_alias_scoped_subquery;
 DROP TABLE t_alias_scalar_subquery;
+DROP TABLE t_nested;
+DROP TABLE t_nested_to_string;
+DROP TABLE t_nested_modify;
+DROP TABLE t_tuple_create;
+DROP TABLE t_tuple_modify;
+DROP TABLE t_tuple_mutation;

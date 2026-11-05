@@ -5,6 +5,12 @@ AS	WHERE event = \'2020-01-01 00:00:00\'
 MODIFY COLUMN, MODIFY TTL	[2]
 ADD COLUMN, MODIFY TTL	WHERE event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')
 CLEAR COLUMN, MODIFY TTL	WHERE event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')
+Nested DROP, ADD, MODIFY TTL	[2]
+Nested to String	WHERE arrayExists(x -> (x = \'keep\'), n.ts) SETTINGS
+Nested ADD, MODIFY COLUMN	WHERE arrayExists(x -> (x = \'keep\'), n.ts) SETTINGS
+Tuple element, CREATE	[2]
+Tuple element, MODIFY TTL	[2]
+Tuple element, DELETE	[2]
 GROUP BY SET	1
 MODIFY TTL GROUP BY SET	1
 lambda	WHERE arrayExists(event -> (event = \'keep\'), tags) AND (event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\'))
