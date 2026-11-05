@@ -5,7 +5,9 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Storages/ObjectStorageQueue/AzureQueue_fwd.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
+#include <Storages/ObjectStorageQueue/S3Queue_fwd.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
@@ -107,7 +109,8 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
     MutableColumnsAndConstraints & params,
     const std::string & table_name,
     const std::string & database_name,
-    const StorageObjectStorageQueue & storage) const
+    const StorageObjectStorageQueue & storage,
+    bool display_secrets) const
 {
     MutableColumns & res_columns = params.res_columns;
     auto settings_changes_ast = storage.getInMemoryMetadataPtr()->settings_changes;
@@ -127,6 +130,23 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
     {
         return StorageObjectStorageQueue::isSettingChangeable(setting_name, (*this)[ObjectStorageQueueSetting::mode]);
     };
+    /// Hides what `SHOW CREATE TABLE` hides. A secret is hidden whole, as its masker renders SQL.
+    auto render_value = [&](const std::string & setting_name, const Field & value) -> String
+    {
+        static constexpr std::string_view hidden_secret = "[HIDDEN]";
+        if (!display_secrets)
+        {
+            for (const auto * settings_to_hide : {&S3Queue::SETTINGS_TO_HIDE, &AzureQueue::SETTINGS_TO_HIDE})
+            {
+                auto it = settings_to_hide->find(setting_name);
+                if (it == settings_to_hide->end())
+                    continue;
+                if (auto masked = it->second(value); masked && masked->contains(hidden_secret))
+                    return String(hidden_secret);
+            }
+        }
+        return convertFieldToString(value);
+    };
 
     for (const auto & change : impl->all())
     {
@@ -135,7 +155,7 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
         res_columns[i++]->insert(database_name);
         res_columns[i++]->insert(table_name);
         res_columns[i++]->insert(name);
-        res_columns[i++]->insert(convertFieldToString(change.getValue()));
+        res_columns[i++]->insert(render_value(name, change.getValue()));
         res_columns[i++]->insert(change.getTypeName());
         res_columns[i++]->insert(is_changed(name));
         res_columns[i++]->insert(change.getDescription());
