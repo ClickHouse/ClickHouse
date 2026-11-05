@@ -225,6 +225,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.type_json_skip_null_typed_paths = settings[Setting::type_json_skip_null_typed_paths];
     format_settings.json.max_dynamic_subcolumns_in_json_type_parsing = settings[Setting::max_dynamic_subcolumns_in_json_type_parsing].valueOrNullopt();
     format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object = settings[Setting::type_json_allow_duplicated_key_with_literal_and_nested_object];
+    format_settings.json.type_json_skip_duplicate_key_detection = settings[Setting::type_json_skip_duplicate_key_detection];
     format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp = settings[Setting::type_json_use_partial_match_to_skip_paths_by_regexp];
     format_settings.json.pretty_print = settings[Setting::output_format_json_pretty_print];
     format_settings.json.infer_array_of_dynamic_from_array_of_different_values = settings[Setting::input_format_json_infer_array_of_dynamic_from_array_of_different_types];
@@ -295,14 +296,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
         size_t budget = static_cast<size_t>(static_cast<double>(memory_limit) * 0.9);
         format_settings.parquet.memory_high_watermark = std::min<size_t>(
             format_settings.parquet.memory_high_watermark, budget / 8);
-        /// The reader does not hold one block of `prefer_block_bytes` but a whole pipeline of them:
-        /// prefetched, decoded and ready-to-deliver row subgroups across the row groups it reads in
-        /// parallel, and downstream (for an `INSERT`) the blocks the squashing stage has accumulated
-        /// so far. Measured on a 105-column table, the default 16 MiB preferred block size costs about
-        /// 290 MiB of live reader memory, so the cap has to be a much smaller fraction of the budget
-        /// than the block size alone suggests.
         format_settings.parquet.prefer_block_bytes = std::min<size_t>(
-            format_settings.parquet.prefer_block_bytes, budget / 256);
+            format_settings.parquet.prefer_block_bytes, budget / 64);
     }
     format_settings.pretty.charset = settings[Setting::output_format_pretty_grid_charset].toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings[Setting::output_format_pretty_color].valueOr(2);
@@ -383,6 +378,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.arrow.output_unsupported_types = getArrowUnsupportedTypesMode(settings);
     format_settings.arrow.output_record_batch_rows = settings[Setting::output_format_arrow_record_batch_size];
     format_settings.arrow.output_record_batch_bytes = settings[Setting::output_format_arrow_record_batch_size_bytes];
+    format_settings.arrow.output_max_record_batch_bytes = settings[Setting::output_format_arrow_max_record_batch_size_bytes];
     format_settings.orc.allow_missing_columns = settings[Setting::input_format_orc_allow_missing_columns];
     format_settings.orc.row_batch_size = settings[Setting::input_format_orc_row_batch_size];
     format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_orc_skip_columns_with_unsupported_types_in_schema_inference];
@@ -396,6 +392,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.orc.filter_push_down = settings[Setting::input_format_orc_filter_push_down];
     format_settings.orc.reader_time_zone_name = settings[Setting::input_format_orc_reader_time_zone_name];
     format_settings.orc.writer_time_zone_name = settings[Setting::output_format_orc_writer_time_zone_name];
+    format_settings.vortex.filter_push_down = settings[Setting::input_format_vortex_filter_push_down];
+    format_settings.vortex.preserve_order = settings[Setting::input_format_vortex_preserve_order];
     format_settings.defaults_for_omitted_fields = settings[Setting::input_format_defaults_for_omitted_fields];
     format_settings.capn_proto.enum_comparing_mode = settings[Setting::format_capn_proto_enum_comparising_mode];
     format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference];
@@ -686,6 +684,8 @@ InputFormatPtr FormatFactory::getInputImpl(
     else
     {
         format = creators.input_creator(buf, format_sample, row_input_format_params, format_settings);
+        if (format_filter_info && format_filter_info->column_mapper)
+            format->setColumnMapper(format_filter_info->column_mapper);
     }
 
     if (owned_buf)
@@ -1381,8 +1381,15 @@ bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, cons
     auto format_name = boost::to_lower_copy(name);
     if (format_name == "parquet" && context->getSettingsRef()[Setting::input_format_parquet_preserve_order])
         return false;
+    if (format_name == "vortex" && context->getSettingsRef()[Setting::input_format_vortex_preserve_order])
+        return false;
 
     return true;
+}
+
+bool FormatFactory::checkParallelizeOutputAfterReadingForAnyFormat(const ContextPtr & context) const
+{
+    return checkParallelizeOutputAfterReading("Parquet", context) && checkParallelizeOutputAfterReading("Vortex", context);
 }
 
 void FormatFactory::checkFormatName(const String & name) const

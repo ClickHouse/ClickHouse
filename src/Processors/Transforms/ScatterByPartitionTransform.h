@@ -1,5 +1,6 @@
 #pragma once
 #include <Columns/IColumn.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/Chunk.h>
@@ -40,7 +41,7 @@ private:
     std::optional<size_t> round_robin_bucket;
 
     bool has_output_chunks = false;
-    std::vector<char> was_output_processed;
+    VectorWithMemoryTracking<char> was_output_processed;
     Chunk chunk;
 
     PaddedPODArray<UInt32> hash;

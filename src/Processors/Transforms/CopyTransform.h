@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Chunk.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 
@@ -25,7 +26,7 @@ public:
 
 private:
     Port::Data data;
-    std::vector<char> was_output_processed;
+    VectorWithMemoryTracking<char> was_output_processed;
     /// Inputs are not requested before an output asks for data.
     bool was_output_needed = false;
 

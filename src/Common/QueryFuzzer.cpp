@@ -62,7 +62,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
-#include <Parsers/ASTHypotheticalObjectQuery.h>
+#include <Parsers/WhatIf/ASTHypotheticalObjectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -6638,7 +6638,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             stderr,
             "The AST node '{}' was already visited before."
             " Depth {}, {} visited nodes, current top AST:\n{}\n",
-            static_cast<void *>(ast.get()),
+            ast->getID(),
             current_ast_depth,
             debug_visited_nodes.size(),
             (*debug_top_ast)->dumpTree());
