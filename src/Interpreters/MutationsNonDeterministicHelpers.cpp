@@ -6,20 +6,27 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/MutationCommands.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
+#include <Common/NaNUtils.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/TypeTree.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/misc.h>
@@ -162,10 +169,21 @@ public:
     {
         ContextPtr context;
         size_t max_literal_size;
+        /// The aliases of the command outside its subqueries, which a subquery cannot resolve on its own.
+        NameSet aliases;
         /// The replacement of each subquery executed so far, nullptr if the subquery is kept.
         /// All occurrences of a subquery in a command share one set, so they must see one result.
         std::map<std::pair<bool, IASTHash>, ASTPtr> results;
     };
+
+    static void collectAliases(const IAST & ast, NameSet & aliases)
+    {
+        if (auto alias = ast.tryGetAlias(); !alias.empty())
+            aliases.insert(std::move(alias));
+        if (!ast.as<ASTSubquery>())
+            for (const auto & child : ast.children)
+                collectAliases(*child, aliases);
+    }
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr & /*child*/)
     {
@@ -205,8 +223,32 @@ private:
     /// `ColumnArray::get` refuses to build a larger array.
     static constexpr size_t max_array_size_as_field = 1'000'000;
 
+    static bool usesAlias(const IAST & ast, const NameSet & aliases)
+    {
+        if (const auto * identifier = ast.as<ASTIdentifier>())
+            return aliases.contains(identifier->name_parts.front());
+        return std::ranges::any_of(ast.children, [&](const auto & child) { return usesAlias(*child, aliases); });
+    }
+
+    template <typename T>
+    static bool hasNaN(const IColumn & column)
+    {
+        const auto * floats = typeid_cast<const ColumnVector<T> *>(&column);
+        return floats && std::ranges::any_of(floats->getData(), [](T x) { return isNaN(x); });
+    }
+
+    static bool hasLongDecimal(const IColumn & column)
+    {
+        const auto * decimals = typeid_cast<const ColumnDecimal<Decimal256> *>(&column);
+        const auto bound = DecimalUtils::scaleMultiplier<Int256>(DecimalUtils::max_precision<Decimal256>);
+        return decimals && std::ranges::any_of(decimals->getData(), [&](const Decimal256 & x) { return x.value <= -bound || x.value >= bound; });
+    }
+
     static ASTPtr getResult(const ASTPtr & subquery, bool is_exists, Data & data)
     {
+        if (usesAlias(*subquery, data.aliases))
+            return nullptr;
+
         auto key = std::make_pair(is_exists, subquery->getTreeHash(/*ignore_aliases=*/ false));
         auto it = data.results.find(key);
         if (it == data.results.end())
@@ -309,21 +351,28 @@ private:
         if (!fits)
             return nullptr;
 
-        /// `ColumnArray::get` refuses nested arrays of more than `max_array_size_as_field` elements too.
-        bool nested_fits = true;
-        auto check_nested = [&](const IColumn & column)
+        /// `ColumnArray::get` refuses nested arrays of more than `max_array_size_as_field` elements too. The text of a NaN
+        /// loses its payload, which `IN` compares, and no decimal type reads back a value of more than 76 digits.
+        bool round_trips = true;
+        auto check_values = [&](const IColumn & column)
         {
             if (const auto * nested = typeid_cast<const ColumnArray *>(&column))
-                for (size_t i = 0; i < nested->size() && nested_fits; ++i)
-                    nested_fits = nested->getSize(i) <= max_array_size_as_field;
+            {
+                for (size_t i = 0; i < nested->size() && round_trips; ++i)
+                    round_trips = nested->getSize(i) <= max_array_size_as_field;
+            }
+            else if (hasNaN<BFloat16>(column) || hasNaN<Float32>(column) || hasNaN<Float64>(column) || hasLongDecimal(column))
+                round_trips = false;
         };
         for (const auto & column : columns)
         {
-            check_nested(*column);
-            column->forEachSubcolumnRecursively(check_nested);
+            /// A shared dictionary of `LowCardinality` is not a subcolumn.
+            auto values = recursiveRemoveLowCardinality(column->getPtr());
+            check_values(*values);
+            values->forEachSubcolumnRecursively(check_values);
         }
 
-        if (!nested_fits)
+        if (!round_trips)
             return nullptr;
 
         size_t num_columns = columns.size();
@@ -345,8 +394,21 @@ private:
         if (!worthConvertingScalarToLiteral(array, data.max_literal_size))
             return nullptr;
 
-        ASTPtr expression = makeASTFunction(
-            "arrayJoin", addTypeConversionToAST(make_intrusive<ASTLiteral>((*array.getByPosition(0).column)[0]), array_type->getName()));
+        /// The text of a `Decimal`, `DateTime64` or `Time64` value is not always read back by its own type,
+        /// while `Decimal(76, S)` reads back any value of up to 76 digits.
+        auto literal_type = rewriteTypeTree(array_type, [](const DataTypePtr & node) -> DataTypePtr
+        {
+            if (auto scale = tryGetDecimalScale(*node))
+                return std::make_shared<DataTypeDecimal256>(DecimalUtils::max_precision<Decimal256>, *scale);
+            return node;
+        }, CustomizationPolicy::Keep);
+
+        auto literal_column = castColumn(array.getByPosition(0), literal_type);
+        ASTPtr literal = addTypeConversionToAST(make_intrusive<ASTLiteral>((*literal_column)[0]), literal_type->getName());
+        if (!literal_type->equals(*array_type))
+            literal = addTypeConversionToAST(std::move(literal), array_type->getName());
+
+        ASTPtr expression = makeASTFunction("arrayJoin", std::move(literal));
         if (num_columns > 1)
             expression = makeASTFunction("untuple", std::move(expression));
 
@@ -444,7 +506,8 @@ ASTPtr replaceNonDeterministicToScalars(const ASTAlterCommand & alter_command, C
         ExecuteScalarSubqueriesVisitor visitor(data);
         visit(visitor);
 
-        ExecuteSetSubqueriesVisitor::Data set_data{context, settings[Setting::mutations_max_literal_size_to_replace], {}};
+        ExecuteSetSubqueriesVisitor::Data set_data{context, settings[Setting::mutations_max_literal_size_to_replace], {}, {}};
+        ExecuteSetSubqueriesMatcher::collectAliases(new_alter_command, set_data.aliases);
         ExecuteSetSubqueriesVisitor set_visitor(set_data);
         visit(set_visitor);
     }

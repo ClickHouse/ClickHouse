@@ -124,6 +124,28 @@ ALTER TABLE t_kept_types UPDATE v = v + 100 WHERE q IN (SELECT q FROM t_qbit_src
 SELECT k, v FROM t_kept_types ORDER BY k;
 SELECT replaceAll(command, currentDatabase(), 'default'), is_done FROM system.mutations WHERE database = currentDatabase() AND table = 't_kept_types' ORDER BY length(mutation_id), mutation_id;
 
+SELECT '-- Kept as a subquery: a NaN and a decimal of more than 76 digits';
+DROP TABLE IF EXISTS t_kept_values;
+DROP TABLE IF EXISTS t_kept_values_src;
+CREATE TABLE t_kept_values (k UInt64, f Float64, f32 Float32, b BFloat16, x Decimal(76, 0), v UInt64) ENGINE = MergeTree ORDER BY k;
+-- The text of the NaN `0 / 0` reads back as a NaN with another sign, and the sum keeps the type `Decimal(76, 0)`.
+INSERT INTO t_kept_values SELECT 1, 0 / 0, 0 / 0, 0 / 0, toDecimal256(concat('5', repeat('0', 75)), 0) * 2, 0;
+INSERT INTO t_kept_values VALUES (2, 1.5, 1.5, 1.5, 1, 0);
+CREATE TABLE t_kept_values_src AS t_kept_values;
+INSERT INTO t_kept_values_src SELECT * FROM t_kept_values;
+
+ALTER TABLE t_kept_values UPDATE v = v + 1 WHERE f IN (SELECT f FROM t_kept_values_src) SETTINGS mutations_sync = 2;
+ALTER TABLE t_kept_values UPDATE v = v + 10 WHERE f32 IN (SELECT f32 FROM t_kept_values_src) SETTINGS mutations_sync = 2;
+ALTER TABLE t_kept_values UPDATE v = v + 100 WHERE b IN (SELECT b FROM t_kept_values_src) SETTINGS mutations_sync = 2;
+ALTER TABLE t_kept_values UPDATE v = v + 1000 WHERE x IN (SELECT x FROM t_kept_values_src) SETTINGS mutations_sync = 2;
+-- Without a NaN, the results are executed on the initiator.
+ALTER TABLE t_kept_values UPDATE v = v + 10000 WHERE f IN (SELECT f FROM t_kept_values_src WHERE k = 2) SETTINGS mutations_sync = 2;
+ALTER TABLE t_kept_values UPDATE v = v + 10000 WHERE f32 IN (SELECT f32 FROM t_kept_values_src WHERE k = 2) SETTINGS mutations_sync = 2;
+ALTER TABLE t_kept_values UPDATE v = v + 10000 WHERE b IN (SELECT b FROM t_kept_values_src WHERE k = 2) SETTINGS mutations_sync = 2;
+
+SELECT k, v FROM t_kept_values ORDER BY k;
+SELECT replaceAll(command, currentDatabase(), 'default'), is_done FROM system.mutations WHERE database = currentDatabase() AND table = 't_kept_values' ORDER BY length(mutation_id), mutation_id;
+
 SELECT '-- The same subquery is executed once, and pulling stops at the limit';
 DROP TABLE IF EXISTS t_once;
 -- Empty on purpose: the mutations below never execute a kept subquery.
@@ -176,6 +198,40 @@ ALTER TABLE t_array UPDATE v = v WHERE 1 SETTINGS mutations_sync = 2;
 SELECT a, v FROM t_array ORDER BY a;
 SELECT replaceAll(command, currentDatabase(), 'default'), is_done FROM system.mutations WHERE database = currentDatabase() AND table = 't_array' ORDER BY length(mutation_id), mutation_id;
 
+SELECT '-- Decimal, DateTime64 and Time64 results keep their values';
+DROP TABLE IF EXISTS t_decimal;
+DROP TABLE IF EXISTS t_decimal_src;
+CREATE TABLE t_decimal (k UInt64, d Nullable(DateTime64(9, 'UTC')), t Time64(3), x Decimal(9, 2), v UInt64) ENGINE = MergeTree ORDER BY k;
+-- The sum keeps the type `Decimal(9, 2)`, but has more digits than its precision.
+INSERT INTO t_decimal SELECT 1, fromUnixTimestamp64Nano(1), '-01:00:00.5', toDecimal32(9999999.99, 2) + toDecimal32(9999999.99, 2), 0;
+INSERT INTO t_decimal VALUES (2, '1950-01-01 00:00:00', '100:00:00.125', 1.5, 0), (3, NULL, '00:00:01', 2.5, 0), (4, '2024-01-01 00:00:00', '00:00:02', 3.5, 0);
+CREATE TABLE t_decimal_src AS t_decimal;
+INSERT INTO t_decimal_src SELECT * FROM t_decimal WHERE k < 3;
+
+SYSTEM STOP MERGES t_decimal;
+ALTER TABLE t_decimal UPDATE v = v + 1 WHERE (k, d) IN (SELECT k, d FROM t_decimal_src);
+ALTER TABLE t_decimal UPDATE v = v + 10 WHERE t IN (SELECT t FROM t_decimal_src);
+ALTER TABLE t_decimal UPDATE v = v + 100 WHERE x IN (SELECT x FROM t_decimal_src);
+ALTER TABLE t_decimal DELETE WHERE d NOT IN (SELECT d FROM t_decimal_src);
+DROP TABLE t_decimal_src;
+SYSTEM START MERGES t_decimal;
+ALTER TABLE t_decimal UPDATE v = v WHERE 1 SETTINGS mutations_sync = 2;
+
+SELECT k, d, t, x, v FROM t_decimal ORDER BY k;
+SELECT countIf(command LIKE '%t_decimal_src%'), countIf(is_done) FROM system.mutations WHERE database = currentDatabase() AND table = 't_decimal';
+
+SELECT '-- Subqueries that name an alias defined outside them are kept';
+DROP TABLE IF EXISTS t_outer_alias;
+CREATE TABLE t_outer_alias (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_outer_alias VALUES (1, 0), (2, 0);
+
+ALTER TABLE t_outer_alias UPDATE v = v + 1 WHERE (toUInt64(1) AS a) = 1 AND k IN (SELECT a) SETTINGS mutations_sync = 2;
+ALTER TABLE t_outer_alias UPDATE v = v + 10 WHERE (toUInt64(1) AS a) = 1 AND exists(SELECT 1 WHERE a = 1) SETTINGS mutations_sync = 2;
+ALTER TABLE t_outer_alias UPDATE v = v + 100 WHERE (CAST(tuple(2), 'Tuple(x UInt64)') AS a).x = 2 AND k IN (SELECT a.x) SETTINGS mutations_sync = 2;
+
+SELECT k, v FROM t_outer_alias ORDER BY k;
+SELECT replaceAll(command, currentDatabase(), 'default'), is_done FROM system.mutations WHERE database = currentDatabase() AND table = 't_outer_alias' ORDER BY length(mutation_id), mutation_id;
+
 SELECT '-- ReplicatedMergeTree';
 DROP TABLE IF EXISTS t_replicated SYNC;
 DROP TABLE IF EXISTS t_replicated_src;
@@ -200,6 +256,8 @@ DROP TABLE t_large;
 DROP TABLE t_large_src;
 DROP TABLE t_variant_src;
 DROP TABLE t_kept_types;
+DROP TABLE t_kept_values;
+DROP TABLE t_kept_values_src;
 DROP TABLE t_dynamic_src;
 DROP TABLE t_json_src;
 DROP TABLE t_qbit_src;
@@ -207,5 +265,7 @@ DROP TABLE t_once;
 DROP TABLE t_alias;
 DROP TABLE t_alias_kept;
 DROP TABLE t_array;
+DROP TABLE t_decimal;
+DROP TABLE t_outer_alias;
 DROP TABLE t_replicated SYNC;
 DROP TABLE t_replicated_src;
