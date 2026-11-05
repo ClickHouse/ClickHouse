@@ -40,11 +40,11 @@ using WriteErrorThrower = std::function<void(const std::string & path)>;
 using ExistsAnswer = std::function<bool(size_t call)>;
 
 /// `writeMetadataFileAndVersionHint` reports a failed commit as `false`, which every caller reads as
-/// a lost compare-and-swap and retries. Only a failure after which another commit's file is at the
-/// path is such a race; any other failure has to propagate instead. This stub makes both outcomes observable
-/// without an object storage: `exists` answers what the test supplies (absent by default, so the
-/// function proceeds to the write), and `writeObject` throws the error the test supplies. Everything
-/// else throws, so an unexpected call is loud rather than silently absorbed.
+/// a lost compare-and-swap and retries. That is right only while a file holds the version after the
+/// failure (or the check cannot tell); while the path is absent, the failure has to propagate. This stub
+/// makes both outcomes observable without an object storage: `exists` answers what the test supplies
+/// (absent by default, so the function proceeds to the write), and `writeObject` throws the error the
+/// test supplies. Everything else throws, so an unexpected call is loud rather than silently absorbed.
 class ThrowingObjectStorage : public IObjectStorage
 {
 public:
@@ -219,8 +219,8 @@ TEST(IcebergCommitPropagation, WriteFailureThatLeavesTheVersionFreeIsNotReported
 
 TEST(IcebergCommitPropagation, LostRaceStaysRetryable)
 {
-    /// Another commit's metadata file is at the path after the failure, so the version is taken and the commit is
-    /// retried, whichever error the storage reports the conflict with.
+    /// A metadata file is at the path after the failure, so the version is taken and the commit is retried,
+    /// whichever error the storage reports the conflict with.
     auto taken_after_the_write = [](size_t call) { return call > 0; };
 
     /// Local storage.

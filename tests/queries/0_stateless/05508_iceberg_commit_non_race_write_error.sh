@@ -3,7 +3,7 @@
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/126287
-# A failed Iceberg metadata write is retried as a lost commit race only when another commit's file took the version.
+# A failed Iceberg metadata write is retried as a lost commit race only when a file holds the target version afterwards.
 # gzip rejects compression level 18 before anything is written, so every commit below must fail with the codec's
 # error instead of being retried up to the limit and reported as something else.
 
