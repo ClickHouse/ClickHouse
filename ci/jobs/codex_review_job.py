@@ -1,22 +1,16 @@
 """
-AI-based automated PR code review job.
+AI-based automated PR code review job, backed by the OpenAI Codex CLI
+(auth: OPENAI_API_KEY from `/ci/llm/openai_api_key`).
 
-Two backends are supported, selected by flag:
-
-  --codex    OpenAI Codex CLI       (auth: OPENAI_API_KEY from `/ci/llm/openai_api_key`)
-  --copilot  GitHub Copilot CLI     (auth: gh robot token from `/ci/robot-ch-test-poll-copilot`)
-
-The backends reach GitHub as different identities. Copilot authenticates with a
-robot token, in a temporary `GH_CONFIG_DIR`. Codex shells out to `gh` with
-`GH_CONFIG_DIR` unset (`GH_PREFIX`), so it runs as the app the job requires to be
-authenticated up front (`enable_gh_auth=True`).
+Codex shells out to `gh` with `GH_CONFIG_DIR` unset (`GH_PREFIX`), so it runs as
+the app the job requires to be authenticated up front (`enable_gh_auth=True`).
 
 The agent writes a free-form Markdown summary to `REVIEW_FILE`. The job script
 then posts that summary via `python3 -m ci.praktika.gh post-or-update --tag review`
 so the top-level comment is always authored by the pre-authenticated app, not
-the agent's robot account.
+the agent's account.
 
-Each agent occasionally hits transient GitHub authorization errors mid-run
+The agent occasionally hits transient GitHub authorization errors mid-run
 ("Authorization error, you may need to run /login"). The whole attempt is
 wrapped in a retry loop with exponential backoff so a single transient API
 failure does not fail the Code Review job. Authorization-style
@@ -25,7 +19,6 @@ non-zero exit code and a missing/empty review file — so both are checked here.
 """
 
 import os
-import random
 import shlex
 import subprocess
 import sys
@@ -38,22 +31,14 @@ from ci.praktika import Secret
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 
-REVIEW_FILE = "./ci/tmp/copilot_review.md"
+REVIEW_FILE = "./ci/tmp/codex_review.md"
 GH_PREFIX = "env -u GH_CONFIG_DIR"
 
-# Number of attempts at a full agent run. The agents fetch auth state and make
+# Number of attempts at a full agent run. The agent fetches auth state and makes
 # GitHub / model-provider API calls during execution; either layer can hit a
 # transient 5xx / authorization error that no single inner subprocess controls.
 # Retrying the whole sequence is the only reliable way to recover.
 MAX_ATTEMPTS = 3
-
-# Robot gh tokens the Copilot CLI authenticates against GitHub with. Each
-# attempt picks one in a randomised rotation so a single robot's rate limit
-# or token issue does not fail every attempt.
-ROBOT_NAMES = [
-    "/ci/robot-ch-test-poll-copilot",
-    "/ci/robot-ch-test-poll-1-copilot",
-]
 
 # OpenAI API key for the Codex CLI, written into `$CODEX_HOME/auth.json`
 # via `codex login --with-api-key`.
@@ -233,43 +218,7 @@ def _drop_stale_review_file():
             print(f"WARNING: Failed to remove stale {REVIEW_FILE}: {e}")
 
 
-def _gh_auth_with_robot_token(gh_config_dir, robot_name):
-    """Authenticate gh CLI in a scoped GH_CONFIG_DIR using the given robot token."""
-    print(f"Using robot: {robot_name}")
-    token = Secret.Config(
-        name=robot_name,
-        type=Secret.Type.AWS_SSM_PARAMETER,
-        region="us-east-1",
-    ).get_value()
-    subprocess.run(
-        ["gh", "auth", "login", "--with-token"],
-        input=token, text=True, check=True,
-        env={**os.environ, "GH_CONFIG_DIR": gh_config_dir},
-    )
-
-
-def _run_copilot_once(prompt, robot_name, model):
-    """Run a single attempt of `gh auth login` + `copilot` for one robot."""
-    _drop_stale_review_file()
-    with tempfile.TemporaryDirectory() as gh_config_dir:
-        _gh_auth_with_robot_token(gh_config_dir, robot_name)
-        return Result.from_commands_run(
-            name="copilot review",
-            # --allow-all: enable all permissions; --allow-all-tools alone hits
-            #   a CLI bug where compound shell commands are denied and the gate
-            #   then tries to escalate to a human (github/copilot-cli#176, #2971)
-            # --no-ask-user: disable ask_user so the agent cannot try to prompt
-            #   for permission in a non-interactive session
-            # --add-dir .: restrict file access to repo root (default, but explicit)
-            # </dev/null: ensure stdin is definitively non-interactive
-            command=f"GH_CONFIG_DIR={shlex.quote(gh_config_dir)} "
-                    f"copilot -p {shlex.quote(prompt)} --allow-all --no-ask-user "
-                    f"--add-dir . --model {model} --effort xhigh < /dev/null",
-            with_info=True,
-        )
-
-
-def _run_codex_once(prompt, _robot_name, model):
+def _run_codex_once(prompt, model):
     """Run a single attempt of `codex login` + `codex exec`.
 
     Codex stores credentials in `$CODEX_HOME/auth.json` and does NOT consult
@@ -280,8 +229,7 @@ def _run_codex_once(prompt, _robot_name, model):
     to use for helper binaries) so the API key never lands on global runner
     state.
 
-    The agent's own `gh` calls run as the app authenticated before the job, so
-    no robot token takes part in this attempt.
+    The agent's own `gh` calls run as the app authenticated before the job.
     """
     _drop_stale_review_file()
     with tempfile.TemporaryDirectory(dir="./ci/tmp") as codex_home:
@@ -298,8 +246,7 @@ def _run_codex_once(prompt, _robot_name, model):
 
         return Result.from_commands_run(
             name="codex review",
-            # -m: same model the Copilot CLI uses, so
-            #   review quality stays comparable across backends.
+            # -m: the review model.
             # -s workspace-write: writable workspace + /tmp + CODEX_HOME,
             #   read-only elsewhere; sufficient for the review output.
             # sandbox_workspace_write.network_access=true: the agent
@@ -321,8 +268,8 @@ def _run_codex_once(prompt, _robot_name, model):
         )
 
 
-def _run(prompt, run_once, agent_name):
-    """Run the chosen agent with retries, then post the review comment.
+def _run(prompt):
+    """Run the Codex agent with retries, then post the review comment.
 
     Each attempt re-fetches secrets and re-runs the agent. The attempt counts
     as success only if the subprocess exits 0 AND `REVIEW_FILE` was written
@@ -330,12 +277,9 @@ def _run(prompt, run_once, agent_name):
     """
     last_error = None
     model = MODEL
-    robots = ROBOT_NAMES.copy()
-    random.shuffle(robots)
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        robot_name = robots[(attempt - 1) % len(robots)]
         try:
-            result = run_once(prompt, robot_name, model)
+            result = _run_codex_once(prompt, model)
             if model != FALLBACK_MODEL and CYBER_RISK_FLAG in result.info:
                 print(f"WARNING: {model} flagged the review as a cybersecurity risk, switching to {FALLBACK_MODEL}")
                 model = FALLBACK_MODEL
@@ -344,38 +288,38 @@ def _run(prompt, run_once, agent_name):
                 model = FALLBACK_MODEL
             if not result.is_ok():
                 last_error = (
-                    f"{agent_name} subprocess exited with non-OK status [{result.status}]"
+                    f"Codex subprocess exited with non-OK status [{result.status}]"
                 )
-                print(f"WARNING: {agent_name} attempt {attempt}/{MAX_ATTEMPTS} failed: {last_error}")
+                print(f"WARNING: Codex attempt {attempt}/{MAX_ATTEMPTS} failed: {last_error}")
             elif not os.path.exists(REVIEW_FILE):
-                last_error = f"{agent_name} did not write {REVIEW_FILE}"
-                print(f"WARNING: {agent_name} attempt {attempt}/{MAX_ATTEMPTS} failed: {last_error}")
+                last_error = f"Codex did not write {REVIEW_FILE}"
+                print(f"WARNING: Codex attempt {attempt}/{MAX_ATTEMPTS} failed: {last_error}")
             elif os.path.getsize(REVIEW_FILE) == 0:
                 last_error = f"{REVIEW_FILE} is empty"
-                print(f"WARNING: {agent_name} attempt {attempt}/{MAX_ATTEMPTS} failed: {last_error}")
+                print(f"WARNING: Codex attempt {attempt}/{MAX_ATTEMPTS} failed: {last_error}")
             else:
                 last_error = None
                 break
         except Exception as e:  # noqa: BLE001 — broad catch: any exception is retryable here
             last_error = f"{type(e).__name__}: {e}"
-            print(f"WARNING: {agent_name} attempt {attempt}/{MAX_ATTEMPTS} raised: {last_error}")
+            print(f"WARNING: Codex attempt {attempt}/{MAX_ATTEMPTS} raised: {last_error}")
             traceback.print_exc()
 
         if attempt < MAX_ATTEMPTS:
             delay = min(2 ** attempt, 60)
-            print(f"Retrying {agent_name} in {delay}s ...")
+            print(f"Retrying Codex in {delay}s ...")
             time.sleep(delay)
 
     if last_error is not None:
         raise RuntimeError(
-            f"{agent_name} review failed after {MAX_ATTEMPTS} attempts: {last_error}"
+            f"Codex review failed after {MAX_ATTEMPTS} attempts: {last_error}"
         )
 
     # Post the summary from the job script so the job fails loudly if anything is broken.
     _post_review()
 
 
-def review(run_once, agent_name):
+def review():
     info = Info()
     if not info.pr_number:
         print("Not a PR, skipping")
@@ -383,22 +327,14 @@ def review(run_once, agent_name):
 
     os.makedirs("./ci/tmp", exist_ok=True)
     prompt = _pre_review_prompt(info)
-    _run(prompt, run_once, agent_name)
+    _run(prompt)
 
 
 if __name__ == "__main__":
-    if "--codex" in sys.argv:
-        run_once, agent_name = _run_codex_once, "Codex"
-    elif "--copilot" in sys.argv:
-        run_once, agent_name = _run_copilot_once, "Copilot"
-    else:
-        print("Usage: copilot_review_job.py --codex | --copilot")
-        sys.exit(1)
-
     status = Result.Status.OK
     info = ""
     try:
-        review(run_once, agent_name)
+        review()
     except Exception as e:
         info = f"ERROR: {e}"
         print(info)
