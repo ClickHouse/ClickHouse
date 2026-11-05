@@ -64,6 +64,7 @@ BlockIO & BlockIO::operator= (BlockIO && rhs) /// NOLINT(hicpp-noexcept-move,per
     finalize_query_pipeline = std::move(rhs.finalize_query_pipeline);
     finish_callbacks        = std::move(rhs.finish_callbacks);
     exception_callbacks     = std::move(rhs.exception_callbacks);
+    cancel_callbacks        = std::move(rhs.cancel_callbacks);
 
     null_format             = rhs.null_format;
     dispatched              = rhs.dispatched;
@@ -86,6 +87,7 @@ void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
     /// in `PipelineExecutor`) and read it until the pipeline is finalized below, so releasing it here would
     /// be a data race. It is released a bit later instead — the extra hold is brief and harmless.
     releaseQuerySlot();
+    cancel_callbacks.clear();
 
     /// The teardown below releases the table locks the interpreter moved into the pipeline's
     /// resources, and a patch sink's lightweight update lock: after it, neither is held.
@@ -109,6 +111,7 @@ void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
 void BlockIO::onException(bool log_as_error)
 {
     setAllDataSent();
+    cancel_callbacks.clear();
 
     for (const auto & callback : exception_callbacks)
         callback(log_as_error, pipeline);
@@ -121,6 +124,11 @@ void BlockIO::onException(bool log_as_error)
 
 void BlockIO::onCancelOrConnectionLoss()
 {
+    auto callbacks = std::move(cancel_callbacks);
+    cancel_callbacks.clear();
+    for (const auto & callback : callbacks)
+        callback();
+
     /// Stop the pipeline before releasing workload resources: pipeline threads hold raw
     /// pointers to `MemoryReservation` and call `syncWithMemoryTracker` between processors.
     resetPipeline(/*cancel=*/true);

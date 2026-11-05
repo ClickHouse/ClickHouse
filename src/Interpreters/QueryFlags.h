@@ -24,6 +24,11 @@ struct QueryFlags
     /// so `max_query_size` keeps its other meanings (e.g. the size limit of the resulting table metadata).
     bool parse_server_formatted_query_text = false;
     bool background = false; /// If true, this query is the background run scheduled by executeQueryInBackground.
+    /// If true, the query is written to the audit log even though it is internal. Composite statements
+    /// (`PARALLEL WITH`, `EXECUTE AS <user> <statement>`) run their parts as internal queries; every part
+    /// must be audited on its own, with its own text and outcome. The flag is not inherited by the
+    /// internal queries a part may issue in turn.
+    bool audit_internal = false;
     /// If true, the initiator of a query to a `Replicated` database runs its own copy of the entry as the submitting user.
     /// Otherwise the copy runs with the full access of the DDL worker. The other replicas run only the entries that
     /// succeeded on the initiator. So the query is checked as it would be on a local database.

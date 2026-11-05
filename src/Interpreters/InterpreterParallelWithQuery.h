@@ -19,6 +19,7 @@ private:
     void executeSubqueries(const ASTs & subqueries);
     void executeSubquery(ASTPtr subquery, ContextMutablePtr subquery_context);
     void executeCombinedPipeline();
+    void onExceptionForPreparedSubqueries();
 
     std::mutex mutex;
 
