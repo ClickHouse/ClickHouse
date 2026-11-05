@@ -125,6 +125,7 @@ TOKEN_EXP="tokexp${U}"
 SIG_ENC="sigenc${U}"
 OVL="ovl${U}"
 SIG_RNG="sigrng${U}"
+SIG_SAS="sigsas${U}"
 TOK_RNG="tokrng${U}"
 BASE="http://127.0.0.1:${HTTP_PORT}/bucket/key.csv"
 URL_V4="${BASE}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=${KEY_V4_SENT}%2F20261016%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261016T000000Z&X-Amz-Expires=900&X-Amz-Security-Token=${TOKEN}%2Fp%2B2%3D&X-Amz-SignedHeaders=host&X-Amz-Signature=${SIG_V4}"
@@ -136,6 +137,8 @@ URL_ALT="${BASE}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-S3session-Token=${TOKEN_
 URL_DUP="${BASE}?$(printf 'Signature=D&%.0s' {1..18})Expires=1792200000"
 # The signature is a prefix of the token and comes first: scrubbing it first would leave the token's tail visible.
 URL_OVL="${BASE}?X-Amz-Signature=${OVL}&X-Amz-Security-Token=${OVL}tail&X-Amz-Date=20261016T000000Z"
+# An Azure SAS: `sig` is its signature, the other fields stay visible.
+URL_SAS="${BASE}?sv=2022-11-02&sp=r&sig=${SIG_SAS}"
 URL_RNG="http://127.0.0.1:${HTTP_PORT}/ranges/200/key.csv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=${SIG_RNG}"
 URL_RNG_201="http://127.0.0.1:${HTTP_PORT}/ranges/201/key.csv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=${SIG_RNG}"
 HDR_RNG="headers('Authorization' = 'Bearer ${TOK_RNG}')"
@@ -182,6 +185,8 @@ check insert_sigv4 "$(error_line "INSERT INTO TABLE FUNCTION url('${URL_V4}', 'C
 check select_sigv2 "$(error_line "SELECT * FROM url('${URL_V2}', 'CSV', 'x UInt8')")" "${V2[@]}"
 check select_overlap "$(error_line "SELECT * FROM url('${URL_OVL}', 'CSV', 'x UInt8')")" "${OV[@]}"
 check select_name_spellings "$(body_of "$(error_line "SELECT * FROM url('${URL_ALT}', 'CSV', 'x UInt8')")")" "${ALT[@]}"
+check select_azure_sas "$(error_line "SELECT * FROM url('${URL_SAS}', 'CSV', 'x UInt8')")" \
+    -"$SIG_SAS" +"sv=2022-11-02&amp;sp=r&amp;sig=[HIDDEN]</CanonicalRequest>"
 # A range that the server does not serve, in a parallel read and in a sequential read resumed after the connection is cut.
 check select_parallel_range "$(error_line "SELECT * FROM url('${URL_RNG}', 'CSV', 'x UInt8', ${HDR_RNG})
     SETTINGS max_download_threads = 2, max_download_buffer_size = 1, http_max_tries = 1, http_make_head_request = 1,

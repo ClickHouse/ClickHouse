@@ -11,7 +11,6 @@ INSERT INTO t_qualify_pushdown SELECT number % 10, number FROM numbers(10000);
 CREATE VIEW v_qualify_pushdown AS
     SELECT tenant, ts FROM t_qualify_pushdown QUALIFY row_number() OVER (PARTITION BY tenant ORDER BY ts) <= 5;
 
-SET enable_analyzer = 1;
 SET allow_push_predicate_ast_for_distributed_subqueries = 1;
 
 SELECT 'local';
