@@ -247,9 +247,9 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(
 /// against the binary fuse filter index header. The subcolumn name format is produced by
 /// `FunctionToSubcolumnsPass`.
 std::optional<MapIndexInfo> tryParseMapSubcolumn(
-    const String & column_name, const Block & header, const NameSet & shadowing_columns)
+    const String & column_name, const Block & header, const IsShadowingColumn & is_shadowing_column)
 {
-    auto parsed = tryParseMapSubcolumnName(column_name, shadowing_columns);
+    auto parsed = tryParseMapSubcolumnName(column_name, is_shadowing_column);
     if (!parsed)
         return std::nullopt;
 
@@ -278,7 +278,7 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(
 /// Try to resolve a `MapIndexInfo` from a key node that is either an `arrayElement(map, key)`
 /// function call or a `map.key_<serialized_key>` subcolumn reference.
 std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
-    const RPNBuilderTreeNode & key_node, const Block & header, const NameSet & shadowing_columns)
+    const RPNBuilderTreeNode & key_node, const Block & header, const IsShadowingColumn & is_shadowing_column)
 {
     if (key_node.isFunction())
     {
@@ -304,7 +304,7 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
         }
     }
 
-    return tryParseMapSubcolumn(key_node.getColumnName(), header, shadowing_columns);
+    return tryParseMapSubcolumn(key_node.getColumnName(), header, is_shadowing_column);
 }
 
 }
@@ -313,11 +313,11 @@ MergeTreeIndexConditionBinaryFuseFilter::MergeTreeIndexConditionBinaryFuseFilter
     const ActionsDAG::Node * predicate,
     ContextPtr context_,
     const Block & header_,
-    NameSet columns_shadowing_map_subcolumns_,
+    IsShadowingColumn is_column_shadowing_map_subcolumn_,
     JSONIndexArgumentTypes json_argument_types_)
     : WithContext(context_)
     , header(header_)
-    , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
+    , is_column_shadowing_map_subcolumn(std::move(is_column_shadowing_map_subcolumn_))
     , json_argument_types(std::move(json_argument_types_))
     , validate_enum_literals_in_operators(context_->getSettingsRef()[Setting::validate_enum_literals_in_operators])
 {
@@ -705,7 +705,7 @@ bool MergeTreeIndexConditionBinaryFuseFilter::traverseTreeIn(
     }
 
     /// Handle both `arrayElement(map, 'key') IN (set)` and `map.key_<serialized_key> IN (set)`.
-    if (auto map_info = tryResolveMapInfoFromNode(key_node, header, columns_shadowing_map_subcolumns))
+    if (auto map_info = tryResolveMapInfoFromNode(key_node, header, is_column_shadowing_map_subcolumn))
     {
         /** It is important to ignore keys like column_map['Key'] IN ('') because if the key does not exist in the map
           * we return the default value for arrayElement.
@@ -1206,7 +1206,7 @@ bool MergeTreeIndexConditionBinaryFuseFilter::traverseTreeEquals(
     /// Handle both `arrayElement(map, 'key') = value` and `map.key_<serialized_key> = value`.
     if (function_name == "equals")
     {
-        if (auto map_info = tryResolveMapInfoFromNode(key_node, header, columns_shadowing_map_subcolumns))
+        if (auto map_info = tryResolveMapInfoFromNode(key_node, header, is_column_shadowing_map_subcolumn))
         {
             /** It is important to ignore keys like column_map['Key'] = '' because if the key does not exist in the map
               * we return the default value for arrayElement.
@@ -1338,7 +1338,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBinaryFuseFilter::createIndexAggregato
 MergeTreeIndexConditionPtr MergeTreeIndexBinaryFuseFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionBinaryFuseFilter>(
-        predicate, context, index.sample_block, getColumnsShadowingMapSubcolumns(), collectJSONIndexArgumentTypes(*index.expression));
+        predicate, context, index.sample_block, getMapSubcolumnShadowingCheck(), collectJSONIndexArgumentTypes(*index.expression));
 }
 
 static void assertIndexColumnsType(const Block & header)
