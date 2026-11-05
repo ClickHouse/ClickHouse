@@ -65,8 +65,7 @@ inline size_t blockEncode(const T * residuals, unsigned cnt, uint8_t * out) noex
         return 1u + num_bytes;
     }
 
-    // The bit width of every value, as bytes. Both loops below vectorise, unlike the increments of a bit-width
-    // histogram, which serialise on the counter that most values of a block share.
+    // The bit width of every value, as bytes, zero-padded to whole 16-byte chunks: a zero width is never an exception.
     alignas(16) uint8_t widths[BLOCK];
     T all_bits = 0;
     for (unsigned i = 0; i < cnt; ++i)
@@ -74,20 +73,46 @@ inline size_t blockEncode(const T * residuals, unsigned cnt, uint8_t * out) noex
         widths[i] = static_cast<uint8_t>(std::bit_width(residuals[i]));
         all_bits |= residuals[i];
     }
+    const unsigned padded_cnt = (cnt + 15) / 16 * 16;
+    std::fill(widths + cnt, widths + padded_cnt, uint8_t{0});
     const unsigned max_width = static_cast<unsigned>(std::bit_width(all_bits));
+
+    // 32-bit values count the exceptions of each candidate width with SIMD over the widths, which beats a bit-width
+    // histogram whose increments serialise on the counter most values share. 64-bit values can have up to 64 candidate
+    // widths, so they use a histogram, interleaved over 4 tables to break that dependency.
+#if PFOR_HAS_VERTICAL
+    constexpr bool count_with_simd = sizeof(T) == 4;
+#else
+    constexpr bool count_with_simd = false;
+#endif
+    unsigned wider_than[typeBits<T> + 2]; // wider_than[w]: number of values needing more than w - 1 bits
+    if constexpr (!count_with_simd)
+    {
+        wider_than[typeBits<T> + 1] = 0;
+        unsigned histograms[4][typeBits<T> + 1] = {};
+        for (unsigned i = 0; i < padded_cnt; i += 4)
+        {
+            ++histograms[0][widths[i]];
+            ++histograms[1][widths[i + 1]];
+            ++histograms[2][widths[i + 2]];
+            ++histograms[3][widths[i + 3]];
+        }
+        for (int width = static_cast<int>(typeBits<T>); width >= 1; --width)
+            wider_than[width] = wider_than[width + 1] + histograms[0][width] + histograms[1][width] + histograms[2][width] + histograms[3][width];
+    }
 
     // Number of values that need more than `width` bits: the exceptions of base width `width`.
     const auto count_wider_than = [&](unsigned width) -> unsigned
     {
 #if PFOR_HAS_VERTICAL
-        if (cnt == BLOCK)
+        if constexpr (count_with_simd)
         {
             using v16u8 = uint8_t __attribute__((vector_size(16)));
             const auto w = static_cast<uint8_t>(width);
             const v16u8 width_vector = {w, w, w, w, w, w, w, w, w, w, w, w, w, w, w, w};
             // A comparison yields -1 in every true lane, so subtracting it counts. A lane counts at most BLOCK / 16.
             decltype(width_vector > width_vector) counts = {};
-            for (unsigned i = 0; i < BLOCK; i += 16)
+            for (unsigned i = 0; i < padded_cnt; i += 16)
             {
                 v16u8 chunk;
                 std::memcpy(&chunk, widths + i, 16);
@@ -99,10 +124,7 @@ inline size_t blockEncode(const T * residuals, unsigned cnt, uint8_t * out) noex
             return total;
         }
 #endif
-        unsigned total = 0;
-        for (unsigned i = 0; i < cnt; ++i)
-            total += widths[i] > width;
-        return total;
+        return wider_than[width + 1];
     };
 
     // A value is an exception exactly when its width exceeds the base, so the count is the winning width's
