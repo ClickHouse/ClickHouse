@@ -150,11 +150,11 @@ Chunk IRowInputFormat::read()
             try
             {
                 info.read_columns.clear();
-                const size_t num_rows_before_read = columns.empty() ? num_rows : columns.front()->size();
+                const size_t column_size_before_read = columns.empty() ? 0 : columns.front()->size();
                 continue_reading = readRow(columns, info);
 
                 /// `readRow` can return true without appending a row (e.g. `Regexp` skips an unmatched line).
-                const bool row_was_appended = !columns.empty() && columns.front()->size() > num_rows_before_read;
+                const bool row_was_appended = !columns.empty() && columns.front()->size() > column_size_before_read;
                 for (size_t column_idx = 0; column_idx < info.read_columns.size(); ++column_idx)
                 {
                     if (!info.read_columns[column_idx])
