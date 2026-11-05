@@ -1981,11 +1981,10 @@ void addWindowSteps(QueryPlan & query_plan,
 
     size_t window_descriptions_size = window_descriptions.size();
 
-    /// One value for every decision below.
+    /// Sampled once: the value can change between calls, and the decisions below must agree.
     const size_t effective_max_threads = getEffectiveMaxThreads(settings);
 
-    /// Whether window `i` can use the sorting of window `i - 1`. With several threads the streams are
-    /// partitioned for window `i - 1`, so a window with another partitioning has to be sorted again.
+    /// With several threads the streams are partitioned for window `i - 1`, so another partitioning needs a new sort.
     auto reuses_previous_sorting = [&](size_t i)
     {
         const auto & current = window_descriptions[i];
