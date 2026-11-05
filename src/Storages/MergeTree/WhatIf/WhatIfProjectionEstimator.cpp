@@ -1149,7 +1149,8 @@ void setVerdict(
     /// the rule against the base table: fewer marks, or the same marks and a served ORDER BY or aggregated rows
     auto beats_base = [&](UInt64 marks)
     { return marks < baseline_marks || (marks == baseline_marks && (outcome.serves_order || aggregated)); };
-    if (chosen_in == weighed && outcome.forced)
+    /// a relaxing setting takes the projection in any layout, and a usable real one would make the candidate `not_applicable`
+    if (chosen_in == weighed && !relaxing_setting.empty())
     {
         String cost;
         if (outcome.nothing_to_serve)
@@ -1160,18 +1161,9 @@ void setVerdict(
             cost = fmt::format("the projection reads the same {} as the base table and serves no ORDER BY", marks_text(projection_marks));
         else
             cost = fmt::format("the projection reads {} against {} from the base table", marks_text(projection_marks), baseline_marks);
-        result.verdict = "chosen (forced)";
-        result.verdict_reason = fmt::format("`{} = 1` overrides the cost; {}", relaxing_setting, cost);
-    }
-    /// a relaxing setting takes the projection in any layout, and a usable real one would make the candidate `not_applicable`
-    else if (!relaxing_setting.empty() && chosen_in == weighed)
-    {
-        result.verdict = "chosen";
+        result.verdict = outcome.forced ? "chosen (forced)" : "chosen";
         result.verdict_reason = fmt::format(
-            "`{} = 1` takes the projection in any layout, and it reads {} against {} from the base table",
-            relaxing_setting,
-            marks_text(projection_marks),
-            baseline_marks);
+            "`{} = 1` {}; {}", relaxing_setting, outcome.forced ? "overrides the cost" : "takes the projection in any layout", cost);
     }
     else if (built.uneven_width_parts != 0)
     {
