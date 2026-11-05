@@ -17,10 +17,9 @@
 #include <Processors/Port.h>
 
 #include <Common/AlignedBuffer.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 
-#include <deque>
-#include <memory>
 #include <optional>
 
 namespace DB
@@ -69,7 +68,7 @@ class WindowTransform final : public IProcessor
 public:
     WindowTransform(
         SharedHeader input_header_, SharedHeader output_header_,
-        const WindowDescription & window_description_, const std::vector<WindowFunctionDescription> & functions);
+        const WindowDescription & window_description_, const VectorWithMemoryTracking<WindowFunctionDescription> & functions);
 
     ~WindowTransform() override;
 
@@ -83,7 +82,7 @@ private:
 
     /// Processors contract.
     std::optional<Chunk> pending_input;
-    std::deque<Chunk> pending_outputs;
+    DequeWithMemoryTracking<Chunk> pending_outputs;
     bool input_is_finished = false;
 
     /// Row walk.
@@ -95,8 +94,8 @@ private:
     Frame frame;
 
     /// Functions.
-    std::vector<GeneralWindowFunctionSlot> general_functions;
-    std::vector<AggregateWindowFunctionSlot> aggregate_functions;
+    VectorWithMemoryTracking<GeneralWindowFunctionSlot> general_functions;
+    VectorWithMemoryTracking<AggregateWindowFunctionSlot> aggregate_functions;
     MutableColumns current_results;
     WindowFunctionRequirements required;
     Int64 first_row_read_by_functions = 0;

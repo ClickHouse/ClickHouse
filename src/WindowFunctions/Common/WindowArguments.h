@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+
+#include <Common/VectorWithMemoryTracking.h>
+
 #include <base/types.h>
 
 #include <span>
-#include <vector>
 
 namespace DB
 {
@@ -57,7 +59,7 @@ private:
     std::span<const Block> blocks;
     Int64 first_row_position = 0;
     const Int64 num_arguments;
-    mutable std::vector<size_t> last_used_block;
+    mutable VectorWithMemoryTracking<size_t> last_used_block;
 };
 
 }
