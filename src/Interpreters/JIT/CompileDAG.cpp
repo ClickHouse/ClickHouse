@@ -13,6 +13,7 @@
 #include <Columns/ColumnConst.h>
 #include <DataTypes/Native.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/TimezoneMixin.h>
 #include <Interpreters/JIT/JITError.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -175,6 +176,24 @@ std::string CompileDAG::dump() const
     return dumped_values.back();
 }
 
+namespace
+{
+
+/// A `DateTime` or a `DateTime64` without a time zone of its own is named without one, whatever time zone it holds: the
+/// session's when the type was created, e.g. when the table was loaded. Compiled code that reads the time-zone table depends
+/// on it, so expressions over types holding different time zones must not share compiled code.
+void updateHashWithTimeZone(SipHash & hash, const DataTypePtr & type)
+{
+    if (const auto * timezone_mixin = dynamic_cast<const TimezoneMixin *>(removeNullable(type).get()))
+    {
+        const auto & time_zone = timezone_mixin->getTimeZone().getTimeZone();
+        hash.update(time_zone.size());
+        hash.update(time_zone);
+    }
+}
+
+}
+
 UInt128 CompileDAG::hash() const
 {
     SipHash hash;
@@ -185,6 +204,7 @@ UInt128 CompileDAG::hash() const
         const auto & result_type_name = node.result_type->getName();
         hash.update(result_type_name.size());
         hash.update(result_type_name);
+        updateHashWithTimeZone(hash, node.result_type);
 
         switch (node.type)
         {
