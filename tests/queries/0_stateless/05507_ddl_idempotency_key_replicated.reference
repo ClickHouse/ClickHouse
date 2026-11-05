@@ -55,6 +55,8 @@ OK
 OK
 OK
 ACCESS_DENIED
+OK
+OK
 -- a recreated user with the same name is another user
 IDEMPOTENCY_KEY_MISMATCH
 -- a failed attempt records nothing

@@ -1,5 +1,6 @@
 #include <Interpreters/DDLIdempotencyKey.h>
 
+#include <Access/ContextAccess.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <IO/Operators.h>
@@ -9,14 +10,12 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTRenameQuery.h>
-#include <Parsers/ASTViewTargets.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Storages/AlterCommands.h>
 #include <Common/FailPoint.h>
@@ -52,6 +51,7 @@ namespace FailPoints
 String DDLIdempotencyKeyNode::toString() const
 {
     WriteBufferFromOwnString out;
+    out << "version: " << VERSION << "\n";
     out << "entry: " << entry << "\n";
     out << "digest: " << digest << "\n";
     out << "ttl_sec: " << ttl_sec << "\n";
@@ -62,10 +62,11 @@ DDLIdempotencyKeyNode DDLIdempotencyKeyNode::parse(const String & data)
 {
     DDLIdempotencyKeyNode node;
     ReadBufferFromString in(data);
+    UInt64 version = 0;
+    in >> "version: " >> version >> "\n";
     in >> "entry: " >> node.entry >> "\n";
     in >> "digest: " >> node.digest >> "\n";
     in >> "ttl_sec: " >> node.ttl_sec >> "\n";
-    assertEOF(in);
     return node;
 }
 
@@ -177,12 +178,6 @@ void checkCreateQuery(const ASTCreateQuery & create)
         throwNotSupported("CREATE TABLE without an explicit ENGINE");
     if (!isEngineSupported(create.storage->engine->name))
         throwNotSupported(fmt::format("CREATE TABLE with engine {}", create.storage->engine->name));
-    if (create.targets)
-    {
-        for (const auto & inner_engine : create.targets->getInnerEngines())
-            if (!inner_engine->engine || !isEngineSupported(inner_engine->engine->name))
-                throwNotSupported("inner tables");
-    }
 }
 
 /// Throws for the statements the key cannot be honoured for: those with an effect before or outside the commit of their
@@ -310,8 +305,6 @@ AccessRightsElements getRequiredAccess(const IInterpreter & interpreter, const I
 {
     if (const auto * create = typeid_cast<const InterpreterCreateQuery *>(&interpreter))
         return create->getRequiredAccess();
-    if (const auto * drop = typeid_cast<const InterpreterDropQuery *>(&interpreter))
-        return drop->getRequiredAccessForDDLOnCluster();
     if (const auto * rename = typeid_cast<const InterpreterRenameQuery *>(&interpreter))
         return rename->getRequiredAccess(InterpreterRenameQuery::RenameType::RenameTable);
     if (typeid_cast<const InterpreterAlterQuery *>(&interpreter))
@@ -333,6 +326,25 @@ AccessRightsElements getRequiredAccess(const IInterpreter & interpreter, const I
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected interpreter for a query with idempotency_key");
 }
 
+void checkRequiredAccess(const IInterpreter & interpreter, const IAST & ast, const Target & target, const ContextPtr & context)
+{
+    const auto * drop = typeid_cast<const ASTDropQuery *>(&ast);
+    if (!drop)
+    {
+        context->checkAccess(getRequiredAccess(interpreter, ast, target, context));
+        return;
+    }
+
+    /// A DROP checks the flag of the kind of the object, which may be gone now: `DROP TABLE` also drops a view.
+    const String & database_name = target.database->getDatabaseName();
+    if (drop->is_dictionary)
+        context->checkAccess(AccessType::DROP_DICTIONARY, database_name, target.table);
+    else if (drop->is_view)
+        context->checkAccess(AccessType::DROP_VIEW, database_name, target.table);
+    else if (!context->getAccess()->isGranted(AccessType::DROP_VIEW, database_name, target.table))
+        context->checkAccess(AccessType::DROP_TABLE, database_name, target.table);
+}
+
 BlockIO answerFromKey(
     const DDLIdempotencyKey & key,
     const DDLIdempotencyKeyNode & node,
@@ -342,7 +354,7 @@ BlockIO answerFromKey(
     const ContextMutablePtr & context)
 {
     checkDDLIdempotencyKeyDigest(key, node);
-    context->checkAccess(getRequiredAccess(interpreter, ast, target, context));
+    checkRequiredAccess(interpreter, ast, target, context);
     key.state = DDLIdempotencyKey::State::Answered;
 
     auto guard = DatabaseCatalog::instance().getDDLGuard(target.database->getDatabaseName(), target.table, target.database.get());

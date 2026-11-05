@@ -19,6 +19,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/thread_local_rng.h>
 #include <Parsers/ASTRenameQuery.h>
+#include <Poco/Timestamp.h>
 
 #include <algorithm>
 
@@ -881,7 +882,12 @@ bool DatabaseReplicatedDDLWorker::canRemoveQueueEntry(const String & entry_name,
 
 void DatabaseReplicatedDDLWorker::cleanupAuxiliaryNodes(const ZooKeeperPtr & zookeeper)
 {
-    /// Expired keys are already treated as absent, this only bounds the space they take.
+    /// Expired keys are already treated as absent, so pruning them only reclaims space.
+    Int64 now = Poco::Timestamp().epochTime();
+    if (last_idempotency_keys_prune_time && now < last_idempotency_keys_prune_time + IDEMPOTENCY_KEYS_PRUNE_PERIOD_SEC)
+        return;
+    last_idempotency_keys_prune_time = now;
+
     String keys_path = fs::path(database->zookeeper_path) / "idempotency";
     Strings names;
     if (zookeeper->tryGetChildren(keys_path, names) != Coordination::Error::ZOK || names.empty())
@@ -892,16 +898,34 @@ void DatabaseReplicatedDDLWorker::cleanupAuxiliaryNodes(const ZooKeeperPtr & zoo
         paths.push_back(fs::path(keys_path) / name);
     auto nodes = zookeeper->tryGet(paths);
 
+    size_t removed = 0;
     for (size_t i = 0; i < paths.size(); ++i)
     {
         if (nodes[i].error != Coordination::Error::ZOK)
             continue;
-        if (!isDDLIdempotencyKeyNodeExpired(nodes[i].stat.ctime, DDLIdempotencyKeyNode::parse(nodes[i].data).ttl_sec))
+
+        UInt64 ttl_sec = 0;
+        try
+        {
+            ttl_sec = DDLIdempotencyKeyNode::parse(nodes[i].data).ttl_sec;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("Cannot parse the idempotency key node {}", paths[i]));
             continue;
+        }
+        if (!isDDLIdempotencyKeyNodeExpired(nodes[i].stat.ctime, ttl_sec))
+            continue;
+
         auto code = zookeeper->tryRemove(paths[i], nodes[i].stat.version);
-        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE && code != Coordination::Error::ZBADVERSION)
+        if (code == Coordination::Error::ZOK)
+            ++removed;
+        else if (code != Coordination::Error::ZNONODE && code != Coordination::Error::ZBADVERSION)
             throw Coordination::Exception::fromPath(code, paths[i]);
     }
+
+    if (removed)
+        LOG_DEBUG(log, "Removed {} expired idempotency keys of {}", removed, names.size());
 }
 
 bool DatabaseReplicatedDDLWorker::isBeyondRetention(UInt32 entry_number, UInt32 max_log_ptr, UInt32 logs_to_keep)

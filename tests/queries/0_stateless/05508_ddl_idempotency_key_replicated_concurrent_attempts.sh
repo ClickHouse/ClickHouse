@@ -70,6 +70,7 @@ function wait_log_size()
     while [ "$(log_size "$1")" -le "$2" ] && [ $SECONDS -lt $deadline ]; do
         sleep 0.1
     done
+    [ "$(log_size "$1")" -le "$2" ] && echo "the second attempt did not enter the log"
 }
 
 function enable_failpoint()

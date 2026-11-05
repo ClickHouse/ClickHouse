@@ -1617,8 +1617,8 @@ void DDLWorker::runCleanupThread()
 
             cleanupQueue(current_time_seconds, zookeeper);
             cleanupStaleReplicas(current_time_seconds, zookeeper);
-            cleanupAuxiliaryNodes(zookeeper);
             last_cleanup_time_seconds = current_time_seconds;
+            cleanupAuxiliaryNodes(zookeeper);
         }
         catch (...)
         {

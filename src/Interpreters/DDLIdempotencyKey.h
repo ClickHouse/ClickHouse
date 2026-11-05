@@ -26,7 +26,7 @@ struct DDLIdempotencyKey
     enum class State : uint8_t
     {
         Pending, /// No log entry was made yet.
-        Enqueued, /// The query made its log entry.
+        Enqueued, /// The query reached `tryEnqueueReplicatedDDL`, so it may have made a log entry.
         Answered, /// The query was answered from the key node of an earlier attempt.
     };
 
@@ -37,9 +37,11 @@ struct DDLIdempotencyKey
     mutable State state = State::Pending;
 };
 
-/// Data of `<zookeeper_path>/idempotency/<hash of the key>`.
+/// Data of `<zookeeper_path>/idempotency/<hash of the key>`. Later versions may append lines, which `parse` ignores.
 struct DDLIdempotencyKeyNode
 {
+    static constexpr UInt64 VERSION = 1;
+
     String entry;
     String digest;
     UInt64 ttl_sec = 0;

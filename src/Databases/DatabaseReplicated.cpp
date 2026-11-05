@@ -1655,11 +1655,13 @@ String DatabaseReplicated::getDDLIdempotencyKeyPath(const String & key) const
 
 std::optional<DDLIdempotencyKeyNode> DatabaseReplicated::tryReadDDLIdempotencyKey(const String & key) const
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::tryReadDDLIdempotencyKey");
     return tryReadDDLIdempotencyKeyNode(getZooKeeper(), getDDLIdempotencyKeyPath(key));
 }
 
 BlockIO DatabaseReplicated::getDDLIdempotencyKeyAnswer(const String & entry_name, ContextPtr query_context, DDLGuardPtr && database_guard) const
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::getDDLIdempotencyKeyAnswer");
     auto zookeeper = getZooKeeper();
     String entry_path = fs::path(zookeeper_path) / "log" / entry_name;
 

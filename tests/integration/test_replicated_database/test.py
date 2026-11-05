@@ -2584,3 +2584,79 @@ def test_mixed_alter_races_replicated_alter_metadata(started_cluster):
     )
     main_node.query("DROP DATABASE IF EXISTS mixed_race SYNC")
     competing_node.query("DROP DATABASE IF EXISTS mixed_race SYNC")
+
+
+def test_ddl_idempotency_key(started_cluster):
+    def keyed(key, **extra):
+        return {"enable_ddl_idempotency_key": 1, "idempotency_key": key, **extra}
+
+    def log_size(zk_path):
+        return main_node.query(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{zk_path}/log'"
+        )
+
+    for node in [main_node, dummy_node]:
+        node.query("DROP DATABASE IF EXISTS idem_a SYNC")
+        node.query("DROP DATABASE IF EXISTS idem_b SYNC")
+        node.query("DROP DATABASE IF EXISTS idem_ttl_a SYNC")
+        node.query("DROP DATABASE IF EXISTS idem_ttl_b SYNC")
+
+    # A retry through a replica that names the database differently and was created after the entry: it is answered
+    # from the key without waiting for that replica, which never executes the entry.
+    main_node.query(
+        "CREATE DATABASE idem_a ENGINE = Replicated('/test/ddl_idempotency_key', 'shard1', 'replica1')"
+    )
+    main_node.query("CREATE TABLE idem_a.a (x UInt8) ENGINE = Memory COMMENT 'a'")
+    main_node.query("CREATE TABLE idem_a.b (x UInt8) ENGINE = Memory COMMENT 'b'")
+    main_node.query("EXCHANGE TABLES idem_a.a AND idem_a.b", settings=keyed("k1"))
+    main_node.query("CREATE TABLE idem_a.c (x UInt8) ENGINE = Memory")
+
+    dummy_node.query(
+        "CREATE DATABASE idem_b ENGINE = Replicated('/test/ddl_idempotency_key', 'shard1', 'replica2')"
+    )
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA idem_b")
+
+    size = log_size("/test/ddl_idempotency_key")
+    dummy_node.query(
+        "EXCHANGE TABLES idem_b.a AND idem_b.b",
+        settings=keyed(
+            "k1", distributed_ddl_output_mode="throw", distributed_ddl_task_timeout=20
+        ),
+    )
+    assert log_size("/test/ddl_idempotency_key") == size
+    main_node.query("SYSTEM SYNC DATABASE REPLICA idem_a")
+    for node, db in [(main_node, "idem_a"), (dummy_node, "idem_b")]:
+        assert (
+            node.query(
+                f"SELECT comment FROM system.tables WHERE database = '{db}' AND name = 'a'"
+            )
+            == "b\n"
+        )
+
+    # The TTL stored with the key decides on every replica, whatever the TTL of the replica that reads it.
+    main_node.query(
+        "CREATE DATABASE idem_ttl_a ENGINE = Replicated('/test/ddl_idempotency_key_ttl', 'shard1', 'replica1') "
+        "SETTINGS idempotency_key_ttl_sec = 1"
+    )
+    dummy_node.query(
+        "CREATE DATABASE idem_ttl_b ENGINE = Replicated('/test/ddl_idempotency_key_ttl', 'shard1', 'replica2')"
+    )
+    main_node.query("CREATE TABLE idem_ttl_a.t (x UInt8) ENGINE = Memory")
+    main_node.query("ALTER TABLE idem_ttl_a.t ADD COLUMN c UInt8", settings=keyed("k2"))
+    main_node.query("ALTER TABLE idem_ttl_a.t DROP COLUMN c")
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA idem_ttl_b")
+
+    assert_eq_with_retry(
+        dummy_node,
+        "ALTER TABLE idem_ttl_b.t ADD COLUMN c UInt8; "
+        "SELECT count() FROM system.columns WHERE database = 'idem_ttl_b' AND table = 't' AND name = 'c'",
+        "1",
+        retry_count=30,
+        settings=keyed("k2", distributed_ddl_output_mode="none"),
+    )
+
+    for node in [main_node, dummy_node]:
+        node.query("DROP DATABASE IF EXISTS idem_a SYNC")
+        node.query("DROP DATABASE IF EXISTS idem_b SYNC")
+        node.query("DROP DATABASE IF EXISTS idem_ttl_a SYNC")
+        node.query("DROP DATABASE IF EXISTS idem_ttl_b SYNC")

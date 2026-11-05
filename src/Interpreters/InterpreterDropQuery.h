@@ -43,9 +43,8 @@ public:
         internal = internal_;
     }
 
-    AccessRightsElements getRequiredAccessForDDLOnCluster() const;
-
 private:
+    AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     ASTPtr query_ptr;
     ASTPtr current_query_ptr;
     /// Is this a step of another statement rather than a DROP the user issued.
