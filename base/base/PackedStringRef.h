@@ -271,8 +271,8 @@ public:
     }
 
     /// Copies the value to `dst` and returns the end of the copy. A small value is copied as the
-    /// whole 16-byte ref, which is cheaper than a variable length copy, so `dst` must have 15
-    /// writable bytes past the value.
+    /// whole 16-byte ref, which is cheaper than a variable length copy, so 16 bytes at `dst` must
+    /// be writable, even when the value is empty.
     ALWAYS_INLINE char8_t * copyTo(char8_t * dst) const
         requires(HASH_BYTES == 0)
     {
@@ -400,8 +400,9 @@ public:
         return r;
     }
 
-    /// Returns the ref of a string of at most 15 bytes. It reads 16 bytes from `ptr`, so the 15 bytes past the end of
-    /// the string must be readable: `ColumnString::Chars` is a `PaddedPODArray` and provides them.
+    /// Returns the ref of a string of at most 15 bytes. It reads 16 bytes from `ptr`, even for an empty string, so 16
+    /// bytes at `ptr` must be readable. `ColumnString::Chars` provides them: a `PaddedPODArray` has 63 readable bytes
+    /// after its end.
     static ALWAYS_INLINE PackedStringRefT buildShort(const char * ptr, size_t len)
         requires(HASH_BYTES == 0)
     {

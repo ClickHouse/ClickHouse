@@ -3,6 +3,7 @@
 #include <cstring>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <base/PackedStringRef.h>
 #include <base/defines.h>
@@ -370,11 +371,25 @@ TEST(UnhashedPackedStringRef, SizeAndCopyTo)
         const UnhashedPackedStringRef ref = UnhashedPackedStringRef::build(padded.data(), padded.size);
         EXPECT_EQ(ref.size(), len) << "len=" << len;
 
-        /// A small value is copied as the whole ref, so the destination needs 15 bytes of slack.
+        /// A small value is copied as the whole ref, so the destination needs 16 writable bytes.
         std::array<char8_t, 64> dst{};
         char8_t * end = ref.copyTo(dst.data());
         EXPECT_EQ(static_cast<size_t>(end - dst.data()), len) << "len=" << len;
         EXPECT_EQ(std::string_view(reinterpret_cast<const char *>(dst.data()), len), std::string_view(s)) << "len=" << len;
+    }
+}
+
+TEST(UnhashedPackedStringRef, SmallValuesTouchExactlySixteenBytes)
+{
+    /// Heap buffers of exactly 16 bytes: AddressSanitizer reports an access past them, for the empty string too.
+    for (size_t len = 0; len <= UnhashedPackedStringRef::MAX_SMALL_LEN; ++len)
+    {
+        const std::vector<char> src(16, 'q');
+        const UnhashedPackedStringRef ref = UnhashedPackedStringRef::buildShort(src.data(), len);
+
+        std::vector<char8_t> dst(16);
+        EXPECT_EQ(static_cast<size_t>(ref.copyTo(dst.data()) - dst.data()), len) << "len=" << len;
+        EXPECT_EQ(std::string_view(reinterpret_cast<const char *>(dst.data()), len), std::string_view(src.data(), len)) << "len=" << len;
     }
 }
 
