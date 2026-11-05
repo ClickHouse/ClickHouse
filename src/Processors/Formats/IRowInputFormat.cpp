@@ -152,6 +152,11 @@ Chunk IRowInputFormat::read()
                 info.read_columns.clear();
                 const size_t num_rows_before_read = columns.empty() ? num_rows : columns.front()->size();
                 continue_reading = readRow(columns, info);
+
+                /// `readRow` can return true without appending a row (e.g. `Regexp` skips an unmatched line
+                /// with `format_regexp_skip_unmatched`); the byte accounting below must not then read
+                /// `byteSizeAt(size() - 1)` on the unchanged column.
+                const bool row_was_appended = !columns.empty() && columns.front()->size() > num_rows_before_read;
                 for (size_t column_idx = 0; column_idx < info.read_columns.size(); ++column_idx)
                 {
                     if (!info.read_columns[column_idx])
@@ -177,10 +182,7 @@ Chunk IRowInputFormat::read()
                 if (columns.empty())
                     ++num_rows;
 
-                /// Account bytes only for a row that was actually appended: `readRow` can return true without
-                /// appending (e.g. `Regexp` skips an unmatched line), which would make `byteSizeAt(size() - 1)` underflow.
-                if ((min_block_size_bytes || max_block_size_bytes) && !columns.empty()
-                    && columns.front()->size() > num_rows_before_read)
+                if ((min_block_size_bytes || max_block_size_bytes) && row_was_appended)
                 {
                     for (const auto & column : columns)
                         total_bytes += column->byteSizeAt(column->size() - 1);
