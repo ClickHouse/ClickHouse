@@ -5,7 +5,9 @@
 #include <Common/HashTable/TwoLevelHashMap.h>
 
 #include <memory>
+#include <mutex>
 #include <random>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -229,4 +231,50 @@ TEST(TwoLevelHashTableGrouped, ExistingKeyAtFillLimitDoesNotGrow)
     }
     ASSERT_GT(bucket.getBufferSizeInCells(), cells);
     checkSameBufferSize(*map);
+}
+
+
+/// The build of `parallel_hash` join fills different buckets from several threads, each under the lock of its bucket.
+/// It calls `disableGroupedGrowth` first: otherwise `growAllBuckets` moves the buckets that other threads are writing.
+/// The TSan build of the unit tests reports a data race if the buckets still grow together.
+TEST(TwoLevelHashTableGrouped, ConcurrentFillAfterDisableGroupedGrowth)
+{
+    constexpr size_t num_threads = 16;
+    constexpr UInt64 keys_per_thread = 20000;
+
+    auto map_holder = std::make_unique<Map>();
+    auto & map = *map_holder;
+    map.disableGroupedGrowth();
+
+    std::vector<std::mutex> bucket_mutexes(Map::NUM_BUCKETS);
+    std::vector<std::thread> threads;
+    threads.reserve(num_threads);
+    for (size_t t = 0; t < num_threads; ++t)
+    {
+        const UInt64 first_key = t * keys_per_thread + 1;
+        threads.emplace_back([&map, &bucket_mutexes, first_key]
+        {
+            for (UInt64 key = first_key; key < first_key + keys_per_thread; ++key)
+            {
+                const size_t hash_value = map.hash(key);
+                std::lock_guard lock(bucket_mutexes[Map::getBucketFromHash(hash_value)]);
+                Map::LookupResult it = nullptr;
+                bool inserted = false;
+                map.emplace(key, it, inserted, hash_value);
+                it->getMapped() = key * 5;
+            }
+        });
+    }
+    for (auto & thread : threads)
+        thread.join();
+
+    ASSERT_EQ(map.size(), num_threads * keys_per_thread);
+    for (UInt64 key = 1; key <= num_threads * keys_per_thread; ++key)
+    {
+        const auto * cell = map.find(key);
+        ASSERT_NE(cell, nullptr) << "key " << key << " was lost";
+        ASSERT_EQ(cell->getMapped(), key * 5) << "key " << key;
+    }
+    for (size_t i = 0; i < Map::NUM_BUCKETS; ++i)
+        ASSERT_FALSE(map.bucketInArena(i));
 }

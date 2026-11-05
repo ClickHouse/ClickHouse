@@ -35,7 +35,8 @@ namespace ErrorCodes
   *
   * Experiment: with `CLICKHOUSE_TWO_LEVEL_GROUPED=1` the buckets whose allocator is `TwoLevelHashTableBucketAllocator`
   * are placed in one memory area and grow together, see `growAllBuckets`. Then the area can be backed by huge pages,
-  * but the resizes are not amortized anymore, and threads must not fill different buckets at the same time.
+  * but the resizes are not amortized anymore, and threads must not fill different buckets at the same time:
+  * a table filled by several threads must call `disableGroupedGrowth` first.
   */
 
 /// The buckets grow by 4 times while they are small, and switch to the Robin Hood mode when they become large,
@@ -191,6 +192,11 @@ protected:
     }
 
 public:
+    /// Lets the buckets grow on their own, as without `CLICKHOUSE_TWO_LEVEL_GROUPED`. Must be called before
+    /// threads start to fill different buckets of the table at the same time, as the build of `parallel_hash` join does:
+    /// `growAllBuckets` moves every bucket, including the ones that other threads are writing.
+    void disableGroupedGrowth() { grouped_growth = false; }
+
     TwoLevelHashTable() = default;
 
     explicit TwoLevelHashTable(size_t size_hint)
