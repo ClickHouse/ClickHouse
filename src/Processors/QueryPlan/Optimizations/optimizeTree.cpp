@@ -297,7 +297,8 @@ void optimizeTreeSecondPass(
     convertOuterJoinToInnerJoinTransitively(optimization_settings, root);
 
     /// Before index analysis, so the copied conjuncts take part in it, and before the runtime
-    /// filters, which would hide the source filters
+    /// filters, which would hide the source filters. `query_plan_optimize_primary_key` is off only in
+    /// the plan built to cost automatic parallel replicas, which is left as it was before this pass
     bool predicates_were_propagated = false;
     if (optimization_settings.propagate_predicate_across_join && optimization_settings.query_plan_optimize_primary_key)
     {
