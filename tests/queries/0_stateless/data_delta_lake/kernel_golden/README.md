@@ -17,8 +17,8 @@ written by Spark as Parquet, in `expected/`. Some tables have only one of them:
 
 Not included:
 
-- `table-with-columnmapping-mode-id` and `table-with-columnmapping-mode-name`: ClickHouse reads them incorrectly
-  (structs nested in arrays and maps under column mapping).
+- `table-with-columnmapping-mode-id` and `table-with-columnmapping-mode-name`: they are in
+  `data_delta_lake/column_mapping_nested` and tested by `05498_delta_lake_column_mapping_nested_struct_in_array_map`.
 - `data-reader-partition-values`: the expected data is wrong (delta-kernel-rs skips this table).
 - `parquet-decimal-dictionaries-v1`: large, and the same data as `parquet-decimal-dictionaries`.
 - `checkpoint`, `delete-re-add-same-file-different-transactions`, `log-replay-special-characters-b`,
