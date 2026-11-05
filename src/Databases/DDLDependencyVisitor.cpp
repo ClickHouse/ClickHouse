@@ -9,6 +9,7 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
+#include <Storages/ABR/StorageABR.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -292,6 +293,11 @@ namespace
                 else
                     addDatabaseAndTableNameFromArguments(table_engine, 0, 1);
             }
+
+            /// ABR(table_prefix, sample_intervals, retention_expression)
+            /// The source tables `{table_prefix}_{interval}` are in the database of the ABR table.
+            if (table_engine.name == "ABR")
+                dependencies.merge(StorageABR::getSourceTableNames(table_engine, table_name.database));
         }
 
         /// Distributed(cluster_name, database_name, table_name, ...)

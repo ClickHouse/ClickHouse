@@ -28,6 +28,7 @@ public:
     std::string getName() const override { return "Alias"; }
 
     bool isMergeTree() const override;
+    bool producesMergeableState(const ContextPtr & query_context) const override;
 
     bool readsFromOtherTables() const override { return true; }
     std::vector<StoragePtr> getUnderlyingStorages() const override
@@ -199,6 +200,7 @@ public:
     bool areAsynchronousInsertsEnabled() const override { return getTargetTable()->areAsynchronousInsertsEnabled(); }
     bool isRemote() const override { return getTargetTable()->isRemote(); }
     bool readRequiresAnalyzedQuery() const override { return getTargetTable()->readRequiresAnalyzedQuery(); }
+    bool readRequiresFullQuery() const override { return getTargetTable()->readRequiresFullQuery(); }
     bool isSharedStorage() const override { return getTargetTable()->isSharedStorage(); }
     bool supportsReplication() const override
     {
