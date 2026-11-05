@@ -18,16 +18,6 @@ class FuzzerLogParser:
         ", Stack trace (when copying this message, always include the lines below):"
     )
     MAX_INLINE_REPRODUCE_COMMANDS = 20
-    # A server log line quotes the query it is about after one of these markers, so a
-    # failure pattern matching after such a marker matched the query text, not a
-    # failure: a test comment or a fuzzed query may contain any text, e.g. the literal
-    # "Logical error: 'max_rows > 0'". Only the part of the line before the match is
-    # checked, so a marker that follows the match (a real failure quoting a query)
-    # keeps the match.
-    QUERY_TEXT_MARKERS = ("(in query:", "(query:")
-    # How many matching lines to consider before giving up on finding a failure that
-    # is not a quoted query.
-    MAX_FAILURE_CANDIDATES = 50
     SANITIZER_ERROR_PATTERN = (
         r"(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|"
         r".*[a-zA-Z]+Sanitizer: CHECK failed:.*"
@@ -41,16 +31,6 @@ class FuzzerLogParser:
             "Sanitizer",
             "is_sanitizer_error",
             SANITIZER_ERROR_PATTERN,
-        ),
-        # After Sanitizer: a sanitizer report (memory safety, highest signal) must
-        # win over an oracle mismatch when both are present, since `parse_failure`
-        # stops at the first matching class. Kept ahead of the generic server-log
-        # patterns below so an unrelated `Logical error` from another test in the
-        # same run's aggregated server log does not steal the oracle classification.
-        (
-            "AST Fuzzer oracle mismatch",
-            "is_oracle_mismatch",
-            r"AST Fuzzer oracle mismatch detected.*",
         ),
         ("Logical error", "is_logical_error", r"Logical error.*"),
         (
@@ -67,10 +47,7 @@ class FuzzerLogParser:
         (
             "Signal",
             "is_killed_by_signal",
-            # Anchor to the watchdog's "<Fatal> Application: " record: keeps a
-            # live-server ShellCommand "<Error> ... Child process was terminated
-            # by signal N" from being misattributed as the server dying.
-            r"Received signal.*|<Fatal> Application: Child process was terminated by signal \d+.*",
+            r"Received signal.*|.*Child process was terminated by signal 9.*",
         ),
         (
             "Memory limit exceeded",
@@ -120,12 +97,6 @@ class FuzzerLogParser:
         self.fuzzer_log = fuzzer_log
         self.stderr_log = stderr_log
         self.stack_trace_str = stack_trace_str
-        # Set by `parse_failure` when the result came from the generic <Fatal>
-        # fallback rather than a specific pattern. It is a lower-confidence signal
-        # than a known classification: a caller scanning several logs (e.g.
-        # `stress_job.py` across replicas) should keep looking for a specific
-        # failure and only settle for a generic fatal if nothing better is found.
-        self.is_generic_fatal = False
 
     @staticmethod
     def extract_format_string(line):
@@ -144,10 +115,9 @@ class FuzzerLogParser:
         match = re.search(r"\[ (\d+) \] \{", line)
         return match.group(1) if match else ""
 
-    def find_format_string(self, match_position, matched_log_file):
-        # Find the `Format string:` message belonging to the failure found at
-        # `match_position` (a 1-based line number in the input).
-        # `abortOnFailedAssertion` logs it immediately after the
+    def find_format_string(self, matched_pattern, matched_log_file):
+        # Find the `Format string:` message belonging to the failure matched by
+        # `matched_pattern`. `abortOnFailedAssertion` logs it immediately after the
         # `Logical error:` message, from the same thread, but does not log it at all
         # when the format string is empty. So it belongs to this failure only if it is
         # the next fatal message of the same thread; otherwise this failure has none
@@ -155,12 +125,13 @@ class FuzzerLogParser:
         # When the input has no thread ids, the search is bounded by the failure
         # block instead. `None` means the search could not be bounded to the failure
         # - e.g. the matched line could not be located in the input.
-        if not match_position:
-            return None
         if self.stack_trace_str:
             lines = self.stack_trace_str.splitlines()
-            match_index = match_position - 1
-            if match_index >= len(lines):
+            match_index = next(
+                (i for i, line in enumerate(lines) if re.search(matched_pattern, line)),
+                -1,
+            )
+            if match_index == -1:
                 return None
             thread = self.thread_id(lines[match_index])
             if thread:
@@ -179,11 +150,15 @@ class FuzzerLogParser:
 
         if not matched_log_file:
             return None
-        match_line = Shell.get_output(f"sed -n '{match_position}p' {matched_log_file}")
+        match_position, _, match_line = Shell.get_output(
+            f"rg --text -n -m1 '{matched_pattern}' {matched_log_file}"
+        ).partition(":")
+        if not match_position.isdigit():
+            return None
         thread = self.thread_id(match_line)
         if thread:
             next_fatal_line = Shell.get_output(
-                f"tail -n +{match_position + 1} {matched_log_file}"
+                f"tail -n +{int(match_position) + 1} {matched_log_file}"
                 f" | rg --text -m1 '\\[ {thread} \\] \\{{.*<Fatal>'"
             )
             return self.extract_format_string(next_fatal_line)
@@ -192,7 +167,7 @@ class FuzzerLogParser:
         # the string input above. Stream the lines instead of loading the file.
         with open(matched_log_file, errors="replace") as f:
             return self.format_string_within_failure_block(
-                itertools.islice(f, match_position, None)
+                itertools.islice(f, int(match_position), None)
             )
 
     def format_string_within_failure_block(self, lines):
@@ -211,59 +186,6 @@ class FuzzerLogParser:
                 return ""
         return ""
 
-    def failure_candidates(self, pattern, file):
-        # (1-based line number, line) of every line matching `pattern`, capped: a
-        # genuine failure is not preceded by hundreds of lines quoting its text.
-        if file:
-            # Only the matching lines are read - the log itself can be gigabytes.
-            output = Shell.get_output(
-                f"rg --text -n '{pattern}' {file}"
-                f" | head -n {self.MAX_FAILURE_CANDIDATES}",
-                strict=True,
-            )
-            for entry in output.splitlines():
-                number, _, line = entry.partition(":")
-                if number.isdigit():
-                    yield int(number), line
-            return
-        matches = 0
-        for number, line in enumerate(self.stack_trace_str.splitlines(), start=1):
-            if re.search(pattern, line):
-                matches += 1
-                if matches > self.MAX_FAILURE_CANDIDATES:
-                    return
-                yield number, line
-
-    def lines_after(self, position, file):
-        # The 9 lines following the line at `position` (1-based).
-        if file:
-            return Shell.get_output(
-                f"sed -n '{position + 1},{position + 9}p' {file}"
-            ).splitlines()
-        return self.stack_trace_str.splitlines()[position : position + 9]
-
-    def find_failure(self, pattern, file):
-        # Find the failure matching `pattern` and return its text - the match itself
-        # followed by the next 9 lines - together with the 1-based line number of the
-        # match, or ("", None) when the pattern does not match a failure.
-        # A match inside a query that the log line quotes is not a failure: the query
-        # text is data, and both a test comment and a fuzzed query may contain any
-        # text, so it is skipped and the search continues with the next match.
-        for position, line in self.failure_candidates(pattern, file):
-            match = re.search(pattern, line)
-            if not match:
-                continue
-            if any(
-                marker in line[: match.start()] for marker in self.QUERY_TEXT_MARKERS
-            ):
-                print(f"Skipping the match in the query text at line {position}")
-                continue
-            return (
-                "\n".join([match.group(0)] + self.lines_after(position, file)),
-                position,
-            )
-        return "", None
-
     def parse_failure(self):
         files = []
         is_logical_error = False
@@ -271,15 +193,19 @@ class FuzzerLogParser:
         is_killed_by_signal = False
         is_segfault = False
         is_memory_limit_exceeded = False
-        is_oracle_mismatch = False
-        self.is_generic_fatal = False
 
         error_output = None
-        match_position = None
+        matched_pattern = None
         matched_log_file = None
         for name, flag_name, pattern in self.ERROR_PATTERNS:
+            output = ""
             file = None
-            if not self.stack_trace_str:
+            if self.stack_trace_str:
+                output = Shell.get_output(
+                    f"echo '{self.stack_trace_str}' | rg --text -A 10 -o '{pattern}' | head -n10",
+                    strict=True,
+                )
+            else:
                 if flag_name == "is_sanitizer_error":
                     if not self.stderr_log:
                         # stderr.log may be absent when stress_runner.sh exits early (e.g. server failed to restart).
@@ -289,11 +215,14 @@ class FuzzerLogParser:
                 else:
                     assert self.server_log, "No server log provided"
                     file = self.server_log
-            output, position = self.find_failure(pattern, file)
+                output = Shell.get_output(
+                    f"rg --text -A 10 -o '{pattern}' {file} | head -n10",
+                    strict=True,
+                )
 
             if output:
                 error_output = output
-                match_position = position
+                matched_pattern = pattern
                 matched_log_file = file
                 if flag_name == "is_sanitizer_error":
                     is_sanitizer_error = True
@@ -305,29 +234,9 @@ class FuzzerLogParser:
                     is_segfault = True
                 elif flag_name == "is_memory_limit_exceeded":
                     is_memory_limit_exceeded = True
-                elif flag_name == "is_oracle_mismatch":
-                    is_oracle_mismatch = True
                 break
 
         if not error_output:
-            # None of the specific patterns matched, but the server may still have
-            # logged a <Fatal> message the parser does not classify (e.g. a new
-            # fuzzer oracle). Surface that message so the report shows what actually
-            # happened, and only fall back to "Unknown error" when there is no
-            # <Fatal> at all.
-            generic_fatal = self.get_generic_fatal()
-            if generic_fatal:
-                self.is_generic_fatal = True
-                fatal_lines = generic_fatal.splitlines()
-                result_name = fatal_lines[0].removesuffix(".")
-                stack_trace = self.get_stack_trace()
-                stack_trace_id = self.get_stack_trace_id(stack_trace)
-                if stack_trace_id:
-                    result_name += f" (STID: {stack_trace_id})"
-                info = f"Error:\n{generic_fatal}\n"
-                if stack_trace:
-                    info += "---\n\nStack trace:\n" + stack_trace + "\n"
-                return result_name, info, files
             return (
                 self.UNKNOWN_ERROR,
                 "Lost connection to server. See the logs.\n",
@@ -350,7 +259,7 @@ class FuzzerLogParser:
         # later unrelated failure. So, for a logical error, take the format string from
         # the matched failure itself - the next fatal message of the same thread.
         bounded_format_message = (
-            self.find_format_string(match_position, matched_log_file)
+            self.find_format_string(matched_pattern, matched_log_file)
             if is_logical_error
             else None
         )
@@ -366,9 +275,7 @@ class FuzzerLogParser:
             error_lines and re.search(r"\w+Sanitizer: CHECK failed:", error_lines[0])
         )
         # keep all lines before next log line
-        # Skip the matched line itself: a pattern with a leading `.*` keeps the record's
-        # own "] {id} <Level>" prefix, which this guard would otherwise match.
-        for i, line in enumerate(error_lines[1:], start=1):
+        for i, line in enumerate(error_lines):
             if "] {" in line and "} <" in line or line.startswith("    #"):
                 # it's a new log line or sanitizer frame - break
                 error_lines = error_lines[:i]
@@ -384,7 +291,7 @@ class FuzzerLogParser:
         stack_trace_id = self.get_stack_trace_id(stack_trace)
 
         if is_logical_error:
-            failed_query = self.get_failed_query(match_position, matched_log_file)
+            failed_query = self.get_failed_query()
             if failed_query and self.fuzzer_log:
                 reproduce_commands = self.get_reproduce_commands(failed_query)
             if format_message and "Inconsistent AST formatting" not in result_name:
@@ -406,28 +313,9 @@ class FuzzerLogParser:
             # distinguish them.
             result_name += f" (STID: {stack_trace_id})"
         elif is_killed_by_signal or is_segfault:
-            # The anchored watchdog match carries the "<Fatal> Application: " prefix;
-            # the "Received signal"/"Segmentation fault" alternatives never do.
-            result_name = result_name.removeprefix("<Fatal> Application: ")
             result_name += f" (STID: {stack_trace_id})"
         elif is_memory_limit_exceeded:
             result_name = "Server unresponsive: memory limit exceeded"
-        elif is_oracle_mismatch:
-            # The oracle kind is logged by `QueryOracleChecker` on a line of the
-            # form "<kind> oracle mismatch!" after the "Fuzzed query:" line. Fold
-            # it into the failure name so distinct oracles group separately in CI
-            # DB, while a missing kind still yields a stable generic name. The
-            # "Fuzzed query:" line captured in `error_output` is kept as the info.
-            # The kind may carry a parenthesized, but still fixed, label - e.g.
-            # "Identity WHERE (p AND 1)" or "Identity WHERE (NOT(NOT p))" - so
-            # allow parentheses in the capture; variable trailers like DQP's
-            # "Setting: <name>" come after the "!" and are excluded.
-            result_name = "AST Fuzzer oracle mismatch"
-            for line in error_lines:
-                match = re.search(r"(\w[\w ()]*?) oracle mismatch!", line)
-                if match and "AST Fuzzer" not in match.group(1):
-                    result_name = f"AST Fuzzer oracle mismatch: {match.group(1).strip()}"
-                    break
         elif is_sanitizer_error:
             stack_trace = self.get_sanitizer_stack_trace()
             if not stack_trace:
@@ -529,41 +417,6 @@ class FuzzerLogParser:
             info += stack_trace + "\n"
 
         return result_name, info, files
-
-    # A real server log line has its level in the structured prefix
-    # "[ <thread> ] {<query_id>} <Level>". Anchoring the generic-fatal search to
-    # this prefix avoids matching a "<Fatal>" substring quoted inside query text
-    # or a comment on an ordinary <Debug>/<Error> line (the query id has no "}").
-    GENERIC_FATAL_PATTERN = r"\[ \d+ \] \{[^}]*\} <Fatal> .*"
-
-    def get_generic_fatal(self):
-        # Fallback used when no specific pattern matched but the server still
-        # logged a <Fatal> message. Return the message (with a few following
-        # lines of context) with the log prefix up to and including "<Fatal> "
-        # stripped, so the report shows the real message instead of a bare
-        # "Unknown error". Returns None when there is no <Fatal> record to
-        # surface. The match is anchored to the log-level field so a "<Fatal>"
-        # substring inside quoted query text is not mistaken for a failure.
-        if not self.server_log:
-            return None
-        output = Shell.get_output(
-            f"rg --text -A 10 -o '{self.GENERIC_FATAL_PATTERN}' {self.server_log} | head -n10"
-        ).strip()
-        if not output:
-            return None
-        lines = output.splitlines()
-        marker = "<Fatal> "
-        marker_pos = lines[0].find(marker)
-        if marker_pos != -1:
-            lines[0] = lines[0][marker_pos + len(marker) :]
-        # Stop at the next server log line so an unrelated later message is not
-        # folded into this one.
-        for i, line in enumerate(lines):
-            if i > 0 and "] {" in line and "} <" in line:
-                lines = lines[:i]
-                break
-        message = "\n".join(lines).strip()
-        return message or None
 
     def get_sanitizer_stack_trace(self):
         # Extract the full sanitizer report: description, all stack traces,
@@ -785,28 +638,17 @@ class FuzzerLogParser:
         print(f"Stack trace functions: {functions}")
         return stack_trace_id
 
-    def get_failed_query(self, match_position, matched_log_file):
+    def get_failed_query(self):
         # TODO: Fetch the failed query from fuzzer.log instead of server.log to ensure exact matching.
         # The server.log may normalize whitespace or format queries differently, making it difficult
         # to locate the corresponding query and its dependencies in fuzzer.log.
         if not self.server_log:
             # Without a file argument `rg` would search the working directory.
             return None
-        if match_position and matched_log_file == self.server_log:
-            # The query id of the failure itself, taken from the failure block, so
-            # that an unrelated line that merely quotes a failure message in a query
-            # cannot contribute its own query id.
-            failure_output = "\n".join(
-                [Shell.get_output(f"sed -n '{match_position}p' {self.server_log}")]
-                + self.lines_after(match_position, self.server_log)
-            )
-        else:
-            # The failure was matched in a stack trace string, which carries no line
-            # numbers of the server log - search the log for the failure block.
-            failure_output = Shell.get_output(
-                f"rg --text -A10 'Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*' {self.server_log}",
-                verbose=True,
-            )
+        failure_output = Shell.get_output(
+            f"rg --text -A10 'Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*' {self.server_log}",
+            verbose=True,
+        )
         if not failure_output:
             return None
         if "Inconsistent AST formatting: the query:" in failure_output:

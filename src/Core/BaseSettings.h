@@ -29,6 +29,25 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
+/** A settings sequence on the wire is a list of name/value pairs, and both the number of pairs and
+  * the size of each name and value come from the peer. There are a few thousand declared settings
+  * and a handful of custom ones per query, so bound the number of pairs: otherwise a peer can keep
+  * the server allocating one pair at a time without a limit, and in interserver mode the settings of
+  * a query are read before its secret hash is checked.
+  */
+static constexpr size_t MAX_SETTINGS_IN_A_SEQUENCE = 65536;
+
+/** The name of a setting or of a query parameter is an identifier, so a name declared longer than
+  * this is rejected before any of it is read. The bound is the same as for the strings of the `Hello`
+  * packet.
+  *
+  * The value of a setting or of a parameter keeps the generic string bound: it is query-sized data
+  * (a parameter is substituted into the query), and the query text itself has to be read at that
+  * bound before the interserver hash that covers it can be checked, so a tighter bound here would
+  * only break large parameters without lowering what a peer can make the server allocate.
+  */
+static constexpr size_t MAX_SETTING_NAME_SIZE = 64 * 1024;
+
 /// Utility functions and types used by the BaseSettings template class.
 /// These are implementation details that handle serialization, error reporting,
 /// and metadata management for settings.
@@ -36,6 +55,7 @@ struct BaseSettingsHelpers
 {
     /// Error handling
     [[noreturn]] static void throwSettingNotFound(std::string_view name);
+    [[noreturn]] static void throwTooManySettings(std::string_view what);
     [[noreturn]] static void throwValuelessSettingIsNotBool(std::string_view name, std::string_view type);
     [[noreturn]] static void throwValuelessSettingIsNotBool(std::string_view name);
     [[noreturn]] static void throwValuelessSettingHasValue(std::string_view name);
@@ -45,6 +65,8 @@ struct BaseSettingsHelpers
     /// Serialization helpers
     static void writeString(std::string_view str, WriteBuffer & out);
     static String readString(ReadBuffer & in);
+    /// The name of a setting or a query parameter, bounded by `MAX_SETTING_NAME_SIZE`.
+    static String readName(ReadBuffer & in);
 
     /// Setting metadata flags
     enum Flags : UInt64
@@ -52,10 +74,6 @@ struct BaseSettingsHelpers
         IMPORTANT = 0x01,  /// Setting affects query results, cannot be ignored by older versions
         CUSTOM = 0x02,     /// User-defined custom setting
         TIER = 0x1c,       /// 0b11100 == 3 bits for tier level (PRODUCTION/BETA/PRIVATE_PREVIEW/EXPERIMENTAL)
-        /// Flag indicating that the setting is baked into a client object built from the settings (e.g. the S3 client
-        /// of an object storage), so a change of the setting requires rebuilding that client.
-        /// See `hasChangesAffectingClient`. Currently only used in S3RequestSettings.
-        AFFECTS_CLIENT = 0x20,
         /// Flag indicating that changes from config can be picked up without server restart.
         /// Currently only works in CoordinationSettings.
         HOT_RELOAD = 0x80,
@@ -144,7 +162,6 @@ struct SettingsOwner;
   *     DECLARE(Float, f, 3.11, "Description of f", IMPORTANT) \
   *     DECLARE(String, s, "default", "Description of s", 0) \
   *     DECLARE_WITH_ALIAS(String, experimental, "default", "Description", 0, stable)
-  *     DECLARE_WITH_ALIAS(String, renamed_twice, "default", "Description", 0, old_name, older_name)
   *
   * DECLARE_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS, MY_SETTINGS_SUPPORTED_TYPES)
   * IMPLEMENT_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS, MySettings, MySetting)
@@ -249,11 +266,6 @@ public:
     /// Resets specified setting to its default value
     void resetToDefault(std::string_view name);
 
-    /// Clears the `changed` flag of the specified built-in setting while keeping its current value.
-    /// The setting keeps acting locally (readers see the value) but is no longer serialized to a
-    /// remote server, which only receives changed settings. No-op for custom settings.
-    void markUnchanged(std::string_view name);
-
     /// Check if a setting exists (either built-in or custom)
     bool has(std::string_view name) const { return hasBuiltin(name) || hasCustom(name); }
 
@@ -306,11 +318,6 @@ public:
     /// Copy settings with HOT_RELOAD flag from `new_settings` into `this`.
     /// Leave other settings unchanged.
     void updateHotReloadableSettings(const BaseSettings & new_settings);
-
-    /// Returns true if some setting with the AFFECTS_CLIENT flag is changed in `new_settings` and has a different value
-    /// than in `this`. Mirrors the semantics of the `updateIfChanged` methods of the settings wrappers (only the settings
-    /// changed in `new_settings` are applied): tells whether applying `new_settings` requires rebuilding the client.
-    bool hasChangesAffectingClient(const BaseSettings & new_settings) const;
 
     /// Convert all settings to a human-readable string (for debugging)
     std::string toString() const;
@@ -490,17 +497,17 @@ SettingsChanges BaseSettings<TTraits>::changes() const
 template <typename TTraits>
 void BaseSettings<TTraits>::checkShorthandChange(const SettingChange & change) const
 {
-    /// `SET name` without a value means `SET name = true`, which only makes sense for a Bool
-    /// setting. This is where the settings schema is known, so this is where it is checked.
+    /// `SET name` without a value means `SET name = true`, which only makes sense for a Bool*
+    /// settings. This is where the settings schema is known, so this is where it is checked.
     if (!change.shorthand)
         return;
 
-    if (std::string_view type = getTypeName(change.name); type != "Bool")
+    if (std::string_view type = getTypeName(change.name); !type.starts_with("Bool"))
         BaseSettingsHelpers::throwValuelessSettingIsNotBool(change.name, type);
 
-    /// The type alone is not enough. The parser writes Bool `true` for the valueless form, but a
+    /// The type alone is not enough. The parser writes `Bool` `true` for the valueless form, but a
     /// `SettingChange` can also arrive from the AST JSON dialect, which is free to pair the flag
-    /// with any other value - and for a `Bool` setting the check above lets that through. Such a
+    /// with any other value - and for a `Bool*` setting the check above lets that through. Such a
     /// change would execute with the carried value while `ASTSetQuery::formatImpl` renders the bare
     /// name, so `system.query_log` and every other formatter would under-report what ran. This is
     /// the first point after deserialization where an exception is logged with the AST masked
@@ -557,15 +564,6 @@ void BaseSettings<TTraits>::resetToDefault(std::string_view name)
 
     if constexpr (Traits::allow_custom_settings)
         custom_settings_map.erase(String{resolveCustomSettingName<TTraits>(name)});
-}
-
-template <typename TTraits>
-void BaseSettings<TTraits>::markUnchanged(std::string_view name)
-{
-    name = TTraits::resolveName(name);
-    const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
-        accessor.setValueChanged(*this, index, false);
 }
 
 template <typename TTraits>
@@ -756,9 +754,12 @@ void BaseSettings<TTraits>::readBinary(ReadBuffer & in)
     size_t num_settings = 0;
     readVarUInt(num_settings, in);
 
+    if (num_settings > MAX_SETTINGS_IN_A_SEQUENCE)
+        BaseSettingsHelpers::throwTooManySettings("settings");
+
     for (size_t i = 0; i < num_settings; ++i)
     {
-        String read_name = BaseSettingsHelpers::readString(in);
+        String read_name = BaseSettingsHelpers::readName(in);
         std::string_view name = TTraits::resolveName(read_name);
         size_t index = accessor.find(name);
 
@@ -776,11 +777,15 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
 {
     resetToDefault();
     const auto & accessor = Traits::Accessor::instance();
+    size_t num_settings = 0;
     while (true)
     {
-        String read_name = BaseSettingsHelpers::readString(in);
+        String read_name = BaseSettingsHelpers::readName(in);
         if (read_name.empty() /* empty string is a marker of the end of settings */)
             break;
+
+        if (++num_settings > MAX_SETTINGS_IN_A_SEQUENCE)
+            BaseSettingsHelpers::throwTooManySettings("settings");
 
         std::string_view name = TTraits::resolveName(read_name);
         size_t index = accessor.find(name);
@@ -833,20 +838,6 @@ void BaseSettings<TTraits>::updateHotReloadableSettings(const BaseSettings & new
         Field value = accessor.getValue(new_settings, index);
         accessor.setValue(*this, index, value);
     }
-}
-
-template <typename TTraits>
-bool BaseSettings<TTraits>::hasChangesAffectingClient(const BaseSettings & new_settings) const
-{
-    const auto & accessor = Traits::Accessor::instance();
-    for (size_t index = 0; index < accessor.size(); ++index)
-    {
-        if (!accessor.affectsClient(index) || !accessor.isValueChanged(new_settings, index))
-            continue;
-        if (accessor.getValue(*this, index) != accessor.getValue(new_settings, index))
-            return true;
-    }
-    return false;
 }
 
 template <typename TTraits>
@@ -1375,7 +1366,6 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
             std::string_view getDescription(size_t index) const { return field_infos[index].description; } \
             bool isImportant(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::IMPORTANT; } \
             bool isHotReload(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::HOT_RELOAD; } \
-            bool affectsClient(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::AFFECTS_CLIENT; } \
             SettingsTierType getTier(size_t index) const { return BaseSettingsHelpers::getTier(field_infos[index].flags); } \
             \
             /* Value conversion utilities — use type-level ops (no Data instance needed) */ \
@@ -1425,11 +1415,6 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
             { \
                 const auto & fi = field_infos[index]; \
                 return fi.ops->is_changed(settingPtr(data, fi.data_offset)); \
-            } \
-            void setValueChanged(Data & data, size_t index, bool changed) const \
-            { \
-                const auto & fi = field_infos[index]; \
-                fi.ops->set_changed(settingPtr(data, fi.data_offset), changed); \
             } \
             void resetValueToDefault(Data & data, size_t index) const \
             { \
@@ -1525,11 +1510,10 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
 #define SETTING_SKIP_TRAIT(...)
 
 
-/// Generates one or two alias mapping entries.
+/// Generates an alias mapping entry
 /// NOLINTNEXTLINE
-#define DECLARE_SETTINGS_WITH_ALIAS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ALIAS, ...) \
-    { #ALIAS, #NAME }, \
-    __VA_OPT__({ #__VA_ARGS__, #NAME },)
+#define DECLARE_SETTINGS_WITH_ALIAS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ALIAS) \
+    { #ALIAS, #NAME },
 
 /// Implement the full settings infrastructure for a settings class.
 /// Generates: Impl struct, Data constructor, Accessor singleton, and
@@ -1624,7 +1608,6 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
         static const Accessor the_instance = [] \
         { \
             [[maybe_unused]] constexpr int IMPORTANT = 0x01; \
-            [[maybe_unused]] constexpr int AFFECTS_CLIENT = 0x20; \
             [[maybe_unused]] constexpr int HOT_RELOAD = 0x80; \
             Accessor res; \
             /* offsetof on non-standard-layout types is well-defined in Clang */ \

@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -729,20 +728,6 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
             nullable_group = true;
         }
     }
-    /// Case 2 in schema inference mode (sample_block is null only there), where only the type is
-    /// named: the read gets that type as its hint and re-derives nullable_group above. Excluded: a
-    /// Map key_value tuple (DataTypeMap requires Tuple(keys, values)) and a Map key (never Nullable).
-    const bool infer_nullable_group =
-        !sample_block
-        && !node.type_hint
-        && node.requested
-        && group_is_optional
-        && !has_optional_ancestor
-        && node.schema_context != SchemaContext::MapTuple
-        && node.schema_context != SchemaContext::MapKey
-        && options.format.schema_inference_allow_nullable_tuple_type
-        && !options.schema_inference_force_not_nullable
-        && tupleSubtreeIsAllRequired(file_metadata.schema, schema_idx - 1);
 
     /// Mark leaves recursed below as belonging to a physically-nullable group (case 2 above).
     nullable_tuple_group_depth += nullable_group ? 1 : 0;
@@ -898,10 +883,6 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     else
     {
         output_type = std::make_shared<DataTypeTuple>(types, names);
-        /// The group null map is reconstructed from a physical leaf's definition levels, so a group
-        /// with no leaf below it cannot be Nullable(Tuple(...)) and stays a plain Tuple.
-        if (infer_nullable_group && primitive_start != primitive_columns.size())
-            output_type = makeNullable(output_type);
     }
 
     /// Physically-nullable struct (OPTIONAL group, case 2 above): the assembled ColumnTuple must be
@@ -1009,12 +990,7 @@ void SchemaConverter::processPrimitiveColumn(
     /// directly; if size or scale differs, the Field additionally goes through
     /// tryConvertFieldToType, which rescales it the same way as the castColumn that is applied
     /// to the values - see PageDecoderInfo::cast_stats_to_output_type.
-    /// `decoded_is_time_of_day` says that the decoded values are a time-of-day (parquet `TIME`),
-    /// i.e. that a `Time64` output type has the same semantics as the decoded values. It must stay
-    /// false for every other decoded semantic: casting a `DateTime64` (parquet `TIMESTAMP`) to
-    /// `Time64` wraps by day and is therefore not order-preserving, so min/max stats of the raw
-    /// values must not be used for pruning.
-    auto allow_decimal_stats = [&](size_t decoded_size, UInt32 decoded_scale, bool decoded_is_time_of_day = false)
+    auto allow_decimal_stats = [&](size_t decoded_size, UInt32 decoded_scale)
     {
         const IDataType * output_type = type_hint ? type_hint.get() : out_inferred_type.get();
         WhichDataType which(output_type->getTypeId());
@@ -1027,19 +1003,6 @@ void SchemaConverter::processPrimitiveColumn(
             if (decoded_size != 8)
                 return;
             same = assert_cast<const DataTypeDateTime64 *>(output_type)->getScale() == decoded_scale;
-        }
-        else if (which.isTime64())
-        {
-            /// Stats are usable only when the decoded values are already a time-of-day; a
-            /// `DateTime64 -> Time64` cast wraps by day (a row group spanning midnight would get
-            /// raw bounds like [23:00:00, 25:00:00] while the values are 23:00:00 and 01:00:00).
-            if (!decoded_is_time_of_day)
-                return;
-            /// Same restriction as for DateTime64: tryConvertFieldToType supports a Time64 target
-            /// only for a Decimal64 source Field.
-            if (decoded_size != 8)
-                return;
-            same = assert_cast<const DataTypeTime64 *>(output_type)->getScale() == decoded_scale;
         }
         else
             return;
@@ -1207,15 +1170,9 @@ void SchemaConverter::processPrimitiveColumn(
     }
     else if (logical.__isset.TIMESTAMP || logical.__isset.TIME || converted == CONV::TIMESTAMP_MILLIS || converted == CONV::TIMESTAMP_MICROS || converted == CONV::TIME_MILLIS || converted == CONV::TIME_MICROS)
     {
-        /// Parquet `TIMESTAMP` is a Unix timestamp -> ClickHouse `DateTime64` (timezone-aware).
-        /// Parquet `TIME` is a time-of-day (no date, no timezone) -> ClickHouse `Time64`
-        /// (timezone-unaware). Routing `TIME` through `DateTime64` and then casting to a
-        /// `Time64` target would shift the value by `session_timezone`, which is wrong because
-        /// time-of-day has no date/timezone to interpret (see issue #104038 for the Arrow
-        /// equivalent of this bug).
-        const bool is_time_of_day = logical.__isset.TIME
-            || converted == CONV::TIME_MILLIS
-            || converted == CONV::TIME_MICROS;
+        /// We interpret both timestamp (logical.TIMESTAMP) and time-of-day (logical.TIME)
+        /// types as timestamps, since clickhouse doesn't have time-of-day type.
+        /// E.g. time of day 12:34:56.789 turns into timestamp 1970-01-01 12:34:56.789.
 
         UInt32 scale = 0;
         if (logical.TIMESTAMP.unit.__isset.MILLIS || logical.TIME.unit.__isset.MILLIS || converted == CONV::TIMESTAMP_MILLIS || converted == CONV::TIME_MILLIS)
@@ -1230,27 +1187,19 @@ void SchemaConverter::processPrimitiveColumn(
         if (type != parq::Type::INT64 && type != parq::Type::INT32)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for timestamp logical type: {}", thriftToString(element));
 
-        if (is_time_of_day)
-        {
-            /// Time64 is timezone-unaware; `isAdjustedToUTC` is intentionally ignored here
-            /// because Time64 has no place to store that distinction.
-            out_inferred_type = std::make_shared<DataTypeTime64>(scale);
-        }
-        else
-        {
-            /// Can't leave int -> DateTime64 conversion to castColumn as it interprets the integer as seconds.
-            String timezone = "UTC";
-            if (!options.format.parquet.local_time_as_utc
-                && logical.__isset.TIMESTAMP && !logical.TIMESTAMP.isAdjustedToUTC)
-                timezone = "";
-            out_inferred_type = std::make_shared<DataTypeDateTime64>(scale, timezone);
-        }
+        /// Can't leave int -> DateTime64 conversion to castColumn as it interprets the integer as seconds.
+        String timezone = "UTC";
+        if (!options.format.parquet.local_time_as_utc &&
+            ((logical.__isset.TIMESTAMP && !logical.TIMESTAMP.isAdjustedToUTC) ||
+             (logical.__isset.TIME && !logical.TIME.isAdjustedToUTC)))
+            timezone = "";
+        out_inferred_type = std::make_shared<DataTypeDateTime64>(scale, timezone);
         auto converter = std::make_shared<IntConverter>();
-        /// `TIMESTAMP` is always INT64. INT32 is only used for `TIME_MILLIS`
-        /// (the sole INT32-backed time-of-day logical type in Parquet).
+        /// Note: TIMESTAMP is always INT64. INT32 is only for weird unimportant case of TIME_MILLIS
+        /// (i.e. time of day rather than timestamp).
         converter->input_size = type == parq::Type::INT32 ? 4 : 8;
 
-        if (!is_time_of_day && scale == 3 && converter->input_size == 8 && type_hint && type_hint->getTypeId() == TypeIndex::DateTime)
+        if (scale == 3 && converter->input_size == 8 && type_hint && type_hint->getTypeId() == TypeIndex::DateTime)
         {
             /// Special case: converting milliseconds to seconds.
             /// We generally don't do such conversions during decoding, leaving it to castColumn.
@@ -1271,7 +1220,7 @@ void SchemaConverter::processPrimitiveColumn(
         else
         {
             converter->field_decimal_scale = scale;
-            allow_decimal_stats(sizeof(Int64), scale, is_time_of_day);
+            allow_decimal_stats(sizeof(Int64), scale);
             if (converter->input_size == 4)
                 /// Can't leave Decimal32 -> DateTime64 conversion to castColumn because this
                 /// particular cast is not supported for some reason.
@@ -1522,10 +1471,8 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for UUID column: {}", thriftToString(element));
 
         out_inferred_type = std::make_shared<DataTypeUUID>();
+        out_decoder.allow_stats = true; // UUIDs support min/max stats
         out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
-        /// (Parquet's sort order for `uuid` is unsigned big-endian byte comparison, while ClickHouse
-        ///  sorts `UUID` by its second half, so the min/max pair is not an interval in the column's
-        ///  own order. Leaving allow_stats == false.)
         return;
     }
     else if (logical.__isset.FLOAT16)
@@ -1583,7 +1530,9 @@ void SchemaConverter::processPrimitiveColumn(
         case parq::Type::INT96:
         {
             out_inferred_type = std::make_shared<DataTypeDateTime64>(9, "UTC");
-            out_decoder.fixed_size_converter = std::make_shared<Int96Converter>();
+            auto converter = std::make_shared<Int96Converter>();
+            converter->overflow_behavior = options.format.date_time_overflow_behavior;
+            out_decoder.fixed_size_converter = std::move(converter);
             /// (Leaving allow_stats == false because INT96 sort order is undefined.)
             return;
         }
@@ -1630,7 +1579,7 @@ void SchemaConverter::processPrimitiveColumn(
                 {
                     out_inferred_type = type_hint;
                     out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
-                    /// (Leaving allow_stats == false: see the `UUID` logical type branch above.)
+                    out_decoder.allow_stats = true;
                     return;
                 }
 
@@ -1649,7 +1598,7 @@ void SchemaConverter::processPrimitiveColumn(
             {
                 out_inferred_type = std::make_shared<DataTypeUUID>();
                 out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
-                /// (Leaving allow_stats == false: see the `UUID` logical type branch above.)
+                out_decoder.allow_stats = true;
                 return;
             }
 

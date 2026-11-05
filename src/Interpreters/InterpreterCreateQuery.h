@@ -117,6 +117,10 @@ private:
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 
+    /// The part of `getRequiredAccess` for settings that send the table's data elsewhere, checked again once
+    /// `setEngine` has resolved an engine inherited through `AS`, which `getRequiredAccess` cannot see.
+    void checkExportAccess(const ASTCreateQuery & create) const;
+
     /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.
     bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode);
     BlockIO doCreateOrReplaceTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode);
@@ -125,11 +129,8 @@ private:
     /// Converts the "*MergeTree" table engine to "Replicated*MergeTree" or "Shared*MergeTree" if the corresponding settings are enabled.
     void convertTableEngineForCloud(ASTStorage & table_engine, TableProperties & properties) const;
 #endif
-    /// Inserts data in created table if it's CREATE ... SELECT (or attaches the source partitions if it's
-    /// CREATE ... CLONE AS). `published_table_name`, when not empty, is the user-visible name the table
-    /// being filled will be published under: the table itself carries the internal `_tmp_replace_*` name of
-    /// `doCreateOrReplaceTable`, so the fill is authorized against `published_table_name` instead.
-    BlockIO fillTableIfNeeded(const ASTCreateQuery & create, const String & published_table_name = {});
+    /// Inserts data in created table if it's CREATE ... SELECT
+    BlockIO fillTableIfNeeded(const ASTCreateQuery & create, bool skip_target_insert_access_check = false);
 
     /// Whether this CREATE MATERIALIZED VIEW ... POPULATE should be populated atomically: the feature
     /// setting is enabled and the query is an immediate INSERT SELECT into a non-window, non-clone view.

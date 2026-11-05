@@ -8,12 +8,12 @@ import requests
 
 from ci.praktika.info import Info
 from ci.praktika.settings import Settings
-from ci.settings.settings import SECRET_CI_DB_CONNECTION
 
 
 class CIDBCluster:
-    # Single JSON connection secret: {"url": ..., "user": ..., "password": ...}
-    CONNECTION_SECRET = SECRET_CI_DB_CONNECTION
+    URL_SECRET = Settings.SECRET_CI_DB_URL
+    PASSWD_SECRET = Settings.SECRET_CI_DB_PASSWORD
+    USER_SECRET = Settings.SECRET_CI_DB_USER
 
     @staticmethod
     def _get_secret_or_raise(info, secret_name):
@@ -27,12 +27,16 @@ class CIDBCluster:
     def __init__(self, url=None, user=None, pwd=None):
         info = Info()
         if url and user is not None and pwd is not None:
-            self.conn_secret = None
+            self.url_secret = None
+            self.user_secret = None
+            self.pwd_secret = None
             self.url = url
             self.user = user
             self.pwd = pwd
         else:
-            self.conn_secret = self._get_secret_or_raise(info, self.CONNECTION_SECRET)
+            self.user_secret = self._get_secret_or_raise(info, self.USER_SECRET)
+            self.url_secret = self._get_secret_or_raise(info, self.URL_SECRET)
+            self.pwd_secret = self._get_secret_or_raise(info, self.PASSWD_SECRET)
             self.user = None
             self.url = None
             self.pwd = None
@@ -52,12 +56,13 @@ class CIDBCluster:
 
     def is_ready(self):
         if not self.url:
-            conn = json.loads(self.conn_secret.get_value())
-            self.url = conn.get("url")
-            self.user = conn.get("user")
-            self.pwd = conn.get("password")
+            self.url, self.user, self.pwd = (
+                self.url_secret.join_with(self.user_secret)
+                .join_with(self.pwd_secret)
+                .get_value()
+            )
             if not self.url:
-                print("ERROR: failed to retrieve url for LogCluster")
+                print("ERROR: failed to retrieve password for LogCluster")
                 return False
             if not self.pwd:
                 print("ERROR: failed to retrieve password for LogCluster")

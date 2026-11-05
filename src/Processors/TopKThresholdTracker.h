@@ -9,8 +9,8 @@ namespace DB
 
 struct TopKThresholdTracker
 {
-    explicit TopKThresholdTracker(const SortColumnDescription & sort_desc_)
-        : sort_desc(sort_desc_)
+    TopKThresholdTracker(const SortColumnDescription & sort_desc_, DataTypePtr data_type_)
+        : sort_desc(sort_desc_), data_type(std::move(data_type_))
     {
     }
 
@@ -57,6 +57,8 @@ struct TopKThresholdTracker
     int getDirection() const { return sort_desc.direction; }
     int getNullsDirection() const { return sort_desc.nulls_direction; }
     const std::shared_ptr<Collator> & getCollator() const { return sort_desc.collator; }
+    /// The type of the sort column the published values are taken from.
+    const DataTypePtr & getDataType() const { return data_type; }
 
 private:
     /// Compare two Field values respecting NULL ordering and collation
@@ -67,6 +69,7 @@ private:
     mutable SharedMutex mutex;
     std::atomic<bool> is_set{false};
     SortColumnDescription sort_desc;
+    DataTypePtr data_type;
 };
 
 using TopKThresholdTrackerPtr = std::shared_ptr<TopKThresholdTracker>;

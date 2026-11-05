@@ -1,3 +1,6 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: `eval` requires the analyzer; the rejection of the old analyzer is tested explicitly at the end of this test.
+
 -- Table function `eval`: evaluates a constant expression to a query string and executes it.
 -- See https://github.com/ClickHouse/ClickHouse/issues/101293
 

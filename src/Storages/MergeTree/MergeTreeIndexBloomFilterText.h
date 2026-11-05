@@ -70,8 +70,7 @@ public:
             ContextPtr context,
             const Block & index_sample_block,
             const BloomFilterParameters & params_,
-            TokenizerPtr token_extactor_,
-            NameSet columns_shadowing_map_subcolumns_);
+            TokenizerPtr token_extactor_);
 
     ~MergeTreeConditionBloomFilterText() override = default;
 
@@ -136,7 +135,7 @@ private:
 
     bool traverseTreeEquals(
         const String & function_name,
-        const RPNBuilderTreeNode & key_node,
+        const RPNBuilderTreeNode & wrapped_key_node,
         const DataTypePtr & value_type,
         const Field & value_field,
         RPNElement & out);
@@ -153,7 +152,6 @@ private:
 
     std::unique_ptr<ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
-    NameSet columns_shadowing_map_subcolumns;
 
     RPN rpn;
 };

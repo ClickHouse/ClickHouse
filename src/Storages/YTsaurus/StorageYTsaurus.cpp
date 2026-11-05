@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/YTsaurus/StorageYTsaurus.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -159,9 +160,15 @@ void registerStorageYTsaurus(StorageFactory & factory)
         if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_ytsaurus_table_engine])
             throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Table engine YTsaurus is experimental. "
                 "Set `allow_experimental_ytsaurus_table_engine` setting to enable it");
+        auto configuration = StorageYTsaurus::getConfiguration(
+            args.engine_args, YTsaurusSettings::createFromQuery(*args.storage_def), args.getLocalContext(), &args.table_id);
+        /// Skipped for a stored definition so that a forbidden header does not block server startup;
+        /// the client still checks it.
+        if (isFreshTableDefinition(args.mode, args.query.attach_short_syntax) && !args.getLocalContext()->isRecoveryFromStoredMetadata())
+            YTsaurusClient::checkHeaders(args.getLocalContext(), configuration.oauth_token);
         return std::make_shared<StorageYTsaurus>(
             args.table_id,
-            StorageYTsaurus::getConfiguration(args.engine_args, YTsaurusSettings::createFromQuery(*args.storage_def), args.getLocalContext(), &args.table_id),
+            std::move(configuration),
             args.columns,
             args.constraints,
             args.comment);
@@ -193,7 +200,7 @@ The YTsaurus table engine allows you to import data from a YTsaurus cluster.
     ) ENGINE = YTsaurus('http_proxy_url', 'cypress_path', 'oauth_token')
 ```
 
-<Info>
+:::info
 This is an experimental feature that may change in backwards-incompatible ways in future releases.
 Enable usage of the YTsaurus table engine
 using setting [`allow_experimental_ytsaurus_table_engine`](/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_table_engine).
@@ -201,7 +208,7 @@ using setting [`allow_experimental_ytsaurus_table_engine`](/reference/settings/s
 You can do so using:
 
 `SET allow_experimental_ytsaurus_table_engine = 1`.
-</Info>
+:::
 
 **Engine parameters**
 

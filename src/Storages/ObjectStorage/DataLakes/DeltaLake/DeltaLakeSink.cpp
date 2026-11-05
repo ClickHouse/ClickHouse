@@ -3,7 +3,6 @@
 
 #if USE_DELTA_KERNEL_RS
 #include <Common/logger_useful.h>
-#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Interpreters/Context.h>
@@ -18,12 +17,11 @@ namespace Setting
 {
     extern const SettingsNonZeroUInt64 delta_lake_insert_max_rows_in_data_file;
     extern const SettingsNonZeroUInt64 delta_lake_insert_max_bytes_in_data_file;
-    extern const SettingsBool delta_lake_accurate_write_cast;
 }
 
 namespace FailPoints
 {
-    extern const char delta_lake_write_cancel_in_commit_window[];
+    extern const char delta_lake_write_commit_pause[];
 }
 
 DeltaLakeSink::DeltaLakeSink(
@@ -40,10 +38,8 @@ DeltaLakeSink::DeltaLakeSink(
     , object_storage(object_storage_)
     , format_settings(format_settings_)
     , sample_block(sample_block_)
-    , write_header(DeltaLake::makeDeltaWriteHeader(*sample_block_, delta_transaction_->getWriteSchema()))
     , data_file_max_rows(context_->getSettingsRef()[Setting::delta_lake_insert_max_rows_in_data_file])
     , data_file_max_bytes(context_->getSettingsRef()[Setting::delta_lake_insert_max_bytes_in_data_file])
-    , accurate_write_cast(context_->getSettingsRef()[Setting::delta_lake_accurate_write_cast])
     , write_format(format)
     , write_compression_method(compression_method)
 {
@@ -90,7 +86,7 @@ DeltaLakeSink::StorageSinkPtr DeltaLakeSink::createStorageSink() const
         DeltaLake::generateWritePath(delta_transaction->getDataPath(), write_format),
         object_storage,
         format_settings,
-        write_header,
+        sample_block,
         getContext(),
         write_format,
         write_compression_method);
@@ -101,9 +97,6 @@ void DeltaLakeSink::consume(Chunk & chunk)
     if (isCancelled())
         return;
 
-    /// Cast to the Delta write schema so the data files match the Delta log (e.g. `UInt8` -> `short`).
-    Chunk write_chunk = DeltaLake::castChunkToDeltaWriteSchema(chunk, *sample_block, *write_header, accurate_write_cast);
-
     if (data_files.empty()
         || data_files.back().written_bytes >= data_file_max_bytes
         || data_files.back().written_rows >= data_file_max_rows)
@@ -112,9 +105,9 @@ void DeltaLakeSink::consume(Chunk & chunk)
     }
 
     auto & data_file = data_files.back();
-    data_file.written_bytes += write_chunk.bytes();
-    data_file.written_rows += write_chunk.getNumRows();
-    data_file.sink->consume(write_chunk);
+    data_file.written_bytes += chunk.bytes();
+    data_file.written_rows += chunk.getNumRows();
+    data_file.sink->consume(chunk);
 }
 
 void DeltaLakeSink::onFinish()
@@ -133,13 +126,10 @@ void DeltaLakeSink::onFinish()
         files.emplace_back(std::move(file_location), file_size, written_rows, Map{});
     }
 
-    /// Test-only hook for the commit window: the data files are finalized and the commit below has
-    /// not run yet. `onFinish` runs inside `IProcessor::work()`, which must only use CPU and never
-    /// wait, so the hook cancels the query the same way `KILL QUERY` does instead of blocking.
-    fiu_do_on(FailPoints::delta_lake_write_cancel_in_commit_window, {
-        if (auto query_context = CurrentThread::tryGetQueryContext())
-            query_context->killCurrentQuery();
-    });
+    /// Test-only hook: pause inside the commit window (after the data files are
+    /// finalized, before commit) so a test can inject an external cancel and
+    /// check that a late cancel does not delete committed files.
+    FailPointInjection::pauseFailPoint(FailPoints::delta_lake_write_commit_pause);
 
     try
     {

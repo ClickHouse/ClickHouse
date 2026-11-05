@@ -51,6 +51,7 @@ namespace Setting
 {
     extern const SettingsBool allow_simdjson;
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
+    extern const SettingsBool json_extract_use_cast_string_to_date_time_mode;
 }
 
 namespace ErrorCodes
@@ -257,22 +258,14 @@ public:
             /// Use combined `@` subcolumn that merges literal value and sub-object.
             /// For typed paths it returns only the literal value. For non-typed paths it returns a Dynamic
             /// column: literal if present, sub-object as JSON if not, NULL otherwise.
-            String combined_name = DataTypeObject::getCombinedSubcolumnName(path);
+            String combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + path + "`";
             auto merged_type = data_type_object.getSubcolumnType(combined_name);
+            auto merged = data_type_object.getSubcolumn(combined_name, object_column);
 
             /// Typed paths are always present in a JSON column, even when the key was missing
             /// from the inserted JSON (they get the type's default value). For non-typed paths
             /// the combined subcolumn returns a Dynamic column where NULL means absent.
-            /// When type_json_skip_null_typed_paths is enabled, NULL typed paths are treated as absent.
             bool is_typed_path = data_type_object.getTypedPaths().contains(path);
-            bool treat_typed_as_always_present = is_typed_path && !format_settings.json.type_json_skip_null_typed_paths;
-
-            /// When skip_null_typed_paths is enabled for a non-typed parent path (e.g. 'a' when 'a.b' is typed),
-            /// use extractCombinedSubcolumn which propagates the setting into sub-object emptiness checks.
-            /// Otherwise the sub-object with all-NULL typed descendants would be considered non-empty.
-            auto merged = (format_settings.json.type_json_skip_null_typed_paths && !is_typed_path)
-                ? data_type_object.extractCombinedSubcolumn(path, object_column, true)
-                : data_type_object.getSubcolumn(combined_name, object_column);
 
             /// JSONHas must be UInt8 {0,1} from path presence. The generic `else` below would
             /// cast the extracted value to UInt8 and silently return the value itself.
@@ -280,7 +273,7 @@ public:
 
             if constexpr (is_has)
             {
-                if (treat_typed_as_always_present)
+                if (is_typed_path)
                     return DataTypeUInt8().createColumnConst(input_rows_count, 1u)->convertToFullColumnIfConst();
 
                 auto result = ColumnVector<UInt8>::create(input_rows_count);
@@ -311,7 +304,7 @@ public:
                 auto serialization = merged_type->getDefaultSerialization();
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    if (!treat_typed_as_always_present && merged->isNullAt(i))
+                    if (!is_typed_path && merged->isNullAt(i))
                     {
                         raw_col->insertDefault();
                     }
@@ -706,7 +699,9 @@ public:
     {
         /// Extracting a string JSON value into a DateTime/DateTime64 column is a string-to-type
         /// cast, so we honour `cast_string_to_date_time_mode` (rather than `date_time_input_format`).
-        format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
+        /// Before 26.8 it followed `date_time_input_format`, which `compatibility` restores.
+        if (context->getSettingsRef()[Setting::json_extract_use_cast_string_to_date_time_mode])
+            format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
     }
 
     bool isVariadic() const override { return true; }
@@ -1171,13 +1166,22 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings & format_settings, String &)
+    static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings & format_settings, String & error)
     {
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
         auto & chars = col_str.getChars();
+        size_t prev_chars_size = chars.size();
+        bool written = false;
         {
             WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
-            jsonElementToString<JSONParser>(element, buf, format_settings);
+            written = jsonElementToString<JSONParser>(element, buf, format_settings, format_settings.json.max_depth);
+        }
+        /// A value nested deeper than the limit cannot be rendered whole: a failure to extract it.
+        if (!written)
+        {
+            chars.resize_assume_reserved(prev_chars_size);
+            error = fmt::format("Maximum JSON depth ({}) exceeded. Consider raising input_format_json_max_depth setting.", format_settings.json.max_depth);
+            return false;
         }
         col_str.getOffsets().push_back(chars.size());
         return true;
@@ -1207,7 +1211,11 @@ public:
         ColumnArray & col_res = assert_cast<ColumnArray &>(dest);
 
         for (auto value : array)
-            JSONExtractRawImpl<JSONParser>::insertResultToColumn(col_res.getData(), value, {}, format_settings, error);
+        {
+            /// The result keeps one element per array element, also where one cannot be rendered.
+            if (!JSONExtractRawImpl<JSONParser>::insertResultToColumn(col_res.getData(), value, {}, format_settings, error))
+                col_res.getData().insertDefault();
+        }
 
         col_res.getOffsets().push_back(col_res.getOffsets().back() + array.size());
         return true;
@@ -1245,7 +1253,9 @@ public:
         for (const auto & [key, value] : object)
         {
             col_key.insertData(key.data(), key.size());
-            JSONExtractRawImpl<JSONParser>::insertResultToColumn(col_value, value, {}, format_settings, error);
+            /// Keep one value per key even where the value cannot be rendered.
+            if (!JSONExtractRawImpl<JSONParser>::insertResultToColumn(col_value, value, {}, format_settings, error))
+                col_value.insertDefault();
         }
 
         col_arr.getOffsets().push_back(col_arr.getOffsets().back() + object.size());
@@ -1308,7 +1318,7 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0;
             )",
             R"(
 1
-1
+0
             )"
         }
         };
@@ -1336,7 +1346,7 @@ SELECT isValidJSON('not JSON') = 0;
             )",
             R"(
 1
-1
+0
             )"
         },
         {
@@ -1355,7 +1365,9 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 3);
 1
 1
 1
+1
 0
+
             )"
         }
         };
@@ -1621,9 +1633,9 @@ Parses JSON and extracts a value with given ClickHouse data type.
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, Array(Float64))') AS res;
             )",
             R"(
-┌─res──────────────────────┐
-│ ('hello',[-100,200,300]) │
-└──────────────────────────┘
+┌─res──────────────────────────────┐
+│ ('hello',[-100,200,300])         │
+└──────────────────────────────────┘
             )"
         }
         };
@@ -1682,9 +1694,9 @@ Returns a part of JSON as unparsed string.
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') AS res;
             )",
             R"(
-┌─res────────────┐
-│ [-100,200,300] │
-└────────────────┘
+┌─res──────────────┐
+│ [-100,200.0,300] │
+└──────────────────┘
             )"
         }
         };
@@ -1712,9 +1724,9 @@ Returns an array with elements of JSON array, each represented as unparsed strin
 SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') AS res;
             )",
             R"(
-┌─res──────────────────────┐
-│ ['-100','200','"hello"'] │
-└──────────────────────────┘
+┌─res──────────────────────────┐
+│ ['-100','200.0','"hello"']   │
+└──────────────────────────────┘
             )"
         }
         };
@@ -1771,9 +1783,9 @@ Parses a JSON string and extracts the keys.
 SELECT JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}') AS res;
             )",
             R"(
-┌─res───────┐
-│ ['a','b'] │
-└───────────┘
+┌─res─────────┐
+│ ['a','b']   │
+└─────────────┘
             )"
         }
         };

@@ -63,6 +63,9 @@ std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in
 /// instead of returning a null pointer that the library dereferences.
 orc::MemoryPool & getORCMemoryPool();
 
+/// Creates an ORC file reader; throws INCORRECT_DATA if the root type of the file is not a struct.
+std::unique_ptr<orc::Reader> createORCReader(std::unique_ptr<orc::InputStream> stream, const orc::ReaderOptions & options);
+
 std::unique_ptr<orc::SearchArgument> buildORCSearchArgument(
     const KeyCondition & key_condition, const Block & header, const orc::Type & schema, const FormatSettings & format_settings);
 
@@ -166,11 +169,7 @@ public:
         BlockMissingValues * block_missing_values = nullptr);
 
     void orcColumnsToCHChunk(
-        Chunk & res,
-        NameToColumnPtr & name_to_column_ptr,
-        const Names & orc_field_names,
-        size_t num_rows,
-        BlockMissingValues * block_missing_values = nullptr);
+        Chunk & res, NameToColumnPtr & name_to_column_ptr, size_t num_rows, BlockMissingValues * block_missing_values = nullptr);
 
 private:
     ColumnWithTypeAndName readColumnFromORCColumn(

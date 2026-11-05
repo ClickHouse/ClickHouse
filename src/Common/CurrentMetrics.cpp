@@ -55,7 +55,6 @@
     M(TemporaryFilesForSort, "Number of temporary files created for external sorting") \
     M(TemporaryFilesForAggregation, "Number of temporary files created for external aggregation") \
     M(TemporaryFilesForJoin, "Number of temporary files created for JOIN") \
-    M(TemporaryFilesForDistinct, "Number of temporary files created for external DISTINCT") \
     M(TemporaryFilesForMerge, "Number of temporary files for vertical merge") \
     M(TemporaryFilesUnknown, "Number of temporary files created without known purpose") \
     M(Read, "Number of read (read, pread, io_getevents, etc.) syscalls in fly") \
@@ -219,6 +218,9 @@
     M(DistributedIndexAnalysisThreads, "Number of threads in the thread pool for distributed index analysis.") \
     M(DistributedIndexAnalysisThreadsActive, "Number of threads in the thread pool for distributed index analysis running a task.") \
     M(DistributedIndexAnalysisThreadsScheduled, "Number of queued or active jobs in the distributed index analysis thread pool.") \
+    M(AIRequestThreads, "Number of threads in the AI request thread pool.") \
+    M(AIRequestThreadsActive, "Number of threads in the AI request thread pool running a task.") \
+    M(AIRequestThreadsScheduled, "Number of queued or active jobs in the AI request thread pool.") \
     M(ObjectStorageQueueRegisteredServers, "Number of registered servers in StorageS3(Azure)Queue")\
     M(IcebergCatalogThreads, "Number of threads in the IcebergCatalog thread pool.") \
     M(IcebergCatalogThreadsActive, "Number of threads in the IcebergCatalog thread pool running a task.") \
@@ -370,6 +372,8 @@
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(IcebergMetadataFilesCacheBytes, "Size of the Iceberg metadata cache in bytes") \
     M(IcebergMetadataFilesCacheFiles, "Number of cached files in the Iceberg metadata cache") \
+    M(GlueCatalogSchemaCacheBytes, "Size of the cache of current Iceberg schema field types in Glue catalogs in bytes") \
+    M(GlueCatalogSchemaCacheEntries, "Number of entries in the cache of current Iceberg schema field types in Glue catalogs") \
     M(PaimonMetadataFilesCacheBytes, "Size of the Paimon metadata cache in bytes") \
     M(PaimonMetadataFilesCacheFiles, "Number of cached files in the Paimon metadata cache") \
     M(ParquetMetadataCacheBytes, "Size of the Parquet metadata cache in bytes") \
@@ -571,7 +575,6 @@
     M(ExchangeServerThreads, "Number of threads in the distributed exchange server handshake thread pool.") \
     M(ExchangeServerThreadsActive, "Number of threads in the distributed exchange server handshake thread pool running a task.") \
     M(ExchangeServerThreadsScheduled, "Number of queued or active jobs in the distributed exchange server handshake thread pool.") \
-    M(StreamingExchangeSinksWithFullSendQueue, "Number of streaming exchange sinks that take no chunks because their queue of packets waiting for the socket is full.") \
     M(ReadonlyDisks, "Number of disks that were marked as readonly during disk check.") \
     M(BrokenDisks, "Number of disks disks that were marked as broken during disk check.") \
     M(TaskTrackerThreads, "Number of threads used by the distributed query remote task tracker.") \

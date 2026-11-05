@@ -42,8 +42,7 @@ struct FixedHashTableCell
         const VoidKey getKey() const { return {}; } /// NOLINT
         VoidMapped getMapped() const { return {}; }
         const value_type & getValue() const { return key; }
-        /// The cell pointer is unused (the key is the cell index); const so that const iteration works.
-        void update(Key && key_, const FixedHashTableCell *) { key = key_; }
+        void update(Key && key_, FixedHashTableCell *) { key = key_; }
     };
 };
 

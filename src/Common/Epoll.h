@@ -38,10 +38,6 @@ enum EpollFlags : uint32_t
 
 #include <atomic>
 #include <string>
-#if defined(OS_DARWIN)
-#include <mutex>
-#include <unordered_set>
-#endif
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
 
@@ -87,13 +83,6 @@ public:
 private:
     int epoll_fd;
     std::atomic<int> events_count;
-#if defined(OS_DARWIN)
-    /// kqueue's EV_ADD re-arms an existing registration instead of failing, so unlike
-    /// epoll_ctl(EPOLL_CTL_ADD) it cannot report EEXIST on its own. Track the registered descriptors
-    /// to reject a duplicate add like Linux does, keeping events_count consistent with reality.
-    mutable std::mutex registered_fds_mutex;
-    std::unordered_set<int> registered_fds;
-#endif
     const std::string fd_description = "epoll";
 };
 

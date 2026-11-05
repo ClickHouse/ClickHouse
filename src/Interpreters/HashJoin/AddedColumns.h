@@ -3,13 +3,8 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
 #include <Core/Defines.h>
-#include <DataTypes/IDataType.h>
 #include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/HashJoin/gatherJoinOutputColumns.h>
-#include <Interpreters/RowDataStore.h>
 #include <Interpreters/TableJoin.h>
-
-#include <span>
 
 namespace DB
 {
@@ -68,32 +63,28 @@ struct LazyOutput
     /// ASOF matches are inline encoded RowRef words too (the leaf of the sorted lookup vector).
     PaddedPODArray<UInt64> row_refs;
     size_t row_count = 0;   /// Total number of rows in all refs and ref lists
-    size_t hash_table_matches = 0; /// Total number of hash table matches
 
     /// Resolves RowRef::block_no at emit time; points into the join's StoredColumnsIndex,
-    /// which is immutable once the build phase is finished. Kept beside the per-column emit table
-    /// below for the two consumers that need a whole block rather than one resolved column:
-    /// `byteSizeAt` accounting and `buildJoinGetOutput`'s nullable dispatch.
+    /// which is immutable once the build phase is finished. Used by the cold paths
+    /// (joinGet / ColumnsWithRowNumbers / ASOF). These keep the raw `StoredBlock *` rather than
+    /// the hot-path emit table below because they need the whole block, not just a resolved column:
+    /// per-row `byteSizeAt` accounting (`buildOutputFromBlocksLimitAndOffset`), nullable-column
+    /// dispatch (`buildJoinGetOutput`), and feeding `ColumnsWithRowNumbers` (`buildOutputFromBlocks`).
     const StoredBlock * const * stored_columns = nullptr;
 
-    /// Per-block row store base pointers (block_no -> RowDataStore*), from StoredColumnsIndex::rowStoresData().
-    /// Shared by all row-store columns of a block; a specific column is a field_offset/field_size slice.
-    const RowDataStore * const * block_row_stores = nullptr;
+    /// Per output column (parallel to `right_indexes`): the StoredColumnsIndex emit table base pointers,
+    /// i.e. the resolved source `const IColumn *` per block and its `ColumnReplicated *` counterpart.
+    /// Filled in the AddedColumns ctor for the hot `fillFromRowRefs` path; empty for joinGet / ASOF.
+    std::vector<const IColumn * const *> emit_block_columns;
+    std::vector<const ColumnReplicated * const *> emit_block_replicated;
 
-    /// Per output column, the source descriptor `gatherColumn` reads. Resolved once per probe block,
-    /// as it is a property of the join rather than of an output chunk. Empty for joinGet.
-    std::vector<GatherColumn> emit_gather;
-
+    std::vector<size_t> right_indexes;
     NamesAndTypes type_name;
 
     bool join_data_sorted = false;
     bool output_by_row_list = false;
     size_t output_by_row_list_threshold = 0;
     size_t join_data_avg_perkey_rows = 0;
-
-    ColumnAccessIndexes output_access_indexes;
-    bool has_row_store = false;
-    bool has_columns = false;
 
     const PaddedPODArray<UInt64> & getRowRefs() const { return row_refs; }
     size_t getRowCount() const { return row_count; }
@@ -105,9 +96,7 @@ struct LazyOutput
     {
         chassert(ref_word != 0);
         row_refs.emplace_back(ref_word);
-        const auto rows = refWordRows(ref_word);
-        row_count += rows;
-        hash_table_matches += rows;
+        row_count += refWordRows(ref_word);
     }
 
     void addDefault()
@@ -129,49 +118,23 @@ struct LazyOutput
 
     void buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
-    /// The columnar output columns read the recorded words in whatever shape they have.
-    void emitColumnarOutputs(MutableColumns & columns, const RefWordSelection & selection) const;
+    /** Build output from the blocks that extract from the encoded refs, to avoid block cache miss which may cause performance slow down.
+     *  And This problem would happen it we directly build output from the encoded refs.
+     */
+    template<bool from_row_list>
+    void buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
-    /// The row store is not addressed by ref words: it needs every ref resolved to a row pointer.
-    /// This resolves them once, into one pointer array that every row-store column reads.
-    void fillRowStoreOutputsByPointers(MutableColumns & columns, const RefWordSelection & selection) const;
+    void buildOutputFromRowRefLists(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
-    /// Each row-store column resolves the refs for itself, so no per-output-row array is kept. The
-    /// choice for keys with many rows, where the output outgrows both inputs.
-    void fillRowStoreOutputsByRefLists(
-        size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
-
-    template<bool from_row_store, bool from_columns>
     [[nodiscard]] size_t buildOutputFromBlocksLimitAndOffset(
         MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end,
         const PaddedPODArray<UInt64> & left_sizes, const IColumn::Offsets & left_offsets,
         size_t rows_offset, size_t rows_limit, size_t bytes_limit) const;
 
 private:
-    template<typename F>
-    void dispatchOutputs(F && f) const;
 };
 
-/// What one emit's output columns read: the access index of each saved-block column in `positions`
-/// and, for the columnar ones, the gather source, resolved once per probe. Only the requested
-/// positions are built, so `StorageJoin` queries selecting different right-column subsets each get
-/// their own columns built rather than reusing another query's table.
-struct EmitPlan
-{
-    ColumnAccessIndexes access_indexes;
-    /// Parallel to `access_indexes`; empty for a row-store column, and for every column when not resolved.
-    std::vector<GatherColumn> gather;
-    bool has_row_store = false;
-    bool has_columns = false;
-};
-
-/// `type_name` is parallel to `positions`. `with_gather` is false for joinGet, whose output type may
-/// wrap the stored one in `Nullable` and which emits row by row through `buildJoinGetOutput`.
-EmitPlan
-planJoinEmit(const HashJoin::RightTableData & data, std::span<const size_t> positions, const NamesAndTypes & type_name, bool with_gather);
-
-/// Records the probe's matches as encoded ref words. Every strictness records rather than emits:
-/// the output columns are built later, by the emit kernels, from the words this collects.
+template <bool lazy>
 class AddedColumns
 {
 public:
@@ -199,20 +162,20 @@ public:
         if (is_asof_join)
             ++num_columns_to_add;
 
-        record_row_refs = num_columns_to_add > 0 || record_refs_for_stats;
-        lazy_output.reserve(rows_to_add);
+        if constexpr (lazy)
+        {
+            record_row_refs = num_columns_to_add > 0 || record_refs_for_stats;
+            lazy_output.reserve(rows_to_add);
+        }
 
         columns.reserve(num_columns_to_add);
         lazy_output.type_name.reserve(num_columns_to_add);
-
-        std::vector<size_t> right_indexes;
-        right_indexes.reserve(num_columns_to_add);
+        lazy_output.right_indexes.reserve(num_columns_to_add);
 
         lazy_output.output_by_row_list_threshold = join.getTableJoin().outputByRowListPerkeyRowsThreshold();
         lazy_output.join_data_sorted = join.getJoinedData()->sorted;
         lazy_output.join_data_avg_perkey_rows = join.getJoinedData()->avgPerKeyRows();
         lazy_output.stored_columns = join.getJoinedData()->stored_columns_index->blocksData();
-        lazy_output.block_row_stores = join.getJoinedData()->stored_columns_index->rowStoresData();
 
         for (const auto & src_column : block_with_columns_to_add)
         {
@@ -233,24 +196,34 @@ public:
         }
 
         for (auto & tn : lazy_output.type_name)
-            right_indexes.push_back(saved_block_sample.getPositionByName(tn.name));
+            lazy_output.right_indexes.push_back(saved_block_sample.getPositionByName(tn.name));
 
-        nullable_column_ptrs.resize(right_indexes.size(), nullptr);
-        for (size_t j = 0; j < right_indexes.size(); ++j)
+        nullable_column_ptrs.resize(lazy_output.right_indexes.size(), nullptr);
+        for (size_t j = 0; j < lazy_output.right_indexes.size(); ++j)
         {
             /** If it's joinGetOrNull, we will have nullable columns in result block
               * even if right column is not nullable in storage (saved_block_sample).
               */
-            const auto & saved_column = saved_block_sample.getByPosition(right_indexes[j]).column;
+            const auto & saved_column = saved_block_sample.getByPosition(lazy_output.right_indexes[j]).column;
             if (columns[j]->isNullable() && !saved_column->isNullable())
                 nullable_column_ptrs[j] = typeid_cast<ColumnNullable *>(columns[j].get());
         }
 
-        EmitPlan plan = planJoinEmit(*join.getJoinedData(), right_indexes, lazy_output.type_name, !is_join_get);
-        lazy_output.output_access_indexes = std::move(plan.access_indexes);
-        lazy_output.emit_gather = std::move(plan.gather);
-        lazy_output.has_row_store = plan.has_row_store;
-        lazy_output.has_columns = plan.has_columns;
+        /// Resolve the StoredColumnsIndex emit table for the hot `fillFromRowRefs` path: cache, per output
+        /// column, the per-block base pointers it hands to `fillFromRowRefs`. Only normal joins reach it
+        /// (joinGet and ASOF use the cold per-block paths). `resolveEmitColumns` builds exactly the
+        /// requested positions (this query's `right_indexes`) under the index mutex, so StorageJoin queries
+        /// selecting different right-column subsets each get their columns built rather than reusing a
+        /// table scoped to some other query's columns.
+        if constexpr (lazy)
+        {
+            if (!is_join_get && !is_asof_join)
+                join.getJoinedData()->stored_columns_index->resolveEmitColumns(
+                    saved_block_sample.columns(),
+                    lazy_output.right_indexes,
+                    lazy_output.emit_block_columns,
+                    lazy_output.emit_block_replicated);
+        }
     }
 
     size_t size() const { return columns.size(); }
@@ -262,18 +235,26 @@ public:
 
     /// Encoded RowRef word (inline single ref, including an ASOF match) or a RowRefList
     /// list word (pointer + count).
-    void appendFromBlock(UInt64 ref_word);
+    void appendFromBlock(UInt64 ref_word, bool has_default);
 
     void appendDefaultRow()
     {
-        if (record_row_refs)
-            lazy_output.addDefault();
+        if constexpr (!lazy)
+        {
+            ++lazy_defaults_count;
+        }
+        else
+        {
+            if (record_row_refs)
+                lazy_output.addDefault();
+        }
     }
+
+    void applyLazyDefaults();
 
     const IColumn & leftAsofKey() const { return *left_asof_key; }
 
-    /// `PreSelectedRows` returns false. It keeps one ref per right row for the additional filter.
-    static constexpr bool appendsWholeKey() { return true; }
+    static constexpr bool isLazy() { return lazy; }
 
     Block left_block;
     std::vector<JoinOnKeyColumns> join_on_keys;
@@ -302,14 +283,35 @@ public:
 
     size_t matched_left_rows = 0;
 
+    void reserve(bool need_replicate)
+    {
+        /// If lazy, we will reserve right after actual insertion into columns, because at that moment we will know the exact number of rows to add.
+        if constexpr (lazy)
+            return;
+
+        if (!max_joined_block_rows)
+            return;
+
+        /// Do not allow big allocations when user set max_joined_block_rows to huge value
+        size_t reserve_size = std::min<size_t>(max_joined_block_rows, rows_to_add * 2);
+
+        if (need_replicate)
+            /// Reserve 10% more space for columns, because some rows can be repeated
+            reserve_size = static_cast<size_t>(1.1 * static_cast<double>(reserve_size));
+
+        for (auto & column : columns)
+            column->reserve(reserve_size);
+    }
+
 private:
 
-    void checkColumns(const StoredBlock & to_check)
+    void checkColumns(const Columns & to_check)
     {
-        auto check = [&](size_t dst_idx, const IColumn * column_from_block)
+        for (size_t j = 0; j < lazy_output.right_indexes.size(); ++j)
         {
-            const auto * dest_column = columns[dst_idx].get();
-            if (auto * nullable_col = nullable_column_ptrs[dst_idx])
+            const auto * column_from_block = to_check.at(lazy_output.right_indexes[j]).get();
+            const auto * dest_column = columns[j].get();
+            if (auto * nullable_col = nullable_column_ptrs[j])
             {
                 if (!is_join_get)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -333,34 +335,22 @@ private:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns {} and {} have different types {} and {}",
                                 dest_column->getName(), column_from_block->getName(),
                                 demangle(typeid(*dest_column).name()), demangle(typeid(*column_from_block).name()));
-        };
-
-        for (size_t dst_idx = 0; dst_idx < lazy_output.output_access_indexes.size(); ++dst_idx)
-        {
-            const auto & output_access_index = lazy_output.output_access_indexes[dst_idx];
-            if (output_access_index.type == ColumnAccessIndex::Type::RowStore)
-            {
-                if (to_check.hasRowStore())
-                {
-                    auto sample_col = to_check.row_store->getFieldLayout(output_access_index.index).type->createColumn();
-                    check(dst_idx, sample_col.get());
-                }
-            }
-            else
-                check(dst_idx, to_check.columns.at(output_access_index.index).get());
         }
     }
 
     bool is_join_get;
     std::vector<ColumnNullable *> nullable_column_ptrs;
+    size_t lazy_defaults_count = 0;
 
     /// for ASOF
     const IColumn * left_asof_key = nullptr;
 
     void addColumn(const ColumnWithTypeAndName & src_column)
     {
-        /// Not reserved here: the emit kernels reserve when they know the exact row count.
         columns.push_back(src_column.column->cloneEmpty());
+        /// If lazy, we will reserve right after actual insertion into columns, because at that moment we will know the exact number of rows to add.
+        if constexpr (!lazy)
+            columns.back()->reserve(rows_to_add);
         lazy_output.type_name.emplace_back(src_column.name, src_column.type);
     }
 };

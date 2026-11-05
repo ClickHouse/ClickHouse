@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Get started",
+      "group": "البدء",
       "pages": [
         "ar/chdb/index",
         "ar/chdb/getting-started"
       ]
     },
     {
-      "group": "Language integrations",
+      "group": "تكاملات اللغات",
       "pages": [
         "ar/chdb/install/index",
         "ar/chdb/install/python",
@@ -36,7 +36,7 @@
       ]
     },
     {
-      "group": "Configuration",
+      "group": "التهيئة",
       "pages": [
         "ar/chdb/configuration/index",
         "ar/chdb/configuration/execution-engine",
@@ -45,7 +45,7 @@
       ]
     },
     {
-      "group": "Debugging",
+      "group": "تصحيح الأخطاء",
       "pages": [
         "ar/chdb/debugging/index",
         "ar/chdb/debugging/explain",
@@ -54,7 +54,7 @@
       ]
     },
     {
-      "group": "Developer guides",
+      "group": "أدلة المطورين",
       "pages": [
         "ar/chdb/guides/index",
         "ar/chdb/guides/jupysql",
@@ -73,7 +73,7 @@
       ]
     },
     {
-      "group": "Technical reference",
+      "group": "المرجع التقني",
       "pages": [
         "ar/chdb/reference/index",
         "ar/chdb/reference/data-formats",

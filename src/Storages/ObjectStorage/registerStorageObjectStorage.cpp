@@ -52,13 +52,15 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     const auto context = args.getLocalContext();
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
 
-    // Format settings come from the query context, so the session's settings apply, plus the SETTINGS clause.
+    // Use format settings from global server context + settings from
+    // the SETTINGS clause of the create query. Settings from current
+    // session and user are ignored.
     std::optional<FormatSettings> format_settings;
     if (args.storage_def->settings)
     {
         Settings settings = context->getSettingsCopy();
 
-        // Applying the changes validates the values, not the names.
+        // Apply changes from SETTINGS clause, with validation.
         settings.applyChanges(args.storage_def->settings->changes);
 
         format_settings = getFormatSettings(context, settings);
@@ -131,7 +133,6 @@ static void registerStorageAzure(StorageFactory & factory)
 {
     factory.registerStorage(AzureDefinition::storage_engine_name, [](const StorageFactory::Arguments & args)
     {
-        checkStorageSettingNames(args);
         auto configuration = std::make_shared<StorageAzureConfiguration>();
         return createStorageObjectStorage(args, configuration);
     },
@@ -165,7 +166,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 - `account_name` - if storage_account_url is used, then account name can be specified here
 - `account_key` - if storage_account_url is used, then account key can be specified here
 - `format` — The [format](/reference/formats) of the file.
-- `compression` — Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. By default, it will autodetect compression by file extension. (same as setting to `auto`). For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).
+- `compression` — Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension. (same as setting to `auto`).
 - `partition_strategy` – Options: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Without an explicit strategy, a path with `{_partition_id}` uses `wildcard`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 - `partition_columns_in_data_file` - Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
 - `extra_credentials` - Use `client_id` and `tenant_id` for authentication. If extra_credentials are provided, they are given priority over `account_name` and `account_key`.
@@ -323,7 +324,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 - `NOSIGN` - If this keyword is provided in place of credentials, all the requests will not be signed.
 - `format` — The [format](/reference/formats#formats-overview) of the file.
 - `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file. For more information see [Using S3 for Data Storage](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
-- `compression` — Compression type. Supported values: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. Parameter is optional. By default, it will auto-detect compression by file extension. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).
+- `compression` — Compression type. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Parameter is optional. By default, it will auto-detect compression by file extension.
 - `partition_strategy` – Options: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Without an explicit strategy, a path with `{_partition_id}` uses `wildcard`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `hive` when `file_like_engine_default_partition_strategy` is `hive`; otherwise it uses no partition strategy.
 - `partition_columns_in_data_file` - Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
 - `storage_class_name` - Options: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Only S3 storage classes that allow immediate retrieval are supported (archival classes such as `GLACIER` and `DEEP_ARCHIVE` are not). Allows to specify [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
@@ -422,7 +423,7 @@ This example uses the [docker compose recipe](https://github.com/ClickHouse/exam
 
 Notice that the S3 endpoint in the `ENGINE` configuration uses the parameter token `{_partition_id}` as part of the S3 object (filename), and that the SELECT queries select against those resulting object names (e.g., `test_3.csv`).
 
-<Note>
+:::note
 As shown in the example, querying from S3 tables that are partitioned is
 not directly supported at this time, but can be accomplished by querying the individual partitions
 using the S3 table function.
@@ -433,7 +434,7 @@ ClickHouse system (for example, moving from on-prem systems to ClickHouse
 Cloud).  Because ClickHouse datasets are often very large, and network
 reliability is sometimes imperfect it makes sense to transfer datasets
 in subsets, hence partitioned writes.
-</Note>
+:::
 
 #### Create the table {#create-the-table}
 ```sql
@@ -460,9 +461,9 @@ INSERT INTO p VALUES (1, 2, 3), (3, 2, 1), (78, 43, 45)
 
 #### Select from partition 3 {#select-from-partition-3}
 
-<Tip>
+:::tip
 This query uses the s3 table function
-</Tip>
+:::
 
 ```sql
 SELECT *
@@ -531,9 +532,9 @@ For more information about virtual columns see [here](/reference/engines/table-e
   - Indexes.
   - [Zero-copy](/concepts/features/configuration/server-config/storing-data#zero-copy) replication is possible, but not supported.
 
-<Note title="Zero-copy replication is not ready for production">
+:::note Zero-copy replication is not ready for production
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
-</Note>
+:::
 
 ## Wildcards in path {#wildcards-in-path}
 
@@ -547,9 +548,9 @@ Zero-copy replication is disabled by default in ClickHouse version 22.8 and high
 
 Constructions with `{}` are similar to the [remote](/reference/functions/table-functions/remote) table function.
 
-<Note>
+:::note
 If the listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
-</Note>
+:::
 
 **Example with wildcards 1**
 
@@ -690,13 +691,13 @@ FROM s3(
 );
 ```
 
-<Note>
+:::note
 ClickHouse supports three archive formats:
 ZIP
 TAR
 7Z
 While ZIP and TAR archives can be accessed from any supported storage location, 7Z archives can only be read from the local filesystem where ClickHouse is installed.
-</Note>
+:::
 
 ## Accessing public buckets {#accessing-public-buckets}
 
@@ -755,7 +756,6 @@ ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(r
 
     factory.registerStorage(name, [=](const StorageFactory::Arguments & args)
     {
-        checkStorageSettingNames(args);
         auto configuration = std::make_shared<StorageS3Configuration>();
         return createStorageObjectStorage(args, configuration);
     },
@@ -799,7 +799,6 @@ static void registerStorageHDFS(StorageFactory & factory)
 {
     factory.registerStorage(HDFSDefinition::storage_engine_name, [=](const StorageFactory::Arguments & args)
     {
-        checkStorageSettingNames(args);
         auto configuration = std::make_shared<StorageHDFSConfiguration>();
         return createStorageObjectStorage(args, configuration);
     },
@@ -878,9 +877,9 @@ SELECT * FROM hdfs_engine_table LIMIT 2
   - Indexes.
   - [Zero-copy](/concepts/features/configuration/server-config/storing-data#zero-copy) replication is possible, but not recommended.
 
-<Note title="Zero-copy replication is not ready for production">
+:::note Zero-copy replication is not ready for production
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
-</Note>
+:::
 
 **Globs in path**
 
@@ -924,9 +923,9 @@ Table consists of all the files in both directories (all files should satisfy fo
 CREATE TABLE table_with_asterisk (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV')
 ```
 
-<Note>
+:::note
 If the listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
-</Note>
+:::
 
 **Example**
 
@@ -1148,12 +1147,12 @@ void registerStorageIceberg(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-<Warning>
+:::warning
 Use the [Iceberg Table Function](/reference/functions/table-functions/iceberg) for direct access to an existing Iceberg table. Use the Iceberg Table Engine when you need a persistent ClickHouse table or want to create a new standalone Iceberg table with an explicit schema on a writable backend.
 
 The Iceberg Table Engine is available but may have limitations. ClickHouse wasn't originally designed to support tables with externally changing schemas, which can affect the functionality of the Iceberg Table Engine. As a result, some features that work with regular tables may be unavailable or may not function correctly, especially when using the old analyzer.
 
-</Warning>
+:::
 
 This engine provides a *data* integration with Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables.
 
@@ -1286,7 +1285,7 @@ This produces a new snapshot (a `replace` operation) that references the same da
 ### Requirements and behavior {#manifest-compaction-behavior}
 
 - The feature is experimental and gated behind the `allow_experimental_iceberg_compaction` setting. The statement throws an exception if the setting is not enabled.
-- Compaction is only attempted when the number of manifest files in the current snapshot's manifest list exceeds the threshold given by the `iceberg_manifest_min_count_to_compact` setting (default `100`, the documented default of the Iceberg table property `commit.manifest.min-count-to-merge`). If the current count is less than or equal to the threshold, compaction is skipped and no new snapshot is created. Set the threshold lower to compact more eagerly.
+- Compaction is only attempted when the number of manifest files in the current snapshot's manifest list exceeds the threshold given by the `iceberg_manifest_min_count_to_compact` setting (default `30`). If the current count is less than or equal to the threshold, compaction is skipped and no new snapshot is created. Set the threshold lower to compact more eagerly.
 - `OPTIMIZE TABLE ... MANIFEST` is supported only for Iceberg tables. Running it against any other table engine throws an exception.
 - `OPTIMIZE TABLE ... MANIFEST` is supported only for Iceberg format-version 2 tables. Running it against a format-version 1 table throws an exception, and so does running it against a format-version 3 table, because the v3 row-lineage `first_row_id` metadata is not yet round-tripped through the manifest rewrite.
 - `OPTIMIZE TABLE ... MANIFEST` is not supported for encrypted Iceberg tables whose data files contain per-file `key_metadata`. Preserving this encryption metadata across a manifest rewrite is not yet implemented, so the statement throws a `NOT_IMPLEMENTED` exception.
@@ -1297,10 +1296,9 @@ ClickHouse supports reading Iceberg tables that use the following deletion metho
 
 - [Position deletes](https://iceberg.apache.org/spec/#position-delete-files)
 - [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files) (supported from version 25.8+)
-- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
 
-Deletion vector support is read-only. ClickHouse does not write, update, or compact deletion vectors.
-`ALTER TABLE ... DELETE` and `ALTER TABLE ... UPDATE` are not supported for Iceberg format-version 3 tables.
+The following deletion method is **not supported**:
+- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
 
 ### Basic usage {#basic-usage}
 ```sql
@@ -1834,14 +1832,14 @@ CREATE TABLE paimon_cached
 ENGINE = PaimonS3(paimon_conf, filename = 'paimon_all_types');
 ```
 
-<Note title="`use_paimon_metadata_files_cache` lifecycle">
+:::note `use_paimon_metadata_files_cache` lifecycle
 How `use_paimon_metadata_files_cache` is applied depends on how the Paimon table is accessed:
 
 - **Table functions** (e.g. `SELECT ... FROM paimonS3(...)`): the cache decision is evaluated per query, so you can pass `SETTINGS use_paimon_metadata_files_cache = 1` directly in the `SELECT`.
 - **Persistent table engines** (`PaimonS3`, `PaimonAzure`, `PaimonHDFS`, `PaimonLocal`, and the `Paimon` alias): the cache decision is latched once when the table's metadata is initialized and is stored in immutable persistent components; the metadata update path deliberately does not re-read the setting. Therefore, passing `SETTINGS use_paimon_metadata_files_cache = 1` in a `SELECT` against an already-initialized persistent table has no effect — the previously latched decision keeps being used. To change it, set `use_paimon_metadata_files_cache` before the table's metadata is initialized, or `DROP` and re-`CREATE` the table with the desired value.
 
 The server-level cache capacity (`paimon_metadata_files_cache_size`) is *not* latched: it is a runtime setting that can be changed via `SYSTEM RELOAD CONFIG` and takes effect immediately even for already-initialized tables.
-</Note>
+:::
 
 ## Incremental read examples {#incremental-read-examples}
 
@@ -1940,9 +1938,9 @@ DROP TABLE IF EXISTS paimon_mv_dest SYNC;
 DROP TABLE IF EXISTS paimon_mv_source SYNC;
 ```
 
-<Note>
+:::note
 Stop the MV before dropping it to prevent background refresh from blocking DDL operations.
-</Note>
+:::
 
 ## Limitations {#limitations}
 
@@ -1970,7 +1968,7 @@ The `Paimon` table engine auto-detects the storage backend from the `disk` setti
 
 | Paimon Data Type | ClickHouse Data Type |
 |-------|--------|
-|BOOLEAN     |Bool      |
+|BOOLEAN     |Int8      |
 |TINYINT     |Int8      |
 |SMALLINT     |Int16      |
 |INTEGER     |Int32      |
@@ -2230,11 +2228,11 @@ import TabItem from '@theme/TabItem';
 
 # DeltaLake table engine
 
-This engine provides an integration with existing [Delta Lake](https://github.com/delta-io/delta) tables in S3, GCP and Azure storage and supports both reads and writes (writes for S3 and GCS from v25.10, for Azure from v26.9).
+This engine provides an integration with existing [Delta Lake](https://github.com/delta-io/delta) tables in S3, GCP and Azure storage and supports both reads and writes (from v25.10).
 
 ## Create a DeltaLake table {#create-table}
 
-By default the Delta Lake table must already exist in S3, GCP or Azure storage, and the commands below attach to it without DDL column definitions. With `allow_delta_lake_create_table = 1`, a `CREATE TABLE` with explicit columns against a location that has no `_delta_log` instead creates a new Delta Lake table by writing the initial commit through `delta-kernel-rs` (creating a partitioned table is not supported yet), and inside a Unity `DataLakeCatalog` database the table is also registered in the catalog.
+To create a DeltaLake table it must already exist in S3, GCP or Azure storage. The commands below do not take DDL parameters to create a new table.
 
 <Tabs>
 <TabItem value="S3" label="S3" default>
@@ -2291,9 +2289,9 @@ CREATE TABLE table_name
 ENGINE = DeltaLake('https://storage.googleapis.com/<bucket>/<path>/', '<access_key_id>', '<secret_access_key>')
 ```
 
-<Note title="Unsupported gsutil URI">
+:::note[Unsupported gsutil URI]
 gsutil URI such as `gs://clickhouse-docs-example-bucket` is not supported, please use a URL starting `https://storage.googleapis.com`
-</Note>
+:::
 
 **Arguments**
 
@@ -2352,11 +2350,10 @@ VALUES (1, 'John', 'Smith', 'M', 32);
 
 Delta Lake writes are a Beta feature disabled by default and must be enabled with `SET allow_delta_lake_writes = 1;` (available from version 26.7; on earlier versions use `SET allow_experimental_delta_lake_writes = 1;`).
 
-<Note>
+:::note
 Writing using the table engine is supported only through delta kernel.
-Writes work for S3 and GCS, and for Azure from version 26.9.
-Azure workload identity authentication (`extra_credentials(client_id = ..., tenant_id = ...)`) is not supported by delta kernel.
-</Note>
+Writes to Azure are not yet supported but work for S3 and GCS.
+:::
 
 ### Data cache {#data-cache}
 
@@ -2404,7 +2401,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
         Documentation{
-            .description = "Provides an integration with existing Delta Lake tables stored in Amazon S3 or S3-compatible object storage, supporting both reads and writes.",
+            .description = "Provides a read-only integration with existing Delta Lake tables stored in Amazon S3 or S3-compatible object storage.",
             .syntax = "ENGINE = DeltaLakeS3(url [, access_key_id, secret_access_key])",
             .related = {"DeltaLake"}});
 #    endif
@@ -2442,7 +2439,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
         Documentation{
-            .description = "Provides an integration with existing Delta Lake tables stored in Microsoft Azure Blob Storage, supporting both reads and writes (writes from version 26.9).",
+            .description = "Provides a read-only integration with existing Delta Lake tables stored in Microsoft Azure Blob Storage.",
             .syntax = "ENGINE = DeltaLakeAzure(connection_string | storage_account_url, container_name, blobpath)",
             .related = {"DeltaLake"}});
 #    endif
@@ -2479,7 +2476,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
             .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
         },
         Documentation{
-            .description = "Provides an integration with Delta Lake tables stored on the local filesystem. Reads work out of the box; with `allow_delta_lake_create_table = 1` a `CREATE TABLE` with explicit columns against a location that has no `_delta_log` creates a new table (writing the initial commit), and `INSERT` requires `allow_delta_lake_writes = 1`.",
+            .description = "Provides a read-only integration with existing Delta Lake tables stored on the local filesystem.",
             .syntax = "ENGINE = DeltaLakeLocal(path)",
             .related = {"DeltaLake"}});
 }

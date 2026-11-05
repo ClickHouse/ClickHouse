@@ -132,7 +132,6 @@ String query;
 std::optional<std::thread> runner;
 pthread_t runner_thread_id{};
 struct sigaction original_sigalrm_action{};
-struct sigaction original_sigusr1_action{};
 
 String clickhouse{"clickhouse"};
 std::vector<char *> clickhouse_args{clickhouse.data()};
@@ -148,27 +147,6 @@ static void signalSafeWrite(const char * msg)
 
 /// Flag set by the SIGUSR1 handler on the runner thread after printing its stack.
 static std::atomic<bool> runner_stack_printed{false};
-
-/// Forward a signal to the handler that was installed before ours.
-static void forwardToOriginalHandler(const struct sigaction & original, int sig, siginfo_t * info, void * ctx)
-{
-    /// `glibc` defines `sa_sigaction`/`sa_handler` as recursive macros expanding
-    /// to `__sigaction_handler.sa_sigaction`/`__sigaction_handler.sa_handler`,
-    /// which trips `-Wdisabled-macro-expansion` on aarch64.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
-    if (original.sa_flags & SA_SIGINFO)
-    {
-        if (original.sa_sigaction)
-            original.sa_sigaction(sig, info, ctx);
-    }
-    else if (original.sa_handler != SIG_IGN
-          && original.sa_handler != SIG_DFL)
-    {
-        original.sa_handler(sig);
-    }
-#pragma clang diagnostic pop
-}
 
 /// Monotonic-clock seconds at the start of the current `LLVMFuzzerTestOneInput`
 /// call. libfuzzer arms `setitimer(ITIMER_REAL)` with an interval of
@@ -190,29 +168,14 @@ std::atomic<int64_t> unit_timeout_sec{1200};
 /// earlier periodic alarm consumed it.
 std::atomic<bool> dump_started{false};
 
-/// SIGUSR1 reaches this process from two senders which mean opposite things:
-///
-///  * `fuzzerSigalrmHandler` below `pthread_kill`s the runner thread so that it
-///    prints the stack of the query that is stuck. A thread-directed signal is
-///    reported as `SI_TKILL`, and only this one is ours.
-///  * the CI harness (`tests/fuzz/runner.py`) `kill`s the whole process to ask
-///    libfuzzer to stop a corpus merge which ran out of its time budget. That is
-///    a process-directed signal, reported as `SI_USER`, and it has to reach
-///    libfuzzer's own graceful-exit handler: a merge ignores `-max_total_time`
-///    and SIGUSR1 is the only way to interrupt it. Swallowing it costs the whole
-///    run — the harness `SIGKILL`s the merge and throws away the hour it spent.
-static void fuzzerSigusr1Handler(int sig, siginfo_t * info, void * ctx)
+/// SIGUSR1 handler installed on the runner thread — prints its own stack trace.
+static void runnerStackTraceHandler(int /*sig*/, siginfo_t * /*info*/, void * /*context*/)
 {
-    if (info && info->si_code == SI_TKILL)
-    {
-        signalSafeWrite("\n=== Runner thread stack trace (where the query is stuck) ===\n");
-        __sanitizer_print_stack_trace();
-        signalSafeWrite("=== End runner thread stack trace ===\n\n");
-        runner_stack_printed.store(true, std::memory_order_release);
-        return;
-    }
-
-    forwardToOriginalHandler(original_sigusr1_action, sig, info, ctx);
+    signalSafeWrite("[fuzzer] SIGUSR1 handler entered on runner thread\n");
+    signalSafeWrite("\n=== Runner thread stack trace (where the query is stuck) ===\n");
+    __sanitizer_print_stack_trace();
+    signalSafeWrite("=== End runner thread stack trace ===\n\n");
+    runner_stack_printed.store(true, std::memory_order_release);
 }
 
 static inline void signal_safe_sleep_ms(int ms)
@@ -288,7 +251,23 @@ static void fuzzerSigalrmHandler(int sig, siginfo_t * info, void * ctx)
     /// Forward to libfuzzer's original SIGALRM handler. If this is a real
     /// timeout it will print the main-thread stack and `_Exit`; otherwise it
     /// returns and the wrapper stays installed for the next periodic alarm.
-    forwardToOriginalHandler(original_sigalrm_action, sig, info, ctx);
+    ///
+    /// `glibc` defines `sa_sigaction`/`sa_handler` as recursive macros expanding
+    /// to `__sigaction_handler.sa_sigaction`/`__sigaction_handler.sa_handler`,
+    /// which trips `-Wdisabled-macro-expansion` on aarch64.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+    if (original_sigalrm_action.sa_flags & SA_SIGINFO)
+    {
+        if (original_sigalrm_action.sa_sigaction)
+            original_sigalrm_action.sa_sigaction(sig, info, ctx);
+    }
+    else if (original_sigalrm_action.sa_handler != SIG_IGN
+          && original_sigalrm_action.sa_handler != SIG_DFL)
+    {
+        original_sigalrm_action.sa_handler(sig);
+    }
+#pragma clang diagnostic pop
 }
 
 extern "C"
@@ -362,32 +341,22 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         dump_started.store(false, std::memory_order_release);
     }
 
-    /// Install our SIGALRM and SIGUSR1 forwarders on the first call, after
-    /// libfuzzer has already set up its own handlers (which we save as the
-    /// originals). It has to be done here and not in `LLVMFuzzerInitialize`:
-    /// libfuzzer calls `SetSignalHandler` *after* `LLVMFuzzerInitialize`, and
-    /// its `SetSigaction` silently keeps an already installed handler instead of
-    /// replacing it, so a handler installed earlier disables libfuzzer's own
-    /// handling of that signal for good.
-    static bool handlers_installed = false;
-    if (!handlers_installed)
+    /// Install our SIGALRM forwarder on the first call, after libfuzzer
+    /// has already set up its own handler (which we save as original).
+    static bool handler_installed = false;
+    if (!handler_installed)
     {
+        struct sigaction sa = {};
         /// `glibc` defines `sa_sigaction` as a recursive macro
         /// `#define sa_sigaction __sigaction_handler.sa_sigaction`,
         /// which trips `-Wdisabled-macro-expansion`.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
-        struct sigaction alrm = {};
-        alrm.sa_sigaction = fuzzerSigalrmHandler;
-        alrm.sa_flags = SA_SIGINFO;
-        sigaction(SIGALRM, &alrm, &original_sigalrm_action);
-
-        struct sigaction usr1 = {};
-        usr1.sa_sigaction = fuzzerSigusr1Handler;
-        usr1.sa_flags = SA_SIGINFO;
-        sigaction(SIGUSR1, &usr1, &original_sigusr1_action);
+        sa.sa_sigaction = fuzzerSigalrmHandler;
 #pragma clang diagnostic pop
-        handlers_installed = true;
+        sa.sa_flags = SA_SIGINFO;
+        sigaction(SIGALRM, &sa, &original_sigalrm_action);
+        handler_installed = true;
     }
 
     {
@@ -415,13 +384,28 @@ void DB::ClientBase::runLibFuzzer()
     /// Block SIGALRM on the runner thread so libfuzzer's periodic timer
     /// signal is only delivered to the libfuzzer main thread. Without this,
     /// SIGALRM can land on the runner — it then runs `fuzzerSigalrmHandler`
-    /// and `pthread_kill`'s SIGUSR1 to itself, so the slow runner-stack dump
-    /// runs concurrently with the one the main thread is already doing.
+    /// and `pthread_kill`'s SIGUSR1 to itself, causing the slow runner-stack
+    /// dump to run concurrently with the main thread's dump and corrupting
+    /// the signal-handler state via two competing `sigaction` calls.
     {
         sigset_t set;
         sigemptyset(&set);
         sigaddset(&set, SIGALRM);
         (void)pthread_sigmask(SIG_BLOCK, &set, nullptr);
+    }
+
+    /// Install SIGUSR1 handler on the runner thread for stack trace dumping.
+    {
+        struct sigaction sa = {};
+        /// `glibc` defines `sa_sigaction` as a recursive macro
+        /// `#define sa_sigaction __sigaction_handler.sa_sigaction`,
+        /// which trips `-Wdisabled-macro-expansion`.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+        sa.sa_sigaction = runnerStackTraceHandler;
+#pragma clang diagnostic pop
+        sa.sa_flags = SA_SIGINFO;
+        (void)sigaction(SIGUSR1, &sa, nullptr);
     }
 
     {

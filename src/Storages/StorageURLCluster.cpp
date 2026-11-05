@@ -109,7 +109,8 @@ StorageURLCluster::StorageURLCluster(
     setInMemoryMetadata(storage_metadata);
 }
 
-void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context)
+void StorageURLCluster::updateQueryToSendIfNeeded(
+    ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context, bool add_structure_and_format)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
@@ -119,12 +120,13 @@ void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageS
     if (!expression_list)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", query->formatForErrorMessage());
 
-    TableFunctionURLCluster::updateStructureAndFormatArgumentsIfNeeded(
-        table_function,
-        storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
-        format_name,
-        context
-    );
+    if (add_structure_and_format)
+        TableFunctionURLCluster::updateStructureAndFormatArgumentsIfNeeded(
+            table_function,
+            storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
+            format_name,
+            context
+        );
 
     /// When a non-cluster table function (`url`) was auto-converted to cluster mode
     /// by the `parallel_replicas_for_cluster_engines` setting, rename it to the Cluster variant
@@ -142,7 +144,7 @@ RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
     const ActionsDAG::Node * predicate, const ActionsDAG * /* filter */, const ContextPtr & context, ClusterPtr, StorageMetadataPtr metadata) const
 {
     auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(
-        uri, urlWithGlobs(uri), context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context);
+        uri, context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context);
 
     auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
     {

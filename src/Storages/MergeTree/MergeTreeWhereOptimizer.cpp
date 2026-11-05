@@ -2,16 +2,11 @@
 #include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
-#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/misc.h>
-#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -398,6 +393,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         bool has_invalid_column = false;
         bool may_use_primary_index = true;
         bool viable = false;
+        bool expensive = false;
     };
 
     std::vector<ConjunctInfo> infos;
@@ -405,7 +401,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
 
     for (const auto & conjunct : conjuncts)
     {
-        ConjunctInfo info{conjunct, {}, {}, false, true, false};
+        ConjunctInfo info{conjunct, {}, {}, false, true, false, false};
         collectColumns(conjunct, nullptr, table_columns, info.columns, info.has_invalid_column, info.may_use_primary_index);
 
         /// Resolve each column to its physical storage name so that subcolumns
@@ -427,11 +423,13 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             && !cannotBeMoved(conjunct, where_optimizer_context)
             /// When use final, do not take into consideration the conditions with non-sorting keys. Because final select
             /// need to use all sorting keys, it will cause correctness issues if we filter other columns before final merge.
-            && (!where_optimizer_context.is_final || isDeterministicExpressionOverSortingKey(conjunct, where_optimizer_context.context))
+            && (!where_optimizer_context.is_final || isExpressionOverSortingKey(conjunct))
             /// Some identifiers can unable to support PREWHERE (usually because of different types in Merge engine)
             && columnsSupportPrewhere(info.columns)
             /// Do not move conditions involving all queried columns.
             && info.columns.size() < queried_columns.size();
+
+        info.expensive = isExpensiveExpression(conjunct);
 
         infos.push_back(std::move(info));
     }
@@ -442,6 +440,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     /// same column (e.g. `map.key_k0` and `map.key_k1`) in one group, so they are moved to
     /// PREWHERE together and arrive adjacent for the prewhere-splitting step.
     /// Non-viable conjuncts stay as individual Conditions.
+    /// 'expensive' conjuncts each get their own group.
     ///
     /// We use a simple linear search to find groups (WHERE clauses are short).
     struct Group
@@ -454,20 +453,29 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     auto find_group_idx = [&](const NameSet & cols) -> std::optional<size_t>
     {
         for (size_t g = 0; g < groups.size(); ++g)
-            if (groups[g].storage_columns == cols)
+            if (groups[g].storage_columns == cols && !infos[groups[g].indices.front()].expensive)
                 return g;
         return std::nullopt;
     };
+
+    /// Index of the group of each viable conjunct.
+    std::vector<size_t> group_of(infos.size());
 
     for (size_t i = 0; i < infos.size(); ++i)
     {
         if (!infos[i].viable)
             continue;
-        auto g = find_group_idx(infos[i].storage_columns);
+        auto g = infos[i].expensive ? std::nullopt : find_group_idx(infos[i].storage_columns);
         if (!g.has_value())
+        {
+            group_of[i] = groups.size();
             groups.push_back({infos[i].storage_columns, {i}});
+        }
         else
+        {
+            group_of[i] = *g;
             groups[*g].indices.push_back(i);
+        }
     }
 
     /// Emit Conditions in the original AND-chain order:
@@ -496,8 +504,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         else
         {
             /// Emit the whole column-set group at the position of the first conjunct.
-            auto g_idx = find_group_idx(info.storage_columns);
-            const auto & group = groups[*g_idx];
+            const auto & group = groups[group_of[i]];
 
             for (size_t idx : group.indices)
                 emitted[idx] = true;
@@ -521,6 +528,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             cond.columns_size = getColumnsSize(group_columns);
             cond.viable = true;
             cond.good = group_good;
+            cond.expensive = info.expensive;
 
             if (where_optimizer_context.use_statistics)
             {
@@ -584,7 +592,7 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
                 !has_invalid_column
                 && !columns.empty()
                 && !cannotBeMoved(conjunct, where_optimizer_context)
-                && (!where_optimizer_context.is_final || isDeterministicExpressionOverSortingKey(conjunct, where_optimizer_context.context))
+                && (!where_optimizer_context.is_final || isExpressionOverSortingKey(conjunct))
                 && columnsSupportPrewhere(columns)
                 && columns.size() < queried_columns.size();
             res.emplace_back(std::move(cond));
@@ -692,6 +700,10 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
         if (!it->viable)
             break;
 
+        /// If any non-expensive conditions stay in WHERE then don't move expensive conditions to PREWHERE
+        if (it->expensive && std::ranges::any_of(where_conditions, [](const Condition & cond) { return !cond.expensive; }))
+            break;
+
         if (!where_optimizer_context.move_all_conditions_to_prewhere)
         {
             bool moved_enough = false;
@@ -789,57 +801,11 @@ bool MergeTreeWhereOptimizer::columnsSupportPrewhere(const NameSet & columns) co
     return true;
 }
 
-/// Constant folding turns a lambda whose captured columns are all constants into a constant
-/// ColumnFunction: a function object, not a value, so its body still has to be checked
-static bool isConstantDeterministicInScopeOfQuery(const RPNBuilderTreeNode & node)
-{
-    const auto * dag_node = node.getDAGNode();
-    if (!dag_node)
-        return true; /// AST constants are scalar literals, lambdas are not folded into them
-
-    while (dag_node->type == ActionsDAG::ActionType::ALIAS)
-        dag_node = dag_node->children.front();
-
-    if (!dag_node->column)
-        return true;
-
-    return allColumnFunctions(*dag_node->column, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
-}
-
-static bool isFunctionDeterministicInScopeOfQuery(const RPNBuilderFunctionTreeNode & function_node, const ContextPtr & context)
-{
-    if (auto function_base = function_node.getFunctionBase())
-        return function_base->isDeterministicInScopeOfQuery();
-
-    /// For an AST-based tree there is no resolved function, mirror the legacy analyzer's lookup order
-    const auto function_name = function_node.getFunctionName();
-
-    /// executable UDFs are never stable within a query
-    if (UserDefinedExecutableFunctionFactory::has(function_name, context))
-        return false;
-
-    /// WASM UDFs are stable only when declared deterministic, plain SQL UDFs are inlined before this point
-    if (auto create_function_query = UserDefinedSQLFunctionFactory::instance().tryGet(function_name))
-    {
-        const auto * create_wasm_function_query = create_function_query->as<ASTCreateWasmFunctionQuery>();
-        return create_wasm_function_query && create_wasm_function_query->is_deterministic;
-    }
-
-    auto function_resolver = FunctionFactory::instance().tryGet(function_name, context);
-    return function_resolver && function_resolver->isDeterministicInScopeOfQuery();
-}
-
-bool MergeTreeWhereOptimizer::isDeterministicExpressionOverSortingKey(const RPNBuilderTreeNode & node, const ContextPtr & context) const
+bool MergeTreeWhereOptimizer::isExpressionOverSortingKey(const RPNBuilderTreeNode & node) const
 {
     if (node.isFunction())
     {
         auto function_node = node.toFunctionNode();
-
-        /// functions like rand can give different results for row versions of the same key,
-        /// query-scoped-stable ones (e.g. runtime filters) are fine to evaluate before the merge
-        if (!isFunctionDeterministicInScopeOfQuery(function_node, context))
-            return false;
-
         size_t arguments_size = function_node.getArgumentsSize();
 
         for (size_t i = 0; i < arguments_size; ++i)
@@ -847,18 +813,10 @@ bool MergeTreeWhereOptimizer::isDeterministicExpressionOverSortingKey(const RPNB
             auto argument = function_node.getArgumentAt(i);
             auto argument_column_name = argument.getColumnName();
 
-            if (argument.isConstant())
-            {
-                /// a folded lambda hides its body behind a constant
-                if (!isConstantDeterministicInScopeOfQuery(argument))
-                    return false;
-                continue;
-            }
-
-            if (sorting_key_names.contains(argument_column_name))
+            if (argument.isConstant() || sorting_key_names.contains(argument_column_name))
                 continue;
 
-            if (!isDeterministicExpressionOverSortingKey(argument, context))
+            if (!isExpressionOverSortingKey(argument))
                 return false;
         }
 
@@ -935,6 +893,25 @@ NameSet MergeTreeWhereOptimizer::determineArrayJoinedNames(const ASTSelectQuery 
         array_joined_names.emplace(ast->getAliasOrColumnName());
 
     return array_joined_names;
+}
+
+bool MergeTreeWhereOptimizer::isExpensiveExpression(const RPNBuilderTreeNode & node)
+{
+    if (!node.isFunction())
+        return false;
+
+    auto function_node = node.toFunctionNode();
+    if (auto function_base = function_node.getFunctionBase(); function_base && function_base->isExpensive())
+        return true;
+
+    size_t arguments_size = function_node.getArgumentsSize();
+    for (size_t i = 0; i < arguments_size; ++i)
+    {
+        if (isExpensiveExpression(function_node.getArgumentAt(i)))
+            return true;
+    }
+
+    return false;
 }
 
 }
