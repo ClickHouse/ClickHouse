@@ -30,6 +30,8 @@ DROP TABLE IF EXISTS t_parent_prewhere;
 DROP TABLE IF EXISTS t_nullable_prewhere;
 DROP TABLE IF EXISTS t_omitted_patch_before;
 DROP TABLE IF EXISTS t_omitted_patch_after;
+DROP TABLE IF EXISTS t_absent_patch;
+DROP TABLE IF EXISTS t_absent_patch_map;
 DROP TABLE IF EXISTS t_text_index_typed;
 DROP TABLE IF EXISTS t_text_index_map;
 DROP TABLE IF EXISTS t_read_cast_path_added;
@@ -275,6 +277,35 @@ SELECT id, length(data.a), data.a.size FROM t_omitted_patch_after ORDER BY id;
 SELECT id, length(data.a) FROM t_omitted_patch_after ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT id, data.a FROM t_omitted_patch_after ORDER BY id;
 
+SELECT 'column added after the part, patch in the old type';
+CREATE TABLE t_absent_patch (id UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
+SYSTEM STOP MERGES t_absent_patch;
+INSERT INTO t_absent_patch VALUES (1), (2);
+ALTER TABLE t_absent_patch ADD COLUMN data JSON(a UInt32);
+UPDATE t_absent_patch SET data = '{"a" : 777}' WHERE id = 1;
+ALTER TABLE t_absent_patch MODIFY COLUMN data JSON(a String) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT id, length(data.a), data.a.size FROM t_absent_patch ORDER BY id;
+SELECT id, length(data.a) FROM t_absent_patch ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT id, data.a FROM t_absent_patch ORDER BY id;
+SYSTEM START MERGES t_absent_patch;
+OPTIMIZE TABLE t_absent_patch FINAL;
+SELECT id, length(data.a), data.a FROM t_absent_patch ORDER BY id;
+
+CREATE TABLE t_absent_patch_map (id UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
+SYSTEM STOP MERGES t_absent_patch_map;
+INSERT INTO t_absent_patch_map VALUES (1), (2);
+ALTER TABLE t_absent_patch_map ADD COLUMN data JSON(a Map(String, UInt32));
+UPDATE t_absent_patch_map SET data = '{"a" : {"k" : 1}}' WHERE id = 1;
+ALTER TABLE t_absent_patch_map MODIFY COLUMN data JSON(a String) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT id, length(data.a), data.a.size FROM t_absent_patch_map ORDER BY id;
+SELECT id, length(data.a) FROM t_absent_patch_map ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT id, data.a FROM t_absent_patch_map ORDER BY id;
+SYSTEM START MERGES t_absent_patch_map;
+OPTIMIZE TABLE t_absent_patch_map FINAL;
+SELECT id, length(data.a), data.a FROM t_absent_patch_map ORDER BY id;
+
 SELECT 'text index fallback';
 CREATE TABLE t_text_index_typed (id UInt64, doc JSON(a String)) ENGINE = MergeTree PARTITION BY id < 1000 ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0;
@@ -357,6 +388,8 @@ DROP TABLE t_parent_prewhere;
 DROP TABLE t_nullable_prewhere;
 DROP TABLE t_omitted_patch_before;
 DROP TABLE t_omitted_patch_after;
+DROP TABLE t_absent_patch;
+DROP TABLE t_absent_patch_map;
 DROP TABLE t_text_index_typed;
 DROP TABLE t_text_index_map;
 DROP TABLE t_read_cast_path_added;

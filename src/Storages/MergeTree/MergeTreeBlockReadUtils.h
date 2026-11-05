@@ -28,6 +28,7 @@ DataTypePtr tryGetColumnTypeInPart(const IMergeTreeDataPartInfoForReader & data_
 /// A part of a `JSON` column resolves any name as one of its paths, which is not the same subcolumn when the conversion
 /// changes the paths. A key subcolumn is read from the part, which is sorted and indexed by it.
 /// The patch parts in @alter_conversions are applied to the source, so it is chosen for them as well.
+/// @column_type_in_part is null when the part has no such column; then only its patch parts decide.
 std::optional<String> getSourceOfSubcolumnInPart(
     const StorageSnapshotPtr & storage_snapshot,
     const NameAndTypePair & subcolumn,

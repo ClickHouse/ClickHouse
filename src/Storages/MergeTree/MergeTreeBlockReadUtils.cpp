@@ -455,10 +455,10 @@ std::optional<String> getSourceOfSubcolumnInPart(
     const DataTypePtr & column_type_in_part,
     const AlterConversionsPtr & alter_conversions)
 {
-    if (!subcolumn.isSubcolumn() || !column_type_in_part)
+    if (!subcolumn.isSubcolumn())
         return std::nullopt;
 
-    auto source = getSourceOfSubcolumnForType(subcolumn, column_type_in_part);
+    auto source = column_type_in_part ? getSourceOfSubcolumnForType(subcolumn, column_type_in_part) : std::nullopt;
     const auto & column_name = subcolumn.getNameInStorage();
     for (const auto & patch : alter_conversions ? alter_conversions->getAllPatches() : PatchPartsForReader{})
     {
