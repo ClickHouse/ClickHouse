@@ -12,6 +12,7 @@ TYPES="${CLICKHOUSE_DATABASE}_05509_types.parquet"
 BYTES="${CLICKHOUSE_DATABASE}_05509_bytes.parquet"
 WITH_M="${CLICKHOUSE_DATABASE}_05509_d_with_m.parquet"
 WITHOUT_M="${CLICKHOUSE_DATABASE}_05509_d_without_m.parquet"
+COLLISION="${CLICKHOUSE_DATABASE}_05509_collision.parquet"
 ICEBERG_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_05509_evolved"
 ICEBERG_MIXED_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_05509_mixed"
 ICEBERG_TYPES_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_05509_types"
@@ -41,6 +42,8 @@ SETTINGS output_format_parquet_row_group_size = 100, output_format_parquet_compr
 INSERT INTO FUNCTION file('${WITH_M}') SELECT number AS id, map('a', toUInt8(number), 'b', 7) AS m FROM numbers(5)
 SETTINGS engine_file_truncate_on_insert = 1;
 INSERT INTO FUNCTION file('${WITHOUT_M}') SELECT number + 100 AS id FROM numbers(3) SETTINGS engine_file_truncate_on_insert = 1;
+INSERT INTO FUNCTION file('${COLLISION}') SELECT map('key', toUInt64(1)) AS m, ['other'] AS \`M.keys\`, [toUInt64(4)] AS \`M.values\`
+SETTINGS engine_file_truncate_on_insert = 1;
 "
 
 # Every query below, with the rewrite off and on.
@@ -112,6 +115,11 @@ SELECT a.id, mapKeys(a.ms) FROM file('${TYPES}') AS a INNER JOIN (SELECT number 
 SELECT a.id, mapKeys(a.ms) FROM file('${TYPES}') AS a INNER JOIN numbers(30) AS b ON a.id = b.number WHERE b.number > 5 ORDER BY a.id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1, join_algorithm = 'hash';
 SELECT id, k FROM (SELECT id, mapKeys(ms) AS k FROM t_05509_types) WHERE id > 5 ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1;
 SELECT length(mapKeys(m)) FROM t_05509_filter ORDER BY rand() LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1, additional_table_filters = {'t_05509_filter': 'id > 1'};
+SELECT 'case-insensitive name collision';
+SELECT count() FROM file('${COLLISION}', Parquet, 'm Map(String, UInt64), \`M.keys\` Array(String), \`M.values\` Array(UInt64)') WHERE has(m, 'other') SETTINGS input_format_parquet_case_insensitive_column_matching = 1;
+SELECT count() FROM file('${COLLISION}', Parquet, 'm Map(String, UInt64), \`M.keys\` Array(String), \`M.values\` Array(UInt64)') WHERE has(m, 'key') SETTINGS input_format_parquet_case_insensitive_column_matching = 1;
+SELECT count() FROM file('${COLLISION}', Parquet, 'm Map(String, UInt64), \`M.keys\` Array(String), \`M.values\` Array(UInt64)') WHERE mapContainsValue(m, toUInt64(4)) SETTINGS input_format_parquet_case_insensitive_column_matching = 1;
+SELECT count() FROM file('${COLLISION}', Parquet, 'm Map(String, UInt64), \`M.keys\` Array(String), \`M.values\` Array(UInt64)') WHERE mapContainsValue(m, toUInt64(1)) SETTINGS input_format_parquet_case_insensitive_column_matching = 1;
 "
 
 ${CLICKHOUSE_CLIENT} -m --query "
@@ -172,6 +180,9 @@ SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM file('${BYTES}')
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM file('${BYTES}') WHERE notHas(m, 'k3')) WHERE explain ILIKE '%m.keys%';
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM file('${BYTES}') WHERE mapContainsKeyLike(m, 'k%')) WHERE explain ILIKE '%m.keys%';
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM file('${BYTES}') WHERE mapContainsValueLike(m, '1%')) WHERE explain ILIKE '%m.values%';
+-- A physical \`M.keys\` or \`M.values\` does not stop the rewrite. LIKE, not ILIKE: the structure argument names them.
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM file('${COLLISION}', Parquet, 'm Map(String, UInt64), \`M.keys\` Array(String), \`M.values\` Array(UInt64)') WHERE has(m, 'other')) WHERE explain LIKE '%m.keys%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM file('${COLLISION}', Parquet, 'm Map(String, UInt64), \`M.keys\` Array(String), \`M.values\` Array(UInt64)') WHERE mapContainsValue(m, toUInt64(4))) WHERE explain LIKE '%m.values%';
 -- Not rewritten anywhere: PREWHERE reads the whole map.
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT mapKeys(m) FROM file('${BYTES}') PREWHERE has(m, 'k3')) WHERE explain ILIKE '%m.keys%';
 -- Not rewritten: the query reads another column of the table.
@@ -198,7 +209,8 @@ for setting in 0 1; do
     "
 done
 ${CLICKHOUSE_CLIENT} -m --query "
-SET use_columns_cache = 0, use_query_condition_cache = 0, query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10;
+-- TopN filtering would skip a timing-dependent number of row groups of \`id\` in the main read.
+SET use_columns_cache = 0, use_query_condition_cache = 0, use_top_k_dynamic_filtering = 0, query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10;
 SELECT id, mapKeys(m) FROM file('${BYTES}') ORDER BY id DESC LIMIT 3 SETTINGS optimize_functions_to_subcolumns = 0, log_comment = 'lazy_keys_0' FORMAT Null;
 SELECT id, m.keys FROM file('${BYTES}') ORDER BY id DESC LIMIT 3 SETTINGS log_comment = 'lazy_keys_1' FORMAT Null;
 SELECT id, mapValues(mv) FROM t_05509_bytes ORDER BY id DESC LIMIT 3 SETTINGS optimize_functions_to_subcolumns = 0, log_comment = 'lazyice_values_0' FORMAT Null;
@@ -233,4 +245,4 @@ DROP TABLE t_05509_types;
 DROP TABLE t_05509_bytes;
 "
 rm -rf "${ICEBERG_PATH}" "${ICEBERG_MIXED_PATH}" "${ICEBERG_TYPES_PATH}" "${ICEBERG_BYTES_PATH}"
-rm -f "${CLICKHOUSE_USER_FILES}/${TYPES}" "${CLICKHOUSE_USER_FILES}/${BYTES}" "${CLICKHOUSE_USER_FILES}/${WITH_M}" "${CLICKHOUSE_USER_FILES}/${WITHOUT_M}"
+rm -f "${CLICKHOUSE_USER_FILES}/${TYPES}" "${CLICKHOUSE_USER_FILES}/${BYTES}" "${CLICKHOUSE_USER_FILES}/${WITH_M}" "${CLICKHOUSE_USER_FILES}/${WITHOUT_M}" "${CLICKHOUSE_USER_FILES}/${COLLISION}"
