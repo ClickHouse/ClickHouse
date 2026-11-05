@@ -242,6 +242,10 @@ NameSet getColumnsRequiredToRecalculateTTL(const StorageInMemoryMetadata & metad
         for (const auto & column : ttl.expression_columns)
             if (columns.hasPhysical(column.name))
                 res.insert(column.name);
+        /// `TTLCalcTransform` evaluates the WHERE part of a ROWS WHERE rule too, to bound its infos.
+        for (const auto & column : ttl.where_expression_columns)
+            if (columns.hasPhysical(column.name))
+                res.insert(column.name);
     };
 
     if (metadata.hasRowsTTL())

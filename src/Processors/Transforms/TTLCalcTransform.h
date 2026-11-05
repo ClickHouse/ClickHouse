@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/PreparedSets.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
@@ -49,9 +50,9 @@ private:
         ExpressionActionsPtr default_expression;
         String default_column_name;
     };
-    std::unordered_map<String, ExpiredColumnData> expired_columns_data;
+    UnorderedMapWithMemoryTracking<String, ExpiredColumnData> expired_columns_data;
     /// (column name, pre-merge info) for column rules whose inputs are absent from the stream.
-    std::vector<std::pair<String, MergeTreeDataPartTTLInfo>> preserved_column_ttls;
+    VectorWithMemoryTracking<std::pair<String, MergeTreeDataPartTTLInfo>> preserved_column_ttls;
     PreparedSets::Subqueries subqueries_for_sets;
 
     /// ttl_infos and empty_columns are updating while reading
