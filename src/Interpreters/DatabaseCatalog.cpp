@@ -112,25 +112,6 @@ namespace FailPoints
     extern const char database_catalog_drop_finally_after_notify[];
 }
 
-namespace
-{
-
-/// Whether the table pushes into views in the background. A proxy is looked through without creating
-/// the storage it wraps, which pushes nothing before it exists.
-bool pushesToViewsInBackground(StoragePtr table)
-{
-    for (size_t depth = 0; table && depth < max_storage_proxy_depth; ++depth)
-    {
-        const auto * proxy = dynamic_cast<const StorageProxy *>(table.get());
-        if (!proxy)
-            return table->noPushingToViewsOnInserts();
-        table = proxy->tryGetNested();
-    }
-    return false;
-}
-
-}
-
 class DatabaseNameHints : public IHints<>
 {
 public:
@@ -385,24 +366,29 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
             return tables;
         };
 
-        auto prepare_for_shutdown = [&](const StoragePtr & table)
+        auto prepare_for_shutdown = [&](const std::vector<StoragePtr> & tables, bool only_background_writes)
         {
-            try
+            for (const auto & table : tables)
             {
-                table->flushAndPrepareForShutdown();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, fmt::format("Failed to prepare to shut down table {}", table->getStorageID().getNameForLogs()));
+                if (!table)
+                    continue;
+
+                try
+                {
+                    if (!only_background_writes || table->hasBackgroundWrites())
+                        table->flushAndPrepareForShutdown();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, fmt::format("Failed to prepare to shut down table {}", table->getStorageID().getNameForLogs()));
+                }
             }
         };
 
         auto user_tables = list_user_tables();
 
-        /// Tables that push into views in the background stop first, so nothing writes into the tables drained below.
-        for (const auto & table : user_tables)
-            if (pushesToViewsInBackground(table))
-                prepare_for_shutdown(table);
+        /// Tables that write into others in the background stop first, so nothing writes into the tables drained below.
+        prepare_for_shutdown(user_tables, /*only_background_writes=*/ true);
 
         for (size_t pass = 0; pass <= user_tables.size(); ++pass)
         {
@@ -445,11 +431,11 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
             }
         }
 
-        /// Prepare every user table before any of them shuts down. List again to include the tables that finished loading meanwhile.
+        /// Prepare every user table before any of them shuts down. List again to include the tables that finished
+        /// loading meanwhile, and stop their background writes first.
         user_tables = list_user_tables();
-        for (const auto & table : user_tables)
-            if (table)
-                prepare_for_shutdown(table);
+        prepare_for_shutdown(user_tables, /*only_background_writes=*/ true);
+        prepare_for_shutdown(user_tables, /*only_background_writes=*/ false);
     }
 
     /// A database shutdown() can throw (e.g. a table flushAndShutdown hitting a ZooKeeper timeout).

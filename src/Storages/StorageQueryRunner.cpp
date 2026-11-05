@@ -822,6 +822,11 @@ void StorageQueryRunner::shutdown(bool /*is_drop*/)
     dispatcher->shutdown();
 }
 
+void StorageQueryRunner::flushAndPrepareForShutdown()
+{
+    dispatcher->shutdown();
+}
+
 void StorageQueryRunner::waitForQueriesToFinish(const QueryStatusPtr & query_status)
 {
     dispatcher->waitForAllPending(query_status);

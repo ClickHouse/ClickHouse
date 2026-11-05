@@ -93,6 +93,7 @@ public:
 
     void startup() override;
     void flushAndPrepareForShutdown() override;
+    bool hasBackgroundWrites() const override { return static_cast<bool>(refresher); }
     void shutdown(bool is_drop) override;
 
     QueryProcessingStage::Enum

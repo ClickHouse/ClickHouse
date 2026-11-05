@@ -728,6 +728,10 @@ public:
 
     virtual void flushAndPrepareForShutdown() {}
 
+    /// Whether the table writes into other tables in the background, which `flushAndPrepareForShutdown` stops.
+    /// `DatabaseCatalog` prepares such tables before flushing buffers on shutdown, so the answer must not resolve other tables.
+    virtual bool hasBackgroundWrites() const { return false; }
+
     /// Asks table to stop executing some action identified by action_type
     /// If table does not support such type of lock, and empty lock is returned
     virtual ActionLock getActionLock(StorageActionBlockType /* action_type */)
