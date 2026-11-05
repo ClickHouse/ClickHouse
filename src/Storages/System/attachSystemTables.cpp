@@ -1762,7 +1762,7 @@ Masking policies can only be created and applied in ClickHouse Cloud. In open-so
 )DOCS_MD");
     attach<StorageSystemQueryMaskingRules>(context, system_database, "query_masking_rules", R"DOCS_MD(
 .description
-Contains the query masking rules created by [CREATE QUERY MASKING RULE](/reference/statements/create/query-masking-rule). The rules from the [`query_masking_rules`](/reference/settings/server-settings/settings/query#query_masking_rules) server setting are not listed. Reading the table requires the `QUERY MASKING RULE ADMIN` privilege.
+Contains the query masking rules created by [CREATE QUERY MASKING RULE](/reference/statements/create/query-masking-rule). The rules from the [`query_masking_rules`](/reference/settings/server-settings/settings/query#query_masking_rules) server setting are not listed. Reading the table requires the `QUERY MASKING RULE ADMIN` privilege, or `SELECT` on the table when `select_from_system_db_requires_grant` is enabled.
 
 .see_also
 - [SHOW QUERY MASKING RULES](/reference/statements/show#show-query-masking-rules)

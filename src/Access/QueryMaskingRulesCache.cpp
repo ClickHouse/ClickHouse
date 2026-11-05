@@ -1,6 +1,7 @@
 #include <Access/QueryMaskingRulesCache.h>
 #include <Access/AccessControl.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/quoteString.h>
 #include <base/sort.h>
@@ -59,6 +60,9 @@ void QueryMaskingRulesCache::reload()
 
 void QueryMaskingRulesCache::publishLocked()
 {
+    /// The masker lives as long as the server, not the query that changed a rule.
+    MemoryTrackerBlockerInThread not_charged_to_the_query;
+
     std::vector<std::pair<UUID, QueryMaskingRulePtr>> sorted_rules(rules.begin(), rules.end());
     ::sort(sorted_rules.begin(), sorted_rules.end(), [](const auto & lhs, const auto & rhs)
     {

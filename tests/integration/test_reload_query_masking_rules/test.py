@@ -107,3 +107,35 @@ def test_sql_rule_survives_config_reload_and_restart():
         assert not node.contains_in_log("SQLSECRET_2")
     finally:
         node.query("DROP QUERY MASKING RULE IF EXISTS sql_rule")
+
+
+def test_sql_rule_applies_when_its_create_has_little_memory():
+    # Makes small allocations honour the memory limit of the query making them.
+    node.copy_file_to_container(
+        os.path.join(SCRIPT_DIR, "configs/throw_on_small_allocations.xml"),
+        "/etc/clickhouse-server/config.d/z.xml",
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+
+    big_rules = [f"big_rule_{i}" for i in range(24)]
+    big_regexp = "[A-M]{1000}" * 20
+    try:
+        for name in big_rules:
+            node.query(
+                f"CREATE QUERY MASKING RULE {name} REGEXP '{big_regexp}' REPLACE '[big]'"
+            )
+
+        # Creating one rule fits into this limit, compiling all the rules does not.
+        node.query(
+            "CREATE QUERY MASKING RULE limited_rule REGEXP 'LIMITSECRET_[0-9]+' REPLACE '[limit-hidden]'",
+            settings={"max_memory_usage": 3000000, "max_untracked_memory": 0},
+        )
+
+        node.rotate_logs()
+        node.query("SELECT 'LIMITSECRET_1'")
+        assert_logs_contain_with_retry(node, r"SELECT '\[limit-hidden\]'")
+        assert not node.contains_in_log("LIMITSECRET_1")
+    finally:
+        node.query(
+            f"DROP QUERY MASKING RULE IF EXISTS limited_rule, {', '.join(big_rules)}"
+        )
