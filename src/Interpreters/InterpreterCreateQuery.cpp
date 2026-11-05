@@ -4156,7 +4156,7 @@ BlockIO InterpreterCreateQuery::execute()
                 normalizeLegacyToTimeInCreateQuery(query_ptr, getContext());
             }
 
-            if (is_create_database)
+            if (is_create_database && !create.if_not_exists)
                 checkDatabaseSettingNames(
                     create,
                     getContext(),

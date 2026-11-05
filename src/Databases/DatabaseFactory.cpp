@@ -103,9 +103,9 @@ void checkDatabaseSettingNames(
 #else
     const bool is_shared_catalog_replay = false;
 #endif
-    /// An ON CLUSTER initiator judges these names at every entry format.
+    /// An ON CLUSTER initiator judges these names at every entry format, except for `IF NOT EXISTS`.
     if (create.attach_short_syntax || (is_metadata_replay && mode >= LoadingStrictnessLevel::ATTACH) || is_restore_from_backup
-        || is_shared_catalog_replay || context->isDDLOrOnClusterInternal())
+        || is_shared_catalog_replay || (context->isDDLOrOnClusterInternal() && !create.if_not_exists))
         return;
 
     /// A clause without `ENGINE` creates an `Atomic` database.

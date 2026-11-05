@@ -17,6 +17,7 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTBackupQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ParserQuery.h>
@@ -488,8 +489,10 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
 ContextMutablePtr DDLTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)
 {
     auto query_context = DDLTaskBase::makeQueryContext(from_context, zookeeper);
-    /// Format 3 is written as 2, so an entry of the older formats is still judged here.
-    if (entry.version >= DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
+    /// Format 3 is written as 2, so an entry of the older formats is still judged here, and so is `IF NOT EXISTS`,
+    /// which only a host can tell from a no-op.
+    const auto * create = query ? query->as<ASTCreateQuery>() : nullptr;
+    if (entry.version >= DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION && !(create && create->if_not_exists))
         query_context->setSettingNamesCheckedOnInitiator(true);
     return query_context;
 }

@@ -171,7 +171,7 @@ public:
     /// See `GetExportAccessFn`. For the engine of the table and the inner engines of a materialized view or a `TimeSeries`
     /// table. An unknown engine needs nothing here: creating it fails later.
     AccessRightsElements getExportAccess(const ASTCreateQuery & create) const;
-    /// Rejects the names an engine of `create` judges, on the initiator of an `ON CLUSTER` query: the hosts that run it do not judge them again.
+    /// On the initiator of an `ON CLUSTER` query, rejects the names an engine of `create` judges, so the hosts do not. `IF NOT EXISTS` is left to the hosts.
     void checkSettingNamesOnInitiator(const ASTCreateQuery & create, LoadingStrictnessLevel mode, const ContextPtr & context) const;
     /// The grants of every engine for which `changes` send the data elsewhere. It does not depend on the engine of the table,
     /// so `ALTER ... ON CLUSTER` can be authorized on an initiator that does not have the table or has another engine.

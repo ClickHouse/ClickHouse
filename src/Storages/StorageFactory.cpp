@@ -93,7 +93,7 @@ void checkSettingNames(
         check(QUERY_PARAMETER_NAME_PREFIX + parameter.first);
 }
 
-void checkStorageSettingNames(const StorageFactory::Arguments & args)
+void checkStorageSettingNames(const StorageFactory::Arguments & args, const StorageFactory::StorageFeatures & features)
 {
     if (!args.storage_def || !args.storage_def->settings)
         return;
@@ -103,7 +103,6 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args)
     if (isReplayedTableDefinition(args.mode, args.query, local_context) || local_context->areSettingNamesCheckedOnInitiator())
         return;
 
-    const auto & features = StorageFactory::instance().getStorageFeatures(args.engine_name);
     checkSettingNames(*args.storage_def->settings, args.engine_name, features.has_builtin_setting_fn, local_context->getSettingsRef());
 }
 
@@ -322,7 +321,7 @@ StoragePtr StorageFactory::get(
 
     const auto & creator = storages.at(name);
     if (creator.features.checks_setting_names)
-        checkStorageSettingNames(arguments);
+        checkStorageSettingNames(arguments, creator.features);
 
     /// The storage object and its metadata outlive the query, so route them to the table-lifetime arena instead
     /// of fragmenting the per-CPU query arenas. Settled on query end, see `MemoryTracker::settleDriftOnQueryEnd`.
@@ -403,14 +402,15 @@ AccessRightsElements StorageFactory::getExportAccess(const ASTCreateQuery & crea
 
 void StorageFactory::checkSettingNamesOnInitiator(const ASTCreateQuery & create, LoadingStrictnessLevel mode, const ContextPtr & context) const
 {
-    if (isReplayedTableDefinition(mode, create, context))
+    /// `IF NOT EXISTS` is a no-op on a host that has the table, so each host judges it.
+    if (create.if_not_exists || isReplayedTableDefinition(mode, create, context))
         return;
 
     auto check = [&](const ASTStorage & storage)
     {
         if (!storage.engine || !storage.settings)
             return;
-        /// An engine this server does not have is reported by the hosts that build it.
+        /// This server cannot judge an engine it does not have, and the hosts do not judge it either.
         auto it = storages.find(storage.engine->name);
         if (it == storages.end() || !it->second.features.checks_setting_names)
             return;
