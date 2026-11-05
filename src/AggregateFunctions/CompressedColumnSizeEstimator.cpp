@@ -1,6 +1,7 @@
 #include <AggregateFunctions/CompressedColumnSizeEstimator.h>
 
 #include <algorithm>
+#include <limits>
 #include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Settings.h>
@@ -29,6 +30,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsNonZeroUInt64 adaptive_write_buffer_initial_size;
     extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
+    extern const MergeTreeSettingsString default_compression_codec;
     extern const MergeTreeSettingsMergeTreeDynamicSerializationVersion dynamic_serialization_version;
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
@@ -118,9 +120,15 @@ CompressedColumnSizeEstimator::WriterSettings CompressedColumnSizeEstimator::Wri
     enumerate.map_buckets_min_avg_size = bulk.map_buckets_min_avg_size;
     enumerate.data_part_type = MergeTreeDataPartType::Wide;
 
-    /// As `MergeTreeData::getCompressionCodecForPart` for a new part.
-    settings.default_codec = context ? context->chooseCompressionCodec(/*part_size=*/ 0, /*part_size_ratio=*/ 0.0)
-                                     : CompressionCodecFactory::instance().getDefaultCodec();
+    /// As `MergeTreeData::getCompressionCodecForPart` for a large merged part, where most of the data of a table ends up: the
+    /// `default_compression_codec` setting, else the `compression` section of the configuration, else the default codec.
+    const String & codec_setting = merge_tree[MergeTreeSetting::default_compression_codec].value;
+    if (!codec_setting.empty())
+        settings.default_codec = CompressionCodecFactory::instance().get(codec_setting);
+    else if (context)
+        settings.default_codec = context->chooseCompressionCodec(std::numeric_limits<size_t>::max(), /*part_size_ratio=*/ 1.0);
+    else
+        settings.default_codec = CompressionCodecFactory::instance().getDefaultCodec();
 
     settings.index_granularity = merge_tree[MergeTreeSetting::index_granularity];
     settings.index_granularity_bytes = merge_tree[MergeTreeSetting::index_granularity_bytes];

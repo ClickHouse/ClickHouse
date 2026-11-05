@@ -36,8 +36,7 @@ public:
         ISerialization::SerializeBinaryBulkSettings bulk;
         /// As `MergeTreeDataPartWriterWide::getEnumerateSettings`: the substreams of `Dynamic`, `JSON` and `Map` depend on them.
         ISerialization::EnumerateStreamsSettings enumerate;
-        /// The codec of a column declared without `CODEC`: the one the server gives a new part, from the `compression` section
-        /// of its configuration (`MergeTreeData::getCompressionCodecForPart`), which is not the default codec of the factory.
+        /// The codec of a column declared without `CODEC`, as the server picks it for a large merged part.
         CompressionCodecPtr default_codec;
         size_t index_granularity = 8192;
         size_t index_granularity_bytes = 10 * 1024 * 1024;

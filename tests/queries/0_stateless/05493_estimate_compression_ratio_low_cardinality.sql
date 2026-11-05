@@ -46,13 +46,12 @@ ORDER BY column;
 SELECT 'Default compressed block sizes: a block ends at a granule boundary once it holds min_compress_block_size bytes';
 
 DROP TABLE IF EXISTS t_ecr_default;
--- `plain` has no CODEC: the server gives it the codec of a new part, and so does the estimate without a codec parameter.
-CREATE TABLE t_ecr_default (s String CODEC(LZ4), lc LowCardinality(String) CODEC(LZ4), n Nullable(UInt32) CODEC(LZ4), arr Array(UInt32) CODEC(LZ4), plain UInt64)
+CREATE TABLE t_ecr_default (s String CODEC(LZ4), lc LowCardinality(String) CODEC(LZ4), n Nullable(UInt32) CODEC(LZ4), arr Array(UInt32) CODEC(LZ4))
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 0, ratio_of_defaults_for_sparse_serialization = 1;
 
 INSERT INTO t_ecr_default
-SELECT concat('value_', toString(number % 16)), concat('value_', toString(number % 16)), if(number % 7 = 0, NULL, number), [number, number + 1], number * 7919
+SELECT concat('value_', toString(number % 16)), concat('value_', toString(number % 16)), if(number % 7 = 0, NULL, number), [number, number + 1]
 FROM numbers(3 * 8192);
 
 SELECT
@@ -68,8 +67,6 @@ INNER JOIN
     SELECT 'n' AS column, estimateCompressionRatio('LZ4')(n) AS ratio FROM t_ecr_default
     UNION ALL
     SELECT 'arr' AS column, estimateCompressionRatio('LZ4')(arr) AS ratio FROM t_ecr_default
-    UNION ALL
-    SELECT 'plain' AS column, estimateCompressionRatio(plain) AS ratio FROM t_ecr_default
 ) AS estimates USING (column)
 WHERE database = currentDatabase() AND table = 't_ecr_default' AND active
 ORDER BY column;

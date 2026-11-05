@@ -5,7 +5,6 @@ Default compressed block sizes: a block ends at a granule boundary once it holds
 arr	1
 lc	1
 n	1
-plain	1
 s	1
 1	1	1	1	1
 Dynamic and JSON are estimated with the layouts of a merged part, Map and Variant as a part stores them

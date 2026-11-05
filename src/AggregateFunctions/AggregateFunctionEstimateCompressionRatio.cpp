@@ -137,7 +137,7 @@ private:
     /// Whether the rows that do not complete a granule wait in the buffer for the next block, so that the granule is written at
     /// once (see `isSplitIndependent`).
     const bool buffer_partial_granules;
-    /// The codec the server gives a new part (see `CompressedColumnSizeEstimator::WriterSettings::default_codec`).
+    /// The codec the server gives a large merged part (see `CompressedColumnSizeEstimator::WriterSettings::default_codec`).
     const CompressionCodecPtr default_codec;
     /// The `codec` parameter, or the default codec, as the `CODEC` clause of a column.
     const ASTPtr codec_description;
@@ -604,7 +604,7 @@ Estimates the compression ratio of a given column without compressing it.
 
 The estimate follows the layout of a MergeTree wide part. Every substream of the column (the dictionary and the indexes of a `LowCardinality` column, the null map of a `Nullable` column, the sizes of an `Array` column, the lengths of a `String` column) is compressed on its own; the codec applies to the data substreams, while the structural substreams keep only its generic codecs, as `CODEC(...)` on a table column does. The rows are serialized one granule at a time, whatever the size of the blocks the query reads, and a compressed block ends at a granule boundary once it holds `min_compress_block_size` bytes, as in a part. A `LowCardinality` column is estimated with its dictionary encoding.
 
-The function has no table, so what the writer takes from a table it takes from the server's MergeTree settings (the `merge_tree` section of the configuration): the serialization versions of `String`, `Nullable` and `Map`, the layouts of `Dynamic`, `JSON` and `Variant` as a merged part stores them, the map buckets, `index_granularity`, `index_granularity_bytes`, `min_compress_block_size`, `max_compress_block_size`, and the adaptive buffers of the substreams of `Dynamic` and `JSON`. The codec of a column declared without `CODEC` is the one the server gives a new part (`LZ4` unless configured). From the query it takes `low_cardinality_max_dictionary_size`, `low_cardinality_use_single_dictionary_for_part`, and the compressed block sizes when the MergeTree settings leave them unset. The settings of a particular table are not known to the function, and the granule size is estimated from this column alone, while a table sizes its granules by all its columns.
+The function has no table, so what the writer takes from a table it takes from the server's MergeTree settings (the `merge_tree` section of the configuration): the serialization versions of `String`, `Nullable` and `Map`, the layouts of `Dynamic`, `JSON` and `Variant` as a merged part stores them, the map buckets, `index_granularity`, `index_granularity_bytes`, `min_compress_block_size`, `max_compress_block_size`, and the adaptive buffers of the substreams of `Dynamic` and `JSON`. Without the `codec` parameter, the codec is the one the server gives a large merged part: the `default_compression_codec` MergeTree setting when it is set, else the `compression` section of the configuration, else `ZSTD(3)`. From the query it takes `low_cardinality_max_dictionary_size`, `low_cardinality_use_single_dictionary_for_part`, and the compressed block sizes when the MergeTree settings leave them unset. The settings of a particular table are not known to the function, and the granule size is estimated from this column alone, while a table sizes its granules by all its columns.
 
 The rows of each `GROUP BY` group and of each window frame are serialized as if they were a part of their own, so the result also depends on how the rows are split between groups, threads and frames. Each state holds the rows of an incomplete granule and one compression buffer per substream, so a `GROUP BY` with many groups needs more memory than with most aggregate functions.
 
@@ -645,9 +645,9 @@ SELECT number FROM system.numbers LIMIT 100_000;
 SELECT estimateCompressionRatio(number) AS estimate FROM compression_estimate_example
         )",
         R"(
-┌───────────estimate─┐
-│ 1.9974133497121227 │
-└────────────────────┘
+┌──────────estimate─┐
+│ 7.315957933241884 │
+└───────────────────┘
         )"
     },
     {
