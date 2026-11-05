@@ -1135,6 +1135,9 @@ Block ProjectionDescription::calculateByQuery(
                 projection_block.dumpNames(),
                 sample_block.dumpNames());
 
+    for (auto & col : projection_block)
+        col.column = col.column->convertToFullColumnIfConst();
+
     return projection_block;
 }
 
