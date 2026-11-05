@@ -1,0 +1,16 @@
+--- without a FILE grant, no File table is restored, neither locally nor on the cluster
+grant TABLE ENGINE ON File
+grant TABLE ENGINE ON File
+grant TABLE ENGINE ON File
+grant TABLE ENGINE ON File
+grant TABLE ENGINE ON File
+grant TABLE ENGINE ON File
+--- the hosts may not apply restore_replace_external_engines_to_null, so it exempts no engine on the cluster
+grant TABLE ENGINE ON File
+--- no table was restored
+0
+--- with READ and WRITE ON FILE, the tables are restored on the cluster
+restored
+restored
+restored
+canary

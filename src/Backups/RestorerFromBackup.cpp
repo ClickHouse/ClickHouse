@@ -455,6 +455,20 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                     flags |= AccessType::CREATE_VIEW;
                 else
                     flags |= AccessType::CREATE_TABLE;
+
+                /// The hosts of `RESTORE ... ON CLUSTER` create the table without the user and may not replace an
+                /// external engine with `Null`, so every engine the definition names is checked here.
+                if (mode == Mode::CHECK_ACCESS_ONLY)
+                {
+                    if (create.storage && create.storage->engine)
+                        required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
+                    if (create.targets)
+                    {
+                        for (const ASTStorage * inner_engine : create.targets->getInnerEngines())
+                            if (inner_engine->engine)
+                                required_access.emplace_back(AccessType::TABLE_ENGINE, inner_engine->engine->name);
+                    }
+                }
             }
 
             if (restore_settings.shouldRestoreTableData() && table_info.has_data)
