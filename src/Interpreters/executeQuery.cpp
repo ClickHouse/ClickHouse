@@ -187,7 +187,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_ast_dialect;
-    extern const SettingsBool allow_experimental_mongo_dialect;
+    extern const SettingsBool enable_mongo_dialect;
     extern const SettingsBool enable_polyglot_dialect;
     extern const SettingsBool enable_kusto_dialect;
     extern const SettingsBool enable_prql_dialect;
@@ -2415,6 +2415,11 @@ static BlockIO executeQueryImpl(
     UInt64 normalized_query_hash = 0;
     size_t log_queries_cut_to_length = settings[Setting::log_queries_cut_to_length];
 
+    /// Whether the query was translated from the `mongo` dialect. Mongo has no SQL division: its
+    /// `$divide` is lowered to `divide`, which has to stay a floating point division whatever
+    /// `sql_compatible_division_for_integers` is, so `normalizeDivision` leaves such a query alone.
+    bool translated_from_mongo = false;
+
     /// Parse the query from string.
     try
     {
@@ -2475,7 +2480,7 @@ static BlockIO executeQueryImpl(
         else if (settings[Setting::dialect] == Dialect::mongo && use_request_dialect)
         {
             /// A leading `SET` must bypass the experimental gate: it is how a session that
-            /// turned `allow_experimental_mongo_dialect` back off runs `SET dialect = 'clickhouse'`
+            /// turned `enable_mongo_dialect` back off runs `SET dialect = 'clickhouse'`
             /// to leave the dialect, the same way the `clickhouse_json` dialect escapes below.
             /// The escape uses the very same `ParserSetQuery` probe as the Mongo parser, so a
             /// statement is a `SET` for the gate exactly when the parser will also read it as
@@ -2490,12 +2495,13 @@ static BlockIO executeQueryImpl(
             else
             {
 #if USE_RAPIDJSON
-                if (!settings[Setting::allow_experimental_mongo_dialect])
+                if (!settings[Setting::enable_mongo_dialect])
                     throw Exception(
                         ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Support for the MongoDB dialect is disabled (turn on setting 'allow_experimental_mongo_dialect')");
+                        "Support for the MongoDB dialect is disabled (turn on setting 'enable_mongo_dialect')");
                 Mongo::ParserMongoQuery parser(max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
                 out_ast = parseMongoQuery(parser, begin, end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
+                translated_from_mongo = true;
 
                 /// `$unset` and `$rename` of a subdocument name only its path, `$set` of one resets
                 /// the leaves it does not name, and the parser does not know the columns it is
@@ -3027,7 +3033,7 @@ static BlockIO executeQueryImpl(
 
             /// Freeze the meaning of division before the AST can enter table metadata, a mutation
             /// entry, a SQL UDF, or a distributed query. Replayed ASTs already carry that decision.
-            if (!internal && !flags.distributed_backup_restore && !context->isDDLOrOnClusterInternal()
+            if (!internal && !translated_from_mongo && !flags.distributed_backup_restore && !context->isDDLOrOnClusterInternal()
                 && client_info.query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
                 normalizeDivision(*out_ast, context);
 

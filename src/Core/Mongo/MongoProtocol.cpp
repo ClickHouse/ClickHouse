@@ -165,6 +165,11 @@ String QueryExecutor::execute(const String & query, const SettingsChanges & extr
     /// `dialect = 'mongo'` the `EXISTS TABLE` of every read command would reach the Mongo parser.
     query_context->setSetting("dialect", String("clickhouse"));
 
+    /// The statements are generated from Mongo commands, whose `$divide` is lowered to `divide`: it
+    /// is a floating point division of integers in Mongo, which `sql_compatible_division_for_integers`
+    /// from the profile would turn into an integer one, see `normalizeDivision`.
+    query_context->setSetting("sql_compatible_division_for_integers", false);
+
     /// The input of an internal `INSERT` is the `JSONEachRow` its query names, and the output of an
     /// internal query is the `JSON` or `TSV` its query names or the `TabSeparated` default of a
     /// query without a `FORMAT`, because both are produced and parsed back by the handlers. The
