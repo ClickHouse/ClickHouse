@@ -50,7 +50,8 @@ QueryPlanSerializationSettings serializeAggregatingStep(bool enable_adaptive_agg
         /*max_block_size=*/65536,
         /*min_hit_rate_to_use_consecutive_keys_optimization=*/0.5f,
         /*serialize_string_with_zero_byte=*/false,
-        /*enable_packed_string_keys=*/true);
+        /*enable_packed_string_keys=*/true,
+        /*enable_fixed_and_packed_string_keys=*/true);
     params.enable_adaptive_aggregator = enable_adaptive_aggregator;
     params.adaptive_aggregator_freeze_threshold = 4096;
     params.adaptive_aggregator_freeze_threshold_bytes = 4096;

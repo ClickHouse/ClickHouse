@@ -80,6 +80,9 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyVoid, false>> key64_void;
     std::unique_ptr<AggregationMethodStringNoCache<AggregatedDataWithShortStringKey>>               key_string;
     std::unique_ptr<AggregationMethodPackedString<AggregatedDataWithPackedStringKey>>        key_packed_string;
+    std::unique_ptr<AggregationMethodKeysAndPackedString<AggregatedDataWithKeys32AndPackedString>>   keys32_packed_string;
+    std::unique_ptr<AggregationMethodKeysAndPackedString<AggregatedDataWithKeys64AndPackedString>>   keys64_packed_string;
+    std::unique_ptr<AggregationMethodKeysAndPackedString<AggregatedDataWithKeys128AndPackedString>>  keys128_packed_string;
     std::unique_ptr<AggregationMethodFixedStringNoCache<AggregatedDataWithShortStringKey>>          key_fixed_string;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt16Key, false, false, false>>  keys16;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt32Key>>                   keys32;
@@ -106,6 +109,9 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyVoidTwoLevel, false>> key64_void_two_level;
     std::unique_ptr<AggregationMethodStringNoCache<AggregatedDataWithShortStringKeyTwoLevel>>       key_string_two_level;
     std::unique_ptr<AggregationMethodPackedString<AggregatedDataWithPackedStringKeyTwoLevel>>       key_packed_string_two_level;
+    std::unique_ptr<AggregationMethodKeysAndPackedString<AggregatedDataWithKeys32AndPackedStringTwoLevel>>  keys32_packed_string_two_level;
+    std::unique_ptr<AggregationMethodKeysAndPackedString<AggregatedDataWithKeys64AndPackedStringTwoLevel>>  keys64_packed_string_two_level;
+    std::unique_ptr<AggregationMethodKeysAndPackedString<AggregatedDataWithKeys128AndPackedStringTwoLevel>> keys128_packed_string_two_level;
     std::unique_ptr<AggregationMethodFixedStringNoCache<AggregatedDataWithShortStringKeyTwoLevel>>  key_fixed_string_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt32KeyTwoLevel>>           keys32_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt64KeyTwoLevel>>           keys64_two_level;
@@ -223,6 +229,9 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys256_void_two_level,     true) \
         M(key_string,                 false) \
         M(key_packed_string,          false) \
+        M(keys32_packed_string,       false) \
+        M(keys64_packed_string,       false) \
+        M(keys128_packed_string,      false) \
         M(key_fixed_string,           false) \
         M(keys16,                    false) \
         M(keys32,                    false) \
@@ -252,6 +261,9 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(key64_two_level,            true) \
         M(key_string_two_level,       true) \
         M(key_packed_string_two_level, true) \
+        M(keys32_packed_string_two_level, true) \
+        M(keys64_packed_string_two_level, true) \
+        M(keys128_packed_string_two_level, true) \
         M(key_fixed_string_two_level, true) \
         M(keys32_two_level,          true) \
         M(keys64_two_level,          true) \
@@ -324,6 +336,9 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys256_void)     \
         M(key_string)       \
         M(key_packed_string) \
+        M(keys32_packed_string) \
+        M(keys64_packed_string) \
+        M(keys128_packed_string) \
         M(key_fixed_string) \
         M(keys32)           \
         M(keys64)           \
@@ -403,6 +418,9 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys256_void_two_level)     \
         M(key_string_two_level)       \
         M(key_packed_string_two_level) \
+        M(keys32_packed_string_two_level) \
+        M(keys64_packed_string_two_level) \
+        M(keys128_packed_string_two_level) \
         M(key_fixed_string_two_level) \
         M(keys32_two_level)           \
         M(keys64_two_level)           \
@@ -496,9 +514,22 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// the arenas and the overflow row, and leaves the variants empty, with no arena. Calling
     /// this while the variants still own live nontrivial states would leak them undestroyed.
     void resetAfterStateOwnershipTransfer();
-    void init(Type type_, std::optional<size_t> size_hint = std::nullopt);
+    /// The expected number of keys of a table, which `init` preallocates the table for.
+    struct SizeHint
+    {
+        size_t keys = 0;
+        /// The part of `keys` with an empty string, which a table of fixed-width keys and one `String` keeps
+        /// in a sub-table of its own (see `KeysAndPackedStringHashMap`). Such a table is preallocated only
+        /// when the hint tells this part.
+        std::optional<size_t> keys_with_empty_string = std::nullopt;
+    };
+
+    void init(Type type_, std::optional<SizeHint> size_hint = std::nullopt);
     /// Number of rows (different keys).
     size_t size() const;
+    /// The number of keys with an empty string in a table of fixed-width keys and one `String` (see
+    /// `SizeHint`), and 0 for the other methods.
+    size_t sizeWithEmptyString() const;
     size_t sizeWithoutOverflowRow() const;
     /// Memory held by the variants: the arenas (keys and states) plus the active method's
     /// hash-table buffer, which dominates for inline states over fixed keys.
@@ -529,6 +560,9 @@ struct AggregatedDataVariants : private boost::noncopyable
     bool isTwoLevel() const;
     bool isConvertibleToTwoLevel() const;
     static bool isConvertibleToTwoLevel(Type type);
+    /// Whether `type` is a method of fixed-width keys and one `String` key: `keys32_packed_string`,
+    /// `keys64_packed_string`, `keys128_packed_string` or a two-level form of them.
+    static bool isKeysAndPackedString(Type type);
     void convertToTwoLevel();
     /// Replaces an empty two-level table with an empty single-level table of the same method: the reverse of
     /// `convertToTwoLevel` for a table whose data was written to disk.

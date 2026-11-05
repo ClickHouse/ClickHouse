@@ -82,6 +82,11 @@ struct SubRangeStateOf
 template <typename State>
 using SubRangeState = typename SubRangeStateOf<State>::Type;
 
+/// A `SubRangeState` packs the keys of its sub-range into an array ahead of the lookups only when the sub-range holds
+/// at least this many rows. It packs the rows of a shorter one one by one: the array would cost more to allocate and
+/// fill than the rows it saves packing.
+constexpr size_t min_rows_to_batch_pack_sub_range = 256;
+
 namespace columns_hashing_impl
 {
 

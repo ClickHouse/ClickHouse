@@ -6,6 +6,7 @@
 
 #include <base/StringViewHash.h>
 #include <base/defines.h>
+#include <base/unaligned.h>
 
 /// PackedStringRef is a compact, 16-byte string representation that encodes
 /// payload and tag bits inside two 64-bit words.
@@ -375,3 +376,128 @@ inline void set(PackedStringRef & x)
 }
 
 }
+
+/// PackedStringRef20 is a 20-byte packed string reference with 4-byte alignment. It keeps strings of up to 15 bytes
+/// inline, 4 more than `PackedStringRef`, and fits right after a 4-byte value, where `PackedStringRef` would leave
+/// 4 bytes of padding (see `KeysAndPackedString`).
+///
+/// A string of up to 15 bytes is small: its bytes are inline. A longer one is a heap string: the value holds a
+/// pointer to its bytes. The length of a heap string has a field of its own, so, unlike in `PackedStringRef`, every
+/// non-empty string stores a hash, and the pointer keeps all 64 bits. The hash is in native byte order and the other
+/// fields are little-endian, so the inline bytes are at the same offsets on every host.
+///
+/// ------------------------------------------------------------
+/// Byte layout (20 bytes total):
+///
+///   bytes  0..3  : hash32
+///   bytes  4..11 : payload 0..7 (small)
+///                  pointer (heap)
+///   bytes 12..18 : payload 8..14 (small)
+///                  length (heap)
+///   byte   19    : length (small)
+///                  0 (heap)
+///
+/// The payload bytes past the end of a small string are 0, so equal strings have equal bytes. Empty: all 20 bytes
+/// are 0. Bytes 12..19 are not all zero in the other encodings: byte 19 holds the length of a small string, and
+/// bytes 12..18 hold the length of a heap string, which is at least 16.
+struct alignas(4) PackedStringRef20
+{
+    static constexpr uint64_t MAX_SMALL_LEN = 15;
+
+private:
+    static constexpr size_t LOW_OFFSET = 4;
+    static constexpr size_t HIGH_OFFSET = 12;
+    static constexpr size_t SMALL_LEN_OFFSET = 19;
+
+    /// Bytes rather than 64-bit words: a 64-bit member would align the value to 8 bytes and pad it to 24.
+    uint8_t bytes[20];
+
+    /// Bytes 4..11 and bytes 12..19 as little-endian words.
+    ALWAYS_INLINE uint64_t low() const { return unalignedLoadLittleEndian<uint64_t>(bytes + LOW_OFFSET); }
+    ALWAYS_INLINE uint64_t high() const { return unalignedLoadLittleEndian<uint64_t>(bytes + HIGH_OFFSET); }
+
+    ALWAYS_INLINE bool isSmall() const { return bytes[SMALL_LEN_OFFSET] != 0; }
+
+public:
+    ALWAYS_INLINE bool isEmpty() const { return high() == 0; }
+
+    ALWAYS_INLINE uint32_t getHash() const { return unalignedLoad<uint32_t>(bytes); }
+
+    /// The number of out-of-line bytes: the length of a heap string, 0 for the others.
+    ALWAYS_INLINE size_t heapSize() const { return isSmall() ? 0 : high(); }
+
+    /// The out-of-line bytes of a heap string, `heapSize` of them.
+    ALWAYS_INLINE const char * getHeapPtr() const { return reinterpret_cast<const char *>(low()); }
+
+    ALWAYS_INLINE explicit operator std::string_view() const
+    {
+        if (isSmall())
+            return {reinterpret_cast<const char *>(bytes + LOW_OFFSET), bytes[SMALL_LEN_OFFSET]};
+        return {getHeapPtr(), heapSize()};
+    }
+
+    /// Points a heap string at a copy of its out-of-line bytes (see `PackedStringRef::setHeapPointer`).
+    ALWAYS_INLINE void setHeapPointer(const char * ptr)
+    {
+        chassert(heapSize() != 0);
+        unalignedStoreLittleEndian<uint64_t>(bytes + LOW_OFFSET, reinterpret_cast<uintptr_t>(ptr));
+    }
+
+    /// Builds a packed value. A non-empty string stores `hash_fn(ptr, len)` as its 32-bit hash, and the empty value is
+    /// all zeros.
+    ///
+    /// A small string is read in whole words starting at `ptr`, so the caller must guarantee at least 7 readable bytes
+    /// past its end, as for `PackedStringRef::build`.
+    template <typename HashFn>
+    static ALWAYS_INLINE PackedStringRef20 build(const char * ptr, size_t len, HashFn && hash_fn)
+    {
+        PackedStringRef20 r{};
+        if (len == 0)
+            return r;
+
+        /// The words are composed in registers and stored once (see `PackedStringRef::build`).
+        uint64_t low = 0;
+        uint64_t high = 0;
+        if (len <= MAX_SMALL_LEN)
+        {
+            /// The bytes past the end of the string are zeroed: they are part of the key identity.
+            low = unalignedLoadLittleEndian<uint64_t>(ptr);
+            if (len <= sizeof(low))
+                low &= ~uint64_t(0) >> ((sizeof(low) - len) * 8);
+            else
+                high = unalignedLoadLittleEndian<uint64_t>(ptr + sizeof(low)) & (~uint64_t(0) >> ((2 * sizeof(low) - len) * 8));
+            high |= uint64_t(len) << 56;
+        }
+        else
+        {
+            /// The 56 bits of the length field hold the length of any string in the address space.
+            chassert(len >> 56 == 0);
+            low = reinterpret_cast<uintptr_t>(ptr);
+            high = len;
+        }
+        unalignedStore<uint32_t>(r.bytes, hash_fn(ptr, len));
+        unalignedStoreLittleEndian<uint64_t>(r.bytes + LOW_OFFSET, low);
+        unalignedStoreLittleEndian<uint64_t>(r.bytes + HIGH_OFFSET, high);
+        return r;
+    }
+
+    /// Bytes 12..19 hold the length of a heap string, and the tail and the length of a small one. With the hash, they
+    /// decide every pair but two heap strings of the same hash and length at different addresses, whose bytes are
+    /// compared.
+    friend ALWAYS_INLINE bool operator==(const PackedStringRef20 & lhs, const PackedStringRef20 & rhs)
+    {
+        if (lhs.getHash() != rhs.getHash() || lhs.high() != rhs.high())
+            return false;
+        if (lhs.low() == rhs.low())
+            return true;
+        if (lhs.isSmall())
+            return false;
+#if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
+        return memequalWide(lhs.getHeapPtr(), rhs.getHeapPtr(), lhs.heapSize());
+#else
+        return memcmp(lhs.getHeapPtr(), rhs.getHeapPtr(), lhs.heapSize()) == 0;
+#endif
+    }
+};
+
+static_assert(sizeof(PackedStringRef20) == 20 && alignof(PackedStringRef20) == 4);
