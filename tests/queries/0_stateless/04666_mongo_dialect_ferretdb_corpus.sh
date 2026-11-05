@@ -50,7 +50,7 @@ done
 for ((i = 0; i < SLICES; i++)); do
     QUERIES="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus_$i.sql"
     {
-        echo "SET allow_experimental_mongo_dialect = 1;"
+        echo "SET enable_mongo_dialect = 1;"
         echo "SET dialect = 'mongo';"
         grep -v '^#' "$CORPUS" | awk "NR % $SLICES == $i" | sed "s/^db\.corpus\./db.corpus_$i./; s/\$/;/"
         # Switching back out of the dialect and reading the marker proves the whole slice was

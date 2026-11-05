@@ -47,7 +47,7 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 
 mongo() {
-    ${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 --query "$1"
+    ${CLICKHOUSE_CLIENT} --dialect mongo --enable_mongo_dialect 1 --query "$1"
 }
 
 # Prints the name of the error of a query.

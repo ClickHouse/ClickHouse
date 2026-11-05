@@ -14,7 +14,7 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 
 mongo() {
-    ${CLICKHOUSE_CLIENT} --session_timezone 'Asia/Istanbul' --dialect mongo --allow_experimental_mongo_dialect 1 --query "$1"
+    ${CLICKHOUSE_CLIENT} --session_timezone 'Asia/Istanbul' --dialect mongo --enable_mongo_dialect 1 --query "$1"
 }
 
 # Prints the error of a query without the parenthesised error name and the stack trace. The

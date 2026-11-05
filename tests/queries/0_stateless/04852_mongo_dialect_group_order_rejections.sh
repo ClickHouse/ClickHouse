@@ -22,7 +22,7 @@ ${CLICKHOUSE_CLIENT} --query "
 # message itself is what the reference records. The `DB::Exception: ` prefix is dropped as well,
 # because the test runner rejects the word `Exception` in the standard output of a test.
 run() {
-    ${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 --query "$1" 2>&1 >/dev/null \
+    ${CLICKHOUSE_CLIENT} --dialect mongo --enable_mongo_dialect 1 --query "$1" 2>&1 >/dev/null \
         | head -1 | sed -e 's/^Received exception.*//' -e 's/ (version .*//' -e 's/\. ([A-Z_]*)$//' -e 's/DB::Exception: //'
 }
 
@@ -34,11 +34,11 @@ echo '-- a stage in between builds documents that do not have the sort key'
 run 'db.group_order_rejections.aggregate([{"$sort" : {"ts" : 1}}, {"$project" : {"k" : 1, "v" : 1}}, {"$group" : {"_id" : "$k", "first" : {"$first" : "$v"}}}]);'
 
 echo '-- an accumulator that does not depend on the order is unaffected'
-${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 --max_threads 1 \
+${CLICKHOUSE_CLIENT} --dialect mongo --enable_mongo_dialect 1 --max_threads 1 \
     --query 'db.group_order_rejections.aggregate([{"$sort" : {"k" : 1, "ts" : -1}}, {"$group" : {"_id" : "$k", "n" : {"$sum" : 1}}}, {"$sort" : {"_id" : 1}}]);'
 
 echo '-- and so is a group that no sort precedes'
-${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 --max_threads 1 \
+${CLICKHOUSE_CLIENT} --dialect mongo --enable_mongo_dialect 1 --max_threads 1 \
     --query 'db.group_order_rejections.aggregate([{"$group" : {"_id" : "$k", "n" : {"$sum" : 1}}}, {"$sort" : {"_id" : 1}}]);'
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE group_order_rejections"

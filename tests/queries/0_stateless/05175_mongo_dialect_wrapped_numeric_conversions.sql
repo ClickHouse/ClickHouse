@@ -15,7 +15,7 @@ CREATE TABLE wrapped_numeric
 ) ENGINE = MergeTree ORDER BY ms;
 INSERT INTO wrapped_numeric VALUES (1546300800000, 1546300800000, 1546300800000, true);
 
-SET allow_experimental_mongo_dialect = 1;
+SET enable_mongo_dialect = 1;
 SET dialect = 'mongo';
 db.wrapped_numeric.aggregate([{"$project" : {"plain" : {"$toDate" : "$ms"}, "nullable" : {"$toDate" : "$ms_nullable"}, "low_cardinality" : {"$toDate" : "$ms_low_cardinality"}}}]);
 db.wrapped_numeric.aggregate([{"$project" : {"nullable" : {"$toDecimal" : "$ms_nullable"}, "low_cardinality" : {"$toDecimal" : "$ms_low_cardinality"}, "flag" : {"$toDecimal" : "$flag_nullable"}}}]);

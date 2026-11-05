@@ -12,7 +12,7 @@ DROP TABLE IF EXISTS date_from_string;
 CREATE TABLE date_from_string (_id Int64, s String) ENGINE = Memory;
 INSERT INTO date_from_string VALUES (1, '2013-07-15');
 
-SET allow_experimental_mongo_dialect = 1;
+SET enable_mongo_dialect = 1;
 SET dialect = 'mongo';
 
 db.date_from_string.aggregate([{"$project" : {"formatted" : {"$dateFromString" : {"dateString" : "$s", "format" : "%Y-%m-%d"}}, "bestEffort" : {"$dateFromString" : {"dateString" : "$s"}}, "sameInstant" : {"$eq" : [{"$dateFromString" : {"dateString" : "$s", "format" : "%Y-%m-%d"}}, {"$dateFromString" : {"dateString" : "$s"}}]}}}]);

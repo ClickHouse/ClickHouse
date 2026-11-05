@@ -21,7 +21,7 @@ ${CLICKHOUSE_CLIENT} --query "
 # message itself is what the reference records. The `DB::Exception: ` prefix is dropped as well,
 # because the test runner rejects the word `Exception` in the standard output of a test.
 run() {
-    ${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 --query "$1" 2>&1 >/dev/null \
+    ${CLICKHOUSE_CLIENT} --dialect mongo --enable_mongo_dialect 1 --query "$1" 2>&1 >/dev/null \
         | head -1 | sed -e 's/^Received exception.*//' -e 's/ (version .*//' -e 's/\. ([A-Z_]*)$//' -e 's/DB::Exception: //'
 }
 
@@ -31,8 +31,8 @@ run 'db.dates.find({"ts" : {"$date" : {"oops" : 1}}});'
 run 'db.dates.find({"ts" : {"$date" : {"$numberLong" : "0", "extra" : 1}}});'
 
 echo '-- the canonical form, the legacy number and the relaxed string'
-${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 --max_threads 1 --query 'db.dates.find({"ts" : {"$date" : {"$numberLong" : "0"}}});'
-${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 --max_threads 1 --query 'db.dates.find({"ts" : {"$date" : 1546300800000}});'
-${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 --max_threads 1 --query 'db.dates.find({"ts" : {"$date" : "2019-01-01"}});'
+${CLICKHOUSE_CLIENT} --dialect mongo --enable_mongo_dialect 1 --max_threads 1 --query 'db.dates.find({"ts" : {"$date" : {"$numberLong" : "0"}}});'
+${CLICKHOUSE_CLIENT} --dialect mongo --enable_mongo_dialect 1 --max_threads 1 --query 'db.dates.find({"ts" : {"$date" : 1546300800000}});'
+${CLICKHOUSE_CLIENT} --dialect mongo --enable_mongo_dialect 1 --max_threads 1 --query 'db.dates.find({"ts" : {"$date" : "2019-01-01"}});'
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE dates"

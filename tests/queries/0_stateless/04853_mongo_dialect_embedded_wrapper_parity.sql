@@ -10,7 +10,7 @@ SET dialect='clickhouse';
 DROP TABLE IF EXISTS wrapper_parity;
 CREATE TABLE wrapper_parity (id Int64, events Array(JSON)) ENGINE = MergeTree ORDER BY id;
 
-SET allow_experimental_mongo_dialect = 1;
+SET enable_mongo_dialect = 1;
 SET mutations_sync = 1;
 SET session_timezone = 'UTC';
 SET dialect='mongo';

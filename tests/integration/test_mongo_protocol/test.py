@@ -1857,7 +1857,7 @@ def test_dialect_writes_the_embedded_documents_the_wire_path_creates(started_clu
     collection.insert_one({"id": 1, "events": [{"name": "start"}]})
 
     node = cluster.instances["node"]
-    dialect_settings = {"dialect": "mongo", "allow_experimental_mongo_dialect": 1}
+    dialect_settings = {"dialect": "mongo", "enable_mongo_dialect": 1}
     node.query(
         'db.dialect_embedded_documents.insertOne({"id": 2, "events": [{"name": "second"}]})',
         password="123",
@@ -2939,7 +2939,7 @@ def test_generated_queries_ignore_the_dialect_of_the_profile(started_cluster):
     node.query("DROP USER IF EXISTS mongo_dialect_user", password="123")
     node.query(
         "CREATE USER mongo_dialect_user IDENTIFIED WITH plaintext_password BY 'mongo_pass' "
-        "SETTINGS dialect = 'mongo', allow_experimental_mongo_dialect = 1",
+        "SETTINGS dialect = 'mongo', enable_mongo_dialect = 1",
         password="123",
     )
     node.query("GRANT SELECT, INSERT ON db.dialect_profile TO mongo_dialect_user", password="123")

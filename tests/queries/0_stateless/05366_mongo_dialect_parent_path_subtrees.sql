@@ -12,7 +12,7 @@ CREATE TABLE docs (id Int32, `profile.name` String, `profile.age` Int32, profile
 INSERT INTO docs VALUES (1, 'alpha', 30, 5), (2, 'beta', 40, 6);
 
 SELECT 'find, inclusion and exclusion of a parent path';
-SET allow_experimental_mongo_dialect = 1;
+SET enable_mongo_dialect = 1;
 SET dialect='mongo';
 db.docs.find({}, {"profile" : 1}).sort({"profile.name" : 1});
 db.docs.find({}, {"profile" : 0}).sort({"id" : 1});

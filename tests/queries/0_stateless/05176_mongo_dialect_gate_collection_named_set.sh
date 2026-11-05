@@ -3,7 +3,7 @@
 # probe as the Mongo parser, so a statement escapes the gate exactly when the parser also reads it
 # as a SQL `SET`. A Mongo statement whose database part is named `set` starts with the word `set`
 # as well, and before the fix that first token alone let it run with
-# `allow_experimental_mongo_dialect = 0`.
+# `enable_mongo_dialect = 0`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -20,14 +20,14 @@ ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --dialect mongo --query 'set.users.
 
 # With the gate on it is parsed as a Mongo statement: the database `set` does not exist, which is
 # `UNKNOWN_DATABASE` (81) rather than a silently executed `SET`.
-${CLICKHOUSE_CLIENT} --send_logs_level=fatal --allow_experimental_mongo_dialect 1 --dialect mongo \
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --enable_mongo_dialect 1 --dialect mongo \
     --query 'set.users.find({});' 2>&1 >/dev/null | grep -m1 -o 'Code: [0-9]*'
 
 # A real SQL `SET` still escapes the gate, so a session can always leave the dialect.
 ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query "
-SET allow_experimental_mongo_dialect = 1;
+SET enable_mongo_dialect = 1;
 SET dialect = 'mongo';
-SET allow_experimental_mongo_dialect = 0;
+SET enable_mongo_dialect = 0;
 SET dialect = 'clickhouse';
 SELECT 'left the dialect';
 "

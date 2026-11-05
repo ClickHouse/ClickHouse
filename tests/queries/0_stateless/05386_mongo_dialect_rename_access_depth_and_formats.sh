@@ -28,7 +28,7 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 
 mongo() {
-    ${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 "$@"
+    ${CLICKHOUSE_CLIENT} --dialect mongo --enable_mongo_dialect 1 "$@"
 }
 
 # Prints the name of the error of a query.
@@ -51,7 +51,7 @@ err --max_parser_depth 20 --query "db.mongo_secret.find(${nested}, {\"id\" : 1})
 mongo --query "db.mongo_secret.find(${nested}, {\"id\" : 1});"
 
 echo '-- a query with leading whitespace'
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&dialect=mongo&allow_experimental_mongo_dialect=1" --data-binary $'\n  db.mongo_secret.find({}, {"id" : 1})'
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&dialect=mongo&enable_mongo_dialect=1" --data-binary $'\n  db.mongo_secret.find({}, {"id" : 1})'
 
 echo '-- the date formats are the ones of MongoDB'
 mongo --query 'db.mongo_dates.aggregate([{"$project" : {"default" : {"$dateToString" : {"date" : "$d"}}, "minutes" : {"$dateToString" : {"date" : "$d", "format" : "%H:%M %% %d/%m/%Y"}}, "week" : {"$dateToString" : {"date" : "$d", "format" : "%w %u %U %V %G %j"}}, "zone" : {"$dateToString" : {"date" : "$d", "format" : "%H:%M%z", "timezone" : "Asia/Kolkata"}}}}]);'

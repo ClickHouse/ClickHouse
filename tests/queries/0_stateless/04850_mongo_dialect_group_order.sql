@@ -12,7 +12,7 @@ DROP TABLE IF EXISTS group_order;
 CREATE TABLE group_order (k String, ts Int64, v String) ENGINE = MergeTree ORDER BY (k, ts);
 INSERT INTO group_order VALUES ('a', 1, 'a1'), ('a', 2, 'a2'), ('a', 3, 'a3'), ('b', 1, 'b1'), ('b', 2, 'b2');
 
-SET allow_experimental_mongo_dialect = 1;
+SET enable_mongo_dialect = 1;
 SET dialect='mongo';
 
 db.group_order.aggregate([{"$sort": {"ts": 1}}, {"$group": {"_id": "$k", "first": {"$first": "$v"}, "last": {"$last": "$v"}, "all": {"$push": "$v"}}}, {"$sort": {"_id": 1}}]);

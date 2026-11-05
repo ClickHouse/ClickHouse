@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-URL="${CLICKHOUSE_URL}&dialect=mongo&allow_experimental_mongo_dialect=1"
+URL="${CLICKHOUSE_URL}&dialect=mongo&enable_mongo_dialect=1"
 
 # A whole `SET`, with or without a trailing `;`, is accepted.
 ${CLICKHOUSE_CURL} -sS "$URL" -d "SET max_threads = 1" && echo "set: ok"

@@ -10,7 +10,7 @@ DROP TABLE IF EXISTS regexp_array;
 CREATE TABLE regexp_array (_id Int64, name String, tags Array(String)) ENGINE = Memory;
 INSERT INTO regexp_array VALUES (1, 'bertha', ['beta', 'gamma']), (2, 'carl', ['alpha']), (3, 'diana', []);
 
-SET allow_experimental_mongo_dialect = 1;
+SET enable_mongo_dialect = 1;
 SET dialect = 'mongo';
 
 db.regexp_array.find({"tags" : {"$regex" : "^be"}});

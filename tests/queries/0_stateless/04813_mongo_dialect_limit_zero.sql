@@ -9,7 +9,7 @@ DROP TABLE IF EXISTS docs;
 CREATE TABLE docs (id Int64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO docs SELECT number + 1 FROM numbers(5);
 
-SET allow_experimental_mongo_dialect = 1;
+SET enable_mongo_dialect = 1;
 SET dialect='mongo';
 
 db.docs.find({}).sort({"id" : 1}).limit(0);

@@ -8,7 +8,7 @@ DROP TABLE IF EXISTS group_order_project;
 CREATE TABLE group_order_project (k String, ts UInt8, v String) ENGINE = MergeTree ORDER BY (k, ts);
 INSERT INTO group_order_project VALUES ('a', 1, 'a1'), ('a', 2, 'a2'), ('b', 1, 'b1'), ('b', 2, 'b2');
 
-SET allow_experimental_mongo_dialect = 1;
+SET enable_mongo_dialect = 1;
 SET dialect = 'mongo';
 db.group_order_project.aggregate([{"$sort" : {"ts" : 1}}, {"$project" : {"k" : 1, "ts" : 1, "v" : 1}}, {"$group" : {"_id" : "$k", "first" : {"$first" : "$v"}, "last" : {"$last" : "$v"}, "all" : {"$push" : "$v"}}}, {"$sort" : {"_id" : 1}}]);
 db.group_order_project.aggregate([{"$sort" : {"ts" : -1}}, {"$project" : {"v" : 0}}, {"$group" : {"_id" : "$k", "first" : {"$first" : "$ts"}}}, {"$sort" : {"_id" : 1}}]);

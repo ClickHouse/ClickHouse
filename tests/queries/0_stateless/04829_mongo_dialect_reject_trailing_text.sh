@@ -22,7 +22,7 @@ ${CLICKHOUSE_CLIENT} --query "
 # message itself is what the reference records. The `DB::Exception: ` prefix is dropped as well,
 # because the test runner rejects the word `Exception` in the standard output of a test.
 run() {
-    ${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 --query "$1" 2>&1 >/dev/null \
+    ${CLICKHOUSE_CLIENT} --dialect mongo --enable_mongo_dialect 1 --query "$1" 2>&1 >/dev/null \
         | head -1 | sed -e 's/^Received exception.*//' -e 's/ (version .*//' -e 's/\. ([A-Z_]*)$//' -e 's/DB::Exception: //'
 }
 
@@ -36,8 +36,8 @@ run 'db.docs.insertOne({"id" : 5, "name" : "e"}) x;'
 run 'db.docs.deleteMany({"id" : 5}) and more;'
 
 echo '-- the recognized suffixes and the argument list are not affected'
-${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 --query 'db.docs.find({}).sort({"id" : 1}).skip(0).limit(1);'
-${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 --query 'db.docs.find({"name" : "a) .limit("});'
+${CLICKHOUSE_CLIENT} --dialect mongo --enable_mongo_dialect 1 --query 'db.docs.find({}).sort({"id" : 1}).skip(0).limit(1);'
+${CLICKHOUSE_CLIENT} --dialect mongo --enable_mongo_dialect 1 --query 'db.docs.find({"name" : "a) .limit("});'
 
 echo '-- malformed inserts'
 run 'db.docs.insertOne(5);'
@@ -49,6 +49,6 @@ run 'db.docs.insertOne({"$id" : 5});'
 run 'db.docs.insertOne({"" : 5});'
 
 echo '-- the server is still healthy'
-${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 --max_threads 1 --query 'db.docs.find({"id" : 1});'
+${CLICKHOUSE_CLIENT} --dialect mongo --enable_mongo_dialect 1 --max_threads 1 --query 'db.docs.find({"id" : 1});'
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE docs"

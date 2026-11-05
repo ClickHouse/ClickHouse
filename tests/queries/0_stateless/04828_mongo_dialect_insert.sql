@@ -10,7 +10,7 @@ SET dialect='clickhouse';
 DROP TABLE IF EXISTS insert_target;
 CREATE TABLE insert_target (name String, age Int64, tags Array(String), `profile.city` String) ENGINE = MergeTree ORDER BY name;
 
-SET allow_experimental_mongo_dialect = 1;
+SET enable_mongo_dialect = 1;
 SET dialect='mongo';
 
 db.insert_target.insertOne({"name": "a", "age": 20, "tags": ["red", "blue"], "profile": {"city": "Amsterdam"}});

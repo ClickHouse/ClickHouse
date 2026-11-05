@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A session must be able to leave the `mongo` dialect after `allow_experimental_mongo_dialect`
+# A session must be able to leave the `mongo` dialect after `enable_mongo_dialect`
 # was turned back off: a leading `SET` bypasses the experimental gate, so
 # `SET dialect = 'clickhouse'` recovers the session instead of failing with
 # `SUPPORT_IS_DISABLED` and stranding it in the dialect until reconnect. A Mongo statement
@@ -19,10 +19,10 @@ ${CLICKHOUSE_CLIENT} --query "
 # Mongo statement, turn the gate back off, leave the dialect with a `SET`, and run plain SQL
 # again. Before the fix the last `SET dialect = 'clickhouse'` failed with `SUPPORT_IS_DISABLED`.
 ${CLICKHOUSE_CLIENT} --query "
-SET allow_experimental_mongo_dialect = 1;
+SET enable_mongo_dialect = 1;
 SET dialect = 'mongo';
 db.escape.find({});
-SET allow_experimental_mongo_dialect = 0;
+SET enable_mongo_dialect = 0;
 SET dialect = 'clickhouse';
 SELECT id + 1 FROM escape;
 "

@@ -17,7 +17,7 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE numeric_wrappers (id Int64, events Array(JSON)) ENGINE = MergeTree ORDER BY id;
 "
 
-MONGO="${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 --mutations_sync 1 --session_timezone UTC"
+MONGO="${CLICKHOUSE_CLIENT} --dialect mongo --enable_mongo_dialect 1 --mutations_sync 1 --session_timezone UTC"
 
 ${MONGO} --query 'db.numeric_wrappers.insertOne({"id": 1, "events": [{"n": {"$numberLong": "5000000000"}, "i": {"$numberInt": "-7"}, "d": {"$numberDouble": "2.5"}}]});'
 ${MONGO} --query 'db.numeric_wrappers.insertOne({"id": 2, "events": [{"n": {"$numberLong": 42}, "i": {"$numberInt": 8}, "d": {"$numberDouble": 1e300}}]});'
