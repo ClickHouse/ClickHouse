@@ -7,6 +7,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/DateLUT.h>
 
+#include <algorithm>
 #include <bit>
 
 
@@ -148,17 +149,23 @@ public:
         auto & data = typeid_cast<NumericVectorBatch<ItemType> &>(batch).prepareColumn(num_values);
         ItemType * out = data.data();
 
-        if (!not_null)
-        {
-            stream->readBytes(reinterpret_cast<char *>(out), num_values * sizeof(ItemType));
-            if constexpr (std::endian::native == std::endian::big)
-                for (size_t i = 0; i < num_values; ++i)
-                    out[i] = std::bit_cast<ItemType>(std::byteswap(std::bit_cast<Bits>(out[i])));
-            return;
-        }
+        /// The stream has only the non-null values: read them at once to the beginning of the column.
+        size_t num_present = num_values;
+        if (not_null)
+            num_present = std::count_if(not_null, not_null + num_values, [](char c) { return c != 0; });
 
-        for (size_t i = 0; i < num_values; ++i)
-            out[i] = not_null[i] ? read() : 0;
+        stream->readBytes(reinterpret_cast<char *>(out), num_present * sizeof(ItemType));
+        if constexpr (std::endian::native == std::endian::big)
+            for (size_t i = 0; i < num_present; ++i)
+                out[i] = std::bit_cast<ItemType>(std::byteswap(std::bit_cast<Bits>(out[i])));
+
+        if (!not_null)
+            return;
+
+        /// Move the values to their rows from the back: the k-th value goes to a row i >= k, so it is not overwritten before it is moved.
+        size_t next_value = num_present;
+        for (size_t i = num_values; i-- > 0;)
+            out[i] = not_null[i] ? out[--next_value] : 0;
     }
 
     void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
@@ -169,14 +176,6 @@ public:
 
 private:
     using Bits = std::conditional_t<sizeof(ItemType) == 8, UInt64, UInt32>;
-
-    ItemType read()
-    {
-        Bits bits = 0;
-        for (size_t b = 0; b < sizeof(ItemType); ++b)
-            bits |= static_cast<Bits>(stream->readByte()) << (b * 8);
-        return std::bit_cast<ItemType>(bits);
-    }
 
     std::unique_ptr<InputByteStream> stream;
 };
