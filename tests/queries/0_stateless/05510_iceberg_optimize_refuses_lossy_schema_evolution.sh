@@ -39,15 +39,17 @@ position_deletes()
         WHERE database = currentDatabase() AND table = '$1' AND content = 'POSITION_DELETE'"
 }
 
-# The `next-row-id` of the metadata version that a read of $1 resolves.
+# The `next-row-id` of the metadata version that a read of $1 resolves. With parallel replicas every
+# replica logs that metadata under the same query id.
 next_row_id()
 {
     local query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_${RANDOM}${RANDOM}"
     $CH --iceberg_metadata_log_level=metadata --query_id "${query_id}" --query "SELECT count() FROM $1" > /dev/null
     $CH --query "
         SYSTEM FLUSH LOGS iceberg_metadata_log;
-        SELECT groupArray(JSONExtractInt(content, 'next-row-id')) FROM system.iceberg_metadata_log
-        WHERE query_id = '${query_id}' AND content_type = 'Metadata'"
+        SELECT groupArray(JSONExtractInt(content, 'next-row-id'))
+        FROM (SELECT DISTINCT content FROM system.iceberg_metadata_log
+              WHERE query_id = '${query_id}' AND content_type = 'Metadata')"
 }
 
 # Each case gets $1: storage label, $2: table name, $3: engine.
