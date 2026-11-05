@@ -13,6 +13,7 @@ DROP TABLE IF EXISTS t_clear_b;
 DROP TABLE IF EXISTS t_clear_m;
 DROP TABLE IF EXISTS t_clear_i;
 DROP TABLE IF EXISTS t_clear_c;
+DROP TABLE IF EXISTS t_clear_s;
 
 CREATE TABLE t_clear_mt (id UInt32, a UInt32, b UInt32, w UInt32, tp Tuple(x UInt32), n Nested(x UInt32))
 ENGINE = MergeTree ORDER BY id;
@@ -133,6 +134,26 @@ ALTER TABLE t_clear_c UPDATE ts = ts + INTERVAL 1 SECOND WHERE 1 SETTINGS mutati
 ALTER TABLE t_clear_c CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
 KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_c' AND NOT is_done SYNC FORMAT Null;
 
+-- A subquery reads `b` through a table alias or a matcher, in an assignment and in a predicate.
+CREATE TABLE t_clear_s (id UInt32, b UInt32, w UInt32, tp Tuple(x UInt32)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_clear_s VALUES (1, 2222, 9, tuple(1)), (2, 4444, 8, tuple(2));
+SYSTEM STOP MERGES t_clear_s;
+ALTER TABLE t_clear_s UPDATE w = (SELECT max(src.b) FROM t_clear_s AS src) WHERE 1 SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_s CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_s' AND NOT is_done SYNC FORMAT Null;
+ALTER TABLE t_clear_s UPDATE w = (SELECT max(COLUMNS('^b$')) FROM t_clear_s) WHERE 1 SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_s CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_s' AND NOT is_done SYNC FORMAT Null;
+ALTER TABLE t_clear_s UPDATE w = (SELECT max(COLUMNS(b)) FROM t_clear_s) WHERE 1 SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_s CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_s' AND NOT is_done SYNC FORMAT Null;
+ALTER TABLE t_clear_s UPDATE w = (SELECT max(tp.COLUMNS('^x$')) FROM t_clear_s) WHERE 1 SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_s CLEAR COLUMN tp SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_s' AND NOT is_done SYNC FORMAT Null;
+ALTER TABLE t_clear_s DELETE WHERE id IN (SELECT id FROM t_clear_s AS src WHERE src.b = 2222) SETTINGS mutations_sync = 0;
+ALTER TABLE t_clear_s CLEAR COLUMN b SETTINGS alter_sync = 0; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_clear_s' AND NOT is_done SYNC FORMAT Null;
+
 CREATE TABLE t_clear_b (id UInt32, x UInt32, b UInt32) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_clear_b VALUES (1, 1, 2222), (2, 2, 4444);
 SYSTEM STOP MERGES t_clear_b;
@@ -217,3 +238,4 @@ DROP TABLE t_clear_b;
 DROP TABLE t_clear_m;
 DROP TABLE t_clear_i;
 DROP TABLE t_clear_c;
+DROP TABLE t_clear_s;

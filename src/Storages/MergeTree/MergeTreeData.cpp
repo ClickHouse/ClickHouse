@@ -24,6 +24,8 @@
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <Analyzer/IdentifierNode.h>
+#include <Analyzer/MatcherNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
@@ -14666,6 +14668,50 @@ namespace
         mutation_name);
 }
 
+/// A subquery may alias the table, so every suffix of a compound identifier in it is a possible column name.
+void collectReadNames(const QueryTreeNodePtr & node, bool in_subquery, const ColumnsDescription & columns, NameSet & names)
+{
+    if (!node)
+        return;
+
+    auto add_identifier = [&](Identifier identifier)
+    {
+        names.insert(identifier.getFullName());
+        while (in_subquery && identifier.getPartsSize() > 1)
+        {
+            identifier.popFirst();
+            names.insert(identifier.getFullName());
+        }
+    };
+
+    if (const auto * identifier_node = node->as<IdentifierNode>())
+    {
+        add_identifier(identifier_node->getIdentifier());
+    }
+    else if (auto * matcher_node = node->as<MatcherNode>())
+    {
+        /// The qualifier can be a compound column, as in `tp.COLUMNS('^x$')`.
+        if (matcher_node->isQualified())
+            add_identifier(matcher_node->getQualifiedIdentifier());
+
+        if (matcher_node->getMatcherType() == MatcherNodeType::COLUMNS_LIST)
+        {
+            for (const auto & identifier : matcher_node->getColumnsIdentifiers())
+                add_identifier(identifier);
+        }
+        else
+        {
+            for (const auto & column : columns)
+                if (matcher_node->isMatchingColumn(column.name))
+                    names.insert(column.name);
+        }
+    }
+
+    in_subquery = in_subquery || node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION;
+    for (const auto & child : node->getChildren())
+        collectReadNames(child, in_subquery, columns, names);
+}
+
 }
 
 void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
@@ -14793,8 +14839,7 @@ NameSet MergeTreeData::getColumnsReadByMutationCommand(
     auto add_identifiers = [&](ASTPtr expression)
     {
         normalizeSetOperations(expression, local_context);
-        auto identifiers = collectIdentifiersFullNames(buildQueryTree(expression, local_context));
-        read.insert(identifiers.begin(), identifiers.end());
+        collectReadNames(buildQueryTree(expression, local_context), /*in_subquery=*/ false, columns, read);
     };
 
     auto add_defaulted = [&](const String & name)
