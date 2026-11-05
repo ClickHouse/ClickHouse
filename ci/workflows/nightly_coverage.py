@@ -69,7 +69,7 @@ workflow = Workflow.Config(
         ),
         Workflow.Config.InputConfig(
             name="performance_shards",
-            description="With suite=performance: all or comma-separated shard numbers, e.g. 4,13",
+            description="Performance shards for suite=performance, either all or comma-separated numbers (e.g. 4,13)",
             is_required=False,
             default_value="all",
         ),

@@ -12,7 +12,7 @@ on:
         options: ['all', 'performance']
         default: all
       performance_shards:
-        description: With suite=performance: all or comma-separated shard numbers, e.g. 4,13
+        description: Performance shards for suite=performance, either all or comma-separated numbers (e.g. 4,13)
         required: false
         default: all
 
