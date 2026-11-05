@@ -1093,11 +1093,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             checkAccessRightsForFilter(
                 context, table_id, storage, storage_snapshot, metadata_snapshot, filter_tables_with_columns, parallel_replicas_custom_key_ast_to_check);
 
-        /// Remove limits for some tables in the `system` database.
+        /// Remove quota and limits for some tables in the `system` database.
+        /// `system.one` keeps the limits, because queries without FROM read it.
         if (shouldIgnoreQuotaAndLimits(table_id) && (joined_tables.tablesCount() <= 1))
         {
             options.ignore_quota = true;
-            /// A query without FROM reads `system.one`, its result must still obey `max_result_rows` and `max_result_bytes`.
             if (table_id.table_name != "one")
                 options.ignore_limits = true;
         }
