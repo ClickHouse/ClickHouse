@@ -78,7 +78,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
 
         auto object_path = position_deletes_object.file_path;
-        auto object_metadata = object_storage->getObjectMetadata(object_path, /*with_tags=*/ false);
+        auto object_metadata = getObjectMetadataForRead(*object_storage, RelativePathWithMetadata(object_path), /*with_tags=*/ false);
         auto object_info = RelativePathWithMetadata{object_path, object_metadata};
 
 
@@ -126,6 +126,8 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
             return std::shared_ptr<const ActionsDAG>();
         }();
 
+        auto delete_format_filter_info = std::make_shared<FormatFilterInfo>(actions_dag_ptr, context, nullptr, nullptr, nullptr);
+        delete_format_filter_info->need_row_numbers = true;
         auto delete_format = FormatFactory::instance().getInput(
             format,
             *delete_read_buffers.back(),
@@ -134,7 +136,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
             context->getSettingsRef()[DB::Setting::max_block_size],
             format_settings,
             parser_shared_resources,
-            std::make_shared<FormatFilterInfo>(actions_dag_ptr, context, nullptr, nullptr, nullptr),
+            delete_format_filter_info,
             true /* is_remote_fs */,
             compression_method);
 

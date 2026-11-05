@@ -1,6 +1,5 @@
 -- Tags: no-parallel-replicas
 
-set enable_analyzer = 1;
 set insert_keeper_fault_injection_probability = 0;
 
 drop table if exists rmt_commit_order sync;
