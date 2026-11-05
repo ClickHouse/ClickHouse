@@ -912,16 +912,10 @@ Aws::Glue::Model::TableInput GlueCatalog::buildUpdatedTableInput(
         parameters["previous_metadata_location"] = it->second;
 
     sd.SetLocation(tableLocationFromMetadataPath(new_metadata_path));
-    if (new_schema)
-        sd.SetColumns(glueColumnsFromIcebergSchema(new_schema));
-    else if (sd.GetColumns().empty())
-    {
-        /// Restore missing Glue columns from the committed Iceberg schema.
-        auto schema = getCurrentSchema(new_metadata);
-        if (!schema || !schema->has(DB::Iceberg::f_fields))
-            throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No current Iceberg schema in {}", new_metadata_path);
-        sd.SetColumns(glueColumnsFromIcebergSchema(schema));
-    }
+    auto schema = new_schema ? new_schema : getCurrentSchema(new_metadata);
+    if (!schema || !schema->has(DB::Iceberg::f_fields))
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No current Iceberg schema in {}", new_metadata_path);
+    sd.SetColumns(glueColumnsFromIcebergSchema(schema));
     table_input.SetStorageDescriptor(sd);
 
     parameters["metadata_location"] = new_metadata_path;

@@ -142,7 +142,7 @@ private:
     };
 
     /// Updates `metadata_location` and columns while preserving the rest of the Glue table `existing`.
-    /// Columns are replaced from `new_schema` if given, otherwise filled from `new_metadata` only when Glue has none.
+    /// Columns are rebuilt from `new_schema` if given, otherwise from the current schema of `new_metadata`.
     static Aws::Glue::Model::TableInput buildUpdatedTableInput(
         const Aws::Glue::Model::Table & existing,
         const String & new_metadata_path,

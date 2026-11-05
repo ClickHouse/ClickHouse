@@ -981,7 +981,8 @@ def test_create_preserves_nested_names_and_uuid_on_reopen(started_cluster):
     assert node.query(f"SELECT * FROM {table_ref}") == ""
 
 
-def test_insert_repairs_empty_glue_columns(started_cluster):
+@pytest.mark.parametrize("glue_columns", [[], [{"Name": "stale", "Type": "int"}]], ids=["empty", "stale"])
+def test_insert_rewrites_glue_columns(started_cluster, glue_columns):
     node = started_cluster.instances["node1"]
     test_ref = f"test_glue_legacy_columns_{uuid.uuid4()}"
     table_name = f"{test_ref}_table"
@@ -1002,12 +1003,13 @@ def test_insert_repairs_empty_glue_columns(started_cluster):
             "TableType": before["TableType"],
             "StorageDescriptor": {
                 "Location": before["StorageDescriptor"]["Location"],
-                "Columns": [],
+                "Columns": glue_columns,
             },
             "Parameters": before["Parameters"],
         },
     )
-    assert not glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]["StorageDescriptor"]["Columns"]
+    stored_columns = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]["StorageDescriptor"]["Columns"]
+    assert [col["Name"] for col in stored_columns] == [col["Name"] for col in glue_columns]
 
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
     node.query(f"INSERT INTO {table_ref} VALUES ('repaired')", settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1})
