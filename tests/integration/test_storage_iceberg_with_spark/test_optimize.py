@@ -315,10 +315,11 @@ def test_optimize_position_delete_other_partition_spec(started_cluster_iceberg_w
     TABLE_NAME = "test_optimize_delete_other_spec_" + get_uuid_str()
     table_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
 
-    # OPTIMIZE must not apply a position delete to a data file of another partition spec. An ORC
-    # data file under `identity(region)` and a position delete under `truncate(1, region)` share the
-    # partition tuple, and `write.data.path` places the ORC file between the two Parquet files the
-    # delete references, so only the partition spec tells the ORC file apart.
+    # OPTIMIZE refuses a table whose live data files span two partition specs, and must refuse it
+    # before applying a position delete to a data file of another spec. An ORC data file under
+    # `identity(region)` and a position delete under `truncate(1, region)` share the partition tuple,
+    # and `write.data.path` places the ORC file between the two Parquet files the delete references,
+    # so only the partition spec tells the ORC file apart.
     spark.sql(
         f"""
         CREATE TABLE {TABLE_NAME} (id long, region string) USING iceberg PARTITIONED BY (region)
@@ -372,12 +373,10 @@ def test_optimize_position_delete_other_partition_spec(started_cluster_iceberg_w
     expected_ids = "0\n3\n4\n"
     assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == expected_ids
 
-    instance.query(
+    error = instance.query_and_get_error(
         f"OPTIMIZE TABLE {TABLE_NAME};",
         settings={"allow_experimental_iceberg_compaction": 1},
     )
+    assert "BAD_ARGUMENTS" in error and "partition spec that differs" in error, error
 
     assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == expected_ids
-    assert "POSITION_DELETE" not in instance.query(
-        f"SELECT content FROM system.iceberg_files WHERE database = currentDatabase() AND table = '{TABLE_NAME}'"
-    )
