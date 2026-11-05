@@ -93,6 +93,8 @@ public:
     /// reads one of `changed_columns`, directly or through another `DEFAULT` column the part does not
     /// store. Only those have to be evaluated again after `changed_columns` are patched: evaluating
     /// any other one again would change the value of a non-deterministic `DEFAULT` such as `rand()`.
+    /// A column of the sorting key is never among them: the rows of the part are sorted by the value its
+    /// `DEFAULT` gave, and ordered reads and merges rely on that order, so it keeps that value.
     NameSet getDefaultsDependingOn(const NameSet & candidates, const NameSet & changed_columns) const;
 
     /// Returns the columns absent in `block` whose `DEFAULT` the expressions of `columns` read, directly or
@@ -385,7 +387,7 @@ private:
         /// The columns of `required_columns` the part does not store: their values come from their `DEFAULT`.
         NameSet missing_in_part;
         /// The columns the part does not store whose `DEFAULT` expression reads a column, by the name of that
-        /// column both as written and in storage.
+        /// column both as written and in storage. The sort-key columns are not among them, see `getDefaultsDependingOn`.
         std::unordered_map<String, std::vector<String>> missing_readers;
         /// The names in storage of the columns above and of the columns their expressions read.
         std::unordered_map<String, String> names_in_storage;

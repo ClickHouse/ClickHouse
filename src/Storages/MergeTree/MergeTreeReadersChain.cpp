@@ -482,11 +482,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
         return patched_columns;
     };
 
-    /// The sort-key columns of `MergeOnKey` patches missing in the part were already filled with
-    /// their defaults by `executeSortingKeyExpressions`, before any patch was applied.
-    NameSet columns_filled_before_patches = result.columns_filled_by_defaults;
-
-    auto columns_patched_before_defaults = apply_patches(ColumnForPatch::Order::BeforeConversions);
+    apply_patches(ColumnForPatch::Order::BeforeConversions);
 
     /// Apply alter conversions for columns read by this step.
     ///
@@ -556,8 +552,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
         }
     }
 
-    auto columns_patched_after_conversions = apply_patches(ColumnForPatch::Order::AfterConversions);
-    columns_patched_before_defaults.insert(columns_patched_after_conversions.begin(), columns_patched_after_conversions.end());
+    apply_patches(ColumnForPatch::Order::AfterConversions);
 
     /// If some columns absent in part, then evaluate default values
     std::vector<size_t> positions_filled_by_defaults;
@@ -597,8 +592,8 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
       * was computed from the value the default gave rather than from the patched one. For
       * `a UInt64, z UInt64 DEFAULT a + 1000` with neither column stored in the part, a lightweight
       * `UPDATE a = 5` left `z` at `1000`, where `ALTER TABLE ... UPDATE a = 5` gives `1005`.
-      * The same holds for the sort-key columns filled before any patch was applied, also when the
-      * column their `DEFAULT` reads is stored and was patched before the pass above.
+      * A sort-key column keeps the value its `DEFAULT` gave, as the rows of the part are sorted by it
+      * (see `IMergeTreeReader::getDefaultsDependingOn`).
       *
       * Evaluate the defaults once more, now that the patches are applied. The rows a patch overwrote
       * keep their patched values, and so do the columns whose expression does not read a patched column
@@ -617,26 +612,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
 
     auto * reader = range_reader.getReader();
 
-    NameSet columns_patched_in_step = columns_patched_before_defaults;
-    columns_patched_in_step.insert(columns_patched_after_defaults.begin(), columns_patched_after_defaults.end());
-
-    NameSet candidates_filled_before_patches;
-    for (const auto & name : columns_filled_before_patches)
-    {
-        if (result.columns_filled_by_defaults.contains(name))
-            candidates_filled_before_patches.insert(name);
-    }
-
-    auto columns_to_reevaluate = reader->getDefaultsDependingOn(candidates_filled_before_patches, columns_patched_in_step);
-
-    /// The pass above evaluated the other `DEFAULT` columns from the stale values of the sort-key columns
-    /// evaluated again here, so the columns that read one of them, directly or not, are evaluated again too.
-    NameSet columns_changed_after_defaults = columns_patched_after_defaults;
-    columns_changed_after_defaults.insert(columns_to_reevaluate.begin(), columns_to_reevaluate.end());
-
-    auto dependents_to_reevaluate = reader->getDefaultsDependingOn(result.columns_filled_by_defaults, columns_changed_after_defaults);
-    columns_to_reevaluate.insert(dependents_to_reevaluate.begin(), dependents_to_reevaluate.end());
-
+    auto columns_to_reevaluate = reader->getDefaultsDependingOn(result.columns_filled_by_defaults, columns_patched_after_defaults);
     if (columns_to_reevaluate.empty())
         return;
 
@@ -1186,11 +1162,7 @@ Block MergeTreeReadersChain::executeSortingKeyExpressions(const Block & result_h
             for (size_t pos = 0; pos < num_columns; ++pos)
             {
                 if (is_missing_key_column(pos))
-                {
                     read_result.columns[pos] = columns_with_defaults[pos];
-                    /// `executeActionsBeforePrewhere` evaluates it again if a patch overwrites a column its `DEFAULT` reads.
-                    read_result.columns_filled_by_defaults.insert(result_header.getByPosition(pos).name);
-                }
             }
         }
     }

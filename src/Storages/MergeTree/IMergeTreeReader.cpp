@@ -440,6 +440,10 @@ const IMergeTreeReader::DefaultExpressionsGraph & IMergeTreeReader::getDefaultEx
         return it->second;
     };
 
+    NameSet sorting_key_columns;
+    for (const auto & name : storage_snapshot->metadata->getColumnsRequiredForSortingKey())
+        sorting_key_columns.insert(add_name_in_storage(name));
+
     for (const auto & [name, default_desc] : graph->combined_columns.getDefaults())
     {
         if (!default_desc.expression)
@@ -457,6 +461,13 @@ const IMergeTreeReader::DefaultExpressionsGraph & IMergeTreeReader::getDefaultEx
             continue;
 
         graph->missing_in_part.insert(name);
+
+        /// The rows of the part are sorted by the value the `DEFAULT` of a sort-key column gave when they were read,
+        /// so the column keeps it even after a patch overwrites a column its expression reads: computing it again
+        /// would change the key without reordering the rows, which breaks ordered reads and merges.
+        if (sorting_key_columns.contains(name_in_storage))
+            continue;
+
         for (const auto & identifier : required)
         {
             const auto & identifier_in_storage = add_name_in_storage(identifier);
