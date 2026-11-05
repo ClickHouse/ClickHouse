@@ -1,10 +1,18 @@
 #pragma once
 
+#include "config.h"
+
+#include <algorithm>
 #include <cmath>
 #include <type_traits>
 #include <Common/Exception.h>
 #include <Common/NaNUtils.h>
 #include <DataTypes/NumberTraits.h>
+
+#if USE_EMBEDDED_COMPILER
+#    include <Interpreters/JIT/JITError.h>
+#    include <llvm/IR/IRBuilder.h>
+#endif
 
 namespace DB
 {
@@ -115,6 +123,176 @@ inline auto checkedDivision(A a, B b)
         return a / b;
 }
 
+#if USE_EMBEDDED_COMPILER
+
+/** IR for integer division and modulo of integers up to 64 bits, mirroring `DivideIntegralImpl::apply`,
+  * `ModuloImpl::apply` and `PositiveModuloImpl::apply` exactly, including their casts and the C++ usual
+  * arithmetic conversions. Each function adds the ways the interpreted function throws to `error` (see `addJITError`),
+  * and changes the operands where one is true, so that the IR never traps.
+  *
+  * The operands are changed with arithmetic, not with a `select`: on AMD Zen 4, a divisor produced by a `select` whose
+  * condition is also used to record the error made the division twice as slow.
+  */
+namespace JITIntegerDivision
+{
+
+template <typename T>
+constexpr unsigned bits = sizeof(T) * 8;
+
+inline llvm::Value * constant(llvm::IRBuilder<> & builder, unsigned width, int64_t value)
+{
+    return llvm::ConstantInt::getSigned(builder.getIntNTy(width), value);
+}
+
+inline llvm::Value * minimalSigned(llvm::IRBuilder<> & builder, unsigned width)
+{
+    return llvm::ConstantInt::get(builder.getContext(), llvm::APInt::getSignedMinValue(width));
+}
+
+/// `value + (value == 0)`: a divisor that is never zero.
+inline llvm::Value * zeroToOne(llvm::IRBuilder<> & builder, llvm::Value * value)
+{
+    auto * is_zero = builder.CreateICmpEQ(value, llvm::ConstantInt::get(value->getType(), 0));
+    return builder.CreateAdd(value, builder.CreateZExt(is_zero, value->getType()));
+}
+
+/// `DivideIntegralImpl::apply`.
+template <typename A, typename B, typename Result>
+llvm::Value * compileDivision(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * divisor, JITErrorValue & error)
+{
+    auto * result_type = builder.getIntNTy(bits<Result>);
+
+    if constexpr (is_signed_v<A> || is_signed_v<B>)
+    {
+        /// `SignedCastA` has the width of `A`; `SignedCastB` the wider of the two widths, `b` extended by its own sign.
+        constexpr unsigned cast_b_bits = std::max(bits<A>, bits<B>);
+        auto * cast_divisor = builder.CreateIntCast(divisor, builder.getIntNTy(cast_b_bits), is_signed_v<B>);
+
+        auto * by_zero = builder.CreateICmpEQ(cast_divisor, constant(builder, cast_b_bits, 0));
+        auto * minimal_by_minus_one = builder.CreateAnd(
+            builder.CreateICmpEQ(a, minimalSigned(builder, bits<A>)), builder.CreateICmpEQ(cast_divisor, constant(builder, cast_b_bits, -1)));
+        addJITError(builder, error, by_zero, JITErrorCode::DivisionByZero);
+        addJITError(builder, error, minimal_by_minus_one, JITErrorCode::DivisionOfMinimalSignedNumberByMinusOne);
+
+        /// The minimal signed number divided by -1 overflows: `MIN + 1` is divided instead.
+        auto * safe_divisor = zeroToOne(builder, cast_divisor);
+        auto * safe_a = builder.CreateAdd(a, builder.CreateZExt(minimal_by_minus_one, a->getType()));
+
+        /// Both operands are signed, promoted to at least `int`.
+        auto * operation_type = builder.getIntNTy(std::max({32u, bits<A>, cast_b_bits}));
+        auto * quotient = builder.CreateSDiv(builder.CreateIntCast(safe_a, operation_type, true), builder.CreateIntCast(safe_divisor, operation_type, true));
+        return builder.CreateIntCast(quotient, result_type, true);
+    }
+    else
+    {
+        auto * by_zero = builder.CreateICmpEQ(divisor, constant(builder, bits<B>, 0));
+        addJITError(builder, error, by_zero, JITErrorCode::DivisionByZero);
+
+        auto * safe_divisor = zeroToOne(builder, divisor);
+
+        /// Both operands are non-negative, so the promotion to `int` of narrow types does not change the result.
+        auto * operation_type = builder.getIntNTy(std::max({32u, bits<A>, bits<B>}));
+        auto * quotient = builder.CreateUDiv(builder.CreateIntCast(a, operation_type, false), builder.CreateIntCast(safe_divisor, operation_type, false));
+        return builder.CreateIntCast(quotient, result_type, false);
+    }
+}
+
+/// `ModuloImpl::apply`.
+template <typename A, typename B, typename Result>
+llvm::Value * compileModulo(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * divisor, JITErrorValue & error)
+{
+    auto * result_type = builder.getIntNTy(bits<Result>);
+
+    /// `throwIfDivisionLeadsToFPE` on the original types.
+    addJITError(builder, error, builder.CreateICmpEQ(divisor, constant(builder, bits<B>, 0)), JITErrorCode::DivisionByZero);
+    if constexpr (is_signed_v<A> && is_signed_v<B>)
+    {
+        auto * minimal_by_minus_one = builder.CreateAnd(
+            builder.CreateICmpEQ(a, minimalSigned(builder, bits<A>)), builder.CreateICmpEQ(divisor, constant(builder, bits<B>, -1)));
+        addJITError(builder, error, minimal_by_minus_one, JITErrorCode::DivisionOfMinimalSignedNumberByMinusOne);
+    }
+
+    if constexpr (is_signed_v<A> || is_signed_v<B>)
+    {
+        /// Unsigned magnitudes in the wider of the two widths; the sign of the result follows the dividend.
+        constexpr unsigned common_bits = std::max(bits<A>, bits<B>);
+        auto * common_type = builder.getIntNTy(common_bits);
+
+        auto is_negative = [&](llvm::Value * value, bool is_signed, unsigned width)
+        {
+            return is_signed ? builder.CreateICmpSLT(value, constant(builder, width, 0)) : builder.getFalse();
+        };
+        auto magnitude = [&](llvm::Value * value, bool is_signed, llvm::Value * negative)
+        {
+            auto * extended = builder.CreateIntCast(value, common_type, is_signed);
+            return builder.CreateSelect(negative, builder.CreateSub(constant(builder, common_bits, 0), extended), extended);
+        };
+
+        auto * a_negative = is_negative(a, is_signed_v<A>, bits<A>);
+        auto * magnitude_a = magnitude(a, is_signed_v<A>, a_negative);
+        auto * magnitude_b = magnitude(divisor, is_signed_v<B>, is_negative(divisor, is_signed_v<B>, bits<B>));
+        /// Only a zero divisor traps in the unsigned remainder.
+        auto * safe_magnitude_b = zeroToOne(builder, magnitude_b);
+
+        auto * magnitude_result = builder.CreateIntCast(builder.CreateURem(magnitude_a, safe_magnitude_b), result_type, false);
+        return builder.CreateSelect(a_negative, builder.CreateSub(constant(builder, bits<Result>, 0), magnitude_result), magnitude_result);
+    }
+    else
+    {
+        auto * safe_divisor = zeroToOne(builder, divisor);
+        auto * operation_type = builder.getIntNTy(std::max({32u, bits<A>, bits<B>}));
+        auto * remainder = builder.CreateURem(builder.CreateIntCast(a, operation_type, false), builder.CreateIntCast(safe_divisor, operation_type, false));
+        return builder.CreateIntCast(remainder, result_type, false);
+    }
+}
+
+/// `PositiveModuloImpl::apply`.
+template <typename A, typename B, typename Result, typename OriginResult>
+llvm::Value * compilePositiveModulo(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * divisor, JITErrorValue & error)
+{
+    auto * result_type = builder.getIntNTy(bits<Result>);
+    auto * remainder = compileModulo<A, B, OriginResult>(builder, a, divisor, error);
+
+    if constexpr (is_signed_v<A> && is_signed_v<OriginResult>)
+    {
+        constexpr unsigned origin_bits = bits<OriginResult>;
+        auto * negative = builder.CreateICmpSLT(remainder, constant(builder, origin_bits, 0));
+        auto * operation_type = builder.getIntNTy(std::max(32u, origin_bits));
+
+        llvm::Value * adjusted = nullptr;
+        if constexpr (is_unsigned_v<B>)
+        {
+            /// `make_unsigned_t<OriginResult>(res) + make_unsigned_t<OriginResult>(b)`.
+            auto * unsigned_remainder = builder.CreateIntCast(remainder, operation_type, false);
+            auto * unsigned_divisor = builder.CreateIntCast(builder.CreateIntCast(divisor, builder.getIntNTy(origin_bits), false), operation_type, false);
+            adjusted = builder.CreateIntCast(builder.CreateAdd(unsigned_remainder, unsigned_divisor), result_type, false);
+        }
+        else
+        {
+            auto * most_negative = builder.CreateAnd(negative, builder.CreateICmpEQ(divisor, minimalSigned(builder, bits<B>)));
+            addJITError(builder, error, most_negative, JITErrorCode::DivisionByTheMostNegativeNumber);
+
+            /// `res + (b >= 0 ? static_cast<OriginResult>(b) : static_cast<OriginResult>(-b))`, `-b` computed in at least `int`.
+            auto * promoted_divisor = builder.CreateIntCast(divisor, builder.getIntNTy(std::max(32u, bits<B>)), true);
+            auto * absolute_divisor = builder.CreateSelect(
+                builder.CreateICmpSGE(divisor, constant(builder, bits<B>, 0)),
+                promoted_divisor,
+                builder.CreateSub(llvm::ConstantInt::get(promoted_divisor->getType(), 0), promoted_divisor));
+            auto * origin_divisor = builder.CreateIntCast(absolute_divisor, builder.getIntNTy(origin_bits), true);
+            auto * sum = builder.CreateAdd(builder.CreateIntCast(remainder, operation_type, true), builder.CreateIntCast(origin_divisor, operation_type, true));
+            adjusted = builder.CreateIntCast(sum, result_type, true);
+        }
+
+        return builder.CreateSelect(negative, adjusted, builder.CreateIntCast(remainder, result_type, true));
+    }
+    else
+        return builder.CreateIntCast(remainder, result_type, is_signed_v<OriginResult>);
+}
+
+}
+
+#endif
+
 
 template <typename A, typename B>
 struct DivideIntegralImpl
@@ -177,7 +355,18 @@ struct DivideIntegralImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false; /// don't know how to throw from LLVM IR
+    static constexpr bool compilable = false;
+
+    /// Integers up to 64 bits are compiled with the errors reported to the caller, see `JITErrorSink`.
+    static constexpr bool compilable_with_errors = is_integer<A> && is_integer<B> && !is_big_int_v<A> && !is_big_int_v<B>;
+
+    static llvm::Value * compileWithErrors(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * divisor)
+    {
+        JITErrorValue error;
+        auto * result = JITIntegerDivision::compileDivision<A, B, ResultType>(builder, a, divisor, error);
+        reportJITError(builder, error);
+        return result;
+    }
 #endif
 };
 
@@ -194,6 +383,10 @@ struct DivideIntegralOrNullImpl : DivideIntegralImpl<A, B>
         else
             return DivideIntegralImpl<A, B>::apply(a, b);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable_with_errors = false;
+#endif
 };
 
 template <typename A, typename B>
@@ -311,6 +504,17 @@ struct ModuloImpl
 
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = false;
+
+    /// Integers up to 64 bits are compiled with the errors reported to the caller, see `JITErrorSink`.
+    static constexpr bool compilable_with_errors = is_integer<A> && is_integer<B> && !is_big_int_v<A> && !is_big_int_v<B>;
+
+    static llvm::Value * compileWithErrors(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * divisor)
+    {
+        JITErrorValue error;
+        auto * result = JITIntegerDivision::compileModulo<A, B, ResultType>(builder, a, divisor, error);
+        reportJITError(builder, error);
+        return result;
+    }
 #endif
 };
 
@@ -323,6 +527,7 @@ struct ModuloLegacyImpl : ModuloImpl<A, B>
 
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = false; /// moduloLegacy is only used in partition key expression
+    static constexpr bool compilable_with_errors = false;
 #endif
 
     /// `moduloToModuloLegacyRecursive` (`KeyDescription.cpp`) silently rewrites every `modulo` in a
@@ -385,6 +590,10 @@ struct ModuloOrNullImpl : ModuloImpl<A, B>
         else
             return ModuloImpl<A, B>::apply(a, b);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable_with_errors = false;
+#endif
 };
 
 template <typename A, typename B>
@@ -430,6 +639,17 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
 
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = false;
+
+    /// Integers up to 64 bits are compiled with the errors reported to the caller, see `JITErrorSink`.
+    static constexpr bool compilable_with_errors = is_integer<A> && is_integer<B> && !is_big_int_v<A> && !is_big_int_v<B>;
+
+    static llvm::Value * compileWithErrors(llvm::IRBuilder<> & builder, llvm::Value * a, llvm::Value * divisor)
+    {
+        JITErrorValue error;
+        auto * result = JITIntegerDivision::compilePositiveModulo<A, B, ResultType, OriginResultType>(builder, a, divisor, error);
+        reportJITError(builder, error);
+        return result;
+    }
 #endif
 };
 
@@ -446,6 +666,10 @@ struct PositiveModuloOrNullImpl : PositiveModuloImpl<A, B>
         else
             return PositiveModuloImpl<A, B>::apply(a, b);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable_with_errors = false;
+#endif
 };
 
 }

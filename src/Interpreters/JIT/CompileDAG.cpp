@@ -10,6 +10,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/Native.h>
+#include <Interpreters/JIT/JITError.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -44,6 +45,10 @@ ValueWithType CompileDAG::compile(llvm::IRBuilderBase & builder, const ValuesWit
             }
             case CompileType::FUNCTION:
             {
+                /// Errors reported while this node is compiled are attributed to it.
+                if (auto * error_sink = JITErrorSink::current())
+                    error_sink->setCurrentNode(i);
+
                 ValuesWithType temporary_values;
                 temporary_values.reserve(node.arguments.size());
                 for (auto argument_index : node.arguments)
