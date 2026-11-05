@@ -330,8 +330,7 @@ struct AggregateFunctionUniqTraits
         }
     }
 
-    /// Whether `hashExactRange` and `hashExactRows` exist. They hash several values at a time where `SipHashStrings.h`
-    /// can, and give the hashes of `hashExact`.
+    /// Whether `hashExactRange` and `hashExactRows` exist; they give the hashes of `hashExact`, several values at a time.
     static constexpr bool has_batched_hash_exact = std::is_same_v<T, std::string_view> || std::is_same_v<T, IPv6>;
     /// Below this many rows `hashExactRows` hashes one row at a time anyway (a group of `SipHashStrings::hashGroup` is 8).
     static constexpr size_t min_batched_hash_rows = 8;
@@ -523,7 +522,6 @@ private:
 
         using Key = decltype(getKey(AggregateFunctionUniqTraits<T, ColumnType>::value(column, row_begin)));
         std::array<Key, hash_chunk_size> keys; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first num_keys entries are written before read
-        /// With `is_batched_hash` the loop of the cache collects the rows of the keys, and `hashKeys` computes the keys.
         std::array<UInt32, is_batched_hash ? hash_chunk_size : 0> key_rows; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
 
         size_t row = row_begin;
@@ -783,8 +781,7 @@ private:
         }
     }
 
-    /// `addBatchExact` for the types that `hashExactRows` hashes: a chunk first chooses the rows to insert, then hashes them
-    /// in one call. When repeats are rare, the rest of the batch stops looking for them.
+    /// `addBatchExact` for the types that `hashExactRows` hashes: the rows a chunk inserts are hashed in one call.
     template <bool check_places>
     void addBatchExactHashed(size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset,
         const IColumn ** columns, ssize_t if_argument_pos) const
