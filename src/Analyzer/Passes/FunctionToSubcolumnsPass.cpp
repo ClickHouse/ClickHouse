@@ -1297,7 +1297,7 @@ bool storageAllowsTransformer(
 }
 
 /// A storage that admits the Map rewrites only through IStorage::supportsOptimizationToMapKeysAndValuesSubcolumns
-/// and whose PREWHERE takes only top-level columns (see IStorage::supportedPrewhereColumnsIncludeSubcolumns).
+/// and whose `PREWHERE` takes only top-level columns (see IStorage::supportedPrewhereColumnsIncludeSubcolumns).
 bool storageRejectsMapSubcolumnsInPrewhere(const QueryTreeNodePtr & column_source, SubcolumnSupportCache & cache)
 {
     auto storage = getStorageForColumnSource(column_source);
@@ -1599,10 +1599,10 @@ public:
     }
 
 private:
-    /// On a storage whose PREWHERE takes only top-level columns, no use of a `Map` is rewritten when PREWHERE reads it
-    /// or its parent tuple: PREWHERE drops the columns that the rest of the query does not name, so a subcolumn
-    /// extracted from the map after reading would be missing. Same when WHERE reads it and the query reads another
-    /// column of the table: the condition stays movable to PREWHERE, which can skip reading the other columns.
+    /// On a storage whose `PREWHERE` takes only top-level columns, no use of a `Map` is rewritten when `PREWHERE` reads
+    /// it or its parent tuple: `PREWHERE` drops the columns that the rest of the query does not name, so a subcolumn
+    /// extracted from the map after reading would be missing. Same when `WHERE` reads it and the query reads another
+    /// column of the table: the condition stays movable to `PREWHERE`, which can skip reading the other columns.
     bool mustReadWholeMap(const ColumnInSource & map) const
     {
         if (columns_in_prewhere.contains(map))
@@ -1619,12 +1619,12 @@ private:
         return false;
     }
 
-    /// Identifiers read in PREWHERE, and the `Map` identifiers read in WHERE.
+    /// Identifiers read in `PREWHERE`, and the `Map` identifiers read in `WHERE`.
     ColumnInSourceSet columns_in_prewhere;
     ColumnInSourceSet maps_in_where;
     /// `Map` identifiers with a rewrite on a storage for which storageRejectsMapSubcolumnsInPrewhere is true.
     ColumnInSourceSet maps_on_storages_rejecting_subcolumns_in_prewhere;
-    /// Same as in_where_prewhere_stack, for PREWHERE alone.
+    /// Same as in_where_prewhere_stack, for `PREWHERE` alone.
     std::vector<bool> in_prewhere_stack;
 
     ColumnInSourceSet all_key_columns;

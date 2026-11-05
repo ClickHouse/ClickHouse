@@ -401,7 +401,7 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
         ++position;
     }
 
-    /// PREWHERE reads the whole map.
+    /// `PREWHERE` reads the whole map.
     auto copy_maps_not_read_by_prewhere = [&](const NameSet & maps, NameSet & result)
     {
         for (const auto & map : maps)
