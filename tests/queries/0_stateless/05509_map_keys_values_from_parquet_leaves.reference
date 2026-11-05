@@ -87,6 +87,7 @@ PREWHERE
 ['k0','c']
 []
 ['k2','c']
+9
 lazy materialization
 29	['k2','c']	[29]
 28	[]	[NULL]

@@ -1422,6 +1422,14 @@ public:
 
     void enterImpl(const QueryTreeNodePtr & node)
     {
+        /// Push a placeholder for every query level, also one that disables the optimization;
+        /// needChildVisit will update it to true when we descend into WHERE or PREWHERE.
+        if (node->as<QueryNode>())
+        {
+            in_where_prewhere_stack.push_back(false);
+            in_prewhere_stack.push_back(false);
+        }
+
         if (!getSettings()[Setting::optimize_functions_to_subcolumns])
             return;
 
@@ -1485,10 +1493,6 @@ public:
             if (query_node->isGroupByWithCube() || query_node->isGroupByWithRollup() || query_node->isGroupByWithGroupingSets())
                 can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::group_by_use_nulls];
             has_where_prewhere_or_group_by = query_node->hasWhere() || query_node->hasPrewhere() || query_node->hasGroupBy();
-            /// Push a placeholder for this query level; needChildVisit will update it
-            /// to true when we descend into WHERE or PREWHERE.
-            in_where_prewhere_stack.push_back(false);
-            in_prewhere_stack.push_back(false);
             correlated_columns.enter(query_node->getCorrelatedColumns());
             return;
         }
@@ -1502,13 +1506,17 @@ public:
 
     void leaveImpl(const QueryTreeNodePtr & node)
     {
+        if (node->as<QueryNode>())
+        {
+            in_where_prewhere_stack.pop_back();
+            in_prewhere_stack.pop_back();
+        }
+
         if (!getSettings()[Setting::optimize_functions_to_subcolumns])
             return;
 
         if (node->as<QueryNode>())
         {
-            in_where_prewhere_stack.pop_back();
-            in_prewhere_stack.pop_back();
             correlated_columns.leave();
         }
         else if (node->as<UnionNode>())

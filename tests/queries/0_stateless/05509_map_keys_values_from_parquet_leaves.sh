@@ -77,6 +77,7 @@ SELECT 'PREWHERE';
 SELECT id, mapKeys(ms) FROM file('${TYPES}') PREWHERE has(ms, 'k2') ORDER BY id;
 SELECT id FROM file('${TYPES}') PREWHERE has(ms, 'k2') WHERE mapContainsValue(ms, '11') ORDER BY id;
 SELECT mapKeys(ms) FROM file('${TYPES}') PREWHERE id > 25 ORDER BY id;
+SELECT count() FROM file('${TYPES}') PREWHERE (1 IN (SELECT 1 SETTINGS optimize_functions_to_subcolumns = 0)) AND has(ms, 'k2');
 SELECT 'lazy materialization';
 SELECT id, mapKeys(ms), mapValues(mn) FROM file('${TYPES}') ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10;
 SELECT id, ms.keys, mn.values FROM file('${TYPES}') ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10;
