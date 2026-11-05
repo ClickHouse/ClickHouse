@@ -20,7 +20,8 @@ struct BlockIO;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 
 /// The `idempotency_key` of a client DDL query on a `Replicated` database. The multi that commits the query's log entry
-/// also creates the key node, so the node exists exactly when a statement with this key has committed.
+/// also creates the key node, or replaces an expired one, so the node exists exactly when a statement with this key has
+/// committed.
 struct DDLIdempotencyKey
 {
     enum class State : uint8_t
@@ -56,7 +57,7 @@ String getDDLIdempotencyKeyNodeName(const String & key);
 std::optional<DDLIdempotencyKeyNode> tryReadDDLIdempotencyKeyNode(
     const ZooKeeperPtr & zookeeper, const String & path, std::optional<int32_t> * expired_version = nullptr);
 
-bool isDDLIdempotencyKeyNodeExpired(Int64 ctime_ms, UInt64 ttl_sec);
+bool isDDLIdempotencyKeyNodeExpired(Int64 mtime_ms, UInt64 ttl_sec);
 
 /// Throws IDEMPOTENCY_KEY_MISMATCH if the node was created by another statement or user.
 void checkDDLIdempotencyKeyDigest(const DDLIdempotencyKey & key, const DDLIdempotencyKeyNode & node);

@@ -569,19 +569,16 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
             return fs::path(queue_dir) / key_node->entry;
         }
 
-        if (expired_version)
-        {
-            auto code = zookeeper->tryRemove(key_path, *expired_version);
-            if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE && code != Coordination::Error::ZBADVERSION)
-                throw Coordination::Exception::fromPath(code, key_path);
-        }
-
-        /// Committed by the same multi as the entry.
         DDLIdempotencyKeyNode key_node{
             .entry = entry_name,
             .digest = idempotency_key->digest,
             .ttl_sec = database->db_settings[DatabaseReplicatedSetting::idempotency_key_ttl_sec]};
-        task->ops.emplace_back(zkutil::makeCreateRequest(key_path, key_node.toString(), zkutil::CreateMode::Persistent));
+        /// Committed by the same multi as the entry. An expired node is replaced in place: a pruner that read it
+        /// cannot remove the replacement, and if it removed the node meanwhile, the commit fails.
+        if (expired_version)
+            task->ops.emplace_back(zkutil::makeSetRequest(key_path, key_node.toString(), *expired_version));
+        else
+            task->ops.emplace_back(zkutil::makeCreateRequest(key_path, key_node.toString(), zkutil::CreateMode::Persistent));
         FailPointInjection::pauseFailPoint(FailPoints::database_replicated_idempotency_key_pause_before_commit);
     }
 
@@ -914,7 +911,7 @@ void DatabaseReplicatedDDLWorker::cleanupAuxiliaryNodes(const ZooKeeperPtr & zoo
             tryLogCurrentException(log, fmt::format("Cannot parse the idempotency key node {}", paths[i]));
             continue;
         }
-        if (!isDDLIdempotencyKeyNodeExpired(nodes[i].stat.ctime, ttl_sec))
+        if (!isDDLIdempotencyKeyNodeExpired(nodes[i].stat.mtime, ttl_sec))
             continue;
 
         auto code = zookeeper->tryRemove(paths[i], nodes[i].stat.version);

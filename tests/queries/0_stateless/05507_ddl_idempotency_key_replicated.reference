@@ -50,6 +50,7 @@ OK
 1
 -- a key used by another statement or user
 IDEMPOTENCY_KEY_MISMATCH
+ACCESS_DENIED
 IDEMPOTENCY_KEY_MISMATCH
 -- the output clauses of the retry do not matter
 OK
@@ -111,3 +112,4 @@ OK
 OK
 OK
 1
+OK

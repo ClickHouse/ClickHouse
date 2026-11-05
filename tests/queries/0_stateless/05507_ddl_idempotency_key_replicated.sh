@@ -4,7 +4,8 @@
 
 # A DDL query with `idempotency_key` on a Replicated database runs at most once for the key, and a retry succeeds like
 # the original, also when it names the database differently. A key reused for another statement or by another user is
-# an error, a failed attempt records nothing, keys expire, and statements the key cannot be honoured for are refused.
+# an error, and it is not disclosed to a user who may not run the statement. A failed attempt records nothing, keys
+# expire, and statements the key cannot be honoured for are refused.
 # Where it matters, the statement is first repeated without a key, to show it is not idempotent on its own.
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
@@ -159,6 +160,8 @@ echo "-- a key used by another statement or user"
 keyed k1 "EXCHANGE TABLES $R1.c AND $R1.d"
 $CLICKHOUSE_CLIENT -q "CREATE USER $OTHER_USER IDENTIFIED WITH no_password"
 keyed k3 "ALTER TABLE $R1.t ADD COLUMN c UInt8" --user "$OTHER_USER"
+$CLICKHOUSE_CLIENT -q "GRANT ALTER ADD COLUMN ON $R1.t TO $OTHER_USER"
+keyed k3 "ALTER TABLE $R1.t ADD COLUMN c UInt8" --user "$OTHER_USER"
 echo "-- the output clauses of the retry do not matter"
 keyed k3 "ALTER TABLE $R1.t ADD COLUMN c UInt8 SETTINGS distributed_ddl_output_mode = 'throw'"
 echo "-- nor does a retry wait for replicas to sync if the original did not ask for it"
@@ -235,7 +238,7 @@ has_column "$R1" t c5
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '$ZK/r/log' AND (value LIKE '%idempotency_key = %' OR value LIKE '%enable_ddl_idempotency_key%')"
 
 echo "-- keys expire"
-$CLICKHOUSE_CLIENT -q "CREATE DATABASE $Y1 ENGINE = Replicated('$ZK/y', 's1', 'r1') SETTINGS idempotency_key_ttl_sec = 1"
+$CLICKHOUSE_CLIENT -q "CREATE DATABASE $Y1 ENGINE = Replicated('$ZK/y', 's1', 'r1') SETTINGS idempotency_key_ttl_sec = 6"
 plain "CREATE TABLE $Y1.e (x UInt8) ENGINE = Memory" > /dev/null
 keyed k13 "ALTER TABLE $Y1.e ADD COLUMN c UInt8"
 plain "ALTER TABLE $Y1.e DROP COLUMN c"
@@ -245,4 +248,5 @@ while [ "$(has_column "$Y1" e c)" = 0 ] && [ $SECONDS -lt $deadline ]; do
     sleep 0.5
 done
 has_column "$Y1" e c
+keyed k13 "ALTER TABLE $Y1.e ADD COLUMN c UInt8"
 

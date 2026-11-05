@@ -76,11 +76,11 @@ String getDDLIdempotencyKeyNodeName(const String & key)
     return sipHash128String(key);
 }
 
-bool isDDLIdempotencyKeyNodeExpired(Int64 ctime_ms, UInt64 ttl_sec)
+bool isDDLIdempotencyKeyNodeExpired(Int64 mtime_ms, UInt64 ttl_sec)
 {
     Int64 now = Poco::Timestamp().epochTime();
-    Int64 created = ctime_ms / 1000;
-    return now > created && static_cast<UInt64>(now - created) > ttl_sec;
+    Int64 modified = mtime_ms / 1000;
+    return now > modified && static_cast<UInt64>(now - modified) > ttl_sec;
 }
 
 std::optional<DDLIdempotencyKeyNode> tryReadDDLIdempotencyKeyNode(
@@ -92,7 +92,7 @@ std::optional<DDLIdempotencyKeyNode> tryReadDDLIdempotencyKeyNode(
         return {};
 
     auto node = DDLIdempotencyKeyNode::parse(data);
-    if (isDDLIdempotencyKeyNodeExpired(stat.ctime, node.ttl_sec))
+    if (isDDLIdempotencyKeyNodeExpired(stat.mtime, node.ttl_sec))
     {
         if (expired_version)
             *expired_version = stat.version;
@@ -359,8 +359,8 @@ BlockIO answerFromKey(
     const Target & target,
     const ContextMutablePtr & context)
 {
-    checkDDLIdempotencyKeyDigest(key, node);
     checkRequiredAccess(interpreter, ast, target, context);
+    checkDDLIdempotencyKeyDigest(key, node);
     key.state = DDLIdempotencyKey::State::Answered;
 
     auto guard = DatabaseCatalog::instance().getDDLGuard(target.database->getDatabaseName(), target.table, target.database.get());
