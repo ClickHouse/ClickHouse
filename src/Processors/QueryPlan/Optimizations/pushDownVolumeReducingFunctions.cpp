@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -586,6 +587,20 @@ std::optional<SubcolumnRead> tryMatchSubcolumnReadImpl(const ActionsDAG::Node & 
             return {};
 
         set_subcolumn(*element, result_type, [element_name = *element](const auto & path) { return SerializationVariant::isElementSubcolumn(path, element_name); });
+        return read;
+    }
+
+    if (name == "tupleElement" && arguments == 2 && source_type_id == TypeIndex::QBit)
+    {
+        auto value = tryGetConstant(node.children[1]);
+        if (!value)
+            return {};
+
+        auto element = getElementSubcolumnName(*value, assert_cast<const DataTypeQBit &>(*source_type));
+        if (!element)
+            return {};
+
+        set_subcolumn(*element, result_type, [element_name = *element](const auto & path) { return SerializationTuple::isElementSubcolumn(path, element_name); });
         return read;
     }
 

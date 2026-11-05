@@ -20,6 +20,7 @@ DROP TABLE IF EXISTS tk;
 DROP TABLE IF EXISTS tm;
 DROP TABLE IF EXISTS tl;
 DROP TABLE IF EXISTS tf;
+DROP TABLE IF EXISTS tq;
 DROP VIEW IF EXISTS v;
 DROP ROW POLICY IF EXISTS rp_05507 ON trp;
 DROP TABLE IF EXISTS trp;
@@ -349,6 +350,14 @@ SELECT 'P23 variantElement';
 SELECT arrayStringConcat(arraySort(arrayFilter(x -> x != '', groupArray(arrayStringConcat(arraySort(arrayFilter(x -> x != 'id', splitByString(', ', replaceRegexpOne(explain, '^.*Output: ', '')))), ', ')))), ' | ') FROM (EXPLAIN SELECT variantElement(v, 'String') FROM (SELECT * FROM t)) WHERE explain LIKE '% Output:%';
 SELECT groupArray(r) FROM (SELECT variantElement(v, 'String') FROM (SELECT * FROM t) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r;
 SELECT groupArray(r) FROM (SELECT variantElement(v, 'String') FROM (SELECT * FROM t) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r SETTINGS query_plan_push_down_volume_reducing_functions = 0;
+
+CREATE TABLE tq (id UInt64, vec QBit(Float32, 8)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO tq SELECT number, arrayMap(i -> toFloat32(if((number + i) % 2 = 0, -1, 1) * (number * 10 + i + 0.5)), range(8)) FROM numbers(6);
+
+SELECT 'P40 tupleElement of QBit';
+SELECT arrayStringConcat(arraySort(arrayFilter(x -> x != '', groupArray(arrayStringConcat(arraySort(arrayFilter(x -> x != 'id', splitByString(', ', replaceRegexpOne(explain, '^.*Output: ', '')))), ', ')))), ' | ') FROM (EXPLAIN SELECT hex(tupleElement(vec, 1)), hex(vec.9) FROM (SELECT * FROM tq)) WHERE explain LIKE '% Output:%';
+SELECT groupArray(r) FROM (SELECT hex(tupleElement(vec, 1)), hex(vec.9) FROM (SELECT * FROM tq) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r;
+SELECT groupArray(r) FROM (SELECT hex(tupleElement(vec, 1)), hex(vec.9) FROM (SELECT * FROM tq) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r SETTINGS query_plan_push_down_volume_reducing_functions = 0;
 
 SELECT 'P24 mapKeys, mapValues';
 SELECT arrayStringConcat(arraySort(arrayFilter(x -> x != '', groupArray(arrayStringConcat(arraySort(arrayFilter(x -> x != 'id', splitByString(', ', replaceRegexpOne(explain, '^.*Output: ', '')))), ', ')))), ' | ') FROM (EXPLAIN SELECT mapKeys(m), mapValues(m) FROM (SELECT * FROM t)) WHERE explain LIKE '% Output:%';
@@ -786,6 +795,7 @@ DROP TABLE tk;
 DROP TABLE tm;
 DROP TABLE tl;
 DROP TABLE tf;
+DROP TABLE tq;
 DROP ROW POLICY rp_05507 ON trp;
 DROP VIEW vtab;
 DROP VIEW vtpk;
