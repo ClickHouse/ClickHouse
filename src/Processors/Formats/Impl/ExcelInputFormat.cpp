@@ -57,8 +57,8 @@ public:
     {
         for (const auto & column : *header_)
         {
-            types.push_back(column.type);
-            serializations.push_back(column.type->getDefaultSerialization());
+            types.push_back(Excel::resolveImplicitTimeZones(column.type));
+            serializations.push_back(types.back()->getDefaultSerialization());
         }
     }
 

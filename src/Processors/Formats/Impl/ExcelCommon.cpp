@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/ExcelCommon.h>
 
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsDateTime.h>
@@ -8,6 +9,7 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -15,6 +17,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
@@ -694,6 +697,19 @@ void decodeOOXMLEscapes(String & str)
     str = std::move(result);
 }
 
+DataTypePtr resolveImplicitTimeZones(const DataTypePtr & type)
+{
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+        return std::make_shared<DataTypeNullable>(resolveImplicitTimeZones(nullable_type->getNestedType()));
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        return std::make_shared<DataTypeLowCardinality>(resolveImplicitTimeZones(low_cardinality_type->getDictionaryType()));
+    if (const auto * date_time_type = typeid_cast<const DataTypeDateTime *>(type.get()); date_time_type && !date_time_type->hasExplicitTimeZone())
+        return std::make_shared<DataTypeDateTime>(DateLUT::instance().getTimeZone());
+    if (const auto * date_time64_type = typeid_cast<const DataTypeDateTime64 *>(type.get()); date_time64_type && !date_time64_type->hasExplicitTimeZone())
+        return std::make_shared<DataTypeDateTime64>(date_time64_type->getScale(), DateLUT::instance().getTimeZone());
+    return type;
+}
+
 void insertCell(
     IColumn & column,
     const DataTypePtr & type,
@@ -702,6 +718,17 @@ void insertCell(
     bool date1904,
     const FormatSettings & format_settings)
 {
+    /// Convert the cell to the dictionary type (keeping its nullability and the exact conversions of its type),
+    /// and then insert the result into the `LowCardinality` column.
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+    {
+        const auto & dictionary_type = low_cardinality_type->getDictionaryType();
+        auto value = dictionary_type->createColumn();
+        insertCell(*value, dictionary_type, dictionary_type->getDefaultSerialization(), cell, date1904, format_settings);
+        assert_cast<ColumnLowCardinality &>(column).insertFromFullColumn(*value, 0);
+        return;
+    }
+
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
     {
         auto & nullable_column = assert_cast<ColumnNullable &>(column);

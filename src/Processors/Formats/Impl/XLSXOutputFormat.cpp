@@ -447,7 +447,7 @@ public:
         for (size_t i = 0; i < header.columns(); ++i)
         {
             const auto & column = header.getByPosition(i);
-            auto type = removeLowCardinalityAndNullable(column.type);
+            auto type = Excel::resolveImplicitTimeZones(removeLowCardinalityAndNullable(column.type));
             column_types.push_back(type);
             serializations.push_back(type->getDefaultSerialization());
             column_kinds.push_back(getColumnKind(type));
@@ -577,6 +577,7 @@ private:
         }
         zip.reset();
         sheet_names.clear();
+        next_sheet_suffix = 1;
         rows_in_sheet = 0;
     }
 
@@ -587,18 +588,37 @@ private:
         zip.endEntry();
     }
 
-    String makeSheetName(size_t index) const
+    /// The name of the next sheet: the base name for the first sheet, and the base name with a suffix like ` (2)` for the following ones.
+    /// The suffix is advanced until the name is unique, because the base name itself may end with such a suffix.
+    String makeSheetName()
     {
         const String & base = settings.excel.output_sheet_name;
-        if (index == 1)
+        if (sheet_names.empty())
             return base;
-        String suffix = fmt::format(" ({})", index);
-        return String(utf8Prefix(base, MAX_SHEET_NAME_LENGTH - suffix.size())) + suffix;
+
+        /// Excel compares sheet names case-insensitively.
+        auto is_used = [&](const String & name)
+        {
+            for (const auto & existing : sheet_names)
+                if (existing.size() == name.size()
+                    && std::equal(existing.begin(), existing.end(), name.begin(), [](char a, char b) { return toLowerIfAlphaASCII(a) == toLowerIfAlphaASCII(b); }))
+                    return true;
+            return false;
+        };
+
+        while (true)
+        {
+            ++next_sheet_suffix;
+            String suffix = fmt::format(" ({})", next_sheet_suffix);
+            String name = String(utf8Prefix(base, MAX_SHEET_NAME_LENGTH - suffix.size())) + suffix;
+            if (!is_used(name))
+                return name;
+        }
     }
 
     void startSheet()
     {
-        sheet_names.push_back(makeSheetName(sheet_names.size() + 1));
+        sheet_names.push_back(makeSheetName());
         zip.beginEntry(fmt::format("xl/worksheets/sheet{}.xml", sheet_names.size()));
         sheet_buffer = std::make_unique<ZipEntryWriteBuffer>(zip);
         auto & buf = *sheet_buffer;
@@ -842,6 +862,8 @@ private:
     ZipStreamWriter zip;
     std::unique_ptr<ZipEntryWriteBuffer> sheet_buffer;
     std::vector<String> sheet_names;
+    /// The last suffix used in the names of the continuation sheets.
+    size_t next_sheet_suffix = 1;
     UInt64 rows_in_sheet = 0;
     String text;
 };

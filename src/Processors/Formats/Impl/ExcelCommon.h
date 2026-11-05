@@ -136,6 +136,12 @@ void cellToString(const Cell & cell, bool date1904, String & out);
 /// Decodes the `_xHHHH_` escape sequences that Office Open XML uses for characters that cannot be represented in XML.
 void decodeOOXMLEscapes(String & str);
 
+/// Replaces `DateTime` and `DateTime64` types without an explicit time zone (also inside `Nullable` and `LowCardinality`)
+/// with the same types in the effective time zone (that respects `session_timezone`), like their serializations do.
+/// The result is only used for conversions: the columns of both types are the same.
+/// Must be called once per formatter, in the context of the query.
+DataTypePtr resolveImplicitTimeZones(const DataTypePtr & type);
+
 /// Inserts a cell into a column of the specified type.
 void insertCell(
     IColumn & column,

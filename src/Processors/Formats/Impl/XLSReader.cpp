@@ -138,6 +138,7 @@ public:
 private:
     static constexpr UInt32 END_OF_CHAIN = 0xFFFFFFFE;
     static constexpr UInt32 FREE_SECTOR = 0xFFFFFFFF;
+    static constexpr UInt32 NO_STREAM = 0xFFFFFFFF;
     static constexpr UInt32 MINI_SECTOR_SIZE = 64;
 
     struct Entry
@@ -146,6 +147,10 @@ private:
         UInt8 type = 0; /// 1 - storage, 2 - stream, 5 - root.
         UInt32 start_sector = 0;
         UInt64 size = 0;
+        /// The children of a storage form a tree of siblings; `child` is the root of the tree of the children of this storage.
+        UInt32 left_sibling = NO_STREAM;
+        UInt32 right_sibling = NO_STREAM;
+        UInt32 child = NO_STREAM;
     };
 
     std::string_view sector(UInt32 id) const;
@@ -236,6 +241,9 @@ CompoundFile::CompoundFile(std::string_view data_) : data(data_)
             entry.name += unit < 0x80 ? toLowerIfAlphaASCII(static_cast<char>(unit)) : '?';
         }
         entry.type = readU8(raw, 66);
+        entry.left_sibling = readU32(raw, 68);
+        entry.right_sibling = readU32(raw, 72);
+        entry.child = readU32(raw, 76);
         entry.start_sector = readU32(raw, 116);
         /// The high 32 bits of the size must be zero in version 3 files, but some writers leave garbage there.
         entry.size = readU32(raw, 120);
@@ -324,15 +332,38 @@ String CompoundFile::readMiniChain(UInt32 start, UInt64 size) const
 
 std::optional<String> CompoundFile::readStream(std::initializer_list<std::string_view> names) const
 {
+    /// Names are scoped to their parent storage, so look only at the children of the root storage:
+    /// a nested storage (like an embedded object) may contain another `Workbook` stream.
+    std::vector<const Entry *> root_streams;
+    std::vector<bool> visited(entries.size());
+    std::vector<UInt32> stack{entries[0].child};
+    while (!stack.empty())
+    {
+        UInt32 id = stack.back();
+        stack.pop_back();
+        if (id == NO_STREAM)
+            continue;
+        if (id >= entries.size())
+            throwCorrupted(fmt::format("invalid directory entry {}", id));
+        if (visited[id])
+            throwCorrupted("the directory has a cycle");
+        visited[id] = true;
+        const auto & entry = entries[id];
+        if (entry.type == 2)
+            root_streams.push_back(&entry);
+        stack.push_back(entry.left_sibling);
+        stack.push_back(entry.right_sibling);
+    }
+
     for (auto name : names)
     {
-        for (const auto & entry : entries)
+        for (const auto * entry : root_streams)
         {
-            if (entry.type != 2 || entry.name != name)
+            if (entry->name != name)
                 continue;
-            if (entry.size < mini_stream_cutoff)
-                return readMiniChain(entry.start_sector, entry.size);
-            return readChain(entry.start_sector, entry.size);
+            if (entry->size < mini_stream_cutoff)
+                return readMiniChain(entry->start_sector, entry->size);
+            return readChain(entry->start_sector, entry->size);
         }
     }
     return {};
