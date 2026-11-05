@@ -1,7 +1,16 @@
 #include <Analyzer/Resolve/TableExpressionData.h>
 
+#include <Common/Exception.h>
+#include <base/scope_guard.h>
+#include <fmt/ranges.h>
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CYCLIC_ALIASES;
+}
 
 void AnalysisTableExpressionData::ensureColumnMembershipSetsArePopulated() const
 {
@@ -41,12 +50,21 @@ ColumnNodePtr AnalysisTableExpressionData::tryGetColumnNode(std::string_view col
     if (it == node_map.end())
         return nullptr;
 
+    if (std::find(alias_columns_in_resolve_process.begin(), alias_columns_in_resolve_process.end(), column_name)
+        != alias_columns_in_resolve_process.end())
+        throw Exception(
+            ErrorCodes::CYCLIC_ALIASES,
+            "Cyclic ALIAS columns: {} -> {}",
+            fmt::join(alias_columns_in_resolve_process, " -> "),
+            column_name);
+
     auto unresolved_it = unresolved_alias_columns.find(column_name);
     if (unresolved_it != unresolved_alias_columns.end())
     {
-        /// Erase before resolving: resolution of the ALIAS expression can look up this column again
-        /// (it is an error of cyclic aliases), and the lookup has to get the column without recursion.
+        /// Erase before resolving; a re-entrant lookup of this column is a cycle and is refused above.
         unresolved_alias_columns.erase(unresolved_it);
+        alias_columns_in_resolve_process.emplace_back(column_name);
+        SCOPE_EXIT({ alias_columns_in_resolve_process.pop_back(); });
         /// `node_map` is not changed by the resolution (only the nodes in it), so `it` remains valid.
         resolve_alias_column(it->second);
     }

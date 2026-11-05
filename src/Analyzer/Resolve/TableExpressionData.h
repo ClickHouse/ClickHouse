@@ -163,6 +163,8 @@ private:
     AliasColumnResolver resolve_alias_column;
     /// Names of ALIAS columns, which expressions are not resolved yet.
     mutable std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> unresolved_alias_columns;
+    /// ALIAS columns whose expressions are being resolved, innermost last.
+    mutable std::vector<std::string> alias_columns_in_resolve_process;
 };
 
 }
