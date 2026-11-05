@@ -9,6 +9,7 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -16,7 +17,6 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/IAST.h>
@@ -211,8 +211,28 @@ struct HasSystemTablesMatcher
     }
 };
 
+struct HasSubqueriesMatcher
+{
+    struct Data
+    {
+        bool has_subqueries = false;
+    };
+
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+
+    static void visit(const ASTPtr & node, Data & data)
+    {
+        if (data.has_subqueries)
+            return;
+
+        if (node->as<ASTSubquery>())
+            data.has_subqueries = true;
+    }
+};
+
 using HasNonDeterministicFunctionsVisitor = InDepthNodeVisitor<HasNonDeterministicFunctionsMatcher, true>;
 using HasSystemTablesVisitor = InDepthNodeVisitor<HasSystemTablesMatcher, true>;
+using HasSubqueriesVisitor = InDepthNodeVisitor<HasSubqueriesMatcher, true>;
 
 }
 
@@ -318,7 +338,7 @@ static bool hasNonDeterministicObfuscate(const ASTPtr & node, ContextPtr context
 }
 
 /// Does AST contain non-deterministic functions like rand() and now()?
-static bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
+bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
 {
     HasNonDeterministicFunctionsMatcher::Data finder_data{context};
     HasNonDeterministicFunctionsVisitor(finder_data).visit(ast);
@@ -332,6 +352,13 @@ static bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
     HasSystemTablesMatcher::Data finder_data{context};
     HasSystemTablesVisitor(finder_data).visit(ast);
     return finder_data.has_system_tables;
+}
+
+bool astContainsSubqueries(ASTPtr ast)
+{
+    HasSubqueriesMatcher::Data finder_data;
+    HasSubqueriesVisitor(finder_data).visit(ast);
+    return finder_data.has_subqueries;
 }
 
 bool canWriteToQueryResultCacheInMemory(ContextPtr context)

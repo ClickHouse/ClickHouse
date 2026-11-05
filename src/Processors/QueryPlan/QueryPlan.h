@@ -9,6 +9,9 @@
 #include <Columns/IColumn_fwd.h>
 #include <DataTypes/IDataType_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
+#include <Storages/IStorage_fwd.h>
+#include <Storages/StorageSnapshot.h>
+#include <Storages/TableLockHolder.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/RuntimeFilterGeometry.h>
 #include <Parsers/IAST_fwd.h>
@@ -60,6 +63,7 @@ struct DeserializedSetsRegistry;
 
 class SettingsChanges;
 
+/// Options from EXPLAIN PLAN query.
 /// Options from EXPLAIN queries based on plan.
 struct ExplainPlanOptions
 {
@@ -146,7 +150,16 @@ public:
     /// complete values is an error, because a `SubqueryPlan` record would make every task re-run
     /// the subquery.
     void serializeForDistributedTask(WriteBuffer & out, size_t max_supported_version, const SizeLimits & sets_transfer_limits) const;
+    /// `max_type_complexity` guards binary type decoding of the plan (0 == unlimited). Client QueryPlan packets
+    /// (`TCPHandler::receiveQueryPlan`) pass the effective `input_format_binary_max_type_complexity`; trusted
+    /// server-to-server plans pass 0.
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data = false);
+
+    /// Local-only serialization for the query plan cache. It may use a newer private
+    /// format than the distributed query plan protocol.
+    void serializeForQueryPlanCache(WriteBuffer & out) const;
+    static QueryPlanAndSets deserializeForQueryPlanCache(ReadBuffer & in, const ContextPtr & context);
+
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
 
     static void serializeReadySets(SerializedSetsRegistry & registry, WriteBuffer & out);
@@ -162,6 +175,12 @@ public:
     bool isSerialized() const;
 
     void resolveStorages(const ContextPtr & context);
+    void resolveStorages(
+        const ContextPtr & context,
+        String bound_table_name,
+        StoragePtr bound_storage,
+        StorageSnapshotPtr bound_snapshot,
+        TableLockHolder bound_table_lock);
 
     /// Optimizes the query. With `make_distributed_plan` set, the plan must have been accepted by
     /// `applyDistributedPlanFallbackToLocal` first (`buildQueryPipeline` does it), because set and CTE
@@ -294,6 +313,9 @@ private:
         SizeLimits sets_transfer_limits = {};
         /// The nesting depth of plans for sets from subqueries, used on deserialize to limit the recursion.
         size_t subquery_nesting_depth = 0;
+        /// The stream is a query plan cache entry, written and read by the same server process and never
+        /// sent to another server. See `serializeForQueryPlanCache`.
+        bool for_query_plan_cache = false;
     };
 
     void serialize(WriteBuffer & out, const SerializationFlags & flags) const;

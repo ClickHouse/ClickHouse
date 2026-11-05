@@ -1,0 +1,23 @@
+1	10
+1
+1	10
+10
+1	10	7
+1	7
+1	10	7
+10
+1	10	7
+1	10
+20
+20
+20
+qpc_05241_columns_after_add	1	0	1
+qpc_05241_except_after_add	1	0	1
+qpc_05241_plain_after_add	1	0	0
+qpc_05241_prewhere_after_modify	1	0	1
+qpc_05241_prewhere_hit	1	0	0
+qpc_05241_star_after_add	1	0	1
+qpc_05241_star_after_drop	1	0	1
+qpc_05241_star_hit	1	0	0
+qpc_05241_prewhere_hit	['a','b']
+qpc_05241_prewhere_seed	['a','b']
