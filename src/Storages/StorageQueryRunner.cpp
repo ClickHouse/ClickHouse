@@ -352,7 +352,7 @@ public:
         }
         else
         {
-            switch (*metadata.sql_security_type)
+            switch (metadata.sql_security_type.value_or(SQLSecurityType::INVOKER))
             {
                 case SQLSecurityType::INVOKER:
                 {
@@ -817,7 +817,7 @@ StorageQueryRunner::StorageQueryRunner(
         if (storage_metadata.sql_security_type == SQLSecurityType::DEFINER)
             DefinerDependencies::instance().addDependency(*storage_metadata.definer, table_id_);
     }
-    else
+    else if (cluster_name.empty())
         storage_metadata.sql_security_type = SQLSecurityType::INVOKER;
 
     setInMemoryMetadata(storage_metadata);
