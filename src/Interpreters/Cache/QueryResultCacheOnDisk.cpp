@@ -34,7 +34,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event QueryCacheOnDiskReadBytes;
     extern const Event QueryCacheOnDiskWrittenBytes;
 }
 
@@ -801,7 +800,6 @@ std::optional<QueryResultCacheReader> QueryResultCacheOnDisk::tryCreateReader(co
         for (const auto & file_segment : *holder)
             file_segment->increasePriority();
 
-        ProfileEvents::increment(ProfileEvents::QueryCacheOnDiskReadBytes, fixed_header->total_size);
         LOG_TRACE(logger, "Query result found on disk for query {}", doubleQuoteString(key.query_string));
 
         return QueryResultCacheReader(
@@ -811,7 +809,8 @@ std::optional<QueryResultCacheReader> QueryResultCacheOnDisk::tryCreateReader(co
             std::move(result_column_origins),
             std::chrono::system_clock::from_time_t(fixed_header->created_at),
             std::chrono::system_clock::from_time_t(fixed_header->expires_at),
-            access.ignore_quota);
+            access.ignore_quota,
+            /* on_disk_read_bytes_ = */ fixed_header->total_size);
     }
     catch (...)
     {

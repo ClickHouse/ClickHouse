@@ -40,6 +40,7 @@ namespace ProfileEvents
     extern const Event QueryCacheMisses;
     extern const Event QueryCacheOnDiskHits;
     extern const Event QueryCacheOnDiskMisses;
+    extern const Event QueryCacheOnDiskReadBytes;
     extern const Event QueryCacheAgeSeconds;
     extern const Event QueryCacheReadRows;
     extern const Event QueryCacheReadBytes;
@@ -1015,8 +1016,10 @@ void QueryResultCacheReader::buildSourceFromChunks(SharedHeader header, Chunks &
         total_rows += chunk.getNumRows();
         total_bytes += chunk.bytes();
     }
-    ProfileEvents::increment(ProfileEvents::QueryCacheReadRows, total_rows);
-    ProfileEvents::increment(ProfileEvents::QueryCacheReadBytes, total_bytes);
+    /// Recorded by `hasCacheEntryForKey`, not here: a query whose quota over profile events is exhausted probes the cache, but is
+    /// rejected before it reads the result, so it must not be charged with these events.
+    read_rows = total_rows;
+    read_bytes = total_bytes;
 
     source_from_chunks = std::make_unique<SourceFromChunks>(header, std::move(chunks));
 
@@ -1047,8 +1050,10 @@ QueryResultCacheReader::QueryResultCacheReader(
     ResultColumnOrigins && result_column_origins_,
     std::chrono::time_point<std::chrono::system_clock> created_at_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
-    bool ignore_quota_)
+    bool ignore_quota_,
+    size_t on_disk_read_bytes_)
     : source(source_)
+    , on_disk_read_bytes(on_disk_read_bytes_)
 {
     buildSourceFromChunks(header, std::move(entry.chunks), entry.totals, entry.extremes);
 
@@ -1138,6 +1143,14 @@ bool QueryResultCacheReader::hasCacheEntryForKey(bool update_profile_events) con
         /// both backends enabled, a miss in memory followed by a hit on disk is a hit of the query result cache.
         if (source == Source::OnDisk)
             ProfileEvents::increment(has_entry ? ProfileEvents::QueryCacheOnDiskHits : ProfileEvents::QueryCacheOnDiskMisses);
+
+        if (has_entry)
+        {
+            ProfileEvents::increment(ProfileEvents::QueryCacheReadRows, read_rows);
+            ProfileEvents::increment(ProfileEvents::QueryCacheReadBytes, read_bytes);
+            if (on_disk_read_bytes)
+                ProfileEvents::increment(ProfileEvents::QueryCacheOnDiskReadBytes, on_disk_read_bytes);
+        }
 
         /// The age of the entry is a property of the hit and not of the backend that served it, so it is recorded for both.
         if (has_entry)

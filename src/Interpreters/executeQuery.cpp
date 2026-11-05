@@ -845,6 +845,14 @@ static void usedQuotaProfileEvents(
         /* check_exceeded = */ false);
 }
 
+/// Whether a query exempt from quotas (see `IInterpreter::ignoreQuota`) is charged against the quotas over profile events all the
+/// same, because a scalar subquery not exempt from quotas has been executed while it was analyzed, in its thread group (see
+/// `QueryStatus::executed_non_exempt_scalar_subquery`). The predefined counters of such a subquery are charged by its own pipeline.
+static bool chargesExemptQueryProfileEvents(const QueryStatusPtr & process_list_elem)
+{
+    return process_list_elem && process_list_elem->hasExecutedNonExemptScalarSubquery();
+}
+
 /// Whether the query is charged against the quotas over profile events. Like the predefined `errors`
 /// counter, only the outer query of an internal one is, with one exception: the deferred flush of
 /// asynchronous inserts, which is internal but runs on behalf of the user who submitted the inserts
@@ -1296,7 +1304,7 @@ void logExceptionBeforeStart(
     }
 
     /// After `addStatusInfoToQueryLogElement`, so that the time-based events it increments are charged too.
-    if (charge_quota && chargesQuotaProfileEvents(ast, internal))
+    if ((charge_quota || chargesExemptQueryProfileEvents(process_list_elem)) && chargesQuotaProfileEvents(ast, internal))
     {
         if (process_list_elem)
             usedQuotaProfileEvents(quota, process_list_elem, quota_normalized_query_hash);
@@ -3458,7 +3466,8 @@ static BlockIO executeQueryImpl(
                         if (query_result_cache_hit_quota)
                             query_result_cache_hit_quota->checkExceededProfileEvents(normalized_query_hash);
 
-                        /// Records `QueryCacheOnDiskHits` (for a hit on disk) and `QueryCacheAgeSeconds`.
+                        /// Records `QueryCacheOnDiskHits` (for a hit on disk), `QueryCacheAgeSeconds`, and what reading the entry amounts
+                        /// to (`QueryCacheReadRows`, `QueryCacheReadBytes`, `QueryCacheOnDiskReadBytes`).
                         reader->hasCacheEntryForKey();
                         QueryResultCacheReader::recordProbeResult(true);
 
@@ -3623,7 +3632,8 @@ static BlockIO executeQueryImpl(
                                 created_at, expires_at,
                                 settings[Setting::query_cache_compress_entries],
                                 /* is_subquery = */ false);
-                            key.ignore_quota = quota_ignored;
+                            /// A hit is charged like the query itself, including the scalar subqueries it executed on its own.
+                            key.ignore_quota = quota_ignored && !chargesExemptQueryProfileEvents(context->getProcessListElement());
                             if (result_column_origins.size() == key.header->columns())
                                 key.result_column_origins = result_column_origins;
 
@@ -3761,6 +3771,8 @@ static BlockIO executeQueryImpl(
             /// (finish, exception, cancellation) it reaches first.
             auto quota_profile_events_charged = std::make_shared<std::atomic_bool>(false);
             auto profile_events_quota = quota ? quota : query_result_cache_hit_quota;
+            if (!profile_events_quota && quota_ignored && chargesExemptQueryProfileEvents(context->getProcessListElement()))
+                profile_events_quota = context->getQuota();
 
             auto finish_callback = [elem,
                                     context,
@@ -3812,7 +3824,8 @@ static BlockIO executeQueryImpl(
 
                 /// Also charges the quotas over profile events with what the failed query consumed.
                 logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_as_internal, log_error,
-                    /* charge_quota_profile_events = */ !quota_ignored && !quota_profile_events_charged->exchange(true));
+                    /* charge_quota_profile_events = */ (!quota_ignored || chargesExemptQueryProfileEvents(context->getProcessListElementSafe()))
+                        && !quota_profile_events_charged->exchange(true));
 
                 if (query_pipeline.initialized())
                 {

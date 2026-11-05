@@ -145,6 +145,11 @@ protected:
     mutable std::mutex excluded_profile_events_mutex;
     std::unique_ptr<ProfileEvents::Counters> excluded_profile_events TSA_GUARDED_BY(excluded_profile_events_mutex);
 
+    /// Whether a scalar subquery not exempt from quotas has been executed while this query was analyzed. Such a subquery runs
+    /// in the thread group of this query, so what it consumes is charged to the quotas over profile events with this query,
+    /// even if the query itself is exempt (e.g. `SELECT (SELECT sum(x) FROM t)` reads only `system.one` on its own).
+    std::atomic<bool> executed_non_exempt_scalar_subquery = false;
+
     /// Used to externally check for the query time limits
     /// They are saved in the constructor to limit the overhead of each call to checkTimeLimit()
     ExecutionSpeedLimits limits;
@@ -299,6 +304,10 @@ public:
 
     /// Returns the sum of the excluded profile events, if any were added.
     std::optional<ProfileEvents::Counters::Snapshot> getExcludedProfileEvents() const;
+
+    /// See `executed_non_exempt_scalar_subquery`.
+    void markNonExemptScalarSubqueryExecuted() { executed_non_exempt_scalar_subquery.store(true, std::memory_order_relaxed); }
+    bool hasExecutedNonExemptScalarSubquery() const { return executed_non_exempt_scalar_subquery.load(std::memory_order_relaxed); }
 
     void throwProperExceptionIfNeeded(const UInt64 & max_execution_time_us, const UInt64 & elapsed_ns);
 

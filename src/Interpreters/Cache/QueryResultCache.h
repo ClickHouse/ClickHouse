@@ -345,7 +345,8 @@ private:
         ResultColumnOrigins && result_column_origins_,
         std::chrono::time_point<std::chrono::system_clock> created_at_,
         std::chrono::time_point<std::chrono::system_clock> expires_at_,
-        bool ignore_quota_);
+        bool ignore_quota_,
+        size_t on_disk_read_bytes_);
 
     void buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
 
@@ -359,6 +360,12 @@ private:
     std::chrono::time_point<std::chrono::system_clock> expires_at;
     bool ignore_quota = false;
     ResultColumnOrigins result_column_origins;
+
+    /// What reading the entry amounts to, recorded in `QueryCacheReadRows` / `QueryCacheReadBytes` / `QueryCacheOnDiskReadBytes`
+    /// by `hasCacheEntryForKey`.
+    size_t read_rows = 0;
+    size_t read_bytes = 0;
+    size_t on_disk_read_bytes = 0;
 
     LoggerPtr logger = getLogger("QueryResultCache");
 
