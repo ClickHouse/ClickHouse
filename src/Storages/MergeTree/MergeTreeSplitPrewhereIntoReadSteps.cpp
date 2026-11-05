@@ -141,6 +141,43 @@ void flattenConjunction(const ActionsDAG::Node * node, ActionsDAG::NodeRawConstP
     atoms.push_back(node);
 }
 
+/// A text index hint is an alias for `and(index_input, original_predicate)`.
+/// Expose its leading index inputs immediately before that conjunct so a reader
+/// can discard rows before fetching the column used for verification. Keep the
+/// original conjunct for its result name, type and any downstream uses.
+void addTextIndexHintConditions(
+    ActionsDAG::NodeRawConstPtrs & conditions,
+    size_t & num_attributed_conditions,
+    const std::unordered_map<const ActionsDAG::Node *, NodeInfo> & nodes_info)
+{
+    ActionsDAG::NodeRawConstPtrs expanded;
+    expanded.reserve(conditions.size());
+    size_t attributed = 0;
+    for (size_t i = 0; i < conditions.size(); ++i)
+    {
+        const auto * condition = conditions[i];
+        const auto * node = condition;
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children.front();
+
+        if (node != condition && node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->getName() == "and"
+            && !nodes_info.at(condition).required_storage_columns.empty())
+        {
+            for (const auto * child : node->children)
+            {
+                if (child->type != ActionsDAG::ActionType::INPUT || nodes_info.at(child).required_indexes.empty())
+                    break;
+                expanded.push_back(child);
+            }
+        }
+        expanded.push_back(condition);
+        if (i + 1 == num_attributed_conditions)
+            attributed = expanded.size();
+    }
+    conditions.swap(expanded);
+    num_attributed_conditions = attributed;
+}
+
 /// Appends the INPUT nodes of the sub-DAG rooted at `node` to `inputs`, each at most once.
 void collectInputNodes(
     const ActionsDAG::Node * node,
@@ -300,7 +337,8 @@ bool tryBuildPrewhereSteps(
     /// 1. List all condition nodes that are combined with AND into PREWHERE condition
     const auto & condition_root = prewhere_info->prewhere_actions.findInOutputs(prewhere_info->prewhere_column_name);
     const bool is_conjunction = (condition_root.type == ActionsDAG::ActionType::FUNCTION && condition_root.function_base->getName() == "and");
-    if (!is_conjunction)
+    const bool has_index_filters = prewhere_info->need_filter && index_read_tasks && !index_read_tasks->empty();
+    if (!is_conjunction && !(has_index_filters && condition_root.type == ActionsDAG::ActionType::ALIAS))
         return false;
     /// Nested conjunctions are flattened, so that a condition list like
     /// `and(existing_prewhere, and(guard, throwing))` (built by optimizePrewhere when a moved WHERE
@@ -327,6 +365,11 @@ bool tryBuildPrewhereSteps(
     {
         fillRequiredColumns(node, nodes_info, columns, index_read_tasks);
     }
+
+    if (has_index_filters)
+        addTextIndexHintConditions(condition_nodes, num_attributed_conditions, nodes_info);
+    if (!is_conjunction && condition_nodes.size() == 1)
+        return false;
 
     /// 3. Sort condition nodes by the number of columns used in them and the overall size of those columns
     /// TODO: not sorting for now because the conditions are already sorted by Where Optimizer
