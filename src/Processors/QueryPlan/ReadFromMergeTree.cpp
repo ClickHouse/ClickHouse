@@ -732,22 +732,19 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             total_rows = query_info.trivial_limit;
     }
 
-    /// A replica asks the coordinator for one task per thread as soon as its buffer is empty, not when its threads are idle,
-    /// so it can hold two such batches at once: the one its threads are still reading and the one in the buffer. If that is
-    /// more than its share, the replica that starts first (e.g. the initiator with a local plan) takes the whole read before
-    /// the others ask. Bound it so that a replica holds at most `sum_marks / replicas^2` in both batches together, which
-    /// also leaves something to steal for every other replica. A replica may always hold the smallest segment, though:
-    /// a read too small for that is not worth balancing, and smaller tasks would only add requests to the coordinator.
+    /// A replica asks the coordinator for one task per thread at once. If that is more than its share, the replica that
+    /// starts first (e.g. the initiator with a local plan) takes the whole read before the others ask. Bound the batch by
+    /// `sum_marks / replicas^2`, which also leaves something to steal for every other replica. A replica may always take
+    /// the smallest segment, though: a read too small for that is not worth balancing, and smaller tasks would only add
+    /// requests to the coordinator.
     if (pool_settings.total_query_nodes > 1)
     {
         const size_t replicas = pool_settings.total_query_nodes;
-        /// Not a tuning knob: the batch the threads are still reading plus the next one in the buffer.
-        const size_t batches = 2;
-        const size_t max_marks_per_replica = std::max<size_t>(
+        const size_t max_marks_per_batch = std::max<size_t>(
             pool_settings.sum_marks / (replicas * replicas), MergeTreeReadPoolParallelReplicas::mark_segment_size_borders.front());
         pool_settings.max_min_marks_per_task = std::max<size_t>(
             context->getSettingsRef()[Setting::merge_tree_min_read_task_size],
-            max_marks_per_replica / (batches * std::max<size_t>(pool_settings.threads, 1)));
+            max_marks_per_batch / std::max<size_t>(pool_settings.threads, 1));
         pool_settings.min_marks_for_concurrent_read
             = std::min(pool_settings.min_marks_for_concurrent_read, pool_settings.max_min_marks_per_task);
     }
