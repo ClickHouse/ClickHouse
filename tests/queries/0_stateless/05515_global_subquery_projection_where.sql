@@ -89,6 +89,13 @@ SELECT a, b FROM gs_nested_join ORDER BY a;
 SELECT count() FROM system.projection_parts
 WHERE database = currentDatabase() AND name = 'p' AND active;
 
+-- And the rows of each projection are the rows its own `WHERE` selects: `gs_src` holds 1 and 2
+-- and `gs_join` holds 1, so each of the four conditions keeps (1, 1) and drops (7, 7).
+SELECT a, b FROM mergeTreeProjection(currentDatabase(), gs_not_distributed, p) ORDER BY a;
+SELECT a, b FROM mergeTreeProjection(currentDatabase(), gs_table_name, p) ORDER BY a;
+SELECT a, b FROM mergeTreeProjection(currentDatabase(), gs_nested_join, p) ORDER BY a;
+SELECT a, b FROM mergeTreeProjection(currentDatabase(), gs_shared_subquery, p) ORDER BY a;
+
 DROP TABLE gs_shared_subquery;
 DROP TABLE gs_nested_join;
 DROP TABLE gs_table_name;
