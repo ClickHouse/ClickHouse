@@ -8201,6 +8201,15 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
                 settled_table_node->setTemporaryTableName(union_node_typed.getCTEName() + "_settled");
             }
 
+            /// Scalar subqueries and `EXISTS` reading these tables cannot be folded during analysis.
+            size_t previous_keyed_recursive_cte_tables_size = keyed_recursive_cte_tables_in_resolve_process.size();
+            SCOPE_EXIT({ keyed_recursive_cte_tables_in_resolve_process.resize(previous_keyed_recursive_cte_tables_size); });
+            if (settled_table_storage)
+            {
+                keyed_recursive_cte_tables_in_resolve_process.emplace_back(temporary_table_storage, union_node_typed.getCTEName());
+                keyed_recursive_cte_tables_in_resolve_process.emplace_back(settled_table_storage, union_node_typed.getCTEName() + "_settled");
+            }
+
             for (size_t i = 1; i < queries_nodes.size(); ++i)
             {
                 auto & query_node = queries_nodes[i];
