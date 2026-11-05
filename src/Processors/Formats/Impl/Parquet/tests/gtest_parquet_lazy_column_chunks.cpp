@@ -1003,6 +1003,8 @@ TEST(ParquetLazyColumnChunks, MetadataCacheConcurrentAdds)
     EXPECT_GT(cached_chunks_seen.load(), 0);
 }
 
+/// Sanitizer runtimes replace operator new with one the memory tracker does not see, so the limit below cannot make it throw.
+#if !defined(SANITIZER)
 TEST(ParquetLazyColumnChunks, KeptOffsetIndexesAddKeepsNoneOnException)
 {
     MainThreadStatus::getInstance();
@@ -1045,5 +1047,6 @@ TEST(ParquetLazyColumnChunks, KeptOffsetIndexesAddKeepsNoneOnException)
     EXPECT_EQ(kept.bytes(), entries.size() * KeptOffsetIndexes::entryBytes(*entries[0].offset_index));
     EXPECT_EQ(kept.get(4095, 1), entries[4095].offset_index);
 }
+#endif
 
 #endif
