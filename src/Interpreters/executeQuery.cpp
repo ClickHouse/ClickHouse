@@ -3090,7 +3090,7 @@ static BlockIO executeQueryImpl(
             else if (settings[Setting::dialect] == Dialect::kusto && use_request_dialect)
             {
                 const char * kql_pos = new_begin;
-                if (!settings[Setting::allow_experimental_kusto_dialect])
+                if (!settings[Setting::enable_kusto_dialect])
                 {
                     /// A plain `SET` passes even when the gate is off, so a session that is
                     /// already in `dialect = 'kusto'` can run `SET dialect = 'clickhouse'`
@@ -3098,7 +3098,7 @@ static BlockIO executeQueryImpl(
                     out_ast = tryParseKQLSetStatement(
                         kql_pos, new_end, max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
                     if (!out_ast)
-                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the Kusto Query Language (KQL) is disabled (turn on setting 'allow_experimental_kusto_dialect')");
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the Kusto Query Language (KQL) is disabled (turn on setting 'enable_kusto_dialect')");
                 }
                 else
                     out_ast = parseKQLQuery(
