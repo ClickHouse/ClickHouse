@@ -89,6 +89,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
+#include <Analyzer/traverseQueryTree.h>
 
 #include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/CollectMaterializedCTE.h>
@@ -335,21 +336,23 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     ResultReplacementMap replacement_map;
 
     auto updated_query_tree = replaceTableExpressionsWithDummyTables(query_tree, table_nodes, query_context, &replacement_map);
-    /// disable parallel replicas to collect filters
+    /// Disable parallel replicas to collect filters, in every (sub)query: each one is planned with its own context,
+    /// which the clone still shares with the original tree, and an `IN` subquery keeps its real tables.
+    traverseQueryTree(updated_query_tree, Everything{}, [](const QueryTreeNodePtr & node)
     {
-        if (auto * query_node = updated_query_tree->as<QueryNode>())
+        if (auto * query_node = node->as<QueryNode>())
         {
             auto new_context = Context::createCopy(query_node->getMutableContext());
             new_context->setSetting("enable_parallel_replicas", false);
             query_node->getMutableContext() = new_context;
         }
-        else if (auto * union_node = updated_query_tree->as<UnionNode>())
+        else if (auto * union_node = node->as<UnionNode>())
         {
             auto new_context = Context::createCopy(union_node->getMutableContext());
             new_context->setSetting("enable_parallel_replicas", false);
             union_node->getMutableContext() = new_context;
         }
-    }
+    });
 
     std::unordered_map<const IStorage *, QueryTreeNodePtr> dummy_storage_to_table;
 
