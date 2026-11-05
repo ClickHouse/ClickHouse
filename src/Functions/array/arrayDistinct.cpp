@@ -7,6 +7,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsHash128.h>
 #include <Common/HashTable/ClearableHashSet.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
@@ -259,6 +260,17 @@ void FunctionArrayDistinct::executeHashed(
         src_null_map = &nullable_col->getNullMapData();
 
     Set set;
+    std::optional<ColumnsHashing::Hash128InOrder> hashes;
+    if (ColumnsHashing::canHash128InPlace({&src_data}))
+        hashes.emplace(ColumnRawPtrs{&src_data}, 0, src_data.size());
+    auto get_hash = [&](size_t row)
+    {
+        if (hashes)
+            return hashes->get(row);
+        SipHash hash_function;
+        src_data.updateHashWithValue(row, hash_function);
+        return hash_function.get128();
+    };
 
     ColumnArray::Offset prev_src_offset = 0;
     ColumnArray::Offset res_offset = 0;
@@ -272,9 +284,7 @@ void FunctionArrayDistinct::executeHashed(
             if (nullable_col && (*src_null_map)[j])
                 continue;
 
-            SipHash hash_function;
-            src_data.updateHashWithValue(j, hash_function);
-            const auto hash = hash_function.get128();
+            const auto hash = get_hash(j);
 
             if (set.insert(hash).second)
                 res_data_col.insertFrom(src_data, j);

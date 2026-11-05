@@ -39,6 +39,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsHash128.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 
@@ -129,6 +130,36 @@ inline UInt128 sipHash128AtRowConsistentWithEquals(const IColumn & column, size_
     SipHash h;
     updateHashNormalizingFloatZero(h, column, row_id);
     return h.get128();
+}
+
+/// `sipHash128AtRowConsistentWithEquals` of every row of a `Float32` or `Float64` column, many rows at once. Empty for
+/// any other column, `Nullable` included, and where `canHash128InPlace` is false.
+PaddedPODArray<UInt128> sipHash128OfFloatRowsConsistentWithEquals(const IColumn & column)
+{
+    if (!ColumnsHashing::canHash128InPlace({&column}))
+        return {};
+
+    MutableColumnPtr normalized;
+    if (const auto * col_f32 = checkAndGetColumn<ColumnFloat32>(&column))
+    {
+        normalized = col_f32->clone();
+        for (auto & value : assert_cast<ColumnFloat32 &>(*normalized).getData())
+            if (value == 0.0f)
+                value = 0.0f; /// Normalize -0.0f to +0.0f (the literal 0.0f has the positive-zero bit pattern).
+    }
+    else if (const auto * col_f64 = checkAndGetColumn<ColumnFloat64>(&column))
+    {
+        normalized = col_f64->clone();
+        for (auto & value : assert_cast<ColumnFloat64 &>(*normalized).getData())
+            if (value == 0.0)
+                value = 0.0; /// Normalize -0.0 to +0.0.
+    }
+    else
+        return {};
+
+    PaddedPODArray<UInt128> hashes(normalized->size());
+    ColumnsHashing::hash128Range({normalized.get()}, 0, normalized->size(), hashes.data());
+    return hashes;
 }
 
 /// A consumed chunk that had at least one match: its sequential dictionary block number
@@ -526,9 +557,12 @@ private:
         auto bucket_values = attribute_column_type->createColumn();
         bucket_values->reserve(input_rows_count);
 
+        const auto float_value_hashes = normalize_float_zero ? sipHash128OfFloatRowsConsistentWithEquals(*values_column) : PaddedPODArray<UInt128>();
         for (size_t cur_row_id = 0; cur_row_id < input_rows_count; ++cur_row_id)
         {
-            const UInt128 value_hash = sipHash128AtRowConsistentWithEquals(*values_column, cur_row_id, normalize_float_zero);
+            const UInt128 value_hash = float_value_hashes.empty()
+                ? sipHash128AtRowConsistentWithEquals(*values_column, cur_row_id, normalize_float_zero)
+                : float_value_hashes[cur_row_id];
 
             auto * it = value_hash_to_bucket_id.find(value_hash);
             if (it)
@@ -752,9 +786,12 @@ private:
             rhs_column->reserve(rows_in_chunk);
             VectorWithMemoryTracking<ssize_t> row_candidate_bucket(rows_in_chunk, -1);
 
+            const auto float_value_hashes = normalize_float_zero ? sipHash128OfFloatRowsConsistentWithEquals(*attr_col) : PaddedPODArray<UInt128>();
             for (size_t row_id = 0; row_id < rows_in_chunk; ++row_id)
             {
-                const UInt128 value_hash = sipHash128AtRowConsistentWithEquals(*attr_col, row_id, normalize_float_zero);
+                const UInt128 value_hash = float_value_hashes.empty()
+                    ? sipHash128AtRowConsistentWithEquals(*attr_col, row_id, normalize_float_zero)
+                    : float_value_hashes[row_id];
 
                 /// Not in user given `values_column`
                 const auto * it = value_hash_to_bucket_id.find(value_hash);

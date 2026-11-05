@@ -1,8 +1,19 @@
 <test>
+    <create_query>CREATE TABLE hash_tables_partitions (d Date, v UInt64) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE hash_tables_map_buckets (m Map(UInt64, UInt64)) ENGINE = MergeTree ORDER BY tuple() SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets', map_buckets_strategy = 'constant', map_buckets_min_avg_size = 0, max_buckets_in_map = 7, serialization_info_version = 'with_types'</create_query>
+
     <query>select arrayUniq(range(1 + (number % 100) * 10)) from numbers(100000) format Null</query>
     <query>select arrayDistinct(range(1 + (number % 100) * 10)) from numbers(100000) format Null</query>
     <query>select arrayEnumerateUniq(range(1 + (number % 100) * 10)) from numbers(100000) format Null</query>
+    <query>select arrayDistinct(arrayMap(x -> toUInt128(x % 50), range(1 + (number % 100) * 10))) from numbers(100000) format Null</query>
+    <query>select arrayDistinct(arrayMap(x -> (x % 50, toString(x % 7)), range(1 + (number % 100) * 10))) from numbers(20000) format Null</query>
+    <query>select arrayEnumerateUniqRanked(range(1 + (number % 100) * 10)) from numbers(100000) format Null</query>
+    <query>insert into hash_tables_partitions select toDate('2020-01-01') + number % 365, number from numbers(2000000)</query>
+    <query>insert into hash_tables_map_buckets select mapFromArrays(arrayMap(i -> number + i, range(number % 10)), arrayMap(i -> toUInt64(i), range(number % 10))) from numbers(500000)</query>
     <query>select arrayIntersect(range((1 + number % 100)), range(1, (1 + number % 100) + 1)) from numbers(1000000) format Null</query>
     <query>select groupUniqArray(rand() % 100) from numbers(1000 * 1000) group by number / 1000 format Null</query>
     <query>select entropy(number / 10) from numbers(1000 * 1000) group by number / 1000 format Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS hash_tables_partitions</drop_query>
+    <drop_query>DROP TABLE IF EXISTS hash_tables_map_buckets</drop_query>
 </test>

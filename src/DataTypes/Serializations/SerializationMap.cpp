@@ -14,6 +14,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsHash128.h>
 #include <Core/Field.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/JSONUtils.h>
@@ -1068,13 +1069,27 @@ void splitMapToBucketsTyped(
         dst_values[b] = static_cast<ValueColumn *>(dst_values_raw[b]);
     }
 
+    if (num_buckets == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of buckets cannot be zero");
+
+    /// The bucket of a key is `getBucketForKey`: `get64` of the `SipHash` is the XOR of the halves of `get128`.
+    std::optional<ColumnsHashing::Hash128InOrder> key_hashes;
+    if (ColumnsHashing::canHash128InPlace({&src_keys_col}))
+        key_hashes.emplace(ColumnRawPtrs{&src_keys_col}, src_offsets[ssize_t(start) - 1], src_offsets[ssize_t(end) - 1]);
+    auto get_bucket = [&](size_t row) -> size_t
+    {
+        if (!key_hashes)
+            return getBucketForKeyImpl(src_keys, row, num_buckets);
+        const UInt128 key_hash = key_hashes->get(row);
+        return (key_hash.items[0] ^ key_hash.items[1]) % num_buckets;
+    };
     for (size_t i = start; i != end; ++i)
     {
         size_t offset_start = src_offsets[ssize_t(i) - 1];
         size_t offset_end = src_offsets[ssize_t(i)];
         for (size_t j = offset_start; j != offset_end; ++j)
         {
-            size_t bucket = getBucketForKeyImpl(src_keys, j, num_buckets);
+            size_t bucket = get_bucket(j);
             dst_keys[bucket]->insertFrom(src_keys, j);
             dst_values[bucket]->insertFrom(src_values, j);
             bucket_index_col.getData().push_back(static_cast<typename IndexColumn::ValueType>(bucket));
