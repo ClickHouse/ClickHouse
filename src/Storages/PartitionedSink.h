@@ -8,6 +8,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/IPartitionStrategy.h>
+#include <Storages/PartitionedWriteAccessCheck.h>
 
 
 namespace DB
@@ -21,7 +22,8 @@ public:
     PartitionedSink(
         std::shared_ptr<IPartitionStrategy> partition_strategy_,
         ContextPtr context_,
-        SharedHeader source_header_);
+        SharedHeader source_header_,
+        PartitionedWriteAccessCheckPtr write_access_check_);
 
     ~PartitionedSink() override;
 
@@ -45,6 +47,7 @@ protected:
 private:
     ContextPtr context;
     SharedHeader source_header;
+    PartitionedWriteAccessCheckPtr write_access_check;
 
     absl::flat_hash_map<std::string_view, SinkPtr> partition_id_to_sink;
     HashMapWithSavedHash<std::string_view, size_t> partition_id_to_chunk_index;

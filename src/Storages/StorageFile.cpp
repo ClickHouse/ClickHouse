@@ -3491,7 +3491,10 @@ public:
         const String format_name_,
         ContextPtr context_,
         int flags_)
-        : PartitionedSink(partition_strategy_, context_, std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
+        /// `file` has no URI to filter grants on, so its partitions need no write access check.
+        : PartitionedSink(
+            partition_strategy_, context_, std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()),
+            /*write_access_check_=*/nullptr)
         , path(path_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)

@@ -284,6 +284,8 @@ StoragePtr TableFunctionURL::executeImpl(
         ContextMutablePtr delegate_context = Context::createCopy(context);
         delegate_context->setSetting("parallel_replicas_for_cluster_engines", false);
 
+        /// The delegate creates the storage, so it needs the `PARTITION BY` expression to write partitions.
+        delegate->setPartitionBy(partition_by);
         return delegate->execute(
             ast_function,
             delegate_context,
@@ -338,12 +340,6 @@ bool TableFunctionURL::hasUnreplicatedTableDataOnDisk() const
     if (is_relative_url)
         return true;
     return delegate ? delegate->hasUnreplicatedTableDataOnDisk() : ITableFunctionFileLike::hasUnreplicatedTableDataOnDisk();
-}
-
-void TableFunctionURL::setPartitionBy(const ASTPtr & partition_by_)
-{
-    if (delegate)
-        delegate->setPartitionBy(partition_by_);
 }
 
 StoragePtr TableFunctionURL::getStorage(

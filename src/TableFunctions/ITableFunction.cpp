@@ -98,22 +98,54 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
 
     auto context_to_use = use_global_context ? context->getGlobalContext() : context;
 
+    StoragePtr storage;
     if (cached_columns.empty())
-        return executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
-
-    if (hasStaticStructure() && cached_columns == getActualTableStructure(context, is_insert_query))
-        return executeImpl(ast_function, context_to_use, table_name, std::move(cached_columns), is_insert_query);
-
-    auto this_table_function = shared_from_this();
-    auto get_storage = [=]() -> StoragePtr
     {
-        return this_table_function->executeImpl(ast_function, context_to_use, table_name, cached_columns, is_insert_query);
-    };
+        storage = executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
+    }
+    else if (hasStaticStructure() && cached_columns == getActualTableStructure(context, is_insert_query))
+    {
+        storage = executeImpl(ast_function, context_to_use, table_name, std::move(cached_columns), is_insert_query);
+    }
+    else
+    {
+        auto this_table_function = shared_from_this();
+        auto get_storage = [=]() -> StoragePtr
+        {
+            return this_table_function->executeImpl(ast_function, context_to_use, table_name, cached_columns, is_insert_query);
+        };
 
-    /// It will request actual table structure and create underlying storage lazily
-    return std::make_shared<StorageTableFunctionProxy>(StorageID(getDatabaseName(), table_name), std::move(get_storage),
-                                                       std::move(cached_columns), needStructureConversion(),
-                                                       hasUnreplicatedTableDataOnDisk());
+        /// It will request actual table structure and create underlying storage lazily
+        storage = std::make_shared<StorageTableFunctionProxy>(StorageID(getDatabaseName(), table_name), std::move(get_storage),
+                                                              std::move(cached_columns), needStructureConversion(),
+                                                              hasUnreplicatedTableDataOnDisk());
+    }
+
+    /// The source access check covered only the URI template, so each partition is checked when it is written.
+    /// Without `check_source_access`, the caller does the checks, e.g. `url('s3://...')` for its delegate.
+    /// `INSERT` passes no cached columns, so the check is never set on a lazy `StorageTableFunctionProxy`, which would not pass it on.
+    if (partition_by && check_source_access)
+    {
+        if (auto partitioned_write_access_check = makePartitionedWriteAccessCheck())
+            storage->setPartitionedWriteAccessCheck(std::move(partitioned_write_access_check), IStorage::PartitionedWriteAccessKey{});
+    }
+
+    return storage;
+}
+
+PartitionedWriteAccessCheckPtr ITableFunction::makePartitionedWriteAccessCheck() const
+{
+    const auto access_object = getSourceAccessObject();
+    /// Without a URI, only an unfiltered grant passed the source access check, and it allows every destination.
+    if (!access_object || getFunctionURI().empty())
+        return nullptr;
+
+    return std::make_shared<PartitionedWriteAccessCheck>(PartitionedWriteAccessCheck{
+        .uri_template = getFunctionURI(),
+        .check = [source = String(toStringSource(*access_object))](const ContextPtr & context, const String & uri)
+        {
+            context->getAccess()->checkAccessWithFilter(AccessType::WRITE, source, normalizeURIForAccessCheck(uri));
+        }});
 }
 
 String ITableFunction::getFunctionURINormalized() const

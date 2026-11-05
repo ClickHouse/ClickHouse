@@ -27,11 +27,13 @@ namespace ErrorCodes
 PartitionedSink::PartitionedSink(
     std::shared_ptr<IPartitionStrategy> partition_strategy_,
     ContextPtr context_,
-    SharedHeader source_header_)
+    SharedHeader source_header_,
+    PartitionedWriteAccessCheckPtr write_access_check_)
     : SinkToStorage(source_header_)
     , partition_strategy(partition_strategy_)
     , context(context_)
     , source_header(source_header_)
+    , write_access_check(std::move(write_access_check_))
 {
 }
 
@@ -41,6 +43,12 @@ SinkPtr PartitionedSink::getSinkForPartitionKey(std::string_view partition_key)
     auto it = partition_id_to_sink.find(partition_key);
     if (it == partition_id_to_sink.end())
     {
+        /// The partition id comes from the data, so its destination is checked before anything is written to it.
+        /// The check runs once per partition key in each sink.
+        if (write_access_check)
+            write_access_check->check(
+                context, partition_strategy->getPathForWrite(write_access_check->uri_template, std::string{partition_key}));
+
         auto sink = createSinkForPartition(std::string{partition_key});
         std::tie(it, std::ignore) = partition_id_to_sink.emplace(partition_key, sink);
     }

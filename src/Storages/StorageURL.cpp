@@ -1509,8 +1509,9 @@ public:
         const ConnectionTimeouts & timeouts_,
         const CompressionMethod compression_method_,
         const HTTPHeaderEntries & headers_,
-        const String & http_method_)
-        : PartitionedSink(partition_strategy_, context_, std::make_shared<const Block>(sample_block_))
+        const String & http_method_,
+        PartitionedWriteAccessCheckPtr write_access_check_)
+        : PartitionedSink(partition_strategy_, context_, std::make_shared<const Block>(sample_block_), std::move(write_access_check_))
         , uri(uri_)
         , format(format_)
         , format_settings(format_settings_)
@@ -2329,7 +2330,8 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             getHTTPTimeouts(context),
             compression_method,
             headers,
-            write_method);
+            write_method,
+            getPartitionedWriteAccessCheck());
     }
 
     return std::make_shared<StorageURLSink>(

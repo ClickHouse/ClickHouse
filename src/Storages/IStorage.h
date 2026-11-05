@@ -11,6 +11,7 @@
 #include <Storages/ColumnDependency.h>
 #include <Storages/ColumnSize.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/PartitionedWriteAccessCheck.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/TableLockHolder.h>
@@ -928,6 +929,19 @@ public:
         ContextPtr context,
         std::shared_ptr<IStorage> storage_);
 
+    /// The class lets only table functions set the partitioned write access check:
+    /// the setter requires the key, and only `ITableFunction` can create one.
+    class PartitionedWriteAccessKey
+    {
+        friend class ITableFunction;
+        PartitionedWriteAccessKey() = default;
+    };
+
+    void setPartitionedWriteAccessCheck(PartitionedWriteAccessCheckPtr check, const PartitionedWriteAccessKey &)
+    {
+        partitioned_write_access_check = std::move(check);
+    }
+
 private:
     /// Lock required for alter queries (lockForAlter).
     /// Allows to execute only one simultaneous alter query.
@@ -938,6 +952,13 @@ private:
     /// DROP-like queries take this lock for write (lockExclusively), to be sure
     /// that all table threads finished.
     mutable RWLock drop_lock = RWLockImpl::create();
+
+    /// The write access check for each partition of `INSERT INTO FUNCTION ... PARTITION BY`. It is kept in the storage
+    /// because the destinations of partitions are known only when the storage writes. Only table functions set it.
+    PartitionedWriteAccessCheckPtr partitioned_write_access_check;
+
+protected:
+    const PartitionedWriteAccessCheckPtr & getPartitionedWriteAccessCheck() const { return partitioned_write_access_check; }
 };
 
 }

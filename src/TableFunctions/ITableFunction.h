@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/PartitionedWriteAccessCheck.h>
 #include <Storages/ColumnsDescription.h>
 #include <Access/Common/AccessType.h>
 #include <Common/FunctionDocumentation.h>
@@ -124,9 +125,9 @@ public:
     /// query do not register anything.
     virtual String getUsedNamedCollectionName() const { return {}; }
 
-    // INSERT INTO TABLE FUNCTION ... PARTITION BY
-    // Set partition by expression so `ITableFunctionObjectStorage` can construct a proper representation
-    virtual void setPartitionBy(const ASTPtr &) {}
+    /// The function sets the expression of `INSERT INTO FUNCTION ... PARTITION BY`.
+    /// Only the interpreter of `INSERT INTO FUNCTION` calls it.
+    void setPartitionBy(const ASTPtr & partition_by_) { partition_by = partition_by_; }
 
     /// Create storage according to the query.
     /// `check_create_temporary_table` is passed as false by database engines that resolve their
@@ -171,6 +172,10 @@ public:
 protected:
     virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
 
+    /// Set only for `INSERT INTO FUNCTION ... PARTITION BY`. Each partition's destination then comes from the data,
+    /// so it needs its own write access check.
+    ASTPtr partition_by;
+
     /// Whether this is a `*Cluster` table function (e.g. `s3Cluster`, `urlCluster`). Overridden by
     /// `ITableFunctionCluster`. Protected so derived functions can branch on the cluster context.
     virtual bool isClusterFunction() const { return false; }
@@ -201,6 +206,10 @@ private:
     /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
     /// privileges as if it was S3.
     virtual const char * getNonClusteredStorageEngineName() const;
+
+    /// The function creates the write access check for each partition, or returns null when the source grant
+    /// already allows every destination.
+    PartitionedWriteAccessCheckPtr makePartitionedWriteAccessCheck() const;
 
 protected:
     String getFunctionURINormalized() const;

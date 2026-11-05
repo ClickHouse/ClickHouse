@@ -55,7 +55,8 @@ public:
         StorageObjectStorageConfigurationPtr configuration_,
         std::optional<FormatSettings> format_settings_,
         SharedHeader sample_block_,
-        ContextPtr context_);
+        ContextPtr context_,
+        PartitionedWriteAccessCheckPtr write_access_check_);
 
     SinkPtr createSinkForPartition(const String & partition_id) override;
 

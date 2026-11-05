@@ -45,7 +45,6 @@ public:
     NameSet getVirtualsToCheckBeforeUsingStructureHint() const override;
     bool hasStaticStructure() const override;
     bool hasUnreplicatedTableDataOnDisk() const override;
-    void setPartitionBy(const ASTPtr & partition_by_) override;
 
     static void updateStructureAndFormatArgumentsIfNeeded(
         ASTs & args,
