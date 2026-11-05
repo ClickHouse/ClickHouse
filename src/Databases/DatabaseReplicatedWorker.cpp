@@ -576,11 +576,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
             .entry = entry_name,
             .digest = idempotency_key->digest,
             .ttl_sec = database->db_settings[DatabaseReplicatedSetting::idempotency_key_ttl_sec]};
-        /// Committed by the entry's multi. Both this set and the pruner's remove are versioned, so only one of them succeeds.
-        if (expired_version)
-            task->ops.emplace_back(zkutil::makeSetRequest(key_path, key_node.toString(), *expired_version));
-        else
-            task->ops.emplace_back(zkutil::makeCreateRequest(key_path, key_node.toString(), zkutil::CreateMode::Persistent));
+        addDDLIdempotencyKeyCommitRequests(task->ops, key_path, key_node, expired_version);
         FailPointInjection::pauseFailPoint(FailPoints::database_replicated_idempotency_key_pause_before_commit);
     }
 
@@ -903,24 +899,25 @@ void DatabaseReplicatedDDLWorker::cleanupAuxiliaryNodes(const ZooKeeperPtr & zoo
         if (nodes[i].error != Coordination::Error::ZOK)
             continue;
 
-        UInt64 ttl_sec = 0;
+        std::optional<ExpiredDDLIdempotencyKeyNode> expired;
         try
         {
-            ttl_sec = DDLIdempotencyKeyNode::parse(nodes[i].data).ttl_sec;
+            /// This read only selects the candidates: a removal needs the version of the parent, read before the node.
+            if (isDDLIdempotencyKeyNodeExpired(nodes[i].stat.mtime, DDLIdempotencyKeyNode::parse(nodes[i].data).ttl_sec, now))
+                expired = tryGetExpiredDDLIdempotencyKeyNode(zookeeper, paths[i], now);
+        }
+        catch (const Coordination::Exception &)
+        {
+            throw;
         }
         catch (...)
         {
             tryLogCurrentException(log, fmt::format("Cannot parse the idempotency key node {}", paths[i]));
             continue;
         }
-        if (!isDDLIdempotencyKeyNodeExpired(nodes[i].stat.mtime, ttl_sec))
-            continue;
 
-        auto code = zookeeper->tryRemove(paths[i], nodes[i].stat.version);
-        if (code == Coordination::Error::ZOK)
+        if (expired && tryRemoveExpiredDDLIdempotencyKeyNode(zookeeper, paths[i], *expired))
             ++removed;
-        else if (code != Coordination::Error::ZNONODE && code != Coordination::Error::ZBADVERSION)
-            throw Coordination::Exception::fromPath(code, paths[i]);
     }
 
     if (removed)

@@ -21,6 +21,7 @@
 #include <Common/FailPoint.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 
 #include <Poco/Timestamp.h>
@@ -76,9 +77,8 @@ String getDDLIdempotencyKeyNodeName(const String & key)
     return sipHash128String(key);
 }
 
-bool isDDLIdempotencyKeyNodeExpired(Int64 mtime_ms, UInt64 ttl_sec)
+bool isDDLIdempotencyKeyNodeExpired(Int64 mtime_ms, UInt64 ttl_sec, Int64 now)
 {
-    Int64 now = Poco::Timestamp().epochTime();
     Int64 modified = mtime_ms / 1000;
     return now > modified && static_cast<UInt64>(now - modified) > ttl_sec;
 }
@@ -92,13 +92,52 @@ std::optional<DDLIdempotencyKeyNode> tryReadDDLIdempotencyKeyNode(
         return {};
 
     auto node = DDLIdempotencyKeyNode::parse(data);
-    if (isDDLIdempotencyKeyNodeExpired(stat.mtime, node.ttl_sec))
+    if (isDDLIdempotencyKeyNodeExpired(stat.mtime, node.ttl_sec, Poco::Timestamp().epochTime()))
     {
         if (expired_version)
             *expired_version = stat.version;
         return {};
     }
     return node;
+}
+
+void addDDLIdempotencyKeyCommitRequests(
+    Coordination::Requests & ops, const String & path, const DDLIdempotencyKeyNode & node, std::optional<int32_t> expired_version)
+{
+    if (expired_version)
+        ops.emplace_back(zkutil::makeSetRequest(path, node.toString(), *expired_version));
+    else
+        ops.emplace_back(zkutil::makeCreateRequest(path, node.toString(), zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeSetRequest(String(Coordination::parentNodePath(path)), "", -1));
+}
+
+std::optional<ExpiredDDLIdempotencyKeyNode> tryGetExpiredDDLIdempotencyKeyNode(const ZooKeeperPtr & zookeeper, const String & path, Int64 now)
+{
+    Coordination::Stat parent_stat;
+    if (!zookeeper->exists(String(Coordination::parentNodePath(path)), &parent_stat))
+        return {};
+
+    String data;
+    Coordination::Stat stat;
+    if (!zookeeper->tryGet(path, data, &stat) || !isDDLIdempotencyKeyNodeExpired(stat.mtime, DDLIdempotencyKeyNode::parse(data).ttl_sec, now))
+        return {};
+
+    return ExpiredDDLIdempotencyKeyNode{.version = stat.version, .parent_version = parent_stat.version};
+}
+
+bool tryRemoveExpiredDDLIdempotencyKeyNode(const ZooKeeperPtr & zookeeper, const String & path, const ExpiredDDLIdempotencyKeyNode & node)
+{
+    Coordination::Requests ops{
+        zkutil::makeCheckRequest(String(Coordination::parentNodePath(path)), node.parent_version),
+        zkutil::makeRemoveRequest(path, node.version)};
+    Coordination::Responses responses;
+    auto code = zookeeper->tryMulti(ops, responses);
+    if (code == Coordination::Error::ZOK)
+        return true;
+    if (code == Coordination::Error::ZBADVERSION || code == Coordination::Error::ZNONODE)
+        return false;
+    zkutil::KeeperMultiException::check(code, ops, responses);
+    return false;
 }
 
 void checkDDLIdempotencyKeyDigest(const DDLIdempotencyKey & key, const DDLIdempotencyKeyNode & node)

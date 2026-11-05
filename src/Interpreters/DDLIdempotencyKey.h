@@ -6,10 +6,18 @@
 
 #include <memory>
 #include <optional>
+#include <vector>
 
 namespace zkutil
 {
 class ZooKeeper;
+}
+
+namespace Coordination
+{
+struct Request;
+using RequestPtr = std::shared_ptr<Request>;
+using Requests = std::vector<RequestPtr>;
 }
 
 namespace DB
@@ -57,7 +65,25 @@ String getDDLIdempotencyKeyNodeName(const String & key);
 std::optional<DDLIdempotencyKeyNode> tryReadDDLIdempotencyKeyNode(
     const ZooKeeperPtr & zookeeper, const String & path, std::optional<int32_t> * expired_version = nullptr);
 
-bool isDDLIdempotencyKeyNodeExpired(Int64 mtime_ms, UInt64 ttl_sec);
+bool isDDLIdempotencyKeyNodeExpired(Int64 mtime_ms, UInt64 ttl_sec, Int64 now);
+
+/// Adds the requests that commit the key node with the log entry: they create it, or replace the expired node of version
+/// `expired_version`, and update its parent, which fences `tryRemoveExpiredDDLIdempotencyKeyNode`.
+void addDDLIdempotencyKeyCommitRequests(
+    Coordination::Requests & ops, const String & path, const DDLIdempotencyKeyNode & node, std::optional<int32_t> expired_version);
+
+/// A key node that has expired, with the version of its parent read before it.
+struct ExpiredDDLIdempotencyKeyNode
+{
+    int32_t version = 0;
+    int32_t parent_version = 0;
+};
+
+std::optional<ExpiredDDLIdempotencyKeyNode> tryGetExpiredDDLIdempotencyKeyNode(const ZooKeeperPtr & zookeeper, const String & path, Int64 now);
+
+/// Removes the node unless a key was committed since it was read: a removed node may be created again with the same
+/// version. Returns whether the node was removed.
+bool tryRemoveExpiredDDLIdempotencyKeyNode(const ZooKeeperPtr & zookeeper, const String & path, const ExpiredDDLIdempotencyKeyNode & node);
 
 /// Engines whose `ALTER` changes nothing but the table's metadata, which the commit of the log entry publishes.
 bool isDDLIdempotencyKeyAlterEngineSupported(const String & engine_name);
