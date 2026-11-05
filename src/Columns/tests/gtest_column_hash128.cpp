@@ -10,6 +10,7 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnsHash128.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -640,4 +641,131 @@ TEST(ColumnsHashing, Hash128EveryColumnClass)
 
     if (!all_equal)
         std::cerr << "expected_checksums computed by this build:\n" << actual_table;
+}
+
+namespace
+{
+
+ColumnPtr replicated(ColumnPtr nested)
+{
+    auto indexes = ColumnUInt8::create();
+    for (size_t row = 0; row < num_rows; ++row)
+        indexes->getData().push_back(static_cast<UInt8>(row * 17 % nested->size()));
+    MutableColumnPtr indexes_column = std::move(indexes);
+    return ColumnReplicated::create(IColumn::mutate(std::move(nested)), std::move(indexes_column));
+}
+
+/// More keys for the code that hashes many rows at once: fixed-width classes and widths, long values, and the wrappers of
+/// `Dynamic` and `JSON`.
+std::vector<NamedKey> moreKeys()
+{
+    return {
+        {"Tuple(Dynamic)", [] { return Columns{fromFields("Tuple(Dynamic)", [](size_t row) { return Tuple{dynamicValueAt(row)}; })}; }},
+        {"Array(JSON)", [] { return Columns{fromFields("Array(JSON)", [](size_t row)
+            {
+                return arrayOf(row % 3, [row](size_t k) { return objectAt(row * 3 + k); });
+            })}; }},
+        {"Map(String, Dynamic)", [] { return Columns{fromFields("Map(String, Dynamic)", [](size_t row)
+            {
+                Map map;
+                for (size_t k = 0; k < row % 4; ++k)
+                    map.push_back(Tuple{Field(bytesAt(row + k, (row + k) % 9)), dynamicValueAt(row * 4 + k)});
+                return map;
+            })}; }},
+        {"Nullable(JSON)", [] { return Columns{fromFields("Nullable(JSON)", [](size_t row) { return row % 5 == 0 ? Field() : objectAt(row); })}; }},
+        {"Variant(UInt64, JSON)", [] { return Columns{fromFields("Variant(UInt64, JSON)", [](size_t row)
+            {
+                return row % 3 == 0 ? Field() : (row % 3 == 1 ? Field(integerAt<UInt64>(row)) : objectAt(row));
+            })}; }},
+        {"Const(Dynamic)", [] { return Columns{constOf("Dynamic", dynamicValueAt(4))}; }},
+        {"Const(UInt64)", [] { return Columns{constOf("UInt64", Field(UInt64(4000000000)))}; }},
+        {"Replicated(JSON)", [] { return Columns{replicated(fromFields("JSON", objectAt, 41))}; }},
+        {"Replicated(UInt64)", [] { return Columns{replicated(integers<UInt64>("UInt64")->cut(0, 41))}; }},
+        {"Tuple(String, Nullable(String))", [] { return Columns{fromFields("Tuple(String, Nullable(String))", [](size_t row)
+            {
+                return Tuple{Field(stringAt(row)), nullableStringAt(row)};
+            })}; }},
+        {"Map(String, String)", [] { return Columns{fromFields("Map(String, String)", [](size_t row)
+            {
+                Map map;
+                for (size_t k = 0; k < row % 5; ++k)
+                    map.push_back(Tuple{Field(bytesAt(row + k, (row + k) % 20)), Field(stringAt(row * 5 + k))});
+                return map;
+            })}; }},
+        {"Date32", [] { return Columns{fromValues<ColumnInt32>("Date32", [](size_t row) { return static_cast<Int32>(row * 37) - 20000; })}; }},
+        {"Time", [] { return Columns{integers<Int32>("Time")}; }},
+        {"Time64(6)", [] { return Columns{decimals<Time64>("Time64(6)", 3)}; }},
+        {"Bool", [] { return Columns{fromValues<ColumnUInt8>("Bool", [](size_t row) { return static_cast<UInt8>(row % 2); })}; }},
+        {"Enum16", [] { return Columns{fromValues<ColumnInt16>("Enum16('a' = -32768, 'b' = 0, 'c' = 32767)", [](size_t row)
+            {
+                static constexpr Int16 values[] = {-32768, 0, 32767};
+                return values[row % 3];
+            })}; }},
+        {"IntervalSecond", [] { return Columns{integers<Int64>("IntervalSecond")}; }},
+        {"String, 70000 bytes in one row", [] { return Columns{fromFields("String", [](size_t row)
+            {
+                return Field(row == 500 ? bytesAt(row, 70000) : stringAt(row));
+            })}; }},
+        {"FixedString(3)", [] { return Columns{fixedStrings(3)}; }},
+        {"FixedString(70000)", [] { return Columns{fromFields("FixedString(70000)", [](size_t row)
+            {
+                return Field(bytesAt(row, row % 3 == 0 ? 5 : 70000));
+            }, 20)}; }},
+        {"{}", [] { return Columns{}; }},
+    };
+}
+
+}
+
+/// `hash128` of many rows at once gives the values of `hash128` of each row.
+TEST(ColumnsHashing, Hash128ManyRowsAtOnce)
+{
+    tryRegisterAggregateFunctions();
+
+    auto keys = namedKeys();
+    for (auto & key : moreKeys())
+        keys.push_back(std::move(key));
+
+    for (const auto & key : keys)
+    {
+        SCOPED_TRACE(key.name);
+        const Columns columns = key.build();
+        const size_t rows = columns.empty() ? num_rows : columns[0]->size();
+        ColumnRawPtrs key_columns;
+        for (const auto & column : columns)
+            key_columns.push_back(column.get());
+
+        std::vector<UInt128> expected(rows);
+        for (size_t row = 0; row < rows; ++row)
+            expected[row] = ColumnsHashing::hash128(row, key_columns.size(), key_columns);
+
+        std::vector<UInt128> hashes(rows);
+        std::vector<size_t> bounds = {0, 1, 7, 8, 9, 255, 256, 257, rows};
+        std::erase_if(bounds, [rows](size_t bound) { return bound > rows; });
+        for (size_t begin : bounds)
+        {
+            for (size_t end : bounds)
+            {
+                if (begin > end)
+                    continue;
+                ColumnsHashing::hash128Range(key_columns, begin, end, hashes.data());
+                for (size_t i = 0; i < end - begin; ++i)
+                    ASSERT_EQ(hashes[i], expected[begin + i]) << "range [" << begin << ", " << end << "), row " << begin + i;
+            }
+        }
+
+        {
+            ColumnsHashing::Hash128InOrder in_order(key_columns, 0, rows);
+            for (size_t row = 0; row < rows; ++row)
+                ASSERT_EQ(in_order.get(row), expected[row]) << "row " << row;
+        }
+        {
+            /// Rows before the range, skips, a skip over a whole chunk, and a read back.
+            ColumnsHashing::Hash128InOrder in_order(key_columns, std::min<size_t>(3, rows), rows);
+            for (size_t row = 0; row < rows; row += 1 + row % 300)
+                ASSERT_EQ(in_order.get(row), expected[row]) << "row " << row;
+            if (rows > 5)
+                ASSERT_EQ(in_order.get(5), expected[5]);
+        }
+    }
 }
