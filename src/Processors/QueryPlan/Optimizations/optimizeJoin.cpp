@@ -1767,7 +1767,7 @@ static bool hasChildJoinToMerge(const QueryPlan::Node & node)
 
 /// Whether a table without statistics and without a row estimate is in this relation. A join optimized
 /// on its own does not record the source of its estimate, so its inputs are checked.
-static bool hasTableWithoutStatistics(QueryPlan::Node & node, QueryGraphBuilder::BuilderContext & context)
+static bool hasTableWithoutStatistics(QueryPlan::Node & node, QueryPlan::Nodes & nodes, QueryGraphBuilder::BuilderContext & context)
 {
     if (context.join_settings.use_hash_table_stats_for_join_reordering && context.statistics_context.getCachedHint(&node))
         return false;
@@ -1776,12 +1776,18 @@ static bool hasTableWithoutStatistics(QueryPlan::Node & node, QueryGraphBuilder:
     while (join_node->children.size() == 1)
         join_node = join_node->children.front();
 
-    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(join_node->step.get()))
+    if (auto * join_step = typeid_cast<JoinStepLogical *>(join_node->step.get()))
     {
-        if (join_step->isOptimized() && join_step->getResultRowsEstimation())
+        /// Optimized now rather than later in the traversal, so that its tables are estimated once.
+        if (!join_step->isOptimized())
+        {
+            optimizeJoinLogicalImpl(join_step, *join_node, nodes, context.optimization_settings, context.relation_estimates);
+            return hasTableWithoutStatistics(node, nodes, context);
+        }
+        if (join_step->getResultRowsEstimation())
             return false;
         return std::ranges::any_of(
-            join_node->children, [&](QueryPlan::Node * child) { return hasTableWithoutStatistics(*child, context); });
+            join_node->children, [&](QueryPlan::Node * child) { return hasTableWithoutStatistics(*child, nodes, context); });
     }
 
     auto stats = estimateRelation(*context.relation_estimates, node);
@@ -1802,7 +1808,7 @@ static bool joinGraphHasRelationWithoutStatistics(
         if (stats.estimated_rows)
             continue;
         if (stats.source == RowEstimateSource::NoStatistics
-            || (stats.source == RowEstimateSource::NoSource && hasTableWithoutStatistics(*relations.inputs[i], *relations.context)))
+            || (stats.source == RowEstimateSource::NoSource && hasTableWithoutStatistics(*relations.inputs[i], nodes, *relations.context)))
             return true;
     }
     return false;

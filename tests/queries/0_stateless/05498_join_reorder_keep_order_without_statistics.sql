@@ -111,11 +111,26 @@ FORMAT Null SETTINGS log_comment = '05498 with_statistics';
 -- so the statistics are loaded as often as with `query_plan_optimize_join_order_limit = 1`.
 SELECT count() FROM nation JOIN nation AS n2 ON n2.n_nationkey = nation.n_nationkey JOIN customer ON c_nationkey = nation.n_nationkey
 WHERE c_nationkey = 6
-FORMAT Null SETTINGS log_comment = '05498-reuse limited';
+FORMAT Null SETTINGS log_comment = '05498-reuse sub_join limited';
 
 SELECT count() FROM nation JOIN nation AS n2 ON n2.n_nationkey = nation.n_nationkey JOIN customer ON c_nationkey = nation.n_nationkey
 WHERE c_nationkey = 6
-FORMAT Null SETTINGS log_comment = '05498-reuse swap_only', query_plan_optimize_join_order_limit = 1;
+FORMAT Null SETTINGS log_comment = '05498-reuse sub_join swap_only', query_plan_optimize_join_order_limit = 1;
+
+-- The same for the joins below `x`, an `ASOF` join without an estimate, whose tables are looked at for missing statistics.
+SELECT count() FROM orders
+JOIN (SELECT * FROM (SELECT nation.n_nationkey AS k FROM nation JOIN nation AS n4 ON n4.n_nationkey = nation.n_nationkey) AS l
+    ASOF JOIN (SELECT c_nationkey, c_custkey FROM customer JOIN nation AS n5 ON n5.n_nationkey = c_nationkey) AS r
+    ON l.k = r.c_nationkey AND l.k <= r.c_custkey) AS x ON o_custkey = x.c_custkey
+JOIN nation AS n2 ON n2.n_nationkey = x.k
+FORMAT Null SETTINGS log_comment = '05498-reuse asof limited';
+
+SELECT count() FROM orders
+JOIN (SELECT * FROM (SELECT nation.n_nationkey AS k FROM nation JOIN nation AS n4 ON n4.n_nationkey = nation.n_nationkey) AS l
+    ASOF JOIN (SELECT c_nationkey, c_custkey FROM customer JOIN nation AS n5 ON n5.n_nationkey = c_nationkey) AS r
+    ON l.k = r.c_nationkey AND l.k <= r.c_custkey) AS x ON o_custkey = x.c_custkey
+JOIN nation AS n2 ON n2.n_nationkey = x.k
+FORMAT Null SETTINGS log_comment = '05498-reuse asof swap_only', query_plan_optimize_join_order_limit = 1;
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -132,13 +147,15 @@ FROM
 )
 ORDER BY log_comment;
 
-SELECT 'statistics_loaded_once', length(loads) = 2 AND loads[1] = loads[2] AND loads[1] > 0
+SELECT 'statistics_loaded_once', shape, length(loads) = 2 AND loads[1] = loads[2] AND loads[1] > 0
 FROM
 (
-    SELECT groupArray(ProfileEvents['LoadedStatistics']) AS loads
+    SELECT splitByChar(' ', log_comment)[2] AS shape, groupArray(ProfileEvents['LoadedStatistics']) AS loads
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05498-reuse %'
-);
+    GROUP BY shape
+)
+ORDER BY shape;
 
 DROP TABLE orders;
 DROP TABLE customer;
