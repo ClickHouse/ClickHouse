@@ -801,6 +801,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 
         if (!params.aggregates[i].function->hasTrivialDestructor())
             all_aggregates_has_trivial_destructor = false;
+        has_heavy_states |= params.aggregates[i].function->sizeOfData() > 16 || !params.aggregates[i].function->hasTrivialDestructor();
     }
 
     if (params.aggregates_size == 1)

@@ -1055,6 +1055,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucket(
     AdaptiveMergeTask & task,
     bool final,
     Int32 bucket,
+    const ParallelMergeThreshold & parallel_merge,
     std::atomic<bool> & is_cancelled,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater,
     size_t * full_group_count) const
@@ -1066,7 +1067,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucket(
         [&](auto & method)
         {
             chunks = mergeAndConvertAdaptiveBucketImpl(
-                dest, method, data, session, task, final, bucket, is_cancelled, updater, full_group_count);
+                dest, method, data, session, task, final, bucket, parallel_merge, is_cancelled, updater, full_group_count);
         });
     return chunks;
 }
@@ -1080,6 +1081,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
     AdaptiveMergeTask & task,
     bool final,
     Int32 bucket,
+    const ParallelMergeThreshold & parallel_merge,
     std::atomic<bool> & is_cancelled,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater,
     size_t * full_group_count) const
@@ -1238,7 +1240,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                     table, arena, ranges, filter, task.record_places, task.records);
             });
             if (!task.places.empty())
-                mergeAdaptiveSourceStates(task.places, task.source_slots, task, session, arena, is_cancelled);
+                mergeSourceStates(task.places, task.source_slots, parallel_merge, task.merge_order, task.merge_group, arena, is_cancelled);
             return skipped;
         };
 
@@ -1360,27 +1362,35 @@ AggregatedDataVariantsPtr Aggregator::createAdaptiveMergeDestination() const
     return destination;
 }
 
-void Aggregator::mergeAdaptiveSourceStates(
+Aggregator::ParallelMergeThreshold Aggregator::parallelMergeThreshold(const AdaptiveAggregationSession * session) const
+{
+    /// While the workers are busy, a group larger than a worker's share can hold up the merge, and very large states
+    /// amortize the pool even when other groups are busy. Without the producers' estimate of the merge work, only a group
+    /// of very large states takes the pool then. Small states do not justify its setup even with idle workers.
+    ParallelMergeThreshold threshold{.busy = adaptive_parallel_merge_max_work, .idle = adaptive_parallel_merge_min_work};
+    if (session)
+    {
+        chassert(params.max_threads > 0 && session->finished_producers > 0);
+        threshold.busy = std::clamp(
+            session->estimated_merge_work / std::min(params.max_threads, session->finished_producers),
+            adaptive_parallel_merge_min_work,
+            adaptive_parallel_merge_max_work);
+    }
+    return threshold;
+}
+
+void Aggregator::mergeSourceStates(
     PaddedPODArray<AggregateDataPtr> & places,
     const PaddedPODArray<AggregateDataPtr *> & source_slots,
-    AdaptiveMergeTask & task,
-    const AdaptiveAggregationSession & session,
+    const ParallelMergeThreshold & parallel_merge,
+    PaddedPODArray<UInt32> & order,
+    AggregateDataPtrs & group,
     Arena * arena,
     std::atomic<bool> & is_cancelled) const
 {
     const size_t merges = places.size();
     chassert(merges == source_slots.size());
-    chassert(params.max_threads > 0 && session.finished_producers > 0);
 
-    /// A group larger than a worker's share can hold up the merge. Very large states amortize the pool even
-    /// when other groups are busy, while small states do not justify its setup even with idle workers.
-    const size_t min_parallel_work = std::clamp(
-        session.estimated_merge_work / std::min(params.max_threads, session.finished_producers),
-        adaptive_parallel_merge_min_work,
-        adaptive_parallel_merge_max_work);
-
-    auto & order = task.merge_order;
-    auto & group = task.merge_group;
     bool ordered = false;
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
@@ -1415,7 +1425,7 @@ void Aggregator::mergeAdaptiveSourceStates(
             for (size_t k = begin; k < end; ++k)
                 group_work += function.getEstimatedMergeWork(*source_slots[order[k]] + offset);
 
-            if (group_work <= min_parallel_work)
+            if (group_work <= parallel_merge.get())
             {
                 for (size_t k = begin; k < end; ++k)
                     function.merge(places[order[k]] + offset, *source_slots[order[k]] + offset, arena);
@@ -1436,7 +1446,7 @@ void Aggregator::mergeAdaptiveSourceStates(
     /// Source tables retain ownership until every aggregate has merged successfully, so an exception
     /// leaves complete states for their ordinary cleanup. Then the sources are destroyed, which does not throw,
     /// and their slots cleared.
-    auto & sources = task.merge_group;
+    auto & sources = group;
     sources.resize(merges);
     for (size_t j = 0; j < merges; ++j)
         sources[j] = *source_slots[j];

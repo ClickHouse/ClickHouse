@@ -192,6 +192,7 @@ namespace
             , session(std::move(session_))
             , destination(std::move(destination_))
             , merged_groups(std::move(merged_groups_))
+            , parallel_merge(params->aggregator.parallelMergeThreshold(session.get()))
             , next_bucket(first_bucket)
             , step(step_)
         {
@@ -218,6 +219,7 @@ namespace
                         task,
                         /*final=*/false,
                         bucket,
+                        parallel_merge,
                         is_cancelled,
                         /*updater=*/nullptr,
                         &full_group_count);
@@ -244,6 +246,8 @@ namespace
         AdaptiveAggregationSessionPtr session;
         ManyAggregatedDataVariantsPtr destination;
         std::shared_ptr<std::atomic<size_t>> merged_groups;
+        /// The sources take their buckets in a fixed stride, not from a shared counter, so they count as busy throughout.
+        const Aggregator::ParallelMergeThreshold parallel_merge;
         AdaptiveMergeTask task;
         Aggregator::AggregatedChunks chunks;
         size_t next_bucket;
@@ -421,14 +425,18 @@ public:
         ManyAggregatedDataVariantsPtr data_,
         SharedDataPtr shared_data_,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
-        AdaptiveAggregationSessionPtr session_)
+        AdaptiveAggregationSessionPtr session_,
+        Aggregator::ParallelMergeThreshold parallel_merge_)
         : ISource(std::make_shared<const Block>(params_->getHeader()), false)
         , params(std::move(params_))
         , data(std::move(data_))
         , shared_data(std::move(shared_data_))
         , updater(std::move(updater_))
         , session(std::move(session_))
+        , parallel_merge(parallel_merge_)
     {
+        parallel_merge.taken = &shared_data->next_bucket_to_merge;
+        parallel_merge.total = ConvertingAggregatedToChunksWithMergingSource::NUM_BUCKETS;
     }
 
     String getName() const override { return "AdaptiveBucketMergingSource"; }
@@ -458,7 +466,7 @@ protected:
 
             size_t full_group_count = 0;
             auto agg_chunks = params->aggregator.mergeAndConvertAdaptiveBucket(
-                *data, *session, task, params->final, bucket_num, shared_data->is_cancelled, updater, &full_group_count);
+                *data, *session, task, params->final, bucket_num, parallel_merge, shared_data->is_cancelled, updater, &full_group_count);
             if (shared_data->is_cancelled.load(std::memory_order_seq_cst))
                 return {};
 
@@ -480,6 +488,7 @@ private:
     SharedDataPtr shared_data;
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
     AdaptiveAggregationSessionPtr session;
+    Aggregator::ParallelMergeThreshold parallel_merge;
     std::deque<Chunk> chunks;
     AdaptiveMergeTask task;
 };
@@ -742,7 +751,8 @@ public:
         size_t num_threads_,
         size_t output_streams_,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
-        AdaptiveAggregationSessionPtr adaptive_session_)
+        AdaptiveAggregationSessionPtr adaptive_session_,
+        Aggregator::ParallelMergeThreshold parallel_merge_)
         : IProcessor({}, {params_->getHeader()})
         , params(std::move(params_))
         , data(std::move(data_))
@@ -751,6 +761,7 @@ public:
         , output_streams(output_streams_)
         , updater(std::move(updater_))
         , adaptive_session(std::move(adaptive_session_))
+        , parallel_merge(parallel_merge_)
     {
     }
 
@@ -1114,6 +1125,9 @@ private:
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
     AdaptiveAggregationSessionPtr adaptive_session;
+    /// When the states of one group merge together on the pool (see `Aggregator::mergeSourceStates`), in the merge by
+    /// partitions and in the adaptive merge. The sources complete it with their progress.
+    Aggregator::ParallelMergeThreshold parallel_merge;
 
     bool is_initialized = false;
     bool finished = false;
@@ -1244,7 +1258,8 @@ private:
             /// The adaptive workers pick their arena per bucket.
             if (adaptive_session)
             {
-                processors.emplace_back(std::make_shared<AdaptiveBucketMergingSource>(params, data, shared_data, updater, adaptive_session));
+                processors.emplace_back(
+                    std::make_shared<AdaptiveBucketMergingSource>(params, data, shared_data, updater, adaptive_session, parallel_merge));
                 continue;
             }
 
@@ -1855,16 +1870,19 @@ void AggregatingTransform::initGenerate()
     {
         if (!skip_merging)
         {
-            auto prepared_data = params->aggregator.prepareVariantsToMerge(
-                std::move(many_data->variants), adaptive_context ? adaptive_context->session.get() : nullptr);
+            AdaptiveAggregationSession * session = adaptive_context ? adaptive_context->session.get() : nullptr;
+            auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants), session);
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
+            /// The producers of the session estimated the merge work, also when none of them froze and the tables merge
+            /// partition by partition.
             processors.emplace_back(std::make_shared<ConvertingAggregatedToChunksTransform>(
                 params,
                 std::move(prepared_data_ptr),
                 max_threads,
                 output_streams,
                 updater,
-                adaptive_engaged ? adaptive_context->session : nullptr));
+                adaptive_engaged ? adaptive_context->session : nullptr,
+                params->aggregator.parallelMergeThreshold(session)));
         }
         else
         {

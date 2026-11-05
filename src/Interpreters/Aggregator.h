@@ -474,25 +474,43 @@ public:
     void prepareAdaptiveTopKPruning(
         AdaptiveAggregationSession & shared, size_t producers, bool external_merge, bool collects_statistics) const;
 
+    /// The work above which the states of one group of a merge take the pool together (see `mergeSourceStates`), read
+    /// at each group. While the merge has buckets or partitions left to take, the other workers are busy, and only a
+    /// group above `busy` takes the pool. Once every one is taken, the workers that finish wait for the last ones, so a
+    /// group above `idle` takes the pool: merged by one worker, it would hold up the end of the merge.
+    struct ParallelMergeThreshold
+    {
+        size_t busy = 0;
+        size_t idle = 0;
+        /// The merge's counter of the buckets or partitions taken, which grows past `total` once every one is taken.
+        /// Without it, the workers count as busy.
+        const std::atomic<UInt32> * taken = nullptr;
+        UInt32 total = 0;
+
+        size_t get() const { return taken && taken->load(std::memory_order_relaxed) >= total ? idle : busy; }
+    };
+
     /// Merges bucket `bucket` of an adaptive aggregation and converts it, one merge unit at a time, as a step of `task`.
-    /// A unit is a run of the bucket's partitions: its records from every producer and the cells of the sources' bucket
-    /// tables that fall into it are merged into the destination's bucket table, grown for them, which is converted into
-    /// one chunk, and the unit's staged records are freed. `data[0]` is the destination of
-    /// `createAdaptiveMergeDestination`: in front of the adaptive sources (see `prepareVariantsToMerge`), or with no
-    /// sources behind it for an external merge. The table is kept, emptied, from one unit to the next, and taken over
-    /// from the slot of the bucket the task merged before, so a task allocates and faults in one table instead of one
-    /// per unit. Each unit creates its states in a fresh arena of the bucket's arena slot, so the states of a converted
-    /// unit free with its arena, at once or with the chunk that captured it, and once the bucket's last unit converted,
-    /// the slot retires. A unit reads the spill streams of its partitions back a block at a time and drains each block
-    /// before the next, so the merge holds the unit's groups instead of all its spilled records; a count-first unit,
-    /// which passes over its records twice, reads the spill streams back twice. `full_group_count` receives the
-    /// bucket's group count over all its units, taken before any top-K truncation.
+    /// A unit is a run of the bucket's partitions: its records from every producer and the cells of the sources that fall
+    /// into it, read through a source's cell index or from its bucket table, are merged into the destination's bucket
+    /// table, grown for them, which is converted into one chunk, and the unit's staged records are freed. `data[0]` is
+    /// the destination of `createAdaptiveMergeDestination`: in front of the adaptive sources (see
+    /// `prepareVariantsToMerge`), or with no sources behind it for an external merge. The table is kept, emptied, from
+    /// one unit to the next, and taken over from the slot of the bucket the task merged before, so a task allocates and
+    /// faults in one table instead of one per unit. Each unit creates its states in a fresh arena of the bucket's arena
+    /// slot, so the states of a converted unit free with its arena, at once or with the chunk that captured it, and once
+    /// the bucket's last unit converted, the slot retires. A unit reads the spill streams of its partitions back a block
+    /// at a time and drains each block before the next, so the merge holds the unit's groups instead of all its spilled
+    /// records; a count-first unit, which passes over its records twice, reads the spill streams back twice.
+    /// `full_group_count` receives the bucket's group count over all its units, taken before any top-K truncation.
+    /// `parallel_merge` tells when the source states of one group merge together on the pool (see `mergeSourceStates`).
     AggregatedChunks mergeAndConvertAdaptiveBucket(
         ManyAggregatedDataVariants & data,
         AdaptiveAggregationSession & session,
         AdaptiveMergeTask & task,
         bool final,
         Int32 bucket,
+        const ParallelMergeThreshold & parallel_merge,
         std::atomic<bool> & is_cancelled,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater,
         size_t * full_group_count) const;
@@ -621,6 +639,17 @@ public:
         std::atomic<bool> & is_cancelled,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater) const;
 
+    /// Whether some aggregation state is heavy: wide, or owning memory that its destructor frees, such as the sets of
+    /// `uniqExact` or the samples of `quantile`. Merging it copies or rehashes that memory, however few bytes the state
+    /// itself takes, as with the 16 bytes of a `-ForEach` state over such a function.
+    bool hasHeavyStates() const { return has_heavy_states; }
+
+    /// The pool threshold of a merge while its workers are busy (see `ParallelMergeThreshold`): a worker's share of the
+    /// merge work that the producers of `session` estimated, within fixed bounds, or the upper bound without a session.
+    /// The session's producers have finished. Once the workers run out of work, any group above the lower bound takes
+    /// the pool.
+    ParallelMergeThreshold parallelMergeThreshold(const AdaptiveAggregationSession * session) const;
+
     using BucketToChunks = std::map<Int32, AggregatedChunks>;
     /// Merge partially aggregated chunks separated to buckets into one data structure.
     void mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVariants & result, std::atomic<bool> & is_cancelled);
@@ -741,6 +770,9 @@ private:
     /// Whether any of the aggregate functions supports parallel merging of large states
     /// (see IAggregateFunction::isAbleToParallelizeMerge), e.g. uniqExact.
     bool has_function_with_parallelizable_merge = false;
+
+    /// Whether some state is heavy (see `hasHeavyStates`).
+    bool has_heavy_states = false;
 
     /// How many RAM were used to process the query before processing the first block. Use for merge_only mode.
     Int64 memory_usage_before_aggregation = 0;
@@ -951,16 +983,18 @@ private:
     /// The thaw transition: the producer returns to the baseline path for good, keeping the records it staged.
     void thawAdaptive(const AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const;
 
-    /// Merges the source states of a merge unit into their destinations, the state of `*source_slots[i]` into
-    /// `places[i]`, then destroys the sources and clears their slots. The source tables keep ownership until all
-    /// aggregates merged successfully. `task` holds the working memory of the merge. A group's states use the pool
-    /// when their combined work amortizes its setup or would hold up the remaining merge; smaller groups use the
-    /// parallelism across buckets.
-    void mergeAdaptiveSourceStates(
+    /// Merges the source states into their destinations, the state of `*source_slots[i]` into `places[i]`, then destroys
+    /// the sources and clears their slots. The source tables keep ownership until all aggregates merged successfully. The
+    /// states of one destination form a group, which merges on the pool when its combined work exceeds the threshold of
+    /// `parallel_merge`: there the group amortizes the setup of the pool or would hold up the rest of the merge. Smaller
+    /// groups merge on the calling thread and use the parallelism across the buckets or partitions of the merge. `order`
+    /// and `group` are working memory.
+    void mergeSourceStates(
         PaddedPODArray<AggregateDataPtr> & places,
         const PaddedPODArray<AggregateDataPtr *> & source_slots,
-        AdaptiveMergeTask & task,
-        const AdaptiveAggregationSession & session,
+        const ParallelMergeThreshold & parallel_merge,
+        PaddedPODArray<UInt32> & order,
+        AggregateDataPtrs & group,
         Arena * arena,
         std::atomic<bool> & is_cancelled) const;
 
@@ -1067,6 +1101,7 @@ private:
         AdaptiveMergeTask & task,
         bool final,
         Int32 bucket,
+        const ParallelMergeThreshold & parallel_merge,
         std::atomic<bool> & is_cancelled,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater,
         size_t * full_group_count) const;
