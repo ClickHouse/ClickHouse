@@ -714,6 +714,7 @@ private:
     friend class ConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
     friend class ConvertingAggregatedToChunksWithMergingSource;
+    friend class AdaptiveBucketMergingSource;
     friend class ConvertingAggregatedToChunksByPartitionMergingSource;
     friend class ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap;
     friend class AggregatingInOrderTransform;
@@ -1422,7 +1423,7 @@ private:
         std::atomic<bool> & is_cancelled) const;
 
     /// Set data_variants[1..last] aggregator as nullptr to ensure aggregator destruction only invoked in data_variants[0]'s destructor.
-    /// Used for single level merge.
+    /// Used by the merges into the first variants: the parallel merge of fixed hash maps and the adaptive merge.
     void resetAggregatorExceptFirst(ManyAggregatedDataVariants & data_variants) const;
 
     bool havingPrefilterKeeps(UInt64 count) const

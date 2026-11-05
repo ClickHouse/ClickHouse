@@ -333,6 +333,14 @@ public:
         /// space, so the sum counts every group exactly once.
         std::atomic<size_t> two_level_merged_groups = 0;
 
+        /// How many of the claimed partitions of the single-level merge, or buckets of the adaptive merge (see
+        /// `next_bucket_to_merge`), merged without a cancellation. Each takes the states out of the cells of the source
+        /// tables that belong to it, so once all of them merged, the source tables hold no states, and the last one stops
+        /// the tables owning states. Their destruction then frees their buffers without walking their cells, which one
+        /// thread would otherwise do for every table at the end of the query. A cancelled merge leaves the tables to
+        /// destroy the states they keep.
+        std::atomic<size_t> merged_claims = 0;
+
         SharedData()
         {
             for (auto & flag : is_bucket_processed)
@@ -472,6 +480,9 @@ protected:
 
             params->aggregator.checkMergedGroupLimit(shared_data->two_level_merged_groups, full_group_count);
             shared_data->is_bucket_processed[bucket_num] = true;
+            /// The first variants are the destination, which keeps its states.
+            if (shared_data->merged_claims.fetch_add(1) + 1 == ConvertingAggregatedToChunksWithMergingSource::NUM_BUCKETS)
+                params->aggregator.resetAggregatorExceptFirst(*data);
 
             for (auto & agg_chunk : agg_chunks)
                 chunks.push_back(convertToChunk(std::move(agg_chunk)));
@@ -541,6 +552,7 @@ protected:
         /// partitions run out. The transform forwards the chunks of all workers one at a time, so a chunk per partition
         /// would make every partition pay a hop of the pipeline. A call claims its first partition before the merge
         /// builds the table, so a worker whose claims ran out finishes without building one.
+        size_t claimed = 0;
         const auto claim = [&](size_t rows) -> std::optional<size_t>
         {
             if (rows >= rows_per_chunk)
@@ -555,6 +567,7 @@ protected:
             const UInt32 partition = shared_data->next_bucket_to_merge.fetch_add(1);
             if (partition >= num_partitions)
                 return std::nullopt;
+            ++claimed;
             return partition;
         };
 
@@ -575,6 +588,10 @@ protected:
             parallel_merge,
             shared_data->is_cancelled,
             updater);
+        if (!shared_data->is_cancelled.load(std::memory_order_seq_cst)
+            && shared_data->merged_claims.fetch_add(claimed) + claimed == num_partitions)
+            for (const auto & variants : *data)
+                variants->aggregator = nullptr;
 
         /// Under the `throw` overflow mode this raises as soon as the running total exceeds the
         /// limit — the same condition on which the serial merge would have thrown between tables.
