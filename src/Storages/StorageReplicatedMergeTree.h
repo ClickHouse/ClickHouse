@@ -253,8 +253,6 @@ public:
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
     /// Same, and also applies `metadata_version` (see `restoreMetadataVersionFromBackup`) before the parts are restored.
-    /// Only the replica which restores the data and has passed the check that the table is empty applies it,
-    /// the other replicas get it through the ALTER_METADATA log entry it creates.
     void restoreDataFromBackup(
         RestorerFromBackup & restorer,
         const String & data_path_in_backup,
@@ -340,11 +338,8 @@ public:
 
     /// Makes the table's metadata version in ZooKeeper at least `metadata_version`. If this replica's version is lower,
     /// raises it to the version in ZooKeeper; throws if this replica does not have the structure the table has at that version.
-    /// Used by RESTORE to apply the metadata version saved in a backup, so that restored parts
-    /// with a non-zero metadata version don't block merges. Never decreases the version.
-    /// Waits for the replica to become writable within `zookeeper_retries_info`. Reaching the target version takes
-    /// one ZooKeeper write per version, so `zookeeper_retries_info.query_status` (may be null) is used to interrupt
-    /// that loop when the RESTORE query is cancelled or times out.
+    /// Never decreases the version. Waits for the replica to become writable within `zookeeper_retries_info`,
+    /// and uses its `query_status` (may be null) to interrupt the version bumps.
     void restoreMetadataVersionFromBackup(Int32 metadata_version, const ZooKeeperRetriesInfo & zookeeper_retries_info);
 
     /// Get throttler for replicated fetches

@@ -7777,8 +7777,7 @@ void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::restoreMetadataVersionFromBackup");
 
-    /// A table which has just been created or attached by RESTORE is read-only until the restarting thread
-    /// activates it, so wait for that, as `ReplicatedMergeTreeSink` does when it attaches restored parts.
+    /// A table just created or attached by RESTORE is read-only until the restarting thread activates it, so wait for that.
     /// A replica without metadata in ZooKeeper or in shutdown is not going to become writable.
     zkutil::ZooKeeperPtr zookeeper;
     ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::restoreMetadataVersionFromBackup", log.load(), zookeeper_retries_info};
@@ -7801,15 +7800,10 @@ void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata
     const String table_columns_path = fs::path(zookeeper_path) / "columns";
     const String replica_metadata_version_path = fs::path(replica_path) / "metadata_version";
 
-    /// The table's metadata version is the version of the /metadata znode.
-    /// Bump it by re-setting the same content. CAS protects against concurrent ALTERs
-    /// and other replicas restoring the same table.
-    /// Every committed bump is done in the same transaction as the creation of an ALTER_METADATA log entry
-    /// for the version it reaches, so an interrupted restore never leaves /metadata ahead of the log, and
-    /// exactly one entry is produced per bump even with concurrent RESTORE ON CLUSTER.
-    /// A transaction makes up to `MULTI_BATCH_SIZE` consecutive bumps to limit the number of log entries.
-    /// Each bump repeats the whole /metadata value, so the bumps of a transaction are also limited to
-    /// `max_bumps_bytes` in total, well below the default request size limit of ZooKeeper (1 MiB).
+    /// The table's metadata version is the version of the /metadata znode. Bump it by re-setting the same content
+    /// with CAS, in one transaction with an ALTER_METADATA log entry for the version it reaches.
+    /// A transaction makes up to `MULTI_BATCH_SIZE` bumps, each repeating the whole /metadata value, so they are
+    /// also limited to `max_bumps_bytes` in total to stay below the request size limit of ZooKeeper.
     constexpr size_t max_bumps_bytes = 256 * 1024;
     Coordination::Stat metadata_stat;
     String metadata_str = zookeeper->get(table_metadata_path, &metadata_stat);
@@ -7857,20 +7851,14 @@ void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata
         metadata_str = zookeeper->get(table_metadata_path, &metadata_stat);
     }
 
-    /// The in-memory metadata is read-modify-written here, and `setInMemoryMetadata` is only an atomic
-    /// pointer swap. Concurrent ALTERs install their new metadata snapshot under the alter lock (see
-    /// `executeMetadataAlter` and `InterpreterAlterQuery`), so without holding it here one of the two
-    /// updates would be silently lost - reverting the table to the pre-ALTER structure.
+    /// Concurrent ALTERs replace the in-memory metadata under the alter lock, so hold it for this read-modify-write.
     auto alter_lock_holder = lockForAlter((*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
     auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     if (metadata_snapshot->getMetadataVersion() >= metadata_version)
         return;
 
-    /// This replica can be marked with the current version of the table in ZooKeeper, which is at least
-    /// `metadata_version`, only if it has the structure the table has at that version, otherwise the parts
-    /// restored next would get a metadata version their columns do not match. The current version is used
-    /// rather than `metadata_version`, because the versions saved by different hosts of one backup can differ
-    /// while the structure is the same, and another host may have already raised the table to a higher one.
+    /// Mark this replica with the current version of the table in ZooKeeper (at least `metadata_version`, possibly
+    /// higher if another host has raised it), only if it has the structure the table has at that version.
     /// /columns changes only together with /metadata, so if /metadata has the same version before and after
     /// reading /columns, both are of that version. Column comments are not compared, as they are not replicated.
     ColumnsDescription columns_from_zk;

@@ -1144,9 +1144,7 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
             }
         }
 
-        /// When the table's data is restored, the metadata version is applied together with it (see
-        /// `insertDataToTableImpl`). Otherwise nothing else would apply it, so do it here. Note that
-        /// `structure_only` is not the same condition: `restore_table_data` overrides it both ways.
+        /// When the table's data is restored, `insertDataToTableImpl` applies the metadata version instead.
         if (!restore_settings.shouldRestoreTableData())
         {
             if (auto replicated_storage = castStorage<StorageReplicatedMergeTree>(resolveStorageProxyLoading(storage), DeferredTable::Skip))
