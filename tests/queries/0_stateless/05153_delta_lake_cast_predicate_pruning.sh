@@ -24,9 +24,10 @@ TABLES=()
 declare -A TABLE_TYPE TABLE_STATS TABLE_DATES
 FIXTURE_QUERIES=""
 
-# make_table <table> <column type> <full|none|no_min|no_max|no_null_count> <dates>...
+# make_table <table> <column type> <full|none|no_min|no_max|no_null_count|partition> <dates>...
 # Each argument is one file: sorted, comma-separated ISO dates, optionally followed by NULLs.
 # `no_min` / `no_max` / `no_null_count` omit only that statistic; `none` emits only `numRecords`.
+# `partition` makes `d` the partition column: each argument is one ISO date or NULL.
 make_table() {
     local table=$1 type=$2 stats_mode=$3
     shift 3
@@ -37,6 +38,11 @@ make_table() {
     TABLE_DATES[$table]="$*"
     local date value
     for date in "$@"; do
+        if [[ "${stats_mode}" == partition ]]; then
+            FIXTURE_QUERIES+="
+            INSERT INTO FUNCTION file('${ROOT}/${table}/${date}.parquet', Parquet, 'x Int32') SELECT 1;"
+            continue
+        fi
         value="'${date//,/\',\'}'"
         value="${value//\'NULL\'/NULL}"
         FIXTURE_QUERIES+="
@@ -55,14 +61,29 @@ write_log() {
     local nullable=false
     [[ "${type}" == Nullable* ]] && nullable=true
     local log="${ROOT}/${table}/_delta_log/00000000000000000000.json"
+    local fields="{\\\"name\\\":\\\"d\\\",\\\"type\\\":\\\"date\\\",\\\"nullable\\\":${nullable},\\\"metadata\\\":{}}"
+    local partition_columns=""
+    if [[ "${stats_mode}" == partition ]]; then
+        fields="{\\\"name\\\":\\\"x\\\",\\\"type\\\":\\\"integer\\\",\\\"nullable\\\":true,\\\"metadata\\\":{}},${fields}"
+        partition_columns="\"d\""
+    fi
     cat > "${log}" <<EOF
 {"protocol":{"minReaderVersion":1,"minWriterVersion":2}}
-{"metaData":{"id":"${CLICKHOUSE_DATABASE}-${table}","format":{"provider":"parquet","options":{}},"schemaString":"{\\"type\\":\\"struct\\",\\"fields\\":[{\\"name\\":\\"d\\",\\"type\\":\\"date\\",\\"nullable\\":${nullable},\\"metadata\\":{}}]}","partitionColumns":[],"configuration":{}}}
+{"metaData":{"id":"${CLICKHOUSE_DATABASE}-${table}","format":{"provider":"parquet","options":{}},"schemaString":"{\\"type\\":\\"struct\\",\\"fields\\":[${fields}]}","partitionColumns":[${partition_columns}],"configuration":{}}}
 EOF
-    local date stats size value nulls
+    local date stats size value nulls partition_values
     local -a all_dates dates non_null
     read -r -a all_dates <<< "${TABLE_DATES[$table]}"
     for date in "${all_dates[@]}"; do
+        size=$(wc -c < "${ROOT}/${table}/${date}.parquet")
+        if [[ "${stats_mode}" == partition ]]; then
+            partition_values="{\"d\":\"${date}\"}"
+            [[ "${date}" == NULL ]] && partition_values='{"d":null}'
+            cat >> "${log}" <<EOF
+{"add":{"path":"${date}.parquet","partitionValues":${partition_values},"size":${size},"modificationTime":1700000000000,"dataChange":true,"stats":"{\\"numRecords\\":1}"}}
+EOF
+            continue
+        fi
         IFS=, read -r -a dates <<< "${date}"
         non_null=()
         nulls=0
@@ -82,7 +103,6 @@ EOF
             [[ "${stats_mode}" == no_null_count ]] || stats+=",\"nullCount\":{\"d\":${nulls}}"
         fi
         stats+="}"
-        size=$(wc -c < "${ROOT}/${table}/${date}.parquet")
         cat >> "${log}" <<EOF
 {"add":{"path":"${date}.parquet","partitionValues":{},"size":${size},"modificationTime":1700000000000,"dataChange":true,"stats":"${stats//\"/\\\"}"}}
 EOF
@@ -404,5 +424,16 @@ check nullable_no_null_count "d::Date = '2026-01-01'" "cast_keep_nullable=0"
 check nullable_no_null_count "NOT (d::Date = '2026-01-01')" "cast_keep_nullable=0"
 make_table nullable_no_stats 'Nullable(Date32)' none 2026-01-01 2026-01-02
 check nullable_no_stats "d::Date = '2026-01-01'" "cast_keep_nullable=0"
+
+make_table partitioned 'Nullable(Date32)' partition 2026-01-01 2026-01-02 2205-06-08 NULL
+check partitioned "d::Date = '2026-01-01'" "cast_keep_nullable=0"
+check partitioned "d::Date32 = '2026-01-02'" "cast_keep_nullable=0"
+for where in "d::Date != '2026-01-01'" "NOT (d::Date = '2026-01-01')"; do
+    for enabled in 0 1; do
+        expect_error "partitioned: ${where} (engine predicate ${enabled})" \
+            partitioned "${where}" "${enabled}" \
+            CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN "cast_keep_nullable=0"
+    done
+done
 
 run_all

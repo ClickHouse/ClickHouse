@@ -331,3 +331,17 @@ nullable_no_null_count: NOT (d::Date = '2026-01-01') SETTINGS cast_keep_nullable
 nullable_no_stats: d::Date = '2026-01-01' SETTINGS cast_keep_nullable=0
 ['2026-01-01']
 2
+partitioned: d::Date = '2026-01-01' SETTINGS cast_keep_nullable=0
+['2026-01-01','2205-06-08']
+3
+partitioned: d::Date32 = '2026-01-02' SETTINGS cast_keep_nullable=0
+['2026-01-02']
+2
+partitioned: d::Date != '2026-01-01' (engine predicate 0)
+1
+partitioned: d::Date != '2026-01-01' (engine predicate 1)
+1
+partitioned: NOT (d::Date = '2026-01-01') (engine predicate 0)
+1
+partitioned: NOT (d::Date = '2026-01-01') (engine predicate 1)
+1
