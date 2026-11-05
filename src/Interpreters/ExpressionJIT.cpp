@@ -398,25 +398,47 @@ static bool isShortCircuitFunctionWithGuards(const IFunctionBase & function)
     return name == "if" || name == "multiIf" || name == "and" || name == "or";
 }
 
-static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes);
+/// The results of `isLazySubtreeCompilable` by node, for one set of lazily executed nodes. Without it, every node above a
+/// subtree would check the subtree again: exponential time in the nesting of short-circuit functions.
+using LazySubtreeCompilableCache = std::unordered_map<const ActionsDAG::Node *, bool>;
+
+static bool isCompilableFunction(
+    const ActionsDAG::Node & node,
+    const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes,
+    LazySubtreeCompilableCache & lazy_subtree_cache);
 
 /// Whether every lazily executed node below `node`, through lazy nodes, is a compilable function, so that the compiled
 /// function computes them all and none becomes an input that the interpreter would evaluate on all rows.
-static bool isLazySubtreeCompilable(const ActionsDAG::Node & node, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
+static bool isLazySubtreeCompilable(
+    const ActionsDAG::Node & node,
+    const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes,
+    LazySubtreeCompilableCache & lazy_subtree_cache)
 {
+    if (auto it = lazy_subtree_cache.find(&node); it != lazy_subtree_cache.end())
+        return it->second;
+
+    bool result = true;
     for (const auto & child : node.children)
     {
         const auto * child_no_alias = removeAliasIfNecessary(child);
         if (!lazy_executed_nodes.contains(child_no_alias))
             continue;
-        if (child_no_alias->type != ActionsDAG::ActionType::FUNCTION || !isCompilableFunction(*child_no_alias, lazy_executed_nodes)
-            || !isLazySubtreeCompilable(*child_no_alias, lazy_executed_nodes))
-            return false;
+        if (child_no_alias->type != ActionsDAG::ActionType::FUNCTION
+            || !isCompilableFunction(*child_no_alias, lazy_executed_nodes, lazy_subtree_cache)
+            || !isLazySubtreeCompilable(*child_no_alias, lazy_executed_nodes, lazy_subtree_cache))
+        {
+            result = false;
+            break;
+        }
     }
-    return true;
+    lazy_subtree_cache.emplace(&node, result);
+    return result;
 }
 
-static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
+static bool isCompilableFunction(
+    const ActionsDAG::Node & node,
+    const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes,
+    LazySubtreeCompilableCache & lazy_subtree_cache)
 {
     if (node.type != ActionsDAG::ActionType::FUNCTION)
         return false;
@@ -435,7 +457,7 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unord
         /// every row of a branch, and a lazy branch holds defaults on the rows it does not take in the interpreter.
         if (has_lazy_child
             && (!isShortCircuitFunctionWithGuards(function) || isDecimal(removeNullable(function.getResultType()))
-                || !isLazySubtreeCompilable(node, lazy_executed_nodes)))
+                || !isLazySubtreeCompilable(node, lazy_executed_nodes, lazy_subtree_cache)))
             return false;
 
         /// `and` and `or` may execute their eager arguments first (`short_circuit_function_evaluation_reorder_arguments`),
@@ -585,6 +607,7 @@ static CompileDAG getCompilableDAG(
     const ActionsDAG::Node * root,
     ActionsDAG::NodeRawConstPtrs & children,
     const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes,
+    LazySubtreeCompilableCache & lazy_subtree_cache,
     bool & guards_match_interpreter)
 {
     /// Extract CompileDAG from root actions dag node.
@@ -611,7 +634,7 @@ static CompileDAG getCompilableDAG(
         const auto * node = frame.node;
 
         bool is_compilable_constant = isCompilableConstant(*node);
-        bool is_compilable_function = isCompilableFunction(*node, lazy_executed_nodes);
+        bool is_compilable_function = isCompilableFunction(*node, lazy_executed_nodes, lazy_subtree_cache);
 
         if (!is_compilable_function || is_compilable_constant || frame.skip_compile)
         {
@@ -700,12 +723,13 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const 
     };
 
     std::unordered_map<const Node *, Data> node_to_data;
+    LazySubtreeCompilableCache lazy_subtree_cache;
 
     /// Check which nodes can be compiled in isolation
 
     for (const auto & node : nodes)
     {
-        bool node_is_compilable_in_isolation = isCompilableFunction(node, lazy_executed_nodes) && !isCompilableConstant(node);
+        bool node_is_compilable_in_isolation = isCompilableFunction(node, lazy_executed_nodes, lazy_subtree_cache) && !isCompilableConstant(node);
         node_to_data[&node].is_compilable_in_isolation = node_is_compilable_in_isolation;
     }
 
@@ -822,7 +846,7 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const 
     {
         NodeRawConstPtrs new_children;
         bool guards_match_interpreter = false;
-        auto dag = getCompilableDAG(node, new_children, lazy_executed_nodes, guards_match_interpreter);
+        auto dag = getCompilableDAG(node, new_children, lazy_executed_nodes, lazy_subtree_cache, guards_match_interpreter);
 
         if (dag.getInputNodesCount() == 0 || !guards_match_interpreter)
             continue;

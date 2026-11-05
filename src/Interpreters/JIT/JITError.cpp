@@ -60,15 +60,6 @@ void throwJITError(const JITError & error, const JITErrorSite & site, const std:
                 Exception(ErrorCodes::ILLEGAL_DIVISION, "Division of minimal signed number by minus one"), function_description);
         case JITErrorCode::DivisionByTheMostNegativeNumber:
             throwWithDescription(Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by the most negative number"), function_description);
-        case JITErrorCode::DecimalConvertOverflow:
-        {
-            /// As in `convertDecimalsBatch`.
-            const Int128 operand = (static_cast<Int128>(static_cast<Int64>(error.operand_high)) << 64) | static_cast<Int128>(error.operand_low);
-            throwWithDescription(
-                Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow while multiplying {} by scale {}",
-                    siteParameter(site, 0), toString(operand), siteParameter(site, 1)),
-                function_description);
-        }
         case JITErrorCode::ThrowIfNonZero:
             throwWithDescription(
                 Exception(ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO, "Value passed to '{}' function is non-zero", siteParameter(site, 0)),

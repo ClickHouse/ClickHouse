@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsComparison.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Native.h>
@@ -35,8 +36,12 @@ public:
     explicit FunctionNullIf(ContextPtr context)
         : equals_resolver(FunctionFactory::instance().get("equals", context))
         , if_resolver(FunctionFactory::instance().get("if", context))
+        , comparison_params(context ? ComparisonParams(context) : ComparisonParams())
     {
     }
+
+    /// The compiled `equals` is built from the same context, so its key is the key of `equals`.
+    void updateHash(SipHash & hash) const override { comparison_params.updateHash(hash); }
 
     std::string getName() const override
     {
@@ -112,6 +117,7 @@ public:
 private:
     FunctionOverloadResolverPtr equals_resolver;
     FunctionOverloadResolverPtr if_resolver;
+    const ComparisonParams comparison_params;
 };
 
 }
