@@ -587,6 +587,9 @@ public:
 
     bool isMergeTree() const override { return true; }
 
+    /// True when parallel replicas are used.
+    bool producesMergeableState(const ContextPtr & query_context) const override;
+
     bool supportsPrewhere() const override { return true; }
 
     /// The contract is std::nullopt here, so this only matters when a wrapper (`Merge`,

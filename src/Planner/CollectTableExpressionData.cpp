@@ -409,23 +409,23 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
     auto & query_node_typed = query_node->as<QueryNode &>();
     auto table_expressions_nodes = extractTableExpressions(query_node_typed.getJoinTreeNodeTyped());
 
+    const auto query_context = planner_context->getQueryContext();
+
     for (auto & table_expression_node : table_expressions_nodes)
     {
         auto & table_expression_data = planner_context->getOrCreateTableExpressionData(table_expression_node);
 
+        StoragePtr storage;
         if (auto * table_node = table_expression_node->as<TableNode>())
-        {
-            bool storage_is_remote = table_node->getStorage()->isRemote();
-            bool storage_is_merge_tree = table_node->getStorage()->isMergeTree();
-            table_expression_data.setIsRemote(storage_is_remote);
-            table_expression_data.setIsMergeTree(storage_is_merge_tree);
-        }
+            storage = table_node->getStorage();
         else if (auto * table_function_node = table_expression_node->as<TableFunctionNode>())
+            storage = table_function_node->getStorage();
+
+        if (storage)
         {
-            bool storage_is_remote = table_function_node->getStorage()->isRemote();
-            bool storage_is_merge_tree = table_function_node->getStorage()->isMergeTree();
-            table_expression_data.setIsRemote(storage_is_remote);
-            table_expression_data.setIsMergeTree(storage_is_merge_tree);
+            table_expression_data.setIsRemote(storage->isRemote());
+            table_expression_data.setIsMergeTree(storage->isMergeTree());
+            table_expression_data.setProducesMergeableState(storage->producesMergeableState(query_context));
         }
     }
 
