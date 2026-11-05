@@ -36,7 +36,6 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <Common/typeid_cast.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/adaptor/map.hpp>
