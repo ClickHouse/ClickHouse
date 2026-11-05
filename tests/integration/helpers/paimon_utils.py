@@ -75,7 +75,7 @@ TYPES_EXPECTED_SCHEMA = [
     ["f_varchar", "Nullable(String)"],
     ["f_string", "Nullable(String)"],
     ["f_binary", "Nullable(String)"],
-    ["f_date", "Nullable(Date)"],
+    ["f_date", "Nullable(Date32)"],
     ["f_timestamp_ltz", "Nullable(DateTime64(6))"],
     ["f_timestamp", "Nullable(DateTime64(6, \\'UTC\\'))"],
     ["f_array", "Array(Nullable(Int32))"],
@@ -474,7 +474,7 @@ def create_paimon_table(
             additional_settings=additional_settings,
             engine_name=engine_name,
         ),
-        settings={"allow_experimental_paimon_storage_engine": 1},
+        settings={"enable_paimon_storage_engine": 1},
     )
 
 
