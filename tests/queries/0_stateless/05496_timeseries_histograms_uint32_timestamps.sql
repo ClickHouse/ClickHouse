@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- Tag no-fasttest: `timeSeriesSelector` parses the selector with the PromQL parser, which needs ANTLR4, disabled in the fast-test build.
+
 -- Native histograms in TimeSeries tables whose timestamps are not DateTime64: the `histograms` column and the `histograms.*` outer
 -- columns take the type of the timestamps of `samples`, the sink sorts and splits the histograms into buckets with these
 -- timestamps, and the selector slices the histogram tuples by them.

@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- Tag no-fasttest: `timeSeriesSelector` parses the selector with the PromQL parser, which needs ANTLR4, disabled in the fast-test build.
+
 -- The recent samples table with a bucket step other than the samples table's: the histograms of an INSERT are split into the
 -- buckets of each table, the counter reset hints are detected once over the whole series and shared by the rows of both tables
 -- (see TimeSeriesSink), and `timeSeriesSelector` returns the same samples from either table, one row per bucket of the table read.

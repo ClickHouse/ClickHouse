@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- Tag no-fasttest: `timeSeriesSelector` parses the selector with the PromQL parser, which needs ANTLR4, disabled in the fast-test build.
+
 -- `timeSeriesSelector` over a TimeSeries table storing native histogram samples returns them in the column `histograms` next to
 -- `samples` with `return_columns = 'samples'`: the stored tuples of a row of the samples table cut to the time range, one row per
 -- series and bucket. Both arrays are read, and a row is returned when either array has samples in the range, regardless of projection.
