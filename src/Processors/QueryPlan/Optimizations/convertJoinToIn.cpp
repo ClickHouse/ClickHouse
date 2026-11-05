@@ -20,6 +20,7 @@
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Storages/StorageMemory.h>
+#include <Storages/StorageMerge.h>
 
 #include <unordered_set>
 
@@ -153,7 +154,7 @@ static bool hasCommonSubplanNodes(const QueryPlan::Node & root)
     return false;
 }
 
-static bool readsUnbuiltMaterializedCTE(const QueryPlan::Node & root)
+static bool mayReadUnbuiltMaterializedCTE(const QueryPlan::Node & root)
 {
     std::vector<const QueryPlan::Node *> stack{&root};
     std::unordered_set<const QueryPlan::Node *> visited;
@@ -170,6 +171,12 @@ static bool readsUnbuiltMaterializedCTE(const QueryPlan::Node & root)
 
         if (!visited.insert(node).second)
             continue;
+
+        /// `ReadFromMerge` can hide readers of an outer CTE inside its child plans. Asking for
+        /// those plans creates and optimizes them, so it is not safe to inspect them here.
+        /// Keep the join rather than extract a source whose CTE dependencies are unknown.
+        if (typeid_cast<const ReadFromMerge *>(node->step.get()))
+            return true;
 
         if (const auto * read = typeid_cast<const ReadFromMemoryStorageStep *>(node->step.get()))
         {
@@ -268,7 +275,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     /// Index analysis can execute the extracted set source synchronously, before an outer CTE
     /// materialization gate runs. Unlike a set planned by `Planner`, this new source does not
     /// carry CTE safety nets, so keep the join until its right-side CTEs have been materialized.
-    if (readsUnbuiltMaterializedCTE(*parent_node->children.at(1)))
+    if (mayReadUnbuiltMaterializedCTE(*parent_node->children.at(1)))
         return 0;
 
     // {
