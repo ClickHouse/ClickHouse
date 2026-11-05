@@ -22,6 +22,9 @@ QueryMaskingRulesCache::QueryMaskingRulesCache(const AccessControl & access_cont
     subscription = access_control.subscribeForChanges<QueryMaskingRule>(
         [this](const std::vector<AccessChangesNotifier::Change> & changes)
         {
+            /// The changed rules are already stored and outlive the query that changed them:
+            /// the server memory tracker accounts for them, but no memory limit may refuse them.
+            MemoryTrackerBlockerInThread not_refused_by_memory_limits(VariableContext::Global);
             std::lock_guard lock{mutex};
             for (const auto & change : changes)
             {
@@ -60,9 +63,6 @@ void QueryMaskingRulesCache::reload()
 
 void QueryMaskingRulesCache::publishLocked()
 {
-    /// The masker lives as long as the server, not the query that changed a rule.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
-
     std::vector<std::pair<UUID, QueryMaskingRulePtr>> sorted_rules(rules.begin(), rules.end());
     ::sort(sorted_rules.begin(), sorted_rules.end(), [](const auto & lhs, const auto & rhs)
     {
