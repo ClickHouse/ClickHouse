@@ -195,7 +195,9 @@ struct LowCardinalityKeyGetterForJoin
 /// - after `buildAllKeys` or `usePrebuiltKeys`, the keys of the rows that the slot scatter of a parallel build routed.
 ///   The scatter calls `buildAllKeys`, and the slot inserts pass the keys it built to `usePrebuiltKeys`;
 /// - after `prepareRows`, the keys of a continuous range of rows, built 256 rows at a time when a read goes past the
-///   built ones. Each join loop calls it for its first map. A prefetching loop also calls it for every other map that it
+///   built ones. A range that starts after the first row is the rest of a block that an earlier call left because of
+///   `max_joined_block_rows`. The call for the rest can stop early too, so its chunks start at 8 rows and double up to
+///   256. Each join loop calls it for its first map. A prefetching loop also calls it for every other map that it
 ///   prefetches for each row: then each key is built once for both the prefetch and the lookup. A loop that stops early
 ///   at `max_joined_block_rows` pays only for the chunks it reached.
 ///   The loop of an `OR` join with a condition in `ON` calls it for every map. For a list of rows in ascending order, it
@@ -203,13 +205,20 @@ struct LowCardinalityKeyGetterForJoin
 template <typename Derived>
 struct PreparedJoinKeys
 {
+    /// The chunk size of `SipHashStrings`, so that a call usually hashes one whole chunk there.
+    static constexpr size_t max_chunk_rows = 256;
+    /// The rows that `SipHashStrings` hashes as one group.
+    static constexpr size_t min_chunk_rows = 8;
+
     /// Keys built ahead of the lookups, those of the rows [ready_begin, ready_begin + ready_keys.size()). While
     /// `ready_keys` is empty, each key is built where it is read.
     size_t ready_begin = 0;
     std::span<const UInt128> ready_keys;
-    /// After `prepareRows`: the buffer that `ready_keys` views, the end of the rows to prepare, and the skip bytes.
+    /// After `prepareRows`: the buffer that `ready_keys` views, the end of the rows to prepare, the rows of the next chunk,
+    /// and the skip bytes.
     PaddedPODArray<UInt128> prepared_keys;
     size_t prepare_end = 0;
+    size_t next_chunk_rows = max_chunk_rows;
     const UInt8 * skip_rows = nullptr;
     /// A caller can build the skip bytes for `prepareRows` here. They must stay valid while the key getter reads keys.
     IColumn::Filter skip_buffer;
@@ -310,6 +319,7 @@ struct PreparedJoinKeys
     {
         ready_begin = range.first;
         prepare_end = range.second;
+        next_chunk_rows = range.first == 0 ? max_chunk_rows : min_chunk_rows;
         skip_rows = skip;
         prepared_keys.clear();
         ready_keys = {};
@@ -321,8 +331,6 @@ struct PreparedJoinKeys
     /// into the join loops that call `getKeyHolder`.
     NO_INLINE void buildNextKeys(size_t row)
     {
-        /// The chunk size of `SipHashStrings`, so that a call usually hashes one whole chunk there.
-        static constexpr size_t chunk_rows = 256;
         const size_t begin = ready_begin + prepared_keys.size();
         if (row < begin || row >= prepare_end)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The join key of row {} was not prepared", row);
@@ -338,8 +346,9 @@ struct PreparedJoinKeys
             ready_begin += dropped;
         }
 
-        /// After a run of `chunk_rows` or more skipped rows, the chunk grows to cover the whole run, up to `row`.
-        const size_t end = std::min(prepare_end, std::max(row + 1, begin + chunk_rows));
+        /// After a run of `next_chunk_rows` or more skipped rows, the chunk grows to cover the whole run, up to `row`.
+        const size_t end = std::min(prepare_end, std::max(row + 1, begin + next_chunk_rows));
+        next_chunk_rows = std::min(max_chunk_rows, 2 * next_chunk_rows);
         const size_t old_size = prepared_keys.size();
         prepared_keys.resize(old_size + (end - begin));
         derived().buildKeys(begin, end, prepared_keys.data() + old_size, skip_rows);
