@@ -38,8 +38,7 @@ HTTPHeaderEntries getTraceContextHeaders()
     return headers;
 }
 
-/// An empty `task_serializer` sends no body, an empty `unique_temp_file_path` no `temp_path`.
-String doSendTask(const String & endpoint_uri, const String & operation, const String & task_id, std::function<void(WriteBuffer&)> task_serializer, const String & unique_temp_file_path, const TaskCollectors & collectors, const ContextPtr & context)
+String doSendTask(const String & endpoint_uri, const String & task_id, std::function<void(WriteBuffer&)> task_serializer, const String & unique_temp_file_path, const TaskCollectors & collectors, const ContextPtr & context)
 {
     auto credentials = context->getInterserverCredentials();
     Poco::Net::HTTPBasicCredentials creds{};
@@ -60,14 +59,18 @@ String doSendTask(const String & endpoint_uri, const String & operation, const S
     read_settings.http_settings.retry_max_backoff_ms = 1000;
 
     Poco::URI uri(endpoint_uri);
-    uri.addQueryParameter("operation",   operation);
+    uri.addQueryParameter("operation",   "start");
     uri.addQueryParameter("compress",    "false");
     uri.addQueryParameter("task_id",     task_id);
-    if (!unique_temp_file_path.empty())
-        uri.addQueryParameter("temp_path",   unique_temp_file_path);
+    uri.addQueryParameter("temp_path",   unique_temp_file_path);
     /// Absent when nothing is collected, so an older worker sees the request it has always seen.
     if (collectors.any())
         uri.addQueryParameter("collect", collectors.toString());
+
+    auto write_body_callback = [&task_serializer] (WriteBuffer & out)
+    {
+        task_serializer(out);
+    };
 
     auto in = BuilderRWBufferFromHTTP(uri)
         .withConnectionGroup(HTTPConnectionGroupType::HTTP)
@@ -75,7 +78,7 @@ String doSendTask(const String & endpoint_uri, const String & operation, const S
         .withTimeouts(timeouts)
         .withSettings(read_settings)
         .withHeaders(getTraceContextHeaders())
-        .withOutCallback(std::move(task_serializer))
+        .withOutCallback(write_body_callback)
         .withDelayInit(false)
         .create(creds);
 
@@ -89,62 +92,15 @@ String doSendTask(const String & endpoint_uri, const String & operation, const S
 
 String sendTask(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path, const TaskCollectors & collectors, const ContextPtr & context)
 {
-    /// The dispatch request is the trace hop to the worker, so the worker's spans hang under it.
-    const Poco::URI uri(endpoint_uri);
-    OpenTelemetry::SpanHolder span(
-        "StatelessWorkerClient::sendTask",
-        OpenTelemetry::SpanKind::CLIENT,
-        {
-            {"clickhouse.distributed.task_id", task_description.task.task_id},
-            {"clickhouse.initial_query_id", task_description.initial_query_id},
-            {"clickhouse.target_host", fmt::format("{}:{}", uri.getHost(), uri.getPort())},
-        });
-
-    auto task_serializer = [task_description] (WriteBuffer & buf)
-    {
-        serializeTask(task_description, buf);
-    };
-
-    try
-    {
-        return doSendTask(endpoint_uri, "start", unique_task_id, task_serializer, unique_temp_file_path, collectors, context);
-    }
-    catch (...)
-    {
-        /// Otherwise a dispatch that never reached the worker leaves a span that looks successful.
-        span.addAttribute(std::current_exception());
-        throw;
-    }
+    return sendTask(endpoint_uri, unique_task_id, task_description, task_description.task, task_description.exchange_stream_sources,
+        unique_temp_file_path, collectors, context);
 }
 
-void createTask(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTask & task, const String & initial_query_id,
+String sendTask(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTaskDescription & stage_description,
+    const DistributedQueryTask & task, const ExchangeStreamSources & stream_sources, const String & unique_temp_file_path,
     const TaskCollectors & collectors, const ContextPtr & context)
 {
-    const Poco::URI uri(endpoint_uri);
-    OpenTelemetry::SpanHolder span(
-        "StatelessWorkerClient::createTask",
-        OpenTelemetry::SpanKind::CLIENT,
-        {
-            {"clickhouse.distributed.task_id", task.task_id},
-            {"clickhouse.initial_query_id", initial_query_id},
-            {"clickhouse.target_host", fmt::format("{}:{}", uri.getHost(), uri.getPort())},
-        });
-
-    try
-    {
-        doSendTask(endpoint_uri, "create", unique_task_id, /*task_serializer=*/ {}, /*unique_temp_file_path=*/ "", collectors, context);
-    }
-    catch (...)
-    {
-        span.addAttribute(std::current_exception());
-        throw;
-    }
-}
-
-void sendTaskPayload(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTaskDescription & stage_description,
-    const DistributedQueryTask & task, const ExchangeStreamSources & stream_sources, const String & unique_temp_file_path, const ContextPtr & context)
-{
-    /// The span of `start`: this request starts the task, so the worker's spans of the task hang under it.
+    /// The dispatch request is the trace hop to the worker, so the worker's spans hang under it.
     const Poco::URI uri(endpoint_uri);
     OpenTelemetry::SpanHolder span(
         "StatelessWorkerClient::sendTask",
@@ -155,6 +111,7 @@ void sendTaskPayload(const String & endpoint_uri, const String & unique_task_id,
             {"clickhouse.target_host", fmt::format("{}:{}", uri.getHost(), uri.getPort())},
         });
 
+    /// By reference: `doSendTask` writes the body before it returns.
     auto task_serializer = [&] (WriteBuffer & buf)
     {
         serializeTask(stage_description, task, stream_sources, buf);
@@ -162,10 +119,11 @@ void sendTaskPayload(const String & endpoint_uri, const String & unique_task_id,
 
     try
     {
-        doSendTask(endpoint_uri, "payload", unique_task_id, task_serializer, unique_temp_file_path, /*collectors=*/ {}, context);
+        return doSendTask(endpoint_uri, unique_task_id, task_serializer, unique_temp_file_path, collectors, context);
     }
     catch (...)
     {
+        /// Otherwise a dispatch that never reached the worker leaves a span that looks successful.
         span.addAttribute(std::current_exception());
         throw;
     }
