@@ -11,8 +11,9 @@
 # probes and the values interleave. This test checks the pruning decisions and the results of that
 # intersection: a large set that misses every row group, one that hits a single row group, and one
 # that hits all of them, each compared against the same query with the dictionary filter disabled.
-# The sets of 20000 values have more probes than a dictionary has values, and the two files read
-# together hash the same set as Int32 and as Int64, which must not share the hashes of the other file.
+# The sets of 20000 values have more probes than a dictionary has values, so the lookup searches the set
+# for each dictionary value instead. The two files read together hash the same set as Int32 and as Int64,
+# which must not share the hashes of the other file.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

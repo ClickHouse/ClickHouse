@@ -2495,7 +2495,7 @@ struct DictionaryValueHashes
     /// Sorting costs about log2(n) scans, so the first max(8, log2(n)) probes scan the unsorted `hashes`.
     ///
     /// `probes` are sorted and deduplicated (see `KeyCondition::BloomFilterData::makeHashes`), so
-    /// this is an intersection of two sorted sequences rather than a sequence of independent binary
+    /// for at most n probes this is an intersection of two sorted sequences rather than a sequence of independent binary
     /// searches: every probe continues where the previous one stopped. A handful of query constants
     /// then costs a binary search each, while a large probe set degrades to a linear merge of the two
     /// sequences instead of `probes.size()` full-height searches over the whole vector. That matters
@@ -2508,6 +2508,15 @@ struct DictionaryValueHashes
         chassert(std::is_sorted(probes.begin(), probes.end()));
         if (default_value_hash && std::binary_search(probes.begin(), probes.end(), *default_value_hash))
             return true;
+
+        /// More probes than dictionary values: search the probes for each dictionary value, which needs no sorting.
+        if (probes.size() > hashes.size())
+        {
+            for (UInt64 hash : hashes)
+                if (std::binary_search(probes.begin(), probes.end(), hash))
+                    return true;
+            return false;
+        }
 
         if (!sorted)
         {
@@ -2522,21 +2531,6 @@ struct DictionaryValueHashes
             }
             std::sort(hashes.begin(), hashes.end());
             sorted = true;
-        }
-
-        /// More probes than dictionary values: search the probes for each dictionary value instead.
-        if (probes.size() > hashes.size())
-        {
-            auto probe_it = probes.begin();
-            for (UInt64 hash : hashes)
-            {
-                probe_it = std::lower_bound(probe_it, probes.end(), hash);
-                if (probe_it == probes.end())
-                    return false;
-                if (*probe_it == hash)
-                    return true;
-            }
-            return false;
         }
 
         auto it = hashes.begin();
