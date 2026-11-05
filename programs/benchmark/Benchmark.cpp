@@ -950,7 +950,7 @@ private:
         /// The run ends when the arrivals stop or the last query finishes, whichever is later,
         /// not when the idle workers notice that there is no more work.
         ArrivalStats arrival_stats_snapshot;
-        double seconds;
+        double seconds = 0;
         {
             std::lock_guard lock(interval_mutex);
             const UInt64 end_ns = std::max(arrivals_end_ns, last_query_end_ns);
