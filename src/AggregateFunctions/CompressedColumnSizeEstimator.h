@@ -34,10 +34,19 @@ public:
         SerializationInfoSettings serialization_info;
         /// As `MergeTreeDataPartWriterWide::getSerializationSettings`, without the stream getter.
         ISerialization::SerializeBinaryBulkSettings bulk;
+        /// As `MergeTreeDataPartWriterWide::getEnumerateSettings`: the substreams of `Dynamic`, `JSON` and `Map` depend on them.
+        ISerialization::EnumerateStreamsSettings enumerate;
+        /// The codec of a column declared without `CODEC`: the one the server gives a new part, from the `compression` section
+        /// of its configuration (`MergeTreeData::getCompressionCodecForPart`), which is not the default codec of the factory.
+        CompressionCodecPtr default_codec;
         size_t index_granularity = 8192;
         size_t index_granularity_bytes = 10 * 1024 * 1024;
         size_t min_compress_block_size = DBMS_DEFAULT_BUFFER_SIZE;
         size_t max_compress_block_size = DBMS_DEFAULT_BUFFER_SIZE;
+        /// The stream of a dynamic substream (a variant of `Dynamic`, a path of `JSON`) gets an adaptive buffer, whose blocks
+        /// start small (`use_adaptive_write_buffer_for_dynamic_subcolumns`, `adaptive_write_buffer_initial_size`).
+        bool adaptive_buffer_for_dynamic_subcolumns = true;
+        size_t adaptive_buffer_initial_size = DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE;
 
         /// The settings of a merged wide part of a table with the server's MergeTree settings (the `merge_tree` section of the
         /// configuration, read from the context of the query, else from the global one) and with the settings of the query when
@@ -77,7 +86,9 @@ public:
         void writePrefix(const IColumn & column);
         void writeRows(const IColumn & rows, size_t offset, size_t limit);
         void endGranule();
+        CompressedSizeCalculator * calculatorFor(const ISerialization::SubstreamPath & path);
         WriteBuffer * streamFor(const ISerialization::SubstreamPath & path);
+        MarkInCompressedFile markFor(const ISerialization::SubstreamPath & path);
 
         struct Stream
         {
@@ -118,11 +129,12 @@ public:
     static std::unique_ptr<Writer> startCounting(const DataTypePtr & type, const WriterSettings & settings, const IColumn & column);
 
 private:
-    /// The codec and the compressed block size of a substream.
+    /// The codec and the compressed block size of a substream, and the initial size of its buffer when it is adaptive.
     struct StreamLayout
     {
         CompressionCodecPtr codec;
         size_t block_size = 0;
+        size_t adaptive_initial_size = 0;
     };
 
     StreamLayout resolveStreamLayout(const ISerialization::SubstreamPath & path) const;

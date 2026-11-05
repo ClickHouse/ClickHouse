@@ -137,6 +137,7 @@ private:
     /// Whether the rows that do not complete a granule wait in the buffer for the next block, so that the granule is written at
     /// once (see `isSplitIndependent`).
     const bool buffer_partial_granules;
+    /// The codec the server gives a new part (see `CompressedColumnSizeEstimator::WriterSettings::default_codec`).
     const CompressionCodecPtr default_codec;
     /// The `codec` parameter, or the default codec, as the `CODEC` clause of a column.
     const ASTPtr codec_description;
@@ -250,6 +251,10 @@ private:
     /// writer serializes a block.
     void serializeRows(const Data & data_ref, const IColumn & rows, size_t offset, size_t limit, size_t granule_rows) const
     {
+        /// No rows start no run: the kind of an empty converted column is not the kind of the rows to come.
+        if (limit == 0)
+            return;
+
         if (!to_represented && !target_type)
         {
             runFor(data_ref, rows, rows).writer->write(rows, offset, limit, granule_rows);
@@ -417,7 +422,7 @@ public:
         , to_represented(represented_type != plain_type ? std::optional(createCast(plain_type, represented_type)) : std::nullopt)
         , to_target(target_type && !target_type->equals(*plain_type) ? std::optional(createCast(plain_type, target_type)) : std::nullopt)
         , buffer_partial_granules(!isSplitIndependent(*represented_type) || !isSplitIndependent(*estimated_type))
-        , default_codec(CompressionCodecFactory::instance().getDefaultCodec())
+        , default_codec(config.writer_settings.default_codec)
         , codec_description(config.codec ? parseCodecDescription(*config.codec) : default_codec->getFullCodecDescription())
         , estimator(estimated_type, codec_description, default_codec, writerSettings(config))
         , sparse_allowed(

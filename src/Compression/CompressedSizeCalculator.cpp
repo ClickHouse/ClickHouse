@@ -14,6 +14,11 @@ namespace
 /// The buffer grows from this size by doubling, up to the block size.
 constexpr size_t initial_buffer_size = 16 * 1024;
 
+size_t initialBufferSize(size_t block_size, size_t adaptive_initial_size)
+{
+    return std::min(block_size, adaptive_initial_size ? adaptive_initial_size : initial_buffer_size);
+}
+
 /// Compressed size of a single block as `compress` would produce it (block header + payload).
 /// If possible, calculate output size cheaply. If not, compress into a scratch buffer and keep only the returned size.
 UInt32 getCompressedBlockSize(const ICompressionCodec & codec, const char * src, UInt32 src_size, PODArray<char> & scratch)
@@ -27,10 +32,11 @@ UInt32 getCompressedBlockSize(const ICompressionCodec & codec, const char * src,
 
 }
 
-CompressedSizeCalculator::CompressedSizeCalculator(CompressionCodecPtr codec_, size_t block_size_)
-    : BufferWithOwnMemory<WriteBuffer>(std::min(block_size_, initial_buffer_size))
+CompressedSizeCalculator::CompressedSizeCalculator(CompressionCodecPtr codec_, size_t block_size_, size_t adaptive_initial_size_)
+    : BufferWithOwnMemory<WriteBuffer>(initialBufferSize(block_size_, adaptive_initial_size_))
     , codec(std::move(codec_))
     , block_size(block_size_)
+    , adaptive(adaptive_initial_size_ != 0)
 {
     if (!codec)
         codec = CompressionCodecFactory::instance().getDefaultCodec();
@@ -39,9 +45,10 @@ CompressedSizeCalculator::CompressedSizeCalculator(CompressionCodecPtr codec_, s
 void CompressedSizeCalculator::nextImpl()
 {
     const size_t collected = blockBytes();
+    const bool buffer_full = collected == memory.size();
 
     /// The buffer is full but the block is not: a write that did not fit. Grow and keep collecting; `resize` keeps the content.
-    if (collected < block_size && collected == memory.size() && !closing)
+    if (!adaptive && buffer_full && collected < block_size && !closing)
     {
         memory.resize(std::min(memory.size() * 2, block_size));
         internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
@@ -51,6 +58,15 @@ void CompressedSizeCalculator::nextImpl()
 
     /// The block is complete, is ended on purpose, or the serialization ends it with `next`.
     compressBlock(collected);
+
+    /// As `BufferWithOwnMemory::growAdaptiveBufferAfterFlush`: an adaptive buffer doubles after a block that filled it.
+    if (adaptive && buffer_full && memory.size() < block_size)
+    {
+        memory.resize(std::min(memory.size() * 2, block_size));
+        internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
+        working_buffer = internal_buffer;
+        pos = working_buffer.begin();
+    }
 }
 
 void CompressedSizeCalculator::compressBlock(size_t size)

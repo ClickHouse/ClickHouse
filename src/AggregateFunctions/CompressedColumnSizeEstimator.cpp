@@ -27,6 +27,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsNonZeroUInt64 adaptive_write_buffer_initial_size;
     extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsMergeTreeDynamicSerializationVersion dynamic_serialization_version;
     extern const MergeTreeSettingsUInt64 index_granularity;
@@ -47,6 +48,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
+    extern const MergeTreeSettingsBool use_adaptive_write_buffer_for_dynamic_subcolumns;
     extern const MergeTreeSettingsBool use_compact_variant_discriminators_serialization;
 }
 
@@ -103,7 +105,22 @@ CompressedColumnSizeEstimator::WriterSettings CompressedColumnSizeEstimator::Wri
     bulk.map_buckets_coefficient = static_cast<double>(merge_tree[MergeTreeSetting::map_buckets_coefficient]);
     bulk.map_buckets_min_avg_size = merge_tree[MergeTreeSetting::map_buckets_min_avg_size];
     bulk.write_statistics = ISerialization::SerializeBinaryBulkSettings::StatisticsMode::SUFFIX;
-    bulk.stream_mark_getter = [](const ISerialization::SubstreamPath &) { return MarkInCompressedFile(); };
+
+    /// As `MergeTreeDataPartWriterWide::getEnumerateSettings`.
+    auto & enumerate = settings.enumerate;
+    enumerate.object_serialization_version = bulk.object_serialization_version;
+    enumerate.object_shared_data_serialization_version = bulk.object_shared_data_serialization_version;
+    enumerate.object_shared_data_buckets = bulk.object_shared_data_buckets;
+    enumerate.object_shared_data_target_chunk_rows = bulk.object_shared_data_target_chunk_rows;
+    enumerate.max_buckets_in_map = bulk.max_buckets_in_map;
+    enumerate.map_buckets_strategy = bulk.map_buckets_strategy;
+    enumerate.map_buckets_coefficient = bulk.map_buckets_coefficient;
+    enumerate.map_buckets_min_avg_size = bulk.map_buckets_min_avg_size;
+    enumerate.data_part_type = MergeTreeDataPartType::Wide;
+
+    /// As `MergeTreeData::getCompressionCodecForPart` for a new part.
+    settings.default_codec = context ? context->chooseCompressionCodec(/*part_size=*/ 0, /*part_size_ratio=*/ 0.0)
+                                     : CompressionCodecFactory::instance().getDefaultCodec();
 
     settings.index_granularity = merge_tree[MergeTreeSetting::index_granularity];
     settings.index_granularity_bytes = merge_tree[MergeTreeSetting::index_granularity_bytes];
@@ -117,6 +134,11 @@ CompressedColumnSizeEstimator::WriterSettings CompressedColumnSizeEstimator::Wri
         = std::min<size_t>(merge_tree_max ? merge_tree_max : query[Setting::max_compress_block_size], MAX_COMPRESS_BLOCK_SIZE);
     /// The serializations that end compressed blocks themselves (the shared data of `JSON`) do so from this size on.
     bulk.min_compress_block_size = settings.min_compress_block_size;
+
+    /// As `MergeTreeDataPartWriterWide::addStreams`. A part with `min_columns_to_activate_adaptive_write_buffer` streams gives
+    /// every stream an adaptive buffer, which a single column cannot tell.
+    settings.adaptive_buffer_for_dynamic_subcolumns = merge_tree[MergeTreeSetting::use_adaptive_write_buffer_for_dynamic_subcolumns];
+    settings.adaptive_buffer_initial_size = merge_tree[MergeTreeSetting::adaptive_write_buffer_initial_size];
 
     return settings;
 }
@@ -149,11 +171,8 @@ void CompressedColumnSizeEstimator::Writer::writePrefix(const IColumn & column)
     serialization->serializeBinaryBulkStatePrefix(column, settings, state);
 }
 
-WriteBuffer * CompressedColumnSizeEstimator::Writer::streamFor(const ISerialization::SubstreamPath & path)
+CompressedSizeCalculator * CompressedColumnSizeEstimator::Writer::calculatorFor(const ISerialization::SubstreamPath & path)
 {
-    if (counter)
-        return counter.get();
-
     const String key = ISerialization::getSubstreamsCacheKeyForStream(path);
     for (auto & stream : streams)
         if (stream.key == key)
@@ -164,6 +183,24 @@ WriteBuffer * CompressedColumnSizeEstimator::Writer::streamFor(const ISerializat
         return nullptr;
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "No stream for substream {}", ISerialization::getSubcolumnNameForStream(path));
+}
+
+WriteBuffer * CompressedColumnSizeEstimator::Writer::streamFor(const ISerialization::SubstreamPath & path)
+{
+    if (counter)
+        return counter.get();
+    return calculatorFor(path);
+}
+
+MarkInCompressedFile CompressedColumnSizeEstimator::Writer::markFor(const ISerialization::SubstreamPath & path)
+{
+    /// As the writer's mark: the position in the compressed file and in the open block. The serializations that write marks
+    /// themselves (the shared data of `JSON`) store these, so their value matters for the compressed size.
+    if (counter)
+        return {};
+    if (const auto * calculator = calculatorFor(path))
+        return {calculator->getCompressedBytesOfEndedBlocks(), calculator->blockBytes()};
+    return {};
 }
 
 void CompressedColumnSizeEstimator::Writer::write(const IColumn & rows, size_t offset, size_t limit, size_t granule_rows)
@@ -237,16 +274,19 @@ CompressedColumnSizeEstimator::CompressedColumnSizeEstimator(
     DataTypePtr type_, ASTPtr codec_description_, CompressionCodecPtr default_codec_, WriterSettings settings_)
     : type(std::move(type_))
     , codec_description(std::move(codec_description_))
-    , default_codec(std::move(default_codec_))
+    , default_codec(default_codec_ ? std::move(default_codec_) : CompressionCodecFactory::instance().getDefaultCodec())
     , settings(std::move(settings_))
 {
-    type->getSerialization(settings.serialization_info)->enumerateStreams(
+    auto serialization = type->getSerialization(settings.serialization_info);
+    auto enumerate_settings = settings.enumerate;
+    serialization->enumerateStreams(
+        enumerate_settings,
         [&](const ISerialization::SubstreamPath & path)
         {
             if (!ISerialization::isEphemeralSubcolumn(path, path.size()))
                 stream_layouts.emplace(ISerialization::getSubstreamsCacheKeyForStream(path), resolveStreamLayout(path));
         },
-        type);
+        ISerialization::SubstreamData(serialization).withType(type));
 }
 
 CompressedColumnSizeEstimator::StreamLayout CompressedColumnSizeEstimator::resolveStreamLayout(const ISerialization::SubstreamPath & path) const
@@ -256,12 +296,14 @@ CompressedColumnSizeEstimator::StreamLayout CompressedColumnSizeEstimator::resol
     const DataTypePtr & substream_type = path.back().data.type;
     const bool is_data_substream = ISerialization::isSpecialCompressionAllowed(path);
 
+    const auto whole_values = [&](size_t size) { return substream_type ? roundCompressBlockSizeToWholeValues(size, *substream_type) : size; };
+
     StreamLayout layout;
     layout.codec = CompressionCodecFactory::instance().get(
         codec_description, is_data_substream ? substream_type.get() : nullptr, default_codec, /*only_generic=*/ !is_data_substream);
-    layout.block_size = substream_type
-        ? roundCompressBlockSizeToWholeValues(settings.max_compress_block_size, *substream_type)
-        : settings.max_compress_block_size;
+    layout.block_size = whole_values(settings.max_compress_block_size);
+    if (settings.adaptive_buffer_for_dynamic_subcolumns && ISerialization::isDynamicSubcolumn(path, path.size()))
+        layout.adaptive_initial_size = whole_values(settings.adaptive_buffer_initial_size);
     return layout;
 }
 
@@ -281,7 +323,9 @@ std::unique_ptr<CompressedColumnSizeEstimator::Writer> CompressedColumnSizeEstim
     std::unique_ptr<Writer> writer(new Writer(type, serialization, settings));
 
     Writer * raw = writer.get();
+    auto enumerate_settings = settings.enumerate;
     serialization->enumerateStreams(
+        enumerate_settings,
         [&](const ISerialization::SubstreamPath & path)
         {
             if (ISerialization::isEphemeralSubcolumn(path, path.size()))
@@ -290,11 +334,12 @@ std::unique_ptr<CompressedColumnSizeEstimator::Writer> CompressedColumnSizeEstim
             const String key = ISerialization::getSubstreamsCacheKeyForStream(path);
             auto it = stream_layouts.find(key);
             const StreamLayout layout = it != stream_layouts.end() ? it->second : resolveStreamLayout(path);
-            raw->streams.push_back({key, std::make_unique<CompressedSizeCalculator>(layout.codec, layout.block_size)});
+            raw->streams.push_back(
+                {key, std::make_unique<CompressedSizeCalculator>(layout.codec, layout.block_size, layout.adaptive_initial_size)});
         },
-        type,
-        column.getPtr());
+        ISerialization::SubstreamData(serialization).withType(type).withColumn(column.getPtr()));
     writer->settings.getter = [raw](const ISerialization::SubstreamPath & path) { return raw->streamFor(path); };
+    writer->settings.stream_mark_getter = [raw](const ISerialization::SubstreamPath & path) { return raw->markFor(path); };
     writer->writePrefix(column);
     return writer;
 }
@@ -304,8 +349,10 @@ CompressedColumnSizeEstimator::startCounting(const DataTypePtr & type, const Wri
 {
     auto serialization = type->getSerialization(*type->getSerializationInfo(column, settings.serialization_info));
     std::unique_ptr<Writer> writer(new Writer(type, serialization, settings));
+    Writer * raw = writer.get();
     writer->counter = std::make_unique<NullWriteBuffer>();
-    writer->settings.getter = [raw = writer.get()](const ISerialization::SubstreamPath & path) { return raw->streamFor(path); };
+    writer->settings.getter = [raw](const ISerialization::SubstreamPath & path) { return raw->streamFor(path); };
+    writer->settings.stream_mark_getter = [raw](const ISerialization::SubstreamPath & path) { return raw->markFor(path); };
     writer->writePrefix(column);
     return writer;
 }
