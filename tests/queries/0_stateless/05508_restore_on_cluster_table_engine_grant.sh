@@ -5,7 +5,7 @@
 # is not refused for the engine of its inner table.
 
 # The hosts of `RESTORE ... ON CLUSTER` create the restored tables without the user, so the initiator requires
-# `TABLE ENGINE` on every engine the definitions name, as a restore without `ON CLUSTER` does.
+# `TABLE ENGINE` on every engine the hosts will create, as a restore without `ON CLUSTER` does.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -28,6 +28,7 @@ CREATE USER ${user} IDENTIFIED WITH no_password;
 GRANT CREATE TABLE, CREATE VIEW, DROP TABLE, SELECT, INSERT ON ${db}.* TO ${user};
 GRANT CLUSTER ON *.* TO ${user};
 GRANT READ ON DISK TO ${user};
+GRANT TABLE ENGINE ON Null TO ${user};
 CREATE TABLE ${db}.src (line String) ENGINE = Memory;
 CREATE TABLE ${db}.t_engine (line String) ENGINE = File(LineAsString, '${CLICKHOUSE_USER_FILES_UNIQUE}/data.txt');
 CREATE MATERIALIZED VIEW ${db}.mv_file ENGINE = File(LineAsString, '${CLICKHOUSE_USER_FILES_UNIQUE}/mv.txt')
@@ -38,11 +39,12 @@ CREATE MATERIALIZED VIEW ${db}.rmv_file REFRESH EVERY 1 YEAR
 BACKUP TABLE ${db}.src, TABLE ${db}.t_engine, TABLE ${db}.mv_file, TABLE ${db}.rmv_file TO ${backup} FORMAT Null;
 "
 
-# Prints the grant that the query of the user lacks, or `restored`.
+# Prints the grant that the query of the user lacks, or `restored`. The other arguments go to the client.
 function restore()
 {
-    local output
-    output=$(${CLICKHOUSE_CLIENT} --user "${user}" --distributed_ddl_output_mode throw -q "$1" 2>&1)
+    local output query=$1
+    shift
+    output=$(${CLICKHOUSE_CLIENT} --user "${user}" --distributed_ddl_output_mode throw "$@" -q "${query}" 2>&1)
     if [ -z "${output}" ]; then
         echo 'restored'
     else
@@ -56,12 +58,24 @@ for t in t_engine mv_file rmv_file; do
     restore "RESTORE TABLE ${db}.${t} AS ${db}.r_${t}_cluster ${cluster} FROM ${backup} FORMAT Null"
 done
 
-echo '--- the hosts may not apply restore_replace_external_engines_to_null, so it exempts no engine on the cluster'
-restore "RESTORE TABLE ${db}.t_engine AS ${db}.r_null_cluster ${cluster} FROM ${backup}
-    SETTINGS restore_replace_external_engines_to_null = 1, allow_different_table_def = 1 FORMAT Null"
+echo '--- a host may drop a session value of restore_replace_external_engines_to_null, so it exempts no engine'
+restore "RESTORE TABLE ${db}.t_engine AS ${db}.r_t_engine_session ${cluster} FROM ${backup}
+    SETTINGS allow_different_table_def = 1 FORMAT Null" --restore_replace_external_engines_to_null 1
 
 echo '--- no table was restored'
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${db}' AND startsWith(name, 'r_')"
+
+echo '--- with restore_replace_external_engines_to_null, the hosts create Null tables, which need only TABLE ENGINE ON Null'
+for t in t_engine mv_file rmv_file; do
+    restore "RESTORE TABLE ${db}.${t} AS ${db}.r_${t}_null ${cluster} FROM ${backup}
+        SETTINGS restore_replace_external_engines_to_null = 1, allow_different_table_def = 1 FORMAT Null"
+done
+${CLICKHOUSE_CLIENT} -q "
+SELECT engine FROM system.tables WHERE database = '${db}' AND name = 'r_t_engine_null';
+SELECT v.name, i.engine FROM system.tables AS v
+    INNER JOIN system.tables AS i ON i.database = v.database AND i.name = concat('.inner_id.', toString(v.uuid))
+    WHERE v.database = '${db}' AND v.name IN ('r_mv_file_null', 'r_rmv_file_null') ORDER BY v.name;
+"
 
 echo '--- with READ and WRITE ON FILE, the tables are restored on the cluster'
 ${CLICKHOUSE_CLIENT} -q "GRANT READ, WRITE ON FILE TO ${user}"
@@ -71,6 +85,9 @@ done
 ${CLICKHOUSE_CLIENT} --user "${user}" -q "SELECT * FROM ${db}.r_t_engine"
 
 ${CLICKHOUSE_CLIENT} -q "
+DROP TABLE ${db}.r_rmv_file_null;
+DROP TABLE ${db}.r_mv_file_null;
+DROP TABLE ${db}.r_t_engine_null;
 DROP TABLE ${db}.r_rmv_file;
 DROP TABLE ${db}.r_mv_file;
 DROP TABLE ${db}.r_t_engine;

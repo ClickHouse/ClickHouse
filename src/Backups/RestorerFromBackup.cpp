@@ -456,17 +456,29 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 else
                     flags |= AccessType::CREATE_TABLE;
 
-                /// The hosts of `RESTORE ... ON CLUSTER` create the table without the user and may not replace an
-                /// external engine with `Null`, so every engine the definition names is checked here.
+                /// The hosts of `RESTORE ... ON CLUSTER` create the tables without the user, so the engines they will
+                /// create are checked here. Only a value in the query reaches every host: a host may drop a session value.
                 if (mode == Mode::CHECK_ACCESS_ONLY)
                 {
-                    if (create.storage && create.storage->engine)
-                        required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
+                    const bool hosts_replace_external_engines_to_null
+                        = context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]
+                        && restore_settings.core_settings.tryGet("restore_replace_external_engines_to_null") != nullptr;
+                    auto add_engine = [&](const ASTStorage & storage)
+                    {
+                        if (!storage.engine)
+                            return;
+                        if (hosts_replace_external_engines_to_null
+                            && StorageFactory::instance().getStorageFeatures(storage.engine->name).source_access_type)
+                            required_access.emplace_back(AccessType::TABLE_ENGINE, "Null");
+                        else
+                            required_access.emplace_back(AccessType::TABLE_ENGINE, storage.engine->name);
+                    };
+                    if (create.storage)
+                        add_engine(*create.storage);
                     if (create.targets)
                     {
                         for (const ASTStorage * inner_engine : create.targets->getInnerEngines())
-                            if (inner_engine->engine)
-                                required_access.emplace_back(AccessType::TABLE_ENGINE, inner_engine->engine->name);
+                            add_engine(*inner_engine);
                     }
                 }
             }
