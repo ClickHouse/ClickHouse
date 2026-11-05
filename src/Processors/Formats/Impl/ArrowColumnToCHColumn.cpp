@@ -1399,6 +1399,8 @@ static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::
                 case GeoEncoding::WKT:
                     result_object = parseWKTFormat(in_buffer, precise_float_parsing);
                     break;
+                case GeoEncoding::Native:
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "A geometry column with a native encoding is not read from bytes");
             }
             appendObjectToGeoColumn(result_object, geo_metadata.type, *column);
         }
@@ -2636,6 +2638,33 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     /// This runs for every nested level too, since the function recurses for nested types.
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
         checkValidityBitmap(*arrow_column->chunk(chunk_i), column_name);
+
+    /// GeoParquet geometry column with a native (GeoArrow) encoding: nested lists of `struct<x, y>`
+    /// with the same layout as the corresponding geo type. Read it as a regular nested column with
+    /// the geo type requested. The geo types are not Nullable, so a NULL geometry becomes the
+    /// default value, the same as for WKB. A different requested type (e.g. `Geometry`) is
+    /// obtained by the cast to the requested type at the end of reading.
+    if (geo_metadata && geo_metadata->encoding == GeoEncoding::Native && settings.allow_geoparquet_parser)
+    {
+        DataTypePtr geo_type = getGeoDataType(geo_metadata->type);
+        auto column = readNonNullableColumnFromArrowColumn(arrow_column,
+            column_name,
+            full_column_name,
+            dictionary_infos,
+            geo_type,
+            is_map_nested_column,
+            /*make_nullable_if_low_cardinality*/ false,
+            /*geo_metadata*/ std::nullopt,
+            settings,
+            arrow_field,
+            parquet_columns_to_clickhouse,
+            clickhouse_columns_to_parquet);
+        if (!column.column)
+            return {};
+        column.column = castColumn(column, geo_type);
+        column.type = geo_type;
+        return column;
+    }
 
     /// LowCardinality(Nullable(...)) holds nulls inside the dictionary, so canBeInsideNullable() is false; exclude it explicitly.
     bool type_hint_not_nullable_capable = type_hint && !type_hint->isLowCardinalityNullable() && !removeNullable(type_hint)->canBeInsideNullable();
