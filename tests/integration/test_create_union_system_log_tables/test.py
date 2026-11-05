@@ -291,9 +291,12 @@ def test_stable_with_non_default_create_settings(start_cluster):
     node5.query("SYSTEM FLUSH LOGS query_log")
 
     # Neither the log table nor its union table is rotated and recreated on every check.
+    # Only the rotated versions (`query_log_0`, ...) are counted: in CI, the export of the
+    # system logs (see helpers/ci_logs_export.py) also creates `query_log_sender` and
+    # `query_log_watcher`.
     assert (
         node5.query(
-            "SELECT count() FROM system.tables WHERE database = 'system' AND name LIKE 'query\\_log\\_%'"
+            "SELECT count() FROM system.tables WHERE database = 'system' AND match(name, '^query_log_[0-9]+$')"
         ).strip()
         == "0"
     )
