@@ -173,6 +173,15 @@ HypotheticalBinding HypotheticalBinding::of(const IAST & definition, const Stora
     return binding;
 }
 
+HypotheticalBinding HypotheticalBinding::of(const ProjectionDescription & projection, const StorageInMemoryMetadata & metadata)
+{
+    auto binding = of(*projection.definition_ast, metadata);
+    /// the walk does not reach an `APPLY` lambda, which is not in `children`, so the columns the analyzer resolved are bound too
+    for (const auto & name : projection.required_columns)
+        bindColumn(name, metadata.getColumns(), binding);
+    return binding;
+}
+
 String HypotheticalBinding::changeTo(const HypotheticalBinding & current, const ContextPtr & context, const StorageID & table_id) const
 {
     auto change = describeChange(*this, current);

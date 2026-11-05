@@ -115,7 +115,7 @@ BlockIO createHypotheticalProjection(
 
     checkHypotheticalObjectIsAddable(merge_tree, metadata, expanded_projection_decl, context);
 
-    store.addProjection(table_id, projection_desc, HypotheticalBinding::of(*projection_desc.definition_ast, *metadata), query.if_not_exists);
+    store.addProjection(table_id, projection_desc, HypotheticalBinding::of(projection_desc, *metadata), query.if_not_exists);
     return {};
 }
 

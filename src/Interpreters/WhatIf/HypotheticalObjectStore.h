@@ -30,6 +30,7 @@ struct HypotheticalBinding
     String settings;
 
     static HypotheticalBinding of(const IAST & definition, const StorageInMemoryMetadata & metadata);
+    static HypotheticalBinding of(const ProjectionDescription & projection, const StorageInMemoryMetadata & metadata);
 
     /// empty when nothing changed, otherwise what changed; a change needs SELECT on the bound columns
     String changeTo(const HypotheticalBinding & current, const ContextPtr & context, const StorageID & table_id) const;

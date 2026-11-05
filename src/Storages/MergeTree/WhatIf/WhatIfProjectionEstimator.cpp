@@ -1319,7 +1319,7 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
     }
 
     const auto change = hypothetical.binding.changeTo(
-        HypotheticalBinding::of(*hypothetical.projection.definition_ast, *metadata), context, data.getStorageID());
+        HypotheticalBinding::of(hypothetical.projection, *metadata), context, data.getStorageID());
     if (!change.empty())
     {
         reason = "Hypothetical projection no longer matches the table: " + change + ". Run CREATE HYPOTHETICAL PROJECTION again";
