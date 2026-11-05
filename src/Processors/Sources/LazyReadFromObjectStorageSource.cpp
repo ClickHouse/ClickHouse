@@ -1,10 +1,13 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Sources/LazyReadFromObjectStorageSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
+
+#include <boost/algorithm/string/predicate.hpp>
 
 namespace DB
 {
@@ -261,7 +264,13 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
     modified_format_settings.vortex.preserve_order = true;
 
     /// All readers together read no more leaf columns at once than the main pass; a lazy read of unknown width keeps one reader.
-    const auto lazy_read_leaf_columns = countLeafColumns(info.format_header);
+    /// Vortex reads a `name.sub` column as the whole field `name`, whose width the header does not show.
+    const bool vortex_reads_whole_fields
+        = std::ranges::any_of(info.format_header, [](const auto & column) { return Nested::extractTableName(column.name) != column.name; })
+        && std::ranges::any_of(
+            files,
+            [&](const auto & file) { return boost::iequals(file.object->getFileFormat().value_or(configuration->format), "Vortex"); });
+    const auto lazy_read_leaf_columns = vortex_reads_whole_fields ? std::nullopt : countLeafColumns(info.format_header);
     const size_t max_streams_for_columns = lazy_read_leaf_columns
         ? std::max<size_t>(max_threads * main_read_leaf_columns / std::max<size_t>(*lazy_read_leaf_columns, 1), 1)
         : 1;

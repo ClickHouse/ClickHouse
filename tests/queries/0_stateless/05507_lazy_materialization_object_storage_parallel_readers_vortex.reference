@@ -1,0 +1,8 @@
+-- the lazy read step is in the plan
+1
+-- the same result with the optimization enabled and disabled
+same
+-- the number of readers
+narrow	8
+subcolumn	1
+tuple	3
