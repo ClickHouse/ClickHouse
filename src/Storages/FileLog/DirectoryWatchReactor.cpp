@@ -286,7 +286,7 @@ void DirectoryWatchReactor::runLoop()
 
 void DirectoryWatchReactor::attachWatcher(DirectoryWatcherBase & watcher, std::unique_ptr<WatcherRegistration> registration)
 {
-    //select one inotify fd at random from the pool
+    /// select one inotify fd at random from the pool
     const int inotify_fd = inotify_fds[std::uniform_int_distribution<size_t>(0, inotify_instances - 1)(thread_local_rng)];
     registration->inotify_fd = inotify_fd;
 
