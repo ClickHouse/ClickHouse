@@ -137,6 +137,57 @@ public:
 
 using HasWildcardVisitor = InDepthNodeVisitor<HasWildcardMatcher, true>;
 
+void collectIdentifierNamesForQueryPlanCache(const ASTPtr & ast, std::set<String> & names)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        names.insert(identifier->name());
+        const auto & parts = identifier->name_parts;
+        for (size_t begin = 0; begin < parts.size(); ++begin)
+        {
+            String name;
+            for (size_t end = begin; end < parts.size(); ++end)
+            {
+                if (end != begin)
+                    name += '.';
+                name += parts[end];
+                names.insert(name);
+            }
+        }
+    }
+
+    for (const auto & child : ast->children)
+        collectIdentifierNamesForQueryPlanCache(child, names);
+}
+
+/// Adds the transitive closure of the columns referenced by the `ALIAS` columns in `column_names`.
+/// Identifiers that are not table columns (e.g. lambda arguments) are ignored. Each column added this
+/// way is validated by its own definition, so a change of an intermediate `ALIAS` invalidates the entry.
+void addColumnsReferencedByAliases(const ColumnsDescription & columns, std::set<String> & column_names)
+{
+    std::vector<String> to_visit(column_names.begin(), column_names.end());
+    while (!to_visit.empty())
+    {
+        String name = std::move(to_visit.back());
+        to_visit.pop_back();
+
+        const auto * column = columns.tryGet(name);
+        if (!column || column->default_desc.kind != ColumnDefaultKind::Alias || !column->default_desc.expression)
+            continue;
+
+        std::set<String> referenced_names;
+        collectIdentifierNamesForQueryPlanCache(column->default_desc.expression, referenced_names);
+        for (const auto & referenced_name : referenced_names)
+        {
+            if (!columns.hasColumnOrSubcolumn(GetColumnsOptions::All, referenced_name))
+                continue;
+
+            if (column_names.insert(referenced_name).second)
+                to_visit.push_back(referenced_name);
+        }
+    }
+}
+
 ASTPtr normalizeASTForQueryPlanCache(const ASTPtr & ast)
 {
     ASTPtr normalized_ast = ast->clone();
@@ -155,7 +206,7 @@ std::optional<QueryPlanCacheStorageDependency> buildStorageDependency(
     const StoragePtr & storage,
     const StorageMetadataPtr & metadata,
     const Names & column_names,
-    bool include_table_columns)
+    const QueryPlanCacheLookupContext & lookup_context)
 {
     QueryPlanCacheStorageDependency dependency;
     dependency.table_name = table_name;
@@ -166,9 +217,9 @@ std::optional<QueryPlanCacheStorageDependency> buildStorageDependency(
     dependency.sampling_key = formatKeyExpression(metadata->sampling_key.expression_list_ast);
     dependency.sorting_key_reverse_flags = metadata->sorting_key.reverse_flags;
 
-    if (include_table_columns)
+    for (const auto & column : metadata->columns)
     {
-        for (const auto & column : metadata->columns)
+        if (lookup_context.has_wildcard || lookup_context.identifier_names.contains(column.name))
             dependency.table_columns.emplace_back(column.name, column.default_desc.kind);
     }
 
@@ -315,6 +366,7 @@ tryBuildPreAnalysisQueryPlanCacheLookup(const ASTPtr & ast, const ContextPtr & c
     lookup_context.key = std::move(key);
     lookup_context.storage_id = std::move(storage_id);
     lookup_context.has_wildcard = wildcard_data.has_wildcard;
+    collectIdentifierNamesForQueryPlanCache(normalized_ast, lookup_context.identifier_names);
     return lookup_context;
 }
 
@@ -426,8 +478,11 @@ std::vector<QueryPlanCacheStorageDependency> buildQueryPlanCacheDependencies(
     dependency_columns.insert(read_columns.begin(), read_columns.end());
     /// An `ALIAS` column inlined into `PREWHERE` is not read physically, but the cached plan depends on its expression.
     dependency_columns.insert(access_checked_columns.begin(), access_checked_columns.end());
+    /// An `ALIAS` column may be expanded only to compute another one (`z ALIAS y + 1`, `y ALIAS a + 1`):
+    /// the intermediate `y` is neither selected nor read, but its expression is baked into the plan.
+    addColumnsReferencedByAliases(storage_snapshot->metadata->columns, dependency_columns);
     Names names(dependency_columns.begin(), dependency_columns.end());
-    auto dependency = buildStorageDependency(expected_table_name, storage, storage_snapshot->metadata, names, lookup_context.has_wildcard);
+    auto dependency = buildStorageDependency(expected_table_name, storage, storage_snapshot->metadata, names, lookup_context);
     if (!dependency)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot capture all dependencies for table {}", expected_table_name);
 
@@ -469,7 +524,7 @@ std::optional<ValidatedQueryPlanCacheEntry> validateQueryPlanCacheEntryAndBuildS
         dependency_columns.push_back(column.name);
 
     auto current_dependency = buildStorageDependency(
-        cached_dependency.table_name, storage, metadata_snapshot, dependency_columns, lookup_context.has_wildcard);
+        cached_dependency.table_name, storage, metadata_snapshot, dependency_columns, lookup_context);
     if (!current_dependency || *current_dependency != cached_dependency)
         return {};
 

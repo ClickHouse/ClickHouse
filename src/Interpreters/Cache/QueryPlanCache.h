@@ -1,5 +1,7 @@
 #pragma once
 
+#include <set>
+
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
@@ -48,6 +50,12 @@ struct QueryPlanCacheLookupContext
     /// The query contains a wildcard (`*`, `t.*`, `COLUMNS(...)`) that the analyzer expands into the
     /// table columns existing at planning time. Such an entry depends on the full list of table columns.
     bool has_wildcard = false;
+
+    /// Every identifier name in the query, together with each contiguous run of the parts of a compound
+    /// identifier (`t.b.c` adds `t`, `b`, `c`, `t.b`, `b.c` and `t.b.c`). A table column with one of these
+    /// names can change how the identifier is resolved: a new column `b` shadows `WITH 100 AS b` under
+    /// `prefer_column_name_to_alias`. So the entry depends on which of these names are table columns.
+    std::set<String> identifier_names;
 };
 
 /// The part of a column definition that can affect a cached read plan. Comments, codecs,
@@ -69,10 +77,12 @@ struct QueryPlanCacheStorageDependency
     String table_name;
     String engine_name;
     std::vector<QueryPlanCacheColumnDependency> columns;
-    /// Names and kinds of all table columns in declaration order, captured only for queries with a
-    /// wildcard (see `QueryPlanCacheLookupContext::has_wildcard`). The wildcard is expanded into a subset
-    /// of them at planning time, so an added, dropped, renamed or reordered column (or a changed column
-    /// kind) invalidates the entry.
+    /// Names and kinds of all table columns in declaration order for queries with a wildcard (see
+    /// `QueryPlanCacheLookupContext::has_wildcard`): the wildcard is expanded into a subset of them at
+    /// planning time, so an added, dropped, renamed or reordered column (or a changed column kind)
+    /// invalidates the entry. For other queries, only the table columns whose names occur among the
+    /// query identifiers (`QueryPlanCacheLookupContext::identifier_names`), so a new column that could
+    /// change identifier resolution invalidates the entry, while an unrelated one does not.
     std::vector<std::pair<String, ColumnDefaultKind>> table_columns;
     String sorting_key;
     String partition_key;
