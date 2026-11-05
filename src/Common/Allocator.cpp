@@ -68,8 +68,10 @@ const bool is_supported_by_kernel = madviseSupportsMadvPopulateWrite();
 size_t readHugePageSizeForHashTables()
 {
 #if defined(OS_LINUX) && defined(MADV_HUGEPAGE)
-    /// Experiment knob: allows to compare both variants with the same binary.
-    if (const char * env = getenv("CLICKHOUSE_HASH_TABLE_HUGE_PAGES"); env && env[0] == '0') // NOLINT(concurrency-mt-unsafe)
+    /// Experiment knob, off by default: `CLICKHOUSE_HASH_TABLE_HUGE_PAGES=1` enables it.
+    /// Every qualifying buffer gets a fresh mapping instead of memory reused by jemalloc, and that makes
+    /// workloads that create and drop many large tables (dictionaries, `DISTINCT`, aggregation) slower.
+    if (const char * env = getenv("CLICKHOUSE_HASH_TABLE_HUGE_PAGES"); !env || env[0] != '1') // NOLINT(concurrency-mt-unsafe)
         return 0;
 
     auto read_first_line = [](const char * path) -> std::string
