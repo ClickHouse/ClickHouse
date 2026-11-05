@@ -206,9 +206,16 @@ public:
     SetHashes getOrComputeSetHashes(const ColumnPtr & set_column, const String & hash_kind, const std::function<SetHashes()> & compute);
 
 private:
+    struct SetHashesEntry
+    {
+        /// Keeps the column alive, so that its address is not reused by another column.
+        ColumnPtr set_column;
+        std::once_flag computed;
+        SetHashes hashes;
+    };
+
     std::mutex set_hashes_mutex;
-    /// The value keeps the column alive, so that its address is not reused by another column.
-    std::map<std::pair<const IColumn *, String>, std::pair<ColumnPtr, SetHashes>> set_hashes;
+    std::map<std::pair<const IColumn *, String>, std::shared_ptr<SetHashesEntry>> set_hashes;
 
 public:
     /// True if the format may skip rows of the file.
