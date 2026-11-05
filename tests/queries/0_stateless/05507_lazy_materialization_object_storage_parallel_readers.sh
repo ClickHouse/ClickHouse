@@ -14,8 +14,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 TABLE="t_${CLICKHOUSE_DATABASE}_lazy_parallel"
 TABLE_PATH="${USER_FILES_PATH}/${TABLE}/"
+ARCHIVE_PATH="${USER_FILES_PATH}/${TABLE}_archive"
 
-trap 'rm -rf "${TABLE_PATH}" 2>/dev/null' EXIT
+trap 'rm -rf "${TABLE_PATH}" "${ARCHIVE_PATH}" 2>/dev/null' EXIT
 
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${TABLE} (
@@ -134,6 +135,21 @@ run_counted 16_nested_dynamic 16 "$S3_NESTED_DYNAMIC" --s3_validate_etag_on_read
 # With `aggregate_function_input_format = 'value'` the format reads the values of the states: the struct of 5 elements.
 S3_AGGREGATE="SELECT k, j FROM s3('${S3_URL}/data_*.parquet', 'test', 'testtest', 'Parquet', 'k Int64, ts Int64, j AggregateFunction(any, Tuple(c1 String, c2 String, c3 String, c4 String, c5 String))') ORDER BY ts, k LIMIT 100"
 run_counted 16_aggregate_value 16 "$S3_AGGREGATE" --s3_validate_etag_on_read=1 --aggregate_function_input_format=value
+# The main pass reads a tar of 8 files with one source, so the lazy pass reads 1 leaf column with 2 readers.
+for i in {0..7}; do
+    ${CLICKHOUSE_CLIENT} --query "
+        INSERT INTO FUNCTION file('${TABLE}_archive/data_${i}.parquet', 'Parquet', 'k Int64, ts Int64, s String')
+        SELECT number AS k, cityHash64(number) % 1000003 AS ts, concat('val_', toString(number)) AS s FROM numbers($((i * 2000)), 2000)
+    "
+done
+tar cf "${ARCHIVE_PATH}/data.tar" -C "${ARCHIVE_PATH}" data_0.parquet data_1.parquet data_2.parquet data_3.parquet \
+    data_4.parquet data_5.parquet data_6.parquet data_7.parquet
+${CLICKHOUSE_CLIENT} --query "
+    INSERT INTO FUNCTION s3('${S3_URL}/data.tar', 'test', 'testtest', 'RawBLOB')
+    SELECT * FROM file('${TABLE}_archive/data.tar', 'RawBLOB') SETTINGS s3_truncate_on_insert = 1
+"
+S3_ARCHIVE="SELECT k, s FROM s3('${S3_URL}/data.tar :: *.parquet', 'test', 'testtest', 'Parquet', 'k Int64, ts Int64, s String') ORDER BY ts, k LIMIT 100"
+run_counted 16_archive 16 "$S3_ARCHIVE" --s3_validate_etag_on_read=1
 
 echo '-- the number of readers'
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS processors_profile_log"

@@ -271,13 +271,13 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
     const bool reads_vortex = std::ranges::any_of(
         files, [&](const auto & file) { return boost::iequals(file.object->getFileFormat().value_or(configuration->format), "Vortex"); });
     const auto lazy_read_leaf_columns = reads_vortex ? std::nullopt : countLeafColumns(parsed_header);
-    /// A reader of the main pass reads one file at a time, and every file that returned rows is registered.
-    size_t main_read_files = 0;
+    /// A source of the main pass reads one file at a time, and every file that returned rows is registered.
+    size_t main_read_streams = 0;
     {
         std::lock_guard lock(rows->file_registry->mutex);
-        main_read_files = rows->file_registry->files.size();
+        main_read_streams = std::min(rows->file_registry->main_read_streams, rows->file_registry->files.size());
     }
-    const size_t main_read_streams = std::min(std::max<size_t>(max_threads, 1), std::max<size_t>(main_read_files, 1));
+    main_read_streams = std::clamp<size_t>(main_read_streams, 1, std::max<size_t>(max_threads, 1));
     const size_t max_streams_for_columns = lazy_read_leaf_columns
         ? std::max<size_t>(main_read_streams * main_read_leaf_columns / std::max<size_t>(*lazy_read_leaf_columns, 1), 1)
         : 1;

@@ -178,6 +178,12 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         num_streams = 1;
     }
 
+    if (lazy_row_index_registry)
+    {
+        std::lock_guard lock(lazy_row_index_registry->mutex);
+        lazy_row_index_registry->main_read_streams = num_streams;
+    }
+
     // here create for node -> query -> level thread pool
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
 

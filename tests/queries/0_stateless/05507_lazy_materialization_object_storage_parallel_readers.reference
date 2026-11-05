@@ -16,6 +16,7 @@ nested, max_threads = 16: same
 04_nested	1
 04_wide	1
 16_aggregate_value	3
+16_archive	2
 16_array	1
 16_dynamic	1
 16_json	1

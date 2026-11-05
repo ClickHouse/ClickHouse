@@ -31,6 +31,8 @@ struct LazyObjectStorageFileRegistry
 
     std::mutex mutex;
     std::vector<ObjectInfoPtr> files;
+    /// The number of sources of the main branch.
+    size_t main_read_streams = 0;
 
     UInt64 registerFile(const ObjectInfoPtr & object_info);
 };
