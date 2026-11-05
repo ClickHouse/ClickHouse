@@ -213,9 +213,10 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeMap::getDynamicSubcolumnInfo(s
 
     /// The bucket of a key is the hash of its bits. The two zeros are equal, but their bits differ,
     /// so the other zero may be in another bucket. A key with a float zero at any depth, e.g. in a `Tuple`
-    /// or in a path of a `JSON`, reads the whole Map.
+    /// or in a path of a `JSON`, reads the whole Map. So does a key with a `JSON` or `Dynamic` value:
+    /// older versions put such keys into buckets by another hash of them.
     bool read_whole_map = map_serialization.getMapSerializationVersion() == MergeTreeMapSerializationVersion::WITH_BUCKETS
-        && anyFieldSatisfies((*key_column)[0], isFloatZeroField);
+        && (key_type->hasDynamicStructure() || anyFieldSatisfies((*key_column)[0], isFloatZeroField));
 
     auto key_value_serialization = SerializationMapKeyValue::create(
         map_serialization.getValueSerialization(),
