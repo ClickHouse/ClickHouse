@@ -430,7 +430,7 @@ TEST(UnhashedPackedStringRef, HeapPointer)
     EXPECT_EQ(buildUnhashed("").heapSize(), 0u);
 
     const std::string original(40, 'q');
-    const std::string copy = original;
+    const std::string copy(original.data(), original.size());
     UnhashedPackedStringRef ref = UnhashedPackedStringRef::buildLong(original.data(), original.size());
     ASSERT_EQ(ref.getHeapPtr(), original.data());
 
