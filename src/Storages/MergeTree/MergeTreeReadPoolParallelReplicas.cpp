@@ -97,7 +97,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 merge_tree_min_read_task_size;
+    extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsUInt64 parallel_replicas_mark_segment_size;
 }
 
