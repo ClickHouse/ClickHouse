@@ -11,6 +11,10 @@ doc_type: 'guide'
 Horizontal autoscaling is in Private Preview and is available on the Scale and Enterprise plans. To request access, contact your ClickHouse account team or support.
 </Note>
 
+<Note>
+[Gen 2 compute](/products/cloud/features/compute-generations) does not support horizontal autoscaling during Private Preview. See the Gen 2 documentation for its supported scaling options.
+</Note>
+
 Horizontal autoscaling automatically adds or removes replicas in your service in response to workload demand. Where vertical autoscaling changes the size of each replica, horizontal autoscaling changes the number of replicas, making it well suited to workloads where demand comes from more queries rather than heavier queries.
 
 ## How it works {#how-it-works}
