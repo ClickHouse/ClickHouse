@@ -46,7 +46,7 @@ struct LocalQueryState
     bool enable_trino_dialect = false;
     /// The `polyglot` dialect transpiles the query, so the `input()` initializer must reparse it with
     /// the same source dialect and feature gate that accepted it.
-    bool allow_experimental_polyglot_dialect = false;
+    bool enable_polyglot_dialect = false;
     String polyglot_dialect;
     String promql_database;
     String promql_table;
@@ -79,8 +79,8 @@ struct LocalQueryState
     std::shared_ptr<ColumnsDescription> columns_description;
     std::optional<ProfileInfo> profile_info;
 
-    /// Is request cancelled
-    bool is_cancelled = false;
+    /// Is request cancelled. Atomic: the interactive cancel callback may set it on a pipeline thread.
+    std::atomic_bool is_cancelled = false;
     bool is_finished = false;
 
     bool sent_totals = false;

@@ -270,6 +270,11 @@ HTTPHandler::HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & 
 HTTPHandler::~HTTPHandler() = default;
 
 
+String HTTPHandler::getURIForLogging(const HTTPServerRequest & request) const
+{
+    return maskSensitiveQueryParametersInURI(request.getURI(), [this](const std::string & name) { return isQueryTextParameter(name); });
+}
+
 bool HTTPHandler::authenticateUser(HTTPServerRequest & request, HTMLForm & params, HTTPServerResponse & response)
 {
     return authenticateUserByHTTP(request, params, response, *session, request_credentials, connection_config, server.context(), log);
@@ -286,7 +291,7 @@ void HTTPHandler::processQuery(
 {
     using namespace Poco::Net;
 
-    LOG_TRACE(log, "Request URI: {}", maskSensitiveQueryParametersInURI(request.getURI()));
+    LOG_TRACE(log, "Request URI: {}", getURIForLogging(request));
 
     if (!authenticateUser(request, params, response))
         return; // '401 Unauthorized' response with 'Negotiate' has been sent at this point.
@@ -1761,7 +1766,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             context->getOpenTelemetrySpanLog());
         thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
         thread_trace_context->root_span.addAttribute(
-            "clickhouse.uri", [&] { return maskSensitiveQueryParametersInURI(request.getURI()); });
+            "clickhouse.uri", [&] { return getURIForLogging(request); });
         thread_trace_context->root_span.addAttribute("http.referer", request.get("Referer", ""));
         thread_trace_context->root_span.addAttribute("http.user.agent", request.get("User-Agent", ""));
         thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
@@ -1914,6 +1919,12 @@ bool DynamicQueryHandler::customizeQueryParam(NameToNameMap & query_parameters, 
     return false;
 }
 
+bool DynamicQueryHandler::isQueryTextParameter(const std::string & name) const
+{
+    /// Case-insensitive, like the params.get(param_name) lookup in getQuery.
+    return Poco::icompare(name, param_name) == 0 || startsWith(name, QUERY_PARAMETER_NAME_PREFIX);
+}
+
 std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)
 {
     /// Only the built-in catch-all enables path uploads. Config-defined handlers keep their query parameters.
@@ -1995,6 +2006,11 @@ bool PredefinedQueryHandler::customizeQueryParam(NameToNameMap & query_parameter
     }
 
     return false;
+}
+
+bool PredefinedQueryHandler::isQueryTextParameter(const std::string & name) const
+{
+    return receive_params.contains(name) || startsWith(name, QUERY_PARAMETER_NAME_PREFIX);
 }
 
 void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, ContextMutablePtr context, ReadBuffer & body)

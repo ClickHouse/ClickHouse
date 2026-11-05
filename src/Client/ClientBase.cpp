@@ -161,7 +161,7 @@ namespace Setting
     extern const SettingsBool throw_if_no_data_to_insert;
     extern const SettingsBool implicit_select;
     extern const SettingsBool apply_settings_from_server;
-    extern const SettingsBool allow_experimental_polyglot_dialect;
+    extern const SettingsBool enable_polyglot_dialect;
     extern const SettingsBool enable_trino_dialect;
     extern const SettingsBool enable_json_ast_dialect;
     extern const SettingsUInt64 max_ast_depth;
@@ -763,7 +763,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         else if (dialect == Dialect::polyglot)
         {
             max_length = 0;
-            parser = std::make_unique<ParserPolyglotQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect], settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+            parser = std::make_unique<ParserPolyglotQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::enable_polyglot_dialect], settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
         }
         else if (dialect == Dialect::logsql)
             parser = std::make_unique<ParserLogsQLQuery>(
@@ -3229,7 +3229,7 @@ void ClientBase::processParsedSingleQuery(
         /// `INSERT ... VALUES SETTINGS ... (...)` as `Values` payload, diverging from the parse the
         /// client already accepted.
         static constexpr std::array polyglot_parse_setting_names{
-            "allow_experimental_polyglot_dialect",
+            "enable_polyglot_dialect",
             "polyglot_dialect",
             "allow_settings_after_format_in_insert",
             "implicit_select",
@@ -3327,7 +3327,7 @@ void ClientBase::processParsedSingleQuery(
             /// The original query text is sent verbatim, and the server transpiles it under the
             /// settings that accompany the query. Pin those settings to their parse-time values so the
             /// query's own `SETTINGS` clause cannot change how the very same text is interpreted on the
-            /// server (e.g. `SELECT 1 SETTINGS allow_experimental_polyglot_dialect = 0` must not be
+            /// server (e.g. `SELECT 1 SETTINGS enable_polyglot_dialect = 0` must not be
             /// accepted locally and then rejected by the server before transpilation). Like the
             /// `clickhouse_json` pinning above, this is transient: a `SET` still takes effect for
             /// subsequent queries (it is applied to the server session and re-applied to the client

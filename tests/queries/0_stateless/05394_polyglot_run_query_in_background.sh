@@ -16,10 +16,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t (n UInt64) ENGINE = MergeTree ORDER BY n"
 
-url="${CLICKHOUSE_URL}&async_insert=0&run_query_in_background=1&allow_experimental_polyglot_dialect=1&dialect=polyglot&polyglot_dialect=clickhouse"
+url="${CLICKHOUSE_URL}&async_insert=0&run_query_in_background=1&enable_polyglot_dialect=1&dialect=polyglot&polyglot_dialect=clickhouse"
 
 gate_id="gate_${CLICKHOUSE_DATABASE}"
-${CLICKHOUSE_CURL} -sS "${url}&query_id=${gate_id}" -d "INSERT INTO t SELECT 41 + 1 SETTINGS allow_experimental_polyglot_dialect = 0"
+${CLICKHOUSE_CURL} -sS "${url}&query_id=${gate_id}" -d "INSERT INTO t SELECT 41 + 1 SETTINGS enable_polyglot_dialect = 0"
 dialect_id="dialect_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CURL} -sS "${url}&query_id=${dialect_id}" -d "INSERT INTO t SELECT 43 SETTINGS dialect = 'clickhouse'"
 

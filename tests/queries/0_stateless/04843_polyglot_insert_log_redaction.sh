@@ -13,7 +13,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # triggered first and the log is flushed and checked once at the end: `SYSTEM FLUSH LOGS` is
 # expensive under sanitizers and remote storage, so one shared flush-retry loop keeps the test fast.
 
-POLY="--allow_experimental_polyglot_dialect 1 --dialect polyglot --polyglot_dialect postgresql"
+POLY="--enable_polyglot_dialect 1 --dialect polyglot --polyglot_dialect postgresql"
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t (x Int32) ENGINE = MergeTree ORDER BY x"
 

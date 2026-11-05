@@ -23,7 +23,7 @@ mkdir -p "$DB_PATH"
 $CLICKHOUSE_LOCAL --path "$DB_PATH" -q "CREATE TABLE t (x Int32) ENGINE = MergeTree ORDER BY x" < /dev/null
 
 echo "--- PostgreSQL-style cast over input() (expect: 3 2) ---"
-printf '1\n2\n' | $CLICKHOUSE_LOCAL --path "$DB_PATH" --allow_experimental_polyglot_dialect 1 --dialect polyglot --polyglot_dialect postgresql --input_format TSV \
+printf '1\n2\n' | $CLICKHOUSE_LOCAL --path "$DB_PATH" --enable_polyglot_dialect 1 --dialect polyglot --polyglot_dialect postgresql --input_format TSV \
     -q "INSERT INTO t SELECT x::Int32 FROM input('x String')"
 $CLICKHOUSE_LOCAL --path "$DB_PATH" -q "SELECT sum(x), count() FROM t" < /dev/null
 
@@ -31,7 +31,7 @@ $CLICKHOUSE_LOCAL --path "$DB_PATH" -q "SELECT sum(x), count() FROM t" < /dev/nu
 # `#comment`, while the ClickHouse lexer only treats `#` as a comment when it is followed by a space
 # or `!`. If the `input()` initializer reparsed this text with the ClickHouse parser it would fail.
 echo "--- lexically foreign query over input() (expect: 18 4) ---"
-printf '7\n8\n' | $CLICKHOUSE_LOCAL --path "$DB_PATH" --allow_experimental_polyglot_dialect 1 --dialect polyglot --polyglot_dialect bigquery --input_format TSV \
+printf '7\n8\n' | $CLICKHOUSE_LOCAL --path "$DB_PATH" --enable_polyglot_dialect 1 --dialect polyglot --polyglot_dialect bigquery --input_format TSV \
     -q "INSERT INTO t SELECT x FROM input('x Int32') #comment"
 $CLICKHOUSE_LOCAL --path "$DB_PATH" -q "SELECT sum(x), count() FROM t" < /dev/null
 

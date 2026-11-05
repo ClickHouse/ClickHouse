@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-POLY="--allow_experimental_polyglot_dialect 1 --dialect polyglot --polyglot_dialect bigquery"
+POLY="--enable_polyglot_dialect 1 --dialect polyglot --polyglot_dialect bigquery"
 
 # A source-dialect statement whose original text is not lexically valid ClickHouse SQL: BigQuery
 # spells a single-line comment `#comment`, while the ClickHouse lexer only treats `#` as a comment
@@ -26,7 +26,7 @@ echo "--- clickhouse-local accepts it in the polyglot dialect (expect: 1) ---"
 $CLICKHOUSE_LOCAL $POLY -q "$FOREIGN"
 
 echo "--- the HTTP (server) interface accepts it too (expect: 1) ---"
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&allow_experimental_polyglot_dialect=1&dialect=polyglot&polyglot_dialect=bigquery" -d "$FOREIGN"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_polyglot_dialect=1&dialect=polyglot&polyglot_dialect=bigquery" -d "$FOREIGN"
 
 # The same statement in a multi-statement script: the client splits and classifies every statement
 # without lexing the foreign text either.

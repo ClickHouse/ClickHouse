@@ -10,7 +10,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # owns. Consumers of a copied context (`Context::createCopy`) - the asynchronous insert queue and
 # the `Distributed` sink - must still see that transpiled query.
 
-POLY="--allow_experimental_polyglot_dialect 1 --dialect polyglot --polyglot_dialect postgresql"
+POLY="--enable_polyglot_dialect 1 --dialect polyglot --polyglot_dialect postgresql"
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t (x Int32) ENGINE = MergeTree ORDER BY x"
 

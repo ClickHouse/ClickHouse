@@ -19,7 +19,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # relying on the default table engine ignores the command-line MergeTree settings in the native dialect
 # too (see `addMergeTreeSettings`), so polyglot behaves the same there.
 
-POLY_CH="--allow_experimental_polyglot_dialect 1 --dialect polyglot --polyglot_dialect clickhouse"
+POLY_CH="--enable_polyglot_dialect 1 --dialect polyglot --polyglot_dialect clickhouse"
 
 query_id="04844_${CLICKHOUSE_DATABASE}_${RANDOM}${RANDOM}"
 $CLICKHOUSE_CLIENT $POLY_CH --allow_merge_tree_settings --index_granularity=1024 --query_id "$query_id" -q "CREATE TABLE t (x Int32, y String) ENGINE = MergeTree ORDER BY x"
@@ -47,7 +47,7 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 # In a foreign SQL dialect the transpiled `CREATE` has no MergeTree engine, so — exactly like a native
 # `CREATE` relying on the default table engine — the command-line MergeTree settings do not apply, and
 # the query is sent verbatim. The transpiled types still work.
-POLY_PG="--allow_experimental_polyglot_dialect 1 --dialect polyglot --polyglot_dialect postgresql"
+POLY_PG="--enable_polyglot_dialect 1 --dialect polyglot --polyglot_dialect postgresql"
 $CLICKHOUSE_CLIENT $POLY_PG --allow_merge_tree_settings --index_granularity=1024 -q "CREATE TABLE t (x int, y text)"
 $CLICKHOUSE_CLIENT -q "SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't' ORDER BY name"
 

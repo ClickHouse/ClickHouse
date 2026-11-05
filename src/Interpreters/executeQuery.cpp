@@ -179,9 +179,9 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_ast_dialect;
-    extern const SettingsBool allow_experimental_polyglot_dialect;
-    extern const SettingsBool allow_experimental_kusto_dialect;
-    extern const SettingsBool allow_experimental_prql_dialect;
+    extern const SettingsBool enable_polyglot_dialect;
+    extern const SettingsBool enable_kusto_dialect;
+    extern const SettingsBool enable_prql_dialect;
     extern const SettingsBool enable_trino_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
@@ -2448,7 +2448,7 @@ static BlockIO executeQueryImpl(
         else if (settings[Setting::dialect] == Dialect::kusto && use_request_dialect)
         {
             const char * kql_pos = begin;
-            if (!settings[Setting::allow_experimental_kusto_dialect])
+            if (!settings[Setting::enable_kusto_dialect])
             {
                 /// A plain `SET` passes even when the gate is off, so a session that is
                 /// already in `dialect = 'kusto'` can run `SET dialect = 'clickhouse'`
@@ -2456,7 +2456,7 @@ static BlockIO executeQueryImpl(
                 out_ast = tryParseKQLSetStatement(
                     kql_pos, end, max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
                 if (!out_ast)
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the Kusto Query Language (KQL) is disabled (turn on setting 'allow_experimental_kusto_dialect')");
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the Kusto Query Language (KQL) is disabled (turn on setting 'enable_kusto_dialect')");
             }
             else
                 out_ast = parseKQLQuery(
@@ -2464,8 +2464,8 @@ static BlockIO executeQueryImpl(
         }
         else if (settings[Setting::dialect] == Dialect::prql && use_request_dialect)
         {
-            if (!settings[Setting::allow_experimental_prql_dialect])
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PRQL is disabled (turn on setting 'allow_experimental_prql_dialect')");
+            if (!settings[Setting::enable_prql_dialect])
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PRQL is disabled (turn on setting 'enable_prql_dialect')");
             ParserPRQLQuery parser(max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
             out_ast = parseQuery(parser, begin, end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
         }
@@ -2511,10 +2511,10 @@ static BlockIO executeQueryImpl(
             }
             else
             {
-                if (!settings[Setting::allow_experimental_polyglot_dialect])
+                if (!settings[Setting::enable_polyglot_dialect])
                     throw Exception(
                         ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Support for polyglot SQL transpiler is disabled (turn on setting 'allow_experimental_polyglot_dialect')");
+                        "Support for polyglot SQL transpiler is disabled (turn on setting 'enable_polyglot_dialect')");
 
                 const String source_dialect = settings[Setting::polyglot_dialect];
                 if (source_dialect.empty())
@@ -2927,7 +2927,7 @@ static BlockIO executeQueryImpl(
 
             /// A background run re-parses the original query text (see `executeQueryInBackground`) with a copy of `context`,
             /// which by then carries the query's own `SETTINGS` clause. Remember the settings that governed the parse of the
-            /// text, so that e.g. `SELECT 1 SETTINGS allow_experimental_polyglot_dialect = 0` under the `polyglot` dialect, or
+            /// text, so that e.g. `SELECT 1 SETTINGS enable_polyglot_dialect = 0` under the `polyglot` dialect, or
             /// `SETTINGS dialect = 'clickhouse'` on a transpiled query, is not accepted here and then rejected or interpreted
             /// differently by the background run.
             SettingsChanges parse_settings_for_background;
@@ -2935,7 +2935,7 @@ static BlockIO executeQueryImpl(
             {
                 static constexpr std::array parse_setting_names{
                     "dialect",
-                    "allow_experimental_polyglot_dialect",
+                    "enable_polyglot_dialect",
                     "polyglot_dialect",
                     "allow_settings_after_format_in_insert",
                     "implicit_select",

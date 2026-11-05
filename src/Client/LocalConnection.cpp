@@ -28,6 +28,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage.h>
+#include <base/getThreadId.h>
 #include <Common/config_version.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentThread.h>
@@ -53,7 +54,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_polyglot_dialect;
+    extern const SettingsBool enable_polyglot_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool enable_trino_dialect;
     extern const SettingsString database;
@@ -330,10 +331,14 @@ void LocalConnection::sendQuery(
     if (is_cancelled_callback)
     {
         query_context->setInteractiveCancelCallback(
-            [this, check_cancelled = is_cancelled_callback, progress_callback = process_progress_callback]() -> bool
+            [this,
+             check_cancelled = is_cancelled_callback,
+             progress_callback = process_progress_callback,
+             client_thread_id = getThreadId()]() -> bool
         {
             /// Send accumulated progress to the client so the progress bar updates during analysis.
-            if (progress_callback)
+            /// Only from the client's thread: the client is not thread-safe, and this callback also runs on pipeline threads.
+            if (progress_callback && getThreadId() == client_thread_id)
             {
                 auto progress = state->progress.fetchAndResetPiecewiseAtomically();
                 if (progress.read_rows || progress.read_bytes)
@@ -396,7 +401,7 @@ void LocalConnection::sendQuery(
     state->implicit_select = parse_time_implicit_select;
     state->enable_trino_dialect = parse_time_enable_trino_dialect;
     /// Pinned by the client to the parse-time values for a verbatim polyglot query, like the dialect.
-    state->allow_experimental_polyglot_dialect = query_context->getSettingsRef()[Setting::allow_experimental_polyglot_dialect];
+    state->enable_polyglot_dialect = query_context->getSettingsRef()[Setting::enable_polyglot_dialect];
     state->polyglot_dialect = query_context->getSettingsRef()[Setting::polyglot_dialect];
     state->promql_database = parse_time_promql_database;
     state->promql_table = parse_time_promql_table;
@@ -524,7 +529,7 @@ void LocalConnection::sendQuery(
             /// statement is what `executeQuery` runs, and this reparse only has to agree with it about
             /// the `input()` structure hint and the data format.
             else if (dialect == Dialect::polyglot)
-                parser = std::make_unique<ParserPolyglotQuery>(state->max_query_size, state->max_parser_depth, state->max_parser_backtracks, state->polyglot_dialect, end, state->allow_experimental_polyglot_dialect, state->allow_settings_after_format_in_insert, state->implicit_select);
+                parser = std::make_unique<ParserPolyglotQuery>(state->max_query_size, state->max_parser_depth, state->max_parser_backtracks, state->polyglot_dialect, end, state->enable_polyglot_dialect, state->allow_settings_after_format_in_insert, state->implicit_select);
             else
                 parser = std::make_unique<ParserQuery>(end, state->allow_settings_after_format_in_insert, state->implicit_select);
 

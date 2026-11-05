@@ -12,8 +12,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # external data. They are separate files so that neither exceeds the per-run time limit of the
 # flaky check.
 
-POLY="--allow_experimental_polyglot_dialect 1 --dialect polyglot --polyglot_dialect postgresql"
-POLY_CH="--allow_experimental_polyglot_dialect 1 --dialect polyglot --polyglot_dialect clickhouse"
+POLY="--enable_polyglot_dialect 1 --dialect polyglot --polyglot_dialect postgresql"
+POLY_CH="--enable_polyglot_dialect 1 --dialect polyglot --polyglot_dialect clickhouse"
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t (x Int32) ENGINE = MergeTree ORDER BY x"
 
@@ -23,7 +23,7 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE t (x Int32) ENGINE = MergeTree ORDER BY x"
 # data. For a foreign dialect that would mix two parsing rules in a single INSERT: the inline data
 # is transpiled and counted towards `max_query_size`, while the body is neither. The server rejects
 # a non-empty body instead of reading it, mirroring the client-side rule for stdin and INFILE.
-poly_url="${CLICKHOUSE_URL}&allow_experimental_polyglot_dialect=1&dialect=polyglot&polyglot_dialect=postgresql&input_format_connection_handling=1&input_format_max_block_wait_ms=1000"
+poly_url="${CLICKHOUSE_URL}&enable_polyglot_dialect=1&dialect=polyglot&polyglot_dialect=postgresql&input_format_connection_handling=1&input_format_max_block_wait_ms=1000"
 
 # An empty body is the normal way to run a polyglot INSERT over HTTP and must keep working.
 ${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query=INSERT%20INTO%20t%20VALUES%20(7)" -d ''
@@ -99,7 +99,7 @@ $CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
 # Disabling the polyglot dialect from inside the query must not make the server reject the text the
 # client already accepted; the SETTINGS clause still applies to the query's execution itself.
 echo "--- a polyglot query may disable the polyglot dialect in its own SETTINGS clause (expect: 42) ---"
-$CLICKHOUSE_CLIENT $POLY_CH -q "SELECT 41 + 1 SETTINGS allow_experimental_polyglot_dialect = 0"
+$CLICKHOUSE_CLIENT $POLY_CH -q "SELECT 41 + 1 SETTINGS enable_polyglot_dialect = 0"
 
 # Likewise, switching `dialect` inside an inline INSERT must not pull it off the verbatim path: the
 # polyglot parser already cleared `insert->data` (the server reads the data from the transpiled
