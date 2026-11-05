@@ -32,7 +32,7 @@ TTLColumnAlgorithm::TTLColumnAlgorithm(
         new_ttl_info.ttl_finished = true;
 }
 
-/// The default of a Nested subcolumn keeps the array sizes, which it shares with the other subcolumns.
+/// The default of a `Nested` subcolumn keeps the array sizes, which it shares with the other subcolumns.
 static ColumnPtr createArraysOfDefaults(const IColumn & column)
 {
     const auto & column_array = assert_cast<const ColumnArray &>(column);
@@ -70,7 +70,6 @@ void TTLColumnAlgorithm::execute(Block & block)
         auto default_column = executeExpressionAndGetColumn(default_expression, block, default_column_name);
         if (!default_column && shares_nested_offsets)
             default_column = createArraysOfDefaults(*column_with_type.column);
-
         if (default_column)
         {
             default_column = default_column->convertToFullColumnIfConst();

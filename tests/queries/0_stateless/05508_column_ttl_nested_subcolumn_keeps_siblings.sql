@@ -5,6 +5,7 @@ DROP TABLE IF EXISTS t_nested_ttl_wide;
 DROP TABLE IF EXISTS t_nested_ttl_rows;
 DROP TABLE IF EXISTS t_nested_ttl_compact;
 
+-- A Wide part with every row expired, the type change also rewrites the subcolumn.
 CREATE TABLE t_nested_ttl_wide (id UInt64, ts DateTime, n Nested(a String, b String))
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
@@ -23,6 +24,7 @@ ALTER TABLE t_nested_ttl_rows MODIFY COLUMN `n.a` Array(String) TTL ts + INTERVA
 OPTIMIZE TABLE t_nested_ttl_rows FINAL;
 SELECT 'rows', id, `n.a`, `n.b` FROM t_nested_ttl_rows ORDER BY id;
 
+-- A Compact part stores the sizes of each subcolumn separately, but it gets the same default.
 CREATE TABLE t_nested_ttl_compact (id UInt64, ts DateTime, n Nested(a String, b String))
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000;
