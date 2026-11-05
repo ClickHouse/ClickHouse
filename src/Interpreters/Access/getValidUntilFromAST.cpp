@@ -1,4 +1,5 @@
 #include <Interpreters/Access/getValidUntilFromAST.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <IO/parseDateTimeBestEffort.h>
 #include <IO/ReadHelpers.h>
@@ -69,7 +70,7 @@ namespace DB
             /// has no single type for a sum of intervals of different kinds, so `FunctionBinaryArithmetic`
             /// folds e.g. `INTERVAL 1 DAY + INTERVAL 2 HOUR` into `Tuple(IntervalDay, IntervalHour)`
             /// (a sum of intervals of the same kind stays a plain `Interval`).
-            const auto interval_type = evaluateConstantExpression(ast, context).second;
+            const auto interval_type = evaluateConstantExpressionAsColumn(ast, context).getType();
             DataTypes interval_types;
             if (WhichDataType(*interval_type).isInterval())
             {
@@ -133,8 +134,8 @@ namespace DB
             /// (`9999-12-31 23:59:59 UTC`), which is above `MAX_VALID_UNTIL_TIME` (see the constant's
             /// declaration) and so would be displayed clamped on a positive-offset node; saturate at
             /// `MAX_VALID_UNTIL_TIME` instead, so the stored deadline displays exactly in every time zone.
-            const auto deadline = evaluateConstantExpression(ast, context).first;
-            return std::clamp<time_t>(static_cast<time_t>(deadline.safeGet<Int64>()), 1, MAX_VALID_UNTIL_TIME);
+            const Int64 deadline = evaluateConstantExpressionAsColumn(ast, context).getInt();
+            return std::clamp<time_t>(static_cast<time_t>(deadline), 1, MAX_VALID_UNTIL_TIME);
         }
 
         if (context)

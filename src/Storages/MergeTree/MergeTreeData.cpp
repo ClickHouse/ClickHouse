@@ -90,6 +90,7 @@
 #include <Planner/TableExpressionData.h>
 #include <Storages/StorageDummy.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/QueryMetadataCache.h>
@@ -11257,8 +11258,9 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         else
         {
             /// E.g. a cast of an empty tuple, produced by a substituted query parameter of type `Tuple()`.
-            Field partition_key_value = evaluateConstantExpression(partition_value_ast, local_context).first;
-            if (partition_key_value.getType() != Field::Types::Tuple || !partition_key_value.safeGet<Tuple>().empty())
+            const auto partition_key_type = evaluateConstantExpressionAsColumn(partition_value_ast, local_context).getType();
+            const auto * partition_key_tuple = typeid_cast<const DataTypeTuple *>(partition_key_type.get());
+            if (!partition_key_tuple || !partition_key_tuple->getElements().empty())
                 throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition key is empty, expected 'tuple()' as partition key");
         }
     }

@@ -4,6 +4,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
+#include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
@@ -67,11 +68,9 @@ NameToNameMap analyzeFunctionParamValues(const ASTPtr & ast, ContextPtr context)
         /// is text-escaped the way `ReplaceQueryParameterVisitor` expects (it reads the value back
         /// with `deserializeTextEscaped`). This mirrors the analyzer counterpart in `QueryAnalyzer`,
         /// which likewise has no separate literal path.
-        auto [field, type] = evaluateConstantExpression(value, context);
-        auto column = type->createColumn();
-        column->insert(field);
+        const auto constant = evaluateConstantExpressionAsColumn(value, context);
         WriteBufferFromOwnString buffer;
-        type->getDefaultSerialization()->serializeTextEscaped(*column, 0, buffer, {});
+        constant.getType()->getDefaultSerialization()->serializeTextEscaped(constant.getColumn()->getDataColumn(), 0, buffer, {});
         parameter_values[identifier->name()] = buffer.str();
     }
 
