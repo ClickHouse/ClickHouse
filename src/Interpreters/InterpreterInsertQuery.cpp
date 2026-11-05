@@ -1795,9 +1795,16 @@ void InterpreterInsertQuery::setInsertContextValues(ContextMutablePtr context_, 
             std::string current_name = identifier->getColumnName();
             found_insert_columns.emplace_back(std::move(current_name));
         }
-
     }
-    context_->setInsertionTable(insert_query.table_id, !found_insert_columns.empty() ? found_insert_columns : column_names, std::make_shared<ColumnsDescription>(metadata_snapshot->columns));
+    if (found_insert_columns.empty())
+    {
+        found_insert_columns = column_names;
+    }
+    std::optional<Names> names;
+    if (!found_insert_columns.empty()) {
+        names = found_insert_columns;
+    }
+    context_->setInsertionTable(insert_query.table_id, names, std::make_shared<ColumnsDescription>(metadata_snapshot->columns));
 }
 
 void registerInterpreterInsertQuery(InterpreterFactory & factory);
