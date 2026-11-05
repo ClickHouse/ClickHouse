@@ -89,7 +89,7 @@ The collector now exposes OTLP gRPC on `4317` and OTLP HTTP on `4318`. Applicati
 <Info>
 **Production deployments**
 
-For production, we recommend enabling TLS on the OTLP endpoint. See [Securing the collector](/clickstack/ingesting-data/collector#securing-the-collector).
+For production, we recommend enabling TLS on the OTLP endpoint. See [Securing the collector](/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured).
 </Info>
 
 </Tab>
@@ -196,7 +196,7 @@ A few things to note:
 
 Reload your collector with the new configuration. Keep the OTLP endpoint and whatever auth header your setup expects to hand, you'll point the application at them in the next steps.
 
-For further details on configuring OpenTelemetry collectors against self-managed ClickHouse Observability, see [Ingesting with OpenTelemetry](/clickstack/ingesting-data/opentelemetry).
+For further details on configuring OpenTelemetry collectors against self-managed ClickHouse Observability, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry#self-managed).
 
 </Tab>
 
@@ -348,8 +348,8 @@ If nothing shows up:
 
 ## Further reading {#further-reading}
 
-- [Monitoring Kubernetes](/clickstack/managed-onboarding/monitoring-kubernetes): collect logs, infra metrics, and Kubernetes events from a cluster.
-- [Monitoring AWS CloudWatch logs](/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): forward CloudWatch logs via the OpenTelemetry CloudWatch receiver.
-- [Tuning self-managed ClickHouse Observability](/clickstack/managed-onboarding/tuning-clickstack-schema): refine your schema for query performance and storage efficiency.
-- [Securing the collector](/clickstack/ingesting-data/collector#securing-the-collector) with TLS on the OTLP endpoint and least-privilege ingestion users.
-- [Going to production](/clickstack/managing/production) for recommendations when going to production.
+- [Monitoring Kubernetes](/clickstack/self-configured/managed-onboarding/monitoring-kubernetes): collect logs, infra metrics, and Kubernetes events from a cluster.
+- [Monitoring AWS CloudWatch logs](/clickstack/self-configured/managed-onboarding/monitoring-aws-cloudwatch-logs): forward CloudWatch logs via the OpenTelemetry CloudWatch receiver.
+- [Tuning self-managed ClickHouse Observability](/clickstack/self-configured/managed-onboarding/tuning-clickstack-schema): refine your schema for query performance and storage efficiency.
+- [Securing the collector](/clickstack/self-configured/ingesting-data/collector#securing-the-collector-self-configured) with TLS on the OTLP endpoint and least-privilege ingestion users.
+- [Going to production](/clickstack/self-configured/managing/production) for recommendations when going to production.
