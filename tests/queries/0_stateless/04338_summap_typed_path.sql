@@ -574,3 +574,33 @@ SELECT sumMap(k, v) FROM
     UNION ALL
     SELECT [tuple(toDecimal64(11, 2)::Dynamic)] AS k, [2] AS v
 );
+
+-- ===================== Long arrays: elements accumulated in batches =====================
+
+-- One row holds more elements than one batch (256), and every key repeats across batch boundaries.
+-- Each result must match the same aggregation done with `ARRAY JOIN` and `GROUP BY`.
+SELECT 'Long arrays sumMap';
+SELECT sumMap(arrayMap(x -> x % 300, range(1000)), arrayMap(x -> toUInt64(x), range(1000)))
+    = (SELECT (groupArray(k), groupArray(s)) FROM (SELECT number % 300 AS k, sum(number) AS s FROM numbers(1000) GROUP BY k ORDER BY k));
+
+SELECT 'Long arrays String keys';
+SELECT sumMap(arrayMap(x -> toString(x % 300), range(1000)), arrayMap(x -> toUInt64(x), range(1000)))
+    = (SELECT (groupArray(k), groupArray(s)) FROM (SELECT toString(number % 300) AS k, sum(number) AS s FROM numbers(1000) GROUP BY k ORDER BY k));
+
+SELECT 'Long arrays Nullable values';
+SELECT sumMap(arrayMap(x -> x % 300, range(1000)), arrayMap(x -> if(x % 7 = 0, NULL, toUInt64(x)), range(1000)))
+    = (SELECT (groupArray(k), groupArray(s)) FROM (SELECT number % 300 AS k, sum(if(number % 7 = 0, NULL, number)) AS s FROM numbers(1000) GROUP BY k ORDER BY k));
+
+SELECT 'Long arrays filtered keys and Nullable values';
+SELECT sumMapFiltered([0, 1, 255, 256, 299, 500])(arrayMap(x -> x % 300, range(1000)), arrayMap(x -> if(x % 7 = 0, NULL, toUInt64(x)), range(1000)))
+    = (SELECT (groupArray(k), groupArray(s)) FROM (SELECT number % 300 AS k, sum(if(number % 7 = 0, NULL, number)) AS s FROM numbers(1000) WHERE k IN (0, 1, 255, 256, 299) GROUP BY k ORDER BY k));
+
+SELECT 'Long arrays minMap and maxMap';
+SELECT minMap(arrayMap(x -> x % 300, range(1000)), arrayMap(x -> if(x % 2 = 0, toInt32(x), -toInt32(x)), range(1000)))
+    = (SELECT (groupArray(k), groupArray(m)) FROM (SELECT number % 300 AS k, min(if(number % 2 = 0, toInt32(number), -toInt32(number))) AS m FROM numbers(1000) GROUP BY k ORDER BY k));
+SELECT maxMap(arrayMap(x -> x % 300, range(1000)), arrayMap(x -> if(x % 2 = 0, toInt32(x), -toInt32(x)), range(1000)))
+    = (SELECT (groupArray(k), groupArray(m)) FROM (SELECT number % 300 AS k, max(if(number % 2 = 0, toInt32(number), -toInt32(number))) AS m FROM numbers(1000) GROUP BY k ORDER BY k));
+
+SELECT 'Long arrays multiple value columns';
+SELECT sumMap(arrayMap(x -> x % 300, range(1000)), arrayMap(x -> toUInt8(x % 256), range(1000)), arrayMap(x -> toDecimal32(x, 2), range(1000)))
+    = (SELECT (groupArray(k), groupArray(s1), groupArray(s2)) FROM (SELECT number % 300 AS k, sum(toUInt8(number % 256)) AS s1, sum(toDecimal32(number, 2)) AS s2 FROM numbers(1000) GROUP BY k ORDER BY k));

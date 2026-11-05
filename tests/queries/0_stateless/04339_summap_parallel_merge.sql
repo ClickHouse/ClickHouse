@@ -132,3 +132,43 @@ SELECT
     (SELECT sumMapFiltered([0, 5, 10, 15])(keys, vals) FROM test_summap_par_filtered SETTINGS max_threads = 8);
 
 DROP TABLE test_summap_par_filtered;
+
+-- Many keys present in every state, so that merging two states takes several batches (256 keys each).
+-- Merging the states of four groups must give the same result as one state. The first group has
+-- only NULLs in `v2`: merged first, its accumulators are NULL on the left; merged last, on the right.
+DROP TABLE IF EXISTS test_summap_par_many_keys;
+CREATE TABLE test_summap_par_many_keys (
+    grp UInt8,
+    keys Array(UInt32),
+    v1 Array(UInt64),
+    v2 Array(Nullable(Int32))
+) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO test_summap_par_many_keys
+SELECT
+    intDiv(number, 50000) AS grp,
+    [toUInt32(number % 5000), toUInt32((number * 7) % 5000)] AS keys,
+    [toUInt64(1), toUInt64(number)] AS v1,
+    [if(grp = 0, NULL, toInt32(number % 100)), if(grp = 0, NULL, toInt32(-1))] AS v2
+FROM numbers(200000);
+
+SELECT 'Many keys serial vs parallel';
+SELECT
+    (SELECT sumMap(keys, v1, v2) FROM test_summap_par_many_keys SETTINGS max_threads = 1) =
+    (SELECT sumMap(keys, v1, v2) FROM test_summap_par_many_keys SETTINGS max_threads = 8);
+
+SELECT 'Many keys merge of group states';
+SELECT
+    (SELECT sumMap(keys, v1, v2) FROM test_summap_par_many_keys SETTINGS max_threads = 1) =
+    (SELECT sumMapMerge(s) FROM (SELECT sumMapState(keys, v1, v2) AS s FROM test_summap_par_many_keys GROUP BY grp ORDER BY grp) SETTINGS max_threads = 1);
+SELECT
+    (SELECT sumMap(keys, v1, v2) FROM test_summap_par_many_keys SETTINGS max_threads = 1) =
+    (SELECT sumMapMerge(s) FROM (SELECT sumMapState(keys, v1, v2) AS s FROM test_summap_par_many_keys GROUP BY grp ORDER BY grp DESC) SETTINGS max_threads = 1);
+SELECT
+    (SELECT minMap(keys, v1, v2) FROM test_summap_par_many_keys SETTINGS max_threads = 1) =
+    (SELECT minMapMerge(s) FROM (SELECT minMapState(keys, v1, v2) AS s FROM test_summap_par_many_keys GROUP BY grp ORDER BY grp) SETTINGS max_threads = 1);
+SELECT
+    (SELECT maxMap(keys, v1, v2) FROM test_summap_par_many_keys SETTINGS max_threads = 1) =
+    (SELECT maxMapMerge(s) FROM (SELECT maxMapState(keys, v1, v2) AS s FROM test_summap_par_many_keys GROUP BY grp ORDER BY grp DESC) SETTINGS max_threads = 1);
+
+DROP TABLE test_summap_par_many_keys;

@@ -227,6 +227,25 @@ struct SumMapKeyTraits<std::string_view>
 ///     bit = 1: null (no value accumulated yet, initial state)
 ///     bit = 0: value present (cleared on first non-null input)
 
+/// The value array of one value column in one input row.
+struct SumMapRowColumn
+{
+    const IColumn * data_col;  /// the nested column, without Nullable
+    const UInt8 * null_map;    /// the null map of a Nullable column, or nullptr
+    size_t vec_offset;         /// the offset of the row's array in `data_col`
+};
+
+/// Accumulate elements `[first, first + count)` of one value column of a row into their blocks.
+/// `blocks[i]` is the block of the key of element `first + i`, or nullptr to skip that element.
+using SumMapAccumulateColumnFn = void (*)(
+    char * const * blocks, size_t count, const SumMapRowColumn & column, size_t first,
+    size_t value_offset, size_t null_bitmap_offset, size_t col);
+
+/// Merge the accumulators of one value column of `rhs_blocks[i]` into `lhs_blocks[i]`, for each `i < count`.
+using SumMapMergeColumnFn = void (*)(
+    char * const * lhs_blocks, const char * const * rhs_blocks, size_t count,
+    size_t value_offset, size_t null_bitmap_offset, size_t col);
+
 struct SumMapValueColumnDesc
 {
     size_t offset;               /// byte offset within accumulator block
@@ -234,6 +253,12 @@ struct SumMapValueColumnDesc
     TypeIndex acc_type_index;    /// TypeIndex of the accumulator (may be promoted)
     UInt32 scale;                /// scale of a decimal input column
     bool is_nullable;            /// whether the source column is Nullable
+
+    /// The loops over a batch of blocks for this column's types and the operation. They are
+    /// resolved once in the constructor of `SumMapTypedValues`, so that `add` and `merge`
+    /// do not dispatch on the type or the operation per element.
+    SumMapAccumulateColumnFn accumulate_column;
+    SumMapMergeColumnFn merge_column;
 };
 
 /// The accumulator type for values of type `In`. It matches the generic path, which accumulates
@@ -281,12 +306,12 @@ void clearNullBit(char * null_bitmap, size_t col)
 }
 
 template <typename V>
-V extractValueFromColumn(const IColumn & col, size_t offset)
+const V * columnData(const IColumn & col)
 {
     if constexpr (is_decimal<V>)
-        return assert_cast<const ColumnDecimal<V> &>(col).getData()[offset];
+        return assert_cast<const ColumnDecimal<V> &>(col).getData().data();
     else
-        return assert_cast<const ColumnVector<V> &>(col).getData()[offset];
+        return assert_cast<const ColumnVector<V> &>(col).getData().data();
 }
 
 /// Widen an input value to its accumulator type (see `SumMapAccumulator`).
@@ -301,50 +326,44 @@ Acc widen(In raw)
         return static_cast<Acc>(raw);
 }
 
-template <typename V>
-void applyOp(SumMapOp op, V & acc, V val)
+template <SumMapOp op, typename V>
+void applyOp(V & acc, V val)
 {
-    switch (op)
+    if constexpr (op == SumMapOp::Sum)
     {
-        case SumMapOp::Sum:
-            if constexpr (is_signed_v<V> && is_integer<V>)
+        if constexpr (is_signed_v<V> && is_integer<V>)
+        {
+            using U = make_unsigned_t<V>;
+            acc = static_cast<V>(static_cast<U>(acc) + static_cast<U>(val));
+        }
+        else
+        {
+            acc += val;
+        }
+    }
+    else
+    {
+        if constexpr (is_floating_point<V>)
+        {
+            if (isNaN(val))
+                return;
+            if (isNaN(acc))
             {
-                using U = make_unsigned_t<V>;
-                acc = static_cast<V>(static_cast<U>(acc) + static_cast<U>(val));
+                acc = val;
+                return;
             }
-            else
-            {
-                acc += val;
-            }
-            break;
-        case SumMapOp::Min:
-            if constexpr (is_floating_point<V>)
-            {
-                if (isNaN(val))
-                    return;
-                if (isNaN(acc))
-                {
-                    acc = val;
-                    return;
-                }
-            }
+        }
+
+        if constexpr (op == SumMapOp::Min)
+        {
             if (val < acc)
                 acc = val;
-            break;
-        case SumMapOp::Max:
-            if constexpr (is_floating_point<V>)
-            {
-                if (isNaN(val))
-                    return;
-                if (isNaN(acc))
-                {
-                    acc = val;
-                    return;
-                }
-            }
+        }
+        else
+        {
             if (val > acc)
                 acc = val;
-            break;
+        }
     }
 }
 
@@ -373,59 +392,64 @@ void applyFieldOp(SumMapOp op, Field & acc, const Field & val)
     }
 }
 
-/// Accumulate a single value into the block
-void accumulateValue(
-    SumMapOp op, const SumMapValueColumnDesc & desc,
-    char * block, char * null_bitmap, size_t col,
-    const IColumn & data_col, size_t elem_idx)
+/// A `SumMapAccumulateColumnFn` for input type `In` and operation `op`.
+template <typename In, SumMapOp op>
+void accumulateColumn(
+    char * const * blocks, size_t count, const SumMapRowColumn & column, size_t first,
+    size_t value_offset, size_t null_bitmap_offset, size_t col)
 {
-    const bool acc_is_null = isNullInBitmap(null_bitmap, col);
-    dispatchOnTypeIndex(desc.input_type_index, [&](auto input_tag)
+    using Acc = SumMapAccumulator<In, op == SumMapOp::Sum>;
+
+    const size_t begin = column.vec_offset + first;
+    const In * data = columnData<In>(*column.data_col) + begin;
+    const UInt8 * null_map = column.null_map ? column.null_map + begin : nullptr;
+
+    for (size_t i = 0; i < count; ++i)
     {
-        using In = decltype(input_tag);
-        const In raw = extractValueFromColumn<In>(data_col, elem_idx);
-        const auto accumulate = [&]<typename Acc>()
+        char * block = blocks[i];
+        if (!block || (null_map && null_map[i]))
+            continue;
+
+        Acc & acc = *reinterpret_cast<Acc *>(block + value_offset);
+        char * null_bitmap = block + null_bitmap_offset;
+        if (isNullInBitmap(null_bitmap, col))
         {
-            Acc & acc = *reinterpret_cast<Acc *>(block + desc.offset);
-            if (acc_is_null)
-            {
-                acc = widen<Acc>(raw);
-                clearNullBit(null_bitmap, col);
-            }
-            else
-            {
-                applyOp(op, acc, widen<Acc>(raw));
-            }
-        };
-        if (op == SumMapOp::Sum)
-            accumulate.template operator()<SumMapAccumulator<In, true>>();
+            acc = widen<Acc>(data[i]);
+            clearNullBit(null_bitmap, col);
+        }
         else
-            accumulate.template operator()<SumMapAccumulator<In, false>>();
-    });
+        {
+            applyOp<op>(acc, widen<Acc>(data[i]));
+        }
+    }
 }
 
-/// Merge accumulators from rhs into lhs
-void mergeAccumulator(
-    SumMapOp op, const SumMapValueColumnDesc & desc,
-    char * lhs_block, char * lhs_null_bitmap, const char * rhs_block, size_t col)
+/// A `SumMapMergeColumnFn` for accumulator type `Acc` and operation `op`.
+template <typename Acc, SumMapOp op>
+void mergeColumn(
+    char * const * lhs_blocks, const char * const * rhs_blocks, size_t count,
+    size_t value_offset, size_t null_bitmap_offset, size_t col)
 {
-    const bool lhs_is_null = isNullInBitmap(lhs_null_bitmap, col);
-    dispatchOnTypeIndex(desc.acc_type_index, [&](auto type_tag)
+    for (size_t i = 0; i < count; ++i)
     {
-        using V = decltype(type_tag);
-        V rhs_val = *reinterpret_cast<const V *>(rhs_block + desc.offset);
-        V & lhs_acc = *reinterpret_cast<V *>(lhs_block + desc.offset);
+        const char * rhs_block = rhs_blocks[i];
+        if (isNullInBitmap(rhs_block + null_bitmap_offset, col))
+            continue;
 
-        if (lhs_is_null)
+        const Acc rhs_val = *reinterpret_cast<const Acc *>(rhs_block + value_offset);
+        char * lhs_block = lhs_blocks[i];
+        Acc & lhs_acc = *reinterpret_cast<Acc *>(lhs_block + value_offset);
+        char * lhs_null_bitmap = lhs_block + null_bitmap_offset;
+        if (isNullInBitmap(lhs_null_bitmap, col))
         {
             lhs_acc = rhs_val;
             clearNullBit(lhs_null_bitmap, col);
         }
         else
         {
-            applyOp(op, lhs_acc, rhs_val);
+            applyOp<op>(lhs_acc, rhs_val);
         }
-    });
+    }
 }
 
 /// Extract a Field from an accumulator slot for serialization
@@ -541,12 +565,11 @@ class SumMapTypedValues
 {
 public:
     /// The value arrays of one input row, see `prepareRow`.
-    struct RowColumn
-    {
-        const IColumn * data_col;
-        const UInt8 * null_map;
-        size_t vec_offset;
-    };
+    using RowColumn = SumMapRowColumn;
+
+    /// The maximum number of blocks that callers pass to `accumulate` and `merge` at once.
+    /// Small enough for buffers on the stack, large enough to amortise the per-column call.
+    static constexpr size_t batch_size = 256;
 
     SumMapTypedValues(const DataTypes & values_types, SumMapOp op_, bool overflow_);
 
@@ -574,10 +597,13 @@ public:
     /// and fill `row_columns`, one per value column.
     void prepareRow(const IColumn ** value_columns, size_t row_num, size_t keys_size, RowColumn * row_columns) const;
 
-    /// Accumulate the `i`-th element of each value array of a row prepared by `prepareRow`.
-    void accumulate(char * block, const RowColumn * row_columns, size_t i) const;
+    /// Accumulate elements `[first, first + count)` of each value array of a row prepared by `prepareRow`.
+    /// `blocks[i]` is the block of the key of element `first + i`, or nullptr to skip that element.
+    /// Elements are accumulated in order, so repeated keys in a batch are fine.
+    void accumulate(char * const * blocks, size_t count, const RowColumn * row_columns, size_t first) const;
 
-    void merge(char * block, const char * rhs_block) const;
+    /// Merge `rhs_blocks[i]` into `lhs_blocks[i]` for each `i < count`.
+    void merge(char * const * lhs_blocks, const char * const * rhs_blocks, size_t count) const;
 
     void serialize(const char * block, WriteBuffer & buf, size_t version) const;
 
@@ -621,19 +647,26 @@ SumMapTypedValues::SumMapTypedValues(const DataTypes & values_types, SumMapOp op
 
         size_t size = 0;
         size_t alignment = 1;
+        /// The only dispatch on the value type and the operation: everything that depends on them
+        /// is resolved here, once per column.
         dispatchOnTypeIndex(desc.input_type_index, [&](auto input_tag)
         {
             using In = decltype(input_tag);
-            const auto set_accumulator = [&]<typename Acc>()
+            const auto resolve = [&]<SumMapOp static_op>()
             {
+                using Acc = SumMapAccumulator<In, static_op == SumMapOp::Sum>;
                 desc.acc_type_index = TypeToTypeIndex<Acc>;
                 size = sizeof(Acc);
                 alignment = alignof(Acc);
+                desc.accumulate_column = &accumulateColumn<In, static_op>;
+                desc.merge_column = &mergeColumn<Acc, static_op>;
             };
-            if (op == SumMapOp::Sum)
-                set_accumulator.template operator()<SumMapAccumulator<In, true>>();
-            else
-                set_accumulator.template operator()<SumMapAccumulator<In, false>>();
+            switch (op)
+            {
+                case SumMapOp::Sum: resolve.template operator()<SumMapOp::Sum>(); break;
+                case SumMapOp::Min: resolve.template operator()<SumMapOp::Min>(); break;
+                case SumMapOp::Max: resolve.template operator()<SumMapOp::Max>(); break;
+            }
         });
 
         /// Align offset to the natural alignment of the accumulator type
@@ -691,33 +724,21 @@ void SumMapTypedValues::prepareRow(const IColumn ** value_columns, size_t row_nu
     }
 }
 
-void SumMapTypedValues::accumulate(char * block, const RowColumn * row_columns, size_t i) const
+void SumMapTypedValues::accumulate(char * const * blocks, size_t count, const RowColumn * row_columns, size_t first) const
 {
-    char * null_bitmap = block + null_bitmap_offset;
     for (size_t col = 0; col < value_descs.size(); ++col)
     {
-        const RowColumn & row_column = row_columns[col];
-        const size_t elem_idx = row_column.vec_offset + i;
-
-        /// Check if source value is null
-        if (row_column.null_map && row_column.null_map[elem_idx])
-            continue;
-
-        accumulateValue(op, value_descs[col], block, null_bitmap, col, *row_column.data_col, elem_idx);
+        const auto & desc = value_descs[col];
+        desc.accumulate_column(blocks, count, row_columns[col], first, desc.offset, null_bitmap_offset, col);
     }
 }
 
-void SumMapTypedValues::merge(char * block, const char * rhs_block) const
+void SumMapTypedValues::merge(char * const * lhs_blocks, const char * const * rhs_blocks, size_t count) const
 {
-    const char * rhs_null_bitmap = rhs_block + null_bitmap_offset;
-    char * null_bitmap = block + null_bitmap_offset;
-
     for (size_t col = 0; col < value_descs.size(); ++col)
     {
-        if (isNullInBitmap(rhs_null_bitmap, col))
-            continue;
-
-        mergeAccumulator(op, value_descs[col], block, null_bitmap, rhs_block, col);
+        const auto & desc = value_descs[col];
+        desc.merge_column(lhs_blocks, rhs_blocks, count, desc.offset, null_bitmap_offset, col);
     }
 }
 
@@ -999,23 +1020,36 @@ public:
             : (row_columns_heap = std::make_unique<SumMapTypedValues::RowColumn[]>(num_columns)).get();
         values.prepareRow(columns + 1, row_num, keys_vec_size, row_columns);
 
-        for (size_t i = 0; i < keys_vec_size; ++i)
+        /// First find the blocks of a batch of keys, then accumulate the batch one value column at
+        /// a time, so that the value type is dispatched once per batch and column, not per element.
+        char * blocks[SumMapTypedValues::batch_size];
+        for (size_t first = 0; first < keys_vec_size; first += SumMapTypedValues::batch_size)
         {
-            auto key = KT::extractKey(key_col, keys_vec_offset + i);
-
-            if (is_filtered && !keys_to_keep.has(key))
-                continue;
-
-            auto [it, inserted] = KT::emplace(data.map, key, arena);
-            if (inserted)
+            const size_t count = std::min(SumMapTypedValues::batch_size, keys_vec_size - first);
+            for (size_t i = 0; i < count; ++i)
             {
-                /// `emplace` leaves the mapped value uninitialized. Clear it before the allocation,
-                /// so that the cell holds a null pointer rather than garbage if the allocation throws.
-                it->getMapped() = nullptr;
-                it->getMapped() = values.allocateBlock(arena);
+                auto key = KT::extractKey(key_col, keys_vec_offset + first + i);
+
+                if (is_filtered && !keys_to_keep.has(key))
+                {
+                    blocks[i] = nullptr;
+                    continue;
+                }
+
+                auto [it, inserted] = KT::emplace(data.map, key, arena);
+                if (inserted)
+                {
+                    /// `emplace` leaves the mapped value uninitialized. Clear it before the allocation,
+                    /// so that the cell holds a null pointer rather than garbage if the allocation throws.
+                    it->getMapped() = nullptr;
+                    it->getMapped() = values.allocateBlock(arena);
+                }
+
+                /// The block lives in the arena, so the pointer stays valid when the map grows.
+                blocks[i] = it->getMapped();
             }
 
-            values.accumulate(it->getMapped(), row_columns, i);
+            values.accumulate(blocks, count, row_columns, first);
         }
     }
 
@@ -1023,6 +1057,12 @@ public:
     {
         auto & lhs_data = this->data(place);
         const auto & rhs_data = this->data(rhs);
+
+        /// Merge the keys present on both sides in batches, see `add`. The keys of `rhs` are unique,
+        /// so a batch never has the same block twice.
+        char * lhs_blocks[SumMapTypedValues::batch_size];
+        const char * rhs_blocks[SumMapTypedValues::batch_size];
+        size_t pending = 0;
 
         for (const auto & [rhs_key, rhs_block] : rhs_data.map)
         {
@@ -1033,12 +1073,19 @@ public:
                 /// See `add`.
                 it->getMapped() = nullptr;
                 it->getMapped() = values.cloneBlock(rhs_block, arena);
+                continue;
             }
-            else
+
+            lhs_blocks[pending] = it->getMapped();
+            rhs_blocks[pending] = rhs_block;
+            if (++pending == SumMapTypedValues::batch_size)
             {
-                values.merge(it->getMapped(), rhs_block);
+                values.merge(lhs_blocks, rhs_blocks, pending);
+                pending = 0;
             }
         }
+
+        values.merge(lhs_blocks, rhs_blocks, pending);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
