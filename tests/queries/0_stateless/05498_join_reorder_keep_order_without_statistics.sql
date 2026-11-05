@@ -70,6 +70,16 @@ ALTER TABLE nation MATERIALIZE STATISTICS ALL SETTINGS mutations_sync = 2;
 SELECT count() FROM customer JOIN orders ON c_custkey = o_custkey JOIN nation ON c_nationkey = n_nationkey WHERE n_name = 'FRANCE'
 FORMAT Null SETTINGS log_comment = '05498 with_statistics';
 
+-- `nation JOIN n2` is optimized on its own below the graph limited by `customer`; its tables are estimated once,
+-- so the statistics are loaded as often as with `query_plan_optimize_join_order_limit = 1`.
+SELECT count() FROM nation JOIN nation AS n2 ON n2.n_nationkey = nation.n_nationkey JOIN customer ON c_nationkey = nation.n_nationkey
+WHERE c_nationkey = 6
+FORMAT Null SETTINGS log_comment = '05498-reuse limited';
+
+SELECT count() FROM nation JOIN nation AS n2 ON n2.n_nationkey = nation.n_nationkey JOIN customer ON c_nationkey = nation.n_nationkey
+WHERE c_nationkey = 6
+FORMAT Null SETTINGS log_comment = '05498-reuse swap_only', query_plan_optimize_join_order_limit = 1;
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT
@@ -84,6 +94,14 @@ FROM
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05498 %'
 )
 ORDER BY log_comment;
+
+SELECT 'statistics_loaded_once', length(loads) = 2 AND loads[1] = loads[2] AND loads[1] > 0
+FROM
+(
+    SELECT groupArray(ProfileEvents['LoadedStatistics']) AS loads
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05498-reuse %'
+);
 
 DROP TABLE orders;
 DROP TABLE customer;
