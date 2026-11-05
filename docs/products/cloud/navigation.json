@@ -128,6 +128,7 @@
               "pages": [
                 "products/cloud/guides/security/cloud-access-management/manage-my-account",
                 "products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+                "products/cloud/guides/security/cloud-access-management/approved-domains",
                 "products/cloud/reference/security/console-roles",
                 "products/cloud/guides/security/cloud-access-management/manage-custom-roles"
               ]
