@@ -234,7 +234,7 @@ std::vector<ScatteredBlock::Selector> scatterImpl(
 
     /// The rows are routed by these keys below, and the slot inserts read them too.
     if constexpr (PreparedKeyGetter<KeyGetter>)
-        key_getter.buildAllKeys(prebuilt_keys);
+        key_getter.buildAllKeys(selector, prebuilt_keys);
 
     /// Nothing here outlives the call: the key holders are read for their hash, never persisted.
     Arena scratch_pool;

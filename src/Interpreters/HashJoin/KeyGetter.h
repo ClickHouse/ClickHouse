@@ -192,8 +192,8 @@ struct LowCardinalityKeyGetterForJoin
 ///   key of row `i` for the rows [begin, end). `skip` is the skip bytes of the block: the keys of the rows `i` with
 ///   `skip[i] != 0` may be left unset.
 /// `getKeyHolder` builds the key of a row, or reads keys built ahead:
-/// - after `buildAllKeys` or `usePrebuiltKeys`, the keys of the whole block. The slot scatter of a parallel build calls
-///   `buildAllKeys`, and the slot inserts pass the keys it built to `usePrebuiltKeys`;
+/// - after `buildAllKeys` or `usePrebuiltKeys`, the keys of the rows that the slot scatter of a parallel build routed.
+///   The scatter calls `buildAllKeys`, and the slot inserts pass the keys it built to `usePrebuiltKeys`;
 /// - after `prepareRows`, the keys of a continuous range of rows, built 256 rows at a time when a read goes past the
 ///   built ones. Each join loop calls it for its first map. A prefetching loop also calls it for every other map that it
 ///   prefetches for each row: then each key is built once for both the prefetch and the lookup. A loop that stops early
@@ -234,18 +234,35 @@ struct PreparedJoinKeys
         return all_selected.data();
     }
 
-    /// Builds the key of every row of the block into `keys`, and reads the keys from there.
-    void buildAllKeys(PaddedPODArray<UInt128> & keys)
+    /// Returns skip bytes for the rows [0, end): 1 for each row that `rows` does not list, and `skip` for each listed row.
+    const UInt8 * skipUnlisted(const PaddedPODArray<UInt64> & rows, size_t end, const UInt8 * skip)
+    {
+        unlisted_skip.assign(end, UInt8(1));
+        for (const auto row : rows)
+            unlisted_skip[row] = skip[row];
+        return unlisted_skip.data();
+    }
+
+    /// Builds the key of every row that `selector` lists into `keys[row]`, and reads the keys from there. The other rows
+    /// of the block get no key.
+    void buildAllKeys(const ScatteredBlock::Selector & selector, PaddedPODArray<UInt128> & keys)
     {
         keys.resize(num_rows);
-        /// The scatter routes every row by its key, including the rows that the slot inserts skip.
-        derived().buildKeys(0, num_rows, keys.data(), skipOrAllSelected(nullptr));
+        /// The scatter routes every listed row by its key, including the rows that the slot inserts skip.
+        const UInt8 * skip = skipOrAllSelected(nullptr);
+        size_t begin = 0;
+        size_t end = num_rows;
+        if (selector.isContinuousRange())
+            std::tie(begin, end) = selector.getRange();
+        else
+            skip = skipUnlisted(selector.getIndexes().getData(), num_rows, skip);
+        derived().buildKeys(begin, end, keys.data() + begin, skip);
         ready_begin = 0;
         ready_keys = {keys.data(), keys.size()};
     }
 
-    /// `keys` holds the key of every row of the block. The key of `check_row` is built again, to check that they are the
-    /// keys of this column.
+    /// `keys[row]` is the key of each row that `buildAllKeys` listed. The key of `check_row`, a listed row, is built again
+    /// to check that they are the keys of this column.
     void usePrebuiltKeys(std::span<const UInt128> keys, size_t check_row)
     {
         if (check_row >= keys.size() || keys[check_row] != derived().buildKey(check_row))
@@ -280,10 +297,7 @@ struct PreparedJoinKeys
             return;
         ready_begin = rows.front();
         prepare_end = rows.back() + 1;
-        unlisted_skip.assign(prepare_end, UInt8(1));
-        for (const auto row : rows)
-            unlisted_skip[row] = skip[row];
-        skip_rows = unlisted_skip.data();
+        skip_rows = skipUnlisted(rows, prepare_end, skip);
         /// All at once, not in chunks: the rows between the listed ones are left out, so the look-ahead of a
         /// prefetching loop can span more rows than `buildNextKeys` keeps.
         prepared_keys.resize(prepare_end - ready_begin);
