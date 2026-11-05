@@ -1,9 +1,10 @@
 -- Tags: no-fasttest
 -- no-fasttest: JIT compilation is not available in fasttest
 
--- A compiled `multiIf`, `CASE` or `if` that lifts a `Decimal` branch to a larger result scale raises `DECIMAL_OVERFLOW`
--- where the interpreted cast does, instead of wrapping around: https://github.com/ClickHouse/ClickHouse/issues/126516
--- Each query runs interpreted and compiled.
+-- A `multiIf`, `CASE` or `if` that lifts a `Decimal` branch to a larger result scale raises `DECIMAL_OVERFLOW` where the
+-- interpreted cast does, instead of wrapping around in compiled code: https://github.com/ClickHouse/ClickHouse/issues/126516
+-- A lift that can overflow is not compiled: the interpreter skips a branch, or stops, at a condition that is a constant
+-- column at run time, which compiled code cannot know. Each query runs with the JIT off and on.
 
 SET min_count_to_compile_expression = 0;
 
@@ -43,5 +44,12 @@ SELECT k, multiIf(k = 1, n, k = 5, n, e) FROM t_jit_decimal_lift WHERE k <= 1 OR
 SELECT k, multiIf(k = 1, n, k = 5, n, e) FROM t_jit_decimal_lift WHERE k <= 1 ORDER BY k SETTINGS compile_expressions = 1;
 SELECT k, multiIf(k = 1, n, k = 5, n, e) FROM t_jit_decimal_lift ORDER BY k SETTINGS compile_expressions = 0; -- { serverError DECIMAL_OVERFLOW }
 SELECT k, multiIf(k = 1, n, k = 5, n, e) FROM t_jit_decimal_lift ORDER BY k SETTINGS compile_expressions = 1; -- { serverError DECIMAL_OVERFLOW }
+
+-- A condition that is constant only at run time (`ignore` is not compiled) decides which branches are lifted.
+SELECT 'condition constant at run time';
+SELECT k, multiIf(k = 3, e, ignore(k) = 0, e, d) FROM t_jit_decimal_lift ORDER BY k SETTINGS compile_expressions = 0;
+SELECT k, multiIf(k = 3, e, ignore(k) = 0, e, d) FROM t_jit_decimal_lift ORDER BY k SETTINGS compile_expressions = 1;
+SELECT k, multiIf(ignore(k) = 1, d, k = 5, e, e) FROM t_jit_decimal_lift ORDER BY k SETTINGS compile_expressions = 0;
+SELECT k, multiIf(ignore(k) = 1, d, k = 5, e, e) FROM t_jit_decimal_lift ORDER BY k SETTINGS compile_expressions = 1;
 
 DROP TABLE t_jit_decimal_lift;
