@@ -1310,6 +1310,14 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
         context->checkAccess(AccessType::SELECT, data.getStorageID(), hypothetical.projection.required_columns);
     context->checkAccess(AccessType::ALTER_ADD_PROJECTION, data.getStorageID());
 
+    /// the binding does not cover names, and the parts of a real projection would be read with this definition
+    if (metadata->projections.has(hypothetical.projection.name))
+    {
+        reason = "Hypothetical projection can no longer be added to this table: projection with this name already exists. "
+                 "Drop the real projection or use another name";
+        return std::nullopt;
+    }
+
     const auto change = hypothetical.binding.changeTo(
         HypotheticalBinding::of(*hypothetical.projection.definition_ast, *metadata), context, data.getStorageID());
     if (!change.empty())
