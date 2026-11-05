@@ -618,7 +618,7 @@ size_t GlueCatalog::CachedSchemaWeightFunction::operator()(const CachedSchema & 
     return result;
 }
 
-GlueCatalog::EarlyAccessLocation GlueCatalog::resolveEarlyAccessLocation(const String & location, const String & storage_endpoint)
+GlueCatalog::EarlyAccessLocation GlueCatalog::resolveEarlyAccessLocation(const String & location, const String & storage_endpoint, DB::S3UriStyle uri_style)
 {
     EarlyAccessLocation result;
 
@@ -643,7 +643,7 @@ GlueCatalog::EarlyAccessLocation GlueCatalog::resolveEarlyAccessLocation(const S
     {
         TableMetadata bucket_location = TableMetadata().withLocation();
         bucket_location.setLocation("s3://" + result.bucket_name);
-        result.storage_endpoint = bucket_location.getLocationWithEndpoint(storage_endpoint, DB::S3UriStyle::AUTO);
+        result.storage_endpoint = bucket_location.getLocationWithEndpoint(storage_endpoint, uri_style);
     }
 
     return result;
@@ -651,7 +651,7 @@ GlueCatalog::EarlyAccessLocation GlueCatalog::resolveEarlyAccessLocation(const S
 
 GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const
 {
-    auto location = resolveEarlyAccessLocation(s3_location, settings.storage_endpoint);
+    auto location = resolveEarlyAccessLocation(s3_location, settings.storage_endpoint, settings.storage_uri_style);
 
     DB::ASTStorage * storage = table_engine_definition->as<DB::ASTStorage>();
     DB::ASTs args = storage->engine->arguments->children;

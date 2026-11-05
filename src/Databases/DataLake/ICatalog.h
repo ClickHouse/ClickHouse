@@ -200,6 +200,7 @@ struct TableNameFilter
 struct CatalogSettings
 {
     String storage_endpoint;
+    DB::S3UriStyle storage_uri_style = DB::S3UriStyle::AUTO;
     String aws_access_key_id;
     String aws_secret_access_key;
     String region;

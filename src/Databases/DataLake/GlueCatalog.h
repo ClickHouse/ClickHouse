@@ -126,7 +126,7 @@ public:
 
     /// Splits `location` of any S3 scheme (`s3://`, `s3a://`, ...) into bucket and path, and builds the URL for the
     /// object storage client: `location` itself, or `storage_endpoint` with the bucket like `DatabaseDataLake::getStorageEndpointForTable`.
-    static EarlyAccessLocation resolveEarlyAccessLocation(const String & location, const String & storage_endpoint);
+    static EarlyAccessLocation resolveEarlyAccessLocation(const String & location, const String & storage_endpoint, DB::S3UriStyle uri_style);
 
 private:
     struct CachedSchema
