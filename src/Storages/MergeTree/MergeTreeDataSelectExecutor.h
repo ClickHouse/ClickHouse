@@ -167,6 +167,13 @@ public:
     /// - Likewise, (A = 5 OR B = 5) AND (C > 5 OR D > 5) requires 7 bits.
     static bool isRPNSizeAllowedForSkipIndexesForDisjunctions(size_t rpn_size, const Settings & settings);
 
+    /// Returns whether OR-connected filters are evaluated with skip indexes during index analysis.
+    static bool useSkipIndexesForDisjunctions(
+        bool requested,
+        bool use_skip_indexes_on_data_read,
+        const ConditionTemplate<KeyCondition> * key_condition_rpn_template,
+        const Settings & settings);
+
 private:
     const MergeTreeData & data;
     MergeTreeSettingsPtr data_settings;
