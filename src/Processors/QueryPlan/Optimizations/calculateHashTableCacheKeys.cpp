@@ -409,7 +409,11 @@ static std::optional<ExpressionChain> mergeExpressionChain(
     const auto * child = node.children.front();
     MergedExpressions merged;
     const auto it = merged_expressions.find(child);
-    const bool extends_chain = it != merged_expressions.end();
+    /// Where the optimizer would not merge, a chain ends: neither plan merges such steps.
+    const bool extends_chain = it != merged_expressions.end() && canMergeExpressions(it->second.actions, expression->getExpression());
+    if (it != merged_expressions.end() && !extends_chain)
+        merged_expressions.erase(it);
+
     if (extends_chain)
     {
         /// The plan is a tree, so the merge of the child has no other user.
