@@ -199,6 +199,30 @@ ALTER TABLE t_apply_deleted_mask APPLY DELETED MASK;
 SELECT 'apply_deleted_mask', id, a FROM t_apply_deleted_mask ORDER BY id;
 DROP TABLE t_apply_deleted_mask;
 
+-- The DEFAULT reads an unstored DEFAULT Nested element, as a flattened Nested column and by its dotted name, after an UPDATE of its input (compact part).
+DROP TABLE IF EXISTS t_nested_input_compact;
+CREATE TABLE t_nested_input_compact (id Int64, x Int64) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000;
+INSERT INTO t_nested_input_compact SELECT number, number FROM numbers(3);
+ALTER TABLE t_nested_input_compact ADD COLUMN `n.e` Array(Int64) DEFAULT range(x);
+ALTER TABLE t_nested_input_compact ADD COLUMN a Int64 DEFAULT length(n) * 100 + n.e[-1];
+ALTER TABLE t_nested_input_compact UPDATE x = x + 2 WHERE id = 1, MATERIALIZE COLUMN a;
+SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_nested_input_compact' AND active;
+SELECT 'nested_input_compact', id, x, `n.e`, a FROM t_nested_input_compact ORDER BY id;
+DROP TABLE t_nested_input_compact;
+
+-- Same (wide part).
+DROP TABLE IF EXISTS t_nested_input_wide;
+CREATE TABLE t_nested_input_wide (id Int64, x Int64) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_nested_input_wide SELECT number, number FROM numbers(3);
+ALTER TABLE t_nested_input_wide ADD COLUMN `n.e` Array(Int64) DEFAULT range(x);
+ALTER TABLE t_nested_input_wide ADD COLUMN a Int64 DEFAULT length(n) * 100 + n.e[-1];
+ALTER TABLE t_nested_input_wide UPDATE x = x + 2 WHERE id = 1, MATERIALIZE COLUMN a;
+SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_nested_input_wide' AND active;
+SELECT 'nested_input_wide', id, x, `n.e`, a FROM t_nested_input_wide ORDER BY id;
+DROP TABLE t_nested_input_wide;
+
 -- DELETE predicate and the columns DELETE writes.
 DROP TABLE IF EXISTS t_delete;
 CREATE TABLE t_delete (id Int64, x Int64) ENGINE = MergeTree ORDER BY id;

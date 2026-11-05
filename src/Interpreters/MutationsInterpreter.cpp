@@ -2366,6 +2366,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                 NamesAndTypesList default_input_subcolumns;
                 NameSet default_input_subcolumn_names;
                 NameSet computed_parents;
+                NamesAndTypesList computed_parent_subcolumns;
                 for (const auto & name : getColumnsReadByDefault(default_columns, columns_to_compute.getNames(), in_header))
                 {
                     auto subcolumn = storage_snapshot->tryGetColumn(col_options, name);
@@ -2397,8 +2398,12 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                             default_input_subcolumns.push_back(*subcolumn);
                     }
                     /// A stale or ALIAS parent is computed together with the default, which then reads the subcolumn of it.
-                    else if ((stage.stale_defaults.contains(parent) || is_alias(parent)) && !needed.contains(parent))
-                        computed_parents.insert(std::move(parent));
+                    else if (stage.stale_defaults.contains(parent) || is_alias(parent))
+                    {
+                        computed_parent_subcolumns.push_back(*subcolumn);
+                        if (!needed.contains(parent))
+                            computed_parents.insert(std::move(parent));
+                    }
                 }
                 for (const auto & column : table_columns)
                     if (computed_parents.contains(column.name))
@@ -2413,22 +2418,71 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                     header.insert(ColumnWithTypeAndName(subcolumn.type, subcolumn.name));
                 }
 
-                stale_defaults_dag = evaluateMissingDefaults(header, columns_to_compute, default_columns, defaults_context);
-                if (stale_defaults_dag)
+                std::optional<ActionsDAG> defaults_dag;
+                auto add_defaults = [&](const NamesAndTypesList & columns)
                 {
-                    auto & dag = *stale_defaults_dag;
-                    dag.appendInputsForUnusedColumns(header);
+                    auto dag = evaluateMissingDefaults(header, columns, default_columns, defaults_context);
+                    if (!dag)
+                        return;
+                    dag->appendInputsForUnusedColumns(header);
                     NameSet dag_outputs;
-                    for (const auto * output : dag.getOutputs())
+                    for (const auto * output : dag->getOutputs())
                         dag_outputs.insert(output->result_name);
-                    for (const auto * input : dag.getInputs())
+                    for (const auto * input : dag->getInputs())
                         if (dag_outputs.insert(input->result_name).second)
-                            dag.getOutputs().push_back(input);
+                            dag->getOutputs().push_back(input);
+                    header = Block(dag->getResultColumns());
+                    defaults_dag = defaults_dag ? ActionsDAG::merge(std::move(*defaults_dag), std::move(*dag)) : std::move(*dag);
+                };
 
-                    dag = ActionsDAG::merge(std::move(default_inputs_dag), std::move(dag));
+                /// The analyzer resolves neither a dotted column (`n.e`) nor a flattened `Nested` built from it (`n`) computed
+                /// in the same expression list, so such a column is computed first, after the dotted columns it reads.
+                auto in_block = [&](const String & name) { return header.has(name); };
+                NameSet dotted;
+                for (const auto & name : getColumnsReadByDefault(default_columns, columns_to_compute.getNames(), in_block))
+                    if (name.contains('.') && table_columns.has(name) && !header.has(name))
+                        dotted.insert(name);
+                while (!dotted.empty())
+                {
+                    NameSet ready_names;
+                    for (const auto & column : table_columns)
+                    {
+                        if (!dotted.contains(column.name))
+                            continue;
+                        auto reads = getColumnsReadByDefault(default_columns, {column.name}, in_block);
+                        if (std::ranges::any_of(reads, [&](const auto & read) { return read != column.name && dotted.contains(read); }))
+                            continue;
+                        ready_names.insert(column.name);
+                        for (const auto & read : reads)
+                            if (computed_parents.contains(read) && !header.has(read))
+                                ready_names.insert(read);
+                    }
+                    if (ready_names.empty())
+                        break;
+                    NamesAndTypesList ready;
+                    for (const auto & column : table_columns)
+                        if (ready_names.contains(column.name))
+                            ready.emplace_back(column.name, column.type);
+                    for (const auto & name : ready_names)
+                        dotted.erase(name);
+                    add_defaults(ready);
+                    for (const auto & subcolumn : computed_parent_subcolumns)
+                    {
+                        if (defaults_dag && header.has(subcolumn.getNameInStorage()) && !header.has(subcolumn.name))
+                        {
+                            add_subcolumn(*defaults_dag, subcolumn);
+                            header.insert(ColumnWithTypeAndName(subcolumn.type, subcolumn.name));
+                        }
+                    }
+                }
+                add_defaults(columns_to_compute);
 
+                if (defaults_dag)
+                {
+                    stale_defaults_dag = ActionsDAG::merge(std::move(default_inputs_dag), std::move(*defaults_dag));
                     for (const auto & subcolumn : subcolumns)
-                        add_subcolumn(dag, subcolumn);
+                        if (!header.has(subcolumn.name))
+                            add_subcolumn(*stale_defaults_dag, subcolumn);
                 }
             }
         }
