@@ -161,7 +161,7 @@ void Prefetcher::readImpl(char * to, size_t n, size_t offset)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected eof: offset {}, length {}, bytes read {}, expected file size {}", offset, n, nread, file_size);
 }
 
-PrefetchHandle Prefetcher::registerRange(size_t offset, size_t length, bool likely_to_be_used)
+PrefetchHandle Prefetcher::registerRange(size_t offset, size_t length, bool likely_to_be_used, bool is_page_index)
 {
     chassert(!ranges_finalized.load(std::memory_order_relaxed));
     if (offset > file_size || length > file_size - offset)
@@ -169,6 +169,7 @@ PrefetchHandle Prefetcher::registerRange(size_t offset, size_t length, bool like
     RequestState & req = requests.emplace_back();
     req.length = length;
     req.allow_incidental_read.store(likely_to_be_used || length < min_bytes_for_seek, std::memory_order_relaxed);
+    req.is_page_index = is_page_index;
     range_sets[0].ranges.push_back(RangeState {.request = &req, .start = offset, .end = offset + length});
     return PrefetchHandle(&req);
 }
@@ -193,7 +194,7 @@ void Prefetcher::finalizeRanges()
     }
 }
 
-void Prefetcher::startPrefetch(const std::vector<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff)
+void Prefetcher::startPrefetch(const std::vector<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff, bool page_indexes_only)
 {
     chassert(ranges_finalized.load(std::memory_order_relaxed));
 
@@ -209,7 +210,7 @@ void Prefetcher::startPrefetch(const std::vector<PrefetchHandle *> & requests_to
             continue;
         RequestState * req = handle->request;
         chassert(req);
-        pickRangesAndCreateTaskIfNotExists(req, *handle, /*splitting=*/ false, 0, 0, std::unique_lock(mutex));
+        pickRangesAndCreateTaskIfNotExists(req, *handle, /*splitting=*/ false, 0, 0, page_indexes_only, std::unique_lock(mutex));
         chassert(req->state.load(std::memory_order_relaxed) == RequestState::State::HasTask);
         const Task * task = req->task;
 
@@ -379,7 +380,7 @@ std::vector<PrefetchHandle> Prefetcher::splitRange(
             /// If the request is already short, don't split it, and try to coalesce with other ranges.
             if (range.length() < min_bytes_for_seek)
             {
-                pickRangesAndCreateTaskIfNotExists(parent_req, request, /*splitting=*/ true, subrange_start, subrange_end, std::move(lock));
+                pickRangesAndCreateTaskIfNotExists(parent_req, request, /*splitting=*/ true, subrange_start, subrange_end, /*page_indexes_only=*/ false, std::move(lock));
             }
             else
             {
@@ -441,16 +442,16 @@ std::vector<PrefetchHandle> Prefetcher::splitRange(
     return out_handles;
 }
 
-void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, const PrefetchHandle &, bool splitting, size_t start_offset, size_t end_offset, std::unique_lock<std::mutex> lock)
+void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, const PrefetchHandle &, bool splitting, size_t start_offset, size_t end_offset, bool page_indexes_only, std::unique_lock<std::mutex> lock)
 {
     chassert(lock.owns_lock());
-    Task * task = pickRangesAndCreateTaskLocked(initial_req, splitting, start_offset, end_offset, /*coalesce_only=*/ nullptr);
+    Task * task = pickRangesAndCreateTaskLocked(initial_req, splitting, start_offset, end_offset, /*coalesce_only=*/ nullptr, page_indexes_only);
     lock.unlock();
     if (task)
         scheduleTask(task);
 }
 
-Prefetcher::Task * Prefetcher::pickRangesAndCreateTaskLocked(RequestState * initial_req, bool splitting, size_t start_offset, size_t end_offset, const std::unordered_set<const RequestState *> * coalesce_only)
+Prefetcher::Task * Prefetcher::pickRangesAndCreateTaskLocked(RequestState * initial_req, bool splitting, size_t start_offset, size_t end_offset, const std::unordered_set<const RequestState *> * coalesce_only, bool page_indexes_only)
 {
     /// Re-check state after locking mutex.
     switch (initial_req->state.load(std::memory_order_acquire))
@@ -464,9 +465,13 @@ Prefetcher::Task * Prefetcher::pickRangesAndCreateTaskLocked(RequestState * init
             /// Another thread created a task while we were locking the mutex.
             return nullptr;
     }
-    auto may_coalesce = [coalesce_only](const RequestState * req)
+    auto may_coalesce = [coalesce_only, page_indexes_only](const RequestState * req)
     {
-        return coalesce_only ? coalesce_only->contains(req) : req->allow_incidental_read.load(std::memory_order_relaxed);
+        if (coalesce_only)
+            return coalesce_only->contains(req);
+        if (page_indexes_only)
+            return req->is_page_index;
+        return req->allow_incidental_read.load(std::memory_order_relaxed);
     };
     size_t range_set_idx = initial_req->range_set_idx;
     size_t range_idx = initial_req->range_idx;

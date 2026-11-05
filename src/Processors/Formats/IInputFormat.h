@@ -10,6 +10,8 @@
 #include <base/types.h>
 #include <Processors/ISource.h>
 
+#include <atomic>
+
 
 namespace DB
 {
@@ -21,6 +23,14 @@ class ColumnMapper;
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
 using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;
 using IColumnFilter = PaddedPODArray<UInt8>;
+
+/// Memory held by the input formats of the files that one source reads one after another, so that the format of the next
+/// file, which may read data ahead (see `IInputFormat::prefetch`), and the current one stay within one stream's limits.
+struct InputFormatStreamMemory
+{
+    std::atomic<size_t> bytes {0};
+};
+using InputFormatStreamMemoryPtr = std::shared_ptr<InputFormatStreamMemory>;
 
 /// Most (all?) file formats have a natural order of rows within the file.
 /// But our format readers and query pipeline may reorder or filter rows. This struct is used to
@@ -151,7 +161,9 @@ public:
 
     virtual void needOnlyCount() { need_only_count = true; }
 
-    virtual void prefetch() {}
+    /// Called in the background while the source reads the previous file, e.g. reads the footer. If `start_reading_data`,
+    /// may also start reading the first data, without decoding it.
+    virtual void prefetch(const InputFormatStreamMemoryPtr & /*stream_memory*/, bool /*start_reading_data*/) {}
 
     virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
 

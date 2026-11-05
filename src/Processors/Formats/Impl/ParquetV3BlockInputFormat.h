@@ -82,7 +82,7 @@ public:
 private:
     Chunk read() override;
 
-    void prefetch() override;
+    void prefetch(const InputFormatStreamMemoryPtr & stream_memory_, bool start_reading_data) override;
 
     void onCancel() noexcept override;
 
@@ -113,9 +113,10 @@ private:
     size_t previous_approx_bytes_read_for_chunk = 0;
 
     void readFileFooterIfNeeded();
-    void initializeIfNeeded();
+    void initializeIfNeeded(bool defer_decoding = false);
     std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
     Parquet::RowGroupSelection rowGroupSelection() const;
+    InputFormatStreamMemoryPtr stream_memory;
 
     /// nullopt if the metadata cache is not used.
     std::optional<ParquetMetadataCacheKey> getMetadataCacheKey() const;
