@@ -63,6 +63,11 @@ bool tryInferDateFromString(std::string_view field, DayNum & date);
 bool tryInferDateTimeFromString(std::string_view field, time_t & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone);
 bool tryInferDateTime64FromString(std::string_view field, DateTime64 & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone);
 
+/// Infer DateTime or DateTime64 from a string, running the invalid-datetime fast check only once (unlike calling
+/// tryInferDateTimeFromString and tryInferDateTime64FromString in turn). On success writes the parsed value into
+/// date_time or date_time64 and sets is_datetime64 accordingly.
+bool tryInferDateTimeOrDateTime64FromString(std::string_view field, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, bool & is_datetime64, time_t & date_time, DateTime64 & date_time64);
+
 /// Try to parse a number value from a string. By default, it tries to parse Float64,
 /// but if setting try_infer_integers is enabled, it also tries to parse Int64.
 DataTypePtr tryInferNumberFromString(std::string_view field, const FormatSettings & settings);
