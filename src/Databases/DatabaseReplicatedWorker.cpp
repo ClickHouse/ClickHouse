@@ -215,12 +215,21 @@ void DatabaseReplicatedDDLWorker::shutdown()
     wait_current_task_change.notify_all();
 }
 
+void DatabaseReplicatedDDLWorker::stopInitialQueries()
+{
+    {
+        std::lock_guard lock{mutex};
+        initial_queries_stopped = true;
+    }
+    wait_current_task_change.notify_all();
+}
+
 void DatabaseReplicatedDDLWorker::waitForForegroundTasks()
 {
-    chassert(stop_flag);
     std::unique_lock lock{mutex};
+    chassert(stop_flag || initial_queries_stopped);
     if (foreground_tasks)
-        LOG_TRACE(log, "Waiting for {} initial queries executed by the stopped worker", foreground_tasks);
+        LOG_TRACE(log, "Waiting for {} admitted initial queries", foreground_tasks);
     foreground_tasks_finished.wait(lock, [&] { return foreground_tasks == 0; });
 }
 
@@ -557,9 +566,9 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
         {
             chassert(zookeeper->expired() || current_task <= entry_name);
 
-            if (zookeeper->expired() || stop_flag)
+            if (zookeeper->expired() || stop_flag || initial_queries_stopped)
             {
-                LOG_TRACE(log, "Not enqueueing query: {}", stop_flag ? "replication stopped" : "ZooKeeper session expired");
+                LOG_TRACE(log, "Not enqueueing query: {}", zookeeper->expired() ? "ZooKeeper session expired" : "replication stopped");
                 throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "ZooKeeper session expired or replication stopped, try again");
             }
 
@@ -576,7 +585,8 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
             throw Exception(ErrorCodes::UNFINISHED, "Timeout: Cannot enqueue query on this replica, "
                             "most likely because replica is busy with previous queue entries");
 
-        /// The predicate above has checked `stop_flag` under `mutex`, so `waitForForegroundTasks` will wait for this query.
+        /// The predicate above has checked `stop_flag` and `initial_queries_stopped` under `mutex`,
+        /// so `waitForForegroundTasks` will wait for this query.
         ++foreground_tasks;
     }
 

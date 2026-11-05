@@ -2506,25 +2506,38 @@ void DatabaseReplicated::restoreDatabaseInKeeper(ContextPtr)
     std::shared_ptr<DatabaseReplicatedDDLWorker> old_worker;
     {
         std::lock_guard lock{ddl_worker_mutex};
+        old_worker = ddl_worker;
+    }
+
+    /// Initial queries admitted by the worker execute and commit on their own threads, and `shutdown` does not wait
+    /// for them. Wait for them before rewriting the replication state: otherwise a query could commit its metadata
+    /// while the recovery of the new worker compares the Keeper snapshot with the local tables, and the recovery
+    /// would move the just created table to `<db>_broken_replicated_tables` (or drop it).
+    /// Stop admitting new initial queries, but keep the worker running while waiting: an admitted query may depend
+    /// on it, e.g. an `ALTER` of a `ReplicatedMergeTree` table with `alter_sync` waits for its `ALTER_METADATA` entry,
+    /// which the table executes only while `canExecuteReplicatedMetadataAlter` is true.
+    /// Not under `ddl_worker_mutex`, because these queries may need it.
+    if (old_worker)
+    {
+        LOG_TRACE(log, "Waiting for initial queries before restoring database metadata in Keeper.");
+        old_worker->stopInitialQueries();
+        old_worker->waitForForegroundTasks();
+    }
+
+    {
+        std::lock_guard lock{ddl_worker_mutex};
+        /// Only `restoreDatabaseInKeeper` (serialized by `restore_in_keeper_mutex`) creates a new worker after startup,
+        /// so the worker is either still the same or was removed by a concurrent `DROP DATABASE`.
+        chassert(!ddl_worker || ddl_worker == old_worker);
         if (ddl_worker)
         {
             LOG_TRACE(log, "Stopping DDL worker before restoring database metadata in Keeper.");
             ddl_worker->shutdown();
             ddl_worker_initialized = false;
-            old_worker = replaceDDLWorkerUnlocked(nullptr);
+            replaceDDLWorkerUnlocked(nullptr);
         }
     }
-
-    /// Initial queries that the old worker admitted before it was stopped still execute and commit on their own
-    /// threads. Wait for them before rewriting the replication state: otherwise a query could commit its metadata
-    /// while the recovery of the new worker compares the Keeper snapshot with the local tables, and the recovery
-    /// would move the just created table to `<db>_broken_replicated_tables` (or drop it).
-    /// Not under `ddl_worker_mutex`, because these queries may need it.
-    if (old_worker)
-    {
-        old_worker->waitForForegroundTasks();
-        old_worker.reset();
-    }
+    old_worker.reset();
 
     /// If the restore fails, reinitialize the DDL worker so the database remains functional.
     /// SAFE: the body runs while an exception propagates and can itself throw (thread
