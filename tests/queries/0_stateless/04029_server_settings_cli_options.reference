@@ -1,4 +1,5 @@
 concurrent_threads_soft_limit_num	7
+default_replica_name	-replica
 distributed_ddl.task_max_lifetime	1234
 dns_max_consecutive_failures	42
 http_connections_soft_limit	111
@@ -8,6 +9,7 @@ max_connections	50
 max_thread_pool_size	999888
 openSSL.server.cacheSessions	1
 openSSL.server.sessionTimeout	4
+os_threads_nice_value_merge_mutate	-5
 prometheus.keeper_metrics_only	1
 query_cache.max_entries	11
 query_cache.max_size_in_bytes	2097152

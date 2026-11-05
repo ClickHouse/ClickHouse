@@ -78,6 +78,8 @@ function stop_server()
 #   `--prometheus_keeper_metrics_only 1` (bound to `prometheus.keeper_metrics_only`) makes the HTTP port serve
 #   `/metrics`, same as `-- --prometheus.keeper_metrics_only 1`. The value is applied, as is
 #   `--distributed_ddl_task_max_lifetime` (bound to `distributed_ddl.task_max_lifetime`).
+# - A space-separated value that starts with `-` is the value of the direct option, not another option, for a
+#   number (`--os_threads_nice_value_merge_mutate -5`) as well as for a string (`--default_replica_name -replica`).
 srv_dir1="${CLICKHOUSE_TMP}/srv1"
 SRV1_HTTP_PORT=50223
 mkdir -p "$srv_dir1"
@@ -96,6 +98,8 @@ $CLICKHOUSE_BINARY server \
     --query_cache_max_size_in_bytes 2097152 \
     --prometheus_keeper_metrics_only 1 \
     --distributed_ddl_task_max_lifetime 1234 \
+    --os_threads_nice_value_merge_mutate -5 \
+    --default_replica_name -replica \
     --logger_log "$srv_dir1/loser.log" --log-file "$srv_dir1/winner.log" \
     -E "$srv_dir1/loser.err" --LOGGER_ERRORLOG:"$srv_dir1/winner.err" \
     -- --tcp_port "$CLICKHOUSE_PORT_TCP" --http_port "$SRV1_HTTP_PORT" --path "$srv_dir1/" \
@@ -116,7 +120,8 @@ $CLICKHOUSE_CLIENT --query "
                    'dns_max_consecutive_failures', 'http_connections_soft_limit', 'uncompressed_cache_size',
                    'concurrent_threads_soft_limit_num', 'load_marks_threadpool_pool_size',
                    'query_cache.max_entries', 'query_cache.max_size_in_bytes', 'logger.level',
-                   'prometheus.keeper_metrics_only', 'distributed_ddl.task_max_lifetime')
+                   'prometheus.keeper_metrics_only', 'distributed_ddl.task_max_lifetime',
+                   'os_threads_nice_value_merge_mutate', 'default_replica_name')
     ORDER BY name"
 
 # The `prometheus` section given on the command line is applied, so `/metrics` is served on the HTTP port.
@@ -202,8 +207,12 @@ $CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name 
 $CLICKHOUSE_CLIENT --query "SELECT value = '$cfg2' FROM system.server_settings WHERE name = 'config-file'"
 
 sed -i 's|<max_connections>777</max_connections>|<max_connections>777</max_connections><no_such_server_setting>1</no_such_server_setting>|' "$cfg2"
-$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG" && echo "OK: config with an unknown setting is reloaded"
-$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG"
+# The warnings that a reload may log are environment-specific and not what is checked here (e.g. `Cannot set max
+# size of core file` on macOS, or `Listen [127.0.0.1]:... failed` when a port of the default `listen_host` was
+# taken at startup and is retried on every reload), so they are not sent to the client.
+CLICKHOUSE_CLIENT_QUIET=$(echo "$CLICKHOUSE_CLIENT" | sed 's/--send_logs_level=[a-z]*/--send_logs_level=error/g')
+$CLICKHOUSE_CLIENT_QUIET --query "SYSTEM RELOAD CONFIG" && echo "OK: config with an unknown setting is reloaded"
+$CLICKHOUSE_CLIENT_QUIET --query "SYSTEM RELOAD CONFIG"
 if grep -q 'Stopped listening for Prometheus' "${CLICKHOUSE_TMP}/server2.log"; then
     echo "FAIL: the Prometheus listener is restarted on a config reload"
 else
