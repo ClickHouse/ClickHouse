@@ -8,8 +8,6 @@
 # expire, and statements the key cannot be honoured for are refused.
 # Where it matters, the statement is first repeated without a key, to show it is not idempotent on its own.
 
-CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
-
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
@@ -21,40 +19,52 @@ ZK="/test/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 OTHER_USER="u_${CLICKHOUSE_DATABASE}"
 DROP_USER="u_drop_${CLICKHOUSE_DATABASE}"
 
+# q <query> [<name>=<value> ...]: runs the query over HTTP with these settings or HTTP parameters. A client process per
+# query would make the test too slow under sanitizers.
+function q()
+{
+    local query=$1 params=""
+    shift
+    for param in "$@"; do
+        params+="&$param"
+    done
+    ${CLICKHOUSE_CURL} -sS --fail-with-body "${CLICKHOUSE_URL}${params}" --data-binary "$query"
+}
+
 function cleanup()
 {
     for db in $R1 $Y1 $ATOMIC; do
-        $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $db SYNC"
+        q "DROP DATABASE IF EXISTS $db SYNC"
     done
-    $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $OTHER_USER, $DROP_USER"
+    q "DROP USER IF EXISTS $OTHER_USER, $DROP_USER"
 }
 trap cleanup EXIT
 
-# Prints OK, or the name of the error.
+# run <query> [<name>=<value> ...]: prints OK, or the name of the error.
 function run()
 {
     local out
-    if out=$("$@" 2>&1); then
+    if out=$(q "$@" 2>&1); then
         echo OK
     else
         echo "$out" | grep -oE '\([A-Z][A-Z0-9_]+\)' | tail -1 | tr -d '()'
     fi
 }
 
-# keyed <key> <query> [client options]
+# keyed <key> <query> [<name>=<value> ...]
 function keyed()
 {
     local key=$1 query=$2
     shift 2
-    run $CLICKHOUSE_CLIENT --enable_ddl_idempotency_key 1 --idempotency_key "$key" --distributed_ddl_output_mode none "$@" -q "$query"
+    run "$query" enable_ddl_idempotency_key=1 "idempotency_key=$key" distributed_ddl_output_mode=none "$@"
 }
 
-# refused <query> [client options]: prints "refused" if the key refused the statement, else what keyed() prints
+# refused <query> [<name>=<value> ...]: prints "refused" if the key refused the statement, else what keyed() prints
 function refused()
 {
     local query=$1 out
     shift
-    if out=$($CLICKHOUSE_CLIENT --enable_ddl_idempotency_key 1 --idempotency_key k20 --distributed_ddl_output_mode none "$@" -q "$query" 2>&1); then
+    if out=$(q "$query" enable_ddl_idempotency_key=1 idempotency_key=k20 distributed_ddl_output_mode=none "$@" 2>&1); then
         echo OK
     elif echo "$out" | grep -qE 'idempotency_key is (not supported for|supported only for statements)'; then
         echo refused
@@ -65,30 +75,30 @@ function refused()
 
 function log_size()
 {
-    $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '$ZK/r/log'"
+    q "SELECT count() FROM system.zookeeper WHERE path = '$ZK/r/log'"
 }
 
 function plain()
 {
-    run $CLICKHOUSE_CLIENT --distributed_ddl_output_mode none -q "$1"
+    run "$1" distributed_ddl_output_mode=none
 }
 
 function comment_of()
 {
-    $CLICKHOUSE_CLIENT -q "SELECT comment FROM system.tables WHERE database = '$1' AND name = '$2'"
+    q "SELECT comment FROM system.tables WHERE database = '$1' AND name = '$2'"
 }
 
 function has_column()
 {
-    $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.columns WHERE database = '$1' AND table = '$2' AND name = '$3'"
+    q "SELECT count() FROM system.columns WHERE database = '$1' AND table = '$2' AND name = '$3'"
 }
 
 function tables_named()
 {
-    $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.tables WHERE database = '$1' AND name = '$2'"
+    q "SELECT count() FROM system.tables WHERE database = '$1' AND name = '$2'"
 }
 
-$CLICKHOUSE_CLIENT -q "CREATE DATABASE $R1 ENGINE = Replicated('$ZK/r', 's1', 'r1')"
+q "CREATE DATABASE $R1 ENGINE = Replicated('$ZK/r', 's1', 'r1')"
 for t in a b c d; do
     plain "CREATE TABLE $R1.$t (x UInt8) ENGINE = Memory COMMENT '$t'" > /dev/null
 done
@@ -99,21 +109,21 @@ plain "CREATE TABLE $R1.t (x UInt8) ENGINE = MergeTree ORDER BY x" > /dev/null
 plain "CREATE TABLE $R1.rmt (x UInt8) ENGINE = ReplicatedMergeTree ORDER BY x" > /dev/null
 
 echo "-- the key needs enable_ddl_idempotency_key"
-run $CLICKHOUSE_CLIENT --idempotency_key k0 -q "CREATE TABLE $R1.g (x UInt8) ENGINE = Memory"
+run "CREATE TABLE $R1.g (x UInt8) ENGINE = Memory" idempotency_key=k0
 
 echo "-- EXCHANGE twice without a key swaps back, with a key it swaps once"
 plain "EXCHANGE TABLES $R1.c AND $R1.d"
 plain "EXCHANGE TABLES $R1.c AND $R1.d"
 comment_of "$R1" c
 keyed k1 "EXCHANGE TABLES $R1.a AND $R1.b"
-keyed k1 "USE $R1; EXCHANGE TABLES a AND b"
+keyed k1 "EXCHANGE TABLES a AND b" "database=$R1"
 comment_of "$R1" a
 
 echo "-- ALTER ADD COLUMN"
 plain "ALTER TABLE $R1.t ADD COLUMN c0 UInt8"
 plain "ALTER TABLE $R1.t ADD COLUMN c0 UInt8"
 keyed k2 "ALTER TABLE $R1.rmt ADD COLUMN c UInt8"
-keyed k2 "USE $R1; ALTER TABLE rmt ADD COLUMN c UInt8"
+keyed k2 "ALTER TABLE rmt ADD COLUMN c UInt8" "database=$R1"
 keyed k3 "ALTER TABLE $R1.t ADD COLUMN c UInt8"
 size=$(log_size)
 keyed k3 "ALTER TABLE $R1.t ADD COLUMN c UInt8"
@@ -133,7 +143,7 @@ keyed k4 "RENAME TABLE $R1.x0 TO $R1.y"
 keyed k4 "RENAME TABLE $R1.x0 TO $R1.y"
 plain "DROP TABLE $R1.z0"
 plain "DROP TABLE $R1.z0"
-keyed k5 "DROP TABLE $R1.z" --ignore_drop_queries_probability 1
+keyed k5 "DROP TABLE $R1.z" ignore_drop_queries_probability=1
 keyed k5 "DROP TABLE $R1.z"
 tables_named "$R1" y
 tables_named "$R1" z
@@ -163,41 +173,41 @@ echo "the retry made $(( $(log_size) - size )) log entries"
 tables_named "$R1" n
 tables_named "$R1" v
 tables_named "$R1" mv
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.dictionaries WHERE database = '$R1' AND name = 'kd'"
+q "SELECT count() FROM system.dictionaries WHERE database = '$R1' AND name = 'kd'"
 tables_named "$R1" nm
 
 echo "-- a key used by another statement or user"
 keyed k1 "EXCHANGE TABLES $R1.c AND $R1.d"
-$CLICKHOUSE_CLIENT -q "CREATE USER $OTHER_USER IDENTIFIED WITH no_password"
-keyed k3 "ALTER TABLE $R1.t ADD COLUMN c UInt8" --user "$OTHER_USER"
-$CLICKHOUSE_CLIENT -q "GRANT ALTER ADD COLUMN ON $R1.t TO $OTHER_USER"
-keyed k3 "ALTER TABLE $R1.t ADD COLUMN c UInt8" --user "$OTHER_USER"
+q "CREATE USER $OTHER_USER IDENTIFIED WITH no_password"
+keyed k3 "ALTER TABLE $R1.t ADD COLUMN c UInt8" "user=$OTHER_USER"
+q "GRANT ALTER ADD COLUMN ON $R1.t TO $OTHER_USER"
+keyed k3 "ALTER TABLE $R1.t ADD COLUMN c UInt8" "user=$OTHER_USER"
 echo "-- the output clauses of the retry do not matter"
 keyed k3 "ALTER TABLE $R1.t ADD COLUMN c UInt8 SETTINGS distributed_ddl_output_mode = 'throw'"
 echo "-- nor does a retry wait for replicas to sync if the original did not ask for it"
-keyed k3 "ALTER TABLE $R1.t ADD COLUMN c UInt8" --database_replicated_enforce_synchronous_settings 1 --distributed_ddl_task_timeout 10
+keyed k3 "ALTER TABLE $R1.t ADD COLUMN c UInt8" database_replicated_enforce_synchronous_settings=1 distributed_ddl_task_timeout=10
 
 echo "-- an answer from the key requires the access the statement requires"
-$CLICKHOUSE_CLIENT -q "GRANT ALTER ADD COLUMN ON $R1.t TO $OTHER_USER"
-keyed k10 "ALTER TABLE $R1.t ADD COLUMN u UInt8" --user "$OTHER_USER"
-keyed k10 "ALTER TABLE $R1.t ADD COLUMN u UInt8" --user "$OTHER_USER"
-$CLICKHOUSE_CLIENT -q "REVOKE ALTER ADD COLUMN ON $R1.t FROM $OTHER_USER"
-keyed k10 "ALTER TABLE $R1.t ADD COLUMN u UInt8" --user "$OTHER_USER"
+q "GRANT ALTER ADD COLUMN ON $R1.t TO $OTHER_USER"
+keyed k10 "ALTER TABLE $R1.t ADD COLUMN u UInt8" "user=$OTHER_USER"
+keyed k10 "ALTER TABLE $R1.t ADD COLUMN u UInt8" "user=$OTHER_USER"
+q "REVOKE ALTER ADD COLUMN ON $R1.t FROM $OTHER_USER"
+keyed k10 "ALTER TABLE $R1.t ADD COLUMN u UInt8" "user=$OTHER_USER"
 plain "CREATE VIEW $R1.dt AS SELECT 1" > /dev/null
-$CLICKHOUSE_CLIENT -q "CREATE USER $DROP_USER IDENTIFIED WITH no_password"
-$CLICKHOUSE_CLIENT -q "GRANT DROP VIEW ON $R1.dt TO $DROP_USER"
-keyed k14 "DROP TABLE $R1.dt" --user "$DROP_USER"
-keyed k14 "DROP TABLE $R1.dt" --user "$DROP_USER"
+q "CREATE USER $DROP_USER IDENTIFIED WITH no_password"
+q "GRANT DROP VIEW ON $R1.dt TO $DROP_USER"
+keyed k14 "DROP TABLE $R1.dt" "user=$DROP_USER"
+keyed k14 "DROP TABLE $R1.dt" "user=$DROP_USER"
 plain "CREATE DICTIONARY $R1.dd (k UInt64, v UInt8) PRIMARY KEY k SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0)" > /dev/null
 plain "CREATE TABLE $R1.de (k UInt64, v UInt8) ENGINE = Dictionary($R1.dd)" > /dev/null
-$CLICKHOUSE_CLIENT -q "GRANT DROP DICTIONARY ON $R1.de TO $DROP_USER"
-keyed k16 "DROP TABLE $R1.de" --user "$DROP_USER"
-keyed k16 "DROP TABLE $R1.de" --user "$DROP_USER"
+q "GRANT DROP DICTIONARY ON $R1.de TO $DROP_USER"
+keyed k16 "DROP TABLE $R1.de" "user=$DROP_USER"
+keyed k16 "DROP TABLE $R1.de" "user=$DROP_USER"
 echo "-- a recreated user with the same name is another user"
-$CLICKHOUSE_CLIENT -q "DROP USER $OTHER_USER"
-$CLICKHOUSE_CLIENT -q "CREATE USER $OTHER_USER IDENTIFIED WITH no_password"
-$CLICKHOUSE_CLIENT -q "GRANT ALTER ADD COLUMN ON $R1.t TO $OTHER_USER"
-keyed k10 "ALTER TABLE $R1.t ADD COLUMN u UInt8" --user "$OTHER_USER"
+q "DROP USER $OTHER_USER"
+q "CREATE USER $OTHER_USER IDENTIFIED WITH no_password"
+q "GRANT ALTER ADD COLUMN ON $R1.t TO $OTHER_USER"
+keyed k10 "ALTER TABLE $R1.t ADD COLUMN u UInt8" "user=$OTHER_USER"
 
 echo "-- a failed attempt records nothing"
 keyed k11 "ALTER TABLE $R1.t ADD COLUMN c UInt8"
@@ -232,9 +242,9 @@ refused "DROP TABLE $R1.mvi"
 refused "ALTER TABLE $R1.mvi MODIFY COMMENT 'c'"
 refused "DROP DATABASE $R1"
 refused "CREATE TABLE $R1.r ON CLUSTER test_shard_localhost (x UInt8) ENGINE = Memory"
-refused "INSERT INTO $R1.t (x) VALUES (1)" --async_insert 0
-refused "INSERT INTO $R1.t (x) VALUES (1)" --async_insert 1
-$CLICKHOUSE_CLIENT -q "CREATE DATABASE $ATOMIC ENGINE = Atomic"
+refused "INSERT INTO $R1.t (x) VALUES (1)" async_insert=0
+refused "INSERT INTO $R1.t (x) VALUES (1)" async_insert=1
+q "CREATE DATABASE $ATOMIC ENGINE = Atomic"
 refused "CREATE TABLE $ATOMIC.r (x UInt8) ENGINE = Memory"
 refused "ALTER TABLE $R1.km ADD COLUMN x UInt8"
 plain "CREATE TABLE $ATOMIC.at (x UInt8) ENGINE = MergeTree ORDER BY x" > /dev/null
@@ -246,8 +256,8 @@ tables_named "$R1" a
 has_column "$ATOMIC" at y
 
 echo "-- a key in the settings of a statement nested in another query is refused"
-$CLICKHOUSE_CLIENT -q "GRANT CREATE TABLE ON $R1.ea TO $OTHER_USER"
-$CLICKHOUSE_CLIENT -q "GRANT TABLE ENGINE ON MergeTree TO $OTHER_USER"
+q "GRANT CREATE TABLE ON $R1.ea TO $OTHER_USER"
+q "GRANT TABLE ENGINE ON MergeTree TO $OTHER_USER"
 plain "ALTER TABLE $R1.t ADD COLUMN p UInt8 SETTINGS idempotency_key = 'k21', enable_ddl_idempotency_key = 1 PARALLEL WITH ALTER TABLE $R1.dst MODIFY COMMENT 'p'"
 plain "EXECUTE AS $OTHER_USER CREATE TABLE $R1.ea (x UInt8) ENGINE = MergeTree ORDER BY x SETTINGS idempotency_key = 'k22', enable_ddl_idempotency_key = 1"
 has_column "$R1" t p
@@ -260,21 +270,21 @@ has_column "$R1" t c5
 plain "ALTER TABLE $R1.t ADD COLUMN c6 UInt8 SETTINGS idempotency_key = 'k19', idempotency_key = 'k19', enable_ddl_idempotency_key = 1"
 plain "ALTER TABLE $R1.t ADD COLUMN c7 UInt8 SETTINGS idempotency_key = 'k24', enable_ddl_idempotency_key = 1, max_threads = DEFAULT"
 plain "ALTER TABLE $R1.t MODIFY COMMENT 'no key' SETTINGS enable_ddl_idempotency_key = 1"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '$ZK/r/log' AND (value LIKE '%idempotency_key = %' OR value LIKE '%enable_ddl_idempotency_key%')"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.zookeeper WHERE path = '$ZK/r/log' AND value LIKE '%ADD COLUMN \`c7\` UInt8) SETTINGS max_threads = DEFAULT%'"
+q "SELECT count() FROM system.zookeeper WHERE path = '$ZK/r/log' AND (value LIKE '%idempotency_key = %' OR value LIKE '%enable_ddl_idempotency_key%')"
+q "SELECT count() FROM system.zookeeper WHERE path = '$ZK/r/log' AND value LIKE '%ADD COLUMN \`c7\` UInt8) SETTINGS max_threads = DEFAULT%'"
 
 echo "-- the key is not sent to the shards of a distributed query"
 qid="${CLICKHOUSE_DATABASE}_remote_${RANDOM}"
-$CLICKHOUSE_CLIENT --enable_ddl_idempotency_key 1 --idempotency_key k23 --prefer_localhost_replica 0 --log_queries 1 --query_id "$qid" -q "SELECT count() FROM remote('127.0.0.2', system.one)"
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-$CLICKHOUSE_CLIENT -q "
+q "SELECT count() FROM remote('127.0.0.2', system.one)" enable_ddl_idempotency_key=1 idempotency_key=k23 prefer_localhost_replica=0 log_queries=1 "query_id=$qid"
+q "SYSTEM FLUSH LOGS query_log"
+q "
     SELECT count() > 0, countIf(Settings['idempotency_key'] != '' OR Settings['enable_ddl_idempotency_key'] != '')
     FROM system.query_log
     WHERE event_date >= yesterday() AND type = 'QueryFinish' AND NOT is_initial_query
         AND initial_query_id = (SELECT any(query_id) FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '$qid')"
 
 echo "-- keys expire"
-$CLICKHOUSE_CLIENT -q "CREATE DATABASE $Y1 ENGINE = Replicated('$ZK/y', 's1', 'r1') SETTINGS idempotency_key_ttl_sec = 10"
+q "CREATE DATABASE $Y1 ENGINE = Replicated('$ZK/y', 's1', 'r1') SETTINGS idempotency_key_ttl_sec = 10"
 plain "CREATE TABLE $Y1.e (x UInt8) ENGINE = Memory" > /dev/null
 keyed k13 "ALTER TABLE $Y1.e ADD COLUMN c UInt8"
 plain "ALTER TABLE $Y1.e DROP COLUMN c"
