@@ -19,12 +19,14 @@ DROP TABLE IF EXISTS tk;
 DROP TABLE IF EXISTS tm;
 DROP TABLE IF EXISTS tl;
 DROP TABLE IF EXISTS tf;
+DROP TABLE IF EXISTS tmb;
 DROP TABLE IF EXISTS tq;
 DROP VIEW IF EXISTS v;
 
 CREATE TABLE t (id UInt64, data JSON, tup Tuple(a UInt64, b String), n Nullable(String), s String, arr Array(UInt32), m Map(String, UInt64),
     lc LowCardinality(Nullable(String)), v Variant(UInt64, String), d Dynamic)
-ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
 INSERT INTO t SELECT number,
     if(number % 4 = 0, '{"a" : {"Int64" : 7}}', toJSONString(map('a', toString(number), 'b', 'x'))),
     (number, toString(number % 5)),
@@ -68,8 +70,12 @@ CREATE TABLE tl (id UInt64, lcm Map(LowCardinality(String), UInt64)) ENGINE = Me
 INSERT INTO tl SELECT number, map('k1', number) FROM numbers(3);
 
 CREATE TABLE tf (id UInt64, m2 Map(FixedString(4), UInt64), m3 Map(LowCardinality(FixedString(4)), UInt64)) ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
 INSERT INTO tf SELECT number, map(toFixedString('ab', 4), number), map(toFixedString('ab', 4), number) FROM numbers(3);
+
+CREATE TABLE tmb (id UInt64, m Map(String, UInt64)) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic';
+INSERT INTO tmb SELECT number, map('k1', number) FROM numbers(3);
 
 SELECT 'P1 JSON path';
 SELECT arrayStringConcat(arraySort(arrayFilter(x -> x != '', groupArray(arrayStringConcat(arraySort(arrayFilter(x -> x != 'id', splitByString(', ', replaceRegexpOne(explain, '^.*Output: ', '')))), ', ')))), ' | ') FROM (EXPLAIN SELECT data.a AS r FROM (SELECT * FROM t)) WHERE explain LIKE '% Output:%';
@@ -340,6 +346,11 @@ SELECT arrayStringConcat(arraySort(arrayFilter(x -> x != '', groupArray(arrayStr
 SELECT groupArray(r) FROM (SELECT m3[toFixedString('ab', 4)] FROM (SELECT * FROM tf) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r;
 SELECT groupArray(r) FROM (SELECT m3[toFixedString('ab', 4)] FROM (SELECT * FROM tf) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r SETTINGS query_plan_push_down_volume_reducing_functions = 0;
 
+SELECT 'N32 map element of a Map without buckets';
+SELECT arrayStringConcat(arraySort(arrayFilter(x -> x != '', groupArray(arrayStringConcat(arraySort(arrayFilter(x -> x != 'id', splitByString(', ', replaceRegexpOne(explain, '^.*Output: ', '')))), ', ')))), ' | ') FROM (EXPLAIN SELECT m['k1'] FROM (SELECT * FROM tmb)) WHERE explain LIKE '% Output:%';
+SELECT groupArray(r) FROM (SELECT m['k1'] FROM (SELECT * FROM tmb) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r;
+SELECT groupArray(r) FROM (SELECT m['k1'] FROM (SELECT * FROM tmb) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r SETTINGS query_plan_push_down_volume_reducing_functions = 0;
+
 SELECT 'N22 a JSON path named like the composed path';
 SELECT arrayStringConcat(arraySort(arrayFilter(x -> x != '', groupArray(arrayStringConcat(arraySort(arrayFilter(x -> x != 'id', splitByString(', ', replaceRegexpOne(explain, '^.*Output: ', '')))), ', ')))), ' | ') FROM (EXPLAIN SELECT toString(getSubcolumn(x, 'Int64')) FROM (SELECT data.a AS x FROM (SELECT * FROM t))) WHERE explain LIKE '% Output:%';
 SELECT groupArray(r) FROM (SELECT toString(getSubcolumn(x, 'Int64')) FROM (SELECT data.a AS x FROM (SELECT * FROM t)) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r;
@@ -403,4 +414,5 @@ DROP TABLE tk;
 DROP TABLE tm;
 DROP TABLE tl;
 DROP TABLE tf;
+DROP TABLE tmb;
 DROP TABLE tq;

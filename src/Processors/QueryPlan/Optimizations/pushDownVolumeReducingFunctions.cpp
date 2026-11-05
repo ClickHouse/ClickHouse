@@ -496,6 +496,7 @@ struct SubcolumnRead
     String residual;
     std::vector<ResidualArgument> residual_arguments;
     bool is_function_form = false;
+    bool is_map_key = false;
 };
 
 std::optional<Field> tryGetConstant(const ActionsDAG::Node * node)
@@ -653,6 +654,7 @@ std::optional<SubcolumnRead> tryMatchSubcolumnReadImpl(const ActionsDAG::Node & 
                 return {};
 
             set_subcolumn(*subcolumn, map.getValueType(), SerializationMap::isKeyValueSubcolumn);
+            read.is_map_key = true;
             return read;
         }
     }
@@ -1215,6 +1217,10 @@ size_t tryPushDownSubcolumnsToReading(QueryPlan::Node * top_node, QueryPlan::Nod
                     ok = false;
 
                 if (!storageResolvesSubcolumn(*read_step, column, read))
+                    ok = false;
+
+                /// Without buckets the key subcolumn `m.key_<key>` reads the whole Map.
+                if (read.is_map_key && !read_step->getMergeTreeData().hasBucketedMapSerialization())
                     ok = false;
             }
         };
