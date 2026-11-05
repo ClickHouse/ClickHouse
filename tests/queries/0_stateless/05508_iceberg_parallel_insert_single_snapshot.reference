@@ -1,5 +1,6 @@
 === INSERT SELECT ===
 10000	10000
+manifests: 2
 === INSERT with data from the client ===
 15000	15000
 === one snapshot per INSERT ===

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# A multithreaded INSERT into Iceberg commits the files of all its parallel sinks in one snapshot, not one per sink.
+# A multithreaded INSERT into Iceberg commits the files of all its parallel sinks in one snapshot, not one per sink,
+# with one manifest per partition holding the files of every sink.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -31,6 +32,7 @@ SETTINGS="--allow_insert_into_iceberg=1 --max_insert_threads=4 --max_threads=4 -
 echo "=== INSERT SELECT ==="
 ${CLICKHOUSE_CLIENT} ${SETTINGS} --query "INSERT INTO ${TABLE} SELECT number FROM numbers_mt(10000)"
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), uniqExact(k) FROM ${TABLE}"
+echo "manifests: $(find "${TABLE_PATH}metadata" -maxdepth 1 -name '*.avro' -not -name 'snap-*.avro' -type f | wc -l | tr -d ' ')"
 
 echo "=== INSERT with data from the client ==="
 ${CLICKHOUSE_CLIENT} --query "SELECT number FROM numbers(10000, 5000) FORMAT TSV" \

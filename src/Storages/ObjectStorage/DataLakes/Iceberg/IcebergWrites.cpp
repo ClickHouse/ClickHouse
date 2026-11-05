@@ -1811,11 +1811,18 @@ bool IcebergStorageSink::initializeMetadata()
                 partition_summary.reset();
             };
 
+            /// Several sinks may write the same partition: group their files, so the manifest of a partition holds all of them.
+            std::unordered_map<ChunkPartitioner::PartitionKey, std::vector<const MultipleFileWriter *>, ChunkPartitioner::PartitionKeyHasher>
+                writers_per_partition;
+            for (const auto & [partition_key, writer] : writers_to_commit)
+                writers_per_partition[*partition_key].push_back(writer);
+
             /// Either one manifest for every partition the insert touched, or one manifest per partition.
             const bool single_manifest = context->getSettingsRef()[Setting::iceberg_insert_single_manifest_for_all_partitions];
-            for (const auto & [partition_key, writer] : writers_to_commit)
+            for (const auto & [partition_key, writers] : writers_per_partition)
             {
-                add_partition(*partition_key, *writer);
+                for (const auto * writer : writers)
+                    add_partition(partition_key, *writer);
                 if (!single_manifest)
                     write_manifest();
             }
