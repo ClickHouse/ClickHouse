@@ -1286,14 +1286,13 @@ void StorageMergeTree::addPreparedMutationEntry(PreparedMutationEntry prepared)
     background_operations_assignee.trigger();
 }
 
-Int64 StorageMergeTree::startMutation(const MutationCommands & commands, ContextPtr query_context)
+Int64 StorageMergeTree::registerMutation(PreparedMutationEntry prepared, ContextPtr query_context)
 {
-    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::startMutation");
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::registerMutation");
 
-    /// File I/O (`writeFile` + `sync` + `moveFile`) happens in `prepareMutationEntry`
+    /// File I/O (`writeFile` + `sync` + `moveFile`) happened in `prepareMutationEntry`
     /// outside the mutex; only the in-memory registration is locked. Holding the
     /// mutex across the file I/O would block merge selection for its full duration.
-    auto prepared = prepareMutationEntry(commands, query_context);
     Int64 version = prepared.version;
     String mutation_id = prepared.mutation_id;
     FailPointInjection::pauseFailPoint(FailPoints::mt_pause_before_register_mutation);
@@ -1499,12 +1498,13 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
         }
     }
 
-    Int64 version = 0;
+    std::optional<PreparedMutationEntry> prepared;
     {
         /// It's important to serialize order of mutations with alter queries because
-        /// they can depend on each other. The lock is held until the mutation entry is created:
+        /// they can depend on each other. The lock is held until the mutation entry is written:
         /// settings that gate the on-disk format of the entry, such as `persist_mutation_author`,
-        /// must not change between the check and the write.
+        /// must not change between the check and the write. It is released before the entry is
+        /// registered in memory, so an `ALTER` does not wait for the registration.
         auto alter_lock = tryLockForAlter(query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
         if (alter_lock == std::nullopt)
         {
@@ -1515,8 +1515,9 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
                 query_context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds());
         }
         FailPointInjection::pauseFailPoint(FailPoints::mt_mutate_pause_after_alter_lock);
-        version = startMutation(commands, query_context);
+        prepared.emplace(prepareMutationEntry(commands, query_context));
     }
+    Int64 version = registerMutation(std::move(*prepared), query_context);
 
     if (query_context->getSettingsRef()[Setting::mutations_sync] > 0 || query_context->getCurrentTransaction())
     {
