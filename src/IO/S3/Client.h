@@ -309,7 +309,6 @@ private:
     /// signed with GOOG4 instead, with generation 0, which succeeds only when the object does not exist.
     bool isGCSCreateIfAbsentWithHMAC(const Model::PutObjectRequest & request) const;
     Model::PutObjectOutcome putObjectWithGOOG4Signature(const Model::PutObjectRequest & request) const;
-    Model::PutObjectOutcome putObjectWithGOOG4SignatureOnce(const Model::PutObjectRequest & request, const String & body) const;
 
     /// True only if the object at `key` carries `idempotency_id`, i.e. whoever set it wrote the object.
     /// One HeadObject. Logs a failed proof, at warning level if asked.

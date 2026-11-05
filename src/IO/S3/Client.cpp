@@ -1507,23 +1507,6 @@ Model::PutObjectOutcome Client::putObjectWithGOOG4Signature(const Model::PutObje
         body.assign(std::istreambuf_iterator<char>(*body_stream), std::istreambuf_iterator<char>());
     }
 
-    const auto & retry_strategy = client_configuration.retryStrategy;
-    for (long retries = 0;; ++retries) // NOLINT(google-runtime-int)
-    {
-        auto outcome = putObjectWithGOOG4SignatureOnce(request, body);
-        if (outcome.IsSuccess())
-            return outcome;
-
-        const Aws::Client::AWSError<Aws::Client::CoreErrors> error(outcome.GetError());
-        if (!retry_strategy->ShouldRetry(error, retries))
-            return outcome;
-
-        GetHttpClient()->RetryRequestSleep(std::chrono::milliseconds(retry_strategy->CalculateDelayBeforeNextRetry(error, retries)));
-    }
-}
-
-Model::PutObjectOutcome Client::putObjectWithGOOG4SignatureOnce(const Model::PutObjectRequest & request, const String & body) const
-{
     const auto credentials = getCredentials();
     const auto & secret = credentials.GetAWSSecretKey();
     const auto & access_key = credentials.GetAWSAccessKeyId();
@@ -1616,20 +1599,33 @@ Model::PutObjectOutcome Client::putObjectWithGOOG4SignatureOnce(const Model::Put
             http_request->SetHeaderValue(name, value);
     http_request->SetHeaderValue("authorization", authorization);
 
-    auto response = GetHttpClient()->MakeRequest(http_request);
-    if (!response)
-        return Aws::S3::S3Error(Aws::Client::AWSError<Aws::Client::CoreErrors>(
-            Aws::Client::CoreErrors::NETWORK_CONNECTION, "", fmt::format("GCS create of {} returned no response", request.GetKey()), true));
-
-    if (!response->HasClientError() && response->GetResponseCode() == Aws::Http::HttpResponseCode::OK)
+    const auto & retry_strategy = client_configuration.retryStrategy;
+    for (long retries = 0;; ++retries) // NOLINT(google-runtime-int)
     {
-        Model::PutObjectResult result;
-        if (response->HasHeader("etag"))
-            result.SetETag(response->GetHeader("etag"));
-        return result;
-    }
+        auto response = GetHttpClient()->MakeRequest(http_request);
+        Aws::Client::AWSError<Aws::Client::CoreErrors> error;
+        if (!response)
+        {
+            error = Aws::Client::AWSError<Aws::Client::CoreErrors>(
+                Aws::Client::CoreErrors::NETWORK_CONNECTION, "", fmt::format("GCS create of {} returned no response", request.GetKey()), true);
+        }
+        else if (!response->HasClientError() && response->GetResponseCode() == Aws::Http::HttpResponseCode::OK)
+        {
+            Model::PutObjectResult result;
+            if (response->HasHeader("etag"))
+                result.SetETag(response->GetHeader("etag"));
+            return result;
+        }
+        else
+        {
+            error = BuildAWSError(response);
+        }
 
-    return Aws::S3::S3Error(GetErrorMarshaller()->BuildAWSError(response));
+        if (!retry_strategy->ShouldRetry(error, retries))
+            return Aws::S3::S3Error(error);
+
+        GetHttpClient()->RetryRequestSleep(std::chrono::milliseconds(retry_strategy->CalculateDelayBeforeNextRetry(error, retries)));
+    }
 }
 
 bool isS3ExpressEndpoint(const std::string & endpoint)
