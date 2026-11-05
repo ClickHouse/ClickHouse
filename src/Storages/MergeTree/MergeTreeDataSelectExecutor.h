@@ -296,6 +296,29 @@ public:
         ReadFromMergeTree::AnalysisResult & result;
     };
 
+    /// Counters of one index, summed over the parts and threads of one analysis.
+    struct IndexAnalysisStat
+    {
+        std::atomic<size_t> total_granules = 0;
+        std::atomic<size_t> granules_dropped = 0;
+        std::atomic<size_t> total_parts = 0;
+        std::atomic<size_t> parts_dropped = 0;
+        std::atomic<size_t> elapsed_us = 0;
+        std::atomic<MarkRanges::SearchAlgorithm> search_algorithm = MarkRanges::SearchAlgorithm::Unknown;
+    };
+
+    struct IndexAnalysisStats
+    {
+        explicit IndexAnalysisStats(size_t num_skip_index_stats) : skip_indexes(num_skip_index_stats) {}
+
+        IndexAnalysisStat primary_key;
+        /// By position in the part's skip index order; one block per part with `per_part_index_stats`.
+        std::vector<IndexAnalysisStat> skip_indexes;
+        std::atomic<size_t> marks_after_primary_key = 0;
+        std::atomic<size_t> parts_after_primary_key = 0;
+        std::atomic<size_t> marks_after_disjunctions = 0;
+    };
+
     /// Filter parts using primary key and secondary indexes.
     /// For every part, select mark ranges to read.
     static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats);

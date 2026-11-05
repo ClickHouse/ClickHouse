@@ -1252,25 +1252,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     if (use_skip_indexes)
         checkForcedSkipIndexes(skip_indexes, settings);
 
-    struct IndexStat
-    {
-        std::atomic<size_t> total_granules = 0;
-        std::atomic<size_t> granules_dropped = 0;
-        std::atomic<size_t> total_parts = 0;
-        std::atomic<size_t> parts_dropped = 0;
-        std::atomic<size_t> elapsed_us = 0;
-        std::atomic<MarkRanges::SearchAlgorithm> search_algorithm = MarkRanges::SearchAlgorithm::Unknown;
-    };
-
-    IndexStat pk_stat;
-
     size_t stat_size = skip_indexes.useful_indices.size();
     if (settings[Setting::per_part_index_stats])
     {
         stat_size = stat_size * parts_with_ranges.size();
     }
 
-    std::vector<IndexStat> useful_indices_stat(stat_size);
+    IndexAnalysisStats stats(stat_size);
 
     /// Part filtering precedes this stage. Compute costs only for the surviving parts,
     /// and only when there is an index order to choose. The result is memoized per part, so
@@ -1316,11 +1304,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         return per_part_index_orders.empty() ? idx : (*per_part_index_orders[part_index])[idx];
     };
 
-    std::atomic<size_t> sum_marks_pk = 0;
-    std::atomic<size_t> sum_parts_pk = 0;
     std::atomic<size_t> top_k_elapsed_us = 0;
-
-    std::atomic<size_t> sum_marks_union = 0;
 
     std::vector<size_t> skip_index_used_in_part(parts_with_ranges.size(), 0);
 
@@ -1412,8 +1396,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 const size_t total_marks_count = ranges.getMarksCount();
                 ProfileEvents::increment(ProfileEvents::FilteringMarksWithPrimaryKeyProcessedMarks, total_marks_count);
-                pk_stat.total_parts.fetch_add(1, std::memory_order_relaxed);
-                pk_stat.total_granules.fetch_add(total_marks_count, std::memory_order_relaxed);
+                stats.primary_key.total_parts.fetch_add(1, std::memory_order_relaxed);
+                stats.primary_key.total_granules.fetch_add(total_marks_count, std::memory_order_relaxed);
 
                 ranges.ranges = markRangesFromPKRange(
                     ranges,
@@ -1426,17 +1410,17 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     settings,
                     log);
 
-                pk_stat.search_algorithm.store(ranges.ranges.search_algorithm, std::memory_order_relaxed);
-                pk_stat.granules_dropped.fetch_add(total_marks_count - ranges.getMarksCount(), std::memory_order_relaxed);
+                stats.primary_key.search_algorithm.store(ranges.ranges.search_algorithm, std::memory_order_relaxed);
+                stats.primary_key.granules_dropped.fetch_add(total_marks_count - ranges.getMarksCount(), std::memory_order_relaxed);
                 if (ranges.ranges.empty())
-                    pk_stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
-                pk_stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
+                    stats.primary_key.parts_dropped.fetch_add(1, std::memory_order_relaxed);
+                stats.primary_key.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
             }
 
-            sum_marks_pk.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
+            stats.marks_after_primary_key.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
 
             if (!ranges.ranges.empty())
-                sum_parts_pk.fetch_add(1, std::memory_order_relaxed);
+                stats.parts_after_primary_key.fetch_add(1, std::memory_order_relaxed);
 
             if (is_final_query && use_skip_indexes_if_final_exact_mode_)
             {
@@ -1511,7 +1495,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     if (settings[Setting::per_part_index_stats])
                         index_stat_idx += num_indexes * part_index;
 
-                    auto & stat = useful_indices_stat[index_stat_idx];
+                    auto & stat = stats.skip_indexes[index_stat_idx];
 
                     stat.total_parts.fetch_add(1, std::memory_order_relaxed);
                     size_t total_granules = ranges.getMarksCount();
@@ -1554,7 +1538,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                                         ranges.ranges, *rpn_template_for_part,
                                         partial_eval_results, reader_settings, log);
 
-                    sum_marks_union.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
+                    stats.marks_after_disjunctions.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
                 }
 
             }
@@ -1687,9 +1671,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         LOG_DEBUG(
             log,
             "PK index has dropped {}/{} granules, it took {}ms across {} threads.",
-            pk_stat.granules_dropped.load(),
-            pk_stat.total_granules.load(),
-            pk_stat.elapsed_us.load() / 1000,
+            stats.primary_key.granules_dropped.load(),
+            stats.primary_key.total_granules.load(),
+            stats.primary_key.elapsed_us.load() / 1000,
             num_threads);
 
         auto description = key_condition->generateUnsubstituted().getDescription();
@@ -1698,9 +1682,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             .type = ReadFromMergeTree::IndexType::PrimaryKey,
             .condition = std::move(description.condition),
             .used_keys = std::move(description.used_keys),
-            .num_parts_after = sum_parts_pk.load(std::memory_order_relaxed),
-            .num_granules_after = sum_marks_pk.load(std::memory_order_relaxed),
-            .search_algorithm = pk_stat.search_algorithm.load(std::memory_order_relaxed)
+            .num_parts_after = stats.parts_after_primary_key.load(std::memory_order_relaxed),
+            .num_granules_after = stats.marks_after_primary_key.load(std::memory_order_relaxed),
+            .search_algorithm = stats.primary_key.search_algorithm.load(std::memory_order_relaxed)
         });
     }
 
@@ -1711,7 +1695,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     {
         for (size_t idx = 0; idx < skip_indexes.useful_indices.size(); ++idx)
         {
-            const auto & stat = useful_indices_stat[part_index * num_indices + idx];
+            const auto & stat = stats.skip_indexes[part_index * num_indices + idx];
             const auto & index_and_condition = skip_indexes.useful_indices[index_order_at(part_index, idx)];
             const auto & index_name = index_and_condition.index->index.name;
             LOG_DEBUG(
@@ -1754,8 +1738,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 .type = ReadFromMergeTree::IndexType::Skip,
                 .name = "<Combined skip indexes>",
                 .description = "Final set of granules after AND/OR processing",
-                .num_parts_after = sum_parts_pk.load(std::memory_order_relaxed),
-                .num_granules_after = sum_marks_union.load(std::memory_order_relaxed)});
+                .num_parts_after = stats.parts_after_primary_key.load(std::memory_order_relaxed),
+                .num_granules_after = stats.marks_after_disjunctions.load(std::memory_order_relaxed)});
         }
     }
 
