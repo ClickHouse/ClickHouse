@@ -32,6 +32,8 @@ public:
 
     bool supportsTruncate() const override { return false; }
 
+    bool mayReadViewSource(const ContextPtr & /*query_context*/) const override { return !input_queries.empty(); }
+
     static VirtualColumnsDescription createVirtuals();
 
     void readImpl(

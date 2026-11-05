@@ -31,6 +31,8 @@ namespace DB
 
         bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return false; }
 
+        bool mayReadViewSource(const ContextPtr & query_context) const override;
+
     private:
         StoragePtr inner_storage;
         ASTPtr inner_table_function_ast;

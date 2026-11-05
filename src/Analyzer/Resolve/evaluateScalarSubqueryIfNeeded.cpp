@@ -6,6 +6,8 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 #include <Planner/Utils.h>
@@ -62,16 +64,25 @@ namespace Setting
 namespace
 {
 
-bool subtreeHasViewSource(const IQueryTreeNode * node, const Context & context)
+bool subtreeHasViewSource(const IQueryTreeNode * node, const ContextPtr & context)
 {
     if (!node)
         return false;
 
+    StoragePtr storage;
     if (const auto * table_node = node->as<TableNode>())
     {
-        if (table_node->getStorageID().getFullNameNotQuoted() == context.getViewSource()->getStorageID().getFullNameNotQuoted())
+        if (table_node->getStorageID().getFullNameNotQuoted() == context->getViewSource()->getStorageID().getFullNameNotQuoted())
             return true;
+        storage = table_node->getStorage();
     }
+    else if (const auto * table_function_node = node->as<TableFunctionNode>())
+    {
+        storage = table_function_node->getStorage();
+    }
+
+    if (storage && storage->mayReadViewSource(context))
+        return true;
 
     for (const auto & child : node->getChildren())
         if (subtreeHasViewSource(child.get(), context))
@@ -133,7 +144,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     QueryTreeNodePtrWithHash node_with_hash(node_without_alias);
     auto str_hash = DB::toString(node_with_hash.hash);
 
-    bool can_use_global_scalars = !only_analyze_subquery && !(context->getViewSource() && subtreeHasViewSource(node_without_alias.get(), *context));
+    bool can_use_global_scalars = !only_analyze_subquery && !(context->getViewSource() && subtreeHasViewSource(node_without_alias.get(), context));
 
     auto & scalars_cache = early_short_circuit_type_inference_in_process
         ? scalar_subquery_to_scalar_value_type_only
