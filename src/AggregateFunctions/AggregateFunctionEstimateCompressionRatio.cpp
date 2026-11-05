@@ -12,9 +12,13 @@
 #include <Compression/ICompressionCodec.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -57,6 +61,24 @@ extern const int LOGICAL_ERROR;
 
 namespace
 {
+
+/// Whether the bytes of a column of `type` do not depend on how its rows are split into writes, because every stream holds one
+/// value after another. Others write something with every write or every granule: `LowCardinality` a header, the shared data of
+/// `JSON` its paths, and `Dynamic` and `JSON` hold any type.
+bool isSplitIndependent(const IDataType & type)
+{
+    if (type.isValueRepresentedByNumber() || isStringOrFixedString(type))
+        return true;
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+        return isSplitIndependent(*nullable->getNestedType());
+    if (const auto * array = typeid_cast<const DataTypeArray *>(&type))
+        return isSplitIndependent(*array->getNestedType());
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(&type))
+        return std::ranges::all_of(tuple->getElements(), [](const DataTypePtr & element) { return isSplitIndependent(*element); });
+    if (const auto * map = typeid_cast<const DataTypeMap *>(&type))
+        return isSplitIndependent(*map->getKeyType()) && isSplitIndependent(*map->getValueType());
+    return false;
+}
 
 /// The codec and the compressed block size of a substream, as `MergeTreeDataPartWriterWide` sets up the streams of a column.
 struct StreamLayout
@@ -213,8 +235,8 @@ private:
     /// The conversions of the rows from `plain_type`, where it differs.
     const std::optional<Conversion> to_represented;
     const std::optional<Conversion> to_target;
-    /// `LowCardinality` writes a header with every write, so a granule is written at once even when the blocks of the query
-    /// split it. For the other types the bytes do not depend on how the rows are split into writes.
+    /// A granule is written at once even when the blocks of the query split it, unless the bytes do not depend on that (see
+    /// `isSplitIndependent`).
     const bool write_whole_granules;
     const CompressionCodecPtr default_codec;
     /// The `codec` parameter, or the default codec, as the `CODEC` clause of a column.
@@ -547,7 +569,7 @@ public:
         , estimated_type(target_type ? target_type : represented_type)
         , to_represented(represented_type != plain_type ? std::optional(createCast(plain_type, represented_type)) : std::nullopt)
         , to_target(target_type && !target_type->equals(*plain_type) ? std::optional(createCast(plain_type, target_type)) : std::nullopt)
-        , write_whole_granules(represented_type != plain_type || recursiveRemoveLowCardinality(estimated_type) != estimated_type)
+        , write_whole_granules(!isSplitIndependent(*represented_type) || !isSplitIndependent(*estimated_type))
         , default_codec(CompressionCodecFactory::instance().getDefaultCodec())
         , codec_description(config.codec ? parseCodecDescription(*config.codec) : default_codec->getFullCodecDescription())
         , block_size_bytes(config.block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE))
