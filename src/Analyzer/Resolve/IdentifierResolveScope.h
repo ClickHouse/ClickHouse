@@ -205,18 +205,21 @@ struct IdentifierResolveScope
       */
     QueryTreeNodePtrWithHashIgnoreAliasesMap<QueryTreeNodePtr> nullable_group_by_keys;
 
-    /** The shallow hashes of the shapes in `nullable_group_by_keys`, which cover the names of the columns and
-      * the functions and the structure of the expression, but not the sources of the columns.
-      * A lookup in `nullable_group_by_keys` computes the tree hash of the node, which also covers the sources
-      * of its columns, so the nodes with other shallow hashes are rejected without it.
+    /** The shapes in `nullable_group_by_keys` with their keys, grouped by a shallow hash, which covers the names of the
+      * columns and the functions, the constants and the structure of the expression, but not the sources of the columns.
+      * A lookup in `nullable_group_by_keys` computes the tree hash of the node, which also covers the sources of its
+      * columns (the whole subquery for a column of a subquery), so `findNullableGroupByKey` uses this index instead:
+      * it compares only the shapes with the same shallow hash, with `isEqual`, which does not go into a column source
+      * that is the same node on both sides.
       * Use `addNullableGroupByKey` to keep them in sync.
       */
-    std::unordered_set<UInt64> nullable_group_by_key_shallow_hashes;
+    std::unordered_map<UInt64, std::vector<std::pair<QueryTreeNodePtr, QueryTreeNodePtr>>> nullable_group_by_keys_by_shallow_hash;
 
     void addNullableGroupByKey(QueryTreeNodePtr key_shape, const QueryTreeNodePtr & key);
 
-    /// False if `node` is certainly not in `nullable_group_by_keys`; it does not compute the tree hash.
-    bool mayBeNullableGroupByKey(const QueryTreeNodePtr & node) const;
+    /// The key of `nullable_group_by_keys` that `node` is equal to (ignoring aliases), or nullptr.
+    /// The same as a lookup in `nullable_group_by_keys`, but it does not compute the tree hash of `node`.
+    const QueryTreeNodePtr * findNullableGroupByKey(const QueryTreeNodePtr & node) const;
 
     /// With `group_by_use_nulls`, the columns that `if`/`multiIf` GROUP BY keys may collapse to; used only for correlated references.
     QueryTreeNodePtrWithHashIgnoreAliasesSet nullable_collapsed_group_by_key_columns;

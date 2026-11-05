@@ -178,13 +178,8 @@ bool subtreeContainsQueryOrUnion(const QueryTreeNodePtr & root)
     return false;
 }
 
-/// Whether the subtree contains any node that is a key in `nodes` (the registered nullable GROUP BY
-/// key shapes), compared by the map's hash (ignoring aliases, exact types).
-/// `may_be_key` rejects the nodes that are certainly not keys before computing their tree hash.
-bool subtreeContainsAnyNode(
-    const QueryTreeNodePtr & root,
-    const QueryTreeNodePtrWithHashIgnoreAliasesMap<QueryTreeNodePtr> & nodes,
-    const std::function<bool(const QueryTreeNodePtr &)> & may_be_key)
+/// Whether the subtree contains any node for which `is_key` is true.
+bool subtreeContainsAnyNode(const QueryTreeNodePtr & root, const std::function<bool(const QueryTreeNodePtr &)> & is_key)
 {
     std::vector<QueryTreeNodePtr> nodes_to_process;
     nodes_to_process.push_back(root);
@@ -194,7 +189,7 @@ bool subtreeContainsAnyNode(
         auto node = nodes_to_process.back();
         nodes_to_process.pop_back();
 
-        if (may_be_key(node) && nodes.contains(node))
+        if (is_key(node))
             return true;
 
         for (const auto & child : node->getChildren())
@@ -350,16 +345,25 @@ UInt64 getNullableGroupByKeyShallowHash(const IQueryTreeNode & root)
 
 void IdentifierResolveScope::addNullableGroupByKey(QueryTreeNodePtr key_shape, const QueryTreeNodePtr & key)
 {
-    nullable_group_by_key_shallow_hashes.insert(getNullableGroupByKeyShallowHash(*key_shape));
-    nullable_group_by_keys.emplace(std::move(key_shape), key);
+    auto shallow_hash = getNullableGroupByKeyShallowHash(*key_shape);
+    if (nullable_group_by_keys.emplace(key_shape, key).second)
+        nullable_group_by_keys_by_shallow_hash[shallow_hash].emplace_back(std::move(key_shape), key);
 }
 
-bool IdentifierResolveScope::mayBeNullableGroupByKey(const QueryTreeNodePtr & node) const
+const QueryTreeNodePtr * IdentifierResolveScope::findNullableGroupByKey(const QueryTreeNodePtr & node) const
 {
     if (nullable_group_by_keys.empty())
-        return false;
+        return nullptr;
 
-    return nullable_group_by_key_shallow_hashes.contains(getNullableGroupByKeyShallowHash(*node));
+    auto it = nullable_group_by_keys_by_shallow_hash.find(getNullableGroupByKeyShallowHash(*node));
+    if (it == nullable_group_by_keys_by_shallow_hash.end())
+        return nullptr;
+
+    for (const auto & [key_shape, key] : it->second)
+        if (node->isEqual(*key_shape, {.compare_aliases = false}))
+            return &key;
+
+    return nullptr;
 }
 
 void IdentifierResolveScope::tryCacheIdentifier(
@@ -377,8 +381,8 @@ void IdentifierResolveScope::tryCacheIdentifier(
     /// node, so a key embedded deeper in a cached tree (e.g. `k` inside `k + 1 AS a`)
     /// would keep whichever nullability the first resolution baked in and corrupt
     /// later use sites in the opposite context.
-    if (!nullable_group_by_keys.empty() && subtreeContainsAnyNode(result.resolved_identifier, nullable_group_by_keys,
-            [this](const QueryTreeNodePtr & node) { return mayBeNullableGroupByKey(node); }))
+    if (!nullable_group_by_keys.empty() && subtreeContainsAnyNode(result.resolved_identifier,
+            [this](const QueryTreeNodePtr & node) { return findNullableGroupByKey(node) != nullptr; }))
         return;
 
     identifier_resolve_cache[lookup] = IdentifierResolveCacheEntry{

@@ -3212,8 +3212,8 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     {
         for (auto & [node, _] : matched_expression_nodes_with_names)
         {
-            auto it = group_by_keys_scope->nullable_group_by_keys.find(node);
-            if (it != group_by_keys_scope->nullable_group_by_keys.end())
+            const auto * group_by_key = group_by_keys_scope->findNullableGroupByKey(node);
+            if (group_by_key)
             {
                 /// Look up the projection name before the clone replaces the node: the map is keyed
                 /// by node identity, so afterwards the original key is unreachable.
@@ -3221,7 +3221,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
                 /// See resolveExpressionNode: for a constant keep the matched node's own source
                 /// expression instead of the stored key, which may be a different colliding constant.
-                node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second)->clone();
+                node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : *group_by_key)->clone();
                 node->convertToNullable();
 
                 /// Keep the projection name computed for the original node, e.g. the qualified
@@ -5045,7 +5045,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     {
         for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
         {
-            if (scope_ptr->mayBeNullableGroupByKey(node) && scope_ptr->nullable_group_by_keys.contains(node))
+            if (scope_ptr->findNullableGroupByKey(node))
             {
                 is_nullable_group_by_key_in_aggregate_function = true;
                 break;
@@ -5073,9 +5073,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
             if ((!is_correlated_column_node || at_source_scope) && !scope_ptr->nullable_group_by_keys.empty())
             {
-                auto it = scope_ptr->mayBeNullableGroupByKey(node) ? scope_ptr->nullable_group_by_keys.find(node)
-                                                                   : scope_ptr->nullable_group_by_keys.end();
-                if (it != scope_ptr->nullable_group_by_keys.end())
+                const auto * group_by_key = scope_ptr->findNullableGroupByKey(node);
+                if (group_by_key)
                 {
                     if (is_correlated_column_node)
                     {
@@ -5093,11 +5092,11 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     else
                     {
                         /// Clone the GROUP BY key and convert it to Nullable. For a constant we clone the
-                        /// matched node itself rather than the stored key `it->second`: two constants equal
+                        /// matched node itself rather than the stored key: two constants equal
                         /// in value and type but with different source expressions share a single map entry,
                         /// and the source expression determines the action node name (hence which aggregation
                         /// key column the projection reads), so the matched node's own one must be preserved.
-                        node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second)->clone();
+                        node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : *group_by_key)->clone();
                         node->convertToNullable();
                     }
                     break;
