@@ -1,0 +1,8 @@
+default_estimate	1
+05508 filtered_dim_join_fact	1000
+05508 left_deep	101
+05508 q6	9901
+05508 q9	0
+05508 q9_dpsize	0
+05508 q9_greedy	0
+05508 unselective_filter_fact	2000

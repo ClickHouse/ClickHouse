@@ -43,6 +43,17 @@ namespace
 /// The sizes of the arrays are unknown, so an array join is assumed to produce this many rows per input row.
 constexpr Float64 array_join_rows_multiplier = 100;
 
+/// The share of rows assumed to pass a filter that neither the index nor column statistics can estimate.
+constexpr Float64 unestimated_filter_selectivity = 0.2;
+
+/// At least 1 row for a non-empty read: the share of a table of a few rows truncates to 0.
+UInt64 applyUnestimatedFilterSelectivity(UInt64 rows)
+{
+    if (rows == 0)
+        return 0;
+    return std::max<UInt64>(toUInt64Saturating(Float64(rows) * unestimated_filter_selectivity), 1);
+}
+
 RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
 {
     const auto & aggregator_params = aggregating_step.getAggregatorParameters();
@@ -278,11 +289,9 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 .imprecise_estimate = true,
                 .source = RowEstimateSource::NoStatistics};
 
-        /// If any conditions are pushed down to storage but not used in the index,
-        /// we cannot precisely estimate the row count
         if (has_filter && !is_filtered_by_index)
             return RelationStats{
-                .estimated_rows = {},
+                .estimated_rows = applyUnestimatedFilterSelectivity(analyzed_result->selected_rows),
                 .table_name = table_display_name,
                 .imprecise_estimate = true,
                 .source = RowEstimateSource::NoStatistics};
@@ -340,9 +349,14 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             return stats;
         }
 
-        /// As for MergeTree without column statistics, conditions that pruned nothing give no estimate.
+        /// As for MergeTree without column statistics, conditions that pruned nothing keep a default share of the rows,
+        /// and the runtime-filter transport gets no estimate.
         if (!estimate->pruned_data_files)
+        {
+            if (!for_runtime_filter_transport)
+                stats.estimated_rows = applyUnestimatedFilterSelectivity(rows);
             return stats;
+        }
 
         /// The remaining files bound the rows, as the selected parts bound a MergeTree read.
         stats.estimated_rows = rows;
