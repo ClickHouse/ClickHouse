@@ -571,6 +571,14 @@ bool StorageMerge::supportedPrewhereColumnsIncludeSubcolumns() const
     return include_subcolumns;
 }
 
+/// `equals` ignores the time zone and custom names such as `Bool`, which a child cannot apply before the conversion.
+static bool childCanProcessBeforeConversion(const IDataType & child_type, const IDataType & declared_type)
+{
+    if (child_type.equals(declared_type))
+        return child_type.getName() == declared_type.getName();
+    return conversionPreservesOrder(child_type, declared_type);
+}
+
 QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,
@@ -625,7 +633,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
                 for (const auto & child_column : table_metadata->getColumns().get(order_relevant_columns))
                 {
                     auto declared_column = declared_columns.tryGetColumn(order_relevant_columns, child_column.name);
-                    if (declared_column && !conversionPreservesOrder(*child_column.type, *declared_column->type))
+                    if (declared_column && !childCanProcessBeforeConversion(*child_column.type, *declared_column->type))
                         any_child_conversion_breaks_order = true;
                 }
             }
@@ -1254,7 +1262,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 for (const auto & child_column : storage_metadata_snapshot->getColumns().get(order_relevant_columns))
                 {
                     auto declared_column = declared_columns.tryGetColumn(order_relevant_columns, child_column.name);
-                    if (declared_column && !conversionPreservesOrder(*child_column.type, *declared_column->type))
+                    if (declared_column && !childCanProcessBeforeConversion(*child_column.type, *declared_column->type))
                         throw Exception(
                             ErrorCodes::INCOMPATIBLE_COLUMNS,
                             "Column {} of table {} has type {}, which does not preserve the order when converted to "

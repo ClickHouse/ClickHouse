@@ -21,6 +21,10 @@ true	1	1
 Merge
 2026-01-01 00:00:00	0
 1
+Merge over Distributed
+0	2
+2
+true
 Variant
 2026-01-01 00:00:00	DateTime(\'UTC\')
 2026-01-01 00:00:00

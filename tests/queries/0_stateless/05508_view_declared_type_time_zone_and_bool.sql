@@ -19,6 +19,9 @@ DROP TABLE IF EXISTS t_var;
 DROP TABLE IF EXISTS t_var_dst;
 DROP TABLE IF EXISTS t_vaf;
 DROP TABLE IF EXISTS t_aaf;
+DROP TABLE IF EXISTS t_mlocal;
+DROP TABLE IF EXISTS t_mdist;
+DROP TABLE IF EXISTS t_merge_dist;
 
 CREATE TABLE t_src (ts DateTime, ts64 DateTime64(3), u UInt8) ENGINE = Memory;
 INSERT INTO t_src VALUES (1767225600, 1767225600.123, 2);
@@ -73,6 +76,16 @@ SELECT x, toHour(x) FROM t_merge;
 SELECT count() FROM t_merge WHERE toHour(x) = 0;
 SELECT count() FROM t_merge PREWHERE toHour(x) = 0; -- { serverError ILLEGAL_PREWHERE }
 
+SELECT 'Merge over Distributed';
+CREATE TABLE t_mlocal (ts DateTime, u UInt8) ENGINE = MergeTree ORDER BY ts;
+INSERT INTO t_mlocal VALUES (1767225600, 1), (1767225600, 2);
+CREATE TABLE t_mdist AS t_mlocal ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_mlocal);
+CREATE TABLE t_merge_dist (ts DateTime('UTC'), u Bool) ENGINE = Merge(currentDatabase(), '^t_mdist$');
+SELECT toHour(ts), count() FROM t_merge_dist GROUP BY 1;
+SELECT count() FROM t_merge_dist WHERE toHour(ts) = 0;
+-- A remote shard's UInt8 is relabelled as Bool without normalization (castColumn), so the local replica is read.
+SELECT DISTINCT u FROM t_merge_dist SETTINGS prefer_localhost_replica = 1;
+
 SELECT 'Variant';
 CREATE TABLE t_var (x Variant(DateTime, String)) ENGINE = Memory;
 INSERT INTO t_var SELECT toDateTime(1767225600)::Variant(DateTime, String);
@@ -116,3 +129,6 @@ DROP TABLE t_var;
 DROP TABLE t_var_dst;
 DROP TABLE t_vaf;
 DROP TABLE t_aaf;
+DROP TABLE t_merge_dist;
+DROP TABLE t_mdist;
+DROP TABLE t_mlocal;
