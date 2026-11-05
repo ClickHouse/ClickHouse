@@ -36,6 +36,7 @@ ClickStack は、ClickHouse のカラム指向アーキテクチャ、高カー�
 * HTTP リクエストから DB クエリまで、正常性とパフォーマンスを監視 (APM)
 * イベントデルタで異常やパフォーマンス低下を特定
 * ログパターンの認識
+* URL クエリパラメータを使用して、[ディープリンク](/ja/clickstack/url-parameters)から ClickStack ページを直接開く
 
 <div id="components">
   ## コンポーネント
@@ -95,9 +96,7 @@ ClickStack は OpenTelemetry にネイティブ対応しており、すべての
 
 ClickStack は完全なオープンソースで、どこにでもデプロイできます。スキーマは柔軟でユーザー自身が変更可能であり、UI も変更を加えることなくカスタムスキーマに対応できるよう設計されています。collector、ClickHouse、UI を含む各コンポーネントは、インジェスト、クエリ、ストレージの要件に応じてそれぞれ個別にスケールできます。
 
-<div id="architectural-overview">
-  ## アーキテクチャの概要
-</div>
+## アーキテクチャの概要 {#architectural-overview}
 
 ClickStack のアーキテクチャは、デプロイ方法によって異なります。すべてのコンポーネントをセルフマネージドで運用する **ClickStack Open Source** と、ClickHouse および HyperDX UI が ClickHouse Cloud でホスト・運用される **Managed ClickStack** では、アーキテクチャ上の重要な違いがあります。どちらのモデルでも中核となるコンポーネントは同じですが、各コンポーネントのホスティング、スケーリング、セキュリティ確保の責任範囲は異なります。
 
@@ -124,7 +123,7 @@ ClickStack のアーキテクチャは、デプロイ方法によって異なり
 
     * **ストレージから独立したコンピュートの自動スケーリング**
     * オブジェクトストレージを基盤とした **低コストで実質的に無制限の保持期間**
-    * ClickHouse Cloud Warehouses を使用した **読み取りと書き込みの独立した分離**
+    * ClickHouse Cloud Warehouses を使用した **[読み取りと書き込みの独立した分離](/ja/clickstack/managing/isolating-read-write)**
     * **統合された認証とアクセス制御**
     * **自動バックアップ**
     * **セキュリティおよびコンプライアンス機能**
@@ -132,7 +131,7 @@ ClickStack のアーキテクチャは、デプロイ方法によって異なり
 
     このデプロイモデルにより、チームは ClickHouse や ClickStack UI 自体を運用する負担を負うことなく、オブザーバビリティのワークフローとインストルメンテーションに専念できます。
 
-    本番環境で ClickStack をデプロイする場合は、Managed ClickStack を推奨します。ClickHouse Cloud で ClickStack をデプロイする手順については、[Getting started guide](/ja/clickstack/getting-started/managed) を参照してください。
+    本番環境で ClickStack をデプロイする場合は、Managed ClickStack を推奨します。ClickHouse Cloud で ClickStack をデプロイする手順については、[Getting Started ガイド](/ja/clickstack/getting-started/managed) を参照してください。
 
     <br />
   </Tab>

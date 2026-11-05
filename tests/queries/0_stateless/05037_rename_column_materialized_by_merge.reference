@@ -1,0 +1,18 @@
+merged into	1
+after merge
+3	None
+3	String
+3	UInt64
+after mutation
+3	None
+3	String
+3	UInt64
+0	0	\N
+1	1	\N
+2	2	\N
+3	3	3
+4	4	4
+5	5	5
+6	6	str_6
+7	7	str_7
+8	8	str_8

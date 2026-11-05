@@ -5,6 +5,7 @@
         <storage_path>/var/lib/clickhouse/coordination</storage_path>
         <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
         <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <data_storage_path>/var/lib/clickhouse/coordination/data</data_storage_path>
 
         <coordination_settings>
             <!-- TODO(mstetsyuk): evaluate if this is needed -->
@@ -41,8 +42,8 @@
     <opentelemetry_span_log>
         <engine>
             engine = MergeTree
-            PARTITION BY toYYYYMM(finish_date)
-            ORDER BY (finish_date, finish_time_us, trace_id)
+            PARTITION BY toYYYYMM(event_date)
+            ORDER BY (event_date, finish_time_us, trace_id)
         </engine>
         <database>system</database>
         <table>opentelemetry_span_log</table>

@@ -86,20 +86,7 @@ Sí, las tablas particionadas son compatibles de forma nativa, siempre que tenga
   ### ¿Puedo conectar bases de datos de Postgres que no tienen una IP pública o que están en redes privadas?
 </div>
 
-¡Sí! ClickPipes for Postgres ofrece dos formas de conectarse a bases de datos en redes privadas:
-
-1. **Túnel SSH**
-   * Funciona bien para la mayoría de los casos de uso
-   * Consulta las instrucciones de configuración [aquí](/es/integrations/clickpipes/postgres/index#adding-your-source-postgres-database-connection)
-   * Funciona en todas las regiones
-
-2. **AWS PrivateLink**
-   * Disponible en tres regiones de AWS:
-     * us-east-1
-     * us-east-2
-     * eu-central-1
-   * Para obtener instrucciones detalladas de configuración, consulta nuestra [documentación de PrivateLink](/es/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)
-   * En las regiones donde PrivateLink no está disponible, usa el túnel SSH
+Sí. Consulta las [opciones de red de ClickPipes](/es/integrations/clickpipes/networking) para conocer las formas en que ClickPipes puede acceder a una fuente de datos que no está expuesta a Internet público.
 
 <div id="how-do-you-handle-updates-and-deletes">
   ### ¿Cómo se gestionan los UPDATEs y DELETEs?

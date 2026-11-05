@@ -8,6 +8,9 @@
 
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/Stopwatch.h>
+
+#include <map>
 #include <unordered_set>
 
 TEST_P(CoordinationTest, TestSystemNodeModify)
@@ -384,6 +387,29 @@ TEST_P(CoordinationTest, TestRemoveRecursiveRequest)
         ASSERT_EQ(responses.size(), 1);
         ASSERT_EQ(responses[0].response->error, Coordination::Error::ZBADARGUMENTS);
     }
+
+    {
+        SCOPED_TRACE("Recursive Remove Single Node Zero Limit");
+        create("/T10", zkutil::CreateMode::Persistent);
+
+        /// The node itself counts toward the limit, so a zero limit removes nothing.
+        auto responses = remove_recursive("/T10", 0);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Coordination::Error::ZNOTEMPTY);
+        ASSERT_TRUE(exists("/T10"));
+
+        responses = remove_recursive("/T10", 1);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Coordination::Error::ZOK);
+        ASSERT_FALSE(exists("/T10"));
+    }
+
+    {
+        SCOPED_TRACE("Recursive Remove Nonexistent Node Zero Limit");
+        auto responses = remove_recursive("/T11", 0);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Coordination::Error::ZOK);
+    }
 }
 
 namespace
@@ -605,6 +631,230 @@ TEST_P(CoordinationTest, TestRemoveRecursiveInMultiRequest)
 
 }
 
+/// Preprocessing a RemoveRecursive request must not slow down when many unrelated uncommitted
+/// nodes are in flight. Without a per-parent index of uncommitted nodes the collector scans every
+/// uncommitted node once per request, so a backlog of 100K uncommitted creates makes a batch of
+/// small recursive removes take hundreds of milliseconds instead of well under one.
+TEST_P(CoordinationTest, TestRemoveRecursivePreprocessWithUncommittedBacklog)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    int64_t zxid = 0;
+
+    const auto preprocess = [&](const ZooKeeperRequestPtr & request)
+    {
+        int64_t new_zxid = ++zxid;
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        return new_zxid;
+    };
+
+    const auto create_committed = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = path;
+        auto new_zxid = preprocess(request);
+        auto responses = storage.processRequest(request, 1, new_zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK) << "Failed to create " << path;
+    };
+
+    const auto exists = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperExistsRequest>();
+        request->path = path;
+        auto new_zxid = preprocess(request);
+        auto responses = storage.processRequest(request, 1, new_zxid);
+        EXPECT_EQ(responses.size(), 1);
+        return responses[0].response->error == Error::ZOK;
+    };
+
+    const auto is_multi_ok = [&](const ZooKeeperResponsePtr & response)
+    {
+        const auto & multi_response = dynamic_cast<const ZooKeeperMultiResponse &>(*response);
+        for (const auto & op_response : multi_response.responses)
+            if (op_response->error != Error::ZOK)
+                return false;
+        return true;
+    };
+
+    /// Two identical sets of small subtrees to remove: one is measured without a backlog, the other with.
+    constexpr size_t subtrees = 50;
+    for (const auto * root : {"/set_a", "/set_b"})
+    {
+        create_committed(root);
+        for (size_t i = 0; i < subtrees; ++i)
+        {
+            const auto node = fmt::format("{}/{}", root, i);
+            create_committed(node);
+            create_committed(node + "/lease");
+        }
+    }
+    create_committed("/backlog");
+
+    const auto make_remove_batch = [&](const String & root)
+    {
+        Requests ops;
+        for (size_t i = 0; i < subtrees; ++i)
+            ops.push_back(makeRemoveRecursiveRequest(fmt::format("{}/{}", root, i), 100));
+        return std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+    };
+
+    /// Baseline: no uncommitted backlog.
+    const auto batch_a = make_remove_batch("/set_a");
+    Stopwatch watch_a;
+    const auto zxid_a = preprocess(batch_a);
+    const UInt64 base_us = watch_a.elapsedMicroseconds();
+    auto responses = storage.processRequest(batch_a, 1, zxid_a);
+    ASSERT_EQ(responses.size(), 1);
+    ASSERT_TRUE(is_multi_ok(responses[0].response));
+
+    /// Backlog: many unrelated creates preprocessed but not yet committed.
+    constexpr size_t backlog = 100000;
+    std::vector<std::pair<ZooKeeperRequestPtr, int64_t>> pending;
+    pending.reserve(backlog);
+    for (size_t i = 0; i < backlog; ++i)
+    {
+        auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = fmt::format("/backlog/{}", i);
+        auto new_zxid = preprocess(request);
+        pending.emplace_back(std::move(request), new_zxid);
+    }
+
+    const auto batch_b = make_remove_batch("/set_b");
+    Stopwatch watch_b;
+    const auto zxid_b = preprocess(batch_b);
+    const UInt64 backlog_us = watch_b.elapsedMicroseconds();
+
+    std::cerr << fmt::format(
+        "RemoveRecursive batch of {} preprocessed in {} us without backlog and in {} us with {} uncommitted nodes\n",
+        subtrees, base_us, backlog_us, backlog);
+
+    /// Commit everything in order and check the outcome.
+    for (const auto & [request, request_zxid] : pending)
+    {
+        auto create_responses = storage.processRequest(request, 1, request_zxid);
+        ASSERT_EQ(create_responses.size(), 1);
+        ASSERT_EQ(create_responses[0].response->error, Error::ZOK);
+    }
+    responses = storage.processRequest(batch_b, 1, zxid_b);
+    ASSERT_EQ(responses.size(), 1);
+    ASSERT_TRUE(is_multi_ok(responses[0].response));
+    ASSERT_FALSE(exists("/set_b/0/lease"));
+    ASSERT_FALSE(exists(fmt::format("/set_b/{}", subtrees - 1)));
+    ASSERT_TRUE(exists("/set_b"));
+    ASSERT_TRUE(exists(fmt::format("/backlog/{}", backlog - 1)));
+
+    /// The cost of the batch must not scale with the number of unrelated uncommitted nodes.
+    /// Allow generous noise: ten times the baseline or 20 ms, whichever is larger.
+    /// Not checked under sanitizers: their runtime makes a timing this short unreliable.
+#if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER)
+    EXPECT_LE(backlog_us, std::max<UInt64>(base_us * 10, 20000))
+        << "preprocessing slowed down from " << base_us << " us to " << backlog_us << " us with " << backlog << " uncommitted nodes";
+#endif
+}
+
+/// Uncommitted children must be visible to RemoveRecursive, and must stop being visible once the
+/// request that created them is rolled back.
+TEST_P(CoordinationTest, TestRemoveRecursiveSeesUncommittedChildrenUntilRollback)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    int64_t zxid = 0;
+
+    const auto preprocess = [&](const ZooKeeperRequestPtr & request)
+    {
+        int64_t new_zxid = ++zxid;
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        return new_zxid;
+    };
+
+    const auto make_create = [](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = path;
+        return request;
+    };
+
+    const auto make_remove_recursive = [](const String & path, uint32_t limit)
+    {
+        auto request = std::make_shared<ZooKeeperRemoveRecursiveRequest>();
+        request->path = path;
+        request->remove_nodes_limit = limit;
+        return request;
+    };
+
+    const auto exists = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperExistsRequest>();
+        request->path = path;
+        auto new_zxid = preprocess(request);
+        auto responses = storage.processRequest(request, 1, new_zxid);
+        EXPECT_EQ(responses.size(), 1);
+        return responses[0].response->error == Error::ZOK;
+    };
+
+    for (const auto * path : {"/p", "/p/x"})
+    {
+        auto request = make_create(path);
+        auto new_zxid = preprocess(request);
+        auto responses = storage.processRequest(request, 1, new_zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+    }
+
+    {
+        SCOPED_TRACE("An uncommitted child counts toward the remove limit");
+        auto child = make_create("/p/x/c1");
+        auto child_zxid = preprocess(child);
+        auto remove = make_remove_recursive("/p/x", 1);
+        auto remove_zxid = preprocess(remove);
+
+        auto child_responses = storage.processRequest(child, 1, child_zxid);
+        ASSERT_EQ(child_responses.size(), 1);
+        ASSERT_EQ(child_responses[0].response->error, Error::ZOK);
+        auto remove_responses = storage.processRequest(remove, 1, remove_zxid);
+        ASSERT_EQ(remove_responses.size(), 1);
+        ASSERT_EQ(remove_responses[0].response->error, Error::ZNOTEMPTY);
+        ASSERT_TRUE(exists("/p/x/c1"));
+
+        /// With a limit that fits the committed child the same remove succeeds.
+        auto remove_fitting = make_remove_recursive("/p/x", 2);
+        auto remove_fitting_zxid = preprocess(remove_fitting);
+        remove_responses = storage.processRequest(remove_fitting, 1, remove_fitting_zxid);
+        ASSERT_EQ(remove_responses.size(), 1);
+        ASSERT_EQ(remove_responses[0].response->error, Error::ZOK);
+        ASSERT_FALSE(exists("/p/x"));
+    }
+
+    {
+        SCOPED_TRACE("A rolled back uncommitted child no longer counts");
+        auto parent = make_create("/p/y");
+        auto parent_zxid = preprocess(parent);
+        auto parent_responses = storage.processRequest(parent, 1, parent_zxid);
+        ASSERT_EQ(parent_responses[0].response->error, Error::ZOK);
+
+        auto child = make_create("/p/y/c2");
+        auto child_zxid = preprocess(child);
+        storage.rollbackRequest(child_zxid, /*allow_missing=*/false);
+        --zxid;
+
+        auto remove = make_remove_recursive("/p/y", 1);
+        auto remove_zxid = preprocess(remove);
+        auto remove_responses = storage.processRequest(remove, 1, remove_zxid);
+        ASSERT_EQ(remove_responses.size(), 1);
+        ASSERT_EQ(remove_responses[0].response->error, Error::ZOK);
+        ASSERT_FALSE(exists("/p/y"));
+        ASSERT_FALSE(exists("/p/y/c2"));
+    }
+}
+
+
 TEST_P(CoordinationTest, TestRemoveRecursiveWatches)
 {
     using namespace DB;
@@ -707,6 +957,133 @@ TEST_P(CoordinationTest, TestRemoveRecursiveWatches)
 
     ASSERT_EQ(storage.watches.size(), 0);
     ASSERT_EQ(storage.list_watches.size(), 0);
+}
+
+/// A session gets one watch event per change, however many of its watches match it (as in ZooKeeper).
+TEST_P(CoordinationTest, TestOverlappingWatchesNotifySessionOnce)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    int64_t zxid = 0;
+
+    const int64_t watcher = 1;
+    const int64_t other_watcher = 2;
+    const int64_t writer = 3;
+
+    using WatchEvents = std::map<int64_t, std::vector<std::pair<Event, String>>>;
+    const auto run = [&](const ZooKeeperRequestPtr & request, int64_t session_id)
+    {
+        int64_t new_zxid = ++zxid;
+        storage.preprocessRequest(request, session_id, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        WatchEvents events;
+        for (const auto & response_for_session : storage.processRequest(request, session_id, new_zxid))
+        {
+            const auto & response = *response_for_session.response;
+            if (const auto * watch_response = dynamic_cast<const ZooKeeperWatchResponse *>(&response))
+                events[response_for_session.session_id].emplace_back(static_cast<Event>(watch_response->type), watch_response->path);
+            else
+                EXPECT_EQ(response.error, Error::ZOK) << request->toString();
+        }
+        for (auto & [_, session_events] : events)
+            std::ranges::sort(session_events);
+        return events;
+    };
+
+    const auto create = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = path;
+        return run(request, writer);
+    };
+
+    const auto set = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperSetRequest>();
+        request->path = path;
+        return run(request, writer);
+    };
+
+    const auto remove = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperRemoveRequest>();
+        request->path = path;
+        return run(request, writer);
+    };
+
+    const auto add_watch = [&](const String & path, AddWatchRequest::AddWatchMode mode, int64_t session_id)
+    {
+        auto request = std::make_shared<ZooKeeperAddWatchRequest>();
+        request->path = path;
+        request->mode = mode;
+        EXPECT_TRUE(run(request, session_id).empty());
+    };
+
+    const auto exists_with_watch = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperExistsRequest>();
+        request->path = path;
+        request->has_watch = true;
+        EXPECT_TRUE(run(request, watcher).empty());
+    };
+
+    const auto list_with_watch = [&](const String & path)
+    {
+        auto request = std::make_shared<ZooKeeperListRequest>();
+        request->path = path;
+        request->has_watch = true;
+        EXPECT_TRUE(run(request, watcher).empty());
+    };
+
+    for (const auto * path : {"/r", "/r/a", "/p", "/p/n", "/d", "/o", "/o/n", "/e"})
+        EXPECT_TRUE(create(path).empty());
+
+    const auto persistent = AddWatchRequest::AddWatchMode::PERSISTENT;
+    const auto recursive = AddWatchRequest::AddWatchMode::PERSISTENT_RECURSIVE;
+    add_watch("/r", recursive, watcher);
+    add_watch("/r/a", recursive, watcher);
+    add_watch("/r", recursive, other_watcher);
+    add_watch("/p", recursive, watcher);
+    add_watch("/p/n", persistent, watcher);
+    add_watch("/d", persistent, watcher);
+    add_watch("/o", recursive, watcher);
+    exists_with_watch("/e");
+    list_with_watch("/e");
+
+    EXPECT_EQ(create("/r/a/b"), (WatchEvents{{watcher, {{Event::CREATED, "/r/a/b"}}}, {other_watcher, {{Event::CREATED, "/r/a/b"}}}}));
+    EXPECT_EQ(set("/r/a/b"), (WatchEvents{{watcher, {{Event::CHANGED, "/r/a/b"}}}, {other_watcher, {{Event::CHANGED, "/r/a/b"}}}}));
+    {
+        const Requests ops{
+            zkutil::makeCreateRequest("/r/a/x", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/r/a/y", "", zkutil::CreateMode::Persistent)};
+        const std::vector<std::pair<Event, String>> created{{Event::CREATED, "/r/a/x"}, {Event::CREATED, "/r/a/y"}};
+        EXPECT_EQ(run(std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{}), writer), (WatchEvents{{watcher, created}, {other_watcher, created}}));
+    }
+    EXPECT_EQ(remove("/r/a/b"), (WatchEvents{{watcher, {{Event::DELETED, "/r/a/b"}}}, {other_watcher, {{Event::DELETED, "/r/a/b"}}}}));
+
+    EXPECT_EQ(set("/p/n"), (WatchEvents{{watcher, {{Event::CHANGED, "/p/n"}}}}));
+    EXPECT_EQ(create("/p/n/c"), (WatchEvents{{watcher, {{Event::CREATED, "/p/n/c"}, {Event::CHILD, "/p/n"}}}}));
+    EXPECT_EQ(remove("/p/n/c"), (WatchEvents{{watcher, {{Event::DELETED, "/p/n/c"}, {Event::CHILD, "/p/n"}}}}));
+    EXPECT_EQ(remove("/p/n"), (WatchEvents{{watcher, {{Event::DELETED, "/p/n"}}}}));
+
+    EXPECT_EQ(remove("/d"), (WatchEvents{{watcher, {{Event::DELETED, "/d"}}}}));
+    EXPECT_EQ(create("/d"), (WatchEvents{{watcher, {{Event::CREATED, "/d"}}}}));
+
+    exists_with_watch("/o/n");
+    EXPECT_EQ(set("/o/n"), (WatchEvents{{watcher, {{Event::CHANGED, "/o/n"}}}}));
+    EXPECT_EQ(set("/o/n"), (WatchEvents{{watcher, {{Event::CHANGED, "/o/n"}}}}));
+    list_with_watch("/o");
+    add_watch("/o", persistent, watcher);
+    EXPECT_EQ(create("/o/m"), (WatchEvents{{watcher, {{Event::CREATED, "/o/m"}, {Event::CHILD, "/o"}}}}));
+    EXPECT_EQ(remove("/e"), (WatchEvents{{watcher, {{Event::DELETED, "/e"}}}}));
+
+    EXPECT_FALSE(storage.watches.contains("/o/n"));
+    EXPECT_FALSE(storage.list_watches.contains("/o"));
+    EXPECT_FALSE(storage.watches.contains("/e"));
+    EXPECT_FALSE(storage.list_watches.contains("/e"));
+    EXPECT_EQ(storage.getTotalWatchesCount(), 11);
 }
 
 TEST_P(CoordinationTest, TestRemoveRecursiveAcls)
@@ -851,6 +1228,202 @@ TEST_P(CoordinationTest, TestListRequestTypes)
     {
         EXPECT_TRUE(expected_ephemeral_children.contains(child) || expected_persistent_children.contains(child))
             << "Missing child " << child;
+    }
+}
+
+TEST_P(CoordinationTest, TestListWithOptionsRequest)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    const auto storage_ptr = KeeperStorage::create(500, "", this->keeper_context);
+    KeeperStorage & storage = *storage_ptr;
+    int32_t zxid = 0;
+
+    const auto create = [&](const String & path, const String & data = "", bool ephemeral = false)
+    {
+        auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = path;
+        request->data = data;
+        request->is_ephemeral = ephemeral;
+        const int32_t new_zxid = ++zxid;
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        const auto responses = storage.processRequest(request, 1, new_zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+    };
+    const auto list = [&](const String & path, const ListOptions & options)
+    {
+        auto request = std::make_shared<ZooKeeperListWithOptionsRequest>();
+        request->path = path;
+        request->options = options;
+        request->xid = ++zxid;
+        storage.preprocessRequest(request, 1, 0, request->xid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        const auto responses = storage.processRequest(request, 1, request->xid);
+        EXPECT_EQ(responses.size(), 1);
+        return dynamic_cast<const ZooKeeperListWithOptionsResponse &>(*responses[0].response);
+    };
+
+    create("/list_with_options");
+    create("/list_with_options/a", "data-a");
+    create("/list_with_options/a/x", "data-x");
+    create("/list_with_options/b", "data-b");
+    create("/list_with_options/b/x", "data-bx");
+    create("/list_with_options_shuffle");
+    for (const auto * child_name : {"a", "b", "c", "d", "e", "f", "g", "h"})
+        create("/list_with_options_shuffle/" + String(child_name));
+
+    {
+        SCOPED_TRACE("List direct children");
+        const auto & response = list("/list_with_options", {});
+        ASSERT_EQ(response.error, Error::ZOK);
+        EXPECT_EQ(std::unordered_set<String>(response.names.begin(), response.names.end()), (std::unordered_set<String>{"a", "b"}));
+        EXPECT_TRUE(response.stats.empty());
+        EXPECT_TRUE(response.data.empty());
+        EXPECT_FALSE(response.truncated);
+    }
+
+    {
+        SCOPED_TRACE("List recursive children with metadata");
+        ListOptions options;
+        options.recursive = true;
+        options.with_stat = true;
+        options.with_data = true;
+        const auto & response = list("/list_with_options", options);
+        ASSERT_EQ(response.error, Error::ZOK);
+        EXPECT_EQ(std::unordered_set<String>(response.names.begin(), response.names.end()), (std::unordered_set<String>{"a", "a/x", "b", "b/x"}));
+        ASSERT_EQ(response.names.size(), response.stats.size());
+        ASSERT_EQ(response.names.size(), response.data.size());
+        EXPECT_TRUE(std::ranges::none_of(response.names, [](const String & name) { return name.starts_with('/'); }));
+    }
+
+    {
+        SCOPED_TRACE("List persistent children with a result limit");
+        ListOptions options;
+        options.filter = ListRequestType::PERSISTENT_ONLY;
+        options.max_results = 1;
+        const auto & response = list("/list_with_options", options);
+        ASSERT_EQ(response.error, Error::ZOK);
+        ASSERT_EQ(response.names.size(), 1);
+        EXPECT_TRUE(response.names[0] == "a" || response.names[0] == "b");
+        EXPECT_TRUE(response.truncated);
+    }
+
+    {
+        SCOPED_TRACE("Shuffle complete results and a result prefix");
+        const std::unordered_set<String> expected_names{"a", "b", "c", "d", "e", "f", "g", "h"};
+
+        ListOptions options;
+        options.shuffle = true;
+        const auto & shuffled_response = list("/list_with_options_shuffle", options);
+        EXPECT_EQ(shuffled_response.error, Error::ZOK);
+        EXPECT_EQ(std::unordered_set<String>(shuffled_response.names.begin(), shuffled_response.names.end()), expected_names);
+
+        const auto first_names = shuffled_response.names;
+        bool observed_different_order = false;
+        for (size_t attempt = 0; attempt < 10; ++attempt)
+        {
+            const auto & retried_response = list("/list_with_options_shuffle", options);
+            ASSERT_EQ(retried_response.error, Error::ZOK);
+            if (retried_response.names != first_names)
+            {
+                observed_different_order = true;
+                break;
+            }
+        }
+        EXPECT_TRUE(observed_different_order);
+
+        options.max_results = 3;
+        const auto & partial_shuffled_response = list("/list_with_options_shuffle", options);
+        EXPECT_EQ(partial_shuffled_response.error, Error::ZOK);
+        EXPECT_EQ(partial_shuffled_response.names.size(), options.max_results);
+        EXPECT_TRUE(partial_shuffled_response.truncated);
+    }
+
+    {
+        SCOPED_TRACE("List recursive children relative to the root");
+        ListOptions options;
+        options.recursive = true;
+        const auto & response = list("/", options);
+        ASSERT_EQ(response.error, Error::ZOK);
+        const auto names = std::unordered_set<String>(response.names.begin(), response.names.end());
+        EXPECT_TRUE(names.contains("list_with_options"));
+        EXPECT_TRUE(names.contains("list_with_options/a"));
+        EXPECT_TRUE(names.contains("list_with_options/a/x"));
+        EXPECT_TRUE(names.contains("list_with_options/b"));
+        EXPECT_TRUE(names.contains("list_with_options/b/x"));
+        EXPECT_TRUE(std::ranges::none_of(response.names, [](const String & name) { return name.starts_with('/'); }));
+    }
+}
+
+TEST_P(CoordinationTest, TestListWithOptionsAcls)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    constexpr int64_t authorized_session_id = 1;
+    constexpr int64_t unauthorized_session_id = 2;
+    const auto storage_ptr = KeeperStorage::create(500, "", this->keeper_context);
+    KeeperStorage & storage = *storage_ptr;
+    int32_t zxid = 0;
+
+    {
+        const auto request = std::make_shared<ZooKeeperAuthRequest>();
+        request->scheme = "digest";
+        request->data = "test_user:test_password";
+        storage.preprocessRequest(request, authorized_session_id, 0, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        const auto responses = storage.processRequest(request, authorized_session_id, zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+    }
+
+    const auto create = [&](const String & path, ACLs acls = {})
+    {
+        const auto request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = path;
+        request->acls = std::move(acls);
+        storage.preprocessRequest(request, authorized_session_id, 0, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        const auto responses = storage.processRequest(request, authorized_session_id, zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+    };
+    const auto list = [&](const String & path, const ListOptions & options, int64_t session_id)
+    {
+        const auto request = std::make_shared<ZooKeeperListWithOptionsRequest>();
+        request->path = path;
+        request->options = options;
+        request->xid = ++zxid;
+        KeeperRequestsForSessions requests {KeeperRequestForSession {.session_id = session_id, .request = request}};
+        const auto responses = storage.processLocalRequests(requests, /*check_acl=*/true);
+        EXPECT_EQ(responses.size(), 1);
+        return dynamic_cast<const ZooKeeperListWithOptionsResponse &>(*responses[0].response);
+    };
+
+    const ACLs unreadable_acls {{.permissions = ACL::Create, .scheme = "auth", .id = ""}};
+    create("/list_with_options_denied_root", unreadable_acls);
+    create("/list_with_options_acl");
+    create("/list_with_options_acl/visible");
+    create("/list_with_options_acl/hidden", unreadable_acls);
+    create("/list_with_options_acl/hidden/grandchild");
+
+    {
+        const auto & response = list("/list_with_options_denied_root", {}, unauthorized_session_id);
+        EXPECT_EQ(response.error, Error::ZNOAUTH);
+    }
+
+    {
+        ListOptions options;
+        options.with_stat = true;
+        const auto & response = list("/list_with_options_acl", options, unauthorized_session_id);
+        EXPECT_EQ(response.error, Error::ZNOAUTH);
+    }
+
+    {
+        ListOptions options;
+        options.recursive = true;
+        const auto & response = list("/list_with_options_acl", options, unauthorized_session_id);
+        EXPECT_EQ(response.error, Error::ZOK);
+        EXPECT_EQ(response.names, std::vector<String>({"visible"}));
     }
 }
 
@@ -1243,6 +1816,44 @@ TEST_P(CoordinationTest, TestBlockACL)
         storage.processRequest(set_acl_request, session_id, req_zxid);
         ASSERT_EQ(committed_acl_id(path), 0);
     }
+}
+
+/// A Keeper snapshot converted from ZooKeeper can carry an ACL map entry whose id is nonzero but whose
+/// ACL list is empty. An empty ACL list means unrestricted, whichever id carries it.
+TEST_P(CoordinationTest, TestEmptyACLListWithNonzeroId)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    int64_t zxid = 0;
+
+    /// Mimic snapshot deserialization: addMapping starts the usage counter at 0, and every node
+    /// referencing the id adds one use.
+    storage.acl_map.addMapping(2, {});
+    addNode(storage, "/legacy_empty_acl", "data", /*ephemeral_owner=*/0, /*acl_id=*/2);
+    storage.acl_map.addUsage(2);
+
+    storage.acl_map.addMapping(3, {{.permissions = ACL::All, .scheme = "digest", .id = "user:password"}});
+    addNode(storage, "/restricted", "data", /*ephemeral_owner=*/0, /*acl_id=*/3);
+    storage.acl_map.addUsage(3);
+
+    const auto assert_get = [&](const std::string & path, Error expected)
+    {
+        int64_t new_zxid = ++zxid;
+        auto request = std::make_shared<ZooKeeperGetRequest>();
+        request->path = path;
+        storage.preprocessRequest(request, 1, 0, new_zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+        auto responses = storage.processRequest(request, 1, new_zxid);
+        ASSERT_EQ(responses.size(), 1u);
+        ASSERT_EQ(responses[0].response->error, expected) << "path " << path;
+    };
+
+    /// The session adds no auth, so only the node's own ACL list decides.
+    assert_get("/legacy_empty_acl", Error::ZOK);
+    /// A nonzero id whose non-empty ACL list the session cannot satisfy is still refused.
+    assert_get("/restricted", Error::ZNOAUTH);
 }
 
 TEST_P(CoordinationTest, TestMultiWatches)
@@ -2375,6 +2986,35 @@ TEST_P(CoordinationTest, TestCreate2ResponseDataLength)
 
     const auto & create2_response = dynamic_cast<const ZooKeeperCreate2Response &>(*responses[0].response);
     EXPECT_EQ(create2_response.zstat.dataLength, static_cast<int32_t>(data.size()));
+}
+
+TEST_P(CoordinationTest, ReadViewStableCountAndRepeatedNext)
+{
+    /// The KeeperNodesReadView contract: getNodeCount must return the same value before and
+    /// after the iteration, and next must keep returning false after the view is exhausted
+    /// (`system.keeper_storage` calls next once per block, retrying after the last one).
+    this->keeper_context->setServerState(DB::KeeperContext::Phase::RUNNING);
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+
+    addNode(storage, "/a", "data_a");
+    addNode(storage, "/b", "data_b");
+
+    auto view = storage.issueReadView();
+    const size_t count_before = view->getNodeCount();
+    EXPECT_GT(count_before, 0u);
+
+    size_t nodes_seen = 0;
+    std::string_view path;
+    std::string_view node_data;
+    DB::KeeperNodeStats stats;
+    while (view->next(path, node_data, stats))
+        ++nodes_seen;
+
+    EXPECT_EQ(nodes_seen, count_before);
+    EXPECT_EQ(view->getNodeCount(), count_before);
+    EXPECT_FALSE(view->next(path, node_data, stats));
+    EXPECT_FALSE(view->next(path, node_data, stats));
 }
 
 #endif

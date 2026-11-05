@@ -116,6 +116,16 @@ public:
         writeVarUInt(data(place).count, buf);
     }
 
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
+    {
+        return VAR_UINT_MAX_SIZE;
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> /* version */) const override
+    {
+        return writeVarUInt(data(place).count, dst);
+    }
+
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         readVarUInt(data(place).count, buf);
@@ -125,6 +135,10 @@ public:
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
+
+    /// The merged count is the modular `UInt64` sum of the partial counts, which never exceeds
+    /// their saturating sum - see `MergedValueBound::Subadditive`.
+    MergedValueBound getMergedValueBound() const override { return MergedValueBound::Subadditive; }
 
     /// Reset the state to specified value. This function is not the part of common interface.
     static void set(AggregateDataPtr __restrict place, UInt64 new_count)

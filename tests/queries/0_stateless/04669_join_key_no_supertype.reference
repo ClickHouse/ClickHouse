@@ -1,0 +1,106 @@
+The query from the issue
+0	1
+1	2
+2	3
+3	4
+4	5
+5	6
+6	7
+7	8
+8	9
+INNER
+0	0
+1	1
+9223372036854775807	9223372036854775807
+LEFT
+0	0
+1	1
+9223372036854775807	9223372036854775807
+9223372036854775808	0
+18446744073709551615	0
+RIGHT
+0	-9223372036854775808
+0	-1
+0	0
+1	1
+9223372036854775807	9223372036854775807
+FULL
+0	-9223372036854775808
+0	-1
+0	0
+1	1
+9223372036854775807	9223372036854775807
+9223372036854775808	0
+18446744073709551615	0
+The types of the result are not affected
+UInt64	Int64
+The same for every JOIN algorithm
+3
+3
+3
+3
+3
+An expression as a key
+0	0
+1	-1
+Multiple keys
+0	0
+1	1
+A narrower signed type: only the values from 0 to 127 can match
+0	0
+1	1
+The widest types
+18446744073709551615	18446744073709551615
+Nullable and LowCardinality keys
+1	1
+1	1
+A Tuple key: an element out of the common range turns the whole tuple into NULL, and it does not match anything
+(0)	(0)
+(1)	(1)
+(1)	Tuple(UInt64)
+A Tuple with nullable integer elements is supported: NULL and out-of-range elements do not match
+(1)	(1)
+A Tuple with an element that accurateCastOrNull cannot represent, such as an Array or a Map, is rejected
+A nested Tuple key is rejected: the join null-key map only supports nullable elements of the outermost Tuple
+USING is supported for INNER JOIN, where the result contains only the common values
+0	UInt64
+1	UInt64
+9223372036854775807	UInt64
+0
+1
+9223372036854775807
+A USING key that is already Nullable still requires an accurate conversion
+9223372036854775807	Nullable(UInt64)
+SEMI JOIN keeps only the matched rows of the preserved side, so USING is supported for it as well
+0	UInt64
+1	UInt64
+9223372036854775807	UInt64
+0	UInt64
+1	UInt64
+9223372036854775807	UInt64
+ANTI JOIN keeps exactly the unmatched rows, which may be out of the common range
+For the other kinds of JOIN the result also contains the values that are out of the common range
+A null-safe comparison cannot be done this way, because NULL matches NULL there
+The ASOF inequality needs the order of the values, not only the equality
+In ASOF JOIN USING only the last column needs the order of the values, the preceding ones are equality keys
+1	3
+The Join table engine holds a hash table prebuilt over the original key, so only the probe side can be converted
+The stored key is the common subtype: the probe key is converted, and an out-of-range value does not match anything
+1	a
+The stored key is not the common subtype: the prebuilt hash table cannot be converted
+A stored key wrapped in LowCardinality or Nullable is served by the prebuilt hash table as is, so only the probe side is converted
+1	a
+1	1	a
+A probe value converted to NULL does not match the NULL of the stored key
+1	a
+The wrappers of the stored key do not relax the unsupported direction
+A direct dictionary lookup keeps a stored subtype key and accurately converts only the probe key
+a
+A LEFT ANTI JOIN gets no runtime filter under the fallback: the values out of the common range become NULL, and `NOT IN` a set with NULL would drop the rows that have to be preserved
+The keys of the same type get a runtime filter
+1
+The keys with no least supertype do not
+0
+The result is the same with and without the runtime filters
+498	2	501
+498	2	501

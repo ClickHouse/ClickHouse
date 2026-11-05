@@ -5,7 +5,7 @@
 -- per-element NULLs is not implemented. Per-element respect-nulls semantics are available by making
 -- the elements `Nullable` instead of the tuple itself.
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 SELECT 'ordinary aggregate over Nullable(Tuple) goes through the -Null wrapper';
 SELECT anyTuple(if(number = 0, NULL, CAST((number, number * 2), 'Nullable(Tuple(UInt64, UInt64))'))) FROM numbers(3);

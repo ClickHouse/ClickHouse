@@ -2,21 +2,18 @@
 sidebarTitle: 'Okta での SCIM プロビジョニング'
 slug: /cloud/security/scim-setup
 title: 'Okta での SCIM プロビジョニング'
-description: 'Okta と ClickHouse Cloud 間で SCIM プロビジョニングを設定する方法'
+description: 'Okta と ClickHouse Cloud 間で SCIM プロビジョニング を設定する方法'
 doc_type: 'guide'
-keywords: ['ClickHouse Cloud', 'SCIM', 'プロビジョニング', 'Okta', 'SSO', 'SAML', 'アイデンティティプロバイダー', 'IdP', 'ユーザー管理']
+keywords: ['ClickHouse Cloud', 'SCIM', 'Provisioning', 'Okta', 'SSO', 'SAML', 'アイデンティティプロバイダー', 'IdP', 'ユーザー管理']
 ---
 
 import { EnterprisePlanFeatureBadge } from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
-import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
-
-<PrivatePreviewBadge />
 
 <EnterprisePlanFeatureBadge feature="SCIM" />
 
 ClickHouse Cloud は、ユーザーとグループのライフサイクルを自動管理するための SCIM 2.0 (System for Cross-domain Identity Management) をサポートしています。IDプロバイダーに接続すると、ClickHouse Cloud アプリケーションに割り当てたすべてのユーザーが、適切なロールで組織内に自動的に作成されます。プロファイルの更新も自動的に反映され、IdP からユーザーを削除すると、そのユーザーのアクセス権も削除されます。手動で招待したり、不要なアカウントが残ったりすることはありません。
 
-このガイドでは、**Okta** を使用して SCIMプロビジョニングをエンドツーエンドで設定する手順を説明します。ClickHouse Cloud の SCIM エンドポイントは SCIM 2.0 (RFC 7644) に準拠していますが、認証方式としてサポートされているのは Basic Auth のみで、検証済みの IDプロバイダーも Okta のみです。他の SCIM 2.0 IdP でも、Basic Auth で認証できれば動作する可能性はありますが、現時点では正式にはサポートされていません。
+このガイドでは、**Okta** を使用して SCIM プロビジョニングをエンドツーエンドで設定する手順を説明します。ClickHouse Cloud の SCIM エンドポイントは SCIM 2.0 (RFC 7644) に準拠しています。Okta は Basic Auth を使用して認証します。本ガイドでもこの方式を使用します。IDプロバイダーが Microsoft Entra ID の場合は、代わりに [Entra ID での SCIM プロビジョニング](/ja/products/cloud/guides/security/cloud-access-management/scim-setup-entra) ガイドに従ってください。
 
 <div id="before-you-begin">
   ## 始める前に
@@ -316,7 +313,7 @@ Okta は失敗したプロビジョニング呼び出しを再試行しますが
   </Accordion>
 
   <Accordion title="SCIM は Microsoft Entra ID、OneLogin、またはその他の SCIM 2.0 IdP で動作しますか？">
-    公式には、いいえ — 現時点でテスト済みかつサポート対象なのは Okta のみです。エンドポイントは SCIM 2.0 (RFC 7644) に準拠していますが、認証は Basic Auth のみに制限されているため、Basic Auth で認証できない IdP では動作しません。その他の Basic Auth 対応 SCIM 2.0 IdP も実際には動作する可能性がありますが、保証はありません。
+    Microsoft Entra ID もサポートされています — [Entra ID による SCIM プロビジョニング](/ja/products/cloud/guides/security/cloud-access-management/scim-setup-entra) を参照してください。エンドポイントは SCIM 2.0 (RFC 7644) に準拠しており、Basic Auth (Okta で使用) または Bearer token (Entra ID で使用) のいずれかを受け付けます。これらのいずれかの方法で認証できる場合、その他の SCIM 2.0 IdP も実際には動作する可能性がありますが、現時点でテスト済みかつサポート対象なのは Okta と Entra ID です。
   </Accordion>
 
   <Accordion title="Okta での変更はどれくらいで ClickHouse Cloud に反映されますか？">

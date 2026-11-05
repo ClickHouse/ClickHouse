@@ -12,21 +12,19 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres configurent le serveur ClickHouse et sont générés automatiquement à partir du code source de ClickHouse.
 
-<div id="database_catalog_drop_error_cooldown_sec">
-  ## database_catalog_drop_error_cooldown_sec
-</div>
+## database_catalog_drop_error_cooldown_sec
 
 <SettingsInfoBlock type="UInt64" default_value="5" changeable_without_restart="No" />En cas d’échec de la suppression d’une table, ClickHouse attendra l’expiration de ce délai avant de réessayer l’opération.
 
-<div id="database_catalog_drop_table_concurrency">
-  ## database_catalog_drop_table_concurrency
-</div>
+## database_catalog_drop_table_concurrency
 
 <SettingsInfoBlock type="UInt64" default_value="16" changeable_without_restart="No" />La taille du pool de threads utilisé pour la suppression des tables.
 
-<div id="database_catalog_unused_dir_cleanup_period_sec">
-  ## database_catalog_unused_dir_cleanup_period_sec
-</div>
+## database_catalog_shutdown_table_concurrency
+
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />Taille du pool de threads utilisé pour arrêter les tables lors de l&#39;arrêt du serveur. Zéro signifie que le nombre de threads est égal au nombre de cœurs.
+
+## database_catalog_unused_dir_cleanup_period_sec
 
 <SettingsInfoBlock type="UInt64" default_value="86400" changeable_without_restart="No" />
 
@@ -37,9 +35,7 @@ Définit la périodicité d&#39;exécution de la tâche.
   Une valeur de `0` signifie « jamais ». La valeur par défaut correspond à 1 jour.
 </Note>
 
-<div id="database_catalog_unused_dir_hide_timeout_sec">
-  ## database_catalog_unused_dir_hide_timeout_sec
-</div>
+## database_catalog_unused_dir_hide_timeout_sec
 
 <SettingsInfoBlock type="UInt64" default_value="3600" changeable_without_restart="No" />
 
@@ -53,9 +49,7 @@ s’attend pas à trouver dans `store/`.
   Une valeur de `0` signifie « immédiatement ».
 </Note>
 
-<div id="database_catalog_unused_dir_rm_timeout_sec">
-  ## database_catalog_unused_dir_rm_timeout_sec
-</div>
+## database_catalog_unused_dir_rm_timeout_sec
 
 <SettingsInfoBlock type="UInt64" default_value="2592000" changeable_without_restart="No" />
 
@@ -63,7 +57,7 @@ Paramètre d&#39;une tâche qui nettoie les éléments inutiles du répertoire `
 Si un sous-répertoire n&#39;est pas utilisé par clickhouse-server et a été précédemment &quot;masqué&quot;
 (voir [database&#95;catalog&#95;unused&#95;dir&#95;hide&#95;timeout&#95;sec](/fr/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_hide_timeout_sec))
 et que ce répertoire n&#39;a pas été modifié au cours des
-[`database_catalog_unused_dir_rm_timeout_sec`]/operations/server-configuration-parameters/settings#database&#95;catalog&#95;unused&#95;dir&#95;rm&#95;timeout&#95;sec) dernières secondes, la tâche supprimera ce répertoire.
+[`database_catalog_unused_dir_rm_timeout_sec`](/fr/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_rm_timeout_sec) dernières secondes, la tâche supprimera ce répertoire.
 Cela fonctionne également pour les répertoires que clickhouse-server ne
 s&#39;attend pas à trouver dans `store/`.
 

@@ -1,0 +1,27 @@
+-- BACKUP TO Disk(...) without WRITE ON DISK: denied, and it names the missing grant
+1
+-- BACKUP TO Disk(...) with WRITE ON DISK: allowed
+allowed
+-- RESTORE FROM Disk(...) without READ ON DISK: denied
+denied
+-- the table was not created by the rejected restore
+0
+-- RESTORE FROM Disk(...) with READ ON DISK: allowed and the row is readable
+allowed
+42
+-- WRITE ON DISK alone does not authorize reading a backup
+denied
+-- FILE and DISK are separate capabilities: neither grant authorizes the other locator
+denied
+denied
+-- CREATE DATABASE ENGINE = Backup over Disk(...) without READ ON DISK: denied
+denied
+-- the database was not created
+0
+-- CREATE DATABASE ENGINE = Backup over Disk(...) with READ ON DISK: allowed and readable
+allowed
+42
+-- SOURCES covers the new source, so an admin-level grant needs no update
+allowed
+-- the source name also accepts the Disk spelling the locator itself uses
+allowed

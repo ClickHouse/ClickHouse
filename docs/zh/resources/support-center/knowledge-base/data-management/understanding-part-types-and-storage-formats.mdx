@@ -26,12 +26,12 @@ ClickHouse 使用两个彼此独立的概念来组织 part 内的数据：
   ### 各类型的使用时机
 </div>
 
-数据分区片段类型由以下表设置控制：
+part 类型由以下表设置控制：
 
-* [`min_bytes_for_wide_part`](/zh/reference/settings/merge-tree-settings#min_bytes_for_wide_part)：数据分区片段使用 `Wide` 格式所需的最小字节数
-* [`min_rows_for_wide_part`](/zh/reference/settings/merge-tree-settings#min_rows_for_wide_part)：数据分区片段使用 `Wide` 格式所需的最小行数
+* [`min_bytes_for_wide_part`](/zh/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part)：分片使用 `Wide` 格式所需的最小字节数
+* [`min_rows_for_wide_part`](/zh/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part)：分片使用 `Wide` 格式所需的最小行数
 
-如果某个数据分区片段的字节数或行数中任一项小于对应的设置值，则该分区片段会以 `Compact` 格式存储；否则将使用 `Wide` 格式。
+如果某个分片的字节数或行数中任一项小于对应的设置值，则该分片会以 `Compact` 格式存储；否则将使用 `Wide` 格式。
 
 <div id="performance-considerations">
   ### 性能注意事项
@@ -71,10 +71,10 @@ Compact 到 Wide 的 merge 比 Wide 到 Wide 的 merge 更慢，因为 ClickHous
 
 存储格式决定了分片文件在磁盘上的物理存放方式。
 
-| 格式         | 说明               | 可用范围       |
-| ---------- | ---------------- | ---------- |
-| **Full**   | 分片目录中的每个文件都单独存储  | 开源版和 Cloud |
-| **Packed** | 所有文件都会打包到单个归档文件中 | 开源版和 Cloud |
+| 格式         | 说明                                                        | 可用范围       |
+| ---------- | --------------------------------------------------------- | ---------- |
+| **Full**   | 分片目录中的每个文件都单独存储                                           | 开源版和 Cloud |
+| **Packed** | 大多数分片文件都会打包到单个归档文件中 (投影 和少数 服务文件 会单独写入)  | 开源版和 Cloud |
 
 <div id="full-storage">
   ### Full 存储
@@ -86,7 +86,7 @@ Compact 到 Wide 的 merge 比 Wide 到 Wide 的 merge 更慢，因为 ClickHous
   ### Packed 存储
 </div>
 
-在 Packed 存储中，所有分片文件都会打包为单个归档文件。这会显著减少文件操作次数；而对于 S3 这类远程存储来说，这一点尤为重要，因为每个请求都会带来相应的延迟和成本。
+在 Packed 存储中，大多数分片文件都会打包为单个归档文件。投影和少数服务文件 - `txn_version.txt`、`delete-on-destroy.txt` 和 `invalidated_system_columns.txt` - 仍会单独写入，因为它们可能在分片本身写入后创建或重写。这会显著减少文件操作次数；而对于 S3 这类远程存储来说，这一点尤为重要，因为每个请求都会带来相应的延迟和成本。
 
 **Packed 存储的优势：**
 
@@ -101,9 +101,9 @@ Compact 到 Wide 的 merge 比 Wide 到 Wide 的 merge 更慢，因为 ClickHous
 
 如果满足以下**任一**条件，分片就会使用 Packed 存储：
 
-* 未压缩字节数 &lt; [`min_bytes_for_full_part_storage`](/zh/reference/settings/merge-tree-settings#min_bytes_for_full_part_storage)
-* 行数 &lt; [`min_rows_for_full_part_storage`](/zh/reference/settings/merge-tree-settings#min_rows_for_full_part_storage)
-* 合并级别 &lt; [`min_level_for_full_part_storage`](/zh/reference/settings/merge-tree-settings#min_level_for_full_part_storage)
+* 未压缩字节数 &lt; [`min_bytes_for_full_part_storage`](/zh/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_full_part_storage)
+* 行数 &lt; [`min_rows_for_full_part_storage`](/zh/reference/settings/merge-tree-settings/min-rows#min_rows_for_full_part_storage)
+* 合并级别 &lt; [`min_level_for_full_part_storage`](/zh/reference/settings/merge-tree-settings/min-level#min_level_for_full_part_storage)
 
 Packed 存储需要显式启用：这三个设置的默认值均为 `0`，因此除非你调高其中某一个值，否则分片会使用 Full 存储。
 
@@ -153,6 +153,10 @@ Packed 存储需要显式启用：这三个设置的默认值均为 `0`，因此
 </div>
 
 您可以使用 [`system.parts`](/zh/reference/system-tables/parts) 表查看现有 parts 的 part 类型和存储类型：
+
+<Note>
+  在开源 ClickHouse 中，从版本 26.9 开始，`system.parts` 会提供 `part_storage_type`。在版本 26.8 及更早版本中，请从查询中省略 `part_storage_type`，并且仅按 `part_type` 分组和排序。
+</Note>
 
 ```sql
 SELECT

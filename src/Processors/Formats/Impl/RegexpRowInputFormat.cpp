@@ -1,6 +1,7 @@
 #include <cstdlib>
 #include <base/find_symbols.h>
 #include <Processors/Formats/Impl/RegexpRowInputFormat.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
@@ -111,13 +112,41 @@ bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
     ReadBuffer field_buf(const_cast<char *>(matched_field.data()), matched_field.size(), 0);
     try
     {
-        bool read = deserializeFieldByEscapingRule(type, serializations[index], *columns[index], field_buf, escaping_rule, format_settings);
-        /// A capture group is the whole field, so the value must consume it entirely. The `Quoted`
-        /// readers stop at the first character that cannot belong to the value, and in a stream-based
-        /// format the leftover would fail the subsequent delimiter check; here there is no delimiter,
-        /// so without this check a trailing unparsed rest would be silently discarded (for example, a
-        /// fractional timestamp read by the integer-only compatibility parser would lose its fraction).
-        if (escaping_rule == FormatSettings::EscapingRule::Quoted && !field_buf.eof())
+        bool read = false;
+        /// A capture group is a whole field with no delimiter, so a tab inside it belongs to the
+        /// value, while the `Raw` reader stops there. A field equal to the null representation keeps
+        /// that reader, which owns the rule's null token where a null-aware one is selected at all.
+        const bool null_token_is_live
+            = isNullableOrLowCardinalityNullable(type) || isVariant(type) || format_settings.null_as_default;
+        if (escaping_rule == FormatSettings::EscapingRule::Raw
+            && matched_field.contains('\t')
+            && !(null_token_is_live && matched_field == format_settings.tsv.null_representation))
+        {
+            if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
+                read = SerializationNullable::deserializeNullAsDefaultOrNestedWholeText(
+                    *columns[index], field_buf, format_settings, serializations[index]);
+            else
+            {
+                serializations[index]->deserializeWholeText(*columns[index], field_buf, format_settings);
+                read = true;
+            }
+        }
+        else
+            read = deserializeFieldByEscapingRule(type, serializations[index], *columns[index], field_buf, escaping_rule, format_settings);
+
+        /// A capture group is the whole field, so the value must consume it entirely: there is no
+        /// delimiter here whose parsing would otherwise reject the leftover. The `CSV` and `JSON`
+        /// rules permit whitespace after a value.
+        if (escaping_rule == FormatSettings::EscapingRule::CSV)
+        {
+            if (!format_settings.csv.allow_whitespace_or_tab_as_delimiter)
+                while (!field_buf.eof() && (*field_buf.position() == ' ' || *field_buf.position() == '\t'))
+                    ++field_buf.position();
+        }
+        else if (escaping_rule == FormatSettings::EscapingRule::JSON)
+            skipWhitespaceIfAny(field_buf);
+
+        if (!field_buf.eof())
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Unexpected data '{}' after parsed value in the matched field '{}'",
                 String(field_buf.position(), field_buf.available()),

@@ -48,10 +48,15 @@ public:
       * Input column names initialized using actions dag nodes with INPUT type.
       * If use_actions_nodes_as_output_columns = true output columns are initialized using actions dag nodes.
       * If additional output columns are specified they are added to output columns.
+      * If additional input columns are specified they are required from the child step in addition to the
+      * inputs of the actions dag. A correlated subquery of this step is not part of the dag - it is planned
+      * as a join over the step's input - so the columns it correlates on have to be named here, otherwise
+      * the child step prunes them and the subquery cannot be planned.
       */
     explicit ActionsChainStep(ActionsAndProjectInputsFlagPtr actions_,
         bool use_actions_nodes_as_output_columns = true,
-        ColumnsWithTypeAndName additional_output_columns_ = {});
+        ColumnsWithTypeAndName additional_output_columns_ = {},
+        NameSet additional_input_columns_ = {});
 
     /// Get actions
     ActionsAndProjectInputsFlagPtr & getActions()
@@ -114,6 +119,8 @@ private:
     ColumnsWithTypeAndName available_output_columns;
 
     ColumnsWithTypeAndName additional_output_columns;
+
+    NameSet additional_input_columns;
 };
 
 /// Query actions chain

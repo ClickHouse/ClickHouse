@@ -22,6 +22,7 @@ namespace DB
 
 struct MySQLSettings;
 class NamedCollection;
+class ASTSetQuery;
 struct StorageID;
 
 /** Implements storage in the MySQL database.
@@ -83,7 +84,9 @@ public:
         String addresses_expr;
     };
 
-    static Configuration getConfiguration(ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings, const StorageID * table_id = nullptr);
+    static Configuration getConfiguration(
+        ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings,
+        const StorageID * table_id = nullptr, const ASTSetQuery * settings = nullptr);
 
     static Configuration processNamedCollectionResult(
         const NamedCollection & named_collection, MySQLSettings & storage_settings,
@@ -97,9 +100,10 @@ public:
     /// the path inherited from the collection, unless the operator marked that path as not overridable.
     static mysqlxx::SSLParams getSSLParams(const NamedCollection & named_collection);
 
-    /// Peels the trailing `ssl_ca_pem = '...'`, `ssl_cert_pem = '...'` and `ssl_key_pem = '...'`
-    /// arguments off a positional argument list (the form without a named collection) and removes them
-    /// from `arguments`, so that the caller sees only the positional arguments it knows about.
+    /// Peels the trailing `ssl_ca_pem = '...'`, `ssl_cert_pem = '...'`, `ssl_key_pem = '...'` and
+    /// `ssl_key_passphrase = '...'` arguments off a positional argument list (the form without a named
+    /// collection) and removes them from `arguments`, so that the caller sees only the positional
+    /// arguments it knows about.
     /// A path (`ssl_ca`, `ssl_cert`, `ssl_key`) is rejected here: it is only accepted from a named
     /// collection defined in the server configuration file, see `getSSLParams`.
     static mysqlxx::SSLParams extractSSLParamsFromArguments(ASTs & arguments, ContextPtr context_);

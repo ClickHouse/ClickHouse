@@ -305,7 +305,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     </openSSL>
     ```
 
-    如需了解更多信息，请访问[此页面](/zh/reference/settings/server-settings/settings#openssl)
+    如需了解更多信息，请访问[此页面](/zh/reference/settings/server-settings/settings/other#openssl)
 
     7. 在每个节点上为 gRPC 配置 TLS：
 
@@ -666,6 +666,12 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     </client>
 </openSSL>
 ```
+
+## 无需重启即可轮换证书和 CA 证书 {#rotating-certificates-without-restart}
+
+ClickHouse server 和 ClickHouse Keeper 会监视 `openSSL.server` 和 `openSSL.client` 配置段 (以及可组合协议的 `protocols.*` 配置段) 中由 `certificateFile`、`privateKeyFile` 和 `caConfig` 引用的文件；如果 `caConfig` 指向的是一个目录，则监视该目录下的文件。当其中任一文件发生变化，或执行 `SYSTEM RELOAD CONFIG` 时，证书会被重新加载，并用于所有新建立的 TLS 连接，包括 HTTPS、安全的原生协议、服务器间连接、到 Keeper 的连接，以及 Keeper 节点之间的 Raft 连接。已建立的连接仍会继续使用其建立时所用的证书。
+
+若要在不停机的情况下轮换 CA，请先将 `caConfig` 文件替换为同时包含旧 CA 证书和新 CA 证书的证书包，然后将节点证书和客户端证书切换为由新 CA 签发的证书，最后再将该证书包替换为仅包含新 CA 证书的文件。
 
 <div id="summary">
   ## 总结

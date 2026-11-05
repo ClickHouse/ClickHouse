@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-msan, no-fasttest, no-parallel
 # Tag justification:
+#   no-msan: the sampling query profiler is disabled under Memory Sanitizer
+#     (QUERY_PROFILER_SUPPORTED), so poll is never interrupted by EINTR and the
+#     timeout-reset regression under test is not exercised.
 #   no-fasttest: depends on libmysql (MySQL database engine), not built in fast test.
 #   no-parallel: attaches a MySQL database pointing at an unreachable host; it is visible
 #     in system.tables, so a concurrent unfiltered scan would also try to connect to it.

@@ -24,6 +24,16 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 When false (default), the server-side AST fuzzer (controlled by `ast_fuzzer_runs`) only fuzzes read-only queries (SELECT, EXPLAIN, SHOW, DESCRIBE, EXISTS). When true, all query types including DDL and INSERT are fuzzed.
 
+## ast_fuzzer_oracle {#ast_fuzzer_oracle}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting to enable correctness oracle checks in the server-side AST fuzzer."}]}]}/>
+
+When enabled together with `ast_fuzzer_runs`, applies a suite of correctness oracle checks to successfully executed fuzzed SELECT queries: TLP WHERE/DISTINCT/GROUP BY/HAVING/Aggregate, NoREC, DQP (toggling individual optimizer settings), Identity WHERE, and Subquery wrap. A mismatch throws an `AST_FUZZER_ORACLE_MISMATCH` exception.
+
 ## ast_fuzzer_runs {#ast_fuzzer_runs}
 
 <ExperimentalBadge/>

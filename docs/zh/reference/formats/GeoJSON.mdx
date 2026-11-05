@@ -26,7 +26,7 @@ doc_type: 'reference'
   ## 读取数据
 </div>
 
-读取 `FeatureCollection` 时，每个要素都会生成一行，并采用以下固定 schema：
+读取 `FeatureCollection` 会为每个要素生成一行，并使用以下固定模式 (schema) ：
 
 | 列            | 类型                 | 描述                                                                                       |
 | ------------ | ------------------ | ---------------------------------------------------------------------------------------- |
@@ -34,11 +34,11 @@ doc_type: 'reference'
 | `geometry`   | `Geometry`         | 要素的几何数据，存储为 `Geometry` Variant 类型。                                                       |
 | `properties` | `Nullable(JSON)`   | 要素的 `properties` 对象，存储为半结构化的 `JSON` 列。显式的 `"properties": null` 会保留为 `NULL`。              |
 
-每个几何数据都存储在 ClickHouse 的 `Geometry` 类型中 (即一种 `Variant`) 。支持的 GeoJSON 几何类型包括 `Point`、`LineString`、`MultiLineString`、`Polygon` 和 `MultiPolygon`。另外两种 GeoJSON 几何类型 `GeometryCollection` 和 `MultiPoint` 无法由 `Geometry` 类型表示；默认情况下，如果将其读入 `geometry` 列，会引发异常，但也可以改为插入 `NULL`——参见下文的[处理不支持的几何类型](#unsupported-geometry)。默认情况下，只有当要素的几何数据是显式的 JSON `null` 时，`geometry` 列才为 `NULL`；在 `input_format_geojson_unsupported_geometry_handling = 'null'` 下，不支持的几何类型也会记为 `NULL`。
+每个几何数据都存储在 ClickHouse 的 `Geometry` 类型 (一个 `Variant`) 中。支持的 GeoJSON 几何类型包括 `Point`、`MultiPoint`、`LineString`、`MultiLineString`、`Polygon` 和 `MultiPolygon`。剩余的 GeoJSON 几何类型 `GeometryCollection` 无法由 `Geometry` 类型表示；默认情况下，将其读入 `geometry` 列会引发异常，但可以改为插入 `NULL` —— 详见下文的[处理不支持的几何类型](#unsupported-geometry)。默认情况下，只有当要素的几何显式为 JSON `null` 时，`geometry` 列才为 `NULL`；在 `input_format_geojson_unsupported_geometry_handling = 'null'` 时，对于不支持的几何类型该列也将为 `NULL`。
 
 系统会验证文档的结构：顶层 `type` 必须是 `FeatureCollection`，并且 `features` 中的每个元素都必须具有 `type` `Feature`。默认情况下，坐标必须满足 GeoJSON 的形态不变量——`LineString` (以及 `MultiLineString` 中的每一条线) 必须至少包含两个点，而 `Polygon` 的 Ring (以及 `MultiPolygon` 中的每个 Ring) 必须闭合且至少包含四个点 (参见[几何校验](#geometry-validation)) 。格式错误的文档会被拒绝，而不会静默加载。
 
-键的顺序很灵活：顶层 `type` 可以出现在 `features` 数组之前或之后，在几何对象内部，`coordinates` 也可以出现在 `type` 之前或之后。
+键的顺序很灵活：顶层的 `type` 可以出现在 `features` 数组之前或之后，在几何对象内，`coordinates` 也可以出现在 `type` 之前或之后。
 
 schema 推断会返回上述固定 schema，因此 `DESCRIBE` 和 `SELECT ... FROM format(...)` 无需表定义即可工作。
 
@@ -91,7 +91,7 @@ FROM file('london.geojson', GeoJSON);
 └────┴─────────────────┴────────────┘
 ```
 
-文件扩展名 `.geojson` 会被自动检测到，因此可以省略 `format` 参数：
+文件扩展名 `.geojson` 会被自动识别，因此可以省略格式参数：
 
 ```sql title="Query"
 SELECT id, properties.name AS name, variantType(geometry) AS geo_type
@@ -213,7 +213,7 @@ DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}');
   ### 处理不支持的几何类型
 </div>
 
-某些有效的 GeoJSON 几何类型 — 例如 `GeometryCollection` 和 `MultiPoint` — 无法用 ClickHouse 的 `Geometry` 类型表示。你可以使用 `input_format_geojson_unsupported_geometry_handling` 设置，控制当这类几何对象必须存储到 `geometry` 列中时应如何处理。可能的值为：
+某些有效的 GeoJSON 几何类型 — 例如 `GeometryCollection` — 无法用 ClickHouse 的 `Geometry` 类型表示。你可以使用 `input_format_geojson_unsupported_geometry_handling` 设置，控制当这类几何对象必须存储到 `geometry` 列中时应如何处理。可能的值为：
 
 * `'throw'` — 抛出异常 (默认)
 * `'null'` — 为 `geometry` 列插入 `NULL` 值并继续解析
@@ -230,7 +230,7 @@ DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}');
 * 位置的第三个 (高程) 坐标以及其后的所有坐标都会被丢弃——位置将变为 `[longitude, latitude]`。
 * `bbox` 和外部成员 (例如顶层的 `name` 或 `crs`，或 `Feature` 内部的额外成员) 都会被忽略。
 * 数值型 `id` 会以文本形式存储，因此字符串与数字的区别会丢失；缺失或为 `null` 的 `id` 会变为 `NULL`。
-* `GeometryCollection` 和 `MultiPoint` 无法表示——请参阅[处理不支持的几何类型](#unsupported-geometry)。
+* `GeometryCollection` 无法表示——请参阅[处理不支持的几何类型](#unsupported-geometry)。
 
 <div id="writing-data">
   ## 写入数据
@@ -252,6 +252,7 @@ DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}');
 | ClickHouse type   | GeoJSON `"type"`                          |
 | ----------------- | ----------------------------------------- |
 | `Point`           | `Point`                                   |
+| `MultiPoint`      | `MultiPoint`                              |
 | `LineString`      | `LineString`                              |
 | `MultiLineString` | `MultiLineString`                         |
 | `Polygon`         | `Polygon`                                 |

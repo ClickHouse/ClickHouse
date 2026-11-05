@@ -1,0 +1,15 @@
+-- The own clause of a subquery is seen only by the construction-settings reader
+ok
+-- So is the clause of a non-last UNION arm, which is consumed per-arm
+ok
+-- `page` is rejected on a top-level query too, by the settings schema
+ok
+-- With a value the same settings still work in every position
+2
+3
+8
+9
+0
+1
+100
+ok

@@ -344,7 +344,7 @@ SELECT groupBitmapAnd(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%'
         )",
         R"(
 ┌─groupBitmapAnd(z)─┐
-│               3   │
+│                 3 │
 └───────────────────┘
         )"
     },
@@ -400,7 +400,7 @@ SELECT groupBitmapOr(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%')
         )",
         R"(
 ┌─groupBitmapOr(z)─┐
-│             15   │
+│               15 │
 └──────────────────┘
         )"
     },
@@ -455,7 +455,7 @@ SELECT groupBitmapXor(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%'
         )",
         R"(
 ┌─groupBitmapXor(z)─┐
-│              10   │
+│                10 │
 └───────────────────┘
         )"
     },
@@ -466,7 +466,7 @@ SELECT arraySort(bitmapToArray(groupBitmapXorState(z))) FROM bitmap_column_expr_
         )",
         R"(
 ┌─arraySort(bitmapToArray(groupBitmapXorState(z)))─┐
-│ [1, 3, 5, 6, 8, 10, 11, 13, 14, 15]              │
+│ [1,3,5,6,8,10,11,13,14,15]                       │
 └──────────────────────────────────────────────────┘
         )"
     }

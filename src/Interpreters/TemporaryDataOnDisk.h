@@ -44,6 +44,9 @@ struct TemporaryDataMetrics
     std::optional<ProfileEvents::Event> bytes_compressed = {};
     std::optional<ProfileEvents::Event> bytes_uncompressed = {};
     std::optional<ProfileEvents::Event> num_files = {};
+
+    /// Name of the operator that owns this temporary data
+    std::string_view spilled_to_disk_operator = {};
 };
 
 struct TemporaryDataOnDiskSettings
@@ -111,6 +114,9 @@ public:
 
     /// Currently used amount of temporary data on disk in bytes (compressed) for this scope.
     size_t currentCompressedSize() const { return stat.compressed_size.load(std::memory_order_relaxed); }
+
+    /// Cumulative compressed bytes written by this scope and its children, including deleted files.
+    size_t getSpilledBytes() const { return spilled_bytes.load(std::memory_order_relaxed); }
 protected:
     friend class TemporaryDataBuffer;
 
@@ -121,6 +127,7 @@ protected:
     TemporaryFileProvider file_provider;
 
     StatAtomic stat;
+    std::atomic<size_t> spilled_bytes{0};
     const TemporaryDataOnDiskSettings settings;
 };
 
@@ -186,6 +193,10 @@ public:
     /// Get location for logging
     virtual String describeFilePath() const = 0;
 
+    /// The disk of the file, or null for a file in a cache. Returned by reference, because a copy for
+    /// every append would contend on the reference count, which all the files on the disk share.
+    virtual const DiskPtr & getDisk() const;
+
     virtual ~TemporaryFileHolder() = default;
 
 private:
@@ -224,7 +235,13 @@ public:
     void cancelImpl() noexcept override;
 
     std::unique_ptr<ReadBuffer> read();
-    std::unique_ptr<SeekableReadBuffer> readRaw();
+    std::unique_ptr<SeekableReadBuffer> readRaw(size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE);
+
+    /// Puts the data written so far into separate compressed blocks and returns the position
+    /// in the file from which the data written after this call can be read with `readFromPosition`.
+    size_t startNewBlock();
+    /// Reads the data from `position` returned by `startNewBlock`, finishes writing if needed.
+    std::unique_ptr<ReadBuffer> readFromPosition(size_t position);
 
     CompressedWriteBuffer & getCompressedWriteBuffer();
 
@@ -233,6 +250,9 @@ public:
     Stat getStat() const;
 
     String describeFilePath() const;
+
+    /// See `TemporaryFileHolder::getDisk`.
+    const DiskPtr & getDisk() const;
 
 private:
     void updateAllocAndCheck();
@@ -245,6 +265,26 @@ private:
 
     Stat stat;
     TemporaryDataMetrics metrics;
+
+    bool reported_spilled_to_disk = false;
+};
+
+/// Checks free space for the appends to existing temporary files, as the creation of a file checks its
+/// reserve size. A writer that keeps appending to its files uses one object for each batch of appends,
+/// and passes with every append the room that the rest of the batch needs: each disk is checked only at
+/// the first append of the batch to a file on it, because a check costs a `statfs`. A file in a cache is
+/// not checked, because the cache makes room for every write.
+class TemporaryAppendSpaceCheck
+{
+public:
+    /// Throws `NOT_ENOUGH_SPACE` unless the disk of `buffer` has room for `reserve_size` bytes, if the
+    /// batch has not checked that disk yet. The space is reserved only for the duration of the check, as
+    /// at the creation of a file.
+    void beforeAppend(const TemporaryDataBuffer & buffer, size_t reserve_size);
+
+private:
+    /// The few disks of a temporary volume.
+    std::vector<DiskPtr> checked_disks;
 };
 
 

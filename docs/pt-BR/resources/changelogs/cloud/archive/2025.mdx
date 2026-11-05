@@ -91,10 +91,10 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 * **ClickHouse Connector for AWS Glue**
   Agora você pode usar o [ClickHouse Connector for AWS Glue](/pt-BR/integrations/connectors/data-ingestion/AWS/glue) oficial, disponível no [AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-eqvmuopqzdg7s). Ele utiliza o mecanismo serverless baseado em Apache
   Spark do AWS Glue para extrair, transformar e carregar dados na integração entre o ClickHouse e outras fontes de dados. Para começar,
-  siga o [post de anúncio no blog](http://clickhouse.com/blog/clickhouse-connector-aws-glue), que mostra como criar tabelas, gravar e ler dados entre o ClickHouse e o Spark.
+  siga o [post de anúncio no blog](https://clickhouse.com/blog/clickhouse-connector-aws-glue), que mostra como criar tabelas, gravar e ler dados entre o ClickHouse e o Spark.
 * **Alteração no número mínimo de réplicas em um serviço**
   Os serviços que foram escalados para cima agora podem ser [reduzidos novamente](/pt-BR/products/cloud/features/autoscaling/overview) para usar uma única réplica (antes, o mínimo era de 2 réplicas). Observação: serviços com uma única réplica têm disponibilidade reduzida e não são recomendados para uso em produção.
-* O ClickHouse Cloud começará a enviar notificações relacionadas ao escalonamento de serviços e a atualizações de versão dos serviços, por padrão, para roles de administrador. Os usuários podem ajustar suas preferências de notificação nas configurações de notificação.
+* O ClickHouse Cloud começará a enviar notificações relacionadas ao escalonamento de serviços e a atualizações de versão dos serviços, por padrão, para funções de administrador. Os usuários podem ajustar suas preferências de notificação nas configurações de notificação.
 
 <div id="august-13-2025">
   ## 13 de agosto de 2025
@@ -237,18 +237,18 @@ para começar a usar.
   configuradas por pipe. Para **ClickPipes de Postgres CDC**, os alertas também abrangem
   o limiar do replication slot (configurável na aba **Settings**), tipos específicos de erro
   e etapas de autoatendimento para resolver falhas.
-* A **private preview do MySQL CDC** já está aberta. Isso permite que os clientes repliquem bancos de dados MySQL
+* A **prévia privada do MySQL CDC** já está aberta. Isso permite que os clientes repliquem bancos de dados MySQL
   para o ClickHouse Cloud com apenas alguns cliques, viabilizando análises rápidas e
   eliminando a necessidade de ferramentas ETL externas. O conector oferece suporte tanto à replicação contínua
   quanto a migrações pontuais, independentemente de o MySQL estar na nuvem (RDS,
-  Aurora, Cloud SQL, Azure etc.) ou em ambiente on-premises. Você pode se inscrever na private
-  preview [seguindo este link](https://clickhouse.com/cloud/clickpipes/mysql-cdc-connector).
+  Aurora, Cloud SQL, Azure etc.) ou em ambiente on-premises. Você pode se inscrever na prévia
+  privada [seguindo este link](https://clickhouse.com/cloud/clickpipes/mysql-cdc-connector).
 * Foi introduzido o **AWS PrivateLink para ClickPipes**. Você pode usar o AWS PrivateLink para
   estabelecer conectividade segura entre VPCs, serviços da AWS, seus sistemas on-premises
   e o ClickHouse Cloud. Isso pode ser feito sem expor o tráfego à
   internet pública ao mover dados de fontes como Postgres, MySQL e
   MSK na AWS. Ele também oferece suporte ao acesso entre regiões por meio de endpoints de serviço da VPC.
-  A configuração da conectividade do PrivateLink agora é [totalmente autoatendimento](/pt-BR/integrations/clickpipes/aws-privatelink)
+  A configuração da conectividade do PrivateLink agora é [totalmente autoatendimento](/pt-BR/integrations/clickpipes/networking/aws-privatelink)
   por meio do ClickPipes.
 
 <div id="april-4-2025">

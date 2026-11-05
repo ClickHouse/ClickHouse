@@ -48,9 +48,12 @@ void ExecutionSpeedLimits::throttle(
     size_t total_rows_to_read, UInt64 total_elapsed_microseconds,
     OverflowMode timeout_overflow_mode) const
 {
+    const bool check_estimated_time = timeout_overflow_mode == OverflowMode::THROW && max_estimated_execution_time != 0
+        && timeout_before_checking_execution_speed != 0 && total_rows_to_read != 0;
+
     if ((min_execution_rps != 0 || max_execution_rps != 0
          || min_execution_bps != 0 || max_execution_bps != 0
-         || (total_rows_to_read != 0 && timeout_before_checking_execution_speed != 0))
+         || check_estimated_time)
         && (static_cast<Int64>(total_elapsed_microseconds) > timeout_before_checking_execution_speed.totalMicroseconds()))
     {
         /// Do not count sleeps in throttlers
@@ -79,7 +82,7 @@ void ExecutionSpeedLimits::throttle(
                     min_execution_bps);
 
             /// If the predicted execution time is longer than `max_estimated_execution_time`.
-            if (timeout_overflow_mode == OverflowMode::THROW && max_estimated_execution_time != 0 && total_rows_to_read && read_rows)
+            if (check_estimated_time && read_rows)
             {
                 /// We impose additional constraints to make estimation more reliable.
                 /// At least 1% of the rows must be read, or at least 1% of the time must be spent.
@@ -130,13 +133,16 @@ bool ExecutionSpeedLimits::checkTimeLimit(const UInt64 & elapsed_ns, OverflowMod
 {
     if (max_execution_time != 0)
     {
-        if (elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
+        /// Compare in whole microseconds: converting the timeout to nanoseconds overflows for values
+        /// above ~584 years, which `max_execution_time` accepts. Dividing the elapsed time instead can
+        /// only fire the timeout up to a microsecond later - never before it.
+        if (elapsed_ns / 1000 > static_cast<UInt64>(max_execution_time.totalMicroseconds()))
             return handleOverflowMode(
                 overflow_mode,
                 ErrorCodes::TIMEOUT_EXCEEDED,
-                "Timeout exceeded: elapsed {:.3f} ms, maximum: {} ms",
+                "Timeout exceeded: elapsed {:.3f} ms, maximum: {:.3f} ms",
                 static_cast<double>(elapsed_ns) / 1000000ULL,
-                max_execution_time.totalMilliseconds());
+                static_cast<double>(max_execution_time.totalMicroseconds()) / 1000);
     }
 
     return true;

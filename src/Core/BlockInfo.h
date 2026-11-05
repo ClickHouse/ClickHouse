@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
 #include <vector>
@@ -31,10 +32,12 @@ struct BlockInfo
       * Please refer to the comment in `ConvertingAggregatedToChunksTransform` for more details.
       */
 
+/// The revision argument is expanded only in BlockInfo.cpp, so `ProtocolDefines.h` is not needed
+/// here (`Block.h` pulls this header into nearly every translation unit).
 #define APPLY_FOR_BLOCK_INFO_FIELDS(M)                                                                                \
     M(bool,               is_overflows,         false, 1, 0)                                                          \
     M(Int32,              bucket_num,           -1,    2, 0)                                                          \
-    M(std::vector<Int32>, out_of_order_buckets, {},    3, DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION)
+    M(VectorWithMemoryTracking<Int32>, out_of_order_buckets, {},    3, DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION)
 
 #define DECLARE_FIELD(TYPE, NAME, DEFAULT, FIELD_NUM, MIN_PROTOCOL_REVISION) \
     TYPE NAME = DEFAULT;

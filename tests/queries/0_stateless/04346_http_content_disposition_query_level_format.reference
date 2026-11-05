@@ -1,0 +1,20 @@
+-- query-level SETTINGS output_format='Native' overrides the path .CSV extension in the filename
+Content-Disposition: attachment; filename="hits.Native"
+-- query-level SETTINGS format='Native' (the generic format setting) is reflected too
+Content-Disposition: attachment; filename="hits.Native"
+-- URL-level output_format override still wins over the path extension (unchanged behavior)
+Content-Disposition: attachment; filename="hits.Native"
+-- no override: the path .Native extension is kept as-is
+Content-Disposition: attachment; filename="hits.Native"
+-- compression alias 'gzip' does not duplicate the path's '.gz' extension
+Content-Disposition: attachment; filename="hits.Native.gz"
+-- compression alias 'gzip' on a path without a compression extension is canonicalized to '.gz'
+Content-Disposition: attachment; filename="hits.Native.gz"
+-- compression alias 'zstd' is canonicalized to '.zst'
+Content-Disposition: attachment; filename="hits.Native.zst"
+-- a compression alias in the path itself ('.zstd') is canonicalized to '.zst', not duplicated
+Content-Disposition: attachment; filename="hits.Native.zst"
+-- path compression alias '.gzip' is canonicalized to '.gz'
+Content-Disposition: attachment; filename="hits.Native.gz"
+-- path alias '.zstd' plus a matching compression=zstd query param still does not duplicate
+Content-Disposition: attachment; filename="hits.Native.zst"

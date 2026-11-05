@@ -1,4 +1,5 @@
 #include <Columns/ColumnSparse.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/SortCursor.h>
@@ -33,7 +34,7 @@ UInt64 computeWindowSize(UInt64 length, UInt64 offset)
 struct GroupingKeys
 {
     Names names;
-    std::vector<size_t> positions;
+    VectorWithMemoryTracking<size_t> positions;
 };
 
 GroupingKeys filterNonConstKeys(const SharedHeader & header, const Names & column_names)
@@ -179,7 +180,17 @@ void NegativeLimitByTransform::appendRun(const ChunkSlice::ColumnsPtr & columns_
     dropExcessRows(window);
 }
 
+/// Stores a group index in the cell's mapped slot, so a set method cannot be used (and is never selected
+/// here); this overload exists only because the dispatch macro covers every variant.
 template <typename Method>
+requires SetAggregationMethod<Method>
+void NegativeLimitByTransform::consumeImpl(Method &, const ColumnRawPtrs &, const ChunkSlice::ColumnsPtr &, UInt64)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "NegativeLimitByTransform does not support void-mapped aggregation methods");
+}
+
+template <typename Method>
+requires MapAggregationMethod<Method>
 void NegativeLimitByTransform::consumeImpl(
     Method & method, const ColumnRawPtrs & key_columns, const ChunkSlice::ColumnsPtr & columns_ptr, UInt64 num_rows)
 {
@@ -190,8 +201,14 @@ void NegativeLimitByTransform::consumeImpl(
     for (UInt64 row = 0; row < num_rows; ++row)
     {
         auto emplace_result = state.emplaceKey(method.data, row, *data.aggregates_pool);
+        /// A key is given its group index only after `emplace_back` succeeds. If it throws, the key stays in the hash
+        /// table with a null mapped value, and since `ISimpleTransform::work` may pass later chunks to this transform,
+        /// the key gets its group the next time it is seen.
+        if (emplace_result.isInserted())
+            emplace_result.setMapped(nullptr);
+
         size_t group_idx = 0;
-        if (emplace_result.isInserted()) /// New grouping key
+        if (!emplace_result.getMapped()) /// New grouping key
         {
             group_idx = group_windows.size();
             group_windows.emplace_back();
@@ -267,7 +284,7 @@ Chunk NegativeLimitByTransform::generate()
         offset_rows_dropped = true;
         releaseHashTable(data);
         hash_method_context.reset();
-        std::vector<GroupWindow>{}.swap(group_windows);
+        VectorWithMemoryTracking<GroupWindow>{}.swap(group_windows);
     }
 
     if (candidate_list.empty())
@@ -469,9 +486,10 @@ void NegativeLimitBySortedStreamTransform::consume(Chunk chunk)
 
     /// Segment the sorted chunk into maximal runs of rows that share the same key; each run is
     /// one group.
+    SortedKeyRuns key_runs(normalized_keys.size());
     while (run_start < num_rows)
     {
-        const UInt64 run_end = getEqualRangeEndAssumeSorted(normalized_keys, run_start, num_rows, 1);
+        const UInt64 run_end = getEqualRangeEndAssumeSorted(key_runs, normalized_keys, run_start, num_rows, 1);
 
         append_run(run_start, run_end - run_start);
 

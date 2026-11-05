@@ -106,7 +106,7 @@ ClickHouse는 ① `town` 컬럼에서 선택된 그래뉼을 읽고, 그중 실�
   ## PREWHERE 최적화는 자동으로 적용됩니다
 </div>
 
-위 예시와 같이 PREWHERE 절은 수동으로 추가할 수 있습니다. 하지만 PREWHERE를 직접 작성할 필요는 없습니다. [`optimize_move_to_prewhere`](/ko/reference/settings/session-settings#optimize_move_to_prewhere) 설정이 활성화되면(기본값은 true) ClickHouse는 WHERE의 필터 조건을 PREWHERE로 자동 이동하며, 읽기량을 가장 크게 줄일 수 있는 조건을 우선적으로 선택합니다.
+위 예시와 같이 PREWHERE 절은 수동으로 추가할 수 있습니다. 하지만 PREWHERE를 직접 작성할 필요는 없습니다. [`optimize_move_to_prewhere`](/ko/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) 설정이 활성화되면(기본값은 true) ClickHouse는 WHERE의 필터 조건을 PREWHERE로 자동 이동하며, 읽기량을 가장 크게 줄일 수 있는 조건을 우선적으로 선택합니다.
 
 핵심은 크기가 작은 컬럼일수록 더 빠르게 스캔할 수 있고, 크기가 큰 컬럼을 처리할 때쯤이면 대부분의 그래뉼이 이미 걸러져 있다는 점입니다. 모든 컬럼은 동일한 수의 행을 가지므로, 컬럼의 크기는 주로 데이터 타입에 따라 결정됩니다. 예를 들어 `UInt8` 컬럼은 일반적으로 `String` 컬럼보다 훨씬 작습니다.
 

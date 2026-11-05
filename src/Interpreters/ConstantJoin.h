@@ -28,8 +28,13 @@ public:
     ConstantJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block_, bool any_take_last_row_ = false);
 
     std::string getName() const override { return "ConstantJoin"; }
+
+    std::string getAlgorithm() const override { return "CONSTANT"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override { return any_take_last_row; }
+
+    /// Every result class walks the probe block by ascending row index.
+    bool preservesLeftBlockOrder() const override { return true; }
 
     bool isCloneSupported() const override
     {
@@ -44,8 +49,7 @@ public:
         return std::make_shared<ConstantJoin>(table_join_, right_sample_block_, any_take_last_row);
     }
 
-    bool addBlockToJoin(const Block & source_block, bool check_limits) override;
-    bool addBlockToJoin(const Block & source_block, size_t num_rows, bool check_limits) override;
+    bool addBlockToJoin(const Block & source_block, size_t num_rows, JoinBuildContext context) override;
 
     void checkTypesOfKeys(const Block &) const override {}
 

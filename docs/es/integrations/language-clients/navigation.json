@@ -3,8 +3,9 @@
     {
       "group": "Inicio",
       "icon": "house",
-      "pages": [],
-      "root": "es/integrations/language-clients/index"
+      "pages": [
+        "es/integrations/language-clients/index"
+      ]
     },
     {
       "$ref": "js/navigation.json"
@@ -34,11 +35,10 @@
       "group": "Clientes de terceros",
       "icon": "users",
       "pages": [
-        "es/integrations/language-clients/third-party/moose-olap",
         "es/integrations/language-clients/third-party/client-libraries"
       ]
     }
   ],
   "icon": "/images/icons/icon-language-clients.svg",
-  "item": "Clientes para lenguajes"
+  "item": "Clientes para distintos lenguajes"
 }
