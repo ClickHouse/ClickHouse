@@ -253,21 +253,6 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
     }
 }
 
-namespace
-{
-
-DistributedQueryTaskDescription readTaskDescription(ReadBufferPtr & body)
-{
-    DistributedQueryTaskDescription task_description;
-    deserializeTask(task_description, *body);
-    /// Read the rest of the body, otherwise the keep-alive connection is closed.
-    body->ignoreAll();
-    body.reset();
-    return task_description;
-}
-
-}
-
 void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuffer & out, HTTPServerResponse & response)
 {
     auto operation = params.get("operation");
@@ -281,24 +266,17 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
         if (params.has("collect"))
             collectors = TaskCollectors::parse(params.get("collect"));
 
-        /// Pass it to the runner to start execution
-        task_runner->startTask(task_id, readTaskDescription(body), unique_temp_file_path, collectors);
-    }
-    else if (operation == "create")
-    {
-        TaskCollectors collectors;
-        if (params.has("collect"))
-            collectors = TaskCollectors::parse(params.get("collect"));
-        body->eof();
+        /// Deserialize task fields from the request body
+        /// This could have been moved to a thread, but it would still require a copy of an object
+        /// and for now it is not expensive part
+        DistributedQueryTaskDescription task_description;
+        deserializeTask(task_description, *body);
+        /// Read the rest of the body, otherwise the keep-alive connection is closed.
+        body->ignoreAll();
         body.reset();
-        task_runner->createTask(task_id, collectors);
-    }
-    else if (operation == "payload")
-    {
-        auto unique_temp_file_path = params.get("temp_path");
-        /// A forgotten task is not an error: the coordinator has given up on it.
-        if (task_runner->schedulePayload(task_id, readTaskDescription(body), unique_temp_file_path) == StatelessTaskExecutor::UnknownTaskId)
-            writeString("Unknown task\n", out);
+
+        /// Pass it to the runner to start execution
+        task_runner->startTask(task_id, std::move(task_description), unique_temp_file_path, collectors);
     }
     else if (operation == "get_status")
     {
