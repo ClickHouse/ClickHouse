@@ -469,10 +469,10 @@ void IMergeTreeReader::evaluateMissingDefaults(
 
         const bool need_reconcile = settings.reconcile_missing_defaults_with_shared_offsets && !shared_offsets_of_missing_defaults.empty();
 
-        /// The columns available before evaluating the defaults, to re-evaluate them from scratch below.
-        Block source_columns;
+        /// The columns available before evaluating the defaults: they are never recomputed below.
+        NameSet source_column_names;
         if (need_reconcile)
-            source_columns = additional_columns;
+            source_column_names = additional_columns.getNameSet();
 
         evaluate_defaults(additional_columns);
 
@@ -485,13 +485,30 @@ void IMergeTreeReader::evaluateMissingDefaults(
         ///
         /// Other defaults (e.g. `MATERIALIZED length(n.b)`) may be computed from such a column, and
         /// they must see the reconciled value, not the one the expression produced. So whenever the
-        /// reconciliation changes a column, it is fixed to the reconciled value and the defaults are
-        /// evaluated again, until nothing changes. Each round fixes at least one more column, so the
-        /// loop terminates.
+        /// reconciliation changes a column, it is fixed to the reconciled value, the evaluated defaults
+        /// that depend on it are dropped and evaluated again, until nothing changes. The defaults that
+        /// do not depend on a fixed column are kept as they are, so a non-deterministic one (`rand64()`)
+        /// is not evaluated a second time, which would make it disagree with the columns fixed from
+        /// its first value. Each round fixes at least one more column, so the loop terminates.
         if (need_reconcile)
         {
+            /// Resolves a name required by a default expression, which may be a subcolumn (`tmp.size0`,
+            /// `n.b.size0`), to the longest prefix that is a column of the table.
+            auto resolve_to_column = [&](const String & required_name)
+            {
+                String prefix = required_name;
+                while (!combined_columns.has(prefix))
+                {
+                    auto last_dot = prefix.rfind('.');
+                    if (last_dot == String::npos)
+                        return required_name;
+                    prefix.resize(last_dot);
+                }
+                return prefix;
+            };
+
             /// Whether the default of @column_name transitively reads any column of @others except itself.
-            auto depends_on_any = [&](const String & column_name, const std::unordered_map<String, ColumnWithTypeAndName> & others)
+            auto depends_on_any = [&](const String & column_name, const auto & others)
             {
                 NameSet visited{column_name};
                 std::vector<String> to_visit{column_name};
@@ -510,21 +527,23 @@ void IMergeTreeReader::evaluateMissingDefaults(
 
                     for (const auto & required_name : columns_context.requiredColumns())
                     {
+                        auto required_column = resolve_to_column(required_name);
                         for (const auto & [other_name, _] : others)
                         {
                             if (other_name != column_name
-                                && (required_name == other_name || required_name.starts_with(other_name + ".")))
+                                && (required_column == other_name || required_name == other_name
+                                    || required_name.starts_with(other_name + ".")))
                                 return true;
                         }
 
-                        if (visited.emplace(required_name).second)
-                            to_visit.push_back(required_name);
+                        if (visited.emplace(required_column).second)
+                            to_visit.push_back(required_column);
                     }
                 }
                 return false;
             };
 
-            std::unordered_map<String, ColumnWithTypeAndName> reconciled_columns;
+            NameSet reconciled_column_names;
             while (true)
             {
                 std::unordered_map<String, ColumnWithTypeAndName> changed_columns;
@@ -532,7 +551,7 @@ void IMergeTreeReader::evaluateMissingDefaults(
                 it = original_requested_columns.begin();
                 for (size_t pos = 0; pos < num_columns; ++pos, ++it)
                 {
-                    if (!was_missing[pos] || it->isSubcolumn() || reconciled_columns.contains(it->name)
+                    if (!was_missing[pos] || it->isSubcolumn() || reconciled_column_names.contains(it->name)
                         || changed_columns.contains(it->name) || !additional_columns.has(it->name))
                         continue;
 
@@ -549,7 +568,7 @@ void IMergeTreeReader::evaluateMissingDefaults(
                     /// Returns the very same column if it already agrees with the offsets.
                     auto reconciled = reconcileEvaluatedDefaultWithSharedOffsets(column, it->type, offsets);
                     if (reconciled.get() != column.get())
-                        changed_columns.emplace(it->name, ColumnWithTypeAndName{std::move(reconciled), it->type, it->name});
+                        changed_columns.emplace(it->name, ColumnWithTypeAndName{reconciled, it->type, it->name});
                 }
 
                 if (changed_columns.empty())
@@ -557,18 +576,32 @@ void IMergeTreeReader::evaluateMissingDefaults(
 
                 /// A changed column computed from another changed one is fixed only in a later round,
                 /// after it is recomputed from the reconciled value of its dependency.
-                size_t num_reconciled_columns = reconciled_columns.size();
+                std::unordered_map<String, ColumnWithTypeAndName> fixed_columns;
                 for (const auto & [name, column] : changed_columns)
                     if (!depends_on_any(name, changed_columns))
-                        reconciled_columns.emplace(name, column);
+                        fixed_columns.emplace(name, column);
 
                 /// Column defaults cannot form a cycle, but make sure that the loop progresses anyway.
-                if (reconciled_columns.size() == num_reconciled_columns)
-                    reconciled_columns.insert(changed_columns.begin(), changed_columns.end());
+                if (fixed_columns.empty())
+                    fixed_columns = std::move(changed_columns);
 
-                additional_columns = source_columns;
-                for (const auto & [_, column] : reconciled_columns)
-                    additional_columns.insert(column);
+                /// Drop the evaluated defaults computed from the values that are replaced now, so that
+                /// they are evaluated again from the reconciled values; keep all the others.
+                Names columns_to_recompute;
+                for (const auto & column : additional_columns)
+                {
+                    if (!source_column_names.contains(column.name) && !reconciled_column_names.contains(column.name)
+                        && !fixed_columns.contains(column.name) && depends_on_any(column.name, fixed_columns))
+                        columns_to_recompute.push_back(column.name);
+                }
+                for (const auto & name : columns_to_recompute)
+                    additional_columns.erase(name);
+
+                for (auto & [name, column] : fixed_columns)
+                {
+                    reconciled_column_names.insert(name);
+                    additional_columns.getByName(name).column = std::move(column.column);
+                }
 
                 evaluate_defaults(additional_columns);
             }
