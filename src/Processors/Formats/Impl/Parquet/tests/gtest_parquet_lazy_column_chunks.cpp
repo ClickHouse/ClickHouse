@@ -6,7 +6,12 @@
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
 
+#include <Common/CurrentMemoryTracker.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
+#include <Common/scope_guard_safe.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -27,6 +32,7 @@ using namespace DB::Parquet;
 namespace DB::ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 /// Footers parsed without column chunks (`deserializeFileMetaDataWithoutColumnChunks`) plus the
@@ -807,6 +813,52 @@ TEST(ParquetLazyColumnChunks, CorruptedFooters)
     }
     EXPECT_GT(both_ok, 0);
     EXPECT_GT(both_failed, 0);
+}
+
+/// The offsets of the column chunks are tracked, so parsing a footer can fail on the memory limit. The error must keep
+/// its code, not become a `STD_EXCEPTION`. Only the offsets of a row group with many column chunks are large enough
+/// to fail, so that the conversion of the error does not fail as well.
+TEST(ParquetLazyColumnChunks, MemoryLimitKeepsErrorCode)
+{
+    MainThreadStatus::getInstance();
+    auto & thread_tracker = CurrentThread::get().memory_tracker;
+
+    constexpr size_t num_columns = 50000;
+    std::vector<WriteFn> columns;
+    for (size_t i = 0; i < num_columns; ++i)
+        columns.push_back(chunk(0, i));
+    const std::string bytes = writeFileMetaData({{rowGroup({columns})}});
+    ASSERT_EQ(parseSkeleton(bytes).offsets.at(0).size(), num_columns + 1);
+
+    const Int64 saved_untracked_limit = CurrentThread::get().untracked_memory_limit;
+    const Int64 saved_thread_hard_limit = thread_tracker.getHardLimit();
+    const Int64 saved_total_hard_limit = total_memory_tracker.getHardLimit();
+    const UInt64 saved_min_alloc_to_throw = CurrentMemoryTracker::getMinAllocationSizeBytesToThrow();
+
+    auto lift_limits = [&]
+    {
+        total_memory_tracker.setHardLimit(saved_total_hard_limit);
+        thread_tracker.setHardLimit(saved_thread_hard_limit);
+        CurrentThread::get().untracked_memory_limit = saved_untracked_limit;
+        CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(saved_min_alloc_to_throw);
+    };
+    SCOPE_EXIT_SAFE(lift_limits());
+
+    /// Every allocation reaches the trackers, and those of at least 64 KiB fail.
+    CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(64 * 1024);
+    CurrentThread::get().untracked_memory_limit = 0;
+    CurrentThread::flushUntrackedMemory();
+    total_memory_tracker.resetCounters();
+    thread_tracker.resetCounters();
+    total_memory_tracker.setHardLimit(1);
+    thread_tracker.setHardLimit(1);
+
+    const int code = errorCode([&] { parseSkeleton(bytes); });
+
+    /// Lift the limits before anything else, the assertions allocate.
+    lift_limits();
+
+    EXPECT_EQ(code, ErrorCodes::MEMORY_LIMIT_EXCEEDED);
 }
 
 TEST(ParquetLazyColumnChunks, MetadataCacheSharesColumnChunks)

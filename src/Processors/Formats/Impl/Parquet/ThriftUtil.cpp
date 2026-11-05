@@ -79,6 +79,11 @@ auto parseThrift(size_t limit, F && parse)
     {
         throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to parse Parquet Thrift metadata from {} bytes: {}", limit, e.what());
     }
+    catch (const Exception &)
+    {
+        /// Keeps the code, e.g. `MEMORY_LIMIT_EXCEEDED` from a tracked container.
+        throw;
+    }
     catch (const std::exception & e)
     {
         /// Convert to DB::Exception for convenience, so that callers can catch+addMessage+rethrow.
