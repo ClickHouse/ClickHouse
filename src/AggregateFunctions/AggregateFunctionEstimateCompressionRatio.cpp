@@ -174,6 +174,14 @@ struct AggregateFunctionEstimateCompressionRatioData
     DataTypePtr represented_type;
 };
 
+/// A conversion of the rows, prepared once. The prepared function refers to the function it is prepared from without owning
+/// it, so both are kept.
+struct Conversion
+{
+    FunctionBasePtr function;
+    ExecutableFunctionPtr prepared;
+};
+
 /// The parameters of the function, and the settings the MergeTree writer takes from the query.
 struct EstimateCompressionRatioConfig
 {
@@ -202,8 +210,8 @@ private:
     /// The ratio is the serialized size of the rows in `represented_type` over their compressed size in `estimated_type`.
     const DataTypePtr estimated_type;
     /// The conversions of the rows from `plain_type`, where it differs.
-    const ExecutableFunctionPtr to_represented;
-    const ExecutableFunctionPtr to_target;
+    const std::optional<Conversion> to_represented;
+    const std::optional<Conversion> to_target;
     /// `LowCardinality` writes a header with every write, so a granule is written at once even when the blocks of the query
     /// split it. For the other types the bytes do not depend on how the rows are split into writes.
     const bool write_whole_granules;
@@ -224,11 +232,14 @@ private:
         return ast;
     }
 
-    /// The cast to the target type; `prepare` builds the converters and so rejects a conversion that does not exist.
-    static ExecutableFunctionPtr createCast(const DataTypePtr & from, const DataTypePtr & to)
+    /// The cast to `to`; `prepare` builds the converters and so rejects a conversion that does not exist.
+    static Conversion createCast(const DataTypePtr & from, const DataTypePtr & to)
     {
         ColumnsWithTypeAndName arguments{{from->createColumn(), from, ""}, {nullptr, std::make_shared<DataTypeString>(), ""}};
-        return createInternalCast(arguments[0], to, CastType::accurate, {}, nullptr)->prepare(arguments);
+        Conversion conversion;
+        conversion.function = createInternalCast(arguments[0], to, CastType::accurate, {}, nullptr);
+        conversion.prepared = conversion.function->prepare(arguments);
+        return conversion;
     }
 
     /// As `MergeTreeDataPartWriterOnDisk::getSubstreamCodec` and `MergeTreeDataPartWriterWide::addStreams`: the codec applies to the
@@ -367,7 +378,7 @@ private:
     }
 
     /// `rows` of `plain_type` converted to `type`.
-    ColumnPtr convertRows(const ColumnPtr & rows, const ExecutableFunctionPtr & conversion, const DataTypePtr & type) const
+    ColumnPtr convertRows(const ColumnPtr & rows, const std::optional<Conversion> & conversion, const DataTypePtr & type) const
     {
         if (!conversion)
             return rows;
@@ -375,7 +386,7 @@ private:
         ColumnsWithTypeAndName arguments{
             {rows, plain_type, ""},
             {DataTypeString().createColumnConst(rows->size(), type->getName()), std::make_shared<DataTypeString>(), ""}};
-        return conversion->execute(arguments, type, rows->size(), /*dry_run=*/ false);
+        return conversion->prepared->execute(arguments, type, rows->size(), /*dry_run=*/ false);
     }
 
     /// Serializes the rows of [offset, offset + limit) one granule at a time, as the writer serializes a block.
@@ -527,8 +538,8 @@ public:
         , plain_type(argument_types[0])
         , target_type(config.target_type && !config.target_type->equals(*represented_type) ? config.target_type : nullptr)
         , estimated_type(target_type ? target_type : represented_type)
-        , to_represented(represented_type != plain_type ? createCast(plain_type, represented_type) : nullptr)
-        , to_target(target_type && !target_type->equals(*plain_type) ? createCast(plain_type, target_type) : nullptr)
+        , to_represented(represented_type != plain_type ? std::optional(createCast(plain_type, represented_type)) : std::nullopt)
+        , to_target(target_type && !target_type->equals(*plain_type) ? std::optional(createCast(plain_type, target_type)) : std::nullopt)
         , write_whole_granules(represented_type != plain_type || recursiveRemoveLowCardinality(estimated_type) != estimated_type)
         , default_codec(CompressionCodecFactory::instance().getDefaultCodec())
         , codec_description(config.codec ? parseCodecDescription(*config.codec) : default_codec->getFullCodecDescription())
