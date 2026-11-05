@@ -70,12 +70,20 @@ function check_user() {
     if [[ "${label}" != "readonly_2" ]]; then
         run "${user}" "DESCRIBE TABLE url('$(endpoint "${label}_values")', 'Values')"
     fi
+
     # `remote` is not allowed in readonly mode, so it is refused before the nested `url` is resolved.
     run "${user}" "DESCRIBE TABLE remote('127.0.0.1', url('$(endpoint "${label}_remote")', 'JSONEachRow'))"
     # `cluster` is allowed in readonly mode, but it resolves the structure of the nested `url` on the local shard.
     run "${user}" "DESCRIBE TABLE cluster('test_shard_localhost', url('$(endpoint "${label}_cluster")', 'JSONEachRow'))"
+
     # `viewIfPermitted` is allowed in readonly mode, but it resolves the structure of its `ELSE` table function.
     run "${user}" "DESCRIBE TABLE viewIfPermitted(SELECT 1 ELSE url('$(endpoint "${label}_view_if_permitted")', 'JSONEachRow'))"
+    # `SELECT` from `viewIfPermitted` resolves the structure of its `ELSE` table function too, before choosing a branch.
+    # It is skipped for `readonly_2`: `SELECT 1` is permitted for it and does not match the structure of the `ELSE` branch.
+    if [[ "${label}" != "readonly_2" ]]; then
+        run "${user}" "SELECT * FROM viewIfPermitted(SELECT 1 ELSE url('$(endpoint "${label}_select_view_if_permitted")', 'JSONEachRow'))"
+    fi
+
     # Table functions allowed in readonly mode stay available without the grant.
     run "${user}" "DESCRIBE TABLE numbers(1)"
 }
