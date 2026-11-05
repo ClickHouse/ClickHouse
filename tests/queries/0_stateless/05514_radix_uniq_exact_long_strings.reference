@@ -1,0 +1,18 @@
+long strings, repeated	1000	1000	1
+short and long strings interleaved	60000	60000
+short strings, then long strings	100000	100000
+consecutive repeats	66667	66667
+three alternating long strings	3	3
+empty strings between long ones	30001	30001
+Nullable(String)	32000	32000
+LowCardinality(String)	3000	3000
+LowCardinality(Nullable(String))	3000	3000
+strings of 512 to 4100 bytes and short ones	1000	1000
+FixedString(16)	40000	40000
+FixedString(17)	40000	40000
+FixedString(32)	40000	40000
+FixedString(64)	40000	40000
+FixedString(100)	40000	40000
+short string among a group of long ones	17	17
+blocks of 7 rows	1000	12000	3000
+blocks of 257 rows	1000	12000	3000
