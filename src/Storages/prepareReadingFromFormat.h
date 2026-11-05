@@ -38,9 +38,8 @@ namespace DB
         /// Hints for the serialization of columns.
         /// For example can be retrieved from the destination table in INSERT SELECT query.
         SerializationInfoByName serialization_hints{{}};
-        /// The `Map` columns of `format_header` whose every requested use is the `keys` (resp. `values`) subcolumn,
-        /// and that no default expression reads: the format may read only that side and fill the other one with defaults.
-        /// Not serialized: without them the whole map is read.
+        /// `Map` columns of `format_header` whose every requested use is `keys` (resp. `values`) and that no default expression
+        /// reads: the format may read only that side and fill the other with defaults. Not serialized: without them the whole map is read.
         NameSet map_columns_read_by_keys;
         NameSet map_columns_read_by_values;
 

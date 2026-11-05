@@ -411,7 +411,6 @@ public:
     /// Unlike `.null`/`.size0`, a tuple element is a real leaf in the file, so the format can serve
     /// `t.x` on its own and prune on it.
     bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
-    /// `m.keys` and `m.values` are extracted from the whole map `m`, see ReadFromFormatInfo::map_columns_read_by_keys.
     bool supportsOptimizationToMapKeysAndValuesSubcolumns() const override { return true; }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }

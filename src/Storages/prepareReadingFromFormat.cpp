@@ -51,7 +51,6 @@ bool isSameOrNestedColumn(const String & lhs, const String & rhs)
 
 void setMapColumnsReadByOneSide(ReadFromFormatInfo & info, const ColumnsDescription & columns)
 {
-    /// The side of each map that the requested columns use, or nullopt if they use the whole map or both sides.
     std::unordered_map<String, std::optional<String>> side_of_map;
     for (const auto & column : info.requested_columns)
     {

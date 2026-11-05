@@ -91,10 +91,8 @@ private:
         std::optional<String> parquet_name;
         DataTypePtr type_hint;
         bool requested = false;
-        /// For a requested map of which only one side is read (see ReadOptions::map_columns_read_by_keys): the index of
-        /// the element of its key_value tuple that is not read. Not inherited by recursive calls.
+        /// Index of the key_value tuple element not read, for a requested map read by one side. Not inherited by recursive calls.
         std::optional<size_t> map_element_to_skip;
-        /// Inside such an element. A column of the sample block found here is still a part of the requested map.
         bool inside_skipped_map_element = false;
 
         /// These are assigned by the callee.

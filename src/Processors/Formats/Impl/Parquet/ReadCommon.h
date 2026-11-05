@@ -81,7 +81,6 @@ struct ReadOptions
     /// Null if the columns cache is not used.
     std::shared_ptr<const ColumnsCacheOptions> columns_cache;
 
-    /// Requested `Map` columns of which only the keys (resp. values) are read, see IInputFormat::setMapColumnsReadByOneSide.
     NameSet map_columns_read_by_keys;
     NameSet map_columns_read_by_values;
 };

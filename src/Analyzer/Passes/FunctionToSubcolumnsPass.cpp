@@ -641,9 +641,8 @@ bool optimizeMapFunctionToKeys(FunctionNode & function_node, ColumnContext & ctx
 {
     const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
 
-    /// No case-insensitive check here: a format reader that binds column names up to case is asked for the whole
-    /// map `m` and `m.keys` is extracted from it (see filterTupleColumnsToRead), so a top-level `M.keys` cannot
-    /// shadow it. On the other storages name resolution is case-sensitive.
+    /// No case-insensitive check here: a format reader that binds names up to case is asked for the whole map `m` and `m.keys` is
+    /// extracted from it (see filterTupleColumnsToRead), so a top-level `M.keys` cannot shadow it. Other storages are case-sensitive.
     NameAndTypePair column{ctx.column.name + ".keys", std::make_shared<DataTypeArray>(data_type_map.getKeyType())};
     if (sourceHasColumn(ctx.column_source, column.name)
         || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isKeysSubcolumn, column.type))
@@ -1269,16 +1268,14 @@ ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
     return column_node;
 }
 
-/// The Map transformers that read only `keys` or only `values`, not `size0` or the bucket of a key.
 const std::unordered_set<std::string_view> map_keys_or_values_transformers =
 {
     "mapKeys", "mapValues", "mapContainsKey", "has", "notHas", "mapContainsValue", "mapContainsKeyLike", "mapContainsValueLike",
 };
 
-/// A storage may permit only tuple element rewrites (see IStorage::supportsOptimizationToTupleElementSubcolumns)
-/// and the rewrites to the keys or the values of a `Map` (see IStorage::supportsOptimizationToMapKeysAndValuesSubcolumns)
-/// while still refusing every other transformer. Applied by both passes through getTypedNodesForOptimization, so their
-/// decisions cannot diverge.
+/// A storage may permit only tuple element rewrites (see IStorage::supportsOptimizationToTupleElementSubcolumns) and the `Map`
+/// keys/values rewrites (see IStorage::supportsOptimizationToMapKeysAndValuesSubcolumns) while still refusing every other
+/// transformer. Applied by both passes through getTypedNodesForOptimization, so their decisions cannot diverge.
 bool storageAllowsTransformer(
     const IStorage & storage, const IDataType & type, const String & function_name, SubcolumnSupportCache & cache)
 {
@@ -1297,8 +1294,6 @@ bool storageAllowsTransformer(
     return *answers.tuple_element_only && function_name == "tupleElement" && isTuple(removeNullable(type.getPtr()));
 }
 
-/// A storage that admits the Map rewrites only through IStorage::supportsOptimizationToMapKeysAndValuesSubcolumns
-/// and whose `PREWHERE` takes only top-level columns (see IStorage::supportedPrewhereColumnsIncludeSubcolumns).
 bool storageRejectsMapSubcolumnsInPrewhere(const QueryTreeNodePtr & column_source, SubcolumnSupportCache & cache)
 {
     auto storage = getStorageForColumnSource(column_source);
@@ -1604,7 +1599,6 @@ private:
     /// tuple, or if the query reads another column of its table (a filter on that column can reach `PREWHERE` from the query plan).
     bool mustReadWholeMap(const ColumnInSource & map) const
     {
-        /// `additional_table_filters` adds a filter that this pass does not see.
         if (!getSettings()[Setting::additional_table_filters].value.empty())
             return true;
         if (columns_in_prewhere.contains(map))
@@ -1619,11 +1613,8 @@ private:
         return false;
     }
 
-    /// Identifiers read in `PREWHERE`.
     ColumnInSourceSet columns_in_prewhere;
-    /// `Map` identifiers with a rewrite on a storage for which storageRejectsMapSubcolumnsInPrewhere is true.
     ColumnInSourceSet maps_on_storages_rejecting_subcolumns_in_prewhere;
-    /// Same as in_where_prewhere_stack, for `PREWHERE` alone.
     std::vector<bool> in_prewhere_stack;
 
     ColumnInSourceSet all_key_columns;
