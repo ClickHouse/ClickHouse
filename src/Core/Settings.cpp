@@ -6879,6 +6879,14 @@ Automatically choose implicit projections to perform SELECT query
 Enables using projections to filter part ranges even when projections are not selected to perform SELECT query.
 )", 0, \
         {"25.6", false, true, "New setting"}) \
+    DECLARE(Float, optimize_projection_skip_index_ratio, 0.5, R"(
+When `use_skip_indexes_on_data_read` is enabled, the base table's skip indexes are applied at data-read time, so the mark count that a normal projection candidate is compared against is estimated by the primary key only. If the best normal projection candidate reads more than this fraction of that estimate, and the base table has skip indexes usable for the query, the skip indexes are applied to the base table during planning and the refined mark count is used for the comparison. `0` always applies them, `1` keeps the primary-key-only comparison. Aggregate projections are not affected.
+
+Possible values:
+
+- A float in the range `[0, 1]`.
+)", 0, \
+        {"26.11", 1.0, 0.5, "New setting controlling when projection selection applies the base table's deferred skip indexes before comparing costs: the extra pass runs only if the best projection candidate reads more than this fraction of the parent's primary-key-only mark estimate. The previous value 1.0 restores the pre-existing behavior: with ratio = 1 the refinement never runs, because it could only matter for candidates that the primary-key-only comparison rejects anyway."}) \
     DECLARE(Bool, force_optimize_projection, false, R"(
 Enables or disables the obligatory use of [projections](/reference/engines/table-engines/mergetree-family/mergetree#projections) in `SELECT` queries, when projection optimization is enabled (see [optimize_use_projections](#optimize_use_projections) setting).
 
@@ -10843,6 +10851,10 @@ Enables the `Quantized` compression codec.
 Enables the `SZ3` compression codec.
 )", EXPERIMENTAL, \
         {"26.8", false, false, "New setting to enable the experimental `SZ3` compression codec individually, without the `allow_experimental_codecs`."}) \
+    DECLARE(Bool, enable_gdeflate_codec, false, R"(
+Enables the `GDeflate` compression codec.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to enable the experimental `GDeflate` compression codec."}) \
     DECLARE(Bool, enable_zxc_codec, false, R"(
 Enables the `ZXC` compression codec.
 )", EXPERIMENTAL, \

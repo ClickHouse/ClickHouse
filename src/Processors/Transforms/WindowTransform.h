@@ -18,10 +18,10 @@
 
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 
-#include <deque>
 #include <optional>
 
 namespace DB
@@ -75,7 +75,7 @@ class WindowTransform final : public IProcessor
 public:
     WindowTransform(
         SharedHeader input_header_, SharedHeader output_header_,
-        const WindowDescription & window_description_, const std::vector<WindowFunctionDescription> & functions);
+        const WindowDescription & window_description_, const VectorWithMemoryTracking<WindowFunctionDescription> & functions);
 
     ~WindowTransform() override;
 
@@ -89,12 +89,12 @@ private:
     const WindowTransformParams params;
 
     std::optional<Chunk> pending_input;
-    std::deque<Chunk> pending_outputs;
+    DequeWithMemoryTracking<Chunk> pending_outputs;
     bool input_is_finished = false;
 
     /// The general functions with their states, and the aggregates; each names its output column.
-    std::vector<GeneralWindowFunctionSlot> general_functions;
-    std::vector<WindowFunctionWorkspace> workspaces;
+    VectorWithMemoryTracking<GeneralWindowFunctionSlot> general_functions;
+    VectorWithMemoryTracking<WindowFunctionWorkspace> workspaces;
     Arena states_arena;
     WindowFunctionRequirements required;
 
