@@ -799,27 +799,9 @@ Poco::JSON::Object::Ptr GlueCatalog::getCurrentSchema(const Poco::JSON::Object::
     if (!metadata_object)
         return nullptr;
 
-    /// Same order as `IcebergMetadata::parseTableSchema`: an ID-less v1 `schema` defers to `schemas`.
-    if (metadata_object->has(DB::Iceberg::f_schema)
-        && (!metadata_object->has(DB::Iceberg::f_format_version)
-            || metadata_object->getValue<Int32>(DB::Iceberg::f_format_version) == 1))
-    {
-        auto schema = metadata_object->getObject(DB::Iceberg::f_schema);
-        if (schema->has(DB::Iceberg::f_schema_id))
-            return schema;
-    }
-
-    if (metadata_object->has(DB::Iceberg::f_schemas) && metadata_object->has(DB::Iceberg::f_current_schema_id))
-    {
-        const auto current_schema_id = metadata_object->getValue<Int64>(DB::Iceberg::f_current_schema_id);
-        auto schemas = metadata_object->getArray(DB::Iceberg::f_schemas);
-        for (size_t i = 0; i < schemas->size(); ++i)
-        {
-            auto schema = schemas->getObject(static_cast<UInt32>(i));
-            if (schema->getValue<Int64>(DB::Iceberg::f_schema_id) == current_schema_id)
-                return schema;
-        }
-    }
+    /// Same order as `IcebergMetadata::parseTableSchema`: the deprecated v1 `schema` may be stale, so `schemas` wins.
+    if (metadata_object->has(DB::Iceberg::f_schemas))
+        return DB::Iceberg::parseTableSchemaV2Method(metadata_object).first;
 
     /// Format version 1 metadata may carry a single top-level `schema` instead.
     if (metadata_object->has(DB::Iceberg::f_schema))

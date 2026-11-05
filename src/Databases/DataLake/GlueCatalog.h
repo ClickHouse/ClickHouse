@@ -108,7 +108,7 @@ public:
     /// Converts top-level Iceberg fields to Glue columns with Hive types and `iceberg.field.*` parameters.
     static Aws::Vector<Aws::Glue::Model::Column> glueColumnsFromIcebergSchema(const Poco::JSON::Object::Ptr & schema);
 
-    /// Selects the top-level v1 `schema` or the entry referenced by `current-schema-id`.
+    /// Selects the `schemas` entry referenced by `current-schema-id`, or the top-level v1 `schema` when there is no `schemas`.
     static Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata_object);
 
     using FieldTypes = std::unordered_map<String, String>;

@@ -111,9 +111,9 @@ TEST(GlueSchemaColumns, CurrentSchemaSelection)
     ASSERT_EQ(columns.size(), 2u);
     EXPECT_EQ(columns[1].GetName(), "b");
 
-    /// In v1, the top-level `schema` takes precedence over `schemas`.
-    auto v1_metadata = parseObject(R"json({"format-version": 1, "schema": {"schema-id": 0, "fields": [{"id": 1, "name": "x", "required": false, "type": "double"}]},
-        "current-schema-id": 1, "schemas": [{"schema-id": 1, "fields": [{"id": 2, "name": "stale", "required": false, "type": "int"}]}]})json");
+    /// In v1, `schemas` takes precedence over the deprecated top-level `schema`, which may be stale.
+    auto v1_metadata = parseObject(R"json({"format-version": 1, "schema": {"schema-id": 0, "fields": [{"id": 1, "name": "stale", "required": false, "type": "int"}]},
+        "current-schema-id": 1, "schemas": [{"schema-id": 1, "fields": [{"id": 2, "name": "x", "required": false, "type": "double"}]}]})json");
     auto v1_columns = GlueCatalog::glueColumnsFromIcebergSchema(GlueCatalog::getCurrentSchema(v1_metadata));
     ASSERT_EQ(v1_columns.size(), 1u);
     EXPECT_EQ(v1_columns[0].GetName(), "x");
@@ -129,6 +129,13 @@ TEST(GlueSchemaColumns, CurrentSchemaSelection)
     ASSERT_EQ(v1_no_id_columns->size(), 1u);
     EXPECT_EQ(v1_no_id_columns->front().name, "x");
     EXPECT_EQ(v1_no_id_columns->front().type->getName(), "Nullable(Int64)");
+
+    /// Without `schemas`, v1 metadata has only the top-level `schema`.
+    auto v1_schema_only_metadata = parseObject(R"json({"format-version": 1,
+        "schema": {"schema-id": 0, "fields": [{"id": 1, "name": "x", "required": false, "type": "double"}]}})json");
+    auto v1_schema_only_columns = GlueCatalog::glueColumnsFromIcebergSchema(GlueCatalog::getCurrentSchema(v1_schema_only_metadata));
+    ASSERT_EQ(v1_schema_only_columns.size(), 1u);
+    EXPECT_EQ(v1_schema_only_columns[0].GetName(), "x");
 
     EXPECT_TRUE(GlueCatalog::glueColumnsFromIcebergSchema(nullptr).empty());
     EXPECT_TRUE(GlueCatalog::getCurrentSchema(nullptr).isNull());
