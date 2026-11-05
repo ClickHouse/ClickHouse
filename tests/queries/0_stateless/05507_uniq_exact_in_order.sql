@@ -48,16 +48,17 @@ SELECT 'low cardinality', uniqExact(s), (SELECT uniqExact(s) FROM t_lc SETTINGS 
 DROP TABLE IF EXISTS t_float;
 CREATE TABLE t_float (x Float64) ENGINE = MergeTree ORDER BY x;
 SYSTEM STOP MERGES t_float;
-INSERT INTO t_float VALUES (0.), (-0.), (1.), (nan), (2.);
-INSERT INTO t_float VALUES (-0.), (0/0), (1.), (0.), (3.);
+-- 0.0, -0.0 and two NaNs with different bits, written by their bits.
+INSERT INTO t_float SELECT arrayJoin([0., reinterpretAsFloat64(toUInt64(9223372036854775808)), 1., reinterpretAsFloat64(toUInt64(9221120237041090560)), 2.]);
+INSERT INTO t_float SELECT arrayJoin([reinterpretAsFloat64(toUInt64(9223372036854775808)), reinterpretAsFloat64(toUInt64(9221120237041090561)), 1., 0., 3.]);
 INSERT INTO t_float SELECT number % 100 FROM numbers(1000);
 SELECT 'float', uniqExact(x), (SELECT uniqExact(x) FROM t_float SETTINGS optimize_aggregation_in_order = 0, optimize_uniq_exact_radix_partitioning = 0) FROM t_float;
 
 DROP TABLE IF EXISTS t_float_nullable;
 CREATE TABLE t_float_nullable (x Nullable(Float32)) ENGINE = MergeTree ORDER BY x SETTINGS allow_nullable_key = 1;
 SYSTEM STOP MERGES t_float_nullable;
-INSERT INTO t_float_nullable VALUES (0.), (-0.), (NULL), (nan), (2.);
-INSERT INTO t_float_nullable VALUES (NULL), (0/0), (-0.), (5.);
+INSERT INTO t_float_nullable SELECT arrayJoin([0., reinterpretAsFloat32(toUInt32(2147483648)), NULL, reinterpretAsFloat32(toUInt32(2143289344)), 2.]);
+INSERT INTO t_float_nullable SELECT arrayJoin([NULL, reinterpretAsFloat32(toUInt32(2143289345)), reinterpretAsFloat32(toUInt32(2147483648)), 5.]);
 SELECT 'float nullable', uniqExact(x), (SELECT uniqExact(x) FROM t_float_nullable SETTINGS optimize_aggregation_in_order = 0, optimize_uniq_exact_radix_partitioning = 0) FROM t_float_nullable;
 
 DROP TABLE IF EXISTS t_empty;

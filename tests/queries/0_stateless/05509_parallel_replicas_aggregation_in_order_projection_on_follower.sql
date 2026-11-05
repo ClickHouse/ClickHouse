@@ -1,5 +1,5 @@
--- Tags: no-parallel
--- - no-parallel - due to usage of fail points
+-- Tags: no-parallel, no-fasttest
+-- - no-parallel, no-fasttest - due to usage of fail points
 
 -- With parallel replicas, every replica must read in the same order, even when some of them use a projection and the others
 -- read the table: the order of an aggregation is decided from the table. The failpoint makes the followers skip the projection.
