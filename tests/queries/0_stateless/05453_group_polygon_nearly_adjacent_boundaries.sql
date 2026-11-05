@@ -21,9 +21,13 @@ SELECT 'intersection with separate components';
 -- The first row has two separated holes, so the next nearly adjacent hole reaches the component set.
 SELECT wkt(groupPolygonIntersection(p)) FROM
 (
-    SELECT [[(0., 0.), (0., 10.), (10., 10.), (10., 0.), (0., 0.)], [(1., 1.), (1., 3.), (3., 3.), (3., 1.), (1., 1.)], [(7., 1.), (7., 3.), (9., 3.), (9., 1.), (7., 1.)]]::Polygon AS p
-    UNION ALL
-    SELECT [[(0., 0.), (0., 10.), (10., 10.), (10., 0.), (0., 0.)], [(3.0000000000000004, 1.), (3.0000000000000004, 3.), (5., 3.), (5., 1.), (3.0000000000000004, 1.)]]::Polygon
+    SELECT p FROM
+    (
+        SELECT 1 AS id, [[(0., 0.), (0., 10.), (10., 10.), (10., 0.), (0., 0.)], [(1., 1.), (1., 3.), (3., 3.), (3., 1.), (1., 1.)], [(7., 1.), (7., 3.), (9., 3.), (9., 1.), (7., 1.)]]::Polygon AS p
+        UNION ALL
+        SELECT 2 AS id, [[(0., 0.), (0., 10.), (10., 10.), (10., 0.), (0., 0.)], [(3.0000000000000004, 1.), (3.0000000000000004, 3.), (5., 3.), (5., 1.), (3.0000000000000004, 1.)]]::Polygon AS p
+    )
+    ORDER BY id
 );
 
 SELECT 'union';
