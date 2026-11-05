@@ -1,0 +1,72 @@
+-- IN in the predicate, in an assignment, with several columns, the same subquery twice
+84	5256	5	1
+5	0	5
+6	0	6
+7	0	7
+8	0	8
+9	0	9
+10	1	10
+11	1	11
+12	1	12
+13	1	13
+14	1	14
+15	0	15
+16	0	16
+17	0	17
+18	0	18
+19	0	19
+30	30	y
+31	31	y
+32	32	y
+33	33	y
+34	34	y
+(DELETE WHERE k IN (SELECT arrayJoin(_CAST([...], \'Array(UInt64)\'))))	1
+(UPDATE v = k IN (SELECT arrayJoin(_CAST([...], \'Array(UInt64)\'))) WHERE k < 20)	1
+(DELETE WHERE (k, s) IN (SELECT untuple(arrayJoin(_CAST([...], \'Array(Tuple(UInt64, String))\')))))	1
+(UPDATE s = \'y\' WHERE (k IN (SELECT arrayJoin(_CAST([...], \'Array(UInt64)\')))) OR (v IN (SELECT arrayJoin(_CAST([...], \'Array(UInt64)\')))))	1
+(UPDATE _row_exists = 0 WHERE k IN (SELECT arrayJoin(_CAST([...], \'Array(UInt64)\'))))	1
+(UPDATE v = 1000 WHERE k = 99)	1
+2	1
+-- exists
+0	1
+1	101
+2	1
+3	1
+4	1
+5	1
+6	1
+7	1
+8	1
+9	1
+(UPDATE v = v + 1 WHERE _CAST(1, \'UInt8\'))	1
+(UPDATE v = v + 10 WHERE _CAST(0, \'UInt8\'))	1
+(UPDATE v = v + 100 WHERE (k = 1) AND _CAST(1, \'UInt8\'))	1
+(UPDATE v = v WHERE 1)	1
+-- The same result as the subquery executed by the mutation
+3	x	\N	0
+4	4	4	1
+5	5	5	1
+1
+(DELETE WHERE s IN (SELECT arrayJoin(_CAST([...], \'Array(UInt8)\'))))
+(UPDATE v = v + 1 WHERE n NOT IN (SELECT arrayJoin(_CAST([...], \'Array(Nullable(UInt64))\'))))
+(UPDATE v = v + 10 WHERE k IN (SELECT arrayJoin(_CAST([], \'Array(UInt8)\'))))
+(UPDATE v = v WHERE 1)
+-- Kept as a subquery
+1140	30	1	110
+(UPDATE v = v + 1 WHERE k IN (SELECT toUInt8(k + 100) FROM default.t_large_src))	1
+(UPDATE v = v + 10 WHERE (e IN (SELECT tuple() FROM numbers(2000000))) AND (k = 199))	1
+(UPDATE v = v + 100 WHERE (k IN (SELECT number FROM numbers(2000000))) AND (k = 199))	1
+(UPDATE v = v + 1000 WHERE k IN (SELECT x FROM default.t_variant_src))	1
+-- ReplicatedMergeTree
+0	1
+1	1
+2	1
+3	2
+4	1
+5	1
+6	1
+7	1
+8	1
+9	1
+(UPDATE v = 1 WHERE _CAST(1, \'UInt8\'))	1
+(UPDATE v = 2 WHERE k IN (SELECT arrayJoin(_CAST([...], \'Array(UInt64)\'))))	1

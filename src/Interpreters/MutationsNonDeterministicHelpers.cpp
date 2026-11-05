@@ -2,26 +2,41 @@
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/MutationCommands.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/IColumn.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/TypeTree.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/interpretSubquery.h>
+#include <Interpreters/misc.h>
 #include <Functions/FunctionFactory.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+
+#include <map>
 
 namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsBool mutations_execute_nondeterministic_on_initiator;
     extern const SettingsBool mutations_execute_subqueries_on_initiator;
     extern const SettingsUInt64 mutations_max_literal_size_to_replace;
+    extern const SettingsBool use_concurrency_control;
 }
 
 namespace
@@ -137,6 +152,193 @@ public:
 
 using ExecuteNonDeterministicConstFunctionsVisitor = InDepthNodeVisitor<ExecuteNonDeterministicConstFunctionsMatcher, true>;
 
+/// Executes the subqueries of `IN` and `exists` and replaces them with their results.
+/// The subquery of `IN` becomes a subquery over the literal of its result: a set built from literals would
+/// convert them to the type of the left argument, while a set built from a subquery keeps the subquery's types.
+class ExecuteSetSubqueriesMatcher
+{
+public:
+    struct Data
+    {
+        ContextPtr context;
+        size_t max_literal_size;
+        /// The replacement of each subquery executed so far, nullptr if the subquery is kept.
+        /// All occurrences of a subquery in a command share one set, so they must see one result.
+        std::map<std::pair<bool, IASTHash>, ASTPtr> results;
+    };
+
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr & /*child*/)
+    {
+        return !node->as<ASTSubquery>();
+    }
+
+    static void visit(ASTPtr & ast, Data & data)
+    {
+        auto * function = ast->as<ASTFunction>();
+        if (!function || !function->arguments)
+            return;
+
+        if (checkFunctionIsInOrGlobalInOperator(*function))
+        {
+            auto & argument = function->arguments->children[1];
+            if (!argument->as<ASTSubquery>())
+                return;
+
+            if (auto result = getResult(argument, /*is_exists=*/ false, data))
+            {
+                result->setAlias(argument->as<ASTSubquery &>().alias);
+                argument = std::move(result);
+            }
+        }
+        else if (function->name == "exists" && function->arguments->children.size() == 1
+            && function->arguments->children[0]->as<ASTSubquery>())
+        {
+            if (auto result = getResult(function->arguments->children[0], /*is_exists=*/ true, data))
+            {
+                result->setAlias(function->alias);
+                ast = std::move(result);
+            }
+        }
+    }
+
+private:
+    /// `ColumnArray::get` refuses to build a larger array.
+    static constexpr size_t max_array_size_as_field = 1'000'000;
+
+    static ASTPtr getResult(const ASTPtr & subquery, bool is_exists, Data & data)
+    {
+        auto key = std::make_pair(is_exists, subquery->getTreeHash(/*ignore_aliases=*/ true));
+        auto it = data.results.find(key);
+        if (it == data.results.end())
+            it = data.results.emplace(key, is_exists ? executeExists(subquery, data) : executeIn(subquery, data)).first;
+        return it->second ? it->second->clone() : nullptr;
+    }
+
+    static ASTPtr makeSubquery(ASTPtr expression, ASTPtr tables = nullptr, ASTPtr limit = nullptr)
+    {
+        auto select_list = make_intrusive<ASTExpressionList>();
+        select_list->children.push_back(std::move(expression));
+
+        auto select = make_intrusive<ASTSelectQuery>();
+        select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
+        select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+        select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(limit));
+
+        auto select_with_union = make_intrusive<ASTSelectWithUnionQuery>();
+        select_with_union->list_of_selects = make_intrusive<ASTExpressionList>();
+        select_with_union->list_of_selects->children.push_back(std::move(select));
+        select_with_union->children.push_back(select_with_union->list_of_selects);
+
+        return make_intrusive<ASTSubquery>(std::move(select_with_union));
+    }
+
+    /// Calls `on_block` for every non-empty block of the result until it returns false.
+    template <typename OnBlock>
+    static void execute(InterpreterSelectQueryAnalyzer & interpreter, const ContextPtr & context, OnBlock && on_block)
+    {
+        auto io = interpreter.execute();
+
+        PullingAsyncPipelineExecutor executor(io.pipeline);
+        io.pipeline.setProgressCallback(context->getProgressCallback());
+        io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
+        if (auto cancel_cb = context->hasQueryContext() ? context->getQueryContext()->getInteractiveCancelCallback() : nullptr)
+            executor.setCancelCallback(std::move(cancel_cb), std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
+
+        Block block;
+        while (executor.pull(block))
+            if (block.rows() && !on_block(block))
+                return;
+    }
+
+    /// Executes `SELECT 1 FROM (subquery) LIMIT 1`, as the analyzer does for `exists`.
+    static ASTPtr executeExists(const ASTPtr & subquery, const Data & data)
+    {
+        auto table_expression = make_intrusive<ASTTableExpression>();
+        table_expression->subquery = subquery->clone();
+        table_expression->children.push_back(table_expression->subquery);
+
+        auto tables_element = make_intrusive<ASTTablesInSelectQueryElement>();
+        tables_element->table_expression = table_expression;
+        tables_element->children.push_back(tables_element->table_expression);
+
+        auto tables = make_intrusive<ASTTablesInSelectQuery>();
+        tables->children.push_back(std::move(tables_element));
+
+        auto exists_subquery = makeSubquery(
+            make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(1))), std::move(tables), make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(1))));
+
+        bool has_rows = false;
+        auto interpreter = interpretSubqueryWithAnalyzer(exists_subquery, data.context, /*subquery_depth=*/ 1, {});
+        execute(*interpreter, data.context, [&](const Block &) { has_rows = true; return false; });
+
+        return addTypeConversionToAST(make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(has_rows))), "UInt8");
+    }
+
+    static ASTPtr executeIn(const ASTPtr & subquery, const Data & data)
+    {
+        auto interpreter = interpretSubqueryWithAnalyzer(subquery, data.context, /*subquery_depth=*/ 1, {});
+        DataTypes types = interpreter->getSampleBlock()->getDataTypes();
+
+        /// Values of these types do not survive the round trip through a literal.
+        for (const auto & type : types)
+            if (anyInTypeTree(*type, [](const IDataType & node) { return isVariant(node) || isDynamic(node) || isObject(node); }))
+                return nullptr;
+
+        MutableColumns columns;
+        for (const auto & type : types)
+            columns.push_back(type->createColumn());
+
+        size_t rows = 0;
+        bool fits = true;
+        execute(*interpreter, data.context, [&](const Block & block)
+        {
+            auto materialized = materializeBlock(block);
+            size_t bytes = 0;
+            for (size_t i = 0; i < columns.size(); ++i)
+            {
+                columns[i]->insertRangeFrom(*materialized.getByPosition(i).column, 0, materialized.rows());
+                bytes += columns[i]->byteSize();
+            }
+            rows += materialized.rows();
+
+            /// Every element takes at least one character of the literal, even if it takes no bytes in the column.
+            fits = rows <= data.max_literal_size && rows <= max_array_size_as_field && bytes <= data.max_literal_size;
+            return fits;
+        });
+
+        if (!fits)
+            return nullptr;
+
+        size_t num_columns = columns.size();
+        ColumnPtr elements;
+        DataTypePtr element_type;
+        if (num_columns == 1)
+        {
+            elements = std::move(columns[0]);
+            element_type = types[0];
+        }
+        else
+        {
+            elements = ColumnTuple::create(std::move(columns));
+            element_type = std::make_shared<DataTypeTuple>(types);
+        }
+
+        auto array_type = std::make_shared<DataTypeArray>(element_type);
+        Block array{{ColumnArray::create(elements, ColumnArray::ColumnOffsets::create(1, rows)), array_type, "_set"}};
+        if (!worthConvertingScalarToLiteral(array, data.max_literal_size))
+            return nullptr;
+
+        ASTPtr expression = makeASTFunction(
+            "arrayJoin", addTypeConversionToAST(make_intrusive<ASTLiteral>((*array.getByPosition(0).column)[0]), array_type->getName()));
+        if (num_columns > 1)
+            expression = makeASTFunction("untuple", std::move(expression));
+
+        return makeSubquery(std::move(expression));
+    }
+};
+
+using ExecuteSetSubqueriesVisitor = InDepthNodeVisitor<ExecuteSetSubqueriesMatcher, true>;
+
 }
 
 FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(const MutationCommand & command, ContextPtr context)
@@ -224,6 +426,10 @@ ASTPtr replaceNonDeterministicToScalars(const ASTAlterCommand & alter_command, C
 
         ExecuteScalarSubqueriesVisitor visitor(data);
         visit(visitor);
+
+        ExecuteSetSubqueriesVisitor::Data set_data{context, settings[Setting::mutations_max_literal_size_to_replace], {}};
+        ExecuteSetSubqueriesVisitor set_visitor(set_data);
+        visit(set_visitor);
     }
 
     if (settings[Setting::mutations_execute_nondeterministic_on_initiator])
