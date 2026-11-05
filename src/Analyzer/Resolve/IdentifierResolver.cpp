@@ -463,13 +463,13 @@ static void checkAccessToTableMetadata(const TableNode & table_node, const Conte
     if (alias && !visible_columns.empty())
     {
         /// An `Alias` shows the metadata of the last table of its chain, so a column must also be visible
-        /// on every table of the chain. The message names only the alias: the user may not know its target.
+        /// on every table it points to. The message names only the alias: the user may not know its target.
         if (!alias->filterColumnsGrantedThroughChain(visible_columns, is_visible).empty())
             return;
 
-        /// A query can also read a subcolumn or a virtual column through the alias. Dynamic subcolumns
-        /// cannot be enumerated: the ones named in the user's grants are tried, and a name that no grant
-        /// mentions stands for all the others, because such a name gets the grant of its table.
+        /// That column may differ from the one visible on the alias (an `ALIAS` column reads others), and may be
+        /// a subcolumn or a virtual column. Dynamic subcolumns cannot be enumerated: those named in the grants
+        /// are tried, and a name that no grant mentions stands for all the others, because it gets its table's grant.
         const auto & snapshot = table_node.getStorageSnapshot();
         const auto options = GetColumnsOptions(GetColumnsOptions::All)
                                  .withSubcolumns()
@@ -498,8 +498,6 @@ static void checkAccessToTableMetadata(const TableNode & table_node, const Conte
                 unnamed_dynamic_subcolumn += '_';
             candidates.push_back(std::move(unnamed_dynamic_subcolumn));
         }
-        std::erase_if(candidates, [&](const String & name)
-        { return !is_temporary && !is_visible(storage_id.database_name, storage_id.table_name, name); });
         if (!alias->filterColumnsGrantedThroughChain(candidates, is_visible).empty())
             return;
 

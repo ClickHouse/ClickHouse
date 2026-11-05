@@ -21,6 +21,8 @@ ok
 1	0
 9
 denied
+-- a grant on an ALIAS column of the alias and on the column it reads on the target
+8
 -- a temporary alias
 ok
 denied
