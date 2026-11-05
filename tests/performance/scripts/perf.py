@@ -758,9 +758,11 @@ for e in root.findall("query"):
         for stmt in statements:
             keyword = first_keyword(stmt)
             if keyword in ("CREATE", "ALTER"):
-                extra_create_queries.append(stmt)
+                if not disabled:
+                    extra_create_queries.append(stmt)
             elif keyword in ("DROP", "TRUNCATE"):
-                extra_drop_queries.append(stmt)
+                if not disabled:
+                    extra_drop_queries.append(stmt)
             else:
                 select_stmts.append(stmt)
         # Some benchmark queries (e.g. TPC-DS Q14) have multiple SELECTs in one file.
@@ -813,6 +815,11 @@ if args.print_settings:
 
     exit(0)
 
+for i in args.queries_to_run or []:
+    if test_queries[i]["disabled"]:
+        print(f"The query no. {i} is disabled in this test")
+        exit(1)
+
 # Skip long tests
 if not args.long:
     for tag in root.findall(".//tag"):
@@ -844,7 +851,7 @@ if args.table_engine and not root.findall("create_query"):
 # options, fail closed: reject the test up front rather than benchmark the wrong
 # endpoint. (Done after the `--print-queries` / `--print-settings` early exits so
 # those read-only paths are unaffected.)
-has_shell_queries = any(q["kind"] == "shell" for q in test_queries)
+has_shell_queries = any(q["kind"] == "shell" and not q["disabled"] for q in test_queries)
 if has_shell_queries and (args.user != "default" or args.password != "" or args.secure):
     raise Exception(
         'Shell-script queries (<query type="shell">) do not support the '
@@ -1304,7 +1311,7 @@ if not args.use_existing_tables:
             sys.exit(0)
         # The measured lightweight updates of the rewritten tables too.
         for q_item in test_queries:
-            if q_item["kind"] == "sql":
+            if q_item["kind"] == "sql" and not q_item["disabled"]:
                 q_item["statements"] = [
                     iceberg_engine.rewrite_update(q, args.binary[-1], tables) for q in q_item["statements"]
                 ]

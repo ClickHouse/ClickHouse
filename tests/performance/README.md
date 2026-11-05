@@ -65,7 +65,7 @@ The performance history of a query is keyed by the test name and the query numbe
 <query disabled="1">SELECT [...]</query>
 ```
 
-A disabled query keeps its number, and `perf.py --print-queries` still prints it, but it is not run unless `--queries-to-run` names it. On a query with substitutions, the attribute applies to all of its expansions.
+A disabled query keeps its number, and `perf.py --print-queries` still prints it, but it is never run, and the setup statements of a disabled `<query file=...>` are not run either. On a query with substitutions, the attribute applies to all of its expansions.
 
 ### Setup queries that cannot run on the reference server
 
