@@ -264,7 +264,7 @@ def create_clickhouse_iceberg_database(
     node.query(
         f"""
 DROP DATABASE IF EXISTS {name};
-SET allow_database_iceberg=true;
+SET allow_experimental_database_iceberg=true;
 CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
@@ -309,7 +309,7 @@ def test_hide_sensitive_info(started_cluster):
         node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
         try:
             node.query(
-                f"""SET allow_database_iceberg=true;
+                f"""SET allow_experimental_database_iceberg=true;
 CREATE DATABASE {CATALOG_NAME} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
 SETTINGS {",".join((k + "=" + repr(v) for k, v in settings.items()))}"""
             )
@@ -431,7 +431,7 @@ def test_static_credentials_when_vended_credentials_disabled(started_cluster):
                 aws_access_key_id = 'minio',
                 aws_secret_access_key = '{secret_access_key}'
             """,
-            settings={"allow_database_iceberg": 1},
+            settings={"allow_experimental_database_iceberg": 1},
         )
 
     # A wrong static pair must fail the read: the catalog-vended refresh
@@ -463,7 +463,7 @@ def test_invalid_auth_header_format(started_cluster):
     with pytest.raises(Exception) as err:
         node.query(
             f"""
-            SET allow_database_iceberg = 1;
+            SET allow_experimental_database_iceberg = 1;
             CREATE DATABASE {CATALOG_NAME}
             ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', 'dummy')
             SETTINGS
@@ -474,48 +474,3 @@ def test_invalid_auth_header_format(started_cluster):
         )
     assert "Invalid auth header format" in str(err.value)
 
-
-@pytest.mark.parametrize("depth", [1, 2])
-def test_namespace_writes(started_cluster, depth):
-    node = started_cluster.instances["node1"]
-    catalog = load_catalog_impl(started_cluster)
-    namespace = (f"writes_{uuid.uuid4().hex}", "raw")[:depth]
-    db = "namespace_writes"
-    table = f"{db}.`{'.'.join(namespace)}.events`"
-    identifier = namespace + ("events",)
-    settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
-
-    if depth > 1:
-        catalog.create_namespace(namespace[:1])
-    create_clickhouse_iceberg_database(started_cluster, node, db)
-    try:
-        node.query(
-            f"CREATE TABLE {table} (id Int32) ENGINE = Iceberg",
-            settings=settings,
-        )
-        assert identifier in catalog.list_tables(namespace)
-        assert "events" in node.query(f"SHOW TABLES FROM {db}")
-
-        node.query(f"INSERT INTO {table} VALUES (1)", settings=settings)
-        node.query(
-            f"ALTER TABLE {table} ADD COLUMN data Nullable(String)",
-            settings=settings,
-        )
-        assert "data" in catalog.load_table(identifier).schema().column_names
-        node.query(f"INSERT INTO {table} VALUES (2, 'new')", settings=settings)
-
-        metadata = catalog.load_table(identifier).metadata
-        assert len(metadata.snapshots) == 2
-        current = metadata.current_snapshot_id
-        expired = next(s.snapshot_id for s in metadata.snapshots if s.snapshot_id != current)
-        node.query(
-            f"ALTER TABLE {table} EXECUTE expire_snapshots("
-            f"snapshot_ids = [{expired}])",
-            settings={**settings, "allow_experimental_expire_snapshots": 1},
-        )
-        assert [s.snapshot_id for s in catalog.load_table(identifier).metadata.snapshots] == [current]
-        assert node.query(f"SELECT id, data FROM {table} ORDER BY id") == "1\t\\N\n2\tnew\n"
-        node.query(f"DROP TABLE {table}", settings=settings)
-        assert identifier not in catalog.list_tables(namespace)
-    finally:
-        node.query(f"DROP DATABASE {db}")

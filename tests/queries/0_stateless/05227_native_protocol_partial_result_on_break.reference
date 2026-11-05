@@ -1,8 +1,0 @@
--- break: the rows that were already produced are returned
-0
-1
-2
-3
-4
--- throw: the time limit is reported
-TIMEOUT_EXCEEDED

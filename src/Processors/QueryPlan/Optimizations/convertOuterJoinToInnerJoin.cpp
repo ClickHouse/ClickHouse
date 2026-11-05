@@ -94,8 +94,7 @@ size_t tryConvertAnyOuterJoinToInnerJoin(
         filter->getExpression(),
         filter->getFilterColumnName(),
         *interesting_side_header,
-        /*allow_unknown_function_arguments=*/true,
-        interesting_side_plan_node);
+        /*allow_unknown_function_arguments=*/true);
 
     /// If not matched rows are not always filtered out, then we cannot convert ANY OUTER JOIN to INNER JOIN
     /// See discussion in https://github.com/ClickHouse/ClickHouse/issues/66447
@@ -228,23 +227,21 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
 
     /// Storage Join expects a particular join kind and cannot build not-matched rows for
     /// composite keys, so converting its outer join to inner is unsound (issue #106949).
-    /// A prepared key-value storage can fill a missing key with the type default on a direct lookup but
-    /// with the column default when read as an ordinary stream, and which applies is decided after this pass.
     /// Earlier passes (filter push-down, runtime-filter build) can insert single-child steps
     /// between the join and its JoinStepLogicalLookup source, so descend through them.
-    auto isPreparedJoinStorage = [](const QueryPlan::Node * side_node)
+    auto isStorageJoin = [](const QueryPlan::Node * side_node)
     {
         for (const auto * node = side_node; node; )
         {
             if (auto * lookup_step = typeid_cast<JoinStepLogicalLookup *>(node->step.get()))
-                return static_cast<bool>(lookup_step->getPreparedJoinStorage());
+                return lookup_step->getPreparedJoinStorage().storage_join != nullptr;
             if (node->children.size() != 1)
                 break;
             node = node->children.front();
         }
         return false;
     };
-    if (isPreparedJoinStorage(child_node->children.back()))
+    if (isStorageJoin(child_node->children.back()))
         return 0;
 
     auto & join_operator = join->getJoinOperator();
@@ -268,12 +265,12 @@ size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::
     if (check_left_stream)
         left_stream_safe = filterResultForNotMatchedRows(
             filter_dag, filter_column_name, *left_stream_input_header,
-            /*allow_unknown_function_arguments=*/true, child_node->children.front()) == FilterResult::FALSE;
+            /*allow_unknown_function_arguments=*/true) == FilterResult::FALSE;
 
     if (check_right_stream)
         right_stream_safe = filterResultForNotMatchedRows(
             filter_dag, filter_column_name, *right_stream_input_header,
-            /*allow_unknown_function_arguments=*/true, child_node->children.back()) == FilterResult::FALSE;
+            /*allow_unknown_function_arguments=*/true) == FilterResult::FALSE;
 
     if (!left_stream_safe || !right_stream_safe)
     {

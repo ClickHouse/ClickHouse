@@ -5,9 +5,6 @@
 namespace DB
 {
 
-/// The null-safe comparison falls back to the plain one for tuples; instantiated in equals.cpp.
-extern template class FunctionComparison<EqualsOp, NameEquals>;
-
 REGISTER_FUNCTION(IsNotDistinctFrom)
 {
     FunctionDocumentation::Description description = R"(
@@ -86,8 +83,5 @@ ColumnPtr FunctionComparison<EqualsOp, NameEquals, true /* is null safe cmp*/>::
         column_type_name1,
         input_rows_count);
 }
-
-/// Explicit instantiation definition, see the comment in equals.cpp. Must come after the member specializations above.
-template class FunctionComparison<EqualsOp, NameEquals, true>;
 
 }

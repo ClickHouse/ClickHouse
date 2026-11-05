@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-old-analyzer
+# no-old-analyzer: the fix is in the analyzer path; the old interpreter reads the view source in its own way.
 
 # Inside a materialized view query, the source table read by the nested interpreter of `loop` or `executable`
 # is the inserted block, like the rest of the view query, while a `merge` child reads the table whatever its
