@@ -72,7 +72,8 @@ public:
         const MergeTreeDataPartInfoForReaderPtr & part_info,
         const SkipIndexReadInput & input,
         const StorageMetadataPtr & metadata_snapshot,
-        const NameSet & all_updated_columns);
+        const NameSet & all_updated_columns,
+        const NameSet & value_updated_columns);
 
     /// Whether `read` prunes by JOIN runtime filters. It snapshots them once per part, fail-open,
     /// so its result must not be built before the build side has published the filters.
@@ -82,11 +83,6 @@ public:
     /// while reading (see `TopKThresholdTracker`): the threshold column is the primary key column at
     /// `primary_key_column_position`.
     void setTopKPrimaryKeyPruning(size_t primary_key_column_position, TopKThresholdTrackerPtr tracker);
-
-    /// Narrows each part's input ranges by the primary key, with the partition-minmax mapping of the plan-time analysis,
-    /// before reading the skip indexes, for a read whose ranges were not analyzed (see `AnalysisResult::key_condition_not_applied`).
-    void setPrimaryKeyCondition(
-        ConditionTemplate<KeyCondition>::Ptr key_condition_, std::vector<std::optional<size_t>> primary_key_to_minmax_slot_);
 
     void cancel() noexcept { is_cancelled = true; }
 
@@ -106,8 +102,6 @@ private:
 
     std::optional<size_t> top_k_primary_key_column_position;
     TopKThresholdTrackerPtr top_k_threshold_tracker;
-    ConditionTemplate<KeyCondition>::Ptr primary_key_condition;
-    std::vector<std::optional<size_t>> primary_key_to_minmax_slot;
     ContextPtr context;
     LoggerPtr log;
 
@@ -277,7 +271,8 @@ public:
         const SkipIndexReadInput & input,
         const RangesInDataParts & projection_parts,
         const StorageMetadataPtr & metadata_snapshot,
-        const NameSet & all_updated_columns);
+        const NameSet & all_updated_columns,
+        const NameSet & value_updated_columns);
 
     /// Cleans up the cached MergeTreeIndexReadResult for a given part if it exists.
     /// Should be called when the last task for the part has finished.

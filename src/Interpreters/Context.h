@@ -193,6 +193,10 @@ class DDLWorker;
 class ITableFunction;
 using TableFunctionPtr = std::shared_ptr<ITableFunction>;
 class Block;
+/// An entry of the query scalar map: the scalar block plus whether it came from the client.
+/// Defined in Context.cpp, where `Block` is complete; here `std::map` only needs the forward
+/// declaration, the same way `Scalars` is a `std::map` over the forward-declared `Block`.
+struct ScalarEntry;
 class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
@@ -277,8 +281,8 @@ class AsynchronousInsertQueue;
 /// Callback for external tables initializer
 using ExternalTablesInitializer = std::function<void(ContextPtr)>;
 
-/// Callback for initialize input()
-using InputInitializer = std::function<void(ContextPtr, const StoragePtr &)>;
+/// Callback for initialize input(): sends the description of the columns and the structure of the blocks to the client
+using InputInitializer = std::function<void(ContextPtr, const ColumnsDescription &, const Block &)>;
 /// Callback for reading blocks of data from client for function input()
 using InputBlocksReader = std::function<Block(ContextPtr)>;
 
@@ -461,8 +465,13 @@ protected:
     /// History of query ids for `system.session_query_ids`, lives on the session context.
     mutable std::shared_ptr<SessionQueryIdsHistory> session_query_ids_history;
     mutable std::shared_ptr<HypotheticalObjectStore> hypothetical_object_store;
-    /// Query scalars
-    Scalars scalars;
+    /// Query scalars. Each entry carries whether it was supplied by the client over the wire (the
+    /// `Scalar` packet, i.e. the `clickhouse-client --external ... --scalar` feature or an initiator
+    /// shipping scalars to a shard) rather than computed by the server itself. The origin travels with
+    /// the block so that the analyzer's scalar-subquery cache (which keys on the query-tree hash) never
+    /// mistakes a client-supplied block for an already-computed subquery result; without this a client
+    /// could forge the result of a scalar subquery used in a row policy and bypass the policy.
+    std::map<String, ScalarEntry> scalars;
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
     Scalars special_scalars;
 
@@ -655,10 +664,18 @@ protected:
     bool skip_forced_projection_check = false;
     /// True when this context belongs to the inner query of an expanded view.
     bool is_view_inner_query = false;
+    /// Set for the query of a `SQL SECURITY DEFINER` / `NONE` view or materialized view. It must not hand its reads to parallel
+    /// replicas (including the replicas of a `Distributed` shard) or a `-Cluster` storage: a replica cannot run them with its
+    /// privileges. Plan-based local reads stay allowed.
+    bool is_sql_security_overridden_body = false;
     /// Which join statistics EXPLAIN ANALYZE needs. It is a context field rather than a setting on
     /// purpose: only Interpreter may turn it on, but it must reach every join of the
     /// query, including joins in nested plans, which EXPLAIN also prints.
     JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;
+    /// True while building the plan with parallel replicas that `automatic_parallel_replicas_mode` costs against the
+    /// single-node plan. It is a context field rather than a setting, because it must reach every planning of that
+    /// plan, including views analyzed later by their own interpreters, and no `SETTINGS` clause there may undo it.
+    bool is_automatic_parallel_replicas_probe = false;
 
     /// Defined out of line: a definition in the header gives every shared object its own copy.
     static ContextPtr global_context_instance;
@@ -786,6 +803,8 @@ protected:
     /// Final `STREAM [BOUNDED]` cursor holder (tree + its mutex), shared across `Context::createCopy` so
     /// parallel reading streams serialize their merges into the one tree.
     std::shared_ptr<StreamingCursor> streaming_cursor;
+
+    QueryExecutionStartedCallback query_execution_started_callback;
 
     /// Use copy constructor or createGlobal() instead
     ContextData();
@@ -1074,8 +1093,9 @@ public:
 
     /// When input() is present we have to send columns structure to client
     void setInputInitializer(InputInitializer && initializer);
-    /// This method is called in StorageInput::read while executing query
-    void initializeInput(const StoragePtr & input_storage);
+    /// This method is called in StorageInput::read while executing query,
+    /// and while building the pipeline of INSERT ... RETURNING with the data sent by the client separately.
+    void initializeInput(const ColumnsDescription & columns, const Block & header);
 
     /// Callback for read data blocks from client one by one for function input()
     void setInputBlocksReaderCallback(InputBlocksReader && reader);
@@ -1150,6 +1170,16 @@ public:
     Block getScalar(const String & name) const;
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
+
+    /// Add a scalar received from the client over the wire (the `Scalar` packet). Unlike `addScalar`,
+    /// the entry is marked as client-supplied so that `hasComputedScalar` will not report it as a
+    /// server-computed subquery result. Explicit readers (`__getScalar`, `_shard_num`, forwarding to
+    /// shards) still see it through `getScalar` / `hasScalar` / `getScalars`.
+    void addClientScalar(const String & name, const Block & block);
+    /// Like `hasScalar`, but returns true only for scalars the server computed itself, never for
+    /// client-supplied ones. The analyzer's scalar-subquery cache must use this so that a forged
+    /// client scalar cannot stand in for the result of a (e.g. row-policy) scalar subquery.
+    bool hasComputedScalar(const String & name) const;
 
     std::optional<Block> tryGetSpecialScalar(const String & name) const;
     void addSpecialScalar(const String & name, const Block & block);
@@ -1341,6 +1371,7 @@ public:
     /// For the resets of a statement that also changes `profile`: `changes_applied_first` decides their constraints.
     void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
+    void clampToSettingsConstraintsRejectingInvalidChanges(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     /// Reset settings to the default in effect for them, which under an active `compatibility` is the value of that version.
@@ -1361,6 +1392,8 @@ public:
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
     void tryCreateEmbeddedDictionaries() const;
+    /// Registers the dictionaries from the configuration files without loading them, so the tables referring to them can be attached.
+    void registerDictionariesBeforeLoadingMetadata(const Poco::Util::AbstractConfiguration & config);
     void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);
     void waitForDictionariesLoad() const;
 
@@ -1489,6 +1522,11 @@ public:
 
     bool getMessageQueueDisableInsertion() const;
 
+    /// How many extra poll cycles a Keeper-backed Kafka consumer keeps its assignment before
+    /// refreshing its Keeper locks. Mutated at runtime by the config reloader, so read it per use.
+    UInt64 getKafkaLocksRefreshPolls() const;
+    void setKafkaLocksRefreshPolls(UInt64 stream_kafka_locks_refresh_polls) const;
+
     /// The server-level distributed cache switches. They live in `shared`, which is common to every context
     /// (including the background and buffer contexts created once at startup), so a config reload is observed
     /// by background operations as well. A query may deviate from them with the `force_*` settings.
@@ -1497,6 +1535,13 @@ public:
 
     bool getWriteThroughDistributedCache() const;
     void setWriteThroughDistributedCache(bool write_through_distributed_cache) const;
+
+    /// Settings of the distributed cache connections for temporary data, applied without a restart.
+    DistributedCachePoolBehaviourOnLimit getDistributedCacheTemporaryDataPoolBehaviourOnLimit() const;
+    void setDistributedCacheTemporaryDataPoolBehaviourOnLimit(DistributedCachePoolBehaviourOnLimit value) const;
+
+    UInt64 getDistributedCacheTemporaryDataMaxConnectionsBypassingPool() const;
+    void setDistributedCacheTemporaryDataMaxConnectionsBypassingPool(UInt64 value) const;
 
     /// The switches with this context's `force_*` setting applied. The global context ignores that setting:
     /// it is the startup snapshot serving operations without a query context, which follow the server switch.
@@ -1967,6 +2012,8 @@ public:
 
     /// Provides storage politics schemes
     StoragePolicyPtr getStoragePolicy(const String & name) const;
+    /// Returns `nullptr` instead of throwing when the policy is not configured.
+    StoragePolicyPtr tryGetStoragePolicy(const String & name) const;
 
     StoragePolicyPtr getStoragePolicyFromDisk(const String & disk_name) const;
 
@@ -2010,8 +2057,20 @@ public:
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }
 
+    bool isSQLSecurityOverriddenBody() const { return is_sql_security_overridden_body; }
+    void setSQLSecurityOverriddenBody(bool value) { is_sql_security_overridden_body = value; }
+    /// Turns off in the body of a `SQL SECURITY DEFINER` / `NONE` view the parallel replicas modes that would hand its reads
+    /// to other replicas. Called once the settings of the body are applied, and again after each `SETTINGS` clause inside it.
+    void restrictParallelReplicasInSQLSecurityOverriddenBody();
+    /// True for a secondary query that reads the slice of a `sampling_key` parallel replicas query
+    /// assigned to it by `parallel_replicas_count` / `parallel_replica_offset`.
+    bool isSamplingKeyParallelReplicasFollower() const;
+
     JoinAnalyzeMode getJoinAnalyzeMode() const { return join_analyze_mode; }
     void setJoinAnalyzeMode(JoinAnalyzeMode value) { join_analyze_mode = value; }
+
+    bool isAutomaticParallelReplicasProbe() const { return is_automatic_parallel_replicas_probe; }
+    void setIsAutomaticParallelReplicasProbe(bool value) { is_automatic_parallel_replicas_probe = value; }
 
     ActionLocksManagerPtr getActionLocksManager() const;
 
@@ -2098,6 +2157,12 @@ public:
     /// Allows adding extra zookeeper operations to the transaction that enqueues a DDL query in DatabaseReplicated.
     void setDDLAdditionalChecksOnEnqueue(Coordination::Requests requests);
     Coordination::Requests getDDLAdditionalChecksOnEnqueue() const;
+
+    /// Called by the interpreter after the query has passed its checks,
+    /// right before it starts its main work.
+    void onQueryExecutionStarted() const;
+    void setQueryExecutionStartedCallback(QueryExecutionStartedCallback callback);
+    const QueryExecutionStartedCallback & getQueryExecutionStartedCallback() const;
 
     void checkTransactionsAreAllowed(bool explicit_tcl_query = false) const;
     void initCurrentTransaction(MergeTreeTransactionPtr txn);
@@ -2266,6 +2331,7 @@ private:
     void checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
 
     void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
+    void clampToSettingsConstraintsRejectingInvalidChangesWithLock(SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source) const;
 
     void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const;
@@ -2273,6 +2339,7 @@ private:
     void checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     ExternalDictionariesLoader & getExternalDictionariesLoaderWithLock(const std::lock_guard<std::mutex> & lock);
+    void addDictionariesConfigRepository(const Poco::Util::AbstractConfiguration & config, const std::lock_guard<std::mutex> & lock);
 
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoaderWithLock(const std::lock_guard<std::mutex> & lock);
 
