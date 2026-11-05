@@ -231,6 +231,7 @@ do
         SELECT 'joinGet $step', count(), sum(cityHash64(id, joinGet('j_s_u64', 'id', s, u1))) FROM l;
         SELECT 'joinGetOrNull $step', countIf(isNull(joinGetOrNull('j_s_u64', 'id', s, u1))), sum(cityHash64(id, joinGetOrNull('j_s_u64', 'id', s, u1))) FROM l;
         SELECT 'joinGet tn $step', count(), sum(cityHash64(id, joinGet('j_tn', 'id', tn))) FROM l;
-        SELECT 'join with Join $step', count(), sum(cityHash64(l.id, j.id)) FROM l ANY LEFT JOIN j_s_u64 AS j USING (s, u1);
+        -- Parallel replicas read the Join table to send it to the replicas, and a table with hashed keys cannot be read.
+        SELECT 'join with Join $step', count(), sum(cityHash64(l.id, j.id)) FROM l ANY LEFT JOIN j_s_u64 AS j USING (s, u1) SETTINGS enable_parallel_replicas = 0;
     "
 done
