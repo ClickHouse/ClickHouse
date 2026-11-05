@@ -3,7 +3,6 @@
 #include <Analyzer/IQueryTreePass.h>
 
 #include <Interpreters/Context_fwd.h>
-#include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
@@ -54,11 +53,6 @@ private:
     std::vector<QueryTreePassPtr> passes;
 };
 
-/// `replaced_storage` is the storage that the caller swaps into the query tree after the passes.
-void addQueryTreePasses(
-    QueryTreePassManager & manager,
-    bool only_analyze = false,
-    bool positional_arguments_already_resolved = false,
-    StoragePtr replaced_storage = nullptr);
+void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze = false, bool positional_arguments_already_resolved = false);
 
 }
