@@ -97,6 +97,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 merge_tree_min_read_task_size;
     extern const SettingsUInt64 parallel_replicas_mark_segment_size;
 }
 
@@ -137,6 +138,7 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
         context_)
     , extension(std::move(extension_))
     , coordination_mode(CoordinationMode::Default)
+    , min_read_task_size(context_->getSettingsRef()[Setting::merge_tree_min_read_task_size])
 {
     const size_t min_marks_per_task = getMinMarksPerTask(pool_settings.min_marks_for_concurrent_read, per_part_infos);
     min_marks_per_request = min_marks_per_task * pool_settings.threads;
@@ -256,6 +258,14 @@ bool MergeTreeReadPoolParallelReplicas::cutRangesToRead(
             return false;
 
         buffered_ranges = std::move(response->description);
+
+        /// The task size comes from the initiator, which computed it for its own number of threads. Cut each batch into
+        /// at most one task per local thread, so that this replica's threads together never hold more than one batch.
+        size_t batch_marks = 0;
+        for (const auto & part : buffered_ranges)
+            batch_marks += part.ranges.getNumberOfMarks();
+        const size_t threads = std::max<size_t>(pool_settings.threads, 1);
+        max_marks_per_task = std::max<size_t>(min_read_task_size, (batch_marks + threads - 1) / threads);
     }
 
     if (buffered_ranges.empty())
@@ -282,6 +292,7 @@ bool MergeTreeReadPoolParallelReplicas::cutRangesToRead(
     /// `min_marks_per_task` computed by the initiator after primary key analysis.
     /// Fall back to locally computed value for old initiators.
     need_marks = current_task.min_marks_per_task > 0 ? current_task.min_marks_per_task : (*part_it)->min_marks_per_task;
+    need_marks = std::min(need_marks, max_marks_per_task);
 
     if (!front_read_request_map && (*part_it)->read_request_map)
         front_read_request_map = std::make_shared<const MarkRanges>(current_task.ranges);
