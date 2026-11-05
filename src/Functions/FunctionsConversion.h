@@ -173,9 +173,13 @@ struct FunctionConvertSettings
         bool cast_keep_nullable_)
         : date_time_overflow_behavior(date_time_overflow_behavior_)
         , precise_float_parsing(base.precise_float_parsing)
-        , cast_ipv4_ipv6_default_on_conversion_error(base.cast_ipv4_ipv6_default_on_conversion_error)
+        /// The JSON parser rejects a malformed address, and a string reaches the nested CAST only when
+        /// the parser would not infer a type for it (see needsFormatParseFallback). Both flags describe
+        /// the user's own CAST, so leaving them on would store a default address for invalid input, or
+        /// a number where the parser keeps a string.
+        , cast_ipv4_ipv6_default_on_conversion_error(false)
         , cast_string_to_variant_use_inference(base.cast_string_to_variant_use_inference)
-        , cast_string_to_dynamic_use_inference(base.cast_string_to_dynamic_use_inference)
+        , cast_string_to_dynamic_use_inference(false)
         , input_format_ipv4_default_on_conversion_error(base.input_format_ipv4_default_on_conversion_error)
         , input_format_ipv6_default_on_conversion_error(base.input_format_ipv6_default_on_conversion_error)
         , check_conversion_from_numbers_to_enum(base.check_conversion_from_numbers_to_enum)

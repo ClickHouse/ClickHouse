@@ -1,4 +1,5 @@
 #include <Functions/FunctionsConversion.h>
+#include <Columns/ColumnsCommon.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/iota.h>
@@ -2322,7 +2323,8 @@ bool parsesDateTimeNumbersUnlikeCast(const DataTypePtr & to_type, const FormatSe
 
 /// Returns true if CAST(from_type, to_type) produces the same result as
 /// JSON format+parse for the same value.
-bool isDynamicElementToTypedCastSafe(const DataTypePtr & from_type, const DataTypePtr & to_type)
+bool isDynamicElementToTypedCastSafe(
+    const DataTypePtr & from_type, const DataTypePtr & to_type, const FormatSettings & format_settings)
 {
     auto from_inner = removeNullable(from_type);
     auto to_inner = removeNullable(to_type);
@@ -2345,6 +2347,8 @@ bool isDynamicElementToTypedCastSafe(const DataTypePtr & from_type, const DataTy
     /// Exception: Float64 → Float32 narrowing is excluded because accurateCast
     /// rejects precision loss (the round-trip Float64→Float32→Float64 is not exact),
     /// while format+parse handles it correctly via text serialization.
+    /// Mixing a float with an integer stays here but is only safe for values that convert exactly,
+    /// which allValuesCastExactly checks against the data.
     if (isIntOrFloat(*from_inner) && (isIntOrFloat(*to_inner) || isStringOrFixedString(*to_inner)))
     {
         if (isFloat(*from_inner) && isFloat(*to_inner)
@@ -2360,8 +2364,12 @@ bool isDynamicElementToTypedCastSafe(const DataTypePtr & from_type, const DataTy
     /// Cross-cast between Date/DateTime/DateTime64 is also disallowed because
     /// castColumnAccurate may fail on text representations (e.g. DateTime64
     /// text "2024-01-15 12:30:00" cannot be parsed as Date by the CAST path).
+    /// DateTime and DateTime64 are serialized according to date_time_output_format while the CAST
+    /// always writes the simple text form, so they match only under that format; Date and Date32
+    /// have a single text form.
     if (isDateOrDateTime(*from_inner) && isStringOrFixedString(*to_inner))
-        return true;
+        return isDateOrDate32(*from_inner)
+            || format_settings.date_time_output_format == FormatSettings::DateTimeOutputFormat::Simple;
 
     /// "Simple non-nested" = any type without subtypes: numbers, strings, dates,
     /// decimals, UUID, IPv4, IPv6, Enum, etc. Types with subtypes (Array, Tuple,
@@ -2386,14 +2394,57 @@ bool isDynamicElementToTypedCastSafe(const DataTypePtr & from_type, const DataTy
     {
         const auto & from_arr = assert_cast<const DataTypeArray &>(*from_inner);
         const auto & to_arr = assert_cast<const DataTypeArray &>(*to_inner);
-        return isDynamicElementToTypedCastSafe(from_arr.getNestedType(), to_arr.getNestedType());
+        /// A null element carries no value to convert: the CAST rejects it, while the parser inserts
+        /// the element default. Only the top-level wrapper is handled that way (see removeNullable above).
+        if (hasNullableMismatchForCast(from_arr.getNestedType(), to_arr.getNestedType()))
+            return false;
+        return isDynamicElementToTypedCastSafe(from_arr.getNestedType(), to_arr.getNestedType(), format_settings);
     }
 
     return false;
 }
 
+/// True for the numeric pairs where accurateCast is stricter than JSON parsing: the parser keeps the
+/// range check but drops the exactness one, so it truncates a fractional value into an integer and
+/// rounds an integer that a float cannot hold, where accurateCast rejects both.
+bool castIsStricterThanParse(const IDataType & from, const IDataType & to)
+{
+    return (isFloat(from) && isNativeInteger(to)) || (isNativeInteger(from) && isFloat(to));
+}
+
+/// True if every value converts exactly, which is what makes the pairs above reproduce format+parse.
+/// The answer comes from the data rather than the types so that ordinary numbers keep the fast path;
+/// accurateCastOrNull reports per value exactly what accurateCast would reject.
+bool allValuesCastExactly(const ColumnPtr & column, const DataTypePtr & from, const DataTypePtr & to)
+{
+    auto to_inner = removeNullable(to);
+
+    /// Only the pairs isDynamicElementToTypedCastSafe accepted get here, so an array is matched by an array.
+    if (const auto * from_array = typeid_cast<const DataTypeArray *>(from.get()))
+    {
+        const auto & to_array = assert_cast<const DataTypeArray &>(*to_inner);
+        const auto & col_array = assert_cast<const ColumnArray &>(*column);
+        return allValuesCastExactly(col_array.getDataPtr(), from_array->getNestedType(), to_array.getNestedType());
+    }
+
+    /// A null has no value to convert, and the rows under it hold the nested default, which converts.
+    if (const auto * from_nullable = typeid_cast<const DataTypeNullable *>(from.get()))
+    {
+        const auto & col_nullable = assert_cast<const ColumnNullable &>(*column);
+        return allValuesCastExactly(col_nullable.getNestedColumnPtr(), from_nullable->getNestedType(), to_inner);
+    }
+
+    if (!castIsStricterThanParse(*from, *to_inner))
+        return true;
+
+    auto probe = castColumnAccurateOrNull({column, from, ""}, makeNullable(to_inner));
+    const auto & null_map = assert_cast<const ColumnNullable &>(*probe).getNullMapData();
+    return memoryIsZero(null_map.data(), 0, null_map.size());
+}
+
 /// Returns true if all variant types in the Dynamic column can be safely CAST to dest_type.
-bool canCastDynamicToTyped(const ColumnDynamic & col_dynamic, const DataTypePtr & dest_type)
+bool canCastDynamicToTyped(
+    const ColumnDynamic & col_dynamic, const DataTypePtr & dest_type, const FormatSettings & format_settings)
 {
     const auto & variant_info = col_dynamic.getVariantInfo();
     const auto & variant_types = assert_cast<const DataTypeVariant &>(
@@ -2403,11 +2454,14 @@ bool canCastDynamicToTyped(const ColumnDynamic & col_dynamic, const DataTypePtr 
     if (!col_dynamic.getSharedVariant().empty())
         return false;
 
+    const auto & variant_column = col_dynamic.getVariantColumn();
     for (size_t i = 0; i < variant_types.size(); ++i)
     {
         if (i == col_dynamic.getSharedVariantDiscriminator())
             continue;
-        if (!isDynamicElementToTypedCastSafe(variant_types[i], dest_type))
+        if (!isDynamicElementToTypedCastSafe(variant_types[i], dest_type, format_settings))
+            return false;
+        if (!allValuesCastExactly(variant_column.getVariantPtrByGlobalDiscriminator(i), variant_types[i], dest_type))
             return false;
     }
     return true;
@@ -2869,9 +2923,20 @@ ColumnPtr convertTypedColumnToTyped(
     FormatSettings json_format_settings = format_settings;
     json_format_settings.json.quote_64bit_integers = false;
 
+    /// A null under type_json_skip_null_typed_paths is not written at all, so the value never reaches
+    /// the parser and the destination keeps its default. Serializing it as `null` instead would make
+    /// the destination node reject it.
+    const bool null_omits_path = format_settings.json.type_json_skip_null_typed_paths && src_column->isNullable();
+
     WriteBufferFromOwnString write_buf;
     for (size_t i = 0; i < rows; ++i)
     {
+        if (null_omits_path && src_column->isNullAt(i))
+        {
+            dest_type->insertDefaultInto(*dest_column);
+            continue;
+        }
+
         write_buf.restart();
         src_serialization->serializeTextJSON(*src_column, i, write_buf, json_format_settings);
 
@@ -2962,16 +3027,25 @@ ColumnPtr convertObjectColumns(
         }
 
         /// The parser applies SKIP REGEXP while descending each object level, so a match on any ancestor
-        /// removes its whole subtree. Test every ancestor prefix as well as the full path.
+        /// removes its whole subtree. Test every ancestor prefix as well as the full path, starting with
+        /// the root object's own empty path: a match there skips the whole document.
         const bool partial = format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp;
+        auto matchesRegexp = [partial](std::string_view prefix, const auto & regexp)
+        {
+            const re2::StringPiece piece(prefix.data(), prefix.size());
+            return partial ? RE2::PartialMatch(piece, *regexp) : RE2::FullMatch(piece, *regexp);
+        };
+
         for (const auto & regexp : plan.new_skip_regexps)
         {
+            if (matchesRegexp({}, regexp))
+                return true;
+
             for (size_t pos = 0;;)
             {
                 size_t dot = path.find('.', pos);
                 std::string_view prefix = dot == std::string_view::npos ? path : path.substr(0, dot);
-                const re2::StringPiece piece(prefix.data(), prefix.size());
-                if (partial ? RE2::PartialMatch(piece, *regexp) : RE2::FullMatch(piece, *regexp))
+                if (matchesRegexp(prefix, regexp))
                     return true;
                 if (dot == std::string_view::npos)
                     break;
@@ -3105,7 +3179,8 @@ ColumnPtr convertObjectColumns(
             dst_typed_columns[path] = convertDynamicColumnToTyped(
                 it_col->second, it_type->second, rows, format_settings, /*skip_on_failure=*/true);
         }
-        else if (it_type->second->isDefaultInsertTrivial() && canCastDynamicToTyped(dynamic_col, it_type->second))
+        else if (it_type->second->isDefaultInsertTrivial()
+            && canCastDynamicToTyped(dynamic_col, it_type->second, format_settings))
         {
             /// CAST fills an absent (NULL) row with the plain zero, so it is only correct for a destination
             /// whose default is that zero; an Enum and the like need the parser's insertDefaultInto.
@@ -3144,8 +3219,15 @@ ColumnPtr convertObjectColumns(
 
     /// ======================== Phase 5: Convert removed typed paths ========================
 
-    size_t available_dynamic_slots = dst_global_max_dynamic_paths > dst_dynamic_columns.size()
-        ? dst_global_max_dynamic_paths - dst_dynamic_columns.size()
+    /// A limit that parsing settings put on the source instance rather than on the type travels with
+    /// the data (see ColumnObject::insertRangeFrom), so a path promoted here must fit within it and
+    /// overflow into shared data otherwise. Paths already materialised cannot be taken back, so the
+    /// bound cannot go below their number.
+    size_t dst_max_dynamic_paths_upper_bound
+        = std::max(std::min(dst_global_max_dynamic_paths, src.getMaxDynamicPathsUpperBound()), dst_dynamic_columns.size());
+
+    size_t available_dynamic_slots = dst_max_dynamic_paths_upper_bound > dst_dynamic_columns.size()
+        ? dst_max_dynamic_paths_upper_bound - dst_dynamic_columns.size()
         : 0;
 
     /// Sort removed typed paths for deterministic ordering.
@@ -3394,11 +3476,9 @@ ColumnPtr convertObjectColumns(
     if (!assert_cast<const ColumnArray &>(*dst_shared_data).getData().empty())
         effective_max_dynamic_paths = dst_dynamic_columns.size();
 
-    /// A limit that parsing settings put on the source instance rather than on the type travels
-    /// with the data (see ColumnObject::insertRangeFrom), so the conversion must not widen it back.
-    /// Paths already materialised cannot be taken back, so the bound cannot go below their number.
-    size_t dst_max_dynamic_paths_upper_bound
-        = std::max(std::min(dst_global_max_dynamic_paths, src.getMaxDynamicPathsUpperBound()), dst_dynamic_columns.size());
+    /// Phase 5 computed the bound before promoting paths; paths already materialised cannot be taken
+    /// back, so the bound cannot go below their final number.
+    dst_max_dynamic_paths_upper_bound = std::max(dst_max_dynamic_paths_upper_bound, dst_dynamic_columns.size());
     effective_max_dynamic_paths = std::min(effective_max_dynamic_paths, dst_max_dynamic_paths_upper_bound);
 
     return ColumnObject::create(
@@ -3487,8 +3567,9 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
             auto captured_format_settings = settings.format_settings;
             /// The nested CASTs must reproduce what the JSON parser would do, so they parse
             /// date/time with date_time_input_format rather than cast_string_to_date_time_mode.
-            /// The other two overrides keep the semantics castColumn() gave those CASTs before:
+            /// The other two arguments keep the semantics castColumn() gave those CASTs before:
             /// saturating overflow, and NULLs in a Dynamic becoming defaults instead of throwing.
+            /// The constructor drops the CAST-only flags that the parser does not honour.
             auto captured_convert_settings = std::make_shared<const FunctionConvertSettings>(
                 settings,
                 FormatSettings::DateTimeOverflowBehavior::Saturate,

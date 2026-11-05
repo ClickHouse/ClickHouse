@@ -130,6 +130,51 @@ SETTINGS json_use_optimized_type_conversion = {{ optimized }}{{ ', ' ~ settings 
 {% endfor -%}
 {% endfor %}
 
+-- The parser range-checks a number but converts it without requiring exactness, so a fractional value
+-- truncates and an integer a float cannot hold rounds, where accurateCast rejects both. Values that do
+-- convert exactly must keep taking the CAST.
+{{ check("new Int32 from a fractional Float64", "JSON", "JSON(a Int32)", ['{"a": 1.5}', '{"a": -2.5}', '{"a": 3}']) }}
+{{ check("new Int32 from a fractional Float64 in shared data", "JSON(max_dynamic_paths = 0)", "JSON(max_dynamic_paths = 0, a Int32)", ['{"a": 1.5}']) }}
+{{ check("new Int32 from a whole Float64", "JSON", "JSON(a Int32)", ['{"a": 3.0}', '{"a": -4.0}']) }}
+{{ check("new Array(Int32) from fractional Float64 elements", "JSON", "JSON(a Array(Int32))", ['{"a": [1.5, 2]}']) }}
+{{ check("new Float64 from an integer beyond its exact range", "JSON", "JSON(a Float64)", ['{"a": 9007199254740993}', '{"a": 5}']) }}
+{{ check("new Float64 from an integer within its exact range", "JSON", "JSON(a Float64)", ['{"a": 5}', '{"a": -7}']) }}
+{{ check("new Float32 from an integer beyond its exact range", "JSON", "JSON(a Float32)", ['{"a": 16777217}']) }}
+
+-- DateTime and DateTime64 are serialized according to date_time_output_format, which the CAST to String
+-- does not implement.
+{{ check("new String from DateTime, unix_timestamp output", "JSON", "JSON(a String)", ['{"a": "2024-01-15 12:30:00"}'], "date_time_output_format = 'unix_timestamp'") }}
+{{ check("new String from DateTime, iso output", "JSON", "JSON(a String)", ['{"a": "2024-01-15 12:30:00"}'], "date_time_output_format = 'iso'") }}
+{{ check("new String from Date, unix_timestamp output", "JSON", "JSON(a String)", ['{"a": "2024-01-15"}'], "date_time_output_format = 'unix_timestamp', input_format_try_infer_datetimes = 0") }}
+
+-- Default inference makes array elements nullable, so a null element reaches a non-Nullable element type.
+{{ check("new Array(Int64) from an array with a null element", "JSON", "JSON(a Array(Int64))", ['{"a": [null, 1]}']) }}
+{{ check("new Array(String) from an array with a null element", "JSON", "JSON(a Array(String))", ['{"a": [null, "x"]}']) }}
+
+-- Type inference for a string belongs to the JSON parser, so a CAST-only inference setting must not
+-- reach the nested CASTs.
+{{ check("removed String holding a number with cast inference", "JSON(a String)", "JSON", ['{"a": "123"}'], 'cast_string_to_dynamic_use_inference = 1') }}
+
+-- A parsing limit travels with the source instance, so a promoted path must fit in it or go to shared data.
+{{ check("removed typed path under a parsing limit", "JSON(a Int64)", "JSON", ['{"a": 1}'], 'max_dynamic_subcolumns_in_json_type_parsing = 0') }}
+{{ check("two removed typed paths under a parsing limit", "JSON(a Int64, b Int64)", "JSON", ['{"a": 1, "b": 2}'], 'max_dynamic_subcolumns_in_json_type_parsing = 1') }}
+
+-- The parser tests SKIP REGEXP against the root object's own empty path before descending into it.
+{{ check("skip regexp matching the root path", "JSON", "JSON(SKIP REGEXP '^$')", ['{"z": 1}', '{"a": {"b": 2}}']) }}
+{{ check("skip regexp matching the root path in shared data", "JSON(max_dynamic_paths = 0)", "JSON(max_dynamic_paths = 0, SKIP REGEXP '^$')", ['{"z": 1}']) }}
+{{ check("skip regexp matching the root path, full match", "JSON", "JSON(SKIP REGEXP '^$')", ['{"z": 1}'], 'type_json_use_partial_match_to_skip_paths_by_regexp = 0') }}
+
+-- A null omitted by type_json_skip_null_typed_paths never reaches the parser, so the destination keeps
+-- its own default even when the nested type changes.
+{% for name, src, dst, rows in [
+    ('changed Nullable(UInt8) to String', 'JSON(a Nullable(UInt8))', 'JSON(a String)', ['{"a": 5}', '{"a": null}']),
+    ('changed Nullable(String) to UInt32', 'JSON(a Nullable(String))', 'JSON(a UInt32)', ['{"a": "7"}', '{"a": null}']),
+    ('changed Nullable(Int8) to Enum8', 'JSON(a Nullable(Int8))', "JSON(a Enum8('n' = 0, 'x' = 1))", ['{"a": 1}', '{"a": null}']),
+    ('changed Nullable(Int32) to Array(Int32)', 'JSON(a Nullable(Int32))', 'JSON(a Array(Int32))', ['{"a": null}']),
+] -%}
+{{ check(name ~ ' with skipped nulls', src, dst, rows, 'type_json_skip_null_typed_paths = 1, input_format_null_as_default = 0') }}
+{% endfor %}
+
 SELECT name, optimized, result FROM results
 WHERE name IN (SELECT name FROM results GROUP BY name HAVING uniqExact(result) > 1)
 ORDER BY name, optimized DESC;
