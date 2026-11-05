@@ -1,7 +1,12 @@
 #include <Interpreters/WhatIf/HypotheticalObjectStore.h>
 
 #include <Interpreters/DatabaseCatalog.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Common/Exception.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -13,6 +18,35 @@ namespace ErrorCodes
 
 namespace
 {
+
+void bindColumn(const String & name, const ColumnsDescription & columns, std::map<String, String> & bound);
+
+void bindIdentifiers(const IAST & ast, const ColumnsDescription & columns, std::map<String, String> & bound)
+{
+    if (const auto * identifier = ast.as<ASTIdentifier>())
+        bindColumn(identifier->name(), columns, bound);
+    else if (ast.as<ASTAsterisk>() || ast.as<ASTColumnsRegexpMatcher>())
+        for (const auto & column : columns.getOrdinary())
+            bindColumn(column.name, columns, bound);
+    for (const auto & child : ast.children)
+        bindIdentifiers(*child, columns, bound);
+}
+
+void bindColumn(const String & name, const ColumnsDescription & columns, std::map<String, String> & bound)
+{
+    auto [it, inserted] = bound.try_emplace(name);
+    if (!inserted)
+        return;
+    const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+    if (!column)
+        return;
+    it->second = column->type->getName();
+    if (const auto column_default = columns.getDefault(column->getNameInStorage()))
+    {
+        it->second += fmt::format(" {} {}", toString(column_default->kind), column_default->expression->formatForErrorMessage());
+        bindIdentifiers(*column_default->expression, columns, bound);
+    }
+}
 
 bool sameTable(const StorageID & a, const StorageID & b)
 {
@@ -93,12 +127,44 @@ bool eraseOrThrow(
 
 }
 
-bool HypotheticalObjectStore::add(const StorageID & table_id, const IndexDescription & index, bool if_not_exists)
+HypotheticalBinding HypotheticalBinding::of(const IAST & definition, const StorageInMemoryMetadata & metadata)
+{
+    HypotheticalBinding binding;
+    bindIdentifiers(definition, metadata.getColumns(), binding.columns);
+    if (metadata.hasSettingsChanges())
+        binding.settings = metadata.getSettingsChanges()->formatWithSecretsOneLine();
+    return binding;
+}
+
+String HypotheticalBinding::changeTo(const HypotheticalBinding & current) const
+{
+    auto report = [](const String & name, const String & before, const String & after)
+    {
+        auto describe = [](const String & column) { return column.empty() ? String("absent") : column; };
+        return fmt::format("column {} was {}, now {}", backQuote(name), describe(before), describe(after));
+    };
+    /// a name on one side only is reached through a column that changed, so report the columns on both sides first
+    for (const auto & [name, before] : columns)
+        if (const auto it = current.columns.find(name); it != current.columns.end() && it->second != before)
+            return report(name, before, it->second);
+    for (const auto & [name, before] : columns)
+        if (!before.empty() && !current.columns.contains(name))
+            return report(name, before, {});
+    for (const auto & [name, after] : current.columns)
+        if (!after.empty() && !columns.contains(name))
+            return report(name, {}, after);
+    if (settings != current.settings)
+        return "the table settings changed";
+    return {};
+}
+
+bool HypotheticalObjectStore::add(
+    const StorageID & table_id, const IndexDescription & index, const HypotheticalBinding & binding, bool if_not_exists)
 {
     std::lock_guard lock(mutex);
     if (!prepareInsert(entries, table_id, index.name, if_not_exists, "index"))
         return false;
-    entries.push_back({table_id, index});
+    entries.push_back({table_id, index, binding});
     return true;
 }
 
@@ -114,14 +180,14 @@ void HypotheticalObjectStore::clear()
     entries.clear();
 }
 
-std::vector<IndexDescription> HypotheticalObjectStore::getForTable(const StorageID & table_id) const
+std::vector<HypotheticalObjectStore::Entry> HypotheticalObjectStore::getForTable(const StorageID & table_id) const
 {
     std::lock_guard lock(mutex);
-    std::vector<IndexDescription> result;
+    std::vector<Entry> result;
     for (const auto & entry : entries)
     {
         if (sameTable(entry.table_id, table_id))
-            result.push_back(entry.index);
+            result.push_back(entry);
     }
     return result;
 }
@@ -133,13 +199,13 @@ std::vector<HypotheticalObjectStore::Entry> HypotheticalObjectStore::getAll() co
 }
 
 bool HypotheticalObjectStore::addProjection(
-    const StorageID & table_id, const ProjectionDescription & projection, bool if_not_exists)
+    const StorageID & table_id, const ProjectionDescription & projection, const HypotheticalBinding & binding, bool if_not_exists)
 {
     std::lock_guard lock(mutex);
     if (!prepareInsert(projection_entries, table_id, projection.name, if_not_exists, "projection"))
         return false;
     /// ProjectionDescription is move-only, so the caller's descriptor is cloned
-    projection_entries.push_back({table_id, projection.clone()});
+    projection_entries.push_back({table_id, projection.clone(), binding});
     return true;
 }
 
@@ -155,14 +221,14 @@ void HypotheticalObjectStore::clearProjections()
     projection_entries.clear();
 }
 
-std::vector<ProjectionDescription> HypotheticalObjectStore::getProjectionsForTable(const StorageID & table_id) const
+std::vector<HypotheticalObjectStore::ProjectionEntry> HypotheticalObjectStore::getProjectionsForTable(const StorageID & table_id) const
 {
     std::lock_guard lock(mutex);
-    std::vector<ProjectionDescription> result;
+    std::vector<ProjectionEntry> result;
     for (const auto & entry : projection_entries)
     {
         if (sameTable(entry.table_id, table_id))
-            result.push_back(entry.projection.clone());
+            result.push_back({entry.table_id, entry.projection.clone(), entry.binding});
     }
     return result;
 }
@@ -173,7 +239,7 @@ std::vector<HypotheticalObjectStore::ProjectionEntry> HypotheticalObjectStore::g
     std::vector<ProjectionEntry> result;
     result.reserve(projection_entries.size());
     for (const auto & entry : projection_entries)
-        result.push_back({entry.table_id, entry.projection.clone()});
+        result.push_back({entry.table_id, entry.projection.clone(), entry.binding});
     return result;
 }
 

@@ -32,22 +32,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_CONVERT_TYPE;
-    extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_PROJECTION;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int NOT_IMPLEMENTED;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SUPPORT_IS_DISABLED;
-    extern const int THERE_IS_NO_COLUMN;
-    extern const int TYPE_MISMATCH;
-    extern const int UNKNOWN_FUNCTION;
-    extern const int UNKNOWN_IDENTIFIER;
 }
 
 namespace MergeTreeSetting
@@ -57,6 +43,36 @@ namespace MergeTreeSetting
 
 namespace
 {
+
+/// the real `ALTER TABLE ... ADD INDEX` or `ADD PROJECTION` validation, so `CREATE` cannot accept what `ALTER` rejects
+void checkHypotheticalObjectIsAddable(
+    const MergeTreeData & merge_tree,
+    const StorageMetadataPtr & metadata,
+    const ASTPtr & declaration,
+    const ContextPtr & context)
+{
+    auto command_ast = make_intrusive<ASTAlterCommand>();
+    if (declaration->as<ASTIndexDeclaration>())
+    {
+        command_ast->type = ASTAlterCommand::ADD_INDEX;
+        command_ast->set(command_ast->index_decl, declaration->clone());
+    }
+    else
+    {
+        command_ast->type = ASTAlterCommand::ADD_PROJECTION;
+        command_ast->set(command_ast->projection_decl, declaration->clone());
+    }
+
+    auto command = AlterCommand::parse(command_ast.get());
+    if (!command)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ADD command was not parsed back into an alter command");
+
+    AlterCommands commands;
+    commands.push_back(std::move(*command));
+    /// the eligibility check applies the commands, which requires prepare first
+    commands.prepare(*metadata, (*merge_tree.getSettings())[MergeTreeSetting::share_nested_offsets]);
+    merge_tree.checkAlterEligibility(commands, context);
+}
 
 /// Mirrors `ALTER TABLE ... ADD PROJECTION`: the descriptor is built and validated the same way,
 /// so EXPLAIN WHATIF can never report a benefit for a projection the user could not materialize
@@ -75,7 +91,7 @@ BlockIO createHypotheticalProjection(
     if (query.if_not_exists)
     {
         for (const auto & existing : store.getProjectionsForTable(table_id))
-            if (existing.name == projection_ast.name)
+            if (existing.name() == projection_ast.name)
                 return {};
         if (metadata->projections.has(projection_ast.name))
             return {};
@@ -88,7 +104,7 @@ BlockIO createHypotheticalProjection(
 
     checkHypotheticalObjectIsAddable(merge_tree, metadata, query.projection_decl, context);
 
-    store.addProjection(table_id, projection_desc, query.if_not_exists);
+    store.addProjection(table_id, projection_desc, HypotheticalBinding::of(*projection_desc.definition_ast, *metadata), query.if_not_exists);
     return {};
 }
 
@@ -109,7 +125,7 @@ BlockIO createHypotheticalIndex(
     if (query.if_not_exists)
     {
         for (const auto & existing : store.getForTable(table_id))
-            if (existing.name == index_ast.name)
+            if (existing.name() == index_ast.name)
                 return {};
         if (metadata->getSecondaryIndices().has(index_ast.name))
             return {};
@@ -172,62 +188,10 @@ BlockIO createHypotheticalIndex(
     /// sparse_grams), so construct once here instead of failing later inside EXPLAIN WHATIF
     MergeTreeIndexFactory::instance().get(metadata, index_desc, *merge_tree.getSettings());
 
-    store.add(table_id, index_desc, query.if_not_exists);
+    store.add(table_id, index_desc, HypotheticalBinding::of(*index_desc.definition_ast, *metadata), query.if_not_exists);
     return {};
 }
 
-}
-
-void checkHypotheticalObjectIsAddable(
-    const MergeTreeData & merge_tree,
-    const StorageMetadataPtr & metadata,
-    const ASTPtr & declaration,
-    const ContextPtr & context)
-{
-    auto command_ast = make_intrusive<ASTAlterCommand>();
-    if (declaration->as<ASTIndexDeclaration>())
-    {
-        command_ast->type = ASTAlterCommand::ADD_INDEX;
-        command_ast->set(command_ast->index_decl, declaration->clone());
-    }
-    else
-    {
-        command_ast->type = ASTAlterCommand::ADD_PROJECTION;
-        command_ast->set(command_ast->projection_decl, declaration->clone());
-    }
-
-    auto command = AlterCommand::parse(command_ast.get());
-    if (!command)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ADD command was not parsed back into an alter command");
-
-    AlterCommands commands;
-    commands.push_back(std::move(*command));
-    /// the eligibility check applies the commands, which requires prepare first
-    commands.prepare(*metadata, (*merge_tree.getSettings())[MergeTreeSetting::share_nested_offsets]);
-    merge_tree.checkAlterEligibility(commands, context);
-}
-
-bool isHypotheticalDefinitionError(int code)
-{
-    static const int codes[]
-    {
-        ErrorCodes::BAD_ARGUMENTS,
-        ErrorCodes::CANNOT_CONVERT_TYPE,
-        ErrorCodes::ILLEGAL_COLUMN,
-        ErrorCodes::ILLEGAL_PROJECTION,
-        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-        ErrorCodes::INCORRECT_QUERY,
-        ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-        ErrorCodes::NOT_IMPLEMENTED,
-        ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-        ErrorCodes::SUPPORT_IS_DISABLED,
-        ErrorCodes::THERE_IS_NO_COLUMN,
-        ErrorCodes::TYPE_MISMATCH,
-        ErrorCodes::UNKNOWN_FUNCTION,
-        ErrorCodes::UNKNOWN_IDENTIFIER,
-    };
-    return std::ranges::contains(codes, code);
 }
 
 BlockIO InterpreterHypotheticalObjectQuery::execute()

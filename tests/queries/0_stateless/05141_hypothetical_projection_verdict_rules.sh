@@ -55,7 +55,7 @@ alias_url="${CLICKHOUSE_URL}&user=${alias_user}&session_id=${CLICKHOUSE_DATABASE
 ${CLICKHOUSE_CURL} -sS "${alias_url}" --data-binary "CREATE HYPOTHETICAL PROJECTION p_al ON ${CLICKHOUSE_DATABASE}.t_alias (SELECT a, c ORDER BY a)"
 ${CLICKHOUSE_CURL} -sS "${alias_url}" --data-binary "EXPLAIN WHATIF SELECT a FROM ${CLICKHOUSE_DATABASE}.t_alias WHERE a = 500 SETTINGS ${PIN}" | grep -E '^\s+status:' | awk '{$1=$1; print}'
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t_alias MODIFY COLUMN c UInt64 ALIAS d + 1;"
-${CLICKHOUSE_CURL} -sS "${alias_url}" --data-binary "EXPLAIN WHATIF SELECT a FROM ${CLICKHOUSE_DATABASE}.t_alias WHERE a = 500 SETTINGS ${PIN}" 2>&1 | grep -m1 -oE 'ACCESS_DENIED'
+${CLICKHOUSE_CURL} -sS "${alias_url}" --data-binary "EXPLAIN WHATIF SELECT a FROM ${CLICKHOUSE_DATABASE}.t_alias WHERE a = 500 SETTINGS ${PIN}" 2>&1 | grep -E '^\s+(status|reason):' | awk '{$1=$1; print}'
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${alias_user}; DROP TABLE IF EXISTS t_alias;"
 
 # the base read prunes a `_part_offset` predicate with its own offset condition, so a projection is
