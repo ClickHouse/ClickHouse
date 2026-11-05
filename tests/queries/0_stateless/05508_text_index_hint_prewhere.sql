@@ -3,6 +3,7 @@ SET use_query_cache = 0;
 SET use_query_condition_cache = 0;
 SET query_plan_direct_read_from_text_index = 1;
 SET query_plan_text_index_add_hint = 1;
+SET text_index_hint_max_selectivity = 0.2;
 SET use_skip_indexes_on_data_read = 1;
 SET enable_multiple_prewhere_read_steps = 1;
 
@@ -17,9 +18,10 @@ CREATE TABLE early_candidates
     INDEX s_idx s TYPE text(tokenizer = ngrams(3))
 ) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1024;
 INSERT INTO early_candidates SELECT number, number + 1, if(number % 2 = 0, 'hit', 'miss'),
-    if(number % 2 = 1, concat('needle phrase ', repeat('x', 200)), repeat('z', 200))
+    if(number % 16 = 1, concat('needle phrase ', repeat('x', 200)), repeat('z', 200))
 FROM numbers(32768);
 
+-- The phrase occurs on 1/16 of rows, below the default hint bypass threshold.
 -- Both postings cover every mark but their intersection is empty. The numeric
 -- condition still reads n, but the phrase hint can eliminate the remaining
 -- rows before the reader fetches s for verification.
