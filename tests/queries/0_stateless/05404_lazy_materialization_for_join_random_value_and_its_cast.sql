@@ -2,7 +2,6 @@
 -- random value is computed once, where the plan computes it, whichever of the two the query lists first, so the two
 -- agree on every row. One of them crossing the LIMIT must not leave the other to be drawn again above it.
 
-SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_lazy_materialization_for_join = 1;
 SET query_plan_max_limit_for_lazy_materialization = 100;

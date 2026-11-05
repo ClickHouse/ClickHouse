@@ -460,9 +460,12 @@ message ExprLike {
         LIKE = 1;
         ILIKE = 2;
         REGEXP = 3;
+        SIMILAR_TO = 4;
     }
     required PossibleKeywords keyword = 3;
     required Expr expr2 = 4;
+    /// Quoted `ESCAPE` literal, not for `REGEXP`
+    optional string escape = 5;
 }
 
 message CondExpr {
@@ -761,6 +764,7 @@ message JoinCore {
     optional JoinType join_op = 4;
     required TableOrSubquery tos = 5;
     required JoinConstraint join_constraint = 6;
+    optional bool lateral = 7;
 }
 
 message ArrayJoin {
@@ -1232,6 +1236,10 @@ enum DatabaseEngineValues {
     DSQLite = 9;
     DBackup = 10;
     DMaterializedPostgreSQL = 11;
+    DCluster = 12;
+    DRemote = 13;
+    DRemoteSecure = 14;
+    DOverlay = 15;
 }
 
 message BackupParam {
@@ -2544,6 +2552,9 @@ message BackupRestoreElement {
         bool all = 2;
     }
     repeated ExprSchemaTable except_tables = 3;
+    /// EXCEPT DATA FROM TABLE[S], BACKUP only
+    optional bool except_data_plural = 4;
+    repeated ExprSchemaTable except_data_tables = 5;
 }
 
 message BackupRestore {

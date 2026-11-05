@@ -64,10 +64,10 @@ FROM
 );
 Point	0	0
 MultiPoint	0	0
-LineString	0	0
+LineString	0	5
 Polygon	16	16
 Ring	16	16
-MultiLineString	0	0
+MultiLineString	0	8
 MultiPolygon	4	8
 -- The same through a table: the Memory engine keeps the casted column as is,
 -- so the stored Geometry column preserves the reordered local discriminators.
