@@ -29,6 +29,20 @@
                 </replica>
             </shard>
         </three_replicas>
+        <!-- node2 is accessed as a user that does not read the external tables of a query for a while. -->
+        <two_replicas_slow_reader>
+            <shard>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                    <user>slow_reader</user>
+                </replica>
+                <replica>
+                    <host>node3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </two_replicas_slow_reader>
         <two_shards>
             <shard>
                 <replica>

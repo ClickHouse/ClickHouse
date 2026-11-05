@@ -15,7 +15,7 @@ cluster = ClickHouseCluster(__file__)
 # ZooKeeper is for the replicated table of `test_retry_on_stale_local_replica_path`.
 node1 = cluster.add_instance("node1", main_configs=["configs/remote_servers.xml"], with_zookeeper=True, stay_alive=True)
 # `stay_alive` is required on node2/node3: tests kill and restart them.
-node2 = cluster.add_instance("node2", with_zookeeper=True, stay_alive=True)
+node2 = cluster.add_instance("node2", user_configs=["configs/slow_reader_user.xml"], with_zookeeper=True, stay_alive=True)
 node3 = cluster.add_instance("node3", with_zookeeper=True, stay_alive=True)
 
 
@@ -326,3 +326,56 @@ def test_no_resend_after_finish_during_prepare_retry_pause(started_cluster):
             except Exception:
                 pass
             node3.start_clickhouse()
+
+
+
+def test_retry_after_receive_timeout(started_cluster):
+    """A replica that hangs while the initiator is waiting for its result makes the asynchronous
+    read time out with the coroutine suspended in the middle of receiving. The retry must unwind it
+    before disconnecting the connections, and go to another replica."""
+
+    prepare_initiator()
+
+    query_id = "dq_retry_after_receive_timeout"
+    settings = {**SETTINGS, "distributed_query_retries": 2, "async_socket_for_remote": 1, "receive_timeout": 3}
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(lambda: node1.query(QUERY, settings=settings, query_id=query_id))
+        try:
+            wait_query_started_on(node2)
+            # Freeze node2 instead of killing it: the read times out instead of failing with an error.
+            with cluster.pause_container_using_signal("node2", wait_for_paused=False):
+                result = future.result(timeout=120)
+        finally:
+            future.cancel()
+
+    assert result.strip() == "45"
+    assert node1.contains_in_log("will retry (1/2)")
+    assert remote_read_rows(node3, query_id) == 10
+
+
+@pytest.mark.parametrize("async_query_sending_for_remote", [0, 1])
+def test_retry_after_send_timeout(started_cluster, async_query_sending_for_remote):
+    """node2 does not read the large external table (`GLOBAL IN`) the initiator is sending it, so the
+    send times out. With `async_query_sending_for_remote = 1` the coroutine is suspended in the middle
+    of sending and must be unwound before the connections are disconnected; with
+    `async_query_sending_for_remote = 0` the query is sent synchronously by `sendQuery`, which must
+    retry as well."""
+
+    prepare_initiator()
+
+    query_id = f"dq_retry_after_send_timeout_async_{async_query_sending_for_remote}"
+    result = node1.query(
+        "SELECT count() FROM cluster('two_replicas_slow_reader', default, t) "
+        "WHERE x GLOBAL IN (SELECT number FROM numbers(5000000))",
+        settings={
+            **SETTINGS,
+            "distributed_query_retries": 2,
+            "async_query_sending_for_remote": async_query_sending_for_remote,
+            "send_timeout": 3,
+        },
+        query_id=query_id,
+    )
+
+    assert result.strip() == "10"
+    assert node1.contains_in_log("will retry (1/2)")
+    assert remote_read_rows(node3, query_id) > 0

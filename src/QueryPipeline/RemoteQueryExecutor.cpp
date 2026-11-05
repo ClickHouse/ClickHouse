@@ -583,7 +583,27 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind, AsyncCallb
     ///     Unexpected packet Data received from client
     ///
     /// A failure to establish the connections or to send the query is this fragment's failure.
+    /// Declared outside the retry loop: a network error that is retried (`distributed_query_retries`) is not a failure.
     SCOPE_FAIL({ failFragmentSpan(); });
+    while (true)
+    {
+        try
+        {
+            sendQueryOnce(query_kind, async_callback);
+            return;
+        }
+        catch (const Exception & e)
+        {
+            if (!canRetryAfterNetworkError(e))
+                throw;
+
+            prepareRetryAfterNetworkError(e);
+        }
+    }
+}
+
+void RemoteQueryExecutor::sendQueryOnce(ClientInfo::QueryKind query_kind, AsyncCallback async_callback)
+{
     LockAndBlocker guard(was_cancelled_mutex);
     sendQueryUnlocked(query_kind, async_callback);
 }
@@ -788,21 +808,9 @@ int RemoteQueryExecutor::sendQueryAsync()
         }
     }
 #else
-    while (true)
-    {
-        try
-        {
-            sendQuery();
-            return -1;
-        }
-        catch (const Exception & e)
-        {
-            if (!canRetryAfterNetworkError(e))
-                throw;
-
-            prepareRetryAfterNetworkError(e);
-        }
-    }
+    /// `sendQuery` retries after network errors itself.
+    sendQuery();
+    return -1;
 #endif
 }
 
@@ -845,7 +853,8 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readImpl()
 {
     if (!sent_query)
     {
-        sendQuery();
+        /// Not `sendQuery`: the retries after network errors are done by `read`.
+        sendQueryOnce();
 
         /// `connections` stays null if sendQuery() was cancelled before sending,
         /// so guard the dereference below (as every other use of it does).
@@ -1070,6 +1079,21 @@ void RemoteQueryExecutor::prepareRetryAfterNetworkError(const Exception & e)
     {
         LockAndBlocker lock(was_cancelled_mutex);
 
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        /// Unwind the I/O coroutine first, while the connections and their sockets are still alive.
+        /// A `SOCKET_TIMEOUT` thrown by `RemoteQueryExecutorReadContext::checkTimeout` leaves it suspended
+        /// in the middle of sending or receiving: it may hold the `cancel_mutex` of the connections
+        /// (taken by `getFailedReplicaAddresses` below) or reference the socket that `disconnect` destroys.
+        /// The drain is skipped: the connections are disconnected anyway, and it could wait for the whole timeout.
+        if (read_context)
+        {
+            read_context->skipDrainOnCancel();
+            read_context->cancel();
+            read_context.reset();
+        }
+        packet_in_progress = false;
+#endif
+
         if (connections)
         {
             /// Penalize the replica that failed mid-query, so that the retry connects to another
@@ -1081,11 +1105,6 @@ void RemoteQueryExecutor::prepareRetryAfterNetworkError(const Exception & e)
 
             connections->disconnect();
         }
-
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-        packet_in_progress = false;
-#endif
-        read_context.reset();
 
         /// Make the next read attempt re-establish the connections and re-send the query.
         established = false;

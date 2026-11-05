@@ -478,6 +478,9 @@ private:
     std::unique_ptr<IConnections> createConnectionsFromPool(
         const ConnectionPoolWithFailoverPtr & pool, const ThrottlerPtr & throttler, AsyncCallback async_callback);
 
+    /// `sendQuery` without the retries after network errors.
+    void sendQueryOnce(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {});
+
     ReadResult readImpl();
     ReadResult readAsyncImpl();
 

@@ -1,0 +1,18 @@
+<clickhouse>
+    <profiles>
+        <!-- Stops reading from the connection after receiving a query, before its external tables. -->
+        <slow_reader>
+            <sleep_after_receiving_query_ms>15000</sleep_after_receiving_query_ms>
+        </slow_reader>
+    </profiles>
+    <users>
+        <slow_reader>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>slow_reader</profile>
+            <quota>default</quota>
+        </slow_reader>
+    </users>
+</clickhouse>
