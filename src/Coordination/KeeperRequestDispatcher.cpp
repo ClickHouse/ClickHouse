@@ -69,7 +69,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsMilliseconds session_shutdown_timeout;
     extern const CoordinationSettingsMilliseconds stream_in_flight_drain_timeout_ms;
     extern const CoordinationSettingsMilliseconds stream_suspect_retry_delay_ms;
-    extern const CoordinationSettingsBool use_batched_log_entries;
+    extern const CoordinationSettingsUInt64 write_log_entry_version;
 }
 
 namespace ErrorCodes
@@ -261,7 +261,7 @@ void KeeperRequestDispatcher::shutdownRequests()
             close_batch.requests = std::move(close_requests);
             close_batch.dispatcher_server_id = server->getServerID();
             auto entries = KeeperStateMachine::serializeRequestBatch(
-                close_batch, keeper_context->getCoordinationSettings()[CoordinationSetting::use_batched_log_entries]);
+                close_batch, keeper_context->getCoordinationSettings()[CoordinationSetting::write_log_entry_version]);
 
             temp_stream->append(std::move(entries));
 
@@ -709,7 +709,7 @@ void KeeperRequestDispatcher::dispatchThread()
             size_t max_read_batch_bytes_size = coordination_settings[CoordinationSetting::max_read_batch_bytes_size];
             bool optimize_read_order = coordination_settings[CoordinationSetting::optimize_read_order];
             bool is_exceeding_memory_soft_limit = server->isExceedingMemorySoftLimit();
-            bool use_batched_log_entries = coordination_settings[CoordinationSetting::use_batched_log_entries];
+            uint64_t write_log_entry_version = coordination_settings[CoordinationSetting::write_log_entry_version];
 
             /// Write requests to put in the batch.
             /// (And possibly some read requests that need to go through raft.)
@@ -934,7 +934,7 @@ void KeeperRequestDispatcher::dispatchThread()
                 log_entry_batch.requests = std::move(requests);
                 log_entry_batch.dispatcher_server_id = server->getServerID();
                 auto entries = KeeperStateMachine::serializeRequestBatch(
-                    log_entry_batch, use_batched_log_entries);
+                    log_entry_batch, write_log_entry_version);
 
                 /// Add information about the batch to the queue of in-flight requests.
 

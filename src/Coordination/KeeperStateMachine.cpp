@@ -92,6 +92,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CORRUPTED_DATA;
     extern const int CANNOT_SEEK_THROUGH_FILE;
+    extern const int UNKNOWN_FORMAT_VERSION;
 }
 
 static constexpr uint64_t nuraft_snapshot_sync_req_framing_size = 89;
@@ -1065,11 +1066,14 @@ KeeperRequestBatchPtr KeeperStateMachine::parseRequestInOldFormat(
     return batch;
 }
 
-std::vector<nuraft::ptr<nuraft::buffer>> KeeperStateMachine::serializeRequestBatch(const KeeperRequestBatch & batch, bool use_batched_format)
+std::vector<nuraft::ptr<nuraft::buffer>> KeeperStateMachine::serializeRequestBatch(const KeeperRequestBatch & batch, uint64_t log_entry_version)
 {
     chassert(!batch.requests.empty());
 
-    if (!use_batched_format)
+    if (log_entry_version > MAX_SUPPORTED_LOG_ENTRY_VERSION)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported log entry version {}", log_entry_version);
+
+    if (log_entry_version == 0)
     {
         /// Legacy format: one log entry per request, for compatibility with older servers.
         std::vector<nuraft::ptr<nuraft::buffer>> entries;
@@ -1081,10 +1085,8 @@ std::vector<nuraft::ptr<nuraft::buffer>> KeeperStateMachine::serializeRequestBat
 
     DB::WriteBufferFromNuraftBuffer write_buf;
 
-    writeIntBinary(BATCH_ENTRY_MARKER, write_buf);
-    /// New fields can be added at the end of header, increasing header_size. parseRequestBatch will
-    /// silently skip them. For forward-incompatible changes (while we'll hopefully never need),
-    /// increment BATCH_ENTRY_MARKER to make old parseRequestBatch reject the entry.
+    writeIntBinary(BATCH_ENTRY_MARKER_BASE + static_cast<int64_t>(log_entry_version), write_buf);
+    /// See `BATCH_ENTRY_MARKER_BASE` for the rules of changing this format.
     constexpr uint32_t header_size = BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET
         + sizeof(int64_t) /*first_zxid*/ + sizeof(uint8_t) + sizeof(uint64_t) /*digest*/
         + sizeof(int64_t) /*committed_log_idx*/ + sizeof(int32_t) /*dispatcher_server_id*/
@@ -1152,13 +1154,21 @@ KeeperRequestBatchPtr KeeperStateMachine::parseRequestBatch(
     int64_t marker = 0;
     readIntBinary(marker, buffer);
 
-    if (marker != BATCH_ENTRY_MARKER)
+    if (marker >= BATCH_ENTRY_MARKER_BASE + BATCH_ENTRY_VERSION_RANGE)
     {
         /// Legacy format: the entry is a single request, and `marker` is its session id.
         /// For legacy versions `patched_fields_offset` is the request end position; which
         /// patchable fields follow it is determined by `serialization_version`.
         return parseRequestInOldFormat(data, final, serialization_version, patched_fields_offset);
     }
+
+    const auto batch_version = static_cast<uint64_t>(marker - BATCH_ENTRY_MARKER_BASE);
+    if (batch_version != 1)
+        throw Exception(
+            ErrorCodes::UNKNOWN_FORMAT_VERSION,
+            "Unsupported batch log entry version {} (supported: 1). Upgrade all servers in the cluster "
+            "before increasing `write_log_entry_version`",
+            batch_version);
 
     if (serialization_version)
         *serialization_version = ZooKeeperLogSerializationVersion::REQUEST_BATCH;

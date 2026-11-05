@@ -50,6 +50,12 @@ namespace DB::CoordinationSetting
     extern const CoordinationSettingsUInt64 min_request_size_for_cache;
     extern const CoordinationSettingsInt64 snapshot_zstd_compression_level;
     extern const CoordinationSettingsUInt64 write_snapshot_version;
+    extern const CoordinationSettingsUInt64 write_log_entry_version;
+}
+
+namespace DB::ErrorCodes
+{
+    extern const int UNKNOWN_FORMAT_VERSION;
 }
 
 TEST(CoordinationSettingsValidation, RejectZeroBatchSizes)
@@ -929,7 +935,7 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
     EXPECT_EQ(storage.committed_ephemerals.size(), 0);
 }
 
-/// One Raft log entry carrying several requests (`use_batched_log_entries`), driven through
+/// One Raft log entry carrying several requests (`write_log_entry_version = 1`), driven through
 /// `KeeperStateMachine` the way `KeeperServer` does it. The leader parses the entry, assigns the
 /// zxid range and digest and patches them into the buffer in place (the PreAppendLogLeader
 /// callback), then goes through `pre_commit` and `commit`. A follower runs only `pre_commit` and
@@ -1004,7 +1010,7 @@ TEST_P(CoordinationTest, TestRequestBatchLogEntry)
         KeeperRequestBatch batch;
         batch.requests = std::move(requests);
         batch.dispatcher_server_id = dispatcher_server_id;
-        auto buffers = KeeperStateMachine::serializeRequestBatch(batch, /*use_batched_format=*/true);
+        auto buffers = KeeperStateMachine::serializeRequestBatch(batch, /*log_entry_version=*/1);
         EXPECT_EQ(buffers.size(), 1);
         return buffers.at(0);
     };
@@ -1244,6 +1250,58 @@ TEST_P(CoordinationTest, TestRequestBatchLogEntry)
     EXPECT_EQ(follower->getNodesDigest().value, state_machine->getNodesDigest().value);
 }
 
+
+/// A batch entry with an unknown version is rejected.
+TEST_P(CoordinationTest, TestRequestBatchLogEntryVersion)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<KeeperStateMachine>(
+        [](KeeperResponseForSession) {}, snapshots_queue, this->keeper_context, nullptr);
+    state_machine->init();
+
+    auto create = std::make_shared<ZooKeeperCreateRequest>();
+    create->path = "/a";
+    create->xid = 1;
+    KeeperRequestBatch batch;
+    batch.requests.push_back(KeeperRequestForSession{.session_id = 1, .request = create});
+
+    /// Version 0 is the legacy format: one entry per request. Version 1 is one batch entry.
+    auto legacy_buffers = KeeperStateMachine::serializeRequestBatch(batch, /*log_entry_version=*/0);
+    ASSERT_EQ(legacy_buffers.size(), 1);
+    EXPECT_EQ(state_machine->parseRequestBatch(*legacy_buffers[0], /*final=*/true)->requests.size(), 1);
+
+    auto buffers = KeeperStateMachine::serializeRequestBatch(batch, /*log_entry_version=*/1);
+    ASSERT_EQ(buffers.size(), 1);
+    EXPECT_EQ(state_machine->parseRequestBatch(*buffers[0], /*final=*/true)->requests.size(), 1);
+
+    for (int64_t version : {int64_t{0}, int64_t{2}, KeeperStateMachine::BATCH_ENTRY_VERSION_RANGE - 1})
+    {
+        SCOPED_TRACE(version);
+        auto copy = nuraft::buffer::copy(*buffers[0]);
+        const int64_t marker = KeeperStateMachine::BATCH_ENTRY_MARKER_BASE + version;
+        memcpy(copy->data_begin(), &marker, sizeof(marker));
+        try
+        {
+            state_machine->parseRequestBatch(*copy, /*final=*/true);
+            FAIL() << "Expected an exception";
+        }
+        catch (const DB::Exception & e)
+        {
+            EXPECT_EQ(e.code(), DB::ErrorCodes::UNKNOWN_FORMAT_VERSION);
+        }
+    }
+
+    /// A hot reload with an unsupported write version is rejected.
+    auto bad_settings = std::make_shared<CoordinationSettings>();
+    (*bad_settings)[CoordinationSetting::write_log_entry_version] = MAX_SUPPORTED_LOG_ENTRY_VERSION + 1;
+    EXPECT_THROW(this->keeper_context->updateSettings(bad_settings), DB::Exception);
+}
 
 TEST_P(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecommitted)
 {

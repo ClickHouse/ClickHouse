@@ -65,9 +65,8 @@ public:
     enum ZooKeeperLogSerializationVersion
     {
         /// Versions of the legacy single-request format, sniffed from the buffer length by
-        /// parseRequestInOldFormat. New entries are written in the REQUEST_BATCH format if
-        /// use_batched_log_entries is enabled, otherwise in the legacy format (WITH_ZXID_DIGEST or
-        /// later, depending on use_xid_64 and on whether the request has a tracing context).
+        /// `parseRequestInOldFormat`. New entries use `REQUEST_BATCH` if
+        /// `write_log_entry_version` is at least 1, otherwise the legacy format.
         INITIAL = 0,
         WITH_TIME = 1,
         WITH_ZXID_DIGEST = 2,
@@ -77,15 +76,24 @@ public:
         REQUEST_BATCH = 5,
     };
 
-    /// Batch log entry format. Distinguished from legacy single-request entries by the first
-    /// int64: legacy entries start with a session id, which is never INT64_MIN.
-    static constexpr int64_t BATCH_ENTRY_MARKER = std::numeric_limits<int64_t>::min();
+    /// A batch entry of format version `v` starts with the int64 `BATCH_ENTRY_MARKER_BASE + v`.
+    /// The first `BATCH_ENTRY_VERSION_RANGE` values are reserved for it. Legacy entries start with
+    /// a session id, which is never in this range.
+    ///
+    /// Rules for changing the batch format:
+    /// 1. A field that an older reader may ignore can be appended to the header (skipped via
+    ///    `header_size`) or after a request body (skipped via the request size).
+    /// 2. Any other change needs a new version and a new `write_log_entry_version` value.
+    ///    Older readers throw `UNKNOWN_FORMAT_VERSION`.
+    /// 3. Bytes 0 to 36 keep their layout in all versions, because a leader patches entries
+    ///    serialized by other servers.
+    static constexpr int64_t BATCH_ENTRY_MARKER_BASE = std::numeric_limits<int64_t>::min();
+    static constexpr int64_t BATCH_ENTRY_VERSION_RANGE = 1 << 16;
     static constexpr size_t BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET = sizeof(int64_t) + sizeof(uint32_t);
 
-    /// Serialize the batch into log entry buffers. With use_batched_format the whole batch
-    /// becomes one entry in the batch format; otherwise one entry per request in the legacy
-    /// single-request format (for compatibility with clusters that have older servers).
-    static std::vector<nuraft::ptr<nuraft::buffer>> serializeRequestBatch(const KeeperRequestBatch & batch, bool use_batched_format);
+    /// Serialize the batch according to `write_log_entry_version`.
+    /// 0: one legacy entry per request. 1: one batch entry. Other values throw `LOGICAL_ERROR`.
+    static std::vector<nuraft::ptr<nuraft::buffer>> serializeRequestBatch(const KeeperRequestBatch & batch, uint64_t log_entry_version);
 
     /// Overwrite the leader-assigned fields (zxid, digest, and for batch entries also
     /// committed_log_idx) of a log entry produced by serializeRequestBatch, in either format.

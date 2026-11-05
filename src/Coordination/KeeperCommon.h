@@ -84,6 +84,9 @@ struct KeeperRequestForSession
 };
 using KeeperRequestsForSessions = std::vector<KeeperRequestForSession>;
 
+/// The highest `write_log_entry_version` this server can write and read.
+static constexpr uint64_t MAX_SUPPORTED_LOG_ENTRY_VERSION = 1;
+
 struct KeeperRequestBatch
 {
     KeeperRequestsForSessions requests;

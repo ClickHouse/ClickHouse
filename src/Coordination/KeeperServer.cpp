@@ -115,7 +115,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 slow_member_backpressure_max_uncommitted_log_entries;
     extern const CoordinationSettingsUInt64 nuraft_append_entries_backward_probe_throttle_threshold;
     extern const CoordinationSettingsMilliseconds nuraft_snapshot_sync_ctx_timeout_ms;
-    extern const CoordinationSettingsBool use_batched_log_entries;
+    extern const CoordinationSettingsUInt64 write_log_entry_version;
 }
 
 namespace ErrorCodes
@@ -933,7 +933,7 @@ RaftAppendResult KeeperServer::putRequestBatch(const KeeperRequestsForSessions &
 {
     KeeperRequestBatch batch;
     batch.requests = requests_for_sessions;
-    auto entries = KeeperStateMachine::serializeRequestBatch(batch, keeper_context->getCoordinationSettings()[CoordinationSetting::use_batched_log_entries]);
+    auto entries = KeeperStateMachine::serializeRequestBatch(batch, keeper_context->getCoordinationSettings()[CoordinationSetting::write_log_entry_version]);
 
     return raft_instance->append_entries(entries);
 }

@@ -144,6 +144,7 @@ private:
     /// and on hot reload, so that SYSTEM RELOAD CONFIG cannot put Keeper into a
     /// configuration that would be rejected on startup.
     void validateWriteSnapshotVersion(const CoordinationSettings & settings) const;
+    void validateWriteLogEntryVersion(const CoordinationSettings & settings) const;
 
     Storage getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
