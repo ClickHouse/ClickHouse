@@ -117,10 +117,11 @@ public:
         /// Bound the number of nested states directly in that case; chains without a zero-sized
         /// -Resample state remain bounded by `sizeOfData` / `max_state_size` alone.
         const auto check_nested_resamples = [&](const auto & self, const AggregateFunctionPtr & nested,
-                                                size_t parent_elements, bool has_zero_sized_resample) -> void
+                                                size_t parent_elements, bool parent_elements_overflow,
+                                                bool has_zero_sized_resample) -> void
         {
             size_t nested_elements = parent_elements;
-            bool nested_elements_overflow = false;
+            bool nested_elements_overflow = parent_elements_overflow;
 
             if (const auto * resample = dynamic_cast<const AggregateFunctionResample<UInt64> *>(nested.get()))
             {
@@ -141,11 +142,11 @@ public:
             nested->forEachNestedFunction(
                 [&](const AggregateFunctionPtr & child)
                 {
-                    self(self, child, nested_elements, has_zero_sized_resample);
+                    self(self, child, nested_elements, nested_elements_overflow, has_zero_sized_resample);
                 });
         };
 
-        check_nested_resamples(check_nested_resamples, nested_function, total, size_of_data == 0);
+        check_nested_resamples(check_nested_resamples, nested_function, total, false, size_of_data == 0);
     }
 
     String getName() const override
