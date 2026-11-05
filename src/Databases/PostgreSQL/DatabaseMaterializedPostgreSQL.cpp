@@ -49,7 +49,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 postgresql_connection_attempt_timeout;
-    extern const SettingsBool allow_experimental_database_materialized_postgresql;
+    extern const SettingsBool enable_database_materialized_postgresql;
 }
 
 namespace MaterializedPostgreSQLSetting
@@ -2034,10 +2034,10 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         /// fresh user input below (an internal metadata replay and the short `ATTACH DATABASE name`
         /// syntax stay exempt).
         if (args.create_query.attach && !is_internal_metadata_replay && !args.create_query.attach_short_syntax
-            && !args.context->getSettingsRef()[Setting::allow_experimental_database_materialized_postgresql])
+            && !args.context->getSettingsRef()[Setting::enable_database_materialized_postgresql])
             throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
                             "MaterializedPostgreSQL is an experimental database engine. "
-                            "Enable allow_experimental_database_materialized_postgresql to use it");
+                            "Enable setting `enable_database_materialized_postgresql` to use it");
 
         /// A named collection may specify the endpoint as `addresses_expr`, which fills only
         /// `configuration.addresses` and leaves `host` / `port` empty, while the connection string

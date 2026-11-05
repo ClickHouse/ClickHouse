@@ -769,7 +769,7 @@ def test_rename_database_and_truncate_all_tables_are_rejected_in_coordinated_mod
             f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
             f"materialized_postgresql_keeper_path = '/clickhouse/mat_pg/{{shard}}/rename_single_table', "
             f"materialized_postgresql_replica_name = '{{replica}}'",
-            settings={"allow_experimental_materialized_postgresql_table": 1},
+            settings={"enable_materialized_postgresql_table": 1},
         )
         assert_eq_with_retry(
             instance, "SELECT count() FROM rename_source_database.test_single_table", "20"
@@ -1747,7 +1747,7 @@ def test_refused_drop_after_handler_shutdown_recovers_single_table_engine(starte
         f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
         f"materialized_postgresql_keeper_path = '{single_table_keeper_path}', "
         f"materialized_postgresql_replica_name = '{{replica}}'",
-        settings={"allow_experimental_materialized_postgresql_table": 1},
+        settings={"enable_materialized_postgresql_table": 1},
     )
 
     def wait_for_count(expected, timeout=90):
@@ -1809,7 +1809,7 @@ def test_single_table_engine_cannot_move_to_another_database(started_cluster):
         f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
         f"materialized_postgresql_keeper_path = '/clickhouse/mat_pg/{{shard}}/{{database}}/single_table', "
         f"materialized_postgresql_replica_name = '{{replica}}'",
-        settings={"allow_experimental_materialized_postgresql_table": 1},
+        settings={"enable_materialized_postgresql_table": 1},
     )
     instance.query("CREATE TABLE other_database.other_table (x UInt64) ENGINE = MergeTree ORDER BY x")
 
@@ -1916,7 +1916,7 @@ def test_refused_drop_when_nested_table_drop_fails_recovers_single_table_engine(
         f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
         f"materialized_postgresql_keeper_path = '{single_table_keeper_path}', "
         f"materialized_postgresql_replica_name = '{{replica}}'",
-        settings={"allow_experimental_materialized_postgresql_table": 1},
+        settings={"enable_materialized_postgresql_table": 1},
     )
 
     def wait_for_count(expected, timeout=90):
@@ -2098,7 +2098,7 @@ def test_single_table_engine_cannot_join_database_engine_keeper_path(started_clu
             f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
             f"materialized_postgresql_keeper_path = '{identity_keeper_path}', "
             f"materialized_postgresql_replica_name = '{{replica}}'",
-            settings={"allow_experimental_materialized_postgresql_table": 1},
+            settings={"enable_materialized_postgresql_table": 1},
         )
         assert "source identity" in error
         assert (
@@ -3619,7 +3619,7 @@ def test_single_table_drop_after_coordination_identity_change_tears_down_origina
         f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
         f"materialized_postgresql_keeper_path = '/clickhouse/mat_pg/{{shard}}/single_table_identity', "
         f"materialized_postgresql_replica_name = '{{coord_replica}}'",
-        settings={"allow_experimental_materialized_postgresql_table": 1},
+        settings={"enable_materialized_postgresql_table": 1},
     )
     try:
         for _ in range(90):
@@ -3860,7 +3860,7 @@ def test_single_table_publication_recreated_after_external_drop(started_cluster)
         f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
         f"materialized_postgresql_keeper_path = '{keeper_path}', "
         f"materialized_postgresql_replica_name = '{{replica}}'",
-        settings={"allow_experimental_materialized_postgresql_table": 1},
+        settings={"enable_materialized_postgresql_table": 1},
     )
 
     def wait_for_count(expected, timeout=90):
@@ -3943,7 +3943,7 @@ def test_single_table_refuses_adopted_publication_with_other_tables(started_clus
         f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
         f"materialized_postgresql_keeper_path = '{keeper_path}', "
         f"materialized_postgresql_replica_name = '{{replica}}'",
-        settings={"allow_experimental_materialized_postgresql_table": 1},
+        settings={"enable_materialized_postgresql_table": 1},
     )
 
     def wait_for_count(expected, timeout=90):
@@ -4099,7 +4099,7 @@ def test_failed_single_table_snapshot_releases_leadership(started_cluster):
             f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
             f"materialized_postgresql_keeper_path = '{keeper_path}', "
             f"materialized_postgresql_replica_name = '{{replica}}'",
-            settings={"allow_experimental_materialized_postgresql_table": 1},
+            settings={"enable_materialized_postgresql_table": 1},
         )
 
     def wait_for_count(node, expected, timeout=120):
@@ -4444,7 +4444,7 @@ def test_full_attach_table_definition_is_validated(started_cluster):
         f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'test_table', 'postgres', '{pg_pass}') "
         f"PRIMARY KEY key "
         f"SETTINGS materialized_postgresql_keeper_path = '{KEEPER_PATH}'",
-        settings={"allow_experimental_materialized_postgresql_table": 1},
+        settings={"enable_materialized_postgresql_table": 1},
     )
     assert "ReplicatedReplacingMergeTree" in error
     assert "test_attach_table_full_def" not in instance.query("SHOW TABLES").split()
@@ -4460,7 +4460,7 @@ def test_full_attach_database_definition_requires_experimental_setting(started_c
         f"UUID '11111111-2222-3333-4444-777777777777' "
         f"ENGINE = MaterializedPostgreSQL("
         f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'postgres', '{pg_pass}')",
-        settings={"allow_experimental_database_materialized_postgresql": 0},
+        settings={"enable_database_materialized_postgresql": 0},
     )
     assert "experimental database engine" in error, error
     assert "test_attach_experimental" not in instance.query("SHOW DATABASES").split()
@@ -4475,7 +4475,7 @@ def test_full_attach_table_definition_requires_experimental_setting(started_clus
         f"ENGINE = MaterializedPostgreSQL("
         f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'test_table', 'postgres', '{pg_pass}') "
         f"PRIMARY KEY key",
-        settings={"allow_experimental_materialized_postgresql_table": 0},
+        settings={"enable_materialized_postgresql_table": 0},
     )
     assert "experimental table engine" in error, error
     assert (

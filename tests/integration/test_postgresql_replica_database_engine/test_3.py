@@ -1647,7 +1647,7 @@ def test_attach_table_with_extended_date_and_time_types_setting_rejected(started
     table = "test_date_types_table_engine_attach"
     error = instance.query_and_get_error(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         ATTACH TABLE {table} UUID '00000000-0000-0000-0000-000000001234' (key Int32, d Date)
         ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         ORDER BY key
@@ -3441,7 +3441,7 @@ def test_plain_single_table_engine_refused_drop_recovers(started_cluster):
     )
     instance.query(
         f"""
-        SET allow_experimental_materialized_postgresql_table=1;
+        SET enable_materialized_postgresql_table=1;
         CREATE TABLE {table} (key Int64, value Int64)
         ENGINE = MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
         PRIMARY KEY key
