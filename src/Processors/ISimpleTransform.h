@@ -21,6 +21,7 @@ protected:
     bool has_input = false;
     bool has_output = false;
     bool no_more_data_needed = false;
+    bool drop_output = false;
     const bool skip_empty_chunks;
 
     /// Set input port NotNeeded after chunk was pulled.
@@ -36,6 +37,10 @@ protected:
 
     virtual bool needInputData() const { return true; }
     void stopReading() { no_more_data_needed = true; }
+
+    /// Push nothing for the current input chunk, regardless of `skip_empty_chunks`.
+    /// Called from `transform`.
+    void dropOutput() { drop_output = true; }
 
 public:
     ISimpleTransform(Block input_header_, Block output_header_, bool skip_empty_chunks_);

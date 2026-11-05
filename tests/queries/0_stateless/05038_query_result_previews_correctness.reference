@@ -1,0 +1,86 @@
+-- aggregation without keys
+1000000	499999500000	999999
+-- aggregation with a numeric key
+0	100000
+1	100000
+2	100000
+3	100000
+4	100000
+5	100000
+6	100000
+7	100000
+8	100000
+9	100000
+-- aggregation with a string key and a stateful aggregate function
+0	1000
+1	1000
+2	1000
+-- aggregation with a nullable key
+0	333334
+1	333333
+\N	333333
+-- HAVING, LIMIT, and OFFSET apply to previews and to the result alike
+5	100000
+6	100000
+7	100000
+8	100000
+-- LIMIT WITH TIES
+5
+-- sorting with a limit
+2808
+3237
+3274
+-- aggregation followed by sorting with a limit
+999	1000
+998	1000
+997	1000
+-- states above the thresholds stop previews but not the query
+0
+1
+2
+-- DISTINCT applies to previews standalone
+0
+1
+2
+0
+1
+2
+100000
+-- window functions apply to previews standalone
+0	250000	██████████
+1	250000	██████████
+2	250000	██████████
+3	250000	██████████
+0	1
+1	1
+-- shapes for which previews are not emitted
+0	50000
+1	50000
+
+0	100000
+0	50000
+0	100000
+1	50000
+-- an aggregation feeding another consumer stays dormant
+5
+-- UNION of two aggregations
+1000000
+-- distributed query (previews are disabled for the remote parts)
+0	200000
+1	200000
+2	200000
+3	200000
+4	200000
+-- INSERT SELECT keeps preview emitters dormant
+10	1000000
+-- max_result_rows is not tripped by preview rows
+0	100000
+1	100000
+2	100000
+3	100000
+4	100000
+5	100000
+6	100000
+7	100000
+8	100000
+9	100000

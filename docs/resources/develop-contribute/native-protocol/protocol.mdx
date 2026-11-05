@@ -185,6 +185,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | UNIQ_STATE_VERSION_1 | 54493 | Block (Column) | Bumps the state version of `AggregateFunction(uniq, ...)` from `0` to `1`. A version `1` state starts with a flags byte, followed by the main sample in the version-`0` layout; when bit `0` of the flags is set, an additional small sample of full 64-bit hashes, each XOR-ed with the constant `0x9E3779B97F4A0000`, follows (`UInt8 skip_degree`, `VarUInt count`, then `count` 8-byte values) — it is thinned out to at most 16384 values and keeps the estimate accurate at cardinalities above two billion, where the 32-bit main sample degrades and used to overflow into garbage. Bit `1` marks the 64-bit sample as incomplete (the state has absorbed a version `0` state, whose elements the 64-bit sample never saw): no such sample is written, and the estimate comes from the 32-bit main sample alone. The two bits are mutually exclusive and no other bit is defined; a reader must reject a flags byte that sets both or any other bit. Only the state payload of that one aggregate function changes; the column framing is untouched, and every other aggregate function keeps its own version. Pass-through combinators over `uniq` (`uniqIf`, `uniqArray`, `uniqForEach`, `uniqMap`, `uniqArgMin` / `uniqArgMax`, `uniqOrNull` / `uniqOrDefault`, `uniqResample`, and the implicit `Nullable`-argument adaptor) follow the same gate and forward the version to the nested `uniq` states inside their payloads. Below this revision the writer emits version `0` states (the main sample only), so an older peer is unaffected. |
 | MERGE_COMBINATOR_STATE_VERSION | 54494 | Block (Column) | The state of a `-Merge` function itself (not the states it merges) takes the state version of the merged function at the negotiated revision, and the outer `AggregateFunction` announces it. For example, for a distributed `quantileDeterministicMerge(state)` a shard sends `AggregateFunction(1, quantileDeterministicMerge, AggregateFunction(1, quantileDeterministic, UInt64, UInt64))`, and the payload has the trailing `skip_degree`. Below this revision the outer version is `0`: the type string is `AggregateFunction(quantileDeterministicMerge, AggregateFunction(1, quantileDeterministic, UInt64, UInt64))` and the payload has no `skip_degree`, which is what older releases send and expect. The payload always follows the outer version, never the version inside the argument type. Only the state payload changes; the column framing is untouched. |
 | INSERT_RETURNING | 54495 | Data (INSERT) | For `INSERT ... RETURNING (SELECT ...)` with the rows sent in `Data` packets, the server sends the result of the `RETURNING` query while it is still reading the rows: `Data` packets (the first one is the header of the result, with 0 rows), `Totals`, `Extremes`, `ProfileInfo`, and `Progress`, interleaved with the client's row stream and before `EndOfStream`. See the [INSERT phase](#insert-phase). Below this revision the server rejects such a query with an `Exception` (`NOT_IMPLEMENTED`) instead of sending the schema block, so an older client never sees the new packets. |
+| QUERY_RESULT_PREVIEWS           | 54496   | PreviewData            | Adds the [`PreviewData`](#previewdata) server packet (type 19), carrying real-time previews of the query result. Sent only when the experimental `query_result_previews` setting is enabled; the server force-disables the setting for clients below this revision, so an older client never sees the packet. |
 
 ## Packet envelope {#packet-envelope}
 
@@ -759,6 +760,16 @@ Server → Client. Sent when the `extremes` setting is enabled. Wire format is i
 [Block]                     num_rows = 2
 ```
 
+### PreviewData (packet type 19) {#previewdata}
+
+Server → Client, gated by `QUERY_RESULT_PREVIEWS` (v54496). Sent only when the experimental `query_result_previews` setting is enabled: while a long-running aggregation or sorting is accumulating, the server periodically emits a small snapshot of the intermediate result, processed by the rest of the query pipeline like ordinary data. Wire format is identical to [Data](#data); the block has the same structure as the result blocks. Each preview fully replaces the previous one, and previews stop before the first row-bearing `Data` packet of the real result. Previews are best effort: a client is free to ignore the packet (after consuming its body), and must never count preview rows as part of the result.
+
+```text
+[VarUInt: 19]               packet type
+[String:  table_name]       always empty
+[Block]                     see the Native Format spec
+```
+
 ### Log (packet type 10) {#log}
 
 Server → Client. Sent when the query has an active logs queue (the `send_logs_level` setting; see [log streaming](#log-streaming)).
@@ -991,6 +1002,7 @@ Below version `8` the announcement is fire-and-forget regardless of mode, and th
 | 16   | MergeTreeReadTaskRequest       | not specified       | Parallel read task assignment |
 | 17   | TimezoneUpdate                 | [TimezoneUpdate](#timezoneupdate) | Server timezone update |
 | 18   | SSHChallenge                   | [SSH auth](#ssh-authentication) | SSH auth challenge |
+| 19   | PreviewData                    | [PreviewData](#previewdata) | Real-time preview of the query result |
 
 ### QueryPlan {#queryplan}
 

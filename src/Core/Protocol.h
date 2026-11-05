@@ -97,7 +97,8 @@ namespace Protocol
             MergeTreeReadTaskRequest = 16,  /// Request from a MergeTree replica to a coordinator
             TimezoneUpdate = 17,            /// Receive server's (session-wide) default timezone
             SSHChallenge = 18,              /// Return challenge for SSH signature signing
-            MAX = SSHChallenge,
+            PreviewData = 19,               /// A block with a real-time preview of the query result (compressed or not).
+            MAX = PreviewData,
 
         };
 

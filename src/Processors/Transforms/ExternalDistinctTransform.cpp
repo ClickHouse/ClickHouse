@@ -7,6 +7,8 @@
 #include <Interpreters/Squashing.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/Merges/DistinctSortedTransform.h>
+#include <Processors/QueryResultPreview.h>
+#include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/Transforms/BufferingFileTransforms.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
@@ -75,6 +77,7 @@ ExternalDistinctTransform::ExternalDistinctTransform(
     : IProcessor({header_}, {header_})
     , set_memory(shared_set_bytes_)
     , state(std::in_place_type<Hashing>, *header_, columns_, set_size_limits_)
+    , key_columns_positions(std::get<Hashing>(state).set.getKeyColumnsPositions())
     , limit_hint(limit_hint_)
     , set_size_limits(set_size_limits_)
     , max_bytes_before_external_distinct(max_bytes_before_external_distinct_)
@@ -466,8 +469,24 @@ void ExternalDistinctTransform::work()
     }, state);
 }
 
+bool ExternalDistinctTransform::consumeQueryResultPreview()
+{
+    if (!isQueryResultPreview(input_chunk))
+        return false;
+
+    /// `prepareInput` pushes the pending result before pulling the next input.
+    chassert(!output_chunk);
+    output_chunk = std::move(input_chunk);
+    /// An empty preview is forwarded too: it tells the client to clear the previous one.
+    deduplicateChunkForQueryResultPreview(output_chunk, key_columns_positions);
+    return true;
+}
+
 void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
 {
+    if (consumeQueryResultPreview())
+        return;
+
     if (unlikely(!input_chunk.hasRows()))
     {
         /// A rowless chunk with a `ChunkInfo` is a marker for the consumer (e.g. a watermark of a streaming
@@ -779,6 +798,9 @@ void ExternalDistinctTransform::flushSortingUnit(CollectingInput & collecting)
 
 void ExternalDistinctTransform::collectInput(CollectingInput & collecting)
 {
+    if (consumeQueryResultPreview())
+        return;
+
     auto chunk = std::move(input_chunk);
     /// Rowless marker chunks are dropped here: after spilling, the rows are emitted only once the input
     /// ends, so a forwarded marker (e.g. a watermark) would overtake the rows that arrived before it.
