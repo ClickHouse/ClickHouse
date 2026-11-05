@@ -15,6 +15,8 @@
 namespace DB
 {
 
+struct Settings;
+
 /** Measures the on-disk size of a column as `MergeTreeDataPartWriterWide` writes a column of a wide part: one compressed
   * stream per substream, the codec of the column for its data substreams and only its generic codecs for the structural ones
   * (null map, array sizes, dictionary indexes), the serialization settings of the writer, and the rows written one granule
@@ -23,16 +25,24 @@ namespace DB
 class CompressedColumnSizeEstimator
 {
 public:
-    /// What the writer takes from the settings of the table and of the query.
+    /// What the writer takes from the MergeTree settings of the table and from the settings of the query.
     struct WriterSettings
     {
-        SerializationInfoSettings serialization_info = SerializationInfoSettings::enableAllSupportedSerializations();
+        static constexpr size_t MAX_COMPRESS_BLOCK_SIZE = 256ULL * 1024 * 1024;
+
+        /// The settings of the serialization infos of a part: the versions of the serializations of `String`, `Nullable` and `Map`.
+        SerializationInfoSettings serialization_info;
         /// As `MergeTreeDataPartWriterWide::getSerializationSettings`, without the stream getter.
         ISerialization::SerializeBinaryBulkSettings bulk;
         size_t index_granularity = 8192;
         size_t index_granularity_bytes = 10 * 1024 * 1024;
         size_t min_compress_block_size = DBMS_DEFAULT_BUFFER_SIZE;
         size_t max_compress_block_size = DBMS_DEFAULT_BUFFER_SIZE;
+
+        /// The settings of a merged wide part of a table with the server's MergeTree settings (the `merge_tree` section of the
+        /// configuration, read from the context of the query, else from the global one) and with the settings of the query when
+        /// they are known. The settings of a particular table stay unknown.
+        static WriterSettings fromServer(const Settings * query_settings);
     };
 
     struct Sizes

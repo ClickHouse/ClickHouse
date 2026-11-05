@@ -5,13 +5,13 @@
 #include <AggregateFunctions/CompressedColumnSizeEstimator.h>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/Defines.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -21,7 +21,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/ISerialization.h>
-#include <Formats/MarkInCompressedFile.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 #include <IO/ReadBuffer.h>
@@ -30,7 +29,6 @@
 #include <IO/WriteHelpers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <base/defines.h>
 #include <base/types.h>
 #include <Common/Arena.h>
@@ -42,12 +40,6 @@
 namespace DB
 {
 struct Settings;
-
-namespace Setting
-{
-    extern const SettingsUInt64 low_cardinality_max_dictionary_size;
-    extern const SettingsBool low_cardinality_use_single_dictionary_for_part;
-}
 
 namespace ErrorCodes
 {
@@ -117,14 +109,13 @@ struct Conversion
     ExecutableFunctionPtr prepared;
 };
 
-/// The parameters of the function, and the settings the MergeTree writer takes from the query.
+/// The parameters of the function, and the settings of the server and of the query the writer would use.
 struct EstimateCompressionRatioConfig
 {
     std::optional<String> codec;
     std::optional<UInt64> block_size_bytes;
     DataTypePtr target_type;
-    size_t low_cardinality_max_dictionary_size = 8192;
-    bool low_cardinality_use_single_dictionary_for_part = false;
+    CompressedColumnSizeEstimator::WriterSettings writer_settings;
 };
 
 class AggregateFunctionEstimateCompressionRatio final
@@ -149,9 +140,11 @@ private:
     const CompressionCodecPtr default_codec;
     /// The `codec` parameter, or the default codec, as the `CODEC` clause of a column.
     const ASTPtr codec_description;
-    const size_t block_size_bytes;
     /// Writes the rows as the MergeTree writer would; building it validates the codec against the estimated type.
     const CompressedColumnSizeEstimator estimator;
+    /// Whether a sparse column is written as such with the server's serialization versions (`Nullable` only with
+    /// `nullable_serialization_version = 'allow_sparse'`). Otherwise a table stores it dense, and so is it measured.
+    const bool sparse_allowed;
 
     static ASTPtr parseCodecDescription(const String & codec)
     {
@@ -172,20 +165,22 @@ private:
         return conversion;
     }
 
-    /// As `MergeTreeDataPartWriterWide::getSerializationSettings`, with the parameters of the function.
-    CompressedColumnSizeEstimator::WriterSettings makeWriterSettings() const
+    /// The settings of the writer, with `block_size_bytes` as both the smallest and the largest size of a compressed block.
+    static CompressedColumnSizeEstimator::WriterSettings writerSettings(const EstimateCompressionRatioConfig & config)
     {
-        CompressedColumnSizeEstimator::WriterSettings settings;
-        settings.bulk.data_part_type = MergeTreeDataPartType::Wide;
-        settings.bulk.low_cardinality_max_dictionary_size = config.low_cardinality_max_dictionary_size;
-        settings.bulk.low_cardinality_use_single_dictionary_for_part = config.low_cardinality_use_single_dictionary_for_part;
-        settings.bulk.write_statistics = ISerialization::SerializeBinaryBulkSettings::StatisticsMode::SUFFIX;
-        /// The serializations that end compressed blocks themselves (the shared data of `JSON`) do so from this size on.
-        settings.bulk.min_compress_block_size = block_size_bytes;
-        settings.bulk.stream_mark_getter = [](const ISerialization::SubstreamPath &) { return MarkInCompressedFile(); };
-        settings.min_compress_block_size = block_size_bytes;
-        settings.max_compress_block_size = block_size_bytes;
+        auto settings = config.writer_settings;
+        if (config.block_size_bytes)
+        {
+            settings.min_compress_block_size = *config.block_size_bytes;
+            settings.max_compress_block_size = *config.block_size_bytes;
+            settings.bulk.min_compress_block_size = *config.block_size_bytes;
+        }
         return settings;
+    }
+
+    static bool allowsSparse(const CompressedColumnSizeEstimator::WriterSettings & settings, const IDataType & type)
+    {
+        return settings.serialization_info.canUseSparseSerialization(type);
     }
 
     /// Starts a run for `column` (and for `source`, the same rows in the type of the column, with a target type).
@@ -391,6 +386,13 @@ private:
             }
         }
 
+        if (rows->isSparse() && !sparse_allowed)
+        {
+            ColumnPtr dense = recursiveRemoveSparse(rows->getPtr());
+            filtered = std::move(dense);
+            rows = filtered.get();
+        }
+
         addRows(data(place), *rows, offset, limit);
     }
 
@@ -407,8 +409,9 @@ public:
         , write_whole_granules(!isSplitIndependent(*represented_type) || !isSplitIndependent(*estimated_type))
         , default_codec(CompressionCodecFactory::instance().getDefaultCodec())
         , codec_description(config.codec ? parseCodecDescription(*config.codec) : default_codec->getFullCodecDescription())
-        , block_size_bytes(config.block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE))
-        , estimator(estimated_type, codec_description, default_codec, makeWriterSettings())
+        , estimator(estimated_type, codec_description, default_codec, writerSettings(config))
+        , sparse_allowed(
+              allowsSparse(estimator.getSettings(), *estimated_type) && (!target_type || allowsSparse(estimator.getSettings(), *represented_type)))
     {
     }
 
@@ -553,8 +556,8 @@ static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
             if (new_block_size_bytes == 0)
                 throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "block_size_bytes should be greater than 0");
 
-            /// Limit to 256 MiB to prevent absurd memory allocations from fuzzed queries
-            static constexpr UInt64 max_block_size_bytes = 256 * 1024 * 1024;
+            /// The limit of the writer too; it prevents absurd memory allocations from fuzzed queries.
+            static constexpr UInt64 max_block_size_bytes = CompressedColumnSizeEstimator::WriterSettings::MAX_COMPRESS_BLOCK_SIZE;
             if (new_block_size_bytes > max_block_size_bytes)
                 throw Exception(
                     ErrorCodes::BAD_QUERY_PARAMETER,
@@ -572,12 +575,8 @@ static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
         }
     }
 
-    /// Without a query (a type being parsed) the writer's defaults apply.
-    if (settings)
-    {
-        config.low_cardinality_max_dictionary_size = (*settings)[Setting::low_cardinality_max_dictionary_size];
-        config.low_cardinality_use_single_dictionary_for_part = (*settings)[Setting::low_cardinality_use_single_dictionary_for_part];
-    }
+    /// Without a query (a type being parsed) the defaults of the query settings apply.
+    config.writer_settings = CompressedColumnSizeEstimator::WriterSettings::fromServer(settings);
 
     return std::make_shared<AggregateFunctionEstimateCompressionRatio>(arguments, parameters, std::move(config));
 }
