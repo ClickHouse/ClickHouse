@@ -112,6 +112,8 @@ struct ProjectionPartData
     size_t stored_row_bytes_most = 0;
     /// the writer can choose the other part format too: the part records neither the parts of a merge nor the settings of an insert
     bool both_formats = false;
+    /// the writer chooses a wide part, the synthetic parts are compact in any case
+    bool wide = false;
     /// for a merged wide part under a constant granularity: the most marks of its layouts, if a granule size between them has no layout
     size_t marks_between_layouts = 0;
     /// for a sample of a projection that drops rows: the rows that the projection keeps of each granule read
@@ -792,6 +794,7 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     const auto part_type
         = merge_tree.choosePartFormat(whole_part.formatBytes(), whole_part.rows, parent_part->info.level, &projection).part_type;
     auto [layouts, primary] = layouts_of(part_type);
+    data.wide = part_type == MergeTreeDataPartType::Wide;
     if (data.both_formats)
         std::ranges::move(
             layouts_of(part_type == MergeTreeDataPartType::Wide ? MergeTreeDataPartType::Compact : MergeTreeDataPartType::Wide).first,
@@ -1040,7 +1043,7 @@ bool buildScenarios(
             : part_data.rows;
         const auto [parts, primary]
             = buildSyntheticProjectionParts(part_data, projection, data, part, mt_settings, uneven_rows, part_rows);
-        if (uneven_rows && !(widest_fits && parts[primary]->getType() == MergeTreeDataPartType::Wide))
+        if (uneven_rows && !(widest_fits && part_data.wide && !part_data.both_formats))
             ++out.uneven_width_parts;
         out.scenarios[0]->parts[part->name] = parts[primary];
         /// without a filter every layout reads all its marks, so the layouts bound the marks of a granule size between them
