@@ -147,6 +147,18 @@ SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & des
     return prefix;
 }
 
+bool sortDescriptionIsAllConstant(const SortDescription & description, const Block & header)
+{
+    for (const auto & column_description : description)
+    {
+        const auto * column = header.findByName(column_description.column_name);
+        if (!column || !column->column || !isColumnConst(*column->column))
+            return false;
+    }
+
+    return true;
+}
+
 #if USE_EMBEDDED_COMPILER
 
 namespace

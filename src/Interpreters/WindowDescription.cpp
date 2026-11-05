@@ -28,6 +28,22 @@ std::string WindowFunctionDescription::dump() const
     return ss.str();
 }
 
+GeneralWindowFunctionPtr asGeneralWindowFunction(const AggregateFunctionPtr & aggregate_function)
+{
+    const auto * shell = dynamic_cast<const WindowFunction *>(aggregate_function.get());
+    return shell ? shell->getDefinition() : nullptr;
+}
+
+void validateWindowFunctions(const WindowDescription & window)
+{
+    for (const auto & function : window.window_functions)
+    {
+        const auto general = asGeneralWindowFunction(function.aggregate_function);
+        if (general && general->getRequirements(window).order_by && window.order_by.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window function '{}' requires ORDER BY in its window definition", general->getName());
+    }
+}
+
 std::string WindowDescription::dump() const
 {
     WriteBufferFromOwnString ss;
