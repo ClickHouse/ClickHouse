@@ -637,7 +637,8 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
 
     bool keep_non_zero_level = storage.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
     part->info.level = (keep_non_zero_level && part->info.level > 0) ? 1 : 0;
-    part->info.mutation = 0;
+    /// Merges and mutations read the version of a patch part from its name, readers from its index.
+    part->info.mutation = part->info.isPatch() ? part->getPatchPartIndex().getMaxDataVersion() : 0;
     part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
     std::vector<DeduplicationHash> deduplication_hashes;
     if (deduplicate && deduplicate_part)

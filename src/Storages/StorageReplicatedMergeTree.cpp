@@ -10463,6 +10463,12 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     String part_name = literal->value.safeGet<String>();
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
+    if (part_info.isPatch())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot move patch part {} to another shard, its data versions are allocated from the block numbers of this table. "
+            "Apply it with `ALTER TABLE ... APPLY PATCHES IN PARTITION ID '{}'` and move the patched part instead",
+            part_name, getOriginalPartitionIdOfPatch(part_info.getPartitionId()));
+
     auto part = getPartIfExists(part_info, {MergeTreeDataPartState::Active});
     if (!part)
         throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} not found locally", part_name);
