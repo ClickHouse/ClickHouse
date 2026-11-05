@@ -1,0 +1,42 @@
+phase1_python_branch
+default_count
+3
+ref_b_count
+1
+ref_main_count
+3
+unknown_ref
+BAD_ARGUMENTS
+ref_and_snapshot_id
+BAD_ARGUMENTS
+ref_and_timestamp
+BAD_ARGUMENTS
+phase2_create_drop
+create_branch
+probe	branch	0
+create_tag
+v1	tag	0
+main_after_insert
+3
+branch_after_insert
+2
+tag_after_insert
+2
+if_not_exists
+probe	branch	1
+duplicate_ref
+BAD_ARGUMENTS
+drop_main
+BAD_ARGUMENTS
+insert_with_ref
+BAD_ARGUMENTS
+execute_without_gate
+SUPPORT_IS_DISABLED
+drop_probe
+probe	branch	0
+read_dropped
+BAD_ARGUMENTS
+if_exists
+probe		1
+drop_missing
+BAD_ARGUMENTS

@@ -92,6 +92,20 @@ public:
         const std::vector<Int64> & snapshot_ids,
         const std::vector<String> & ref_names) const override;
 
+    Poco::JSON::Object::Ptr setSnapshotRef(
+        const String & namespace_name,
+        const String & table_name,
+        Poco::JSON::Object::Ptr base_metadata,
+        const String & ref_name,
+        const String & type,
+        Int64 snapshot_id) const override;
+
+    Poco::JSON::Object::Ptr removeSnapshotRef(
+        const String & namespace_name,
+        const String & table_name,
+        Poco::JSON::Object::Ptr base_metadata,
+        const String & ref_name) const override;
+
     bool isTransactional() const override { return true; }
 
     /// The Iceberg REST spec makes the server write the metadata file on create.
