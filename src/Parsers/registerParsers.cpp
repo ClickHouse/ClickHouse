@@ -24,7 +24,7 @@
 #include <Parsers/ParserDescribeTableQuery.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserExplainQuery.h>
-#include <Parsers/ParserHypotheticalObjectQuery.h>
+#include <Parsers/WhatIf/ParserHypotheticalObjectQuery.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserKillQueryQuery.h>
 #include <Parsers/ParserOnCluster.h>

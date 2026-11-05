@@ -65,6 +65,31 @@ struct DataFileEntryLineage
     std::optional<Int64> file_sequence_number;
 };
 
+/// The manifest-list `partitions` field summary of one manifest, accumulated over the partition tuples of its entries.
+class ManifestPartitionSummary
+{
+public:
+    struct FieldSummary
+    {
+        DataTypePtr type;
+        bool contains_null = false;
+        bool contains_nan = false;
+        /// A value whose type has no Iceberg single-value serialization was seen, so no bounds can be published.
+        bool bounds_unavailable = false;
+        std::optional<Field> lower_bound;
+        std::optional<Field> upper_bound;
+    };
+
+    explicit ManifestPartitionSummary(const DataTypes & partition_types);
+
+    void add(const Row & partition_value);
+
+    const std::vector<FieldSummary> & getFields() const { return fields; }
+
+private:
+    std::vector<FieldSummary> fields;
+};
+
 Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata);
 
 /// Whether `generateManifestFile` can write the partition value. Manifests written by other engines can hold values it cannot.
@@ -73,7 +98,8 @@ bool canWritePartitionValue(const Field & value);
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
-    const std::vector<Field> & partition_values,
+    /// One partition tuple per data file, parallel to `data_file_names`.
+    const std::vector<Row> & per_file_partition_values,
     const DataTypes & partition_types,
     const std::vector<Iceberg::IcebergPathFromMetadata> & data_file_names,
     const std::vector<UInt64> & data_file_row_counts,
@@ -104,30 +130,7 @@ void generateManifestFile(
     Poco::JSON::Object::Ptr schema_to_serialize = nullptr,
     /// Optional freshly-computed per-file statistics parallel to `data_file_names`; when set each entry's stats
     /// describe only its own data file, else the shared `data_file_statistics` is used for every entry.
-    const std::vector<const DataFileStatistics *> * per_file_fresh_statistics = nullptr,
-    /// Optional per-file partition tuples parallel to `data_file_names`, for a manifest that spans several partitions;
-    /// when empty every entry gets `partition_values`.
-    const std::vector<Row> & per_file_partition_values = {});
-
-/// The manifest-list `partitions` summary of one partition field over all data files of a manifest.
-struct ManifestPartitionFieldSummary
-{
-    explicit ManifestPartitionFieldSummary(DataTypePtr type_) : type(std::move(type_)) {}
-    ManifestPartitionFieldSummary(const Field & value, DataTypePtr type_) : type(std::move(type_)) { add(value); }
-
-    /// Accounts for the partition value of one more data file.
-    void add(const Field & value);
-
-    DataTypePtr type;
-    bool contains_null = false;
-    bool contains_nan = false;
-    /// The bounds over the non-null, non-NaN values; both are null when there is no such value.
-    Field lower_bound;
-    Field upper_bound;
-};
-
-/// One summary per partition field of the manifest's partition spec.
-using ManifestPartitionSummary = std::vector<ManifestPartitionFieldSummary>;
+    const std::vector<const DataFileStatistics *> * per_file_fresh_statistics = nullptr);
 
 /// Per manifest-list entry file/row counts and lineage for rewritten manifests.
 struct ManifestListEntryCounts
@@ -223,7 +226,7 @@ private:
     /// The snapshot referencing the written files is committed, so they must never be removed.
     bool committed = false;
 
-    /// Manifests are written once and reused on commit retries.
+    /// The manifests are written once and reused on commit retries.
     Strings manifest_entries_in_storage;
     std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
     std::vector<Int64> manifest_entry_sizes;

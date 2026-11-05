@@ -94,6 +94,7 @@ namespace Setting
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
     extern const SettingsBool write_full_path_in_iceberg_metadata;
     extern const SettingsUInt64 iceberg_insert_max_rows_in_data_file;
+    extern const SettingsBool iceberg_insert_single_manifest_for_all_partitions;
     extern const SettingsUInt64 iceberg_insert_max_bytes_in_data_file;
     extern const SettingsUInt64 iceberg_manifest_min_count_to_compact;
 }
@@ -510,10 +511,49 @@ bool canWritePartitionValue(const Field & value)
     }
 }
 
+ManifestPartitionSummary::ManifestPartitionSummary(const DataTypes & partition_types)
+{
+    fields.reserve(partition_types.size());
+    for (const auto & type : partition_types)
+    {
+        auto & field = fields.emplace_back();
+        field.type = type;
+    }
+}
+
+void ManifestPartitionSummary::add(const Row & partition_value)
+{
+    if (partition_value.size() != fields.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Iceberg partition tuple has {} values, but the manifest partition summary has {} fields",
+            partition_value.size(),
+            fields.size());
+
+    for (size_t i = 0; i < fields.size(); ++i)
+    {
+        auto & field = fields[i];
+        const Field & value = partition_value[i];
+        if (value.isNull())
+            field.contains_null = true;
+        else if (isNaNPartitionValue(value, field.type))
+            field.contains_nan = true;
+        else if (!canDumpIcebergStats(value, field.type))
+            field.bounds_unavailable = true;
+        else
+        {
+            if (!field.lower_bound || accurateLess(value, *field.lower_bound))
+                field.lower_bound = value;
+            if (!field.upper_bound || accurateLess(*field.upper_bound, value))
+                field.upper_bound = value;
+        }
+    }
+}
+
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
-    const std::vector<Field> & partition_values,
+    const std::vector<Row> & per_file_partition_values,
     const DataTypes & partition_types,
     const std::vector<IcebergPathFromMetadata> & data_file_names,
     const std::vector<UInt64> & data_file_row_counts,
@@ -533,8 +573,7 @@ void generateManifestFile(
     const std::vector<std::optional<Int32>> & data_file_sort_order_ids,
     const std::vector<DataFileEntryLineage> & per_file_entry_lineage,
     Poco::JSON::Object::Ptr schema_to_serialize,
-    const std::vector<const DataFileStatistics *> * per_file_fresh_statistics,
-    const std::vector<Row> & per_file_partition_values)
+    const std::vector<const DataFileStatistics *> * per_file_fresh_statistics)
 {
     /// A throw, not a `chassert`: mis-pairing statistics with data files publishes metadata that is
     /// wrong in the unsafe direction for external readers, and `chassert` compiles out of release builds.
@@ -558,28 +597,27 @@ void generateManifestFile(
         per_file_entry_lineage.empty() || per_file_entry_lineage.size() == data_file_names.size(),
         "per_file_entry_lineage size does not match number of data files");
 
-    if (!per_file_partition_values.empty() && per_file_partition_values.size() != data_file_names.size())
+    if (per_file_partition_values.size() != data_file_names.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "per_file_partition_values size does not match number of data files: {} vs {}",
+            "Iceberg manifest needs one partition tuple per data file, got {} tuples for {} files",
             per_file_partition_values.size(),
             data_file_names.size());
 
-    /// The value and type tuples must have exactly one entry per partition column;
-    auto check_partition_arity = [&](const std::vector<Field> & values)
-    {
-        if (values.size() != partition_columns.size() || partition_types.size() != partition_columns.size())
+    if (partition_types.size() != partition_columns.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Iceberg manifest partition arity mismatch: {} partition columns but {} types",
+            partition_columns.size(),
+            partition_types.size());
+
+    for (const auto & partition_values : per_file_partition_values)
+        if (partition_values.size() != partition_columns.size())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Iceberg manifest partition arity mismatch: {} partition columns but {} values and {} types",
+                "Iceberg manifest partition arity mismatch: {} partition columns but {} values",
                 partition_columns.size(),
-                values.size(),
-                partition_types.size());
-    };
-    if (per_file_partition_values.empty())
-        check_partition_arity(partition_values);
-    for (const auto & values : per_file_partition_values)
-        check_partition_arity(values);
+                partition_values.size());
 
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
@@ -747,8 +785,7 @@ void generateManifestFile(
             sort_order_field.value<Int32>() = *data_file_sort_order_ids[file_idx];
         }
 
-        const std::vector<Field> & file_partition_values
-            = per_file_partition_values.empty() ? partition_values : per_file_partition_values[file_idx];
+        const Row & file_partition_values = per_file_partition_values[file_idx];
         avro::GenericRecord & partition_record = data_file.field("partition").value<avro::GenericRecord>();
         for (size_t i = 0; i < partition_columns.size(); ++i)
         {
@@ -845,24 +882,6 @@ void generateManifestFile(
     writer.close();
 }
 
-void ManifestPartitionFieldSummary::add(const Field & value)
-{
-    if (value.isNull())
-    {
-        contains_null = true;
-        return;
-    }
-    if (isNaNPartitionValue(value, type))
-    {
-        contains_nan = true;
-        return;
-    }
-    if (lower_bound.isNull() || accurateLess(value, lower_bound))
-        lower_bound = value;
-    if (upper_bound.isNull() || accurateLess(upper_bound, value))
-        upper_bound = value;
-}
-
 void generateManifestList(
     const Iceberg::IcebergPathResolver & path_resolver,
     Poco::JSON::Object::Ptr metadata,
@@ -929,8 +948,8 @@ void generateManifestList(
     writer.setMetadata(Iceberg::f_avro_schema, schema_representation);
     writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
 
-    /// Writes the `partitions` field summary of one manifest-list entry; readers use the bounds to skip whole manifests.
-    /// Left null when no summaries are supplied (unpartitioned table).
+    /// Writes the `partitions` field summary of one manifest-list entry; readers use its bounds to skip whole
+    /// manifests. Left null when no summaries are supplied (unpartitioned table).
     auto write_partition_summary = [&](avro::GenericRecord & entry, size_t entry_idx)
     {
         if (entry_partition_summaries.empty())
@@ -940,28 +959,27 @@ void generateManifestList(
         partitions_field.selectBranch(1);
         auto & summaries = partitions_field.value<avro::GenericArray>();
         auto summary_schema = summaries.schema()->leafAt(0);
-        for (const auto & field_summary : entry_partition_summaries[entry_idx])
+        for (const auto & field_summary : entry_partition_summaries[entry_idx].getFields())
         {
             avro::GenericDatum summary_datum(summary_schema);
             auto & summary_record = summary_datum.value<avro::GenericRecord>();
             summary_record.field(Iceberg::f_contains_null) = avro::GenericDatum(field_summary.contains_null);
             if (field_summary.contains_nan)
             {
-                /// NaN float/double partition values are recorded via `contains_nan` instead of publishing the NaN bytes as ordered bounds.
+                /// NaN float/double partition values are recorded via `contains_nan`, never as ordered bounds.
                 auto & contains_nan = summary_record.field(Iceberg::f_contains_nan);
                 contains_nan.selectBranch(1);
                 contains_nan.value<bool>() = true;
             }
-            /// A partition type whose bounds we cannot serialize (e.g. `Float`) leaves the bounds null, matching the data-file statistics path.
-            if (!field_summary.lower_bound.isNull() && canDumpIcebergStats(field_summary.lower_bound, field_summary.type)
-                && canDumpIcebergStats(field_summary.upper_bound, field_summary.type))
+            /// A type whose bounds we cannot serialize (e.g. `Float`) leaves the bounds null, matching the data-file statistics path.
+            if (!field_summary.bounds_unavailable && field_summary.lower_bound && field_summary.upper_bound)
             {
                 auto & lower = summary_record.field(Iceberg::f_lower_bound);
                 lower.selectBranch(1);
-                lower.value<std::vector<uint8_t>>() = dumpFieldToBytes(field_summary.lower_bound, field_summary.type);
+                lower.value<std::vector<uint8_t>>() = dumpFieldToBytes(*field_summary.lower_bound, field_summary.type);
                 auto & upper = summary_record.field(Iceberg::f_upper_bound);
                 upper.selectBranch(1);
-                upper.value<std::vector<uint8_t>>() = dumpFieldToBytes(field_summary.upper_bound, field_summary.type);
+                upper.value<std::vector<uint8_t>>() = dumpFieldToBytes(*field_summary.upper_bound, field_summary.type);
             }
             summaries.value().push_back(summary_datum);
         }
@@ -1790,78 +1808,108 @@ bool IcebergStorageSink::initializeMetadata()
         /// On a retry the manifests are reused and only the manifest list is written.
         if (manifest_entries.empty())
         {
-            for (const auto & [partition_key, writer] : writer_per_partition_key)
+            /// The manifest being collected; each entry carries its own partition tuple.
+            std::vector<IcebergPathFromMetadata> data_file_names;
+            std::vector<UInt64> data_file_row_counts;
+            std::vector<UInt64> data_file_byte_counts;
+            std::vector<Row> per_file_partition_values;
+            /// Each manifest entry must describe only the data file it points at, so the writers' per-file statistics are
+            /// passed instead of a partition-wide aggregate (which can report more nulls than the file has rows).
+            std::vector<const DataFileStatistics *> per_file_fresh_statistics;
+            std::optional<ManifestPartitionSummary> partition_summary;
+
+            auto add_partition = [&](const ChunkPartitioner::PartitionKey & partition_key, const MultipleFileWriter & writer)
+            {
+                const auto & files = writer.getDataFiles();
+                const auto & row_counts = writer.getDataFileRowCounts();
+                const auto & byte_counts = writer.getDataFileByteCounts();
+                const auto & file_statistics = writer.getPerFileStatistics();
+                if (row_counts.size() != files.size() || byte_counts.size() != files.size() || file_statistics.size() != files.size())
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Iceberg writer reports {} data files but {} row counts, {} byte counts and {} statistics",
+                        files.size(),
+                        row_counts.size(),
+                        byte_counts.size(),
+                        file_statistics.size());
+
+                data_file_names.insert(data_file_names.end(), files.begin(), files.end());
+                data_file_row_counts.insert(data_file_row_counts.end(), row_counts.begin(), row_counts.end());
+                data_file_byte_counts.insert(data_file_byte_counts.end(), byte_counts.begin(), byte_counts.end());
+                per_file_partition_values.insert(per_file_partition_values.end(), files.size(), partition_key);
+                for (const auto & statistics : file_statistics)
+                    per_file_fresh_statistics.push_back(statistics.get());
+                if (partitioner)
+                {
+                    if (!partition_summary)
+                        partition_summary.emplace(partitioner->getResultTypes());
+                    partition_summary->add(partition_key);
+                }
+            };
+
+            auto write_manifest = [&]()
             {
                 auto manifest_entry_path = filename_generator.generateManifestEntryName();
                 manifest_entries_in_storage.push_back(resolver.resolve(manifest_entry_path));
                 manifest_entries.push_back(manifest_entry_path);
                 Int64 manifest_row_count = 0;
-                for (UInt64 data_file_row_count : writer.getDataFileRowCounts())
+                for (UInt64 data_file_row_count : data_file_row_counts)
                     manifest_row_count += static_cast<Int64>(data_file_row_count);
                 manifest_entry_row_counts.push_back(manifest_row_count);
-                manifest_entry_file_counts.push_back(static_cast<Int64>(writer.getDataFiles().size()));
-
-                /// The manifest holds a single partition tuple, which becomes its manifest-list field summary.
-                if (partitioner)
-                {
-                    const auto & partition_types = partitioner->getResultTypes();
-                    ManifestPartitionSummary partition_summary;
-                    partition_summary.reserve(partition_key.size());
-                    for (size_t i = 0; i < partition_key.size(); ++i)
-                        partition_summary.emplace_back(partition_key[i], partition_types[i]);
-                    entry_partition_summaries.push_back(std::move(partition_summary));
-                }
+                manifest_entry_file_counts.push_back(static_cast<Int64>(data_file_names.size()));
+                if (partition_summary)
+                    entry_partition_summaries.push_back(std::move(*partition_summary));
 
                 auto buffer_manifest_entry = object_storage->writeObject(
                     StoredObject(resolver.resolve(manifest_entry_path)), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
-                try
-                {
-                    /// Each manifest entry must describe only the data file it points at, so pass the writer's
-                    /// per-file statistics instead of letting every entry inherit the manifest-wide aggregate
-                    /// (which can report more nulls than the file has rows, and prunes non-empty files).
-                    std::vector<const DataFileStatistics *> per_file_fresh_statistics;
-                    per_file_fresh_statistics.reserve(writer.getPerFileStatistics().size());
-                    for (const auto & file_statistics : writer.getPerFileStatistics())
-                        per_file_fresh_statistics.push_back(file_statistics.get());
+                generateManifestFile(
+                    metadata,
+                    partitioner ? partitioner->getColumns() : std::vector<String>{},
+                    per_file_partition_values,
+                    partitioner ? partitioner->getResultTypes() : DataTypes{},
+                    data_file_names,
+                    data_file_row_counts,
+                    data_file_byte_counts,
+                    /*data_file_statistics=*/std::nullopt,
+                    sample_block,
+                    new_snapshot,
+                    write_format,
+                    partititon_spec,
+                    partition_spec_id,
+                    *buffer_manifest_entry,
+                    Iceberg::FileContentType::DATA,
+                    /*user_defined_sequence_number=*/std::nullopt,
+                    /*user_defined_snapshot_id=*/std::nullopt,
+                    /*data_file_formats=*/{},
+                    /*per_file_statistics=*/{},
+                    /*data_file_sort_order_ids=*/{},
+                    /*per_file_entry_lineage=*/{},
+                    /*schema_to_serialize=*/nullptr,
+                    &per_file_fresh_statistics);
+                buffer_manifest_entry->finalize();
+                auto size = buffer_manifest_entry->count();
+                if (size == 0)
+                    size = object_storage->getObjectMetadata(resolver.resolve(manifest_entry_path), /*with_tags=*/false).size_bytes;
+                manifest_entry_sizes.push_back(size);
 
-                    generateManifestFile(
-                        metadata,
-                        partitioner ? partitioner->getColumns() : std::vector<String>{},
-                        partition_key,
-                        partitioner ? partitioner->getResultTypes() : DataTypes{},
-                        writer.getDataFiles(),
-                        writer.getDataFileRowCounts(),
-                        writer.getDataFileByteCounts(),
-                        writer.getResultStatistics(),
-                        sample_block,
-                        new_snapshot,
-                        write_format,
-                        partititon_spec,
-                        partition_spec_id,
-                        *buffer_manifest_entry,
-                        Iceberg::FileContentType::DATA,
-                        /*user_defined_sequence_number=*/std::nullopt,
-                        /*user_defined_snapshot_id=*/std::nullopt,
-                        /*data_file_formats=*/{},
-                        /*per_file_statistics=*/{},
-                        /*data_file_sort_order_ids=*/{},
-                        /*per_file_entry_lineage=*/{},
-                        /*schema_to_serialize=*/nullptr,
-                        &per_file_fresh_statistics);
-                    buffer_manifest_entry->finalize();
-                    auto size = buffer_manifest_entry->count();
-                    if (size == 0)
-                    {
-                        size = object_storage->getObjectMetadata(resolver.resolve(manifest_entry_path), /*with_tags=*/false).size_bytes;
-                    }
-                    manifest_entry_sizes.push_back(size);
-                }
-                catch (...)
-                {
-                    cleanup(false);
-                    throw;
-                }
+                data_file_names.clear();
+                data_file_row_counts.clear();
+                data_file_byte_counts.clear();
+                per_file_partition_values.clear();
+                per_file_fresh_statistics.clear();
+                partition_summary.reset();
+            };
+
+            /// Either one manifest for every partition the insert touched, or one manifest per partition.
+            const bool single_manifest = context->getSettingsRef()[Setting::iceberg_insert_single_manifest_for_all_partitions];
+            for (const auto & [partition_key, writer] : writer_per_partition_key)
+            {
+                add_partition(partition_key, writer);
+                if (!single_manifest)
+                    write_manifest();
             }
+            if (single_manifest)
+                write_manifest();
         }
         {
             try
@@ -1906,10 +1954,10 @@ bool IcebergStorageSink::initializeMetadata()
                         counts.counts_are_added = true;
                         entry_counts.push_back(counts);
                         entry_spec_ids.push_back(partition_spec_id);
-                        entry_summaries.push_back(entry_partition_summaries.empty() ? ManifestPartitionSummary{} : entry_partition_summaries[i]);
+                        entry_summaries.push_back(entry_partition_summaries.empty() ? ManifestPartitionSummary(DataTypes{}) : entry_partition_summaries[i]);
                     }
                     /// Keep the `partitions` field null, as for any other manifest list of an unpartitioned table.
-                    if (std::ranges::all_of(entry_summaries, [](const auto & summary) { return summary.empty(); }))
+                    if (std::ranges::all_of(entry_summaries, [](const auto & summary) { return summary.getFields().empty(); }))
                         entry_summaries.clear();
 
                     generateManifestList(

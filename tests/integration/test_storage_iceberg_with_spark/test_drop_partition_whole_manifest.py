@@ -146,7 +146,7 @@ def test_drop_partition_after_position_delete(
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "local"])
-def test_drop_partition_shared_spark_manifest(
+def test_drop_partition_shared_manifest(
     started_cluster_iceberg_with_spark, storage_type
 ):
     cluster = started_cluster_iceberg_with_spark
@@ -183,11 +183,30 @@ def test_drop_partition_shared_spark_manifest(
         instance.query(f"SELECT * FROM {table_name} WHERE tag = 3") == "3\tkeep-b\n"
     )
 
+    # With `iceberg_insert_single_manifest_for_all_partitions`, a ClickHouse INSERT spanning several partitions writes them into one manifest as well.
+    instance.query(
+        f"INSERT INTO {table_name} VALUES (4, 'new-a'), (5, 'new-b'), (2, 'new-c')",
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "iceberg_insert_single_manifest_for_all_partitions": 1,
+        },
+    )
+    instance.query(
+        f"ALTER TABLE {table_name} DROP PARTITION 4",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    expected = [(2, "keep-a"), (2, "new-c"), (3, "keep-b"), (5, "new-b")]
+    assert instance.query(f"SELECT * FROM {table_name} ORDER BY tag, value") == "".join(
+        f"{tag}\t{value}\n" for tag, value in expected
+    )
+
     local_dir = update_spark_version_hint(cluster, storage_type, table_name)
-    spark_rows = spark.read.format("iceberg").load(local_dir).collect()
-    assert sorted((row["tag"], row["value"]) for row in spark_rows) == [
-        (2, "keep-a"),
-        (3, "keep-b"),
+    df = spark.read.format("iceberg").load(local_dir)
+    assert sorted((row["tag"], row["value"]) for row in df.collect()) == expected
+    assert sorted(row["value"] for row in df.where("tag = 2").collect()) == [
+        "keep-a",
+        "new-c",
     ]
 
 
@@ -273,3 +292,4 @@ def test_merge_float_partitioned_spark_manifests_on_insert(
         (3.5, 3),
         (4.5, 4),
     ]
+

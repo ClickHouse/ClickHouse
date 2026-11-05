@@ -224,10 +224,7 @@ void DataManifestsRewriter::writeManifest(
     std::vector<DataFileEntryLineage> file_entry_lineage;
     std::vector<Row> file_partition_values;
 
-    ManifestPartitionSummary partition_summary;
-    partition_summary.reserve(resolved_spec.partition_types.size());
-    for (const auto & partition_type : resolved_spec.partition_types)
-        partition_summary.emplace_back(partition_type);
+    ManifestPartitionSummary partition_summary(resolved_spec.partition_types);
 
     ManifestListEntryCounts counts;
     /// Files keep their original sequence numbers, so `min_sequence_number` is the minimum over them.
@@ -253,8 +250,7 @@ void DataManifestsRewriter::writeManifest(
         file_entry_lineage.push_back(file.lineage);
         file_partition_values.push_back(file.partition_values);
 
-        for (size_t i = 0; i < partition_summary.size(); ++i)
-            partition_summary[i].add(file.partition_values[i]);
+        partition_summary.add(file.partition_values);
 
         ++counts.files_count;
         counts.rows_count += file.record_count;
@@ -274,7 +270,7 @@ void DataManifestsRewriter::writeManifest(
     generateManifestFile(
         metadata_object,
         resolved_spec.partition_columns,
-        files.front().partition_values,
+        file_partition_values,
         resolved_spec.partition_types,
         file_paths,
         file_row_counts,
@@ -293,9 +289,7 @@ void DataManifestsRewriter::writeManifest(
         file_statistics,
         file_sort_order_ids,
         file_entry_lineage,
-        /* schema_to_serialize */ getSchemaObjectById(group.schema_id),
-        /* per_file_fresh_statistics */ nullptr,
-        file_partition_values);
+        /* schema_to_serialize */ getSchemaObjectById(group.schema_id));
 
     buffer->finalize();
     Int64 manifest_size = buffer->count();

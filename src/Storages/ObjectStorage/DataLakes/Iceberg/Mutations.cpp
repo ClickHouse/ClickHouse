@@ -309,6 +309,10 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
 
             for (const auto & [partition_key, partition_chunk] : partition_result)
             {
+                /// Drive the write and stats from this partition's rows only; the full `chunk`
+                /// spans every partition and would duplicate rows into each per-partition file.
+                auto partition_block = data_block.cloneWithColumns(partition_chunk.getColumns());
+
                 if (!update_data_statistics.contains(partition_key))
                     update_data_statistics.emplace(partition_key, DataFileStatistics(data_schema->getArray(Iceberg::f_fields)));
 
@@ -327,15 +331,15 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
                     ColumnMapperPtr data_column_mapper = createColumnMapper(data_schema);
                     FormatFilterInfoPtr data_format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, data_column_mapper, nullptr, nullptr);
                     auto data_output_format = FormatFactory::instance().getOutputFormat(
-                        write_format, *data_write_buffer, data_block, context, format_settings, data_format_filter_info);
+                        write_format, *data_write_buffer, partition_block, context, format_settings, data_format_filter_info);
 
                     update_data_write_buffers[partition_key] = std::move(data_write_buffer);
                     it = update_data_writers.emplace(partition_key, std::move(data_output_format)).first;
                 }
 
-                update_data_result[partition_key].total_rows += data_block.rows();
-                it->second->write(data_block);
-                update_data_statistics.at(partition_key).update(chunk);
+                update_data_result[partition_key].total_rows += partition_block.rows();
+                it->second->write(partition_block);
+                update_data_statistics.at(partition_key).update(partition_chunk);
             }
         }
 
@@ -469,14 +473,10 @@ static bool writeMetadataFiles(
             manifest_entry_row_counts.push_back(data_file.total_rows);
             manifest_entry_file_counts.push_back(1);
 
-            /// The manifest holds a single partition tuple, which becomes its manifest-list field summary.
             if (chunk_partitioner)
             {
-                const auto & partition_types = chunk_partitioner->getResultTypes();
-                ManifestPartitionSummary partition_summary;
-                partition_summary.reserve(partition_key.size());
-                for (size_t i = 0; i < partition_key.size(); ++i)
-                    partition_summary.emplace_back(partition_key[i], partition_types[i]);
+                ManifestPartitionSummary partition_summary(chunk_partitioner->getResultTypes());
+                partition_summary.add(partition_key);
                 entry_partition_summaries.push_back(std::move(partition_summary));
             }
 
@@ -491,7 +491,7 @@ static bool writeMetadataFiles(
                 generateManifestFile(
                     metadata,
                     chunk_partitioner ? chunk_partitioner->getColumns() : std::vector<String>{},
-                    partition_key,
+                    {partition_key},
                     chunk_partitioner ? chunk_partitioner->getResultTypes() : DataTypes{},
                     {data_file.path},
                     {static_cast<UInt64>(data_file.total_rows)},
