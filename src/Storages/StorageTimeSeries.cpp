@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -116,6 +117,10 @@ namespace
     void dropInnerTablesOfFailedCreate(
         const std::vector<StorageID> & inner_table_ids, const StorageID & table_id, const ContextPtr & local_context)
     {
+        /// Runs from a scope guard while the error of the `CREATE` propagates: nothing here may throw, including the logging of
+        /// an error, so the memory limit must not throw either.
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+
         for (const auto & inner_table_id : inner_table_ids)
         {
             try
@@ -198,6 +203,9 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
     /// Inner target tables are created only for a new table, ATTACH expects them to exist already.
     if (mode <= LoadingStrictnessLevel::SECONDARY_CREATE)
     {
+        /// Reserved so that adding a table on an error does not allocate: an exception there would replace the error.
+        created_inner_tables.reserve(created_inner_tables.size() + targets.size());
+
         for (const auto & target : targets)
         {
             if (!target.is_inner_table)
@@ -217,17 +225,18 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
             UInt64 version = getTimeSeriesVersion(create_query);
             StorageID inner_table_id(
                 table_id.database_name, getTimeSeriesInnerTableName(target.kind, table_id, version), target.table_id.uuid);
+            /// A table with this name may exist already (in an `Ordinary` database the name does not depend on a UUID): it is not
+            /// created by this `CREATE` and must not be dropped. An inner table published before an error, e.g. from its `startup`,
+            /// is dropped with the others.
+            bool created = false;
             try
             {
                 createTimeSeriesInnerTable(
-                    target.kind, target.table_id.uuid, *inner_columns, inner_engine, table_id, version, local_context);
+                    target.kind, target.table_id.uuid, *inner_columns, inner_engine, table_id, version, local_context, created);
             }
             catch (...)
             {
-                /// A table with this name that exists already (in an `Ordinary` database the name does not depend on a UUID) makes
-                /// the inner `CREATE` fail before it creates anything, and must not be dropped. Any other error can come after the
-                /// inner table is published, e.g. from its `startup`, so the table is dropped with the others if it exists.
-                if (getCurrentExceptionCode() != ErrorCodes::TABLE_ALREADY_EXISTS)
+                if (created)
                     created_inner_tables.push_back(inner_table_id);
                 throw;
             }

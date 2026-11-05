@@ -18,4 +18,16 @@ SELECT x FROM {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.tags.ts`;
 -- `CLICKHOUSE_DATABASE_1` is the name of the test database with `_1` appended.
 SELECT name FROM system.tables WHERE database = currentDatabase() || '_1' ORDER BY name;
 
+-- An inner `CREATE` that fails before the check of the existing table keeps it too: the invalid default of a column of the
+-- `samples` inner table fails with `UNKNOWN_IDENTIFIER` while a table with its name exists.
+DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.tags.ts`;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.samples.ts` (x UInt64) ENGINE = Memory;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.samples.ts` VALUES (43);
+
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.ts ENGINE = TimeSeries
+    SAMPLES INNER COLUMNS (extra UInt8 DEFAULT missing_identifier); -- { serverError UNKNOWN_IDENTIFIER }
+
+SELECT x FROM {CLICKHOUSE_DATABASE_1:Identifier}.`.inner.samples.ts`;
+SELECT name FROM system.tables WHERE database = currentDatabase() || '_1' ORDER BY name;
+
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
