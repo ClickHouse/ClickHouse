@@ -27,6 +27,7 @@ private:
     AggregateFunctionPtr function;
     AlignedBuffer place;
     std::unique_ptr<Arena> arena;
+    const bool is_state;
 };
 
 }

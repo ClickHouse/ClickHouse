@@ -3,7 +3,6 @@
 #include <Columns/IColumn_fwd.h>
 #include <base/types.h>
 
-#include <Common/DevectorWithMemoryTracking.h>
 #include <span>
 #include <vector>
 
@@ -46,15 +45,17 @@ public:
         Int64 end_position = 0;
     };
 
-    WindowArguments(const DevectorWithMemoryTracking<Block> & blocks_, Int64 first_row_position_, Int64 num_arguments_);
+    explicit WindowArguments(Int64 num_arguments_);
+
+    void setBlocks(std::span<const Block> blocks_, Int64 first_row_position_);
 
     Int64 size() const;
     ArgumentValue at(size_t argument, Int64 row) const;
-    std::vector<ArgumentsSegment> segments(Int64 begin_row, Int64 end_row) const;
+    ArgumentsSegment segment(Int64 begin_row, Int64 end_row) const;
 
 private:
-    const DevectorWithMemoryTracking<Block> & blocks;
-    const Int64 first_row_position;
+    std::span<const Block> blocks;
+    Int64 first_row_position = 0;
     const Int64 num_arguments;
     mutable std::vector<size_t> last_used_block;
 };

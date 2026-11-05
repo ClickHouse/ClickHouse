@@ -12,12 +12,12 @@ namespace DB
 namespace
 {
 
-size_t blockIndexAt(const DevectorWithMemoryTracking<WindowArguments::Block> & blocks, size_t & last_block, Int64 position)
+size_t blockIndexAt(std::span<const WindowArguments::Block> blocks, size_t & last_block, Int64 position)
 {
     if (last_block < blocks.size() && blocks[last_block].begin_position <= position && position < blocks[last_block].end_position)
         return last_block;
 
-    const auto * const after = std::upper_bound(blocks.begin(), blocks.end(), position, [](Int64 value, const WindowArguments::Block & block) { return value < block.begin_position; });
+    const auto after = std::upper_bound(blocks.begin(), blocks.end(), position, [](Int64 value, const WindowArguments::Block & block) { return value < block.begin_position; });
     last_block = after - blocks.begin() - 1;
     return last_block;
 }
@@ -60,12 +60,16 @@ void ArgumentValue::appendTo(IColumn & result) const
     result.insertFrom(*column, row);
 }
 
-WindowArguments::WindowArguments(const DevectorWithMemoryTracking<Block> & blocks_, Int64 first_row_position_, Int64 num_arguments_)
-    : blocks(blocks_)
-    , first_row_position(first_row_position_)
-    , num_arguments(num_arguments_)
+WindowArguments::WindowArguments(Int64 num_arguments_)
+    : num_arguments(num_arguments_)
     , last_used_block(num_arguments_ + 1, 0)
 {
+}
+
+void WindowArguments::setBlocks(std::span<const Block> blocks_, Int64 first_row_position_)
+{
+    blocks = blocks_;
+    first_row_position = first_row_position_;
 }
 
 Int64 WindowArguments::size() const
@@ -80,29 +84,16 @@ ArgumentValue WindowArguments::at(size_t argument, Int64 row) const
     return ArgumentValue(*block.columns[argument], position - block.begin_position);
 }
 
-std::vector<ArgumentsSegment> WindowArguments::segments(Int64 begin_row, Int64 end_row) const
+ArgumentsSegment WindowArguments::segment(Int64 begin_row, Int64 end_row) const
 {
-    std::vector<ArgumentsSegment> segments;
-    if (begin_row >= end_row)
-        return segments;
-
     const Int64 begin_position = first_row_position + begin_row;
     const Int64 end_position = first_row_position + end_row;
-    const size_t first_block = blockIndexAt(blocks, last_used_block.back(), begin_position);
-    for (size_t block_index = first_block; block_index < blocks.size(); ++block_index)
-    {
-        const Block & block = blocks[block_index];
-        if (block.begin_position >= end_position)
-            break;
-
-        segments.push_back(ArgumentsSegment{
-            .columns = block.columns,
-            .row_begin = static_cast<size_t>(std::max(begin_position, block.begin_position) - block.begin_position),
-            .row_end = static_cast<size_t>(std::min(end_position, block.end_position) - block.begin_position),
-        });
-    }
-
-    return segments;
+    const Block & block = blocks[blockIndexAt(blocks, last_used_block.back(), begin_position)];
+    return ArgumentsSegment{
+        .columns = block.columns,
+        .row_begin = static_cast<size_t>(begin_position - block.begin_position),
+        .row_end = static_cast<size_t>(std::min(end_position, block.end_position) - block.begin_position),
+    };
 }
 
 }
