@@ -845,5 +845,114 @@ submit
 expect "7924"
 expect ":) "
 
+# Whitespace at the end of a line ends a counted word object before the line break.
+send -- "SELECT 40000 -- note  \r+ 234"
+escape
+send -- "gg0fnd2iw"
+submit
+expect "40234"
+expect ":) "
+
+send -- "SELECT 40100 -- note  \r+ 234"
+escape
+send -- "gg0fnd2iW"
+submit
+expect "40334"
+expect ":) "
+
+send -- "SELECT 40200 -- note word  \r+ 234"
+escape
+send -- "gg0fnd2aw"
+submit
+expect "40434"
+expect ":) "
+
+# A counted `aw` that does not end with whitespace takes the whitespace before the word instead.
+send -- "SELECT 40300 -- a note\r+ 234"
+escape
+send -- "gg0fad2aw"
+submit
+expect "40534"
+expect ":) "
+
+# A counted `aw` skips the line break at the end of a non-empty line, like `iw`.
+send -- "SELECT 40400 -- a note\r+ 7\r+ 50"
+escape
+send -- "gg0fad3aw"
+submit
+expect "40450"
+expect ":) "
+
+# `w` that stops at the end of the input is inclusive, so `v` makes it exclusive.
+send -- "SELECT 40500+123"
+escape
+send -- "dvw"
+submit
+expect "40623"
+expect ":) "
+
+send -- "SELECT 40900 -- note\r+ 234"
+escape
+send -- "gg0fndvw"
+submit
+expect "41134"
+expect ":) "
+
+# `v` makes the inclusive text objects exclusive.
+send -- "SELECT 40600+123"
+escape
+send -- "dviw"
+submit
+expect "40603"
+expect ":) "
+
+send -- "SELECT 40700+(23)"
+escape
+send -- "dvi("
+submit
+expect "40703"
+expect ":) "
+
+send -- "SELECT 40800+(23)"
+escape
+send -- "cvi(9"
+escape
+submit
+expect "40893"
+expect ":) "
+
+# A forced characterwise `gg` leaves the `g` prefix mode, so the next command runs.
+send -- "SELECT 41000 +\r23 +\r234"
+escape
+send -- "d2vggi9"
+escape
+submit
+expect "41094"
+expect ":) "
+
+# Counted `dd`, `cc` and `S` fail on the last line.
+send -- "SELECT 41200\r+ 34"
+escape
+send -- "2dd"
+submit
+expect "41234"
+expect ":) "
+
+send -- "SELECT 41300\r+ 34"
+escape
+send -- "2cc9"
+escape
+submit
+expect "41334"
+expect ":) "
+
+send -- "SELECT 41400\r+ 34"
+escape
+send -- "2S9"
+escape
+submit
+expect "41434"
+expect ":) "
+
 send -- "\4"
 expect eof

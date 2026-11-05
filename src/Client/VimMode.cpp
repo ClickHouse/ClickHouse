@@ -397,7 +397,11 @@ static int extendChunk(const std::u32string & text, int & end, bool bigword)
     end++;
     if (cls == 3)
         return cls;
-    while (end + 1 < length && chunkClass(text, end + 1, bigword) == cls)
+    /* Like vim, whitespace that starts within a line ends at the end of that line: the line break
+     * after it is not part of the chunk, so an edit does not join the following line. */
+    bool within_line = cls == 0 && text[end] != '\n';
+    while (end + 1 < length
+           && (within_line ? charClass(text, end + 1, bigword) == 0 : chunkClass(text, end + 1, bigword) == cls))
         end++;
     return cls;
 }
@@ -727,7 +731,19 @@ void ReplxxLineReader::vimWordMotion(int & pos, std::u32string & text, char moti
         }
         else if (pos > oldpos || (kind == 'e' && selected))
         {
-            text.erase(oldpos, pos - oldpos + (kind == 'e' ? 1 - inclusivity_flip : inclusivity_flip));
+            int count = pos - oldpos;
+            int length = static_cast<int>(text.length());
+            if (kind == 'e')
+                count += 1 - inclusivity_flip;
+            else if ((pos == length || text[pos] == '\n') && text[pos - 1] != '\n')
+                /* Like vim, `w` that stops at the end of a non-empty line or of the input is inclusive
+                 * on the last character, so `v` makes it exclusive, e.g. `dvw` on the last character
+                 * deletes nothing. */
+                count -= inclusivity_flip;
+            else
+                count += inclusivity_flip;
+            if (count > 0)
+                text.erase(oldpos, count);
             pos = oldpos;
         }
         else if (pos < oldpos)
@@ -807,19 +823,17 @@ void ReplxxLineReader::vimWordObject(int & pos, std::u32string & text, bool bigw
                 end++;
             extendChunk(text, end, bigword);
         }
-        else if (end + 1 < length && reps > 1 && chunkClass(text, end + 1, bigword) == 0)
-            extendChunk(text, end, bigword);
-        else if (end + 1 < length && charClass(text, end + 1, bigword) == 0)
+        else
         {
-            /* Without a count the trailing whitespace stays within the line, as in Vim. */
+            /* The trailing whitespace stays within the line, as in Vim. */
             while (end + 1 < length && charClass(text, end + 1, bigword) == 0)
                 end++;
         }
-        else
-            while (start > 0 && charClass(text, start - 1, bigword) == 0)
-                start--;
         for (int rep = 1; rep < reps; rep++)
         {
+            /* Like for `iw`, the line break at the end of a non-empty line is not a chunk of its own. */
+            if (end + 2 < length && text[end + 1] == '\n' && text[end] != '\n')
+                end++;
             int chunk = extendChunk(text, end, bigword);
             /* Like vim, the operation is canceled when there are fewer chunks than requested. */
             if (chunk == -1)
@@ -827,9 +841,22 @@ void ReplxxLineReader::vimWordObject(int & pos, std::u32string & text, bool bigw
                 resetVim(&pos, &text);
                 return;
             }
-            if (chunk == 0 || (end + 1 < length && chunkClass(text, end + 1, bigword) == 0))
+            if (chunk == 0 || chunk == 3)
+            {
+                /* Whitespace or an empty line is taken together with the following word, and
+                 * the whitespace continues across line breaks. */
+                while (end + 1 < length && chunkClass(text, end + 1, bigword) == 0)
+                    end++;
+                extendChunk(text, end, bigword);
+            }
+            else if (end + 1 < length && charClass(text, end + 1, bigword) == 0)
                 extendChunk(text, end, bigword);
         }
+        /* Like vim, a selection that starts on a word and does not end with whitespace takes the
+         * whitespace before the word instead. */
+        if (cls != 0 && charClass(text, end, bigword) > 0)
+            while (start > 0 && charClass(text, start - 1, bigword) == 0)
+                start--;
     }
     else
     {
@@ -853,7 +880,11 @@ void ReplxxLineReader::vimWordObject(int & pos, std::u32string & text, bool bigw
             end--;
     }
 
-    text.erase(start, end - start + 1);
+    /* Like vim, `v` after the operator makes the inclusive text object exclusive, e.g. `dviw`. */
+    if (inclusivity_flip)
+        end--;
+    if (end >= start)
+        text.erase(start, end - start + 1);
     pos = start;
     if (op == OPERATOR_C)
     {
@@ -890,6 +921,9 @@ void ReplxxLineReader::vimBracketObject(int & pos, std::u32string & text, char32
 
     int start = around ? open : open + 1;
     int count = around ? close - open + 1 : close - open - 1;
+    /* Like vim, `v` after the operator makes the inclusive text object exclusive, e.g. `dvi(`. */
+    if (inclusivity_flip)
+        count--;
     if (count > 0)
         text.erase(start, count);
     pos = start;
@@ -1029,7 +1063,13 @@ void ReplxxLineReader::vimForcedDoubledOperator(int & pos, std::u32string & text
 
 void ReplxxLineReader::vimChangeLines(int & pos, std::u32string & text)
 {
-    /* Replace count lines, starting from the current one, with an empty line. */
+    /* Replace count lines, starting from the current one, with an empty line. Like vim, a count
+     * fails on the last line, and stops there otherwise. */
+    if (vimReps() > 1 && std::find(text.begin() + pos, text.end(), U'\n') == text.end())
+    {
+        resetVim(&pos, &text);
+        return;
+    }
     int length = static_cast<int>(text.length());
     for (; pos > 0 && text[pos - 1] != '\n'; pos--)
         ;
@@ -1783,6 +1823,9 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
         'g',
         [this](int & pos, std::u32string & text, char32_t)
         {
+            /* Leave the `g` prefix mode on every path, also when a forced characterwise delete
+             * returns early. A change selects insert mode afterwards. */
+            rx.set_editing_mode(MODE_NORMAL);
             int oldpos = pos;
             /* A count is an absolute line number, not a repeat. */
             pos = vimbuffer || vimbufferinner ? lineStart(text, vimReps()) : 0;
@@ -1805,6 +1848,12 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
             else if (op == OPERATOR_D)
             {
                 int reps = vimReps();
+                /* Like vim, a count fails on the last line, and stops there otherwise. */
+                if (reps > 1 && std::find(text.begin() + pos, text.end(), U'\n') == text.end())
+                {
+                    resetVim(&pos, &text);
+                    return;
+                }
                 for (int rep = 0; rep < reps; rep++)
                 {
                     int length = static_cast<int>(text.length());
