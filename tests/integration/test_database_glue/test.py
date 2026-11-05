@@ -1015,6 +1015,43 @@ def test_insert_repairs_empty_glue_columns(started_cluster):
     assert node.query(f"SELECT * FROM {table_ref}") == "repaired\n"
 
 
+def test_s3a_locations(started_cluster):
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_glue_s3a_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    schema = Schema(NestedField(field_id=1, name="id", field_type=StringType(), required=False))
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER, dir=table_name)
+    table.append(pa.Table.from_pylist([{"id": "a"}, {"id": "b"}]))
+
+    # Other writers (Spark, EMR) register Hadoop `s3a://` locations in Glue.
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    before = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    parameters = dict(before["Parameters"])
+    parameters["metadata_location"] = parameters["metadata_location"].replace("s3://", "s3a://", 1)
+    storage_descriptor = dict(before["StorageDescriptor"])
+    storage_descriptor["Location"] = storage_descriptor["Location"].replace("s3://", "s3a://", 1)
+    glue_client.update_table(
+        DatabaseName=root_namespace,
+        TableInput={
+            "Name": table_name,
+            "TableType": before["TableType"],
+            "StorageDescriptor": storage_descriptor,
+            "Parameters": parameters,
+        },
+    )
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": "http://minio1:9001"})
+    assert "`id` Nullable(String)" in node.query(f"SHOW CREATE TABLE {table_ref}")
+    assert node.query(f"SELECT id FROM {table_ref} ORDER BY id") == "a\nb\n"
+
+
 @pytest.mark.parametrize("engine_clause", [" ENGINE = IcebergS3", ""])
 def test_create_without_engine_arguments(started_cluster, engine_clause):
     node = started_cluster.instances["node1"]

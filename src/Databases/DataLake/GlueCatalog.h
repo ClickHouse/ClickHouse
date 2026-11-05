@@ -117,6 +117,17 @@ public:
 
     static String resolveTimestampType(const FieldTypes & field_types, const String & column_name, const String & glue_column_type);
 
+    struct EarlyAccessLocation
+    {
+        String storage_endpoint;
+        String bucket_name;
+        String path;  /// Path within bucket, without the trailing slash
+    };
+
+    /// Splits `location` of any S3 scheme (`s3://`, `s3a://`, ...) into bucket and path, and builds the URL for the
+    /// object storage client: `location` itself, or `storage_endpoint` with the bucket like `DatabaseDataLake::getStorageEndpointForTable`.
+    static EarlyAccessLocation resolveEarlyAccessLocation(const String & location, const String & storage_endpoint);
+
 private:
     struct CachedSchema
     {

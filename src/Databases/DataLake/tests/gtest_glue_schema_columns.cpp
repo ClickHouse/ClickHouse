@@ -148,4 +148,27 @@ TEST(GlueSchemaColumns, NestedTypesParseableByGlueFallback)
     EXPECT_EQ(parsed->getName(), "Tuple(a Map(String, Nullable(Decimal(9, 2))), b Array(Nullable(Int64)))");
 }
 
+TEST(GlueSchemaColumns, EarlyAccessLocation)
+{
+    for (const auto * scheme : {"s3://", "s3a://"})
+    {
+        const String location = String(scheme) + "warehouse/t/metadata/v1.metadata.json";
+
+        auto with_endpoint = GlueCatalog::resolveEarlyAccessLocation(location, "http://minio1:9001");
+        EXPECT_EQ(with_endpoint.bucket_name, "warehouse");
+        EXPECT_EQ(with_endpoint.path, "t/metadata/v1.metadata.json");
+        EXPECT_EQ(with_endpoint.storage_endpoint, "http://minio1:9001/warehouse/");
+
+        auto without_endpoint = GlueCatalog::resolveEarlyAccessLocation(location, "");
+        EXPECT_EQ(without_endpoint.bucket_name, "warehouse");
+        EXPECT_EQ(without_endpoint.path, "t/metadata/v1.metadata.json");
+        EXPECT_EQ(without_endpoint.storage_endpoint, location);
+    }
+
+    auto table_location = GlueCatalog::resolveEarlyAccessLocation("s3a://warehouse/t/", "http://minio1:9001/warehouse");
+    EXPECT_EQ(table_location.bucket_name, "warehouse");
+    EXPECT_EQ(table_location.path, "t");
+    EXPECT_EQ(table_location.storage_endpoint, "http://minio1:9001/warehouse/");
+}
+
 #endif
