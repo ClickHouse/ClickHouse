@@ -1217,26 +1217,68 @@ bool MergeTreeIndexConditionBinaryFuseFilter::traverseTreeEquals(
             if (value_field == value_type->getDefault())
                 return false;
 
-            /// Over `Enum` map values the constant can be the name of the enum value, a `String`, which has
-            /// to be converted to the value of the enum before it is hashed and compared with the default.
-            /// The default value of an `Enum` is not the default value of the type of the constant. For a
-            /// missing key `arrayElement` returns the zero of the underlying integer, which is not necessarily
-            /// the default value of the `Enum` (its first value), so decline the index for both.
-            Field map_value_field = value_field;
-            if (const auto * dag_node = key_node.getDAGNode())
-            {
-                const DataTypePtr map_value_type = removeLowCardinalityAndNullable(dag_node->result_type);
-                if (isEnum(map_value_type))
-                {
-                    if (auto enum_value = tryConvertEnumNameConstant(value_field, value_type, map_value_type))
-                        map_value_field = std::move(*enum_value);
-                    else
-                        map_value_field = tryConvertFieldToType(value_field, *map_value_type, value_type.get(), {}, /* strict */ true);
+            /// The comparison is between the result of the map lookup and the constant, so the constant has
+            /// to be converted the way `equals` converts it to the type of the map values, both to decide
+            /// whether a missing key (for which the lookup returns the default value) can satisfy the
+            /// predicate, and to hash the value that is actually stored in a `mapValues` index. For example,
+            /// over `Map(String, UInt64)` the predicate `m['missing'] = '0'` is true, and over
+            /// `Map(String, FixedString(2))` the predicate `m['k'] = 'a'` matches the stored value `a\0`.
+            const auto * dag_node = key_node.getDAGNode();
+            if (!dag_node)
+                return false;
 
-                    if (map_value_field.isNull() || map_value_field == Field(Int64(0)) || map_value_field == map_value_type->getDefault())
-                        return false;
-                }
+            const DataTypePtr & lookup_type = dag_node->result_type;
+            const DataTypePtr map_value_type = removeLowCardinalityAndNullable(lookup_type);
+
+            Field map_value_field;
+            if (isEnum(map_value_type))
+            {
+                /// The constant can be the name of the enum value, a `String`. For a missing key `arrayElement`
+                /// returns the zero of the underlying integer, which is not necessarily the default value of
+                /// the `Enum` (its first value), so decline the index for both below.
+                if (auto enum_value = tryConvertEnumNameConstant(value_field, value_type, map_value_type))
+                    map_value_field = std::move(*enum_value);
+                else
+                    map_value_field = tryConvertFieldToType(value_field, *map_value_type, value_type.get(), {}, /* strict */ true);
+
+                if (map_value_field.isNull() || map_value_field == Field(Int64(0)))
+                    return false;
             }
+            else if (isStringOrFixedString(map_value_type) && value_field.getType() == Field::Types::String)
+            {
+                /// The same guards as for the scalar equality above: equality compares zero-padded, while the
+                /// index holds only the hash of each value's exact bytes.
+                const WhichDataType which_constant(removeLowCardinalityAndNullable(value_type));
+                const bool constant_may_be_fixed_string
+                    = which_constant.isFixedString() || which_constant.isVariant() || which_constant.isDynamic();
+                const size_t constant_bytes = value_field.safeGet<String>().size();
+                const auto * fixed_value_type = typeid_cast<const DataTypeFixedString *>(map_value_type.get());
+
+                if (constant_may_be_fixed_string && !fixed_value_type)
+                    return false;
+
+                if (fixed_value_type && fixed_value_type->getN() < constant_bytes)
+                    return false;
+
+                map_value_field = convertFieldToType(value_field, *map_value_type, value_type.get());
+            }
+            else if (isStringOrFixedString(map_value_type))
+            {
+                /// A non-string constant compared with a string value: the conversion is not obvious.
+                return false;
+            }
+            else
+            {
+                map_value_field = tryConvertFieldToTypeExact(value_field, *map_value_type, value_type.get());
+            }
+
+            if (map_value_field.isNull())
+                return false;
+
+            /// For a missing key the lookup returns `NULL` over `Nullable` map values, which never satisfies
+            /// `equals`, and the default value of the map value type otherwise.
+            if (!lookup_type->isNullable() && map_value_field == map_value_type->getDefault())
+                return false;
 
             size_t position = 0;
             Field const_value;
