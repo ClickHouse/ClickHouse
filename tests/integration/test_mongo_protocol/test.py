@@ -2191,7 +2191,7 @@ def test_dialect_writes_the_embedded_documents_the_wire_path_creates(started_clu
     )
     collection.insert_one({"id": 1, "events": [{"name": "start"}]})
 
-    dialect_settings = {"dialect": "mongo", "allow_experimental_mongo_dialect": 1}
+    dialect_settings = {"dialect": "mongo", "enable_mongo_dialect": 1}
     node.query(
         'db.dialect_embedded_documents.insertOne({"id": 2, "events": [{"name": "second"}]})',
         password="123",
@@ -2498,7 +2498,7 @@ def test_dialect_over_a_document_collection_is_an_error(started_cluster):
             'db.document_dialect.find({"id": 1})',
             password="123",
             database="db",
-            settings={"dialect": "mongo", "allow_experimental_mongo_dialect": 1},
+            settings={"dialect": "mongo", "enable_mongo_dialect": 1},
         )
 
     assert [document["id"] for document in collection.find({})] == [1]

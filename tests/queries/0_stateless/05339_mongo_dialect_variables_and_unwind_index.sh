@@ -14,7 +14,7 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 
 mongo() {
-    ${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 --query "$1" 2>&1 \
+    ${CLICKHOUSE_CLIENT} --dialect mongo --enable_mongo_dialect 1 --query "$1" 2>&1 \
         | sed -e 's/^Received exception.*//' -e 's/ (version .*//' -e 's/\. ([A-Z_]*)$//' -e 's/^Code: [0-9]*\. //' -e 's/DB::Exception: //' \
         | grep -v '^$'
 }

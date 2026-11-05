@@ -18,7 +18,7 @@ DROP TABLE IF EXISTS docs;
 CREATE TABLE docs (id Int32, `profile.limit` Int32, `profile.skip` Int32, `profile.sort` Int32) ENGINE = MergeTree ORDER BY id;
 INSERT INTO docs VALUES (1, 30, 3, 300), (2, 20, 2, 200), (3, 10, 1, 100);
 
-SET allow_experimental_mongo_dialect = 1;
+SET enable_mongo_dialect = 1;
 SET dialect='mongo';
 db.docs.find({}).sort({"profile.limit" : 1});
 db.docs.find({}).sort({"profile.skip" : 1});

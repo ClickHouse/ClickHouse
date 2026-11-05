@@ -24,12 +24,12 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 
 mongo() {
-    ${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 --query "$1"
+    ${CLICKHOUSE_CLIENT} --dialect mongo --enable_mongo_dialect 1 --query "$1"
 }
 
 # Prints the error code of a query, which is what the reference records.
 mongo_error() {
-    ${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 --query "$1" 2>&1 >/dev/null \
+    ${CLICKHOUSE_CLIENT} --dialect mongo --enable_mongo_dialect 1 --query "$1" 2>&1 >/dev/null \
         | grep -o -m1 '([A-Z_]*)'
 }
 

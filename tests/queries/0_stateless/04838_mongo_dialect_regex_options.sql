@@ -10,19 +10,19 @@ DROP TABLE IF EXISTS docs;
 CREATE TABLE docs (id Int32, name String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO docs VALUES (1, 'Abc'), (2, 'abc'), (3, 'zzz');
 
-SET allow_experimental_mongo_dialect = 1;
+SET enable_mongo_dialect = 1;
 SET dialect='mongo';
 db.docs.aggregate([{"$project" : {"id" : 1, "matched" : {"$regexMatch" : {"input" : "$name", "regex" : "^a", "options" : "i"}}}}, {"$sort" : {"id" : 1}}]);
 
-SET allow_experimental_mongo_dialect = 1;
+SET enable_mongo_dialect = 1;
 SET dialect='mongo';
 db.docs.aggregate([{"$project" : {"id" : 1, "matched" : {"$regexMatch" : {"input" : "$name", "regex" : "^a"}}}}, {"$sort" : {"id" : 1}}]);
 
-SET allow_experimental_mongo_dialect = 1;
+SET enable_mongo_dialect = 1;
 SET dialect='mongo';
 db.docs.aggregate([{"$project" : {"id" : 1, "matched" : {"$regexMatch" : {"input" : "$name", "regex" : {"$regularExpression" : {"pattern" : "^A", "options" : "i"}}}}}}, {"$sort" : {"id" : 1}}]);
 
-SET allow_experimental_mongo_dialect = 1;
+SET enable_mongo_dialect = 1;
 SET dialect='mongo';
 db.docs.aggregate([{"$project" : {"id" : 1, "found" : {"$regexFind" : {"input" : "$name", "regex" : "^(a)", "options" : "i"}}}}, {"$sort" : {"id" : 1}}]);
 

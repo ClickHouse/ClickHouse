@@ -11,7 +11,7 @@ DROP TABLE IF EXISTS to_date;
 CREATE TABLE to_date (ms Int64, f Float64, s String) ENGINE = Memory;
 INSERT INTO to_date VALUES (1546300800000, 1546300800500.0, '2019-01-01 00:00:00');
 
-SET allow_experimental_mongo_dialect = 1;
+SET enable_mongo_dialect = 1;
 SET dialect = 'mongo';
 
 db.to_date.aggregate([{"$project" : {"literal" : {"$toDate" : 1546300800000}, "negative" : {"$toDate" : -86400000}, "fractional" : {"$toDate" : 1546300800500.5}, "intColumn" : {"$toDate" : "$ms"}, "floatColumn" : {"$toDate" : "$f"}, "stringLiteral" : {"$toDate" : "2019-01-01 00:00:00"}, "stringColumn" : {"$toDate" : "$s"}}}]);

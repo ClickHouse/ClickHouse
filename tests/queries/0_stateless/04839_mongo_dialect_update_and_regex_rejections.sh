@@ -23,7 +23,7 @@ ${CLICKHOUSE_CLIENT} --query "
 # message itself is what the reference records. The `DB::Exception: ` prefix is dropped as well,
 # because the test runner rejects the word `Exception` in the standard output of a test.
 run() {
-    ${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 --query "$1" 2>&1 >/dev/null \
+    ${CLICKHOUSE_CLIENT} --dialect mongo --enable_mongo_dialect 1 --query "$1" 2>&1 >/dev/null \
         | head -1 | sed -e 's/^Received exception.*//' -e 's/ (version .*//' -e 's/\. ([A-Z_]*)$//' -e 's/DB::Exception: //'
 }
 
@@ -43,6 +43,6 @@ run 'db.docs.aggregate([{"$project" : {"x" : {"$regexMatch" : {"input" : "$name"
 run 'db.docs.aggregate([{"$project" : {"x" : {"$regexMatch" : {"input" : "$name", "regex" : "^a", "options" : "z"}}}}]);'
 
 echo '-- the server is still healthy'
-${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 --max_threads 1 --query 'db.docs.find({"id" : 1});'
+${CLICKHOUSE_CLIENT} --dialect mongo --enable_mongo_dialect 1 --max_threads 1 --query 'db.docs.find({"id" : 1});'
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE docs"

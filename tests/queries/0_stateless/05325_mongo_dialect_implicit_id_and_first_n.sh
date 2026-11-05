@@ -23,7 +23,7 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE no_id_distributed AS no_id ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), no_id);
 "
 
-MONGO_CLIENT="${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 --max_threads 1"
+MONGO_CLIENT="${CLICKHOUSE_CLIENT} --dialect mongo --enable_mongo_dialect 1 --max_threads 1"
 
 run() {
     ${MONGO_CLIENT} --query "$1" 2>&1 >/dev/null \

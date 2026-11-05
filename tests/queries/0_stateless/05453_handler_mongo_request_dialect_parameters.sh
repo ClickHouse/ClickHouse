@@ -19,6 +19,6 @@ ${CLICKHOUSE_CLIENT} --query "DROP HANDLER IF EXISTS ${HANDLER}"
 ${CLICKHOUSE_CLIENT} --query "CREATE HANDLER ${HANDLER} URL '${URL}' AS SELECT 'stored' AS s, {x:UInt64} AS p"
 
 ${CLICKHOUSE_CURL} -sS "${BASE}${URL}?dialect=mongo&param_x=7"
-${CLICKHOUSE_CURL} -sS "${BASE}${URL}?dialect=mongo&allow_experimental_mongo_dialect=1&param_x=8"
+${CLICKHOUSE_CURL} -sS "${BASE}${URL}?dialect=mongo&enable_mongo_dialect=1&param_x=8"
 
 ${CLICKHOUSE_CLIENT} --query "DROP HANDLER ${HANDLER}"

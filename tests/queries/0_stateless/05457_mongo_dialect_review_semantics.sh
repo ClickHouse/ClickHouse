@@ -30,7 +30,7 @@ ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO review_dates VALUES (1, '2026-01-01 00:00:00', '2026-01-01', '2026-01-01 00:00:00.0');
 "
 
-MONGO_CLIENT="${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 --max_threads 1"
+MONGO_CLIENT="${CLICKHOUSE_CLIENT} --dialect mongo --enable_mongo_dialect 1 --max_threads 1"
 
 run() {
     ${MONGO_CLIENT} --query "$1" 2>&1 >/dev/null \

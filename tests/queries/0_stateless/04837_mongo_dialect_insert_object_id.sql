@@ -9,13 +9,13 @@ SET dialect='clickhouse';
 DROP TABLE IF EXISTS docs;
 CREATE TABLE docs (`_id` String, id Int32, name String, `profile._id` String) ENGINE = MergeTree ORDER BY id;
 
-SET allow_experimental_mongo_dialect = 1;
+SET enable_mongo_dialect = 1;
 SET dialect='mongo';
 db.docs.insertOne({"_id" : {"$oid" : "64c9c5b1e1b8a2b3c4d5e6f7"}, "id" : 1, "name" : "alpha", "profile" : {"_id" : "nested"}});
 SET dialect='clickhouse';
 SELECT _id, id, name, `profile._id` FROM docs ORDER BY id;
 
-SET allow_experimental_mongo_dialect = 1;
+SET enable_mongo_dialect = 1;
 SET dialect='mongo';
 db.docs.insertMany([{"_id" : 2, "id" : 2, "name" : "beta", "profile" : {"_id" : ""}}, {"_id" : 3, "id" : 3, "name" : "gamma", "profile" : {"_id" : ""}}]);
 SET dialect='clickhouse';

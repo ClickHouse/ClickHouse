@@ -234,10 +234,10 @@ The limitations that hold for either shape are:
 
 ## MongoDB dialect {#mongodb-dialect}
 
-Set the [`dialect`](/operations/settings/settings#dialect) setting to `mongo` to write MongoDB shell syntax over any ClickHouse interface. The dialect is experimental, so it also requires the `allow_experimental_mongo_dialect` setting:
+Set the [`dialect`](/operations/settings/settings#dialect) setting to `mongo` to write MongoDB shell syntax over any ClickHouse interface. The dialect is experimental, so it also requires the `enable_mongo_dialect` setting:
 
 ```sql
-SET allow_experimental_mongo_dialect = 1;
+SET enable_mongo_dialect = 1;
 SET dialect = 'mongo';
 
 db.users.find({"age" : {"$gt" : 20}});
@@ -258,7 +258,7 @@ An embedded document that is a value rather than a set of paths - an element of 
 The first name of a query is the database. The literal `db`, as written by the MongoDB shell, means the current database; any other name addresses that database explicitly:
 
 ```sql
-SET allow_experimental_mongo_dialect = 1;
+SET enable_mongo_dialect = 1;
 SET dialect = 'mongo';
 
 analytics.users.find({"age" : 20});

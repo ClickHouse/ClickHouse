@@ -19,13 +19,13 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 
 mongo() {
-    ${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 --max_threads 1 --query "$1"
+    ${CLICKHOUSE_CLIENT} --dialect mongo --enable_mongo_dialect 1 --max_threads 1 --query "$1"
 }
 
 # The message of the error names the table, whose database is the one of the test run, so the name
 # of the error is what the reference records.
 mongo_error() {
-    ${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 --max_threads 1 --query "$1" 2>&1 >/dev/null \
+    ${CLICKHOUSE_CLIENT} --dialect mongo --enable_mongo_dialect 1 --max_threads 1 --query "$1" 2>&1 >/dev/null \
         | grep -oE '[A-Z_]+\)$' | tr -d ')'
 }
 
