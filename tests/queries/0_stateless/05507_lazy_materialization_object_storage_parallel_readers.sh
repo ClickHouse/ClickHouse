@@ -123,6 +123,9 @@ ${CLICKHOUSE_CLIENT} "${LAZY_SETTINGS[@]}" --query_plan_optimize_lazy_materializ
     --max_threads=16 --query "EXPLAIN ${S3_JSON}" | grep -c 'LazilyReadFromObjectStorage'
 run_counted 16_json 16 "$S3_JSON" --s3_validate_etag_on_read=1
 run_counted 16_dynamic 16 "$S3_DYNAMIC" --s3_validate_etag_on_read=1
+# The same struct read as `Nullable(Tuple)` counts as its 5 elements (`IcebergLocal` stores a `Nullable(Tuple)` as a `Tuple`).
+S3_NULLABLE="SELECT k, j FROM s3('${S3_URL}/data_*.parquet', 'test', 'testtest', 'Parquet', 'k Int64, ts Int64, j Nullable(Tuple(c1 String, c2 String, c3 String, c4 String, c5 String))') ORDER BY ts, k LIMIT 100"
+run_counted 16_nullable 16 "$S3_NULLABLE" --s3_validate_etag_on_read=1
 
 echo '-- the number of readers'
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS processors_profile_log"

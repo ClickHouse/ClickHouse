@@ -22,4 +22,5 @@ nested, max_threads = 16: same
 16_narrow	8
 16_narrow_streams	4
 16_nested	3
+16_nullable	6
 16_wide	3
