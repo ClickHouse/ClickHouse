@@ -103,6 +103,10 @@ FROM (EXPLAIN PIPELINE SELECT l.number % 100 AS k, r.v AS v FROM numbers(1000000
 SELECT count(), sum(cityHash64(k, v))
 FROM (SELECT l.number % 100 AS k, r.v AS v FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k ORDER BY k, v LIMIT 2, 3 BY k SETTINGS max_bytes_before_external_join = 1000000000);
 
+-- `RIGHT` and `FULL` joins emit each unmatched right row once, whatever the probe width.
+SELECT count(), sum(cityHash64(r.k, r.v, l.number)) FROM numbers(500) AS l RIGHT JOIN t_probe_width_dim AS r ON l.number = r.k;
+SELECT count(), sum(cityHash64(r.k, r.v, l.number)) FROM numbers(500, 1000) AS l FULL JOIN t_probe_width_dim AS r ON l.number = r.k;
+
 -- Results do not change.
 SELECT count(), sum(cityHash64(l.number, r.v)) FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k;
 SELECT count(), sum(cityHash64(l.number, r.v)) FROM numbers(1000000) AS l JOIN t_probe_width_dim AS r ON l.number = r.k SETTINGS parallel_hash_join_threshold = 0;
