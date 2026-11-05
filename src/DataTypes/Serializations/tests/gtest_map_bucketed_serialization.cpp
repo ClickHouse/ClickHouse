@@ -295,6 +295,10 @@ Field arrayOfFloat64Key(size_t row)
     return value;
 }
 
+/// No integer of `dynamicKey` and `jsonKey` needs a wider type than the first integer of its variant or path, so the keys
+/// do not depend on whether inserting a `Field` widens the variant.
+constexpr Int64 OFFSET_TO_64_BITS = Int64(1) << 40;
+
 Field dynamicKey(size_t row)
 {
     switch (row % 5)
@@ -302,7 +306,7 @@ Field dynamicKey(size_t row)
         case 0: return Field(rowBits(row));
         case 1: return Field(stringKey(row));
         case 2: return floatKey<Float64>(row);
-        case 3: return Array{Field(static_cast<Int64>(row)), Field(Int64(-1))};
+        case 3: return Array{Field(static_cast<Int64>(row) - OFFSET_TO_64_BITS), Field(Int64(-1))};
         default: return Field();
     }
 }
@@ -314,13 +318,13 @@ Field jsonKey(size_t row)
     if (row % 7 == 6)
         return value;
 
-    value["a"] = Field(rowBits(row) % 1000);
+    value["a"] = Field(1000 + rowBits(row) % 1000);
     if (row % 2)
         value["b"] = Field("s" + std::to_string(row % 50));
     if (row % 3 == 0)
-        value["c.d"] = Field(-static_cast<Int64>(row));
+        value["c.d"] = Field(-static_cast<Int64>(row) - OFFSET_TO_64_BITS);
     if (row % 5 == 0)
-        value["e"] = Array{Field(static_cast<UInt64>(row)), Field(static_cast<UInt64>(row + 1))};
+        value["e"] = Array{Field(static_cast<UInt64>(OFFSET_TO_64_BITS) + row), Field(static_cast<UInt64>(OFFSET_TO_64_BITS) + row + 1)};
     return value;
 }
 
@@ -530,10 +534,10 @@ TEST(MapBucketedSerialization, BucketsOfEveryKeyClassArePinned)
         {"Tuple(String, UInt64)", 0x3dcb75c6c8cd75a8, {0xeb3bf4a8f98f2090, 0x05eadc83f3afa527, 0x2a0b952b77178107}},
         {"Tuple(Float64, UInt8)", 0x97603802ecd0d152, {0xa65263dbb79e235d, 0x2117fceae739f28c, 0xe4308bc5a5984f3f}},
         {"Variant(UInt64, String)", 0xc9a2b7d3e706771b, {0x9ce7f7285d2d200b, 0x8b3cca82ad28dcf5, 0xc78b694d3034cf43}},
-        {"Dynamic", 0x68edfafef64e3bc6, {0x7d1225093821209d, 0x879974bad3788127, 0x6427e2bae7f03cac}},
-        {"Dynamic(max_types=1)", 0xa925e400a9ee89bc, {0x26d99a37330042ad, 0xde3a26278f2a79b6, 0x2ac8a82239da348f}},
-        {"JSON", 0x759ca8c2efa04a59, {0xa5d9ff1583a32a28, 0xb2a93a7fdcd79e5a, 0x522772627335da60}},
-        {"JSON(a UInt32, max_dynamic_paths=1)", 0x6f7e60c95597912f, {0x491112db11260f35, 0x3c588414b22b0281, 0xb1289b0e02dc3cdc}},
+        {"Dynamic", 0xe8caef0e1dc7afb7, {0xa8de81bf5eb61051, 0x3b23085d43456ffb, 0xb7b5285110a9488a}},
+        {"Dynamic(max_types=1)", 0xe8caef0e1dc7afb7, {0xa8de81bf5eb61051, 0x3b23085d43456ffb, 0xb7b5285110a9488a}},
+        {"JSON", 0x54bf20ad6e005aab, {0x0fe6136777ff4acb, 0xd9ab465e72b0f17c, 0x2ced10401898911b}},
+        {"JSON(a UInt32, max_dynamic_paths=1)", 0x85d4c13b756e46bf, {0xc02689496a0bfb8d, 0xdf38a0e5231eaa9d, 0x72caa298430d8bac}},
     };
 
     std::vector<PinnedKeyClass> actual;

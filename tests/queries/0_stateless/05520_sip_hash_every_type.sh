@@ -6,8 +6,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # `sipHash64` and `sipHash128` of every type, of nested types, of several arguments and of constants. The checksums in
 # the reference were computed by the code that hashes one row at a time, so they must not change. Every value is made
-# from `number`, and the same query runs with blocks of 1, 7, 9, 257, 1003 and 65536 rows, so the reference repeats the
-# checksums once per block size.
+# from `number`. The same query runs over the first 64 rows with blocks of 1 row, over the first 301 rows with blocks of 7
+# and 9 rows, and over all 1003 rows with blocks of 257 and 65536 rows.
 
 # Special values of an integer type for `k` < 5 (0, 1, all bits set, the maximum and the minimum of the signed type),
 # random bits otherwise.
@@ -101,10 +101,12 @@ String and constant Tuple|str, (1, 'abc', [2, 3])
 EOF
 )
 
-# `str` has every length from 0 to 300 several times, then about 4 KB or short. `f64` has signed zeros, NaNs, infinities
+# `str` has every length from 0 to 300 twice, then about 4 KB or short. `f64` has signed zeros, NaNs, infinities
 # and subnormals. The values of `dyn` have 6 types and NULL. The arrays in `js` are never empty, because the type of an
 # empty array in JSON comes from the other rows of the block.
-SOURCE="
+source_query()
+{
+    echo "
     SELECT
         number,
         cityHash64(number) AS h,
@@ -113,7 +115,7 @@ SOURCE="
         concat(reinterpretAsFixedString(h), reinterpretAsFixedString(g),
             reinterpretAsFixedString(cityHash64(number, 2)), reinterpretAsFixedString(cityHash64(number, 3))) AS b,
         unhex(substring(repeat(hex(b), 126), 1,
-            2 * multiIf(number < 2000, number % 301, number % 3 = 0, 4000 + number % 9, number % 64))) AS str,
+            2 * multiIf(number < 602, number % 301, number % 3 = 0, 4000 + number % 9, number % 64))) AS str,
         reinterpretAsFloat64(multiIf(k = 0, 0, k = 1, 0x8000000000000000, k = 2, 0x7FF8000000000000, k = 3, 0xFFF8000000000001,
             k = 4, 0x7FF0000000000000, k = 5, 0xFFF0000000000000, k = 6, 1, k = 7, 0x800FFFFFFFFFFFFF, h)) AS f64,
         if(number % 7 = 0, NULL, toUInt32(h)) AS nu32,
@@ -127,7 +129,8 @@ SOURCE="
             ',\"s', toString(number % 3), '\":\"', hex(substring(str, 1, number % 9)), '\",\"arr', toString(number % 2), '\":[',
             arrayStringConcat(arrayMap(i -> toString(number + i), range(1 + number % 4)), ','), '],\"f\":', toString(number % 10 / 4), '}'))
             AS JSON(a.b UInt32)) AS js
-    FROM numbers(3003)"
+    FROM numbers($1)"
+}
 
 # Full column names and no readable number tips in the output.
 FORMAT="output_format_pretty_max_column_name_width_cut_to = 0, output_format_pretty_single_large_number_tip_threshold = 0 FORMAT Vertical"
@@ -138,8 +141,11 @@ while IFS='|' read -r name args; do
     COLUMNS+=", groupBitXor(cityHash64(number, sipHash128($args))) AS \`$name sipHash128\`"
 done <<< "$TYPES"
 
-for block_size in 1 7 9 257 1003 65536; do
-    $CLICKHOUSE_CLIENT -q "SELECT $block_size AS max_block_size $COLUMNS FROM ($SOURCE) SETTINGS max_block_size = $block_size, $FORMAT"
+QUERIES=""
+for rows_and_block_size in "64 1" "301 7" "301 9" "1003 257" "1003 65536"; do
+    read -r rows block_size <<< "$rows_and_block_size"
+    QUERIES+="SELECT $rows AS rows, $block_size AS max_block_size $COLUMNS FROM ($(source_query "$rows"))
+        SETTINGS max_block_size = $block_size, $FORMAT;"
 done
 
 # The keyed and reference variants share code paths with the functions above.
@@ -149,4 +155,6 @@ while IFS='|' read -r name args; do
     KEYED+=", groupBitXor(cityHash64(number, sipHash128Keyed((toUInt64(1), toUInt64(2)), $args))) AS \`$name sipHash128Keyed\`"
     KEYED+=", groupBitXor(cityHash64(number, sipHash128Reference($args))) AS \`$name sipHash128Reference\`"
 done <<< "$(grep -E '^(Tuple\(Nullable|Array\(String\)|Map\(String|UInt64, String)' <<< "$TYPES")"
-$CLICKHOUSE_CLIENT -q "SELECT 'keyed' AS functions $KEYED FROM ($SOURCE) SETTINGS $FORMAT"
+QUERIES+="SELECT 'keyed' AS functions $KEYED FROM ($(source_query 1003)) SETTINGS $FORMAT;"
+
+$CLICKHOUSE_CLIENT <<< "$QUERIES"

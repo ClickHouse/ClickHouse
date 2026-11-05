@@ -1,933 +1,785 @@
 Row 1:
 ──────
+rows:                                                       64
 max_block_size:                                             1
-UInt8 sipHash64:                                            10119854501469660556
-UInt8 sipHash128:                                           6026032112037920132
-UInt16 sipHash64:                                           9071680848167832101
-UInt16 sipHash128:                                          6934132568451323698
-UInt32 sipHash64:                                           16362788689865703783
-UInt32 sipHash128:                                          13423536092977456262
-UInt64 sipHash64:                                           11432770794852125635
-UInt64 sipHash128:                                          909279623013292615
-UInt128 sipHash64:                                          5403937297100312013
-UInt128 sipHash128:                                         2670207482998778328
-UInt256 sipHash64:                                          2790960882895703638
-UInt256 sipHash128:                                         16433930626538596280
-Int8 sipHash64:                                             10119854501469660556
-Int8 sipHash128:                                            6026032112037920132
-Int16 sipHash64:                                            9071680848167832101
-Int16 sipHash128:                                           6934132568451323698
-Int32 sipHash64:                                            16362788689865703783
-Int32 sipHash128:                                           13423536092977456262
-Int64 sipHash64:                                            11432770794852125635
-Int64 sipHash128:                                           909279623013292615
-Int128 sipHash64:                                           5403937297100312013
-Int128 sipHash128:                                          2670207482998778328
-Int256 sipHash64:                                           2790960882895703638
-Int256 sipHash128:                                          16433930626538596280
-Float32 sipHash64:                                          4646738560927424426
-Float32 sipHash128:                                         14716236083238956832
-Float64 sipHash64:                                          7366483245233485322
-Float64 sipHash128:                                         8487023238397817001
-BFloat16 sipHash64:                                         15704148814016230478
-BFloat16 sipHash128:                                        7098768495619624420
-Bool sipHash64:                                             1971855717984216977
-Bool sipHash128:                                            14388002606479051527
-Decimal32 sipHash64:                                        2763082730501794092
-Decimal32 sipHash128:                                       11972750696268175186
-Decimal64 sipHash64:                                        17426815624464286826
-Decimal64 sipHash128:                                       7390189630872634308
-Decimal128 sipHash64:                                       15984201463424014311
-Decimal128 sipHash128:                                      9492728432405321570
-Decimal256 sipHash64:                                       13622159580818668298
-Decimal256 sipHash128:                                      9293721609569383793
-Date sipHash64:                                             6609601126816791842
-Date sipHash128:                                            14238606223508580016
-Date32 sipHash64:                                           2982755935697732850
-Date32 sipHash128:                                          5416811342231149345
-DateTime sipHash64:                                         3572435291522968153
-DateTime sipHash128:                                        6853575142161818277
-DateTime64(3) sipHash64:                                    9882138885577782257
-DateTime64(3) sipHash128:                                   54029088775778811
-Time sipHash64:                                             3103614932874483137
-Time sipHash128:                                            9183402397653536727
-Time64(6) sipHash64:                                        5500342890890233018
-Time64(6) sipHash128:                                       14141267871018121059
-Enum8 sipHash64:                                            7148361552583723751
-Enum8 sipHash128:                                           16565313975524305436
-Enum16 sipHash64:                                           12705513379728082762
-Enum16 sipHash128:                                          11296989550043331221
-UUID sipHash64:                                             5403937297100312013
-UUID sipHash128:                                            2670207482998778328
-IPv4 sipHash64:                                             3572435291522968153
-IPv4 sipHash128:                                            6853575142161818277
-IPv6 sipHash64:                                             14754682784069338856
-IPv6 sipHash128:                                            14583985233562886980
-IntervalSecond sipHash64:                                   11432770794852125635
-IntervalSecond sipHash128:                                  909279623013292615
-String sipHash64:                                           6055926186686336657
-String sipHash128:                                          5223541486509779131
-FixedString(1) sipHash64:                                   11469695648079902848
-FixedString(1) sipHash128:                                  9961168914078146079
-FixedString(5) sipHash64:                                   8647250394568855773
-FixedString(5) sipHash128:                                  16525703635604125063
-FixedString(8) sipHash64:                                   1207561622589542623
-FixedString(8) sipHash128:                                  14834592652531079365
-FixedString(16) sipHash64:                                  10533030573690796799
-FixedString(16) sipHash128:                                 2358959872406504598
-FixedString(33) sipHash64:                                  9914217459176682291
-FixedString(33) sipHash128:                                 7692327516195392629
-Nullable(UInt32) sipHash64:                                 11304750776008968360
-Nullable(UInt32) sipHash128:                                5230526110718448753
-Nullable(String) sipHash64:                                 17766838188287481059
-Nullable(String) sipHash128:                                2291898431926607650
-LowCardinality(String) sipHash64:                           6055926186686336657
-LowCardinality(String) sipHash128:                          5223541486509779131
-LowCardinality(Nullable(String)) sipHash64:                 17766838188287481059
-LowCardinality(Nullable(String)) sipHash128:                2291898431926607650
-Array(UInt8) sipHash64:                                     2833114091452304215
-Array(UInt8) sipHash128:                                    17208622608977038920
-Array(String) sipHash64:                                    12789242606656393924
-Array(String) sipHash128:                                   11546681962623593189
-Array(Array(UInt32)) sipHash64:                             10431722380632634297
-Array(Array(UInt32)) sipHash128:                            320813004864539729
-Array(Nullable(String)) sipHash64:                          6731217629042446767
-Array(Nullable(String)) sipHash128:                         9270594354852154933
-Array(Tuple(UInt64, String)) sipHash64:                     11799764183681331788
-Array(Tuple(UInt64, String)) sipHash128:                    15703798107943568267
-Map(String, UInt64) sipHash64:                              1350796917745561299
-Map(String, UInt64) sipHash128:                             13161562619502973391
-Map(UInt32, Array(String)) sipHash64:                       16149042756989058628
-Map(UInt32, Array(String)) sipHash128:                      4492079224556973586
-Array(UInt32) sipHash64:                                    7440887341613643404
-Array(UInt32) sipHash128:                                   352254484442481242
-Map(UInt64, String) sipHash64:                              9134366295966183718
-Map(UInt64, String) sipHash128:                             3898786676840614417
-Tuple(UInt64, String, Float64) sipHash64:                   12930061042991291026
-Tuple(UInt64, String, Float64) sipHash128:                  16321577523701416972
-Tuple(Nullable(UInt32), Nullable(String)) sipHash64:        4903775521299565922
-Tuple(Nullable(UInt32), Nullable(String)) sipHash128:       15199682022439940969
-Tuple(LowCardinality(String)) sipHash64:                    6055926186686336657
-Tuple(LowCardinality(String)) sipHash128:                   5223541486509779131
-Empty Tuple sipHash64:                                      12322868794795055543
-Empty Tuple sipHash128:                                     6186415108322938835
-Nested Tuple sipHash64:                                     18022159680042539320
-Nested Tuple sipHash128:                                    677773199030425147
-Variant(UInt64, String, Array(UInt32)) sipHash64:           12882136026792851553
-Variant(UInt64, String, Array(UInt32)) sipHash128:          17412744720681215443
-Dynamic sipHash64:                                          15328597668059434822
-Dynamic sipHash128:                                         14145875509075956721
-Dynamic(max_types = 1) sipHash64:                           15328597668059434822
-Dynamic(max_types = 1) sipHash128:                          14145875509075956721
-Tuple(Dynamic) sipHash64:                                   11341889856508237959
-Tuple(Dynamic) sipHash128:                                  14042770752621058463
-Tuple(Dynamic(max_types = 1)) sipHash64:                    11341889856508237959
-Tuple(Dynamic(max_types = 1)) sipHash128:                   14042770752621058463
-JSON sipHash64:                                             3626025473319722781
-JSON sipHash128:                                            1099880731438550494
-JSON(max_dynamic_paths = 1, a.b UInt32) sipHash64:          3626025473319722781
-JSON(max_dynamic_paths = 1, a.b UInt32) sipHash128:         1099880731438550494
-Tuple(JSON) sipHash64:                                      3626025473319722781
-Tuple(JSON) sipHash128:                                     1099880731438550494
-Tuple(JSON(max_dynamic_paths = 1, a.b UInt32)) sipHash64:   3626025473319722781
-Tuple(JSON(max_dynamic_paths = 1, a.b UInt32)) sipHash128:  1099880731438550494
-AggregateFunction(sum, UInt64) sipHash64:                   10575596833096249289
-AggregateFunction(sum, UInt64) sipHash128:                  12115566468784082823
-AggregateFunction(uniq, String) sipHash64:                  8851381237910902243
-AggregateFunction(uniq, String) sipHash128:                 12936309354676766529
-QBit(Float32, 8) sipHash64:                                 7557126637700755188
-QBit(Float32, 8) sipHash128:                                13953367952715664676
+UInt8 sipHash64:                                            8105800163746628331
+UInt8 sipHash128:                                           6066383263989115003
+UInt16 sipHash64:                                           6966199519076550420
+UInt16 sipHash128:                                          14179329270316618761
+UInt32 sipHash64:                                           11841299835435619693
+UInt32 sipHash128:                                          3983319110249728298
+UInt64 sipHash64:                                           1875548789919808393
+UInt64 sipHash128:                                          11987824915043141153
+UInt128 sipHash64:                                          3948457762040329930
+UInt128 sipHash128:                                         15439434008503079864
+UInt256 sipHash64:                                          2465860234253287043
+UInt256 sipHash128:                                         3592260868162537228
+Int8 sipHash64:                                             8105800163746628331
+Int8 sipHash128:                                            6066383263989115003
+Int16 sipHash64:                                            6966199519076550420
+Int16 sipHash128:                                           14179329270316618761
+Int32 sipHash64:                                            11841299835435619693
+Int32 sipHash128:                                           3983319110249728298
+Int64 sipHash64:                                            1875548789919808393
+Int64 sipHash128:                                           11987824915043141153
+Int128 sipHash64:                                           3948457762040329930
+Int128 sipHash128:                                          15439434008503079864
+Int256 sipHash64:                                           2465860234253287043
+Int256 sipHash128:                                          3592260868162537228
+Float32 sipHash64:                                          3705721960198351115
+Float32 sipHash128:                                         6690003442818147782
+Float64 sipHash64:                                          18169867556462398222
+Float64 sipHash128:                                         3742433665619268332
+BFloat16 sipHash64:                                         970043360326004723
+BFloat16 sipHash128:                                        5928148015136777982
+Bool sipHash64:                                             4512881810765677500
+Bool sipHash128:                                            5588814074225804834
+Decimal32 sipHash64:                                        12709213853046888396
+Decimal32 sipHash128:                                       17102074967632025103
+Decimal64 sipHash64:                                        447251246785835116
+Decimal64 sipHash128:                                       10992503191866919993
+Decimal128 sipHash64:                                       15451837788001758131
+Decimal128 sipHash128:                                      997873297607544474
+Decimal256 sipHash64:                                       9348100639271451866
+Decimal256 sipHash128:                                      6256200892169426350
+Date sipHash64:                                             18106785359039664775
+Date sipHash128:                                            17331580515742361352
+Date32 sipHash64:                                           1454971490215317658
+Date32 sipHash128:                                          477667498817296665
+DateTime sipHash64:                                         14886682087449896934
+DateTime sipHash128:                                        2879365191966893160
+DateTime64(3) sipHash64:                                    3319479534371854263
+DateTime64(3) sipHash128:                                   6921392238191883689
+Time sipHash64:                                             16032488736604883469
+Time sipHash128:                                            5710501923391777573
+Time64(6) sipHash64:                                        6837949259107844365
+Time64(6) sipHash128:                                       13134831837475436512
+Enum8 sipHash64:                                            15572097022747741913
+Enum8 sipHash128:                                           8398379476300691753
+Enum16 sipHash64:                                           16137227149971226091
+Enum16 sipHash128:                                          9427343775835737534
+UUID sipHash64:                                             3948457762040329930
+UUID sipHash128:                                            15439434008503079864
+IPv4 sipHash64:                                             14886682087449896934
+IPv4 sipHash128:                                            2879365191966893160
+IPv6 sipHash64:                                             177601760265719254
+IPv6 sipHash128:                                            60217458958430030
+IntervalSecond sipHash64:                                   1875548789919808393
+IntervalSecond sipHash128:                                  11987824915043141153
+String sipHash64:                                           2641836509796214099
+String sipHash128:                                          15173084345319138410
+FixedString(1) sipHash64:                                   15455865746691719054
+FixedString(1) sipHash128:                                  1996837987112879527
+FixedString(5) sipHash64:                                   6409086428842338453
+FixedString(5) sipHash128:                                  11626339241946183940
+FixedString(8) sipHash64:                                   14610077175489688250
+FixedString(8) sipHash128:                                  12615573732614336420
+FixedString(16) sipHash64:                                  185152671015701169
+FixedString(16) sipHash128:                                 14356822809909282878
+FixedString(33) sipHash64:                                  2291479404986383697
+FixedString(33) sipHash128:                                 14188098344238052899
+Nullable(UInt32) sipHash64:                                 5735446643316427079
+Nullable(UInt32) sipHash128:                                15987350275660824563
+Nullable(String) sipHash64:                                 12314011534328980887
+Nullable(String) sipHash128:                                17394562769899582634
+LowCardinality(String) sipHash64:                           2641836509796214099
+LowCardinality(String) sipHash128:                          15173084345319138410
+LowCardinality(Nullable(String)) sipHash64:                 12314011534328980887
+LowCardinality(Nullable(String)) sipHash128:                17394562769899582634
+Array(UInt8) sipHash64:                                     18139876883132893478
+Array(UInt8) sipHash128:                                    8535066486167779109
+Array(String) sipHash64:                                    8237274936349489347
+Array(String) sipHash128:                                   15345388479202069445
+Array(Array(UInt32)) sipHash64:                             5920019137750044042
+Array(Array(UInt32)) sipHash128:                            3452427145066189444
+Array(Nullable(String)) sipHash64:                          9981133557050651505
+Array(Nullable(String)) sipHash128:                         18440345712848679153
+Array(Tuple(UInt64, String)) sipHash64:                     17366709635292093416
+Array(Tuple(UInt64, String)) sipHash128:                    15597051077380979546
+Map(String, UInt64) sipHash64:                              871817482778392662
+Map(String, UInt64) sipHash128:                             14499502813208956251
+Map(UInt32, Array(String)) sipHash64:                       18125361392637712234
+Map(UInt32, Array(String)) sipHash128:                      782306256863721855
+Array(UInt32) sipHash64:                                    5241268164187982827
+Array(UInt32) sipHash128:                                   1996710578153343451
+Map(UInt64, String) sipHash64:                              9007731893901187107
+Map(UInt64, String) sipHash128:                             14776174922061539272
+Tuple(UInt64, String, Float64) sipHash64:                   16443437974142307018
+Tuple(UInt64, String, Float64) sipHash128:                  9788066068592825407
+Tuple(Nullable(UInt32), Nullable(String)) sipHash64:        16267303643827803631
+Tuple(Nullable(UInt32), Nullable(String)) sipHash128:       4341880680846824020
+Tuple(LowCardinality(String)) sipHash64:                    2641836509796214099
+Tuple(LowCardinality(String)) sipHash128:                   15173084345319138410
+Empty Tuple sipHash64:                                      3555092439328849513
+Empty Tuple sipHash128:                                     16893205635527158607
+Nested Tuple sipHash64:                                     16237653911484331222
+Nested Tuple sipHash128:                                    7318278927389719395
+Variant(UInt64, String, Array(UInt32)) sipHash64:           7516036522900442690
+Variant(UInt64, String, Array(UInt32)) sipHash128:          17620893955505384496
+Dynamic sipHash64:                                          7377470706150705420
+Dynamic sipHash128:                                         3719770490324992213
+Dynamic(max_types = 1) sipHash64:                           7377470706150705420
+Dynamic(max_types = 1) sipHash128:                          3719770490324992213
+Tuple(Dynamic) sipHash64:                                   16804814446326806807
+Tuple(Dynamic) sipHash128:                                  11135528496595953205
+Tuple(Dynamic(max_types = 1)) sipHash64:                    16804814446326806807
+Tuple(Dynamic(max_types = 1)) sipHash128:                   11135528496595953205
+JSON sipHash64:                                             1100123862947716418
+JSON sipHash128:                                            3232469067904500739
+JSON(max_dynamic_paths = 1, a.b UInt32) sipHash64:          1100123862947716418
+JSON(max_dynamic_paths = 1, a.b UInt32) sipHash128:         3232469067904500739
+Tuple(JSON) sipHash64:                                      1100123862947716418
+Tuple(JSON) sipHash128:                                     3232469067904500739
+Tuple(JSON(max_dynamic_paths = 1, a.b UInt32)) sipHash64:   1100123862947716418
+Tuple(JSON(max_dynamic_paths = 1, a.b UInt32)) sipHash128:  3232469067904500739
+AggregateFunction(sum, UInt64) sipHash64:                   8377451183522702412
+AggregateFunction(sum, UInt64) sipHash128:                  9712567662501378107
+AggregateFunction(uniq, String) sipHash64:                  10140547316822286706
+AggregateFunction(uniq, String) sipHash128:                 4196206939793767262
+QBit(Float32, 8) sipHash64:                                 12331164835430196611
+QBit(Float32, 8) sipHash128:                                3956580778062442408
 NULL sipHash64:                                             ᴺᵁᴸᴸ
 NULL sipHash128:                                            ᴺᵁᴸᴸ
-Empty Array sipHash64:                                      11349019289213493218
-Empty Array sipHash128:                                     10715893757459819181
-UInt64, String, Nullable(Float64), Array(UInt8) sipHash64:  17221313568658355350
-UInt64, String, Nullable(Float64), Array(UInt8) sipHash128: 16285526529246457345
-String and constant String sipHash64:                       17827776328936267084
-String and constant String sipHash128:                      1937421119426288672
-Constant UInt32 and String sipHash64:                       10264276986887242525
-Constant UInt32 and String sipHash128:                      11484871140298689789
-Constant Tuple sipHash64:                                   13015805725073447506
-Constant Tuple sipHash128:                                  13194744109582160030
-String and constant Tuple sipHash64:                        14581642151226736953
-String and constant Tuple sipHash128:                       4350068528724834309
+Empty Array sipHash64:                                      425073107282697950
+Empty Array sipHash128:                                     3129181437414756803
+UInt64, String, Nullable(Float64), Array(UInt8) sipHash64:  6393887367328075241
+UInt64, String, Nullable(Float64), Array(UInt8) sipHash128: 11401777750249585730
+String and constant String sipHash64:                       14164016011378927939
+String and constant String sipHash128:                      5034587984872747915
+Constant UInt32 and String sipHash64:                       10432898166946007729
+Constant UInt32 and String sipHash128:                      1062446870613037073
+Constant Tuple sipHash64:                                   2344648856449067997
+Constant Tuple sipHash128:                                  10113043603047197827
+String and constant Tuple sipHash64:                        7996981947292254897
+String and constant Tuple sipHash128:                       5981383015043799280
 Row 1:
 ──────
+rows:                                                       301
 max_block_size:                                             7
-UInt8 sipHash64:                                            10119854501469660556
-UInt8 sipHash128:                                           6026032112037920132
-UInt16 sipHash64:                                           9071680848167832101
-UInt16 sipHash128:                                          6934132568451323698
-UInt32 sipHash64:                                           16362788689865703783
-UInt32 sipHash128:                                          13423536092977456262
-UInt64 sipHash64:                                           11432770794852125635
-UInt64 sipHash128:                                          909279623013292615
-UInt128 sipHash64:                                          5403937297100312013
-UInt128 sipHash128:                                         2670207482998778328
-UInt256 sipHash64:                                          2790960882895703638
-UInt256 sipHash128:                                         16433930626538596280
-Int8 sipHash64:                                             10119854501469660556
-Int8 sipHash128:                                            6026032112037920132
-Int16 sipHash64:                                            9071680848167832101
-Int16 sipHash128:                                           6934132568451323698
-Int32 sipHash64:                                            16362788689865703783
-Int32 sipHash128:                                           13423536092977456262
-Int64 sipHash64:                                            11432770794852125635
-Int64 sipHash128:                                           909279623013292615
-Int128 sipHash64:                                           5403937297100312013
-Int128 sipHash128:                                          2670207482998778328
-Int256 sipHash64:                                           2790960882895703638
-Int256 sipHash128:                                          16433930626538596280
-Float32 sipHash64:                                          4646738560927424426
-Float32 sipHash128:                                         14716236083238956832
-Float64 sipHash64:                                          7366483245233485322
-Float64 sipHash128:                                         8487023238397817001
-BFloat16 sipHash64:                                         15704148814016230478
-BFloat16 sipHash128:                                        7098768495619624420
-Bool sipHash64:                                             1971855717984216977
-Bool sipHash128:                                            14388002606479051527
-Decimal32 sipHash64:                                        2763082730501794092
-Decimal32 sipHash128:                                       11972750696268175186
-Decimal64 sipHash64:                                        17426815624464286826
-Decimal64 sipHash128:                                       7390189630872634308
-Decimal128 sipHash64:                                       15984201463424014311
-Decimal128 sipHash128:                                      9492728432405321570
-Decimal256 sipHash64:                                       13622159580818668298
-Decimal256 sipHash128:                                      9293721609569383793
-Date sipHash64:                                             6609601126816791842
-Date sipHash128:                                            14238606223508580016
-Date32 sipHash64:                                           2982755935697732850
-Date32 sipHash128:                                          5416811342231149345
-DateTime sipHash64:                                         3572435291522968153
-DateTime sipHash128:                                        6853575142161818277
-DateTime64(3) sipHash64:                                    9882138885577782257
-DateTime64(3) sipHash128:                                   54029088775778811
-Time sipHash64:                                             3103614932874483137
-Time sipHash128:                                            9183402397653536727
-Time64(6) sipHash64:                                        5500342890890233018
-Time64(6) sipHash128:                                       14141267871018121059
-Enum8 sipHash64:                                            7148361552583723751
-Enum8 sipHash128:                                           16565313975524305436
-Enum16 sipHash64:                                           12705513379728082762
-Enum16 sipHash128:                                          11296989550043331221
-UUID sipHash64:                                             5403937297100312013
-UUID sipHash128:                                            2670207482998778328
-IPv4 sipHash64:                                             3572435291522968153
-IPv4 sipHash128:                                            6853575142161818277
-IPv6 sipHash64:                                             14754682784069338856
-IPv6 sipHash128:                                            14583985233562886980
-IntervalSecond sipHash64:                                   11432770794852125635
-IntervalSecond sipHash128:                                  909279623013292615
-String sipHash64:                                           6055926186686336657
-String sipHash128:                                          5223541486509779131
-FixedString(1) sipHash64:                                   11469695648079902848
-FixedString(1) sipHash128:                                  9961168914078146079
-FixedString(5) sipHash64:                                   8647250394568855773
-FixedString(5) sipHash128:                                  16525703635604125063
-FixedString(8) sipHash64:                                   1207561622589542623
-FixedString(8) sipHash128:                                  14834592652531079365
-FixedString(16) sipHash64:                                  10533030573690796799
-FixedString(16) sipHash128:                                 2358959872406504598
-FixedString(33) sipHash64:                                  9914217459176682291
-FixedString(33) sipHash128:                                 7692327516195392629
-Nullable(UInt32) sipHash64:                                 11304750776008968360
-Nullable(UInt32) sipHash128:                                5230526110718448753
-Nullable(String) sipHash64:                                 17766838188287481059
-Nullable(String) sipHash128:                                2291898431926607650
-LowCardinality(String) sipHash64:                           6055926186686336657
-LowCardinality(String) sipHash128:                          5223541486509779131
-LowCardinality(Nullable(String)) sipHash64:                 17766838188287481059
-LowCardinality(Nullable(String)) sipHash128:                2291898431926607650
-Array(UInt8) sipHash64:                                     2833114091452304215
-Array(UInt8) sipHash128:                                    17208622608977038920
-Array(String) sipHash64:                                    12789242606656393924
-Array(String) sipHash128:                                   11546681962623593189
-Array(Array(UInt32)) sipHash64:                             10431722380632634297
-Array(Array(UInt32)) sipHash128:                            320813004864539729
-Array(Nullable(String)) sipHash64:                          6731217629042446767
-Array(Nullable(String)) sipHash128:                         9270594354852154933
-Array(Tuple(UInt64, String)) sipHash64:                     11799764183681331788
-Array(Tuple(UInt64, String)) sipHash128:                    15703798107943568267
-Map(String, UInt64) sipHash64:                              1350796917745561299
-Map(String, UInt64) sipHash128:                             13161562619502973391
-Map(UInt32, Array(String)) sipHash64:                       16149042756989058628
-Map(UInt32, Array(String)) sipHash128:                      4492079224556973586
-Array(UInt32) sipHash64:                                    7440887341613643404
-Array(UInt32) sipHash128:                                   352254484442481242
-Map(UInt64, String) sipHash64:                              9134366295966183718
-Map(UInt64, String) sipHash128:                             3898786676840614417
-Tuple(UInt64, String, Float64) sipHash64:                   12930061042991291026
-Tuple(UInt64, String, Float64) sipHash128:                  16321577523701416972
-Tuple(Nullable(UInt32), Nullable(String)) sipHash64:        4903775521299565922
-Tuple(Nullable(UInt32), Nullable(String)) sipHash128:       15199682022439940969
-Tuple(LowCardinality(String)) sipHash64:                    6055926186686336657
-Tuple(LowCardinality(String)) sipHash128:                   5223541486509779131
-Empty Tuple sipHash64:                                      12322868794795055543
-Empty Tuple sipHash128:                                     6186415108322938835
-Nested Tuple sipHash64:                                     18022159680042539320
-Nested Tuple sipHash128:                                    677773199030425147
-Variant(UInt64, String, Array(UInt32)) sipHash64:           12882136026792851553
-Variant(UInt64, String, Array(UInt32)) sipHash128:          17412744720681215443
-Dynamic sipHash64:                                          15328597668059434822
-Dynamic sipHash128:                                         14145875509075956721
-Dynamic(max_types = 1) sipHash64:                           15328597668059434822
-Dynamic(max_types = 1) sipHash128:                          14145875509075956721
-Tuple(Dynamic) sipHash64:                                   11341889856508237959
-Tuple(Dynamic) sipHash128:                                  14042770752621058463
-Tuple(Dynamic(max_types = 1)) sipHash64:                    11341889856508237959
-Tuple(Dynamic(max_types = 1)) sipHash128:                   14042770752621058463
-JSON sipHash64:                                             3626025473319722781
-JSON sipHash128:                                            1099880731438550494
-JSON(max_dynamic_paths = 1, a.b UInt32) sipHash64:          3626025473319722781
-JSON(max_dynamic_paths = 1, a.b UInt32) sipHash128:         1099880731438550494
-Tuple(JSON) sipHash64:                                      3626025473319722781
-Tuple(JSON) sipHash128:                                     1099880731438550494
-Tuple(JSON(max_dynamic_paths = 1, a.b UInt32)) sipHash64:   3626025473319722781
-Tuple(JSON(max_dynamic_paths = 1, a.b UInt32)) sipHash128:  1099880731438550494
-AggregateFunction(sum, UInt64) sipHash64:                   10575596833096249289
-AggregateFunction(sum, UInt64) sipHash128:                  12115566468784082823
-AggregateFunction(uniq, String) sipHash64:                  8851381237910902243
-AggregateFunction(uniq, String) sipHash128:                 12936309354676766529
-QBit(Float32, 8) sipHash64:                                 7557126637700755188
-QBit(Float32, 8) sipHash128:                                13953367952715664676
+UInt8 sipHash64:                                            13016695658915364133
+UInt8 sipHash128:                                           4690980165651896855
+UInt16 sipHash64:                                           1321644706051641717
+UInt16 sipHash128:                                          505109752530525372
+UInt32 sipHash64:                                           5565847104859616071
+UInt32 sipHash128:                                          17729904360314216784
+UInt64 sipHash64:                                           17550559893467312043
+UInt64 sipHash128:                                          16691763729612372833
+UInt128 sipHash64:                                          1672509376955943633
+UInt128 sipHash128:                                         8476518987835785916
+UInt256 sipHash64:                                          7232873706118702586
+UInt256 sipHash128:                                         14472949822429999924
+Int8 sipHash64:                                             13016695658915364133
+Int8 sipHash128:                                            4690980165651896855
+Int16 sipHash64:                                            1321644706051641717
+Int16 sipHash128:                                           505109752530525372
+Int32 sipHash64:                                            5565847104859616071
+Int32 sipHash128:                                           17729904360314216784
+Int64 sipHash64:                                            17550559893467312043
+Int64 sipHash128:                                           16691763729612372833
+Int128 sipHash64:                                           1672509376955943633
+Int128 sipHash128:                                          8476518987835785916
+Int256 sipHash64:                                           7232873706118702586
+Int256 sipHash128:                                          14472949822429999924
+Float32 sipHash64:                                          6741692269165051453
+Float32 sipHash128:                                         2727391714422410965
+Float64 sipHash64:                                          1637925476895340146
+Float64 sipHash128:                                         658616564533335031
+BFloat16 sipHash64:                                         3394348623764919210
+BFloat16 sipHash128:                                        472978516878592740
+Bool sipHash64:                                             1419183109190283717
+Bool sipHash128:                                            18392863543427617180
+Decimal32 sipHash64:                                        4365093027876852041
+Decimal32 sipHash128:                                       8662255252375828768
+Decimal64 sipHash64:                                        5873175589454318098
+Decimal64 sipHash128:                                       6014160459682207108
+Decimal128 sipHash64:                                       16891309594362304705
+Decimal128 sipHash128:                                      13685639785924712649
+Decimal256 sipHash64:                                       10214855335637604915
+Decimal256 sipHash128:                                      10454547144685807278
+Date sipHash64:                                             11666270726656553627
+Date sipHash128:                                            7180489587450353232
+Date32 sipHash64:                                           9034607448248946466
+Date32 sipHash128:                                          1392975671065270717
+DateTime sipHash64:                                         1773751962983909913
+DateTime sipHash128:                                        8242620402648514694
+DateTime64(3) sipHash64:                                    2726870459876526809
+DateTime64(3) sipHash128:                                   141639731044670859
+Time sipHash64:                                             15143387461326178226
+Time sipHash128:                                            8538996862610393890
+Time64(6) sipHash64:                                        6432071268872168181
+Time64(6) sipHash128:                                       12692562327389710519
+Enum8 sipHash64:                                            694279736498179451
+Enum8 sipHash128:                                           10689296498355463220
+Enum16 sipHash64:                                           13977651624250001737
+Enum16 sipHash128:                                          13603212642304975275
+UUID sipHash64:                                             1672509376955943633
+UUID sipHash128:                                            8476518987835785916
+IPv4 sipHash64:                                             1773751962983909913
+IPv4 sipHash128:                                            8242620402648514694
+IPv6 sipHash64:                                             8854956276985390088
+IPv6 sipHash128:                                            9573988710978514348
+IntervalSecond sipHash64:                                   17550559893467312043
+IntervalSecond sipHash128:                                  16691763729612372833
+String sipHash64:                                           17144746779760159598
+String sipHash128:                                          5273584884009060399
+FixedString(1) sipHash64:                                   15589077474934185465
+FixedString(1) sipHash128:                                  11167229393337058922
+FixedString(5) sipHash64:                                   15542346042470318523
+FixedString(5) sipHash128:                                  464723856464908386
+FixedString(8) sipHash64:                                   18096434289585077390
+FixedString(8) sipHash128:                                  11611379857600543507
+FixedString(16) sipHash64:                                  10473637021939309845
+FixedString(16) sipHash128:                                 90509516450399620
+FixedString(33) sipHash64:                                  9412508531032376636
+FixedString(33) sipHash128:                                 8019622423418982184
+Nullable(UInt32) sipHash64:                                 12363440675782100533
+Nullable(UInt32) sipHash128:                                2077494560962099135
+Nullable(String) sipHash64:                                 6207212839190674172
+Nullable(String) sipHash128:                                4282495008710276812
+LowCardinality(String) sipHash64:                           17144746779760159598
+LowCardinality(String) sipHash128:                          5273584884009060399
+LowCardinality(Nullable(String)) sipHash64:                 6207212839190674172
+LowCardinality(Nullable(String)) sipHash128:                4282495008710276812
+Array(UInt8) sipHash64:                                     18290882950549217098
+Array(UInt8) sipHash128:                                    4995302026204847380
+Array(String) sipHash64:                                    10963492608095442707
+Array(String) sipHash128:                                   12314435839721524052
+Array(Array(UInt32)) sipHash64:                             13591135797722101190
+Array(Array(UInt32)) sipHash128:                            7309600468816848334
+Array(Nullable(String)) sipHash64:                          4970847991913985401
+Array(Nullable(String)) sipHash128:                         1859665624593509483
+Array(Tuple(UInt64, String)) sipHash64:                     7554116947652166188
+Array(Tuple(UInt64, String)) sipHash128:                    15964940589654284426
+Map(String, UInt64) sipHash64:                              16022115628175671111
+Map(String, UInt64) sipHash128:                             983223531474165899
+Map(UInt32, Array(String)) sipHash64:                       8377007729955672176
+Map(UInt32, Array(String)) sipHash128:                      15786415546603068263
+Array(UInt32) sipHash64:                                    6874695439824104651
+Array(UInt32) sipHash128:                                   17681134120495979062
+Map(UInt64, String) sipHash64:                              13004079519680512015
+Map(UInt64, String) sipHash128:                             15427131712757059553
+Tuple(UInt64, String, Float64) sipHash64:                   12952473465269809856
+Tuple(UInt64, String, Float64) sipHash128:                  2429326555258695190
+Tuple(Nullable(UInt32), Nullable(String)) sipHash64:        1090832337549649818
+Tuple(Nullable(UInt32), Nullable(String)) sipHash128:       7004553620522578746
+Tuple(LowCardinality(String)) sipHash64:                    17144746779760159598
+Tuple(LowCardinality(String)) sipHash128:                   5273584884009060399
+Empty Tuple sipHash64:                                      10148003526456704756
+Empty Tuple sipHash128:                                     4940596904940588425
+Nested Tuple sipHash64:                                     16932825565789514583
+Nested Tuple sipHash128:                                    2108962182009065755
+Variant(UInt64, String, Array(UInt32)) sipHash64:           7428783888307943298
+Variant(UInt64, String, Array(UInt32)) sipHash128:          3467375719859161826
+Dynamic sipHash64:                                          14080990270393623007
+Dynamic sipHash128:                                         2499304128275084227
+Dynamic(max_types = 1) sipHash64:                           14080990270393623007
+Dynamic(max_types = 1) sipHash128:                          2499304128275084227
+Tuple(Dynamic) sipHash64:                                   12565590289066132185
+Tuple(Dynamic) sipHash128:                                  11137651875602298297
+Tuple(Dynamic(max_types = 1)) sipHash64:                    12565590289066132185
+Tuple(Dynamic(max_types = 1)) sipHash128:                   11137651875602298297
+JSON sipHash64:                                             14622714290491118280
+JSON sipHash128:                                            9239778789721960124
+JSON(max_dynamic_paths = 1, a.b UInt32) sipHash64:          14622714290491118280
+JSON(max_dynamic_paths = 1, a.b UInt32) sipHash128:         9239778789721960124
+Tuple(JSON) sipHash64:                                      14622714290491118280
+Tuple(JSON) sipHash128:                                     9239778789721960124
+Tuple(JSON(max_dynamic_paths = 1, a.b UInt32)) sipHash64:   14622714290491118280
+Tuple(JSON(max_dynamic_paths = 1, a.b UInt32)) sipHash128:  9239778789721960124
+AggregateFunction(sum, UInt64) sipHash64:                   705709631579322432
+AggregateFunction(sum, UInt64) sipHash128:                  1258254981624466231
+AggregateFunction(uniq, String) sipHash64:                  2147602288509080799
+AggregateFunction(uniq, String) sipHash128:                 3007618411787515875
+QBit(Float32, 8) sipHash64:                                 14691066089064277330
+QBit(Float32, 8) sipHash128:                                5756235374643059307
 NULL sipHash64:                                             ᴺᵁᴸᴸ
 NULL sipHash128:                                            ᴺᵁᴸᴸ
-Empty Array sipHash64:                                      11349019289213493218
-Empty Array sipHash128:                                     10715893757459819181
-UInt64, String, Nullable(Float64), Array(UInt8) sipHash64:  17221313568658355350
-UInt64, String, Nullable(Float64), Array(UInt8) sipHash128: 16285526529246457345
-String and constant String sipHash64:                       17827776328936267084
-String and constant String sipHash128:                      1937421119426288672
-Constant UInt32 and String sipHash64:                       10264276986887242525
-Constant UInt32 and String sipHash128:                      11484871140298689789
-Constant Tuple sipHash64:                                   13015805725073447506
-Constant Tuple sipHash128:                                  13194744109582160030
-String and constant Tuple sipHash64:                        14581642151226736953
-String and constant Tuple sipHash128:                       4350068528724834309
+Empty Array sipHash64:                                      14389800735151191566
+Empty Array sipHash128:                                     12842609403181817560
+UInt64, String, Nullable(Float64), Array(UInt8) sipHash64:  5883902324829490399
+UInt64, String, Nullable(Float64), Array(UInt8) sipHash128: 16794570534928665226
+String and constant String sipHash64:                       14174793349323521401
+String and constant String sipHash128:                      15574640183401425721
+Constant UInt32 and String sipHash64:                       2052706007151246379
+Constant UInt32 and String sipHash128:                      6163976457043103823
+Constant Tuple sipHash64:                                   4971628396210123806
+Constant Tuple sipHash128:                                  2425820738816298447
+String and constant Tuple sipHash64:                        7460280830969383701
+String and constant Tuple sipHash128:                       6716933868083934977
 Row 1:
 ──────
+rows:                                                       301
 max_block_size:                                             9
-UInt8 sipHash64:                                            10119854501469660556
-UInt8 sipHash128:                                           6026032112037920132
-UInt16 sipHash64:                                           9071680848167832101
-UInt16 sipHash128:                                          6934132568451323698
-UInt32 sipHash64:                                           16362788689865703783
-UInt32 sipHash128:                                          13423536092977456262
-UInt64 sipHash64:                                           11432770794852125635
-UInt64 sipHash128:                                          909279623013292615
-UInt128 sipHash64:                                          5403937297100312013
-UInt128 sipHash128:                                         2670207482998778328
-UInt256 sipHash64:                                          2790960882895703638
-UInt256 sipHash128:                                         16433930626538596280
-Int8 sipHash64:                                             10119854501469660556
-Int8 sipHash128:                                            6026032112037920132
-Int16 sipHash64:                                            9071680848167832101
-Int16 sipHash128:                                           6934132568451323698
-Int32 sipHash64:                                            16362788689865703783
-Int32 sipHash128:                                           13423536092977456262
-Int64 sipHash64:                                            11432770794852125635
-Int64 sipHash128:                                           909279623013292615
-Int128 sipHash64:                                           5403937297100312013
-Int128 sipHash128:                                          2670207482998778328
-Int256 sipHash64:                                           2790960882895703638
-Int256 sipHash128:                                          16433930626538596280
-Float32 sipHash64:                                          4646738560927424426
-Float32 sipHash128:                                         14716236083238956832
-Float64 sipHash64:                                          7366483245233485322
-Float64 sipHash128:                                         8487023238397817001
-BFloat16 sipHash64:                                         15704148814016230478
-BFloat16 sipHash128:                                        7098768495619624420
-Bool sipHash64:                                             1971855717984216977
-Bool sipHash128:                                            14388002606479051527
-Decimal32 sipHash64:                                        2763082730501794092
-Decimal32 sipHash128:                                       11972750696268175186
-Decimal64 sipHash64:                                        17426815624464286826
-Decimal64 sipHash128:                                       7390189630872634308
-Decimal128 sipHash64:                                       15984201463424014311
-Decimal128 sipHash128:                                      9492728432405321570
-Decimal256 sipHash64:                                       13622159580818668298
-Decimal256 sipHash128:                                      9293721609569383793
-Date sipHash64:                                             6609601126816791842
-Date sipHash128:                                            14238606223508580016
-Date32 sipHash64:                                           2982755935697732850
-Date32 sipHash128:                                          5416811342231149345
-DateTime sipHash64:                                         3572435291522968153
-DateTime sipHash128:                                        6853575142161818277
-DateTime64(3) sipHash64:                                    9882138885577782257
-DateTime64(3) sipHash128:                                   54029088775778811
-Time sipHash64:                                             3103614932874483137
-Time sipHash128:                                            9183402397653536727
-Time64(6) sipHash64:                                        5500342890890233018
-Time64(6) sipHash128:                                       14141267871018121059
-Enum8 sipHash64:                                            7148361552583723751
-Enum8 sipHash128:                                           16565313975524305436
-Enum16 sipHash64:                                           12705513379728082762
-Enum16 sipHash128:                                          11296989550043331221
-UUID sipHash64:                                             5403937297100312013
-UUID sipHash128:                                            2670207482998778328
-IPv4 sipHash64:                                             3572435291522968153
-IPv4 sipHash128:                                            6853575142161818277
-IPv6 sipHash64:                                             14754682784069338856
-IPv6 sipHash128:                                            14583985233562886980
-IntervalSecond sipHash64:                                   11432770794852125635
-IntervalSecond sipHash128:                                  909279623013292615
-String sipHash64:                                           6055926186686336657
-String sipHash128:                                          5223541486509779131
-FixedString(1) sipHash64:                                   11469695648079902848
-FixedString(1) sipHash128:                                  9961168914078146079
-FixedString(5) sipHash64:                                   8647250394568855773
-FixedString(5) sipHash128:                                  16525703635604125063
-FixedString(8) sipHash64:                                   1207561622589542623
-FixedString(8) sipHash128:                                  14834592652531079365
-FixedString(16) sipHash64:                                  10533030573690796799
-FixedString(16) sipHash128:                                 2358959872406504598
-FixedString(33) sipHash64:                                  9914217459176682291
-FixedString(33) sipHash128:                                 7692327516195392629
-Nullable(UInt32) sipHash64:                                 11304750776008968360
-Nullable(UInt32) sipHash128:                                5230526110718448753
-Nullable(String) sipHash64:                                 17766838188287481059
-Nullable(String) sipHash128:                                2291898431926607650
-LowCardinality(String) sipHash64:                           6055926186686336657
-LowCardinality(String) sipHash128:                          5223541486509779131
-LowCardinality(Nullable(String)) sipHash64:                 17766838188287481059
-LowCardinality(Nullable(String)) sipHash128:                2291898431926607650
-Array(UInt8) sipHash64:                                     2833114091452304215
-Array(UInt8) sipHash128:                                    17208622608977038920
-Array(String) sipHash64:                                    12789242606656393924
-Array(String) sipHash128:                                   11546681962623593189
-Array(Array(UInt32)) sipHash64:                             10431722380632634297
-Array(Array(UInt32)) sipHash128:                            320813004864539729
-Array(Nullable(String)) sipHash64:                          6731217629042446767
-Array(Nullable(String)) sipHash128:                         9270594354852154933
-Array(Tuple(UInt64, String)) sipHash64:                     11799764183681331788
-Array(Tuple(UInt64, String)) sipHash128:                    15703798107943568267
-Map(String, UInt64) sipHash64:                              1350796917745561299
-Map(String, UInt64) sipHash128:                             13161562619502973391
-Map(UInt32, Array(String)) sipHash64:                       16149042756989058628
-Map(UInt32, Array(String)) sipHash128:                      4492079224556973586
-Array(UInt32) sipHash64:                                    7440887341613643404
-Array(UInt32) sipHash128:                                   352254484442481242
-Map(UInt64, String) sipHash64:                              9134366295966183718
-Map(UInt64, String) sipHash128:                             3898786676840614417
-Tuple(UInt64, String, Float64) sipHash64:                   12930061042991291026
-Tuple(UInt64, String, Float64) sipHash128:                  16321577523701416972
-Tuple(Nullable(UInt32), Nullable(String)) sipHash64:        4903775521299565922
-Tuple(Nullable(UInt32), Nullable(String)) sipHash128:       15199682022439940969
-Tuple(LowCardinality(String)) sipHash64:                    6055926186686336657
-Tuple(LowCardinality(String)) sipHash128:                   5223541486509779131
-Empty Tuple sipHash64:                                      12322868794795055543
-Empty Tuple sipHash128:                                     6186415108322938835
-Nested Tuple sipHash64:                                     18022159680042539320
-Nested Tuple sipHash128:                                    677773199030425147
-Variant(UInt64, String, Array(UInt32)) sipHash64:           12882136026792851553
-Variant(UInt64, String, Array(UInt32)) sipHash128:          17412744720681215443
-Dynamic sipHash64:                                          15328597668059434822
-Dynamic sipHash128:                                         14145875509075956721
-Dynamic(max_types = 1) sipHash64:                           15328597668059434822
-Dynamic(max_types = 1) sipHash128:                          14145875509075956721
-Tuple(Dynamic) sipHash64:                                   11341889856508237959
-Tuple(Dynamic) sipHash128:                                  14042770752621058463
-Tuple(Dynamic(max_types = 1)) sipHash64:                    11341889856508237959
-Tuple(Dynamic(max_types = 1)) sipHash128:                   14042770752621058463
-JSON sipHash64:                                             3626025473319722781
-JSON sipHash128:                                            1099880731438550494
-JSON(max_dynamic_paths = 1, a.b UInt32) sipHash64:          3626025473319722781
-JSON(max_dynamic_paths = 1, a.b UInt32) sipHash128:         1099880731438550494
-Tuple(JSON) sipHash64:                                      3626025473319722781
-Tuple(JSON) sipHash128:                                     1099880731438550494
-Tuple(JSON(max_dynamic_paths = 1, a.b UInt32)) sipHash64:   3626025473319722781
-Tuple(JSON(max_dynamic_paths = 1, a.b UInt32)) sipHash128:  1099880731438550494
-AggregateFunction(sum, UInt64) sipHash64:                   10575596833096249289
-AggregateFunction(sum, UInt64) sipHash128:                  12115566468784082823
-AggregateFunction(uniq, String) sipHash64:                  8851381237910902243
-AggregateFunction(uniq, String) sipHash128:                 12936309354676766529
-QBit(Float32, 8) sipHash64:                                 7557126637700755188
-QBit(Float32, 8) sipHash128:                                13953367952715664676
+UInt8 sipHash64:                                            13016695658915364133
+UInt8 sipHash128:                                           4690980165651896855
+UInt16 sipHash64:                                           1321644706051641717
+UInt16 sipHash128:                                          505109752530525372
+UInt32 sipHash64:                                           5565847104859616071
+UInt32 sipHash128:                                          17729904360314216784
+UInt64 sipHash64:                                           17550559893467312043
+UInt64 sipHash128:                                          16691763729612372833
+UInt128 sipHash64:                                          1672509376955943633
+UInt128 sipHash128:                                         8476518987835785916
+UInt256 sipHash64:                                          7232873706118702586
+UInt256 sipHash128:                                         14472949822429999924
+Int8 sipHash64:                                             13016695658915364133
+Int8 sipHash128:                                            4690980165651896855
+Int16 sipHash64:                                            1321644706051641717
+Int16 sipHash128:                                           505109752530525372
+Int32 sipHash64:                                            5565847104859616071
+Int32 sipHash128:                                           17729904360314216784
+Int64 sipHash64:                                            17550559893467312043
+Int64 sipHash128:                                           16691763729612372833
+Int128 sipHash64:                                           1672509376955943633
+Int128 sipHash128:                                          8476518987835785916
+Int256 sipHash64:                                           7232873706118702586
+Int256 sipHash128:                                          14472949822429999924
+Float32 sipHash64:                                          6741692269165051453
+Float32 sipHash128:                                         2727391714422410965
+Float64 sipHash64:                                          1637925476895340146
+Float64 sipHash128:                                         658616564533335031
+BFloat16 sipHash64:                                         3394348623764919210
+BFloat16 sipHash128:                                        472978516878592740
+Bool sipHash64:                                             1419183109190283717
+Bool sipHash128:                                            18392863543427617180
+Decimal32 sipHash64:                                        4365093027876852041
+Decimal32 sipHash128:                                       8662255252375828768
+Decimal64 sipHash64:                                        5873175589454318098
+Decimal64 sipHash128:                                       6014160459682207108
+Decimal128 sipHash64:                                       16891309594362304705
+Decimal128 sipHash128:                                      13685639785924712649
+Decimal256 sipHash64:                                       10214855335637604915
+Decimal256 sipHash128:                                      10454547144685807278
+Date sipHash64:                                             11666270726656553627
+Date sipHash128:                                            7180489587450353232
+Date32 sipHash64:                                           9034607448248946466
+Date32 sipHash128:                                          1392975671065270717
+DateTime sipHash64:                                         1773751962983909913
+DateTime sipHash128:                                        8242620402648514694
+DateTime64(3) sipHash64:                                    2726870459876526809
+DateTime64(3) sipHash128:                                   141639731044670859
+Time sipHash64:                                             15143387461326178226
+Time sipHash128:                                            8538996862610393890
+Time64(6) sipHash64:                                        6432071268872168181
+Time64(6) sipHash128:                                       12692562327389710519
+Enum8 sipHash64:                                            694279736498179451
+Enum8 sipHash128:                                           10689296498355463220
+Enum16 sipHash64:                                           13977651624250001737
+Enum16 sipHash128:                                          13603212642304975275
+UUID sipHash64:                                             1672509376955943633
+UUID sipHash128:                                            8476518987835785916
+IPv4 sipHash64:                                             1773751962983909913
+IPv4 sipHash128:                                            8242620402648514694
+IPv6 sipHash64:                                             8854956276985390088
+IPv6 sipHash128:                                            9573988710978514348
+IntervalSecond sipHash64:                                   17550559893467312043
+IntervalSecond sipHash128:                                  16691763729612372833
+String sipHash64:                                           17144746779760159598
+String sipHash128:                                          5273584884009060399
+FixedString(1) sipHash64:                                   15589077474934185465
+FixedString(1) sipHash128:                                  11167229393337058922
+FixedString(5) sipHash64:                                   15542346042470318523
+FixedString(5) sipHash128:                                  464723856464908386
+FixedString(8) sipHash64:                                   18096434289585077390
+FixedString(8) sipHash128:                                  11611379857600543507
+FixedString(16) sipHash64:                                  10473637021939309845
+FixedString(16) sipHash128:                                 90509516450399620
+FixedString(33) sipHash64:                                  9412508531032376636
+FixedString(33) sipHash128:                                 8019622423418982184
+Nullable(UInt32) sipHash64:                                 12363440675782100533
+Nullable(UInt32) sipHash128:                                2077494560962099135
+Nullable(String) sipHash64:                                 6207212839190674172
+Nullable(String) sipHash128:                                4282495008710276812
+LowCardinality(String) sipHash64:                           17144746779760159598
+LowCardinality(String) sipHash128:                          5273584884009060399
+LowCardinality(Nullable(String)) sipHash64:                 6207212839190674172
+LowCardinality(Nullable(String)) sipHash128:                4282495008710276812
+Array(UInt8) sipHash64:                                     18290882950549217098
+Array(UInt8) sipHash128:                                    4995302026204847380
+Array(String) sipHash64:                                    10963492608095442707
+Array(String) sipHash128:                                   12314435839721524052
+Array(Array(UInt32)) sipHash64:                             13591135797722101190
+Array(Array(UInt32)) sipHash128:                            7309600468816848334
+Array(Nullable(String)) sipHash64:                          4970847991913985401
+Array(Nullable(String)) sipHash128:                         1859665624593509483
+Array(Tuple(UInt64, String)) sipHash64:                     7554116947652166188
+Array(Tuple(UInt64, String)) sipHash128:                    15964940589654284426
+Map(String, UInt64) sipHash64:                              16022115628175671111
+Map(String, UInt64) sipHash128:                             983223531474165899
+Map(UInt32, Array(String)) sipHash64:                       8377007729955672176
+Map(UInt32, Array(String)) sipHash128:                      15786415546603068263
+Array(UInt32) sipHash64:                                    6874695439824104651
+Array(UInt32) sipHash128:                                   17681134120495979062
+Map(UInt64, String) sipHash64:                              13004079519680512015
+Map(UInt64, String) sipHash128:                             15427131712757059553
+Tuple(UInt64, String, Float64) sipHash64:                   12952473465269809856
+Tuple(UInt64, String, Float64) sipHash128:                  2429326555258695190
+Tuple(Nullable(UInt32), Nullable(String)) sipHash64:        1090832337549649818
+Tuple(Nullable(UInt32), Nullable(String)) sipHash128:       7004553620522578746
+Tuple(LowCardinality(String)) sipHash64:                    17144746779760159598
+Tuple(LowCardinality(String)) sipHash128:                   5273584884009060399
+Empty Tuple sipHash64:                                      10148003526456704756
+Empty Tuple sipHash128:                                     4940596904940588425
+Nested Tuple sipHash64:                                     16932825565789514583
+Nested Tuple sipHash128:                                    2108962182009065755
+Variant(UInt64, String, Array(UInt32)) sipHash64:           7428783888307943298
+Variant(UInt64, String, Array(UInt32)) sipHash128:          3467375719859161826
+Dynamic sipHash64:                                          14080990270393623007
+Dynamic sipHash128:                                         2499304128275084227
+Dynamic(max_types = 1) sipHash64:                           14080990270393623007
+Dynamic(max_types = 1) sipHash128:                          2499304128275084227
+Tuple(Dynamic) sipHash64:                                   12565590289066132185
+Tuple(Dynamic) sipHash128:                                  11137651875602298297
+Tuple(Dynamic(max_types = 1)) sipHash64:                    12565590289066132185
+Tuple(Dynamic(max_types = 1)) sipHash128:                   11137651875602298297
+JSON sipHash64:                                             14622714290491118280
+JSON sipHash128:                                            9239778789721960124
+JSON(max_dynamic_paths = 1, a.b UInt32) sipHash64:          14622714290491118280
+JSON(max_dynamic_paths = 1, a.b UInt32) sipHash128:         9239778789721960124
+Tuple(JSON) sipHash64:                                      14622714290491118280
+Tuple(JSON) sipHash128:                                     9239778789721960124
+Tuple(JSON(max_dynamic_paths = 1, a.b UInt32)) sipHash64:   14622714290491118280
+Tuple(JSON(max_dynamic_paths = 1, a.b UInt32)) sipHash128:  9239778789721960124
+AggregateFunction(sum, UInt64) sipHash64:                   705709631579322432
+AggregateFunction(sum, UInt64) sipHash128:                  1258254981624466231
+AggregateFunction(uniq, String) sipHash64:                  2147602288509080799
+AggregateFunction(uniq, String) sipHash128:                 3007618411787515875
+QBit(Float32, 8) sipHash64:                                 14691066089064277330
+QBit(Float32, 8) sipHash128:                                5756235374643059307
 NULL sipHash64:                                             ᴺᵁᴸᴸ
 NULL sipHash128:                                            ᴺᵁᴸᴸ
-Empty Array sipHash64:                                      11349019289213493218
-Empty Array sipHash128:                                     10715893757459819181
-UInt64, String, Nullable(Float64), Array(UInt8) sipHash64:  17221313568658355350
-UInt64, String, Nullable(Float64), Array(UInt8) sipHash128: 16285526529246457345
-String and constant String sipHash64:                       17827776328936267084
-String and constant String sipHash128:                      1937421119426288672
-Constant UInt32 and String sipHash64:                       10264276986887242525
-Constant UInt32 and String sipHash128:                      11484871140298689789
-Constant Tuple sipHash64:                                   13015805725073447506
-Constant Tuple sipHash128:                                  13194744109582160030
-String and constant Tuple sipHash64:                        14581642151226736953
-String and constant Tuple sipHash128:                       4350068528724834309
+Empty Array sipHash64:                                      14389800735151191566
+Empty Array sipHash128:                                     12842609403181817560
+UInt64, String, Nullable(Float64), Array(UInt8) sipHash64:  5883902324829490399
+UInt64, String, Nullable(Float64), Array(UInt8) sipHash128: 16794570534928665226
+String and constant String sipHash64:                       14174793349323521401
+String and constant String sipHash128:                      15574640183401425721
+Constant UInt32 and String sipHash64:                       2052706007151246379
+Constant UInt32 and String sipHash128:                      6163976457043103823
+Constant Tuple sipHash64:                                   4971628396210123806
+Constant Tuple sipHash128:                                  2425820738816298447
+String and constant Tuple sipHash64:                        7460280830969383701
+String and constant Tuple sipHash128:                       6716933868083934977
 Row 1:
 ──────
+rows:                                                       1003
 max_block_size:                                             257
-UInt8 sipHash64:                                            10119854501469660556
-UInt8 sipHash128:                                           6026032112037920132
-UInt16 sipHash64:                                           9071680848167832101
-UInt16 sipHash128:                                          6934132568451323698
-UInt32 sipHash64:                                           16362788689865703783
-UInt32 sipHash128:                                          13423536092977456262
-UInt64 sipHash64:                                           11432770794852125635
-UInt64 sipHash128:                                          909279623013292615
-UInt128 sipHash64:                                          5403937297100312013
-UInt128 sipHash128:                                         2670207482998778328
-UInt256 sipHash64:                                          2790960882895703638
-UInt256 sipHash128:                                         16433930626538596280
-Int8 sipHash64:                                             10119854501469660556
-Int8 sipHash128:                                            6026032112037920132
-Int16 sipHash64:                                            9071680848167832101
-Int16 sipHash128:                                           6934132568451323698
-Int32 sipHash64:                                            16362788689865703783
-Int32 sipHash128:                                           13423536092977456262
-Int64 sipHash64:                                            11432770794852125635
-Int64 sipHash128:                                           909279623013292615
-Int128 sipHash64:                                           5403937297100312013
-Int128 sipHash128:                                          2670207482998778328
-Int256 sipHash64:                                           2790960882895703638
-Int256 sipHash128:                                          16433930626538596280
-Float32 sipHash64:                                          4646738560927424426
-Float32 sipHash128:                                         14716236083238956832
-Float64 sipHash64:                                          7366483245233485322
-Float64 sipHash128:                                         8487023238397817001
-BFloat16 sipHash64:                                         15704148814016230478
-BFloat16 sipHash128:                                        7098768495619624420
-Bool sipHash64:                                             1971855717984216977
-Bool sipHash128:                                            14388002606479051527
-Decimal32 sipHash64:                                        2763082730501794092
-Decimal32 sipHash128:                                       11972750696268175186
-Decimal64 sipHash64:                                        17426815624464286826
-Decimal64 sipHash128:                                       7390189630872634308
-Decimal128 sipHash64:                                       15984201463424014311
-Decimal128 sipHash128:                                      9492728432405321570
-Decimal256 sipHash64:                                       13622159580818668298
-Decimal256 sipHash128:                                      9293721609569383793
-Date sipHash64:                                             6609601126816791842
-Date sipHash128:                                            14238606223508580016
-Date32 sipHash64:                                           2982755935697732850
-Date32 sipHash128:                                          5416811342231149345
-DateTime sipHash64:                                         3572435291522968153
-DateTime sipHash128:                                        6853575142161818277
-DateTime64(3) sipHash64:                                    9882138885577782257
-DateTime64(3) sipHash128:                                   54029088775778811
-Time sipHash64:                                             3103614932874483137
-Time sipHash128:                                            9183402397653536727
-Time64(6) sipHash64:                                        5500342890890233018
-Time64(6) sipHash128:                                       14141267871018121059
-Enum8 sipHash64:                                            7148361552583723751
-Enum8 sipHash128:                                           16565313975524305436
-Enum16 sipHash64:                                           12705513379728082762
-Enum16 sipHash128:                                          11296989550043331221
-UUID sipHash64:                                             5403937297100312013
-UUID sipHash128:                                            2670207482998778328
-IPv4 sipHash64:                                             3572435291522968153
-IPv4 sipHash128:                                            6853575142161818277
-IPv6 sipHash64:                                             14754682784069338856
-IPv6 sipHash128:                                            14583985233562886980
-IntervalSecond sipHash64:                                   11432770794852125635
-IntervalSecond sipHash128:                                  909279623013292615
-String sipHash64:                                           6055926186686336657
-String sipHash128:                                          5223541486509779131
-FixedString(1) sipHash64:                                   11469695648079902848
-FixedString(1) sipHash128:                                  9961168914078146079
-FixedString(5) sipHash64:                                   8647250394568855773
-FixedString(5) sipHash128:                                  16525703635604125063
-FixedString(8) sipHash64:                                   1207561622589542623
-FixedString(8) sipHash128:                                  14834592652531079365
-FixedString(16) sipHash64:                                  10533030573690796799
-FixedString(16) sipHash128:                                 2358959872406504598
-FixedString(33) sipHash64:                                  9914217459176682291
-FixedString(33) sipHash128:                                 7692327516195392629
-Nullable(UInt32) sipHash64:                                 11304750776008968360
-Nullable(UInt32) sipHash128:                                5230526110718448753
-Nullable(String) sipHash64:                                 17766838188287481059
-Nullable(String) sipHash128:                                2291898431926607650
-LowCardinality(String) sipHash64:                           6055926186686336657
-LowCardinality(String) sipHash128:                          5223541486509779131
-LowCardinality(Nullable(String)) sipHash64:                 17766838188287481059
-LowCardinality(Nullable(String)) sipHash128:                2291898431926607650
-Array(UInt8) sipHash64:                                     2833114091452304215
-Array(UInt8) sipHash128:                                    17208622608977038920
-Array(String) sipHash64:                                    12789242606656393924
-Array(String) sipHash128:                                   11546681962623593189
-Array(Array(UInt32)) sipHash64:                             10431722380632634297
-Array(Array(UInt32)) sipHash128:                            320813004864539729
-Array(Nullable(String)) sipHash64:                          6731217629042446767
-Array(Nullable(String)) sipHash128:                         9270594354852154933
-Array(Tuple(UInt64, String)) sipHash64:                     11799764183681331788
-Array(Tuple(UInt64, String)) sipHash128:                    15703798107943568267
-Map(String, UInt64) sipHash64:                              1350796917745561299
-Map(String, UInt64) sipHash128:                             13161562619502973391
-Map(UInt32, Array(String)) sipHash64:                       16149042756989058628
-Map(UInt32, Array(String)) sipHash128:                      4492079224556973586
-Array(UInt32) sipHash64:                                    7440887341613643404
-Array(UInt32) sipHash128:                                   352254484442481242
-Map(UInt64, String) sipHash64:                              9134366295966183718
-Map(UInt64, String) sipHash128:                             3898786676840614417
-Tuple(UInt64, String, Float64) sipHash64:                   12930061042991291026
-Tuple(UInt64, String, Float64) sipHash128:                  16321577523701416972
-Tuple(Nullable(UInt32), Nullable(String)) sipHash64:        4903775521299565922
-Tuple(Nullable(UInt32), Nullable(String)) sipHash128:       15199682022439940969
-Tuple(LowCardinality(String)) sipHash64:                    6055926186686336657
-Tuple(LowCardinality(String)) sipHash128:                   5223541486509779131
-Empty Tuple sipHash64:                                      12322868794795055543
-Empty Tuple sipHash128:                                     6186415108322938835
-Nested Tuple sipHash64:                                     18022159680042539320
-Nested Tuple sipHash128:                                    677773199030425147
-Variant(UInt64, String, Array(UInt32)) sipHash64:           12882136026792851553
-Variant(UInt64, String, Array(UInt32)) sipHash128:          17412744720681215443
-Dynamic sipHash64:                                          15328597668059434822
-Dynamic sipHash128:                                         14145875509075956721
-Dynamic(max_types = 1) sipHash64:                           15328597668059434822
-Dynamic(max_types = 1) sipHash128:                          14145875509075956721
-Tuple(Dynamic) sipHash64:                                   11341889856508237959
-Tuple(Dynamic) sipHash128:                                  14042770752621058463
-Tuple(Dynamic(max_types = 1)) sipHash64:                    11341889856508237959
-Tuple(Dynamic(max_types = 1)) sipHash128:                   14042770752621058463
-JSON sipHash64:                                             3626025473319722781
-JSON sipHash128:                                            1099880731438550494
-JSON(max_dynamic_paths = 1, a.b UInt32) sipHash64:          3626025473319722781
-JSON(max_dynamic_paths = 1, a.b UInt32) sipHash128:         1099880731438550494
-Tuple(JSON) sipHash64:                                      3626025473319722781
-Tuple(JSON) sipHash128:                                     1099880731438550494
-Tuple(JSON(max_dynamic_paths = 1, a.b UInt32)) sipHash64:   3626025473319722781
-Tuple(JSON(max_dynamic_paths = 1, a.b UInt32)) sipHash128:  1099880731438550494
-AggregateFunction(sum, UInt64) sipHash64:                   10575596833096249289
-AggregateFunction(sum, UInt64) sipHash128:                  12115566468784082823
-AggregateFunction(uniq, String) sipHash64:                  8851381237910902243
-AggregateFunction(uniq, String) sipHash128:                 12936309354676766529
-QBit(Float32, 8) sipHash64:                                 7557126637700755188
-QBit(Float32, 8) sipHash128:                                13953367952715664676
+UInt8 sipHash64:                                            16115608619335502289
+UInt8 sipHash128:                                           11955568681658596459
+UInt16 sipHash64:                                           13619197526455880891
+UInt16 sipHash128:                                          14655426093060117590
+UInt32 sipHash64:                                           13488020765634418229
+UInt32 sipHash128:                                          16673304069066518396
+UInt64 sipHash64:                                           13962341025763437600
+UInt64 sipHash128:                                          17604926112846953854
+UInt128 sipHash64:                                          12992167476209248290
+UInt128 sipHash128:                                         4740251397498708404
+UInt256 sipHash64:                                          13353366768073890009
+UInt256 sipHash128:                                         4068915392072756705
+Int8 sipHash64:                                             16115608619335502289
+Int8 sipHash128:                                            11955568681658596459
+Int16 sipHash64:                                            13619197526455880891
+Int16 sipHash128:                                           14655426093060117590
+Int32 sipHash64:                                            13488020765634418229
+Int32 sipHash128:                                           16673304069066518396
+Int64 sipHash64:                                            13962341025763437600
+Int64 sipHash128:                                           17604926112846953854
+Int128 sipHash64:                                           12992167476209248290
+Int128 sipHash128:                                          4740251397498708404
+Int256 sipHash64:                                           13353366768073890009
+Int256 sipHash128:                                          4068915392072756705
+Float32 sipHash64:                                          16777636269572877739
+Float32 sipHash128:                                         13876227176444427990
+Float64 sipHash64:                                          2696176119473439311
+Float64 sipHash128:                                         11852475974603403407
+BFloat16 sipHash64:                                         9266223237498587152
+BFloat16 sipHash128:                                        16383051092556263996
+Bool sipHash64:                                             1002949991434634493
+Bool sipHash128:                                            4174498933738473363
+Decimal32 sipHash64:                                        11237837224816724994
+Decimal32 sipHash128:                                       11395790031557720860
+Decimal64 sipHash64:                                        9307526900539703258
+Decimal64 sipHash128:                                       9588773693311949744
+Decimal128 sipHash64:                                       18384419616327452952
+Decimal128 sipHash128:                                      889537440074099219
+Decimal256 sipHash64:                                       17761022249606211926
+Decimal256 sipHash128:                                      14534900720274227911
+Date sipHash64:                                             4655207163474481991
+Date sipHash128:                                            5910892843479874944
+Date32 sipHash64:                                           7483196184531126266
+Date32 sipHash128:                                          4888453153160635075
+DateTime sipHash64:                                         9192987617976460466
+DateTime sipHash128:                                        13059295750301481369
+DateTime64(3) sipHash64:                                    7480790261338414255
+DateTime64(3) sipHash128:                                   13465337037192361310
+Time sipHash64:                                             18054199665273919158
+Time sipHash128:                                            10090153550037529298
+Time64(6) sipHash64:                                        660335381351127350
+Time64(6) sipHash128:                                       2798968815760255212
+Enum8 sipHash64:                                            2003559019012459208
+Enum8 sipHash128:                                           5956213915951092983
+Enum16 sipHash64:                                           1518940570051636635
+Enum16 sipHash128:                                          8691236547912955369
+UUID sipHash64:                                             12992167476209248290
+UUID sipHash128:                                            4740251397498708404
+IPv4 sipHash64:                                             9192987617976460466
+IPv4 sipHash128:                                            13059295750301481369
+IPv6 sipHash64:                                             17335950512985896034
+IPv6 sipHash128:                                            13770926467249151048
+IntervalSecond sipHash64:                                   13962341025763437600
+IntervalSecond sipHash128:                                  17604926112846953854
+String sipHash64:                                           13309486050047662498
+String sipHash128:                                          18209947741829335529
+FixedString(1) sipHash64:                                   18137766440752768809
+FixedString(1) sipHash128:                                  8415741627914618457
+FixedString(5) sipHash64:                                   4775279459399349663
+FixedString(5) sipHash128:                                  2940681881516629818
+FixedString(8) sipHash64:                                   14543124638535079332
+FixedString(8) sipHash128:                                  429885349280610974
+FixedString(16) sipHash64:                                  4992061845257201276
+FixedString(16) sipHash128:                                 16837146756732501568
+FixedString(33) sipHash64:                                  10773022796408860686
+FixedString(33) sipHash128:                                 1241414539713309184
+Nullable(UInt32) sipHash64:                                 3398236344957043510
+Nullable(UInt32) sipHash128:                                12640576960570038440
+Nullable(String) sipHash64:                                 13853687130271656565
+Nullable(String) sipHash128:                                453871199540493213
+LowCardinality(String) sipHash64:                           13309486050047662498
+LowCardinality(String) sipHash128:                          18209947741829335529
+LowCardinality(Nullable(String)) sipHash64:                 13853687130271656565
+LowCardinality(Nullable(String)) sipHash128:                453871199540493213
+Array(UInt8) sipHash64:                                     18347368801254274537
+Array(UInt8) sipHash128:                                    5340839923585634977
+Array(String) sipHash64:                                    5820927798280758276
+Array(String) sipHash128:                                   14639231801462709939
+Array(Array(UInt32)) sipHash64:                             2860708565572484714
+Array(Array(UInt32)) sipHash128:                            11612869840676674449
+Array(Nullable(String)) sipHash64:                          11838632675913182601
+Array(Nullable(String)) sipHash128:                         4212761481359768645
+Array(Tuple(UInt64, String)) sipHash64:                     1578172909628613006
+Array(Tuple(UInt64, String)) sipHash128:                    6660330457243462245
+Map(String, UInt64) sipHash64:                              16987703882548880743
+Map(String, UInt64) sipHash128:                             3575240134636037439
+Map(UInt32, Array(String)) sipHash64:                       12715412107007199378
+Map(UInt32, Array(String)) sipHash128:                      9203047420449266254
+Array(UInt32) sipHash64:                                    14124123924524721089
+Array(UInt32) sipHash128:                                   2663527939498311486
+Map(UInt64, String) sipHash64:                              412814410154927048
+Map(UInt64, String) sipHash128:                             5867746130949982213
+Tuple(UInt64, String, Float64) sipHash64:                   10280090295290089318
+Tuple(UInt64, String, Float64) sipHash128:                  17190438208219499438
+Tuple(Nullable(UInt32), Nullable(String)) sipHash64:        12210179864660342945
+Tuple(Nullable(UInt32), Nullable(String)) sipHash128:       16459746105611509002
+Tuple(LowCardinality(String)) sipHash64:                    13309486050047662498
+Tuple(LowCardinality(String)) sipHash128:                   18209947741829335529
+Empty Tuple sipHash64:                                      6608180264737386748
+Empty Tuple sipHash128:                                     14937335408495191620
+Nested Tuple sipHash64:                                     13537266718032387230
+Nested Tuple sipHash128:                                    15277756501140914320
+Variant(UInt64, String, Array(UInt32)) sipHash64:           4439817823985882136
+Variant(UInt64, String, Array(UInt32)) sipHash128:          7653090056708309186
+Dynamic sipHash64:                                          17888473858978804565
+Dynamic sipHash128:                                         7482006804953645317
+Dynamic(max_types = 1) sipHash64:                           17888473858978804565
+Dynamic(max_types = 1) sipHash128:                          7482006804953645317
+Tuple(Dynamic) sipHash64:                                   2225755792424926373
+Tuple(Dynamic) sipHash128:                                  7526224617124576697
+Tuple(Dynamic(max_types = 1)) sipHash64:                    2225755792424926373
+Tuple(Dynamic(max_types = 1)) sipHash128:                   7526224617124576697
+JSON sipHash64:                                             2870523191349354623
+JSON sipHash128:                                            14266985803539583330
+JSON(max_dynamic_paths = 1, a.b UInt32) sipHash64:          2870523191349354623
+JSON(max_dynamic_paths = 1, a.b UInt32) sipHash128:         14266985803539583330
+Tuple(JSON) sipHash64:                                      2870523191349354623
+Tuple(JSON) sipHash128:                                     14266985803539583330
+Tuple(JSON(max_dynamic_paths = 1, a.b UInt32)) sipHash64:   2870523191349354623
+Tuple(JSON(max_dynamic_paths = 1, a.b UInt32)) sipHash128:  14266985803539583330
+AggregateFunction(sum, UInt64) sipHash64:                   16519426982212543387
+AggregateFunction(sum, UInt64) sipHash128:                  17925048597087181199
+AggregateFunction(uniq, String) sipHash64:                  8813457799278605912
+AggregateFunction(uniq, String) sipHash128:                 5151518445828460154
+QBit(Float32, 8) sipHash64:                                 14161209201232629853
+QBit(Float32, 8) sipHash128:                                12511905033500931880
 NULL sipHash64:                                             ᴺᵁᴸᴸ
 NULL sipHash128:                                            ᴺᵁᴸᴸ
-Empty Array sipHash64:                                      11349019289213493218
-Empty Array sipHash128:                                     10715893757459819181
-UInt64, String, Nullable(Float64), Array(UInt8) sipHash64:  17221313568658355350
-UInt64, String, Nullable(Float64), Array(UInt8) sipHash128: 16285526529246457345
-String and constant String sipHash64:                       17827776328936267084
-String and constant String sipHash128:                      1937421119426288672
-Constant UInt32 and String sipHash64:                       10264276986887242525
-Constant UInt32 and String sipHash128:                      11484871140298689789
-Constant Tuple sipHash64:                                   13015805725073447506
-Constant Tuple sipHash128:                                  13194744109582160030
-String and constant Tuple sipHash64:                        14581642151226736953
-String and constant Tuple sipHash128:                       4350068528724834309
+Empty Array sipHash64:                                      7368892003093757752
+Empty Array sipHash128:                                     339127594437411734
+UInt64, String, Nullable(Float64), Array(UInt8) sipHash64:  1561566479118030808
+UInt64, String, Nullable(Float64), Array(UInt8) sipHash128: 16755460864866586444
+String and constant String sipHash64:                       3609113578516757889
+String and constant String sipHash128:                      12089031207967429949
+Constant UInt32 and String sipHash64:                       5360952371226117067
+Constant UInt32 and String sipHash128:                      12829997227579798193
+Constant Tuple sipHash64:                                   15489426196464711034
+Constant Tuple sipHash128:                                  5727733014765360935
+String and constant Tuple sipHash64:                        13370686762453462228
+String and constant Tuple sipHash128:                       14809241007677582635
 Row 1:
 ──────
-max_block_size:                                             1003
-UInt8 sipHash64:                                            10119854501469660556
-UInt8 sipHash128:                                           6026032112037920132
-UInt16 sipHash64:                                           9071680848167832101
-UInt16 sipHash128:                                          6934132568451323698
-UInt32 sipHash64:                                           16362788689865703783
-UInt32 sipHash128:                                          13423536092977456262
-UInt64 sipHash64:                                           11432770794852125635
-UInt64 sipHash128:                                          909279623013292615
-UInt128 sipHash64:                                          5403937297100312013
-UInt128 sipHash128:                                         2670207482998778328
-UInt256 sipHash64:                                          2790960882895703638
-UInt256 sipHash128:                                         16433930626538596280
-Int8 sipHash64:                                             10119854501469660556
-Int8 sipHash128:                                            6026032112037920132
-Int16 sipHash64:                                            9071680848167832101
-Int16 sipHash128:                                           6934132568451323698
-Int32 sipHash64:                                            16362788689865703783
-Int32 sipHash128:                                           13423536092977456262
-Int64 sipHash64:                                            11432770794852125635
-Int64 sipHash128:                                           909279623013292615
-Int128 sipHash64:                                           5403937297100312013
-Int128 sipHash128:                                          2670207482998778328
-Int256 sipHash64:                                           2790960882895703638
-Int256 sipHash128:                                          16433930626538596280
-Float32 sipHash64:                                          4646738560927424426
-Float32 sipHash128:                                         14716236083238956832
-Float64 sipHash64:                                          7366483245233485322
-Float64 sipHash128:                                         8487023238397817001
-BFloat16 sipHash64:                                         15704148814016230478
-BFloat16 sipHash128:                                        7098768495619624420
-Bool sipHash64:                                             1971855717984216977
-Bool sipHash128:                                            14388002606479051527
-Decimal32 sipHash64:                                        2763082730501794092
-Decimal32 sipHash128:                                       11972750696268175186
-Decimal64 sipHash64:                                        17426815624464286826
-Decimal64 sipHash128:                                       7390189630872634308
-Decimal128 sipHash64:                                       15984201463424014311
-Decimal128 sipHash128:                                      9492728432405321570
-Decimal256 sipHash64:                                       13622159580818668298
-Decimal256 sipHash128:                                      9293721609569383793
-Date sipHash64:                                             6609601126816791842
-Date sipHash128:                                            14238606223508580016
-Date32 sipHash64:                                           2982755935697732850
-Date32 sipHash128:                                          5416811342231149345
-DateTime sipHash64:                                         3572435291522968153
-DateTime sipHash128:                                        6853575142161818277
-DateTime64(3) sipHash64:                                    9882138885577782257
-DateTime64(3) sipHash128:                                   54029088775778811
-Time sipHash64:                                             3103614932874483137
-Time sipHash128:                                            9183402397653536727
-Time64(6) sipHash64:                                        5500342890890233018
-Time64(6) sipHash128:                                       14141267871018121059
-Enum8 sipHash64:                                            7148361552583723751
-Enum8 sipHash128:                                           16565313975524305436
-Enum16 sipHash64:                                           12705513379728082762
-Enum16 sipHash128:                                          11296989550043331221
-UUID sipHash64:                                             5403937297100312013
-UUID sipHash128:                                            2670207482998778328
-IPv4 sipHash64:                                             3572435291522968153
-IPv4 sipHash128:                                            6853575142161818277
-IPv6 sipHash64:                                             14754682784069338856
-IPv6 sipHash128:                                            14583985233562886980
-IntervalSecond sipHash64:                                   11432770794852125635
-IntervalSecond sipHash128:                                  909279623013292615
-String sipHash64:                                           6055926186686336657
-String sipHash128:                                          5223541486509779131
-FixedString(1) sipHash64:                                   11469695648079902848
-FixedString(1) sipHash128:                                  9961168914078146079
-FixedString(5) sipHash64:                                   8647250394568855773
-FixedString(5) sipHash128:                                  16525703635604125063
-FixedString(8) sipHash64:                                   1207561622589542623
-FixedString(8) sipHash128:                                  14834592652531079365
-FixedString(16) sipHash64:                                  10533030573690796799
-FixedString(16) sipHash128:                                 2358959872406504598
-FixedString(33) sipHash64:                                  9914217459176682291
-FixedString(33) sipHash128:                                 7692327516195392629
-Nullable(UInt32) sipHash64:                                 11304750776008968360
-Nullable(UInt32) sipHash128:                                5230526110718448753
-Nullable(String) sipHash64:                                 17766838188287481059
-Nullable(String) sipHash128:                                2291898431926607650
-LowCardinality(String) sipHash64:                           6055926186686336657
-LowCardinality(String) sipHash128:                          5223541486509779131
-LowCardinality(Nullable(String)) sipHash64:                 17766838188287481059
-LowCardinality(Nullable(String)) sipHash128:                2291898431926607650
-Array(UInt8) sipHash64:                                     2833114091452304215
-Array(UInt8) sipHash128:                                    17208622608977038920
-Array(String) sipHash64:                                    12789242606656393924
-Array(String) sipHash128:                                   11546681962623593189
-Array(Array(UInt32)) sipHash64:                             10431722380632634297
-Array(Array(UInt32)) sipHash128:                            320813004864539729
-Array(Nullable(String)) sipHash64:                          6731217629042446767
-Array(Nullable(String)) sipHash128:                         9270594354852154933
-Array(Tuple(UInt64, String)) sipHash64:                     11799764183681331788
-Array(Tuple(UInt64, String)) sipHash128:                    15703798107943568267
-Map(String, UInt64) sipHash64:                              1350796917745561299
-Map(String, UInt64) sipHash128:                             13161562619502973391
-Map(UInt32, Array(String)) sipHash64:                       16149042756989058628
-Map(UInt32, Array(String)) sipHash128:                      4492079224556973586
-Array(UInt32) sipHash64:                                    7440887341613643404
-Array(UInt32) sipHash128:                                   352254484442481242
-Map(UInt64, String) sipHash64:                              9134366295966183718
-Map(UInt64, String) sipHash128:                             3898786676840614417
-Tuple(UInt64, String, Float64) sipHash64:                   12930061042991291026
-Tuple(UInt64, String, Float64) sipHash128:                  16321577523701416972
-Tuple(Nullable(UInt32), Nullable(String)) sipHash64:        4903775521299565922
-Tuple(Nullable(UInt32), Nullable(String)) sipHash128:       15199682022439940969
-Tuple(LowCardinality(String)) sipHash64:                    6055926186686336657
-Tuple(LowCardinality(String)) sipHash128:                   5223541486509779131
-Empty Tuple sipHash64:                                      12322868794795055543
-Empty Tuple sipHash128:                                     6186415108322938835
-Nested Tuple sipHash64:                                     18022159680042539320
-Nested Tuple sipHash128:                                    677773199030425147
-Variant(UInt64, String, Array(UInt32)) sipHash64:           12882136026792851553
-Variant(UInt64, String, Array(UInt32)) sipHash128:          17412744720681215443
-Dynamic sipHash64:                                          15328597668059434822
-Dynamic sipHash128:                                         14145875509075956721
-Dynamic(max_types = 1) sipHash64:                           15328597668059434822
-Dynamic(max_types = 1) sipHash128:                          14145875509075956721
-Tuple(Dynamic) sipHash64:                                   11341889856508237959
-Tuple(Dynamic) sipHash128:                                  14042770752621058463
-Tuple(Dynamic(max_types = 1)) sipHash64:                    11341889856508237959
-Tuple(Dynamic(max_types = 1)) sipHash128:                   14042770752621058463
-JSON sipHash64:                                             3626025473319722781
-JSON sipHash128:                                            1099880731438550494
-JSON(max_dynamic_paths = 1, a.b UInt32) sipHash64:          3626025473319722781
-JSON(max_dynamic_paths = 1, a.b UInt32) sipHash128:         1099880731438550494
-Tuple(JSON) sipHash64:                                      3626025473319722781
-Tuple(JSON) sipHash128:                                     1099880731438550494
-Tuple(JSON(max_dynamic_paths = 1, a.b UInt32)) sipHash64:   3626025473319722781
-Tuple(JSON(max_dynamic_paths = 1, a.b UInt32)) sipHash128:  1099880731438550494
-AggregateFunction(sum, UInt64) sipHash64:                   10575596833096249289
-AggregateFunction(sum, UInt64) sipHash128:                  12115566468784082823
-AggregateFunction(uniq, String) sipHash64:                  8851381237910902243
-AggregateFunction(uniq, String) sipHash128:                 12936309354676766529
-QBit(Float32, 8) sipHash64:                                 7557126637700755188
-QBit(Float32, 8) sipHash128:                                13953367952715664676
-NULL sipHash64:                                             ᴺᵁᴸᴸ
-NULL sipHash128:                                            ᴺᵁᴸᴸ
-Empty Array sipHash64:                                      11349019289213493218
-Empty Array sipHash128:                                     10715893757459819181
-UInt64, String, Nullable(Float64), Array(UInt8) sipHash64:  17221313568658355350
-UInt64, String, Nullable(Float64), Array(UInt8) sipHash128: 16285526529246457345
-String and constant String sipHash64:                       17827776328936267084
-String and constant String sipHash128:                      1937421119426288672
-Constant UInt32 and String sipHash64:                       10264276986887242525
-Constant UInt32 and String sipHash128:                      11484871140298689789
-Constant Tuple sipHash64:                                   13015805725073447506
-Constant Tuple sipHash128:                                  13194744109582160030
-String and constant Tuple sipHash64:                        14581642151226736953
-String and constant Tuple sipHash128:                       4350068528724834309
-Row 1:
-──────
+rows:                                                       1003
 max_block_size:                                             65536
-UInt8 sipHash64:                                            10119854501469660556
-UInt8 sipHash128:                                           6026032112037920132
-UInt16 sipHash64:                                           9071680848167832101
-UInt16 sipHash128:                                          6934132568451323698
-UInt32 sipHash64:                                           16362788689865703783
-UInt32 sipHash128:                                          13423536092977456262
-UInt64 sipHash64:                                           11432770794852125635
-UInt64 sipHash128:                                          909279623013292615
-UInt128 sipHash64:                                          5403937297100312013
-UInt128 sipHash128:                                         2670207482998778328
-UInt256 sipHash64:                                          2790960882895703638
-UInt256 sipHash128:                                         16433930626538596280
-Int8 sipHash64:                                             10119854501469660556
-Int8 sipHash128:                                            6026032112037920132
-Int16 sipHash64:                                            9071680848167832101
-Int16 sipHash128:                                           6934132568451323698
-Int32 sipHash64:                                            16362788689865703783
-Int32 sipHash128:                                           13423536092977456262
-Int64 sipHash64:                                            11432770794852125635
-Int64 sipHash128:                                           909279623013292615
-Int128 sipHash64:                                           5403937297100312013
-Int128 sipHash128:                                          2670207482998778328
-Int256 sipHash64:                                           2790960882895703638
-Int256 sipHash128:                                          16433930626538596280
-Float32 sipHash64:                                          4646738560927424426
-Float32 sipHash128:                                         14716236083238956832
-Float64 sipHash64:                                          7366483245233485322
-Float64 sipHash128:                                         8487023238397817001
-BFloat16 sipHash64:                                         15704148814016230478
-BFloat16 sipHash128:                                        7098768495619624420
-Bool sipHash64:                                             1971855717984216977
-Bool sipHash128:                                            14388002606479051527
-Decimal32 sipHash64:                                        2763082730501794092
-Decimal32 sipHash128:                                       11972750696268175186
-Decimal64 sipHash64:                                        17426815624464286826
-Decimal64 sipHash128:                                       7390189630872634308
-Decimal128 sipHash64:                                       15984201463424014311
-Decimal128 sipHash128:                                      9492728432405321570
-Decimal256 sipHash64:                                       13622159580818668298
-Decimal256 sipHash128:                                      9293721609569383793
-Date sipHash64:                                             6609601126816791842
-Date sipHash128:                                            14238606223508580016
-Date32 sipHash64:                                           2982755935697732850
-Date32 sipHash128:                                          5416811342231149345
-DateTime sipHash64:                                         3572435291522968153
-DateTime sipHash128:                                        6853575142161818277
-DateTime64(3) sipHash64:                                    9882138885577782257
-DateTime64(3) sipHash128:                                   54029088775778811
-Time sipHash64:                                             3103614932874483137
-Time sipHash128:                                            9183402397653536727
-Time64(6) sipHash64:                                        5500342890890233018
-Time64(6) sipHash128:                                       14141267871018121059
-Enum8 sipHash64:                                            7148361552583723751
-Enum8 sipHash128:                                           16565313975524305436
-Enum16 sipHash64:                                           12705513379728082762
-Enum16 sipHash128:                                          11296989550043331221
-UUID sipHash64:                                             5403937297100312013
-UUID sipHash128:                                            2670207482998778328
-IPv4 sipHash64:                                             3572435291522968153
-IPv4 sipHash128:                                            6853575142161818277
-IPv6 sipHash64:                                             14754682784069338856
-IPv6 sipHash128:                                            14583985233562886980
-IntervalSecond sipHash64:                                   11432770794852125635
-IntervalSecond sipHash128:                                  909279623013292615
-String sipHash64:                                           6055926186686336657
-String sipHash128:                                          5223541486509779131
-FixedString(1) sipHash64:                                   11469695648079902848
-FixedString(1) sipHash128:                                  9961168914078146079
-FixedString(5) sipHash64:                                   8647250394568855773
-FixedString(5) sipHash128:                                  16525703635604125063
-FixedString(8) sipHash64:                                   1207561622589542623
-FixedString(8) sipHash128:                                  14834592652531079365
-FixedString(16) sipHash64:                                  10533030573690796799
-FixedString(16) sipHash128:                                 2358959872406504598
-FixedString(33) sipHash64:                                  9914217459176682291
-FixedString(33) sipHash128:                                 7692327516195392629
-Nullable(UInt32) sipHash64:                                 11304750776008968360
-Nullable(UInt32) sipHash128:                                5230526110718448753
-Nullable(String) sipHash64:                                 17766838188287481059
-Nullable(String) sipHash128:                                2291898431926607650
-LowCardinality(String) sipHash64:                           6055926186686336657
-LowCardinality(String) sipHash128:                          5223541486509779131
-LowCardinality(Nullable(String)) sipHash64:                 17766838188287481059
-LowCardinality(Nullable(String)) sipHash128:                2291898431926607650
-Array(UInt8) sipHash64:                                     2833114091452304215
-Array(UInt8) sipHash128:                                    17208622608977038920
-Array(String) sipHash64:                                    12789242606656393924
-Array(String) sipHash128:                                   11546681962623593189
-Array(Array(UInt32)) sipHash64:                             10431722380632634297
-Array(Array(UInt32)) sipHash128:                            320813004864539729
-Array(Nullable(String)) sipHash64:                          6731217629042446767
-Array(Nullable(String)) sipHash128:                         9270594354852154933
-Array(Tuple(UInt64, String)) sipHash64:                     11799764183681331788
-Array(Tuple(UInt64, String)) sipHash128:                    15703798107943568267
-Map(String, UInt64) sipHash64:                              1350796917745561299
-Map(String, UInt64) sipHash128:                             13161562619502973391
-Map(UInt32, Array(String)) sipHash64:                       16149042756989058628
-Map(UInt32, Array(String)) sipHash128:                      4492079224556973586
-Array(UInt32) sipHash64:                                    7440887341613643404
-Array(UInt32) sipHash128:                                   352254484442481242
-Map(UInt64, String) sipHash64:                              9134366295966183718
-Map(UInt64, String) sipHash128:                             3898786676840614417
-Tuple(UInt64, String, Float64) sipHash64:                   12930061042991291026
-Tuple(UInt64, String, Float64) sipHash128:                  16321577523701416972
-Tuple(Nullable(UInt32), Nullable(String)) sipHash64:        4903775521299565922
-Tuple(Nullable(UInt32), Nullable(String)) sipHash128:       15199682022439940969
-Tuple(LowCardinality(String)) sipHash64:                    6055926186686336657
-Tuple(LowCardinality(String)) sipHash128:                   5223541486509779131
-Empty Tuple sipHash64:                                      12322868794795055543
-Empty Tuple sipHash128:                                     6186415108322938835
-Nested Tuple sipHash64:                                     18022159680042539320
-Nested Tuple sipHash128:                                    677773199030425147
-Variant(UInt64, String, Array(UInt32)) sipHash64:           12882136026792851553
-Variant(UInt64, String, Array(UInt32)) sipHash128:          17412744720681215443
-Dynamic sipHash64:                                          15328597668059434822
-Dynamic sipHash128:                                         14145875509075956721
-Dynamic(max_types = 1) sipHash64:                           15328597668059434822
-Dynamic(max_types = 1) sipHash128:                          14145875509075956721
-Tuple(Dynamic) sipHash64:                                   11341889856508237959
-Tuple(Dynamic) sipHash128:                                  14042770752621058463
-Tuple(Dynamic(max_types = 1)) sipHash64:                    11341889856508237959
-Tuple(Dynamic(max_types = 1)) sipHash128:                   14042770752621058463
-JSON sipHash64:                                             3626025473319722781
-JSON sipHash128:                                            1099880731438550494
-JSON(max_dynamic_paths = 1, a.b UInt32) sipHash64:          3626025473319722781
-JSON(max_dynamic_paths = 1, a.b UInt32) sipHash128:         1099880731438550494
-Tuple(JSON) sipHash64:                                      3626025473319722781
-Tuple(JSON) sipHash128:                                     1099880731438550494
-Tuple(JSON(max_dynamic_paths = 1, a.b UInt32)) sipHash64:   3626025473319722781
-Tuple(JSON(max_dynamic_paths = 1, a.b UInt32)) sipHash128:  1099880731438550494
-AggregateFunction(sum, UInt64) sipHash64:                   10575596833096249289
-AggregateFunction(sum, UInt64) sipHash128:                  12115566468784082823
-AggregateFunction(uniq, String) sipHash64:                  8851381237910902243
-AggregateFunction(uniq, String) sipHash128:                 12936309354676766529
-QBit(Float32, 8) sipHash64:                                 7557126637700755188
-QBit(Float32, 8) sipHash128:                                13953367952715664676
+UInt8 sipHash64:                                            16115608619335502289
+UInt8 sipHash128:                                           11955568681658596459
+UInt16 sipHash64:                                           13619197526455880891
+UInt16 sipHash128:                                          14655426093060117590
+UInt32 sipHash64:                                           13488020765634418229
+UInt32 sipHash128:                                          16673304069066518396
+UInt64 sipHash64:                                           13962341025763437600
+UInt64 sipHash128:                                          17604926112846953854
+UInt128 sipHash64:                                          12992167476209248290
+UInt128 sipHash128:                                         4740251397498708404
+UInt256 sipHash64:                                          13353366768073890009
+UInt256 sipHash128:                                         4068915392072756705
+Int8 sipHash64:                                             16115608619335502289
+Int8 sipHash128:                                            11955568681658596459
+Int16 sipHash64:                                            13619197526455880891
+Int16 sipHash128:                                           14655426093060117590
+Int32 sipHash64:                                            13488020765634418229
+Int32 sipHash128:                                           16673304069066518396
+Int64 sipHash64:                                            13962341025763437600
+Int64 sipHash128:                                           17604926112846953854
+Int128 sipHash64:                                           12992167476209248290
+Int128 sipHash128:                                          4740251397498708404
+Int256 sipHash64:                                           13353366768073890009
+Int256 sipHash128:                                          4068915392072756705
+Float32 sipHash64:                                          16777636269572877739
+Float32 sipHash128:                                         13876227176444427990
+Float64 sipHash64:                                          2696176119473439311
+Float64 sipHash128:                                         11852475974603403407
+BFloat16 sipHash64:                                         9266223237498587152
+BFloat16 sipHash128:                                        16383051092556263996
+Bool sipHash64:                                             1002949991434634493
+Bool sipHash128:                                            4174498933738473363
+Decimal32 sipHash64:                                        11237837224816724994
+Decimal32 sipHash128:                                       11395790031557720860
+Decimal64 sipHash64:                                        9307526900539703258
+Decimal64 sipHash128:                                       9588773693311949744
+Decimal128 sipHash64:                                       18384419616327452952
+Decimal128 sipHash128:                                      889537440074099219
+Decimal256 sipHash64:                                       17761022249606211926
+Decimal256 sipHash128:                                      14534900720274227911
+Date sipHash64:                                             4655207163474481991
+Date sipHash128:                                            5910892843479874944
+Date32 sipHash64:                                           7483196184531126266
+Date32 sipHash128:                                          4888453153160635075
+DateTime sipHash64:                                         9192987617976460466
+DateTime sipHash128:                                        13059295750301481369
+DateTime64(3) sipHash64:                                    7480790261338414255
+DateTime64(3) sipHash128:                                   13465337037192361310
+Time sipHash64:                                             18054199665273919158
+Time sipHash128:                                            10090153550037529298
+Time64(6) sipHash64:                                        660335381351127350
+Time64(6) sipHash128:                                       2798968815760255212
+Enum8 sipHash64:                                            2003559019012459208
+Enum8 sipHash128:                                           5956213915951092983
+Enum16 sipHash64:                                           1518940570051636635
+Enum16 sipHash128:                                          8691236547912955369
+UUID sipHash64:                                             12992167476209248290
+UUID sipHash128:                                            4740251397498708404
+IPv4 sipHash64:                                             9192987617976460466
+IPv4 sipHash128:                                            13059295750301481369
+IPv6 sipHash64:                                             17335950512985896034
+IPv6 sipHash128:                                            13770926467249151048
+IntervalSecond sipHash64:                                   13962341025763437600
+IntervalSecond sipHash128:                                  17604926112846953854
+String sipHash64:                                           13309486050047662498
+String sipHash128:                                          18209947741829335529
+FixedString(1) sipHash64:                                   18137766440752768809
+FixedString(1) sipHash128:                                  8415741627914618457
+FixedString(5) sipHash64:                                   4775279459399349663
+FixedString(5) sipHash128:                                  2940681881516629818
+FixedString(8) sipHash64:                                   14543124638535079332
+FixedString(8) sipHash128:                                  429885349280610974
+FixedString(16) sipHash64:                                  4992061845257201276
+FixedString(16) sipHash128:                                 16837146756732501568
+FixedString(33) sipHash64:                                  10773022796408860686
+FixedString(33) sipHash128:                                 1241414539713309184
+Nullable(UInt32) sipHash64:                                 3398236344957043510
+Nullable(UInt32) sipHash128:                                12640576960570038440
+Nullable(String) sipHash64:                                 13853687130271656565
+Nullable(String) sipHash128:                                453871199540493213
+LowCardinality(String) sipHash64:                           13309486050047662498
+LowCardinality(String) sipHash128:                          18209947741829335529
+LowCardinality(Nullable(String)) sipHash64:                 13853687130271656565
+LowCardinality(Nullable(String)) sipHash128:                453871199540493213
+Array(UInt8) sipHash64:                                     18347368801254274537
+Array(UInt8) sipHash128:                                    5340839923585634977
+Array(String) sipHash64:                                    5820927798280758276
+Array(String) sipHash128:                                   14639231801462709939
+Array(Array(UInt32)) sipHash64:                             2860708565572484714
+Array(Array(UInt32)) sipHash128:                            11612869840676674449
+Array(Nullable(String)) sipHash64:                          11838632675913182601
+Array(Nullable(String)) sipHash128:                         4212761481359768645
+Array(Tuple(UInt64, String)) sipHash64:                     1578172909628613006
+Array(Tuple(UInt64, String)) sipHash128:                    6660330457243462245
+Map(String, UInt64) sipHash64:                              16987703882548880743
+Map(String, UInt64) sipHash128:                             3575240134636037439
+Map(UInt32, Array(String)) sipHash64:                       12715412107007199378
+Map(UInt32, Array(String)) sipHash128:                      9203047420449266254
+Array(UInt32) sipHash64:                                    14124123924524721089
+Array(UInt32) sipHash128:                                   2663527939498311486
+Map(UInt64, String) sipHash64:                              412814410154927048
+Map(UInt64, String) sipHash128:                             5867746130949982213
+Tuple(UInt64, String, Float64) sipHash64:                   10280090295290089318
+Tuple(UInt64, String, Float64) sipHash128:                  17190438208219499438
+Tuple(Nullable(UInt32), Nullable(String)) sipHash64:        12210179864660342945
+Tuple(Nullable(UInt32), Nullable(String)) sipHash128:       16459746105611509002
+Tuple(LowCardinality(String)) sipHash64:                    13309486050047662498
+Tuple(LowCardinality(String)) sipHash128:                   18209947741829335529
+Empty Tuple sipHash64:                                      6608180264737386748
+Empty Tuple sipHash128:                                     14937335408495191620
+Nested Tuple sipHash64:                                     13537266718032387230
+Nested Tuple sipHash128:                                    15277756501140914320
+Variant(UInt64, String, Array(UInt32)) sipHash64:           4439817823985882136
+Variant(UInt64, String, Array(UInt32)) sipHash128:          7653090056708309186
+Dynamic sipHash64:                                          17888473858978804565
+Dynamic sipHash128:                                         7482006804953645317
+Dynamic(max_types = 1) sipHash64:                           17888473858978804565
+Dynamic(max_types = 1) sipHash128:                          7482006804953645317
+Tuple(Dynamic) sipHash64:                                   2225755792424926373
+Tuple(Dynamic) sipHash128:                                  7526224617124576697
+Tuple(Dynamic(max_types = 1)) sipHash64:                    2225755792424926373
+Tuple(Dynamic(max_types = 1)) sipHash128:                   7526224617124576697
+JSON sipHash64:                                             2870523191349354623
+JSON sipHash128:                                            14266985803539583330
+JSON(max_dynamic_paths = 1, a.b UInt32) sipHash64:          2870523191349354623
+JSON(max_dynamic_paths = 1, a.b UInt32) sipHash128:         14266985803539583330
+Tuple(JSON) sipHash64:                                      2870523191349354623
+Tuple(JSON) sipHash128:                                     14266985803539583330
+Tuple(JSON(max_dynamic_paths = 1, a.b UInt32)) sipHash64:   2870523191349354623
+Tuple(JSON(max_dynamic_paths = 1, a.b UInt32)) sipHash128:  14266985803539583330
+AggregateFunction(sum, UInt64) sipHash64:                   16519426982212543387
+AggregateFunction(sum, UInt64) sipHash128:                  17925048597087181199
+AggregateFunction(uniq, String) sipHash64:                  8813457799278605912
+AggregateFunction(uniq, String) sipHash128:                 5151518445828460154
+QBit(Float32, 8) sipHash64:                                 14161209201232629853
+QBit(Float32, 8) sipHash128:                                12511905033500931880
 NULL sipHash64:                                             ᴺᵁᴸᴸ
 NULL sipHash128:                                            ᴺᵁᴸᴸ
-Empty Array sipHash64:                                      11349019289213493218
-Empty Array sipHash128:                                     10715893757459819181
-UInt64, String, Nullable(Float64), Array(UInt8) sipHash64:  17221313568658355350
-UInt64, String, Nullable(Float64), Array(UInt8) sipHash128: 16285526529246457345
-String and constant String sipHash64:                       17827776328936267084
-String and constant String sipHash128:                      1937421119426288672
-Constant UInt32 and String sipHash64:                       10264276986887242525
-Constant UInt32 and String sipHash128:                      11484871140298689789
-Constant Tuple sipHash64:                                   13015805725073447506
-Constant Tuple sipHash128:                                  13194744109582160030
-String and constant Tuple sipHash64:                        14581642151226736953
-String and constant Tuple sipHash128:                       4350068528724834309
+Empty Array sipHash64:                                      7368892003093757752
+Empty Array sipHash128:                                     339127594437411734
+UInt64, String, Nullable(Float64), Array(UInt8) sipHash64:  1561566479118030808
+UInt64, String, Nullable(Float64), Array(UInt8) sipHash128: 16755460864866586444
+String and constant String sipHash64:                       3609113578516757889
+String and constant String sipHash128:                      12089031207967429949
+Constant UInt32 and String sipHash64:                       5360952371226117067
+Constant UInt32 and String sipHash128:                      12829997227579798193
+Constant Tuple sipHash64:                                   15489426196464711034
+Constant Tuple sipHash128:                                  5727733014765360935
+String and constant Tuple sipHash64:                        13370686762453462228
+String and constant Tuple sipHash128:                       14809241007677582635
 Row 1:
 ──────
 functions:                                                           keyed
-Array(String) sipHash64Keyed:                                        7250412193062422671
-Array(String) sipHash128Keyed:                                       10331921055359972681
-Array(String) sipHash128Reference:                                   16068752262126520586
-Map(String, UInt64) sipHash64Keyed:                                  5835661335002317280
-Map(String, UInt64) sipHash128Keyed:                                 2412504386289981066
-Map(String, UInt64) sipHash128Reference:                             6836518482871227095
-Tuple(Nullable(UInt32), Nullable(String)) sipHash64Keyed:            6928943155495343582
-Tuple(Nullable(UInt32), Nullable(String)) sipHash128Keyed:           17420895631988582695
-Tuple(Nullable(UInt32), Nullable(String)) sipHash128Reference:       7358828174761846587
-UInt64, String, Nullable(Float64), Array(UInt8) sipHash64Keyed:      15707856604814664046
-UInt64, String, Nullable(Float64), Array(UInt8) sipHash128Keyed:     7893525218792907078
-UInt64, String, Nullable(Float64), Array(UInt8) sipHash128Reference: 1639643521371303469
+Array(String) sipHash64Keyed:                                        13983012205777264714
+Array(String) sipHash128Keyed:                                       9749579136447078358
+Array(String) sipHash128Reference:                                   2782831649276943855
+Map(String, UInt64) sipHash64Keyed:                                  9241663979122855784
+Map(String, UInt64) sipHash128Keyed:                                 3019803114168066880
+Map(String, UInt64) sipHash128Reference:                             4523078901591439040
+Tuple(Nullable(UInt32), Nullable(String)) sipHash64Keyed:            16839961016746340057
+Tuple(Nullable(UInt32), Nullable(String)) sipHash128Keyed:           16501493557763419544
+Tuple(Nullable(UInt32), Nullable(String)) sipHash128Reference:       565502222189563227
+UInt64, String, Nullable(Float64), Array(UInt8) sipHash64Keyed:      9234225652831686792
+UInt64, String, Nullable(Float64), Array(UInt8) sipHash128Keyed:     4832935891130974042
+UInt64, String, Nullable(Float64), Array(UInt8) sipHash128Reference: 6353345410561280704

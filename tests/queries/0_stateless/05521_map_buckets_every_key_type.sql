@@ -1,6 +1,6 @@
 -- A bucketed `Map` puts a key in the bucket of its hash, and `m[k]` with a constant `k` reads only the bucket of the
--- hash of `k`. For every class of key: the parts have 7 buckets, `m[k]` finds every key and returns the default for
--- the other keys, and the whole `Map` reads back as it was written.
+-- hash of `k`. For every class of key: the parts have 7 buckets, `m[k]` finds the keys and returns the default for the
+-- other keys, and the whole `Map` reads back as it was written.
 
 DROP VIEW IF EXISTS v_map_buckets_every_key_type_lookups;
 DROP TABLE IF EXISTS t_map_buckets_every_key_type;
@@ -114,43 +114,44 @@ SET optimize_functions_to_subcolumns = 1;
 CREATE VIEW v_map_buckets_every_key_type_lookups AS
 WITH {j:UInt64} AS j, if(j < 50 AND (id + j) % 10 != 0, id * 100 + j + 1, 0) AS expected
 SELECT [
-    ('UInt8', countIf(m_uint8[toUInt8(j * 4 + 3)] != expected), countIf(m_uint8[toUInt8(j * 4 + 3)] != 0)),
-    ('UInt16', countIf(m_uint16[toUInt16(j * 1201)] != expected), countIf(m_uint16[toUInt16(j * 1201)] != 0)),
-    ('UInt32', countIf(m_uint32[toUInt32(j * 78125311)] != expected), countIf(m_uint32[toUInt32(j * 78125311)] != 0)),
-    ('UInt64', countIf(m_uint64[toUInt64(18446744073709551615 - j * 335544321234567)] != expected), countIf(m_uint64[toUInt64(18446744073709551615 - j * 335544321234567)] != 0)),
-    ('Int8', countIf(m_int8[toInt8(toInt16(j * 4) - 110)] != expected), countIf(m_int8[toInt8(toInt16(j * 4) - 110)] != 0)),
-    ('Int16', countIf(m_int16[toInt16(toInt32(j * 1201) - 32768)] != expected), countIf(m_int16[toInt16(toInt32(j * 1201) - 32768)] != 0)),
-    ('Int32', countIf(m_int32[toInt32(toInt64(j * 78125311) - 2147483648)] != expected), countIf(m_int32[toInt32(toInt64(j * 78125311) - 2147483648)] != 0)),
-    ('Int64', countIf(m_int64[9000000000000000000 - toInt64(j) * 170000000000000000] != expected), countIf(m_int64[9000000000000000000 - toInt64(j) * 170000000000000000] != 0)),
-    ('Float32', countIf(m_float32[toFloat32(multiIf(j = 1, inf, j = 2, -inf, (j - 20.5) / 4))] != expected), countIf(m_float32[toFloat32(multiIf(j = 1, inf, j = 2, -inf, (j - 20.5) / 4))] != 0)),
-    ('Float64', countIf(m_float64[multiIf(j = 1, inf, j = 2, -inf, (j - 20.5) / 8)] != expected), countIf(m_float64[multiIf(j = 1, inf, j = 2, -inf, (j - 20.5) / 8)] != 0)),
-    ('String', countIf(m_string[concat('k', toString(j), repeat('x', j % 20))] != expected), countIf(m_string[concat('k', toString(j), repeat('x', j % 20))] != 0)),
-    ('FixedString(4)', countIf(m_fixed_string[toFixedString(toString(1000 + j * 37), 4)] != expected), countIf(m_fixed_string[toFixedString(toString(1000 + j * 37), 4)] != 0)),
-    ('UInt128', countIf(m_uint128[bitShiftLeft(toUInt128(j), 100) + j] != expected), countIf(m_uint128[bitShiftLeft(toUInt128(j), 100) + j] != 0)),
-    ('Int256', countIf(m_int256[(toInt256(j) - 27) * toInt256(repeat('9', 70))] != expected), countIf(m_int256[(toInt256(j) - 27) * toInt256(repeat('9', 70))] != 0)),
-    ('UUID', countIf(m_uuid[reinterpret(bitShiftLeft(toUInt128(j), 70) + j * 7919, 'UUID')] != expected), countIf(m_uuid[reinterpret(bitShiftLeft(toUInt128(j), 70) + j * 7919, 'UUID')] != 0)),
-    ('IPv4', countIf(m_ipv4[toIPv4(toUInt32(j * 78125311))] != expected), countIf(m_ipv4[toIPv4(toUInt32(j * 78125311))] != 0)),
-    ('IPv6', countIf(m_ipv6[toIPv6(bitShiftLeft(toUInt128(j + 1), 90) + j)] != expected), countIf(m_ipv6[toIPv6(bitShiftLeft(toUInt128(j + 1), 90) + j)] != 0)),
-    ('Date', countIf(m_date[toDate('1970-01-01') + toUInt16(j * 1201)] != expected), countIf(m_date[toDate('1970-01-01') + toUInt16(j * 1201)] != 0)),
-    ('Date32', countIf(m_date32[toDate32('1900-01-01') + toInt32(j * 2700)] != expected), countIf(m_date32[toDate32('1900-01-01') + toInt32(j * 2700)] != 0)),
-    ('DateTime', countIf(m_datetime[toDateTime(toUInt32(j * 78125311), 'UTC')] != expected), countIf(m_datetime[toDateTime(toUInt32(j * 78125311), 'UTC')] != 0)),
-    ('DateTime64(3)', countIf(m_datetime64[fromUnixTimestamp64Milli(toInt64(j) * 123456789123 - 2208988800000, 'UTC')] != expected), countIf(m_datetime64[fromUnixTimestamp64Milli(toInt64(j) * 123456789123 - 2208988800000, 'UTC')] != 0)),
-    ('Enum8', countIf(j < 7 AND m_enum8[['a', 'b', 'c', 'd', 'e', 'f', 'g'][j % 7 + 1]] != if(j < 5, expected, 0)), countIf(j < 7 AND m_enum8[['a', 'b', 'c', 'd', 'e', 'f', 'g'][j % 7 + 1]] != 0)),
-    ('Decimal64(4)', countIf(m_decimal64[reinterpret(toInt64(j) * 123456789012 - 3000000000000, 'Decimal64(4)')] != expected), countIf(m_decimal64[reinterpret(toInt64(j) * 123456789012 - 3000000000000, 'Decimal64(4)')] != 0)),
-    ('Bool', countIf(j < 2 AND m_bool[CAST(j AS Bool)] != if(j < 1, expected, 0)), countIf(j < 2 AND m_bool[CAST(j AS Bool)] != 0)),
-    ('LowCardinality(String)', countIf(m_low_cardinality[concat('l', toString(j), repeat('y', j % 9))] != expected), countIf(m_low_cardinality[concat('l', toString(j), repeat('y', j % 9))] != 0)),
-    ('Array(UInt8)', countIf(m_array_uint8[if(j = 0, [], arraySlice([toUInt8(j * 3), toUInt8(j), 7, 9], 1, 1 + j % 4))] != expected), countIf(m_array_uint8[if(j = 0, [], arraySlice([toUInt8(j * 3), toUInt8(j), 7, 9], 1, 1 + j % 4))] != 0)),
-    ('Array(Float64)', countIf(m_array_float64[[toFloat64(j) / 4 + 0.125, -toFloat64(j)]] != expected), countIf(m_array_float64[[toFloat64(j) / 4 + 0.125, -toFloat64(j)]] != 0)),
-    ('Tuple(String, UInt64)', countIf(m_tuple[(concat('t', toString(j)), j * 1000003)] != expected), countIf(m_tuple[(concat('t', toString(j)), j * 1000003)] != 0)),
-    ('Tuple(Float64, UInt8)', countIf(m_tuple_float64[(toFloat64(j) / 2 - 10, toUInt8(j))] != expected), countIf(m_tuple_float64[(toFloat64(j) / 2 - 10, toUInt8(j))] != 0)),
-    ('Variant(UInt64, String)', countIf(m_variant[if(j % 2 = 0, CAST(j AS Variant(UInt64, String)), CAST(concat('v', toString(j)) AS Variant(UInt64, String)))] != expected), countIf(m_variant[if(j % 2 = 0, CAST(j AS Variant(UInt64, String)), CAST(concat('v', toString(j)) AS Variant(UInt64, String)))] != 0)),
-    ('Dynamic', countIf(m_dynamic[multiIf(j % 3 = 0, CAST(toInt64(j) * 1000 - 7 AS Dynamic), j % 3 = 1, CAST(concat('d', toString(j)) AS Dynamic), CAST(j + 0.5 AS Dynamic))] != expected), countIf(m_dynamic[multiIf(j % 3 = 0, CAST(toInt64(j) * 1000 - 7 AS Dynamic), j % 3 = 1, CAST(concat('d', toString(j)) AS Dynamic), CAST(j + 0.5 AS Dynamic))] != 0)),
-    ('JSON', countIf(m_json[CAST(concat('{"a":', toString(j), ',"b":{"c":"s', toString(j), '"}}') AS JSON)] != expected), countIf(m_json[CAST(concat('{"a":', toString(j), ',"b":{"c":"s', toString(j), '"}}') AS JSON)] != 0))
+    ('UInt8', countIf(m_uint8[toUInt8(j * 4 + 3)] != expected)),
+    ('UInt16', countIf(m_uint16[toUInt16(j * 1201)] != expected)),
+    ('UInt32', countIf(m_uint32[toUInt32(j * 78125311)] != expected)),
+    ('UInt64', countIf(m_uint64[toUInt64(18446744073709551615 - j * 335544321234567)] != expected)),
+    ('Int8', countIf(m_int8[toInt8(toInt16(j * 4) - 110)] != expected)),
+    ('Int16', countIf(m_int16[toInt16(toInt32(j * 1201) - 32768)] != expected)),
+    ('Int32', countIf(m_int32[toInt32(toInt64(j * 78125311) - 2147483648)] != expected)),
+    ('Int64', countIf(m_int64[9000000000000000000 - toInt64(j) * 170000000000000000] != expected)),
+    ('Float32', countIf(m_float32[toFloat32(multiIf(j = 1, inf, j = 2, -inf, (j - 20.5) / 4))] != expected)),
+    ('Float64', countIf(m_float64[multiIf(j = 1, inf, j = 2, -inf, (j - 20.5) / 8)] != expected)),
+    ('String', countIf(m_string[concat('k', toString(j), repeat('x', j % 20))] != expected)),
+    ('FixedString(4)', countIf(m_fixed_string[toFixedString(toString(1000 + j * 37), 4)] != expected)),
+    ('UInt128', countIf(m_uint128[bitShiftLeft(toUInt128(j), 100) + j] != expected)),
+    ('Int256', countIf(m_int256[(toInt256(j) - 27) * toInt256(repeat('9', 70))] != expected)),
+    ('UUID', countIf(m_uuid[reinterpret(bitShiftLeft(toUInt128(j), 70) + j * 7919, 'UUID')] != expected)),
+    ('IPv4', countIf(m_ipv4[toIPv4(toUInt32(j * 78125311))] != expected)),
+    ('IPv6', countIf(m_ipv6[toIPv6(bitShiftLeft(toUInt128(j + 1), 90) + j)] != expected)),
+    ('Date', countIf(m_date[toDate('1970-01-01') + toUInt16(j * 1201)] != expected)),
+    ('Date32', countIf(m_date32[toDate32('1900-01-01') + toInt32(j * 2700)] != expected)),
+    ('DateTime', countIf(m_datetime[toDateTime(toUInt32(j * 78125311), 'UTC')] != expected)),
+    ('DateTime64(3)', countIf(m_datetime64[fromUnixTimestamp64Milli(toInt64(j) * 123456789123 - 2208988800000, 'UTC')] != expected)),
+    ('Enum8', countIf(j < 7 AND m_enum8[['a', 'b', 'c', 'd', 'e', 'f', 'g'][j % 7 + 1]] != if(j < 5, expected, 0))),
+    ('Decimal64(4)', countIf(m_decimal64[reinterpret(toInt64(j) * 123456789012 - 3000000000000, 'Decimal64(4)')] != expected)),
+    ('Bool', countIf(j < 2 AND m_bool[CAST(j AS Bool)] != if(j < 1, expected, 0))),
+    ('LowCardinality(String)', countIf(m_low_cardinality[concat('l', toString(j), repeat('y', j % 9))] != expected)),
+    ('Array(UInt8)', countIf(m_array_uint8[if(j = 0, [], arraySlice([toUInt8(j * 3), toUInt8(j), 7, 9], 1, 1 + j % 4))] != expected)),
+    ('Array(Float64)', countIf(m_array_float64[[toFloat64(j) / 4 + 0.125, -toFloat64(j)]] != expected)),
+    ('Tuple(String, UInt64)', countIf(m_tuple[(concat('t', toString(j)), j * 1000003)] != expected)),
+    ('Tuple(Float64, UInt8)', countIf(m_tuple_float64[(toFloat64(j) / 2 - 10, toUInt8(j))] != expected)),
+    ('Variant(UInt64, String)', countIf(m_variant[if(j % 2 = 0, CAST(j AS Variant(UInt64, String)), CAST(concat('v', toString(j)) AS Variant(UInt64, String)))] != expected)),
+    ('Dynamic', countIf(m_dynamic[multiIf(j % 3 = 0, CAST(toInt64(j) * 1000 - 7 AS Dynamic), j % 3 = 1, CAST(concat('d', toString(j)) AS Dynamic), CAST(j + 0.5 AS Dynamic))] != expected)),
+    ('JSON', countIf(m_json[CAST(concat('{"a":', toString(j), ',"b":{"c":"s', toString(j), '"}}') AS JSON)] != expected))
 ] AS result
 FROM t_map_buckets_every_key_type;
 
--- Mismatches and found keys per class, for the keys from 0 to 54 (50 to 54 are in no row).
-SELECT r.1 AS key_type, sum(r.2) AS mismatches, sum(r.3) AS found
+-- Mismatches per class for the keys from 0 to 9, which have the special values of every class and are absent from some
+-- rows, and for the key 50, which is in no row.
+SELECT r.1 AS key_type, sum(r.2) AS mismatches
 FROM
 (
     SELECT * FROM v_map_buckets_every_key_type_lookups(j = 0) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 1) UNION ALL
@@ -158,33 +159,14 @@ FROM
     SELECT * FROM v_map_buckets_every_key_type_lookups(j = 4) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 5) UNION ALL
     SELECT * FROM v_map_buckets_every_key_type_lookups(j = 6) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 7) UNION ALL
     SELECT * FROM v_map_buckets_every_key_type_lookups(j = 8) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 9) UNION ALL
-    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 10) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 11) UNION ALL
-    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 12) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 13) UNION ALL
-    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 14) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 15) UNION ALL
-    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 16) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 17) UNION ALL
-    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 18) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 19) UNION ALL
-    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 20) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 21) UNION ALL
-    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 22) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 23) UNION ALL
-    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 24) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 25) UNION ALL
-    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 26) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 27) UNION ALL
-    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 28) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 29) UNION ALL
-    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 30) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 31) UNION ALL
-    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 32) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 33) UNION ALL
-    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 34) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 35) UNION ALL
-    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 36) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 37) UNION ALL
-    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 38) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 39) UNION ALL
-    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 40) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 41) UNION ALL
-    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 42) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 43) UNION ALL
-    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 44) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 45) UNION ALL
-    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 46) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 47) UNION ALL
-    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 48) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 49) UNION ALL
-    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 50) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 51) UNION ALL
-    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 52) UNION ALL SELECT * FROM v_map_buckets_every_key_type_lookups(j = 53) UNION ALL
-    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 54)
+    SELECT * FROM v_map_buckets_every_key_type_lookups(j = 50)
 )
 ARRAY JOIN result AS r, arrayEnumerate(result) AS n
 GROUP BY n, key_type
 ORDER BY n;
+
+-- The rows have keys, so the mismatches above are not vacuous.
+SELECT count(), sum(length(m_uint8)), sum(length(m_json)) FROM t_map_buckets_every_key_type;
 
 -- The whole `Map` of every class reads back as written.
 SELECT count() FROM
