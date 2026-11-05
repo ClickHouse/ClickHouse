@@ -40,9 +40,11 @@ $CLICKHOUSE_CLIENT --query "
 # disables below. Otherwise every part check and every replica shutdown on the server stays paused.
 trap '$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT check_data_part_pause_after_block_read; SYSTEM DISABLE FAILPOINT rmt_part_check_thread_pause_in_stop" > /dev/null 2>&1 || true' EXIT
 
+# Bounded, so that a check which reads on past the stop flag and pauses again is reported instead of
+# blocking the test until its timeout.
 check_out="${CLICKHOUSE_TMP}/05458_check_${CLICKHOUSE_DATABASE}.out"
 rm -f "$check_out"
-$CLICKHOUSE_CLIENT --check_query_single_value_result 1 --query "CHECK TABLE $table" > "$check_out" 2>&1 &
+timeout 60 $CLICKHOUSE_CLIENT --check_query_single_value_result 1 --query "CHECK TABLE $table" > "$check_out" 2>&1 &
 check_pid=$!
 
 # The check is now held inside the first column file, after its first block.
@@ -61,27 +63,19 @@ if ! timeout 120 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT rmt_part_chec
 fi
 
 # Release the check for one more block. The stop flag is already raised, so the poll between blocks ends
-# the read, and the check reports that it was cancelled. Bounded, so that a check which reads on and pauses
-# again is reported instead of blocking the test until its timeout.
+# the read, and the check reports that it was cancelled. The client exits with an error either way;
+# exit status 124 is `timeout` reporting a check that was still running.
 $CLICKHOUSE_CLIENT --query "SYSTEM NOTIFY FAILPOINT check_data_part_pause_after_block_read"
 
-check_finished=0
-for _ in {1..600}; do
-    if ! kill -0 "$check_pid" 2>/dev/null; then
-        check_finished=1
-        break
-    fi
-    sleep 0.1
-done
-if [[ "$check_finished" != "1" ]]; then
-    echo "FAIL: the check did not stop after the stop flag was raised"
-fi
+check_status=0
+wait "$check_pid" || check_status=$?
 
-# Lets a check that is still paused finish, so that the test does not hang on `wait` after a failure.
+# Lets a check that is still paused finish, so that the server does not keep it after the test.
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT check_data_part_pause_after_block_read"
-wait "$check_pid" 2>/dev/null || true
 
-if grep -q "ABORTED" "$check_out"; then
+if [[ "$check_status" == "124" ]]; then
+    echo "FAIL: the check did not stop after the stop flag was raised"
+elif grep -q "ABORTED" "$check_out"; then
     echo "check cancelled by the shutdown"
 else
     echo "FAIL: unexpected check result: $(cat "$check_out")"
