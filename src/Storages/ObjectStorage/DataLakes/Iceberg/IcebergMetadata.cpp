@@ -2107,8 +2107,7 @@ ProcessorPtr IcebergMetadata::createInsertCommitSink(
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> catalog)
 {
-    /// Only the parallel sinks of an incremental refresh send their files to the commit sink, see `IcebergStorageSink`.
-    if (!context->getStreamingCursor() || !context->getSettingsRef()[Setting::allow_insert_into_iceberg])
+    if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg])
         return nullptr;
     checkTableRootIsQueriedPath("INSERT");
     auto committer = std::make_shared<IcebergStorageSink>(

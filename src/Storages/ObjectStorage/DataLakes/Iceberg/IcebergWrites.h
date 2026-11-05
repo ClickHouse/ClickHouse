@@ -217,7 +217,7 @@ public:
 
     void onFinish() override;
     void onException(std::exception_ptr exception) override;
-    void setHasDependentMaterializedViews(bool has_dependent_views) override;
+    void setFinishedByCommitSink() override { send_files_to_commit = true; }
 
     /// Used by `IcebergCommit`: takes the files written by a parallel sink and commits all of them in one snapshot.
     void addWrittenFiles(IcebergWrittenFilesPtr files);
@@ -258,7 +258,7 @@ private:
     /// The snapshot referencing the written files is committed, so they must never be removed.
     bool committed = false;
 
-    /// The sink is one of the parallel sinks of an incremental refresh: it sends its files to `IcebergCommit` instead of committing them.
+    /// The sink sends its files to `IcebergCommit` instead of committing them.
     bool send_files_to_commit = false;
     bool files_sent = false;
     /// Files of the parallel sinks, received by `IcebergCommit`.
@@ -282,7 +282,7 @@ private:
 
 };
 
-/// Receives the files written by the parallel sinks of an incremental refresh and commits them in one snapshot with the cursor.
+/// Receives the files written by the parallel sinks of an insert and commits them in one snapshot.
 class IcebergCommit final : public ISink
 {
 public:

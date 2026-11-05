@@ -543,7 +543,8 @@ public:
         bool /*async_insert*/);
 
     /** Returns a sink which receives the output of all the parallel sinks returned by `write` for one `INSERT`
-      * and finishes the insert, e.g. commits everything the sinks wrote at once.
+      * and finishes the insert, e.g. commits everything the sinks wrote at once. If it is used, the sinks
+      * are told so with `SinkToStorage::setFinishedByCommitSink`.
       * nullptr if each sink finishes its part of the insert itself.
       */
     virtual ProcessorPtr createInsertCommitSink(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/) { return nullptr; }

@@ -1344,9 +1344,6 @@ IcebergStorageSink::IcebergStorageSink(
             break;
         }
     }
-
-    /// The parallel sinks of an incremental refresh round commit together with the cursor, see `IStorage::createInsertCommitSink`.
-    send_files_to_commit = context->getStreamingCursor() && context->hasInsertionTable() && context->getInsertionTable() == table_id;
 }
 
 IcebergStorageSink::~IcebergStorageSink()
@@ -1456,13 +1453,6 @@ void IcebergStorageSink::consume(Chunk & chunk)
     auto new_chunk = Chunk(columns, chunk.getNumRows());
     new_chunk.setChunkInfos(chunk.getChunkInfos());
     chunk = std::move(new_chunk);
-}
-
-void IcebergStorageSink::setHasDependentMaterializedViews(bool has_dependent_views)
-{
-    /// The sent files would go to the dependent views instead of `IcebergCommit`.
-    if (has_dependent_views)
-        send_files_to_commit = false;
 }
 
 IcebergStorageSink::GenerateResult IcebergStorageSink::getRemaining()

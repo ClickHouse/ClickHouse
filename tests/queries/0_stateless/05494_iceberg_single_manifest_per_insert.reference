@@ -35,7 +35,7 @@ NOT_IMPLEMENTED
 5	2
 4
 4
---- parallel INSERT: one manifest per insert stream, each spanning all partitions
+--- parallel INSERT: one snapshot with one manifest spanning all partitions
 1	1	1
 0	100000
 1	100000

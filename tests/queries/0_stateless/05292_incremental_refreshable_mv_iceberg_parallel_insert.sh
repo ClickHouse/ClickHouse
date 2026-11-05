@@ -29,14 +29,16 @@ ${CLICKHOUSE_CLIENT} --query "
     PARTITION BY icebergBucket(2, k)
 "
 
-# Small blocks spread the round over all the parallel sinks.
+# Small blocks spread the round over all the parallel sinks. The data file limits are above the round size,
+# so each sink writes at most one file per partition: more than two files in a round mean several sinks.
 ${CLICKHOUSE_CLIENT} --query "
     CREATE MATERIALIZED VIEW ${MV}
         REFRESH EVERY 10 YEAR APPEND INCREMENTAL
         TO ${TGT} EMPTY
         AS SELECT k FROM ${SRC}
         SETTINGS max_insert_threads = 4, max_threads = 4, max_block_size = 100,
-            min_insert_block_size_rows = 100, min_insert_block_size_bytes = 1
+            min_insert_block_size_rows = 100, min_insert_block_size_bytes = 1,
+            iceberg_insert_max_rows_in_data_file = 1000000, iceberg_insert_max_bytes_in_data_file = 1000000000
 "
 
 function refresh_round()
@@ -56,10 +58,18 @@ ${CLICKHOUSE_CLIENT} --query "
         operation,
         summary['added-records'],
         summary['changed-partition-count'],
-        summary['clickhouse.refresh-cursor'] != ''
+        summary['clickhouse.refresh-cursor'] != '',
+        toUInt64(summary['added-data-files']) > 2
     FROM system.iceberg_history
     WHERE database = currentDatabase() AND table = '${TGT}'
     ORDER BY made_current_at
+"
+
+echo "=== snapshots ==="
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count()
+    FROM system.iceberg_history
+    WHERE database = currentDatabase() AND table = '${TGT}'
 "
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${MV}"
