@@ -70,6 +70,7 @@ struct StorageSnapshot
     /// Get default expression for a column.
     /// Takes into account physical and virtual columns.
     std::optional<ColumnDefault> getDefault(const String & column_name) const;
+    std::optional<ColumnDefault> getDefaultOfColumnOrSubcolumn(const String & column_name) const;
 
 private:
     /// Empty on almost every snapshot: one that is consumed inside the scope of an owning

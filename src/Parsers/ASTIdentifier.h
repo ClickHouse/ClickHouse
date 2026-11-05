@@ -60,6 +60,9 @@ public:
     String full_name;
     std::vector<String> name_parts;
 
+    /// Rebuilds `full_name` after `name_parts` changed.
+    void resetFullName();
+
 protected:
     std::shared_ptr<IdentifierSemanticImpl> semantic; /// pimpl
 
@@ -73,8 +76,6 @@ private:
     friend class ReplaceQueryParameterVisitor;
     friend struct IdentifierSemantic;
     friend void setIdentifierSpecial(ASTPtr & ast);
-
-    void resetFullName();
 };
 
 class ASTTableIdentifier : public ASTIdentifier
