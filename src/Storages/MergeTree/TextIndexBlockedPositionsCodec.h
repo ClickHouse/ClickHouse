@@ -105,6 +105,9 @@ public:
 
     /// `decodeBlock` in two steps, so that ranks of one parsed block can be emitted several times.
     static void readBlock(ReadBuffer & in, const Directory & dir, size_t block_idx, DecodeScratch & scratch);
+    /// The same, but decodes the lane into `lane` at `lane_begin`, so that phrase matching can read positions in place.
+    static void readBlock(
+        ReadBuffer & in, const Directory & dir, size_t block_idx, DecodeScratch & scratch, PaddedPODArray<UInt32> & lane, size_t lane_begin);
     static void emitRanks(
         const DecodeScratch & scratch,
         std::span<const UInt32> local_ranks,

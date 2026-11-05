@@ -23,11 +23,14 @@ namespace
 
 /// Parse a block payload into the delta value lane and per-rank bounds: rank r spans [doc_offsets[r], doc_offsets[r + 1]).
 /// The bounds are derived here and never persisted, so they are UInt64 and put no ceiling on a block's position count.
+/// Decodes the lane into `values` at `values_begin`; the bounds are relative to it.
 void parseBlock(
     const uint8_t * payload,
     size_t payload_bytes,
     size_t docs_in_block,
-    TextIndexBlockedPositionsCodec::DecodeScratch & scratch)
+    TextIndexBlockedPositionsCodec::DecodeScratch & scratch,
+    PaddedPODArray<UInt32> & values,
+    size_t values_begin)
 {
     const uint8_t * pos = payload;
     const uint8_t * end = payload + payload_bytes;
@@ -63,8 +66,8 @@ void parseBlock(
     }
     doc_offsets[docs_in_block] = total;
 
-    scratch.values.resize(total);
-    const size_t consumed = PFor::decodeBlocks<UInt32>(pos, total, PFor::Delta::none, scratch.values.data(), end);
+    values.resize(values_begin + total);
+    const size_t consumed = PFor::decodeBlocks<UInt32>(pos, total, PFor::Delta::none, values.data() + values_begin, end);
     if (consumed == 0 || pos + consumed != end)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Corrupt text index positions: malformed position lane ({} of {} payload bytes consumed)",
@@ -223,11 +226,17 @@ void TextIndexBlockedPositionsCodec::decodeBlock(
 
 void TextIndexBlockedPositionsCodec::readBlock(ReadBuffer & in, const Directory & dir, size_t block_idx, DecodeScratch & scratch)
 {
+    readBlock(in, dir, block_idx, scratch, scratch.values, 0);
+}
+
+void TextIndexBlockedPositionsCodec::readBlock(
+    ReadBuffer & in, const Directory & dir, size_t block_idx, DecodeScratch & scratch, PaddedPODArray<UInt32> & lane, size_t lane_begin)
+{
     const size_t payload_bytes = dir.block_offsets[block_idx + 1] - dir.block_offsets[block_idx];
     scratch.payload.resize(payload_bytes);
     in.readStrict(scratch.payload.data(), payload_bytes);
 
-    parseBlock(reinterpret_cast<const uint8_t *>(scratch.payload.data()), payload_bytes, dir.docsInBlock(block_idx), scratch);
+    parseBlock(reinterpret_cast<const uint8_t *>(scratch.payload.data()), payload_bytes, dir.docsInBlock(block_idx), scratch, lane, lane_begin);
 }
 
 void TextIndexBlockedPositionsCodec::emitRanks(
