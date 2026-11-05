@@ -27,13 +27,57 @@ INPUT_PATHS = (
 )
 
 
-def validate_options(resume_from, max_hours):
+def validate_options(resume_from, max_hours, binary_url="", binary_sha256=""):
     if resume_from and not re.fullmatch("[0-9a-f]{40}", resume_from):
         raise ValueError(
             "performance_resume_from must be an empty string or a full commit SHA"
         )
     if max_hours not in ("6", "12"):
         raise ValueError("performance_max_hours must be 6 or 12")
+    if resume_from and not (binary_url and binary_sha256):
+        raise ValueError("Performance recovery requires a pinned binary URL and SHA256")
+    if binary_url or binary_sha256:
+        url = urllib.parse.urlsplit(binary_url)
+        if (
+            url.scheme != "https"
+            or url.netloc != "clickhouse-builds.s3.amazonaws.com"
+            or url.query
+            or url.fragment
+            or ".." in urllib.parse.unquote(url.path).split("/")
+            or not re.fullmatch(
+                r"/(?:REFs/.+|PRs/[0-9]+)/[0-9a-f]{40}/[a-z0-9_]+/"
+                r"build_amd_llvm_coverage_per_test/clickhouse",
+                url.path,
+            )
+        ):
+            raise ValueError(
+                "performance_binary_url must identify an immutable coverage build"
+            )
+        if not re.fullmatch("[0-9a-f]{64}", binary_sha256):
+            raise ValueError(
+                "performance_binary_sha256 must be the unpacked binary SHA256"
+            )
+
+
+def pin_binary(binary, url, expected_sha256):
+    """Replace the cached build only after verifying the exact unpacked artifact."""
+    pinned = binary.with_name("clickhouse.pinned")
+    with urllib.request.urlopen(url, timeout=120) as response, pinned.open("xb") as out:
+        while chunk := response.read(1024 * 1024):
+            out.write(chunk)
+    pinned.chmod(pinned.stat().st_mode | 0o111)
+    # CI publishes a self-extracting executable. Starting it replaces the
+    # wrapper in place; manifests identify the unpacked executable, not the
+    # compressed transport or its S3 ETag.
+    subprocess.run([str(pinned), "--version"], check=True, timeout=120)
+    with pinned.open("rb") as source:
+        actual = hashlib.file_digest(source, "sha256").hexdigest()
+    if actual != expected_sha256:
+        raise ValueError(
+            f"Pinned binary SHA256 mismatch: expected {expected_sha256}, got {actual}"
+        )
+    pinned.replace(binary)
+    return actual
 
 
 def source_identity(revision):

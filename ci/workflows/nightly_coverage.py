@@ -14,11 +14,13 @@ def filter_coverage_jobs(job_name):
     shards = info.get_workflow_input_value("performance_shards")
     resume_from = info.get_workflow_input_value("performance_resume_from") or ""
     max_hours = info.get_workflow_input_value("performance_max_hours") or "6"
-    validate_options(resume_from, max_hours)
+    binary_url = info.get_workflow_input_value("performance_binary_url") or ""
+    binary_sha256 = info.get_workflow_input_value("performance_binary_sha256") or ""
+    validate_options(resume_from, max_hours, binary_url, binary_sha256)
     # Older dispatches predate this optional input.
     shards = "all" if shards is None else shards.strip()
     if suite == "all":
-        if shards != "all" or resume_from or max_hours != "6":
+        if shards != "all" or resume_from or max_hours != "6" or binary_url:
             raise ValueError("Performance recovery inputs require suite=performance")
         return False, ""
     if suite != "performance":
@@ -89,6 +91,18 @@ workflow = Workflow.Config(
             is_required=False,
             default_value="6",
             options=["6", "12"],
+        ),
+        Workflow.Config.InputConfig(
+            name="performance_binary_url",
+            description="Immutable coverage binary artifact URL required for recovery",
+            is_required=False,
+            default_value="",
+        ),
+        Workflow.Config.InputConfig(
+            name="performance_binary_sha256",
+            description="SHA256 of the unpacked pinned binary required for recovery",
+            is_required=False,
+            default_value="",
         ),
     ],
     workflow_filter_hooks=[filter_coverage_jobs],

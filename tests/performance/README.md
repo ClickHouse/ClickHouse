@@ -241,13 +241,26 @@ XML always restarts from setup. The combined manifest retains each reused test's
 origin; CIDB publication still requires completion of the entire shard. New
 manifests also record the binary checksum and per-test wall times.
 
+Recovery also requires `performance_binary_url` and
+`performance_binary_sha256`. Use the immutable artifact URL from the original
+coverage build report and the SHA256 of its unpacked executable from a verified
+manifest. The collector downloads and unpacks that binary, verifies its checksum
+before initializing datasets, and records the URL in the new manifest. The build
+cache may choose another executable even at the same workflow revision; recovery
+must not rely on that choice. A mismatch remains an error. The checksum is not
+the compressed download's checksum or its S3 ETag.
+
 Manual recovery can set `performance_max_hours=12` when a large whole XML does
 not fit the default six-hour job budget. This does not change the scheduled
 collector's six-hour budget, test assignment, query set, or repetition policy.
 The outer CI timeout is twelve hours to accommodate this explicit option.
 
 ```bash
-gh workflow run nightly_coverage.yml --ref <branch> -f suite=performance -f performance_shards=4,13 -f performance_resume_from=<full-sha> -f performance_max_hours=12
+gh workflow run nightly_coverage.yml --ref <branch> \
+    -f suite=performance -f performance_shards=4,13 \
+    -f performance_resume_from=<full-sha> -f performance_max_hours=12 \
+    -f performance_binary_url=<original-artifact-url> \
+    -f performance_binary_sha256=<unpacked-binary-sha256>
 ```
 
 The collector reuses `perf.py` for parameter expansion, query groups, settings,

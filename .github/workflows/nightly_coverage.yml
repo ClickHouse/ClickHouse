@@ -24,6 +24,14 @@ on:
         type: choice
         options: ['6', '12']
         default: 6
+      performance_binary_url:
+        description: Immutable coverage binary artifact URL required for recovery
+        required: false
+        default: ''
+      performance_binary_sha256:
+        description: SHA256 of the unpacked pinned binary required for recovery
+        required: false
+        default: ''
 
 concurrency:
   group: ${{ github.workflow }}

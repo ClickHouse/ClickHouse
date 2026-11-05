@@ -17,6 +17,7 @@ from ci.jobs import performance_tests as perf
 from ci.jobs.performance_coverage_resume import (
     RESUME_PROTOCOL,
     download_archive,
+    pin_binary,
     restore_archive,
     source_identity,
     validate_options,
@@ -216,6 +217,8 @@ def main():
     parser.add_argument("--test", default="")
     parser.add_argument("--warm-runs", type=int, default=1)
     parser.add_argument("--resume-from", default="")
+    parser.add_argument("--binary-url", default="")
+    parser.add_argument("--binary-sha256", default="")
     parser.add_argument("--max-hours", choices=("6", "12"), default="6")
     args = parser.parse_args()
     if args.warm_runs < 1:
@@ -231,7 +234,16 @@ def main():
         args.max_hours = (
             info.get_workflow_input_value("performance_max_hours") or args.max_hours
         )
-    validate_options(args.resume_from, args.max_hours)
+        args.binary_url = (
+            info.get_workflow_input_value("performance_binary_url") or args.binary_url
+        )
+        args.binary_sha256 = (
+            info.get_workflow_input_value("performance_binary_sha256")
+            or args.binary_sha256
+        )
+    validate_options(
+        args.resume_from, args.max_hours, args.binary_url, args.binary_sha256
+    )
     sw = Utils.Stopwatch()
     check_start_time = Utils.timestamp_to_str(sw.start_time)
     deadline = time.monotonic() + int(args.max_hours) * 3600 - EXPORT_RESERVE
@@ -287,6 +299,13 @@ def main():
             dest = CIDBCluster()
             if not dest.is_ready():
                 raise RuntimeError("Coverage destination unavailable")
+        if args.binary_url:
+            manifest["binary_url"] = args.binary_url
+            manifest["binary_sha256"] = pin_binary(
+                binary, args.binary_url, args.binary_sha256
+            )
+            save_manifest()
+            print(f"Pinned coverage binary verified: {manifest['binary_sha256']}")
         configure(binary)
         if needs_s3:
             if not s3_service.ensure(f"{perf.perf_wd}/s3_server.log"):
