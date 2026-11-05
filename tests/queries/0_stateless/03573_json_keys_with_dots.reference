@@ -3,3 +3,5 @@
 {"a.b":42,"a":{"b":"Hello World!"}}	42	Hello World!
 {"a.b":42,"a":{"b":"Hello World!"}}	42	Hello World!	Hello World!
 {"a.b":42,"a":{"b":"Hello World!"}}	42	UInt8
+{"x":{"a.b.c":42}}	['x.a%2Eb%2Ec']
+{"":{"":42}}	['.']
