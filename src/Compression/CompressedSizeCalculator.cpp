@@ -12,7 +12,7 @@ namespace
 {
 
 /// The buffer grows from this size by doubling, up to the block size.
-constexpr size_t initial_buffer_size = 64 * 1024;
+constexpr size_t initial_buffer_size = 16 * 1024;
 
 /// Compressed size of a single block as `compress` would produce it (block header + payload).
 /// If possible, calculate output size cheaply. If not, compress into a scratch buffer and keep only the returned size.
@@ -38,11 +38,10 @@ CompressedSizeCalculator::CompressedSizeCalculator(CompressionCodecPtr codec_, s
 
 void CompressedSizeCalculator::nextImpl()
 {
-    /// The working buffer is the tail of `memory`, behind the bytes of the block collected so far.
-    const size_t collected = (working_buffer.begin() - memory.data()) + offset();
+    const size_t collected = blockBytes();
 
     /// The buffer is full but the block is not: a write that did not fit. Grow and keep collecting; `resize` keeps the content.
-    if (collected < block_size && collected == memory.size() && !finalizing)
+    if (collected < block_size && collected == memory.size() && !closing)
     {
         memory.resize(std::min(memory.size() * 2, block_size));
         internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
@@ -50,7 +49,7 @@ void CompressedSizeCalculator::nextImpl()
         return;
     }
 
-    /// The block is complete, the buffer is finalized, or the serialization ends the block with `next`.
+    /// The block is complete, is ended on purpose, or the serialization ends it with `next`.
     compressBlock(collected);
 }
 
@@ -61,15 +60,24 @@ void CompressedSizeCalculator::compressBlock(size_t size)
     compressed_total
         += sizeof(CityHash_v1_0_2::uint128) + getCompressedBlockSize(*codec, memory.data(), static_cast<UInt32>(size), scratch);
     working_buffer = internal_buffer;
+    /// `next` resets `pos` itself; `endBlock` reaches here without it, and `count` adds `offset` to the bytes counted.
+    pos = working_buffer.begin();
+}
+
+void CompressedSizeCalculator::endBlock()
+{
+    closing = true;
+    next();
+    closing = false;
+
+    /// `next` does nothing when no byte followed a grow, whose bytes are still collected.
+    if (const size_t collected = working_buffer.begin() - memory.data())
+        compressBlock(collected);
 }
 
 void CompressedSizeCalculator::finalizeImpl()
 {
-    finalizing = true;
-    next();
-    /// `next` does nothing when no byte followed an explicit `next`, whose bytes are still collected.
-    if (const size_t collected = working_buffer.begin() - memory.data())
-        compressBlock(collected);
+    endBlock();
 }
 
 }
