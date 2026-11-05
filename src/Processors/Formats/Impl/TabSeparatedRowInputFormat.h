@@ -56,6 +56,8 @@ public:
     void skipFieldDelimiter() override;
     void skipRowEndDelimiter() override;
     void skipPrefixBeforeHeader() override;
+    void skipRowBetweenDelimiter() override;
+    void skipComments();
 
     std::vector<String> readRow() { return readRowImpl<false>(); }
     std::vector<String> readNames() override { return readHeaderRow(); }

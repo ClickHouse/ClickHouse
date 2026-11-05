@@ -1,0 +1,14 @@
+Alice	30
+Bob	25
+SAT1	U1	US	PAYLOAD
+SAT2	U2	FR	ROCKET
+Nullable(Int64)	Nullable(String)
+Nullable(Int64)	Nullable(String)
+1	2
+3	4
+10	20
+30	40
+Jane	99
+John	95
+3
+1
