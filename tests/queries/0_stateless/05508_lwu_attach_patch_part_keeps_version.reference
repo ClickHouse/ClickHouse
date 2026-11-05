@@ -14,5 +14,6 @@ ReplicatedMergeTree, ATTACH PARTITION
 attached patch keeps its version	1
 MOVE PART TO SHARD
 BAD_ARGUMENTS
+SUPPORT_IS_DISABLED
 1	5
 0

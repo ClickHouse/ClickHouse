@@ -22,10 +22,11 @@ trap '$CLICKHOUSE_CLIENT --query "
 CLIENT="$CLICKHOUSE_CLIENT --enable_lightweight_update 1 --apply_patch_parts 1 --insert_keeper_fault_injection_probability 0"
 
 echo "MergeTree, ATTACH PART"
+# remove_unused_patch_parts = 0: the version checks read the attached patch after its update is materialized.
 $CLIENT --query "
     CREATE TABLE t_mt (id UInt64, a UInt64, d UInt64) ENGINE = MergeTree ORDER BY id
     SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
-        max_bytes_to_merge_at_max_space_in_pool = 1, apply_patches_on_merge = 1;
+        max_bytes_to_merge_at_max_space_in_pool = 1, apply_patches_on_merge = 1, remove_unused_patch_parts = 0;
     INSERT INTO t_mt VALUES (1, 0, 0);
     UPDATE t_mt SET a = 5 WHERE id = 1;
 "
@@ -56,7 +57,7 @@ echo "ReplicatedMergeTree, ATTACH PARTITION"
 $CLIENT --query "
     CREATE TABLE t_rmt (id UInt64, a UInt64, b UInt64) ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_rmt', '1') ORDER BY id
     SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
-        max_bytes_to_merge_at_max_space_in_pool = 1, apply_patches_on_merge = 1,
+        max_bytes_to_merge_at_max_space_in_pool = 1, apply_patches_on_merge = 1, remove_unused_patch_parts = 0,
         merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
 "
 
@@ -102,6 +103,8 @@ $CLIENT --query "
 
 patch=$($CLIENT --query "SELECT name FROM system.parts WHERE database = currentDatabase() AND table = 't_src' AND active AND startsWith(name, 'patch-')")
 $CLIENT --query "ALTER TABLE t_src MOVE PART '$patch' TO SHARD '/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_dst'" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
+part=$($CLIENT --query "SELECT name FROM system.parts WHERE database = currentDatabase() AND table = 't_src' AND active AND NOT startsWith(name, 'patch-')")
+$CLIENT --query "ALTER TABLE t_src MOVE PART '$part' TO SHARD '/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_dst'" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED'
 $CLIENT --query "
     SELECT id, a FROM t_src ORDER BY id;
     SELECT count() FROM system.part_moves_between_shards WHERE database = currentDatabase();
