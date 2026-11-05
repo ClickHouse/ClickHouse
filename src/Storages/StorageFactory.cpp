@@ -402,7 +402,6 @@ AccessRightsElements StorageFactory::getExportAccess(const ASTCreateQuery & crea
 
 void StorageFactory::checkSettingNamesOnInitiator(const ASTCreateQuery & create, LoadingStrictnessLevel mode, const ContextPtr & context) const
 {
-    /// `IF NOT EXISTS` is a no-op on a host that has the table, so each host judges it.
     if (create.if_not_exists || isReplayedTableDefinition(mode, create, context))
         return;
 

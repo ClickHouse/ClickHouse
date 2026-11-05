@@ -660,8 +660,7 @@ protected:
     /// Set for CREATE queries a Replicated database replays from a definition it already stored.
     /// Such a definition describes existing state, so validation that may reject a new one must not run.
     bool is_recovery_from_stored_metadata = false;
-    /// Set for a host running an `ON CLUSTER` `CREATE` that its initiator normalized and that is not `IF NOT EXISTS`:
-    /// the initiator judges its `SETTINGS` names (an older one never did), so this host does not.
+    /// Set on a host for a normalized `ON CLUSTER` `CREATE` that is not `IF NOT EXISTS`: the host skips the `SETTINGS` name check.
     bool setting_names_checked_on_initiator = false;
     /// `EXPLAIN WHATIF` plans the query without the projections that it weighs, so its plans skip the forced projection check
     bool skip_forced_projection_check = false;
