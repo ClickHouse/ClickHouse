@@ -74,6 +74,9 @@ void MultipleFileWriter::finalize()
     output_format->finalize();
     buffer->finalize();
     total_bytes += buffer->count();
+
+    /// A finished format can still hold resources: a Parquet one keeps its idle encoder threads.
+    release();
 }
 
 void MultipleFileWriter::release()
