@@ -24,5 +24,6 @@ for run in cold warm; do
     ${CLICKHOUSE_CLIENT} --query "
         SELECT '${run}', sum(ProfileEvents['ParquetMetadataCacheMisses']), toInt64(sum(ProfileEvents['ParquetMetadataCacheHits'])) - ${ROW_GROUPS}
         FROM system.query_log
-        WHERE event_date >= yesterday() AND type = 'QueryFinish' AND initial_query_id = '${query_id}'"
+        WHERE event_date >= yesterday() AND type = 'QueryFinish'
+            AND initial_query_id IN (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '${query_id}')"
 done

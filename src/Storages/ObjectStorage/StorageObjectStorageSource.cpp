@@ -1417,7 +1417,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
             if (metadata_from_table)
             {
-                object_info->setObjectMetadata(std::move(*metadata_from_table));
+                object_info->setObjectMetadata(*metadata_from_table);
             }
             else if (query_settings.ignore_non_existent_file)
             {

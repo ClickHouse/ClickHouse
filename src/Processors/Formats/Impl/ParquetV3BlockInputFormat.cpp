@@ -715,7 +715,7 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(
     if (context->getSettingsRef()[Setting::use_parquet_metadata_cache])
         metadata_cache = context->tryGetParquetMetadataCache();
     std::optional<ParquetMetadataCacheKey> cache_key;
-    if (metadata_cache)
+    if (metadata_cache && object.metadata && object.metadata->getContentCacheToken())
         cache_key = makeMetadataCacheKey(object);
 
     std::shared_ptr<const Parquet::FileFooter> footer;
