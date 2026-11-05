@@ -2,7 +2,6 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Interpreters/WindowDescription.h>
-#include <WindowFunctions/Common/WindowArguments.h>
 #include <WindowFunctions/Common/WindowBounds.h>
 #include <WindowFunctions/Common/WindowFunctionRequirements.h>
 #include <WindowFunctions/IGeneralWindowFunction.h>
@@ -10,6 +9,7 @@
 #include <Processors/Transforms/Window/Frame.h>
 #include <Processors/Transforms/Window/Partition.h>
 #include <Processors/Transforms/Window/Peers.h>
+#include <Processors/Transforms/Window/SlidingArguments.h>
 #include <Processors/Transforms/Window/SlidingBlocks.h>
 #include <Processors/Transforms/Window/SlidingIndexes.h>
 #include <Processors/Transforms/Window/WindowTransformParams.h>
@@ -18,10 +18,10 @@
 
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 
-#include <deque>
 #include <optional>
 
 namespace DB
@@ -42,8 +42,7 @@ struct GeneralWindowFunctionSlot
 {
     GeneralWindowFunctionPtr function;
     char * state = nullptr;
-    size_t result_column = 0;
-    WindowArguments arguments;
+    size_t function_index = 0;
 };
 
 /* Computes several window functions that share one window. The input is sorted by PARTITION BY, then by
@@ -76,7 +75,7 @@ class WindowTransform final : public IProcessor
 public:
     WindowTransform(
         SharedHeader input_header_, SharedHeader output_header_,
-        const WindowDescription & window_description_, const std::vector<WindowFunctionDescription> & functions);
+        const WindowDescription & window_description_, const VectorWithMemoryTracking<WindowFunctionDescription> & functions);
 
     ~WindowTransform() override;
 
@@ -90,12 +89,12 @@ private:
     const WindowTransformParams params;
 
     std::optional<Chunk> pending_input;
-    std::deque<Chunk> pending_outputs;
+    DequeWithMemoryTracking<Chunk> pending_outputs;
     bool input_is_finished = false;
 
     /// The general functions with their states, and the aggregates; each names its output column.
-    std::vector<GeneralWindowFunctionSlot> general_functions;
-    std::vector<WindowFunctionWorkspace> workspaces;
+    VectorWithMemoryTracking<GeneralWindowFunctionSlot> general_functions;
+    VectorWithMemoryTracking<WindowFunctionWorkspace> workspaces;
     Arena states_arena;
     WindowFunctionRequirements required;
 
@@ -109,6 +108,7 @@ private:
 
     SlidingBlocks blocks;
     SlidingIndexes indexes;
+    SlidingArguments arguments;
 
     Partition partition;
     Frame frame;

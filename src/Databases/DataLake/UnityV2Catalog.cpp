@@ -607,14 +607,14 @@ bool UnityV2Catalog::tryGetTableMetadata(
         {
             /// Status codes for a refused request are undocumented, so any failure marks the table unreadable.
             std::string iceberg_rest_url = std::filesystem::path(base_url_str) / "iceberg-rest";
-            auto reason = fmt::format(
+            auto reason = PreformattedMessage::create(
                 "Cannot read Iceberg table `{}`: the Unity Iceberg REST endpoint `{}` returned an error: {}. "
                 "Reading managed Iceberg tables from Unity requires 'External data access' to be enabled on the metastore "
                 "and the `EXTERNAL USE SCHEMA` privilege for the principal; "
                 "check these if the error above indicates a permission problem.",
                 full_table_name, iceberg_rest_url, DB::getCurrentExceptionMessage(false));
-            LOG_DEBUG(log, "{}", reason);
-            result.setTableIsNotReadable(reason);
+            LOG_DEBUG(log, reason);
+            result.setTableIsNotReadable(reason.text);
             return true;
         }
     }
