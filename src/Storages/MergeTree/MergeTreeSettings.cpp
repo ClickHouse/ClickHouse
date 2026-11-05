@@ -285,7 +285,11 @@ single stripe in compact parts
 )", 0) \
     DECLARE(UInt64, compact_parts_merge_max_bytes_to_prefetch_part, 16 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal size of compact part to read it
-in a whole to memory during merge.
+in a whole to memory during merge. A merge also reads a bigger part in a whole
+if the part is not bigger than the worst-case memory of a read buffer for each
+column (the configured buffer size, twice with prefetch). For a part with small
+stripes this can take more memory than reading each column separately, but it
+sends one request instead of one per column per stripe. 0 disables it.
 )", 0) \
     DECLARE(UInt64, merge_max_bytes_to_prewarm_cache, 1ULL * 1024 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal size of part (compact or packed)
