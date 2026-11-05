@@ -13,8 +13,6 @@ namespace DB
 namespace
 {
 
-/// A subcolumn of a column whose name has a dot, replaced without an alias of its own: the slot it was written to, the
-/// identifier it replaced, the replacement and its name.
 struct UnnamedReplacement
 {
     ASTPtr * slot;
@@ -33,7 +31,6 @@ struct ReplaceState
     /// Aliases of the nodes around the visited one: an alias is not visible inside the expression it names.
     NameSet defining;
     NameSet lambda_parameters;
-    /// Names of the identifiers left as written.
     NameSet kept;
     std::vector<UnnamedReplacement> unnamed;
 };
@@ -124,8 +121,7 @@ void replaceSubcolumnsToGetSubcolumnFunctionInQuery(ASTPtr & ast, const NamesAnd
     collectAliases(*ast, state.aliases);
     replaceSubcolumns(ast, state, /*is_root=*/ true);
 
-    /// A name the expression also uses otherwise is left as written: an alias would change what that name means, and no alias
-    /// would change the name.
+    /// A name used elsewhere in the expression keeps the identifier: an alias would change its meaning, no alias the name.
     for (const auto & [slot, identifier, function, name] : state.unnamed)
     {
         if (state.aliases.contains(name) || state.kept.contains(name))
