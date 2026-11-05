@@ -123,6 +123,33 @@ PY
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP ICEBERG METADATA CACHE"
 ${CLICKHOUSE_CLIENT} --query "SELECT arraySort(groupArray(c0)) FROM ${TABLE}"
 
+# --- OPTIMIZE keeps the table-level metadata, so the table stays readable by its UUID ----------
+reset
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --write_full_path_in_iceberg_metadata=1 --query "
+CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') ORDER BY c0 SETTINGS iceberg_format_version=2, allow_experimental_iceberg_compaction=1;
+INSERT INTO ${TABLE} VALUES (1, 'a'), (2, 'b');
+INSERT INTO ${TABLE} VALUES (3, 'c'), (4, 'd');
+ALTER TABLE ${TABLE} DELETE WHERE c0 = 2;
+"
+BEFORE="${CLICKHOUSE_TMP}/${TABLE}_before.json"
+cp "$(ls -v "${TABLE_PATH}"/metadata/v*.metadata.json | tail -1)" "${BEFORE}"
+${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE ${TABLE}"
+python3 - "${BEFORE}" "${TABLE_PATH}/metadata" <<'PY'
+import json, os, sys, glob
+vs = sorted(glob.glob(os.path.join(sys.argv[2], 'v*.metadata.json')),
+            key=lambda p: int(''.join(filter(str.isdigit, os.path.basename(p).split('.')[0]))))
+a, b = json.load(open(sys.argv[1])), json.load(open(vs[-1]))
+snapshot_state = {'snapshots', 'current-snapshot-id', 'refs', 'snapshot-log', 'metadata-log',
+                  'last-sequence-number', 'last-updated-ms', 'statistics', 'partition-statistics'}
+print(sorted(k for k in set(a) | set(b) if k not in snapshot_state and a.get(k) != b.get(k)))
+PY
+UUID=$(python3 -c "import json, sys; print(json.load(open(sys.argv[1]))['table-uuid'])" "${BEFORE}")
+rm -f "${BEFORE}"
+${CLICKHOUSE_CLIENT} --query "SYSTEM DROP ICEBERG METADATA CACHE"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE}_by_uuid ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') SETTINGS iceberg_metadata_table_uuid = '${UUID}'"
+${CLICKHOUSE_CLIENT} --query "SELECT arraySort(groupArray(c0)) FROM ${TABLE}_by_uuid"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}_by_uuid"
+
 # --- OPTIMIZE on a malformed table (current-schema-id resolves to no schema): rejected --------
 # getPlan builds ManifestFilePlan(current_schema) -> DataFileStatistics derefs schema_->size()
 # before the validate helper runs, so the null-schema guard must sit ahead of getPlan.

@@ -1136,11 +1136,13 @@ static bool writeMetadataFiles(
     ColumnsDescription columns_description = ColumnsDescription::fromNamesAndTypes(sample_block_->getNamesAndTypes());
     auto [metadata_object, metadata_object_str] = createEmptyMetadataFile(table_path, columns_description, nullptr, nullptr, context);
 
-    /// The rewritten files, their statistics and partition tuples use the table's current schema and default partition spec.
-    for (const char * key : {Iceberg::f_schemas, Iceberg::f_current_schema_id, Iceberg::f_last_column_id,
-                             Iceberg::f_partition_specs, Iceberg::f_default_spec_id, Iceberg::f_last_partition_id})
-        if (plan.initial_metadata_object->has(key))
-            metadata_object->set(key, plan.initial_metadata_object->get(key));
+    /// Keep the table-level metadata; only the snapshot state is rebuilt below.
+    static const std::unordered_set<std::string_view> snapshot_state_keys{
+        Iceberg::f_snapshots, Iceberg::f_current_snapshot_id, Iceberg::f_refs, Iceberg::f_snapshot_log, Iceberg::f_metadata_log,
+        Iceberg::f_last_sequence_number, Iceberg::f_last_updated_ms, Iceberg::f_statistics, Iceberg::f_partition_statistics};
+    for (const auto & [key, value] : *plan.initial_metadata_object)
+        if (!snapshot_state_keys.contains(key))
+            metadata_object->set(key, value);
 
     auto current_schema_id = metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
     Poco::JSON::Object::Ptr current_schema;
