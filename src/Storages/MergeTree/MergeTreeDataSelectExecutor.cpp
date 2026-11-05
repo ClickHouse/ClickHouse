@@ -1402,16 +1402,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         num_threads = std::min<size_t>(num_streams, settings[Setting::max_threads_for_indexes]);
     }
 
-    /// NOTE: we must check the size of key_condition_rpn_template (not key_condition),
-    /// because key_condition_rpn_template is the RPN used in mergePartialResultsForDisjunctions
-    /// and in the callback that writes to the partial_disjunction_result bitset.
-    /// When use_primary_key = false, key_condition has skip_analysis_ = true and its RPN
-    /// has only 1 element, but the template has the full RPN.
-    bool use_skip_indexes_for_disjunctions = use_skip_indexes_for_disjunctions_
-                                && !use_skip_indexes_on_data_read_
-                                && key_condition_rpn_template != nullptr
-                                && isRPNSizeAllowedForSkipIndexesForDisjunctions(
-                                    key_condition_rpn_template->generateUnsubstituted().getRPN().size(), settings);
+    bool use_skip_indexes_for_disjunctions = useSkipIndexesForDisjunctions(
+        use_skip_indexes_for_disjunctions_, use_skip_indexes_on_data_read_, key_condition_rpn_template.get(), settings);
 
     auto is_index_supported_on_data_read = [&](const MergeTreeIndexPtr & index) -> bool
     {
@@ -3697,6 +3689,24 @@ bool MergeTreeDataSelectExecutor::isRPNSizeAllowedForSkipIndexesForDisjunctions(
 {
     const UInt64 max_rpn_elements = settings[Setting::use_skip_indexes_for_disjunctions_max_rpn_elements];
     return max_rpn_elements == 0 || rpn_size <= max_rpn_elements;
+}
+
+bool MergeTreeDataSelectExecutor::useSkipIndexesForDisjunctions(
+    bool requested,
+    bool use_skip_indexes_on_data_read,
+    const ConditionTemplate<KeyCondition> * key_condition_rpn_template,
+    const Settings & settings)
+{
+    /// NOTE: we must check the size of key_condition_rpn_template (not key_condition),
+    /// because key_condition_rpn_template is the RPN used in mergePartialResultsForDisjunctions
+    /// and in the callback that writes to the partial_disjunction_result bitset.
+    /// When use_primary_key = false, key_condition has skip_analysis_ = true and its RPN
+    /// has only 1 element, but the template has the full RPN.
+    return requested
+        && !use_skip_indexes_on_data_read
+        && key_condition_rpn_template != nullptr
+        && isRPNSizeAllowedForSkipIndexesForDisjunctions(
+            key_condition_rpn_template->generateUnsubstituted().getRPN().size(), settings);
 }
 
 /// Evaluate the predicate condition using the saved partial results.
