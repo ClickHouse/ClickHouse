@@ -187,10 +187,16 @@ namespace
         return path.substr(0, position);
     }
 
+    String getObjectStorageHash(const IObjectStorage & object_storage)
+    {
+        const String description = object_storage.getDescription();
+        return sipHash128String(description.substr(0, description.find('?')) + '\0' + object_storage.getObjectsNamespace());
+    }
+
     String getPageCachePathForObjectStorage(const RelativePathWithMetadata & object_info, const ObjectStoragePtr & object_storage)
     {
         if (object_storage->getType() != ObjectStorageType::Web)
-            return "s3:" + object_info.getPath();
+            return fmt::format("s3:{}:{}", getObjectStorageHash(*object_storage), object_info.getPath());
 
         if (!object_info.read_source_index)
             return "web:" + object_info.getPath();
@@ -1229,7 +1235,8 @@ Chunk StorageObjectStorageSource::generate()
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
             && !format_filter_info->hasFilter()
             && !hasAttachedDeletes(*reader.getObjectInfo())
-            && !reader.getObjectInfo()->rows_to_read)
+            && !reader.getObjectInfo()->rows_to_read
+            && !reader.getObjectInfo()->file_bucket_info)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -1585,7 +1592,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     const bool headers_requested = read_from_format_info.requested_virtual_columns.contains("_headers");
 
     std::optional<size_t> num_rows_from_cache
-        = need_only_count && !headers_requested && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
+        = need_only_count && !headers_requested && !object_info->file_bucket_info
+            && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
         ? try_get_num_rows_from_cache() : std::nullopt;
 
     if (auto custom_pipe = configuration->read(
@@ -2350,6 +2358,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         else
         {
             SipHash hash;
+            hash.update(getObjectStorageHash(*object_storage));
             hash.update(object_info.getPath());
             hash.update(*content_token);
 
