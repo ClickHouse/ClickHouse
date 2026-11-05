@@ -15,15 +15,20 @@ DROP TABLE keeper_map_drop SYNC;
 
 SYSTEM FLUSH LOGS zookeeper_log;
 
--- RemoveRecursive requests on data/, then Remove and List requests on the key nodes.
+-- RemoveRecursive of data/ in the same multi request as the removal of metadata/, removals of data/ in any other request, then removals and List requests of the key nodes.
 WITH '/test_keeper_map/' || currentDatabase() || '/' AS prefix
 SELECT
     splitByChar('/', substring(path, length(prefix) + 1))[1] AS table_name,
-    countIf(op_num = 'RemoveRecursive' AND endsWith(path, '/data')),
-    countIf(op_num = 'Remove' AND path LIKE '%/data/%'),
+    countIf(op_num = 'RemoveRecursive' AND endsWith(path, '/data') AND removes_metadata),
+    countIf(toString(op_num) IN ('Remove', 'TryRemove', 'RemoveRecursive') AND endsWith(path, '/data') AND NOT removes_metadata),
+    countIf(toString(op_num) IN ('Remove', 'TryRemove', 'RemoveRecursive') AND path LIKE '%/data/%'),
     countIf(toString(op_num) LIKE '%List%' AND path LIKE '%/data/%')
-FROM system.zookeeper_log
-WHERE type = 'Request' AND startsWith(path, prefix)
+FROM
+(
+    SELECT path, op_num, max(op_num = 'Remove' AND endsWith(path, '/metadata')) OVER (PARTITION BY session_id, xid) AS removes_metadata
+    FROM system.zookeeper_log
+    WHERE type = 'Request' AND startsWith(path, prefix)
+)
 GROUP BY table_name
 ORDER BY table_name;
 

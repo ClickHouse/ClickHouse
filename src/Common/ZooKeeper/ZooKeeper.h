@@ -460,8 +460,7 @@ public:
     /// if someone concurrently removes a node in the subtree, this will not cause errors.
     /// For instance, you can call this method twice concurrently for the same node and the end
     /// result would be the same as for the single call.
-    /// `probably_flat` is passed to `tryRemoveChildrenRecursive` when falling back to it.
-    Coordination::Error tryRemoveRecursive(const std::string & path, uint32_t remove_nodes_limit = 1000, bool probably_flat = false);
+    Coordination::Error tryRemoveRecursive(const std::string & path, uint32_t remove_nodes_limit = 1000);
 
     /// Lists all descendant paths under `path`.
     Strings listRecursive(const std::string & path, uint32_t children_nodes_limit = 1000000);

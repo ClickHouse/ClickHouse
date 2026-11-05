@@ -1209,11 +1209,11 @@ void ZooKeeper::removeRecursive(const std::string & path, uint32_t remove_nodes_
     check(tryRemoveRecursive(path, remove_nodes_limit), path);
 }
 
-Coordination::Error ZooKeeper::tryRemoveRecursive(const std::string & path, uint32_t remove_nodes_limit, bool probably_flat)
+Coordination::Error ZooKeeper::tryRemoveRecursive(const std::string & path, uint32_t remove_nodes_limit)
 {
     const auto fallback_method = [&]
     {
-        tryRemoveChildrenRecursive(path, probably_flat);
+        tryRemoveChildrenRecursive(path);
         return tryRemove(path);
     };
 
