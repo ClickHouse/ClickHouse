@@ -1,5 +1,5 @@
 --- iterations: all arrivals are executed
-Open-loop mode: max 256 queries in flight, seed 42.
+Open-loop mode: max 2 queries in flight, seed 42.
 Queries executed: 50
 Arrivals: 50, target rate: 200.000/s
 --- a list of rates makes one report per rate
