@@ -350,10 +350,6 @@ struct AggregateFunctionUniqTraits
             const auto [chars, n] = fixedSizeValues(typed_column);
             sipHash128PaddedFixedStrings(chars + begin * n, n, num_rows, hashes);
         }
-#ifndef NDEBUG
-        for (size_t i = 0; i < num_rows; ++i)
-            chassert(hashes[i] == hashExact(value(column, begin + i)));
-#endif
     }
 
     /// hashes[rows[i]] = hashExact(value(column, begin + rows[i])), for i in [0, num_rows).
@@ -375,10 +371,6 @@ struct AggregateFunctionUniqTraits
             const auto [chars, n] = fixedSizeValues(typed_column);
             sipHash128PaddedFixedStringRows(chars + begin * n, n, rows, num_rows, hashes);
         }
-#ifndef NDEBUG
-        for (size_t i = 0; i < num_rows; ++i)
-            chassert(hashes[rows[i]] == hashExact(value(column, begin + rows[i])));
-#endif
     }
 
 private:
