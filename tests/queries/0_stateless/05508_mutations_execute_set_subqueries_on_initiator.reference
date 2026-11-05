@@ -67,6 +67,12 @@
 -- Subqueries that differ only in their aliases are different subqueries
 [0,1]
 [0,1]
+2	2
+-- An array result up to the limit is executed on the initiator
+[0,1,2]	1
+[3]	0
+(UPDATE v = 1 WHERE a IN (SELECT arrayJoin(_CAST([[0, 1, 2]], \'Array(Array(UInt32))\'))))	1
+(UPDATE v = v WHERE 1)	1
 -- ReplicatedMergeTree
 0	1
 1	1

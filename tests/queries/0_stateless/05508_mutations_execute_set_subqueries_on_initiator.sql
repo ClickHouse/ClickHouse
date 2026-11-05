@@ -134,6 +134,25 @@ ALTER TABLE t_alias UPDATE v = 1 WHERE k IN (SELECT number AS a FROM numbers(10)
 ALTER TABLE t_alias_kept UPDATE v = 1 WHERE k IN (SELECT number AS a FROM numbers(10) WHERE (number + 3 AS b) > 0 AND a < 5) AND k IN (SELECT number AS b FROM numbers(10) WHERE (number + 3 AS a) > 0 AND a < 5) SETTINGS mutations_execute_subqueries_on_initiator = 0, mutations_sync = 2;
 SELECT arraySort(groupArray(k)) FROM t_alias WHERE v = 1;
 SELECT arraySort(groupArray(k)) FROM t_alias_kept WHERE v = 1;
+-- Both subqueries are executed on the initiator, to two different results.
+SELECT length(sets), arrayUniq(sets) FROM (SELECT extractAll(command, '\\[[^\\]]+\\]') AS sets FROM system.mutations WHERE database = currentDatabase() AND table = 't_alias');
+
+SELECT '-- An array result up to the limit is executed on the initiator';
+DROP TABLE IF EXISTS t_array;
+DROP TABLE IF EXISTS t_array_src;
+CREATE TABLE t_array (a Array(UInt32), v UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_array VALUES ([0, 1, 2], 0), ([3], 0);
+CREATE TABLE t_array_src (a Array(UInt32)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_array_src VALUES ([0, 1, 2]);
+
+SYSTEM STOP MERGES t_array;
+ALTER TABLE t_array UPDATE v = 1 WHERE a IN (SELECT a FROM t_array_src);
+DROP TABLE t_array_src;
+SYSTEM START MERGES t_array;
+ALTER TABLE t_array UPDATE v = v WHERE 1 SETTINGS mutations_sync = 2;
+
+SELECT a, v FROM t_array ORDER BY a;
+SELECT replaceAll(command, currentDatabase(), 'default'), is_done FROM system.mutations WHERE database = currentDatabase() AND table = 't_array' ORDER BY length(mutation_id), mutation_id;
 
 SELECT '-- ReplicatedMergeTree';
 DROP TABLE IF EXISTS t_replicated SYNC;
@@ -161,5 +180,6 @@ DROP TABLE t_variant_src;
 DROP TABLE t_once;
 DROP TABLE t_alias;
 DROP TABLE t_alias_kept;
+DROP TABLE t_array;
 DROP TABLE t_replicated SYNC;
 DROP TABLE t_replicated_src;
