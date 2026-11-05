@@ -236,8 +236,9 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
             }
             catch (...)
             {
+                /// Moved: a copy of the names would allocate.
                 if (created)
-                    created_inner_tables.push_back(inner_table_id);
+                    created_inner_tables.push_back(std::move(inner_table_id));
                 throw;
             }
             created_inner_tables.push_back(std::move(inner_table_id));
