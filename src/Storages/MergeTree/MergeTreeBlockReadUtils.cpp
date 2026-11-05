@@ -1,8 +1,10 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/TypeTree.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -313,9 +315,20 @@ bool isTypedPathSubstream(const Substream & substream)
     return substream.type == Substream::ObjectTypedPath || substream.type == Substream::ObjectTypedSharedDataPath;
 }
 
+/// `Dynamic` infers `JSON` for an object, and a `Variant` tries each of its variants.
+bool canHoldObjectValue(const DataTypePtr & type)
+{
+    auto nested_type = removeNullable(removeLowCardinality(type));
+    if (DataTypeObject::canParseObjectValue(nested_type) || isDynamic(nested_type))
+        return true;
+
+    const auto * variant_type = typeid_cast<const DataTypeVariant *>(nested_type.get());
+    return variant_type && std::ranges::any_of(variant_type->getVariants(), canHoldObjectValue);
+}
+
 /// A type hint of a path that the part stores as a dynamic path or with another type hint, read as a whole: it is applied
-/// by casting the path's value, which is how type hints are documented to apply to old parts. Hints of the types parsed
-/// from objects are not, on either side, because a part stores an object as separate paths, not as the value of the path.
+/// by casting the path's value, which is how type hints are documented to apply to old parts. Hints of the types that can
+/// hold an object are not, on either side, because a part stores an object as separate paths, not as the value of the path.
 bool isTypeHintCastOfPath(
     const IDataType * object_in_storage,
     const IDataType * object_in_part,
@@ -336,14 +349,14 @@ bool isTypeHintCastOfPath(
     const auto & typed_object_in_part = typeid_cast<const DataTypeObject &>(*object_in_part);
     auto hinted_type = typed_object_in_storage.getTypedPaths().find(path);
     if (hinted_type == typed_object_in_storage.getTypedPaths().end() || hasTypedPathUnder(typed_object_in_storage, path)
-        || hasTypedPathUnder(typed_object_in_part, path) || DataTypeObject::canParseObjectValue(hinted_type->second))
+        || hasTypedPathUnder(typed_object_in_part, path) || canHoldObjectValue(hinted_type->second))
         return false;
 
     if (!is_typed_path_in_part)
         return true;
 
     auto type_in_part = typed_object_in_part.getTypedPaths().find(path);
-    return type_in_part != typed_object_in_part.getTypedPaths().end() && !DataTypeObject::canParseObjectValue(type_in_part->second);
+    return type_in_part != typed_object_in_part.getTypedPaths().end() && !canHoldObjectValue(type_in_part->second);
 }
 
 /// The typed path of an object that has @subcolumn in its value, when the part stores the path as a dynamic path or with

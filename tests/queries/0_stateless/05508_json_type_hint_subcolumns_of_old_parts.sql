@@ -19,6 +19,8 @@ DROP TABLE IF EXISTS t_map_to_string;
 DROP TABLE IF EXISTS t_add_hint;
 DROP TABLE IF EXISTS t_typed_ancestor;
 DROP TABLE IF EXISTS t_skip;
+DROP TABLE IF EXISTS t_dynamic_hint;
+DROP TABLE IF EXISTS t_variant_hint;
 DROP TABLE IF EXISTS t_patch_before;
 DROP TABLE IF EXISTS t_patch_merged;
 DROP TABLE IF EXISTS t_patch_after;
@@ -39,6 +41,7 @@ DROP TABLE IF EXISTS t_text_index_map;
 DROP TABLE IF EXISTS t_read_cast_path_added;
 DROP TABLE IF EXISTS t_read_cast_path_changed;
 DROP TABLE IF EXISTS t_read_cast_path_array;
+DROP TABLE IF EXISTS t_read_cast_path_tuple;
 DROP TABLE IF EXISTS t_default_dep;
 
 SELECT 'issue 123339';
@@ -165,6 +168,25 @@ SYSTEM STOP MERGES t_skip;
 INSERT INTO t_skip VALUES (1, '{"a" : 1, "b" : {"c" : 2}}');
 ALTER TABLE t_skip MODIFY COLUMN data JSON(SKIP b) SETTINGS mutations_sync = 0, alter_sync = 0;
 SELECT data.a, data.b.c FROM t_skip;
+
+SELECT 'hints that can hold an object';
+CREATE TABLE t_dynamic_hint (id UInt64, j JSON) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_dynamic_hint;
+INSERT INTO t_dynamic_hint VALUES (1, '{"a" : {"k" : 1, "l" : 2}}'), (2, '{"a" : 42}'), (3, '{}');
+ALTER TABLE t_dynamic_hint MODIFY COLUMN j JSON(a Dynamic) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT id, dynamicType(j.a), j.a, j.a.:Int64 FROM t_dynamic_hint ORDER BY id;
+SYSTEM START MERGES t_dynamic_hint;
+OPTIMIZE TABLE t_dynamic_hint FINAL;
+SELECT id, dynamicType(j.a), j.a, j.a.:Int64 FROM t_dynamic_hint ORDER BY id;
+
+CREATE TABLE t_variant_hint (id UInt64, j JSON) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_variant_hint;
+INSERT INTO t_variant_hint VALUES (1, '{"a" : {"k" : 1, "l" : 2}}'), (2, '{"a" : "s"}'), (3, '{}');
+ALTER TABLE t_variant_hint MODIFY COLUMN j JSON(a Variant(Map(String, UInt32), String)) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT id, variantType(j.a), j.a, j.a.String FROM t_variant_hint ORDER BY id;
+SYSTEM START MERGES t_variant_hint;
+OPTIMIZE TABLE t_variant_hint FINAL;
+SELECT id, variantType(j.a), j.a, j.a.String FROM t_variant_hint ORDER BY id;
 
 SELECT 'patch before alter';
 CREATE TABLE t_patch_before (id UInt64, data JSON(a UInt32)) ENGINE = MergeTree ORDER BY id
@@ -328,7 +350,7 @@ CREATE TABLE t_absent_default_patch_map (id UInt64) ENGINE = MergeTree ORDER BY 
 SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
 SYSTEM STOP MERGES t_absent_default_patch_map;
 INSERT INTO t_absent_default_patch_map VALUES (1), (2);
-ALTER TABLE t_absent_default_patch_map ADD COLUMN data JSON(a Map(String, UInt32)) DEFAULT '{"a" : {"x" : 2}}';
+ALTER TABLE t_absent_default_patch_map ADD COLUMN data JSON(a Map(String, UInt32)) DEFAULT '{"a" : {"x" : 22}}';
 UPDATE t_absent_default_patch_map SET data = '{"a" : {"k" : 1}}' WHERE id = 1;
 ALTER TABLE t_absent_default_patch_map MODIFY COLUMN data JSON(a String) SETTINGS enable_json_lazy_type_hints = 1;
 SELECT id, length(data.a), data.a.size FROM t_absent_default_patch_map ORDER BY id;
@@ -396,6 +418,12 @@ INSERT INTO t_read_cast_path_array SELECT number, [concat('{"a" : ', toString(nu
 ALTER TABLE t_read_cast_path_array MODIFY COLUMN arr Array(JSON(a String)) SETTINGS enable_json_lazy_type_hints = 1;
 SELECT sum(arraySum(arr.a.size)) FROM t_read_cast_path_array SETTINGS log_comment = '05508_read_cast_path_array';
 
+CREATE TABLE t_read_cast_path_tuple (id UInt64, tup Tuple(t JSON(a UInt32))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_read_cast_path_tuple;
+INSERT INTO t_read_cast_path_tuple SELECT number, CAST(tuple(concat('{"a" : ', toString(number * 100), ', "big" : "', repeat('x', 100000), '"}')), 'Tuple(t JSON(a UInt32))') FROM numbers(3);
+ALTER TABLE t_read_cast_path_tuple MODIFY COLUMN tup Tuple(t JSON(a String)) SETTINGS mutations_sync = 0, alter_sync = 0;
+SELECT sum(length(tup.t.a)), sum(tup.t.a.size) FROM t_read_cast_path_tuple SETTINGS log_comment = '05508_read_cast_path_tuple';
+
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, read_bytes < 50000 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment LIKE '05508_read_cast_path_%' AND type = 'QueryFinish'
@@ -415,6 +443,8 @@ DROP TABLE t_map_to_string;
 DROP TABLE t_add_hint;
 DROP TABLE t_typed_ancestor;
 DROP TABLE t_skip;
+DROP TABLE t_dynamic_hint;
+DROP TABLE t_variant_hint;
 DROP TABLE t_patch_before;
 DROP TABLE t_patch_merged;
 DROP TABLE t_patch_after;
@@ -435,4 +465,5 @@ DROP TABLE t_text_index_map;
 DROP TABLE t_read_cast_path_added;
 DROP TABLE t_read_cast_path_changed;
 DROP TABLE t_read_cast_path_array;
+DROP TABLE t_read_cast_path_tuple;
 DROP TABLE t_default_dep;
