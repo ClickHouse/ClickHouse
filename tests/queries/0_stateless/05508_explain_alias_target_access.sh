@@ -13,13 +13,18 @@ u_showcol="u_showcol_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_both="u_both_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_show="u_show_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 u_tmp="u_tmp_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+u_mvdef="u_mvdef_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+u_create="u_create_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 session="session_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+# `CREATE` in a `Replicated` database is analyzed without the user, so the view arms use an `Atomic` one.
+db_atomic="${CLICKHOUSE_DATABASE}_atomic"
 
 drop_users()
 {
-    ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${u_alias}, ${u_col}, ${u_showcol}, ${u_both}, ${u_show}, ${u_tmp}"
+    ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${u_alias}, ${u_col}, ${u_showcol}, ${u_both}, ${u_show}, ${u_tmp}, ${u_mvdef}, ${u_create}"
 }
 
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${db_atomic}"
 drop_users
 ${CLICKHOUSE_CLIENT} -m --query "
     DROP TABLE IF EXISTS alias_t;
@@ -126,6 +131,30 @@ check_ok "$(session_query "EXPLAIN QUERY TREE SELECT * FROM t_alias")"
 ${CLICKHOUSE_CLIENT} --query "REVOKE SHOW COLUMNS ON ${db}.hidden_target FROM ${u_tmp}"
 check_denied "$(session_query "EXPLAIN QUERY TREE SELECT * FROM t_alias")"
 
+${CLICKHOUSE_CLIENT} -m --query "
+    CREATE DATABASE ${db_atomic} ENGINE = Atomic;
+    CREATE TABLE ${db_atomic}.hidden_target (secret_column_1 UInt32, secret_column_2 String) ENGINE = MergeTree ORDER BY secret_column_1;
+    CREATE TABLE ${db_atomic}.alias_t ENGINE = Alias('${db_atomic}', 'hidden_target');
+    CREATE TABLE ${db_atomic}.mv_dst (secret_column_1 UInt32) ENGINE = MergeTree ORDER BY tuple();
+
+    CREATE USER ${u_mvdef} NOT IDENTIFIED;
+    GRANT SELECT ON ${db_atomic}.alias_t TO ${u_mvdef};
+    GRANT INSERT ON ${db_atomic}.mv_dst TO ${u_mvdef};
+
+    CREATE USER ${u_create} NOT IDENTIFIED;
+    GRANT SELECT ON ${db_atomic}.alias_t TO ${u_create};
+    GRANT CREATE VIEW ON ${db_atomic}.* TO ${u_create};
+"
+
+echo "-- a materialized view over the alias, defined by a user granted on the alias only"
+${CLICKHOUSE_CLIENT} --query "CREATE MATERIALIZED VIEW ${db_atomic}.mv TO ${db_atomic}.mv_dst DEFINER = ${u_mvdef} SQL SECURITY DEFINER AS SELECT secret_column_1 FROM ${db_atomic}.alias_t"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${db_atomic}.alias_t SETTINGS async_insert = 0 VALUES (7, 'x')"
+${CLICKHOUSE_CLIENT} --query "SELECT secret_column_1 FROM ${db_atomic}.mv_dst"
+
+echo "-- a view over the alias, created by a user granted on the alias only"
+check_denied "$(as_user "${u_create}" "CREATE VIEW ${db_atomic}.v AS SELECT * FROM ${db_atomic}.alias_t")"
+
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${db_atomic}"
 drop_users
 ${CLICKHOUSE_CLIENT} -m --query "
     DROP TABLE alias_t;

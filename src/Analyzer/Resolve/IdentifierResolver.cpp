@@ -284,6 +284,14 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
 
 /// Resolve identifier functions implementation
 
+/// Whether `storage_id` is the table whose inserted block a materialized view or `INSERT ... RETURNING` reads.
+static bool isViewSource(const StorageID & storage_id, const ContextPtr & context)
+{
+    auto view_source = context->getViewSource();
+    return view_source && !context->isViewInnerQuery()
+        && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted();
+}
+
 /// Try resolve table identifier from database catalog
 std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const Identifier & table_identifier, const ContextPtr & context)
 {
@@ -384,11 +392,9 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     /// `replaceStorageInQueryTree` swaps the view source in for execution after the passes.
     /// The inner query of an ordinary view reads the table itself.
     /// The snapshot above can be shared by every read of the table in the query, so only a copy gets the view source's types.
-    if (auto view_source = context->getViewSource();
-        view_source && !context->isViewInnerQuery()
-        && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted())
+    if (isViewSource(storage_id, context))
     {
-        auto view_source_metadata = view_source->getInMemoryMetadataPtr(context, false);
+        auto view_source_metadata = context->getViewSource()->getInMemoryMetadataPtr(context, false);
         storage_snapshot = storage_snapshot->clone(view_source_metadata, storage_snapshot->data);
     }
 
@@ -415,7 +421,9 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
 /// (e.g. by `MutationsInterpreter`) do not pass through here and keep their own access semantics.
 static void checkAccessToTableMetadata(const TableNode & table_node, const ContextPtr & context)
 {
-    const auto * alias = table_node.getStorage()->as<StorageAlias>();
+    const auto & storage_id = table_node.getStorageID();
+    /// The view source is the block inserted into the table, not the data of an alias's target.
+    const auto * alias = isViewSource(storage_id, context) ? nullptr : table_node.getStorage()->as<StorageAlias>();
 
     /// Temporary tables of the current session are always accessible, but a temporary `Alias` still
     /// shows the metadata of its target.
@@ -423,7 +431,6 @@ static void checkAccessToTableMetadata(const TableNode & table_node, const Conte
     if (is_temporary && !alias)
         return;
 
-    const auto & storage_id = table_node.getStorageID();
     if (!storage_id.hasDatabase())
         return;
 

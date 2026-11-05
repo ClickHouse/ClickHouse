@@ -17,3 +17,7 @@ ok
 -- a temporary alias
 ok
 denied
+-- a materialized view over the alias, defined by a user granted on the alias only
+7
+-- a view over the alias, created by a user granted on the alias only
+denied
