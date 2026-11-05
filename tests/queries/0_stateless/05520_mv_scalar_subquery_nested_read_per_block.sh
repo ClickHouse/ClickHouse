@@ -18,6 +18,9 @@ DROP TABLE IF EXISTS mv_loop;
 DROP TABLE IF EXISTS mv_loop_table;
 DROP TABLE IF EXISTS mv_merge;
 DROP TABLE IF EXISTS mv_alias;
+DROP TABLE IF EXISTS mv_parallel;
+DROP TABLE IF EXISTS dst_parallel;
+DROP TABLE IF EXISTS src_null;
 DROP TABLE IF EXISTS src_loop_alias;
 DROP TABLE IF EXISTS src_loop;
 DROP TABLE IF EXISTS dst;
@@ -70,11 +73,29 @@ SYSTEM WAIT VIEW ${CLICKHOUSE_DATABASE_1}.rmv_read;
 
 SELECT 'refreshable', name, groupArray((inserted, seen)) FROM (SELECT * FROM dst ORDER BY name, inserted) GROUP BY name ORDER BY name;
 
+-- Parallel view branches of one INSERT: an Array or Tuple scalar of one block must not take the value of another block.
+CREATE TABLE src_null (x UInt64) ENGINE = Null;
+CREATE TABLE dst_parallel (x UInt64, seen_array Array(UInt64), seen_tuple Tuple(UInt64, String), seen_source Array(UInt64)) ENGINE = Memory;
+CREATE MATERIALIZED VIEW mv_parallel TO dst_parallel AS SELECT x,
+    (SELECT groupArray(x) FROM (SELECT x FROM loop(${CLICKHOUSE_DATABASE}, src_null) LIMIT 1)) AS seen_array,
+    (SELECT max(x), any(toString(x)) FROM (SELECT x FROM loop(${CLICKHOUSE_DATABASE}, src_null) LIMIT 1)) AS seen_tuple,
+    (SELECT groupArray(x) FROM ${CLICKHOUSE_DATABASE}.src_null) AS seen_source FROM src_null;
+
+INSERT INTO src_null SELECT number FROM numbers(1000) SETTINGS max_insert_threads = 8, max_threads = 8, parallel_view_processing = 1,
+    max_insert_threads_min_free_memory_per_thread = 0, max_threads_min_free_memory_per_thread = 0, enable_scalar_subquery_optimization = 1,
+    max_block_size = 1, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0,
+    min_insert_block_size_rows_for_materialized_views = 0, min_insert_block_size_bytes_for_materialized_views = 0;
+
+SELECT 'parallel', count(), countIf(seen_array != [x]), countIf(seen_tuple != (x, toString(x))), countIf(seen_source != [x]) FROM dst_parallel;
+
 DROP DATABASE ${CLICKHOUSE_DATABASE_1};
 DROP TABLE mv_loop;
 DROP TABLE mv_loop_table;
 DROP TABLE mv_merge;
 DROP TABLE mv_alias;
+DROP TABLE mv_parallel;
+DROP TABLE dst_parallel;
+DROP TABLE src_null;
 DROP TABLE src_loop_alias;
 DROP TABLE src_loop;
 DROP TABLE dst;

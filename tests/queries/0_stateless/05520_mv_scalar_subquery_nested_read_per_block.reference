@@ -10,6 +10,7 @@ refreshable	alias	[(6,6)]
 refreshable	loop	[(6,6)]
 refreshable	loop_table	[(6,6)]
 refreshable	merge	[(6,6)]
+parallel	1000	0	0	0
 insert	executable	[(1,1),(2,2),(3,3)]
 insert	loop_executable_table	[(1,1),(2,2),(3,3)]
 append_refresh	executable	[(4,4),(5,5),(6,6)]
