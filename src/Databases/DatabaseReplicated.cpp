@@ -1659,12 +1659,15 @@ BlockIO DatabaseReplicated::getDDLIdempotencyKeyAnswer(const String & entry_name
     String entry_path = fs::path(zookeeper_path) / "log" / entry_name;
 
     /// The entry committed, but its status is no longer kept.
-    if (!zookeeper->exists(entry_path))
+    String entry_data;
+    if (!zookeeper->tryGet(entry_path, entry_data))
         return {};
 
-    /// Replicas create `synced` nodes only if the original query asked for them, while `finished` nodes always exist.
+    DDLLogEntry entry;
+    entry.parse(entry_data);
+    /// Wait for what the original query waited for: replicas create `synced` nodes only if it asked for them.
     auto status_context = Context::createCopy(query_context);
-    status_context->setSetting("database_replicated_enforce_synchronous_settings", false);
+    status_context->setSetting("database_replicated_enforce_synchronous_settings", entry.enforcesSynchronousSettings());
 
     return getQueryStatus(
         zookeeper_name,

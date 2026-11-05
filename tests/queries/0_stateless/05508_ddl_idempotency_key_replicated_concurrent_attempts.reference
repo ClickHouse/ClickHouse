@@ -35,3 +35,7 @@ OK
 NOT_IMPLEMENTED
 MaterializedView
 OK
+-- the first attempt asked for synchronous completion and waits for a query that still reads the dropped table
+TIMEOUT_EXCEEDED
+OK
+OK

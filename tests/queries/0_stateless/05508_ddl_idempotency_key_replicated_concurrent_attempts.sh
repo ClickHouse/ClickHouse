@@ -7,7 +7,8 @@
 # once, whatever moment the first attempt is held at (before it is enqueued, before it commits, after it commits but
 # before it answers, and while the other attempt is being validated), and a table replaced meanwhile by one with hidden
 # tables is refused, and an attempt whose entry the database cancelled because it did not commit in time fails. An error
-# of the statement itself is not hidden by the key.
+# of the statement itself is not hidden by the key. An attempt answered from the key waits for the synchronous
+# completion that the first attempt asked for.
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 
@@ -43,10 +44,12 @@ function run()
     fi
 }
 
-# keyed <key> <query>
+# keyed <key> <query> [client options]
 function keyed()
 {
-    run $CLICKHOUSE_CLIENT --enable_ddl_idempotency_key 1 --idempotency_key "$1" --distributed_ddl_output_mode none -q "$2"
+    local key=$1 query=$2
+    shift 2
+    run $CLICKHOUSE_CLIENT --enable_ddl_idempotency_key 1 --idempotency_key "$key" --distributed_ddl_output_mode none "$@" -q "$query"
 }
 
 function plain()
@@ -72,6 +75,15 @@ function wait_log_size()
         sleep 0.1
     done
     [ "$(log_size "$1")" -le "$2" ] && echo "the second attempt did not enter the log"
+}
+
+# wait_for <query>: waits until the query returns 1.
+function wait_for()
+{
+    local deadline=$((SECONDS + 60))
+    while [ "$($CLICKHOUSE_CLIENT -q "$1")" != 1 ] && [ $SECONDS -lt $deadline ]; do
+        sleep 0.1
+    done
 }
 
 function enable_failpoint()
@@ -179,3 +191,18 @@ wait
 cat "$CLICKHOUSE_TMP/a.txt"
 $CLICKHOUSE_CLIENT -q "SELECT engine FROM system.tables WHERE database = '$R1' AND name = 'h'"
 plain "ALTER TABLE $R1.a MODIFY COMMENT 'after'"
+
+echo "-- the first attempt asked for synchronous completion and waits for a query that still reads the dropped table"
+plain "CREATE TABLE $R1.s (x UInt64) ENGINE = MergeTree ORDER BY x" > /dev/null
+reader="${CLICKHOUSE_DATABASE}_reader"
+$CLICKHOUSE_CLIENT --query_id "$reader" -q "SELECT count() FROM $R1.s WHERE x IN (SELECT sleepEachRow(3) FROM numbers(1000) SETTINGS max_block_size = 1)" > /dev/null 2>&1 &
+wait_for "SELECT count() > 0 FROM system.processes WHERE query_id = '$reader' AND read_rows > 0"
+keys="SELECT count() FROM system.zookeeper WHERE path = '$ZK/r/idempotency'"
+keys_before=$($CLICKHOUSE_CLIENT -q "$keys")
+keyed k9 "DROP TABLE $R1.s SYNC" --database_replicated_enforce_synchronous_settings 1 > "$CLICKHOUSE_TMP/a.txt" &
+wait_for "SELECT ($keys) > $keys_before"
+keyed k9 "DROP TABLE $R1.s SYNC" --database_replicated_enforce_synchronous_settings 1 --distributed_ddl_task_timeout 1
+$CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$reader' SYNC FORMAT Null"
+wait
+cat "$CLICKHOUSE_TMP/a.txt"
+keyed k9 "DROP TABLE $R1.s SYNC" --database_replicated_enforce_synchronous_settings 1
