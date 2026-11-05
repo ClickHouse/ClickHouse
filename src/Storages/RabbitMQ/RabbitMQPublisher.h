@@ -60,7 +60,7 @@ public:
     void disconnect(bool immediately = false);
 
     /// Heartbeat interval in seconds negotiated with the server, 0 if heartbeats are disabled.
-    uint16_t getHeartbeatInterval() { return connection.getHandler().getHeartbeatInterval(); }
+    uint16_t getHeartbeatInterval() const { return connection.getHandler().getHeartbeatInterval(); }
 
 private:
     void setupChannel();

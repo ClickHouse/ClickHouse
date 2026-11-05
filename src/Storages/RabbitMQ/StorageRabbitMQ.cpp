@@ -92,6 +92,7 @@ static const uint32_t QUEUE_SIZE = 100000;
 static const auto MAX_FAILED_READ_ATTEMPTS = 10;
 static const auto RESCHEDULE_MS = 500;
 static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
+static const auto PUBLISHER_CLEANUP_INTERVAL_MS = 5000;
 
 namespace ErrorCodes
 {
@@ -316,6 +317,10 @@ StorageRabbitMQ::StorageRabbitMQ(
 
     init_task = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), "RabbitMQConnectionTask", [this]{ connectionFunc(); });
     init_task->deactivate();
+
+    publisher_cleanup_task = getContext()->getMessageBrokerSchedulePool()->createTask(
+        getStorageID(), "RabbitMQPublisherCleanupTask", [this]{ publisherCleanupFunc(); });
+    publisher_cleanup_task->deactivate();
 }
 
 StorageRabbitMQ::~StorageRabbitMQ() = default;
@@ -1011,6 +1016,10 @@ SinkToStoragePtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr
 
 void StorageRabbitMQ::startup()
 {
+    /// Inserts are possible even if streaming to views is disabled.
+    if ((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_max_idle_producer_connections] > 0)
+        publisher_cleanup_task->activateAndSchedule();
+
     if (getContext()->getMessageQueueDisableInsertion())
     {
         StreamingStorageRegistry::instance().registerTable(getStorageID());
@@ -1028,6 +1037,20 @@ void StorageRabbitMQ::startup()
         init_task->activateAndSchedule();
     }
     StreamingStorageRegistry::instance().registerTable(getStorageID());
+}
+
+void StorageRabbitMQ::publisherCleanupFunc()
+{
+    try
+    {
+        publisher_pool->cleanupIdlePublishers();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
+
+    publisher_cleanup_task->scheduleAfter(PUBLISHER_CLEANUP_INTERVAL_MS);
 }
 
 void StorageRabbitMQ::scheduleStreamingTasksImpl()
@@ -1067,6 +1090,7 @@ void StorageRabbitMQ::shutdown(bool is_drop)
     deactivateTask(looping_task, true, true);
 
     /// Inserts are possible even if streaming to views is disabled, so close their idle connections in any case.
+    publisher_cleanup_task->deactivate();
     publisher_pool->shutdown();
 
     if (getContext()->getMessageQueueDisableInsertion())
@@ -1719,7 +1743,7 @@ Optional parameters:
 - `reject_unhandled_messages` - Reject messages (send RabbitMQ negative acknowledgement) in case of errors. This setting is automatically enabled if there is a `x-dead-letter-exchange` defined in `rabbitmq_queue_settings_list`.
 - `rabbitmq_commit_on_select` - Commit messages when select query is made. Default: `false`.
 - `rabbitmq_max_rows_per_message` — The maximum number of rows written in one RabbitMQ message for row-based formats. Default : `1`.
-- `rabbitmq_max_idle_producer_connections` - The maximum number of idle connections, each with an open channel, that the table keeps for subsequent `INSERT` queries. Reusing them avoids the cost of connecting to RabbitMQ (and of the TLS handshake) for every `INSERT`, for example when a materialized view writes to the table on each insert into its source. A connection that stayed idle for half of the heartbeat timeout negotiated with the server is not reused, because the server closes it once the timeout passes. `0` disables the reuse: every `INSERT` opens and closes its own connection. Default: `0`.
+- `rabbitmq_max_idle_producer_connections` - The maximum number of idle connections, each with an open channel, that the table keeps for subsequent `INSERT` queries. Reusing them avoids the cost of connecting to RabbitMQ (and of the TLS handshake) for every `INSERT`, for example when a materialized view writes to the table on each insert into its source. Idle connections are checked every few seconds: a connection that stayed idle for half of the heartbeat timeout negotiated with the server is closed, because the server closes it once the timeout passes, and so is a connection that was lost. `0` disables the reuse: every `INSERT` opens and closes its own connection. Default: `0`.
 - `rabbitmq_empty_queue_backoff_start_ms` — A start backoff point to reschedule read if the rabbitmq queue is empty.
 - `rabbitmq_empty_queue_backoff_end_ms` — An end backoff point to reschedule read if the rabbitmq queue is empty.
 - `rabbitmq_empty_queue_backoff_step_ms` — A backoff step to reschedule read if the rabbitmq queue is empty.

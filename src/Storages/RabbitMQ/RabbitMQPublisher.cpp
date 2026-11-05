@@ -232,6 +232,8 @@ void RabbitMQPublisher::publishStep(Payloads & payloads)
 
 bool RabbitMQPublisher::isReusable()
 {
+    if (connection.isConnected())
+        connection.heartbeat();
     iterateEventLoop();
     return connection.isConnected() && channel->usable() && channel_ready && !hasPendingDeliveries();
 }

@@ -148,6 +148,8 @@ private:
     BackgroundSchedulePoolTaskHolder streaming_task;
     BackgroundSchedulePoolTaskHolder looping_task;
     BackgroundSchedulePoolTaskHolder init_task;
+    /// Closes idle producer connections of `publisher_pool`, which are expired or lost.
+    BackgroundSchedulePoolTaskHolder publisher_cleanup_task;
 
     uint64_t milliseconds_to_wait;
 
@@ -182,6 +184,7 @@ private:
     void threadFunc();
     void loopingFunc();
     void connectionFunc();
+    void publisherCleanupFunc();
 
     void startLoop();
     void stopLoop();

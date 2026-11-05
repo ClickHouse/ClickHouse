@@ -2,6 +2,9 @@
 
 #include <Common/logger_useful.h>
 
+#include <algorithm>
+#include <iterator>
+
 
 namespace DB
 {
@@ -29,13 +32,13 @@ RabbitMQPublisherPtr RabbitMQPublisherPool::acquire()
     /// The network is only touched outside of the mutex.
     while (auto idle = popIdlePublisher())
     {
-        if (idle->publisher->isReusable())
+        if (!isExpired(*idle) && idle->publisher->isReusable())
         {
             LOG_TRACE(log, "Reusing an idle producer connection");
             return std::move(idle->publisher);
         }
 
-        LOG_DEBUG(log, "Discarding an idle producer connection, which is no longer usable");
+        LOG_DEBUG(log, "Discarding an idle producer connection, which is expired or no longer usable");
         idle->publisher->disconnect(/* immediately */ true);
     }
 
@@ -74,39 +77,69 @@ void RabbitMQPublisherPool::shutdown()
         idle.publisher->disconnect();
 }
 
-std::optional<RabbitMQPublisherPool::IdlePublisher> RabbitMQPublisherPool::popIdlePublisher()
+void RabbitMQPublisherPool::cleanupIdlePublishers()
 {
-    std::vector<IdlePublisher> expired_publishers;
-    std::optional<IdlePublisher> idle;
+    std::vector<IdlePublisher> publishers_to_check;
     {
         std::lock_guard lock(mutex);
+        publishers_to_check.swap(idle_publishers);
+    }
 
-        /// Only the most recently released publisher is taken, so the older ones are checked here,
-        /// otherwise their closed connections would be kept until the table is shut down.
-        std::erase_if(idle_publishers, [&](IdlePublisher & publisher)
+    std::vector<IdlePublisher> usable_publishers;
+    size_t num_discarded = 0;
+    for (auto & idle : publishers_to_check)
+    {
+        if (isExpired(idle) || !idle.publisher->isReusable())
         {
-            if (!isExpired(publisher))
-                return false;
-            expired_publishers.push_back(std::move(publisher));
-            return true;
-        });
+            idle.publisher->disconnect(/* immediately */ true);
+            ++num_discarded;
+        }
+        else
+            usable_publishers.push_back(std::move(idle));
+    }
 
-        if (!idle_publishers.empty())
+    if (num_discarded)
+        LOG_DEBUG(log, "Discarded {} idle producer connections, which are expired or no longer usable", num_discarded);
+
+    std::vector<IdlePublisher> excess_publishers;
+    {
+        std::lock_guard lock(mutex);
+        if (is_shutdown)
         {
-            idle = std::move(idle_publishers.back());
-            idle_publishers.pop_back();
+            excess_publishers.swap(usable_publishers);
+        }
+        else
+        {
+            /// Publishers released in the meantime are more recent, so the checked ones go to the front.
+            idle_publishers.insert(
+                idle_publishers.begin(), std::make_move_iterator(usable_publishers.begin()), std::make_move_iterator(usable_publishers.end()));
+
+            /// The released ones may have filled the pool while it was being checked, then the oldest ones are closed.
+            if (idle_publishers.size() > max_idle_publishers)
+            {
+                const auto num_excess = idle_publishers.size() - max_idle_publishers;
+                std::move(idle_publishers.begin(), idle_publishers.begin() + num_excess, std::back_inserter(excess_publishers));
+                idle_publishers.erase(idle_publishers.begin(), idle_publishers.begin() + num_excess);
+            }
         }
     }
 
-    if (!expired_publishers.empty())
-        LOG_DEBUG(log, "Discarding {} expired idle producer connections", expired_publishers.size());
-    for (auto & expired : expired_publishers)
-        expired.publisher->disconnect(/* immediately */ true);
+    for (auto & excess : excess_publishers)
+        excess.publisher->disconnect();
+}
 
+std::optional<RabbitMQPublisherPool::IdlePublisher> RabbitMQPublisherPool::popIdlePublisher()
+{
+    std::lock_guard lock(mutex);
+    if (idle_publishers.empty())
+        return {};
+
+    auto idle = std::move(idle_publishers.back());
+    idle_publishers.pop_back();
     return idle;
 }
 
-bool RabbitMQPublisherPool::isExpired(IdlePublisher & idle)
+bool RabbitMQPublisherPool::isExpired(const IdlePublisher & idle)
 {
     const auto heartbeat_interval = idle.publisher->getHeartbeatInterval();
     if (heartbeat_interval == 0)

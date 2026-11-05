@@ -32,6 +32,8 @@ public:
     /// Closes it instead if the pool is full or shut down.
     void release(RabbitMQPublisherPtr publisher);
 
+    void cleanupIdlePublishers();
+
     void shutdown();
 
 private:
@@ -41,10 +43,10 @@ private:
         std::chrono::steady_clock::time_point released_at;
     };
 
-    /// Pops the most recently released publisher, disconnecting the expired ones.
+    /// Pops the most recently released publisher.
     std::optional<IdlePublisher> popIdlePublisher();
 
-    static bool isExpired(IdlePublisher & idle);
+    static bool isExpired(const IdlePublisher & idle);
 
     const RabbitMQConfiguration configuration;
     const Names routing_keys;
