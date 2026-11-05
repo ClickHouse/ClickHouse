@@ -40,7 +40,7 @@ for operation in 'alter' 'create or replace'; do
         system flush logs query_log;
         select count(), countIf(position(query, '[qmr_preserved]') > 0), countIf(position(query, '${secret}') > 0)
         from system.query_log
-        where query_id = '${query_id}' and type = 'QueryFinish';
+        where current_database = currentDatabase() and query_id = '${query_id}' and type = 'QueryFinish';
     "
 done
 
