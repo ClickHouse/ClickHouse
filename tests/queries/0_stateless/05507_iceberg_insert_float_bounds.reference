@@ -1,0 +1,13 @@
+--- A: values=(nan, nan)
+lower_ids=[]	upper_ids=[]	f32_lower=[]	f32_upper=[]	f64_lower=[]	f64_upper=[]
+--- B: values=(1.5, 1.5), (3.5, 3.5)
+lower_ids=[1,2]	upper_ids=[1,2]	f32_lower=[1.5]	f32_upper=[3.5]	f64_lower=[1.5]	f64_upper=[3.5]
+--- C: values=(1.5, 1.5), (nan, nan), (-5.5, -5.5)
+lower_ids=[1,2]	upper_ids=[1,2]	f32_lower=[-5.5]	f32_upper=[1.5]	f64_lower=[-5.5]	f64_upper=[1.5]
+--- D: values=(1.5, 1.5), (nan, nan), (-5.5, -5.5) (SETTINGS max_block_size = 1)
+lower_ids=[1,2]	upper_ids=[1,2]	f32_lower=[-5.5]	f32_upper=[1.5]	f64_lower=[-5.5]	f64_upper=[1.5]
+--- E: values=(1.5, 1.5), (NULL, NULL), (-5.5, -5.5)
+lower_ids=[1,2]	upper_ids=[1,2]	f32_lower=[-5.5]	f32_upper=[1.5]	f64_lower=[-5.5]	f64_upper=[1.5]
+--- F: values=(nan, nan), (0.0, 0.0), (-0.0, -0.0), (5.5, 5.5)
+lower_ids=[1,2]	upper_ids=[1,2]	f32_lower=[-0.0]	f32_upper=[5.5]	f64_lower=[-0.0]	f64_upper=[5.5]
+f32_lower_hex=[\'00000000\']	f64_lower_hex=[\'0000000000000000\']

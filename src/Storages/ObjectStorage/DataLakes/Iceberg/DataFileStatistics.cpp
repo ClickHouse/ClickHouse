@@ -4,6 +4,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
+#include <cmath>
 
 namespace DB
 {
@@ -129,8 +130,40 @@ void DataFileStatistics::merge(const DataFileStatistics & other)
     }
 }
 
+namespace
+{
+
+/// `Field` has no Float32 slot (see Field.h): a Float32 column's values are always stored as
+/// Field::Types::Float64, so this one check also covers Float32.
+bool isFloatNaN(const Field & value)
+{
+    return value.getType() == Field::Types::Float64 && std::isnan(value.safeGet<Float64>());
+}
+
+/// Whether `range` is the "no usable value" sentinel: an all-NaN chunk's own extremes are NaN on
+/// both sides at once (see `ColumnVector::getExtremes`), never on just one.
+bool isNaNRange(const Range & range)
+{
+    return isFloatNaN(range.left) && isFloatNaN(range.right);
+}
+
+}
+
 Range DataFileStatistics::uniteRanges(const Range & left, const Range & right)
 {
+    /// `Range::less` (via `accurateLess`) deliberately ranks NaN above every real value, for
+    /// generic ordering purposes (sorting, index range analysis). That is the wrong rule here: an
+    /// all-NaN chunk/file must not push a real bound out, so a NaN side is excluded instead of
+    /// compared.
+    bool left_is_nan = isNaNRange(left);
+    bool right_is_nan = isNaNRange(right);
+    if (left_is_nan && right_is_nan)
+        return left;
+    if (left_is_nan)
+        return right;
+    if (right_is_nan)
+        return left;
+
     return Range(
         Range::less(left.left, right.left) ? left.left : right.left,
         true,

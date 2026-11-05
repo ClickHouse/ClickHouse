@@ -67,8 +67,8 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query \
     "INSERT INTO ${PREFIX}_c SELECT number::Int32, 'val-' || toString(number) FROM numbers(5)"
 report "${ROOT}/c"
 
-# Case D: wrapper composition with a non-NULL value. Float64 is unsupported for bounds even though
-# the byte dumper handles it, so the filter must gate on the bounds predicate and skip only `f`.
+# Case D: wrapper composition with a non-NULL value. Float64 is supported for bounds, so `f` keeps
+# its bound alongside `key`.
 echo '--- D: key Int32 + f Nullable(Float64) with values'
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${PREFIX}_d (key Int32, f Nullable(Float64))
