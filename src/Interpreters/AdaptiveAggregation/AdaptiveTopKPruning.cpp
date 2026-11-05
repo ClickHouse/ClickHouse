@@ -23,8 +23,9 @@ bool AdaptiveTopKPruning::prepare(size_t expected_producers)
     if (producer_bins.size() + merge_counted_tables.size() != expected_producers)
         return false;
 
-    /// A bucket's largest bin is at most the sum of the producers' largest bins in it, which orders the buckets.
-    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> priorities{};
+    /// A bucket's largest bin is at most the sum of the producers' largest bins in it, and a group of the bucket counts
+    /// at most the sum of the largest counts of the bucket in the tables that the merge counts, which orders the buckets.
+    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> priorities = merge_counted_bucket_maxima;
     for (const auto & producer : producer_bins)
         for (size_t bucket = 0; bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++bucket)
             priorities[bucket] += producer.bucket_maxima[bucket];

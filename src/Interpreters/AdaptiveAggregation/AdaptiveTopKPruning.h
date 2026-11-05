@@ -66,15 +66,17 @@ private:
 /// The bin-bound top-K pruning of an aggregation that feeds `ORDER BY count() DESC LIMIT n`, or the same by `uniqExact`
 /// or `uniqExactIf` (`Aggregator::Params::bucket_top_k`). Every producer that froze counts the rows of its staged
 /// records, and at its finish the counts of the groups of its own table, into its bins. A producer that never froze
-/// staged nothing, so its table is its whole contribution: it hands the table over without bins, and the merge of each
-/// bucket adds the table's groups in the bucket to the bucket's bounds. An aggregation in which no producer froze
-/// merges as usual, so its producers spend nothing on the pruning. Summed over the producers, a bin bounds the count of
-/// every group in it from above: a row adds one to a group's count at most, and merging adds the counts of the merged
-/// groups for `count`, or at most adds them for the distinct count of `uniqExact`, as a union has no more elements than
-/// its parts together. The merge keeps the `limit` best exact counts of the groups it has converted; once there are
-/// `limit` of them, a group whose bin is bounded below the smallest one has `limit` groups ahead of it, so the merge
-/// skips the units, staged records and source cells of such bins without draining them. The merge takes the buckets
-/// with the largest bounds first, so the threshold rises early.
+/// staged nothing, so its table is its whole contribution: it hands the table over without bins, with the largest count
+/// of each bucket where the pruning can run without a freeze, and the merge of each bucket adds the table's groups in
+/// the bucket to the bucket's bounds. An aggregation in which no producer froze takes the adaptive merge for the pruning
+/// too when the pruning pays for its buckets (see `Aggregator::prepareAdaptiveTopKPruning`), and the merge reads the
+/// tables through their cell indexes. Summed over the producers, a bin bounds the count of every group in it from
+/// above: a row adds one to a group's count at most, and merging adds the counts of the merged groups for `count`, or at
+/// most adds them for the distinct count of `uniqExact`, as a union has no more elements than its parts together. The
+/// merge keeps the `limit` best exact counts of the groups it has converted; once there are `limit` of them, a group
+/// whose bin is bounded below the smallest one has `limit` groups ahead of it, so the merge skips the units, staged
+/// records and source cells of such bins without draining them. The merge takes the buckets with the largest bounds
+/// first, so the threshold rises early.
 class AdaptiveTopKPruning
 {
 public:
@@ -104,6 +106,9 @@ public:
 
     explicit AdaptiveTopKPruning(size_t limit_) : limit(limit_) { }
 
+    /// How many groups the top keeps.
+    size_t getLimit() const { return limit; }
+
     /// Takes a producer's bins at its finish and finds the largest bin of each bucket. Called before the producer takes
     /// the session's lock, so the scans of the finishing producers run in parallel.
     static ProducerBins finalizeProducerCounts(AdaptiveTopKCountBins && counts);
@@ -112,8 +117,17 @@ public:
     void addProducerBins(ProducerBins && bins) { producer_bins.push_back(std::move(bins)); }
 
     /// Hands over the table of a producer that never froze, under the session's `producer_buffers_mutex`. The merge adds
-    /// its groups to the bounds (see `addToBounds`).
-    void addMergeCountedTable(const AggregatedDataVariants & table) { merge_counted_tables.push_back(&table); }
+    /// its groups to the bounds (see `addToBounds`). `bucket_maxima`, unless null, holds the largest count of a group of
+    /// each bucket in the table, which the producer measures where the pruning can run without a freeze (see
+    /// `Aggregator::adaptiveTopKPrunesWithoutFreeze`). A table without them takes no part in the order of the buckets.
+    void addMergeCountedTable(
+        const AggregatedDataVariants & table, const std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * bucket_maxima)
+    {
+        merge_counted_tables.push_back(&table);
+        if (bucket_maxima)
+            for (size_t bucket = 0; bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++bucket)
+                merge_counted_bucket_maxima[bucket] += (*bucket_maxima)[bucket];
+    }
 
     /// Whether `table` is the table of a producer that never froze, whose groups the merge adds to the bounds.
     bool isMergeCounted(const AggregatedDataVariants & table) const
@@ -122,9 +136,9 @@ public:
     }
 
     /// Called after the finish barrier, before the merge starts. Checks that `expected_producers` handed their bins or
-    /// their tables over, which the bounds rely on, and orders the buckets for the merge by the bounds of the bins. The
-    /// tables that the merge counts are not in this order, which only lets the threshold rise later. Returns false if
-    /// some producer handed over neither: the pruning cannot be used then.
+    /// their tables over, which the bounds rely on, and orders the buckets for the merge by the bounds of the bins and the
+    /// largest counts that the tables brought. A table without them is not in this order, which only lets the threshold
+    /// rise later. Returns false if some producer handed over neither: the pruning cannot be used then.
     bool prepare(size_t expected_producers);
 
     /// The bucket that the merge claim `claim` takes: the buckets with the largest bounds come first.
@@ -158,6 +172,8 @@ private:
 
     std::vector<ProducerBins> producer_bins;
     std::vector<const AggregatedDataVariants *> merge_counted_tables;
+    /// The sums of the largest counts of a group of each bucket that the tables the merge counts brought.
+    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> merge_counted_bucket_maxima{};
     std::array<UInt8, ADAPTIVE_AGGREGATION_NUM_BUCKETS> bucket_order{};
 
     /// The `limit` best exact counts converted so far, and the smallest of them once there are `limit`.

@@ -296,13 +296,21 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     const bool froze = adaptive.partitions != nullptr;
 
     /// The bins of a producer that froze take the rows of its own table as well, whatever its phase now. A producer
-    /// that never froze has no bins and hands its table over instead: the adaptive merge counts it, and the ordinary
-    /// merge of an aggregation in which no producer froze does not prune.
+    /// that never froze has no bins and hands its table over instead, which the adaptive merge counts. An aggregation in
+    /// which no producer froze takes the adaptive merge only where the pruning pays for it (see
+    /// `prepareAdaptiveTopKPruning`); the ordinary merge does not prune.
     AdaptiveTopKCountBins * count_bins = adaptive.count_bins.isAllocated() ? &adaptive.count_bins : nullptr;
 
+    /// A producer that never froze measures the largest count of each bucket of its table, by which the pruning merges
+    /// the buckets with the largest bounds first. Only the pruning of an aggregation in which no producer froze lacks the
+    /// bins that order the buckets otherwise, so the producer measures them only where that pruning can run (see
+    /// `adaptiveTopKPrunesWithoutFreeze`).
+    std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> bucket_maxima_storage{};
+    auto * const bucket_maxima = !count_bins && adaptiveTopKPrunesWithoutFreeze() ? &bucket_maxima_storage : nullptr;
+
     size_t estimated_merge_work = adaptive.total_staged_records * adaptive_parallel_merge_indices.size();
-    if (count_bins || !adaptive_parallel_merge_indices.empty())
-        estimated_merge_work += collectAdaptiveTableStatistics(local_variants, count_bins);
+    if (count_bins || bucket_maxima || !adaptive_parallel_merge_indices.empty())
+        estimated_merge_work += collectAdaptiveTableStatistics(local_variants, count_bins, bucket_maxima);
 
     std::optional<AdaptiveTopKPruning::ProducerBins> bins;
     if (count_bins)
@@ -342,9 +350,13 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
         local_variants.convertToTwoLevel();
     }
 
+    const bool unindexed = !local_variants.empty() && !local_variants.isTwoLevel() && !local_variants.cell_index;
+
     std::lock_guard lock(shared.producer_buffers_mutex);
     shared.estimated_merge_work += estimated_merge_work;
     ++shared.finished_producers;
+    shared.table_cells += local_variants.sizeWithoutOverflowRow();
+    shared.unindexed_tables += unindexed;
     if (froze)
     {
         ++shared.frozen_producers;
@@ -355,14 +367,20 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     if (bins)
         shared.top_k_pruning->addProducerBins(std::move(*bins));
     else if (params.adaptiveTopKPrunes())
-        shared.top_k_pruning->addMergeCountedTable(local_variants);
+        shared.top_k_pruning->addMergeCountedTable(local_variants, bucket_maxima);
 }
 
 void Aggregator::prepareAdaptiveTopKPruning(
     AdaptiveAggregationSession & shared, size_t producers, bool external_merge, bool collects_statistics) const
 {
+    shared.top_k_pruning_prepared = true;
     auto & pruning = shared.top_k_pruning;
-    if (pruning && (external_merge || collects_statistics || !pruning->prepare(producers)))
+    if (!pruning)
+        return;
+
+    const bool pays_without_freeze = adaptiveTopKPrunesWithoutFreeze() && shared.unindexed_tables == 0
+        && shared.table_cells >= std::max(adaptive_merge_unit_records, pruning->getLimit() * ADAPTIVE_AGGREGATION_NUM_BUCKETS);
+    if (external_merge || collects_statistics || !(shared.engaged() || pays_without_freeze) || !pruning->prepare(producers))
         pruning.reset();
 }
 

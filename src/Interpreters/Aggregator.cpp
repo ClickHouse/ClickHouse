@@ -5748,7 +5748,7 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
     /// Note - perhaps it would be more optimal not to convert single-level versions before the merge, but merge them separately, at the end.
     /// The adaptive merge reads every source by bucket: a two-level table through its buckets, a single-level one through
     /// its cell index. So it converts the single-level tables without an index, also when no table is two-level.
-    const bool adaptive_merge = adaptive_session && adaptive_session->engaged();
+    const bool adaptive_merge = adaptive_session && adaptive_session->mergesAdaptively();
 
     bool has_at_least_one_two_level = false;
     for (const auto & variant : non_empty_data)

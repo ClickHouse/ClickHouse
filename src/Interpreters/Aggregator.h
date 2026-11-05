@@ -466,12 +466,16 @@ public:
     /// frees them, while their spills have not ended at the finish barrier. Returns the released bytes.
     size_t spillHandedOverStagedRecords(AdaptiveAggregationSession & shared) const;
 
-    /// Decides once, after the finish barrier of an engaged aggregation and before its merge starts, whether the merge
-    /// prunes by the top-K, and orders the buckets for it by their bounds. The bounds need every source's rows, in the
-    /// count bins or in a table that the merge counts. A producer without the adaptive context (another aggregator of a
-    /// mixed projection pipeline) handed over neither, and an external merge reads back rows that nothing counted. A
-    /// merge that collects the runtime dataflow statistics needs every group converted. In all these cases the pruning
-    /// is dropped.
+    /// Decides once, after the finish barrier and before the merge starts, whether the merge prunes by the top-K, and
+    /// orders the buckets for it by their bounds. Only the adaptive merge prunes, so without a frozen producer the pruning
+    /// takes it only where that pays for its buckets: where it skips the merge of heavy states (see
+    /// `adaptiveTopKPrunesWithoutFreeze`) and the top keeps a small part of the groups, so that the tables hold at least
+    /// as many cells per bucket as the top keeps groups, and a merge unit's worth in all. The adaptive merge reads a table
+    /// that never froze through its cell index, so a table without one, the string table, keeps the merge ordinary. The
+    /// bounds need every source's rows, in the count bins or in a table that the merge counts. A producer without the
+    /// adaptive context (another aggregator of a mixed projection pipeline) handed over neither, and an external merge
+    /// reads back rows that nothing counted. A merge that collects the runtime dataflow statistics needs every group
+    /// converted. In all these cases the pruning is dropped (see `AdaptiveAggregationSession::mergesAdaptively`).
     void prepareAdaptiveTopKPruning(
         AdaptiveAggregationSession & shared, size_t producers, bool external_merge, bool collects_statistics) const;
 
@@ -977,6 +981,10 @@ private:
     /// `AggregatedDataVariants::hashTableBufferBytes`).
     bool adaptiveFreezeBoundReached(const AggregatedDataVariants & result) const;
 
+    /// Whether the top-K pruning can take the adaptive merge of an aggregation in which no producer froze (see
+    /// `prepareAdaptiveTopKPruning`): only where it skips the merge of heavy states.
+    bool adaptiveTopKPrunesWithoutFreeze() const { return params.adaptiveTopKPrunes() && has_heavy_states; }
+
     /// Whether a learning table still slices its blocks to freeze exactly at the key-count threshold: until it has
     /// taken more than `adaptive_learning_slicing_row_multiple` times the threshold in rows.
     bool adaptiveLearningSlices(const AdaptiveAggregationProducer & adaptive) const;
@@ -1208,10 +1216,18 @@ private:
         Arena * arena, PaddedPODArray<AggregateDataPtr> & places, const Columns & arguments, bool use_compiled_functions) const;
 
     /// Estimates the work of the selected aggregate states and, when requested, adds rank counts to the producer's
-    /// top-K bins. Both statistics visit the same cells before the producer hands its table to the merge.
-    size_t collectAdaptiveTableStatistics(AggregatedDataVariants & variants, AdaptiveTopKCountBins * bins) const;
+    /// top-K bins, or, with `bucket_maxima`, raises its largest rank count of each bucket. The statistics visit the same
+    /// cells before the producer hands its table to the merge.
+    size_t collectAdaptiveTableStatistics(
+        AggregatedDataVariants & variants,
+        AdaptiveTopKCountBins * bins,
+        std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * bucket_maxima) const;
     template <typename Method>
-    size_t collectAdaptiveTableStatistics(Method & method, Arena * arena, AdaptiveTopKCountBins * bins) const;
+    size_t collectAdaptiveTableStatistics(
+        Method & method,
+        Arena * arena,
+        AdaptiveTopKCountBins * bins,
+        std::array<UInt64, ADAPTIVE_AGGREGATION_NUM_BUCKETS> * bucket_maxima) const;
 
     /// The rank of the group with the aggregate states at `mapped`, which the top-K pruning bounds: its count, or the
     /// distinct count of its `uniqExact` or `uniqExactIf` rank, finalized into `scratch`.
