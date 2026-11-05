@@ -79,11 +79,6 @@ SELECT count() FROM v_plain_over_plain;
 
 -- Which relation is shipped to the replicas. An empty array means the query is not read through
 -- the coordinated remote path at all, which is the expected verdict once a view body opts out.
--- This section reads the relation out of the shipped SQL, which only the query-based
--- implementation produces; plan-based ships a plan fragment. The row counts above are what the
--- test is really guarding, and they run under either implementation.
-SET parallel_replicas_plan_based = 0;
-
 SELECT '-- what is shipped to replicas';
 
 SELECT 'v_plain', arraySort(groupUniqArray(if(explain LIKE '%v_plain%', 'v_plain', if(explain LIKE '%mt_g%', 'mt_g', 'other'))))

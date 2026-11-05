@@ -45,7 +45,7 @@ NO_INLINE void WriteBuffer::throwWriteToCanceledBuffer(int code)
     throw Exception{code, "Cannot write to canceled buffer"};
 }
 
-void WriteBuffer::writeSlow(const char * from, size_t n)
+void WriteBuffer::write(const char * from, size_t n)
 {
     if (finalized)
         throwWriteToFinalizedBuffer();
@@ -68,7 +68,7 @@ void WriteBuffer::writeSlow(const char * from, size_t n)
     }
 }
 
-void WriteBuffer::writeSlow(char x)
+void WriteBuffer::write(char x)
 {
     if (finalized)
         throwWriteToFinalizedBuffer();
@@ -90,7 +90,6 @@ void WriteBuffer::cancel() noexcept
     LockMemoryExceptionInThread lock(VariableContext::Global);
     cancelImpl();
     canceled = true;
-    closed = true;
 }
 
 void WriteBuffer::finalize()
@@ -106,7 +105,6 @@ void WriteBuffer::finalize()
     {
         finalizeImpl();
         finalized = true;
-        closed = true;
     }
     catch (...)
     {

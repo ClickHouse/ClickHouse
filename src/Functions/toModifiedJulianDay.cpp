@@ -16,6 +16,7 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int ILLEGAL_COLUMN;
+        extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     }
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
@@ -186,13 +187,23 @@ namespace DB
             return std::make_unique<FunctionBaseToModifiedJulianDay<Name, ToDataType, nullOnErrors>>(argument_types, return_type);
         }
 
-        String getSignatureString() const override
+        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
-            const String to = ToDataType{}.getName();
+            if (!isStringOrFixedString(arguments[0]))
+            {
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be String or FixedString",
+                    getName());
+            }
+
+            DataTypePtr base_type = std::make_shared<ToDataType>();
             if constexpr (nullOnErrors)
-                return "(StringOrFixedString) -> Nullable(" + to + ")";
+            {
+                return std::make_shared<DataTypeNullable>(base_type);
+            }
             else
-                return "(StringOrFixedString) -> " + to;
+            {
+                return base_type;
+            }
         }
 
         size_t getNumberOfArguments() const override

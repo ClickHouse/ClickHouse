@@ -2740,7 +2740,7 @@ ASTPtr LogsQLParser::parseMathExpr(int max_priority)
         }
         else
         {
-            /// LogsQL division stays floating point regardless of `sql_compatible_division_for_integers`.
+            /// LogsQL division stays floating point regardless of `exact_division_for_integers`.
             if (String(it->second.function) == "divide")
                 left = makeASTFunction("toFloat64", left);
             left = makeASTFunction(it->second.function, left, right);

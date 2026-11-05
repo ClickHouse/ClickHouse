@@ -218,10 +218,6 @@ public:
         /// Set only on a parallel replicas follower: it kept every part, and the coordinator chooses its ranges
         /// from the analysis done on the initiator.
         bool index_analysis_was_already_done_on_initiator = false;
-        /// The filter constrains the primary key of the analyzed parts (the same criterion the
-        /// `force_primary_key` check uses). A projection whose own key is not used may not serve
-        /// the read.
-        bool pk_condition_useful = false;
         std::atomic<bool> exceeded_row_limits = false;
 
         AnalysisResult() = default;
@@ -245,7 +241,6 @@ public:
             , has_exact_ranges(other.has_exact_ranges)
             , exact_ranges_excluded(other.exact_ranges_excluded)
             , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
-            , pk_condition_useful(other.pk_condition_useful)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 
@@ -268,7 +263,6 @@ public:
             , has_exact_ranges(other.has_exact_ranges)
             , exact_ranges_excluded(other.exact_ranges_excluded)
             , index_analysis_was_already_done_on_initiator(other.index_analysis_was_already_done_on_initiator)
-            , pk_condition_useful(other.pk_condition_useful)
             , exceeded_row_limits(other.exceeded_row_limits.load())
         {}
 

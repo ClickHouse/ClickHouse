@@ -245,10 +245,6 @@ public:
     SerializationPtr getSerialization(const String & column_name) const;
     SerializationPtr tryGetSerialization(const String & column_name) const;
 
-    /// A static subcolumn's serialization from the part's shared serializations;
-    /// see `PartSerializations::tryGetSubcolumnSerialization` for when it returns nothing.
-    SerializationPtr tryGetSubcolumnSerialization(const String & column_name, const String & subcolumn_name) const;
-
     void remove();
 
     /// The statistics of the part's columns; an empty `required_columns` means all columns.
@@ -492,7 +488,8 @@ public:
 
     Checksums checksums;
 
-    /// Columns with values, that all have been zeroed by expired ttl
+    /// Columns with no values to store: every value zeroed by a column TTL, or no source part stores the column
+    /// (e.g. added by `ADD COLUMN` without a default and never written).
     NameSet expired_columns;
 
     NameSet invalidated_system_columns;
@@ -660,9 +657,6 @@ public:
     bool hasProjection() const { return !projection_parts.empty(); }
 
     bool hasBrokenProjection(const String & projection_name) const;
-
-    /// Listed in checksums but not loaded by loadProjections, e.g. because the part was loaded with table metadata that did not have it yet.
-    bool hasUnloadedProjection(const String & projection_name) const;
 
     /// Return true, if all projections were loaded successfully and none was marked as broken.
     void loadProjections(

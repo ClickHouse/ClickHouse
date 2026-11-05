@@ -119,8 +119,21 @@ bool typeContainsFloat(const DataTypePtr & type)
 
 /// -0.0 compares equal to 0.0 and NaN payloads compare equal to each other, so a condition
 /// over a float sorting key column can tell apart rows of one dedup group and drop its winner
-NameSet getSortingKeyNamesSafeBeforeFinal(const KeyDescription & sorting_key)
+NameSet getSortingKeyNamesSafeBeforeFinal(const StorageSnapshotPtr & storage_snapshot)
 {
+    const auto & sorting_key = storage_snapshot->metadata->getSortingKey();
+
+    /// `Graphite` merges adjacent rows of one path into one row with a rounded time.
+    /// A path filter can make rows adjacent unless the path is the first sorting key column.
+    const auto * data = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage);
+    if (data && data->merging_params.mode == MergeTreeData::MergingParams::Graphite)
+    {
+        const auto & path = data->merging_params.graphite_params.path_column_name;
+        if (sorting_key.column_names.empty() || sorting_key.column_names.front() != path)
+            return {};
+        return {path};
+    }
+
     NameSet names;
     for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
         if (!typeContainsFloat(sorting_key.data_types[i]))
@@ -143,7 +156,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , queried_columns{queried_columns_}
     , supported_columns{supported_columns_}
     , supported_columns_include_subcolumns{supported_columns_include_subcolumns_}
-    , sorting_key_names{getSortingKeyNamesSafeBeforeFinal(storage_snapshot->metadata->getSortingKey())}
+    , sorting_key_names{getSortingKeyNamesSafeBeforeFinal(storage_snapshot)}
     , primary_key_names_positions(fillNamesPositions(storage_snapshot->metadata->getPrimaryKey().column_names))
     , storage_metadata(storage_snapshot->metadata)
     , log{log_}
@@ -414,6 +427,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         bool has_invalid_column = false;
         bool may_use_primary_index = true;
         bool viable = false;
+        bool expensive = false;
     };
 
     std::vector<ConjunctInfo> infos;
@@ -421,7 +435,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
 
     for (const auto & conjunct : conjuncts)
     {
-        ConjunctInfo info{conjunct, {}, {}, false, true, false};
+        ConjunctInfo info{conjunct, {}, {}, false, true, false, false};
         collectColumns(conjunct, nullptr, table_columns, info.columns, info.has_invalid_column, info.may_use_primary_index);
 
         /// Resolve each column to its physical storage name so that subcolumns
@@ -452,6 +466,8 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             && (info.columns.size() < queried_columns.size()
                 || (where_optimizer_context.apply_string_filters_during_scan && isConditionSuitableForStringValueFilter(conjunct, where_optimizer_context)));
 
+        info.expensive = isExpensiveExpression(conjunct);
+
         infos.push_back(std::move(info));
     }
 
@@ -461,6 +477,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     /// same column (e.g. `map.key_k0` and `map.key_k1`) in one group, so they are moved to
     /// PREWHERE together and arrive adjacent for the prewhere-splitting step.
     /// Non-viable conjuncts stay as individual Conditions.
+    /// 'expensive' conjuncts each get their own group.
     ///
     /// We use a simple linear search to find groups (WHERE clauses are short).
     struct Group
@@ -473,20 +490,29 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
     auto find_group_idx = [&](const NameSet & cols) -> std::optional<size_t>
     {
         for (size_t g = 0; g < groups.size(); ++g)
-            if (groups[g].storage_columns == cols)
+            if (groups[g].storage_columns == cols && !infos[groups[g].indices.front()].expensive)
                 return g;
         return std::nullopt;
     };
+
+    /// Index of the group of each viable conjunct.
+    std::vector<size_t> group_of(infos.size());
 
     for (size_t i = 0; i < infos.size(); ++i)
     {
         if (!infos[i].viable)
             continue;
-        auto g = find_group_idx(infos[i].storage_columns);
+        auto g = infos[i].expensive ? std::nullopt : find_group_idx(infos[i].storage_columns);
         if (!g.has_value())
+        {
+            group_of[i] = groups.size();
             groups.push_back({infos[i].storage_columns, {i}});
+        }
         else
+        {
+            group_of[i] = *g;
             groups[*g].indices.push_back(i);
+        }
     }
 
     /// Emit Conditions in the original AND-chain order:
@@ -515,8 +541,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         else
         {
             /// Emit the whole column-set group at the position of the first conjunct.
-            auto g_idx = find_group_idx(info.storage_columns);
-            const auto & group = groups[*g_idx];
+            const auto & group = groups[group_of[i]];
 
             for (size_t idx : group.indices)
                 emitted[idx] = true;
@@ -542,6 +567,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             cond.columns_size = getColumnsSize(group_columns);
             cond.viable = true;
             cond.good = group_good;
+            cond.expensive = info.expensive;
             cond.is_runtime_filter = group_is_runtime_filter;
 
             if (where_optimizer_context.use_statistics)
@@ -685,6 +711,10 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
         auto it = std::min_element(where_conditions.begin(), where_conditions.end());
 
         if (!it->viable)
+            break;
+
+        /// If any non-expensive conditions stay in WHERE then don't move expensive conditions to PREWHERE
+        if (it->expensive && std::ranges::any_of(where_conditions, [](const Condition & cond) { return !cond.expensive; }))
             break;
 
         if (!where_optimizer_context.move_all_conditions_to_prewhere)
@@ -1009,6 +1039,25 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, con
         if (where_optimizer_context.array_joined_names.contains(column_name) ||
             where_optimizer_context.array_joined_names.contains(Nested::extractTableName(column_name)) ||
             (table_columns.contains(column_name) && where_optimizer_context.is_final && !isSortingKey(column_name)))
+            return true;
+    }
+
+    return false;
+}
+
+bool MergeTreeWhereOptimizer::isExpensiveExpression(const RPNBuilderTreeNode & node)
+{
+    if (!node.isFunction())
+        return false;
+
+    auto function_node = node.toFunctionNode();
+    if (auto function_base = function_node.getFunctionBase(); function_base && function_base->isExpensive())
+        return true;
+
+    size_t arguments_size = function_node.getArgumentsSize();
+    for (size_t i = 0; i < arguments_size; ++i)
+    {
+        if (isExpensiveExpression(function_node.getArgumentAt(i)))
             return true;
     }
 

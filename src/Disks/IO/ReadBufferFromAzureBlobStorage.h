@@ -138,8 +138,6 @@ private:
 
     off_t offset = 0;
     size_t total_size{};
-    /// The size of the whole blob from the `Content-Range` of the last download response.
-    size_t blob_size_from_response = 0;
     bool initialized = false;
     char * data_ptr;
     size_t data_capacity;

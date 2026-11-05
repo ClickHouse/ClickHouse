@@ -2,10 +2,8 @@
 #include <shared_mutex>
 #include <Processors/TopKThresholdTracker.h>
 #include <Columns/Collator.h>
-#include <Columns/IColumn.h>
 #include <Core/CompareHelper.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/TypeTree.h>
 
 namespace DB
 {
@@ -90,13 +88,6 @@ template class TopKThresholdTrackerNumeric<UInt64>;
 template class TopKThresholdTrackerNumeric<Int64>;
 template class TopKThresholdTrackerNumeric<Float64>;
 
-TopKThresholdTrackerGeneric::TopKThresholdTrackerGeneric(const SortColumnDescription & sort_desc_, DataTypePtr data_type_)
-    : ITopKThresholdTracker(sort_desc_, std::move(data_type_))
-{
-    if (sort_desc.collator || anyInTypeTree(*data_type, [](const IDataType & node) { return node.isNullable() || isFloat(node); }))
-        empty_column = data_type->createColumn();
-}
-
 void TopKThresholdTrackerGeneric::testAndSet(const Field & value)
 {
     std::unique_lock lock(mutex);
@@ -149,13 +140,11 @@ int TopKThresholdTrackerGeneric::compareFields(const Field & lhs, const Field & 
     if (rhs_null)
         return -sort_desc.nulls_direction;
 
-    if (empty_column)
+    if (sort_desc.collator && lhs.getType() == Field::Types::String)
     {
-        auto column = empty_column->cloneEmpty();
-        column->insert(lhs);
-        column->insert(rhs);
-        return sort_desc.collator ? column->compareAtWithCollation(0, 1, *column, sort_desc.nulls_direction, *sort_desc.collator)
-                                  : column->compareAt(0, 1, *column, sort_desc.nulls_direction);
+        const auto & l = lhs.safeGet<String>();
+        const auto & r = rhs.safeGet<String>();
+        return sort_desc.collator->compare(l.data(), l.size(), r.data(), r.size());
     }
 
     if (lhs < rhs)

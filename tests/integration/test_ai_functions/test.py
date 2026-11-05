@@ -802,6 +802,54 @@ def test_filter_where(started_cluster):
     assert lines == ["also good", "great product"]
 
 
+PREWHERE_SETTINGS = {
+    "enable_analyzer": 1,
+    "optimize_move_to_prewhere": 1,
+    "move_all_conditions_to_prewhere": 1,
+    "allow_reorder_prewhere_conditions": 1,
+}
+
+
+def count_filter_calls(prefix, where):
+    """Runs `SELECT count()` over 16 rows, half of them with `flag = 1`, and returns the number of
+    rows and of AI requests."""
+    instance.query(
+        "CREATE TABLE IF NOT EXISTS prewhere_ai (flag UInt8, text String) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    instance.query("TRUNCATE TABLE prewhere_ai")
+    instance.query(
+        "INSERT INTO prewhere_ai SELECT number % 2, 'row ' || toString(number) FROM numbers(16)"
+    )
+    qid = unique_query_id(prefix)
+    rows = instance.query(
+        f"SELECT count() FROM prewhere_ai WHERE {where}",
+        query_id=qid,
+        settings=PREWHERE_SETTINGS,
+    )
+    return int(rows), int(get_profile_events(qid)["api_calls"])
+
+
+def test_filter_prewhere_after_cheap_condition(started_cluster):
+    """The AI condition is moved to PREWHERE after `flag = 1`, so only the rows passing it are sent."""
+    rows, api_calls = count_filter_calls(
+        "filter_prewhere_after_cheap",
+        "aiFilter(text, 'matches', map('credentials', 'ai_mock')) AND flag = 1",
+    )
+    assert rows == 8
+    assert api_calls == 8
+
+
+def test_filter_prewhere_behind_condition_left_in_where(started_cluster):
+    """`length(text) = flag` uses every queried column, so it stays in WHERE. The AI condition
+    stays there too and is evaluated only for the rows passing it, which are none."""
+    rows, api_calls = count_filter_calls(
+        "filter_prewhere_behind_where",
+        "length(text) = flag AND aiFilter(text, 'matches', map('credentials', 'ai_mock'))",
+    )
+    assert rows == 0
+    assert api_calls == 0
+
+
 def test_filter_truncated_response_throw(started_cluster):
     """aiFilter shares the FunctionBaseAI rejection path. A provider-signalled incomplete reply
     (here `finish_reason="length"`) is an error under the default `ai_function_throw_on_error=1`,

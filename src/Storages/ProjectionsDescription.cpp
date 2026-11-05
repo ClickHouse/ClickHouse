@@ -14,7 +14,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -609,40 +608,16 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
         is_aggregate = query_node.hasGroupBy() || hasAggregateFunctionNodes(query_tree);
 
-        ConvertToASTOptions ast_options;
-        ast_options.fully_qualified_identifiers = false;
-
         /// Expand aliases in projection ORDER BY using the Analyzer-resolved query tree.
         /// cloneToASTSelect() appends the ORDER BY expression as the last SELECT child,
         /// so the last resolved projection column has aliases fully expanded.
         if (projection_order_by)
         {
             auto & projection_nodes = query_node.getProjection().getNodes();
+            ConvertToASTOptions ast_options;
+            ast_options.fully_qualified_identifiers = false;
             projection_order_by = projection_nodes.back()->toAST(ast_options);
             projection_order_by->setAlias({});
-        }
-
-        /// An identifier in `WHERE` may refer to an alias of the query, not to the column: the rows are filtered
-        /// by the resolved `WHERE`, in which a substituted alias keeps its name.
-        if (result.where_clause_ast)
-            result.where_clause_ast = query_node.getWhere()->toAST(ast_options);
-    }
-
-    /// With `WHERE` the query runs to `WithMergeableState`, whose header holds the results of the `SELECT` expressions,
-    /// so the `ORDER BY` appended to `SELECT` is replaced with the columns it reads: the part stores those, not its result.
-    if (projection_order_by && result.where_clause_ast && !is_aggregate)
-    {
-        auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
-        const auto virtuals = metadata_snapshot->virtuals;
-        auto & select_list = result.query_ast->as<ASTSelectQuery &>().select()->children;
-        select_list.pop_back();
-        for (const auto & column :
-             KeyDescription::getKeyFromAST(projection_order_by, columns, virtuals, query_context).expression->getRequiredColumns())
-        {
-            /// A column of the source table, which an alias of the same name does not replace.
-            auto identifier = make_intrusive<ASTIdentifier>(column);
-            IdentifierSemantic::setMembership(*identifier, 0);
-            select_list.push_back(std::move(identifier));
         }
     }
 
@@ -924,12 +899,21 @@ Block ProjectionDescription::calculateByQuery(
     /// Now, projections do not support in on SELECT, and (with this change) should ignore on INSERT as well.
     mut_context->setSetting("aggregate_functions_null_for_empty", Field(0));
     mut_context->setSetting("transform_null_in", Field(0));
-    /// Building the metadata analyzes `query_ast` in place, which already replaces its positional arguments,
-    /// so resolving them again would re-interpret the integer literals they were replaced with.
-    mut_context->setSetting("enable_positional_arguments", false);
-    /// Analyze the projection query as an initial one, as its metadata is built, also when the data
-    /// comes from a remote `INSERT`, which is executed as a `SECONDARY_QUERY`.
+    const bool positional_arguments_for_projections = context->getSettingsRef()[Setting::enable_positional_arguments_for_projections];
+
+    /// Disable positional arguments. Positional references are unsafe/unsupported in this context (e.g., within
+    /// internal queries like those used for Projection definitions), as they rely on a fixed column order and alias
+    /// resolution that is neither guaranteed nor sensible here.
+    ///
+    /// Setting `enable_positional_arguments_for_projections` may enable positional arguments for projections.
+    /// It is needed for compatibility with existing projections that use positional arguments to allow successful cluster upgrade.
+    mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
+    /// The Analyzer does not resolve positional arguments in a `SECONDARY_QUERY` or in a context
+    /// where the initiator has already resolved them, because it expects that to be done by the
+    /// initiator. A projection query is never resolved by the initiator, and the data may come
+    /// from a remote `INSERT`, so the projection query is always analyzed as an initial one.
     mut_context->setQueryKindInitial();
+    mut_context->setPositionalArgumentsAlreadyResolved(false);
 
     ASTPtr query_ast_copy = nullptr;
 

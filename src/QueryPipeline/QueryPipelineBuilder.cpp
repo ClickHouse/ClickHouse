@@ -739,6 +739,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
     OutputPortRawPtrs joined_output_ports;
     OutputPortRawPtrs delayed_root_output_ports;
+    OutputPortRawPtrs non_joined_output_ports;
 
     std::shared_ptr<DelayedJoinedBlocksTransform> delayed_root = nullptr;
     if (join->hasDelayedBlocks())
@@ -756,8 +757,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             delayed_root_output_ports.emplace_back(&outport);
     }
 
-    /// When true, non-joined rows are emitted by separate NonJoinedBlocksTransform sources in parallel,
-    /// which a DelayedPortsProcessor starts after all JoiningTransforms (and so all delayed blocks) finish.
+    /// When true, non-joined rows are emitted by separate NonJoinedBlocksTransform sources in parallel.
+    /// Can be combined with delayed_root: in that case two DelayedPorts are created:
+    ///  - the first for the DelayedJoinedBlocksWorkerTransforms until all JoiningTransforms finish
+    ///  - the second for the NonJoinedBlocksTransforms until the first DelayedPorts finishes
     bool use_parallel_non_joined = join->supportParallelNonJoinedBlocksProcessing();
 
     /// When delayed blocks exist, JoiningTransform still needs non-joined rows emission for the main bucket (GraceHashJoin spilled case).
@@ -787,7 +790,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         connect(**rit, joining->getInputs().back());
         if (delayed_root)
         {
-            // The JoiningTransform forwards the delayed joined blocks of its worker after its own rows.
+            // Process delayed joined blocks when all JoiningTransform are finished.
             auto delayed = std::make_shared<DelayedJoinedBlocksWorkerTransform>(
                 output_header,
                 [left_header, output_header, max_block_size, join]()
@@ -796,12 +799,23 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "DelayedJoinedBlocksWorkerTransform should have one input and one output");
 
             connect(*delayed_root_output_ports[i], delayed->getInputs().front());
-            connect(delayed->getOutputs().front(), joining->addDelayedBlocksInput());
+
+            joined_output_ports.push_back(&joining->getOutputs().front());
+            joined_output_ports.push_back(&delayed->getOutputs().front());
 
             add_to_left_pipe(std::move(delayed));
-        }
 
-        if (use_parallel_non_joined)
+            if (use_parallel_non_joined)
+            {
+                auto non_joined = std::make_shared<NonJoinedBlocksTransform>(
+                    output_header, join, *left_header, max_block_size, i, num_streams);
+
+                non_joined_output_ports.push_back(&non_joined->getPort());
+
+                add_to_left_pipe(std::move(non_joined));
+            }
+        }
+        else if (use_parallel_non_joined)
         {
             /// Parallel non-joined source, activated by DelayedPortsProcessor after all probing finishes
             auto non_joined = std::make_shared<NonJoinedBlocksTransform>(
@@ -823,9 +837,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         add_to_left_pipe(std::move(joining));
     }
 
-    if (use_parallel_non_joined)
+    if (delayed_root || use_parallel_non_joined)
     {
-        // Process NonJoinedBlocksTransforms after all JoiningTransforms.
+        // Process DelayedJoinedBlocksTransform after all JoiningTransforms.
         VectorWithMemoryTracking<UInt64> delayed_ports_numbers;
         delayed_ports_numbers.reserve(joined_output_ports.size() / 2);
         for (size_t i = 1; i < joined_output_ports.size(); i += 2)
@@ -834,7 +848,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         auto delayed_processor = std::make_shared<DelayedPortsProcessor>(output_header, 2 * num_streams, delayed_ports_numbers);
         add_to_left_pipe(delayed_processor);
 
-        // Connect @delayed_processor ports with inputs (JoiningTransforms & NonJoinedBlocksTransforms) / pipe outputs
+        // Connect @delayed_processor ports with inputs (JoiningTransforms & DelayedJoinedBlocksTransforms) / pipe outputs
         auto next_delayed_input = delayed_processor->getInputs().begin();
         for (OutputPort * port : joined_output_ports)
             connect(*port, *next_delayed_input++);
@@ -843,6 +857,32 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             left->pipe.output_ports.push_back(&port);
         left->pipe.header = output_header;
         left->resize(num_streams);
+
+        // Second DelayedPortsProcessor: when both delayed blocks and parallel non-joined are active,
+        // delays the NonJoinedBlocksTransforms until all delayed-block workers finish.
+        if (delayed_root && use_parallel_non_joined)
+        {
+            VectorWithMemoryTracking<UInt64> non_joined_delayed_ports;
+            non_joined_delayed_ports.reserve(num_streams);
+            for (size_t i = 0; i < num_streams; ++i)
+                non_joined_delayed_ports.push_back(2 * i + 1);
+
+            auto non_joined_processor = std::make_shared<DelayedPortsProcessor>(
+                output_header, 2 * num_streams, non_joined_delayed_ports);
+            add_to_left_pipe(non_joined_processor);
+
+            auto next_input = non_joined_processor->getInputs().begin();
+            for (size_t i = 0; i < num_streams; ++i)
+            {
+                connect(*left->pipe.output_ports[i], *next_input++);
+                connect(*non_joined_output_ports[i], *next_input++);
+            }
+            left->pipe.output_ports.clear();
+            for (OutputPort & port : non_joined_processor->getOutputs())
+                left->pipe.output_ports.push_back(&port);
+            left->pipe.header = output_header;
+            left->resize(num_streams);
+        }
     }
 
     if (left->hasTotals())

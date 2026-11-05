@@ -59,8 +59,8 @@ namespace DB
   * without hard links is unchanged.
   *
   * The explicit form cannot be read by servers older than the version that introduced it, so a disk that has it is not readable
-  * after a downgrade. Therefore the creation of hard links can be disabled by the `enable_hard_links` setting of the disk
-  * (on by default); with hard links disabled, `createHardLink` copies the blob, as it did before, and no directory ever
+  * after a downgrade. Therefore the creation of hard links is off by default and has to be enabled by the `enable_hard_links`
+  * setting of the disk; with hard links disabled, `createHardLink` copies the blob, as it did before, and no directory ever
   * switches to the explicit form. The explicit form is always *read*, so a disk written with hard links enabled stays usable
   * after they are disabled again.
   */
@@ -83,9 +83,6 @@ public:
     bool areBlobPathsRandom() const override { return false; }
     bool isPlain() const override { return true; }
     bool isWriteOnce() const override { return false; }
-    /// Blobs are removed right in the transaction, and there is nothing to replicate.
-    bool hasDeadBlobsQueue() const override { return false; }
-    bool hasMissingBlobsQueue() const override { return false; }
     bool supportsHardLinks() const override { return hard_links_enabled; }
 
     MetadataTransactionPtr createTransaction() override;
@@ -116,7 +113,7 @@ private:
     const std::string storage_path_prefix;
     const std::string storage_path_full;
     /// Real hard links require the explicit form of `prefix.path`, which older servers cannot read,
-    /// so they can be disabled by the `enable_hard_links` setting of the disk. See the comment above.
+    /// so they are enabled by the `enable_hard_links` setting of the disk. See the comment above.
     /// The setting is startup-only (`applyNewSettings` is not overridden): `DiskObjectStorage::applyNewSettings` passes the
     /// config prefix of the outer disk, which is not the prefix of this one when the disk is wrapped with a cache, so a reload
     /// would read the setting from the wrong place. Changing it requires a restart, as a downgrade does anyway.

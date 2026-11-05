@@ -733,8 +733,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
     std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
 
-    const bool check_aliases = !isReplayedTableDefinition(args.mode, args.query, args.getLocalContext());
-
     if (is_extended_storage_def)
     {
         ASTPtr partition_by_key;
@@ -1034,6 +1032,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             for (const auto & index : args.query.columns_list->indices->children)
             {
+                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
 
                 auto using_auto_minmax_index =
@@ -1047,21 +1046,19 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     if (args.mode <= LoadingStrictnessLevel::CREATE)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create table because index {} uses a reserved index name", index_name);
 
-                    /// Backward compatibility: older versions (before 25.12) stored implicit indices on disk
-                    /// as regular indices. Skip one identical to the index generated below, keep any other one.
+                    /// Backward compatibility: older versions (before 25.12) stored implicit indices
+                    /// on disk as regular indices. Re-mark them so `explicitToString` excludes them.
+                    auto & added = metadata.secondary_indices.back();
                     String col_name = index_name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX));
                     if (columns.has(col_name))
                     {
                         const auto & col_type = columns.get(col_name).type;
-                        if (((metadata.add_minmax_index_for_numeric_columns && isNumber(col_type))
-                                || (metadata.add_minmax_index_for_string_columns && isString(col_type))
-                                || (metadata.add_minmax_index_for_temporal_columns && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(col_type)))
-                            && index->formatWithSecretsOneLine() == createImplicitMinMaxIndexAST(col_name)->formatWithSecretsOneLine())
-                            continue;
+                        if ((metadata.add_minmax_index_for_numeric_columns && isNumber(col_type))
+                            || (metadata.add_minmax_index_for_string_columns && isString(col_type))
+                            || (metadata.add_minmax_index_for_temporal_columns && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(col_type)))
+                            added.is_implicitly_created = true;
                     }
                 }
-
-                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
             }
         }
 
@@ -1071,16 +1068,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             metadata.addImplicitIndicesForColumn(column, context);
         }
         metadata.addImplicitIndicesForVirtualColumns(context);
-
-        /// The expression and the text index transforms of an index have the ALIAS columns they use expanded.
-        if (check_aliases)
-        {
-            for (const auto & index : metadata.secondary_indices)
-            {
-                KeyDescription::checkNoAlias(index.expression_list_ast.get(), "INDEX " + index.name);
-                KeyDescription::checkNoAlias(index.arguments.get(), "INDEX " + index.name);
-            }
-        }
 
         String statistics_types_str = (*storage_settings)[MergeTreeSetting::auto_statistics_types];
 
@@ -1144,8 +1131,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// If there is an expression for sampling
         if (arg_cnt - arg_num == 3)
         {
-            if (check_aliases)
-                KeyDescription::checkNoAlias(engine_args[arg_num].get(), "SAMPLE BY");
             metadata.sampling_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, metadata.virtuals, context);
             ++arg_num;
         }
@@ -1159,8 +1144,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (merging_param_key_arg)
             additional_columns.emplace_back(*merging_param_key_arg, metadata.columns.getPhysical(*merging_param_key_arg).type);
 
-        if (check_aliases)
-            KeyDescription::checkNoAlias(engine_args[arg_num].get(), "PRIMARY KEY");
         metadata.sorting_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, metadata.virtuals, context, additional_columns);
 
         if (!local_settings[Setting::allow_suspicious_primary_key] && args.mode <= LoadingStrictnessLevel::CREATE)

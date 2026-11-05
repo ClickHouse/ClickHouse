@@ -13,8 +13,6 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <Poco/Util/MapConfiguration.h>
-#include <Poco/Util/SystemConfiguration.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
@@ -72,7 +70,6 @@
 #include <Common/HTTPConnectionPool.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
-#include <Server/ConnectionRegistry.h>
 #include <Server/createServer.h>
 #include <Server/StartupWarnings.h>
 #include <Server/socketBindListen.h>
@@ -278,7 +275,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt32 dns_max_consecutive_failures;
     extern const ServerSettingsBool enable_azure_sdk_logging;
     extern const ServerSettingsBool enable_silk_runtime;
-    extern const ServerSettingsBool enable_gpu;
     extern const ServerSettingsUInt64 global_profiler_cpu_time_period_ns;
     extern const ServerSettingsUInt64 global_profiler_real_time_period_ns;
     extern const ServerSettingsUInt64 http_connections_soft_limit;
@@ -429,7 +425,6 @@ namespace ServerSetting
     extern const ServerSettingsBool cpu_slot_preemption;
     extern const ServerSettingsUInt64 cpu_slot_quantum_ns;
     extern const ServerSettingsUInt64 cpu_slot_preemption_timeout_ms;
-    extern const ServerSettingsBool cpu_slot_parking;
     extern const ServerSettingsString uncompressed_cache_policy;
     extern const ServerSettingsUInt64 uncompressed_cache_size;
     extern const ServerSettingsDouble uncompressed_cache_size_ratio;
@@ -465,7 +460,6 @@ namespace ServerSetting
     extern const ServerSettingsFloat max_os_cpu_wait_time_ratio_to_drop_connection;
     extern const ServerSettingsBool skip_binary_checksum_checks;
     extern const ServerSettingsBool abort_on_logical_error;
-    extern const ServerSettingsBool collect_connection_metrics;
     extern const ServerSettingsUInt64 jemalloc_flush_profile_interval_bytes;
     extern const ServerSettingsUInt64 jemalloc_merge_tree_arenas;
     extern const ServerSettingsBool jemalloc_flush_profile_on_memory_exceeded;
@@ -874,13 +868,6 @@ int Server::run()
 
 void Server::initialize(Poco::Util::Application & self)
 {
-    Poco::AutoPtr<Poco::Util::MapConfiguration> properties(new Poco::Util::MapConfiguration);
-    Poco::Util::AbstractConfiguration::Keys property_keys;
-    config().keys("application", property_keys);
-    for (const auto & key : property_keys)
-        properties->setString("application." + key, config().getRawString("application." + key));
-    application_properties = properties;
-
     ConfigProcessor::registerEmbeddedConfig("config.xml", std::string_view(reinterpret_cast<const char *>(resource_embedded_xml), std::size(resource_embedded_xml)));
     BaseDaemon::initialize(self);
     logger().information("starting up");
@@ -2295,15 +2282,6 @@ try
     }
     global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size, uncompressed_cache_size_ratio);
 
-    if (server_settings[ServerSetting::enable_gpu])
-    {
-#if USE_GPU
-        global_context->setGPU(server_settings);
-#else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server setting `enable_gpu` is set, but the server is built without GPU support");
-#endif
-    }
-
     String mark_cache_policy = server_settings[ServerSetting::mark_cache_policy];
     size_t mark_cache_size = server_settings[ServerSetting::mark_cache_size];
     double mark_cache_size_ratio = server_settings[ServerSetting::mark_cache_size_ratio];
@@ -2659,15 +2637,6 @@ try
                     incoming_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
             }
 
-            /// The Prometheus check below, the reloaders and `latest_config` keep the configuration they are given, so it must have
-            /// the command line on top of the file and, like `config()`, resolve `${application.*}` and `${system.*}` references.
-            Poco::AutoPtr<Poco::Util::LayeredConfiguration> file_and_command_line(new Poco::Util::LayeredConfiguration);
-            file_and_command_line->add(loaded_config, PRIO_DEFAULT);
-            argsToConfig(argv(), *file_and_command_line, PRIO_APPLICATION - 100);
-            file_and_command_line->add(application_properties, PRIO_APPLICATION, /* shared */ true);
-            file_and_command_line->add(new Poco::Util::SystemConfiguration, PRIO_SYSTEM, /* shared */ false);
-            const ConfigurationPtr reload_config = file_and_command_line;
-
             /// Fail closed on a Prometheus constant label that collides with a label an endpoint writes
             /// itself. `asynchronous_metrics_key_values_mode` takes part in this check, because it decides
             /// whether the key of a key-value asynchronous metric is written as a label (`device="sda"`),
@@ -2677,7 +2646,7 @@ try
             /// so validating afterwards would leave a rejected reload publishing the new form while the
             /// endpoints keep serving with the labels of the old one.
             validatePrometheusConstantLabels(
-                *reload_config, servedHTTPHandlersKeys(*reload_config), hasPrometheusListener(*reload_config));
+                *loaded_config, servedHTTPHandlersKeys(*loaded_config), hasPrometheusListener(*loaded_config));
 
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
@@ -2693,8 +2662,6 @@ try
                 new_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
 
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
-
-            ConnectionRegistry::instance().setEnabled(new_server_settings[ServerSetting::collect_connection_metrics]);
 
             /// The seccomp filter cannot be changed once installed; `system.server_settings` keeps showing the mode in force.
             if (const auto requested_seccomp_mode = getRequestedSeccompMode();
@@ -2794,8 +2761,6 @@ try
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
             updateLevels(config(), logger());
-            /// File-only, so `remote_servers` ignores the command line: `Cluster` takes the server's own `tcp_port` from this configuration
-            /// to find its local replicas, and with `-- --tcp_port` the replicas on the file's port would become remote.
             global_context->setClustersConfig(loaded_config, has_zookeeper);
             global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
             global_context->setExternalAuthenticatorsConfig(config());
@@ -2982,7 +2947,6 @@ try
                 new_server_settings[ServerSetting::cpu_slot_preemption],
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
-            global_context->setCPUSlotParking(new_server_settings[ServerSetting::cpu_slot_parking]);
 
             /// The thresholds were validated above, so a rejected reload never reaches here. Sets and stamps
             /// the shared thresholds, so every monitor adopts them on its next sample,
@@ -3007,11 +2971,11 @@ try
             {
                 /// We do not load ZooKeeper configuration on the first config loading
                 /// because TestKeeper server is not started yet.
-                if (zkutil::hasZooKeeperConfig(*reload_config))
-                    global_context->reloadZooKeeperIfChanged(reload_config);
+                if (zkutil::hasZooKeeperConfig(config()))
+                    global_context->reloadZooKeeperIfChanged(loaded_config);
 
-                global_context->reloadAuxiliaryZooKeepersConfigIfChanged(reload_config);
-                global_context->reloadQueryMaskingRulesIfChanged(reload_config);
+                global_context->reloadAuxiliaryZooKeepersConfigIfChanged(loaded_config);
+                global_context->reloadQueryMaskingRulesIfChanged(loaded_config);
 
                 if (global_context->isServerCompletelyStarted())
                 {
@@ -3066,7 +3030,6 @@ try
             CertificateReloader::instance().tryReloadAll(config());
 #endif
             CompressionCodecEncrypted::Configuration::instance().tryLoad(config(), "encryption_codecs");
-            global_context->reloadStatelessWorkersConfig(config());
             NamedCollectionFactory::instance().reloadFromConfig(config());
             FileCacheFactory::instance().updateSettingsFromConfig(config());
 
@@ -3123,7 +3086,7 @@ try
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
             /// Must be the last.
-            latest_config = reload_config;
+            latest_config = loaded_config;
         });
 
     const auto listen_hosts = getListenHosts(config());
@@ -3913,11 +3876,8 @@ try
             stop_oom_canary();
 
             /// Killing remaining queries.
-            /// In wait mode the DDL worker's parts of ON CLUSTER backups and restores are spared, and waited for below.
-            /// Any other backup or restore that missed the wait above is cancelled: an initiator's own part needs this host's DDL worker.
-            const bool wait_backups_and_restores = server_settings[ServerSetting::shutdown_wait_backups_and_restores];
             if (!server_settings[ServerSetting::shutdown_wait_unfinished_queries])
-                global_context->getProcessList().killAllQueries(/* except_ddl_backups_and_restores= */ wait_backups_and_restores);
+                global_context->getProcessList().killAllQueries();
 
             size_t wait_limit_seconds = server_settings[ServerSetting::shutdown_wait_unfinished];
             auto wait_start = std::chrono::steady_clock::now();
@@ -3959,14 +3919,6 @@ try
                 /// No leak check: remaining connection handlers, refresh tasks or background queries still own memory
                 /// it would report as leaked. Reported, because here stderr is the server log.
                 safeExit(0, LeakCheck::SkipAndReport);
-            }
-
-            /// Before the AsyncLoader stops, because a restore can create a database, and after the forced exit, because stopping
-            /// the DDL worker waits for the task it runs, which the kill cancels unless it is such a part.
-            if (wait_backups_and_restores)
-            {
-                global_context->getProcessList().killAllQueries(/* except_ddl_backups_and_restores= */ true);
-                global_context->stopDDLWorkerAndWaitAllBackupsAndRestores();
             }
         });
 

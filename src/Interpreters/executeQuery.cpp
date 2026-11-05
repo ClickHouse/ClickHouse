@@ -37,6 +37,7 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -163,7 +164,6 @@ namespace ProfileEvents
     extern const Event ASTFuzzerSkippedBackupRestore;
     extern const Event ASTFuzzerSkippedReplicatedDDLInternal;
     extern const Event ASTFuzzerSkippedCollaborativeWorker;
-    extern const Event ASTFuzzerSkippedSecondaryQuery;
     extern const Event QueryParseMicroseconds;
 }
 
@@ -2771,7 +2771,6 @@ static BlockIO executeQueryImpl(
     BlockIO res;
     String query_database;
     String query_table;
-    bool background_query_dispatched = false;
 
     try
     {
@@ -2896,9 +2895,7 @@ static BlockIO executeQueryImpl(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "A query whose data streams over the connection cannot be run in the background");
 
-                auto background_query_execution_started = executeQueryInBackground(std::string_view(begin, end), context);
-                background_query_dispatched = true;
-                background_query_execution_started.get();
+                executeQueryInBackground(std::string_view(begin, end), out_ast, context);
                 BlockIO io;
                 io.dispatched = true;
                 return io;
@@ -3283,10 +3280,7 @@ static BlockIO executeQueryImpl(
                 }
 
                 if (out_ast)
-                    interpreter = InterpreterFactory::instance().get(
-                        out_ast,
-                        context,
-                        SelectQueryOptions(stage).setInternal(internal).positionalArgumentsAlreadyResolved(!internal && is_secondary_query));
+                    interpreter = InterpreterFactory::instance().get(out_ast, context, SelectQueryOptions(stage).setInternal(internal));
 
                 const auto & query_settings = context->getSettingsRef();
                 if (interpreter && context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
@@ -3573,8 +3567,7 @@ static BlockIO executeQueryImpl(
             txn->onException();
         }
 
-        if (!background_query_dispatched)
-            logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal);
 
         throw;
     }
@@ -3655,14 +3648,6 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         return;
     }
 
-    /// Any other secondary query's context still holds the callbacks its initiator installed (e.g. the read-task
-    /// callback of a cluster function), which a fuzzed copy must not call. The initiator fuzzes its own query.
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-    {
-        ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedSecondaryQuery);
-        return;
-    }
-
     size_t num_runs = static_cast<size_t>(ast_fuzzer_runs_value);
     double fractional = ast_fuzzer_runs_value - static_cast<double>(num_runs);
     if (fractional > 0)
@@ -3685,8 +3670,6 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
     /// the deadline/KILL check via checkTimeLimitSoft is unavailable; the shutdown metric still
     /// stops the loop in that case.
     QueryStatusPtr process_list_element = context->getProcessListElement();
-    /// Fuzzed queries run without the client's progress callback, which is where HTTP checks for a disconnected client.
-    auto client_connected = context->getClientConnectedCallback();
 
     ASTPtr base_ast = ast;
 
@@ -3702,12 +3685,6 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         if (process_list_element && !process_list_element->checkTimeLimitSoft())
         {
             LOG_TRACE(logger, "Stopping AST fuzzer: outer query was killed or timed out");
-            break;
-        }
-
-        if (client_connected && !client_connected())
-        {
-            LOG_TRACE(logger, "Stopping AST fuzzer: the client has disconnected");
             break;
         }
 
@@ -3816,17 +3793,6 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             fuzz_context = Context::createCopy(fuzz_session_context);
             fuzz_context->makeQueryContext();
             fuzz_context->resetInputCallbacks();
-            /// The copy inherits the client's progress callbacks; fuzzed queries must not report into the seed's response.
-            /// The oracle's queries run on copies of this context, so they get the client check from here.
-            ProgressCallback stop_on_client_disconnect;
-            if (client_connected)
-                stop_on_client_disconnect = [client_connected](const Progress &)
-                {
-                    if (!client_connected())
-                        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "The client has disconnected");
-                };
-            fuzz_context->setProgressCallback(std::move(stop_on_client_disconnect));
-            fuzz_context->setFileProgressCallback({});
             fuzz_context->clearTableFunctionResults();
             fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
             fuzz_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
@@ -3866,6 +3832,8 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             /// Run the fuzzed query on its own thread group, so that code reading the query context
             /// from the thread (read/write settings, temporary data, distributed plan execution, ...)
             /// sees the fuzz context and the limits pinned above instead of the outer query's.
+            /// The oracle's nested queries run on `fuzz_context` too, so keep the switcher alive
+            /// across them as well.
             ThreadGroupSwitcher thread_group_switcher(
                 ThreadGroup::createForQuery(fuzz_context), ThreadName::AST_FUZZER, /*allow_existing_group=*/ true);
 
@@ -3902,13 +3870,11 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
                         /// wall-clock deadline, and cancel the executor (it runs on a separate thread).
                         Stopwatch fuzzed_query_watch;
                         executor.setCancelCallback(
-                            [&fuzzed_query_watch, &process_list_element, &client_connected]()
+                            [&fuzzed_query_watch, &process_list_element]()
                             {
                                 if (CurrentMetrics::get(CurrentMetrics::IsServerShuttingDown))
                                     return true;
                                 if (process_list_element && !process_list_element->checkTimeLimitSoft())
-                                    return true;
-                                if (client_connected && !client_connected())
                                     return true;
                                 return fuzzed_query_watch.elapsedMilliseconds() > 30000;
                             },
@@ -4247,8 +4213,32 @@ void setFramingQueues(IFramingFormat & framing, const ContextMutablePtr & contex
 
 }
 
-std::future<void> executeQueryInBackground(std::string_view query, ContextMutablePtr context)
+void executeQueryInBackground(std::string_view query, const ASTPtr & ast, ContextMutablePtr context)
 {
+    /// Best-effort check that INSERT/OPTIMIZE query's target table exists.
+    /// (For other queries, it's not trivial to check this).
+    {
+        std::optional<StorageID> target_table_id;
+
+        if (const auto * insert_query = ast->as<ASTInsertQuery>();
+            insert_query && !insert_query->table_function)
+        {
+            if (insert_query->table_id)
+                target_table_id = insert_query->table_id;
+            else if (auto table = insert_query->getTable(); !table.empty())
+                target_table_id = StorageID{insert_query->getDatabase(), table};
+        }
+        else if (const auto * optimize_query = ast->as<ASTOptimizeQuery>();
+            optimize_query && optimize_query->cluster.empty())
+        {
+            if (auto table = optimize_query->getTable(); !table.empty())
+                target_table_id = StorageID{optimize_query->getDatabase(), table};
+        }
+
+        if (target_table_id)
+            DatabaseCatalog::instance().getTable(context->resolveStorageID(*target_table_id), context);
+    }
+
     const auto & settings = context->getSettingsRef();
     if (settings[Setting::implicit_transaction] && settings[Setting::throw_on_unsupported_query_inside_transaction])
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Background queries with 'implicit_transaction' are not supported");
@@ -4260,34 +4250,7 @@ std::future<void> executeQueryInBackground(std::string_view query, ContextMutabl
     auto background_context = Context::createCopy(context);
     background_context->makeQueryContext();
 
-    struct ExecutionStart
-    {
-        std::promise<void> promise;
-        std::atomic<bool> fulfilled{false};
-
-        ~ExecutionStart()
-        {
-            if (!fulfilled.exchange(true))
-                promise.set_exception(std::make_exception_ptr(Exception(ErrorCodes::ABORTED, "Server is shutting down")));
-        }
-
-        void setStarted()
-        {
-            if (!fulfilled.exchange(true))
-                promise.set_value();
-        }
-
-        void setException(std::exception_ptr exception)
-        {
-            if (!fulfilled.exchange(true))
-                promise.set_exception(exception);
-        }
-    };
-
-    auto background_query_execution_started = std::make_shared<ExecutionStart>();
-    background_context->setQueryExecutionStartedCallback([background_query_execution_started] { background_query_execution_started->setStarted(); });
-
-    context->getBackgroundQueryPool().scheduleOrThrow([query_text = String(query), background_context, background_query_execution_started]
+    context->getBackgroundQueryPool().scheduleOrThrow([query_text = String(query), background_context]
     {
         try
         {
@@ -4296,7 +4259,6 @@ std::future<void> executeQueryInBackground(std::string_view query, ContextMutabl
             SCOPE_EXIT_SAFE(thread_group->memory_tracker.logPeakMemoryUsage());
 
             auto io = executeQuery(query_text, background_context, QueryFlags{ .background = true }).second;
-            background_context->onQueryExecutionStarted();
             try
             {
                 if (io.pipeline.initialized())
@@ -4330,11 +4292,8 @@ std::future<void> executeQueryInBackground(std::string_view query, ContextMutabl
         catch (...)
         {
             tryLogCurrentException("executeQueryInBackground");
-            background_query_execution_started->setException(std::current_exception());
         }
     });
-
-    return background_query_execution_started->promise.get_future();
 }
 
 void executeQuery(
@@ -4561,8 +4520,6 @@ void executeQuery(
         result_details.timezone = DateLUT::instance().getTimeZone();
         throw;
     }
-
-    context->onQueryExecutionStarted();
 
     /// The timezone was already set before query was processed,
     /// But `session_timezone` setting could be modified in the query itself, so we update the value.

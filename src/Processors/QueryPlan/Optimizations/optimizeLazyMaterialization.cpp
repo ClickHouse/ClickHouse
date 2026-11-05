@@ -17,7 +17,6 @@
 #include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
 #include <Processors/QueryPlan/LazilyReadFromFile.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
-#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Storages/StorageFile.h>
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
 #include <Processors/Transforms/LazyMaterializingTransform.h>
@@ -395,7 +394,7 @@ static IQueryPlanStep * findReadingStep(QueryPlan::Node & node, StepStack & back
     backward_path.push_back(step);
 
     if (typeid_cast<ReadFromMergeTree *>(step) || typeid_cast<ReadFromObjectStorageStep *>(step)
-        || typeid_cast<ReadFromFile *>(step) || typeid_cast<ReadFromMemoryStorageStep *>(step))
+        || typeid_cast<ReadFromFile *>(step))
         return step;
 
     if (node.children.size() != 1)
@@ -479,7 +478,6 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     auto * merge_tree_reading_step = typeid_cast<ReadFromMergeTree *>(reading_step);
     auto * object_storage_reading_step = typeid_cast<ReadFromObjectStorageStep *>(reading_step);
     auto * file_reading_step = typeid_cast<ReadFromFile *>(reading_step);
-    auto * memory_reading_step = typeid_cast<ReadFromMemoryStorageStep *>(reading_step);
 
     if (merge_tree_reading_step && !canUseLazyMaterializationForReadingStep(merge_tree_reading_step))
         return false;
@@ -490,9 +488,6 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
     if (file_reading_step
         && !(settings.optimize_lazy_materialization_for_file && file_reading_step->canUseLazyMaterialization()))
-        return false;
-
-    if (memory_reading_step && !memory_reading_step->canUseLazyMaterialization())
         return false;
 
     if (!allExpressionsSuitableForLazyMaterialization(chain_top_node))
@@ -563,8 +558,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get());
     auto * read_from_object_storage = typeid_cast<ReadFromObjectStorageStep *>(node->step.get());
     auto * read_from_file = typeid_cast<ReadFromFile *>(node->step.get());
-    auto * read_from_memory = typeid_cast<ReadFromMemoryStorageStep *>(node->step.get());
-    if (node->step.get() != reading_step || (!read_from_merge_tree && !read_from_object_storage && !read_from_file && !read_from_memory))
+    if (node->step.get() != reading_step || (!read_from_merge_tree && !read_from_object_storage && !read_from_file))
         return false;
 
     /// (typeid_cast to the intermediate base class SourceStepWithFilter would return nullptr
@@ -579,14 +573,9 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         if (read_from_object_storage->getPrewhereInfo() || read_from_object_storage->getRowLevelFilter())
             has_filter = true;
     }
-    else if (read_from_file)
-    {
-        if (read_from_file->getPrewhereInfo() || read_from_file->getRowLevelFilter())
-            has_filter = true;
-    }
     else
     {
-        if (read_from_memory->getPrewhereInfo() || read_from_memory->getRowLevelFilter())
+        if (read_from_file->getPrewhereInfo() || read_from_file->getRowLevelFilter())
             has_filter = true;
     }
 
@@ -598,7 +587,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     /// Without a sorting step, defer columns only for FINAL with a filter: the filter cannot
     /// be moved to PREWHERE (it would run before the FINAL merge and change its result), so
     /// this is the only way to avoid reading all columns for every scanned row. For non-FINAL
-    /// reads, PREWHERE already covers this shape. Object storage, file and memory reads have no FINAL,
+    /// reads, PREWHERE already covers this shape. Object storage and file reads have no FINAL,
     /// so the no-sorting case never applies to them.
     if (!sorting_step && (!read_from_merge_tree || !read_from_merge_tree->isQueryWithFinal() || !has_filter))
         return false;
@@ -606,7 +595,6 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     std::unique_ptr<LazilyReadFromMergeTree> merge_tree_lazy_reading;
     std::unique_ptr<LazilyReadFromObjectStorage> object_storage_lazy_reading;
     std::unique_ptr<LazilyReadFromFile> file_lazy_reading;
-    std::unique_ptr<LazilyReadFromMemoryStorage> memory_lazy_reading;
     {
         auto initial_header = reading_step->getOutputHeader();
         const auto & cols = initial_header->getColumnsWithTypeAndName();
@@ -643,16 +631,10 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
             if (!object_storage_lazy_reading)
                 return false;
         }
-        else if (read_from_file)
+        else
         {
             file_lazy_reading = read_from_file->keepOnlyRequiredColumnsAndCreateLazyReadStep(required_names);
             if (!file_lazy_reading)
-                return false;
-        }
-        else
-        {
-            memory_lazy_reading = read_from_memory->keepOnlyRequiredColumnsAndCreateLazyReadStep(required_names);
-            if (!memory_lazy_reading)
                 return false;
         }
 
@@ -706,7 +688,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     main_plan.addStep(std::move(node->step));
 
     /// For MergeTree, `__global_row_index` is calculated from the `_part_starting_offset` and
-    /// `_part_offset` virtual columns; for object storage, file and memory reads the reading step
+    /// `_part_offset` virtual columns; for object storage and file reads the reading step
     /// produces it directly.
     if (read_from_merge_tree)
     {
@@ -771,19 +753,12 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         lazy_materializing_rows = std::move(object_storage_rows);
         lazy_plan.addStep(std::move(object_storage_lazy_reading));
     }
-    else if (read_from_file)
+    else
     {
         auto file_rows = std::make_shared<FileLazyMaterializingRows>(read_from_file->getLazyRowIndexRegistry());
         file_lazy_reading->setLazyMaterializingRows(file_rows);
         lazy_materializing_rows = std::move(file_rows);
         lazy_plan.addStep(std::move(file_lazy_reading));
-    }
-    else
-    {
-        auto memory_rows = std::make_shared<MemoryLazyMaterializingRows>();
-        memory_lazy_reading->setLazyMaterializingRows(memory_rows);
-        lazy_materializing_rows = std::move(memory_rows);
-        lazy_plan.addStep(std::move(memory_lazy_reading));
     }
 
     const auto & lhs_plan_header = main_plan.getCurrentHeader();
