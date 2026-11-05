@@ -3389,13 +3389,19 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
     res.part->setState(to_state);
 
-    DataPartIteratorByInfo it;
+    /// The part that is already indexed under the same name. It is copied while `part_loading_mutex` is held:
+    /// under `leader_election` the follower retirement passes may erase its index node concurrently with this
+    /// load, so the iterator must not be dereferenced after the mutex is released.
+    DataPartPtr existing_part;
     bool inserted = false;
 
     {
         std::lock_guard lock(part_loading_mutex);
         LOG_TEST(log, "loadDataPart: inserting {} into data_parts_indexes", res.part->getNameWithState());
+        DataPartIteratorByInfo it;
         std::tie(it, inserted) = data_parts_indexes.insert(res.part);
+        if (!inserted)
+            existing_part = *it;
     }
 
     /// Remove duplicate parts with the same checksum.
@@ -3406,8 +3412,8 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         /// takeover scan has loaded a replacement directory with the same name (the block numbers are reused after
         /// the table becomes empty and restarts). The load then reads the directory of the indexed part itself.
         /// It is not a second copy of the part, so it must be neither removed nor treated as a conflict.
-        if ((*it)->getDataPartStorage().getDiskName() == res.part->getDataPartStorage().getDiskName()
-            && (*it)->getDataPartStorage().getRelativePath() == res.part->getDataPartStorage().getRelativePath())
+        if (existing_part->getDataPartStorage().getDiskName() == res.part->getDataPartStorage().getDiskName()
+            && existing_part->getDataPartStorage().getRelativePath() == res.part->getDataPartStorage().getRelativePath())
         {
             LOG_INFO(log, "Part {} is already loaded from the same directory {}, skipping",
                 res.part->name, res.part->getDataPartStorage().getFullPath());
@@ -3416,7 +3422,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
             return res;
         }
 
-        if ((*it)->checksums.getTotalChecksumHex() == res.part->checksums.getTotalChecksumHex())
+        if (existing_part->checksums.getTotalChecksumHex() == res.part->checksums.getTotalChecksumHex())
         {
             LOG_ERROR(log, "Duplicate part {}", res.part->getDataPartStorage().getFullPath());
             res.part->is_duplicate = true;
