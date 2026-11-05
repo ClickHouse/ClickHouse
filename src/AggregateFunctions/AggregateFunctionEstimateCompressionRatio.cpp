@@ -115,8 +115,9 @@ struct ColumnWriter
 /// stream getter holds its address.
 struct Run
 {
-    /// A sparse column after a dense one, or vice versa, starts a new run.
+    /// A sparse column after a dense one, or vice versa, starts a new run; with a target type, of either of the two columns.
     ISerialization::KindStack kind_stack;
+    ISerialization::KindStack source_kind_stack;
     ColumnWriter writer;
 
     struct Stream
@@ -322,7 +323,7 @@ private:
             run->source_counter = std::make_unique<NullWriteBuffer>();
             auto & source_writer = run->source_writer.emplace();
             source_writer.type = represented_type;
-            source_writer.serialization = represented_type->getDefaultSerialization();
+            source_writer.serialization = represented_type->getSerialization(*represented_type->getSerializationInfo(source));
             setWriterSettings(source_writer.settings);
             source_writer.settings.getter
                 = [counter = run->source_counter.get()](const ISerialization::SubstreamPath &) -> WriteBuffer * { return counter; };
@@ -365,10 +366,13 @@ private:
     Run & runFor(const Data & data_ref, const IColumn & rows, const IColumn & source) const
     {
         auto kind_stack = ISerialization::getKindStack(rows);
-        if (data_ref.run && !data_ref.run->finished && data_ref.run->kind_stack == kind_stack)
+        auto source_kind_stack = target_type ? ISerialization::getKindStack(source) : ISerialization::KindStack{};
+        if (data_ref.run && !data_ref.run->finished && data_ref.run->kind_stack == kind_stack
+            && data_ref.run->source_kind_stack == source_kind_stack)
             return *data_ref.run;
 
         auto run = startRun(rows, source, std::move(kind_stack));
+        run->source_kind_stack = std::move(source_kind_stack);
         if (data_ref.run)
         {
             finishRun(*data_ref.run);
@@ -402,12 +406,13 @@ private:
             return;
         }
 
-        /// Converted rows are dense, as the conversion produces them.
-        const ColumnPtr dense = rows.convertToFullColumnIfSparse();
+        /// A sparse column stays sparse through a conversion that keeps its default value the default, as a table stores the
+        /// converted column (see `IExecutableFunction::executeWithoutReplicatedColumns`).
+        const ColumnPtr input = rows.getPtr();
         for (size_t end = offset + limit; offset < end; offset += granule_rows)
         {
             const size_t rows_in_granule = std::min(granule_rows, end - offset);
-            const ColumnPtr granule = (offset == 0 && rows_in_granule == dense->size()) ? dense : dense->cut(offset, rows_in_granule);
+            const ColumnPtr granule = (offset == 0 && rows_in_granule == input->size()) ? input : input->cut(offset, rows_in_granule);
             const ColumnPtr represented = convertRows(granule, to_represented, represented_type);
             if (!target_type)
             {

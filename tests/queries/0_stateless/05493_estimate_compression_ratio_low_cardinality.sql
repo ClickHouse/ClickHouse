@@ -295,6 +295,39 @@ INNER JOIN (SELECT partition, column_data_compressed_bytes FROM system.parts_col
 INNER JOIN (SELECT partition, column_data_uncompressed_bytes FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_ecr_lc_parts' AND active AND column = 's') AS s_parts ON toUInt32(s_parts.partition) = k
 ORDER BY k;
 
+-- A sparse column is measured sparse, also when it is converted to a target type that a table would store sparse too.
+DROP TABLE IF EXISTS t_ecr_sparse;
+CREATE TABLE t_ecr_sparse (n UInt64 CODEC(LZ4), m Int64 CODEC(LZ4))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 0,
+         min_compress_block_size = 65536, max_compress_block_size = 65536, ratio_of_defaults_for_sparse_serialization = 0.5;
+
+INSERT INTO t_ecr_sparse SELECT if(number % 1000 = 0, number, 0) AS n, n FROM numbers(3 * 8192);
+
+SELECT
+    column,
+    serialization_kind,
+    column_data_compressed_bytes = toUInt64(round(baseline_uncompressed_bytes / ratio)) AS matches_on_disk_size
+FROM system.parts_columns
+INNER JOIN
+(
+    SELECT
+        'n' AS column,
+        (SELECT column_data_uncompressed_bytes FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_ecr_sparse' AND active AND column = 'n') AS baseline_uncompressed_bytes,
+        estimateCompressionRatio('LZ4', 65536)(n) AS ratio
+    FROM t_ecr_sparse
+    UNION ALL
+    SELECT
+        'm' AS column,
+        (SELECT column_data_uncompressed_bytes FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_ecr_sparse' AND active AND column = 'n') AS baseline_uncompressed_bytes,
+        estimateCompressionRatio('LZ4', 65536, 'Int64')(n) AS ratio
+    FROM t_ecr_sparse
+) AS estimates USING (column)
+WHERE database = currentDatabase() AND table = 't_ecr_sparse' AND active
+ORDER BY column;
+
+DROP TABLE t_ecr_sparse;
+
 -- A wider representation of the same values: comparable with the ratio of the column as it is.
 SELECT estimateCompressionRatio('LZ4', 65536, 'IPv6')(toIPv4(number)) < estimateCompressionRatio('LZ4', 65536)(toIPv4(number)) FROM numbers(3 * 8192);
 
