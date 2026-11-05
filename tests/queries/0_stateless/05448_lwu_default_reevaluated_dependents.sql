@@ -2,9 +2,9 @@ DROP TABLE IF EXISTS t_lwu_sorting_key_dependent;
 DROP TABLE IF EXISTS t_lwu_shared_intermediate;
 DROP TABLE IF EXISTS t_lwu_shared_intermediate_pending_mutation;
 
--- A missing sort-key column is filled with its `DEFAULT` before any patch is applied and is evaluated
--- again after the patches. A `DEFAULT` column that reads it must be evaluated again from its new value,
--- both on read and when a merge materializes it.
+-- A missing sort-key column is filled with its `DEFAULT` before any patch is applied and keeps that value,
+-- as the rows of the part are sorted by it. A `DEFAULT` column that reads it must agree with it, both on read
+-- and when a merge materializes it.
 
 CREATE TABLE t_lwu_sorting_key_dependent (id UInt32, a UInt32) ENGINE = MergeTree ORDER BY id
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, apply_patches_on_merge = 0, patch_parts_version = 'v2';
