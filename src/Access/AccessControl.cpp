@@ -298,11 +298,6 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     setEnabledUsersWithoutRowPoliciesCanReadRows(config_.getBool("access_control_improvements.users_without_row_policies_can_read_rows", true));
     setOnClusterQueriesRequireClusterGrant(config_.getBool("access_control_improvements.on_cluster_queries_require_cluster_grant", true));
     setSelectFromSystemDatabaseRequiresGrant(config_.getBool("access_control_improvements.select_from_system_db_requires_grant", true));
-
-    /// Keep in sync with `attachSystemTables`: `system.user_query_log` is attached (and thus safe to grant
-    /// SELECT on implicitly) only when this is enabled. When disabled, the name is free for a regular table.
-    setUserQueryLogEnabled(config_.getBool("query_log.enable_user_query_log", true));
-
     setSelectFromInformationSchemaRequiresGrant(config_.getBool("access_control_improvements.select_from_information_schema_requires_grant", true));
     setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", true));
     setImpersonateUserAllowed(config_.getBool("access_control_improvements.allow_impersonate_user", config_.getBool("allow_impersonate_user", true)));
@@ -311,6 +306,7 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     setTableEnginesRequireGrant(config_.getBool("access_control_improvements.table_engines_require_grant", false));
     setEnableReadWriteGrants(config_.getBool("access_control_improvements.enable_read_write_grants", false));
     setThrowOnUnmatchedRowPolicies(config_.getBool("access_control_improvements.throw_on_unmatched_row_policies", false));
+    setReadonlyRestrictsSetRole(config_.getBool("access_control_improvements.readonly_restricts_set_role", false));
 
     /// Set `true` by default because the feature is backward incompatible only when older version replicas are in the same cluster.
     setEnableUserNameAccessType(config_.getBool("access_control_improvements.enable_user_name_access_type", true));
@@ -510,7 +506,7 @@ void AccessControl::addStoragesFromMainConfig(
 
     String config_dir = std::filesystem::path{config_path}.remove_filename().string();
     String dbms_dir = config.getString("path", DBMS_DEFAULT_PATH);
-    String include_from_path = config.getString("include_from", "");
+    String include_from_path = config.getString("include_from", "/etc/metrika.xml");
     bool has_user_directories = config.has("user_directories");
 
     /// If path to users' config isn't absolute, try guess its root (current) dir.
@@ -564,6 +560,11 @@ scope_guard AccessControl::subscribeForChanges(const std::vector<UUID> & ids, co
     return changes_notifier->subscribeForChanges(ids, handler);
 }
 
+scope_guard AccessControl::subscribeForBatchFinished(const OnBatchFinishedHandler & handler) const
+{
+    return changes_notifier->subscribeForBatchFinished(handler);
+}
+
 bool AccessControl::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
 {
     if (MultipleAccessStorage::insertImpl(id, entity, replace_if_exists, throw_if_exists, conflicting_id))
@@ -601,22 +602,25 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
     // NOTE: In the case where the user has never been logged in using LDAP,
     // Then user_id is not generated, and the authentication quota will always be nullptr.
     auto authentication_quota = getAuthenticationQuota(credentials.getUserName(), address, client_info.getLastForwardedForHost());
-    if (authentication_quota)
-    {
-        /// Reserve a single try from the quota to check whether we have another authentication try.
-        /// This is required for correct behavior in this situation:
-        /// User has 1 login failures quota.
-        /// * At the first login with an invalid password: Increase the quota counter. 1 (used) > 1 (max) is false.
-        ///   Then try to authenticate the user and throw an AUTHENTICATION_FAILED error.
-        /// * In case of the second try: increase quota counter, 2 (used) > 1 (max), then throw QUOTA_EXCEED
-        ///   and don't let the user authenticate.
-        ///
-        /// The authentication failures counter will be reset after successful authentication.
-        authentication_quota->used(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS, 1);
-    }
 
     try
     {
+        if (authentication_quota)
+        {
+            /// Reserve a single try from the quota to check whether we have another authentication try.
+            /// This is required for correct behavior in this situation:
+            /// User has 1 login failures quota.
+            /// * At the first login with an invalid password: Increase the quota counter. 1 (used) > 1 (max) is false.
+            ///   Then try to authenticate the user and throw an AUTHENTICATION_FAILED error.
+            /// * In case of the second try: increase quota counter, 2 (used) > 1 (max), then throw QUOTA_EXCEED
+            ///   and don't let the user authenticate.
+            ///
+            /// The authentication failures counter will be reset after successful authentication.
+            /// Inside the try block, so that an exceeded quota is reported like any other authentication failure
+            /// and doesn't reveal whether the user exists.
+            authentication_quota->used(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS, 1);
+        }
+
         const auto auth_result = MultipleAccessStorage::authenticate(credentials, address, *external_authenticators, client_info,
                                                                      allow_no_password, allow_plaintext_password);
         if (authentication_quota)
@@ -858,7 +862,7 @@ std::shared_ptr<const EnabledQuota> AccessControl::getEnabledQuota(
     const String & forwarded_address,
     const String & custom_quota_key) const
 {
-    return quota_cache->getEnabledQuota(user_id, user_name, enabled_roles, address, forwarded_address, custom_quota_key, true);
+    return quota_cache->getEnabledQuota(user_id, user_name, enabled_roles, address, forwarded_address, custom_quota_key);
 }
 
 std::shared_ptr<const EnabledQuota> AccessControl::getAuthenticationQuota(
@@ -871,18 +875,13 @@ std::shared_ptr<const EnabledQuota> AccessControl::getAuthenticationQuota(
         const auto new_current_roles = user->granted_roles.findGranted(user->default_roles);
         const auto roles_info = getEnabledRolesInfo(new_current_roles, {});
 
-        // client_key is not received at the moment of authentication during TCP connection
-        // if key type is set to QuotaKeyType::CLIENT_KEY
-        // QuotaCache::QuotaInfo::calculateKey will throw exception without throw_if_client_key_empty = false
         String quota_key;
-        bool throw_if_client_key_empty = false;
         return quota_cache->getEnabledQuota(*user_id,
                                             user->getName(),
                                             roles_info->enabled_roles,
                                             std::make_shared<Poco::Net::IPAddress>(address),
                                             forwarded_address,
-                                            quota_key,
-                                            throw_if_client_key_empty);
+                                            quota_key);
     }
     return nullptr;
 }
@@ -932,29 +931,21 @@ void AccessControl::allowAllSettings()
 void AccessControl::setAllowTierSettings(UInt32 value)
 {
     allow_experimental_tier_settings = value == 0;
-    allow_private_preview_tier_settings = value <= 1;
-    allow_beta_tier_settings = value <= 2;
+    allow_beta_tier_settings = value <= 1;
 }
 
 UInt32 AccessControl::getAllowTierSettings() const
 {
     if (allow_experimental_tier_settings)
         return 0;
-    if (allow_private_preview_tier_settings)
-        return 1;
     if (allow_beta_tier_settings)
-        return 2;
-    return 3;
+        return 1;
+    return 2;
 }
 
 bool AccessControl::getAllowExperimentalTierSettings() const
 {
     return allow_experimental_tier_settings;
-}
-
-bool AccessControl::getAllowPrivatePreviewTierSettings() const
-{
-    return allow_private_preview_tier_settings;
 }
 
 bool AccessControl::getAllowBetaTierSettings() const

@@ -28,7 +28,7 @@ public:
     ASTExecute() = default;
 
     String function_name;
-    VectorWithMemoryTracking<String> arguments;
+    std::vector<String> arguments;
 
     String getID(char) const override { return "Execute"; }
 

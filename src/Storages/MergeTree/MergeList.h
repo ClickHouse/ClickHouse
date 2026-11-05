@@ -4,6 +4,7 @@
 #include <Core/Field.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ThreadStatus.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
@@ -35,30 +36,23 @@ struct MergeInfo
     Array source_part_paths;
     std::string partition_id;
     std::string partition;
-    bool is_mutation{};
-    Float64 elapsed{};
-    Float64 progress{};
-    UInt64 num_parts{};
-    UInt64 total_size_bytes_compressed{};
-    UInt64 total_size_bytes_uncompressed{};
-    UInt64 total_size_marks{};
-    UInt64 total_rows_count{};
-    UInt64 bytes_read_uncompressed{};
-    UInt64 bytes_written_uncompressed{};
-    UInt64 rows_read{};
-    UInt64 rows_written{};
-    UInt64 columns_written{};
-    UInt64 memory_usage{};
-    UInt64 thread_id{};
+    bool is_mutation;
+    Float64 elapsed;
+    Float64 progress;
+    UInt64 num_parts;
+    UInt64 total_size_bytes_compressed;
+    UInt64 total_size_bytes_uncompressed;
+    UInt64 total_size_marks;
+    UInt64 total_rows_count;
+    UInt64 bytes_read_uncompressed;
+    UInt64 bytes_written_uncompressed;
+    UInt64 rows_read;
+    UInt64 rows_written;
+    UInt64 columns_written;
+    UInt64 memory_usage;
+    UInt64 thread_id;
     std::string merge_type;
     std::string merge_algorithm;
-
-    std::string current_projection;
-    Float64 current_projection_progress{0};
-    UInt64 current_projection_parts_merging{0};
-    UInt64 current_projection_parts_remaining{0};
-    Array projections_completed;
-    Array projections_remaining;
 };
 
 struct FutureMergedMutatedPart;
@@ -66,9 +60,6 @@ using FutureMergedMutatedPartPtr = std::shared_ptr<FutureMergedMutatedPart>;
 
 struct MergeListElement;
 using MergeListEntry = BackgroundProcessListEntry<MergeListElement, MergeInfo>;
-
-class ThreadGroup;
-using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
 struct Settings;
 
@@ -114,24 +105,6 @@ struct MergeListElement : boost::noncopyable
     /// Detected after merge already started
     std::atomic<MergeAlgorithm> merge_algorithm;
 
-    /// Projection merge introspection.
-    /// Updated by MergeTask when merging/rebuilding projections.
-    mutable std::mutex projection_introspection_mutex;
-    String current_projection;
-    Names projections_done;
-    Names projections_pending;
-
-    /// Atomic fields for projection sub-merge progress (lock-free reads from system.merges).
-    /// current_projection_progress is written by child MergeListElement via parent_progress pointer.
-    std::atomic<Float64> current_projection_progress{0};
-    std::atomic<UInt64> current_projection_parts_merging{0};
-    std::atomic<UInt64> current_projection_parts_remaining{0};
-
-    /// When non-null, child MergeListElement writes its progress here.
-    /// Points to parent's current_projection_progress. Safe because parent
-    /// lifetime always exceeds child lifetime.
-    std::atomic<Float64> * parent_progress{nullptr};
-
     ThreadGroupPtr thread_group;
     CurrentMetrics::Increment num_parts_metric_increment;
 
@@ -159,8 +132,6 @@ class MergeList final : public BackgroundProcessList<MergeListElement, MergeInfo
 private:
     using Parent = BackgroundProcessList<MergeListElement, MergeInfo>;
     std::atomic<size_t> merges_with_ttl_counter = 0;
-    /// Set by cancelAll (on server shutdown): entries inserted after it are cancelled at birth.
-    std::atomic<bool> all_cancelled = false;
 public:
     MergeList()
         : Parent(CurrentMetrics::Merge)
@@ -183,28 +154,6 @@ public:
                 && merge_element.result_part_info.getDataVersion() >= mutation_version)
                 merge_element.is_cancelled = true;
         }
-    }
-
-    /// Cancel all current merges and mutations, and also all inserted later.
-    /// Used on server shutdown, when their results would be discarded anyway.
-    void cancelAll()
-    {
-        /// The flag is set before iterating the list, and `insert` checks it after linking
-        /// the new entry into the list under the mutex, so an entry is either cancelled by
-        /// the loop below or observes the flag in `insert` - none can escape.
-        all_cancelled = true;
-        std::lock_guard lock{mutex};
-        for (auto & merge_element : entries)
-            merge_element.is_cancelled = true;
-    }
-
-    template <typename... Args>
-    EntryPtr insert(Args &&... args)
-    {
-        auto entry = Parent::insert(std::forward<Args>(args)...);
-        if (all_cancelled)
-            (*entry)->is_cancelled = true;
-        return entry;
     }
 
     void cancelInPartition(const StorageID & table_id, const String & partition_id, Int64 delimiting_block_number)

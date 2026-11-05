@@ -1,49 +1,159 @@
 #include <Processors/Transforms/DistinctTransform.h>
 
-#include <algorithm>
-
-#include <Common/MemoryTrackerUtils.h>
-#include <Common/ProfileEvents.h>
-#include <Common/formatReadable.h>
-#include <Common/logger_useful.h>
-
-namespace ProfileEvents
-{
-    extern const Event DistinctTransformsAbandonedDeduplication;
-    extern const Event DistinctTransformsSwitchedToPassThrough;
-}
+#include <Columns/ColumnsNumber.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
 
-bool DeduplicationAbandonController::update(size_t num_rows, size_t num_unique_rows, size_t set_bytes)
+namespace ErrorCodes
 {
-    ++chunks_observed;
-    rows_observed += num_rows;
-    unique_rows_observed += num_unique_rows;
-
-    if (chunks_observed < OBSERVATION_CHUNK_COUNT && set_bytes < MAX_OBSERVATION_SET_BYTES)
-        return false;
-
-    double unique_rate = static_cast<double>(unique_rows_observed) / static_cast<double>(rows_observed);
-    return unique_rate >= UNIQUE_RATE_THRESHOLD;
+    extern const int SET_SIZE_LIMIT_EXCEEDED;
+    extern const int LOGICAL_ERROR;
 }
 
 DistinctTransform::DistinctTransform(
     SharedHeader header_,
     const SizeLimits & set_size_limits_,
     const UInt64 limit_hint_,
-    const Names & columns_,
-    bool allow_abandoning_,
-    bool skip_null_keys_,
-    const UInt64 max_bytes_before_pass_through_)
+    const Names & columns_)
     : ISimpleTransform(header_, header_, true)
-    , distinct_set(std::in_place, *header_, columns_, set_size_limits_, skip_null_keys_)
     , limit_hint(limit_hint_)
-    , max_bytes_before_pass_through(max_bytes_before_pass_through_)
+    , set_size_limits(set_size_limits_)
 {
-    if (allow_abandoning_)
-        abandon_controller.emplace();
+    const size_t num_columns = columns_.empty() ? header_->columns() : columns_.size();
+    key_columns_pos.reserve(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        const auto pos = columns_.empty() ? i : header_->getPositionByName(columns_[i]);
+        const auto & col = header_->getByPosition(pos).column;
+        if (col && !isColumnConst(*col))
+            key_columns_pos.emplace_back(pos);
+    }
+}
+
+template <typename Method>
+void DistinctTransform::buildFilter(
+    Method & method,
+    const ColumnRawPtrs & columns,
+    IColumn::Filter & filter,
+    const size_t rows,
+    SetVariants & variants,
+    const IColumn::Filter * mask) const
+{
+    typename Method::State state(columns, key_sizes, nullptr);
+
+    if (mask)
+    {
+        for (size_t i = 0; i < rows; ++i)
+        {
+            if (!(*mask)[i])
+            {
+                /// Already known duplicate row (by LC index), skip insertion
+                filter[i] = 0;
+                continue;
+            }
+
+            auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+            filter[i] = emplace_result.isInserted();
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < rows; ++i)
+        {
+            auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+
+            /// Emit the record if there is no such key in the current set yet.
+            /// Skip it otherwise.
+            filter[i] = emplace_result.isInserted();
+        }
+    }
+}
+
+IColumn::Filter DistinctTransform::buildLowCardinalityMask(const ColumnLowCardinality & column, size_t num_rows)
+{
+    const auto & dictionary = column.getDictionary();
+    const auto dict_size = dictionary.size();
+
+    LCDictionaryKey dict_key;
+    dict_key.hash = dictionary.getHash();
+    dict_key.size = dict_size;
+
+    auto & state = lc_dict_states[dict_key];
+
+    /// The first time we see this dictionary, initialize the seen_indices array to keep track which entries
+    /// in the dictionary have been seen.
+    chassert(state.seen_count <= dict_size);
+    if (state.seen_indices.size() != dict_size)
+    {
+        chassert(state.seen_indices.empty());
+        chassert(state.seen_count == 0);
+        state.seen_indices.resize_fill(dict_size);
+    }
+
+    /// If we've already seen all dictionary indices for this dictionary,
+    /// then no row in this chunk (and also other chunks with the same dictionary) can produce a new distinct value.
+    if (state.seen_count == dict_size)
+        return {}; /// empty mask == no candidates
+
+    auto & seen = state.seen_indices;
+
+    const auto index_type_size = column.getSizeOfIndexType();
+    const IColumn & indexes_column = *column.getIndexesPtr();
+
+    IColumn::Filter mask;
+
+    auto handle_index = [&](size_t idx, size_t row)
+    {
+        chassert(idx < dict_size);
+        if (!seen[idx])
+        {
+            seen[idx] = 1;
+            ++state.seen_count;
+
+            if (mask.empty())
+                mask.resize_fill(num_rows);
+
+            mask[row] = 1; /// first time we see this dictionary index for this dictionary
+        }
+    };
+
+    switch (index_type_size)
+    {
+        case sizeof(UInt8):
+        {
+            const auto & col = assert_cast<const ColumnUInt8 &>(indexes_column).getData();
+            for (size_t row = 0; row < num_rows; ++row)
+                handle_index(static_cast<size_t>(col[row]), row);
+            break;
+        }
+        case sizeof(UInt16):
+        {
+            const auto & col = assert_cast<const ColumnUInt16 &>(indexes_column).getData();
+            for (size_t row = 0; row < num_rows; ++row)
+                handle_index(static_cast<size_t>(col[row]), row);
+            break;
+        }
+        case sizeof(UInt32):
+        {
+            const auto & col = assert_cast<const ColumnUInt32 &>(indexes_column).getData();
+            for (size_t row = 0; row < num_rows; ++row)
+                handle_index(static_cast<size_t>(col[row]), row);
+            break;
+        }
+        case sizeof(UInt64):
+        {
+            const auto & col = assert_cast<const ColumnUInt64 &>(indexes_column).getData();
+            for (size_t row = 0; row < num_rows; ++row)
+                handle_index(static_cast<size_t>(col[row]), row);
+            break;
+        }
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for LowCardinality column in DistinctTransform");
+    }
+
+    return mask; /// if empty, then means no candidates in this chunk
 }
 
 void DistinctTransform::transform(Chunk & chunk)
@@ -51,26 +161,16 @@ void DistinctTransform::transform(Chunk & chunk)
     if (unlikely(!chunk.hasRows()))
         return;
 
-    /// Releasing the filter permanently switches subsequent chunks to pass-through.
-    if (!distinct_set)
-        return;
+    /// Convert to full column, because SetVariant for sparse column is not implemented.
+    removeSpecialColumnRepresentations(chunk);
+    convertToFullIfConst(chunk);
 
-    /// A constant `NULL` key component makes every key contain a `NULL`, so a consumer that skips `NULL`
-    /// keys drops all rows; emit nothing and stop the input.
-    if (distinct_set->hasConstNullKey())
+    const auto num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+
+    /// Special case, - only const columns, return single row
+    if (unlikely(key_columns_pos.empty()))
     {
-        chunk.setColumns(chunk.cloneEmptyColumns(), 0);
-        stopReading();
-        return;
-    }
-
-    /// Special case - only const columns, return single row.
-    if (unlikely(!distinct_set->hasKeyColumns()))
-    {
-        removeSpecialColumnRepresentations(chunk);
-        convertToFullIfConst(chunk);
-
-        auto columns = chunk.detachColumns();
         for (auto & column : columns)
             column = column->cut(0, 1);
 
@@ -79,85 +179,61 @@ void DistinctTransform::transform(Chunk & chunk)
         return;
     }
 
-    if (max_bytes_before_pass_through)
+    ColumnRawPtrs column_ptrs;
+    column_ptrs.reserve(key_columns_pos.size());
+    for (auto pos : key_columns_pos)
+        column_ptrs.emplace_back(columns[pos].get());
+
+    std::optional<IColumn::Filter> lc_mask;
+
+    if (key_columns_pos.size() == 1)
     {
-        distinct_set->prepareForInsert(chunk);
-
-        /// Preliminary hashing shares the query's remaining spill-threshold budget with the final
-        /// transform and other operators.
-        const UInt64 query_memory_usage = std::max<Int64>(0, getCurrentQueryMemoryUsage());
-        const UInt64 available_memory = max_bytes_before_pass_through - std::min(max_bytes_before_pass_through, query_memory_usage);
-
-        const size_t filtering_memory = distinct_set->estimateFilteringMemory(chunk);
-        const size_t growth_memory = distinct_set->estimateGrowthMemory(chunk);
-        if (filtering_memory > available_memory || growth_memory > available_memory - filtering_memory)
+        if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(column_ptrs[0]))
         {
-            LOG_TRACE(getLogger("DistinctTransform"),
-                "Switching preliminary DISTINCT to pass-through: {} "
-                "(query memory: {}, spill threshold: {}, "
-                "estimated peak extra memory for growth: {}, filtering workspace: {})",
-                query_memory_usage > max_bytes_before_pass_through
-                    ? "query memory exceeded the spill threshold"
-                    : "projected allocations exceed the remaining spill-threshold budget",
-                formatReadableSizeWithBinarySuffix(query_memory_usage),
-                formatReadableSizeWithBinarySuffix(max_bytes_before_pass_through),
-                formatReadableSizeWithBinarySuffix(growth_memory),
-                formatReadableSizeWithBinarySuffix(filtering_memory));
+            lc_mask.emplace(buildLowCardinalityMask(*lc, num_rows));
 
-            distinct_set.reset();
-            ProfileEvents::increment(ProfileEvents::DistinctTransformsSwitchedToPassThrough);
-            return;
+            /// Empty mask -> no candidate rows in this chunk, emit nothing.
+            if (lc_mask->empty())
+                return;
         }
     }
 
-    const size_t num_rows = chunk.getNumRows();
-    chunk = distinct_set->filter(std::move(chunk));
+    if (data.empty())
+        data.init(SetVariants::chooseMethod(column_ptrs, key_sizes));
 
-    /// Return the current chunk and stop before releasing the set if a size limit or the hint is reached.
-    if (distinct_set->isLimitReached() || (limit_hint && distinct_set->getTotalRowCount() >= limit_hint))
+    const auto old_set_size = data.getTotalRowCount();
+    IColumn::Filter filter(num_rows);
+
+    switch (data.type)
+    {
+        case SetVariants::Type::EMPTY:
+            break;
+#define M(NAME) \
+        case SetVariants::Type::NAME: \
+            buildFilter(*data.NAME, column_ptrs, filter, num_rows, data, lc_mask ? &*lc_mask : nullptr); \
+        break;
+        APPLY_FOR_SET_VARIANTS(M)
+#undef M
+    }
+
+    /// Just go to the next chunk if there isn't any new record in the current one.
+    size_t new_set_size = data.getTotalRowCount();
+    if (new_set_size == old_set_size)
+        return;
+
+    if (!set_size_limits.check(new_set_size, data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+        return;
+
+    for (auto & column : columns)
+        column = column->filter(filter, -1);
+
+    chunk.setColumns(std::move(columns), new_set_size - old_set_size);
+
+    /// Stop reading if we already reach the limit
+    if (limit_hint && new_set_size >= limit_hint)
     {
         stopReading();
         return;
-    }
-
-    if (abandon_controller)
-    {
-        /// The rate is measured against the rows the transform received: the rows dropped as `NULL` keys
-        /// (in the `skip_null_keys` mode, inside the filter) count as removed by the deduplication, so a
-        /// stream that mostly consists of `NULL` keys keeps the transform even when the non-`NULL` part is
-        /// unique - dropping the `NULL` rows is exactly the reduction the consumer benefits from.
-        if (abandon_controller->update(num_rows, chunk.getNumRows(), distinct_set->getTotalByteCount()))
-        {
-            LOG_TRACE(getLogger("DistinctTransform"),
-                "Switching DISTINCT to pass-through: input is mostly unique (retained keys: {}, set memory: {})",
-                distinct_set->getTotalRowCount(), formatReadableSizeWithBinarySuffix(distinct_set->getTotalByteCount()));
-
-            /// The new rows of the current chunk are still emitted (the following chunks flow
-            /// through unfiltered).
-            distinct_set.reset();
-            ProfileEvents::increment(ProfileEvents::DistinctTransformsAbandonedDeduplication);
-            return;
-        }
-    }
-
-    /// Preliminary hashing can release its set under memory pressure because a downstream step
-    /// deduplicates the output exactly. This also gives up any remaining local limit hint. The set
-    /// can be released even when the current chunk produces no new rows.
-    if (max_bytes_before_pass_through)
-    {
-        const Int64 query_memory_usage = getCurrentQueryMemoryUsage();
-        if (query_memory_usage > static_cast<Int64>(max_bytes_before_pass_through))
-        {
-            LOG_TRACE(getLogger("DistinctTransform"),
-                "Switching preliminary DISTINCT to pass-through: query memory exceeded the spill threshold after insertion "
-                "(query memory: {}, spill threshold: {})",
-                formatReadableSizeWithBinarySuffix(query_memory_usage),
-                formatReadableSizeWithBinarySuffix(max_bytes_before_pass_through));
-
-            distinct_set.reset();
-            ProfileEvents::increment(ProfileEvents::DistinctTransformsSwitchedToPassThrough);
-            return;
-        }
     }
 }
 

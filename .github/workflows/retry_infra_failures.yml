@@ -62,8 +62,6 @@ jobs:
             #   not actual tests — always treated as infrastructure failure), or
             # - it never reached its main "Run" step (failed during checkout/setup), or
             # - the "Run" step was skipped, or
-            # - the "Run" step produced no conclusion at all (GitHub finalized the job
-            #   while its main step was still unreported), or
             # - the "Run" step failed almost immediately (under 2 minutes), indicating
             #   a setup/download issue (e.g. missing S3 credentials) rather than a real
             #   test failure
@@ -74,7 +72,6 @@ jobs:
                 [.steps[] | select(.name == "Run")] |
                 if length == 0 then true
                 elif .[0].conclusion == "skipped" then true
-                elif .[0].conclusion == null then true
                 elif .[0].conclusion == "failure" then
                   ((.[0].completed_at | fromdateiso8601) -
                    (.[0].started_at | fromdateiso8601)) < 120
@@ -100,9 +97,8 @@ jobs:
             run_sha=$(echo "$run_data" | jq -r '.sha')
 
             # If the job-level heuristic didn't trigger, check Praktika result JSONs
-            # on S3 for infrastructure-related failures:
-            # - "Checkout Submodules" failures (transient DNS/git issues)
-            # - Results with the "infra" label (e.g. Docker image pull failures)
+            # on S3 for failures at the "Checkout Submodules" sub-step (e.g. transient
+            # DNS failures cloning git submodules).
             if [ "$should_rerun" = "false" ] && [ -n "$verdicts" ] && [ -n "$pr_number" ] && [ -n "$run_sha" ]; then
               # Get names of failed jobs (excluding pipeline plumbing)
               failed_job_names=$(echo "$jobs_raw" | jq -r '
@@ -111,7 +107,7 @@ jobs:
                 .name
               ')
 
-              all_infra_failures=true
+              all_checkout_failures=true
               while IFS= read -r job_name; do
                 [ -z "$job_name" ] && continue
                 # Normalize job name to match Praktika result file naming:
@@ -122,16 +118,8 @@ jobs:
 
                 result_json=$(curl -sf --compressed "$result_url" 2>/dev/null || true)
                 if [ -z "$result_json" ]; then
-                  all_infra_failures=false
+                  all_checkout_failures=false
                   break
-                fi
-
-                # Check if the top-level result has the "infra" label
-                has_infra_label=$(echo "$result_json" | jq -r '
-                  (.ext.labels // []) | any(. == "infra")
-                ')
-                if [ "$has_infra_label" = "true" ]; then
-                  continue
                 fi
 
                 # Check: all failed sub-results must be "Checkout Submodules"
@@ -140,14 +128,14 @@ jobs:
                    .name] | map(select(. != "Checkout Submodules")) | length > 0
                 ')
                 if [ "$has_non_checkout_failure" = "true" ]; then
-                  all_infra_failures=false
+                  all_checkout_failures=false
                   break
                 fi
               done <<< "$failed_job_names"
 
-              if [ "$all_infra_failures" = "true" ] && [ -n "$failed_job_names" ]; then
+              if [ "$all_checkout_failures" = "true" ] && [ -n "$failed_job_names" ]; then
                 should_rerun=true
-                echo "  Infrastructure failure detected (Praktika results indicate infra issue)."
+                echo "  Infrastructure failure detected (submodule checkout failure in Praktika results)."
               fi
             fi
 

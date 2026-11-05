@@ -24,8 +24,6 @@
 
 #include <base/types.h>
 
-#include <fmt/format.h>
-
 
 namespace Aws::Http::Standard
 {
@@ -37,26 +35,9 @@ namespace DB
 class Context;
 }
 
-namespace Poco::Net
-{
-class HTTPMessage;
-}
 
 namespace DB::S3
 {
-
-/// HTTP 400 from S3 with non-empty `x-amz-bucket-region` (wrong SigV4 signing region for the bucket).
-bool isS3WrongSigningRegionBadRequest(int status_code, const Poco::Net::HTTPMessage & response);
-
-/// Renders an HTTP response code for logs and error messages.
-/// The AWS SDK reports `REQUEST_NOT_MADE` (-1) when no response has been received at all, e.g. after a network error.
-/// Printing that as a number is confusing, and casting it to an unsigned type turns it into 18446744073709551615.
-String httpResponseCodeToString(Aws::Http::HttpResponseCode response_code);
-
-/// Bounds only the response wait of a credential-acquisition round trip; the connect timeout stays
-/// as the caller set it. An already tighter wait is kept, a non-positive one is unbounded downstream
-/// and so takes the cap.
-ConnectionTimeouts getCredentialAcquisitionTimeouts(const ConnectionTimeouts & timeouts);
 
 class ClientFactory;
 class PocoHTTPClient;
@@ -83,7 +64,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     std::optional<std::string> opt_disk_name;
     HTTPRequestThrottler request_throttler;
 
-    NormalizedHTTPHeaderEntries extra_headers;
+    HTTPHeaderEntries extra_headers;
     String http_client;
     String service_account;
     String metadata_service;
@@ -228,7 +209,7 @@ protected:
 
     static S3MetricKind getMetricKind(const Aws::Http::HttpRequest & request);
     void addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount = 1) const;
-    void observeLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, HistogramMetrics::Value latency) const;
+    void observeLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, HistogramMetrics::Value latency = 1) const;
 
     std::function<ProxyConfiguration()> per_request_configuration;
     std::function<void(const ProxyConfiguration &)> error_report;
@@ -244,7 +225,7 @@ protected:
 
     HTTPRequestThrottler request_throttler;
 
-    const NormalizedHTTPHeaderEntries extra_headers;
+    const HTTPHeaderEntries extra_headers;
 };
 
 class PocoHTTPClientGCPOAuth : public PocoHTTPClient
@@ -281,14 +262,5 @@ private:
 };
 
 }
-
-/// Without this, `{}` prints the underlying number, which is meaningless for `REQUEST_NOT_MADE`.
-template <> struct fmt::formatter<Aws::Http::HttpResponseCode> : fmt::formatter<std::string>
-{
-    auto format(Aws::Http::HttpResponseCode response_code, auto & ctx) const
-    {
-        return formatter<std::string>::format(DB::S3::httpResponseCodeToString(response_code), ctx);
-    }
-};
 
 #endif

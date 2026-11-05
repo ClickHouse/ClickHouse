@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/EscapingRuleUtils.h>
@@ -198,7 +197,6 @@ void TemplateBlockOutputFormat::resetFormatterImpl()
     statistics = Statistics();
 }
 
-void registerOutputFormatTemplate(FormatFactory & factory);
 void registerOutputFormatTemplate(FormatFactory & factory)
 {
     factory.registerOutputFormat("Template", [](

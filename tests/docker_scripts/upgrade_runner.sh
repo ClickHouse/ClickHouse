@@ -11,18 +11,18 @@ set -ex
 # we mount tests folder from repo to /usr/share
 ln -s /repo/ci/jobs/scripts/stress/stress.py /usr/bin/stress
 ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
-ln -s /repo/ci/tools/download_release_packages.py /usr/bin/download_release_packages
-ln -s /repo/ci/tools/get_previous_release_tag.py /usr/bin/get_previous_release_tag
+ln -s /repo/tests/ci/download_release_packages.py /usr/bin/download_release_packages
+ln -s /repo/tests/ci/get_previous_release_tag.py /usr/bin/get_previous_release_tag
 
 # Stress tests and upgrade check uses similar code that was placed
-# in a separate bash library. See tests/docker_scripts/stress_tests.lib
+# in a separate bash library. See tests/ci/stress_tests.lib
+# shellcheck source=../stateless/attach_gdb.lib
+source /repo/tests/docker_scripts/attach_gdb.lib
 # shellcheck source=../stateless/stress_tests.lib
 source /repo/tests/docker_scripts/stress_tests.lib
 
-cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_azurite || { echo "Failed to start azurite"; exit 1; }
-cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_seaweedfs stateless || ( echo "Failed to start seaweedfs" && exit 1 ) # to have a proper environment
-
-bash /repo/ci/jobs/scripts/functional_tests/setup_kafka.sh || { echo "Failed to start Kafka (Redpanda)"; exit 1; }
+azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || ( echo "Failed to start minio" && exit 1 ) # to have a proper environment
 
 echo "Get previous release tag"
 PACKAGES_DIR=/repo/ci/tmp
@@ -35,43 +35,17 @@ fi
 echo $previous_release_tag
 
 echo "Clone previous release repository"
-
-function clone_previous_release_repository()
-{
-    # A killed clone leaves a `.git`-only directory that every later attempt rejects.
-    rm -rf previous_release_repository
-    # git has no default low-speed bound, so a stalled-but-open connection never ends.
-    git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=120 clone https://github.com/ClickHouse/ClickHouse.git --no-tags --progress --branch=$previous_release_tag --no-recurse-submodules --depth=1 previous_release_repository
-}
-
-if ! run_with_retry 3 clone_previous_release_repository; then
-    echo -e "Failed to clone previous release tests$FAIL" >> /test_output/test_results.tsv
-    echo -e 'failure\tFailed to clone previous release tests' > /test_output/check_status.tsv
-    exit 1
-fi
+git clone https://github.com/ClickHouse/ClickHouse.git --no-tags --progress --branch=$previous_release_tag --no-recurse-submodules --depth=1 previous_release_repository
 
 echo "Download clickhouse-server from the previous release"
 mkdir previous_release_package_folder
 
-# --- download previous release packages: fail closed on a missing required one ---
-# `download_release_packages` exits nonzero when a required previous-release
-# package is missing or fails to download. Stop here at the download boundary
-# with a clear, attributable status instead of letting the later `install_packages`
-# die with an opaque `dpkg` glob error. (`set -e` does not fire inside an
-# `&& ... || ...` list, so the nonzero status must be handled explicitly.)
-if echo $previous_release_tag | download_release_packages; then
-    echo -e "Download script exit code$OK" >> /test_output/test_results.tsv
-else
-    echo -e "Download script failed$FAIL" >> /test_output/test_results.tsv
-    echo -e 'failure\tFailed to download previous release packages' > /test_output/check_status.tsv
-    exit 1
-fi
-# --- end download previous release packages ---
+echo $previous_release_tag | download_release_packages && echo -e "Download script exit code$OK" >> /test_output/test_results.tsv \
+    || echo -e "Download script failed$FAIL" >> /test_output/test_results.tsv
 
 # Check if we cloned previous release repository successfully
 if ! [ "$(ls -A previous_release_repository/tests/queries)" ]
 then
-    echo -e "Failed to clone previous release tests$FAIL" >> /test_output/test_results.tsv
     echo -e 'failure\tFailed to clone previous release tests' > /test_output/check_status.tsv
     exit 1
 elif ! [ "$(ls -A previous_release_package_folder/clickhouse-common-static_*.deb && ls -A previous_release_package_folder/clickhouse-server_*.deb)" ]
@@ -121,14 +95,12 @@ configure_opts=(
     # Let's enable S3 storage by default
     --s3-storage
 )
-use_encrypted_storage=0
 if [ $((RANDOM % 2)) -eq 0 ]; then
     configure_opts+=(--encrypted-storage)
-    use_encrypted_storage=1
 fi
 
 # Start server from previous release
-configure "${configure_opts[@]}" --previous-release
+configure "${configure_opts[@]}"
 
 # But we still need default disk because some tables loaded only into it
 sudo sed -i "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
@@ -137,25 +109,14 @@ sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_defau
 
 start_server || (echo "Failed to start server" && exit 1)
 
-clickhouse-client --receive_timeout 30 --query="SELECT 'Server version: ', version()"
+clickhouse-client --query="SELECT 'Server version: ', version()"
 
 mkdir tmp_stress_output
 
-# clickhouse-test must know which storage backend the server actually uses, or its storage skip tags
-# are ignored and incompatible tests run on an unsupported backend: --s3-storage (object storage is the
-# default MergeTree policy above) covers no-object-storage/no-s3-storage; --encrypted-storage mirrors the
-# coin flip above and covers no-encrypted-storage (stress.py forwards it to clickhouse-test).
-stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\" --s3-storage" --encrypted-storage "$use_encrypted_storage" --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200 \
+stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\""  --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200 \
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
 
-# The full server stacktrace dumps must survive the removal of the phase
-# output folder below.
-for stacktrace_log in tmp_stress_output/sql_stacktraces.log tmp_stress_output/c_stacktraces.log; do
-    if [ -f "$stacktrace_log" ]; then
-        mv "$stacktrace_log" /test_output/
-    fi
-done
 rm -rf tmp_stress_output
 
 # We experienced deadlocks in this command in very rare cases. Let's debug it:
@@ -165,104 +126,6 @@ timeout 10m clickhouse-client --query="SELECT 'Tables count:', count() FROM syst
     timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
     clickhouse stop --force
 )
-
-# Kill the mutations that the stress phase left unfinished, before the server is upgraded.
-#
-# Several tests deliberately start a mutation that can never succeed - `toUInt32` of a non-numeric
-# string, `throwIf(1)`, a type mismatch, a `DELETE WHERE` on a virtual column - and kill it at the end
-# of the test file. The stress runner regularly stops a test file before its last statement (memory
-# fault injection, the random query and client killer, the global time limit), and `--upgrade-check`
-# implies `--fake-drop`, so the table and its broken mutation survive. The upgraded server then resumes
-# the mutation, retries it for the whole post-upgrade window and logs its error, which the `<Error>`
-# scan at the end of this script reports. Every test of this shape needed its own entry in that scan's
-# allow list, and the list kept growing.
-#
-# A mutation that an interrupted stress run left behind is test garbage, not a backward-compatibility
-# signal, and the allow list had to suppress the mutation error messages wholesale anyway. Leaving the
-# upgraded server nothing to resume retires the whole class at once, and makes the scan stricter: a
-# mutation error after the upgrade becomes an anomaly instead of an expected message to be filtered.
-echo "Kill the mutations left unfinished by the stress phase"
-
-timeout 1m clickhouse-client --query "
-    SELECT database, table, mutation_id, command, parts_to_do, latest_fail_error_code_name, latest_fail_reason
-    FROM system.mutations
-    WHERE NOT is_done
-    ORDER BY database, table, mutation_id
-    FORMAT Vertical" > /test_output/unfinished_mutations.txt ||:
-
-# `KILL MUTATION` throws for a read-only table, and `set -e` would abort the job, so kill the mutations
-# one at a time instead of in a single statement that one such table would stop. Address each of them by
-# a hash of its key: database and table names are arbitrary strings that must not be carried through the
-# shell, while the hash is recomputed server-side. A collision is harmless, it only widens the statement
-# to another unfinished mutation, which is to be killed anyway.
-#
-# The keys are listed into a variable instead of directly into the `for`, because a command substitution
-# in the list of a `for` loop is not a command that `set -e` watches: a listing that fails or times out
-# would simply be an empty list, every mutation would survive into the upgraded server, and the log scan
-# below - which no longer tolerates their errors - would fail far away from the cause. Report it here.
-if mutation_keys=$(timeout 1m clickhouse-client --query "SELECT DISTINCT cityHash64(database, table, mutation_id) FROM system.mutations WHERE NOT is_done")
-then
-    for mutation_key in $mutation_keys
-    do
-        timeout 1m clickhouse-client --param_mutation_key="$mutation_key" --query \
-            "KILL MUTATION WHERE NOT is_done AND cityHash64(database, table, mutation_id) = {mutation_key:UInt64}" ||:
-    done
-else
-    echo -e "Cannot list the mutations left unfinished by the stress phase$FAIL" >> /test_output/test_results.tsv
-fi
-
-# The mutation entries of the `<Error>` scan below are removed on the assumption that this queue is empty
-# when the new server starts, so that assumption is checked here, where a leftover can still be attributed
-# to the mutation that caused it - after the upgrade it is only an error message with nothing pointing back
-# at this step. Each `KILL` above is allowed to fail so that one read-only table does not stop the rest of
-# them, and this is where those failures are accounted for. This has to stay before the mutation submitted
-# below on purpose, which is meant to be unfinished at this point.
-if unfinished_mutations=$(timeout 1m clickhouse-client --query "SELECT count() FROM system.mutations WHERE NOT is_done")
-then
-    if [ "$unfinished_mutations" = 0 ]
-    then
-        echo -e "The stress phase left no unfinished mutation to the upgrade$OK" >> /test_output/test_results.tsv
-    else
-        timeout 1m clickhouse-client --query "
-            SELECT database, table, mutation_id, command, parts_to_do, latest_fail_error_code_name, latest_fail_reason
-            FROM system.mutations
-            WHERE NOT is_done
-            ORDER BY database, table, mutation_id
-            FORMAT Vertical" > /test_output/unkilled_mutations.txt ||:
-        echo -e "$unfinished_mutations mutations could not be killed before the upgrade (see unkilled_mutations.txt)$FAIL$(head_escaped /test_output/unkilled_mutations.txt)" >> /test_output/test_results.tsv
-    fi
-else
-    echo -e "Cannot count the mutations left unfinished by the stress phase$FAIL" >> /test_output/test_results.tsv
-fi
-
-# The reports are only interesting when there was something to kill, or something left after it
-[ -s /test_output/unfinished_mutations.txt ] || rm -f /test_output/unfinished_mutations.txt
-[ -s /test_output/unkilled_mutations.txt ] || rm -f /test_output/unkilled_mutations.txt
-
-# A mutation submitted to the old server and finished by the new one is a real part of the upgrade
-# contract - a submitted mutation is persisted and continues to execute after a restart - and the kill
-# above takes away whatever the stress phase happened to leave of it. It was never a dependable check
-# anyway: which mutations survive a run, and whether they are valid at all, is decided by which test file
-# the stress runner interrupted. Submit one deliberately instead, so the upgrade always carries exactly
-# one, known to be valid. It is created after the kill loop, so that loop does not kill it.
-#
-# `SYSTEM STOP MERGES` holds the mutation unfinished without making it broken, and it is in-memory state,
-# so the upgraded server starts with merges enabled and has to pick the mutation up on its own.
-echo "Submit a mutation that the upgraded server has to finish"
-
-mutation_across_upgrade_submitted=0
-
-if timeout 1m clickhouse-client --query "
-    DROP TABLE IF EXISTS default.mutation_across_upgrade SYNC;
-    CREATE TABLE default.mutation_across_upgrade (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
-    INSERT INTO default.mutation_across_upgrade SELECT number, number FROM numbers(1000);
-    SYSTEM STOP MERGES default.mutation_across_upgrade;
-    ALTER TABLE default.mutation_across_upgrade UPDATE v = v + 1 WHERE 1 SETTINGS mutations_sync = 0, alter_sync = 0;"
-then
-    mutation_across_upgrade_submitted=1
-else
-    echo -e "Cannot submit the mutation that has to survive the upgrade$FAIL" >> /test_output/test_results.tsv
-fi
 
 # Use bigger timeout for previous version and disable additional hang check
 stop_server 300 false || (echo "Failed to stop server" && exit 1)
@@ -274,12 +137,8 @@ configure "${configure_opts[@]}"
 
 # Check that all new/changed setting were added in settings changes history.
 # Some settings can be different for builds with sanitizers, so we check
+# Also the automatic value of 'max_threads' and similar was displayed as "'auto(...)'" in previous versions instead of "auto(...)".
 # settings changes only for non-sanitizer builds.
-# The automatic value of 'max_threads' and similar settings is rendered as auto(N); older releases
-# rendered it as the quoted 'auto(N)' (with the quotes baked into the value). Suppress only this pure
-# rendering difference - a row where the old value is exactly the new value wrapped in single quotes -
-# so it is not reported as a setting change. A genuine change of an auto-valued setting's default is
-# still caught and must have a settings changes history entry.
 IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
 if [ "${IS_SANITIZED}" -eq "0" ]
 then
@@ -299,7 +158,6 @@ then
   FROM new_settings
   LEFT JOIN old_settings ON new_settings.name = old_settings.name
   WHERE (old_value IS NULL OR new_value != old_value)
-      AND NOT (old_value IS NOT NULL AND new_value LIKE 'auto(%' AND old_value = concat('''', new_value, ''''))
       AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
@@ -319,7 +177,6 @@ then
   FROM new_merge_tree_settings
   LEFT JOIN old_merge_tree_settings ON new_merge_tree_settings.name = old_merge_tree_settings.name
   WHERE (old_value IS NULL OR new_value != old_value)
-      AND NOT (old_value IS NOT NULL AND new_value LIKE 'auto(%' AND old_value = concat('''', new_value, ''''))
       AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
@@ -431,7 +288,7 @@ check_allow_list() {
 
 start_server || check_allow_list || (echo "Failed to start server" && exit 1)
 
-clickhouse-client --receive_timeout 30 --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
+clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
     || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
     && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \
     >> /test_output/test_results.tsv)
@@ -439,46 +296,10 @@ clickhouse-client --receive_timeout 30 --query "SELECT 'Server successfully star
 # Remove file application_errors.txt if it's empty
 [ -s /test_output/application_errors.txt ] || rm -f /test_output/application_errors.txt
 
-clickhouse-client --receive_timeout 30 --query="SELECT 'Server version: ', version()"
+clickhouse-client --query="SELECT 'Server version: ', version()"
 
 # Let the server run for a while before checking log.
 sleep 60
-
-# The mutation submitted to the previous release before the upgrade has to be resumed and finished by the
-# new server on its own: the `SYSTEM STOP MERGES` that held it did not survive the restart, and nothing
-# starts it explicitly. `sum(v)` is checked too, so that the mutation is required to have been applied to
-# the data and not only marked done. The `sleep` above is normally enough, the loop is for a loaded runner.
-if [ "$mutation_across_upgrade_submitted" = 1 ]
-then
-    mutation_across_upgrade_finished=0
-
-    for _ in {1..60}
-    do
-        mutation_across_upgrade_finished=$(timeout 1m clickhouse-client --query "
-            SELECT
-                (SELECT count() = 1 AND countIf(NOT is_done OR latest_fail_reason != '') = 0
-                    FROM system.mutations WHERE database = 'default' AND table = 'mutation_across_upgrade')
-                AND (SELECT sum(v) FROM default.mutation_across_upgrade) = 500500") ||:
-
-        if [ "$mutation_across_upgrade_finished" = 1 ]
-        then
-            break
-        fi
-
-        sleep 1
-    done
-
-    if [ "$mutation_across_upgrade_finished" = 1 ]
-    then
-        echo -e "The mutation submitted before the upgrade was finished by the new server$OK" >> /test_output/test_results.tsv
-    else
-        timeout 1m clickhouse-client --query "
-            SELECT * FROM system.mutations
-            WHERE database = 'default' AND table = 'mutation_across_upgrade'
-            FORMAT Vertical" > /test_output/mutation_across_upgrade.txt ||:
-        echo -e "The mutation submitted before the upgrade was not finished by the new server (see mutation_across_upgrade.txt)$FAIL$(head_escaped /test_output/mutation_across_upgrade.txt)" >> /test_output/test_results.tsv
-    fi
-fi
 
 stop_server || (echo "Failed to stop server" && exit 1)
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.upgrade.log
@@ -489,171 +310,15 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 # FIXME Not sure if it's expected, but some tests from stress test may not be finished yet when we restarting server.
 #       Let's just ignore all errors from queries ("} <Error> TCPHandler: Code:", "} <Error> executeQuery: Code:")
 # FIXME https://github.com/ClickHouse/ClickHouse/issues/39197 ("Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'")
-# Mutation errors are deliberately absent from this list: the mutations left unfinished by the stress
-#       phase are killed before the upgrade (the `KILL MUTATION` loop above), so the upgraded server has
-#       none to resume and a mutation error here is a real finding. Do not allow-list a new one - when a
-#       test's intentionally broken mutation reaches this scan again, it is that kill step that is wrong.
+# FIXME https://github.com/ClickHouse/ClickHouse/issues/39174 - bad mutation does not indicate backward incompatibility:
+#       stress tests may leave behind intentionally-broken mutations that retry after upgrade.
+#       `CANNOT_PARSE_TEXT` errors come from:
+#       - 00834_kill_mutation{,_replicated_zookeeper}: `DELETE WHERE toUInt32(s) = 1` on String data ('a', 'b')
+#       - 01414_mutations_and_errors_zookeeper: `MODIFY COLUMN value UInt64` on String data ('Hello')
+#       `MutateFromLogEntryTask` is also excluded for the same reason, but only catches the first log line;
+#       the wrapping `MergeTreeBackgroundExecutor` line also needs to be excluded.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
-# `Azure::Storage::StorageException.*Not found address of host` is a transient Azure blob DNS resolution failure
-#       for `openbucketforpublicci.blob.core.windows.net`. Filtered via regex in the secondary pipe below to match
-#       both the Azure SDK exception type AND the DNS error together, so non-Azure DNS errors are not masked.
-# `Cluster` + `Code: 198` + a first host label of one repeated character is the deliberately unresolvable
-#       host of `04725_distributed_async_insert_long_directory_name`. Master no longer carries that test, but
-#       this job runs the previous release's copy of the suite, cloned by tag above, and `--fake-drop` makes
-#       its `DROP` a no-op, so the `Remote` table survives into the upgrade restart, where attaching it
-#       resolves the address and logs the failure. The entry is needed until a release without the test is
-#       the previous one. Filtered via regex in the secondary pipe below to require the `Cluster` logger AND
-#       `Code: 198` AND a first host label of 64 or more identical characters, which is past the 63 octets
-#       RFC 1035 permits a label, so a genuine failure to resolve a cluster peer still fails this job.
-# `StorageKeeperMap` + a `05024_keeper_map_parenthesized_metadata*` table + `Failed to activate table because of
-#       invalid metadata in ZooKeeper` is the same class: that test rewrites its own `metadata` znode into shapes a
-#       server must refuse and reverts them at the end of the file, but stress worker 1 (`--database=test_1`) runs
-#       with `memory_tracker_fault_probability`, so an injected `Code: 241` can stop the file before the `DROP`s at
-#       its end run, leaving the tables it created behind with an unreadable znode. The upgrade restart re-attaches
-#       them and logs this per table instead of refusing to start, which is what #115941 made it do on purpose.
-#       Requires the `StorageKeeperMap` logger AND the backquoted fixture-table prefix, so the same message on any
-#       other KeeperMap table - the shape a real metadata-compatibility regression takes - still fails this job.
-# `SystemLogQueue` + `Queue had been full` overflow happens under heavy stress test load and is not a
-#       compatibility bug. Filtered via regex in the secondary pipe below to require both the component name
-#       AND the specific overflow phrase together (the log format is `SystemLogQueue (system.<table>): Queue
-#       had been full ...`), so other SystemLogQueue errors are not masked.
-# `TraceCollector` + `CANNOT_READ_FROM_FILE_DESCRIPTOR` is a transient pipe close error during server shutdown,
-#       unrelated to upgrade compatibility. Filtered via regex in the secondary pipe below to require both
-#       the component name AND the specific error code together, so non-pipe TraceCollector errors are not masked.
-# `This engine is deprecated and is not supported in transactions` appears for Ordinary engine tables from old versions.
-# `e.what() = failed to parse response body` is a transient Azure blob storage batch-parsing error from
-#       `Azure::Storage::Blobs`. Narrowed with the `e.what() = ` prefix to only match caught C++ exceptions of this
-#       type (stable ClickHouse exception formatting), so arbitrary log lines containing the phrase are not masked.
-# `while loading statistics` + `ILLEGAL_STATISTICS` appears when the statistics file format version changes between
-#       releases. The new binary cannot deserialize old statistics files and throws ILLEGAL_STATISTICS (Code: 708).
-#       Filtered via regex in the secondary pipe below to require both the loading context AND the error code together.
-# `rdk:FAIL` + `Connect to` + `Connection refused` is a librdkafka broker connection error when the Kafka
-#       broker is unavailable during upgrade (several tests point at a deliberately unreachable broker). Filtered
-#       via regex in the secondary pipe below to require the `rdk:FAIL` tag AND the specific connection-refused
-#       message together, so real Kafka regressions (auth, protocol, config) that also emit `rdk:FAIL` are
-#       not masked.
-# `StorageKafka2` + `Exception during get topic partitions from Kafka: Local: Broker transport failure` is
-#       the wrapper-exception variant of the same class of error: the `KafkaConsumer2` background poll loop
-#       (`KafkaConsumer2::getAllTopicPartitionOffsets` -> `cppkafka::HandleException`) keeps polling while the
-#       Redpanda broker is in transition during the upgrade restart sequence and logs `<Error>` for each retry.
-#       Filtered via regex in the secondary pipe below to require both the `StorageKafka2` engine context AND
-#       the `Broker transport failure` symptom together, so real `StorageKafka2` regressions (auth errors,
-#       timeouts, protocol errors, other broker errors) still surface.
-# `StorageKafka` + `Consumer error: Broker: Unknown topic or partition`, and the aggregate count line after
-#       it, are the deleted-topic variant of the same class. The six `NNNNN_kafka*` stateless tests that
-#       create real topics (03918, 03919, 03920, 03921, 03922, 03923) clean up in two halves that fail
-#       independently: the `DROP TABLE`s go through the server, the `rpk topic delete`s straight to the
-#       Redpanda started above, which runs for the whole job. A server death between a test's last query and
-#       its cleanup (here the stress-phase server aborted) leaves the Kafka table and its view behind, topic
-#       already gone. The upgrade restart reattaches the table, the surviving view keeps it streaming, and the
-#       consumer polls a topic the broker no longer has; topic auto-creation is off on both sides, hence
-#       `UNKNOWN_TOPIC_OR_PART` rather than the transport failure covered above. Both lines come from
-#       `StorageKafkaUtils::eraseMessageErrors`, so the entries cover `Kafka2` too. Both anchor the
-#       `NNNNN_kafka` token to the start of the backquoted table name, so a database or a longer name carrying
-#       it does not match. That scope is needed because the count line carries no error text of its own and
-#       `Authentication failed` above can already remove its partner line. Removable once the previous
-#       release's copies of these tests stop deleting a topic whose table may survive.
-# `No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed` is the unique signature of
-#       issue #102259 (`getFileNameForRenamedColumnStream` uses `substr(0, N)` instead of `substr(N)`, producing
-#       `<renamed><original>.bin` instead of `<renamed>.bin`). The fix is in PR #102689; until it lands, the
-#       upgraded server detaches the renamed-column parts of `02538_alter_rename_sequence`'s `wrong_metadata_wide`
-#       table. Matched via the exact corrupted filename + column name, which is unique to that test and that bug.
-# `No stream (ba1.bin) file checksum for column b` is the same bug observed on
-#       `02555_davengers_rename_chain`'s `wrong_metadata` table. The test chains `a -> a1` and then
-#       `a1 -> b`, so the corrupted file name is `<new=b><old=a1>.bin = ba1.bin` for column `b`. The
-#       `<column><stream>` combination is unique to this chained-rename test.
-# `wrong_metadata` + `Detaching broken part` + `backward incompatibility` is the follow-up cleanup line for
-#       the same issue: a "Detaching broken part" notice that does not contain the corrupted filename.
-#       Filtered via regex in the secondary pipe below to require all three substrings together, so unrelated
-#       broken-part detach messages are not masked. The regex matches both `wrong_metadata` (from
-#       `02555_davengers_rename_chain`) and `wrong_metadata_wide` (from `02538_alter_rename_sequence`).
-# `RaftInstance: session` + `failed to read rpc header from socket` + `due to error` is a benign NuRaft
-#       shutdown-time message emitted by `rpc_session::start` in `contrib/NuRaft/src/asio_service.cxx` when
-#       the peer side of an accepted RPC connection (in single-node Keeper this is a loopback `::1` client)
-#       closes its socket before the acceptor cancels its pending header read. The already-allow-listed sibling
-#       `RaftInstance: failed to accept a rpc connection due to error 125` is the inverse race (acceptor wins);
-#       this regex covers the other variant (peer wins, read returns EOF or another transient socket error).
-#       Filtered via regex in the secondary pipe below to require all three substrings together, so unrelated
-#       RaftInstance errors are not masked.
-# `Failed to flush system log system.metric_log` + `DEADLOCK_AVOIDED` is a transient lock-timeout emitted by
-#       `SystemLog<MetricLogElement>::flushImpl` when the background `MetricLog` flush loop races with the
-#       ongoing upgrade-test shutdown sequence. Another worker (DROP/RENAME/DETACH on `system.metric_log`,
-#       or a parallel mutation/merge) holds the table-level write lock, the flush blocks for the 60s timeout,
-#       and then aborts with code 473 (`DEADLOCK_AVOIDED`). Losing a few `MetricLogElement` samples during
-#       shutdown is harmless; the upgrade-check stage is not asserting on metric continuity. Filtered via
-#       regex in the secondary pipe below to require BOTH the `SystemLog` flush wrapper for `metric_log` AND
-#       the `DEADLOCK_AVOIDED` error code together, so unrelated lock-timeout errors and unrelated
-#       `metric_log` errors are not masked.
-# `PostgreSQLConnectionPool: Connection error` and `DatabasePostgreSQL::removeOutdatedTables` + `Connection to`
-#       + `failed` are benign background-reconnection errors from a `DatabasePostgreSQL` engine left behind by
-#       `04210_show_remote_databases_in_system_tables` when the stress phase interrupts that test between its
-#       `CREATE DATABASE ... ENGINE = PostgreSQL('192.0.2.1:5432', ...)` and the final `DROP DATABASE` (the
-#       documentation IP `192.0.2.1`, RFC 5737, is intentionally unreachable). `DatabasePostgreSQL::startup`
-#       always activates the `PostgreSQLCleanerTask`, so after the upgrade restart the leftover database's cleaner
-#       task (`removeOutdatedTables`) tries to connect and the connection pool logs `<Error>` for each retry.
-#       Filtered via regex in the secondary pipe below to require the PostgreSQL connection-pool / cleaner-task
-#       context AND a connection failure to the known 04210 fixture host `192.0.2.1:5432` together, so a real
-#       cleaner-task connect failure on a different (persisted) host, or a non-connection PostgreSQL regression
-#       (auth, protocol, query errors), still fails this job.
-#       The same leftover `DatabasePostgreSQL` engine reaches the same unreachable host through two more code
-#       paths that also log the benign connection failure, so they are filtered the same way:
-#       `DatabasePostgreSQL::getTablesIterator` (a `system.tables` scan reads the leftover engine and probes
-#       the pool; it deliberately swallows the error and logs it via `tryLogCurrentException`), and
-#       `AsyncLoader::worker` (the post-upgrade startup asynchronously loads the leftover engine and logs the
-#       same `POSTGRESQL_CONNECTION_FAILURE` (Code: 614) exception). Both matchers require the PostgreSQL
-#       code-path context AND a connection failure to the known 04210 fixture host `192.0.2.1:5432` together
-#       (the `AsyncLoader` one additionally pins the PostgreSQL-specific `Code: 614`). `PoolWithFailover::get`
-#       builds every `pqxx::broken_connection` into the same `Code: 614` / `Connection to <host_port> failed`
-#       text, so scoping to the fixture host (not any `Connection to .* failed`) keeps genuine connect-time
-#       PostgreSQL regressions on a persisted `DatabasePostgreSQL` (a different host, or a non-614 code)
-#       still failing this job.
-# The MySQL matchers below filter the same class of benign connection failure from a `DatabaseMySQL` engine
-#       that `04210_show_remote_databases_in_system_tables` also creates
-#       (`ENGINE = MySQL('192.0.2.1:3306', ...)`, the same unreachable RFC 5737 host). On the post-upgrade
-#       restart the engine probes the server while loading the persisted object and logs `<Error>` for the
-#       expected connection failure. Filtered to require the MySQL component AND the connection-failure
-#       symptom together, so real MySQL regressions (auth, protocol, query errors) are not masked.
-# `is broken and needs manual correction` / `while loading part` + Code 697 (CANNOT_RESTORE_TO_NONENCRYPTED_DISK)
-#       is a benign leftover-state error from the `Backup` database engine. The `03276`/`03277`/`03278`/`03279`
-#       backup-database tests `CREATE DATABASE ... ENGINE = Backup(...)` and drop it, but the upgrade check runs
-#       the client with `--fake-drop` (DROP queries are ignored), so the database survives into the upgrade
-#       restart. When the run randomly enables `--encrypted-storage`, the backed-up parts are encrypted; on
-#       restart the MergeTree part loader reads them through the Backup engine's `DiskBackup` (a non-encrypted
-#       virtual disk), so `BackupImpl::readFileImpl` rejects each encrypted part with Code 697 and the loader logs
-#       it as a broken part. This is expected: an encrypted backup stores already-encrypted bytes and no disk key,
-#       so it can only be read back on an encrypted disk; the Backup DB engine cannot serve it, no crash/data loss.
-#       Scoped to the part-loader wrapper (`is broken and needs manual correction` OR `while loading part`), which
-#       Code 697 only carries on this background Backup-engine read path (`BackupImpl.cpp` readFileImpl, ~912).
-#       The explicit RESTORE-to-disk path (`copyFileToDisk`, ~1038) throws the same message straight to the client
-#       without a part-loader wrapper, so a real regression restoring an encrypted backup to a non-encrypted
-#       destination still surfaces. The scope is database-name-independent, so it covers all four tests regardless
-#       of the surviving DB name (`03279` -> `..._inner_backup_database`; `03277` -> `..._restore`). The follow-up
-#       `Detaching broken part` + `backward incompatibility` cleanup line carries no Code 697 message, so it is
-#       matched by the sibling regex below, scoped to the backup-database DB-name tokens (`backup_database` for
-#       `03276`/`03278`/`03279`, and the full unique test-name prefix
-#       `03277_database_backup_database_file_engine.*_restore` for `03277`) so unrelated broken-part errors are not
-#       masked. `03277`'s restore DB is named `${CLICKHOUSE_TEST_UNIQUE_NAME}_restore`, which embeds the test file
-#       name, so keying on the bare `_restore` token would also swallow real regressions for ordinary restored
-#       objects created by other previous-release tests (e.g. `${TABLE}_restored`, `t_restore_*`).
-# `DDLWorker(rdb_test_...)` + `Error on initialization of rdb_test_...` + `Mapping for table with UUID=... already
-#       exists` + `TABLE_ALREADY_EXISTS` is benign noise from the `--replicated-database` test wrapper during the
-#       upgrade restart. `clickhouse-test --replicated-database` creates each test's database as
-#       `ENGINE=Replicated(...)` named `rdb_test_<rnd>_<shard>`. On the upgrade restart the database's DDLWorker
-#       runs `DatabaseReplicatedDDLWorker::initializeReplication` -> `recoverLostReplica`, which re-creates tables
-#       from the ZooKeeper metadata snapshot. If a stale local table still owns a table's UUID (e.g. a leftover
-#       `_tmp_replace_*` from `CREATE OR REPLACE`, or a table not yet finally dropped), `addUUIDMapping` reports the
-#       collision as a non-fatal `TABLE_ALREADY_EXISTS` (code 57). The DDLWorker main loop catches it, logs this
-#       `<Error> ... Error on initialization of ...` line, waits 5s and retries; recovery self-heals (after enough
-#       retries `max_retries_before_automatic_recovery` forces a digest reset). The server stays up - every other
-#       upgrade-check sub-test (incl. "Server successfully started") passes; only the post-restart `<Error>` scrub
-#       trips. Filtered via regex in the secondary pipe below to require ALL of: `Error on initialization of`
-#       (logged at exactly one site, the DDLWorker recovery retry), the `rdb_test_` test-DB prefix, the UUID mapping
-#       message, AND the `TABLE_ALREADY_EXISTS` code together. So a real `LOGICAL_ERROR` UUID-mapping crash, the same
-#       collision on a non-test database, a different init failure on an `rdb_test_` DB, and unrelated
-#       `TABLE_ALREADY_EXISTS` errors all still surface.
-# `StorageFileLog` + `The absolute data path should be inside` is expected:
-#       `04202_filelog_attach_path_outside_user_files` has an explicit `ATTACH` query for a path outside `user_files_path`.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -671,10 +336,6 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "DistributedInsertQueue" \
            -e "TABLE_IS_READ_ONLY" \
            -e "Code: 1000, e.code() = 111, Connection refused" \
-           -e "[rdk:FAIL]" \
-           -e "[rdk:ERROR]" \
-           -e "Error during draining" \
-           -e "Timeout during draining" \
            -e "UNFINISHED" \
            -e "NETLINK_ERROR" \
            -e "Renaming unexpected part" \
@@ -683,6 +344,14 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "found in queue and some source parts for it was lost" \
            -e "is lost forever." \
            -e "Unknown index: idx." \
+           -e "Cannot parse string 'Hello' as UInt64" \
+           -e "Cannot parse string 'Hello' as UInt32" \
+           -e "Cannot parse string \'Hello\' as UInt32" \
+           -e "Cannot parse string \\'Hello\\' as UInt32" \
+           -e "Cannot parse string \'a\' as UInt32" \
+           -e "Cannot parse string \'b\' as UInt32" \
+           -e "Cannot parse string 'a' as UInt32" \
+           -e "Cannot parse string 'b' as UInt32" \
            -e "} <Error> TCPHandler: Code:" \
            -e "} <Error> executeQuery: Code:" \
            -e "Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'" \
@@ -690,6 +359,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "(ReplicatedMergeTreeAttachThread): Initialization failed. Error" \
            -e "Code: 269. DB::Exception: Destination table is myself" \
            -e "Coordination::Exception: Connection loss" \
+           -e "MutateFromLogEntryTask" \
            -e "No connection to ZooKeeper, cannot get shared table ID" \
            -e "Session expired" \
            -e "TOO_MANY_PARTS" \
@@ -709,40 +379,8 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Cannot parse projection test_projection" \
            -e "Key expressions cannot contain subqueries" \
            -e "Expression must be deterministic but it contains non-deterministic part" \
-           -e "This engine is deprecated and is not supported in transactions" \
-           -e "e.what() = failed to parse response body" \
-           -e "Tuple element name 'null' is reserved" \
-           -e "No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed" \
-           -e "No stream (ba1.bin) file checksum for column b" \
-           -e "Exception during get topic partitions from Kafka: Local: Broker transport failure" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
-    | grep -av -e "Error on initialization of rdb_test_.*Mapping for table with UUID=.*already exists.*TABLE_ALREADY_EXISTS" \
-    | grep -av -e "Azure::Storage::StorageException.*Not found address of host" \
-    | grep -av -e "Cluster: Code: 198.*Not found address of host: \(.\)\1\{63,\}" \
-    | grep -av -e "StorageKeeperMap (.*\.\`05024_keeper_map_parenthesized_metadata.*Failed to activate table because of invalid metadata in ZooKeeper" \
-    | grep -av -e "SystemLogQueue.*Queue had been full" \
-    | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \
-    | grep -av -e "while loading statistics.*ILLEGAL_STATISTICS" \
-    | grep -av -e "rdk:FAIL.*Connect to.*failed: Connection refused" \
-    | grep -av -e "StorageKafka2.*Exception during get topic partitions from Kafka: Local: Broker transport failure" \
-    | grep -av -e "StorageKafka.*\.\`[0-9]\{5\}_kafka.*Consumer error: Broker: Unknown topic or partition" \
-    | grep -av -e "StorageKafka.*\.\`[0-9]\{5\}_kafka.*There were [0-9][0-9]* messages with an error" \
-    | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
-    | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
-    | grep -av -e "SystemLog.*Failed to flush system log system\.metric_log.*DEADLOCK_AVOIDED" \
-    | grep -av -e "PostgreSQLConnectionPool: Connection error.*192\.0\.2\.1., port 5432 failed" \
-    | grep -av -e "DatabasePostgreSQL::removeOutdatedTables.*Connection to .192\.0\.2\.1:5432. failed" \
-    | grep -av -e "DatabasePostgreSQL::getTablesIterator.*Connection to .192\.0\.2\.1:5432. failed" \
-    | grep -av -e "AsyncLoader::worker.*Code: 614.*Connection to .192\.0\.2\.1:5432. failed" \
-    | grep -av -e "mysqlxx::Pool.*Failed to connect to MySQL" \
-    | grep -av -e "Application: Connection to mysql failed" \
-    | grep -av -e "DatabaseMySQL.*Connections to mysql failed" \
-    | grep -av -e "is broken and needs manual correction.*is encrypted in the backup, it can be restored only to an encrypted disk" \
-    | grep -av -e "while loading part.*is encrypted in the backup, it can be restored only to an encrypted disk" \
-    | grep -av -e "backup_database.*Detaching broken part.*backward incompatibility" \
-    | grep -av -e "03277_database_backup_database_file_engine.*_restore.*Detaching broken part.*backward incompatibility" \
-    | grep -av -e "StorageFileLog (.*): The absolute data path should be inside" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
@@ -762,3 +400,5 @@ tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 collect_query_and_trace_logs
 
 mv /var/log/clickhouse-server/stderr.log /test_output/
+
+collect_core_dumps

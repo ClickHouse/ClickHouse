@@ -2,8 +2,8 @@
 
 #include <IO/HTTPCommon.h>
 #include <IO/WriteHelpers.h>
-#include <IO/parseHTTPDate.h>
 #include <Common/NetException.h>
+#include <Common/maskURIPassword.h>
 #include <Poco/Net/NetException.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Interpreters/Context.h>
@@ -20,6 +20,21 @@ namespace ProfileEvents
 namespace
 {
 
+bool isRetriableError(const Poco::Net::HTTPResponse::HTTPStatus http_status) noexcept
+{
+    static constexpr std::array non_retriable_errors{
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_BAD_REQUEST,
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_UNAUTHORIZED,
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND,
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN,
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_IMPLEMENTED,
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_METHOD_NOT_ALLOWED,
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT};
+
+    return std::all_of(
+        non_retriable_errors.begin(), non_retriable_errors.end(), [&](const auto status) { return http_status != status; });
+}
+
 Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTPResponse & response, bool enable_url_encoding)
 {
     chassert(DB::isRedirect(response.getStatus()));
@@ -34,6 +49,15 @@ Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTPRespons
     location_uri = prev_uri;
     location_uri.setPath(path);
     return location_uri;
+}
+
+/// A URI that ends up in a log line or an exception message must never carry credentials. Convenience
+/// overload for a `Poco::URI`: masks the userinfo and presigned-URL parameters via the shared helper.
+std::string maskedURI(const Poco::URI & uri)
+{
+    std::string masked = uri.toString();
+    DB::maskURICredentials(masked);
+    return masked;
 }
 
 class ReadBufferFromSessionResponse : public DB::ReadBufferFromIStream
@@ -92,12 +116,7 @@ void ReadWriteBufferFromHTTP::prepareRequest(Poco::Net::HTTPRequest & request, s
         request.setHost(current_uri.getHost());
 
     if (out_stream_callback)
-    {
-        if (out_stream_fixed_content_length)
-            request.setContentLength(static_cast<std::streamsize>(*out_stream_fixed_content_length));
-        else
-            request.setChunkedTransferEncoding(true);
-    }
+        request.setChunkedTransferEncoding(true);
     else if (method == Poco::Net::HTTPRequest::HTTP_POST)
         request.setContentLength(0);    /// No callback - no body
 
@@ -163,7 +182,7 @@ bool ReadWriteBufferFromHTTP::checkIfActuallySeekable()
 
 String ReadWriteBufferFromHTTP::getFileName() const
 {
-    return initial_uri.toString();
+    return maskedURI(initial_uri);
 }
 
 void ReadWriteBufferFromHTTP::getHeadResponse(Poco::Net::HTTPResponse & response)
@@ -190,11 +209,9 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     size_t max_redirects_,
     bool enable_url_encoding_,
     OutStreamCallback out_stream_callback_,
-    std::optional<size_t> out_stream_fixed_content_length_,
     bool use_external_buffer_,
     bool http_skip_not_found_url_,
     HTTPHeaderEntries http_header_entries_,
-    RedirectCallback redirect_callback_,
     bool delay_initialization,
     std::optional<HTTPFileInfo> file_info_)
     : SeekableReadBuffer(nullptr, 0)
@@ -212,8 +229,6 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     , use_external_buffer(use_external_buffer_)
     , http_skip_not_found_url(http_skip_not_found_url_)
     , out_stream_callback(std::move(out_stream_callback_))
-    , out_stream_fixed_content_length(out_stream_fixed_content_length_)
-    , redirect_callback(std::move(redirect_callback_))
     , redirects(0)
     , http_header_entries {std::move(http_header_entries_)}
     , file_info(file_info_)
@@ -224,16 +239,16 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     if (current_uri.getPath().empty())
         current_uri.setPath("/");
 
-    if (read_settings.http_settings.max_tries <= 0 || read_settings.http_settings.retry_initial_backoff_ms <= 0
-        || read_settings.http_settings.retry_initial_backoff_ms >= read_settings.http_settings.retry_max_backoff_ms)
+    if (read_settings.http_max_tries <= 0 || read_settings.http_retry_initial_backoff_ms <= 0
+        || read_settings.http_retry_initial_backoff_ms >= read_settings.http_retry_max_backoff_ms)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Invalid setting for http backoff, "
             "must be http_max_tries >= 1 (current is {}) and "
-            "0 < http_retry_initial_backoff_ms < http_retry_max_backoff_ms (now 0 < {} < {})",
-            read_settings.http_settings.max_tries,
-            read_settings.http_settings.retry_initial_backoff_ms,
-            read_settings.http_settings.retry_max_backoff_ms);
+            "0 < http_retry_initial_backoff_ms < settings.http_retry_max_backoff_ms (now 0 < {} < {})",
+            read_settings.http_max_tries,
+            read_settings.http_retry_initial_backoff_ms,
+            read_settings.http_retry_max_backoff_ms);
 
     // Configure User-Agent if it not already set.
     const std::string user_agent = "User-Agent";
@@ -248,7 +263,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     if (!delay_initialization && use_external_buffer)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Invalid setting for ReadWriteBufferFromHTTP "
+            "Invalid setting for ReadWriteBufferFromHTTP"
             "delay_initialization is false and use_external_buffer it true.");
 
     if (!delay_initialization)
@@ -276,7 +291,7 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
 
     auto & resp_stream = session->receiveResponse(response);
 
-    assertResponseIsOk(current_uri.toString(), response, resp_stream, allow_redirects);
+    assertResponseIsOk(maskedURI(current_uri), response, resp_stream, allow_redirects, requestCredentialSecrets(request));
 
     return ReadWriteBufferFromHTTP::CallResult(std::move(session), resp_stream);
 }
@@ -297,10 +312,7 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callWithRedirects(
                 " You can {} redirects by changing the setting 'max_http_get_redirects'."
                 " Example: `SET max_http_get_redirects = 10`."
                 " Redirects are restricted to prevent possible attack when a malicious server redirects to an internal resource, bypassing the authentication or firewall.",
-                initial_uri.toString(), max_redirects ? "increase the allowed maximum number of" : "allow");
-
-        if (redirect_callback)
-            redirect_callback(current_uri, uri_redirect);
+                maskedURI(initial_uri), max_redirects ? "increase the allowed maximum number of" : "allow");
 
         current_uri = uri_redirect;
         result = callImpl(response, method_, range, true);
@@ -314,14 +326,14 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                                             std::function<void()> on_retry,
                                             bool mute_logging) const
 {
-    [[maybe_unused]] auto milliseconds_to_wait = read_settings.http_settings.retry_initial_backoff_ms;
+    [[maybe_unused]] auto milliseconds_to_wait = read_settings.http_retry_initial_backoff_ms;
 
     bool is_retriable = true;
     std::exception_ptr exception = nullptr;
 
-    for (size_t attempt = 1; attempt <= read_settings.http_settings.max_tries; ++attempt)
+    for (size_t attempt = 1; attempt <= read_settings.http_max_tries; ++attempt)
     {
-        [[maybe_unused]] bool last_attempt = attempt + 1 > read_settings.http_settings.max_tries;
+        [[maybe_unused]] bool last_attempt = attempt + 1 > read_settings.http_max_tries;
 
         String error_message;
 
@@ -342,7 +354,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         }
         catch (HTTPException & e)
         {
-            if (!isRetriableHTTPError(e.getHTTPStatus()))
+            if (!isRetriableError(e.getHTTPStatus()))
                 is_retriable = false;
 
             error_message = e.displayText();
@@ -373,9 +385,9 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                           "Failed to make request to '{}'{}. "
                           "Error: '{}'. "
                           "Failed at try {}/{}.",
-                          initial_uri.toString(), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
+                          maskedURI(initial_uri), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", maskedURI(current_uri)),
                           error_message,
-                          attempt, read_settings.http_settings.max_tries);
+                          attempt, read_settings.http_max_tries);
 
             std::rethrow_exception(exception);
         }
@@ -390,13 +402,13 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                          "Error: {}. "
                          "Failed at try {}/{}. "
                          "Will retry with current backoff wait is {}/{} ms.",
-                         initial_uri.toString(), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
+                         maskedURI(initial_uri), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", maskedURI(current_uri)),
                          error_message,
-                         attempt + 1, read_settings.http_settings.max_tries,
-                         milliseconds_to_wait, read_settings.http_settings.retry_max_backoff_ms);
+                         attempt + 1, read_settings.http_max_tries,
+                         milliseconds_to_wait, read_settings.http_retry_max_backoff_ms);
 
             sleepForMilliseconds(milliseconds_to_wait);
-            milliseconds_to_wait = std::min(milliseconds_to_wait * 2, read_settings.http_settings.retry_max_backoff_ms);
+            milliseconds_to_wait = std::min(milliseconds_to_wait * 2, read_settings.http_retry_max_backoff_ms);
         }
     }
 }
@@ -428,7 +440,7 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
                 /// it is retriable error
                 throw HTTPException(
                     ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
-                    current_uri.toString(),
+                    maskedURI(current_uri),
                     Poco::Net::HTTPResponse::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE,
                     response.getReason(),
                     explanation);
@@ -546,15 +558,15 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
                 (offset != 0 || offset + n < *file_info->file_size))
             {
                 String explanation = fmt::format(
-                    "When reading with readBigAt {}. "
+                    "When reading with readBigAt {}."
                     "Cannot read with range: [{}, {}] (response status: {}, reason: {}), will retry",
-                    initial_uri.toString(),
+                    maskedURI(initial_uri),
                     *range.begin, *range.end,
                     toString(response.getStatus()), response.getReason());
 
                 throw HTTPException(
                     ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
-                    current_uri.toString(),
+                    maskedURI(current_uri),
                     Poco::Net::HTTPResponse::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE,
                     response.getReason(),
                     explanation);
@@ -615,7 +627,7 @@ off_t ReadWriteBufferFromHTTP::seek(off_t offset_, int whence)
         if (offset_ >= position)
         {
             size_t diff = offset_ - position;
-            if (diff < read_settings.remote_fs_settings.min_bytes_for_seek)
+            if (diff < read_settings.remote_read_min_bytes_for_seek)
             {
                 ignore(diff);
                 return offset_;
@@ -701,13 +713,6 @@ Map ReadWriteBufferFromHTTP::getResponseHeaders() const
     return map;
 }
 
-std::optional<Field> ReadWriteBufferFromHTTP::getMetadata(const String & name) const
-{
-    if (name == "headers")
-        return Field(getResponseHeaders());
-    return std::nullopt;
-}
-
 void ReadWriteBufferFromHTTP::setNextCallback(NextCallback next_callback_)
 {
     next_callback = next_callback_;
@@ -751,12 +756,9 @@ std::optional<time_t> ReadWriteBufferFromHTTP::tryGetLastModificationTime()
 
 ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
 {
-    if (file_info)
-        return *file_info;
-
     /// May be disabled in case the user knows in advance that the server doesn't support HEAD requests.
     /// Allows to avoid making unnecessary requests in such cases.
-    if (!read_settings.http_settings.make_head_request)
+    if (!read_settings.http_make_head_request)
         return HTTPFileInfo{};
 
     Poco::Net::HTTPResponse response;
@@ -783,8 +785,7 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
         throw;
     }
 
-    file_info = parseFileInfo(response, 0);
-    return *file_info;
+    return parseFileInfo(response, 0);
 }
 
 ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(const Poco::Net::HTTPResponse & response, size_t requested_range_begin)
@@ -807,25 +808,18 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(con
     }
 
     if (response.has("Last-Modified"))
-        res.last_modified = tryParseHTTPDate(response.get("Last-Modified"));
+    {
+        String date_str = response.get("Last-Modified");
+        struct tm info;
+        char * end = strptime(date_str.data(), "%a, %d %b %Y %H:%M:%S %Z", &info);
+        if (end == date_str.data() + date_str.size())
+            res.last_modified = timegm(&info);
+    }
 
     return res;
 }
 
 ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTPBasicCredentials & credentials_)
-{
-    return createWithBearerToken(/*bearer_token_=*/ "", credentials_);
-}
-
-ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(const std::string & bearer_token_)
-{
-    /// The buffer keeps a reference to the credentials, hence the immutable static empty object.
-    static const Poco::Net::HTTPBasicCredentials no_credentials;
-    return createWithBearerToken(bearer_token_, no_credentials);
-}
-
-ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
-    const std::string & bearer_token_, const Poco::Net::HTTPBasicCredentials & fallback_credentials_)
 {
     ProxyConfiguration proxy_configuration;
 
@@ -835,17 +829,6 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
         proxy_configuration = ProxyConfigurationResolverProvider::get(proxy_protocol)->resolve();
     }
 
-    /// A non-empty bearer token takes precedence: it and the Basic credentials occupy the
-    /// same `Authorization` header. The buffer keeps a reference to the credentials, hence
-    /// the immutable static for the bearer case (the fallback is then unused).
-    static const Poco::Net::HTTPBasicCredentials no_credentials;
-
-    /// Append the bearer header to a local copy so this does not mutate the builder:
-    /// the same builder can be reused without carrying over a stale `Authorization` header.
-    HTTPHeaderEntries header_entries = http_header_entries;
-    if (!bearer_token_.empty())
-        header_entries.emplace_back("Authorization", "Bearer " + bearer_token_);
-
     // todo it could be a problem if ReadWriteBufferFromHTTP throws
     std::unique_ptr<ReadWriteBufferFromHTTP> ptr(new ReadWriteBufferFromHTTP(
         connection_group,
@@ -854,40 +837,18 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
         proxy_configuration,
         read_settings,
         timeouts,
-        bearer_token_.empty() ? fallback_credentials_ : no_credentials,
+        credentials_,
         remote_host_filter,
         buffer_size,
         max_redirects,
         enable_url_encoding,
         out_stream_callback,
-        out_stream_fixed_content_length,
         use_external_buffer,
         http_skip_not_found_url,
-        header_entries,
-        redirect_callback,
+        http_header_entries,
         delay_initialization,
         /*file_info_=*/ std::nullopt));
     return ptr;
-}
-
-void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri)
-{
-    credentials.clear();
-
-    const auto & user_info = uri.getUserInfo();
-    if (user_info.empty())
-        return;
-
-    const auto n = user_info.find(':');
-    if (n != std::string::npos)
-    {
-        credentials.setUsername(user_info.substr(0, n));
-        credentials.setPassword(user_info.substr(n + 1));
-    }
-    else
-    {
-        credentials.setUsername(user_info);
-    }
 }
 
 }

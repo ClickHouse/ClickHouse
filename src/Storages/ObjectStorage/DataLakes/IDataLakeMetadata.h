@@ -7,11 +7,12 @@
 #include <Core/Types.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/StorageID.h>
+#include <Processors/ISimpleTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/IStorage_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/prepareReadingFromFormat.h>
@@ -31,7 +32,6 @@ namespace ErrorCodes
 extern const int UNSUPPORTED_METHOD;
 }
 
-class BackgroundJobsAssignee;
 class SinkToStorage;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 class StorageObjectStorageConfiguration;
@@ -44,9 +44,6 @@ struct ObjectInfo;
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;
-
-struct FormatParserSharedResources;
-using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
 class IDataLakeMetadata : boost::noncopyable
 {
@@ -104,10 +101,6 @@ public:
     virtual bool supportsWrites() const { return false; }
     virtual bool supportsParallelInsert() const { return false; }
 
-    /// Reads the incremental refreshable-MV cursor persisted in the current table snapshot (as stored),
-    /// or nullopt if absent/unsupported. The write path commits it atomically with the appended data.
-    virtual std::optional<String> getRefreshCursor(ContextPtr) const { return std::nullopt; }
-
     virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
 
     static bool supportsTotalRows(ContextPtr, ObjectStorageType) { return false; }
@@ -120,12 +113,6 @@ public:
     /// not be rewritten and will be left unsorted or with previous sort order.
     /// In this case we shouldn't use read in order optimization.
     virtual bool isDataSortedBySortingKey(StorageMetadataPtr, ContextPtr) const { return false; }
-
-    /// Whether LIMIT lazy materialization can be used for the data snapshot pinned in the
-    /// storage metadata snapshot (see ReadFromObjectStorageStep::canUseLazyMaterialization).
-    /// It requires that every data file can be re-read by physical row numbers with the
-    /// deferred columns pruned from the main read.
-    virtual bool supportsLazyMaterialization(StorageMetadataPtr, ContextPtr) const { return false; }
 
     /// Some data lakes specify information for reading files from disks.
     /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
@@ -147,13 +134,13 @@ public:
     virtual bool optimize(
         const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
     {
-        throwNotImplemented("optimize");
+        return false;
     }
 
     virtual bool supportsDelete() const { return false; }
     virtual void mutate(
         const MutationCommands & /*commands*/,
-        StoragePtr /*storage_ptr*/,
+        StorageObjectStorageConfigurationPtr /*configuration*/,
         ContextPtr /*context*/,
         const StorageID & /*storage_id*/,
         StorageMetadataPtr /*metadata_snapshot*/,
@@ -167,11 +154,7 @@ public:
 
     virtual void addDeleteTransformers(ObjectInfoPtr, QueryPipelineBuilder &, const std::optional<FormatSettings> &, FormatParserSharedResourcesPtr, ContextPtr) const { }
     virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) { throwNotImplemented("alter"); }
-    virtual void alter(
-        const AlterCommands & /*params*/,
-        ContextPtr /*context*/,
-        const StorageID & /*storage_id*/,
-        std::shared_ptr<DataLake::ICatalog> /*catalog*/) { throwNotImplemented("alter"); }
+    virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) { throwNotImplemented("alter"); }
 
     virtual Pipe executeCommand(
         const String & command_name,
@@ -186,13 +169,6 @@ public:
     }
 
     virtual void drop(ContextPtr) { }
-
-    virtual ObjectStorageType getObjectStorageType() const { return ObjectStorageType::None; }
-
-    virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & /*assignee*/, StorageObjectStorage & /*storage_object_storage*/) { return false; }
-    virtual void finishAllBackgroundJobs() {}
-    virtual Int32 getBiasBackoffSeconds() const { return 0; }
-    virtual bool isBackgroundExecutable() const { return false; }
 
 protected:
     virtual ObjectIterator
