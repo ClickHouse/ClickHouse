@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# no-fasttest: bzip2, xz and IcebergLocal are not in the fast-test build
+# no-fasttest: bzip2 and IcebergLocal are not in the fast-test build
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,7 +18,9 @@ trap cleanup EXIT
 
 function check()
 {
-    ${CLICKHOUSE_CLIENT} --send_logs_level=fatal "$@" 2>&1 | grep -oE 'Compression level -?[0-9]+ is out of range for [a-z0-9]+'
+    local out
+    out=$(${CLICKHOUSE_CLIENT} --send_logs_level=fatal "$@" 2>&1) && echo "Unexpected success"
+    grep -oE 'Compression level -?[0-9]+ is out of range for [a-z0-9]+\. \([A-Z0-9_]+\)' <<< "$out"
 }
 
 check --query "INSERT INTO FUNCTION file('${CLICKHOUSE_TEST_UNIQUE_NAME}_1.csv.gz', 'CSV') SELECT 1 SETTINGS output_format_compression_level = 18"

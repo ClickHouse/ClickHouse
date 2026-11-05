@@ -1,5 +1,5 @@
-Compression level 18 is out of range for gzip
-Compression level 18 is out of range for deflate
-Compression level 10 is out of range for xz
-Compression level 0 is out of range for bz2
-Compression level 18 is out of range for gzip
+Compression level 18 is out of range for gzip. (ZLIB_DEFLATE_FAILED)
+Compression level 18 is out of range for deflate. (ZLIB_DEFLATE_FAILED)
+Compression level 10 is out of range for xz. (LZMA_STREAM_ENCODER_FAILED)
+Compression level 0 is out of range for bz2. (BZIP2_STREAM_ENCODER_FAILED)
+Compression level 18 is out of range for gzip. (ZLIB_DEFLATE_FAILED)
