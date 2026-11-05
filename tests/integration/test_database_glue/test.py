@@ -14,7 +14,7 @@ from datetime import timedelta
 from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table.sorting import SortField, SortOrder
+from pyiceberg.table.sorting import UNSORTED_SORT_ORDER, SortField, SortOrder
 from pyiceberg.transforms import DayTransform, IdentityTransform
 from helpers.config_cluster import minio_access_key, minio_secret_key
 import decimal
@@ -1027,7 +1027,7 @@ def test_s3a_locations(started_cluster):
     catalog = load_catalog_impl(started_cluster)
     catalog.create_namespace(root_namespace)
     schema = Schema(NestedField(field_id=1, name="id", field_type=StringType(), required=False))
-    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER, dir=table_name)
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), UNSORTED_SORT_ORDER, dir=table_name)
     table.append(pa.Table.from_pylist([{"id": "a"}, {"id": "b"}]))
 
     # Other writers (Spark, EMR) register Hadoop `s3a://` locations in Glue.
