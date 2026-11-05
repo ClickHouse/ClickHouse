@@ -18,7 +18,7 @@ namespace DB
 /// Close a descriptor of a directory watcher, which also removes it from the kqueue of the reactor.
 void closeFileDescriptor(int fd);
 
-/// The state of the macOS directory watcher, which the loop of the former watch thread kept in local variables.
+/// The state of the macOS directory watcher.
 /// It is used only by the `DirectoryWatchReactor` thread (and the constructor, before the watcher is added).
 struct DarwinDirectoryWatchState
 {
