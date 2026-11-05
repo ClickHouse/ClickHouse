@@ -1,0 +1,27 @@
+-- A `Variant` key is cast alternative by alternative, and each row takes the value of its active alternative.
+-- The `DateTime64` alternative therefore gets the same lossy-conversion check as a plain `DateTime64` key: a
+-- timestamp that the key type cannot hold exactly matches nothing, while the `UInt8` alternative and a NULL
+-- row keep their own semantics.
+
+SET enable_nullable_tuple_type = 1, allow_experimental_variant_type = 1;
+
+{% for mode in [0, 1] %}
+SELECT {{ mode }}, id, v,
+    (v, 1) IN (SELECT toFloat64(arrayJoin([1767225600, 3])), 1) AS float_key,
+    (v, 1) NOT IN (SELECT toFloat64(arrayJoin([1767225600, 3])), 1) AS not_float_key,
+    (v, 1) IN (SELECT toDateTime(arrayJoin([1767225600, 3]), 'UTC'), 1) AS datetime_key,
+    (v, 1) IN (SELECT toDateTime64(arrayJoin([1767225600, 3]), 3, 'UTC'), 1) AS datetime64_3_key,
+    (toNullable(tuple(v)), 1) IN (SELECT tuple(toFloat64(arrayJoin([1767225600, 3]))), 1) AS nullable_tuple_float_key
+FROM
+(
+    SELECT number AS id, arrayElement([
+        CAST(fromUnixTimestamp64Nano(1767225600000000000, 'UTC'), 'Variant(DateTime64(9, \'UTC\'), UInt8)'),
+        CAST(fromUnixTimestamp64Nano(1767225600000000001, 'UTC'), 'Variant(DateTime64(9, \'UTC\'), UInt8)'),
+        CAST(fromUnixTimestamp64Nano(1767225599999999999, 'UTC'), 'Variant(DateTime64(9, \'UTC\'), UInt8)'),
+        CAST(3, 'Variant(DateTime64(9, \'UTC\'), UInt8)'),
+        CAST(NULL, 'Variant(DateTime64(9, \'UTC\'), UInt8)')], number + 1) AS v
+    FROM numbers(5)
+)
+ORDER BY id
+SETTINGS transform_null_in = {{ mode }};
+{% endfor %}

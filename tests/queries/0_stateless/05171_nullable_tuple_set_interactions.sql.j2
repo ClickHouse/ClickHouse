@@ -1,0 +1,53 @@
+SET enable_nullable_tuple_type = 1;
+
+-- Primary-key pruning agrees with row evaluation, including tuple element type conversions.
+DROP TABLE IF EXISTS nullable_tuple_index;
+CREATE TABLE nullable_tuple_index (id UInt8, k Nullable(Tuple(Nullable(UInt8))), tag Nullable(UInt8))
+ENGINE = MergeTree ORDER BY (k, tag) SETTINGS allow_nullable_key = 1, index_granularity = 1;
+INSERT INTO nullable_tuple_index VALUES (1, (NULL), 1), (2, (1), 1), (3, NULL, 1), (4, (2), 1), (5, (NULL), NULL);
+{% for mode in [0, 1] %}
+{% for element_type in ['UInt8', 'UInt16'] %}
+{% for operator in ['IN', 'NOT IN'] %}
+SELECT 'index, {{ mode }}, {{ element_type }}, {{ operator }}', arraySort(groupArray(id))
+FROM nullable_tuple_index
+WHERE (k, tag) {{ operator }}
+    (SELECT CAST(k, 'Nullable(Tuple(Nullable({{ element_type }})))'), tag FROM nullable_tuple_index WHERE id IN (1, 2, 3, 5))
+SETTINGS transform_null_in = {{ mode }}, use_index_for_in_with_subqueries = 1,
+    use_skip_indexes = 0, optimize_move_to_prewhere = 0;
+{% endfor %}
+{% endfor %}
+{% endfor %}
+DROP TABLE nullable_tuple_index;
+
+-- Low-cardinality nullable keys follow the outer-null policy of plain nullable keys. Against a non-nullable
+-- set, an outer NULL never matches and is not converted to the set type, while the values are. Against a
+-- nullable set, it matches the NULL of the set with `transform_null_in = 1`.
+DROP TABLE IF EXISTS nullable_tuple_low_cardinality;
+CREATE TABLE nullable_tuple_low_cardinality (id UInt8, k LowCardinality(Nullable(String))) ENGINE = Memory;
+INSERT INTO nullable_tuple_low_cardinality VALUES (1, '1'), (2, '2'), (3, NULL), (4, '1');
+{% for mode in [0, 1] %}
+SELECT 'low cardinality, {{ mode }}', id, k,
+    (k, 1) IN (SELECT '1', 1), (k, 1) NOT IN (SELECT '1', 1),
+    (k, 1) IN (SELECT 1, 1), (k, 1) NOT IN (SELECT 1, 1),
+    (k, 1) IN (SELECT CAST(NULL, 'Nullable(String)'), 1)
+FROM nullable_tuple_low_cardinality
+ORDER BY id
+SETTINGS transform_null_in = {{ mode }}, max_block_size = 2;
+{% endfor %}
+DROP TABLE nullable_tuple_low_cardinality;
+
+-- Stored sets retain their null-matching policy independently of the querying session setting.
+DROP TABLE IF EXISTS nullable_tuple_stored_set;
+CREATE TABLE nullable_tuple_stored_set (k Nullable(Tuple(Nullable(UInt8))), tag Nullable(UInt8)) ENGINE = Set SETTINGS persistent = 0;
+INSERT INTO nullable_tuple_stored_set VALUES ((NULL), 1), ((1), 1), (NULL, 1), ((NULL), NULL);
+{% for mode in [0, 1] %}
+SELECT {{ mode }}, number, (k, 1) IN nullable_tuple_stored_set, (k, 1) NOT IN nullable_tuple_stored_set
+FROM
+(
+    SELECT number, CAST(if(number = 0, NULL, tuple(if(number = 1, NULL, toNullable(number - 1)))),
+        'Nullable(Tuple(Nullable(UInt8)))') AS k
+    FROM numbers(4)
+)
+SETTINGS transform_null_in = {{ mode }};
+{% endfor %}
+DROP TABLE nullable_tuple_stored_set;

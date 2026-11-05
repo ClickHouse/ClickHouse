@@ -1,0 +1,12 @@
+0	Nullable(Tuple) with one field	1	1	1	1	0	0
+0	plain tuple with one field	1	1	1	1
+0	Nullable(Tuple) with two fields	1	1	1	1
+0	plain tuple with two fields	0	0	0	0
+0	all-NULL tuple literal on the right	1	1	0
+0	members the key cannot hold	0	1	\N
+1	Nullable(Tuple) with one field	1	1	1	1	0	0
+1	plain tuple with one field	1	1	1	1
+1	Nullable(Tuple) with two fields	1	1	1	1
+1	plain tuple with two fields	1	1	1	1
+1	all-NULL tuple literal on the right	1	1	0
+1	members the key cannot hold	0	1	1
