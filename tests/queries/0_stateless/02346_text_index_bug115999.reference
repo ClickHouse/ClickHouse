@@ -113,6 +113,11 @@ a lambda capture named like the indexed column
 a multi-column haystack above UNION ALL arms
 1
 2
+a declared column spelled like a JSON path
+0
+0
+0
+1
 a Distributed haystack, predicate on the initiator
 1
 1

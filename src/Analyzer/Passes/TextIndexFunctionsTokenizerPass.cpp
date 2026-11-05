@@ -465,7 +465,8 @@ private:
         if (!inserted)
             return it->second;
 
-        const Carriers carriers = map_only_name.empty() ? carrierNames(resolved, name, getMapSubcolumnShadowingCheck(metadata))
+        const auto is_shadowing_column = getMapSubcolumnShadowingCheck(metadata);
+        const Carriers carriers = map_only_name.empty() ? carrierNames(resolved, name, is_shadowing_column)
                                                         : Carriers{.names = {name}, .json_subcolumn = {}};
 
         for (const auto & index : indices)
@@ -480,6 +481,11 @@ private:
 
             auto matches_json = [&](const String & carrier)
             {
+                /// The flattened spelling of a JSON path can equally name a declared column, or a subcolumn
+                /// of one, and then that is what the predicate reads rather than the indexed JSON column.
+                if (is_shadowing_column(carrier))
+                    return false;
+
                 return tryMatchJSONSubcolumnToIndex(carrier, index.column_names, "JSONAllValues", json_argument_types).has_value();
             };
 

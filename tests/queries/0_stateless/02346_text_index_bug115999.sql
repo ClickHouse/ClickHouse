@@ -651,6 +651,35 @@ WHERE hasAnyTokens(z, ['ell']);
 
 DROP TABLE t_115999_arms;
 
+-- The flattened spelling of a JSON path can equally name a declared column. Such a column is what the
+-- predicate reads, so the index on the JSON column says nothing about it.
+SELECT 'a declared column spelled like a JSON path';
+CREATE TABLE t_115999_shadowed
+(
+    group_id UInt64,
+    j JSON,
+    `j.k` String,
+    `j.t` Tuple(m String),
+    INDEX idx_j JSONAllValues(j) TYPE text(tokenizer = ngrams(3))
+)
+ENGINE = MergeTree
+ORDER BY group_id;
+
+INSERT INTO t_115999_shadowed VALUES (1, '{"other":"hello"}', 'world', tuple('world'));
+
+-- The first three print 0: `j.k` and `j.t.m` read the declared columns, so the default applies.
+SELECT count() FROM t_115999_shadowed AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasAnyTokens(t.`j.k`, ['orl']) OR b.category = 'nonexistent';
+SELECT count() FROM t_115999_shadowed AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasAnyTokens(t.`j.k`, ['orl'], 'splitByNonAlpha') OR b.category = 'nonexistent';
+SELECT count() FROM t_115999_shadowed AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasAnyTokens(t.`j.t`.m, ['orl']) OR b.category = 'nonexistent';
+-- A path of the indexed JSON column still forwards, so the refusal is about ownership, not the shape.
+SELECT count() FROM t_115999_shadowed AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasAnyTokens(t.j.other::String, ['ell']) OR b.category = 'nonexistent';
+
+DROP TABLE t_115999_shadowed;
+
 -- A Distributed table carries no indexes of its own, so the initiator has to reach the shards' local
 -- table by name; otherwise a predicate it evaluates itself disagrees with the shard-local scans.
 SELECT 'a Distributed haystack, predicate on the initiator';
