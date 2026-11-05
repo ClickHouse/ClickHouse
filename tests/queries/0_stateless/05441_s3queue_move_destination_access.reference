@@ -44,3 +44,5 @@ shared_o	delete
 shared_v	keep
 delete
 ['3.csv']
+delete
+['3.csv','4.csv']

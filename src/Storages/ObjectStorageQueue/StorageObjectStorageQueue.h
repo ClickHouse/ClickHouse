@@ -38,6 +38,7 @@ public:
         std::optional<FormatSettings> format_settings_,
         ASTStorage * engine_args,
         LoadingStrictnessLevel mode,
+        bool is_fresh_definition,
         bool keep_data_in_keeper_);
 
     String getName() const override { return engine_name; }

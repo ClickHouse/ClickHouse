@@ -433,6 +433,42 @@ shared_put v 3 4
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH OBJECT STORAGE QUEUE ${db}.shared_v PATH '${db}_shared_v/3.csv'"
 shared_files v
 
+# A new definition must still agree with Keeper, which older replicas compare: a full `ATTACH` and a `RESTORE` with
+# another action are rejected.
+shared_backup="Disk('backups', '05441_shared_${CLICKHOUSE_TEST_UNIQUE_NAME}')"
+shared_uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
+$CLICKHOUSE_CLIENT --send_logs_level=error -q "
+    ATTACH TABLE ${db}.shared_n UUID '${shared_uuid}' (x UInt8)
+    ENGINE = S3Queue('${shared_url}_n/*.csv', 'clickhouse', 'clickhouse', 'CSV')
+    SETTINGS mode = 'unordered', keeper_path = '${shared_keeper_path}', after_processing = 'keep'
+    -- { serverError METADATA_MISMATCH }
+"
+$CLICKHOUSE_CLIENT -q "BACKUP TABLE ${db}.shared_v TO ${shared_backup} FORMAT Null"
+$CLICKHOUSE_CLIENT -q "
+    RESTORE TABLE ${db}.shared_v AS ${db}.shared_r FROM ${shared_backup} SETTINGS structure_only = 1 FORMAT Null
+    -- { serverError METADATA_MISMATCH }
+"
+
+# `ALTER ... ON CLUSTER` changes the shared object of this server but not Keeper, so the two differ. A table whose
+# action differs from Keeper attaches again.
+$CLICKHOUSE_CLIENT --distributed_ddl_output_mode none -q "
+    ALTER TABLE ${db}.shared_o ON CLUSTER test_shard_localhost MODIFY SETTING after_processing = 'keep'
+"
+$CLICKHOUSE_CLIENT -q "DETACH TABLE ${db}.shared_v SYNC"
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE ${db}.shared_v"
+
+# Detaching both tables drops the shared object, and the next `ATTACH` seeds it from its own metadata. An `ALTER` of
+# another setting stored in Keeper must still leave Keeper's action, which older versions compare, unchanged.
+$CLICKHOUSE_CLIENT -q "DETACH TABLE ${db}.shared_v SYNC"
+$CLICKHOUSE_CLIENT -q "DETACH TABLE ${db}.shared_o SYNC"
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE ${db}.shared_v"
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE ${db}.shared_o"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE ${db}.shared_o MODIFY SETTING loading_retries = 5"
+$CLICKHOUSE_CLIENT -q "SELECT JSONExtractString(value, 'after_processing') FROM system.zookeeper WHERE path = '${shared_keeper_path}' AND name = 'metadata'"
+shared_put v 4 5
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH OBJECT STORAGE QUEUE ${db}.shared_v PATH '${db}_shared_v/4.csv'"
+shared_files v
+
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE ${db}.shared_mv SYNC;
     DROP TABLE ${db}.shared_dst SYNC;
