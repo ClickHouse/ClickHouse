@@ -2,8 +2,8 @@
 
 The `SQLLogic test` CI job runs ClickHouse against the canonical results of the
 SQLite SQLLogicTest corpus used by SQuaLity. The job pins the upstream corpus to
-the commit recorded in `exclusions/catalog.json`; it does not compare ClickHouse
-with live results from DuckDB, PostgreSQL, or another database system.
+the commit recorded in `exclusions/catalog.json` and compares only ClickHouse
+with those canonical expected results.
 
 Every corpus request is executed. Files under `exclusions/` list request IDs
 whose current ClickHouse result is incompatible with the canonical result. An
