@@ -67,8 +67,9 @@ INSERT INTO tm SELECT number, if(number < 4, map('k1', 1), map('k2', 2)) FROM nu
 CREATE TABLE tl (id UInt64, lcm Map(LowCardinality(String), UInt64)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
 INSERT INTO tl SELECT number, map('k1', number) FROM numbers(3);
 
-CREATE TABLE tf (id UInt64, m2 Map(FixedString(4), UInt64)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
-INSERT INTO tf SELECT number, map(toFixedString('ab', 4), number) FROM numbers(3);
+CREATE TABLE tf (id UInt64, m2 Map(FixedString(4), UInt64), m3 Map(LowCardinality(FixedString(4)), UInt64)) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO tf SELECT number, map(toFixedString('ab', 4), number), map(toFixedString('ab', 4), number) FROM numbers(3);
 
 SELECT 'P1 JSON path';
 SELECT arrayStringConcat(arraySort(arrayFilter(x -> x != '', groupArray(arrayStringConcat(arraySort(arrayFilter(x -> x != 'id', splitByString(', ', replaceRegexpOne(explain, '^.*Output: ', '')))), ', ')))), ' | ') FROM (EXPLAIN SELECT data.a AS r FROM (SELECT * FROM t)) WHERE explain LIKE '% Output:%';
@@ -328,6 +329,16 @@ SELECT 'N19 map element of a FixedString-keyed map';
 SELECT arrayStringConcat(arraySort(arrayFilter(x -> x != '', groupArray(arrayStringConcat(arraySort(arrayFilter(x -> x != 'id', splitByString(', ', replaceRegexpOne(explain, '^.*Output: ', '')))), ', ')))), ' | ') FROM (EXPLAIN SELECT m2['ab'] FROM (SELECT * FROM tf)) WHERE explain LIKE '% Output:%';
 SELECT groupArray(r) FROM (SELECT m2['ab'] FROM (SELECT * FROM tf) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r;
 SELECT groupArray(r) FROM (SELECT m2['ab'] FROM (SELECT * FROM tf) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r SETTINGS query_plan_push_down_volume_reducing_functions = 0;
+
+SELECT 'N19b map element of a LowCardinality(FixedString)-keyed map';
+SELECT arrayStringConcat(arraySort(arrayFilter(x -> x != '', groupArray(arrayStringConcat(arraySort(arrayFilter(x -> x != 'id', splitByString(', ', replaceRegexpOne(explain, '^.*Output: ', '')))), ', ')))), ' | ') FROM (EXPLAIN SELECT m3['ab'] FROM (SELECT * FROM tf)) WHERE explain LIKE '% Output:%';
+SELECT groupArray(r) FROM (SELECT m3['ab'] FROM (SELECT * FROM tf) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r;
+SELECT groupArray(r) FROM (SELECT m3['ab'] FROM (SELECT * FROM tf) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r SETTINGS query_plan_push_down_volume_reducing_functions = 0;
+
+SELECT 'P41 map element of a LowCardinality(FixedString)-keyed map with a full-width key';
+SELECT arrayStringConcat(arraySort(arrayFilter(x -> x != '', groupArray(arrayStringConcat(arraySort(arrayFilter(x -> x != 'id', splitByString(', ', replaceRegexpOne(explain, '^.*Output: ', '')))), ', ')))), ' | ') FROM (EXPLAIN SELECT m3[toFixedString('ab', 4)] FROM (SELECT * FROM tf)) WHERE explain LIKE '% Output:%';
+SELECT groupArray(r) FROM (SELECT m3[toFixedString('ab', 4)] FROM (SELECT * FROM tf) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r;
+SELECT groupArray(r) FROM (SELECT m3[toFixedString('ab', 4)] FROM (SELECT * FROM tf) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r SETTINGS query_plan_push_down_volume_reducing_functions = 0;
 
 SELECT 'N22 a JSON path named like the composed path';
 SELECT arrayStringConcat(arraySort(arrayFilter(x -> x != '', groupArray(arrayStringConcat(arraySort(arrayFilter(x -> x != 'id', splitByString(', ', replaceRegexpOne(explain, '^.*Output: ', '')))), ', ')))), ' | ') FROM (EXPLAIN SELECT toString(getSubcolumn(x, 'Int64')) FROM (SELECT data.a AS x FROM (SELECT * FROM t))) WHERE explain LIKE '% Output:%';

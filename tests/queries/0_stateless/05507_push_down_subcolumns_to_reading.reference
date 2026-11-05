@@ -203,6 +203,14 @@ N19 map element of a FixedString-keyed map
 m2
 [(0),(0),(0)]
 [(0),(0),(0)]
+N19b map element of a LowCardinality(FixedString)-keyed map
+m3
+[(0),(0),(0)]
+[(0),(0),(0)]
+P41 map element of a LowCardinality(FixedString)-keyed map with a full-width key
+m3.key_ab\0\0
+[(0),(1),(2)]
+[(0),(1),(2)]
 N22 a JSON path named like the composed path
 data.a
 [(NULL),(NULL),(NULL),(NULL),(NULL),(NULL),(NULL),(NULL),(NULL),(NULL),(NULL),(NULL)]

@@ -4,6 +4,7 @@
 #include <Core/Names.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeQBit.h>
@@ -642,7 +643,8 @@ std::optional<SubcolumnRead> tryMatchSubcolumnReadImpl(const ActionsDAG::Node & 
                 return {};
 
             /// A shorter constant is padded, so that a missing key would match a key with trailing zero bytes.
-            if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(map.getKeyType().get());
+            const auto key_type = removeLowCardinality(map.getKeyType());
+            if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(key_type.get());
                 fixed_string && (key->getType() != Field::Types::String || key->safeGet<String>().size() != fixed_string->getN()))
                 return {};
 
