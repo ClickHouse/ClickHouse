@@ -51,8 +51,8 @@ llvm::Value * compileDateTransformCall(llvm::IRBuilderBase & builder, llvm::Valu
     auto * time_zone_pointer = b.CreateIntToPtr(b.getInt64(reinterpret_cast<uintptr_t>(&time_zone)), pointer_type);
 
     auto * call = b.CreateCall(function_type, function, {argument, time_zone_pointer});
+    /// Not `readonly`: the transform may go to cctz, whose time zones update cached hints on lookups.
     call->setDoesNotThrow();
-    call->setOnlyReadsMemory();
     return b.CreateTrunc(call, b.getIntNTy(sizeof(To) * 8));
 }
 
