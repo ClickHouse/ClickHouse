@@ -842,6 +842,8 @@ Aws::Vector<Aws::Glue::Model::Column> GlueCatalog::glueColumnsFromIcebergSchema(
         Aws::Glue::Model::Column column;
         column.SetName(field->getValue<String>(DB::Iceberg::f_name));
         column.SetType(icebergTypeToGlueType(field->get(DB::Iceberg::f_type)));
+        if (field->has("doc") && !field->isNull("doc"))
+            column.SetComment(field->getValue<String>("doc"));
 
         const bool required = field->has(DB::Iceberg::f_required) && field->getValue<bool>(DB::Iceberg::f_required);
 

@@ -72,7 +72,7 @@ TEST(GlueSchemaColumns, ColumnsFromSchema)
         "schema-id": 0,
         "fields": [
             {"id": 1, "name": "id", "required": true, "type": "long"},
-            {"id": 2, "name": "message", "required": false, "type": "string"},
+            {"id": 2, "name": "message", "required": false, "type": "string", "doc": "Message text"},
             {"id": 3, "name": "details", "required": false, "type": {"type": "struct", "fields": [
                 {"id": 4, "name": "created_by", "required": false, "type": "string"}]}}
         ]})json");
@@ -85,11 +85,13 @@ TEST(GlueSchemaColumns, ColumnsFromSchema)
     EXPECT_EQ(columns[0].GetParameters().at("iceberg.field.id"), "1");
     EXPECT_EQ(columns[0].GetParameters().at("iceberg.field.optional"), "false");
     EXPECT_EQ(columns[0].GetParameters().at("iceberg.field.current"), "true");
+    EXPECT_FALSE(columns[0].CommentHasBeenSet());
 
     EXPECT_EQ(columns[1].GetName(), "message");
     EXPECT_EQ(columns[1].GetType(), "string");
     EXPECT_EQ(columns[1].GetParameters().at("iceberg.field.id"), "2");
     EXPECT_EQ(columns[1].GetParameters().at("iceberg.field.optional"), "true");
+    EXPECT_EQ(columns[1].GetComment(), "Message text");
 
     EXPECT_EQ(columns[2].GetName(), "details");
     EXPECT_EQ(columns[2].GetType(), "struct<created_by:string>");
