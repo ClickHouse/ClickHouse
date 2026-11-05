@@ -761,10 +761,16 @@ def test_success_clears_stale_retriable_marker(started_cluster):
     assert processed_ready, "file never succeeded after being fixed"
 
     # The .retriable marker must be gone now - cleared atomically with success.
-    remaining = node.query(
-        f"SELECT name FROM system.zookeeper WHERE path = '{failed_path}' "
-        f"AND name LIKE '%.retriable'"
-    ).strip()
+    # Rows become visible before the later Keeper commit removes the marker, so poll for it.
+    remaining = None
+    for _ in range(60):
+        remaining = node.query(
+            f"SELECT name FROM system.zookeeper WHERE path = '{failed_path}' "
+            f"AND name LIKE '%.retriable'"
+        ).strip()
+        if remaining == "":
+            break
+        time.sleep(1)
     assert remaining == "", (
         f"stale .retriable marker(s) survived a successful reprocess: {remaining}"
     )
@@ -857,10 +863,16 @@ def test_ordered_mode_non_max_processed_file_clears_stale_retriable_marker(start
     assert processed_ready, "both files never succeeded after fixing the flaky one"
 
     # The .retriable marker for the non-max (flaky) file must be gone now.
-    remaining = node.query(
-        f"SELECT name FROM system.zookeeper WHERE path = '{failed_path}' "
-        f"AND name LIKE '%.retriable'"
-    ).strip()
+    # Rows become visible before the later Keeper commit removes the marker, so poll for it.
+    remaining = None
+    for _ in range(60):
+        remaining = node.query(
+            f"SELECT name FROM system.zookeeper WHERE path = '{failed_path}' "
+            f"AND name LIKE '%.retriable'"
+        ).strip()
+        if remaining == "":
+            break
+        time.sleep(1)
     assert remaining == "", (
         f"stale .retriable marker(s) survived a successful non-max-file reprocess: {remaining}"
     )

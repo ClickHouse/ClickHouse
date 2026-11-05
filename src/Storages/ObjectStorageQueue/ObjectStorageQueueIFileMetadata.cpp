@@ -473,6 +473,13 @@ bool ObjectStorageQueueIFileMetadata::hasNonProcessableState() const
 
 bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 {
+    /// An optimization for local parallel processing.
+    /// Taken before reading or revalidating the cached state, so that two local consumers
+    /// cannot reset the shared status of a file while the other one is processing it.
+    std::unique_lock processing_lock(file_status->processing_lock, std::defer_lock);
+    if (!processing_lock.try_lock())
+        return {};
+
     auto state = file_status->state.load();
     if (state == FileStatus::State::Failed)
     {
@@ -501,6 +508,9 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
             }
             /// Keeper's live retry count is under the current limit: allow processing
             /// to proceed below (covers e.g. a cold cache observing an in-progress retry).
+            /// Sync the cached count with the live one (under `processing_lock`), otherwise
+            /// `hasNonProcessableState` below would reject the file by a stale exhausted count.
+            file_status->retries.store(keeper_retries);
         }
         else if (path_state == PathState::Unknown)
         {
@@ -541,11 +551,6 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
             return false;
         }
     }
-
-    /// An optimization for local parallel processing.
-    std::unique_lock processing_lock(file_status->processing_lock, std::defer_lock);
-    if (!processing_lock.try_lock())
-        return {};
 
     /// Under the lock, as `prepareSetProcessingRequests` does: a processor of this server
     /// takes the file and sets its state while holding the lock, so a check made before
@@ -613,6 +618,9 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
             }
             /// Keeper's live retry count is under the current limit: allow processing
             /// to proceed below (covers e.g. a cold cache observing an in-progress retry).
+            /// Sync the cached count with the live one (under `processing_lock`), otherwise
+            /// `hasNonProcessableState` below would reject the file by a stale exhausted count.
+            file_status->retries.store(keeper_retries);
         }
         else if (path_state == PathState::Unknown)
         {
