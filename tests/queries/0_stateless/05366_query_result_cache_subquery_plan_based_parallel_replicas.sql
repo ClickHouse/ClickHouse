@@ -26,8 +26,9 @@ SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1;
 
 SELECT sum(k) FROM t_qrc_pr_pb WHERE k IN (SELECT k FROM t_qrc_pr_pb WHERE k < 20 SETTINGS use_query_cache = 1);
 
--- A subquery cannot escape the ban by turning plan-based parallel replicas off in its own SETTINGS.
-SELECT sum(k) FROM t_qrc_pr_pb WHERE k IN (SELECT k FROM t_qrc_pr_pb WHERE k < 30 SETTINGS use_query_cache = 1, parallel_replicas_plan_based = 0);
+-- A subquery cannot escape the ban by turning plan-based parallel replicas off in its own SETTINGS:
+-- mixing the implementations of parallel replicas within one query is rejected.
+SELECT sum(k) FROM t_qrc_pr_pb WHERE k IN (SELECT k FROM t_qrc_pr_pb WHERE k < 30 SETTINGS use_query_cache = 1, parallel_replicas_plan_based = 0); -- { serverError INCORRECT_QUERY }
 
 SELECT count() FROM system.query_cache WHERE is_subquery = 1 AND query LIKE '%' || currentDatabase() || '.t_qrc_pr_pb%';
 
