@@ -14,6 +14,7 @@ SET query_plan_join_swap_table = 'auto';
 DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS customer;
 DROP TABLE IF EXISTS nation;
+DROP TABLE IF EXISTS keys_log;
 
 CREATE TABLE orders (o_orderkey Int32, o_custkey Int32, o_totalprice Decimal(15, 2)) ENGINE = MergeTree ORDER BY o_orderkey;
 CREATE TABLE customer (c_custkey Int32, c_nationkey Int32) ENGINE = MergeTree ORDER BY c_custkey;
@@ -64,6 +65,42 @@ JOIN (SELECT * FROM nation ASOF JOIN customer ON n_nationkey = c_nationkey AND n
 JOIN nation AS n2 ON n2.n_nationkey = cn.c_nationkey
 FORMAT Null SETTINGS log_comment = '05498 asof';
 
+-- After a first run, the hash table statistics give the filtered `nation` inside the unknown `keys_log ⋈ nation`
+-- (`Log` has no statistics) a row estimate, so the graph above it is reordered.
+CREATE TABLE keys_log (l_key Int32) ENGINE = Log;
+INSERT INTO keys_log SELECT number % 10 FROM numbers(100);
+
+SELECT count() FROM keys_log JOIN nation ON l_key = n_nationkey JOIN customer ON c_custkey = l_key
+JOIN nation AS n2 ON n2.n_nationkey = nation.n_nationkey WHERE nation.n_name = 'FRANCE'
+FORMAT Null SETTINGS query_plan_optimize_join_order_limit = 3, collect_hash_table_stats_during_joins = 1, use_hash_table_stats_for_join_reordering = 1;
+
+SELECT 'cached_boundary', count()
+FROM
+(
+    EXPLAIN keep_logical_steps = 1
+    SELECT count() FROM keys_log JOIN nation ON l_key = n_nationkey JOIN customer ON c_custkey = l_key
+    JOIN nation AS n2 ON n2.n_nationkey = nation.n_nationkey WHERE nation.n_name = 'FRANCE'
+    SETTINGS query_plan_optimize_join_order_limit = 3, collect_hash_table_stats_during_joins = 1, use_hash_table_stats_for_join_reordering = 1
+)
+WHERE explain ILIKE '%Join: keys_log%⋈ nation%⋈ n2%⋈ customer%';
+
+-- The same when the hash table statistics give the row estimate to `cn`, a sub-join that contains the filtered `nation`.
+SELECT count() FROM keys_log JOIN (SELECT * FROM nation ANY JOIN customer ON n_nationkey = c_nationkey WHERE n_name = 'FRANCE') AS cn
+    ON l_key = cn.n_nationkey
+JOIN customer AS c2 ON c2.c_custkey = l_key JOIN nation AS n2 ON n2.n_nationkey = cn.n_nationkey
+FORMAT Null SETTINGS query_plan_optimize_join_order_limit = 3, collect_hash_table_stats_during_joins = 1, use_hash_table_stats_for_join_reordering = 1;
+
+SELECT 'cached_composite_boundary', count()
+FROM
+(
+    EXPLAIN keep_logical_steps = 1
+    SELECT count() FROM keys_log JOIN (SELECT * FROM nation ANY JOIN customer ON n_nationkey = c_nationkey WHERE n_name = 'FRANCE') AS cn
+        ON l_key = cn.n_nationkey
+    JOIN customer AS c2 ON c2.c_custkey = l_key JOIN nation AS n2 ON n2.n_nationkey = cn.n_nationkey
+    SETTINGS query_plan_optimize_join_order_limit = 3, collect_hash_table_stats_during_joins = 1, use_hash_table_stats_for_join_reordering = 1
+)
+WHERE explain ILIKE '%Join: keys_log%⋈ (cn)%⋈ n2%⋈ c2%';
+
 -- With statistics `nation` has a row estimate, and the joins are reordered.
 ALTER TABLE nation MATERIALIZE STATISTICS ALL SETTINGS mutations_sync = 2;
 
@@ -106,3 +143,4 @@ FROM
 DROP TABLE orders;
 DROP TABLE customer;
 DROP TABLE nation;
+DROP TABLE keys_log;

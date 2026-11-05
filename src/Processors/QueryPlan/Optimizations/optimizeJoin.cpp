@@ -1767,8 +1767,11 @@ static bool hasChildJoinToMerge(const QueryPlan::Node & node)
 
 /// Whether a table without statistics and without a row estimate is in this relation. A join optimized
 /// on its own does not record the source of its estimate, so its inputs are checked.
-static bool hasTableWithoutStatistics(QueryPlan::Node & node, RelationEstimates & estimates)
+static bool hasTableWithoutStatistics(QueryPlan::Node & node, QueryGraphBuilder::BuilderContext & context)
 {
+    if (context.join_settings.use_hash_table_stats_for_join_reordering && context.statistics_context.getCachedHint(&node))
+        return false;
+
     auto * join_node = &node;
     while (join_node->children.size() == 1)
         join_node = join_node->children.front();
@@ -1778,10 +1781,10 @@ static bool hasTableWithoutStatistics(QueryPlan::Node & node, RelationEstimates 
         if (join_step->isOptimized() && join_step->getResultRowsEstimation())
             return false;
         return std::ranges::any_of(
-            join_node->children, [&](QueryPlan::Node * child) { return hasTableWithoutStatistics(*child, estimates); });
+            join_node->children, [&](QueryPlan::Node * child) { return hasTableWithoutStatistics(*child, context); });
     }
 
-    auto stats = estimateRelation(estimates, node);
+    auto stats = estimateRelation(*context.relation_estimates, node);
     return !stats.estimated_rows && stats.source == RowEstimateSource::NoStatistics;
 }
 
@@ -1799,8 +1802,7 @@ static bool joinGraphHasRelationWithoutStatistics(
         if (stats.estimated_rows)
             continue;
         if (stats.source == RowEstimateSource::NoStatistics
-            || (stats.source == RowEstimateSource::NoSource
-                && hasTableWithoutStatistics(*relations.inputs[i], *relations.context->relation_estimates)))
+            || (stats.source == RowEstimateSource::NoSource && hasTableWithoutStatistics(*relations.inputs[i], *relations.context)))
             return true;
     }
     return false;
