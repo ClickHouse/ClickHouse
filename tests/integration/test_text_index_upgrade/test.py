@@ -485,6 +485,11 @@ def test_downgrade_after_writing_pfor(started_cluster):
     try:
         assert run_search_queries(node, table) == expected_results()
 
+        # Pin a header version the old binary knows, so that it reaches the codec check.
+        node.query(
+            f"ALTER TABLE {table} MODIFY SETTING text_index_serialization_version = 'v2_with_positions'"
+        )
+
         # The table now mixes the original parts with parts naming an unknown codec.
         insert_new_part(node, table)
         assert run_search_queries(node, table) == MIXED_EXPECTED
@@ -494,6 +499,10 @@ def test_downgrade_after_writing_pfor(started_cluster):
         node.query(f"OPTIMIZE TABLE {table} FINAL")
         assert_single_active_part(node, table)
         assert run_search_queries(node, table) == MIXED_EXPECTED
+
+        node.query(
+            f"ALTER TABLE {table} RESET SETTING text_index_serialization_version"
+        )
 
         # The metadata names no new setting, so the failure below can only come from the part.
         node.restart_with_original_version()

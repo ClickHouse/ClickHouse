@@ -18,6 +18,7 @@ using namespace DB;
 
 namespace DB::ErrorCodes
 {
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int CORRUPTED_DATA;
 }
 
@@ -47,12 +48,13 @@ int deserializeTokensErrorCode(const std::string & buffer)
     return 0;
 }
 
-std::vector<std::string> deserializeFrontCodedTokens(const std::string & buffer)
+std::vector<std::string> deserializeFrontCodedTokens(
+    const std::string & buffer, TextIndexDictionaryBlockEncoding expected_encoding = TextIndexDictionaryBlockEncoding::FrontCodingV1)
 {
     ReadBufferFromMemory in(buffer.data(), buffer.size());
     auto [column, format] = TextIndexSerialization::deserializeTokens(in);
 
-    EXPECT_EQ(format, static_cast<UInt64>(TextIndexDictionaryBlockEncoding::FrontCodingV1));
+    EXPECT_EQ(format, static_cast<UInt64>(expected_encoding));
 
     /// Cumulative offsets, no terminating zeros: token i is the range [offsets[i - 1], offsets[i]).
     const auto & string_column = assert_cast<const ColumnString &>(*column);
@@ -170,6 +172,84 @@ TEST(TextIndexFrontCoding, ReconstructedTokenTooLargeIsRejected)
     writeVarUInt(4, out);
     out.write("test", 4);
     writeFrontCodedToken(out, /*lcp=*/ 4, /*data_size=*/ SerializationString::MAX_STRING_SIZE, "");
+
+    EXPECT_EQ(deserializeTokensErrorCode(out.str()), ErrorCodes::CORRUPTED_DATA);
+}
+
+namespace
+{
+
+/// Writes the header of a `frontcoding_v2` block, its first token and the bit widths of both length columns.
+void writeFrontCodingV2Header(WriteBuffer & out, UInt64 num_tokens, std::string_view first_token, UInt64 lcp_bit_width, UInt64 suffix_size_bit_width)
+{
+    writeVarUInt(static_cast<UInt64>(TextIndexDictionaryBlockEncoding::FrontCodingV2), out);
+    writeVarUInt(num_tokens, out);
+    writeVarUInt(first_token.size(), out);
+    out.write(first_token.data(), first_token.size());
+    writeVarUInt(lcp_bit_width, out);
+    writeVarUInt(suffix_size_bit_width, out);
+}
+
+}
+
+TEST(TextIndexFrontCodingV2, RoundTrip)
+{
+    auto tokens = ColumnString::create();
+    for (std::string_view token : {"car", "card", "care", "dog"})
+        tokens->insertData(token.data(), token.size());
+
+    WriteBufferFromOwnString out;
+    TextIndexSerialization::serializeTokens(*tokens, out, TextIndexDictionaryBlockEncoding::FrontCodingV2);
+
+    const auto result = deserializeFrontCodedTokens(out.str(), TextIndexDictionaryBlockEncoding::FrontCodingV2);
+    EXPECT_EQ(result, (std::vector<std::string>{"car", "card", "care", "dog"}));
+}
+
+/// Lengths of tokens above 4 GiB need more than 32 bits.
+TEST(TextIndexFrontCodingV2, BitWidthAbove32IsAccepted)
+{
+    WriteBufferFromOwnString out;
+    writeFrontCodingV2Header(out, /*num_tokens=*/ 2, "ab", /*lcp_bit_width=*/ 33, /*suffix_size_bit_width=*/ 1);
+    out.write("\x01\x00\x00\x00\x00", 5); /// lcp = 1 in 33 bits
+    out.write("\x01", 1); /// suffix size = 1 in 1 bit
+    out.write("c", 1);
+
+    const auto result = deserializeFrontCodedTokens(out.str(), TextIndexDictionaryBlockEncoding::FrontCodingV2);
+    EXPECT_EQ(result, (std::vector<std::string>{"ab", "ac"}));
+}
+
+TEST(TextIndexFrontCodingV2, BitWidthTooLargeIsRejected)
+{
+    WriteBufferFromOwnString out;
+    writeFrontCodingV2Header(out, /*num_tokens=*/ 2, "ab", /*lcp_bit_width=*/ 64, /*suffix_size_bit_width=*/ 1);
+
+    EXPECT_EQ(deserializeTokensErrorCode(out.str()), ErrorCodes::CORRUPTED_DATA);
+}
+
+/// (2^61 - 1) * 8 bits does not overflow, but rounding it up to whole words does.
+TEST(TextIndexFrontCodingV2, BitColumnSizeOverflowIsRejected)
+{
+    WriteBufferFromOwnString out;
+    writeFrontCodingV2Header(out, /*num_tokens=*/ 1ULL << 61, "a", /*lcp_bit_width=*/ 8, /*suffix_size_bit_width=*/ 8);
+    out.write("\x00\x00\x00\x00", 4);
+
+    EXPECT_EQ(deserializeTokensErrorCode(out.str()), ErrorCodes::CORRUPTED_DATA);
+}
+
+TEST(TextIndexFrontCodingV2, TruncatedBitColumnIsRejected)
+{
+    WriteBufferFromOwnString out;
+    writeFrontCodingV2Header(out, /*num_tokens=*/ 1000, "a", /*lcp_bit_width=*/ 8, /*suffix_size_bit_width=*/ 8);
+    out.write("\x00\x00\x00\x00", 4);
+
+    EXPECT_EQ(deserializeTokensErrorCode(out.str()), ErrorCodes::CANNOT_READ_ALL_DATA);
+}
+
+TEST(TextIndexFrontCodingV2, LcpLargerThanPreviousTokenIsRejected)
+{
+    WriteBufferFromOwnString out;
+    writeFrontCodingV2Header(out, /*num_tokens=*/ 2, "ab", /*lcp_bit_width=*/ 2, /*suffix_size_bit_width=*/ 0);
+    out.write("\x03", 1); /// lcp = 3
 
     EXPECT_EQ(deserializeTokensErrorCode(out.str()), ErrorCodes::CORRUPTED_DATA);
 }

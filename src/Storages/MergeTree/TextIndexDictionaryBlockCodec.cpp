@@ -9,7 +9,9 @@
 #include <IO/ReadHelpers.h>
 #include <base/arithmeticOverflow.h>
 
+#include <bit>
 #include <cstring>
+#include <limits>
 
 namespace DB
 {
@@ -25,13 +27,14 @@ namespace TextIndexDictionaryBlockCodec
 namespace
 {
 
-/// Token lengths never exceed `SerializationString::MAX_STRING_SIZE`, so they fit into 32 bits.
-constexpr UInt64 MAX_BIT_WIDTH_FRONT_CODING_V2 = 32;
+/// Token lengths never exceed `SerializationString::MAX_STRING_SIZE`.
+constexpr UInt64 MAX_BIT_WIDTH_FRONT_CODING_V2 = std::bit_width(SerializationString::MAX_STRING_SIZE);
 
-void readBitPacked(ReadBuffer & istr, size_t num_values, UInt8 bit_width, PODArray<UInt32> & values)
+void readBitPacked(ReadBuffer & istr, size_t num_values, UInt8 bit_width, PODArray<UInt64> & values)
 {
+    /// Rounding up to whole words below must not overflow either.
     size_t num_bits = 0;
-    if (common::mulOverflow<size_t>(num_values, bit_width, num_bits))
+    if (common::mulOverflow<size_t>(num_values, bit_width, num_bits) || num_bits > std::numeric_limits<size_t>::max() - 128)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted text index dictionary: too many tokens ({}) in a block", num_values);
 
     PODArray<UInt64> words;
@@ -43,7 +46,7 @@ void readBitPacked(ReadBuffer & istr, size_t num_values, UInt8 bit_width, PODArr
 
     values.resize(num_values);
     for (size_t i = 0; i < num_values; ++i)
-        values[i] = static_cast<UInt32>(readBitsPacked64(words.data(), i * bit_width, bit_width));
+        values[i] = readBitsPacked64(words.data(), i * bit_width, bit_width);
 }
 
 UInt8 readBitWidth(ReadBuffer & istr)
@@ -57,7 +60,7 @@ UInt8 readBitWidth(ReadBuffer & istr)
 
 }
 
-void writeBitPacked(std::span<const UInt32> values, UInt8 bit_width, WriteBuffer & ostr)
+void writeBitPacked(std::span<const UInt64> values, UInt8 bit_width, WriteBuffer & ostr)
 {
     size_t num_bits = values.size() * bit_width;
     PODArray<UInt64> words;
@@ -179,8 +182,8 @@ ColumnPtr deserializeFrontCodingV2(ReadBuffer & istr, size_t num_tokens)
     const UInt8 lcp_bit_width = readBitWidth(istr);
     const UInt8 suffix_size_bit_width = readBitWidth(istr);
 
-    PODArray<UInt32> lcps;
-    PODArray<UInt32> suffix_sizes;
+    PODArray<UInt64> lcps;
+    PODArray<UInt64> suffix_sizes;
     readBitPacked(istr, num_tokens - 1, lcp_bit_width, lcps);
     readBitPacked(istr, num_tokens - 1, suffix_size_bit_width, suffix_sizes);
 

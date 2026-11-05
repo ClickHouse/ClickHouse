@@ -19,7 +19,7 @@ class WriteBuffer;
 namespace TextIndexDictionaryBlockCodec
 {
 
-void writeBitPacked(std::span<const UInt32> values, UInt8 bit_width, WriteBuffer & ostr);
+void writeBitPacked(std::span<const UInt64> values, UInt8 bit_width, WriteBuffer & ostr);
 
 ColumnPtr deserializeRaw(ReadBuffer & istr, size_t num_tokens);
 ColumnPtr deserializeFrontCodingV1(ReadBuffer & istr, size_t num_tokens);
@@ -98,8 +98,8 @@ void serializeFrontCodingV2(
     writeVarUInt(first_token.size(), ostr);
     ostr.write(first_token.data(), first_token.size());
 
-    PODArray<UInt32> lcps;
-    PODArray<UInt32> suffix_sizes;
+    PODArray<UInt64> lcps;
+    PODArray<UInt64> suffix_sizes;
     lcps.reserve(block_end - block_begin - 1);
     suffix_sizes.reserve(block_end - block_begin - 1);
 
@@ -109,8 +109,8 @@ void serializeFrontCodingV2(
         auto current_token = token_getter(i);
         TextIndexSerialization::checkTokenSize(current_token.size());
         auto lcp = computeCommonPrefixLength(previous_token, current_token);
-        lcps.push_back(static_cast<UInt32>(lcp));
-        suffix_sizes.push_back(static_cast<UInt32>(current_token.size() - lcp));
+        lcps.push_back(lcp);
+        suffix_sizes.push_back(current_token.size() - lcp);
         previous_token = current_token;
     }
 
