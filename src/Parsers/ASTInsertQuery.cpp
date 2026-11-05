@@ -83,6 +83,7 @@ void ASTInsertQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("partition_by", partition_by);
     w.writeChild("settings_ast", settings_ast);
     w.writeChild("select", select);
+    w.writeChild("returning", returning);
     w.writeChild("infile", infile);
     w.writeChild("compression", compression);
 }
@@ -130,6 +131,7 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     child = r.readScreenedChildOfType<ASTFunction>("table_function");
     if (child)
     {
+        child->as<ASTFunction &>().setKind(ASTFunction::Kind::TABLE_FUNCTION);
         table_function = child;
         children.push_back(table_function);
     }
@@ -160,6 +162,13 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     {
         select = child;
         children.push_back(select);
+    }
+
+    child = r.readScreenedChildOfType<ASTSelectWithUnionQuery>("returning");
+    if (child)
+    {
+        returning = child;
+        children.push_back(returning);
     }
 
     /// `FROM INFILE`/`COMPRESSION` are both string `ASTLiteral`s in the SQL grammar, and
@@ -247,6 +256,13 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     {
         ostr << " (";
         columns->format(ostr, settings, state, frame);
+        ostr << ")";
+    }
+
+    if (returning)
+    {
+        ostr << " RETURNING (";
+        returning->format(ostr, settings, state, frame);
         ostr << ")";
     }
 
