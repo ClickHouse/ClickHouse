@@ -325,8 +325,9 @@ namespace
     /// `ASTWithAlias::parametrised_alias`, which is NOT a child, so the placeholder walks above
     /// (and the matcher / substitution in `RewriteRulesASTTraversal.cpp`, which also follow only
     /// `children`) never see it: the rule would be stored with an alias placeholder that is
-    /// never validated, bound or substituted. Walks ordinary `children` and the template fields
-    /// of any nested rule DDL.
+    /// never validated, bound or substituted. Walks ordinary `children`, the members kept outside
+    /// `children` (`forEachNonChildSemanticAST`, e.g. an alias inside a `SHOW TABLES WHERE`
+    /// subquery) and the template fields of any nested rule DDL.
     std::optional<String> findParametrisedAlias(const ASTPtr & ast)
     {
         if (!ast)
@@ -351,7 +352,13 @@ namespace
         for (const auto & child : ast->children)
             if (auto found = findParametrisedAlias(child))
                 return found;
-        return {};
+        std::optional<String> found_in_non_child;
+        forEachNonChildSemanticAST(*ast, [&](const ASTPtr & member)
+        {
+            if (!found_in_non_child)
+                found_in_non_child = findParametrisedAlias(member);
+        });
+        return found_in_non_child;
     }
 
     /// Returns the name of the first `{name:Type}` placeholder (`ASTQueryParameter`) reachable
