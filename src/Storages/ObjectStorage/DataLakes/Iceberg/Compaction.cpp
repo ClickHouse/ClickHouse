@@ -1745,7 +1745,6 @@ void compactIcebergTable(
         context_,
         persistent_table_components.metadata_compression_method);
 
-    /// External files may be shared with other tables through `add_files`; compaction cannot safely delete them.
     if (!plan.external_files.empty())
     {
         constexpr size_t max_files_to_name = 10;

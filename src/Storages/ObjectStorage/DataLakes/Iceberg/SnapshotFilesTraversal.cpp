@@ -125,7 +125,7 @@ void collectMetadataRootFiles(
     const VisitPathFn & visit,
     std::unordered_set<String> & out)
 {
-    /// `metadata_path` is already a storage key; passing it through URI resolution would misparse it.
+    /// `metadata_path` is already a storage key.
     out.insert(metadata_path);
 
     /// version-hint.text is not a metadata path: it is a fixed object under the storage root.

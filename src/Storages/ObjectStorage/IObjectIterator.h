@@ -91,12 +91,8 @@ struct ObjectInfo
     String getIdentifier(bool include_file_bucket_info = true) const;
     String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
 
-    /// The identifier of the object in the query condition cache. A data lake file is identified by its path in the
-    /// table metadata, since files in different storages can have the same key. That path can carry secrets (the
-    /// userinfo or a signed query of a URI), while the key is visible in `system.query_condition_cache` and in the
-    /// logs, so such a path is replaced by the path without them, followed by a hash of the complete identifier.
-    /// A file outside `base_storage` is read with a client whose access depends on the query settings, so the identifier
-    /// also names that client.
+    /// The identifier of the object in the query condition cache. A data lake file is identified by its metadata path
+    /// with the userinfo and query replaced by a hash of the complete identifier, plus its storage if outside `base_storage`.
     String getQueryConditionCacheIdentifier(const ObjectStoragePtr & base_storage) const;
 };
 

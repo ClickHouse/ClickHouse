@@ -2232,8 +2232,6 @@ IcebergMetadata::tryCollectExternalFilesToDeleteOnDrop(ContextPtr context, const
     }
 }
 
-/// A copy of `context` with `s3_allow_server_credentials_in_user_queries` and
-/// `object_storage_propagate_credentials_to_other_storages` set to the given values.
 static ContextPtr withCredentialsPolicy(ContextPtr context, bool allow_server_credentials, bool propagate_credentials)
 {
     auto result = Context::createCopy(context);
