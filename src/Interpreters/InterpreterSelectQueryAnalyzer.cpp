@@ -5,6 +5,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Analyzer/Passes/DisableParallelReplicasPass.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -74,6 +75,7 @@ extern const SettingsBool use_concurrency_control;
 extern const SettingsBool parallel_replicas_local_plan;
 extern const SettingsString cluster_for_parallel_replicas;
 extern const SettingsBool make_distributed_plan;
+extern const SettingsBool parallel_replicas_plan_based;
 }
 
 namespace
@@ -212,8 +214,7 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     /// The automatic mode decides with its own cost model, and the row estimate that
     /// `parallel_replicas_min_number_of_rows_per_replica` asks for is a full index analysis of the read, repeated on
     /// every build of this plan. Every context of the plan inherits this mark, and the planner skips the estimate there.
-    auto probe = std::make_shared<AutomaticParallelReplicasProbe>();
-    ctx->setAutomaticParallelReplicasProbe(probe);
+    ctx->setIsAutomaticParallelReplicasProbe(true);
 
     /// Building the plan below re-analyzes and re-plans the query from scratch, and for a query parallel
     /// replicas cannot read at all the result is the single-node plan again, recognized as such only
@@ -236,6 +237,16 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
         {
             LOG_TRACE(logger, "Parallel replicas cannot be used for this query. Skipping building query plan with parallel replicas.");
             return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::Settings};
+        }
+
+        /// A correlated subquery makes `DisableParallelReplicasPass` turn parallel replicas off in the query tree of
+        /// this plan. When it turns them off everywhere, the planner reads nothing with them. Plan-based parallel
+        /// replicas choose the read while optimizing the plan instead, so leave that to the build.
+        if (!eligibility_context->getSettingsRef()[Setting::parallel_replicas_plan_based]
+            && disablesParallelReplicasInWholeTree(single_node_query_tree))
+        {
+            LOG_TRACE(logger, "A correlated subquery disables parallel replicas in the whole query. Skipping building query plan with parallel replicas.");
+            return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::QueryShape};
         }
 
         if (!canQueryPossiblyUseParallelReplicas(single_node_query_tree, eligibility_context))
@@ -307,9 +318,7 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     reuseBuiltSets(plan, built_sets);
     plan.optimize(optimization_settings);
     return PlanWithParallelReplicas{
-        .plan = std::make_unique<QueryPlan>(std::move(plan)),
-        .skip_reason = PlanWithParallelReplicas::SkipReason::None,
-        .without_parallel_replicas_for_now = probe->without_parallel_replicas_for_now};
+        .plan = std::make_unique<QueryPlan>(std::move(plan)), .skip_reason = PlanWithParallelReplicas::SkipReason::None};
 }
 }
 

@@ -193,7 +193,7 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     /// The analyze mode must reach every join the report walker can reach, including the joins of
     /// this view's inner query. So must the mark of the automatic mode's plan with parallel replicas.
     new_context->setJoinAnalyzeMode(context->getJoinAnalyzeMode());
-    new_context->setAutomaticParallelReplicasProbe(context->getAutomaticParallelReplicasProbe());
+    new_context->setIsAutomaticParallelReplicasProbe(context->isAutomaticParallelReplicasProbe());
 
     if (context->getCurrentTransaction())
         new_context->setCurrentTransaction(context->getCurrentTransaction());

@@ -43,8 +43,6 @@ struct PlanWithParallelReplicas
 
     std::unique_ptr<QueryPlan> plan;
     SkipReason skip_reason = SkipReason::None;
-    /// The plan was built without parallel replicas for a reason that can pass: see `AutomaticParallelReplicasProbe`.
-    bool without_parallel_replicas_for_now = false;
 };
 
 using QueryPlanWithParallelReplicasBuilder = std::function<PlanWithParallelReplicas(const BuiltSetsByHashPtr &, const LoggerPtr &)>;

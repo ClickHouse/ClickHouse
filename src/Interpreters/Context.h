@@ -32,7 +32,6 @@
 
 #include "config.h"
 
-#include <atomic>
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -67,14 +66,6 @@ struct OvercommitTracker;
 
 namespace DB
 {
-
-/// Shared by every context of the plan with parallel replicas that `automatic_parallel_replicas_mode` builds to cost.
-struct AutomaticParallelReplicasProbe
-{
-    /// The build used no parallel replicas for a reason that can pass while the query and its settings stay the
-    /// same: too few active replicas, or nothing to read yet. Whatever the plan shows is not worth remembering.
-    std::atomic<bool> without_parallel_replicas_for_now = false;
-};
 
 class ASTSelectQuery;
 
@@ -681,11 +672,10 @@ protected:
     /// purpose: only Interpreter may turn it on, but it must reach every join of the
     /// query, including joins in nested plans, which EXPLAIN also prints.
     JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;
-    /// Set while building the plan with parallel replicas that `automatic_parallel_replicas_mode` costs against the
+    /// True while building the plan with parallel replicas that `automatic_parallel_replicas_mode` costs against the
     /// single-node plan. It is a context field rather than a setting, because it must reach every planning of that
     /// plan, including views analyzed later by their own interpreters, and no `SETTINGS` clause there may undo it.
-    /// Every context of that plan shares it, so it also carries back what the build ran into.
-    std::shared_ptr<AutomaticParallelReplicasProbe> automatic_parallel_replicas_probe;
+    bool is_automatic_parallel_replicas_probe = false;
 
     /// Defined out of line: a definition in the header gives every shared object its own copy.
     static ContextPtr global_context_instance;
@@ -2079,9 +2069,8 @@ public:
     JoinAnalyzeMode getJoinAnalyzeMode() const { return join_analyze_mode; }
     void setJoinAnalyzeMode(JoinAnalyzeMode value) { join_analyze_mode = value; }
 
-    bool isAutomaticParallelReplicasProbe() const { return automatic_parallel_replicas_probe != nullptr; }
-    const std::shared_ptr<AutomaticParallelReplicasProbe> & getAutomaticParallelReplicasProbe() const { return automatic_parallel_replicas_probe; }
-    void setAutomaticParallelReplicasProbe(std::shared_ptr<AutomaticParallelReplicasProbe> value) { automatic_parallel_replicas_probe = std::move(value); }
+    bool isAutomaticParallelReplicasProbe() const { return is_automatic_parallel_replicas_probe; }
+    void setIsAutomaticParallelReplicasProbe(bool value) { is_automatic_parallel_replicas_probe = value; }
 
     ActionLocksManagerPtr getActionLocksManager() const;
 

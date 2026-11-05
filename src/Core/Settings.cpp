@@ -9795,9 +9795,7 @@ Enable automatic switching to execution with parallel replicas based on collecte
     DECLARE(Bool, automatic_parallel_replicas_remember_boundary, true, R"(
 Lets automatic parallel replicas remember, per query plan, where the replicas' share of the work ends, so that a
 repeated query whose statistics decline parallel replicas is decided without building the plan with parallel
-replicas. It also remembers, for ten minutes, a query plan whose plan with parallel replicas could not be used at
-all - it could not be compared with the single-node plan, or the planner did not use parallel replicas in it - so
-that repeating the query does not build that plan again.
+replicas.
 
 Disable it to make every query pay the full cost of the decision, e.g. when benchmarking that cost.
 )", 0, \

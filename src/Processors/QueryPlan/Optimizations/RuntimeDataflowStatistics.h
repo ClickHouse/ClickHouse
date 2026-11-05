@@ -14,7 +14,6 @@
 #include <Common/CacheBase.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
-#include <chrono>
 #include <cstddef>
 #include <functional>
 #include <memory>
@@ -66,7 +65,6 @@ public:
     RuntimeDataflowStatisticsCache()
         : stats_cache(std::make_shared<Cache>(CurrentMetrics::end(), CurrentMetrics::end(), 100_MiB, 1'000'000))
         , boundary_cache(std::make_shared<BoundaryCache>(CurrentMetrics::end(), CurrentMetrics::end(), 100_MiB, 1'000'000))
-        , unmatched_cache(std::make_shared<UnmatchedCache>(CurrentMetrics::end(), CurrentMetrics::end(), 100_MiB, 1'000'000))
     {
     }
 
@@ -89,35 +87,11 @@ public:
 
     void setBoundary(UInt64 root_key, Boundary boundary);
 
-    /// Why the replicas plan an earlier execution built under `root_key` could not be used at all. Neither outcome
-    /// records statistics, so without remembering it every execution would build that plan again only to throw it
-    /// away. It is forgotten after a while, because the plans can come to match as the data changes, e.g. when the
-    /// replicas plan orders its joins differently.
-    enum class Unmatched : uint8_t
-    {
-        /// The plans could not be matched well enough to compare them.
-        PlansNotComparable,
-        /// The planner did not use parallel replicas in the replicas plan.
-        PlanWithoutParallelReplicas,
-    };
-
-    std::optional<Unmatched> getUnmatched(UInt64 root_key) const;
-
-    void setUnmatched(UInt64 root_key, Unmatched reason);
-
 private:
     using BoundaryCache = DB::CacheBase<UInt64, Boundary>;
 
-    struct UnmatchedEntry
-    {
-        Unmatched reason = Unmatched::PlansNotComparable;
-        std::chrono::steady_clock::time_point expires_at;
-    };
-    using UnmatchedCache = DB::CacheBase<UInt64, UnmatchedEntry>;
-
     CachePtr stats_cache;
     std::shared_ptr<BoundaryCache> boundary_cache;
-    std::shared_ptr<UnmatchedCache> unmatched_cache;
 };
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache();

@@ -968,14 +968,6 @@ static std::vector<bool> getActiveReplicasForParallelReplicas(const ContextPtr &
     return is_active;
 }
 
-/// Both reasons this file falls back to a plan without parallel replicas - a single usable replica, or nothing to
-/// read - can pass while the query stays the same. Tell the automatic mode, so that it does not remember the plan.
-static void markProbeWithoutParallelReplicasForNow(const ContextPtr & context)
-{
-    if (const auto & probe = context->getAutomaticParallelReplicasProbe())
-        probe->without_parallel_replicas_for_now = true;
-}
-
 static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
 {
     const auto & settings = context->getSettingsRef();
@@ -1192,7 +1184,6 @@ void executeQueryWithParallelReplicas(
 
         if (!with_parallel_replicas || connection_pools.size() == 1)
         {
-            markProbeWithoutParallelReplicasForNow(new_context);
             query_plan = std::move(*local_plan);
             return;
         }
@@ -1316,10 +1307,7 @@ QueryPlanPtr createParallelReplicasPlan(QueryPlanPtr plan_fragment, ContextPtr c
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
     if (connection_pools.size() == 1)
-    {
-        markProbeWithoutParallelReplicasForNow(new_context);
         return nullptr;
-    }
 
     auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(max_replicas_to_use);
 
