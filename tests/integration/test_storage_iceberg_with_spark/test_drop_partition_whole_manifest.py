@@ -276,14 +276,13 @@ def test_drop_partition_shared_manifest(
 
 
 def test_drop_partition_after_spark_v1_to_v2_upgrade(started_cluster_iceberg_with_spark):
-    storage_type = "local"
     cluster = started_cluster_iceberg_with_spark
     instance = cluster.instances["node1"]
     spark = cluster.spark_session
     table_name = f"test_drop_partition_v1_upgrade_{get_uuid_str()}"
 
     def spark_query(query):
-        execute_spark_query_general(spark, cluster, storage_type, table_name, query)
+        execute_spark_query_general(spark, cluster, "local", table_name, query)
 
     spark_query(
         f"""
@@ -301,7 +300,7 @@ def test_drop_partition_after_spark_v1_to_v2_upgrade(started_cluster_iceberg_wit
     spark_query(f"ALTER TABLE {table_name} SET TBLPROPERTIES ('format-version'='2')")
     spark_query(f"INSERT INTO {table_name} VALUES (4, 'new')")
 
-    create_iceberg_table(storage_type, instance, table_name, cluster)
+    create_iceberg_table("local", instance, table_name, cluster)
     instance.query(
         f"ALTER TABLE {table_name} DROP PARTITION 1",
         settings={"allow_insert_into_iceberg": 1},
@@ -310,7 +309,7 @@ def test_drop_partition_after_spark_v1_to_v2_upgrade(started_cluster_iceberg_wit
     expected = "2\tkeep-a\n3\tkeep-b\n4\tnew\n"
     assert instance.query(f"SELECT * FROM {table_name} ORDER BY tag") == expected
 
-    local_dir = update_spark_version_hint(cluster, storage_type, table_name)
+    local_dir = update_spark_version_hint(cluster, "local", table_name)
     spark_rows = spark.read.format("iceberg").load(local_dir).collect()
     assert sorted((row["tag"], row["value"]) for row in spark_rows) == [
         (2, "keep-a"),

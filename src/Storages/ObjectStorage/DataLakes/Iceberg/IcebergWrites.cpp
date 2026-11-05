@@ -919,35 +919,33 @@ ManifestListEntryCounts rewriteManifestForDelete(
     avro::DataFileReader<avro::GenericDatum> reader(std::move(reader_base));
 
     avro::GenericDatum datum(reader.dataSchema());
-    const auto & schema_record = datum.value<avro::GenericRecord>();
 
-    /// Use the format version of the manifest file, not the version of the table: an external tool can
-    /// upgrade a table from v1 to v2 and leave the old v1 manifests as they are.
-    /// Older writers did not store the version. In this case, a manifest with `sequence_number` is v2.
-    Int32 manifest_format_version = schema_record.hasField(f_sequence_number) ? 2 : 1;
-    if (const auto version_it = avro_metadata.find(f_format_version); version_it != avro_metadata.end())
-        manifest_format_version = parse<Int32>(String(version_it->second.begin(), version_it->second.end()));
+    /// Use the format version of the manifest file, not of the table. An external tool can upgrade a table
+    /// from v1 to v2 and leave the old v1 manifests as they are.
+    const auto manifest_format_version = getFormatVersionFromAvroMetadata(
+        avro_metadata, datum.value<avro::GenericRecord>().hasField(f_sequence_number), source.manifest_file_path);
 
-    /// The rewrite keeps the source schema, so it cannot add a missing field to the entries.
-    /// A v1 entry has no sequence numbers. Readers give it sequence number 0, and the manifest-list entry
-    /// keeps the original value (0) for this reason. A v2 entry must have explicit sequence numbers,
-    /// because the rewrite changes `ADDED` entries to `EXISTING`, and an `EXISTING` entry cannot inherit them.
+    /// The rewrite keeps the source schema, so it cannot add a field to the entries. A v1 entry has no sequence
+    /// numbers: readers give it sequence number 0, and the manifest-list entry keeps this value. A v2 entry must
+    /// have explicit sequence numbers, because the rewrite changes `ADDED` entries to `EXISTING`, and an `EXISTING`
+    /// entry cannot inherit them.
     const bool has_sequence_numbers = manifest_format_version > 1;
-    std::vector<const char *> required_fields{f_snapshot_id};
-    if (has_sequence_numbers)
+    auto require_field = [&](const char * field_name)
     {
-        required_fields.push_back(f_sequence_number);
-        required_fields.push_back(f_file_sequence_number);
-    }
-    for (const char * field_name : required_fields)
-        if (!schema_record.hasField(field_name))
+        if (!datum.value<avro::GenericRecord>().hasField(field_name))
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
-                "DROP PARTITION cannot rewrite manifest '{}' of format-version {}: its entries have no '{}' field, "
-                "and the rewrite must store this value in every entry",
+                "DROP PARTITION cannot rewrite manifest '{}' of format-version {}: its entries have no '{}' field",
                 source.manifest_file_path.serialize(),
                 manifest_format_version,
                 field_name);
+    };
+    require_field(f_snapshot_id);
+    if (has_sequence_numbers)
+    {
+        require_field(f_sequence_number);
+        require_field(f_file_sequence_number);
+    }
 
     avro::DataFileWriter<avro::GenericDatum> writer(std::make_unique<OutputStreamWriteBufferAdapter>(output), reader.dataSchema());
     /// Preserve the original schema, including Iceberg field IDs, and all manifest metadata.
@@ -969,12 +967,11 @@ ManifestListEntryCounts rewriteManifestForDelete(
             continue;
 
         inheritManifestField(entry.field(f_snapshot_id), source.added_snapshot_id);
-        Int64 sequence = source.added_sequence_number;
+        const Int64 sequence = has_sequence_numbers
+            ? inheritManifestField(entry.field(f_sequence_number), source.added_sequence_number)
+            : source.added_sequence_number;
         if (has_sequence_numbers)
-        {
-            sequence = inheritManifestField(entry.field(f_sequence_number), source.added_sequence_number);
             inheritManifestField(entry.field(f_file_sequence_number), source.added_sequence_number);
-        }
 
         const auto rows = entry.field(f_data_file).value<avro::GenericRecord>().field(f_record_count).value<Int64>();
         if (rows_to_delete.contains(row_number))
