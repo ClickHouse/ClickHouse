@@ -68,6 +68,13 @@ SETTINGS max_bytes_before_external_join = 400000;
 SELECT '-- limits of DISTINCT';
 SELECT count() FROM (SELECT number FROM numbers(10) INTERSECT DISTINCT SELECT number FROM numbers(10))
 SETTINGS max_rows_in_distinct = 3; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
+-- No `DISTINCT` set is built when the join emits each row once, so `max_bytes_in_distinct` is not enforced.
+SELECT count() FROM (SELECT number FROM numbers(10) INTERSECT DISTINCT SELECT number FROM numbers(5))
+SETTINGS max_bytes_in_distinct = 1, make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1,
+    distributed_plan_workers_num = 2, distributed_plan_fallback_to_local_execution = 0;
+SELECT count() FROM (SELECT number FROM numbers(10) EXCEPT DISTINCT SELECT number FROM numbers(5))
+SETTINGS max_bytes_in_distinct = 1, make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1,
+    distributed_plan_workers_num = 2, distributed_plan_fallback_to_local_execution = 0, query_plan_join_swap_table = 'false';
 
 SELECT '-- The totals of the first branch win.';
 SELECT * FROM (SELECT number % 3 AS k, count() AS c FROM numbers(100000) GROUP BY k WITH TOTALS INTERSECT DISTINCT SELECT number % 3 AS k, count() AS c FROM numbers(0) GROUP BY k WITH TOTALS) ORDER BY k

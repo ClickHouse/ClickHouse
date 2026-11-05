@@ -25,6 +25,8 @@ a	String
 6000
 4000
 -- limits of DISTINCT
+5
+5
 -- The totals of the first branch win.
 
 0	100000
