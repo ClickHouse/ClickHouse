@@ -923,8 +923,8 @@ private:
     bool advanceAdaptiveProducer(
         AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, size_t rows, bool over_external_threshold) const;
 
-    /// Whether a learning table reached a bound of the freeze: its key count or its own tracked memory, so the caller
-    /// reports the thread's unreported allocations to the table's tracker first (see `executeOnBlock`).
+    /// Whether a learning table reached a bound of the freeze: its key count or the bytes of its hash-table buffer (see
+    /// `AggregatedDataVariants::hashTableBufferBytes`).
     bool adaptiveFreezeBoundReached(const AggregatedDataVariants & result) const;
 
     /// Whether a learning table still slices its blocks to freeze exactly at the key-count threshold: until it has

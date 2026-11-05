@@ -22,12 +22,13 @@ namespace DB
 /// a fixed-width key costs less than storing and reading the extra bytes. Records never point into the
 /// source block, so the block is released.
 ///
-/// The byte bound of the freeze measures the table's own tracked memory, which counts the heap
-/// memory its states own, so a few groups with growing states, such as `uniqExact` per region,
-/// freeze the table by its memory where its key count never would. Each table freezes on its own
-/// bounds alone: a bound on the memory of the whole aggregation would let the growth of some tables
-/// freeze the others. A table that reaches no bound is small and keeps learning, like a small
-/// baseline table. Over the external-aggregation threshold a learning table that holds enough
+/// The byte bound of the freeze measures the table's hash-table buffer, the cells that every probe
+/// walks, so wide cells freeze the table before its key count would. The memory of the states is no
+/// bound: it grows through the keys that the table already holds, which a freeze does not stop, so a
+/// few groups with growing states, such as `uniqExact` per region, keep learning. Each table freezes
+/// on its own bounds alone: a bound on the memory of the whole aggregation would let the growth of
+/// some tables freeze the others. A table that reaches no bound is small and keeps learning, like a
+/// small baseline table. Over the external-aggregation threshold a learning table that holds enough
 /// memory, or a frozen one whose states keep growing, is written to disk, and its thread learns its
 /// keys again from empty.
 ///

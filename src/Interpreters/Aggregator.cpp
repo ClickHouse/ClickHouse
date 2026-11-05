@@ -2446,9 +2446,9 @@ bool Aggregator::executeOnBlock(Columns columns,
     /// tracker, which adds up the table's, so without an adaptive producer the scope stays closed and spares every block
     /// two tracker switches, which a stream of small blocks feels. A thread reports its allocations to its tracker in
     /// batches, and the switch holds the unreported ones back until the scope ends. A scope in which the table may
-    /// freeze reports them to the table's tracker first: the freeze bound and the write of a learning table read the
-    /// table's tracked memory, and the freeze takes it as the base of its growth (see `adaptiveFreezeBoundReached` and
-    /// `adaptiveTableWorthSpilling`).
+    /// freeze reports them to the table's tracker first: the write of a learning table reads the table's tracked
+    /// memory, and the freeze takes it as the base of its growth (see `adaptiveTableWorthSpilling` and
+    /// `freezeAdaptive`).
     const auto aggregator_scope = [&](std::optional<MemoryTrackerSwitcher> & scope, bool table_may_freeze)
     {
         if (aggregator_tracker && adaptive)

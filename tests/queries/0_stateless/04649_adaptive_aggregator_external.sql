@@ -47,15 +47,15 @@ SELECT
     =
     (SELECT count(), sum(s) FROM (SELECT number % 200000 AS g, sum(number) AS s FROM numbers_mt(600000) GROUP BY g SETTINGS enable_adaptive_aggregator = 1, max_bytes_before_external_group_by = 20000000));
 
--- Few groups whose states own heap memory: one block of sets takes a table over the byte bound of
--- the freeze, so it freezes before the constant pressure writes it as a learning table, and as the
--- states keep growing, the frozen tables are written to disk as ordinary parts, which the external
--- merge reads back.
+-- Few groups whose states own heap memory: a byte bound of one byte, which the cells of any table
+-- exceed, freezes a table at the end of its first block, before the constant pressure writes it as a
+-- learning table, and as the states keep growing, the frozen tables are written to disk as ordinary
+-- parts, which the external merge reads back.
 SELECT 'Frozen tables of growing states spill as ordinary parts';
 SELECT
     (SELECT count(), sum(u) FROM (SELECT toUInt64(number % 50) AS g, uniqExact(number) AS u FROM numbers_mt(400000) GROUP BY g SETTINGS enable_adaptive_aggregator = 0))
     =
-    (SELECT count(), sum(u) FROM (SELECT toUInt64(number % 50) AS g, uniqExact(number) AS u FROM numbers_mt(400000) GROUP BY g SETTINGS enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold_bytes = 10000, max_bytes_before_external_group_by = 1));
+    (SELECT count(), sum(u) FROM (SELECT toUInt64(number % 50) AS g, uniqExact(number) AS u FROM numbers_mt(400000) GROUP BY g SETTINGS enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold_bytes = 1, max_bytes_before_external_group_by = 1));
 
 -- A key freeze threshold far above the key count, with the byte bound disabled, keeps every
 -- producer learning for the whole query. Over the threshold its table is written to disk once it

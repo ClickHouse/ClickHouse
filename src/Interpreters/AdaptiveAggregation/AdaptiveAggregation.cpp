@@ -204,14 +204,15 @@ bool Aggregator::adaptiveLearningSlices(const AdaptiveAggregationProducer & adap
 
 bool Aggregator::adaptiveFreezeBoundReached(const AggregatedDataVariants & result) const
 {
-    /// The byte twin of the key-count bound is the table's own tracked memory: its hash-table buffer, its arenas and
-    /// the heap memory that its states own, such as the sets of `uniqExact`, which a few groups can grow while the key
-    /// count stays low. It is checked between blocks, so a byte-triggered freeze lands on a block boundary; the
-    /// mid-block freeze crossing checks only the key count. The memory of the whole aggregation is no bound: it sums
-    /// the allocations of every thread, including the blocks they are processing, so the growth of some tables would
-    /// freeze the others.
+    /// The byte twin of the key-count bound is the table's hash-table buffer: the cells that every probe walks, hits and
+    /// misses alike, so it keeps a table with wide cells cache-resident. The memory of the states is no bound: it grows
+    /// through the keys that the table already holds, which a freeze does not stop, and freezing a few groups with
+    /// growing states would only stage the rest of the stream. It is checked between blocks, so a byte-triggered freeze
+    /// lands on a block boundary; the mid-block freeze crossing checks only the key count. The memory of the whole
+    /// aggregation is no bound either: it sums the allocations of every thread, including the blocks they are
+    /// processing, so the growth of some tables would freeze the others.
     const bool freeze_bytes_reached = params.adaptive_aggregator_freeze_threshold_bytes
-        && result.memoryUsage() >= params.adaptive_aggregator_freeze_threshold_bytes;
+        && result.hashTableBufferBytes() >= params.adaptive_aggregator_freeze_threshold_bytes;
     return (result.sizeWithoutOverflowRow() >= params.adaptive_aggregator_freeze_threshold || freeze_bytes_reached)
         && result.isConvertibleToTwoLevel();
 }
