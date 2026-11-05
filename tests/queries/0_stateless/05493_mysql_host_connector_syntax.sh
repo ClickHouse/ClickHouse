@@ -61,8 +61,14 @@ check_dictionary "localhost" "/nonexistent/mysqld.sock"
 check_dictionary "localhost" "\\0"
 
 # `localhost` uses TCP to the given port, not the client library's default Unix socket.
-$CLICKHOUSE_CLIENT --send_logs_level=fatal -q "SELECT * FROM mysql('localhost:1', 'db', 't', 'u', 'p')" 2>&1 \
-    | grep -q -F "through socket" && echo "localhost: unix socket" || echo "localhost: tcp"
+output=$($CLICKHOUSE_CLIENT --send_logs_level=fatal -q "SELECT * FROM mysql('localhost:1', 'db', 't', 'u', 'p')" 2>&1)
+if grep -q -F "Can't connect to server on 'localhost'" <<< "$output"; then
+    echo "localhost: tcp"
+elif grep -q -F "through socket" <<< "$output"; then
+    echo "localhost: unix socket"
+else
+    echo "unexpected output: $output"
+fi
 
 # The `MySQL` database engine and table engine use the same connection pool.
 check "CREATE DATABASE ${CLICKHOUSE_DATABASE}_mysql ENGINE = MySQL('socket=/nonexistent/mysqld.sock', 'db', 'u', 'p')"
