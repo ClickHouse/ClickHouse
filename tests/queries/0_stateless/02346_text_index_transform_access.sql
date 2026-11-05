@@ -128,11 +128,11 @@ DROP TABLE tab;
 SELECT '14. The transform preflight does not reject what a plain ALTER accepts.';
 
 CREATE TABLE tab_preflight (id UInt64, val String, num UInt64)
-ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = 'countmin';
+ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = 'minmax';
 
 -- The preflight must drop implicit statistics too, or `ADD STATISTICS` looks like a duplicate.
 ALTER TABLE tab_preflight ADD INDEX idx_pre(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(val)) GRANULARITY 1,
-                          ADD STATISTICS num TYPE countmin;
+                          ADD STATISTICS num TYPE minmax;
 
 SELECT name FROM system.data_skipping_indices
 WHERE database = currentDatabase() AND table = 'tab_preflight' ORDER BY name;
