@@ -449,12 +449,18 @@ void StorageObjectStorageQueue::startup()
     /// Create metadata in keeper if it does not exits yet.
     /// Create a persistent node for the table under /registry node.
     bool created_new_metadata = false;
-    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(
+    /// Keep a local handle: the factory call and the startup below do keeper I/O, which must not
+    /// run under `mutex`.
+    auto metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(
         zookeeper_name,
         zk_path,
         std::move(temp_metadata),
         getStorageID(),
         created_new_metadata);
+    {
+        std::lock_guard lock(mutex);
+        files_metadata = metadata;
+    }
 
     /// Register the metadata in startup(), unregister in shutdown.
     /// (If startup is never called, shutdown also won't be called.)
@@ -471,6 +477,7 @@ void StorageObjectStorageQueue::startup()
                 /* is_drop */created_new_metadata,
                 /* keep_data_in_keeper */false);
 
+            std::lock_guard lock(mutex);
             files_metadata.reset();
         }
     });
@@ -489,7 +496,7 @@ void StorageObjectStorageQueue::startup()
     });
 
     /// Start background tasks.
-    files_metadata->startup();
+    metadata->startup();
     for (auto & task : streaming_tasks)
         task->activateAndSchedule();
 
@@ -532,11 +539,19 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
         tryLogCurrentException(log);
     }
 
-    if (files_metadata)
+    /// Drop the handle before the keeper cleanup below, so a concurrent reader sees the
+    /// shut-down state. The local copy keeps the metadata alive for that cleanup.
+    std::shared_ptr<ObjectStorageQueueMetadata> metadata;
+    {
+        std::lock_guard lock(mutex);
+        metadata = std::move(files_metadata);
+    }
+
+    if (metadata)
     {
         try
         {
-            files_metadata->unregisterActive(getStorageID());
+            metadata->unregisterActive(getStorageID());
         }
         catch (...)
         {
@@ -544,8 +559,6 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
         }
 
         ObjectStorageQueueMetadataFactory::instance().remove(zookeeper_name, zk_path, getStorageID(), is_drop, keep_data_in_keeper);
-
-        files_metadata.reset();
     }
     LOG_TRACE(log, "Shut down storage");
 }
@@ -1597,6 +1610,12 @@ const ObjectStorageQueueTableMetadata & StorageObjectStorageQueue::getTableMetad
     return files_metadata->getTableMetadata();
 }
 
+std::shared_ptr<ObjectStorageQueueMetadata> StorageObjectStorageQueue::tryGetFilesMetadata() const
+{
+    std::lock_guard lock(mutex);
+    return files_metadata;
+}
+
 std::shared_ptr<StorageObjectStorageQueue::FileIterator>
 StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
@@ -1636,11 +1655,16 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     /// (because of the inconvenience of keeping them in sync with ObjectStorageQueueTableMetadata),
     /// so let's reconstruct.
     ObjectStorageQueueSettings settings;
-    /// If startup() for a table was not called, just use the default queue settings
+    /// If startup() for a table was not called, just use the default queue settings.
+    /// The same holds after shutdown(), which drops the metadata handle while `startup_finished` stays set.
     if (!startup_finished)
         return settings;
 
-    const auto & table_metadata = getTableMetadata();
+    auto metadata = tryGetFilesMetadata();
+    if (!metadata)
+        return settings;
+
+    const auto & table_metadata = metadata->getTableMetadata();
     settings[ObjectStorageQueueSetting::mode] = table_metadata.mode;
     settings[ObjectStorageQueueSetting::after_processing] = table_metadata.after_processing;
     if (zookeeper_name == zkutil::DEFAULT_ZOOKEEPER_NAME)
@@ -1656,12 +1680,12 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::tracked_files_limit] = table_metadata.tracked_files_limit;
     settings[ObjectStorageQueueSetting::buckets] = table_metadata.buckets;
 
-    auto cleanup_interval_ms = files_metadata->getCleanupIntervalMS();
+    auto cleanup_interval_ms = metadata->getCleanupIntervalMS();
     settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = static_cast<UInt32>(cleanup_interval_ms.first);
     settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = static_cast<UInt32>(cleanup_interval_ms.second);
-    settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = static_cast<UInt32>(files_metadata->getPersistentProcessingNodeTTLSeconds());
-    settings[ObjectStorageQueueSetting::use_persistent_processing_nodes] = files_metadata->usePersistentProcessingNode();
-    const auto & file_statuses_cache = files_metadata->getFileStatusesCache();
+    settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = static_cast<UInt32>(metadata->getPersistentProcessingNodeTTLSeconds());
+    settings[ObjectStorageQueueSetting::use_persistent_processing_nodes] = metadata->usePersistentProcessingNode();
+    const auto & file_statuses_cache = metadata->getFileStatusesCache();
     settings[ObjectStorageQueueSetting::metadata_cache_size_bytes] = file_statuses_cache.maxSizeInBytes();
     settings[ObjectStorageQueueSetting::metadata_cache_size_elements] = file_statuses_cache.maxCount();
 
