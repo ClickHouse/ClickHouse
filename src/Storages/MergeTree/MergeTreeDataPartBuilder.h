@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <Storages/MergeTree/PartDirIntent.h>
 #include <optional>
 
 namespace DB
@@ -25,8 +26,21 @@ using VolumePtr = std::shared_ptr<IVolume>;
 class MergeTreeDataPartBuilder
 {
 public:
-    MergeTreeDataPartBuilder(const MergeTreeData & data_, String name_, VolumePtr volume_, String root_path_, String part_dir_, const ReadSettings & read_settings_);
-    MergeTreeDataPartBuilder(const MergeTreeData & data_, String name_, MutableDataPartStoragePtr part_storage_, const ReadSettings & read_settings_);
+    MergeTreeDataPartBuilder(
+        const MergeTreeData & data_,
+        String name_,
+        VolumePtr volume_,
+        String root_path_,
+        String part_dir_,
+        const ReadSettings & read_settings_,
+        PartDirIntent intent_);
+
+    MergeTreeDataPartBuilder(
+        const MergeTreeData & data_,
+        String name_,
+        MutableDataPartStoragePtr part_storage_,
+        const ReadSettings & read_settings_,
+        PartDirIntent intent_);
 
     std::shared_ptr<IMergeTreeDataPart> build();
 
@@ -58,6 +72,7 @@ private:
         const VolumePtr & volume_,
         const String & root_path_,
         const String & part_dir_,
+        bool initialize,
         const ReadSettings & read_settings);
 
     const MergeTreeData & data;
@@ -72,6 +87,7 @@ private:
     const IMergeTreeDataPart * parent_part = nullptr;
     ProjectionDescriptionRawPtr projection = nullptr;
 
+    const PartDirIntent intent;
     const ReadSettings read_settings;
 };
 

@@ -10,8 +10,10 @@ from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.network import PartitionManager
 from helpers.config_cluster import mysql_pass
 
+# The `mysql:5.7` docker image is amd64-only.
 if is_arm():
     pytestmark = pytest.mark.skip
+
 
 cluster = ClickHouseCluster(__file__)
 clickhouse_node = cluster.add_instance(

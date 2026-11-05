@@ -87,6 +87,7 @@ DROP TABLE IF EXISTS t1;
 CREATE TABLE t1 (`n` UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t1 SELECT * FROM numbers(10);
 
+SET automatic_parallel_replicas_mode = 0;
 SET
 enable_parallel_replicas=1,
     max_parallel_replicas=2,

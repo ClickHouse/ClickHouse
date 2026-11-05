@@ -82,3 +82,14 @@ SELECT COUNT() FROM tab WHERE endsWithCaseInsensitiveUTF8(S1, S2);
 -- endsWithCaseCaseInsensitiveUTF8 does not support FixedString
 
 DROP TABLE tab;
+
+-- Empty needle must always match (return 1). Regression test for a use-of-uninitialized-value
+-- in StringSearcher::compare which unconditionally dereferenced *pos even when needle was empty.
+SELECT '-- Test empty needle';
+SELECT startsWithCaseInsensitive('Hello', '');
+SELECT startsWithCaseInsensitive(toFixedString('Hello', 10), '');
+SELECT endsWithCaseInsensitive('Hello', '');
+SELECT endsWithCaseInsensitive(toFixedString('Hello', 10), '');
+SELECT endsWithCaseInsensitive(toFixedString(toFixedString('富强民主文明和谐', 24), 24), '');
+SELECT startsWithCaseInsensitiveUTF8('Привет', '');
+SELECT endsWithCaseInsensitiveUTF8('Привет', '');

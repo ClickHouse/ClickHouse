@@ -1,0 +1,36 @@
+---
+description: 'クエリの実行時、ClickHouse はさまざまなキャッシュを使用します。'
+sidebarTitle: 'キャッシュ'
+slug: /operations/caches
+title: 'キャッシュの種類'
+keywords: ['キャッシュ']
+doc_type: 'reference'
+---
+
+ClickHouse はクエリの実行時に、クエリを高速化し、
+ディスクの読み書きを減らすためにさまざまなキャッシュを使用します。
+
+主なキャッシュの種類は次のとおりです。
+
+* `mark_cache` — [`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) ファミリーのテーブルエンジンで使用される [marks](/ja/resources/develop-contribute/introduction/architecture#merge-tree) のキャッシュ。
+* `uncompressed_cache` — [`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) ファミリーのテーブルエンジンで使用される非圧縮データのキャッシュ。
+* オペレーティングシステムのページキャッシュ (実データを含むファイルで間接的に使用) 。
+
+このほかにも、さまざまなキャッシュがあります。
+
+* DNS キャッシュ。
+* [Regexp](/ja/reference/formats/Regexp) キャッシュ。
+* コンパイル済み式のキャッシュ。
+* [ベクトル類似度索引](/ja/reference/engines/table-engines/mergetree-family/annindexes) キャッシュ。
+* [テキスト索引](/ja/reference/engines/table-engines/mergetree-family/textindexes#caching) キャッシュ。
+* [Avro フォーマット](/ja/reference/formats/Avro/Avro) のスキーマキャッシュ。
+* [Dictionaries](/ja/reference/statements/create/dictionary) のデータキャッシュ。
+* スキーマ推論キャッシュ。
+* S3、Azure、Local、その他のディスク上の [ファイルシステムキャッシュ](/ja/concepts/features/configuration/server-config/storing-data)。
+* [ユーザー空間ページキャッシュ](/ja/concepts/features/performance/caches/userspace-page-cache)
+* [クエリキャッシュ](/ja/concepts/features/performance/caches/query-cache)。
+* [クエリ条件キャッシュ](/ja/concepts/features/performance/caches/query-condition-cache)。
+* フォーマットスキーマキャッシュ。
+
+パフォーマンスチューニング、トラブルシューティング、またはデータ整合性のためにこれらのキャッシュのいずれかをクリアしたい場合は、
+[`SYSTEM CLEAR ... CACHE`](/ja/reference/statements/system) ステートメントを使用できます。

@@ -1,0 +1,4 @@
+RENAME TABLE a TO b
+RENAME DATABASE db1 TO db2
+RENAME TABLE db1.a TO db2.b
+SET max_threads = 4

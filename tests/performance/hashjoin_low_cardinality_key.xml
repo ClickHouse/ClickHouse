@@ -1,0 +1,36 @@
+<test>
+    <settings>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+        <join_algorithm>hash</join_algorithm>
+        <query_plan_join_swap_table>false</query_plan_join_swap_table>
+    </settings>
+
+    <!--
+        Joins on a single non-nullable LowCardinality key now use a dictionary-aware hash map: the
+        key column is not materialized, and the probe deduplicates the hash-table lookup per
+        dictionary index within a block. The probe table has many rows but few distinct keys, so the
+        per-block dictionary has far fewer entries than the block size; with swap pinned off the large
+        table is the probe side. The benefit is concentrated on string keys, where the materialized
+        baseline pays for variable-length data and string hashing/comparison.
+    -->
+
+    <create_query>CREATE TABLE lck_str_build (k LowCardinality(String), w UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE lck_str_probe (k LowCardinality(String), v UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE lck_fs_build (k LowCardinality(FixedString(16)), w UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE lck_fs_probe (k LowCardinality(FixedString(16)), v UInt64) ENGINE = Memory</create_query>
+
+    <fill_query>INSERT INTO lck_str_build SELECT toString(number), number FROM numbers_mt(1000)</fill_query>
+    <fill_query>INSERT INTO lck_str_probe SELECT toString(number % 1000), number FROM numbers_mt(50000000)</fill_query>
+    <fill_query>INSERT INTO lck_fs_build SELECT toFixedString(leftPad(toString(number), 16, '0'), 16), number FROM numbers_mt(1000)</fill_query>
+    <fill_query>INSERT INTO lck_fs_probe SELECT toFixedString(leftPad(toString(number % 1000), 16, '0'), 16), number FROM numbers_mt(50000000)</fill_query>
+
+    <!-- The build keys are unique, so ALL INNER matches each of the 50M probe rows exactly once and
+         drives the full probe through the dictionary-aware key getter. -->
+    <query>SELECT sum(l.v) FROM lck_str_probe AS l ALL INNER JOIN lck_str_build AS r ON l.k = r.k FORMAT Null</query>
+    <query>SELECT sum(l.v) FROM lck_fs_probe AS l ALL INNER JOIN lck_fs_build AS r ON l.k = r.k FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS lck_str_build</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lck_str_probe</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lck_fs_build</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lck_fs_probe</drop_query>
+</test>

@@ -1,0 +1,75 @@
+---
+title: 'MySQL ClickPipe の並列スナップショット'
+description: 'MySQL ClickPipe の並列スナップショットを説明するドキュメント'
+slug: /integrations/clickpipes/mysql/parallel_initial_load
+sidebarTitle: '並列スナップショットの仕組み'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'CDC', 'データインジェスト', 'リアルタイム同期']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+このドキュメントでは、MySQL ClickPipe における並列化されたスナップショット/初期ロードの仕組みと、それを制御するために使用できるスナップショットパラメータについて説明します。
+
+<div id="overview-mysql-snapshot">
+  ## 概要
+</div>
+
+初期ロードは CDC ClickPipe の最初のフェーズで、この段階では ClickPipe は CDC を開始する前に、ソースデータベース内のテーブルの過去データを ClickHouse に同期します。多くの場合、開発者はこれを単一スレッドで実行します。
+しかし、MySQL ClickPipe ではこのプロセスを並列化できるため、初期ロードを大幅に高速化できます。
+
+<div id="key-mysql-snapshot">
+  ### パーティションキー カラム
+</div>
+
+機能フラグを有効にすると、ClickPipe のテーブルピッカーに以下の設定が表示されます (ClickPipe の作成時と編集時の両方) :
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/partition_key.webp" alt="パーティションキー カラム" size="md" />
+
+MySQL ClickPipe では、ソーステーブルを論理的にパーティション分割するために、そのテーブル上のカラムを使用します。このカラムを **パーティションキー カラム** と呼びます。これはソーステーブルをパーティションに分割するために使われ、各パーティションは ClickPipe によって並列に処理されます。
+
+<Warning>
+  十分なパフォーマンス向上を得るには、パーティションキー カラムにソーステーブル上で索引が設定されている必要があります。これは、MySQL で `SHOW INDEX FROM <table_name>` を実行すると確認できます。
+</Warning>
+
+<div id="logical-partitioning-mysql-snapshot">
+  ### 論理パーティション化
+</div>
+
+以下の設定を見ていきましょう。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/snapshot_params.webp" alt="スナップショットパラメータ" size="md" />
+
+<div id="numrows-mysql-snapshot">
+  #### スナップショット時のパーティションあたりの行数
+</div>
+
+この設定は、1 つのパーティションを構成する行数を制御します。ClickPipe はソーステーブルをこのサイズの chunk 単位で読み取り、chunk は設定された初期ロードの並列度に基づいて並列に処理されます。デフォルト値は、パーティションあたり 100,000 行です。
+
+<div id="parallelism-mysql-snapshot">
+  #### 初期ロードの並列度
+</div>
+
+この設定では、並列に処理するパーティション数を制御します。デフォルト値は 4 で、ClickPipe はソーステーブルの 4 つのパーティションを並列に読み取ります。初期ロードを高速化するためにこの値を増やすことはできますが、ソースデータベースに過度な負荷をかけないよう、ソースインスタンスのスペックに応じて妥当な値に抑えることを推奨します。ClickPipe は、ソーステーブルのサイズと各パーティションあたりの行数に基づいて、パーティション数を自動的に調整します。
+
+<div id="tables-parallel-mysql-snapshot">
+  #### 並列にスナップショットするテーブル数
+</div>
+
+並列スナップショット自体に直接関係する設定ではありませんが、この設定では初期ロード中に並列処理するテーブル数を制御します。デフォルト値は 1 です。これはパーティションの並列度に加えて適用される点に注意してください。たとえば、4 つのパーティションと 2 つのテーブルがある場合、ClickPipe は 8 個のパーティションを並列に読み取ります。
+
+<div id="monitoring-parallel-mysql-snapshot">
+  ### MySQL で並列スナップショットを監視する
+</div>
+
+MySQL で **SHOW processlist** を実行すると、並列スナップショットが実際に動作していることを確認できます。ClickPipe はソースデータベースに複数の接続を作成し、それぞれがソーステーブルの異なるパーティションを読み取ります。異なる範囲の **SELECT** クエリが表示されていれば、ClickPipe がソーステーブルを読み取っていることを意味します。ここでは、COUNT(*) やパーティション化のためのクエリも確認できます。
+
+<div id="limitations-parallel-mysql-snapshot">
+  ### 制限事項
+</div>
+
+* スナップショットパラメータは、パイプの作成後に編集できません。変更する場合は、新しいClickPipeを作成する必要があります。
+* 既存のClickPipeにテーブルを追加する場合、スナップショットパラメータは変更できません。新しいテーブルには既存のパラメータが使用されます。

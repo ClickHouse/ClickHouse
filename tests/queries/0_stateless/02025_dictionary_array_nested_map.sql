@@ -6,7 +6,8 @@ CREATE TABLE dict_nested_map_test_table
 	ncp UInt8
 )
 ENGINE=MergeTree()
-ORDER BY test_id;
+ORDER BY test_id
+SETTINGS map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic';
 
 INSERT INTO dict_nested_map_test_table VALUES (3, 't', [{'l': 0.0, 'h': 10000.0, 't': 0.1}, {'l': 10001.0, 'h': 100000000000000.0, 't': 0.2}], 0);
 

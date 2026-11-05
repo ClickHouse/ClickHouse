@@ -1,0 +1,9 @@
+Nullable(UInt32)
+Nullable(Tuple(class_id UInt32, probability Float64))
+UInt32
+\N
+1
+[]
+\N	\N	1	[]
+bad awful	1	0	[(1,0.968),(0,0.032)]
+good great	0	0	[(0,0.968),(1,0.032)]

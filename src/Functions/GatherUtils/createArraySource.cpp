@@ -1,7 +1,14 @@
+#include <Columns/ColumnReplicated.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Sources.h>
 #include <base/TypeLists.h>
+
+
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace DB::GatherUtils
 {
@@ -54,6 +61,38 @@ struct ArraySourceCreator<>
     }
 };
 
+template <typename... Types>
+struct ReplicatedArraySourceCreator;
+
+template <typename Type, typename... Types>
+struct ReplicatedArraySourceCreator<Type, Types...>
+{
+    static std::unique_ptr<IArraySource> create(const ColumnArray & col, const NullMap * null_map, const ColumnIndex & replication_indexes)
+    {
+        using ColVecType = ColumnVectorOrDecimal<Type>;
+
+        if (typeid_cast<const ColVecType *>(&col.getData()))
+        {
+            if (null_map)
+                return std::make_unique<ReplicatedSource<NullableArraySource<NumericArraySource<Type>>>>(col, *null_map, replication_indexes);
+            return std::make_unique<ReplicatedSource<NumericArraySource<Type>>>(col, replication_indexes);
+        }
+
+        return ReplicatedArraySourceCreator<Types...>::create(col, null_map, replication_indexes);
+    }
+};
+
+template <>
+struct ReplicatedArraySourceCreator<>
+{
+    static std::unique_ptr<IArraySource> create(const ColumnArray & col, const NullMap * null_map, const ColumnIndex & replication_indexes)
+    {
+        if (null_map)
+            return std::make_unique<ReplicatedSource<NullableArraySource<GenericArraySource>>>(col, *null_map, replication_indexes);
+        return std::make_unique<ReplicatedSource<GenericArraySource>>(col, replication_indexes);
+    }
+};
+
 }
 
 std::unique_ptr<IArraySource> createArraySource(const ColumnArray & col, bool is_const, size_t total_rows)
@@ -65,5 +104,22 @@ std::unique_ptr<IArraySource> createArraySource(const ColumnArray & col, bool is
         return Creator::create(*column, &column_nullable->getNullMapData(), is_const, total_rows);
     }
     return Creator::create(col, nullptr, is_const, total_rows);
+}
+
+std::unique_ptr<IArraySource> createArraySourceFromReplicated(const ColumnReplicated & col)
+{
+    const auto * nested_array = typeid_cast<const ColumnArray *>(col.getNestedColumn().get());
+    if (!nested_array)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "createArraySourceFromReplicated expects ColumnReplicated over ColumnArray, got {}",
+            col.getNestedColumn()->getName());
+
+    using Creator = TypeListChangeRoot<ReplicatedArraySourceCreator, TypeListNumberWithUUID>;
+    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(&nested_array->getData()))
+    {
+        auto column = ColumnArray::create(column_nullable->getNestedColumnPtr(), nested_array->getOffsetsPtr());
+        return Creator::create(*column, &column_nullable->getNullMapData(), col.getIndexes());
+    }
+    return Creator::create(*nested_array, nullptr, col.getIndexes());
 }
 }

@@ -1,0 +1,12 @@
+---
+name: gitlab_base.CurrentStatus
+description: |
+  Checks for words that indicate a product or feature may change in the future.
+extends: existence
+message: "Remove '%s'. The documentation reflects the current state of the product."
+vocab: false
+level: warning
+ignorecase: true
+link: https://docs.gitlab.com/development/documentation/styleguide/#promising-features-in-future-versions
+tokens:
+  - currently

@@ -1,6 +1,10 @@
 -- This test checks, that common SQL operations work
 -- with mixed columns (sparse and full) in table.
 
+-- `SELECT DISTINCT u ... ORDER BY id` below sorts by the id of whichever duplicate
+-- survives DISTINCT; per-partition DISTINCT makes the survivor timing-dependent.
+SET force_distinct_partitions_independently = 0;
+
 DROP TABLE IF EXISTS t_sparse_full;
 
 CREATE TABLE t_sparse_full (id UInt64, u UInt64, s String)
@@ -43,7 +47,7 @@ SELECT id % 3 AS k, sum(u) FROM t_sparse_full WHERE u != 0 GROUP BY k ORDER BY k
 SELECT '======';
 SELECT uniqExact(u) FROM t_sparse_full WHERE s != '';
 SELECT '======';
-SELECT toUInt32(s) % 5 AS k, groupUniqArray(u % 4) FROM t_sparse_full WHERE s != '' GROUP BY k ORDER BY k;
+SELECT toUInt32(s) % 5 AS k, arraySort(groupUniqArray(u % 4)) FROM t_sparse_full WHERE s != '' GROUP BY k ORDER BY k;
 SELECT max(range(id % 10)[u]) FROM t_sparse_full;
 SELECT '======';
 SELECT id, u, s FROM remote('127.0.0.{1,2}', currentDatabase(), t_sparse_full) ORDER BY id, u, s LIMIT 5;

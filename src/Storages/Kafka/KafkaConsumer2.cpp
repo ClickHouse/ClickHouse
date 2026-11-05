@@ -36,6 +36,7 @@ using namespace std::chrono_literals;
 static constexpr auto EVENT_POLL_TIMEOUT = 50ms;
 static constexpr auto DRAIN_TIMEOUT_MS = 5000ms;
 static constexpr auto GET_KAFKA_METADATA_TIMEOUT_MS = 1000ms;
+static constexpr size_t DRAIN_REMOVED_PARTITION_BATCH_SIZE = 1024;
 
 bool KafkaConsumer2::TopicPartition::operator<(const TopicPartition & other) const
 {
@@ -65,7 +66,8 @@ KafkaConsumer2::~KafkaConsumer2()
     if (!consumer)
         return;
 
-    moveConsumer();
+    auto consumer_to_close = moveConsumer();
+    consumer_to_close.reset();
 }
 
 void KafkaConsumer2::createConsumer(cppkafka::Configuration consumer_config)
@@ -148,15 +150,83 @@ void KafkaConsumer2::cleanQueuesAndMessages()
 
 void KafkaConsumer2::initializeQueues(const cppkafka::TopicPartitionList & topic_partitions)
 {
-    cleanQueuesAndMessages();
-    // cppkafka itself calls assign(), but in order to detach the queues here we have to do the assignment manually.
-    // Later on we have to reassign the topic partitions with correct offsets.
-    consumer->assign(topic_partitions);
+    std::unordered_set<TopicPartition, TopicPartitionHash, TopicPartitionEquality> new_partitions;
     for (const auto & topic_partition : topic_partitions)
-        // This will also detach the partition queues from the consumer, thus the messages won't be forwarded without
-        // attaching them manually
-        queues.emplace(
-            TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()}, consumer->get_partition_queue(topic_partition));
+        new_partitions.emplace(TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()});
+
+    /// After a failed call `queues` may not match the consumer's assignment, so take the assignment from librdkafka.
+    cppkafka::TopicPartitionList removed_partitions;
+    for (const auto & topic_partition : consumer->get_assignment())
+        if (!new_partitions.contains(TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()}))
+            removed_partitions.emplace_back(topic_partition.get_topic(), topic_partition.get_partition());
+
+    if (!removed_partitions.empty())
+    {
+        /// Removing a partition from the assignment only stops its fetcher: the messages librdkafka has already
+        /// prefetched stay in the partition queue, which is owned by librdkafka and is not freed when we drop our handle.
+        /// Pausing makes these messages outdated, and reading the queue drops outdated messages and frees them.
+        /// Pausing alone is not enough: librdkafka purges the queue on pause, but the purge stops at the version barrier
+        /// that the pause itself puts at the head of the queue.
+        /// Remember the partitions before pausing them, so that they are resumed when they come back even if the pause
+        /// succeeds only for some of them and throws, or draining throws.
+        for (const auto & topic_partition : removed_partitions)
+            paused_partitions.emplace(TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()});
+        consumer->pause_partitions(removed_partitions);
+
+        for (const auto & topic_partition : removed_partitions)
+        {
+            TopicPartition key{topic_partition.get_topic(), topic_partition.get_partition()};
+            /// The handle is lost if the previous call failed after the assignment.
+            if (!queues.contains(key))
+                queues.emplace(key, consumer->get_partition_queue(topic_partition));
+            const auto & queue = queues.at(key);
+            LOG_DEBUG(
+                log,
+                "Draining {} queued entries of partition {}:{} that is removed from the assignment",
+                queue.get_length(),
+                key.topic,
+                key.partition_id);
+            /// After the pause every queued message is outdated, so `consume_batch` frees them without returning them,
+            /// and normally the first call empties the queue. A paused partition gets no new messages, so the queue only
+            /// shrinks and its current length bounds the number of batches.
+            for (size_t batches_left = queue.get_length() / DRAIN_REMOVED_PARTITION_BATCH_SIZE + 1; batches_left > 0; --batches_left)
+                if (queue.consume_batch(DRAIN_REMOVED_PARTITION_BATCH_SIZE, 0ms).empty())
+                    break;
+        }
+    }
+
+    cleanQueuesAndMessages();
+
+    queues.reserve(topic_partitions.size());
+    // `get_partition_queue` creates the partition queue if needed and disables forwarding to the main consumer queue.
+    // Do this before `assign` starts fetching, otherwise messages may leak into the main queue before we detach it.
+    try
+    {
+        for (const auto & topic_partition : topic_partitions)
+            queues.emplace(
+                TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()},
+                consumer->get_partition_queue(topic_partition));
+
+        consumer->assign(topic_partitions);
+
+        /// Unassigning clears only librdkafka's own pause flag, so a partition we paused stays paused when it comes back.
+        cppkafka::TopicPartitionList partitions_to_resume;
+        for (const auto & topic_partition : new_partitions)
+            if (paused_partitions.contains(topic_partition))
+                partitions_to_resume.emplace_back(topic_partition.topic, topic_partition.partition_id);
+        if (!partitions_to_resume.empty())
+        {
+            consumer->resume_partitions(partitions_to_resume);
+            /// Forget the partitions only after the resume succeeded, so that if it throws, the next call retries it.
+            for (const auto & topic_partition : partitions_to_resume)
+                paused_partitions.erase(TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()});
+        }
+    }
+    catch (...)
+    {
+        cleanQueuesAndMessages();
+        throw;
+    }
 }
 
 // it does the poll when needed
@@ -244,7 +314,7 @@ void KafkaConsumer2::commit(const TopicPartitionOffset & topic_partition_offset)
     {
         try
         {
-            // See https://github.com/edenhill/librdkafka/issues/1470
+            // See https://github.com/confluentinc/librdkafka/issues/1470
             // broker may reject commit if during offsets.commit.timeout.ms (5000 by default), there were not enough
             // replicas available for the __consumer_offsets topic. also some other temporary issues like client-server
             // connectivity problems are possible
@@ -378,7 +448,7 @@ ReadBufferPtr KafkaConsumer2::getNextMessage()
 
 void KafkaConsumer2::filterMessageErrors()
 {
-    assert(current == messages.begin());
+    chassert(current == messages.begin());
 
     StorageKafkaUtils::eraseMessageErrors(
         messages,
@@ -392,6 +462,9 @@ void KafkaConsumer2::resetIfStopped()
     if (stopped)
     {
         stalled_status = StalledStatus::CONSUMER_STOPPED;
+        /// Discard the interrupted batch; a later batch must not continue from its middle.
+        messages.clear();
+        current = messages.end();
     }
 }
 

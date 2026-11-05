@@ -22,12 +22,21 @@ def start_cluster():
 
 
 def _create_tables(table_name):
-    for idx, node in enumerate(nodes):
+    # Restart replicated sends that may have been stopped by a previous run
+    for node in nodes:
+        node.query("SYSTEM START REPLICATED SENDS")
+
+    # Drop all replicas first so the ZK path is fully cleaned up
+    # before recreating. If we interleave DROP and CREATE in the same loop,
+    # a newly created replica will see stale replicas still in ZK and
+    # fetch their old data, causing accumulation across repeated runs.
+    for node in nodes:
         node.query(
             f"DROP TABLE IF EXISTS {table_name}",
             settings={"database_atomic_wait_for_drop_and_detach_synchronously": True},
         )
 
+    for idx, node in enumerate(nodes):
         node.query(
             f"""
             CREATE TABLE {table_name} (value Int64)
@@ -67,6 +76,7 @@ def test_initiator_snapshot_is_used_for_reading(start_cluster):
                     "max_parallel_replicas": 100,
                     "cluster_for_parallel_replicas": "parallel_replicas",
                     "parallel_replicas_local_plan": True,
+                    "enable_shared_storage_snapshot_in_query": False,
                 },
             )
             == f"{expected}\n"

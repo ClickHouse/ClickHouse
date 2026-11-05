@@ -1,0 +1,10 @@
+<clickhouse>
+    <mqs>111111</mqs>
+
+    <extra_users>
+        <first_user>
+            <password></password>
+            <profile>default</profile>
+        </first_user>
+    </extra_users>
+</clickhouse>

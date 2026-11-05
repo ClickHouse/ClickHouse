@@ -1,0 +1,47 @@
+---
+description: 'TCP 接続制限。'
+sidebarTitle: 'TCP 接続制限'
+slug: /operations/settings/tcp-connection-limits
+title: 'TCP 接続制限'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 概要
+</div>
+
+ClickHouse の TCP connection (つまり、[コマンドラインクライアント](/ja/concepts/features/interfaces/client) 経由の connection) は、
+一定回数のクエリ実行後、または一定時間経過後に自動的に切断されることがあります。
+切断後に自動的に再接続されることはありません (コマンドラインクライアントで別のクエリを送信するなど、
+ほかの操作によってトリガーされた場合を除きます) 。
+
+接続制限を有効にするには、サーバー設定
+`tcp_close_connection_after_queries_num` (クエリ数の上限)
+または `tcp_close_connection_after_queries_seconds` (時間の上限) に 0 より大きい値を設定します。
+両方の制限が有効な場合は、どちらか一方の上限に先に達した時点で connection がクローズされます。
+
+上限に達して切断されると、クライアントは
+`TCP_CONNECTION_LIMIT_REACHED` 例外を受け取り、**切断の原因となったクエリは処理されません**。
+
+<div id="query-limits">
+  ## クエリ制限
+</div>
+
+`tcp_close_connection_after_queries_num` が N に設定されている場合、その接続では
+成功したクエリを N 回まで実行できます。その後、N + 1 回目のクエリでクライアントは切断されます。
+
+処理されたすべてのクエリが、クエリ制限のカウント対象になります。したがって、コマンドラインクライアントで接続する場合、
+自動的に最初のシステム警告クエリが実行され、それも制限にカウントされることがあります。
+
+TCP connection が idle 状態になると (つまり、一定時間クエリが処理されておらず、
+その時間がセッション設定 `poll_interval` で指定されている場合) 、
+それまでにカウントされたクエリ数は 0 にリセットされます。
+つまり、idle 状態が発生した場合は、1 つの接続内で実行されるクエリの総数が
+`tcp_close_connection_after_queries_num` を超える可能性があります。
+
+<div id="duration-limits">
+  ## 接続継続時間の制限
+</div>
+
+接続継続時間は、クライアントが接続した時点から計測されます。
+`tcp_close_connection_after_queries_seconds` 秒が経過した後に実行される最初のクエリで、クライアントは切断されます。

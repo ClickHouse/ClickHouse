@@ -1,4 +1,5 @@
 #include <Client/ProgressTable.h>
+#include <base/sort.h>
 #include <Common/ProfileEvents.h>
 #include <base/defines.h>
 
@@ -194,6 +195,11 @@ void writeWithWidthStrict(Out & out, std::string_view s, size_t width)
 void ProgressTable::writeTable(
     WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &, bool show_table, bool toggle_enabled, bool is_final)
 {
+    /// The terminal may be gone, e.g. a closed session of the client embedded into the server:
+    /// a failed write cancels the buffer and reports the error, and a write into it after that is a logical error.
+    if (message.isCanceled())
+        return;
+
     std::lock_guard lock{mutex};
     message << HIDE_CURSOR;
     if (!show_table && toggle_enabled)
@@ -236,7 +242,7 @@ void ProgressTable::writeTable(
         sorted_metrics.emplace_back(&elem);
     }
 
-    std::stable_sort(sorted_metrics.begin(), sorted_metrics.end(), [](Metrics::const_pointer a, Metrics::const_pointer b)
+    ::stableSort(sorted_metrics.begin(), sorted_metrics.end(), [](Metrics::const_pointer a, Metrics::const_pointer b)
     {
         return std::tuple(a->second.getDisplayPriority(), std::floor(std::log10(1 + a->second.getSummaryValue())))
             > std::tuple(b->second.getDisplayPriority(), std::floor(std::log10(1 + b->second.getSummaryValue())));
@@ -354,6 +360,11 @@ void ProgressTable::updateTable(const Block & block)
 
 void ProgressTable::clearTableOutput(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &)
 {
+    /// The terminal may be gone, e.g. a closed session of the client embedded into the server:
+    /// a failed write cancels the buffer and reports the error, and a write into it after that is a logical error.
+    if (message.isCanceled())
+        return;
+
     message << "\r" << CLEAR_TO_END_OF_SCREEN << SHOW_CURSOR;
     message.next();
 }

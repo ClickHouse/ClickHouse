@@ -1,0 +1,142 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-06-05
+title: 'Demo days - 2026-06-05'
+sidebarTitle: '2026-06-05'
+description: 'ClickStack demo days du 2026-06-05'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="split-trace-view-and-extended-trace-view">
+  ## Vue de trace scindée et vue de trace étendue
+</div>
+
+*Démo par [@karl-power](https://github.com/karl-power)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/L4sduqf3CR8" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Le panneau de trace propose désormais un mode d’affichage scindé : lorsque vous parcourez les spans dans la chronologie, le panneau de détails se met à jour directement à droite, au lieu de s’ouvrir sous le span sélectionné comme auparavant. Cela permet de conserver toute la chronologie visible pendant que vous examinez des spans individuels.
+
+Vous pouvez également passer à une vue de trace étendue pour afficher une chronologie sur toute la largeur, avec prise en charge du défilement et du zoom. Les deux panneaux peuvent être ouverts et fermés indépendamment, ce qui facilite le passage entre une vue d’ensemble et une inspection détaillée des spans, sans perdre votre position.
+
+**PR associées :** [#2402](https://github.com/hyperdxio/hyperdx/pull/2402) feat: détail scindé intégré du panneau de trace
+
+<div id="source-level-required-filters">
+  ## Filtres requis au niveau de la source
+</div>
+
+*Démo par [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/RcAl8Sl5GFM" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Les sources peuvent désormais déclarer des filtres obligatoires qui s’affichent automatiquement sur tout tableau de bord qui les utilise. Au lieu d’ajouter manuellement le même filtre à chaque tableau de bord qui référence une source, ClickStack détecte cette exigence et remonte le filtre au niveau du tableau de bord — en le limitant uniquement aux tuiles qui utilisent réellement cette source.
+
+Les tuiles individuels peuvent remplacer la valeur définie au niveau du tableau de bord s’ils ont besoin de valeurs de filtre différentes, et les filtres obligatoires sont également répercutés dans l’aperçu de l’éditeur de graphiques afin que vous puissiez valider les requêtes sans avoir à les supprimer. Les filtres de source obligatoires s’intègrent aussi à la macro de filtres SQL pour les graphiques basés sur SQL, et lors de la configuration de liens d’un tableau de bord à l’autre, ClickStack les inclut automatiquement comme candidats pour les paramètres de lien.
+
+<div id="fit-y-axis-to-data">
+  ## Ajuster l’axe Y aux données
+</div>
+
+*Démo par [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/cNiGHy1OqhU" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Les graphiques en courbes disposent d’un nouveau paramètre d’affichage, « Ajuster l’axe Y aux données ». Par défaut, l’axe Y est ancré à zéro, ce qui comprime la plage visible lorsque les valeurs sont élevées mais varient peu — au point de masquer les tendances au premier coup d’œil.
+
+Lorsque cette option est activée, la plage de l’axe Y est calculée dynamiquement à partir de la plage réelle des données, afin de rendre visibles les fluctuations des séries à valeurs élevées sans devoir configurer manuellement les bornes de l’axe.
+
+**PR associée :** [#2417](https://github.com/hyperdxio/hyperdx/pull/2417) feat(charts): add &#39;Fit Y-Axis to Data&#39; display setting for line charts
+
+<div id="anomaly-alerts">
+  ## Alertes d’anomalie
+</div>
+
+*Démo par [@fleon](https://github.com/fleon)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/aAgN3ZlQz8M" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Himanshu a montré comment nous travaillons sur des alertes basées sur les anomalies à l’aide d’une détection par score Z. Au lieu d’un seuil fixe, vous définissez le nombre d’écarts types par rapport à la moyenne attendue qui doit déclencher une alerte. La fenêtre de saisonnalité (horaire ou quotidienne) détermine la manière dont le niveau de référence est calculé, et l’éditeur d’alertes met en évidence les fenêtres qui se seraient déclenchées afin que vous puissiez ajuster la sensibilité avant d’enregistrer.
+
+Cela répond à un problème courant avec les alertes à seuil : les utilisateurs ne savent souvent pas quelle valeur numérique choisir. Voir les fenêtres d’alerte potentielles se mettre à jour en temps réel lorsque vous ajustez le score Z permet concrètement de trouver un seuil qui capture les véritables pics sans générer trop de bruit. Les alertes peuvent être configurées pour ne se déclencher que lorsque les valeurs dépassent la plage attendue (et non lorsqu’elles passent en dessous), et un paramètre d’occurrence vous permet d’exiger que la condition soit vérifiée sur plusieurs points de données consécutifs avant le déclenchement. Cette fonctionnalité est encore en cours de développement : le niveau de référence est actuellement calculé sous forme de moyenne mobile, et la prise en charge de la moyenne mobile exponentielle est prévue.
+
+<div id="clearer-configuration-for-api-and-ai-agents">
+  ## Configuration plus claire pour l’API et les agents IA
+</div>
+
+*Démo par [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/gpQA-Vso1XI" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Les paramètres de ClickStack incluent désormais un onglet dédié API et Agents, qui regroupe au même endroit les clés API et la configuration de la connexion MCP. Les boutons en un clic pour Claude, Cursor et OpenCode évitent d’avoir à composer manuellement les commandes de connexion — le bouton Cursor, par exemple, ouvre un terminal avec la commande d’installation appropriée déjà préremplie. Les utilisateurs d’OpenCode disposent d’un extrait de system prompt à copier-coller directement. Une option de configuration JSON générique couvre les autres clients MCP.
+
+**PR associées :** [#2407](https://github.com/hyperdxio/hyperdx/pull/2407) feat(team-settings): connect your AI assistant
+
+<div id="color-selection-for-number-charts">
+  ## Sélection des couleurs pour les graphiques Number
+</div>
+
+*Démo par [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/qsZ-I6FEsNw" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Les tuiles Number prennent désormais en charge à la fois un sélecteur de couleurs statique et des règles de couleur conditionnelles. La palette du graphique a été mise à jour avec des noms de couleurs lisibles — « blue » et « gray » au lieu de « color-1 » et « color-10 » —, ce qui permet de comprendre bien plus facilement ce que vous sélectionnez.
+
+La coloration conditionnelle vous permet de définir des règles de seuil ordonnées, par exemple vert en dessous d’une valeur cible, orange dans une plage d’avertissement et rouge au-dessus d’un seuil critique. Les tuiles Number deviennent ainsi vraiment utiles comme indicateurs d’état dans les tableaux de bord, en particulier pour des métriques comme les taux d’erreur ou la latence P99, lorsque vous voulez un retour visuel immédiat sans avoir à lire la valeur.
+
+**PR associées :** [#2386](https://github.com/hyperdxio/hyperdx/pull/2386) Règles de couleur conditionnelles pour les tuiles Number (seuils ordonnés), [#2265](https://github.com/hyperdxio/hyperdx/pull/2265) feat(app) : sélecteur de couleurs statique pour les tuiles Number
+
+<div id="schema-migrations">
+  ## Migrations de schéma
+</div>
+
+*Démo par [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/qVV8vQqctfM" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickStack dispose désormais d’un onglet Migrations de schéma dans les paramètres (enterprise) pour effectuer des modifications DDL contrôlées et versionnées de vos schémas de données. Vous rédigez une migration, lui attribuez un numéro de version, puis un job d’arrière-plan la prend en charge et l’exécute avec une logique de nouvelle tentative et un ordonnancement strict — si une migration échoue, les migrations suivantes qui en dépendent ne s’exécuteront pas tant qu’elle n’aura pas été résolue ou supprimée.
+
+Ce système versionné permet également à ClickHouse de déployer des optimisations de schéma gérées auprès des équipes ClickStack Cloud sans nécessiter de travail manuel avec ALTER TABLE. Les équipes peuvent examiner les migrations en attente et les débloquer à leur propre rythme. La première phase couvre les changements additifs ; les modifications de clé primaire sont prévues pour la deuxième phase.
+
+<div id="out-of-the-box-browser-rum-dashboards">
+  ## Tableaux de bord Browser RUM prêts à l’emploi
+</div>
+
+*Démo par [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Kmq9qwTnObw" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickStack inclut désormais un tableau de bord Browser RUM prêt à l’emploi qui couvre l’ensemble des métriques de performance web. Le tableau de bord comprend une vue d’ensemble des performances avec les pages vues et le temps de chargement P90, ainsi que les signaux web essentiels — LCP, INP et CLS — avec des seuils par niveau pour voir immédiatement si chaque métrique est correcte, doit être améliorée ou est médiocre.
+
+Des sections supplémentaires couvrent l’évolution des pages vues dans le temps, les tâches longues, la répartition par appareil, les pages les plus lentes, les sessions générant le plus d’erreurs, les taux d’erreurs JavaScript et les échecs d’API. Des actions de ligne personnalisées vous permettent de cliquer sur n’importe quelle ligne du tableau pour accéder directement à la session ou aux données de trace correspondantes. Les filtres en haut de page vous permettent de segmenter par service, environnement, version du service et page. Le filtrage par pays est en cours, dans l’attente d’améliorations du Browser SDK pour émettre des données géographiques.
+
+**PR associées :** [#2413](https://github.com/hyperdxio/hyperdx/pull/2413) feat: add Browser RUM dashboard template
+
+<div id="dependent-dashboard-filters">
+  ## Filtres de tableau de bord dépendants
+</div>
+
+*Démo par [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/nTnBmZ-MvFg" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Les filtres de tableau de bord peuvent désormais dépendre les uns des autres, de sorte que la sélection d&#39;une valeur dans un filtre restreint automatiquement les options disponibles dans les filtres suivants. Le tableau de bord Kubernetes est le premier à utiliser cette fonctionnalité : la sélection d&#39;un pod limite désormais les listes déroulantes de déploiement et de nœud aux seules valeurs pertinentes pour ce pod, au lieu d&#39;afficher toutes les options de l&#39;ensemble du cluster.
+
+Ainsi, aucune combinaison de filtres susceptible de ne renvoyer aucun résultat ne vous est proposée. Cette fonctionnalité est déjà disponible dans le modèle de tableau de bord Kubernetes.

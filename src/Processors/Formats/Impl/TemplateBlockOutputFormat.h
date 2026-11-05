@@ -3,6 +3,7 @@
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/ParsedTemplateFormatString.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -10,9 +11,9 @@ namespace DB
 
 class ISerialization;
 using SerializationPtr = std::shared_ptr<const ISerialization>;
-using Serializations = std::vector<SerializationPtr>;
+using Serializations = VectorWithMemoryTracking<SerializationPtr>;
 
-class TemplateBlockOutputFormat : public IOutputFormat
+class TemplateBlockOutputFormat final : public IOutputFormat
 {
     using EscapingRule = FormatSettings::EscapingRule;
 public:

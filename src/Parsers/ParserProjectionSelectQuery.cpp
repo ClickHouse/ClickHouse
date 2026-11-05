@@ -17,15 +17,18 @@ bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     ParserKeyword s_with(Keyword::WITH);
     ParserKeyword s_select(Keyword::SELECT);
+    ParserKeyword s_where(Keyword::WHERE);
     ParserKeyword s_group_by(Keyword::GROUP_BY);
     ParserKeyword s_order_by(Keyword::ORDER_BY);
 
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
     ParserNotEmptyExpressionList exp_list_for_select_clause(true); /// Allows aliases without AS keyword.
     ParserStorageOrderByExpressionList order_list_p(/*allow_order_*/ false);
+    ParserExpressionWithOptionalAlias exp_elem(false);
 
     ASTPtr with_expression_list;
     ASTPtr select_expression_list;
+    ASTPtr where_expression;
     ASTPtr group_expression_list;
     ASTPtr order_expression;
 
@@ -44,6 +47,13 @@ bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
             return false;
 
         if (!exp_list_for_select_clause.parse(pos, select_expression_list, expected))
+            return false;
+    }
+
+    /// WHERE expr
+    if (s_where.ignore(pos, expected))
+    {
+        if (!exp_elem.parse(pos, where_expression, expected))
             return false;
     }
 
@@ -78,6 +88,7 @@ bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     select_query->setExpression(ASTProjectionSelectQuery::Expression::WITH, std::move(with_expression_list));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::SELECT, std::move(select_expression_list));
+    select_query->setExpression(ASTProjectionSelectQuery::Expression::WHERE, std::move(where_expression));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, std::move(group_expression_list));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::ORDER_BY, std::move(order_expression));
     return true;

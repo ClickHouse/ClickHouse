@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <random>
 #include <vector>
 
 #include <base/types.h>
@@ -50,8 +51,19 @@ public:
     void tick();
 
 private:
+    /// Numerical tolerance for sum-to-one and feasibility checks. Equality at the level of
+    /// double-precision rounding is what we care about; tighter tolerances would falsely
+    /// reject legitimate distributions after a normalize-and-renormalize cycle.
+    static constexpr double kEpsilon = 1e-12;
+    /// Maximum iterations of the water-filling clamp loop. The loop converges in a handful
+    /// of passes in practice; the cap is a safety net so a pathological bounds set cannot
+    /// spin forever.
+    static constexpr int kClampMaxIterations = 10;
+
     uint64_t seed;
     pcg64_fast generator;
+    /// Reused across nextOp() calls so we don't reconstruct the distribution object every sample.
+    std::uniform_real_distribution<double> uniform_unit{0.0, 1.0};
 
     std::vector<double> cdf;
     std::vector<bool> enabled_values;
@@ -61,7 +73,7 @@ private:
 
     static void ensureAtLeastOneEnabled(const std::vector<bool> & mask);
 
-    size_t lastEnabledEnum() const;
+    size_t lastEnabledIndex() const;
 
     std::vector<double> generateInitial();
 

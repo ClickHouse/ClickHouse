@@ -1,0 +1,399 @@
+---
+title: 'DataStore 日志'
+sidebarTitle: '日志'
+slug: /chdb/debugging/logging
+description: '配置 DataStore 日志以进行调试和监控'
+keywords: ['chdb', 'DataStore', '日志', '调试', '日志', '级别']
+doc_type: '参考'
+---
+
+DataStore 使用 Python 的标准日志模块。本指南介绍如何配置日志以便进行调试。
+
+<div id="quick-start">
+  ## 快速入门
+</div>
+
+```python
+from pathlib import Path
+Path("data.csv").write_text("""\
+name,age,city,salary,department
+Alice,25,NYC,55000,Engineering
+Bob,30,LA,65000,Product
+Charlie,35,NYC,80000,Engineering
+Diana,28,SF,70000,Design
+Eve,42,NYC,95000,Product
+""")
+
+from chdb import datastore as pd
+from chdb.datastore.config import config
+
+# 启用调试日志
+config.enable_debug()
+
+# 现在所有操作都将记录详细信息
+ds = pd.read_csv("data.csv")
+result = ds.filter(ds['age'] > 25).to_df()
+```
+
+<div id="levels">
+  ## 日志级别
+</div>
+
+| 级别         | 值  | 描述         |
+| ---------- | -- | ---------- |
+| `DEBUG`    | 10 | 供调试使用的详细信息 |
+| `INFO`     | 20 | 常规运行信息     |
+| `WARNING`  | 30 | 警告信息 (默认)  |
+| `ERROR`    | 40 | 错误信息       |
+| `CRITICAL` | 50 | 严重故障       |
+
+<div id="setting-level">
+  ## 设置日志级别
+</div>
+
+```python
+import logging
+from chdb.datastore.config import config
+
+# 使用标准日志级别
+config.set_log_level(logging.DEBUG)
+config.set_log_level(logging.INFO)
+config.set_log_level(logging.WARNING)  # 默认
+config.set_log_level(logging.ERROR)
+
+# 使用快捷预设
+config.enable_debug()  # 设置 DEBUG 级别 + 详细格式
+```
+
+<div id="format">
+  ## 日志格式
+</div>
+
+<div id="simple">
+  ### 简洁格式 (默认)
+</div>
+
+```python title="Query"
+config.set_log_format("simple")
+```
+
+```text title="Response"
+DEBUG - Executing SQL query
+DEBUG - Cache miss for key abc123
+```
+
+<div id="verbose">
+  ### 详细格式
+</div>
+
+```python title="Query"
+config.set_log_format("verbose")
+```
+
+```text title="Response"
+2024-01-15 10:30:45.123 DEBUG datastore.core - Executing SQL query
+2024-01-15 10:30:45.456 DEBUG datastore.cache - Cache miss for key abc123
+```
+
+***
+
+<div id="what-logged">
+  ## 会记录哪些日志
+</div>
+
+<div id="debug-logged">
+  ### DEBUG 级别
+</div>
+
+* 生成的 SQL 查询
+* 执行引擎的选择
+* 缓存操作 (命中/未命中) 
+* 操作耗时
+* 数据源信息
+
+```text
+DEBUG - Creating DataStore from file 'data.csv'
+DEBUG - SQL: SELECT * FROM file('data.csv', 'CSVWithNames') WHERE age > 25
+DEBUG - Using engine: chdb
+DEBUG - Execution time: 0.089s
+DEBUG - Cache: Storing result (key: abc123)
+```
+
+<div id="info-logged">
+  ### INFO 级别
+</div>
+
+* 主要操作已完成
+* 配置变更
+* 数据源连接
+
+```text
+INFO - Loaded 1,000,000 rows from data.csv
+INFO - Execution engine set to: chdb
+INFO - Connected to MySQL: localhost:3306/mydb
+```
+
+<div id="warning-logged">
+  ### WARNING 级别
+</div>
+
+* 使用已弃用的功能
+* 性能警告
+* 非关键问题
+
+```text
+WARNING - Large result set (>1M rows) may cause memory issues
+WARNING - Cache TTL exceeded, re-executing query
+WARNING - Column 'date' has mixed types, using string
+```
+
+<div id="error-logged">
+  ### ERROR 级别
+</div>
+
+* 查询执行失败
+* 连接错误
+* 数据转换错误
+
+```text
+ERROR - Failed to execute SQL: syntax error near 'FORM'
+ERROR - Connection to MySQL failed: timeout
+ERROR - Cannot convert column 'price' to float
+```
+
+***
+
+<div id="custom">
+  ## 自定义日志配置
+</div>
+
+<div id="python-logging">
+  ### 使用 Python 日志
+</div>
+
+```python
+import logging
+
+# 配置根 logger
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('datastore.log'),
+        logging.StreamHandler()
+    ]
+)
+
+# 获取 DataStore 日志记录器
+ds_logger = logging.getLogger('chdb.datastore')
+ds_logger.setLevel(logging.DEBUG)
+```
+
+<div id="log-file">
+  ### 将日志写入文件
+</div>
+
+```python
+import logging
+
+# 创建文件处理器
+file_handler = logging.FileHandler('datastore_debug.log')
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+))
+
+# 添加到 DataStore 日志记录器
+ds_logger = logging.getLogger('chdb.datastore')
+ds_logger.addHandler(file_handler)
+```
+
+<div id="suppress">
+  ### 抑制日志输出
+</div>
+
+```python
+import logging
+
+# 抑制所有 DataStore 日志
+logging.getLogger('chdb.datastore').setLevel(logging.CRITICAL)
+
+# 或使用 config
+config.set_log_level(logging.CRITICAL)
+```
+
+***
+
+<div id="scenarios">
+  ## 调试场景
+</div>
+
+<div id="debug-sql">
+  ### 调试 SQL 生成过程
+</div>
+
+```python
+config.enable_debug()
+
+ds = pd.read_csv("data.csv")
+result = ds.filter(ds['age'] > 25).groupby('city').sum()
+```
+
+日志输出：
+
+```text
+DEBUG - 从文件 'data.csv' 创建 DataStore
+DEBUG - 构建过滤器：age > 25
+DEBUG - 构建 groupby：city
+DEBUG - 构建聚合：sum
+DEBUG - 生成的 SQL：
+        SELECT city, SUM(*) 
+        FROM file('data.csv', 'CSVWithNames')
+        WHERE age > 25
+        GROUP BY city
+```
+
+<div id="debug-engine">
+  ### 调试引擎选择
+</div>
+
+```python
+config.enable_debug()
+
+result = ds.filter(ds['x'] > 10).apply(custom_func)
+```
+
+日志输出：
+
+```text
+DEBUG - filter: selecting engine (eligible: chdb, pandas)
+DEBUG - filter: using chdb (SQL-compatible)
+DEBUG - apply: selecting engine (eligible: pandas)
+DEBUG - apply: using pandas (custom function)
+```
+
+<div id="debug-cache">
+  ### 调试缓存操作
+</div>
+
+```python
+config.enable_debug()
+
+# 首次执行
+result1 = ds.filter(ds['age'] > 25).to_df()
+# DEBUG - 查询哈希 abc123 缓存未命中
+# DEBUG - 正在执行查询...
+# DEBUG - 正在缓存结果（key: abc123, size: 1.2MB）
+
+# 第二次执行（相同查询）
+result2 = ds.filter(ds['age'] > 25).to_df()
+# DEBUG - 查询哈希 abc123 缓存命中
+# DEBUG - 返回缓存结果
+```
+
+<div id="debug-performance">
+  ### 排查性能问题
+</div>
+
+```python
+config.enable_debug()
+config.enable_profiling()
+
+# 日志将显示每个操作的耗时
+result = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('region')
+    .agg({'amount': 'sum'})
+    .to_df()
+)
+```
+
+日志输出：
+
+```text
+DEBUG - filter: 0.002ms
+DEBUG - groupby: 0.001ms
+DEBUG - agg: 0.003ms
+DEBUG - SQL generation: 0.012ms
+DEBUG - SQL execution: 89.456ms  <- 主要耗时在此
+DEBUG - Result conversion: 2.345ms
+```
+
+***
+
+<div id="production">
+  ## 生产环境配置
+</div>
+
+<div id="recommended">
+  ### 推荐配置
+</div>
+
+```python
+import logging
+from chdb.datastore.config import config
+
+# 生产环境：最小化日志
+config.set_log_level(logging.WARNING)
+config.set_log_format("simple")
+config.set_profiling_enabled(False)
+```
+
+<div id="rotation">
+  ### 日志轮转
+</div>
+
+```python
+import logging
+from logging.handlers import RotatingFileHandler
+
+# 创建轮转文件处理器
+handler = RotatingFileHandler(
+    'datastore.log',
+    maxBytes=10*1024*1024,  # 10MB
+    backupCount=5
+)
+handler.setLevel(logging.WARNING)
+
+# 添加到 DataStore 日志记录器
+logging.getLogger('chdb.datastore').addHandler(handler)
+```
+
+***
+
+<div id="env-vars">
+  ## 环境变量
+</div>
+
+你也可以通过环境变量来配置日志：
+
+```bash
+# 设置日志级别
+export CHDB_LOG_LEVEL=DEBUG
+
+# 设置日志格式
+export CHDB_LOG_FORMAT=verbose
+```
+
+```python
+import os
+import logging
+
+# 从环境变量读取
+log_level = os.environ.get('CHDB_LOG_LEVEL', 'WARNING')
+config.set_log_level(getattr(logging, log_level))
+```
+
+***
+
+<div id="summary">
+  ## 摘要
+</div>
+
+| 任务     | 命令                                       |
+| ------ | ---------------------------------------- |
+| 启用调试   | `config.enable_debug()`                  |
+| 设置日志级别 | `config.set_log_level(logging.DEBUG)`    |
+| 设置日志格式 | `config.set_log_format("verbose")`       |
+| 输出到文件  | 使用 Python 日志处理器                          |
+| 抑制日志输出 | `config.set_log_level(logging.CRITICAL)` |

@@ -1,0 +1,11 @@
+---
+description: 'دليل لبناء ClickHouse من الشيفرة المصدرية لمعمارية AARCH64'
+sidebarTitle: 'البناء على Linux لـ AARCH64'
+slug: /development/build-cross-arm
+title: 'كيفية بناء ClickHouse على Linux لـ AARCH64'
+doc_type: 'guide'
+---
+
+لا يلزم اتخاذ أي خطوات خاصة لبناء ClickHouse لمعمارية Aarch64 على جهاز يعمل بمعمارية Aarch64.
+
+لإجراء بناء متقاطع لـ ClickHouse لمعمارية AArch64 على جهاز Linux من نوع x86، مرّر الخيار التالي إلى `cmake`: `-DCMAKE_TOOLCHAIN_FILE=cmake/linux/toolchain-aarch64.cmake`

@@ -3,6 +3,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
+#include <IO/WriteHelpers.h>
 
 #include <Poco/JSON/Object.h>
 
@@ -22,7 +23,7 @@ SerializationInfoTuple::SerializationInfoTuple(MutableSerializationInfos elems_,
     , elems(std::move(elems_))
     , names(std::move(names_))
 {
-    assert(names.size() == elems.size());
+    chassert(names.size() == elems.size());
     for (size_t i = 0; i < names.size(); ++i)
         name_to_elem[names[i]] = elems[i];
 }
@@ -51,7 +52,7 @@ void SerializationInfoTuple::add(const IColumn & column)
 
     const auto & column_tuple = assert_cast<const ColumnTuple &>(column);
     const auto & right_elems = column_tuple.getColumns();
-    assert(elems.size() == right_elems.size());
+    chassert(elems.size() == right_elems.size());
 
     for (size_t i = 0; i < elems.size(); ++i)
         elems[i]->add(*right_elems[i]);
@@ -61,14 +62,19 @@ void SerializationInfoTuple::add(const SerializationInfo & other)
 {
     SerializationInfo::add(other);
 
-    const auto & other_info = assert_cast<const SerializationInfoTuple &>(other);
+    const auto * other_info = typeid_cast<const SerializationInfoTuple *>(&other);
+    if (!other_info)
+    {
+        return;
+    }
+
     for (const auto & [name, elem] : name_to_elem)
     {
-        auto it = other_info.name_to_elem.find(name);
-        if (it != other_info.name_to_elem.end())
+        auto it = other_info->name_to_elem.find(name);
+        if (it != other_info->name_to_elem.end())
             elem->add(*it->second);
         else
-            elem->addDefaults(other_info.getData().num_rows);
+            elem->addDefaults(other_info->getData().num_rows);
     }
 }
 
@@ -97,11 +103,16 @@ void SerializationInfoTuple::replaceData(const SerializationInfo & other)
 {
     SerializationInfo::replaceData(other);
 
-    const auto & other_info = assert_cast<const SerializationInfoTuple &>(other);
+    const auto * other_info = typeid_cast<const SerializationInfoTuple *>(&other);
+    if (!other_info)
+    {
+        return;
+    }
+
     for (const auto & [name, elem] : name_to_elem)
     {
-        auto it = other_info.name_to_elem.find(name);
-        if (it != other_info.name_to_elem.end())
+        auto it = other_info->name_to_elem.find(name);
+        if (it != other_info->name_to_elem.end())
             elem->replaceData(*it->second);
     }
 }
@@ -137,7 +148,10 @@ MutableSerializationInfoPtr SerializationInfoTuple::createWithType(
     for (size_t i = 0; i < elems.size(); ++i)
         infos.push_back(elems[i]->createWithType(*old_elements[i], *new_elements[i], new_settings));
 
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
+    /// The result describes `new_type`, so the element identities have to be the ones of `new_type` as well:
+    /// the elements can be renamed, and everything that merges tuple subinfos (`add`, `replaceData`) matches
+    /// them by name, so carrying the old names over would silently make the renamed elements unmatched.
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), new_tuple.getElementNames());
 }
 
 void SerializationInfoTuple::serialializeKindStackBinary(WriteBuffer & out) const
@@ -147,11 +161,32 @@ void SerializationInfoTuple::serialializeKindStackBinary(WriteBuffer & out) cons
         elem->serialializeKindStackBinary(out);
 }
 
-void SerializationInfoTuple::deserializeFromKindsBinary(ReadBuffer & in)
+void SerializationInfoTuple::deserializeFromKindsBinary(ReadBuffer & in, ISerialization::KindSet allowed_kinds)
 {
-    SerializationInfo::deserializeFromKindsBinary(in);
+    SerializationInfo::deserializeFromKindsBinary(in, allowed_kinds);
+
+    /// A detached blob always covers a whole column, never a single tuple element.
+    auto elements_allowed_kinds = allowed_kinds.without(ISerialization::Kind::DETACHED);
     for (const auto & elem : elems)
-        elem->deserializeFromKindsBinary(in);
+        elem->deserializeFromKindsBinary(in, elements_allowed_kinds);
+}
+
+void SerializationInfoTuple::writeJSONFields(WriteBuffer & out, const String * name) const
+{
+    SerializationInfo::writeJSONFields(out, name);
+    writeString(R"(,"subcolumns":[)", out);
+
+    bool first = true;
+    for (const auto & elem : elems)
+    {
+        if (!first)
+            writeChar(',', out);
+        first = false;
+
+        elem->writeJSON(out, nullptr);
+    }
+
+    writeChar(']', out);
 }
 
 void SerializationInfoTuple::toJSON(Poco::JSON::Object & object) const
@@ -178,7 +213,7 @@ void SerializationInfoTuple::fromJSON(const Poco::JSON::Object & object)
     auto subcolumns = object.getArray("subcolumns");
     if (elems.size() != subcolumns->size())
         throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
-            "Mismatched number of subcolumns between JSON and SerializationInfoTuple."
+            "Mismatched number of subcolumns between JSON and SerializationInfoTuple. "
             "Expected: {}, got: {}", elems.size(), subcolumns->size());
 
     for (size_t i = 0; i < elems.size(); ++i)

@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <base/insertAtEnd.h>
@@ -36,12 +37,10 @@ BackupMetadataFinder::BackupMetadataFinder(
     const RestoreSettings & restore_settings_,
     const BackupPtr & backup_,
     const ContextMutablePtr & context_,
-    const ContextPtr & query_context_,
     ThreadPool & thread_pool_)
     : restore_settings(restore_settings_)
     , backup(backup_)
     , context(context_)
-    , query_context(query_context_)
     , process_list_element(context->getProcessListElement())
     , log(getLogger("BackupMetadataFinder"))
     , tables_dependencies("BackupMetadataFinder")
@@ -287,6 +286,16 @@ void BackupMetadataFinder::findTableInBackupImpl(
     ParserCreateQuery create_parser;
     ASTPtr create_table_query
         = parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    /// `BACKUP` writes the full definition, without `AS` (see `cleanupObjectDefinitionFromTemporaryFlags`). A definition that
+    /// inherits its engine with `AS` would let the access check of the restore see no engine, so it is rejected.
+    if (const auto & create = create_table_query->as<const ASTCreateQuery &>(); !create.as_table.empty())
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "The definition of {} in the backup uses AS {}, which BACKUP never writes",
+            tableNameWithTypeToString(table_name_in_backup.database, table_name_in_backup.table, false),
+            backQuoteIfNeed(create.as_table));
+
     applyCustomStoragePolicy(create_table_query);
     renameDatabaseAndTableNameInCreateQuery(create_table_query, renaming_map, context->getGlobalContext());
     String create_table_query_str = create_table_query->formatWithSecretsOneLine();
@@ -306,8 +315,8 @@ void BackupMetadataFinder::findTableInBackupImpl(
                 ErrorCodes::CANNOT_RESTORE_TABLE,
                 "Extracted two different create queries for the same {}: {} and {}",
                 tableNameWithTypeToString(table_name.database, table_name.table, false),
-                table_info.create_table_query_str,
-                create_table_query_str);
+                table_info.create_table_query->formatForErrorMessage(),
+                create_table_query->formatForErrorMessage());
         }
     }
 
@@ -397,8 +406,8 @@ void BackupMetadataFinder::findDatabaseInBackupImpl(
                 ErrorCodes::CANNOT_RESTORE_DATABASE,
                 "Extracted two different create queries for the same database {}: {} and {}",
                 backQuoteIfNeed(database_name),
-                database_info.create_database_query_str,
-                create_database_query_str);
+                database_info.create_database_query->formatForErrorMessage(),
+                create_database_query->formatForErrorMessage());
         }
 
         database_info.create_database_query = create_database_query;

@@ -1,0 +1,16 @@
+summing_clear_rows	0
+summing_clear_parts_column_v	0
+summing_clear_partition_compact_rows	0
+summing_update_zero_parity_rows	0
+summing_add_column_rows	0
+summing_add_column_parts_column_v	0
+summing_ttl_values	1	0	30
+summing_ttl_parts_column_expired	0
+coalescing_clear_values	1	0
+coalescing_clear_parts_column_v	0
+aggregating_clear_state	1	0	180
+aggregating_clear_parts_column_s	0
+aggregating_ttl_values	1	0	30
+aggregating_ttl_parts_column_expired	0
+replacing_clear_regression	1	2	0
+replacing_clear_parts_column_v	0

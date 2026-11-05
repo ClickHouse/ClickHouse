@@ -133,7 +133,7 @@ public:
         columns[0]->get(row_num, arr[position]);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         Array & arr_lhs = data(place).value;
         const Array & arr_rhs = data(rhs).value;
@@ -174,6 +174,10 @@ public:
         if (size > AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                             "Too large array size (maximum: {})", AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE);
+
+        if (length_to_resize && size > length_to_resize)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                            "Too large array size (maximum: {})", length_to_resize);
 
         Array & arr = data(place).value;
         arr.resize(size);
@@ -229,6 +233,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArrayInsertAt(
 
 }
 
+void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -289,7 +294,7 @@ SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size
         )",
         R"(
 ┌─groupArrayInsertAt(number, 0)─┐
-│ [7]                           │
+│ [0]                           │
 └───────────────────────────────┘
         )"
     }
@@ -298,7 +303,8 @@ SELECT groupArrayInsertAt(number, 0) FROM numbers_mt(10) SETTINGS max_block_size
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("groupArrayInsertAt", {createAggregateFunctionGroupArrayInsertAt, documentation});
+    AggregateFunctionProperties properties = {.is_order_dependent = true};
+    factory.registerFunction("groupArrayInsertAt", {createAggregateFunctionGroupArrayInsertAt, documentation, properties});
 }
 
 }

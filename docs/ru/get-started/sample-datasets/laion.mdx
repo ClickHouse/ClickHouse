@@ -1,0 +1,333 @@
+---
+description: 'Набор данных, содержащий 400 миллионов изображений с англоязычными подписями'
+sidebarTitle: 'Набор данных Laion-400M'
+slug: /getting-started/example-datasets/laion-400m-dataset
+title: 'Набор данных Laion-400M'
+doc_type: 'guide'
+keywords: ['демонстрационный набор данных', 'laion', 'эмбеддинги изображений', 'образцы данных', 'машинное обучение']
+---
+
+[Набор данных Laion-400M](https://laion.ai/blog/laion-400-open-dataset/) содержит 400 миллионов изображений с англоязычными подписями. Сейчас Laion также предоставляет [ещё более крупный набор данных](https://laion.ai/blog/laion-5b/), но работа с ним будет похожей.
+
+Набор данных содержит URL изображения, эмбеддинги как самого изображения, так и его подписи, оценку сходства между изображением и подписью, а также метаданные, например ширину и высоту изображения, лицензию и флаг NSFW. Этот набор данных можно использовать, чтобы продемонстрировать [приближённый поиск ближайших соседей](/ru/reference/engines/table-engines/mergetree-family/annindexes) в ClickHouse.
+
+<div id="data-preparation">
+  ## Подготовка данных
+</div>
+
+Эмбеддинги и метаданные в исходных данных хранятся в отдельных файлах. На этапе подготовки данные загружаются, файлы объединяются,
+преобразуются в CSV и импортируются в ClickHouse. Для этого можно использовать следующий скрипт `download.sh`:
+
+```bash
+number=${1}
+if [[ $number == '' ]]; then
+    number=1
+fi;
+wget --tries=100 https://deploy.laion.ai/8f83b608504d46bb81708ec86e912220/embeddings/img_emb/img_emb_${number}.npy          # скачать эмбеддинг изображения
+wget --tries=100 https://deploy.laion.ai/8f83b608504d46bb81708ec86e912220/embeddings/text_emb/text_emb_${number}.npy        # скачать текстовый эмбеддинг
+wget --tries=100 https://deploy.laion.ai/8f83b608504d46bb81708ec86e912220/embeddings/metadata/metadata_${number}.parquet    # скачать метаданные
+python3 process.py $number # объединить файлы и преобразовать в CSV
+```
+
+Скрипт `process.py` определяется следующим образом:
+
+```python
+import pandas as pd
+import numpy as np
+import os
+import sys
+
+str_i = str(sys.argv[1])
+npy_file = "img_emb_" + str_i + '.npy'
+metadata_file = "metadata_" + str_i + '.parquet'
+text_npy =  "text_emb_" + str_i + '.npy'
+
+# загрузить все файлы
+im_emb = np.load(npy_file)
+text_emb = np.load(text_npy) 
+data = pd.read_parquet(metadata_file)
+
+# объединить файлы
+data = pd.concat([data, pd.DataFrame({"image_embedding" : [*im_emb]}), pd.DataFrame({"text_embedding" : [*text_emb]})], axis=1, copy=False)
+
+# столбцы для импорта в ClickHouse
+data = data[['url', 'caption', 'NSFW', 'similarity', "image_embedding", "text_embedding"]]
+
+# преобразовать массивы np в списки
+data['image_embedding'] = data['image_embedding'].apply(lambda x: x.tolist())
+data['text_embedding'] = data['text_embedding'].apply(lambda x: x.tolist())
+
+# этот небольшой хак нужен, потому что в caption иногда встречаются кавычки разных типов
+data['caption'] = data['caption'].apply(lambda x: x.replace("'", " ").replace('"', " "))
+
+# экспортировать данные в CSV-файл
+data.to_csv(str_i + '.csv', header=False)
+
+# удалить исходные файлы данных
+os.system(f"rm {npy_file} {metadata_file} {text_npy}")
+```
+
+Чтобы запустить конвейер подготовки данных, выполните:
+
+```bash
+seq 0 409 | xargs -P1 -I{} bash -c './download.sh {}'
+```
+
+Набор данных разбит на 410 файлов, каждый из которых содержит примерно 1 миллион строк. Если вы хотите работать с меньшим подмножеством данных, просто скорректируйте диапазон, например `seq 0 9 | ...`.
+
+(Приведённый выше скрипт Python очень медленный (~2–10 минут на файл), потребляет много памяти (41 ГБ на файл), а итоговые CSV-файлы получаются большими (по 10 ГБ каждый), поэтому будьте осторожны. Если у вас достаточно оперативной памяти, увеличьте значение `-P1`, чтобы повысить параллелизм. Если и этого недостаточно, подумайте о более эффективной процедуре ингестии — например, можно преобразовать файлы .npy в Parquet, а затем выполнять всю остальную обработку в ClickHouse.)
+
+<div id="create-table">
+  ## Создание таблицы
+</div>
+
+Чтобы создать таблицу без индексов, выполните:
+
+```sql
+CREATE TABLE laion
+(
+    `id` Int64,
+    `url` String,
+    `caption` String,
+    `NSFW` String,
+    `similarity` Float32,
+    `image_embedding` Array(Float32),
+    `text_embedding` Array(Float32)
+)
+ENGINE = MergeTree
+ORDER BY id
+```
+
+Чтобы импортировать CSV-файлы в ClickHouse:
+
+```sql
+INSERT INTO laion FROM INFILE '{path_to_csv_files}/*.csv'
+```
+
+Обратите внимание: столбец `id` приведён здесь лишь для наглядности и заполняется скриптом неуникальными значениями.
+
+<div id="run-a-brute-force-vector-similarity-search">
+  ## Выполните векторный поиск по сходству методом полного перебора
+</div>
+
+Чтобы выполнить приближённый векторный поиск методом полного перебора, выполните:
+
+```sql
+SELECT url, caption FROM laion ORDER BY cosineDistance(image_embedding, {target:Array(Float32)}) LIMIT 10
+```
+
+`target` — это массив из 512 элементов и клиентский параметр.
+Удобный способ получения таких массивов будет показан в конце статьи.
+Пока же в качестве `target` можно использовать эмбеддинг случайного изображения набора LEGO.
+
+**Результат**
+
+```markdown
+    ┌─url───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─caption──────────────────────────────────────────────────────────────────────────┐
+ 1. │ https://s4.thcdn.com/productimg/600/600/11340490-9914447026352671.jpg                                                                                                                         │ LEGO Friends: Puppy Treats & Tricks (41304)                                      │
+ 2. │ https://www.avenuedelabrique.com/img/uploads/f20fd44bfa4bd49f2a3a5fad0f0dfed7d53c3d2f.jpg                                                                                                     │ Nouveau LEGO Friends 41334 Andrea s Park Performance 2018                        │
+ 3. │ http://images.esellerpro.com/2489/I/667/303/3938_box_in.jpg                                                                                                                                   │ 3938 LEGO Andreas Bunny House Girls Friends Heartlake Age 5-12 / 62 Pieces  New! │
+ 4. │ http://i.shopmania.org/180x180/7/7f/7f1e1a2ab33cde6af4573a9e0caea61293dfc58d.jpg?u=https%3A%2F%2Fs.s-bol.com%2Fimgbase0%2Fimagebase3%2Fextralarge%2FFC%2F4%2F0%2F9%2F9%2F9200000049789904.jpg │ LEGO Friends Avonturenkamp Boomhuis - 41122                                      │
+ 5. │ https://s.s-bol.com/imgbase0/imagebase/large/FC/5/5/9/4/1004004011684955.jpg                                                                                                                  │ LEGO Friends Andrea s Theatershow - 3932                                         │
+ 6. │ https://www.jucariicucubau.ro/30252-home_default/41445-lego-friends-ambulanta-clinicii-veterinare.jpg                                                                                         │ 41445 - LEGO Friends - Ambulanta clinicii veterinare                             │
+ 7. │ https://cdn.awsli.com.br/600x1000/91/91201/produto/24833262/234c032725.jpg                                                                                                                    │ LEGO FRIENDS 41336 EMMA S ART CAFÉ                                               │
+ 8. │ https://media.4rgos.it/s/Argos/6174930_R_SET?$Thumb150$&amp;$Web$                                                                                                                             │ more details on LEGO Friends Stephanie s Friendship Cake Set - 41308.            │
+ 9. │ https://thumbs4.ebaystatic.com/d/l225/m/mG4k6qAONd10voI8NUUMOjw.jpg                                                                                                                           │ Lego Friends Gymnast 30400 Polybag 26 pcs                                        │
+10. │ http://www.ibrickcity.com/wp-content/gallery/41057/thumbs/thumbs_lego-41057-heartlake-horse-show-friends-3.jpg                                                                                │ lego-41057-heartlake-horse-show-friends-3                                        │
+    └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────┘
+
+10 rows in set. Elapsed: 4.605 sec. Processed 100.38 million rows, 309.98 GB (21.80 million rows/s., 67.31 GB/s.)
+```
+
+<div id="run-an-approximate-vector-similarity-search-with-a-vector-similarity-index">
+  ## Выполните приблизительный поиск по векторному сходству с помощью индекса векторного сходства
+</div>
+
+Теперь давайте создадим для таблицы два индекса векторного сходства.
+
+```sql
+ALTER TABLE laion ADD INDEX image_index image_embedding TYPE vector_similarity('hnsw', 'cosineDistance', 512, 'bf16', 64, 256)
+ALTER TABLE laion ADD INDEX text_index text_embedding TYPE vector_similarity('hnsw', 'cosineDistance', 512, 'bf16', 64, 256)
+```
+
+Параметры и аспекты производительности при создании индекса и поиске описаны в [документации](/ru/reference/engines/table-engines/mergetree-family/annindexes).
+Приведённое выше определение индекса задаёт индекс HNSW, использующий &quot;cosine distance&quot; в качестве метрики расстояния, с параметром &quot;hnsw&#95;max&#95;connections&#95;per&#95;layer&quot;, установленным в 64, и параметром &quot;hnsw&#95;candidate&#95;list&#95;size&#95;for&#95;construction&quot;, установленным в 256.
+Индекс использует формат bfloat16 (brain floating point половинной точности) для квантования, чтобы оптимизировать использование памяти.
+
+Чтобы построить и материализовать индекс, выполните эти команды:
+
+```sql
+ALTER TABLE laion MATERIALIZE INDEX image_index;
+ALTER TABLE laion MATERIALIZE INDEX text_index;
+```
+
+Построение и сохранение индекса может занять от нескольких минут до нескольких часов — в зависимости от количества строк и параметров индекса HNSW.
+
+Чтобы выполнить векторный поиск, просто выполните тот же запрос ещё раз:
+
+```sql
+SELECT url, caption FROM laion ORDER BY cosineDistance(image_embedding, {target:Array(Float32)}) LIMIT 10
+```
+
+**Результат**
+
+```response
+    ┌─url───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─caption──────────────────────────────────────────────────────────────────────────┐
+ 1. │ https://s4.thcdn.com/productimg/600/600/11340490-9914447026352671.jpg                                                                                                                         │ LEGO Friends: Puppy Treats & Tricks (41304)                                      │
+ 2. │ https://www.avenuedelabrique.com/img/uploads/f20fd44bfa4bd49f2a3a5fad0f0dfed7d53c3d2f.jpg                                                                                                     │ Nouveau LEGO Friends 41334 Andrea s Park Performance 2018                        │
+ 3. │ http://images.esellerpro.com/2489/I/667/303/3938_box_in.jpg                                                                                                                                   │ 3938 LEGO Andreas Bunny House Girls Friends Heartlake Age 5-12 / 62 Pieces  New! │
+ 4. │ http://i.shopmania.org/180x180/7/7f/7f1e1a2ab33cde6af4573a9e0caea61293dfc58d.jpg?u=https%3A%2F%2Fs.s-bol.com%2Fimgbase0%2Fimagebase3%2Fextralarge%2FFC%2F4%2F0%2F9%2F9%2F9200000049789904.jpg │ LEGO Friends Avonturenkamp Boomhuis - 41122                                      │
+ 5. │ https://s.s-bol.com/imgbase0/imagebase/large/FC/5/5/9/4/1004004011684955.jpg                                                                                                                  │ LEGO Friends Andrea s Theatershow - 3932                                         │
+ 6. │ https://www.jucariicucubau.ro/30252-home_default/41445-lego-friends-ambulanta-clinicii-veterinare.jpg                                                                                         │ 41445 - LEGO Friends - Ambulanta clinicii veterinare                             │
+ 7. │ https://cdn.awsli.com.br/600x1000/91/91201/produto/24833262/234c032725.jpg                                                                                                                    │ LEGO FRIENDS 41336 EMMA S ART CAFÉ                                               │
+ 8. │ https://media.4rgos.it/s/Argos/6174930_R_SET?$Thumb150$&amp;$Web$                                                                                                                             │ more details on LEGO Friends Stephanie s Friendship Cake Set - 41308.            │
+ 9. │ https://thumbs4.ebaystatic.com/d/l225/m/mG4k6qAONd10voI8NUUMOjw.jpg                                                                                                                           │ Lego Friends Gymnast 30400 Polybag 26 pcs                                        │
+10. │ http://www.ibrickcity.com/wp-content/gallery/41057/thumbs/thumbs_lego-41057-heartlake-horse-show-friends-3.jpg                                                                                │ lego-41057-heartlake-horse-show-friends-3                                        │
+    └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────┘
+
+10 rows in set. Elapsed: 0.019 sec. Processed 137.27 thousand rows, 24.42 MB (7.38 million rows/s., 1.31 GB/s.)
+```
+
+Время отклика запроса значительно сократилось, поскольку ближайшие соседи находились с помощью векторного индекса.
+Поиск векторного сходства с использованием индекса векторного сходства может возвращать результаты, немного отличающиеся от результатов поиска полным перебором.
+Индекс HNSW потенциально может обеспечить полноту, близкую к 1 (то есть такую же точность, как и при поиске полным перебором), при тщательном подборе параметров HNSW и оценке качества индекса.
+
+<div id="creating-embeddings-with-udfs">
+  ## Создание эмбеддингов с помощью пользовательских функций (UDF)
+</div>
+
+Обычно требуется создавать эмбеддинги для новых изображений или новых подписей к изображениям и искать в данных похожие пары «изображение / подпись к изображению». Мы можем использовать [UDF](/ru/reference/functions/regular-functions/udf), чтобы создать вектор `target`, не выходя из клиента. Важно использовать одну и ту же модель как для создания данных, так и для создания новых эмбеддингов для поиска. В следующих скриптах используется модель `ViT-B/32`, на которой также основан набор данных.
+
+<div id="text-embeddings">
+  ### Текстовые эмбеддинги
+</div>
+
+Сначала сохраните следующий Python-скрипт в каталоге `user_scripts/` в каталоге с данными ClickHouse и сделайте его исполняемым (`chmod +x encode_text.py`).
+
+`encode_text.py`:
+
+```python
+#!/usr/bin/python3
+#!Примечание: Если используется виртуальное окружение, измените указанный выше путь к исполняемому файлу python3.
+import clip
+import torch
+import numpy as np
+import sys
+
+if __name__ == '__main__':
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model, preprocess = clip.load("ViT-B/32", device=device)
+    for text in sys.stdin:
+        inputs = clip.tokenize(text)
+        with torch.no_grad():
+            text_features = model.encode_text(inputs)[0].tolist()
+            print(text_features)
+        sys.stdout.flush()
+```
+
+Затем создайте `encode_text_function.xml` по пути, указанному в `<user_defined_executable_functions_config>/path/to/*_function.xml</user_defined_executable_functions_config>` в файле конфигурации сервера ClickHouse.
+
+```xml
+<functions>
+    <function>
+        <type>executable</type>
+        <name>encode_text</name>
+        <return_type>Array(Float32)</return_type>
+        <argument>
+            <type>String</type>
+            <name>text</name>
+        </argument>
+        <format>TabSeparated</format>
+        <command>encode_text.py</command>
+        <command_read_timeout>1000000</command_read_timeout>
+    </function>
+</functions>
+```
+
+Теперь можно просто использовать:
+
+```sql
+SELECT encode_text('cat');
+```
+
+Первый запуск будет медленным, потому что при нём загружается model, но последующие запуски будут быстрыми. Затем можно скопировать результат в `SET param_target=...` и легко писать запросы. Либо функцию `encode_text()` можно напрямую использовать в качестве аргумента функции `cosineDistance`:
+
+```SQL
+SELECT url
+FROM laion
+ORDER BY cosineDistance(text_embedding, encode_text('a dog and a cat')) ASC
+LIMIT 10
+```
+
+Обратите внимание, что самой UDF `encode_text()` может потребоваться несколько секунд, чтобы вычислить и вернуть эмбеддинг-вектор.
+
+<div id="image-embeddings">
+  ### Эмбеддинги изображений
+</div>
+
+Эмбеддинги изображений можно создавать аналогичным образом. Для этого мы предоставляем Python-скрипт, который генерирует эмбеддинг изображения, сохранённого локально в файле.
+
+`encode_image.py`
+
+```python
+#!/usr/bin/python3
+#!Примечание: Измените указанный выше путь к исполняемому файлу python3, если используется виртуальное окружение.
+import clip
+import torch
+import numpy as np
+from PIL import Image
+import sys
+
+if __name__ == '__main__':
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model, preprocess = clip.load("ViT-B/32", device=device)
+    for text in sys.stdin:
+        image = preprocess(Image.open(text.strip())).unsqueeze(0).to(device)
+        with torch.no_grad():
+            image_features = model.encode_image(image)[0].tolist()
+            print(image_features)
+        sys.stdout.flush()
+```
+
+`encode_image_function.xml`
+
+```xml
+<functions>
+    <function>
+        <type>executable_pool</type>
+        <name>encode_image</name>
+        <return_type>Array(Float32)</return_type>
+        <argument>
+            <type>String</type>
+            <name>path</name>
+        </argument>
+        <format>TabSeparated</format>
+        <command>encode_image.py</command>
+        <command_read_timeout>1000000</command_read_timeout>
+    </function>
+</functions>
+```
+
+Загрузите пример изображения для поиска:
+
+```shell
+# получить случайное изображение набора LEGO
+$ wget http://cdn.firstcry.com/brainbees/images/products/thumb/191325a.jpg
+```
+
+Затем выполните этот запрос, чтобы сгенерировать эмбеддинг для приведённого выше изображения:
+
+```sql
+SELECT encode_image('/path/to/your/image');
+```
+
+Полный поисковый запрос:
+
+```sql
+SELECT
+    url,
+    caption
+FROM laion
+ORDER BY cosineDistance(image_embedding, encode_image('/path/to/your/image')) ASC
+LIMIT 10
+```

@@ -1,0 +1,174 @@
+---
+sidebarTitle: 'ClickHouse はなぜこれほど高速なのか？'
+description: '高速になるよう設計されているからです。クエリ実行性能は開発プロセスを通じて常に最優先事項でしたが、ClickHouse が実運用に耐える真のプロダクションシステムとなるよう、使いやすさ、スケーラビリティ、セキュリティといった重要な特性も考慮されてきました。'
+title: 'ClickHouse はなぜこれほど高速なのか？'
+slug: /concepts/why-clickhouse-is-so-fast
+keywords: ['アーキテクチャ', 'VLDB', 'パフォーマンス']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+データベースのパフォーマンスを左右する要因は、[データの配置方式](/ja/get-started/about/intro#row-oriented-vs-column-oriented-storage)以外にも数多くあります。
+ここからは、特に他のカラム指向データベースと比較しながら、ClickHouse がなぜこれほど高速なのかを詳しく説明します。
+
+アーキテクチャの観点では、データベースは少なくともストレージ層とクエリ処理層で構成されます。ストレージ層はテーブルデータの保存、読み込み、維持管理を担い、クエリ処理層はユーザーのクエリを実行します。他のデータベースと比べて、ClickHouse はこの両方の層に革新をもたらしており、それによって非常に高速な INSERT と SELECT クエリを実現しています。
+
+<div id="storage-layer-concurrent-inserts-are-isolated-from-each-other">
+  ## ストレージ層: 同時実行される挿入は互いに分離されている
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/vsykFYns0Ws?si=hE2qnOf6cDKn-otP" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickHouse では、各テーブルは複数の「テーブルパーツ」で構成されます。ユーザーがテーブルにデータを挿入するたびに (INSERT ステートメント) 、[パーツ](/ja/concepts/core-concepts/parts) が作成されます。クエリは常に、開始時点で存在するすべてのテーブルパーツに対して実行されます。
+
+パーツが過剰に蓄積するのを防ぐため、ClickHouse はバックグラウンドで [merge](/ja/concepts/core-concepts/merges) 操作を実行し、複数の小さなパーツを継続的に 1 つの大きなパーツへ統合します。
+
+このアプローチにはいくつかの利点があります。すべてのデータ処理を[バックグラウンドのパーツマージにオフロード](/ja/get-started/about/why-clickhouse-is-so-fast#storage-layer-merge-time-computation)できるため、データの書き込みは軽量で非常に高効率に保たれます。個々の挿入は、グローバルな、つまりテーブル単位のデータ構造を更新する必要がないという意味で「ローカル」です。その結果、複数の同時挿入では相互の同期も既存のテーブルデータとの同期も不要となり、挿入はほぼディスク I/O の速度で実行できます。
+
+🤿 この点については、VLDB 2024 論文の Web 版にある [On-Disk Format](/ja/concepts/core-concepts/academic-overview#3-1-on-disk-format) セクションで詳しく説明しています。
+
+<div id="storage-layer-concurrent-inserts-and-selects-are-isolated">
+  ## ストレージ層: 同時実行される INSERT と SELECT は分離される
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/dvGlPh2bJFo?si=F3MSALPpe0gAoq5k" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+INSERT は SELECT クエリから完全に分離されており、挿入されたデータパーツのマージは、同時実行中のクエリに影響を与えることなくバックグラウンドで行われます。
+
+🤿 詳しくは、VLDB 2024 論文の Web 版にある [ストレージ層](/ja/concepts/core-concepts/academic-overview#3-storage-layer) セクションをご覧ください。
+
+<div id="storage-layer-merge-time-computation">
+  ## ストレージ層: マージ時の計算
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/_w3zQg695c0?si=g0Wa_Petn-LcmC-6" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+他のデータベースとは異なり、ClickHouse では追加のデータ変換をすべてバックグラウンドの [merge](/ja/concepts/core-concepts/merges) プロセスで行うことで、データ書き込みを軽量かつ効率的に保っています。具体例としては、次のようなものがあります。
+
+* **Replacing merges** は、入力パーツ内の行について最新バージョンだけを残し、それ以外のバージョンはすべて破棄します。Replacing merges は、マージ時に行うクリーンアップ処理と考えることができます。
+
+* **Aggregating merges** は、入力パート内の中間集計状態を新しい集計状態へと結合します。少しわかりにくく感じるかもしれませんが、実際に行っているのは増分集計の実装にすぎません。
+
+* **TTL (time-to-live) merges** は、時間ベースのルールに基づいて行を圧縮、移動、または削除します。
+
+これらの変換の目的は、ユーザーのクエリ実行時の処理 (計算) をマージ時に移すことです。これが重要なのには、次の 2 つの理由があります。
+
+まず、ユーザーのクエリが「変換済み」のデータ、たとえば事前集計されたデータを利用できる場合、1000 倍以上高速になることもあるなど、大幅な高速化が見込めます。
+
+また、マージの実行時間の大半は、入力パーツの読み込みと出力パートの保存に費やされます。そのため、マージ中にデータ変換を行う追加コストは、通常はマージの実行時間にそれほど大きな影響を与えません。こうした仕組みはすべて完全に透過的で、クエリ結果には影響せず (変わるのは性能だけです) 。
+
+🤿 詳しくは、VLDB 2024 論文の Web 版にある [Merge-time Data Transformation](/ja/concepts/core-concepts/academic-overview#3-3-merge-time-data-transformation) セクションをご覧ください。
+
+<div id="storage-layer-data-pruning">
+  ## ストレージ層: データプルーニング
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/UJpVAx7o1aY?si=w-AfhBcRIO-e3Ysj" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+実運用では、多くのクエリが繰り返し実行されます。つまり、同じ内容のまま、あるいはわずかな変更 (たとえばパラメータ値の違い) のみで、一定間隔ごとに実行されることがよくあります。同じクエリや類似のクエリを繰り返し実行するのであれば、索引を追加したり、頻出クエリがより高速にアクセスできるようにデータを再編成したりできます。このアプローチは「データプルーニング」とも呼ばれ、ClickHouse にはそのための 3 つの手法があります。
+
+1. テーブルデータのソート順を定義する [主キー索引](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design)。適切に選ばれた主キーを使うことで、 (上記のクエリの WHERE 句のような) フィルタを、カラム全体の走査ではなく高速な二分探索で評価できます。より技術的に言えば、走査の実行時間はデータサイズに対して線形ではなく対数的になります。
+
+2. 同じデータを保持しつつ、別の主キーでソートして格納する、テーブルの代替となる内部バージョンである [テーブルプロジェクション](/ja/reference/statements/alter/projection)。プロジェクションは、頻出するフィルタ条件が複数ある場合に役立ちます。
+
+3. カラムに追加の統計情報を埋め込む [スキッピング索引](/ja/concepts/features/performance/skip-indexes/skipping-indexes)。たとえば、カラムの最小値と最大値、一意な値の集合などです。スキッピング索引は主キーやテーブルプロジェクションとは独立しており、カラム内のデータ分布によっては、フィルタの評価を大幅に高速化できます。
+
+これら 3 つの手法はいずれも、カラム全体の読み取り時にできるだけ多くの行をスキップすることを目的としています。というのも、データを最も速く読み取る方法は、まったく読み取らないことだからです。
+
+🤿 詳しくは、VLDB 2024 論文の Web 版にある [Data Pruning](/ja/concepts/core-concepts/academic-overview#3-2-data-pruning) セクションをご覧ください。
+
+<div id="storage-layer-data-compression">
+  ## ストレージ層: データ圧縮
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/MH10E3rVvnM?si=duWmS_OatCLx-akH" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+これに加えて、ClickHouse のストレージ層では、さまざまなコーデックを使って生のテーブルデータをさらに (必要に応じて) 圧縮できます。
+
+カラム指向ストアは、同じ型で似た分布の値がまとまって配置されるため、このような圧縮に特に適しています。
+
+ユーザーは、[指定](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)により、カラムを ZSTD などの汎用圧縮アルゴリズムや、たとえば浮動小数点値向けの Gorilla や FPC、整数値向けの Delta や GCD、さらには暗号化コーデックとしての AES で圧縮できます。
+
+データ圧縮はデータベーステーブルの保存容量を削減するだけでなく、ローカルディスクやネットワーク I/O はスループットがボトルネックになりやすいため、多くの場合、クエリ性能の向上にもつながります。
+
+🤿 この点について詳しくは、VLDB 2024 論文の Web 版にある [On-Disk Format](/ja/concepts/core-concepts/academic-overview#3-1-on-disk-format) セクションをご覧ください。
+
+<div id="state-of-the-art-query-processing-layer">
+  ## 最先端のクエリ処理層
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/O5qecdQ7Y18?si=XVtOIuVd8NLbqyox" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+最後に、ClickHouse は、利用可能なリソースを最大限に活用して最高の速度と効率を実現するため、クエリ実行を可能な限り並列化するベクトル化クエリ処理層を採用しています。
+
+「ベクトル化」とは、クエリプランの演算子が中間結果の行を 1 行ずつではなく、バッチ単位で受け渡すことを意味します。これにより CPU キャッシュをより効率的に活用でき、さらに演算子は SIMD 命令を使って複数の値を一度に処理できます。実際、多くの演算子には複数の実装があり、SIMD 命令セットの世代ごとに 1 つずつ用意されています。ClickHouse は、実行環境のハードウェアに応じて、最新かつ最速のバージョンを自動的に選択します。
+
+現代のシステムには数十の CPU コアがあります。すべてのコアを活用するために、ClickHouse はクエリプランを複数のレーンに展開し、通常はコアごとに 1 レーンを割り当てます。各レーンは、テーブルデータの互いに重ならない範囲を処理します。これにより、データベースの性能は利用可能なコア数に応じて「垂直方向」にスケールします。
+
+1 つのノードだけではテーブルデータを保持しきれなくなった場合は、さらにノードを追加してクラスターを構成できます。テーブルは分割 (「分片化」) して各ノードに分散できます。ClickHouse はテーブルデータを保持するすべてのノードでクエリを実行し、その結果、利用可能なノード数に応じて「水平方向」にスケールします。
+
+🤿 詳しくは、VLDB 2024 論文の Web 版にある [クエリ処理層](/ja/concepts/core-concepts/academic-overview#4-query-processing-layer) セクションをご覧ください。
+
+<div id="meticulous-attention-to-detail">
+  ## 細部への徹底したこだわり
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/dccGLSuYWy0?si=rQ-Jp-z5Ik_-Rb8S" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+> **「ClickHouse は異様なシステムです。20 種類ものハッシュテーブルがある。ほとんどのシステムはハッシュテーブルを 1 つしか持っていないのに、こんなにもすばらしい仕組みがそろっている** **...** **ClickHouse が驚異的な性能を発揮するのは、こうした特化したコンポーネントを数多く備えているからです」** [Andy Pavlo, CMU のデータベース教授](https://www.youtube.com/watch?v=Vy2t_wZx4Is\&t=3579s)
+
+ClickHouse を[際立たせている](https://www.youtube.com/watch?v=CAS2otEoerM)のは、低レベル最適化に対する徹底したこだわりです。単に動作するデータベースを作るのと、多様なクエリタイプ、データ構造、データ分布、索引構成にわたって高速性を発揮できるように設計するのとはまったく別物であり、そこにこそ「[異様なシステム](https://youtu.be/Vy2t_wZx4Is?si=K7MyzsBBxgmGcuGU\&t=3579)」たる真価が光ります。
+
+**Hash Tables.** 例として、ハッシュテーブルを取り上げましょう。ハッシュテーブルは、JOIN や集計で使われる中核的なデータ構造です。プログラマは、次のような設計上の判断を考える必要があります。
+
+* どのハッシュ関数を選ぶか
+* 衝突解決方式は [open addressing](https://en.wikipedia.org/wiki/Open_addressing) か [chaining](https://en.wikipedia.org/wiki/Hash_table#Separate_chaining) か
+* メモリレイアウトはどうするか: キーと値を 1 つの配列に入れるのか、別々の配列にするのか
+* 充填率はどうするか: いつ、どのようにリサイズするか。リサイズ時に値をどう移動するか
+* 削除: ハッシュテーブルでエントリの追い出しを許可すべきか
+
+サードパーティライブラリが提供する標準的なハッシュテーブルでも機能的には動作しますが、高速ではありません。優れた性能を得るには、綿密な benchmark と試行錯誤が必要です。
+
+[ClickHouse のハッシュテーブル実装](https://clickhouse.com/blog/hash-tables-in-clickhouse-and-zero-cost-abstractions)では、クエリとデータの特性に応じて、**事前コンパイルされた 30 種類以上のハッシュテーブル実装の中から 1 つを選択**します。
+
+**Algorithms.** アルゴリズムについても同様です。たとえばソートでは、次のような点を検討します。
+
+* 何をソートするのか: 数値、タプル、文字列、それとも構造体か
+* データは RAM 上にあるか
+* 安定ソートが必要か
+* すべてのデータをソートすべきか、それとも部分ソートで十分か
+
+データの特性に依存するアルゴリズムは、多くの場合、汎用的な実装よりも高い性能を発揮します。データ特性が事前にわからない場合は、システムが複数の実装を試し、runtime で最も適したものを選ぶこともできます。例として、[ClickHouse で LZ4 展開がどのように実装されているかを解説した記事](https://habr.com/en/company/yandex/blog/457612/)を参照してください。
+
+🤿 このテーマについては、VLDB 2024 論文の Web 版にある [Holistic Performance Optimization](/ja/concepts/core-concepts/academic-overview#4-4-holistic-performance-optimization) セクションでさらに詳しく掘り下げています。
+
+<div id="vldb-2024-paper">
+  ## VLDB 2024 論文
+</div>
+
+2024年8月、当社初の研究論文がVLDBに採択され、公開されました。
+VLDBは超大規模データベースに関する国際会議で、データ管理分野を代表する主要会議の1つとして広く知られています。
+数百本の投稿がある中で、VLDBの採択率は通常約20%です。
+
+この論文の[PDF](https://www.vldb.org/pvldb/vol17/p3731-schulze.pdf)またはその[Web 版](/ja/concepts/core-concepts/academic-overview)をご覧いただけます。Web 版では、ClickHouseをこれほど高速にしている特に興味深いアーキテクチャやシステム設計上の要素を簡潔に紹介しています。
+
+ClickHouseのCTOであり生みの親でもあるAlexey Milovidovがこの論文を発表し (スライドは[こちら](https://raw.githubusercontent.com/ClickHouse/clickhouse-presentations/master/2024-vldb/VLDB_2024_presentation.pdf)) 、その後にQ&amp;Aも行われました (あっという間に時間切れになってしまいました！) 。
+発表の録画は以下からご覧いただけます。
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/7QXKBKDOkJE?si=5uFerjqPSXQWqDkF" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>

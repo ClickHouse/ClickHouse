@@ -55,7 +55,7 @@ void ExtremesTransform::work()
         ISimpleTransform::work();
 }
 
-void ExtremesTransform::transform(DB::Chunk & chunk)
+void accumulateExtremes(MutableColumns & extremes_columns, const Chunk & chunk)
 {
 
     if (chunk.getNumRows() == 0)
@@ -66,7 +66,18 @@ void ExtremesTransform::transform(DB::Chunk & chunk)
 
     if (extremes_columns.empty())
     {
-        extremes_columns.resize(num_columns);
+        /// Build into a local vector first. If any step below throws (for example,
+        /// `MEMORY_LIMIT_EXCEEDED` raised by `insert` when copying a large value, or any
+        /// other exception while computing extremes for an individual column), the local
+        /// vector is destroyed by stack unwinding and `extremes_columns` stays empty.
+        /// This keeps the invariant that `extremes_columns` is either empty (no chunk
+        /// processed yet) or fully populated with size-2 columns at every index. Without
+        /// it, a partial population would later trip the row-count check in
+        /// `Chunk::setColumns` inside `work()` and the formatted error message would
+        /// dereference one of the still-null entries via `Chunk::dumpStructure`,
+        /// crashing the server with `Assertion 'px != 0' failed` on the
+        /// `boost::intrusive_ptr<IColumn>::operator->` null check.
+        MutableColumns new_extremes_columns(num_columns);
 
         for (size_t i = 0; i < num_columns; ++i)
         {
@@ -75,7 +86,7 @@ void ExtremesTransform::transform(DB::Chunk & chunk)
             if (isColumnConst(*src))
             {
                 /// Equal min and max.
-                extremes_columns[i] = src->cloneResized(2);
+                new_extremes_columns[i] = src->cloneResized(2);
             }
             else
             {
@@ -84,19 +95,30 @@ void ExtremesTransform::transform(DB::Chunk & chunk)
 
                 src->getExtremes(min_value, max_value, 0, src->size());
 
-                extremes_columns[i] = src->cloneEmpty();
+                new_extremes_columns[i] = src->cloneEmpty();
 
-                extremes_columns[i]->insert(min_value);
-                extremes_columns[i]->insert(max_value);
+                new_extremes_columns[i]->insert(min_value);
+                new_extremes_columns[i]->insert(max_value);
             }
         }
+
+        extremes_columns = std::move(new_extremes_columns);
     }
     else
     {
         for (size_t i = 0; i < num_columns; ++i)
         {
             if (isColumnConst(*extremes_columns[i]))
-                continue;
+            {
+                /// A column that is constant in the header has the same value in every chunk, so the extremes stay as is.
+                /// But a column can also be constant only within a chunk (for example, `FilterTransform` replaces
+                /// a column with `ColumnConst` after `WHERE x = 1`), and its value can differ between chunks
+                /// (for example, between `UNION ALL` branches). In this case, materialize the extremes and accumulate them.
+                if (isColumnConst(*columns[i]) && columns[i]->compareAt(0, 0, *extremes_columns[i], 1) == 0)
+                    continue;
+
+                extremes_columns[i] = IColumn::mutate(extremes_columns[i]->convertToFullColumnIfConst());
+            }
 
             Field min_value = (*extremes_columns[i])[0];
             Field max_value = (*extremes_columns[i])[1];
@@ -111,7 +133,7 @@ void ExtremesTransform::transform(DB::Chunk & chunk)
             {
                 if (value.isNull())
                     return true;
-                Float64 rawVal;
+                Float64 rawVal = 0;
                 return value.tryGet<Float64>(rawVal) && isNaN(rawVal);
             };
             if (isNullORNaN(min_value) || (!isNullORNaN(cur_min_value) && cur_min_value < min_value))
@@ -127,6 +149,11 @@ void ExtremesTransform::transform(DB::Chunk & chunk)
             extremes_columns[i] = std::move(new_extremes);
         }
     }
+}
+
+void ExtremesTransform::transform(DB::Chunk & chunk)
+{
+    accumulateExtremes(extremes_columns, chunk);
 }
 
 }

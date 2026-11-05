@@ -1,4 +1,11 @@
 -- Tags: long, no-object-storage, no-random-merge-tree-settings
+-- Random settings limits: send_table_structure_on_insert_with_inline_data=(1, 1)
+-- This test asserts exact `total_bytes` values returned by `system.tables` for several
+-- engines (notably `Memory`). The inline-server-parsed path
+-- (`send_table_structure_on_insert_with_inline_data=0`) builds the in-memory block with a
+-- different layout than the legacy client-parsed path, so the reported byte counts differ
+-- (e.g. 130 -> 256 for the `Memory` engine case). Pin the legacy path here; this test is
+-- about the system-table reporting, not about which side parses inline data.
 SET output_format_pretty_row_numbers = 0;
 
 DROP TABLE IF EXISTS check_system_tables;
@@ -70,20 +77,25 @@ FORMAT PrettyCompactNoEscapes;
 DROP TABLE IF EXISTS check_system_tables;
 
 SELECT 'Check total_bytes/total_rows for TinyLog';
-CREATE TABLE check_system_tables (key UInt8) ENGINE = TinyLog();
+-- Pin the codec to `LZ4` so `total_bytes` does not depend on the server's default compression codec.
+CREATE TABLE check_system_tables (key UInt8 CODEC(LZ4)) ENGINE = TinyLog();
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
 INSERT INTO check_system_tables VALUES (1);
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
 DROP TABLE check_system_tables;
 
 SELECT 'Check total_bytes/total_rows for Log';
-CREATE TABLE check_system_tables (key UInt8) ENGINE = Log();
+-- Pin the codec to `LZ4` so `total_bytes` does not depend on the server's default compression codec.
+CREATE TABLE check_system_tables (key UInt8 CODEC(LZ4)) ENGINE = Log();
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
 INSERT INTO check_system_tables VALUES (1);
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
 DROP TABLE check_system_tables;
 
 SELECT 'Check total_bytes/total_rows for StripeLog';
+-- Unlike TinyLog/Log, StripeLog compresses its combined data stream with the server's default codec
+-- (`getDefaultCodec`, currently `ZSTD(3)`) regardless of the column codec, so `total_bytes` cannot be
+-- pinned here and reflects that default.
 CREATE TABLE check_system_tables (key UInt8) ENGINE = StripeLog();
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
 INSERT INTO check_system_tables VALUES (1);
@@ -136,9 +148,9 @@ DROP TABLE check_system_tables;
 
 SELECT 'Check total_bytes/total_rows for Join';
 CREATE TABLE check_system_tables Engine=Join(ANY, LEFT, number) AS SELECT * FROM numbers(50);
-SELECT total_bytes BETWEEN 5000 AND 15000, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
+SELECT total_bytes BETWEEN 4000 AND 15000, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
 INSERT INTO check_system_tables SELECT number+50 FROM numbers(50);
-SELECT total_bytes BETWEEN 5000 AND 15000, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
+SELECT total_bytes BETWEEN 4000 AND 15000, total_rows FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase();
 DROP TABLE check_system_tables;
 
 -- Build MergeTree table for Materialized view

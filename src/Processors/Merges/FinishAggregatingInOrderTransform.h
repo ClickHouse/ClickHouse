@@ -19,7 +19,8 @@ public:
         AggregatingTransformParamsPtr params,
         SortDescription description,
         size_t max_block_size_rows,
-        size_t max_block_size_bytes)
+        size_t max_block_size_bytes,
+        size_t limit_hint_ = 0)
         : IMergingTransform(
             num_inputs, header, std::make_shared<Block>(Block{}), /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
             header,
@@ -27,7 +28,8 @@ public:
             params,
             std::move(description),
             max_block_size_rows,
-            max_block_size_bytes)
+            max_block_size_bytes,
+            limit_hint_)
     {
     }
 

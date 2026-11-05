@@ -1,0 +1,87 @@
+bf large: a.b = 1
+Skip
+Parts: 1/2
+Granules: 1/4
+bf large: x.y = 10
+Skip
+Parts: 1/2
+Granules: 1/4
+bf large: p.q = 100
+Skip
+Parts: 1/2
+Granules: 1/4
+bf large: nonexistent
+Skip
+Parts: 0/2
+Granules: 0/4
+bf large: OR across parts
+Skip
+Parts: 2/2
+Granules: 2/4
+bf large: AND same granule
+Skip
+Parts: 1/2
+Granules: 1/4
+bf large: AND different parts
+Skip
+Parts: 0/2
+Granules: 0/4
+bf large: OR same part different granules
+Skip
+Parts: 1/2
+Granules: 2/4
+bf large: IS NOT NULL
+Skip
+Parts: 1/2
+Granules: 1/4
+tbf large: a.b = 1
+Skip
+Parts: 1/2
+Granules: 1/4
+tbf large: nonexistent
+Skip
+Parts: 0/2
+Granules: 0/4
+tbf large: OR across parts
+Skip
+Parts: 2/2
+Granules: 2/4
+tbf large: IS NOT NULL
+Skip
+Parts: 1/2
+Granules: 1/4
+text large: a.b = 1
+Skip
+Parts: 1/2
+Granules: 1/4
+text large: nonexistent
+Skip
+Parts: 0/2
+Granules: 0/4
+text large: OR across parts
+Skip
+Parts: 2/2
+Granules: 2/4
+text large: IS NOT NULL
+Skip
+Parts: 1/2
+Granules: 1/4
+large result: a.b = 1
+1
+large result: x.y = 10
+4
+large result: nonexistent
+large result: AND same granule
+1
+large result: OR across parts
+1
+7
+large result: AND different parts
+large result: typed AND Dynamic
+2
+large result: OR different leaves
+6
+9
+large result: IS NOT NULL a.b
+1
+large result: IS NOT NULL nonexistent

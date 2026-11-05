@@ -1,0 +1,76 @@
+-- LowCardinality(Bool) statistics pruning
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.stid_1499_6033)
+        Indexes:
+          Statistics
+            Keys:
+              b
+            Parts: 1/2
+            Granules: 1/2
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Ranges: 1
+8
+-- LowCardinality(UInt8) statistics pruning
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.stid_1499_6033)
+        Indexes:
+          Statistics
+            Keys:
+              v
+            Parts: 1/2
+            Granules: 1/2
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Ranges: 1
+8
+-- explicit CAST over LowCardinality statistics column
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.stid_1499_6033)
+        Indexes:
+          Statistics
+            Keys:
+              b
+            Parts: 1/2
+            Granules: 1/2
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Ranges: 1
+8
+-- explicit CAST over LowCardinality statistics column (IN / set-index path)
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.stid_1499_6033)
+        Indexes:
+          Statistics
+            Keys:
+              b
+            Parts: 1/2
+            Granules: 1/2
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Ranges: 1
+8
+-- executing CAST chain over LowCardinality primary key (force_primary_key)
+15
+8
+8

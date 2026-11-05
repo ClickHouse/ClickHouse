@@ -1,0 +1,64 @@
+---
+slug: '/examples/aggregate-function-combinators/argMaxIf'
+title: 'argMaxIf'
+description: 'argMaxIf 조합자를 사용하는 예시'
+keywords: ['argMax', 'if', '조합자', '예시', 'argMaxIf']
+sidebarTitle: 'argMaxIf'
+doc_type: '참고'
+---
+
+<div id="description">
+  ## 설명
+</div>
+
+[`If`](/ko/reference/functions/aggregate-functions/combinators#-if) 조합자는 [`argMax`](/ko/reference/functions/aggregate-functions/argMax)
+함수에 적용할 수 있으며, `argMaxIf` 집계 조합자 함수를 사용하면 조건이 true인 행에서 `val`의 최댓값에 해당하는 `arg` 값을 찾을 수 있습니다.
+
+`argMaxIf` 함수는 데이터셋에서 최댓값에 대응하는 값을 찾아야 하지만, 특정
+조건을 만족하는 행만 대상으로 해야 할 때 유용합니다.
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+이 예시에서는 제품 판매 샘플 데이터셋을 사용해
+`argMaxIf`의 작동 방식을 보여줍니다. 가격이 가장 높은 제품의 이름을 찾되,
+판매 횟수가 10회 이상인 제품만 대상으로 합니다.
+
+```sql title="Query"
+CREATE TABLE product_sales
+(
+    product_name String,
+    price Decimal32(2),
+    sales_count UInt32
+) ENGINE = Memory;
+
+INSERT INTO product_sales VALUES
+    ('Laptop', 999.99, 10),
+    ('Phone', 499.99, 15),
+    ('Tablet', 299.99, 0),
+    ('Watch', 1199.99, 5),
+    ('Headphones', 79.99, 20);
+
+SELECT argMaxIf(product_name, price, sales_count >= 10) AS most_expensive_popular_product
+FROM product_sales;
+```
+
+`argMaxIf` 함수는 최소 10번 이상 판매된 모든 제품(sales&#95;count &gt;= 10) 중에서
+가격이 가장 높은 제품명을 반환합니다.
+이 경우 인기 제품 중 가격이 가장 높은 제품이 가격 999.99의 &#39;Laptop&#39;이므로 &#39;Laptop&#39;을 반환합니다.
+
+```response title="Response"
+   ┌─most_expensi⋯lar_product─┐
+1. │ Laptop                   │
+   └──────────────────────────┘
+```
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [`argMax`](/ko/reference/functions/aggregate-functions/argMax)
+* [`argMin`](/ko/reference/functions/aggregate-functions/argMin)
+* [`argMinIf`](/ko/guides/clickhouse/examples/aggregate-function-combinators/argMinIf)
+* [`If 조합자`](/ko/reference/functions/aggregate-functions/combinators#-if)

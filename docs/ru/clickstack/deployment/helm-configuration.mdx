@@ -1,0 +1,469 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm-configuration
+title: 'Конфигурация Helm'
+description: 'Настройка ключей API, секретов и входного шлюза для Helm-развертываний ClickStack'
+doc_type: 'guide'
+keywords: ['конфигурация ClickStack', 'секреты Helm', 'настройка ключей API', 'конфигурация входного шлюза', 'настройка TLS']
+---
+
+<Warning>
+  **Версия чарта 2.x**
+
+  На этой странице описан Helm-чарт **v2.x** на основе subchart. Если вы всё ещё используете чарт v1.x со встроенными шаблонами, см. [Конфигурация Helm (v1.x)](/ru/clickstack/deployment/helm-configuration-v1). Инструкции по миграции см. в [руководстве по обновлению](/ru/clickstack/deployment/helm-upgrade).
+</Warning>
+
+В этом руководстве описаны параметры конфигурации для Helm-развертываний ClickStack. Базовую установку см. в [основном руководстве по развертыванию с Helm](/ru/clickstack/deployment/helm).
+
+<div id="values-organization">
+  ## Организация значений
+</div>
+
+В чарте v2.x значения сгруппированы по типам ресурсов Kubernetes в блоке `hyperdx:`:
+
+```yaml
+hyperdx:
+  ports:          # Общие номера портов (Deployment, Service, ConfigMap, Ingress)
+    api: 8000
+    app: 3000
+    opamp: 4320
+
+  frontendUrl: "http://localhost:3000"
+
+  config:         # → clickstack-config ConfigMap (несекретные переменные окружения)
+    APP_PORT: "3000"
+    HYPERDX_LOG_LEVEL: "info"
+
+  secrets:        # → clickstack-secret Secret (секретные переменные окружения)
+    HYPERDX_API_KEY: "..."
+    CLICKHOUSE_PASSWORD: "otelcollectorpass"
+    CLICKHOUSE_APP_PASSWORD: "hyperdx"
+    MONGODB_PASSWORD: "hyperdx"
+
+  deployment:     # Спецификация K8s Deployment (образ, реплики, пробы и т.д.)
+  service:        # Спецификация K8s Service (тип, аннотации)
+  ingress:        # Спецификация K8s Ingress (хост, tls, аннотации)
+  podDisruptionBudget:  # Спецификация K8s PDB
+  tasks:          # Спецификации K8s CronJob
+```
+
+Все переменные окружения передаются через два ресурса с фиксированными именами, которые совместно используются развертыванием HyperDX **и** OTel collector через `envFrom`:
+
+* **`clickstack-config`** ConfigMap — заполняется из `hyperdx.config`
+* **`clickstack-secret`** Secret — заполняется из `hyperdx.secrets`
+
+Отдельного ConfigMap для OTel collector больше нет. Обе рабочие нагрузки используют одни и те же источники.
+
+<div id="api-key-setup">
+  ## Настройка API-ключа
+</div>
+
+После успешного развертывания ClickStack настройте API-ключ, чтобы включить сбор данных телеметрии:
+
+1. **Перейдите к своему экземпляру HyperDX** через настроенный входной шлюз или конечную точку сервиса
+2. **Войдите в панель мониторинга HyperDX** и перейдите в Team settings, чтобы создать или получить API-ключ
+3. **Обновите развертывание** с помощью API-ключа, используя один из следующих методов:
+
+<div id="api-key-values-file">
+  ### Способ 1: Обновление с помощью helm upgrade и файла значений
+</div>
+
+Добавьте API-ключ в `values.yaml`:
+
+```yaml
+hyperdx:
+  secrets:
+    HYPERDX_API_KEY: "your-api-key-here"
+```
+
+Затем обновите развертывание:
+
+```shell
+helm upgrade my-clickstack clickstack/clickstack -f values.yaml
+```
+
+<div id="api-key-set-flag">
+  ### Способ 2: обновление через Helm upgrade с флагом --set
+</div>
+
+```shell
+helm upgrade my-clickstack clickstack/clickstack \
+  --set hyperdx.secrets.HYPERDX_API_KEY="your-api-key-here"
+```
+
+<div id="restart-pods">
+  ### Перезапустите поды, чтобы применить изменения
+</div>
+
+После обновления API-ключа перезапустите поды, чтобы они применили новую конфигурацию:
+
+```shell
+kubectl rollout restart deployment my-clickstack-clickstack-app
+```
+
+<Note>
+  Чарт автоматически создает secret Kubernetes (`clickstack-secret`) с вашими параметрами конфигурации. Дополнительная настройка secret не требуется, если только вы не хотите использовать внешний secret.
+</Note>
+
+<div id="secret-management">
+  ## Управление секретами
+</div>
+
+Для работы с конфиденциальными данными, такими как ключи API или учетные данные базы данных, чарт v2.x предоставляет единый ресурс `clickstack-secret`, который заполняется из `hyperdx.secrets`.
+
+<div id="default-secret-values">
+  ### Значения секретов по умолчанию
+</div>
+
+В чарте заданы значения по умолчанию для всех секретов. Переопределите их в `values.yaml`:
+
+```yaml
+hyperdx:
+  secrets:
+    HYPERDX_API_KEY: "your-api-key"
+    CLICKHOUSE_PASSWORD: "your-clickhouse-otel-password"
+    CLICKHOUSE_APP_PASSWORD: "your-clickhouse-app-password"
+    MONGODB_PASSWORD: "your-mongodb-password"
+```
+
+<div id="using-external-secret">
+  ### Использование внешнего секрета
+</div>
+
+Для рабочих развертываний, где нужно хранить учетные данные отдельно от значений Helm, используйте внешний секрет Kubernetes:
+
+```bash
+# Создайте секрет
+kubectl create secret generic my-clickstack-secrets \
+  --from-literal=HYPERDX_API_KEY=my-secret-api-key \
+  --from-literal=CLICKHOUSE_PASSWORD=my-ch-password \
+  --from-literal=CLICKHOUSE_APP_PASSWORD=my-ch-app-password \
+  --from-literal=MONGODB_PASSWORD=my-mongo-password
+```
+
+Затем укажите это в values:
+
+```yaml
+hyperdx:
+  useExistingConfigSecret: true
+  existingConfigSecret: "my-clickstack-secrets"
+```
+
+<div id="ingress-setup">
+  ## Настройка входного шлюза
+</div>
+
+Чтобы открыть доступ к интерфейсу и API HyperDX по доменному имени, включите входной шлюз в файле `values.yaml`.
+
+<div id="general-ingress-configuration">
+  ### Общие настройки входного шлюза
+</div>
+
+```yaml
+hyperdx:
+  frontendUrl: "https://hyperdx.yourdomain.com"  # Должен совпадать с хостом входного шлюза
+
+  ingress:
+    enabled: true
+    host: "hyperdx.yourdomain.com"
+```
+
+<Info>
+  **Важное примечание по настройке**
+
+  `hyperdx.frontendUrl` должен совпадать с хостом входного шлюза и включать протокол (например, `https://hyperdx.yourdomain.com`). Это гарантирует, что все создаваемые ссылки, cookie и перенаправления будут работать корректно.
+</Info>
+
+<div id="enabling-tls">
+  ### Включение TLS (HTTPS)
+</div>
+
+Чтобы защитить развертывание с помощью HTTPS:
+
+**1. Создайте TLS-секрет с сертификатом и ключом:**
+
+```shell
+kubectl create secret tls hyperdx-tls \
+  --cert=path/to/tls.crt \
+  --key=path/to/tls.key
+```
+
+**2. Включите TLS в конфигурации входного шлюза:**
+
+```yaml
+hyperdx:
+  ingress:
+    enabled: true
+    host: "hyperdx.yourdomain.com"
+    tls:
+      enabled: true
+      tlsSecretName: "hyperdx-tls"
+```
+
+<div id="example-ingress-configuration">
+  ### Пример конфигурации входного шлюза
+</div>
+
+Для справки: ниже показано, как выглядит сгенерированный ресурс входного шлюза:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hyperdx-app-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: hyperdx.yourdomain.com
+      http:
+        paths:
+          - path: /(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: my-clickstack-clickstack-app
+                port:
+                  number: 3000
+  tls:
+    - hosts:
+        - hyperdx.yourdomain.com
+      secretName: hyperdx-tls
+```
+
+<div id="common-ingress-pitfalls">
+  ### Распространенные проблемы с входным шлюзом
+</div>
+
+**Настройка `path` и `rewrite`:**
+
+* Для Next.js и других SPA всегда используйте путь с регулярным выражением и аннотацию `rewrite`, как показано выше
+* Не используйте просто `path: /` без `rewrite`, так как это нарушит раздачу статических ресурсов
+
+**Несоответствие `frontendUrl` и `ingress.host`:**
+
+* Если они не совпадают, возможны проблемы с cookie, перенаправлениями и загрузкой ресурсов
+
+**Неправильная настройка TLS:**
+
+* Убедитесь, что ваш TLS-секрет действителен и правильно указан во входном шлюзе
+* Браузеры могут блокировать небезопасный контент, если вы открываете приложение по HTTP при включенном TLS
+
+**Версия контроллера входного шлюза:**
+
+* Некоторые возможности (например, пути с регулярными выражениями и `rewrite`) требуют новой версии nginx ingress controller
+* Проверьте версию с помощью:
+
+```shell
+kubectl -n ingress-nginx get pods -l app.kubernetes.io/name=ingress-nginx -o jsonpath="{.items[0].spec.containers[0].image}"
+```
+
+<div id="otel-collector-ingress">
+  ## Входной шлюз для OTel collector
+</div>
+
+Если вам нужно открыть доступ к конечным точкам OTel collector (для трассировок, метрик и журналов) через входной шлюз, используйте конфигурацию `additionalIngresses`. Это полезно, если вы отправляете телеметрические данные из-за пределов кластера или используете для collector собственный домен.
+
+```yaml
+hyperdx:
+  ingress:
+    enabled: true
+    additionalIngresses:
+      - name: otel-collector
+        annotations:
+          nginx.ingress.kubernetes.io/ssl-redirect: "false"
+          nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+          nginx.ingress.kubernetes.io/use-regex: "true"
+        ingressClassName: nginx
+        hosts:
+          - host: collector.yourdomain.com
+            paths:
+              - path: /v1/(traces|metrics|logs)
+                pathType: Prefix
+                port: 4318
+                name: otel-collector
+        tls:
+          - hosts:
+              - collector.yourdomain.com
+            secretName: collector-tls
+```
+
+* Это создает отдельный ресурс входного шлюза для конечных точек OTEL collector
+* Вы можете использовать другой домен, настроить отдельные параметры TLS и применить пользовательские аннотации
+* Правило пути с регулярным выражением позволяет направлять все сигналы OTLP (трассировки, метрики, журналы) через одно правило
+
+<Note>
+  Если вам не нужно открывать OTEL collector для внешнего доступа, эту конфигурацию можно пропустить. Для большинства пользователей достаточно общей настройки входного шлюза.
+</Note>
+
+В качестве альтернативы вы можете использовать [`additionalManifests`](/ru/clickstack/deployment/helm-additional-manifests), чтобы определить полностью настраиваемые ресурсы входного шлюза, например AWS ALB Ingress.
+
+<div id="otel-collector-configuration">
+  ## Конфигурация OTEL collector
+</div>
+
+OTEL Collector разворачивается с помощью официального Helm-чарта OpenTelemetry Collector как подчарт `otel-collector:`. Настройте его напрямую в разделе `otel-collector:` файла values:
+
+```yaml
+otel-collector:
+  enabled: true
+  mode: deployment
+  replicaCount: 3
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+  nodeSelector:
+    node-role: monitoring
+  tolerations:
+    - key: monitoring
+      operator: Equal
+      value: otel
+      effect: NoSchedule
+```
+
+Переменные окружения (конечная точка ClickHouse, URL-адрес OpAMP и т. д.) передаются через общие ресурсы ConfigMap `clickstack-config` и Secret `clickstack-secret`. Параметр `extraEnvsFrom` в дочернем чарте уже настроен на чтение из обоих.
+
+См. [OpenTelemetry Collector Helm chart](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector), чтобы узнать обо всех доступных значениях дочернего чарта.
+
+<div id="mongodb-configuration">
+  ## Конфигурация MongoDB
+</div>
+
+MongoDB управляется оператором MCK через пользовательский ресурс `MongoDBCommunity`. Раздел `spec` ресурса CR выводится без изменений из `mongodb.spec`:
+
+```yaml
+mongodb:
+  enabled: true
+  spec:
+    members: 1
+    type: ReplicaSet
+    version: "5.0.32"
+    security:
+      authentication:
+        modes: ["SCRAM"]
+    statefulSet:
+      spec:
+        volumeClaimTemplates:
+          - metadata:
+              name: data-volume
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              storageClassName: "your-storage-class"
+              resources:
+                requests:
+                  storage: 10Gi
+```
+
+Пароль MongoDB задаётся в `hyperdx.secrets.MONGODB_PASSWORD`. Все доступные поля CRD см. в [документации MCK](https://github.com/mongodb/mongodb-kubernetes/tree/master/docs/mongodbcommunity).
+
+<div id="clickhouse-configuration">
+  ## Конфигурация ClickHouse
+</div>
+
+ClickHouse управляется через ClickHouse Operator с помощью пользовательских ресурсов `ClickHouseCluster` и `KeeperCluster`. Разделы `spec` обоих CR дословно берутся из `values`:
+
+```yaml
+clickhouse:
+  enabled: true
+  port: 8123
+  nativePort: 9000
+  prometheus:
+    enabled: true
+    port: 9363
+  keeper:
+    spec:
+      replicas: 1
+      dataVolumeClaimSpec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+  cluster:
+    spec:
+      replicas: 1
+      shards: 1
+      dataVolumeClaimSpec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+```
+
+Учетные данные пользователя ClickHouse берутся из `hyperdx.secrets` (а не из `clickhouse.config.users`, как в версии v1.x). Полный список доступных полей CRD см. в [руководстве по настройке ClickHouse Operator](/ru/products/kubernetes-operator/guides/configuration).
+
+<div id="troubleshooting-ingress">
+  ## Устранение неполадок входного шлюза
+</div>
+
+**Проверьте ресурс входного шлюза:**
+
+```shell
+kubectl get ingress -A
+kubectl describe ingress <ingress-name>
+```
+
+**Проверьте журналы контроллера входного шлюза:**
+
+```shell
+kubectl logs -l app.kubernetes.io/name=ingress-nginx -n ingress-nginx
+```
+
+**Проверьте URL-адреса тестовых ресурсов:**
+
+Используйте `curl`, чтобы убедиться, что статические ресурсы отдаются как JS, а не как HTML:
+
+```shell
+curl -I https://hyperdx.yourdomain.com/_next/static/chunks/main-xxxx.js
+# Должен вернуть Content-Type: application/javascript
+```
+
+**Инструменты разработчика в браузере:**
+
+* Проверьте вкладку Network на наличие ответов 404 или ресурсов, для которых вместо JS возвращается HTML
+* Ищите в консоли ошибки вроде `Unexpected token <` (это означает, что вместо JS был возвращён HTML)
+
+**Проверьте перезапись путей:**
+
+* Убедитесь, что входной шлюз не удаляет части путей к ресурсам и не переписывает их неправильно
+
+**Очистите кэш браузера и CDN:**
+
+* После внесения изменений очистите кэш браузера и кэш CDN/прокси, чтобы избежать загрузки устаревших ресурсов
+
+<div id="customizing-values">
+  ## Настройка значений
+</div>
+
+Вы можете настроить параметры с помощью флагов `--set`:
+
+```shell
+helm install my-clickstack clickstack/clickstack --set key=value
+```
+
+Либо создайте собственный `values.yaml`. Чтобы получить значения по умолчанию:
+
+```shell
+helm show values clickstack/clickstack > values.yaml
+```
+
+Примените собственные значения:
+
+```shell
+helm install my-clickstack clickstack/clickstack -f values.yaml
+```
+
+<div id="next-steps">
+  ## Следующие шаги
+</div>
+
+* [Варианты развертывания](/ru/clickstack/deployment/helm-deployment-options) - Внешние системы и минимальные развертывания
+* [Облачные развертывания](/ru/clickstack/deployment/helm-cloud) - Конфигурации GKE, EKS и AKS
+* [Руководство по обновлению](/ru/clickstack/deployment/helm-upgrade) - Миграция с v1.x на v2.x
+* [Дополнительные манифесты](/ru/clickstack/deployment/helm-additional-manifests) - Пользовательские объекты Kubernetes
+* [Основное руководство по Helm](/ru/clickstack/deployment/helm) - Базовая установка
+* [Конфигурация (v1.x)](/ru/clickstack/deployment/helm-configuration-v1) - Руководство по настройке v1.x

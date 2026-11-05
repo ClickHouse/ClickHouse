@@ -1,6 +1,12 @@
+-- Tags: no-flaky-check
+-- ^^ Slow test (~78s per run on debug); the only change in this PR is pinning
+-- date_time_input_format='basic' to preserve the old default, which doesn't
+-- affect test stability and doesn't warrant 50x re-runs in the flaky check.
+
 set allow_experimental_variant_type = 1;
 set allow_suspicious_variant_types = 1;
 set session_timezone = 'UTC';
+set date_time_input_format = 'basic';
 
 select 'JSON';
 select 'String';

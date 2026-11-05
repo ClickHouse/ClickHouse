@@ -2,7 +2,7 @@
 
 -- Reproduces assertion failure in Set::appendSetElements when ColumnTuple has
 -- inner sparse columns from one MergeTree part and non-sparse from another.
--- The fix: IColumn::convertToFullIfNeeded now recursively converts subcolumns.
+-- The fix: IColumn::convertToFullIfWrapped now recursively converts subcolumns.
 --
 -- The bug path: Set::appendSetElements is called only when fill_set_elements is
 -- true, which happens when KeyCondition calls buildOrderedSetInplace for index

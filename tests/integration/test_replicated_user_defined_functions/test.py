@@ -1,3 +1,4 @@
+import base64
 import inspect
 from contextlib import nullcontext as does_not_raise
 from os import path as p
@@ -32,6 +33,22 @@ node2 = cluster.add_instance(
 )
 
 all_nodes = [node1, node2]
+wasm_dir = p.join(
+    p.dirname(p.realpath(__file__)), "..", "..", "queries", "0_stateless", "wasm"
+)
+
+
+def read_wasm_base64(file_name):
+    with open(p.join(wasm_dir, file_name), "rb") as wasm_file:
+        return base64.b64encode(wasm_file.read()).decode()
+
+
+def insert_wasm_module(node, module_name, file_name):
+    node.query(f"DELETE FROM system.webassembly_modules WHERE name = '{module_name}'")
+    node.query(
+        "INSERT INTO system.webassembly_modules (name, code) "
+        f"SELECT '{module_name}', base64Decode('{read_wasm_base64(file_name)}')"
+    )
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -158,6 +175,118 @@ def test_replication_replace_by_another_node_after_creation():
     assert_eq_with_retry(
         node2, "SELECT create_query FROM system.functions WHERE name='f2'", ""
     )
+
+
+def test_replicated_wasm_udf_registry_refresh():
+    if node1.is_built_with_memory_sanitizer() or node2.is_built_with_memory_sanitizer():
+        pytest.skip("Wasmtime is disabled in MSAN builds")
+
+    function_name = "replicated_wasm_udf"
+    identity_module = "replicated_wasm_identity"
+    replacement_module = "replicated_wasm_replacement"
+
+    for node in all_nodes:
+        node.query("DROP VIEW IF EXISTS replicated_wasm_mv")
+        node.query("DROP TABLE IF EXISTS replicated_wasm_mv_src")
+        node.query("DROP TABLE IF EXISTS replicated_wasm_mv_dst")
+
+    node1.query(f"DROP FUNCTION IF EXISTS {function_name}")
+    assert_eq_with_retry(
+        node2,
+        f"SELECT name FROM system.functions WHERE name = '{function_name}'",
+        "",
+    )
+
+    try:
+        for node in all_nodes:
+            insert_wasm_module(node, identity_module, "identity_int.wasm")
+            insert_wasm_module(node, replacement_module, "faulty.wasm")
+
+        node1.query(
+            f"""
+            CREATE FUNCTION {function_name}
+            LANGUAGE WASM ABI ROW_DIRECT
+            FROM '{identity_module}' :: 'identity_raw'
+            ARGUMENTS (value UInt32)
+            RETURNS UInt32
+            """
+        )
+
+        assert_eq_with_retry(
+            node2,
+            f"SELECT {function_name}(6 :: UInt32)",
+            "6\n",
+        )
+
+        node2.query(
+            "CREATE TABLE replicated_wasm_mv_src (value UInt32) ENGINE = Memory"
+        )
+        node2.query(
+            "CREATE TABLE replicated_wasm_mv_dst (value UInt32) ENGINE = Memory"
+        )
+        node2.query(
+            f"""
+            CREATE MATERIALIZED VIEW replicated_wasm_mv TO replicated_wasm_mv_dst AS
+            SELECT {function_name}(value) AS value
+            FROM replicated_wasm_mv_src
+            """
+        )
+        node2.query("INSERT INTO replicated_wasm_mv_src VALUES (6)")
+        assert node2.query("SELECT value FROM replicated_wasm_mv_dst") == "6\n"
+        node2.query("DROP VIEW replicated_wasm_mv")
+        node2.query("DROP TABLE replicated_wasm_mv_src")
+        node2.query("DROP TABLE replicated_wasm_mv_dst")
+
+        node1.query(
+            f"""
+            CREATE OR REPLACE FUNCTION {function_name}
+            LANGUAGE WASM ABI ROW_DIRECT
+            FROM '{replacement_module}' :: 'fib'
+            ARGUMENTS (value UInt32)
+            RETURNS UInt32
+            """
+        )
+
+        assert_eq_with_retry(
+            node2,
+            f"SELECT {function_name}(6 :: UInt32)",
+            "13\n",
+        )
+
+        node2.query(
+            "CREATE TABLE replicated_wasm_mv_src (value UInt32) ENGINE = Memory"
+        )
+        node2.query(
+            "CREATE TABLE replicated_wasm_mv_dst (value UInt32) ENGINE = Memory"
+        )
+        node2.query(
+            f"""
+            CREATE MATERIALIZED VIEW replicated_wasm_mv TO replicated_wasm_mv_dst AS
+            SELECT {function_name}(value) AS value
+            FROM replicated_wasm_mv_src
+            """
+        )
+        node2.query("INSERT INTO replicated_wasm_mv_src VALUES (6)")
+        assert node2.query("SELECT value FROM replicated_wasm_mv_dst") == "13\n"
+
+        node1.query(f"DROP FUNCTION {function_name}")
+        assert_eq_with_retry(
+            node2,
+            f"SELECT name FROM system.functions WHERE name = '{function_name}'",
+            "",
+        )
+    finally:
+        node1.query(f"DROP FUNCTION IF EXISTS {function_name}")
+        for node in all_nodes:
+            node.query("DROP VIEW IF EXISTS replicated_wasm_mv")
+            node.query("DROP TABLE IF EXISTS replicated_wasm_mv_src")
+            node.query("DROP TABLE IF EXISTS replicated_wasm_mv_dst")
+            node.query(
+                f"DELETE FROM system.webassembly_modules WHERE name = '{identity_module}'"
+            )
+            node.query(
+                f"DELETE FROM system.webassembly_modules WHERE name = '{replacement_module}'"
+            )
 
 
 # UserDefinedSQLObjectsLoaderFromZooKeeper must be able to continue working after reloading ZooKeeper.

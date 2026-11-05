@@ -1,0 +1,85 @@
+---
+title: ClickHouse에서 Materialized View를 사용하는 쿼리를 식별하는 방법
+description: ClickHouse 로그를 조회하여 지정된 시간 범위 내에서 Materialized View와 관련된 모든 쿼리를 식별하는 방법을 알아봅니다.
+date: 2023-03-24
+tags: ['시스템 테이블']
+keywords: ['Materialized Views', 'create_table_query']
+---
+
+***
+
+<div id="question">
+  ## 질문
+</div>
+
+지난 60분 동안 materialized view가 포함된 모든 쿼리를 어떻게 표시하나요?
+
+<div id="answer">
+  ## 답변
+</div>
+
+이 쿼리는 다음 사항을 바탕으로 Materialized View로 전달되는 모든 쿼리를 표시합니다.
+
+* `system.tables` 테이블의 `create_table_query` field를 활용해 어떤 테이블이 MV의 명시적(`TO`) 대상 테이블인지 식별할 수 있습니다.
+* `uuid`와 `.inner_id.<uuid>` 명명 규칙을 사용해 어떤 테이블이 MV의 암시적 대상 테이블인지 역추적할 수 있습니다.
+
+또한 초기 쿼리 CTE의 값(기본값 `60` m)을 변경하여 어느 시점까지 거슬러 올라가 확인할지 설정할 수 있습니다.
+
+```sql
+WITH(60) -- 기본값 60분
+AS timeRange,
+(
+    --NULL이 아닌 uuid를 가진 *모든* 테이블에 대해 암시적 MV 숨겨진 대상 테이블의 가능한 이름을 준비
+    SELECT groupArray(
+            concat('default.`.inner_id.', toString(uuid), '`')
+        )
+    FROM clusterAllReplicas(default, system.tables)
+    WHERE notEmpty(uuid)
+) AS MV_implicit_possible_hidden_target_tables_names_array,
+(
+    --MV 이름과 대상 테이블을 캡처 (TO가 지정된 경우)
+    --TODO: extract가 첫 번째 캡처 그룹만 반환하는 것으로 보임 :( regexpExtract 사용 가능 시 교체 필요
+    SELECT arrayFilter(
+            x->x != '',
+            --빈 캡처 제거
+            groupArray(
+                extract(
+                    create_table_query,
+                    '^CREATE MATERIALIZED VIEW\s(\w+\.\w+)\s(?:TO\s(\S+))?'
+                )
+            )
+        )
+    FROM clusterAllReplicas(default, system.tables)
+    WHERE engine = 'MaterializedView'
+) AS MV_explicit_target_tables_names_array
+SELECT event_time,
+    query,
+    tables as "MVs tables"
+FROM clusterAllReplicas(default, system.query_log)
+WHERE (
+        -- 60분 이내의 SELECT만 해당
+        event_time > now() - toIntervalMinute(timeRange)
+        AND startsWith(query, 'SELECT')
+    ) -- 쿼리에 암시적 MV 대상 테이블 이름이 포함되는지 확인
+    AND (
+        hasAny(
+            tables,
+            MV_implicit_possible_hidden_target_tables_names_array
+        )
+        OR -- 쿼리에 명시적 MV 대상 테이블이 포함되는지 확인
+        hasAny(tables, MV_explicit_target_tables_names_array)
+    )
+ORDER BY event_time DESC;
+```
+
+예상 출력:
+
+```sql
+| event_time          | query                                                                                          | MVs tables                                                            |
+| ------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| 2023-02-23 08:14:14 | SELECT     rand(),* FROM     default.sum_of_volumes,     default.big_changes,     system.users | ["default.big_changes_mv","default.sum_of_volumes_mv","system.users"] |
+| 2023-02-23 08:04:47 | SELECT     price,* FROM     default.sum_of_volumes,     default.big_changes                    | ["default.big_changes_mv","default.sum_of_volumes_mv"]                |
+
+```
+
+이 예시에서 위에 나온 `default.big_changes_mv`와 `default.sum_of_volumes_mv`는 모두 materialized view입니다.

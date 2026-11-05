@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Core/Field.h>
 #include <Storages/ColumnsDescription.h>
@@ -71,6 +70,7 @@ public:
     static consteval size_t getDefaultMaxSize() { return 1024; }
     static consteval size_t getDefaultReservedSize() { return 1024; }
     static consteval size_t getDefaultFlushIntervalMilliseconds() { return 1000; }
+    static const char * getDefaultPartitionBy() { return ""; }
     static consteval size_t shouldNotifyFlushOnCrash() { return true; }
 };
 

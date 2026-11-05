@@ -1,6 +1,6 @@
 -- Tags: no-fasttest, no-ordinary-database
-
 -- Tests vector search over vectors with a huge dimension (32k)
+SET explain_query_plan_default = 'legacy';
 
 SET parallel_replicas_local_plan = 1;
 

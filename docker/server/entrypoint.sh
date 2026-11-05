@@ -30,10 +30,10 @@ CLICKHOUSE_CONFIG="${CLICKHOUSE_CONFIG:-/etc/clickhouse-server/config.xml}"
 DATA_DIR="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=path || true)"
 TMP_DIR="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=tmp_path || true)"
 USER_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=user_files_path || true)"
-LOG_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=logger.log || true)"
+LOG_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=logger.log --try || true)"
 LOG_DIR=""
 if [ -n "$LOG_PATH" ]; then LOG_DIR="$(dirname "$LOG_PATH")"; fi
-ERROR_LOG_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=logger.errorlog || true)"
+ERROR_LOG_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=logger.errorlog --try || true)"
 ERROR_LOG_DIR=""
 if [ -n "$ERROR_LOG_PATH" ]; then ERROR_LOG_DIR="$(dirname "$ERROR_LOG_PATH")"; fi
 FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=format_schema_path || true)"
@@ -41,6 +41,13 @@ FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_
 # There could be many disks declared in config
 readarray -t DISKS_PATHS < <(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='storage_configuration.disks.*.path' || true)
 readarray -t DISKS_METADATA_PATHS < <(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='storage_configuration.disks.*.metadata_path' || true)
+
+# A `filesystem_caches` entry is not a `storage_configuration` disk, so the paths above do not cover
+# it, and `FileCache::initialize` cannot create one under a directory the server does not own.
+# Absolute entries only: those are used verbatim, while a relative one is resolved by the server
+# against a prefix (`filesystem_caches_path`, or `<path>/caches` when unset) that this script cannot
+# reconstruct, so preparing it as written would create a directory nothing opens.
+readarray -t FILESYSTEM_CACHES_PATHS < <(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='filesystem_caches.*.path' | grep '^/' || true)
 
 CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
 CLICKHOUSE_PASSWORD_FILE="${CLICKHOUSE_PASSWORD_FILE:-}"
@@ -86,7 +93,8 @@ function manage_clickhouse_directories() {
       "$USER_PATH" \
       "$FORMAT_SCHEMA_PATH" \
       "${DISKS_PATHS[@]}" \
-      "${DISKS_METADATA_PATHS[@]}"
+      "${DISKS_METADATA_PATHS[@]}" \
+      "${FILESYSTEM_CACHES_PATHS[@]}"
     do
         create_directory_and_do_chown "$dir"
     done
@@ -100,11 +108,11 @@ function manage_clickhouse_user() {
     case $USERS_XML in
         /* ) # absolute path
             cp "$USERS_XML" /tmp
-            USERS_CONFIG="/tmp/$(basename $USERS_XML)"
+            USERS_CONFIG="/tmp/$(basename "$USERS_XML")"
             ;;
         * ) # relative path to the $CLICKHOUSE_CONFIG
             cp "$(dirname "$CLICKHOUSE_CONFIG")/${USERS_XML}" /tmp
-            USERS_CONFIG="/tmp/$(basename $USERS_XML)"
+            USERS_CONFIG="/tmp/$(basename "$USERS_XML")"
             ;;
     esac
 

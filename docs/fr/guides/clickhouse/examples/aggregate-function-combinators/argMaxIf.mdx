@@ -1,0 +1,67 @@
+---
+slug: '/examples/aggregate-function-combinators/argMaxIf'
+title: 'argMaxIf'
+description: "Exemple d’utilisation du combinateur argMaxIf"
+keywords: ['argMax', 'if', 'combinateur', 'exemples', 'argMaxIf']
+sidebarTitle: 'argMaxIf'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Description
+</div>
+
+Le combinateur [`If`](/fr/reference/functions/aggregate-functions/combinators#-if) peut être appliqué à la fonction [`argMax`](/fr/reference/functions/aggregate-functions/argMax)
+pour trouver la valeur de `arg` correspondant à la valeur maximale de `val` pour les lignes où la condition est vraie,
+à l’aide de la fonction de combinateur d’agrégation `argMaxIf`.
+
+La fonction `argMaxIf` est utile lorsque vous devez trouver la valeur associée à
+la valeur maximale dans un jeu de données, mais uniquement pour les lignes qui remplissent une
+condition spécifique.
+
+<div id="example-usage">
+  ## Exemple d&#39;utilisation
+</div>
+
+Dans cet exemple, nous utiliserons un échantillon de données de ventes de produits pour montrer comment
+`argMaxIf` fonctionne. Nous trouverons le nom du produit au prix le plus élevé, mais
+uniquement parmi les produits qui ont été vendus au moins 10 fois.
+
+```sql title="Query"
+CREATE TABLE product_sales
+(
+    product_name String,
+    price Decimal32(2),
+    sales_count UInt32
+) ENGINE = Memory;
+
+INSERT INTO product_sales VALUES
+    ('Laptop', 999.99, 10),
+    ('Phone', 499.99, 15),
+    ('Tablet', 299.99, 0),
+    ('Watch', 1199.99, 5),
+    ('Headphones', 79.99, 20);
+
+SELECT argMaxIf(product_name, price, sales_count >= 10) AS most_expensive_popular_product
+FROM product_sales;
+```
+
+La fonction `argMaxIf` renverra le nom du produit dont le prix est le plus élevé
+parmi tous les produits vendus au moins 10 fois (sales&#95;count &gt;= 10).
+Dans ce cas, elle renverra &#39;Laptop&#39;, puisque c&#39;est le produit au prix le plus élevé (999.99)
+parmi les produits populaires.
+
+```response title="Response"
+   ┌─most_expensi⋯lar_product─┐
+1. │ Laptop                   │
+   └──────────────────────────┘
+```
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [`argMax`](/fr/reference/functions/aggregate-functions/argMax)
+* [`argMin`](/fr/reference/functions/aggregate-functions/argMin)
+* [`argMinIf`](/fr/guides/clickhouse/examples/aggregate-function-combinators/argMinIf)
+* [`combinateur If`](/fr/reference/functions/aggregate-functions/combinators#-if)

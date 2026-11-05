@@ -1,0 +1,5 @@
+rows	4000
+index_materialized	1
+pk_match	23
+index_filters	1
+1

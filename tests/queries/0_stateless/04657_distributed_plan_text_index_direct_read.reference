@@ -1,0 +1,5 @@
+hasAnyTokens over a text index works under make_distributed_plan
+1
+1
+the query distributes
+distributes

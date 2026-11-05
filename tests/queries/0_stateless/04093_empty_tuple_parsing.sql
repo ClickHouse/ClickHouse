@@ -1,0 +1,11 @@
+-- { echo }
+
+SELECT CAST('()', 'Tuple');
+
+SELECT CAST('()(', 'Tuple'); -- { serverError UNEXPECTED_DATA_AFTER_PARSED_VALUE }
+
+SELECT CAST('()()', 'Tuple'); -- { serverError UNEXPECTED_DATA_AFTER_PARSED_VALUE }
+
+SELECT CAST('()extra', 'Tuple()'); -- { serverError UNEXPECTED_DATA_AFTER_PARSED_VALUE }
+
+SELECT CAST('()()()', 'Tuple'); -- { serverError UNEXPECTED_DATA_AFTER_PARSED_VALUE }

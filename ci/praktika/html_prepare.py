@@ -25,7 +25,7 @@ class Html:
         compressed_file = Utils.compress_gz(page_file)
 
         S3.copy_file_to_s3(
-            s3_path=str(Path(Settings.HTML_S3_PATH) / Path(page_file).name),
+            s3_path=str(Path(Settings.S3_REPORT_BUCKET) / Path(page_file).name),
             local_path=compressed_file,
             content_type="text/html",
             content_encoding="gzip",

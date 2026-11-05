@@ -82,7 +82,7 @@ def test_ipv4(setup_cluster):
             privileged=True,
             user="root",
         )
-    except Exception as ex:
+    except Exception:
         assert (
             False
         ), "allowed client with 10.5.172.10 cannot connect to server with allowed mask '10.5.172.0/24'"
@@ -97,7 +97,7 @@ def test_ipv4(setup_cluster):
             privileged=True,
             user="root",
         )
-    except Exception as ex:
+    except Exception:
         assert (
             False
         ), "allowed client with 10.5.173.1 cannot connect to server with allowed ip '10.5.173.1'"
@@ -112,7 +112,7 @@ def test_ipv4(setup_cluster):
             privileged=True,
             user="root",
         )
-    except Exception as ex:
+    except Exception:
         assert (
             False
         ), "allowed client with 10.5.175.77 cannot connect to server with allowed ip '10.5.175.0/255.255.255.0'"
@@ -163,7 +163,7 @@ def test_ipv6(setup_cluster):
             privileged=True,
             user="root",
         )
-    except Exception as ex:
+    except Exception:
         assert (
             False
         ), "allowed client with 2001:3984:3989:0:0:0:1:1111 cannot connect to server with allowed ip '2001:3984:3989:0:0:0:1:1111'"

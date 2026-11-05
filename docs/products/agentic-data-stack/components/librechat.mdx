@@ -1,0 +1,37 @@
+---
+sidebarTitle: 'LibreChat'
+title: 'LibreChat'
+description: 'How LibreChat serves as the chat and agent front-end of the agentic data stack'
+doc_type: 'guide'
+keywords: ['agentic data stack', 'LibreChat', 'chat', 'front-end', 'MCP']
+---
+
+LibreChat is the **chat and agent front-end** of the [Agentic Data Stack](/products/agentic-data-stack/overview). Instead of writing SQL, a user asks a question in plain language and an agent answers it.
+
+The agent works through the ClickHouse MCP server to inspect your databases and tables, run read-only queries, and build an answer from the results. The stack wires this up for you, so LibreChat queries your data from the first sign-in. Stand up the full stack with the [Docker setup guide](/products/agentic-data-stack/docker-setup).
+
+## LibreChat capabilities {#capabilities}
+
+| Capability | What it does |
+|------------|--------------|
+| [Build an agent over your data](https://www.librechat.ai/docs/features/agents) | Build a reusable agent for a recurring question. Two choices make it ClickHouse-aware: give it **Instructions** that describe your schema and preferred tables, and add the **ClickHouse-Local** MCP server so it can list databases and tables and run read-only queries. |
+| [Connect more MCP servers](https://www.librechat.ai/docs/features/mcp) | The agent isn't limited to ClickHouse. Add any MCP server through LibreChat's MCP settings so one chat can reach other databases, internal APIs, or SaaS tools. |
+| [Generate charts and visualizations](https://www.librechat.ai/docs/features/artifacts) | Ask the agent to visualize your results, for example "Chart the top 10 products by revenue," and it returns an interactive chart you can explore and share. Visualizations use LibreChat Artifacts, enabled per agent. |
+| [Run code with the code interpreter](https://www.librechat.ai/docs/features/code_interpreter) | Beyond SQL, the agent can run code in a secure sandbox to transform or analyze your results, such as turning a query into a file or a computed metric. |
+| [Run long queries in the background](https://www.librechat.ai/docs/features/resumable_streams) | A query can take a while, and you don't have to wait. With resumable streams, start a generation, switch to another conversation, and come back to the finished response. |
+| [Share an analysis as a read-only link](https://www.librechat.ai/docs/features/shareable_links) | Share a conversation as a read-only link so others can review an analysis without rerunning it. The shared view includes the tool calls and the SQL behind each answer, giving a clear chain of custody for how a result was produced. |
+| [Control access to MCP servers](https://www.librechat.ai/docs/features/access_control) | In a team deployment, role-based access control governs who can use, create, and share MCP servers and agents, and at what level (Viewer, Editor, or Owner). |
+
+## In the stack {#in-the-stack}
+
+LibreChat is preconfigured through `librechat.yaml`, so it works out of the box:
+
+- The [ClickHouse MCP server](/products/agentic-data-stack/components/mcp-server) is registered as a tool source, so the agent can explore and query ClickHouse with no extra setup.
+- Every conversation is traced to [Langfuse](/products/agentic-data-stack/components/langfuse) for observability, capturing prompts, tool calls, responses, cost, and latency.
+- The [Admin Panel](https://github.com/ClickHouse/librechat-admin-panel) (port 3081) is a browser-based UI for changing this configuration (endpoints, MCP servers, and agent settings) without editing `librechat.yaml` by hand.
+
+To connect the ClickHouse MCP server to a standalone LibreChat instance, see the canonical guide: [Using ClickHouse MCP server with LibreChat](/guides/use-cases/ai-ml/MCP/librechat). For LibreChat's full feature documentation, see the [LibreChat documentation](https://www.librechat.ai/docs).
+
+<Info>
+**Prefer a managed experience?** ClickHouse Cloud offers [ClickHouse Agents](/products/cloud/features/ai-ml/agents) (Beta) — a hosted, no-setup agent experience built on the same foundation, with the agent-building features available through the Cloud console.
+</Info>

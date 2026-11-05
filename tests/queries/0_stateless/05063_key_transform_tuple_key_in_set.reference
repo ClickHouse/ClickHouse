@@ -1,0 +1,22 @@
+1
+1
+1
+Condition: (toString(k) in 1-element set)
+1
+1
+1
+1
+0
+1
+0
+1
+Condition: (toString(k) in 1-element set)
+Condition: (toString(k) in 1-element set)
+1
+Condition: true
+1
+1
+1
+Condition: (identity(k) notIn 1-element set)
+1
+Condition: (hex(k) notIn 2-element set)

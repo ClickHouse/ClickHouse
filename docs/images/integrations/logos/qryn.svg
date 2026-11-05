@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg version="1.1" viewBox="16.246 17.555 567.55 504.923" fill="none" stroke="none" stroke-linecap="square" stroke-miterlimit="10" xmlns="http://www.w3.org/2000/svg">
+  <clipPath id="g208aa234b19_0_0.0">
+    <path d="m0 0l960.0 0l0 540.0l-960.0 0l0 -540.0z" clip-rule="nonzero"/>
+  </clipPath>
+  <g clip-path="url(#g208aa234b19_0_0.0)" transform="matrix(1, 0, 0, 1, -216, 0)">
+    <path fill="#000000" fill-opacity="0.0" d="m0 0l960.0 0l0 540.0l-960.0 0z" fill-rule="evenodd"/>
+    <path fill="#ffcc01" d="m243.51294 267.56085l61.5748 -61.5748l239.71652 239.71652l-61.5748 61.5748z" fill-rule="evenodd"/>
+    <path fill="#ffcc01" d="m581.6899 285.63776l61.57483 61.5748l-160.09448 160.09448l-61.57483 -61.5748z" fill-rule="evenodd"/>
+    <path fill="#ffcc01" d="m428.42728 82.645584l61.5748 61.574814l-184.91339 184.91339l-61.5748 -61.57483z" fill-rule="evenodd"/>
+    <path fill="#ff9900" d="m421.6378 89.43592l61.5748 -61.574802l305.38586 305.38583l-61.57483 61.5748z" fill-rule="evenodd"/>
+    <path fill="#ff9900" d="m484.30643 189.31891l77.51181 77.51181l-75.3071 75.3071l-77.51181 -77.51181z" fill-rule="evenodd"/>
+    <path fill="#ffcc01" d="m680.2571 191.41998l71.93701 -12.535431l-12.5354 71.937z" fill-rule="evenodd"/>
+  </g>
+</svg>

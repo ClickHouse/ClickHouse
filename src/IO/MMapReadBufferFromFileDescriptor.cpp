@@ -69,7 +69,7 @@ off_t MMapReadBufferFromFileDescriptor::getPosition()
 
 off_t MMapReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 {
-    off_t new_pos;
+    off_t new_pos = 0;
     if (whence == SEEK_SET)
         new_pos = offset;
     else if (whence == SEEK_CUR)

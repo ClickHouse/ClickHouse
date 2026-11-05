@@ -1,0 +1,7 @@
+nan coordinate rejected
+inf coordinate rejected
+nan id rejected
+one-position linestring rejected
+short polygon ring rejected
+unclosed polygon ring rejected
+empty multipolygon rejected

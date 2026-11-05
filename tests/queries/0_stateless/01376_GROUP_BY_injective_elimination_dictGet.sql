@@ -1,4 +1,7 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-flaky-check
+
+SET optimize_injective_functions_in_group_by = 1;
+SET optimize_group_by_function_keys = 1;
 
 -- https://github.com/ClickHouse/ClickHouse/issues/11469
 SELECT dictGet('default.countryId', 'country', toUInt64(number)) AS country FROM numbers(2) GROUP BY country; -- { serverError BAD_ARGUMENTS }
@@ -37,8 +40,7 @@ EXPLAIN SYNTAX SELECT dictGet('dictdb_01376.dict_exists', 'value', toUInt64(1)) 
 EXPLAIN QUERY TREE
 SELECT dictGet('dictdb_01376.dict_exists', 'value', number) as val
 FROM numbers(2)
-GROUP BY val
-SETTINGS enable_analyzer = 1;
+GROUP BY val;
 
 DROP DICTIONARY dictdb_01376.dict_exists;
 DROP TABLE dictdb_01376.table_for_dict;

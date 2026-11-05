@@ -1,0 +1,46 @@
+-- { echoOn }
+
+EXPLAIN indexes = 1
+SELECT count() FROM t_sparse_pk_sfc
+WHERE x >= 4 AND x <= 8 AND y >= 4 AND y <= 8
+SETTINGS use_lightweight_primary_key_index_analysis = 0;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_sparse_pk_sfc)
+        Indexes:
+          PrimaryKey
+            Keys:
+              mortonEncode(x, y)
+            Condition: (mortonEncode(x, y) has args in [4, 8] × [4, 8])
+            Parts: 1/1
+            Granules: 14/64
+            Search Algorithm: generic exclusion search
+          Ranges: 4
+SELECT count() FROM t_sparse_pk_sfc
+WHERE x >= 4 AND x <= 8 AND y >= 4 AND y <= 8
+SETTINGS use_lightweight_primary_key_index_analysis = 0;
+25
+EXPLAIN indexes = 1
+SELECT count() FROM t_sparse_pk_sfc
+WHERE x >= 4 AND x <= 8 AND y >= 4 AND y <= 8
+SETTINGS use_lightweight_primary_key_index_analysis = 1;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_sparse_pk_sfc)
+        Indexes:
+          PrimaryKey
+            Keys:
+              mortonEncode(x, y)
+            Condition: (mortonEncode(x, y) has args in [4, 8] × [4, 8])
+            Parts: 1/1
+            Granules: 14/64
+            Search Algorithm: generic exclusion search
+          Ranges: 4
+SELECT count() FROM t_sparse_pk_sfc
+WHERE x >= 4 AND x <= 8 AND y >= 4 AND y <= 8
+SETTINGS use_lightweight_primary_key_index_analysis = 1;
+25

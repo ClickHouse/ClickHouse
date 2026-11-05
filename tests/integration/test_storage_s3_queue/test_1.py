@@ -1,30 +1,22 @@
-import io
 import json
 import logging
-import random
-import string
 import time
 import uuid
-from multiprocessing.dummy import Pool
 
 import pytest
-from kazoo.exceptions import NoNodeError
 
-from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key
 from helpers.s3_queue_common import (
     run_query,
-    random_str,
     generate_random_files,
     put_s3_file_content,
-    put_azure_file_content,
     create_table,
     create_mv,
     generate_random_string,
 )
 
-AVAILABLE_MODES = ["unordered", "ordered"]
+AVAILABLE_MODES = ["unordered", "ordered", "exclusive"]
 DEFAULT_AUTH = ["'minio'", f"'{minio_secret_key}'"]
 NO_AUTH = ["NOSIGN"]
 
@@ -165,7 +157,7 @@ def prepare_public_s3_bucket(started_cluster):
 
 
 # TODO: Update the modes for this test to include "ordered" once PR #55795 is finished.
-@pytest.mark.parametrize("mode", ["unordered"])
+@pytest.mark.parametrize("mode", ["unordered", "exclusive"])
 def test_multiple_tables_streaming_sync(started_cluster, mode):
     node = started_cluster.instances["instance"]
     table_name = f"multiple_tables_streaming_sync_{mode}"
@@ -175,24 +167,27 @@ def test_multiple_tables_streaming_sync(started_cluster, mode):
     files_path = f"{table_name}_data"
     files_to_generate = 300
 
+    total_values = []
     for i in range(3):
         table = f"{table_name}_{i + 1}"
         dst_table = f"{dst_table_name}_{i + 1}"
+        files_path_node = f"{files_path}{i}" if mode == "exclusive" else files_path
         create_table(
             started_cluster,
             node,
             table,
             mode,
-            files_path,
+            files_path_node,
             additional_settings={
                 "keeper_path": keeper_path,
             },
         )
         create_mv(node, table, dst_table)
 
-    total_values = generate_random_files(
-        started_cluster, files_path, files_to_generate, row_num=1
-    )
+        chunk = files_to_generate//3
+        total_values += generate_random_files(
+            started_cluster, files_path_node, chunk, row_num=1, start_ind=i*chunk,
+        )
 
     def get_count(table_name):
         return int(run_query(node, f"SELECT count() FROM {table_name}"))
@@ -262,17 +257,19 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
     files_to_generate = 1000
     row_num = 10
     total_rows = row_num * files_to_generate
+    buckets_num = 2
 
-    for instance in [node, node_2]:
+    for i, instance in enumerate([node, node_2]):
+        files_path_node = f"{files_path}{i}" if mode == "exclusive" else files_path
         create_table(
             started_cluster,
             instance,
             table_name,
             mode,
-            files_path,
+            files_path_node,
             additional_settings={
                 "keeper_path": keeper_path,
-                "s3queue_buckets": 2,
+                "s3queue_buckets": buckets_num,
                 "polling_max_timeout_ms": 2000,
                 "polling_backoff_ms": 1000,
                 **({"s3queue_processing_threads_num": 1} if mode == "ordered" else {}),
@@ -282,9 +279,18 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
     for instance in [node, node_2]:
         create_mv(instance, table_name, dst_table_name)
 
-    total_values = generate_random_files(
-        started_cluster, files_path, files_to_generate, row_num=row_num
-    )
+    if mode == "exclusive":
+        total_values = []
+        for i in range(2):
+            files_path_node = f"{files_path}{i}"
+            chunk = files_to_generate//2
+            total_values += generate_random_files(
+                started_cluster, files_path_node, chunk, row_num=row_num, start_ind=i*chunk,
+            )
+    else:
+        total_values = generate_random_files(
+            started_cluster, files_path, files_to_generate, row_num=row_num
+        )
 
     def get_count(node, table_name):
         return int(run_query(node, f"SELECT count() FROM {table_name}"))
@@ -299,7 +305,10 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
     count1 = get_count(node, dst_table_name)
     count2 = get_count(node_2, dst_table_name)
     if (count1 + count2) != total_rows:
-        expected_files = [f"{files_path}/test_{x}.csv" for x in range(1000)]
+        expected_files = []
+        for i in range(2):
+            files_path_node = f"{files_path}{i}" if mode == "exclusive" else files_path
+            expected_files += [f"{files_path_node}/test_{x}.csv" for x in range(1000)]
         node.query("SYSTEM FLUSH LOGS")
         node_2.query("SYSTEM FLUSH LOGS")
         processed_files = (
@@ -330,9 +339,10 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
 
     assert len(res1) + len(res2) == total_rows
 
-    # Checking that all engines have made progress
-    assert len(res1) > 0
-    assert len(res2) > 0
+    if mode == "unordered":
+        # Ordered mode has no per-server split, so one server may process every file.
+        assert len(res1) > 0
+        assert len(res2) > 0
 
     assert {tuple(v) for v in res1 + res2} == set([tuple(i) for i in total_values])
 
@@ -342,11 +352,31 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
         get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
     ) == total_rows
 
+    if mode == "ordered":
+        # Work is claimed per bucket, not per server, so every bucket must end up with a
+        # `processed` pointer, written by the commit that empties `processing` after the insert.
+        zk = started_cluster.get_kazoo_client("zoo1")
+        buckets = zk.get_children(f"{keeper_path}/buckets/")
+        assert len(buckets) == buckets_num
 
-@pytest.mark.parametrize("mode", ["unordered", "ordered"])
+        processing_left = (
+            "SELECT processing_nodes_count FROM system.s3_queue_metadata "
+            f"WHERE zookeeper_path ilike '%{keeper_path}%'"
+        )
+        for _ in range(60):
+            if run_query(node, processing_left).strip() == "0":
+                break
+            time.sleep(1)
+        assert run_query(node, processing_left).strip() == "0"
+
+        for bucket in buckets:
+            assert zk.exists(f"{keeper_path}/buckets/{bucket}/processed")
+
+
+@pytest.mark.parametrize("mode", ["unordered", "ordered", "exclusive"])
 def test_max_set_age(started_cluster, mode):
     # We use an instance without keeper fault injection,
-    # because otherwise we fail to update keeper state in 1.5 * max_age,
+    # because otherwise we fail to update keeper state within the wait window,
     # so we cannot check max_set_age correctness properly.
     node = started_cluster.instances["instance_without_keeper_fault_injection"]
     table_name = f"max_set_age_{mode}_{generate_random_string()}"
@@ -380,13 +410,21 @@ def test_max_set_age(started_cluster, mode):
 
     expected_rows = files_to_generate
 
-    node.wait_for_log_line("Checking failed nodes for tracking limits")
-    node.wait_for_log_line("Node limits check finished")
+    if mode != "exclusive":
+        node.wait_for_log_line("Checking failed nodes for tracking limits")
+        node.wait_for_log_line("Node limits check finished")
 
     def get_count():
         return int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
-    def wait_for_condition(check_function, max_wait_time=1.5 * max_age):
+    # Slow instrumented builds (sanitizers, coverage) ingest far slower, so give
+    # them a larger ceiling; fast release/debug builds keep the tighter
+    # 1.5 * max_age so a genuine regression is not masked. Either way the ceiling
+    # stays above max_age so the tracked_file_ttl expiry the test relies on fires.
+    slow_build = node.is_built_with_sanitizer() or node.is_built_with_llvm_coverage()
+    condition_wait_time = (3 if slow_build else 1.5) * max_age
+
+    def wait_for_condition(check_function, max_wait_time=condition_wait_time):
         before = time.time()
         while time.time() - before < max_wait_time:
             if check_function():
@@ -400,7 +438,7 @@ def test_max_set_age(started_cluster, mode):
     )
 
     # We do not removed processed nodes in ordered mode
-    if mode != "ordered":
+    if mode == "unordered":
         expected_rows *= 2
         wait_for_condition(lambda: get_count() == expected_rows)
         assert files_to_generate == int(
@@ -461,13 +499,17 @@ def test_max_set_age(started_cluster, mode):
         )
     )
 
-    wait_for_condition(lambda: failed_count + 2 == get_object_storage_failures())
+    n_fails = 2 if mode != "exclusive" else 1
+
+    wait_for_condition(
+        lambda: failed_count + n_fails == get_object_storage_failures()
+    )
 
     node.query("SYSTEM FLUSH LOGS")
     assert "Cannot parse input" in node.query(
         f"SELECT exception FROM system.s3queue_metadata_cache WHERE file_name ilike '%{file_with_error}' ORDER BY processing_end_time DESC LIMIT 1"
     )
-    assert 1 < int(
+    assert (n_fails - 1) < int(
         node.query(
             f"SELECT count() FROM system.s3queue_log WHERE file_name ilike '%{file_with_error}' AND notEmpty(exception)"
         )
@@ -476,7 +518,7 @@ def test_max_set_age(started_cluster, mode):
     node.restart_clickhouse()
 
     # We do not removed processed nodes in ordered mode
-    if mode != "ordered":
+    if mode == "unordered":
         expected_rows *= 2
         wait_for_condition(lambda: get_count() == expected_rows)
         assert files_to_generate == int(
@@ -535,7 +577,7 @@ def test_max_set_size(started_cluster):
 
 def test_drop_table(started_cluster):
     node = started_cluster.instances["instance"]
-    table_name = f"test_drop"
+    table_name = "test_drop"
     dst_table_name = f"{table_name}_dst"
     # A unique path is necessary for repeatable tests
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
@@ -553,11 +595,11 @@ def test_drop_table(started_cluster):
             "s3queue_processing_threads_num": 5,
         },
     )
-    total_values = generate_random_files(
+    generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=100000
     )
     create_mv(node, table_name, dst_table_name)
-    node.wait_for_log_line(f"rows from file test_drop_data")
+    node.wait_for_log_line("rows from file test_drop_data")
     node.query(f"DROP TABLE {table_name} SYNC")
     assert node.contains_in_log(
         f"StorageS3Queue (default.{table_name}): Table is being dropped"
@@ -568,7 +610,7 @@ def test_drop_table(started_cluster):
 
 def test_s3_client_reused(started_cluster):
     node = started_cluster.instances["instance"]
-    table_name = f"test_s3_client_reused"
+    table_name = "test_s3_client_reused"
     dst_table_name = f"{table_name}_dst"
     files_path = f"{table_name}_data"
     # A unique path is necessary for repeatable tests
@@ -577,7 +619,7 @@ def test_s3_client_reused(started_cluster):
 
     def get_created_s3_clients_count():
         value = node.query(
-            f"SELECT value FROM system.events WHERE event='S3Clients'"
+            "SELECT value FROM system.events WHERE event='S3Clients'"
         ).strip()
         return int(value) if value != "" else 0
 

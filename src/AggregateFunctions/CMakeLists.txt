@@ -19,6 +19,14 @@ extract_into_parent_list(clickhouse_aggregate_functions_headers dbms_headers
     parseAggregateFunctionParameters.h
 )
 
+# TODO: at v3 the `UniquesHashSet::merge` probe loop lowers `good(hash) = (hash >> s) << s == hash`
+# to BMI2 `bzhi`/`shlxq`/`shrxq`, which is slightly slower than the legacy `shl %cl + not + test`
+# sequence on Sapphire Rapids (regresses `uniq_stored #1` by ~9%). Disabling BMI1/BMI2 on this TU
+# keeps the rest of v3 (AVX2/FMA/etc.) while restoring the legacy shift codegen.
+if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 3)
+    set_source_files_properties(AggregateFunctionUniq.cpp PROPERTIES COMPILE_FLAGS "-mno-bmi -mno-bmi2")
+endif()
+
 add_library(clickhouse_aggregate_functions ${clickhouse_aggregate_functions_headers} ${clickhouse_aggregate_functions_sources})
 target_link_libraries(clickhouse_aggregate_functions PRIVATE dbms PUBLIC ch_contrib::cityhash)
 

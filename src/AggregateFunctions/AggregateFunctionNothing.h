@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/IColumn_fwd.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -48,12 +49,26 @@ class AggregateFunctionNothingImpl final : public IAggregateFunctionHelper<Aggre
     }
 
 public:
-    AggregateFunctionNothingImpl(const DataTypes & arguments, const Array &)
-        : IAggregateFunctionHelper<AggregateFunctionNothingImpl<Name>>(arguments, Array(), getReturnType(arguments))
+    AggregateFunctionNothingImpl(const DataTypes & arguments, const Array & params)
+        : IAggregateFunctionHelper<AggregateFunctionNothingImpl<Name>>(arguments, params, getReturnType(arguments))
     {
     }
 
     String getName() const override { return Name::name; }
+
+    DataTypePtr getNormalizedStateType() const override
+    {
+        /// The state of this placeholder is empty and its serialization is a single zero byte,
+        /// independent of the parameters. The parameters are only inherited from the aggregate
+        /// function that collapsed to this placeholder over only-null argument types, where they
+        /// would have affected finalization only. Drop them from the normalized state type, so
+        /// that placeholder states produced with different parameters are interchangeable.
+        DataTypes normalized_argument_types;
+        normalized_argument_types.reserve(this->argument_types.size());
+        for (const auto & argument_type : this->argument_types)
+            normalized_argument_types.emplace_back(argument_type->getNormalizedType());
+        return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), normalized_argument_types, Array{});
+    }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -84,7 +99,7 @@ public:
     {
     }
 
-    void merge(AggregateDataPtr __restrict, ConstAggregateDataPtr, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict, ConstAggregateDataPtr, Arena *) const override
     {
     }
 
@@ -95,7 +110,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict, ReadBuffer & buf, std::optional<size_t>, Arena *) const override
     {
-        [[maybe_unused]] char symbol;
+        [[maybe_unused]] char symbol = 0;
         readChar(symbol, buf);
         if (symbol != '\0')
             throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect state of aggregate function '{}', it should contain exactly one zero byte, while it is {}",

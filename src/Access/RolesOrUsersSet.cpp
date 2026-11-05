@@ -1,10 +1,12 @@
 #include <Access/RolesOrUsersSet.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Access/AccessControl.h>
 #include <Access/User.h>
 #include <Access/Role.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/quoteString.h>
 #include <boost/range/algorithm/set_algorithm.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <base/sort.h>
@@ -15,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ACCESS_DENIED;
 }
 
 
@@ -70,7 +73,7 @@ void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl *
     {
         if (ast.id_mode)
             return parse<UUID>(name);
-        assert(access_control);
+        chassert(access_control);
         if (ast.allow_users && ast.allow_roles)
         {
             auto id = access_control->find<User>(name);
@@ -83,33 +86,33 @@ void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl *
             return access_control->getID<User>(name);
         }
 
-        assert(ast.allow_roles);
+        chassert(ast.allow_roles);
         return access_control->getID<Role>(name);
     };
 
-    if (!ast.names.empty() && !all)
+    if (const auto all_names = ast.names ? ast.names->toStrings() : Strings{}; !all_names.empty() && !all)
     {
-        ids.reserve(ast.names.size());
-        for (const String & name : ast.names)
+        ids.reserve(all_names.size());
+        for (const String & name : all_names)
             ids.insert(name_to_id(name));
     }
 
     if (ast.current_user && !all)
     {
-        assert(current_user_id);
+        chassert(current_user_id);
         ids.insert(*current_user_id);
     }
 
-    if (!ast.except_names.empty())
+    if (const auto all_except_names = ast.except_names ? ast.except_names->toStrings() : Strings{}; !all_except_names.empty())
     {
-        except_ids.reserve(ast.except_names.size());
-        for (const String & name : ast.except_names)
+        except_ids.reserve(all_except_names.size());
+        for (const String & name : all_except_names)
             except_ids.insert(name_to_id(name));
     }
 
     if (ast.except_current_user)
     {
-        assert(current_user_id);
+        chassert(current_user_id);
         except_ids.insert(*current_user_id);
     }
 
@@ -126,18 +129,26 @@ boost::intrusive_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toAST() const
 
     if (!ids.empty() && !all)
     {
-        ast->names.reserve(ids.size());
+        Strings names;
+        names.reserve(ids.size());
         for (const UUID & id : ids)
-            ast->names.emplace_back(::DB::toString(id));
-        ::sort(ast->names.begin(), ast->names.end());
+            names.emplace_back(::DB::toString(id));
+        ::sort(names.begin(), names.end());
+        ast->names = make_intrusive<ASTUserNamesWithHost>();
+        for (const auto & name : names)
+            ast->names->children.push_back(make_intrusive<ASTUserNameWithHost>(name));
     }
 
     if (!except_ids.empty())
     {
-        ast->except_names.reserve(except_ids.size());
+        Strings except_names;
+        except_names.reserve(except_ids.size());
         for (const UUID & except_id : except_ids)
-            ast->except_names.emplace_back(::DB::toString(except_id));
-        ::sort(ast->except_names.begin(), ast->except_names.end());
+            except_names.emplace_back(::DB::toString(except_id));
+        ::sort(except_names.begin(), except_names.end());
+        ast->except_names = make_intrusive<ASTUserNamesWithHost>();
+        for (const auto & name : except_names)
+            ast->except_names->children.push_back(make_intrusive<ASTUserNameWithHost>(name));
     }
 
     return ast;
@@ -151,26 +162,34 @@ boost::intrusive_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const A
 
     if (!ids.empty() && !all)
     {
-        ast->names.reserve(ids.size());
+        Strings names;
+        names.reserve(ids.size());
         for (const UUID & id : ids)
         {
             auto name = access_control.tryReadName(id);
             if (name)
-                ast->names.emplace_back(std::move(*name));
+                names.emplace_back(std::move(*name));
         }
-        ::sort(ast->names.begin(), ast->names.end());
+        ::sort(names.begin(), names.end());
+        ast->names = make_intrusive<ASTUserNamesWithHost>();
+        for (const auto & name : names)
+            ast->names->children.push_back(make_intrusive<ASTUserNameWithHost>(name));
     }
 
     if (!except_ids.empty())
     {
-        ast->except_names.reserve(except_ids.size());
+        Strings except_names;
+        except_names.reserve(except_ids.size());
         for (const UUID & except_id : except_ids)
         {
             auto except_name = access_control.tryReadName(except_id);
             if (except_name)
-                ast->except_names.emplace_back(std::move(*except_name));
+                except_names.emplace_back(std::move(*except_name));
         }
-        ::sort(ast->except_names.begin(), ast->except_names.end());
+        ::sort(except_names.begin(), except_names.end());
+        ast->except_names = make_intrusive<ASTUserNamesWithHost>();
+        for (const auto & name : except_names)
+            ast->except_names->children.push_back(make_intrusive<ASTUserNameWithHost>(name));
     }
 
     return ast;
@@ -244,6 +263,33 @@ bool RolesOrUsersSet::match(const UUID & user_id, const boost::container::flat_s
     bool in_except_list = std::any_of(
         enabled_roles.begin(), enabled_roles.end(), [this](const UUID & enabled_role) { return except_ids.contains(enabled_role); });
     return !in_except_list;
+}
+
+
+void RolesOrUsersSet::throwIfTargetingUsersFromUsersConfig(const AccessControl & access_control) const
+{
+    /// `TO ALL` is handled at match time by the access-entity caches. Only explicit IDs are checked here.
+    if (all)
+        return;
+
+    for (const auto & id : ids)
+    {
+        /// Only User IDs are checked here. Roles may be defined in users.xml and granted to SQL users,
+        /// in which case a SQL policy targeting such a role is legitimate.
+        auto name_and_type = access_control.tryReadNameWithType(id);
+        if (!name_and_type || name_and_type->second != AccessEntityType::USER)
+            continue;
+
+        if (access_control.isEntityFromUsersConfig(id))
+        {
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Cannot target user {} which is defined in the users.xml configuration. "
+                "Quotas, row policies, masking policies, and settings profiles for users "
+                "defined in configuration files must also be defined in configuration files",
+                backQuote(name_and_type->first));
+        }
+    }
 }
 
 

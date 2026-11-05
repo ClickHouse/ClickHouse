@@ -1,0 +1,12 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- Small limits for testing -->
+            <http_max_fields>10</http_max_fields>
+            <http_max_field_name_size>64</http_max_field_name_size>
+            <http_max_field_value_size>256</http_max_field_value_size>
+            <http_max_request_header_size>512</http_max_request_header_size>
+            <http_headers_read_timeout>3</http_headers_read_timeout>
+        </default>
+    </profiles>
+</clickhouse>

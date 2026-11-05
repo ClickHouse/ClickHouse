@@ -1,0 +1,89 @@
+---
+slug: /managing-data/drop_partition
+sidebarTitle: 'Excluir partição'
+title: 'Excluindo partições'
+hide_title: false
+description: 'Página que descreve como excluir partições'
+keywords: ['DROP PARTITION', 'excluir partição', 'apagar partição', 'remover partição', 'gerenciamento de partições']
+doc_type: 'reference'
+---
+
+<div id="background">
+  ## Contexto
+</div>
+
+O particionamento é especificado em uma tabela quando ela é definida inicialmente por meio da cláusula `PARTITION BY`. Essa cláusula pode conter uma expressão SQL sobre quaisquer colunas, cujo resultado definirá para qual partição uma linha será enviada.
+
+As partes de dados são associadas logicamente a cada partição em disco e podem ser consultadas isoladamente. No exemplo abaixo, particionamos a tabela `posts` por ano usando a expressão `toYear(CreationDate)`. Conforme as linhas são inseridas no ClickHouse, essa expressão é avaliada para cada linha, que é encaminhada para a partição resultante, caso ela exista (se a linha for a primeira de um ano, a partição será criada).
+
+```sql
+ CREATE TABLE posts
+(
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime64(3, 'UTC'),
+...
+        `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate)
+PARTITION BY toYear(CreationDate)
+```
+
+Leia sobre como definir a expressão de partição na seção [Como definir a expressão de partição](/pt-BR/reference/statements/alter/partition#how-to-set-partition-expression).
+
+No ClickHouse, os usuários devem considerar o particionamento principalmente como um recurso de gerenciamento de dados, e não como uma técnica de otimização de consultas. Ao separar os dados logicamente com base em uma chave, cada partição pode ser manipulada de forma independente, por exemplo, excluída. Isso permite que os usuários movam partições e, assim, subconjuntos entre [camadas de armazenamento](/pt-BR/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#storage-tiers) com eficiência com base no tempo ou [expirar dados/excluir do cluster com eficiência](/pt-BR/reference/statements/alter/partition).
+
+<div id="drop-partitions">
+  ## Remover partições
+</div>
+
+`ALTER TABLE ... DROP PARTITION` oferece uma forma econômica de remover uma partição inteira.
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION|PART partition_expr
+```
+
+Esta consulta marca a partição como inativa e exclui os dados por completo em aproximadamente 10 minutos. A consulta é replicada — ela exclui os dados em todas as réplicas.
+
+No exemplo abaixo, removemos posts de 2008 da tabela anterior excluindo a partição associada.
+
+```sql
+SELECT DISTINCT partition
+FROM system.parts
+WHERE `table` = 'posts'
+```
+
+```response
+┌─partition─┐
+│ 2008      │
+│ 2009      │
+│ 2010      │
+│ 2011      │
+│ 2012      │
+│ 2013      │
+│ 2014      │
+│ 2015      │
+│ 2016      │
+│ 2017      │
+│ 2018      │
+│ 2019      │
+│ 2020      │
+│ 2021      │
+│ 2022      │
+│ 2023      │
+│ 2024      │
+└───────────┘
+
+17 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+ALTER TABLE posts
+(DROP PARTITION '2008')
+```
+
+```response
+0 rows in set. Elapsed: 0.103 sec.
+```

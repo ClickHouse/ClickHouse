@@ -1,0 +1,56 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/05/2026-05-08
+title: 'Demo days - 2026-05-08'
+sidebarTitle: '2026-05-08'
+description: 'ClickStack demo days for 2026-05-08'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Improved handling of secrets in webhooks {#improved-handling-of-secrets-in-webhooks}
+
+*Demo by [@dhable](https://github.com/dhable)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/aD7sT5dc470" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Webhook URLs and headers often carry credentials in plain sight. A Slack webhook URL has the secret token in the path, and an HTTP webhook usually needs an Authorization header to authenticate. Until this release, HyperDX's internal API for listing and editing webhooks was returning all of that material back on every request, which meant any authenticated team member could read the secrets just by hitting the API.
+
+This change applies the same redaction pattern the public API already used. Webhook URLs come back with the path replaced by `****`, so the Slack token (or any other key embedded in the path) never leaves the server. Headers are redacted by default too, since we have no reliable way to tell which ones carry secrets, so all values are replaced with `****` and only the header names are visible.
+
+The edit form treats the redacted value as "no change": leave it alone and the stored value stays put, change it and the new value is saved, clear it and the field is removed entirely. That keeps the workflow obvious for the common case (editing one field) without ever round-tripping the real secret through the browser.
+
+**Related PRs:** [#2239](https://github.com/hyperdxio/hyperdx/pull/2239) [HDX-4173] Redact sensitive fields from internal webhook API responses
+
+## Extra metadata in alerts {#extra-metadata-in-alerts}
+
+*Demo by [@dhable](https://github.com/dhable)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/evEd7Cc9e1c" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+A request from the community Slack to add freeform context to alerts, somewhere to put threshold history, links to runbooks, or notes for the on-call. This is also handy as ground truth for AI summaries: any LLM responding to a firing alert now has the operator's own reasoning to work from, rather than guessing intent from the query alone.
+
+The note field is markdown-renderable, so collapsible sections, lists, and links all work. It lives on the alert configuration and shows up wherever the alert is displayed. The UX isn't set in stone yet, the markdown surface is the starting point and feedback on how it should render is welcome.
+
+While in there, this PR also tidies up the firing-alert UX in saved searches. The bell icon on the Alerts button gets a red dot when something is firing, the dialog box highlights which alert is active rather than just linking to it, and the visual language now matches what dashboard tiles already do for the same state.
+
+**Related PRs:** [#2210](https://github.com/hyperdxio/hyperdx/pull/2210) [HDX-3044] Add optional note field to alerts
+
+## Possible themes {#possible-themes}
+
+*Demo by [@elizabetdev](https://github.com/elizabetdev)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/JZYGz6ZOPf4" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+This was a hackathon experiment that introduced three IDE-inspired themes to the ClickStack UI: Nord (Arctic blues), Catppuccin (pastel), and One Dark (Atom-style), each with light and dark variants. We tried generated color tokens from the named source themes, which got it most of the way there with a few rough edges around sidebar colors and line contrast that would still need cleanup.
+
+The PR ended up closed rather than merged. The team is moving toward ClickUI, which currently supports a single theme, and maintaining several parallel sets of tokens would create ongoing work, especially once you start checking contrast properly across each combination. The decision was to hold off until ClickUI itself supports multi-theming.
+
+We felt one piece of design logic from the experiment was worth keeping in mind for whenever this comes back. The first iteration recoloured the HyperDX logo per theme, which lost the brand. The cleaner approach: a light theme shows the dark logo, a dark theme shows the light logo, and the green HyperDX wordmark itself stays untouched.
+
+**Related PRs:** [#2191](https://github.com/hyperdxio/hyperdx/pull/2191) feat: add IDE-inspired themes (Nord, Catppuccin, One Dark)

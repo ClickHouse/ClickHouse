@@ -1,0 +1,4 @@
+a pinned row count ignores an out-of-range ratio
+4
+the ratio is still rejected where it decides the batch size
+1

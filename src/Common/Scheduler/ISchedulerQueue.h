@@ -1,10 +1,8 @@
 #pragma once
 
-#include <Common/Scheduler/ISchedulerNode.h>
+#include <Common/Scheduler/ITimeSharedNode.h>
 #include <Common/Scheduler/ResourceBudget.h>
 #include <Common/Scheduler/ResourceRequest.h>
-
-#include <memory>
 
 
 namespace DB
@@ -14,15 +12,11 @@ namespace DB
  * Queue for pending requests for specific resource, leaf of hierarchy.
  * Note that every queue has budget associated with it.
  */
-class ISchedulerQueue : public ISchedulerNode
+class ISchedulerQueue : public ITimeSharedNode
 {
 public:
-    explicit ISchedulerQueue(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
-        : ISchedulerNode(event_queue_, config, config_prefix)
-    {}
-
-    ISchedulerQueue(EventQueue * event_queue_, const SchedulerNodeInfo & info_)
-        : ISchedulerNode(event_queue_, info_)
+    explicit ISchedulerQueue(EventQueue & event_queue_, const SchedulerNodeInfo & info_ = {})
+        : ITimeSharedNode(event_queue_, info_)
     {}
 
     // Wrapper for `enqueueRequest()` that should be used to account for available resource budget
@@ -31,7 +25,20 @@ public:
     {
         ResourceCost estimated_cost = request->cost;
         request->cost = budget.ask(estimated_cost);
-        enqueueRequest(request);
+        try
+        {
+            enqueueRequest(request);
+        }
+        catch (...)
+        {
+            // The request did not enter the scheduler (e.g. the queue is full or is being destructed),
+            // so the budget transaction made by `ask` (which assumes the request is granted `request->cost`
+            // and consumes `estimated_cost`) must be rolled back, or the queue budget would diverge with
+            // every failed enqueue and skew costs of subsequent requests.
+            budget.adjust(estimated_cost, request->cost);
+            request->cost = estimated_cost;
+            throw;
+        }
         return estimated_cost;
     }
 
@@ -55,6 +62,14 @@ public:
     /// Afterwards any new request will be failed on `enqueueRequest()`.
     /// NOTE: This is done for queues that are about to be destructed.
     virtual void purgeQueue() = 0;
+
+    /// Update the limit on the number of waiting requests (workload `max_waiting_queries`).
+    /// Excess requests over the new limit are failed. Must be positive.
+    virtual void updateQueueLimit(Int64 value) = 0;
+
+    /// For introspection: {number of waiting requests, sum of their costs}.
+    /// Exposed through the interface so callers do not need to downcast to a concrete queue type.
+    virtual std::pair<UInt64, Int64> getQueueLengthAndCost() = 0;
 
     /// For introspection
     ResourceCost getBudget() const

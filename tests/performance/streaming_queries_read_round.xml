@@ -1,0 +1,33 @@
+<test>
+    <settings>
+        <enable_streaming_queries>1</enable_streaming_queries>
+    </settings>
+
+    <create_query>
+        CREATE TABLE t_streaming_read_round
+        (
+            value UInt64,
+            event_time DateTime64(3),
+            PROJECTION commit_order INDEX * TYPE commit_order
+        )
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, allow_commit_order_projection = 1, merge_selector_algorithm = 'Manual'
+    </create_query>
+
+    <fill_query>
+        INSERT INTO t_streaming_read_round
+        SELECT number, toDateTime64('2020-01-01 00:00:00', 3) + number
+        FROM numbers(100000000)
+        SETTINGS max_insert_threads = 1, max_insert_block_size = 2000000, min_insert_block_size_rows = 2000000, min_insert_block_size_bytes = 0
+    </fill_query>
+
+    <fill_query>
+        ALTER TABLE t_streaming_read_round MATERIALIZE PROJECTION commit_order SETTINGS mutations_sync = 2
+    </fill_query>
+
+    <query>SELECT * FROM t_streaming_read_round STREAM BOUNDED FORMAT Null</query>
+    <query>SELECT * FROM t_streaming_read_round STREAM BOUNDED WATERMARK FOR event_time AS event_time - INTERVAL 10 SECOND FORMAT Null</query>
+    <query>SELECT sum(value) FROM t_streaming_read_round STREAM BOUNDED</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_streaming_read_round</drop_query>
+</test>

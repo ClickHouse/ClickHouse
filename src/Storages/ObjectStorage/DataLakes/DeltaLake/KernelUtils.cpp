@@ -6,6 +6,9 @@
 
 #include <Common/logger_useful.h>
 #include <Core/UUID.h>
+#include <Core/Block.h>
+#include <Processors/Chunk.h>
+#include <Interpreters/castColumn.h>
 #include <IO/WriteHelpers.h>
 
 #include <Poco/String.h>
@@ -17,6 +20,7 @@ namespace DB::ErrorCodes
 {
     extern const int DELTA_KERNEL_ERROR;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 namespace DeltaLake
@@ -25,6 +29,42 @@ namespace DeltaLake
 std::string generateWritePath(const std::string & prefix, const std::string & format_str)
 {
     return std::filesystem::path(prefix) / (DB::toString(DB::UUIDHelpers::generateV4()) + "." + Poco::toLower(format_str));
+}
+
+DB::SharedHeader makeDeltaWriteHeader(const DB::Block & sample, const DB::NamesAndTypesList & write_schema)
+{
+    DB::Block header = sample;
+    for (size_t i = 0; i < header.columns(); ++i)
+    {
+        auto & col = header.getByPosition(i);
+        auto schema_col = write_schema.tryGetByName(col.name);
+        if (schema_col && !schema_col->type->equals(*col.type))
+        {
+            col.type = schema_col->type;
+            col.column = col.type->createColumn();
+        }
+    }
+    return std::make_shared<const DB::Block>(std::move(header));
+}
+
+DB::Chunk castChunkToDeltaWriteSchema(const DB::Chunk & chunk, const DB::Block & in_header, const DB::Block & out_header, bool accurate)
+{
+    const auto & in_columns = chunk.getColumns();
+    DB::Columns out_columns;
+    out_columns.reserve(in_columns.size());
+    for (size_t i = 0; i < in_columns.size(); ++i)
+    {
+        const auto & from = in_header.getByPosition(i);
+        const auto & to_type = out_header.getByPosition(i).type;
+        if (from.type->equals(*to_type))
+            out_columns.push_back(in_columns[i]);
+        else
+            out_columns.push_back(
+                accurate
+                    ? DB::castColumnAccurate({in_columns[i], from.type, from.name}, to_type)
+                    : DB::castColumn({in_columns[i], from.type, from.name}, to_type));
+    }
+    return DB::Chunk(std::move(out_columns), chunk.getNumRows());
 }
 
 ffi::KernelStringSlice KernelUtils::toDeltaString(const std::string & string)
@@ -63,8 +103,8 @@ void recordKernelErrorAllocation(uintptr_t error, std::string error_message)
     {
         throw DB::Exception(
             DB::ErrorCodes::LOGICAL_ERROR,
-            "Trying to record already allocated error. (Current Pointer: {}, Current Message: {}, Previous Message: {})",
-            error, error_message, it->second);
+            "Trying to record already allocated error. (Current Message: {}, Previous Message: {})",
+            error_message, it->second);
     }
 }
 
@@ -74,7 +114,7 @@ std::string forgetKernelErrorAllocation(uintptr_t error)
 
     const auto it = allocated_errors.find(error);
     if (it == allocated_errors.end())
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Trying to deallocate unregistered error. (Pointer: {})", error);
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Trying to deallocate unregistered error");
 
     std::string recorded_message = std::move(it->second);
     allocated_errors.erase(it);
@@ -100,8 +140,8 @@ ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::Kerne
 
     LOG_TRACE(
         getLogger("KernelUtils"),
-        "Allocated KernelError (Pointer: {}, EType: {}, Message: {})",
-        ptrToInt(error), etype, error_message);
+        "Allocated KernelError (EType: {}, Message: {})",
+        etype, error_message);
 
     return error;
 }
@@ -117,8 +157,8 @@ ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::Kerne
     {
         LOG_TRACE(
             getLogger("KernelUtils"),
-            "Deallocating KernelError (Pointer: {}) (in {})",
-            error_ptr, from);
+            "Deallocating KernelError (in {})",
+            from);
 
         ffi::KernelError etype = error->etype;
         delete error;
@@ -137,14 +177,28 @@ ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::Kerne
 
         LOG_ERROR(
             getLogger("KernelUtils"),
-            "Received unknown error from DeltaLake kernel. (Pointer: {}, EType: {}) (in {})",
-            error_ptr, etype, from);
+            "Received unknown error from DeltaLake kernel. (EType: {}) (in {})",
+            etype, from);
 
         throw DB::Exception(
             DB::ErrorCodes::LOGICAL_ERROR,
-            "Received unknown error from DeltaLake kernel. (Pointer: {}, EType: {}) (in {})",
-            error_ptr, etype, from);
+            "Received unknown error from DeltaLake kernel. (EType: {}) (in {})",
+            etype, from);
     }
+}
+
+std::string appendToLogicalPath(const std::string & logical_path, const std::string & field_name)
+{
+    std::string result = logical_path;
+    if (!result.empty())
+        result += '.';
+    for (char c : field_name)
+    {
+        if (c == '.' || c == '\\')
+            result += '\\';
+        result += c;
+    }
+    return result;
 }
 
 std::optional<std::string> tryGetPhysicalName(const std::string & name, const DB::NameToNameMap & physical_names_map)
@@ -168,9 +222,12 @@ std::string getPhysicalName(const std::string & name, const DB::NameToNameMap & 
         for (const auto & [key, _] : physical_names_map)
             keys.push_back(key);
 
+        /// The map comes from external Delta metadata; the name comes from the ClickHouse
+        /// schema. A miss is external-schema drift (catchable), not an internal invariant.
         throw DB::Exception(
-            DB::ErrorCodes::LOGICAL_ERROR,
-            "Not found column {} in physical names map. There are only columns: {}",
+            DB::ErrorCodes::INCORRECT_DATA,
+            "Column {} is not present in the DeltaLake column mapping. There are only columns: {}. "
+            "The column may have been renamed or dropped in the Delta table",
             name, fmt::join(keys, ", "));
     }
     return *physical_name;

@@ -1,0 +1,8 @@
+<clickhouse>
+    <predicate_statistics_log>
+        <database>system</database>
+        <table>predicate_statistics_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </predicate_statistics_log>
+</clickhouse>

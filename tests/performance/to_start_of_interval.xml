@@ -1,0 +1,18 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>interval</name>
+            <values>
+                <value>2 SECOND</value>
+                <value>90 SECOND</value>
+                <value>5 MINUTE</value>
+                <value>15 MINUTE</value>
+                <value>1 HOUR</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toStartOfInterval(toDateTime(1600000000 + number % 100000000, 'UTC'), INTERVAL {interval}))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toStartOfInterval(toDateTime64(1600000000 + number % 100000000, 3, 'UTC'), INTERVAL {interval}))</query>
+    <query>SELECT count() FROM numbers(50000000) WHERE NOT ignore(toStartOfInterval(toDateTime(1600000000 + number % 100000000, 'Asia/Kolkata'), INTERVAL {interval}))</query>
+</test>

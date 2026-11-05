@@ -1,0 +1,11 @@
+<clickhouse>
+    <!-- Stateless tests run with high parallelism against the in-process
+         `azurite-rs` Azure Blob Storage emulator. With many concurrent
+         connections to the storage backend the default
+         `storage_connections_warn_limit` of 500 is hit easily, and the
+         resulting `<Warning>` messages are propagated to test clients via
+         `send_logs_level=warning`, causing unrelated tests to fail with
+         "having stderror". Raise the limit so that warnings only fire if
+         the connection count is genuinely abnormal. -->
+    <storage_connections_warn_limit>100000</storage_connections_warn_limit>
+</clickhouse>

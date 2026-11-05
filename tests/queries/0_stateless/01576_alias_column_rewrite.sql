@@ -1,3 +1,7 @@
+SET explain_query_plan_default = 'legacy';
+SET use_skip_indexes_for_top_k = 0;
+SET use_top_k_dynamic_filtering = 0;
+
 DROP TABLE IF EXISTS test_table;
 CREATE TABLE test_table
 (
@@ -81,15 +85,15 @@ SELECT count() == 10 FROM test_table WHERE  arrayMap((day) -> day + 1, [1,2,3]) 
 set max_rows_to_read = 0;
 
 SELECT 'optimize_read_in_order';
-EXPLAIN description = 0 SELECT day AS s FROM test_table ORDER BY s LIMIT 1 SETTINGS optimize_read_in_order = 0;
-EXPLAIN description = 0 SELECT day AS s FROM test_table ORDER BY s LIMIT 1 SETTINGS optimize_read_in_order = 1;
-EXPLAIN description = 0 SELECT toDate(timestamp) AS s FROM test_table ORDER BY toDate(timestamp) LIMIT 1 SETTINGS optimize_read_in_order = 1;
+EXPLAIN description = 0 SELECT day AS s FROM test_table ORDER BY s LIMIT 1 SETTINGS optimize_read_in_order = 0, enable_parallel_replicas = 0;
+EXPLAIN description = 0 SELECT day AS s FROM test_table ORDER BY s LIMIT 1 SETTINGS optimize_read_in_order = 1, enable_parallel_replicas = 0;
+EXPLAIN description = 0 SELECT toDate(timestamp) AS s FROM test_table ORDER BY toDate(timestamp) LIMIT 1 SETTINGS optimize_read_in_order = 1, enable_parallel_replicas = 0;
 
 
 SELECT 'optimize_aggregation_in_order';
-EXPLAIN description = 0 SELECT day, count() AS s FROM test_table GROUP BY day SETTINGS optimize_aggregation_in_order = 0;
-EXPLAIN description = 0 SELECT day, count() AS s FROM test_table GROUP BY day SETTINGS optimize_aggregation_in_order = 1;
-EXPLAIN description = 0 SELECT toDate(timestamp), count() AS s FROM test_table GROUP BY toDate(timestamp) SETTINGS optimize_aggregation_in_order = 1;
+EXPLAIN description = 0 SELECT day, count() AS s FROM test_table GROUP BY day SETTINGS optimize_aggregation_in_order = 0, enable_parallel_replicas = 0;
+EXPLAIN description = 0 SELECT day, count() AS s FROM test_table GROUP BY day SETTINGS optimize_aggregation_in_order = 1, enable_parallel_replicas = 0;
+EXPLAIN description = 0 SELECT toDate(timestamp), count() AS s FROM test_table GROUP BY toDate(timestamp) SETTINGS optimize_aggregation_in_order = 1, enable_parallel_replicas = 0;
 
 DROP TABLE test_table;
 

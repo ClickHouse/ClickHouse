@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionGroupConcat.h>
+#include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
-#include <Interpreters/castColumn.h>
 
 namespace DB
 {
@@ -14,7 +15,7 @@ extern const int LOGICAL_ERROR;
 extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
-void GroupConcatDataBase::checkAndUpdateSize(UInt64 add, Arena * arena)
+void GroupConcatData::checkAndUpdateSize(UInt64 add, Arena * arena)
 {
     if (data_size + add >= allocated_size)
     {
@@ -24,19 +25,11 @@ void GroupConcatDataBase::checkAndUpdateSize(UInt64 add, Arena * arena)
     }
 }
 
-void GroupConcatDataBase::insertChar(const char * str, UInt64 str_size, Arena * arena)
+void GroupConcatData::insertChar(const char * str, UInt64 str_size, Arena * arena)
 {
     checkAndUpdateSize(str_size, arena);
     memcpy(data + data_size, str, str_size);
     data_size += str_size;
-}
-
-void GroupConcatDataBase::insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena)
-{
-    WriteBufferFromOwnString buff;
-    serialization->serializeText(*column, row_num, buff, FormatSettings{});
-    auto string = buff.stringView();
-    insertChar(string.data(), string.size(), arena);
 }
 
 UInt64 GroupConcatData::getSize(size_t i) const
@@ -49,18 +42,27 @@ UInt64 GroupConcatData::getString(size_t i) const
     return offsets[i * 2];
 }
 
+template <bool has_limit>
+void GroupConcatData::insertString(std::string_view str, Arena * arena)
+{
+    if constexpr (has_limit)
+        offsets.push_back(data_size, arena);
+
+    insertChar(str.data(), str.size(), arena);
+
+    if constexpr (has_limit)
+    {
+        offsets.push_back(data_size, arena);
+        num_rows++;
+    }
+}
+
+template <bool has_limit>
 void GroupConcatData::insert(const IColumn * column, const SerializationPtr & serialization, size_t row_num, Arena * arena)
 {
     WriteBufferFromOwnString buff;
     serialization->serializeText(*column, row_num, buff, {});
-    auto string = buff.stringView();
-
-    checkAndUpdateSize(string.size(), arena);
-    memcpy(data + data_size, string.data(), string.size());
-    offsets.push_back(data_size, arena);
-    data_size += string.size();
-    offsets.push_back(data_size, arena);
-    num_rows++;
+    insertString<has_limit>(buff.stringView(), arena);
 }
 
 template <bool has_limit>
@@ -70,9 +72,10 @@ GroupConcatImpl<has_limit>::GroupConcatImpl(
         {data_type_}, parameters_, std::make_shared<DataTypeString>())
     , limit(limit_)
     , delimiter(delimiter_)
-    , type(data_type_)
+    , is_string(isString(data_type_))
+    , is_fixed_string(isFixedString(data_type_))
 {
-    serialization = isFixedString(type) ? std::make_shared<DataTypeString>()->getDefaultSerialization() : this->argument_types[0]->getDefaultSerialization();
+    serialization = this->argument_types[0]->getDefaultSerialization();
 }
 
 template <bool has_limit>
@@ -98,18 +101,25 @@ void GroupConcatImpl<has_limit>::add(
     if (cur_data.data_size != 0)
         cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
 
-    if (isFixedString(type))
+    if (is_string)
     {
-        ColumnWithTypeAndName col = {columns[0]->getPtr(), type, "column"};
-        const auto & col_str = castColumn(col, std::make_shared<DataTypeString>());
-        cur_data.insert(col_str.get(), serialization, row_num, arena);
+        /// The text serialization of `String` is the value itself, so it is appended without a temporary copy.
+        cur_data.template insertString<has_limit>(assert_cast<const ColumnString &>(*columns[0]).getDataAt(row_num), arena);
+    }
+    else if (is_fixed_string)
+    {
+        /// Trailing zero bytes are cut, matching `CAST(FixedString AS String)`.
+        std::string_view ref = assert_cast<const ColumnFixedString &>(*columns[0]).getDataAt(row_num);
+        while (!ref.empty() && ref.back() == 0)
+            ref.remove_suffix(1);
+        cur_data.template insertString<has_limit>(ref, arena);
     }
     else
-        cur_data.insert(columns[0], serialization, row_num, arena);
+        cur_data.template insert<has_limit>(columns[0], serialization, row_num, arena);
 }
 
 template <bool has_limit>
-void GroupConcatImpl<has_limit>::merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const
+void GroupConcatImpl<has_limit>::mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const
 {
     auto & cur_data = this->data(place);
     auto & rhs_data = this->data(rhs);
@@ -125,10 +135,7 @@ void GroupConcatImpl<has_limit>::merge(AggregateDataPtr __restrict place, ConstA
             if (cur_data.data_size != 0)
                 cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
 
-            cur_data.offsets.push_back(cur_data.data_size, arena);
-            cur_data.insertChar(rhs_data.data + rhs_data.getString(i), rhs_data.getSize(i), arena);
-            cur_data.num_rows++;
-            cur_data.offsets.push_back(cur_data.data_size, arena);
+            cur_data.template insertString<true>({rhs_data.data + rhs_data.getString(i), rhs_data.getSize(i)}, arena);
         }
     }
     else
@@ -171,6 +178,15 @@ void GroupConcatImpl<has_limit>::deserialize(AggregateDataPtr __restrict place, 
 
     UInt64 temp_size = 0;
     readVarUInt(temp_size, buf);
+
+    /// Prevent the allocator's "Too large size passed to allocator" `LOGICAL_ERROR`.
+    static constexpr UInt64 max_data_size = UInt64{1} << 48;
+    if (temp_size > max_data_size)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Invalid groupConcat state: data size {} is too large (maximum: {})",
+            temp_size,
+            max_data_size);
 
     cur_data.checkAndUpdateSize(temp_size, arena);
 
@@ -220,9 +236,7 @@ void GroupConcatImpl<has_limit>::insertResultInto(AggregateDataPtr __restrict pl
 template <bool has_limit>
 bool GroupConcatImpl<has_limit>::allocatesMemoryInArena() const { return true; }
 
-// Implementation of add, merge, serialize, deserialize, insertResultInto, etc. remains unchanged.
-
-AggregateFunctionPtr createAggregateFunctionGroupConcat(
+static AggregateFunctionPtr createAggregateFunctionGroupConcat(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertUnary(name, argument_types);
@@ -263,6 +277,7 @@ AggregateFunctionPtr createAggregateFunctionGroupConcat(
     return std::make_shared<GroupConcatImpl</* has_limit= */ false>>(argument_types[0], parameters, limit, delimiter);
 }
 
+void registerAggregateFunctionGroupConcat(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupConcat(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
@@ -271,11 +286,11 @@ void registerAggregateFunctionGroupConcat(AggregateFunctionFactory & factory)
     FunctionDocumentation::Description description_groupConcat = R"(
 Calculates a concatenated string from a group of strings, optionally separated by a delimiter, and optionally limited by a maximum number of elements.
 
-:::note
+<Note>
 If delimiter is specified without limit, it must be the first parameter. If both delimiter and limit are specified, delimiter must precede limit.
 
 Also, if different delimiters are specified as parameters and arguments, the delimiter from arguments will be used only.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_groupConcat = R"(
 groupConcat[(delimiter [, limit])](expression)
@@ -293,6 +308,9 @@ groupConcat[(delimiter [, limit])](expression)
     {
         "Basic usage without a delimiter",
         R"(
+CREATE TABLE Employees (Name String) ENGINE = Memory;
+INSERT INTO Employees VALUES ('John'), ('Jane'), ('Bob');
+
 SELECT groupConcat(Name) FROM Employees;
         )",
         R"(
@@ -332,7 +350,13 @@ John, Jane
     FunctionDocumentation documentation_groupConcat = {description_groupConcat, syntax_groupConcat, arguments_groupConcat, parameters_groupConcat, returned_value_groupConcat, examples_groupConcat, introduced_in_groupConcat, category_groupConcat};
 
     factory.registerFunction("groupConcat", { createAggregateFunctionGroupConcat, documentation_groupConcat, properties });
-    factory.registerAlias(GroupConcatImpl<false>::getNameAndAliases().at(1), GroupConcatImpl<false>::getNameAndAliases().at(0), AggregateFunctionFactory::Case::Insensitive);
+    /// Register every alias from `getNameAndAliases` (index 0 is the canonical name).
+    /// `string_agg` is the PostgreSQL/SQL-standard alias; its argument order matches `groupConcat(expr, sep)`.
+    /// The alias names must also be present in `getNameAndAliases` so the analyzer rewrites
+    /// the 2-argument form into the parameterized form (see `QueryTreeBuilder::setSecondArgumentAsParameter`).
+    const auto & aliases = GroupConcatImpl<false>::getNameAndAliases();
+    for (size_t i = 1; i < aliases.size(); ++i)
+        factory.registerAlias(aliases.at(i), aliases.at(0), AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

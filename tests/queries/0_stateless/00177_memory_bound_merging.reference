@@ -12,6 +12,9 @@ http://auto.ru/chatay-baranta_bound-in-thankYou=ru/tver/zhanny	2014-03-20	http:/
 1
 MergingAggregatedBucketTransform
 FinishAggregatingInOrderTransform
-FinalizeAggregatedTransform
+SortingAggregatedForMemoryBoundMergingTransform
+MergingAggregatedBucketTransform
+FinishAggregatingInOrderTransform
 AggregatingInOrderTransform
 MergeTreeSelect
+OK

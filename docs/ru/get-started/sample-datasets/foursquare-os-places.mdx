@@ -1,0 +1,379 @@
+---
+description: 'Узнайте, как просматривать и загружать геопространственный набор данных Foursquare OS Places в ClickHouse.'
+sidebarTitle: 'Foursquare OS Places'
+slug: /getting-started/example-datasets/foursquare-places
+title: 'Набор данных Foursquare OS Places'
+keywords: ['демонстрационный набор данных', 'Foursquare', 'геопространственный', 'Iceberg', 'начало работы']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Foursquare OS Places содержит более 100 миллионов коммерческих точек интереса (POI), включая магазины, рестораны, парки, игровые площадки и памятники. В этом руководстве вы подключите ClickHouse к каталогу Iceberg Foursquare, изучите набор данных и загрузите его в таблицу, оптимизированную для геопространственных запросов.
+
+Набор данных доступен на [портале Foursquare Places](https://places.foursquare.com/) и бесплатен для использования по лицензии Apache 2.0.
+
+<Note>
+  Foursquare изменил способ доступа к OS Places. В предыдущих версиях этого руководства выполнялись запросы к файлам с фиксированной датой в публичном S3 бакете; теперь доступ предоставляется через портал Foursquare Places и аутентифицированный каталог Iceberg. Подробнее см. [документацию Foursquare по доступу к OS Places](https://docs.foursquare.com/data-products/docs/access-fsq-os-places).
+</Note>
+
+<div id="before-you-begin">
+  ## Перед началом работы
+</div>
+
+Перед выполнением запросов из этого руководства вам потребуются:
+
+* аккаунт на [портале Foursquare Places](https://places.foursquare.com/)
+* токен доступа, созданный на вкладке **Access Data** набора данных **OS Places**
+
+<div id="connect-to-the-foursquare-catalog">
+  ## Подключение к каталогу Foursquare
+</div>
+
+Не разглашайте свой токен доступа. Запустите клиент ClickHouse, затем замените
+`<YOUR_ACCESS_TOKEN>` в следующем запросе своим токеном:
+
+```sql title="Query"
+SET allow_database_iceberg = 1;
+
+CREATE DATABASE places
+ENGINE = DataLakeCatalog('https://catalog.h3-hub.foursquare.com/iceberg')
+SETTINGS
+    catalog_type = 'rest',
+    warehouse = 'places',
+    auth_header = 'Authorization: Bearer <YOUR_ACCESS_TOKEN>',
+    vended_credentials = 1;
+```
+
+База данных каталога доступна только для чтения. Таблица `places_os` отражает текущую
+опубликованную версию Foursquare, а не версию Parquet, привязанную к определённой дате, поэтому её строки и схема могут
+меняться со временем. Поэтому запросы без предложения `ORDER BY` могут возвращать другие
+строки выборки, чем показанные в этом руководстве результаты.
+
+<div id="verify-the-connection">
+  ## Проверьте подключение
+</div>
+
+Выполните запрос, возвращающий одну строку из Iceberg-таблицы `places_os`:
+
+```sql title="Query"
+SELECT *
+FROM places.`datasets.places_os`
+LIMIT 1;
+```
+
+```response title="Response"
+Row 1:
+──────
+fsq_place_id:        587711a138094df2b93ec3af
+name:                Iyang Tadon
+latitude:            ᴺᵁᴸᴸ
+longitude:           ᴺᵁᴸᴸ
+address:             2 38A Jalan Penrissen Batu 10 Pekan Batu 10 93250 Kuching Kuching Sarawak 93250 Malaysia Kuching Sarawak
+locality:            Kuching
+region:              Sarawak
+postcode:            93250
+admin_region:        ᴺᵁᴸᴸ
+post_town:           ᴺᵁᴸᴸ
+po_box:              ᴺᵁᴸᴸ
+country:             MY
+date_created:        2015-05-24
+date_refreshed:      2015-05-24
+date_closed:         ᴺᵁᴸᴸ
+tel:                 082-617 033
+website:             ᴺᵁᴸᴸ
+email:               ᴺᵁᴸᴸ
+facebook_id:         ᴺᵁᴸᴸ
+instagram:           ᴺᵁᴸᴸ
+twitter:             ᴺᵁᴸᴸ
+fsq_category_ids:    []
+fsq_category_labels: []
+placemaker_url:      https://foursquare.com/placemakers/review-place/587711a138094df2b93ec3af
+unresolved_flags:    []
+geom:                ᴺᵁᴸᴸ
+bbox:                (NULL,NULL,NULL,NULL)
+```
+
+<div id="explore-the-data">
+  ## Изучение данных
+</div>
+
+Пример строки содержит несколько полей со значением null. Добавьте фильтры, чтобы получить более полную строку:
+
+```sql title="Query"
+SELECT *
+FROM places.`datasets.places_os`
+WHERE address IS NOT NULL AND postcode IS NOT NULL AND instagram IS NOT NULL
+LIMIT 1;
+```
+
+```response title="Response"
+Row 1:
+──────
+fsq_place_id:        4b9af2a9f964a52000e635e3
+name:                KFC
+latitude:            42.214429044404966
+longitude:           -83.5428035767019
+address:             2169 Rawsonville Rd
+locality:            Van Buren Township
+region:              MI
+postcode:            48111
+admin_region:        ᴺᵁᴸᴸ
+post_town:           ᴺᵁᴸᴸ
+po_box:              ᴺᵁᴸᴸ
+country:             US
+date_created:        2010-03-13
+date_refreshed:      2026-07-08
+date_closed:         ᴺᵁᴸᴸ
+tel:                 (734) 482-7256
+website:             https://locations.kfc.com/mi/belleville/2169-rawsonville-road
+email:               kfccares@kfc.com
+facebook_id:         159863790842385 -- 159.86 trillion
+instagram:           kfc
+twitter:             kfc
+fsq_category_ids:    ['4d4ae6fc7a7b7dea34424761','4bf58dd8d48988d16e941735']
+fsq_category_labels: ['Dining and Drinking > Restaurant > Fried Chicken Joint','Dining and Drinking > Restaurant > Fast Food Restaurant']
+placemaker_url:      https://foursquare.com/placemakers/review-place/4b9af2a9f964a52000e635e3
+unresolved_flags:    []
+geom:                [binary data]
+bbox:                (-83.5428035767019,42.214429044404966,-83.5428035767019,42.214429044404966)
+```
+
+Используйте `DESCRIBE`, чтобы просмотреть схему таблицы:
+
+```sql title="Query"
+DESCRIBE places.`datasets.places_os`;
+```
+
+```response title="Response"
+    ┌─name────────────────┬─type────────────────────────┬
+ 1. │ fsq_place_id        │ Nullable(String)            │
+ 2. │ name                │ Nullable(String)            │
+ 3. │ latitude            │ Nullable(Float64)           │
+ 4. │ longitude           │ Nullable(Float64)           │
+ 5. │ address             │ Nullable(String)            │
+ 6. │ locality            │ Nullable(String)            │
+ 7. │ region              │ Nullable(String)            │
+ 8. │ postcode            │ Nullable(String)            │
+ 9. │ admin_region        │ Nullable(String)            │
+10. │ post_town           │ Nullable(String)            │
+11. │ po_box              │ Nullable(String)            │
+12. │ country             │ Nullable(String)            │
+13. │ date_created        │ Nullable(String)            │
+14. │ date_refreshed      │ Nullable(String)            │
+15. │ date_closed         │ Nullable(String)            │
+16. │ tel                 │ Nullable(String)            │
+17. │ website             │ Nullable(String)            │
+18. │ email               │ Nullable(String)            │
+19. │ facebook_id         │ Nullable(Int64)             │
+20. │ instagram           │ Nullable(String)            │
+21. │ twitter             │ Nullable(String)            │
+22. │ fsq_category_ids    │ Array(Nullable(String))     │
+23. │ fsq_category_labels │ Array(Nullable(String))     │
+24. │ placemaker_url      │ Nullable(String)            │
+25. │ unresolved_flags    │ Array(Nullable(String))     │
+26. │ geom                │ Nullable(String)            │
+27. │ bbox                │ Tuple(                     ↴│
+    │                     │↳    xmin Nullable(Float64),↴│
+    │                     │↳    ymin Nullable(Float64),↴│
+    │                     │↳    xmax Nullable(Float64),↴│
+    │                     │↳    ymax Nullable(Float64)) │
+    └─────────────────────┴─────────────────────────────┘
+```
+
+<div id="loading-the-data">
+  ## Загрузите данные в ClickHouse
+</div>
+
+Чтобы сохранить данные, создайте таблицу на сервере `clickhouse-server` или в ClickHouse Cloud.
+
+Создайте таблицу `MergeTree` со столбцами, закодированными по словарю, и материализованными координатами в проекции Web Mercator:
+
+```sql title="Query"
+CREATE TABLE foursquare_mercator
+(
+    fsq_place_id Nullable(String),
+    name Nullable(String),
+    latitude Float64,
+    longitude Float64,
+    address Nullable(String),
+    locality Nullable(String),
+    region LowCardinality(Nullable(String)),
+    postcode LowCardinality(Nullable(String)),
+    admin_region LowCardinality(Nullable(String)),
+    post_town LowCardinality(Nullable(String)),
+    po_box LowCardinality(Nullable(String)),
+    country LowCardinality(Nullable(String)),
+    date_created Nullable(Date),
+    date_refreshed Nullable(Date),
+    date_closed Nullable(Date),
+    tel Nullable(String),
+    website Nullable(String),
+    email Nullable(String),
+    facebook_id Nullable(Int64),
+    instagram Nullable(String),
+    twitter Nullable(String),
+    fsq_category_ids Array(Nullable(String)),
+    fsq_category_labels Array(Nullable(String)),
+    placemaker_url Nullable(String),
+    geom Nullable(String),
+    bbox Tuple(
+        xmin Nullable(Float64),
+        ymin Nullable(Float64),
+        xmax Nullable(Float64),
+        ymax Nullable(Float64)
+    ),
+    category LowCardinality(Nullable(String)) ALIAS fsq_category_labels[1],
+    mercator_x UInt32 MATERIALIZED 0xFFFFFFFF * ((longitude + 180) / 360),
+    mercator_y UInt32 MATERIALIZED 0xFFFFFFFF * ((1 / 2) - ((log(tan(((latitude + 90) / 360) * pi())) / 2) / pi())),
+    INDEX idx_x mercator_x TYPE minmax,
+    INDEX idx_y mercator_y TYPE minmax
+)
+ENGINE = MergeTree
+ORDER BY mortonEncode(mercator_x, mercator_y);
+```
+
+Несколько столбцов используют тип данных [`LowCardinality`](/ru/reference/data-types/lowcardinality),
+который хранит повторяющиеся значения с кодированием с использованием словаря. Такое представление может значительно
+повысить производительность `SELECT`-запросов.
+
+Два материализованных столбца типа `UInt32` — `mercator_x` и `mercator_y` — преобразуют широту и
+долготу в [проекцию Web Mercator](https://en.wikipedia.org/wiki/Web_Mercator_projection),
+что упрощает разбиение карты на тайлы:
+
+```sql
+mercator_x UInt32 MATERIALIZED 0xFFFFFFFF * ((longitude + 180) / 360),
+mercator_y UInt32 MATERIALIZED 0xFFFFFFFF * ((1 / 2) - ((log(tan(((latitude + 90) / 360) * pi())) / 2) / pi())),
+```
+
+Выражения вычисляют следующие значения.
+
+**mercator&#95;x**
+
+Этот столбец преобразует значение долготы в координату X в проекции Меркатора:
+
+* `longitude + 180` сдвигает диапазон долготы с [-180, 180] к [0, 360].
+* Деление на 360 нормализует значение до диапазона от 0 до 1.
+* Умножение на `0xFFFFFFFF` — максимальное 32-битное беззнаковое целое число — масштабирует нормализованное значение до всего диапазона 32-битного целого числа.
+
+**mercator&#95;y**
+
+Этот столбец преобразует значение широты в координату Y в проекции Меркатора:
+
+* `latitude + 90` сдвигает диапазон широты с [-90, 90] к [0, 180].
+* Деление на 360 и умножение на `pi` преобразуют значение в радианы для тригонометрических функций.
+* `log(tan(...))` применяет основную формулу проекции Меркатора.
+* Умножение на `0xFFFFFFFF` масштабирует результат до всего диапазона 32-битного целого числа.
+
+Указание `MATERIALIZED` предписывает ClickHouse вычислять эти значения при вставке данных,
+без необходимости включать эти столбцы в исходные данные.
+
+Таблица упорядочена по `mortonEncode(mercator_x, mercator_y)`, что создаёт кривую заполнения
+пространства Z-порядка и упорядочивает данные по пространственной близости:
+
+```sql
+ORDER BY mortonEncode(mercator_x, mercator_y);
+```
+
+Два индекса `minmax` дополнительно ускоряют пространственную фильтрацию:
+
+```sql
+INDEX idx_x mercator_x TYPE minmax,
+INDEX idx_y mercator_y TYPE minmax;
+```
+
+Загрузите текущий выпуск OS Places в таблицу:
+
+<Warning>
+  Этот запрос считывает и сохраняет более 100 миллионов строк. Его выполнение может занять значительное время,
+  потребовать места в хранилище и повлечь расходы в ClickHouse Cloud. При повторном запуске добавляются
+  те же данные, поэтому перед повторным импортом убедитесь, что `foursquare_mercator` пуста.
+</Warning>
+
+```sql title="Query"
+INSERT INTO foursquare_mercator
+(
+    fsq_place_id,
+    name,
+    latitude,
+    longitude,
+    address,
+    locality,
+    region,
+    postcode,
+    admin_region,
+    post_town,
+    po_box,
+    country,
+    date_created,
+    date_refreshed,
+    date_closed,
+    tel,
+    website,
+    email,
+    facebook_id,
+    instagram,
+    twitter,
+    fsq_category_ids,
+    fsq_category_labels,
+    placemaker_url,
+    geom,
+    bbox
+)
+SELECT
+    fsq_place_id,
+    name,
+    assumeNotNull(latitude),
+    assumeNotNull(longitude),
+    address,
+    locality,
+    region,
+    postcode,
+    admin_region,
+    post_town,
+    po_box,
+    country,
+    date_created,
+    date_refreshed,
+    date_closed,
+    tel,
+    website,
+    email,
+    facebook_id,
+    instagram,
+    twitter,
+    fsq_category_ids,
+    fsq_category_labels,
+    placemaker_url,
+    geom,
+    bbox
+FROM places.`datasets.places_os`
+WHERE latitude IS NOT NULL AND longitude IS NOT NULL;
+```
+
+Явные списки столбцов источника и пункта назначения предотвращают несоответствие импортированных значений при изменении
+порядка столбцов в каталоге. Запрос исключает `unresolved_flags`, поскольку этот столбец
+не нужен локальной таблице, и отфильтровывает строки без координат, так как их
+нельзя разместить на карте. Другие допускающие NULL значения источника остаются NULL в локальной таблице.
+
+<div id="data-visualization">
+  ## Визуализируйте данные
+</div>
+
+<Note>
+  Модель доступа Foursquare изменилась с момента создания этих визуализаций.
+  [исходное интерактивное представление Places](https://adsb.exposed/?dataset=Places\&zoom=5\&lat=52.3488\&lng=4.9219)
+  создано до введения текущей модели доступа и приведено для исторической справки, однако оно может больше не
+  отображать данные Places. Изображения ниже сохранены в качестве исторических примеров.
+</Note>
+
+Во время корпоративного хакатона сооснователь и CTO ClickHouse Алексей Миловидов использовал ClickHouse,
+чтобы создать следующие визуализации на основе набора данных Foursquare.
+
+<Image img="/images/getting-started/example-datasets/visualization_1.webp" size="md" alt="Карта плотности точек интереса в Европе" />
+
+<Image img="/images/getting-started/example-datasets/visualization_2.webp" size="md" alt="Саке-бары в Японии" />
+
+<Image img="/images/getting-started/example-datasets/visualization_3.webp" size="md" alt="Банкоматы" />
+
+<Image img="/images/getting-started/example-datasets/visualization_4.webp" size="md" alt="Карта Европы с точками интереса, распределёнными по странам" />

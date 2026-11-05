@@ -1,0 +1,89 @@
+---
+title: '通知'
+slug: /cloud/notifications
+description: '您的 ClickHouse Cloud 服务通知'
+keywords: ['cloud', '通知', '告警', '服务通知', '计费通知']
+sidebarTitle: '通知'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+ClickHouse Cloud 会发送与您的 service 或组织相关的关键事件通知。要了解通知的发送方式和配置方式，需要先了解以下几个概念：
+
+1. **通知类别**：指一类通知，例如 计费通知、与 service 相关的通知等。每个类别下都包含多种通知，并且可以分别配置其传递方式。
+2. **通知严重级别**：通知严重级别可以是 `info`、`warning` 或 `critical`，具体取决于通知的重要程度。此项不可配置。
+3. **通知渠道**：渠道指接收通知的方式，例如 UI、电子邮件、Slack 等。对于大多数通知，此项可配置。
+
+<div id="receiving-notifications">
+  ## 接收通知
+</div>
+
+可通过多种渠道接收通知。ClickHouse Cloud 支持通过电子邮件、ClickHouse Cloud UI 和 Slack 接收通知。您可以点击左上角菜单中的铃铛图标查看当前通知，这会打开一个弹出面板。点击弹出面板底部的 **View All** 按钮，即可进入显示所有通知活动日志的页面。
+
+<Image img="/images/cloud/manage/notifications-1.webp" size="md" alt="ClickHouse Cloud 通知弹出面板" border />
+
+<Image img="/images/cloud/manage/notifications-2.webp" size="md" alt="ClickHouse Cloud 通知活动日志" border />
+
+<div id="customizing-notifications">
+  ## 自定义通知
+</div>
+
+对于每条通知，您都可以自定义接收方式。您可以从通知弹出面板或通知活动日志的第二个选项卡进入设置界面。
+
+您可以自定义通过 Cloud UI 发送的通知，这些自定义设置会对每位用户单独生效。您也可以自定义发送到您本人邮箱的通知，但只有具有管理员权限的用户才能自定义发送到自定义邮箱地址的通知以及发送到 Slack 频道的通知。
+
+要为特定通知配置投递方式，请点击铅笔图标以修改通知投递渠道。
+
+<Image img="/images/cloud/manage/notifications-3.webp" size="md" alt="ClickHouse Cloud 通知设置界面" border />
+
+<Image img="/images/cloud/manage/notifications-4.webp" size="md" alt="ClickHouse Cloud 通知投递设置" border />
+
+<Note>
+  某些**必需**通知 (例如 **Payment failed**) 无法配置。
+</Note>
+
+<div id="service-notifications">
+  ## 服务通知
+</div>
+
+当触发特定告警条件时，ClickHouse 会发送服务通知。有关 ClickHouse Cloud 服务通知的更多信息，请参见下文：
+
+| 通知时机             | 具体告警条件                                        | 默认通知渠道        | 处理步骤                                                                                                                        |
+| ---------------- | --------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 集群无法向上扩缩容        | 当推荐的集群大小超过垂直扩缩容的最大限制时触发。推荐的集群大小发生变化时，会生成新的通知。 |               | 可考虑提高每个副本的自动扩缩容最大限制。请参见 [扩缩容](/zh/products/cloud/features/autoscaling/overview)。                                               |
+| parts 过多错误       | 检测到“too many parts”错误时触发。每个日历日只会触发一次通知。       | 管理员用户将收到电子邮件。 | 可考虑对插入操作进行批处理。请参见 [Exception: parts 过多](/zh/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts)。 |
+| 变更失败             | 当某项变更处于失败状态持续 15 分钟时触发。每个日历日只会触发一次通知。         | 管理员用户将收到电子邮件。 | 终止失败的变更。请参见 [避免使用变更](/zh/concepts/best-practices/avoid-mutations)。                                                             |
+| 查询并发过高           | 当每个副本的查询并发数超过 1,000 时触发。每个日历日只会触发一次通知。        | 管理员用户将收到电子邮件。 | 可考虑增加副本。                                                                                                                    |
+| 集群扩缩容完成          | 当集群大小发生变化时。                                   |               | 不适用                                                                                                                         |
+| 集群无法向下扩缩容        | 当推荐的集群大小超过垂直扩缩容的最大限制时触发。推荐的集群大小发生变化时，会生成新的通知。 |               | 可考虑降低每个副本的自动扩缩容最小限制。请参见 [扩缩容](/zh/products/cloud/features/autoscaling/overview)。                                               |
+| ClickHouse 版本已变更 | 当 ClickHouse 服务版本更新开始时，以及更新完成时。               |               | 不适用                                                                                                                         |
+
+<div id="clickpipes-notifications">
+  ## ClickPipes 通知
+</div>
+
+当您的 ClickPipe 出现故障或异常时，ClickHouse 会发送 ClickPipes 通知。
+
+<div id="billing-notifications">
+  ## 计费通知
+</div>
+
+ClickHouse 会在出现支付问题时，以及预付费承诺的使用量达到特定阈值时发送计费通知。
+
+<div id="supported-notifications">
+  ## 支持的通知
+</div>
+
+目前，我们会发送与计费相关的通知 (如付款失败、使用量超过某个阈值等) ，以及与扩缩容事件相关的通知 (如扩缩容已完成、扩缩容受阻等) 。
+
+<div id="related">
+  ## 相关页面
+</div>
+
+* [Cloud Console 监控](/zh/products/cloud/features/monitoring/cloud-console) — 用于查看服务健康状态、资源使用情况和查询性能的内置仪表盘
+* [监控概览](/zh/products/cloud/features/monitoring/overview) — 对比 ClickHouse Cloud 的各种监控方式
+
+<Note>
+  额度阈值通知目前仅适用于签订了承诺消费合同的组织。按使用量付费 (PAYG) 组织不会收到此类通知。
+</Note>

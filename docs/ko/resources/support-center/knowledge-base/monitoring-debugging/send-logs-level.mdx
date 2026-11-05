@@ -1,0 +1,30 @@
+---
+date: 2023-03-01
+title: "클라이언트에서 쿼리의 서버 로그 캡처하기"
+description: "`send_logs_level` 클라이언트 설정을 사용하여 로그 설정이 서로 다르더라도 클라이언트 수준에서 서버 로그를 캡처하는 방법을 알아봅니다."
+tags: ['서버 관리']
+keywords: ['서버 로그']
+---
+
+<div id="learn-how-to-capture-server-logs-of-queries-at-the-client">
+  ## 클라이언트에서 쿼리의 서버 로그를 캡처하는 방법을 알아보십시오.
+</div>
+
+클라이언트는 `send_logs_level` 클라이언트 설정을 지정하면 서버에 구성된 로그 수준과 다른 수준의 서버 로그도 볼 수 있습니다.
+
+예를 들어, 클라이언트가 다음을 실행한다고 가정하겠습니다:
+
+```sql
+SET send_logs_level = 'trace';
+```
+
+서버의 로그 수준이 info로 설정되어 있어도 클라이언트는 트레이스 로그를 수신합니다.
+
+유용한 사용 사례 중 하나는 `send_logs_level`을 사용해 `Distributed` 테이블에 행이 삽입되는 과정을 모니터링하는 것입니다.
+
+* `SET send_logs_level = 'trace';`를 사용해 `clickhouse-client`에서 로그를 활성화합니다
+* `INSERT` 쿼리를 실행합니다
+* 분산 테이블에 대한 삽입은 기본적으로 비동기식입니다. 데이터는 먼저 디스크의 로컬 버퍼에 기록된 후 백그라운드에서 원격 서버로 전송됩니다.
+* 쿼리 처리에 참여하는 모든 노드에서 로그가 전송됩니다(분산 추적)
+
+분산 삽입의 상태를 확인하려면 [`system.distribution_queue` 테이블](/ko/reference/system-tables/distribution_queue)을 확인하십시오. 이 테이블에는 세그먼트로 전송되기 위해 큐에 들어 있는 로컬 파일에 대한 정보가 포함되어 있습니다. 이러한 로컬 파일에는 비동기 모드에서 `Distributed` 테이블에 새 데이터를 삽입할 때 생성된 새 파트가 들어 있습니다.

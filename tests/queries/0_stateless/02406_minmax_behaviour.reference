@@ -12,7 +12,7 @@ SELECT
     min(data3),
     min(data4),
     min(data5);
-1	nan	1	nan	nan
+1	1	1	nan	1
 WITH
     arrayJoin([1, 2, 3, nan, 4, 5]) AS data,
     arrayJoin([nan, 1, 2, 3, 4]) AS data2,
@@ -25,7 +25,7 @@ SELECT
     max(data3),
     max(data4),
     max(data5);
-5	nan	4	nan	nan
+5	4	4	nan	3
 Select max(number) from numbers(100) settings max_threads=1, max_block_size=10;
 99
 Select max(-number) from numbers(100);
@@ -135,15 +135,15 @@ SELECT argMinIf(number, -number::Float64, number > 2030) from numbers(2032);
 Select argMax((n, n), n) t, toTypeName(t) FROM (Select if(number % 3 == 0, NULL, number) as n from numbers(10));
 (8,8)	Nullable(Tuple(Nullable(UInt64), Nullable(UInt64)))
 Select argMaxIf((n, n), n, n < 5) t, toTypeName(t) FROM (Select if(number % 3 == 0, NULL, number) as n from numbers(10));
-(4,4)	Nullable(Tuple(Nullable(UInt64), Nullable(UInt64)))
+(4,4)	Tuple(Nullable(UInt64), Nullable(UInt64))
 Select argMaxIf((n, n), n, n > 5) t, toTypeName(t) FROM (Select if(number % 3 == 0, NULL, number) as n from numbers(10));
-(8,8)	Nullable(Tuple(Nullable(UInt64), Nullable(UInt64)))
+(8,8)	Tuple(Nullable(UInt64), Nullable(UInt64))
 Select argMin((n, n), n) t, toTypeName(t) FROM (Select if(number % 3 == 0, NULL, number) as n from numbers(10));
 (1,1)	Nullable(Tuple(Nullable(UInt64), Nullable(UInt64)))
 Select argMinIf((n, n), n, n < 5) t, toTypeName(t) FROM (Select if(number % 3 == 0, NULL, number) as n from numbers(10));
-(1,1)	Nullable(Tuple(Nullable(UInt64), Nullable(UInt64)))
+(1,1)	Tuple(Nullable(UInt64), Nullable(UInt64))
 Select argMinIf((n, n), n, n > 5) t, toTypeName(t) FROM (Select if(number % 3 == 0, NULL, number) as n from numbers(10));
-(7,7)	Nullable(Tuple(Nullable(UInt64), Nullable(UInt64)))
+(7,7)	Tuple(Nullable(UInt64), Nullable(UInt64))
 SET compile_aggregate_expressions=1;
 SET min_count_to_compile_aggregate_expression=0;
 WITH
@@ -158,7 +158,7 @@ SELECT
     min(data3),
     min(data4),
     min(data5);
-1	nan	1	nan	nan
+1	1	1	nan	1
 WITH
     arrayJoin([1, 2, 3, nan, 4, 5]) AS data,
     arrayJoin([nan, 1, 2, 3, 4]) AS data2,
@@ -171,7 +171,7 @@ SELECT
     max(data3),
     max(data4),
     max(data5);
-5	nan	4	nan	nan
+5	4	4	nan	3
 SELECT minIf(number, rand() % 2 == 3) from numbers(10);
 0
 SELECT maxIf(number, rand() % 2 == 3) from numbers(10);

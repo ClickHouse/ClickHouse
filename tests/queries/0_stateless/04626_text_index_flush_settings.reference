@@ -1,0 +1,5 @@
+text_index_max_memory_usage_before_flush	1073741824
+text_index_max_processed_tokens_before_flush	100000000
+18446744073709551615	1073741824
+token_limit_flushed	1
+1

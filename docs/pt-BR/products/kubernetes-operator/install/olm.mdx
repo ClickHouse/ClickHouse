@@ -1,0 +1,113 @@
+---
+slug: /clickhouse-operator/install/olm
+title: 'Instalar o ClickHouse Operator com o Operator Lifecycle Manager (OLM)'
+keywords: ['kubernetes']
+description: 'Este guia aborda a instalação do ClickHouse Operator usando kubectl e arquivos de manifesto.'
+doc_type: 'guide'
+sidebarTitle: 'OLM'
+---
+
+Este guia aborda a instalação do ClickHouse Operator usando o Operator Lifecycle Manager (OLM).
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+* Cluster Kubernetes versão 1.28.0 ou posterior
+* kubectl configurado para acessar seu cluster
+* Permissões de administrador do cluster
+* OLM (Operator Lifecycle Manager) instalado
+
+<div id="install-olm">
+  ## Instale o OLM
+</div>
+
+Se o OLM ainda não estiver instalado no cluster, instale-o:
+
+```bash
+# Verifique se o OLM está instalado
+kubectl get ns olm
+
+# Se não estiver instalado, instale o OLM
+curl -sL https://github.com/operator-framework/operator-lifecycle-manager/releases/download/v0.28.0/install.sh | bash -s v0.28.0
+```
+
+<div id="install-the-operator">
+  ## Instalar o Operator
+</div>
+
+<div id="install-from-github-catalog">
+  ### Instalar pelo GitHub Catalog
+</div>
+
+```bash
+# Criar o espaço de nomes do operador
+kubectl create namespace clickhouse-operator-system
+
+# Criar um CatalogSource
+kubectl apply -f - <<EOF
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: clickhouse-operator-catalog
+  namespace: clickhouse-operator-system
+spec:
+  sourceType: grpc
+  image: ghcr.io/clickhouse/clickhouse-operator-catalog:latest
+  displayName: ClickHouse Operator
+  publisher: ClickHouse
+  updateStrategy:
+    registryPoll:
+      interval: 30m
+EOF
+
+# Criar o OperatorGroup
+kubectl apply -f - <<EOF
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: clickhouse-operator-group
+  namespace: clickhouse-operator-system
+EOF
+
+# Criar a Subscription
+kubectl apply -f - <<EOF
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: clickhouse-operator
+  namespace: clickhouse-operator-system
+spec:
+  channel: stable-v0
+  name: clickhouse-operator
+  source: clickhouse-operator-catalog
+  sourceNamespace: clickhouse-operator-system
+  installPlanApproval: Automatic
+EOF
+```
+
+<div id="uninstall">
+  ## Desinstalar
+</div>
+
+```bash
+# Excluir a Subscription
+kubectl delete subscription clickhouse-operator -n clickhouse-operator-system
+# Encontrar todos os recursos associados
+kubectl get operator clickhouse-operator.clickhouse-operator-system -o=jsonpath="{.status.components.refs}" | jq 'map({kind, name})'
+# Excluir recursos associados (CRDs, Implantações, etc.)
+kubectl delete <resource> <name> [-n <namespace>]  # Repetir para cada recurso encontrado
+
+# Excluir o OperatorGroup (opcional):
+kubectl delete operatorgroup clickhouse-operator-group -n clickhouse-operator-system
+# Excluir a view do Operator
+kubectl delete operator clickhouse-operator.clickhouse-operator-system
+```
+
+Mais informações sobre como desinstalar podem ser encontradas na [documentação do OLM](https://olm.operatorframework.io/docs/tasks/uninstall-operator/).
+
+<div id="additional-resources">
+  ## Recursos adicionais
+</div>
+
+* [Documentação do Operator Lifecycle Manager](https://olm.operatorframework.io/docs)

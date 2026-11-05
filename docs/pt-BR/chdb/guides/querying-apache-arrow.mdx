@@ -1,0 +1,180 @@
+---
+title: 'Como consultar o Apache Arrow com chDB'
+sidebarTitle: 'Consultar Apache Arrow'
+slug: /chdb/guides/apache-arrow
+description: 'Neste guia, aprenderemos como consultar tabelas Apache Arrow com a função de tabela `Python`'
+keywords: ['chdb', 'Apache Arrow']
+doc_type: 'guide'
+---
+
+[Apache Arrow](https://arrow.apache.org/) é um formato de memória padronizado e orientado a colunas que ganhou popularidade na comunidade de dados.
+Neste guia, aprenderemos como consultar o Apache Arrow usando a função de tabela `Python`.
+
+<div id="setup">
+  ## Configuração
+</div>
+
+Vamos criar primeiro um ambiente virtual:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+E agora vamos instalar o chDB.
+Certifique-se de ter a versão 2.0.2 ou superior:
+
+```bash
+pip install "chdb>=2.0.2"
+```
+
+Agora, vamos instalar PyArrow, pandas e ipython:
+
+```bash
+pip install pyarrow pandas ipython
+```
+
+Vamos usar o `ipython` para executar os comandos no restante do guia, que pode ser iniciado com:
+
+```bash
+ipython
+```
+
+Você também pode usar o código em um script Python ou no notebook de sua preferência.
+
+<div id="creating-an-apache-arrow-table-from-a-file">
+  ## Criando uma tabela Apache Arrow a partir de um arquivo
+</div>
+
+Primeiro, vamos baixar um dos arquivos Parquet do [conjunto de dados Ookla](https://github.com/teamookla/ookla-open-data) usando a [AWS CLI](https://aws.amazon.com/cli/):
+
+```bash
+aws s3 cp \
+  --no-sign \
+  s3://ookla-open-data/parquet/performance/type=mobile/year=2023/quarter=2/2023-04-01_performance_mobile_tiles.parquet .
+```
+
+<Note>
+  Se quiser baixar mais arquivos, use `aws s3 ls` para obter uma lista de todos eles e, em seguida, atualizar o comando acima.
+</Note>
+
+Em seguida, vamos importar o módulo Parquet do pacote `pyarrow`:
+
+```python
+import pyarrow.parquet as pq
+```
+
+E então podemos ler o arquivo Parquet em uma tabela do Apache Arrow:
+
+```python
+arrow_table = pq.read_table("./2023-04-01_performance_mobile_tiles.parquet")
+```
+
+O esquema é exibido abaixo:
+
+```python
+arrow_table.schema
+```
+
+```text
+quadkey: string
+tile: string
+tile_x: double
+tile_y: double
+avg_d_kbps: int64
+avg_u_kbps: int64
+avg_lat_ms: int64
+avg_lat_down_ms: int32
+avg_lat_up_ms: int32
+tests: int64
+devices: int64
+```
+
+E podemos obter o número de linhas e colunas chamando o atributo `shape`:
+
+```python
+arrow_table.shape
+```
+
+```text
+(3864546, 11)
+```
+
+<div id="querying-apache-arrow">
+  ## Consultando o Apache Arrow
+</div>
+
+Agora vamos consultar a tabela do Arrow no chDB.
+Primeiro, vamos importar o chDB:
+
+```python
+import chdb
+```
+
+Em seguida, podemos descrever a tabela:
+
+```python
+chdb.query("""
+DESCRIBE Python(arrow_table)
+SETTINGS describe_compact_output=1
+""", "DataFrame")
+```
+
+```text
+               name     type
+0           quadkey   String
+1              tile   String
+2            tile_x  Float64
+3            tile_y  Float64
+4        avg_d_kbps    Int64
+5        avg_u_kbps    Int64
+6        avg_lat_ms    Int64
+7   avg_lat_down_ms    Int32
+8     avg_lat_up_ms    Int32
+9             tests    Int64
+10          devices    Int64
+```
+
+Também podemos contar o número de linhas:
+
+```python
+chdb.query("SELECT count() FROM Python(arrow_table)", "DataFrame")
+```
+
+```text
+   count()
+0  3864546
+```
+
+Agora, vamos fazer algo um pouco mais interessante.
+A consulta a seguir exclui as colunas `quadkey` e `tile.*` e, em seguida, calcula os valores médio e máximo de todas as colunas restantes:
+
+```python
+chdb.query("""
+WITH numericColumns AS (
+  SELECT * EXCEPT ('tile.*') EXCEPT(quadkey)
+  FROM Python(arrow_table)
+)
+SELECT * APPLY(max), * APPLY(avg) APPLY(x -> round(x, 2))
+FROM numericColumns
+""", "Vertical")
+```
+
+```text
+Linha 1:
+──────
+max(avg_d_kbps):                4155282
+max(avg_u_kbps):                1036628
+max(avg_lat_ms):                2911
+max(avg_lat_down_ms):           2146959360
+max(avg_lat_up_ms):             2146959360
+max(tests):                     111266
+max(devices):                   1226
+round(avg(avg_d_kbps), 2):      84393.52
+round(avg(avg_u_kbps), 2):      15540.4
+round(avg(avg_lat_ms), 2):      41.25
+round(avg(avg_lat_down_ms), 2): 554355225.76
+round(avg(avg_lat_up_ms), 2):   552843178.3
+round(avg(tests), 2):           6.31
+round(avg(devices), 2):         2.88
+```

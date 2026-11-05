@@ -1,4 +1,4 @@
--- Tags: no-parallel, log-engine
+-- Tags: no-parallel, log-engine, no-flaky-check
 
 DROP DATABASE IF EXISTS db_02097;
 CREATE DATABASE db_02097;

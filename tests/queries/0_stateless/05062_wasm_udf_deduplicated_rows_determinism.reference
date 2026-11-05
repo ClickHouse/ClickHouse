@@ -1,0 +1,7 @@
+sparse argument is stored sparse	1
+control argument is stored full	1
+distinct results over sparse argument	1
+distinct results over low cardinality argument	1
+distinct results over full argument	1
+deduplicated over sparse argument when declared deterministic	1
+deduplicated over low cardinality argument when declared deterministic	1

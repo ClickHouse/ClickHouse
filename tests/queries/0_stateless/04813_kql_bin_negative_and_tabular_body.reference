@@ -1,0 +1,24 @@
+-- a negative bin size yields null --
+true
+true
+true
+true
+true
+true
+-- and a per-row one nulls only its rows --
+\N
+6
+-5
+\N
+4.5
+-- non-negative bins keep their values --
+-5
+0
+4.5
+-- a tabular body needs no pipe or source keyword to be tabular --
+3
+1
+1
+4
+-- a scalar body stays scalar --
+3

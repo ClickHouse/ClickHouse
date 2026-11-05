@@ -9,6 +9,7 @@
 #include <Parsers/ASTShowColumnsQuery.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
 
 
@@ -85,7 +86,11 @@ WITH map(
                 startsWith(type_, 'LowCardinality'), split[2],
                 startsWith(type_, 'Nullable'), split[2],
                 split[1]) AS inner_type,
-        if (length(split) > 1, splitByString(', ', split[2]), []) AS decimal_scale_and_precision,
+        multiIf(startsWith(type_, 'LowCardinality(Nullable(Decimal'), splitByString(', ', split[4]),
+                startsWith(type_, 'LowCardinality(Decimal'), splitByString(', ', split[3]),
+                startsWith(type_, 'Nullable(Decimal'), splitByString(', ', split[3]),
+                startsWith(type_, 'Decimal'), splitByString(', ', split[2]),
+                []) AS decimal_scale_and_precision,
         multiIf(inner_type = 'Decimal' AND toInt8(decimal_scale_and_precision[1]) <= 65 AND toInt8(decimal_scale_and_precision[2]) <= 30, concat('DECIMAL(', decimal_scale_and_precision[1], ', ', decimal_scale_and_precision[2], ')'),
                 mapContains(native_to_mysql_mapping, inner_type) = true, native_to_mysql_mapping[inner_type],
                 'TEXT') AS mysql_type
@@ -113,7 +118,7 @@ SELECT
     '' AS extra )";
 
     // TODO Interpret query.extended. It is supposed to show internal/virtual columns. Need to fetch virtual column names, see
-    // IStorage::getVirtualsList(). We can't easily do that via SQL.
+    // IStorage::getInMemoryMetadataPtr(context, false)->virtuals.getSampleBlock(...).getNamesAndTypesList(). We can't easily do that via SQL.
 
     if (query.full)
     {
@@ -146,7 +151,7 @@ WHERE
         database,
         table);
 
-    if (!query.like.empty())
+    if (query.has_like)
     {
         rewritten_query += " AND field ";
         if (query.not_like)
@@ -171,13 +176,18 @@ WHERE
 
 BlockIO InterpreterShowColumnsQuery::execute()
 {
+    const auto & query = query_ptr->as<ASTShowColumnsQuery &>();
+    String database = getContext()->resolveDatabase(query.database);
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
+    if (DatabaseCatalog::instance().isRemoteDatabase(database))
+        query_context->setSetting("show_remote_databases_in_system_tables", true);
 
     return executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
 }
 
+void registerInterpreterShowColumnsQuery(InterpreterFactory & factory);
 void registerInterpreterShowColumnsQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

@@ -1,0 +1,85 @@
+---
+slug: /use-cases/observability/clickstack/tuning-clickstack-schema
+title: 'Tuning Managed ClickStack - refining your schema'
+description: 'Refine your ClickStack schema for improved query performance and storage efficiency in Managed ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'tuning', 'schema', 'managed', 'observability', 'performance', 'optimization', 'storage']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+If you've been running ClickStack for a while, you've probably noticed that the default schema handles most observability workloads without any changes. This page is for when that's no longer enough: query latency starts to climb, or your access patterns have drifted away from the defaults.
+
+Four optimizations cover most of what helps in practice. They're listed roughly in order of effort. The first two are local `ALTER TABLE` changes you can roll out incrementally. The third pays off when the same aggregation runs over and over on a dashboard. The fourth needs a table migration, so it's the most involved.
+
+The summaries below are short on purpose. For the reasoning behind each change, benchmarks, and the recipes for rolling it out to existing data, see [Performance tuning](/clickstack/managing/performance-tuning).
+
+<Steps>
+<Step title="Materialize frequently queried attributes" id="materialize-attributes">
+
+Filtering on `LogAttributes['service.version']` asks ClickHouse to load and decode the whole `LogAttributes` Map for every row it examines. Promote the attribute to a `MATERIALIZED` column and the same filter becomes a column read, usually an order of magnitude faster. ClickStack rewrites the filter automatically once the column exists, so saved searches and dashboards keep working unchanged.
+
+Pick the attributes you actually query often. Each materialized column costs storage and insert time, so this is a "promote what you use" exercise rather than a "promote everything" one.
+
+```sql
+ALTER TABLE otel_logs
+  ADD COLUMN ServiceVersion LowCardinality(String)
+  MATERIALIZED LogAttributes['service.version'];
+```
+
+Existing rows stay empty for the new column until you also `ALTER TABLE otel_logs MATERIALIZE COLUMN ServiceVersion`.
+
+Read more: [Materialize frequently queried attributes](/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes).
+</Step>
+<Step title="Add skip indexes" id="add-skip-indexes">
+
+Skip indexes let ClickHouse rule out granules of data that can't match a filter, turning a scan into a small targeted read. Three types are worth knowing about:
+
+- **Text indexes** (`text(tokenizer = ...)`) on string columns and on `mapKeys`/`*AttributeItems` arrays. The default logs schema already ships these.
+- **Min-max indexes** on numeric columns filtered by range. Trace `Duration` is the classic case.
+- **Bloom filters** for high-cardinality equality lookups on ClickHouse versions that don't yet support text indexes.
+
+```sql
+ALTER TABLE otel_traces ADD INDEX idx_duration Duration TYPE minmax GRANULARITY 1;
+ALTER TABLE otel_traces MATERIALIZE INDEX idx_duration;
+```
+
+A skip index only pays for its evaluation cost if it actually prunes granules. Confirm with `EXPLAIN indexes = 1` on a representative query before assuming it helped.
+
+Read more: [Adding skip indexes](/clickstack/managing/performance-tuning#adding-skip-indexes).
+</Step>
+<Step title="Pre-compute repeated aggregations" id="materialized-views">
+
+When the same aggregation runs again and again on a dashboard (top services by error rate, p99 latency per endpoint, request counts per minute), a materialized view computes the result at insert time and writes it to a small rollup table. Dashboards then hit the rollup instead of the raw logs or traces, which is cheap by comparison.
+
+This pays off when the dashboard is hot and the underlying table is large. The cost is some insert-time CPU and a second table to maintain.
+
+Read more: [Exploiting materialized views](/clickstack/managing/performance-tuning#exploiting-materialized-views).
+</Step>
+<Step title="Choose a primary key for your access pattern" id="choose-primary-key">
+
+The primary key controls how rows are sorted on disk. Filters on the leading columns of that key let ClickHouse seek straight to the relevant region; filters that don't lead with one of those columns scan the whole partition.
+
+The default logs key `(toStartOfFiveMinutes(Timestamp), ServiceName, Timestamp)` favors "what happened in the last N minutes for service X". If most of your queries lead with a different column (a tenant id, a customer id, a region), changing the primary key to lead with that column is the highest-impact change you can make.
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+  -- same columns as otel_logs
+)
+ENGINE = MergeTree
+ORDER BY (TenantId, ServiceName, Timestamp);
+```
+
+ClickHouse doesn't allow editing the primary key in place, so this is a table migration rather than a simple `ALTER`. The performance tuning guide walks through creating the new table, redirecting ingestion, and using a `Merge` table so existing dashboards keep working across old and new data.
+
+Read more: [Modifying the primary key](/clickstack/managing/performance-tuning#modifying-the-primary-key).
+</Step>
+</Steps>
+
+## Further reading {#further-reading}
+
+- [Performance tuning](/clickstack/managing/performance-tuning): full guide, including projections and row-lookup acceleration.
+- [Tables and schemas used by ClickStack](/clickstack/ingesting-data/schemas): the canonical DDL the optimizations build on.
+- [Going to production](/clickstack/managing/production): broader production recommendations.

@@ -1,0 +1,21 @@
+---
+sidebarTitle: 'Confluent Platform'
+slug: /integrations/kafka/cloud/confluent
+description: 'خيارات ربط Confluent Kafka مع ClickHouse'
+title: 'تكامل Confluent مع ClickHouse'
+doc_type: 'guide'
+keywords: ['Confluent Cloud ClickHouse', 'تكامل Confluent مع ClickHouse', 'موصل Kafka لـ ClickHouse', 'Confluent Platform ClickHouse', 'ClickHouse Connect Sink']
+---
+
+توفر Confluent ثلاثة خيارات للتكامل مع ClickHouse:
+
+* [ClickHouse Connect Sink على Confluent Cloud](/ar/integrations/connectors/data-ingestion/kafka/confluent/confluent-cloud)، وهو الموصل المُدار بالكامل
+* [ClickHouse Connect Sink بوصفه Custom Connector على Confluent Cloud](/ar/integrations/connectors/data-ingestion/kafka/confluent/custom-connector)، حيث تتولى تحميل الموصل بنفسك
+* [HTTP Sink Connector لـ Confluent Platform](/ar/integrations/connectors/data-ingestion/kafka/confluent/kafka-connect-http) لدمج Apache Kafka مع واجهة برمجة تطبيقات عبر HTTP أو HTTPS
+
+## ما خيار Confluent Cloud الذي ينبغي أن أستخدمه؟ {#which-confluent-cloud-option-should-i-use}
+
+يشغّل الخياران الأولان كلاهما موصل ClickHouse Connect Sink نفسه على Confluent Cloud، والفرق بينهما هو الجهة التي تتولى إدارة الموصل:
+
+* **الموصل المُدار بالكامل**: تتولى Confluent تثبيت الموصل وترقيته نيابةً عنك. ابدأ بهذا الخيار ما لم تكن بحاجة إلى ميزة لا يوفرها.
+* **Custom Connector**: تنزّل بنفسك إصدارًا من الموصل من [GitHub](https://github.com/ClickHouse/clickhouse-kafka-connect/releases) ثم تحمّله إلى Confluent Cloud. استخدم هذا الخيار عندما تحتاج إلى إصدار محدد من الموصل، أو عندما تريد تجاوز إعدادات لا يمكن تغييرها في الموصل المُدار بالكامل إلا بفتح تذكرة دعم لدى Confluent. علمًا بأن Custom Connectors لا تتوفر إلا في بعض مناطق AWS.

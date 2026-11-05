@@ -1,0 +1,42 @@
+<clickhouse>
+  <profiles>
+    <default>
+      <cloud_mode>1</cloud_mode>
+      <default_table_engine>SharedMergeTree</default_table_engine>
+      <cloud_mode_database_engine>1</cloud_mode_database_engine>
+      <cloud_mode_engine>3</cloud_mode_engine>
+      <alter_sync>0</alter_sync>
+      <mutations_sync>0</mutations_sync>
+
+<!--      <compatibility>25.8</compatibility>-->
+
+<!--      <enable_parallel_replicas>1</enable_parallel_replicas>-->
+<!--      <max_parallel_replicas>10</max_parallel_replicas>-->
+      <cluster_for_parallel_replicas>default</cluster_for_parallel_replicas>
+<!--      <parallel_replicas_for_non_replicated_merge_tree>1</parallel_replicas_for_non_replicated_merge_tree>-->
+      <allow_experimental_shared_set_join>1</allow_experimental_shared_set_join>
+
+
+<!--      <async_insert>1</async_insert>-->
+<!--      <date_time_input_format>best_effort</date_time_input_format>-->
+
+
+      <mongodb_throw_on_unsupported_query>0</mongodb_throw_on_unsupported_query>
+      <enable_json_type>1</enable_json_type>
+      <allow_suspicious_low_cardinality_types>1</allow_suspicious_low_cardinality_types>
+      <allow_experimental_object_type>1</allow_experimental_object_type>
+      <max_memory_usage>0</max_memory_usage>
+
+    </default>
+  </profiles>
+
+  <user_directories replace="replace">
+      <!-- <users_xml>-->
+      <!-- <path>/etc/clickhouse-server/users.xml</path>-->
+      <!-- </users_xml>-->
+      <replicated>
+          <zookeeper_path>/clickhouse/mycluster/access/</zookeeper_path>
+      </replicated>
+  </user_directories>
+
+</clickhouse>

@@ -1,0 +1,131 @@
+---
+title: 'chDB for Bun'
+sidebarTitle: 'Bun'
+slug: /chdb/install/bun
+description: 'Bun 런타임에서 chDB를 설치하고 사용하는 방법'
+keywords: ['chdb', 'bun', 'javascript', 'typescript', '내장', 'clickhouse', 'sql', 'olap']
+doc_type: 'guide'
+---
+
+chDB-bun은 chDB용 Experimental FFI(Foreign Function Interface) 바인딩을 제공하여, 추가 외부 의존성 없이 Bun 애플리케이션에서 ClickHouse 쿼리를 직접 실행할 수 있게 합니다.
+
+<div id="installation">
+  ## 설치
+</div>
+
+<Steps>
+  <Step title="시스템 의존성 설치" id="install-system-dependencies">
+    먼저, 필요한 시스템 의존성을 설치합니다:
+
+    #### libchdb 설치
+
+    ```bash
+    curl -sL https://lib.chdb.io | bash
+    ```
+
+    #### 빌드 도구 설치
+
+    시스템에 `gcc` 또는 `clang` 중 하나가 설치되어 있어야 합니다:
+  </Step>
+
+  <Step title="chDB-bun 설치" id="install-chdb-bun">
+    ```bash
+    # GitHub 리포지토리에서 설치
+    bun add github:chdb-io/chdb-bun
+
+    # 또는 로컬에 클론한 후 빌드
+    git clone https://github.com/chdb-io/chdb-bun.git
+    cd chdb-bun
+    bun install
+    bun run build
+    ```
+  </Step>
+</Steps>
+
+<div id="usage">
+  ## 사용 방법
+</div>
+
+chDB-bun은 두 가지 쿼리 모드를 지원합니다. 하나는 일회성 작업을 위한 임시 쿼리이고, 다른 하나는 데이터베이스 상태를 유지하는 지속형 세션입니다.
+
+<div id="ephemeral-queries">
+  ### 임시 쿼리
+</div>
+
+영구적으로 유지되는 상태가 필요하지 않은 간단한 일회성 쿼리의 경우:
+
+```typescript
+import { query } from 'chdb-bun';
+
+// Basic query
+const result = query("SELECT version()", "CSV");
+console.log(result); // "23.10.1.1"
+
+// Query with different output formats
+const jsonResult = query("SELECT 1 as id, 'Hello' as message", "JSON");
+console.log(jsonResult);
+
+// Query with calculations
+const mathResult = query("SELECT 2 + 2 as sum, pi() as pi_value", "Pretty");
+console.log(mathResult);
+
+// Query system information
+const systemInfo = query("SELECT * FROM system.functions LIMIT 5", "CSV");
+console.log(systemInfo);
+```
+
+<div id="persistent-sessions">
+  ### 지속형 세션
+</div>
+
+쿼리 간 상태를 유지해야 하는 복잡한 작업의 경우:
+
+```typescript
+import { Session } from 'chdb-bun';
+
+// Create a session with persistent storage
+const sess = new Session('./chdb-bun-tmp');
+
+try {
+    // Create a database and table
+    sess.query(`
+        CREATE DATABASE IF NOT EXISTS mydb;
+        CREATE TABLE IF NOT EXISTS mydb.users (
+            id UInt32,
+            name String,
+            email String
+        ) ENGINE = MergeTree() ORDER BY id
+    `, "CSV");
+
+    // Insert data
+    sess.query(`
+        INSERT INTO mydb.users VALUES 
+        (1, 'Alice', 'alice@example.com'),
+        (2, 'Bob', 'bob@example.com'),
+        (3, 'Charlie', 'charlie@example.com')
+    `, "CSV");
+
+    // Query the data
+    const users = sess.query("SELECT * FROM mydb.users ORDER BY id", "JSON");
+    console.log("Users:", users);
+
+    // Create and use custom functions
+    sess.query("CREATE FUNCTION IF NOT EXISTS hello AS () -> 'Hello chDB'", "CSV");
+    const greeting = sess.query("SELECT hello() as message", "Pretty");
+    console.log(greeting);
+
+    // Aggregate queries
+    const stats = sess.query(`
+        SELECT 
+            COUNT(*) as total_users,
+            MAX(id) as max_id,
+            MIN(id) as min_id
+        FROM mydb.users
+    `, "JSON");
+    console.log("Statistics:", stats);
+
+} finally {
+    // Always cleanup the session to free resources
+    sess.cleanup(); // This deletes the database files
+}
+```

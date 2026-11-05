@@ -48,3 +48,49 @@ TEST(PocoJSON, roundtrip)
         std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
     }
 }
+
+
+TEST(PocoNumberParser, integerOverflow)
+{
+    /** `strToInt` accumulated digits checking only `result > max / base`, which still leaves room for
+      * `max % base` in the last digit. Appending a larger digit overflowed the accumulator - undefined
+      * behavior for a signed type - and the wrapped value was reported as successfully parsed.
+      */
+    Poco::Int64 signed_value = 0;
+    EXPECT_TRUE(Poco::strToInt<Poco::Int64>("9223372036854775807", signed_value, 10));
+    EXPECT_EQ(std::numeric_limits<Poco::Int64>::max(), signed_value);
+    EXPECT_FALSE(Poco::strToInt<Poco::Int64>("9223372036854775808", signed_value, 10));
+    EXPECT_FALSE(Poco::strToInt<Poco::Int64>("18446744073709551617", signed_value, 10));
+    EXPECT_TRUE(Poco::strToInt<Poco::Int64>("7fffffffffffffff", signed_value, 16));
+    EXPECT_EQ(std::numeric_limits<Poco::Int64>::max(), signed_value);
+    EXPECT_FALSE(Poco::strToInt<Poco::Int64>("8000000000000000", signed_value, 16));
+
+    /// The magnitude of the most negative value does not fit into the type itself, so it is
+    /// accumulated as unsigned; it must still parse, and one below it must not.
+    EXPECT_TRUE(Poco::strToInt<Poco::Int64>("-9223372036854775808", signed_value, 10));
+    EXPECT_EQ(std::numeric_limits<Poco::Int64>::min(), signed_value);
+    EXPECT_FALSE(Poco::strToInt<Poco::Int64>("-9223372036854775809", signed_value, 10));
+
+    Poco::UInt64 unsigned_value = 0;
+    EXPECT_TRUE(Poco::strToInt<Poco::UInt64>("18446744073709551615", unsigned_value, 10));
+    EXPECT_EQ(std::numeric_limits<Poco::UInt64>::max(), unsigned_value);
+    EXPECT_FALSE(Poco::strToInt<Poco::UInt64>("18446744073709551616", unsigned_value, 10));
+
+    Poco::Int16 narrow_value = 0;
+    EXPECT_TRUE(Poco::strToInt<Poco::Int16>("32767", narrow_value, 10));
+    EXPECT_EQ(std::numeric_limits<Poco::Int16>::max(), narrow_value);
+    EXPECT_FALSE(Poco::strToInt<Poco::Int16>("32768", narrow_value, 10));
+    EXPECT_TRUE(Poco::strToInt<Poco::Int16>("-32768", narrow_value, 10));
+    EXPECT_EQ(std::numeric_limits<Poco::Int16>::min(), narrow_value);
+    EXPECT_FALSE(Poco::strToInt<Poco::Int16>("-32769", narrow_value, 10));
+
+    /// A number out of the `Int64` range is a valid `UInt64`, and `Poco::JSON` falls back to it.
+    Poco::JSON::Parser parser;
+    Poco::Dynamic::Var parsed = parser.parse(std::string(R"({"value": 18446744073709551615})"));
+    EXPECT_EQ(
+        std::numeric_limits<Poco::UInt64>::max(),
+        parsed.extract<Poco::JSON::Object::Ptr>()->get("value").convert<Poco::UInt64>());
+
+    /// A number out of the `UInt64` range is an error, not a wrapped-around value.
+    EXPECT_THROW(parser.parse(std::string(R"({"value": 18446744073709551617})")), Poco::SyntaxException);
+}

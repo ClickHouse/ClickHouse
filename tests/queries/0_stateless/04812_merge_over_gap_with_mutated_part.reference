@@ -1,0 +1,10 @@
+mutation failed on one part	1
+gap part is outdated	1
+parts with gap
+all_1_1_0	1	1	0
+all_2_2_0	1	0	0
+all_2_2_0_3	0	0	0
+all_4_4_0	1	1	0
+gap mutation exceeds neighbours, levels equal	1	1
+CANNOT_ASSIGN_OPTIMIZE
+rows after detach/attach	2

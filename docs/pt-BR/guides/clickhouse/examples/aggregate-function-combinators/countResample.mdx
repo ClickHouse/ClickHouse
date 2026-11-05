@@ -1,0 +1,69 @@
+---
+slug: '/examples/aggregate-function-combinators/countResample'
+title: 'countResample'
+description: 'Exemplo de uso do combinador Resample com o count'
+keywords: ['count', 'Resample', 'combinador', 'exemplos', 'countResample']
+sidebarTitle: 'countResample'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Descrição
+</div>
+
+O
+combinador [`Resample`](/pt-BR/reference/functions/aggregate-functions/combinators#-resample) pode ser aplicado à função de agregação [`count`](/pt-BR/reference/functions/aggregate-functions/count)
+para contar os valores de uma coluna-chave especificada em um número fixo
+de intervalos (`N`).
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+<div id="basic-example">
+  ### Exemplo básico
+</div>
+
+Vamos ver um exemplo. Vamos criar uma tabela que contém `name`, `age` e
+`wage` de funcionários e inserir alguns dados nela:
+
+```sql
+CREATE TABLE employee_data 
+(
+    name String,
+    age UInt8,
+    wage Float32
+) 
+ENGINE = MergeTree()
+ORDER BY tuple()
+
+INSERT INTO employee_data (name, age, wage) VALUES
+    ('John', 16, 10.0),
+    ('Alice', 30, 15.0),
+    ('Mary', 35, 8.0),
+    ('Evelyn', 48, 11.5),
+    ('David', 62, 9.9),
+    ('Brian', 60, 16.0);
+```
+
+Vamos contar todas as pessoas cuja idade se enquadra nos intervalos `[30,60)`
+e `[60,75)`. Como representamos a idade com números inteiros, obtemos idades nos
+intervalos `[30, 59]` e `[60,74]`. Para isso, aplicamos o combinador `Resample`
+a `count`
+
+```sql
+SELECT countResample(30, 75, 30)(name, age) AS amount FROM employee_data
+```
+
+```response
+┌─amount─┐
+│ [3,2]  │
+└────────┘
+```
+
+<div id="see-also">
+  ## Veja também
+</div>
+
+* [`count`](/pt-BR/reference/functions/aggregate-functions/count)
+* [`Combinador Resample`](/pt-BR/reference/functions/aggregate-functions/combinators#-resample)

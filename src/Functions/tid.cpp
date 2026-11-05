@@ -9,7 +9,7 @@ namespace DB
 {
 namespace
 {
-    class FunctionTid : public IFunction
+    class FunctionTid final : public IFunction
     {
     public:
         static constexpr auto name = "tid";
@@ -19,7 +19,7 @@ namespace
 
         size_t getNumberOfArguments() const override { return 0; }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeUInt64>(); }
+        String getSignatureString() const override { return "() -> UInt64"; }
 
         DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
         {
@@ -40,7 +40,7 @@ namespace
 REGISTER_FUNCTION(Tid)
 {
     FunctionDocumentation::Description description = R"(
-Returns id of the thread, in which the current [Block](/development/architecture/#block) is processed.
+Returns id of the thread, in which the current [Block](/resources/develop-contribute/introduction/architecture#block) is processed.
     )";
     FunctionDocumentation::Syntax syntax = "tid()";
     FunctionDocumentation::Arguments arguments = {};

@@ -6,6 +6,7 @@
 #include <IO/WriteBufferDecorator.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ZstdContext.h>
 
 #include <zstd.h>
 
@@ -74,9 +75,9 @@ private:
     std::function<std::unique_ptr<ReadBufferFromFileBase>()> read_buffer_creator;
 
     bool append_to_existing_file = false;
-    ZSTD_CCtx * cctx;
-    ZSTD_inBuffer input;
-    ZSTD_outBuffer output;
+    ZstdCCtxPtr cctx;
+    ZSTD_inBuffer input{};
+    ZSTD_outBuffer output{};
     /// Flipped on the first nextImpl call
     bool first_write = true;
 };

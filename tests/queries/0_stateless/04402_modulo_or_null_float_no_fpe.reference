@@ -1,0 +1,19 @@
+Float32 smallest-positive % -1 is the finite remainder, not NULL
+0
+1
+0
+1
+0
+1
+Float64 smallest-positive % -1 is the finite remainder, not NULL
+0
+1
+0
+1
+Floating modulo by zero still maps to NULL
+1
+1
+1
+A regular floating remainder is unaffected
+1
+1

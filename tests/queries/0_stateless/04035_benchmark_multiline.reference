@@ -1,0 +1,8 @@
+OK: Single multiline query
+OK: Multiple multiline queries
+OK: Insert FORMAT Values
+OK: Semicolons in comments ignored
+OK: Default mode (tsv)
+OK: Explicit tsv mode
+OK: Unknown format rejected
+All multiline tests passed

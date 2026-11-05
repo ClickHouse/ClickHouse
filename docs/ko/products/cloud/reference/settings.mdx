@@ -1,0 +1,18 @@
+---
+sidebarTitle: '설정 구성하기'
+slug: /manage/settings
+title: '설정 구성하기'
+description: '특정 사용자 또는 역할에 대한 ClickHouse Cloud 서비스 설정을 구성하는 방법'
+keywords: ['ClickHouse Cloud', '설정 구성', '클라우드 설정', '사용자 설정', '역할 설정']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+특정 [사용자](/ko/concepts/features/security/access-rights#user-account-management) 또는 [역할](/ko/concepts/features/security/access-rights#role-management)에 대해 ClickHouse Cloud 서비스의 설정을 지정하려면 [SQL 기반 Settings Profiles](/ko/concepts/features/security/access-rights#settings-profiles-management)를 사용해야 합니다. Settings Profiles를 적용하면 서비스가 중지되거나 유휴 상태가 되거나 업그레이드되더라도 구성한 설정이 유지됩니다. Settings Profiles에 대해 자세히 알아보려면 [이 페이지](/ko/concepts/features/configuration/settings/settings-profiles)를 참조하십시오.
+
+ClickHouse Cloud에서는 현재 XML 기반 Settings Profiles 및 [설정 파일](/ko/concepts/features/configuration/server-config/configuration-files)을 지원하지 않습니다.
+
+ClickHouse Cloud 서비스에서 지정할 수 있는 설정에 대해 자세히 알아보려면 [문서](/ko/reference/settings/index)에서 범주별 전체 설정 목록을 참조하십시오.
+
+<Image img="/images/cloud/manage/cloud-settings-sidebar.webp" size="sm" alt="Cloud 설정 사이드바" border />

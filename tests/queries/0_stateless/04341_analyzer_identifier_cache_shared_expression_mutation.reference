@@ -1,0 +1,16 @@
+-- compound AND alias in GROUP BY + HAVING (empty result)
+-- compound AND alias that selects a group (returns 1)
+1
+-- compound OR alias in GROUP BY + HAVING
+1
+-- three-way AND alias
+1
+-- alias referenced in projection, GROUP BY, HAVING and ORDER BY
+1	3
+-- Nullable column
+1
+-- compound alias projected twice
+0	0
+0	0
+-- AndCompareChain is idempotent: shared (cache on) and unshared (cache off) trees match
+1

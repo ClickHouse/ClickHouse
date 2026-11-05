@@ -41,7 +41,9 @@ def test_explanation(started_cluster_iceberg_with_spark, format_version, storage
             storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, format=format
         )
 
-        res = instance.query(f"EXPLAIN SELECT * FROM {TABLE_NAME}")
+        res = instance.query(
+            f"EXPLAIN SELECT * FROM {TABLE_NAME} SETTINGS explain_query_plan_default = 'legacy'"
+        )
         res = list(
             map(
                 lambda x: x.split("\t"),
@@ -53,7 +55,7 @@ def test_explanation(started_cluster_iceberg_with_spark, format_version, storage
             [
                 "Expression ((Project names + (Projection + Change column names to column identifiers)))"
             ],
-            [f"  ReadFromObjectStorage"],
+            ["  ReadFromObjectStorage"],
         ]
 
         assert res == expected

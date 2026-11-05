@@ -1,0 +1,24 @@
+--- single-row: flat object ---
+['a','b','c']
+{'a':['Int64'],'b':['String'],'c':['Bool']}
+--- single-row: nested path gets dotted ---
+['a.b.c']
+{'a.b.c':['Int64']}
+--- mixed paths across rows: aggregation adds all seen types ---
+['a','b','c','d.e']
+{'a':['Int64','String'],'b':['String'],'c':['Array(Nullable(Int64))'],'d.e':['Int64']}
+--- merge path via GROUP BY ---
+1	['a','b']	{'a':['Int64'],'b':['Int64']}
+2	['a','c']	{'a':['String'],'c':['Int64']}
+--- empty JSON object ---
+[]
+{}
+--- Nullable(JSON) with NULL ---
+[]
+{}
+--- array of mixed types in one path ---
+{'a':['Array(Nullable(Int64))','Bool','Float64','Int64','String']}
+--- deep nesting ---
+['root.level1.level2.level3.leaf']
+{'root.level1.level2.level3.leaf':['Int64']}
+--- error: non-JSON argument ---

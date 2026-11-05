@@ -1,0 +1,13 @@
+dictGet IPv4
+NP
+NP
+17501
+dictGet IPv6
+ZZ
+ZZ
+dictGet multiple attributes
+(17501,'NP')
+dictHas
+1
+1
+0

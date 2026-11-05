@@ -1,0 +1,203 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm-cloud-v1
+title: 'Helm Cloud 배포 (v1.x)'
+description: 'v1.x Helm 차트로 GKE, EKS, AKS에 ClickStack을 배포하기 위한 Cloud 전용 구성'
+doc_type: 'guide'
+keywords: ['ClickStack GKE', 'ClickStack EKS', 'ClickStack AKS', 'Kubernetes Cloud 배포', '프로덕션 배포']
+---
+
+<Warning>
+  **지원 중단 — v1.x 차트**
+
+  이 페이지는 유지보수 모드에 있는 **v1.x** 인라인 템플릿 Helm 차트를 사용한 Cloud 배포를 설명합니다. v2.x 차트는 [Helm Cloud 배포](/ko/clickstack/deployment/helm-cloud)를 참조하십시오. 마이그레이션 방법은 [업그레이드 가이드](/ko/clickstack/deployment/helm-upgrade)를 참조하십시오.
+</Warning>
+
+이 가이드는 관리형 Kubernetes 서비스에 ClickStack을 배포할 때 필요한 Cloud 전용 구성을 다룹니다. 기본 설치는 [기본 Helm 배포 가이드](/ko/clickstack/deployment/helm-v1)를 참조하십시오.
+
+<div id="google-kubernetes-engine-gke">
+  ## Google Kubernetes Engine (GKE)
+</div>
+
+GKE에 배포할 때는 클라우드별 네트워킹 동작으로 인해 일부 값을 재정의해야 할 수 있습니다.
+
+<div id="loadbalancer-dns-resolution-issue">
+  ### LoadBalancer DNS 이름 확인 문제
+</div>
+
+GKE의 LoadBalancer 서비스는 파드 간 통신이 클러스터 네트워크 내부에 머무르지 않고 외부 IP로 확인되는 내부 DNS 이름 확인 문제를 일으킬 수 있습니다. 이는 특히 OTel collector의 OpAMP 서버 연결에 영향을 줍니다.
+
+**증상:**
+
+* 클러스터 IP 주소와 함께 &quot;connection refused&quot; 오류가 표시되는 OTel collector 로그
+* 다음과 같은 OpAMP 연결 실패: `dial tcp 34.118.227.30:4320: connect: connection refused`
+
+**해결 방법:**
+
+OpAMP 서버 URL에 정규화된 도메인 이름(FQDN)을 사용하십시오:
+
+```shell
+helm install my-clickstack clickstack/clickstack \
+  --set hyperdx.frontendUrl="http://your-external-ip-or-domain.com" \
+  --set otel.opampServerUrl="http://my-clickstack-clickstack-app.default.svc.cluster.local:4320"
+```
+
+<div id="other-gke-considerations">
+  ### 기타 GKE 관련 고려 사항
+</div>
+
+```yaml
+# values-gke.yaml
+hyperdx:
+  frontendUrl: "http://34.123.61.99"  # LoadBalancer 외부 IP를 사용하세요
+
+otel:
+  opampServerUrl: "http://my-clickstack-clickstack-app.default.svc.cluster.local:4320"
+
+# 필요한 경우 GKE 파드 네트워킹에 맞게 조정하세요
+clickhouse:
+  config:
+    clusterCidrs:
+      - "10.8.0.0/16"  # GKE에서 일반적으로 사용하는 범위
+      - "10.0.0.0/8"   # 다른 구성을 위한 폴백
+```
+
+<div id="amazon-eks">
+  ## Amazon EKS
+</div>
+
+EKS 배포에서는 다음과 같은 일반적인 구성을 고려할 수 있습니다:
+
+```yaml
+# values-eks.yaml
+hyperdx:
+  frontendUrl: "http://your-alb-domain.com"
+
+# EKS는 일반적으로 다음 파드 CIDR을 사용합니다
+clickhouse:
+  config:
+    clusterCidrs:
+      - "192.168.0.0/16"
+      - "10.0.0.0/8"
+
+# 프로덕션 환경에서 인그레스 활성화
+hyperdx:
+  ingress:
+    enabled: true
+    host: "hyperdx.yourdomain.com"
+    tls:
+      enabled: true
+```
+
+<div id="azure-aks">
+  ## Azure AKS
+</div>
+
+AKS에 배포하는 경우:
+
+```yaml
+# values-aks.yaml
+hyperdx:
+  frontendUrl: "http://your-azure-lb.com"
+
+# AKS 파드 네트워킹
+clickhouse:
+  config:
+    clusterCidrs:
+      - "10.244.0.0/16"  # 일반적인 AKS 파드 CIDR
+      - "10.0.0.0/8"
+```
+
+<div id="production-cloud-deployment-checklist">
+  ## 프로덕션 Cloud 배포 체크리스트
+</div>
+
+클라우드 제공업체와 관계없이 ClickStack을 프로덕션 환경에 배포하기 전에 다음 사항을 확인하십시오.
+
+* [ ] 외부 도메인/IP에 맞게 `frontendUrl`을 올바르게 구성
+* [ ] HTTPS 접속을 위해 TLS가 적용된 인그레스 설정
+* [ ] 연결 문제가 발생하는 경우(특히 GKE에서) `otel.opampServerUrl`을 FQDN으로 재정의
+* [ ] 파드 네트워크 CIDR에 맞게 `clickhouse.config.clusterCidrs` 조정
+* [ ] 프로덕션 워크로드용 영구 스토리지 구성
+* [ ] 적절한 리소스 요청량 및 제한 설정
+* [ ] 모니터링 및 알림 활성화
+* [ ] 백업 및 재해 복구 구성
+* [ ] 적절한 시크릿 관리 구현
+
+<div id="production-best-practices">
+  ## 프로덕션 환경 모범 사례
+</div>
+
+<div id="resource-management">
+  ### 리소스 관리
+</div>
+
+```yaml
+hyperdx:
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+```
+
+<div id="high-availability">
+  ### 고가용성
+</div>
+
+```yaml
+hyperdx:
+  replicaCount: 3
+
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values:
+                    - clickstack
+            topologyKey: kubernetes.io/hostname
+```
+
+<div id="persistent-storage">
+  ### 영구 스토리지
+</div>
+
+데이터 보존을 위해 영구 볼륨이 구성되어 있는지 확인하세요:
+
+```yaml
+clickhouse:
+  persistence:
+    enabled: true
+    size: 100Gi
+    storageClass: "fast-ssd"  # 클라우드 환경에 맞는 스토리지 클래스를 사용하세요
+```
+
+**Cloud 환경별 스토리지 클래스:**
+
+* **GKE**: `pd-ssd` 또는 `pd-balanced`
+* **EKS**: `gp3` 또는 `io2`
+* **AKS**: `managed-premium` 또는 `managed-csi`
+
+<div id="browser-compatibility-notes">
+  ### 브라우저 호환성 참고 사항
+</div>
+
+HTTP 전용 배포(개발/테스트)에서는 보안 컨텍스트 요구 사항 때문에 일부 브라우저에서 crypto API 오류가 표시될 수 있습니다. 프로덕션 배포에서는 항상 인그레스 구성을 통해 올바른 TLS 인증서와 함께 HTTPS를 사용하십시오.
+
+TLS 설정 방법은 [인그레스 구성](/ko/clickstack/deployment/helm-configuration-v1#ingress-setup)을 참조하십시오.
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+* [구성 가이드 (v1.x)](/ko/clickstack/deployment/helm-configuration-v1) - API Key, 시크릿 및 인그레스
+* [배포 옵션 (v1.x)](/ko/clickstack/deployment/helm-deployment-options-v1) - 외부 시스템 구성
+* [메인 Helm 가이드 (v1.x)](/ko/clickstack/deployment/helm-v1) - 기본 설치
+* [Cloud 배포 (v2.x)](/ko/clickstack/deployment/helm-cloud) - v2.x Cloud 가이드
+* [업그레이드 가이드](/ko/clickstack/deployment/helm-upgrade) - v1.x에서 v2.x로 마이그레이션

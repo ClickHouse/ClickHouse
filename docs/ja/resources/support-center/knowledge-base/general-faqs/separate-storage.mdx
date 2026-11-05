@@ -1,0 +1,14 @@
+---
+slug: /faq/operations/deploy-separate-storage-and-compute
+title: 'ストレージとコンピュートを分離して ClickHouse をデプロイできますか？'
+sidebarTitle: 'ストレージとコンピュートを分離して ClickHouse をデプロイできますか？'
+toc_hidden: true
+toc_priority: 20
+description: 'このページでは、ストレージとコンピュートを分離して ClickHouse をデプロイできるかどうかについて説明します'
+doc_type: 'guide'
+keywords: ['ストレージ', 'ディスク構成', 'データ構成', 'ボリューム管理', 'ストレージティア']
+---
+
+短く答えると、「はい」です。
+
+オブジェクトストレージ (S3、GCS) は、ClickHouse テーブルのデータに対する伸縮性のあるプライマリストレージバックエンドとして利用できます。[S3 をバックエンドとする MergeTree](/ja/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse) および [GCS をバックエンドとする MergeTree](/ja/reference/functions/table-functions/gcs) のガイドも公開されています。この構成では、コンピュートノードにローカル保存されるのはメタデータのみです。追加ノードで複製が必要なのはメタデータだけなので、この構成ではコンピュートリソースを簡単にスケールアップおよびスケールダウンできます。

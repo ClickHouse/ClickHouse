@@ -1,0 +1,8 @@
+<clickhouse>
+  <macros>
+    <rabbitmq_host>rabbitmq1</rabbitmq_host>
+    <rabbitmq_port>5672</rabbitmq_port>
+    <rabbitmq_exchange_name>macro</rabbitmq_exchange_name>
+    <rabbitmq_format>JSONEachRow</rabbitmq_format>
+  </macros>
+</clickhouse>

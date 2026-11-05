@@ -1,0 +1,153 @@
+---
+slug: /community-wisdom/performance-optimization
+sidebarTitle: 'Otimização de desempenho'
+doc_type: 'guide'
+keywords: [
+  'otimização de desempenho',
+  'desempenho de consultas',
+  'ajuste de banco de dados',
+  'consultas lentas',
+  'otimização de memória',
+  'análise de cardinalidade',
+  'estratégias de indexação',
+  'otimização de agregação',
+  'técnicas de amostragem',
+  'desempenho de banco de dados',
+  'análise de consultas',
+  'solução de problemas de desempenho'
+]
+title: 'Lições sobre otimização de desempenho'
+description: 'Exemplos reais de estratégias de otimização de desempenho'
+---
+
+*Este guia faz parte de uma coletânea de aprendizados obtidos em encontros da comunidade. Para ver mais soluções e insights práticos, você pode [navegar por problema específico](/pt-BR/resources/support-center/tips-and-tricks/community-wisdom).*
+*Está com problemas com visões materializadas? Confira o guia de insights da comunidade sobre [Visões materializadas](/pt-BR/resources/support-center/tips-and-tricks/materialized-views).*
+*Se você está enfrentando consultas lentas e quer ver mais exemplos, também temos um guia de [Otimização de consultas](/pt-BR/guides/clickhouse/performance-and-monitoring/query-optimization).*
+
+<div id="cardinality-ordering">
+  ## Ordene por cardinalidade (da menor para a maior)
+</div>
+
+O índice primário do ClickHouse funciona melhor quando colunas de baixa cardinalidade vêm primeiro, permitindo pular grandes fragmentos de dados com eficiência. Colunas de alta cardinalidade mais adiante na chave fornecem uma ordenação mais granular dentro desses fragmentos. Comece com colunas que têm poucos valores únicos (como status, categoria e país) e termine com colunas que têm muitos valores únicos (como user&#95;id, timestamp e session&#95;id).
+
+Confira mais documentação sobre cardinalidade e índices primários:
+
+* [Escolhendo uma chave primária](/pt-BR/concepts/best-practices/choosing-a-primary-key)
+* [Índices primários](/pt-BR/concepts/core-concepts/primary-indexes)
+
+<div id="time-granularity">
+  ## A granularidade do tempo importa
+</div>
+
+Ao usar timestamps na cláusula ORDER BY, considere o trade-off entre cardinalidade e precisão. Timestamps com precisão de microssegundos geram cardinalidade muito alta (quase um valor único por linha), o que reduz a eficácia do índice primário esparso do ClickHouse. Timestamps arredondados geram cardinalidade mais baixa, o que permite que o índice descarte mais dados, mas você perde precisão em consultas baseadas em tempo.
+
+```sql runnable editable
+-- Desafio: Experimente diferentes funções de tempo como toStartOfMinute ou toStartOfWeek
+-- Experimento: Compare as diferenças de cardinalidade com seus próprios dados de timestamp
+SELECT 
+    'Microsecond precision' as granularity,
+    uniq(created_at) as unique_values,
+    'Creates massive cardinality - bad for sort key' as impact
+FROM github.github_events
+WHERE created_at >= '2024-01-01'
+UNION ALL
+SELECT 
+    'Hour precision',
+    uniq(toStartOfHour(created_at)),
+    'Much better for sort key - enables skip indexing'
+FROM github.github_events
+WHERE created_at >= '2024-01-01'
+UNION ALL  
+SELECT 
+    'Day precision',
+    uniq(toStartOfDay(created_at)),
+    'Best for reporting queries'
+FROM github.github_events
+WHERE created_at >= '2024-01-01';
+```
+
+<div id="focus-on-individual-queries-not-averages">
+  ## Foque em consultas individuais, não em médias
+</div>
+
+Ao depurar o desempenho do ClickHouse, não se baseie em tempos médios de consulta nem em métricas gerais do sistema. Em vez disso, identifique por que consultas específicas estão lentas. Um sistema pode ter um bom desempenho médio, enquanto consultas individuais sofrem com esgotamento de memória, filtragem ineficiente ou operações de alta cardinalidade.
+
+Segundo Alexey, CTO da ClickHouse: *&quot;A forma correta é se perguntar por que esta consulta em particular foi processada em cinco segundos... Não me importo se a mediana e outras consultas são processadas rapidamente. Só me importo com a minha consulta&quot;*
+
+Quando uma consulta estiver lenta, não olhe apenas para as médias. Pergunte: &quot;Por que ESTA consulta específica ficou lenta?&quot; e examine os padrões reais de uso de recursos.
+
+<div id="memory-and-row-scanning">
+  ## Memória e varredura de linhas
+</div>
+
+A Sentry é uma plataforma de rastreamento de erros voltada para desenvolvedores que processa diariamente bilhões de eventos gerados por mais de 4 milhões de desenvolvedores. O principal insight deles: *&quot;É a cardinalidade da chave de agrupamento que vai determinar o uso de memória nesta situação específica&quot;* — agregações de alta cardinalidade destroem o desempenho por esgotamento de memória, não por varredura de linhas.
+
+Quando as consultas falharem, determine se o problema é de memória (grupos demais) ou de varredura (linhas demais).
+
+Uma consulta como `GROUP BY user_id, error_message, url_path` cria um estado separado na memória para cada combinação única dos três valores. Com uma carga maior de usuários, tipos de erro e caminhos de URL, você pode facilmente gerar milhões de estados de agregação que precisam ser mantidos na memória simultaneamente.
+
+Para casos extremos, a Sentry usa amostragem determinística. Uma amostra de 10% reduz o uso de memória em 90%, mantendo cerca de 5% de precisão para a maioria das agregações:
+
+```sql
+WHERE cityHash64(user_id) % 10 = 0  -- Sempre os mesmos 10% dos usuários
+```
+
+Isso garante que os mesmos usuários apareçam em todas as consultas, fornecendo resultados consistentes em diferentes períodos de tempo. O principal insight é: `cityHash64()` produz valores de hash consistentes para a mesma entrada, então `user_id = 12345` sempre resultará no mesmo valor de hash, garantindo que esse usuário sempre apareça na sua amostra de 10% ou nunca apareça — sem alternar entre consultas.
+
+<div id="bit-mask-optimization">
+  ## Otimização de máscara de bits do Sentry
+</div>
+
+Ao fazer agregações em colunas de alta cardinalidade (como URLs), cada valor único cria um estado de agregação separado na memória, o que acaba esgotando a memória. A solução do Sentry: em vez de agrupar pelas strings reais de URL, agrupe por expressões booleanas que se reduzem a máscaras de bits.
+
+Aqui está uma consulta que você pode testar nas suas próprias tabelas, caso essa situação se aplique:
+
+```sql
+-- Padrão de Agregação com Uso Eficiente de Memória: Cada condição = um inteiro por grupo
+-- Ponto-chave: sumIf() cria memória limitada independentemente do volume de dados
+-- Memória por grupo: N inteiros (N * 8 bytes) onde N = número de condições
+
+SELECT 
+    your_grouping_column,
+    
+    -- Cada sumIf cria exatamente um contador inteiro por grupo
+    -- A memória permanece constante independentemente de quantas linhas satisfazem cada condição
+    sumIf(1, your_condition_1) as condition_1_count,
+    sumIf(1, your_condition_2) as condition_2_count,
+    sumIf(1, your_text_column LIKE '%pattern%') as pattern_matches,
+    sumIf(1, your_numeric_column > threshold_value) as above_threshold,
+    
+    -- Agregações complexas com múltiplas condições ainda utilizam memória constante
+    sumIf(1, your_condition_1 AND your_text_column LIKE '%pattern%') as complex_condition_count,
+    
+    -- Agregações padrão para referência
+    count() as total_rows,
+    avg(your_numeric_column) as average_value,
+    max(your_timestamp_column) as latest_timestamp
+    
+FROM your_schema.your_table
+WHERE your_timestamp_column >= 'start_date' 
+  AND your_timestamp_column < 'end_date'
+GROUP BY your_grouping_column
+HAVING condition_1_count > minimum_threshold 
+   OR condition_2_count > another_threshold
+ORDER BY (condition_1_count + condition_2_count + pattern_matches) DESC
+LIMIT 20
+```
+
+Em vez de armazenar cada string exclusiva na memória, você armazena como inteiros as respostas a perguntas sobre essas strings. O estado de agregação fica pequeno e limitado, independentemente da diversidade dos dados.
+
+Da equipe de engenharia da Sentry: &quot;Essas consultas pesadas são mais de 10x mais rápidas e nosso uso de memória é 100x menor (e, mais importante, limitado). Nossos maiores clientes não encontram mais erros ao pesquisar replays, e agora podemos atender clientes de qualquer porte sem esgotar a memória.&quot;
+
+<div id="video-sources">
+  ## Fontes de vídeo
+</div>
+
+* [Perdido no Palheiro - Otimizando Agregações de Alta Cardinalidade](https://www.youtube.com/watch?v=paK84-EUJCA) - lições da Sentry em produção sobre otimização de memória
+* [Análise de Desempenho do ClickHouse](https://www.youtube.com/watch?v=lxKbvmcLngo) - Alexey Milovidov sobre metodologia de depuração
+* [Meetup do ClickHouse: Técnicas de Otimização de Consultas](https://www.youtube.com/watch?v=JBomQk4Icjo) - estratégias de otimização da comunidade
+
+**Leia a seguir**:
+
+* [Guia de Otimização de Consultas](/pt-BR/guides/clickhouse/performance-and-monitoring/query-optimization)
+* [Insights da comunidade sobre visões materializadas](/pt-BR/resources/support-center/tips-and-tricks/materialized-views)

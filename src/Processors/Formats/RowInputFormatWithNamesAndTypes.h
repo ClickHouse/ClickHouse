@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/BlockNameMap.h>
+#include <Core/CaseAwareBlockNameMap.h>
 #include <Processors/Formats/RowInputFormatWithDiagnosticInfo.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -71,7 +71,7 @@ protected:
     bool with_types;
 
     std::unique_ptr<FormatReaderImpl> format_reader;
-    BlockNameMap column_indexes_by_names;
+    CaseAwareBlockNameMap column_indexes_by_names;
 
 private:
     bool is_binary;
@@ -87,8 +87,14 @@ class FormatWithNamesAndTypesReader
 public:
     explicit FormatWithNamesAndTypesReader(ReadBuffer & in_, const FormatSettings & format_settings_) : in(&in_), format_settings(format_settings_) {}
 
+    /// Called once, before any row is read, with the types of the header columns. A reader can use
+    /// it to work out per-column decisions here instead of deriving them from the type of every
+    /// single field while parsing.
+    virtual void setDataTypes(const DataTypes &) {}
+
     /// Read single field from input. Return false if there was no real value and we inserted default value.
-    virtual bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) = 0;
+    /// `column_index` is the index of the column in the header, i.e. the index `setDataTypes` saw.
+    virtual bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name, size_t column_index) = 0;
 
     /// Methods for parsing with diagnostic info.
     virtual void checkNullValueForNonNullable(DataTypePtr) {}

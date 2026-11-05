@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/DequeWithMemoryTracking.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
@@ -77,7 +78,7 @@ private:
      * from deque and data from next reader will be delivered.
      * After removing from deque, call addReaders().
      */
-    std::deque<ReadWorkerPtr> read_workers;
+    DequeWithMemoryTracking<ReadWorkerPtr> read_workers;
 
     /// Triggered when new data available
     std::condition_variable next_condvar;

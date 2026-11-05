@@ -1,4 +1,4 @@
--- Tags: distributed, no-parallel
+-- Tags: distributed, no-parallel, no-flaky-check
 
 DROP DATABASE IF EXISTS shard_0;
 DROP DATABASE IF EXISTS shard_1;

@@ -2,7 +2,15 @@
 -- { echo }
 select count() from (select * from test_1m);
 989999
-explain indexes=1 select key from (select * from test_1m);
+-- The `Distributed:` block lists one row per replica of `test_cluster_one_shard_two_replicas`.
+-- 127.0.0.2 is not guaranteed to be up, and when it is down its row degenerates to an empty
+-- `Address:` with zero counters while the local replica absorbs its parts. Assert the
+-- aggregate `Parts:`/`Granules:` and the pushed-down `Condition:` instead.
+select * from (
+    explain indexes=1 select key from (select * from test_1m)
+) where explain not like '%Address:%'
+    and explain not like '%Parts send:%' and explain not like '%Parts received:%'
+    and explain not like '%Granules send:%' and explain not like '%Granules received:%';
 Expression ((Project names + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
   Filter (additional filter)
     ReadFromMergeTree (default.test_1m)
@@ -14,14 +22,5 @@ Expression ((Project names + (Projection + (Change column names to column identi
         Parts: 99/100
         Granules: 99/100
         Distributed:
-          Address: 127.0.0.2:9000
-          Parts send: 44
-          Parts received: 43
-          Granules send: 44
-          Granules received: 43
-          Address: 127.0.0.1:9000
-          Parts send: 56
-          Parts received: 56
-          Granules send: 56
-          Granules received: 56
       Ranges: 99
+DistributedIndexAnalysisMicroseconds>0=1, DistributedIndexAnalysisReplicaFallback=0, DistributedIndexAnalysisMissingParts=0

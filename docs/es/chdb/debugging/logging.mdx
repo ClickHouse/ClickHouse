@@ -1,0 +1,399 @@
+---
+title: 'Logging de DataStore'
+sidebarTitle: 'Logging'
+slug: /chdb/debugging/logging
+description: 'Configura el logging de DataStore para depuración y monitorización'
+keywords: ['chdb', 'datastore', 'logging', 'depuración', 'log', 'nivel']
+doc_type: 'reference'
+---
+
+DataStore usa el módulo estándar logging de Python. En esta guía se muestra cómo configurar el logging para depuración.
+
+<div id="quick-start">
+  ## Inicio rápido
+</div>
+
+```python
+from pathlib import Path
+Path("data.csv").write_text("""\
+name,age,city,salary,department
+Alice,25,NYC,55000,Engineering
+Bob,30,LA,65000,Product
+Charlie,35,NYC,80000,Engineering
+Diana,28,SF,70000,Design
+Eve,42,NYC,95000,Product
+""")
+
+from chdb import datastore as pd
+from chdb.datastore.config import config
+
+# Habilitar el logging de depuración
+config.enable_debug()
+
+# Ahora todas las operaciones registrarán detalles
+ds = pd.read_csv("data.csv")
+result = ds.filter(ds['age'] > 25).to_df()
+```
+
+<div id="levels">
+  ## Niveles de log
+</div>
+
+| Nivel      | Valor | Descripción                              |
+| ---------- | ----- | ---------------------------------------- |
+| `DEBUG`    | 10    | Información detallada para la depuración |
+| `INFO`     | 20    | Información general de funcionamiento    |
+| `WARNING`  | 30    | Mensajes de advertencia (predeterminado) |
+| `ERROR`    | 40    | Mensajes de error                        |
+| `CRITICAL` | 50    | Fallos críticos                          |
+
+<div id="setting-level">
+  ## Configurar el nivel de registro
+</div>
+
+```python
+import logging
+from chdb.datastore.config import config
+
+# Usando niveles de registro estándar
+config.set_log_level(logging.DEBUG)
+config.set_log_level(logging.INFO)
+config.set_log_level(logging.WARNING)  # Predeterminado
+config.set_log_level(logging.ERROR)
+
+# Usando configuración rápida
+config.enable_debug()  # Establece el nivel DEBUG + formato detallado
+```
+
+<div id="format">
+  ## Formato del log
+</div>
+
+<div id="simple">
+  ### Formato simple (predeterminado)
+</div>
+
+```python title="Query"
+config.set_log_format("simple")
+```
+
+```text title="Response"
+DEBUG - Executing SQL query
+DEBUG - Cache miss for key abc123
+```
+
+<div id="verbose">
+  ### Formato detallado
+</div>
+
+```python title="Query"
+config.set_log_format("verbose")
+```
+
+```text title="Response"
+2024-01-15 10:30:45.123 DEBUG datastore.core - Executing SQL query
+2024-01-15 10:30:45.456 DEBUG datastore.cache - Cache miss for key abc123
+```
+
+***
+
+<div id="what-logged">
+  ## Qué se registra
+</div>
+
+<div id="debug-logged">
+  ### Nivel DEBUG
+</div>
+
+* Consultas SQL generadas
+* Selección del motor de ejecución
+* Operaciones de caché (aciertos/fallos)
+* Duración de las operaciones
+* Información de la fuente de datos
+
+```text
+DEBUG - Creating DataStore from file 'data.csv'
+DEBUG - SQL: SELECT * FROM file('data.csv', 'CSVWithNames') WHERE age > 25
+DEBUG - Using engine: chdb
+DEBUG - Execution time: 0.089s
+DEBUG - Cache: Storing result (key: abc123)
+```
+
+<div id="info-logged">
+  ### Nivel INFO
+</div>
+
+* Finalización de operaciones importantes
+* Cambios de configuración
+* Conexiones a fuentes de datos
+
+```text
+INFO - Loaded 1,000,000 rows from data.csv
+INFO - Execution engine set to: chdb
+INFO - Connected to MySQL: localhost:3306/mydb
+```
+
+<div id="warning-logged">
+  ### Nivel WARNING
+</div>
+
+* Uso de funcionalidades obsoletas
+* Advertencias de rendimiento
+* Problemas no críticos
+
+```text
+WARNING - Large result set (>1M rows) may cause memory issues
+WARNING - Cache TTL exceeded, re-executing query
+WARNING - Column 'date' has mixed types, using string
+```
+
+<div id="error-logged">
+  ### Nivel ERROR
+</div>
+
+* Fallos en la ejecución de consultas
+* Errores de conexión
+* Errores de conversión de datos
+
+```text
+ERROR - Failed to execute SQL: syntax error near 'FORM'
+ERROR - Connection to MySQL failed: timeout
+ERROR - Cannot convert column 'price' to float
+```
+
+***
+
+<div id="custom">
+  ## Configuración personalizada de logging
+</div>
+
+<div id="python-logging">
+  ### Uso de logging en Python
+</div>
+
+```python
+import logging
+
+# Configurar el root logger
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('datastore.log'),
+        logging.StreamHandler()
+    ]
+)
+
+# Obtener el logger de DataStore
+ds_logger = logging.getLogger('chdb.datastore')
+ds_logger.setLevel(logging.DEBUG)
+```
+
+<div id="log-file">
+  ### Registrar en un archivo
+</div>
+
+```python
+import logging
+
+# Crear manejador de archivo
+file_handler = logging.FileHandler('datastore_debug.log')
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+))
+
+# Agregar al logger de DataStore
+ds_logger = logging.getLogger('chdb.datastore')
+ds_logger.addHandler(file_handler)
+```
+
+<div id="suppress">
+  ### Deshabilitar el logging
+</div>
+
+```python
+import logging
+
+# Suprimir todos los logs de DataStore
+logging.getLogger('chdb.datastore').setLevel(logging.CRITICAL)
+
+# O usando config
+config.set_log_level(logging.CRITICAL)
+```
+
+***
+
+<div id="scenarios">
+  ## Escenarios de depuración
+</div>
+
+<div id="debug-sql">
+  ### Depurar la generación de SQL
+</div>
+
+```python
+config.enable_debug()
+
+ds = pd.read_csv("data.csv")
+result = ds.filter(ds['age'] > 25).groupby('city').sum()
+```
+
+Salida del log:
+
+```text
+DEBUG - Creating DataStore from file 'data.csv'
+DEBUG - Building filter: age > 25
+DEBUG - Building groupby: city
+DEBUG - Building aggregation: sum
+DEBUG - Generated SQL:
+        SELECT city, SUM(*) 
+        FROM file('data.csv', 'CSVWithNames')
+        WHERE age > 25
+        GROUP BY city
+```
+
+<div id="debug-engine">
+  ### Depurar la selección del motor
+</div>
+
+```python
+config.enable_debug()
+
+result = ds.filter(ds['x'] > 10).apply(custom_func)
+```
+
+Salida del log:
+
+```text
+DEBUG - filter: selecting engine (eligible: chdb, pandas)
+DEBUG - filter: using chdb (SQL-compatible)
+DEBUG - apply: selecting engine (eligible: pandas)
+DEBUG - apply: using pandas (custom function)
+```
+
+<div id="debug-cache">
+  ### Depuración de operaciones de caché
+</div>
+
+```python
+config.enable_debug()
+
+# Primera ejecución
+result1 = ds.filter(ds['age'] > 25).to_df()
+# DEBUG - Fallo de caché para el hash de consulta abc123
+# DEBUG - Ejecutando consulta...
+# DEBUG - Almacenando resultado en caché (key: abc123, size: 1.2MB)
+
+# Segunda ejecución (misma consulta)
+result2 = ds.filter(ds['age'] > 25).to_df()
+# DEBUG - Acierto de caché para el hash de consulta abc123
+# DEBUG - Devolviendo resultado en caché
+```
+
+<div id="debug-performance">
+  ### Solucionar problemas de rendimiento
+</div>
+
+```python
+config.enable_debug()
+config.enable_profiling()
+
+# Los registros mostrarán el tiempo de cada operación
+result = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('region')
+    .agg({'amount': 'sum'})
+    .to_df()
+)
+```
+
+Salida del log:
+
+```text
+DEBUG - filter: 0.002ms
+DEBUG - groupby: 0.001ms
+DEBUG - agg: 0.003ms
+DEBUG - SQL generation: 0.012ms
+DEBUG - SQL execution: 89.456ms  <- Aquí es donde se concentra el tiempo
+DEBUG - Result conversion: 2.345ms
+```
+
+***
+
+<div id="production">
+  ## Configuración de producción
+</div>
+
+<div id="recommended">
+  ### Configuración recomendada
+</div>
+
+```python
+import logging
+from chdb.datastore.config import config
+
+# Producción: logging mínimo
+config.set_log_level(logging.WARNING)
+config.set_log_format("simple")
+config.set_profiling_enabled(False)
+```
+
+<div id="rotation">
+  ### Rotación de logs
+</div>
+
+```python
+import logging
+from logging.handlers import RotatingFileHandler
+
+# Crear manejador de archivo rotativo
+handler = RotatingFileHandler(
+    'datastore.log',
+    maxBytes=10*1024*1024,  # 10MB
+    backupCount=5
+)
+handler.setLevel(logging.WARNING)
+
+# Agregar al logger de DataStore
+logging.getLogger('chdb.datastore').addHandler(handler)
+```
+
+***
+
+<div id="env-vars">
+  ## Variables de entorno
+</div>
+
+También puedes configurar el logging mediante variables de entorno:
+
+```bash
+# Establecer el nivel de log
+export CHDB_LOG_LEVEL=DEBUG
+
+# Establecer el formato de log
+export CHDB_LOG_FORMAT=verbose
+```
+
+```python
+import os
+import logging
+
+# Leer desde el entorno
+log_level = os.environ.get('CHDB_LOG_LEVEL', 'WARNING')
+config.set_log_level(getattr(logging, log_level))
+```
+
+***
+
+<div id="summary">
+  ## Resumen
+</div>
+
+| Tarea                   | Comando                                  |
+| ----------------------- | ---------------------------------------- |
+| Activar depuración      | `config.enable_debug()`                  |
+| Configurar nivel        | `config.set_log_level(logging.DEBUG)`    |
+| Configurar formato      | `config.set_log_format("verbose")`       |
+| Registrar en un archivo | Usar controladores de logging de Python  |
+| Suprimir logs           | `config.set_log_level(logging.CRITICAL)` |

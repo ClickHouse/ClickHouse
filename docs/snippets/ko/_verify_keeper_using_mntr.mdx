@@ -1,0 +1,70 @@
+---
+title: Mntr를 사용하여 Keeper 확인
+---
+
+`mntr` 명령은 ClickHouse Keeper가
+실행 중인지 확인하고, 3개의 Keeper 노드가 서로 어떤 상태인지에 대한 정보를 확인하는 데에도 일반적으로 사용됩니다.
+이 예시에서 사용된 구성에서는 3개의 노드가 함께 동작합니다.
+노드들은 리더를 선출하고, 나머지 노드들은 팔로워가 됩니다.
+
+`mntr` 명령은 성능 관련 정보와 함께 특정
+노드가 팔로워인지 리더인지에 대한 정보도 제공합니다.
+
+<Tip>
+  `mntr` 명령을 Keeper로 보내려면 `netcat`를 설치해야 할 수 있습니다.
+  다운로드 정보는 [nmap.org](https://nmap.org/ncat/) 페이지를 참조하십시오.
+</Tip>
+
+각 Keeper 노드의 상태를 확인하려면 `clickhouse-keeper-01`, `clickhouse-keeper-02`,
+`clickhouse-keeper-03`의 셸에서 아래 명령을 실행하십시오. `clickhouse-keeper-01`용 명령은
+아래와 같습니다:
+
+```bash
+docker exec -it clickhouse-keeper-01  /bin/sh -c 'echo mntr | nc 127.0.0.1 9181'
+```
+
+아래는 팔로워 노드에서 반환된 응답의 예시입니다:
+
+```response title="Response" highlight={9}
+zk_version      v23.3.1.2823-testing-46e85357ce2da2a99f56ee83a079e892d7ec3726
+zk_avg_latency  0
+zk_max_latency  0
+zk_min_latency  0
+zk_packets_received     0
+zk_packets_sent 0
+zk_num_alive_connections        0
+zk_outstanding_requests 0
+zk_server_state follower
+zk_znode_count  6
+zk_watch_count  0
+zk_ephemerals_count     0
+zk_approximate_data_size        1271
+zk_key_arena_size       4096
+zk_latest_snapshot_size 0
+zk_open_file_descriptor_count   46
+zk_max_file_descriptor_count    18446744073709551615
+```
+
+아래는 leader 노드의 응답 예시입니다:
+
+```response title="Response" highlight={9,18-19}
+zk_version      v23.3.1.2823-testing-46e85357ce2da2a99f56ee83a079e892d7ec3726
+zk_avg_latency  0
+zk_max_latency  0
+zk_min_latency  0
+zk_packets_received     0
+zk_packets_sent 0
+zk_num_alive_connections        0
+zk_outstanding_requests 0
+zk_server_state leader
+zk_znode_count  6
+zk_watch_count  0
+zk_ephemerals_count     0
+zk_approximate_data_size        1271
+zk_key_arena_size       4096
+zk_latest_snapshot_size 0
+zk_open_file_descriptor_count   48
+zk_max_file_descriptor_count    18446744073709551615
+zk_followers    2
+zk_synced_followers     2
+```

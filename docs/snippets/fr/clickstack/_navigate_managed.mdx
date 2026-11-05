@@ -1,0 +1,37 @@
+---
+title: Accéder à Managed
+---
+
+Sélectionnez « Launch ClickStack » pour accéder à l’interface ClickStack (HyperDX). Vous serez automatiquement authentifié, puis redirigé.
+
+<Tabs>
+  <Tab title="OpenTelemetry">
+    Des sources de données seront automatiquement créées pour toutes les données OpenTelemetry.
+
+    <img src="/images/clickstack/getting-started/clickstack_managed_ui.webp" alt="" />
+  </Tab>
+
+  <Tab title="Vector">
+    Si vous utilisez Vector, vous devrez créer vos propres sources de données. Il vous sera demandé d’en créer une lors de votre première connexion. Ci-dessous, nous montrons un exemple de configuration pour une source de données de logs.
+
+    <img src="/images/clickstack/create-vector-datasource.webp" alt="" />
+
+    Cette configuration suppose un schéma de type Nginx avec une colonne `time_local` utilisée comme horodatage. Idéalement, il doit s’agir de la colonne d’horodatage déclarée dans la clé primaire. **Cette colonne est obligatoire**.
+
+    Nous vous recommandons également de mettre à jour `Default SELECT` afin de définir explicitement quelles colonnes sont renvoyées dans la vue des logs. Si des champs supplémentaires sont disponibles, comme le nom du service, le niveau de log ou une colonne body, ils peuvent aussi être configurés. La colonne d’affichage de l’horodatage peut également être redéfinie si elle diffère de la colonne utilisée dans la clé primaire de la table et configurée ci-dessus.
+
+    Dans l’exemple ci-dessus, il n’existe pas de colonne `Body` dans les données. À la place, elle est définie à l’aide d’une expression SQL qui reconstitue une ligne de log Nginx à partir des champs disponibles.
+
+    Pour connaître les autres options possibles, consultez la [référence de configuration](/fr/clickstack/managing/config).
+
+    Une fois la source créée, vous devriez être redirigé vers la vue de recherche, où vous pourrez immédiatement commencer à explorer vos données.
+
+    <img src="/images/clickstack/getting-started/clickstack_managed_ui.webp" alt="" />
+  </Tab>
+</Tabs>
+
+<br />
+
+Et c’est tout — vous êtes prêt. 🎉
+
+Vous pouvez maintenant explorer ClickStack : commencez à rechercher dans les logs et les traces, observez comment les logs, les traces et les métriques se corrèlent en temps réel, créez des tableaux de bord, explorez les Service maps, découvrez Event deltas et Patterns, et configurez des alertes pour garder une longueur d’avance sur les problèmes.
