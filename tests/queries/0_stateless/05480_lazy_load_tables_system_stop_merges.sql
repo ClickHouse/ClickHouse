@@ -7,7 +7,8 @@
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic SETTINGS lazy_load_tables = 1;
-CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t (x UInt64) ENGINE = MergeTree ORDER BY x;
+-- Background merges would leave one part before the lock is taken; the explicit `OPTIMIZE` still exercises the lock.
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS merge_selector_algorithm = 'Manual';
 INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t VALUES (1);
 INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t VALUES (2);
 
