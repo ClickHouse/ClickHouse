@@ -1833,7 +1833,8 @@ body.clickpipes_home .hero-text {
     color: #ffffff !important;
 }
 
-/* Prose links: colored without underline by default, underline appears on hover.
+/* Prose links are colored by default. Dark-mode links keep an underline so they
+   remain identifiable when browser color rendering makes the yellow accent subtle.
    Light: #135be6 blue. Dark: ClickHouse yellow #FAFF69. */
 html:not(.dark) .prose a:not(.card):not(.card *) {
     color: #135be6 !important;
@@ -1850,7 +1851,7 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
 :is(.dark) .prose a:not(.card):not(.card *) {
     color: #FAFF69 !important;
     border-bottom: none !important;
-    text-decoration: none !important;
+    text-decoration: underline !important;
     font-weight: normal !important;
 }
 .dark .prose a:not(.card):not(.card *):hover,
