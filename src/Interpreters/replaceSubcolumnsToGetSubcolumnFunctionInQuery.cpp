@@ -55,26 +55,33 @@ void replaceSubcolumns(ASTPtr & ast, ReplaceState & state, bool is_root)
         if (state.columns.contains(name))
             return;
 
-        /// A column name can contain dots (`t.x`, a member of a flattened Nested), so every split is tried, unless the first
-        /// part is a lambda parameter or an alias: `p.f.g` in `p -> p.f.g` reads the parameter, not the column `p.f`.
-        auto splits = Nested::getAllColumnAndSubcolumnPairs(name);
+        /// A column name can contain dots (`t.x`, a member of a flattened Nested), so every split is tried. Beyond the first dot a
+        /// split is not made when the name, its first part or the new column is a lambda parameter or an alias other than the
+        /// identifier's own: `p.f.g` in `p -> p.f.g` reads the parameter, and `t.x` in `getSubcolumn(t.x, 'a')` would read the alias.
+        auto is_parameter_or_alias = [&](const String & part)
+        {
+            return state.lambda_parameters.contains(part) || (state.aliases.contains(part) && part != own_alias);
+        };
         const auto & first_part = identifier->name_parts.front();
         bool first_part_is_alias = state.aliases.contains(first_part) && !state.defining.contains(first_part);
-        if (splits.size() > 1 && (state.lambda_parameters.contains(first_part) || first_part_is_alias))
-            splits.resize(1);
+        bool first_dot_only = state.lambda_parameters.contains(first_part) || first_part_is_alias || is_parameter_or_alias(name);
+        size_t first_dot = name.find('.');
 
-        for (size_t i = 0; i < splits.size(); ++i)
+        for (const auto & [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
         {
-            auto [column_name, subcolumn_name] = splits[i];
             auto column = state.columns.tryGetByName(String(column_name));
             if (!column || !column->type->hasSubcolumn(subcolumn_name))
                 continue;
 
+            bool beyond_first_dot = column_name.size() != first_dot;
+            if (beyond_first_dot && (first_dot_only || is_parameter_or_alias(String(column_name))))
+                break;
+
             auto function = makeASTFunction(
                 "getSubcolumn", make_intrusive<ASTIdentifier>(String(column_name)), make_intrusive<ASTLiteral>(String(subcolumn_name)));
             ASTPtr original = ast;
-            /// Beyond the first split the alias and the name of the identifier are kept, as the old analyzer reads it by them.
-            if (i > 0 && !is_root)
+            /// Beyond the first dot the alias and the name of the identifier are kept, as the old analyzer reads it by them.
+            if (beyond_first_dot && !is_root)
             {
                 if (auto alias = identifier->tryGetAlias(); !alias.empty())
                     function->setAlias(alias);
@@ -121,10 +128,10 @@ void replaceSubcolumnsToGetSubcolumnFunctionInQuery(ASTPtr & ast, const NamesAnd
     collectAliases(*ast, state.aliases);
     replaceSubcolumns(ast, state, /*is_root=*/ true);
 
-    /// A name used elsewhere in the expression keeps the identifier: an alias would change its meaning, no alias the name.
+    /// An identifier of the same name left as written would read the new alias, so that name keeps the identifier.
     for (const auto & [slot, identifier, function, name] : state.unnamed)
     {
-        if (state.aliases.contains(name) || state.kept.contains(name))
+        if (state.kept.contains(name))
         {
             *slot = identifier;
             continue;

@@ -20,3 +20,9 @@ masked name, arr updated	{"t.x.a":7}-2
 self alias	3
 full name alias, inserted	10-{"t.x.a":1}
 full name alias, y updated	20-{"t.x.a":1}
+column captured	21	[1]	[31]
+leading dot, y updated	{".t.a":1}-2	[6]
+leading dot, .t updated	{".t.a":3}-2	[6]
+own alias, name	(2)	3
+own alias, column	(2)	3
+enclosing alias, y updated	7

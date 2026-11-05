@@ -182,3 +182,58 @@ SELECT 'full name alias, inserted', m FROM t_full_name_alias;
 ALTER TABLE t_full_name_alias UPDATE y = 2 WHERE 1;
 SELECT 'full name alias, y updated', m FROM t_full_name_alias;
 DROP TABLE t_full_name_alias;
+
+DROP TABLE IF EXISTS t_column_captured;
+CREATE TABLE t_column_captured
+(
+    `t.x` Tuple(a UInt32),
+    y UInt32,
+    arr Array(UInt32),
+    m1 UInt32 MATERIALIZED t.x.a + (CAST(tuple(y), 'Tuple(a UInt32)') AS `t.x`).a,
+    m2 Array(UInt32) MATERIALIZED arrayMap(`t.x` -> t.x.a, arr),
+    m3 Array(UInt32) MATERIALIZED arrayMap(`t.x.a` -> t.x.a + 1, arr)
+)
+ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_column_captured (`t.x`, y, arr) VALUES (tuple(1), 10, [10, 20]);
+ALTER TABLE t_column_captured UPDATE y = 20, arr = [30] WHERE 1;
+SELECT 'column captured', m1, m2, m3 FROM t_column_captured;
+DROP TABLE t_column_captured;
+
+DROP TABLE IF EXISTS t_leading_dot;
+CREATE TABLE t_leading_dot
+(
+    `.t` Tuple(a UInt32),
+    y UInt32,
+    arr Array(UInt32),
+    m1 String MATERIALIZED concat(formatRowNoNewline('JSONEachRow', `.t.a`), '-', toString(y)),
+    m2 Array(UInt32) MATERIALIZED arrayMap(`.t.a` -> `.t.a` + 1, arr)
+)
+ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_leading_dot (`.t`, y, arr) VALUES (tuple(1), 1, [1]);
+ALTER TABLE t_leading_dot UPDATE y = 2, arr = [5] WHERE 1;
+SELECT 'leading dot, y updated', m1, m2 FROM t_leading_dot;
+ALTER TABLE t_leading_dot UPDATE `.t` = tuple(3) WHERE 1;
+SELECT 'leading dot, .t updated', m1, m2 FROM t_leading_dot;
+DROP TABLE t_leading_dot;
+
+DROP TABLE IF EXISTS t_own_alias_name;
+CREATE TABLE t_own_alias_name (`t.x` Tuple(a UInt32), m UInt32 MATERIALIZED (t.x.a AS `t.x.a`) + 1) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_own_alias_name (`t.x`) VALUES (tuple(1));
+ALTER TABLE t_own_alias_name UPDATE `t.x` = tuple(2) WHERE 1;
+SELECT 'own alias, name', `t.x`, m FROM t_own_alias_name;
+DROP TABLE t_own_alias_name;
+
+DROP TABLE IF EXISTS t_own_alias_column;
+CREATE TABLE t_own_alias_column (`t.x` Tuple(a UInt32), m UInt32 MATERIALIZED (t.x.a AS `t.x`) + 1) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_own_alias_column (`t.x`) VALUES (tuple(1));
+ALTER TABLE t_own_alias_column UPDATE `t.x` = tuple(2) WHERE 1;
+SELECT 'own alias, column', `t.x`, m FROM t_own_alias_column;
+DROP TABLE t_own_alias_column;
+
+DROP TABLE IF EXISTS t_enclosing_alias;
+CREATE TABLE t_enclosing_alias (`t.x` Tuple(a UInt32), y UInt32, m UInt32 MATERIALIZED (((t.x.a AS z) + y) AS `t.x`) * 2 + z)
+ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_enclosing_alias (`t.x`, y) VALUES (tuple(1), 1);
+ALTER TABLE t_enclosing_alias UPDATE y = 2 WHERE 1;
+SELECT 'enclosing alias, y updated', m FROM t_enclosing_alias;
+DROP TABLE t_enclosing_alias;
