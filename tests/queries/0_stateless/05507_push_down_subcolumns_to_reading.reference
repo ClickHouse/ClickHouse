@@ -381,6 +381,11 @@ K8 plan
 count(), tup
 [(0,10),(1,9),(2,9),(3,9),(4,9),(5,9),(6,9)]
 [(0,10),(1,9),(2,9),(3,9),(4,9),(5,9),(6,9)]
+K3 plan, partition key over the whole tuple
+getSubcolumn(tup, \'a\') = 1
+K5 plan, set index over the whole tuple and Nullable
+getSubcolumn(tup, \'a\') = 2
+getSubcolumn(n, \'null\') = 1
 N27-N29 projections are used
 0	100
 1	100

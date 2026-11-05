@@ -703,6 +703,13 @@ SELECT arrayStringConcat(arraySort(arrayFilter(x -> x != '', groupArray(arrayStr
 SELECT groupArray(r) FROM (SELECT tup.a AS x, count() FROM (SELECT * FROM k8) GROUP BY x ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r SETTINGS optimize_use_projections = 1;
 SELECT groupArray(r) FROM (SELECT tup.a AS x, count() FROM (SELECT * FROM k8) GROUP BY x ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r SETTINGS optimize_use_projections = 1, query_plan_push_down_volume_reducing_functions = 0;
 
+SELECT 'K3 plan, partition key over the whole tuple';
+SELECT replaceRegexpOne(explain, '^.*Prewhere filter column: *', '') FROM (EXPLAIN SELECT id FROM (SELECT * FROM k3w) WHERE tup.a = 1) WHERE explain LIKE '%Prewhere filter column:%';
+
+SELECT 'K5 plan, set index over the whole tuple and Nullable';
+SELECT replaceRegexpOne(explain, '^.*Prewhere filter column: *', '') FROM (EXPLAIN SELECT id FROM (SELECT * FROM k5w) WHERE tup.a = 2) WHERE explain LIKE '%Prewhere filter column:%';
+SELECT replaceRegexpOne(explain, '^.*Prewhere filter column: *', '') FROM (EXPLAIN SELECT id FROM (SELECT * FROM k5w) WHERE n.null = 1) WHERE explain LIKE '%Prewhere filter column:%';
+
 SELECT 'N27-N29 projections are used';
 
 SELECT length(s), count() FROM (SELECT s FROM tpa) GROUP BY length(s) ORDER BY ALL LIMIT 3 SETTINGS force_optimize_projection = 1, optimize_use_projections = 1;
