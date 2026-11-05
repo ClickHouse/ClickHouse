@@ -1981,6 +1981,27 @@ void addWindowSteps(QueryPlan & query_plan,
 
     size_t window_descriptions_size = window_descriptions.size();
 
+    /// One value for every decision below.
+    const size_t effective_max_threads = getEffectiveMaxThreads(settings);
+
+    /// Whether window `i` can use the sorting of window `i - 1`. With several threads the streams are
+    /// partitioned for window `i - 1`, so a window with another partitioning has to be sorted again.
+    auto reuses_previous_sorting = [&](size_t i)
+    {
+        const auto & current = window_descriptions[i];
+        const auto & previous = window_descriptions[i - 1];
+        return sortDescriptionIsPrefix(current.full_sort_description, previous.full_sort_description)
+            && (effective_max_threads == 1 || current.partition_by.size() == previous.partition_by.size());
+    };
+
+    /// Reusing a sorting with another partitioning needs one stream, but the pipeline can get more
+    /// threads than planned here, so then the window sortings merge their streams instead of scattering.
+    bool merge_window_streams = false;
+    for (size_t i = 1; i < window_descriptions_size; ++i)
+        if (!window_descriptions[i].full_sort_description.empty() && reuses_previous_sorting(i)
+            && window_descriptions[i].partition_by.size() != window_descriptions[i - 1].partition_by.size())
+            merge_window_streams = true;
+
     for (size_t i = 0; i < window_descriptions_size; ++i)
     {
         const auto & window_description = window_descriptions[i];
@@ -1995,11 +2016,7 @@ void addWindowSteps(QueryPlan & query_plan,
 
         bool need_sort = !window_description.full_sort_description.empty();
         if (need_sort && i != 0)
-        {
-            const size_t effective_max_threads = getEffectiveMaxThreads(settings);
-            need_sort = !sortDescriptionIsPrefix(window_description.full_sort_description, window_descriptions[i - 1].full_sort_description)
-                || (effective_max_threads != 1 && window_description.partition_by.size() != window_descriptions[i - 1].partition_by.size());
-        }
+            need_sort = !reuses_previous_sorting(i);
         SortingStep::Settings sort_settings(query_context->getSettingsRef());
 
         /// Window functions require fully sorted input. Applying sort_overflow_mode = 'break'
@@ -2012,7 +2029,7 @@ void addWindowSteps(QueryPlan & query_plan,
             /// but `WindowTransform` finds partition boundaries with `compareAt`. For key types where
             /// the two disagree the scatter would split one logical partition across threads, so such
             /// windows sort in a single merged stream instead.
-            SortDescription scatter_partition_by = window_description.partition_by;
+            SortDescription scatter_partition_by = merge_window_streams ? SortDescription{} : window_description.partition_by;
             const auto & sort_input_header = query_plan.getCurrentHeader();
             for (const auto & partition_column : window_description.partition_by)
             {
