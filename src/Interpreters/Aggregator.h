@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -617,25 +618,40 @@ public:
         ManyAggregatedDataVariants && data_variants, AdaptiveAggregationSession * adaptive_session) const;
 
     /// Whether the variants' single-level method can be merged in hash partitions
-    /// (`mergeSingleLevelPartitionAndConvertToChunk`): every method with a two-level counterpart, whose
-    /// bucket function defines the partition partition.
+    /// (`mergeSingleLevelPartitionsAndConvertToChunk`): every method with a two-level counterpart, whose
+    /// bucket function defines the partitions.
     bool canMergeSingleLevelInPartitions(const AggregatedDataVariants & variants) const;
 
-    /// Merges partition `partition_index` of `num_partitions` — the keys whose two-level bucket `b` satisfies
-    /// `b % num_partitions == partition_index` — out of every table of `non_empty_data` into a fresh table
-    /// and converts it to one output chunk. The merge adopts the aggregate state pointers of
-    /// first-seen keys and nulls the visited source cells, so distinct partitions may run concurrently
-    /// over the same source tables and the tables' destruction afterwards cannot double-destroy.
-    /// The NULL key of the single-key nullable methods belongs to partition 0.
-    /// `max_source_table_size` (used to pre-size the destination table) must be measured by the
-    /// caller before any partition starts: once the workers run, the source tables are mutated
-    /// concurrently and may not be read outside the caller-owned partition.
-    AggregatedChunk mergeSingleLevelPartitionAndConvertToChunk(
+    /// Hands out the partitions of a merge by partitions (see `mergeSingleLevelPartitionsAndConvertToChunk`): called with
+    /// the rows of the chunk merged so far, it returns the next partition to merge into the chunk, or nothing to end it.
+    using ClaimMergePartition = std::function<std::optional<size_t>(size_t rows)>;
+
+    /// Whether the merge by partitions of `tables` reads them through their cell indexes (see
+    /// `AggregatedDataVariants::indexCells`), which every one of them has then.
+    static bool mergesByCellIndex(const ManyAggregatedDataVariants & tables);
+
+    /// Merges partition `first_partition` of `num_partitions`, then the partitions that `claim` hands out, out of every
+    /// table of `non_empty_data` into one fresh table, and converts it to one output chunk. The partitions hold disjoint
+    /// keys, so a worker merges all its partitions into one table, which spares a table and a chunk for every partition.
+    /// When the merge reads the tables through their cell indexes (see `mergesByCellIndex`), the partitions are those of
+    /// the indexes. Otherwise partition `p` is the keys whose two-level bucket `b` satisfies `b % num_partitions == p`,
+    /// and `num_partitions` is a power of two up to the 256 buckets.
+    /// The merge adopts the aggregate state pointers of first-seen keys and nulls the visited source cells, so distinct
+    /// partitions may run concurrently over the same source tables and the tables' destruction afterwards cannot
+    /// double-destroy. The NULL key of the single-key nullable methods belongs to partition 0. `destination_size_hint`
+    /// pre-sizes the destination table; the caller derives it from the source tables before any partition starts, since
+    /// once the workers run, the source tables are mutated concurrently and may not be read outside the partitions that
+    /// a worker claimed. `parallel_merge` tells when the states of one group of indexed tables merge together on the
+    /// pool. The tables walked source by source defer their large pairs of states to the pool (see
+    /// `mergeDeferredLargeStates`).
+    AggregatedChunk mergeSingleLevelPartitionsAndConvertToChunk(
         ManyAggregatedDataVariants & non_empty_data,
         bool final,
-        size_t partition_index,
         size_t num_partitions,
-        size_t max_source_table_size,
+        size_t first_partition,
+        const ClaimMergePartition & claim,
+        size_t destination_size_hint,
+        const ParallelMergeThreshold & parallel_merge,
         std::atomic<bool> & is_cancelled,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater) const;
 
@@ -1268,7 +1284,7 @@ private:
     /// can parallelize its merge and there is a thread pool to run it on.
     bool worthDeferringLargeMerges() const { return has_function_with_parallelizable_merge && params.max_threads > 1; }
 
-    /// Merge the pairs deferred by `mergeDataImpl` / `mergeSingleLevelPartitionImpl` / `mergeStreamsImplCase`,
+    /// Merge the pairs deferred by `mergeDataImpl` / `mergeSingleLevelPartitionsImpl` / `mergeStreamsImplCase`,
     /// using the thread pool. With `destroy_sources` the source states are destroyed afterwards (they were
     /// detached from the source hash tables); without it they stay owned by the caller (aggregate columns
     /// of a block of partial states). If `is_cancelled` is set, nothing is merged and only the destruction happens.
@@ -1610,15 +1626,18 @@ private:
     template <typename Method>
     AggregatedChunks prepareChunksAndFillTwoLevelImpl(AggregatedDataVariants & data_variants, Method & method, bool final) const;
 
-    /// The per-method body of `mergeSingleLevelPartitionAndConvertToChunk`'s merge. `TwoLevelMethod` is
-    /// the method's two-level counterpart, whose bucket function defines the partition partition.
+    /// The per-method body of `mergeSingleLevelPartitionsAndConvertToChunk`'s merge. `TwoLevelMethod` is the method's
+    /// two-level counterpart, whose bucket function defines the partitions of the tables walked source by source.
     template <typename Method, typename TwoLevelMethod>
-    void mergeSingleLevelPartitionImpl(
+    void mergeSingleLevelPartitionsImpl(
         Method & dst_method,
         const std::vector<AggregatedDataVariants *> & sources,
+        bool indexed,
         Arena * arena,
-        size_t partition_index,
         size_t num_partitions,
+        size_t first_partition,
+        const ClaimMergePartition & claim,
+        const ParallelMergeThreshold & parallel_merge,
         std::atomic<bool> & is_cancelled) const;
 
     template <typename State, typename Table>

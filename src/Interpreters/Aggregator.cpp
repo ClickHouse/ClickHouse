@@ -3636,12 +3636,19 @@ bool Aggregator::canMergeSingleLevelInPartitions(const AggregatedDataVariants & 
     }
 }
 
-Aggregator::AggregatedChunk Aggregator::mergeSingleLevelPartitionAndConvertToChunk(
+bool Aggregator::mergesByCellIndex(const ManyAggregatedDataVariants & tables)
+{
+    return std::ranges::all_of(tables, [](const auto & variants) { return variants->cell_index.has_value(); });
+}
+
+Aggregator::AggregatedChunk Aggregator::mergeSingleLevelPartitionsAndConvertToChunk(
     ManyAggregatedDataVariants & non_empty_data,
     bool final,
-    size_t partition_index,
     size_t num_partitions,
-    size_t max_source_table_size,
+    size_t first_partition,
+    const ClaimMergePartition & claim,
+    size_t destination_size_hint,
+    const ParallelMergeThreshold & parallel_merge,
     std::atomic<bool> & is_cancelled,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
 {
@@ -3654,17 +3661,25 @@ Aggregator::AggregatedChunk Aggregator::mergeSingleLevelPartitionAndConvertToChu
 
     AggregatedDataVariants dst;
     dst.aggregator = this;
-    dst.init(first->type, max_source_table_size / num_partitions);
+    dst.init(first->type, destination_size_hint);
     dst.keys_size = params.keys_size;
     dst.key_sizes = key_sizes;
     dst.aggregates_pools.insert(dst.aggregates_pools.end(), first->aggregates_pools.begin(), first->aggregates_pools.end());
 
     #define M(NAME) \
         else if (first->type == AggregatedDataVariants::Type::NAME) \
-            mergeSingleLevelPartitionImpl< \
+            mergeSingleLevelPartitionsImpl< \
                 decltype(dst.NAME)::element_type, \
                 decltype(dst.NAME ## _two_level)::element_type>( \
-                *dst.NAME, sources, dst.aggregates_pool, partition_index, num_partitions, is_cancelled);
+                *dst.NAME, \
+                sources, \
+                mergesByCellIndex(non_empty_data), \
+                dst.aggregates_pool, \
+                num_partitions, \
+                first_partition, \
+                claim, \
+                parallel_merge, \
+                is_cancelled);
 
     if (false) {} // NOLINT
     APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
@@ -3672,9 +3687,8 @@ Aggregator::AggregatedChunk Aggregator::mergeSingleLevelPartitionAndConvertToChu
     else
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 
-    /// The partitions' tables are disjoint, and the dataflow-statistics updater accumulates, so the
-    /// per-partition records sum up to the whole result — the same accounting the two-level merge
-    /// does per bucket.
+    /// The chunks' tables are disjoint, and the dataflow-statistics updater accumulates, so the per-chunk records sum
+    /// up to the whole result, the same accounting the two-level merge does per bucket.
     if (updater)
         updater->recordAggregationStateSizes(dst, /*bucket=*/-1);
 
@@ -3690,28 +3704,44 @@ Aggregator::AggregatedChunk Aggregator::mergeSingleLevelPartitionAndConvertToChu
 }
 
 template <typename Method, typename TwoLevelMethod>
-void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
+void NO_INLINE Aggregator::mergeSingleLevelPartitionsImpl(
     Method & dst_method,
     const std::vector<AggregatedDataVariants *> & sources,
+    bool indexed,
     Arena * arena,
-    size_t partition_index,
     size_t num_partitions,
+    size_t first_partition,
+    const ClaimMergePartition & claim,
+    const ParallelMergeThreshold & parallel_merge,
     std::atomic<bool> & is_cancelled) const
 {
-    chassert(std::has_single_bit(num_partitions));
-    const size_t partition_mask = num_partitions - 1;
-
     /// Set methods (GROUP BY without aggregate functions) have no aggregate states, so merging a source
     /// cell into the destination is just inserting its key - there is nothing to adopt, merge or destroy.
     static constexpr bool is_void_mapped = std::is_void_v<typename Method::Mapped>;
 
+    /// When the merge reads the tables through their cell indexes (`indexed`, see `mergesByCellIndex`), a partition of
+    /// the merge is a partition of the indexes, the same in every table: the cells of the partition from every table,
+    /// then their states, as the bucket merge of two-level tables merges a bucket. Only the destination states of one
+    /// partition are touched at a time, and no table is walked for the cells of other partitions. A state with a
+    /// destructor stays in its source table until the merge of its partition, whose large groups of states take the pool
+    /// together (see `mergeSourceStates`). Otherwise the partition walks the tables source by source. Such a partition
+    /// is a large share of the keys, so its pairs of states merge as each source comes, and only the large ones wait for
+    /// the pool: holding the pairs of the whole partition for the merge by destination would cost memory and the
+    /// locality of the pairs merged source by source. Only a table that iterates its cells is ever indexed.
+    using Table = typename Method::Data;
+    chassert(!indexed || IterableCells<Table>);
+    const bool collects_source_slots = indexed && !all_aggregates_has_trivial_destructor;
+
+    /// The destination state of each pair, and either its source state, detached from the source table, or the slot of
+    /// the source cell, whose table keeps the state until the merge of the partition.
     PaddedPODArray<AggregateDataPtr> dst_places;
     PaddedPODArray<AggregateDataPtr> src_places;
+    PaddedPODArray<AggregateDataPtr *> src_slots;
 
-    /// Large states (e.g. `uniqExact` sets past the two-level threshold) are not merged in place but
-    /// collected here and merged with all their sources in one parallel pass after the last source.
+    /// Large states (e.g. `uniqExact` sets past the two-level threshold) of the merge source by source are not merged in
+    /// place but collected here and merged with all their sources in one parallel pass after the last source.
     DeferredMerges deferred;
-    if (worthDeferringLargeMerges())
+    if (!indexed && worthDeferringLargeMerges())
         deferred.resize(params.aggregates_size);
     DeferredMerges * deferred_ptr = deferred.empty() ? nullptr : &deferred;
 
@@ -3721,17 +3751,24 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
         if (inserted)
         {
             dst_data = src_data;
+            src_data = nullptr;
         }
         else if (is_simple_count)
         {
             getInlineCountState(dst_data) += getInlineCountState(src_data);
+            src_data = nullptr;
+        }
+        else if (collects_source_slots)
+        {
+            dst_places.push_back(dst_data);
+            src_slots.push_back(&src_data);
         }
         else
         {
             dst_places.push_back(dst_data);
             src_places.push_back(src_data);
+            src_data = nullptr;
         }
-        src_data = nullptr;
     };
 
     auto merge_cell = [&](const auto & key, [[maybe_unused]] auto && src_data, size_t hash_value)
@@ -3774,136 +3811,181 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
                 return;
 
             auto & dst_table = dst_method.data;
-            if (!dst_table.hasNullKeyData())
-            {
-                dst_table.hasNullKeyData() = true;
-                dst_table.getNullKeyData() = src_table.getNullKeyData();
-            }
-            else if constexpr (is_void_mapped)
+            if constexpr (is_void_mapped)
             {
                 /// The null group carries no state: its presence in the destination is all there is.
-            }
-            else if (is_simple_count)
-            {
-                getInlineCountState(dst_table.getNullKeyData()) += getInlineCountState(src_table.getNullKeyData());
+                dst_table.hasNullKeyData() = true;
             }
             else
             {
-                dst_places.push_back(dst_table.getNullKeyData());
-                src_places.push_back(src_table.getNullKeyData());
+                const bool inserted = !dst_table.hasNullKeyData();
+                dst_table.hasNullKeyData() = true;
+                adopt_or_collect(inserted, dst_table.getNullKeyData(), src_table.getNullKeyData());
             }
             src_table.hasNullKeyData() = false;
-            src_table.getNullKeyData() = nullptr;
         }
     };
 
-    const bool owns_null_slot = partition_index == 0;
+    /// The working memory of the merges of the states of indexed tables, which every partition reuses.
+    PaddedPODArray<UInt32> order;
+    AggregateDataPtrs group;
 
-    try
+    /// A partition of the tables walked source by source takes the keys of the two-level buckets `b` with
+    /// `b % num_partitions == partition_index`.
+    chassert(indexed || std::has_single_bit(num_partitions));
+    const size_t partition_mask = num_partitions - 1;
+
+    const auto merge_partition = [&](size_t partition_index)
     {
-        for (auto * source : sources)
+        const bool owns_null_slot = partition_index == 0;
+
+        if constexpr (IterableCells<Table>)
         {
-            if (is_cancelled.load(std::memory_order_seq_cst))
-                break;
-
-            auto & src = getDataVariant<Method>(*source).data;
-
-            if (owns_null_slot)
-                merge_null_slot(src);
-
-            if constexpr (requires { src.begin() != src.end(); })
+            if (indexed)
             {
-                static constexpr size_t prefetch_batch_size = 16;
-                using CellPtr = decltype(&*src.begin());
-                std::array<std::pair<CellPtr, size_t>, prefetch_batch_size> batch;
+                if (owns_null_slot)
+                    for (auto * source : sources)
+                        merge_null_slot(getDataVariant<Method>(*source).data);
 
-                auto it = src.begin();
-                const auto end = src.end();
-                while (it != end)
+                /// The tables of one aggregation are indexed with the same partitions, those of the merge.
+                using Cell = typename Table::cell_type;
+                for (const auto * source : sources)
                 {
-                    size_t batch_size = 0;
-                    for (; it != end && batch_size < prefetch_batch_size; ++it)
-                    {
-                        const size_t hash_value = it.getHash();
-                        if ((TwoLevelMethod::Data::getBucketFromHash(hash_value) & partition_mask) != partition_index)
-                            continue;
-                        batch[batch_size++] = {&*it, hash_value};
-                    }
-
-                    if (params.enable_prefetch)
-                    {
-                        for (size_t i = 0; i < batch_size; ++i)
-                            dst_method.data.prefetchByHash(batch[i].second);
-                    }
-
-                    for (size_t i = 0; i < batch_size; ++i)
-                        merge_cell(
-                            std::decay_t<decltype(*batch[i].first)>::getKey(batch[i].first->getValue()),
-                            batch[i].first->getMapped(),
-                            batch[i].second);
+                    chassert(source->cell_index->numPartitions() == num_partitions);
+                    source->cell_index->forEachCell<Cell>(
+                        partition_index,
+                        partition_index + 1,
+                        [&](Cell & cell, UInt64 hash) { merge_cell(Cell::getKey(cell.getValue()), cell.getMapped(), hash); });
                 }
+
+                if (!collects_source_slots)
+                {
+                    flush_merges();
+                }
+                else if (!dst_places.empty())
+                {
+                    mergeSourceStates(dst_places, src_slots, parallel_merge, order, group, arena, is_cancelled);
+                    dst_places.clear();
+                    src_slots.clear();
+                }
+                return;
             }
-            else if constexpr (requires { src.emptyStringSlot(); })
+        }
+
+        try
+        {
+            for (auto * source : sources)
             {
-                /// A string table dispatches keys over size-class sub-tables and has no unified cell
-                /// iterator. The empty-string key lives in a dedicated slot whose dispatch hash is 0,
-                /// so it belongs to partition 0 like the NULL key.
-                auto & dst_table = dst_method.data;
+                if (is_cancelled.load(std::memory_order_seq_cst))
+                    break;
+
+                auto & src = getDataVariant<Method>(*source).data;
 
                 if (owns_null_slot)
+                    merge_null_slot(src);
+
+                if constexpr (IterableCells<Table>)
                 {
-                    auto & src_slot = src.emptyStringSlot();
-                    if (src_slot.hasZero() && src_slot.zeroValue()->getMapped())
-                    {
-                        auto & dst_slot = dst_table.emptyStringSlot();
-                        typename std::decay_t<decltype(dst_slot)>::LookupResult slot_it;
-                        bool inserted = false;
+                    static constexpr size_t prefetch_batch_size = 16;
+                    using CellPtr = decltype(&*src.begin());
+                    std::array<std::pair<CellPtr, size_t>, prefetch_batch_size> batch;
 
-                        /// The empty-string slot ignores the key argument.
-                        dst_slot.emplace(0, slot_it, inserted, 0);
-                        adopt_or_collect(inserted, slot_it->getMapped(), src_slot.zeroValue()->getMapped());
-                    }
-                }
-
-                std::decay_t<decltype(src)>::forEachSubMapPair(
-                    src,
-                    dst_table,
-                    [&](auto & src_sub, auto & dst_sub)
+                    auto it = src.begin();
+                    const auto end = src.end();
+                    while (it != end)
                     {
-                        for (auto it = src_sub.begin(); it != src_sub.end(); ++it)
+                        size_t batch_size = 0;
+                        for (; it != end && batch_size < prefetch_batch_size; ++it)
                         {
                             const size_t hash_value = it.getHash();
                             if ((TwoLevelMethod::Data::getBucketFromHash(hash_value) & partition_mask) != partition_index)
                                 continue;
-
-                            AggregateDataPtr & src_data = it->getMapped();
-                            if (!src_data)
-                                continue;
-
-                            typename std::decay_t<decltype(dst_sub)>::LookupResult dst_it;
-                            bool inserted = false;
-                            dst_sub.emplace(it->value.first, dst_it, inserted, hash_value);
-                            adopt_or_collect(inserted, dst_it->getMapped(), src_data);
+                            batch[batch_size++] = {&*it, hash_value};
                         }
-                    });
-            }
-            else
-            {
-                static_assert(false, "The aggregation method's table supports neither cell iteration nor sub-table pairing");
-            }
 
-            flush_merges();
+                        if (params.enable_prefetch)
+                        {
+                            for (size_t i = 0; i < batch_size; ++i)
+                                dst_method.data.prefetchByHash(batch[i].second);
+                        }
+
+                        for (size_t i = 0; i < batch_size; ++i)
+                            merge_cell(
+                                std::decay_t<decltype(*batch[i].first)>::getKey(batch[i].first->getValue()),
+                                batch[i].first->getMapped(),
+                                batch[i].second);
+                    }
+                }
+                else if constexpr (requires { src.emptyStringSlot(); })
+                {
+                    /// A string table dispatches keys over size-class sub-tables and has no unified cell
+                    /// iterator. The empty-string key lives in a dedicated slot whose dispatch hash is 0,
+                    /// so it belongs to partition 0 like the NULL key.
+                    auto & dst_table = dst_method.data;
+
+                    if (owns_null_slot)
+                    {
+                        auto & src_slot = src.emptyStringSlot();
+                        if (src_slot.hasZero() && src_slot.zeroValue()->getMapped())
+                        {
+                            auto & dst_slot = dst_table.emptyStringSlot();
+                            typename std::decay_t<decltype(dst_slot)>::LookupResult slot_it;
+                            bool inserted = false;
+
+                            /// The empty-string slot ignores the key argument.
+                            dst_slot.emplace(0, slot_it, inserted, 0);
+                            adopt_or_collect(inserted, slot_it->getMapped(), src_slot.zeroValue()->getMapped());
+                        }
+                    }
+
+                    std::decay_t<decltype(src)>::forEachSubMapPair(
+                        src,
+                        dst_table,
+                        [&](auto & src_sub, auto & dst_sub)
+                        {
+                            for (auto it = src_sub.begin(); it != src_sub.end(); ++it)
+                            {
+                                const size_t hash_value = it.getHash();
+                                if ((TwoLevelMethod::Data::getBucketFromHash(hash_value) & partition_mask) != partition_index)
+                                    continue;
+
+                                AggregateDataPtr & src_data = it->getMapped();
+                                if (!src_data)
+                                    continue;
+
+                                typename std::decay_t<decltype(dst_sub)>::LookupResult dst_it;
+                                bool inserted = false;
+                                dst_sub.emplace(it->value.first, dst_it, inserted, hash_value);
+                                adopt_or_collect(inserted, dst_it->getMapped(), src_data);
+                            }
+                        });
+                }
+                else
+                {
+                    static_assert(false, "The aggregation method's table supports neither cell iteration nor sub-table pairing");
+                }
+
+                flush_merges();
+            }
         }
-    }
-    catch (...)
-    {
-        destroyDeferredMergeSources(deferred);
-        throw;
-    }
+        catch (...)
+        {
+            destroyDeferredMergeSources(deferred);
+            throw;
+        }
 
-    /// On cancellation this only frees the deferred source states: the partition's result is thrown away.
-    if (deferred_ptr)
-        mergeDeferredLargeStates(deferred, arena, is_cancelled, /*destroy_sources=*/ true);
+        /// On cancellation this only frees the deferred source states: the partition's result is thrown away.
+        if (deferred_ptr)
+            mergeDeferredLargeStates(deferred, arena, is_cancelled, /*destroy_sources=*/ true);
+    };
+
+    /// The partitions hold disjoint keys, so every partition that the worker claims merges into the one destination.
+    for (std::optional<size_t> partition_index = first_partition; partition_index; partition_index = claim(dst_method.data.size()))
+    {
+        if (is_cancelled.load(std::memory_order_seq_cst))
+            break;
+        merge_partition(*partition_index);
+    }
 }
 
 bool Aggregator::isTypeFixedSize(const ManyAggregatedDataVariants & data_variants) const
