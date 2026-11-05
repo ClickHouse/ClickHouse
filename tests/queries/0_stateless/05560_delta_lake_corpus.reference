@@ -71,22 +71,22 @@ delta/change_data_feed_deletion_vectors types	Nullable(Int64), Nullable(String),
 delta/column_mapping_id WHERE `id` < 10	ok
 delta/column_mapping_id WHERE `id` = 7	ok
 delta/column_mapping_id WHERE `id` >= 25	ok
-delta/column_mapping_id `arr`	MISMATCH
-delta/column_mapping_id `arr`.`c`	INCORRECT_DATA
-delta/column_mapping_id `arr`.size0	MISMATCH
+delta/column_mapping_id `arr`	ok
+delta/column_mapping_id `arr`.`c`	ok
+delta/column_mapping_id `arr`.size0	ok
 delta/column_mapping_id `id`	ok
-delta/column_mapping_id `mp`	MISMATCH
+delta/column_mapping_id `mp`	ok
 delta/column_mapping_id `s2`	ok
 delta/column_mapping_id `s`	ok
 delta/column_mapping_id `st`	ok
 delta/column_mapping_id `st`.`a2`	ok
-delta/column_mapping_id content	8	MISMATCH
+delta/column_mapping_id content	8	ok
 delta/column_mapping_id content version 0 CREATE TABLE	0	ok
-delta/column_mapping_id content version 1 WRITE	5	MISMATCH
-delta/column_mapping_id content version 2 RENAME COLUMN	5	MISMATCH
-delta/column_mapping_id content version 3 RENAME COLUMN	5	MISMATCH
-delta/column_mapping_id content version 4 DROP COLUMNS	5	MISMATCH
-delta/column_mapping_id content version 5 ADD COLUMNS	5	MISMATCH
+delta/column_mapping_id content version 1 WRITE	5	ok
+delta/column_mapping_id content version 2 RENAME COLUMN	5	ok
+delta/column_mapping_id content version 3 RENAME COLUMN	5	ok
+delta/column_mapping_id content version 4 DROP COLUMNS	5	ok
+delta/column_mapping_id content version 5 ADD COLUMNS	5	ok
 delta/column_mapping_id count()	ok
 delta/column_mapping_id count() version 0 CREATE TABLE	ok
 delta/column_mapping_id count() version 1 WRITE	ok
@@ -193,22 +193,22 @@ delta/delta332_change_data_feed_deletion_vectors types	Nullable(Int64), Nullable
 delta/delta332_column_mapping_id WHERE `id` < 10	ok
 delta/delta332_column_mapping_id WHERE `id` = 7	ok
 delta/delta332_column_mapping_id WHERE `id` >= 25	ok
-delta/delta332_column_mapping_id `arr`	MISMATCH
-delta/delta332_column_mapping_id `arr`.`c`	INCORRECT_DATA
-delta/delta332_column_mapping_id `arr`.size0	MISMATCH
+delta/delta332_column_mapping_id `arr`	ok
+delta/delta332_column_mapping_id `arr`.`c`	ok
+delta/delta332_column_mapping_id `arr`.size0	ok
 delta/delta332_column_mapping_id `id`	ok
-delta/delta332_column_mapping_id `mp`	MISMATCH
+delta/delta332_column_mapping_id `mp`	ok
 delta/delta332_column_mapping_id `s2`	ok
 delta/delta332_column_mapping_id `s`	ok
 delta/delta332_column_mapping_id `st`	ok
 delta/delta332_column_mapping_id `st`.`a2`	ok
-delta/delta332_column_mapping_id content	8	MISMATCH
+delta/delta332_column_mapping_id content	8	ok
 delta/delta332_column_mapping_id content version 0 CREATE TABLE	0	ok
-delta/delta332_column_mapping_id content version 1 WRITE	5	MISMATCH
-delta/delta332_column_mapping_id content version 2 RENAME COLUMN	5	MISMATCH
-delta/delta332_column_mapping_id content version 3 RENAME COLUMN	5	MISMATCH
-delta/delta332_column_mapping_id content version 4 DROP COLUMNS	5	MISMATCH
-delta/delta332_column_mapping_id content version 5 ADD COLUMNS	5	MISMATCH
+delta/delta332_column_mapping_id content version 1 WRITE	5	ok
+delta/delta332_column_mapping_id content version 2 RENAME COLUMN	5	ok
+delta/delta332_column_mapping_id content version 3 RENAME COLUMN	5	ok
+delta/delta332_column_mapping_id content version 4 DROP COLUMNS	5	ok
+delta/delta332_column_mapping_id content version 5 ADD COLUMNS	5	ok
 delta/delta332_column_mapping_id count()	ok
 delta/delta332_column_mapping_id count() version 0 CREATE TABLE	ok
 delta/delta332_column_mapping_id count() version 1 WRITE	ok
@@ -328,15 +328,15 @@ delta/delta332_v2_checkpoint_parquet types	Nullable(Int64), Nullable(String), Nu
 delta/iceberg_compat_v2 WHERE `id` < 10	ok
 delta/iceberg_compat_v2 WHERE `id` = 7	ok
 delta/iceberg_compat_v2 WHERE `id` >= 25	ok
-delta/iceberg_compat_v2 `arr`	MISMATCH
-delta/iceberg_compat_v2 `arr`.`x`	INCORRECT_DATA
-delta/iceberg_compat_v2 `arr`.size0	MISMATCH
+delta/iceberg_compat_v2 `arr`	ok
+delta/iceberg_compat_v2 `arr`.`x`	ok
+delta/iceberg_compat_v2 `arr`.size0	ok
 delta/iceberg_compat_v2 `id`	ok
 delta/iceberg_compat_v2 `mp`	ok
 delta/iceberg_compat_v2 `s`	ok
-delta/iceberg_compat_v2 content	3	MISMATCH
+delta/iceberg_compat_v2 content	3	ok
 delta/iceberg_compat_v2 content version 0 CREATE TABLE	0	ok
-delta/iceberg_compat_v2 content version 1 WRITE	2	MISMATCH
+delta/iceberg_compat_v2 content version 1 WRITE	2	ok
 delta/iceberg_compat_v2 count()	ok
 delta/iceberg_compat_v2 count() version 0 CREATE TABLE	ok
 delta/iceberg_compat_v2 count() version 1 WRITE	ok
