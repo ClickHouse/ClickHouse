@@ -29,6 +29,8 @@ namespace DB
 {
 
 struct StorageID;
+class AccessRights;
+class AccessFlags;
 
 namespace ErrorCodes
 {
@@ -239,6 +241,17 @@ public:
     /// containing a dot, or unknown names such as virtual columns) are returned unchanged. The result is deduplicated
     /// while preserving the order of first appearance.
     Names getColumnNamesForSelectAccessCheck(const Names & column_names, const ContextPtr & context, const StorageID & table_id) const;
+
+    /// Returns the names of the real subcolumns of the column `column_name` that have a grant of `flags` on their exact
+    /// name which they do not inherit from the column (e.g. ``GRANT SELECT(`json.a`)`` without a grant on `json`).
+    /// Grants are matched by name only, so a granted name is returned only if it resolves, by the same type-aware
+    /// resolution as identifiers (including dynamic paths of `JSON` / `Dynamic` / `Map`), to a subcolumn of this column.
+    Names getSubcolumnsWithExplicitGrant(
+        const AccessRights & access_rights,
+        const AccessFlags & flags,
+        const String & database,
+        const String & table,
+        const String & column_name) const;
 
     bool hasPhysical(const String & column_name) const;
     bool hasNotAlias(const String & column_name) const;

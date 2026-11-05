@@ -444,13 +444,27 @@ void checkAccessRightsForSelect(
         /// because `required_columns` will contain the name of a column of minimum size (see TreeRewriterResult::collectUsedColumns())
         /// which is probably not the same column as the column the current user has access to.
         auto access = context->getAccess();
+        /// Probe the raw rights so that probing does not pollute `used_privileges` of the query log.
+        const auto access_rights = access->getAccessRightsWithImplicit();
         const auto * alias = storage ? storage->as<StorageAlias>() : nullptr;
-        for (const auto & column : table_metadata->getColumns())
+        const auto & columns = table_metadata->getColumns();
+        for (const auto & column : columns)
         {
             /// An `Alias` also requires access to the same column of its target table.
             if (access->isGranted(AccessType::SELECT, table_id.database_name, table_id.table_name, column.name)
                 && (!alias || alias->isTargetTableGranted(context, AccessType::SELECT, column.name)))
                 return;
+
+            /// A grant on the exact name of a subcolumn (e.g. ``GRANT SELECT(`json.a`)``) takes precedence over its
+            /// column in the `SELECT` check (see `ColumnsDescription::getColumnNamesForSelectAccessCheck`), so such a
+            /// subcolumn is readable even without a grant on its column, and it is enough for a trivial query too.
+            for (const auto & subcolumn : columns.getSubcolumnsWithExplicitGrant(
+                     *access_rights, AccessType::SELECT, table_id.database_name, table_id.table_name, column.name))
+            {
+                if (!alias || alias->isTargetTableGranted(context, AccessType::SELECT, subcolumn)
+                    || alias->isTargetTableGranted(context, AccessType::SELECT, column.name))
+                    return;
+            }
         }
         throw Exception(
             ErrorCodes::ACCESS_DENIED,

@@ -441,16 +441,11 @@ static void checkAccessToTableMetadata(const TableNode & table_node, const Conte
         /// visible too. Grants are matched by name only, so a granted name counts only if it resolves, by the same
         /// type-aware resolution as identifiers (including dynamic paths of `JSON` / `Dynamic` / `Map`), to a
         /// subcolumn of this column: a grant on `secret.no_such_subcolumn` of a scalar column `secret` reveals nothing.
-        const String subcolumn_prefix = column.name + '.';
         for (const auto access_type : {AccessType::SELECT, AccessType::SHOW_COLUMNS})
         {
-            for (const auto & name : access_rights->getColumnsWithExplicitGrantAndPrefix(
-                     access_type, storage_id.database_name, storage_id.table_name, subcolumn_prefix))
-            {
-                auto subcolumn = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
-                if (subcolumn && subcolumn->isSubcolumn() && subcolumn->getNameInStorage() == column.name)
-                    return;
-            }
+            if (!columns.getSubcolumnsWithExplicitGrant(
+                     *access_rights, access_type, storage_id.database_name, storage_id.table_name, column.name).empty())
+                return;
         }
     }
 

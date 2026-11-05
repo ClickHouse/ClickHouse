@@ -598,22 +598,47 @@ NameSet checkAccessRights(
           * one table column is accessible.
           */
         auto access = query_context->getAccess();
+        const auto & columns = storage_snapshot->metadata->getColumns();
+
+        /// A grant on the exact name of a subcolumn (e.g. ``GRANT SELECT(`json.a`)``) takes precedence over its column
+        /// in the `SELECT` check (see `ColumnsDescription::getColumnNamesForSelectAccessCheck`), so such a subcolumn is
+        /// readable even without a grant on its column, and it is enough for a trivial query too.
+        /// Probe the raw rights so that probing does not pollute `used_privileges` of the query log.
+        const auto access_rights = access->getAccessRightsWithImplicit();
+        std::unordered_map<String, Names> granted_subcolumns;
+        for (const auto & column : columns)
+        {
+            auto subcolumns = columns.getSubcolumnsWithExplicitGrant(
+                *access_rights, AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name);
+            if (!subcolumns.empty())
+                granted_subcolumns.emplace(column.name, std::move(subcolumns));
+        }
+
         const auto * alias = storage->as<StorageAlias>();
         NameSet chain_granted;
         if (alias)
         {
             Names all_columns;
-            all_columns.reserve(storage_snapshot->metadata->getColumns().size());
-            for (const auto & column : storage_snapshot->metadata->getColumns())
+            all_columns.reserve(columns.size());
+            for (const auto & column : columns)
                 all_columns.push_back(column.name);
+            for (const auto & [_, subcolumns] : granted_subcolumns)
+                all_columns.insert(all_columns.end(), subcolumns.begin(), subcolumns.end());
             chain_granted = alias->filterColumnsGrantedThroughChain(query_context, AccessType::SELECT, all_columns);
         }
-        for (const auto & column : storage_snapshot->metadata->getColumns())
+        for (const auto & column : columns)
         {
             /// An `Alias` also requires access to the selected column of its target table.
             if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
                 && (!alias || chain_granted.contains(column.name)))
                 accessible_columns.insert(column.name);
+        }
+        for (const auto & [column_name, subcolumns] : granted_subcolumns)
+        {
+            /// On the target of an `Alias` the subcolumn is readable through a grant on either its exact name or its column.
+            for (const auto & subcolumn : subcolumns)
+                if (!alias || chain_granted.contains(subcolumn) || chain_granted.contains(column_name))
+                    accessible_columns.insert(subcolumn);
         }
 
         if (accessible_columns.empty())

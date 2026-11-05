@@ -497,6 +497,7 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
     auto column_sizes = storage->getColumnSizes();
     auto column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns());
 
+    bool filtered_by_allowed_columns = false;
     if (!column_names_allowed_to_select.empty())
     {
         /// Keep only the columns the user is allowed to read, so that a trivial query reads a column
@@ -506,21 +507,36 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
         /// physical columns: reading any of them just to determine the number of rows for a trivial query
         /// (such as `SELECT count()`) is allowed, because computing an accessible ALIAS column requires
         /// reading its physical source columns anyway and no column values are exposed to the user.
-        bool has_allowed_physical_column = std::any_of(
-            column_names_and_types.begin(),
-            column_names_and_types.end(),
-            [&](const auto & column) { return column_names_allowed_to_select.contains(column.name); });
-
-        if (has_allowed_physical_column)
+        ///
+        /// The allowed names also include the subcolumns the user has a grant on by their exact name (e.g. `t.a` of a
+        /// `Tuple` or a dynamic path `json.a` of a `JSON` column, see `checkAccessRights`). Dynamic subcolumns are not
+        /// listed in `column_names_and_types`, so they are resolved by name, and subcolumns must not be skipped when
+        /// choosing among the allowed columns: reading another column may be denied, e.g. by an `Alias` table.
+        NamesAndTypesList allowed_columns;
+        NameSet listed_names;
+        for (const auto & column : column_names_and_types)
         {
-            auto it = column_names_and_types.begin();
-            while (it != column_names_and_types.end())
-            {
-                if (!column_names_allowed_to_select.contains(it->name))
-                    it = column_names_and_types.erase(it);
-                else
-                    ++it;
-            }
+            listed_names.insert(column.name);
+            if (column_names_allowed_to_select.contains(column.name))
+                allowed_columns.push_back(column);
+        }
+
+        Names not_listed_names;
+        for (const auto & name : column_names_allowed_to_select)
+            if (!listed_names.contains(name))
+                not_listed_names.push_back(name);
+        std::sort(not_listed_names.begin(), not_listed_names.end());
+        for (const auto & name : not_listed_names)
+        {
+            auto column = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), name);
+            if (column && column->isSubcolumn())
+                allowed_columns.push_back(std::move(*column));
+        }
+
+        if (!allowed_columns.empty())
+        {
+            filtered_by_allowed_columns = true;
+            column_names_and_types = std::move(allowed_columns);
         }
     }
 
@@ -549,7 +565,7 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
                 "Cannot read from table expression with no columns");
 
         /// If we have no information about columns sizes, choose a column of minimum size of its data type
-        result = ExpressionActions::getSmallestColumn(column_names_and_types);
+        result = ExpressionActions::getSmallestColumn(column_names_and_types, /*skip_subcolumns=*/ !filtered_by_allowed_columns);
     }
 
     return result;

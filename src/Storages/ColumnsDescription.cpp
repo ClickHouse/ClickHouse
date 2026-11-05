@@ -925,6 +925,23 @@ Names ColumnsDescription::getColumnNamesForSelectAccessCheck(
     return result;
 }
 
+Names ColumnsDescription::getSubcolumnsWithExplicitGrant(
+    const AccessRights & access_rights,
+    const AccessFlags & flags,
+    const String & database,
+    const String & table,
+    const String & column_name) const
+{
+    Names result;
+    for (auto & name : access_rights.getColumnsWithExplicitGrantAndPrefix(flags, database, table, column_name + '.'))
+    {
+        auto subcolumn = tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+        if (subcolumn && subcolumn->isSubcolumn() && subcolumn->getNameInStorage() == column_name)
+            result.push_back(std::move(name));
+    }
+    return result;
+}
+
 std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumnsOptions & options, const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
