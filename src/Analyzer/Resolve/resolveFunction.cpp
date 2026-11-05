@@ -1313,9 +1313,10 @@ static QueryTreeNodePtr buildScalarInComparison(
 
 /// Builds exact equality for a heterogeneous numeric pair. Native float/integer comparisons are
 /// already exact. For a `Decimal` and an integer or integral float, check that the `Decimal` is integral
-/// and compare both integer values as `Int256`. This avoids narrower signed intermediates and the
-/// overflow-prone scale multiplication in mixed Decimal/integer comparisons. Non-integral floats
-/// keep the regular ClickHouse float/`Decimal` comparison semantics.
+/// and compare both integer values as `Int256`. Floats are formatted with zero fractional digits and
+/// round-tripped to prove that they are integral. This avoids narrower signed intermediates and the
+/// overflow-prone scale multiplication in mixed Decimal/integer comparisons. Non-integral floats keep
+/// the regular ClickHouse float/`Decimal` comparison semantics.
 static QueryTreeNodePtr buildNumericEquality(
     const QueryTreeNodePtr & left_argument,
     const QueryTreeNodePtr & right_argument)
@@ -1343,9 +1344,44 @@ static QueryTreeNodePtr buildNumericEquality(
     const auto & numeric_argument = left_is_decimal ? right_argument : left_argument;
     const auto & numeric_type = left_is_decimal ? right_type : left_type;
 
-    auto int256_type_name = std::make_shared<ConstantNode>("Int256", std::make_shared<DataTypeString>());
-    auto converted_integer = std::make_shared<FunctionNode>("accurateCastOrNull");
-    converted_integer->getArguments().getNodes() = {numeric_argument, std::move(int256_type_name)};
+    QueryTreeNodePtr converted_integer;
+    QueryTreeNodePtr float_can_convert;
+    QueryTreeNodePtr float64_argument;
+    if (isInteger(numeric_type))
+    {
+        auto int256_type_name = std::make_shared<ConstantNode>("Int256", std::make_shared<DataTypeString>());
+        auto accurate_cast = std::make_shared<FunctionNode>("accurateCastOrNull");
+        accurate_cast->getArguments().getNodes() = {numeric_argument, std::move(int256_type_name)};
+        converted_integer = std::move(accurate_cast);
+    }
+    else
+    {
+        auto to_float64 = std::make_shared<FunctionNode>("toFloat64");
+        to_float64->getArguments().getNodes().push_back(numeric_argument);
+        float64_argument = std::move(to_float64);
+
+        auto is_finite = std::make_shared<FunctionNode>("isFinite");
+        is_finite->getArguments().getNodes().push_back(float64_argument);
+        auto absolute_value = std::make_shared<FunctionNode>("abs");
+        absolute_value->getArguments().getNodes().push_back(float64_argument);
+        auto is_in_decimal_range = std::make_shared<FunctionNode>("less");
+        is_in_decimal_range->getArguments().getNodes()
+            = {std::move(absolute_value), std::make_shared<ConstantNode>(Field{1e76})};
+        auto can_convert = std::make_shared<FunctionNode>("and");
+        can_convert->getArguments().getNodes() = {std::move(is_finite), std::move(is_in_decimal_range)};
+        float_can_convert = can_convert;
+
+        auto safe_float = std::make_shared<FunctionNode>("if");
+        safe_float->getArguments().getNodes()
+            = {can_convert, float64_argument, std::make_shared<ConstantNode>(Field{0.0})};
+        auto formatted_integer = std::make_shared<FunctionNode>("toDecimalString");
+        formatted_integer->getArguments().getNodes()
+            = {std::move(safe_float), std::make_shared<ConstantNode>(Field{0u})};
+        auto int256_type_name = std::make_shared<ConstantNode>("Int256", std::make_shared<DataTypeString>());
+        auto accurate_cast = std::make_shared<FunctionNode>("accurateCastOrNull");
+        accurate_cast->getArguments().getNodes() = {std::move(formatted_integer), std::move(int256_type_name)};
+        converted_integer = std::move(accurate_cast);
+    }
 
     auto decimal_as_integer = std::make_shared<FunctionNode>("toInt256");
     decimal_as_integer->getArguments().getNodes().push_back(decimal_argument);
@@ -1374,11 +1410,19 @@ static QueryTreeNodePtr buildNumericEquality(
     auto approximate_matches = std::make_shared<FunctionNode>("ifNull");
     approximate_matches->getArguments().getNodes() = {std::move(approximate_equals), std::make_shared<ConstantNode>(Field{0u})};
 
-    auto conversion_failed = std::make_shared<FunctionNode>("isNull");
-    conversion_failed->getArguments().getNodes().push_back(std::move(converted_integer));
+    auto converted_float = std::make_shared<FunctionNode>("toFloat64");
+    converted_float->getArguments().getNodes().push_back(converted_integer);
+    auto roundtrip_equals = std::make_shared<FunctionNode>("equals");
+    roundtrip_equals->getArguments().getNodes() = {float64_argument, std::move(converted_float)};
+    auto roundtrip_matches = std::make_shared<FunctionNode>("ifNull");
+    roundtrip_matches->getArguments().getNodes()
+        = {std::move(roundtrip_equals), std::make_shared<ConstantNode>(Field{0u})};
+    auto exact_float_conversion = std::make_shared<FunctionNode>("and");
+    exact_float_conversion->getArguments().getNodes() = {std::move(float_can_convert), std::move(roundtrip_matches)};
 
     auto result = std::make_shared<FunctionNode>("if");
-    result->getArguments().getNodes() = {std::move(conversion_failed), std::move(approximate_matches), std::move(exact_matches)};
+    result->getArguments().getNodes()
+        = {std::move(exact_float_conversion), std::move(exact_matches), std::move(approximate_matches)};
     return result;
 }
 

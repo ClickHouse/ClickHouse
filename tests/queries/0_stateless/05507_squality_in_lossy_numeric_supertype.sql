@@ -140,3 +140,19 @@ FROM values('x UInt256, d Decimal256(0), f Float64',
     ('9999999999999999999999999999999999999999999999999999999999999999999999999999',
      '9999999999999999999999999999999999999999999999999999999999999999999999999999', 0.5))
 SETTINGS allow_lossy_numeric_supertype = 1;
+
+SELECT d IN (x), d NOT IN (x), d IN (x, y), d NOT IN (x, y), d IN (100000000000000000000., 65)
+FROM values('d Decimal(38, 0), x Float64, y Int64',
+    ('100000000000000000001', 100000000000000000000., 65))
+SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 0;
+
+SELECT d IN (x), d NOT IN (x), d IN (x, y), d NOT IN (x, y), d IN (100000000000000000000., 65)
+FROM values('d Decimal(38, 0), x Float64, y Int64',
+    ('100000000000000000001', 100000000000000000000., 65))
+SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 1;
+
+SELECT d IN (x, y), d NOT IN (x, y)
+FROM values('d Decimal(18, 0), x Float64, y Int64',
+    (0, 'nan', 65), (1, 'inf', 65), (2, '-inf', 65), (3, '1e100', 65))
+ORDER BY d
+SETTINGS allow_lossy_numeric_supertype = 1;
