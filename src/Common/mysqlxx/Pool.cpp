@@ -23,8 +23,8 @@ namespace DB::ErrorCodes
 namespace
 {
 
-/// `mysql_real_connect` reinterprets these hosts; reject them so it dials exactly the host checked by `remote_url_allow_hosts`.
-void checkHostIsPlain(const std::string & server)
+/// `mysql_real_connect` reinterprets these hosts and port 0; reject them so it dials exactly what `remote_url_allow_hosts` checked.
+void checkConnectionTarget(const std::string & server, unsigned port, const std::string & socket)
 {
     std::string_view meaning;
     if (server.contains('\0'))
@@ -35,18 +35,25 @@ void checkHostIsPlain(const std::string & server)
         meaning = "a connection plugin URL";
     else if (server.contains(','))
         meaning = "a list of hosts";
-    else
-        return;
 
-    std::string printable;
-    for (const char c : server)
-        printable += c == '\0' ? std::string_view("\\0") : std::string_view(&c, 1);
+    if (!meaning.empty())
+    {
+        std::string printable;
+        for (const char c : server)
+            printable += c == '\0' ? std::string_view("\\0") : std::string_view(&c, 1);
 
-    throw DB::Exception(
-        DB::ErrorCodes::BAD_ARGUMENTS,
-        "MySQL host '{}' contains syntax which the MySQL client library would read as {}. "
-        "Specify a plain host and port, and use the `socket` and `ssl_*` settings instead",
-        printable, meaning);
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "MySQL host '{}' contains syntax which the MySQL client library would read as {}. "
+            "Specify a plain host and port, and use the `socket` and `ssl_*` settings instead",
+            printable, meaning);
+    }
+
+    if (port == 0 && socket.empty())
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "MySQL port 0 for host '{}' would be replaced by the default port of the MySQL client library. Specify the port explicitly",
+            server);
 }
 
 }
@@ -421,7 +428,7 @@ void Pool::initialize()
 Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
 {
     /// All connections of the pool are created here.
-    checkHostIsPlain(server);
+    checkConnectionTarget(server, port, socket);
 
     auto conn_ptr = std::make_unique<Connection>();
 

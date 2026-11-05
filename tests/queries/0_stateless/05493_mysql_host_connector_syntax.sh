@@ -33,6 +33,10 @@ check "SELECT * FROM mysql('127.0.0.1\\0.example.com:1', 'db', 't', 'u', 'p')"
 # A plain host is passed through and fails to connect as usual.
 check "SELECT * FROM mysql('127.0.0.1:1', 'db', 't', 'u', 'p')"
 
+# Port 0 would be replaced by the client library's default port.
+$CLICKHOUSE_CLIENT --send_logs_level=fatal -q "SELECT * FROM mysql('127.0.0.1:0', 'db', 't', 'u', 'p')" 2>&1 \
+    | grep -q -F "MySQL port 0" && echo "port 0: rejected" || echo "port 0: connection failed"
+
 # `localhost` uses TCP to the given port, not the client library's default Unix socket.
 $CLICKHOUSE_CLIENT --send_logs_level=fatal -q "SELECT * FROM mysql('localhost:1', 'db', 't', 'u', 'p')" 2>&1 \
     | grep -q -F "through socket" && echo "localhost: unix socket" || echo "localhost: tcp"
