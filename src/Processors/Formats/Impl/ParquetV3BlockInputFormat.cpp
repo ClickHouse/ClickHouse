@@ -221,8 +221,7 @@ void ParquetV3BlockInputFormat::readFileFooterIfNeeded()
         {
             std::tie(footer_cache_cell, footer_cache_hit) = metadata_cache->getOrSetMetadata(
                 *footer_cache_key, [&] { return readFileFooter(new_reader->reader.prefetcher); });
-            /// The offset indexes are read from beyond the footer, so they are used and kept only under a key that
-            /// identifies the content of the file.
+            /// Offset indexes lie outside the footer: use and keep them only under a key that identifies the file content.
             const bool key_identifies_content = object_with_metadata->metadata->getContentCacheToken().has_value();
             new_reader->reader.setFileFooter(
                 footer_cache_cell->footer,
@@ -468,7 +467,6 @@ Chunk ParquetV3BlockInputFormat::read()
     auto res = reader->read();
     if (!res.chunk && offset_indexes_cache_cell)
     {
-        /// The whole file is read: later reads find its offset indexes with the cached footer.
         metadata_cache->keepOffsetIndexes(*footer_cache_key, offset_indexes_cache_cell, reader->reader.takeReadOffsetIndexes());
         offset_indexes_cache_cell.reset();
     }

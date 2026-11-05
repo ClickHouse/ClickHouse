@@ -48,7 +48,6 @@ ParquetMetadataCacheCell::ParquetMetadataCacheCell(
                            : std::allocate_shared<ParquetKeptStatistics>(
                                  ServerOwnedCacheEntryAllocator<ParquetKeptStatistics>(),
                                  std::max<size_t>(memory_bytes / 4, MIN_KEPT_STATISTICS_BYTES)))
-    /// Kept offset indexes may add as much as the footer's size to the cell, and at least 4 KiB for a small footer.
     , kept_offset_indexes(
           kept_offset_indexes_ ? std::move(kept_offset_indexes_)
                                : std::allocate_shared<Parquet::KeptOffsetIndexes>(

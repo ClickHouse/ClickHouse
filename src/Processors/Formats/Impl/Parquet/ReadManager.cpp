@@ -1310,7 +1310,6 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
                 }
                 break;
             case ReadStage::ColumnIndexAndOffsetIndex:
-                /// Otherwise the offset index is kept with the cached footer and already decoded.
                 if (column.offset_index_prefetch)
                     reader.decodeOffsetIndex(column, column_info, row_group);
                 column.offset_index_prefetch.reset(&diff);

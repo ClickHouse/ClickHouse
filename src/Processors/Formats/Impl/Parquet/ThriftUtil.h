@@ -43,9 +43,8 @@ struct FileColumnChunks
 };
 using FileColumnChunksPtr = std::shared_ptr<const FileColumnChunks>;
 
-/// Offset indexes of a file's column chunks, read from the file and validated, that ParquetMetadataCache keeps with the
-/// cached footer (see `ParquetMetadataCache::keepOffsetIndexes`), so that a later read of the file does not read them again.
-/// Only grows. Shared by the cache cells of a file version that replace each other.
+/// Validated offset indexes of a file's column chunks, kept by ParquetMetadataCache with the cached footer (see
+/// `ParquetMetadataCache::keepOffsetIndexes`). Only grows; shared by the cache cells of a file version that replace each other.
 class KeptOffsetIndexes
 {
 public:
@@ -70,7 +69,6 @@ public:
     bool add(const std::vector<Entry> & entries);
     size_t bytes() const;
     size_t remainingBytes() const;
-    /// What keeping `offset_index` takes.
     static size_t entryBytes(const parq::OffsetIndex & offset_index);
 
 private:

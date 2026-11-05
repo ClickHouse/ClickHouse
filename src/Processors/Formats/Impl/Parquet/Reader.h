@@ -705,8 +705,7 @@ struct Reader
     std::vector<size_t> collect_key_condition_column_ranges;
     size_t max_key_condition_column_ranges_bytes = 0;
 
-    /// If non-zero before `init`, the offset indexes read from the file are collected for ParquetMetadataCache, while
-    /// they take at most this many bytes (see `KeptOffsetIndexes::entryBytes`).
+    /// If non-zero before `init`, the offset indexes read are collected up to this many bytes (`KeptOffsetIndexes::entryBytes`).
     size_t max_read_offset_indexes_bytes = 0;
     /// The offset indexes read from the file and validated so far, see `max_read_offset_indexes_bytes`.
     std::vector<KeptOffsetIndexes::Entry> takeReadOffsetIndexes();
@@ -872,7 +871,6 @@ private:
     std::vector<FileColumnChunksPtr> column_chunks;
     /// See setFileFooter, released by prefilterAndInitRowGroups.
     std::vector<FileColumnChunksPtr> cached_column_chunks;
-    /// See setFileFooter.
     KeptOffsetIndexesPtr kept_offset_indexes;
 
     std::mutex read_offset_indexes_mutex;
