@@ -119,6 +119,8 @@ SELECT a.id, mapKeys(a.ms) FROM file('${TYPES}') AS a INNER JOIN (SELECT number 
 SELECT a.id, mapKeys(a.ms) FROM file('${TYPES}') AS a INNER JOIN numbers(30) AS b ON a.id = b.number WHERE b.number > 5 ORDER BY a.id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1, join_algorithm = 'hash';
 SELECT id, k FROM (SELECT id, mapKeys(ms) AS k FROM t_05509_types) WHERE id > 5 ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1;
 SELECT length(mapKeys(m)) FROM t_05509_filter ORDER BY rand() LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1, additional_table_filters = {'t_05509_filter': 'id > 1'};
+SELECT * FROM (SELECT length(mapKeys(m)) FROM t_05509_filter ORDER BY rand() LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1, additional_table_filters = {'t_05509_filter': 'id > 1'});
+SELECT * FROM v_05509_filter;
 SELECT 'case-insensitive name collision';
 SELECT count() FROM file('${COLLISION}', Parquet, 'm Map(String, UInt64), \`M.keys\` Array(String), \`M.values\` Array(UInt64)') WHERE has(m, 'other') SETTINGS input_format_parquet_case_insensitive_column_matching = 1;
 SELECT count() FROM file('${COLLISION}', Parquet, 'm Map(String, UInt64), \`M.keys\` Array(String), \`M.values\` Array(UInt64)') WHERE has(m, 'key') SETTINGS input_format_parquet_case_insensitive_column_matching = 1;
@@ -137,6 +139,8 @@ SET allow_experimental_insert_into_iceberg = 1, allow_insert_into_iceberg = 1;
 CREATE TABLE t_05509_policy (id UInt64, m Map(String, UInt8)) ENGINE = File(Parquet, '${WITH_M}');
 CREATE ROW POLICY ${CLICKHOUSE_DATABASE}_05509 ON t_05509_policy USING mapContainsValue(m, 3) TO ALL;
 CREATE TABLE t_05509_filter (id UInt64, m Map(String, UInt8)) ENGINE = File(Parquet, '${WITH_M}');
+CREATE VIEW v_05509_filter AS SELECT length(mapKeys(m)) AS l FROM t_05509_filter ORDER BY rand() LIMIT 3
+    SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1, additional_table_filters = {'t_05509_filter': 'id > 1'};
 
 -- Files written before the renames are read with the names of their own schema: there \`m\` is the current \`a\`.
 CREATE TABLE t_05509_evolved (id Int64, m Map(String, String), m2 Map(String, String), s String)
@@ -198,6 +202,7 @@ SELECT count() FROM (EXPLAIN QUERY TREE SELECT mapKeys(m) FROM file('${BYTES}') 
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT id FROM file('${BYTES}') WHERE has(m, 'k3')) WHERE explain ILIKE '%m.keys%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT id, mapKeys(m) FROM file('${BYTES}') WHERE id > 5 ORDER BY id LIMIT 3) WHERE explain ILIKE '%m.keys%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT id, mapKeys(m) FROM file('${BYTES}')) WHERE explain ILIKE '%m.keys%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT * FROM (SELECT mapKeys(m) FROM t_05509_filter SETTINGS additional_table_filters = {'t_05509_filter': 'id > 1'})) WHERE explain ILIKE '%m.keys%';
 SELECT count() FROM (EXPLAIN SELECT id, mapKeys(m) FROM file('${BYTES}') ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10) WHERE explain ILIKE '%LazilyReadFromFile%';
 SELECT count() FROM (EXPLAIN SELECT id, mapKeys(m) FROM t_05509_bytes ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10) WHERE explain ILIKE '%LazilyReadFromObjectStorage%';
 "
@@ -246,6 +251,7 @@ ORDER BY side;
 ${CLICKHOUSE_CLIENT} -m --query "
 DROP ROW POLICY ${CLICKHOUSE_DATABASE}_05509 ON t_05509_policy;
 DROP TABLE t_05509_policy;
+DROP VIEW v_05509_filter;
 DROP TABLE t_05509_filter;
 DROP TABLE t_05509_evolved;
 DROP TABLE t_05509_mixed;

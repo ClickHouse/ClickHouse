@@ -1427,6 +1427,8 @@ public:
 
         if (node->as<TableNode>() || node->as<TableFunctionNode>())
         {
+            if (!getSettings()[Setting::additional_table_filters].value.empty())
+                sources_with_additional_table_filters.insert(node.get());
             enterColumnSource(node);
             return;
         }
@@ -1599,7 +1601,7 @@ private:
     /// tuple, or if the query reads another column of its table (a filter on that column can reach `PREWHERE` from the query plan).
     bool mustReadWholeMap(const ColumnInSource & map) const
     {
-        if (!getSettings()[Setting::additional_table_filters].value.empty())
+        if (sources_with_additional_table_filters.contains(map.source))
             return true;
         if (columns_in_prewhere.contains(map))
             return true;
@@ -1615,6 +1617,7 @@ private:
 
     ColumnInSourceSet columns_in_prewhere;
     ColumnInSourceSet maps_on_storages_rejecting_subcolumns_in_prewhere;
+    std::unordered_set<const IQueryTreeNode *> sources_with_additional_table_filters;
     std::vector<bool> in_prewhere_stack;
 
     ColumnInSourceSet all_key_columns;
