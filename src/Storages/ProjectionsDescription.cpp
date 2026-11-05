@@ -1,4 +1,5 @@
 #include <Storages/ProjectionsDescription.h>
+#include <Storages/ProjectionPlanner.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <base/sort.h>
@@ -11,7 +12,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -23,9 +23,6 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/QueryTreePassManager.h>
-#include <Analyzer/TableNode.h>
 #include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
@@ -40,7 +37,6 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISink.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/Pipe.h>
@@ -151,83 +147,6 @@ bool ProjectionDescription::operator==(const ProjectionDescription & other) cons
 namespace
 {
 
-/// Provides source data for the projection pipeline
-class ProjectionDataSource final : public ISource
-{
-public:
-    explicit ProjectionDataSource(SharedHeader block)
-        : ISource(std::make_shared<const Block>(block->cloneEmpty()))
-        , chunk(block->getColumns(), block->rows())
-    {
-    }
-
-    String getName() const override { return "ProjectionDataSource"; }
-
-    /// Avoid tracking read progress for projection calculation pipeline.
-    std::optional<ReadProgress> getReadProgress() override { return std::nullopt; }
-
-protected:
-    Chunk generate() override { return std::move(chunk); }
-
-private:
-    Chunk chunk;
-};
-
-/// Fake storage which stands in for the missing `FROM` clause of a projection query,
-/// both when the projection metadata is built and when the projection is calculated.
-///
-/// It borrows the name of `system.one`, which is what a `SELECT` without a `FROM` clause reads from
-/// anyway. The Analyzer plans a read from a table expression as a read from a table, so it checks the
-/// access rights and applies the quotas for it, and calculating a projection must not require
-/// anything beyond the rights of the query which writes the data: `system.one` is readable by every
-/// user and is exempt from quotas and limits.
-class StorageProjectionSource final : public IStorage
-{
-public:
-    StorageProjectionSource(const ColumnsDescription & columns_description, VirtualColumnsDescription virtuals, Block data_)
-        : IStorage({DatabaseCatalog::SYSTEM_DATABASE, "one"})
-        , data(std::move(data_))
-    {
-        StorageInMemoryMetadata storage_metadata;
-        storage_metadata.setColumns(columns_description);
-        storage_metadata.setVirtuals(std::move(virtuals));
-        setInMemoryMetadata(storage_metadata);
-    }
-
-    std::string getName() const override { return "ProjectionSource"; }
-
-    /// The storage is not a table of the catalog, it only borrows the name of `system.one`, so the
-    /// row policies and the `additional_table_filters` of that name must not be applied to it: they
-    /// would silently reshape the data written into the projection part.
-    bool isSyntheticDataSource() const override { return true; }
-
-    bool supportsSubcolumns() const override { return true; }
-
-    bool supportsColumnsWithDynamicStructure() const override { return true; }
-
-    Pipe read(
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo &,
-        ContextPtr /*context*/,
-        QueryProcessingStage::Enum /*processing_stage*/,
-        size_t /*max_block_size*/,
-        size_t /*num_streams*/) override
-    {
-        if (data.columns() == 0)
-            return Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
-
-        Block block;
-        for (const auto & name : column_names)
-            block.insert(data.getColumnOrSubcolumnByName(name));
-
-        return Pipe(std::make_shared<ProjectionDataSource>(std::make_shared<const Block>(std::move(block))));
-    }
-
-private:
-    Block data;
-};
-
 /// Collects processed data from the projection pipeline into a single chunk,
 /// Enforces that projections cannot increase the number of rows beyond the original input.
 class ProjectionDataSink final : public ISink
@@ -275,26 +194,6 @@ private:
     const size_t max_rows_allowed;
 };
 
-/// The names the expressions of a projection query have before the Analyzer resolves them.
-/// The nodes are held, so that the address of a node discarded by the analysis is not reused by another one.
-using ProjectionUnresolvedNodeNames = std::unordered_map<QueryTreeNodePtr, String>;
-
-/// Remembers the names of the functions of `node` as they are written in the projection query.
-void collectUnresolvedNodeNames(const QueryTreeNodePtr & node, ProjectionUnresolvedNodeNames & result)
-{
-    if (node->getNodeType() == QueryTreeNodeType::FUNCTION)
-    {
-        ConvertToASTOptions ast_options;
-        ast_options.add_cast_for_constants = false;
-        ast_options.fully_qualified_identifiers = false;
-        result.emplace(node, node->toAST(ast_options)->getColumnName());
-    }
-
-    for (const auto & child : node->getChildren())
-        if (child)
-            collectUnresolvedNodeNames(child, result);
-}
-
 /** The Analyzer names the columns of a query plan by its own rules: a column is named by the
   * identifier of its table expression (`__table1.a`), a constant is suffixed with its data type
   * (`1_UInt8`), a set is named by its key. A projection, on the other hand, stores its columns under
@@ -313,7 +212,7 @@ void collectUnresolvedNodeNames(const QueryTreeNodePtr & node, ProjectionUnresol
 void collectProjectionColumnNames(
     const QueryTreeNodePtr & node,
     const PlannerContext & planner_context,
-    const ProjectionUnresolvedNodeNames & unresolved_node_names,
+    const QueryTreeNodeToName & unresolved_node_names,
     std::unordered_map<String, Names> & result)
 {
     auto node_type = node->getNodeType();
@@ -379,57 +278,6 @@ QueryTreeNodes removeDuplicateProjectionColumns(QueryTreeNodePtr & query_tree)
 
     query_node.removeUnusedProjectionColumns(unique_projection_column_indexes);
     return removed_projection_nodes;
-}
-
-StoragePtr createProjectionQuerySource(const ColumnsDescription & columns, VirtualColumnsDescription virtuals, Block data = {})
-{
-    return std::make_shared<StorageProjectionSource>(columns, std::move(virtuals), std::move(data));
-}
-
-/// Builds the query tree of the `SELECT` of a projection over `source` and runs the analysis passes on it.
-/// If `unresolved_node_names` is set, remembers the names of the functions before the analysis.
-QueryTreeNodePtr buildProjectionQueryTree(
-    const ASTPtr & query_ast,
-    const StoragePtr & source,
-    const ContextPtr & context,
-    ProjectionUnresolvedNodeNames * unresolved_node_names = nullptr)
-{
-    auto query_tree = buildQueryTree(query_ast, context);
-    auto & query_node = query_tree->as<QueryNode &>();
-
-    /// A projection query is stored without a `FROM` clause, so its join tree is a reference to
-    /// `system.one` which has to be replaced with the table expression providing the input columns.
-    query_node.getJoinTreeNode() = std::make_shared<TableNode>(source, context);
-
-    /** The Analyzer unwraps a `tuple` at the top level of `GROUP BY` into separate keys, while a
-      * projection stores such a key as a single column named after the whole tuple. Wrap the key into
-      * one more `tuple` so that unwrapping gives back the key the projection stores.
-      */
-    if (query_node.hasGroupBy() && !query_node.isGroupByWithGroupingSets())
-    {
-        for (auto & group_by_key_node : query_node.getGroupBy().getNodes())
-        {
-            const auto * function_node = group_by_key_node->as<FunctionNode>();
-            if (!function_node || function_node->getFunctionName() != "tuple")
-                continue;
-
-            auto wrapped_key_node = std::make_shared<FunctionNode>("tuple");
-            wrapped_key_node->getArguments().getNodes().push_back(group_by_key_node);
-            group_by_key_node = std::move(wrapped_key_node);
-        }
-    }
-
-    if (unresolved_node_names)
-        collectUnresolvedNodeNames(query_tree, *unresolved_node_names);
-
-    QueryTreePassManager query_tree_pass_manager(context);
-    addQueryTreePasses(query_tree_pass_manager, /*only_analyze=*/true);
-    /// Optimization passes are not applied because some of them are invalid for projections.
-    /// Example: 'SELECT min(c0), max(c0), count() GROUP BY -c0' for minmax_count projection can be rewritten to
-    /// 'SELECT min(c0), max(c0), count() GROUP BY c0' which is incorrect cause we store a column '-c0' in projection.
-    query_tree_pass_manager.runOnlyResolve(query_tree);
-
-    return query_tree;
 }
 
 }
@@ -1036,7 +884,7 @@ Block ProjectionDescription::calculateByQuery(
 
     auto select_query_options = SelectQueryOptions{processing_stage}.ignoreASTOptimizations().ignoreSettingConstraints();
 
-    ProjectionUnresolvedNodeNames unresolved_node_names;
+    QueryTreeNodeToName unresolved_node_names;
     auto query_tree = buildProjectionQueryTree(query_ast_copy ? query_ast_copy : query_ast, source, mut_context, &unresolved_node_names);
     auto removed_projection_nodes = removeDuplicateProjectionColumns(query_tree);
 
