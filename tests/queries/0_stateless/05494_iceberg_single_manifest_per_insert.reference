@@ -1,0 +1,42 @@
+--- one INSERT, three partitions: manifests written
+1
+--- manifest-list entry: files, rows, partition bounds
+6	0	12	0	[(false,10,12)]
+--- manifest entries: own partition value, status ADDED, inherited sequence number
+(10)	1	\N	2
+(10)	1	\N	2
+(11)	1	\N	2
+(11)	1	\N	2
+(12)	1	\N	2
+(12)	1	\N	2
+--- rows read back
+10	4	18
+11	4	22
+12	4	26
+--- partition pruning on the shared manifest
+4
+0
+4
+6
+--- second INSERT: manifests written
+2
+2	0	2	0	[(false,10,12)]
+6	0	12	0	[(false,10,12)]
+--- DROP PARTITION 11 is rejected: its manifest is shared with partitions 10 and 12
+NOT_IMPLEMENTED
+10	5	118
+11	4	22
+12	5	146
+--- NULL and non-NULL partition values in one INSERT
+1
+3	0	4	0	[(true,-7,5)]
+\N	4
+-7	4
+5	2
+4
+4
+--- parallel INSERT: one manifest per insert stream, each spanning all partitions
+1	1	1
+0	100000
+1	100000
+2	100000
