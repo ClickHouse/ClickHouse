@@ -162,14 +162,15 @@ ASTPtr makeBalancedFold(const std::string & function, const std::vector<ASTPtr> 
   * `function` one after another, from the first to the last, as Mongo evaluates them: with doubles,
   * `[1e16, 1.0, -1e16, 1.0]` add up to `1`, while `(1e16 + 1) + (-1e16 + 1)` is `0`. The fold is
   * done by `arrayFold` over a flat array, so its depth does not grow with the number of operands,
-  * see `makeBalancedFold`. Every value is `Nullable`, so that the accumulator keeps its type when
-  * some of the operands are `Nullable` and others are not, and a `NULL` operand gives a `NULL`.
+  * see `makeBalancedFold`. Every value is a `Nullable(Float64)`, so that the accumulator keeps its
+  * type when some of the operands are `Nullable` and others are not - or a `NULL` literal, of the
+  * type `Nullable(Nothing)` - and a `NULL` operand gives a `NULL`.
   */
 ASTPtr makeSequentialFloatFold(const std::string & function, const std::vector<ASTPtr> & operands)
 {
     const auto to_float = [](const ASTPtr & operand)
     {
-        return makeASTFunction("toNullable", makeASTFunction("toFloat64", operand->clone()));
+        return makeASTFunction("CAST", operand->clone(), makeLiteral(Field(String("Nullable(Float64)"))));
     };
     if (operands.size() == 1)
         return to_float(operands.front());
@@ -1062,19 +1063,30 @@ ASTPtr makeExactIntegerPower(const ASTPtr & base, UInt64 exponent)
         /// `1`, and `NULL` for a `NULL`.
         return makeASTFunction("plus", makeASTFunction("multiply", base->clone(), makeLiteral(Field(UInt64(0)))), makeLiteral(Field(UInt64(1))));
 
-    /// Exponentiation by squaring.
-    ASTPtr result;
-    ASTPtr square = base->clone();
-    while (true)
+    /// Exponentiation by squaring. Every product is used several times - in the next product and
+    /// in the check of its overflow - so it is bound once (see `withValue`), and the size of the
+    /// expression stays linear in the number of steps.
+    std::function<ASTPtr(const ASTPtr &, const ASTPtr &, UInt64)> step;
+    step = [&](const ASTPtr & square, const ASTPtr & result, UInt64 remaining) -> ASTPtr
     {
-        if (exponent & 1)
-            result = result ? checked_multiply(result, square) : square->clone();
-        exponent >>= 1;
-        if (!exponent)
-            break;
-        square = checked_multiply(square, square);
-    }
-    return result;
+        ASTPtr next_result = result;
+        if (remaining & 1)
+            next_result = result ? checked_multiply(result, square) : square->clone();
+        remaining >>= 1;
+        if (!remaining)
+            return next_result;
+        const auto with_next_square = [&](const ASTPtr & bound_result)
+        {
+            return withValue(checked_multiply(square, square), [&](const ASTPtr & bound_square)
+            {
+                return step(bound_square, bound_result, remaining);
+            });
+        };
+        if (!next_result)
+            return with_next_square(nullptr);
+        return withValue(next_result, with_next_square);
+    };
+    return step(base, nullptr, exponent);
 }
 
 /** The lowering of `$pow`. `pow` computes in `Float64`, while Mongo keeps the result of integers an
@@ -1285,8 +1297,13 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
                     "match",
                     makeASTFunction("toTypeName", exact->clone()),
                     makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*B?Float)"))));
-                auto sequential = makeASTFunction(
-                    "CAST", makeSequentialFloatFold(it->second, operands), makeASTFunction("toTypeName", exact->clone()));
+                /// A `NULL` literal makes the type `Nullable(Nothing)`, which nothing converts to.
+                auto type = makeASTFunction(
+                    "replaceRegexpOne",
+                    makeASTFunction("toTypeName", exact->clone()),
+                    makeLiteral(Field(String("^Nullable\\(Nothing\\)$"))),
+                    makeLiteral(Field(String("Nullable(Float64)"))));
+                auto sequential = makeASTFunction("CAST", makeSequentialFloatFold(it->second, operands), std::move(type));
                 checked = makeASTFunction("if", std::move(is_float), std::move(sequential), std::move(checked));
             }
             if (name != "$add")
