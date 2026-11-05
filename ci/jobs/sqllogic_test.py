@@ -465,7 +465,7 @@ def generate_html_report(
                 f.write(
                     "\n  To reproduce via sqllogictest (ClickHouse must be running):\n"
                     "  <span style='color: blue;'>"
-                    "git clone https://github.com/gregrahn/sqllogictest.git"
+                    "git clone https://github.com/gregrahn/sqllogictest"
                     " /tmp/sqllogictest</span>\n\n"
                 )
                 for tf in new_test_files:
@@ -679,7 +679,7 @@ def main():
         def clone():
             if not Path(sqllogictest_repo).is_dir():
                 if not Shell.check(
-                    f"git clone https://github.com/gregrahn/sqllogictest.git {sqllogictest_repo}",
+                    f"git clone https://github.com/gregrahn/sqllogictest {sqllogictest_repo}",
                     verbose=True,
                 ):
                     return False
@@ -840,7 +840,7 @@ def main():
                     )
                     print(
                         "  git clone"
-                        " https://github.com/gregrahn/sqllogictest.git"
+                        " https://github.com/gregrahn/sqllogictest"
                         " /tmp/sqllogictest"
                     )
                     for tf in new_test_files:

@@ -28,8 +28,18 @@ def extract_failure_ids(report):
 
 
 def exclusion_group(failure_id):
-    prefix = failure_id.split("/", 1)[0]
-    if prefix in {"evidence", "index", "random"}:
+    parts = failure_id.split("/", 2)
+    prefix = parts[0]
+    if prefix == "random" and len(parts) > 1:
+        random_group = f"random_{parts[1]}"
+        if random_group in {
+            "random_aggregates",
+            "random_expr",
+            "random_groupby",
+            "random_select",
+        }:
+            return random_group
+    if prefix in {"evidence", "index"}:
         return prefix
     return "select"
 
@@ -37,7 +47,18 @@ def exclusion_group(failure_id):
 def write_exclusion_directory(failure_ids, output_dir):
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
-    groups = {key: [] for key in ("evidence", "index", "random", "select")}
+    groups = {
+        key: []
+        for key in (
+            "evidence",
+            "index",
+            "random_aggregates",
+            "random_expr",
+            "random_groupby",
+            "random_select",
+            "select",
+        )
+    }
     for failure_id in failure_ids:
         groups[exclusion_group(failure_id)].append(failure_id)
     for key, values in groups.items():
@@ -63,7 +84,7 @@ def main():
     )
     output_group.add_argument(
         "--output-dir",
-        help="Write evidence.txt, index.txt, random.txt, and select.txt",
+        help="Write the path-based exclusion manifests",
         default=None,
     )
     args = parser.parse_args()

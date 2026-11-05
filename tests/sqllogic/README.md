@@ -27,7 +27,7 @@ Start a ClickHouse server on the default native port, clone the pinned corpus,
 and run:
 
 ```bash
-git clone https://github.com/gregrahn/sqllogictest.git ./tmp/sqllogictest
+git clone https://github.com/gregrahn/sqllogictest ./tmp/sqllogictest
 git -C ./tmp/sqllogictest checkout 634e46492bff5c206a6eb9ba934f2cd411c74bf0
 python3 tests/sqllogic/runner.py complete-test \
     --input-dir ./tmp/sqllogictest/test \
@@ -44,7 +44,7 @@ PYTHONPATH=.:./ci python3 ci/jobs/sqllogic_test.py
 ## Update exclusions
 
 Download the `complete-clickhouse` `report.json` artifact or use a local report,
-then regenerate the four path-based manifests:
+then regenerate the path-based manifests:
 
 ```bash
 python3 tests/sqllogic/generate_known_failures.py \
