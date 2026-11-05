@@ -3475,6 +3475,8 @@ ALTER DATABASE testdb MODIFY SETTING max_replication_lag_to_enqueue = 100;
 
 The query is not replicated through the DDL log: it is executed on the replica it was sent to. An unknown setting is rejected with `BAD_ARGUMENTS` and an immutable one with `QUERY_NOT_ALLOWED`; in both cases nothing is changed.
 
+`collection_name` has two extra constraints. The user must have the `NAMED COLLECTION` privilege on the collection the setting points to (`GRANT NAMED COLLECTION ON name TO user`), otherwise the query fails with `ACCESS_DENIED`; setting the name to an empty string clears the authentication info and needs no such privilege. The new collection must also have the same `cluster_secure_connection` as the current one: the transport mode is encoded into the replica's registration in ZooKeeper and the cluster uses one mode for all its addresses, so a collection that would flip it is rejected with `QUERY_NOT_ALLOWED`. Recreate the replica to change `cluster_secure_connection`.
+
 Immutable settings cannot be changed because the value would no longer describe anything or could not be changed safely: the `default_replica_*` settings are used only when the corresponding engine arguments are omitted at `CREATE DATABASE`, `internal_replication` determines how a `Distributed` table over this database's cluster routes inserts, so it must match the engines of the tables in the database and be identical on every replica, and `logs_to_keep` is shared by all replicas, see below. Recreate the database to change them.
 
 A replica-local setting affects only the replica it was changed on, so run the query on every replica if the whole database should behave uniformly.
