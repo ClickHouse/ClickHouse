@@ -401,6 +401,8 @@ The serialization layer computes which bucket the requested key belongs to and r
 
 When the full map is read (e.g., `SELECT m`), all buckets are read and reassembled into the original map. This is slower than `basic` serialization due to the overhead of reading and merging multiple substreams.
 
+A `Map` whose key type contains `JSON` or `Dynamic` is always written in one bucket, and a lookup of one of its keys reads the whole map.
+
 <Note>
 Since version 26.8, `with_buckets` serialization preserves the original key order: an additional `bucket_indexes` substream records which bucket every key-value pair was taken from, so the map is reassembled in the order it was written instead of in bucket order.
 
