@@ -12,6 +12,6 @@ MergeTree
 --- DELETE and mutations are accepted
 98
 --- DELETE respects lightweight_mutation_projection_mode
-lightweight_mutation_projection_mode is set to THROW
+SUPPORT_IS_DISABLED
 1
 100

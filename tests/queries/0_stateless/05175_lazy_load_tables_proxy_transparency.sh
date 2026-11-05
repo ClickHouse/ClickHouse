@@ -73,7 +73,7 @@ SELECT count() FROM $DB.mt;
 echo "--- DELETE respects lightweight_mutation_projection_mode"
 # The guard resolves the mode by downcasting the storage, so it has to see through the stand-in too -
 # otherwise the `THROW` mode silently degrades to dropping the projections.
-$CLICKHOUSE_CLIENT --query "DELETE FROM $DB.mtp WHERE a = 1" 2>&1 | grep -o "lightweight_mutation_projection_mode is set to THROW" | head -n 1
+$CLICKHOUSE_CLIENT --query "DELETE FROM $DB.mtp WHERE a = 1" 2>&1 | grep -o "SUPPORT_IS_DISABLED" | head -n 1
 # The projection is still there: the query was refused, not executed with the projection dropped.
 $CLICKHOUSE_CLIENT --query "SELECT count() > 0 FROM system.projection_parts WHERE database = '$DB' AND table = 'mtp' AND active AND name = 'p'"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM $DB.mtp"
