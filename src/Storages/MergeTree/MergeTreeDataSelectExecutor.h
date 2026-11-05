@@ -326,7 +326,7 @@ public:
         ReadFromMergeTree::AnalysisResult & result;
     };
 
-    /// Counters of one index, summed over the parts and threads of one analysis.
+    /// Counters of one index in one analysis.
     struct IndexAnalysisStat
     {
         std::atomic<size_t> total_granules = 0;
@@ -370,7 +370,7 @@ public:
 
         const UsefulSkipIndexes & skip_indexes;
         const ConditionTemplate<KeyCondition> * key_condition_rpn_template = nullptr;
-        /// The effective value.
+        /// The result of `useSkipIndexesForDisjunctions`.
         bool use_skip_indexes_for_disjunctions = false;
         bool use_skip_indexes_on_data_read = false;
         bool query_hides_lightweight_deleted_rows = true;
@@ -391,7 +391,8 @@ public:
 
     /// Primary key and offset conditions, then the skip indexes in `skip_index_order` (declaration order when null), then the
     /// disjunction merge. Calls `get_part_for_skip_indexes` once, only when skip indexes run, inside the
-    /// `FilteringMarksWithSecondaryKeys` metric scope. Per-index counters go to `skip_index_stats` (the caller's slice of
+    /// `FilteringMarksWithSecondaryKeys` metric scope; it returns the same part with its alter conversions (not null).
+    /// Per-index counters go to `skip_index_stats` (the caller's slice of
     /// `IndexAnalysisStats::skip_indexes`, by position in the order).
     /// Returns whether a skip index is usable for the part, applied here or deferred to the read.
     static bool analyzeSinglePart(
