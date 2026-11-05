@@ -414,6 +414,10 @@ public:
 
     bool isKafkaEngine(bool as_alias = false) const;
 
+    bool isTimeSeriesEngine(bool as_alias = false) const;
+
+    bool isFileLogEngine(bool as_alias = false) const;
+
     bool isNotTruncableEngine() const;
 
     bool isEngineReplaceable() const;
