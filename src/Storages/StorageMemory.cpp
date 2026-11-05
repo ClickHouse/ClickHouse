@@ -96,7 +96,6 @@ namespace FailPoints
     extern const char memory_sink_pause_before_commit[];
 }
 
-static Names storedColumnNames(const Block & block);
 static void applyStoredColumnIdentity(
     Block & block,
     const AlterCommands & commands,
@@ -125,6 +124,9 @@ public:
         , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_, context_))
         , context(std::move(context_))
     {
+        std::lock_guard lock(storage.mutex);
+        schema_generation = storage.schema_generation;
+
         if (storage.is_temporary_table)
             max_temporary_table_memory_usage = context->getSettingsRef()[Setting::max_temporary_table_memory_usage];
     }
@@ -167,15 +169,13 @@ public:
         if (!new_blocks.empty())
         {
             const bool compress = (*storage.getMemorySettings())[MemorySetting::compress];
-            Names current_names = storedColumnNames(new_blocks.front());
             for (const auto & rewrite : storage.identity_rewrites)
             {
-                if (rewrite.before_names != current_names)
+                if (rewrite.schema_generation <= schema_generation)
                     continue;
 
                 for (auto & block : new_blocks)
                     applyStoredColumnIdentity(block, rewrite.commands, rewrite.metadata, context, compress);
-                current_names = storedColumnNames(new_blocks.front());
             }
         }
 
@@ -231,6 +231,8 @@ private:
     Blocks new_blocks;
     UInt64 new_blocks_bytes = 0;
     UInt64 max_temporary_table_memory_usage = 0;
+    /// Table `schema_generation` when this sink was created.
+    UInt64 schema_generation = 0;
     StorageMemory & storage;
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
@@ -507,13 +509,6 @@ void StorageMemory::truncate(
     setData(std::make_unique<BlocksWithCounts>());
 }
 
-static Names storedColumnNames(const Block & block)
-{
-    auto names = block.getNames();
-    std::sort(names.begin(), names.end());
-    return names;
-}
-
 static void renameStoredColumn(Block & block, const String & from, const String & to)
 {
     if (!block.has(from))
@@ -538,13 +533,13 @@ static void eraseStoredColumn(Block & block, const String & name)
         block.erase(nested_name);
 }
 
-/// `DROP` or `RENAME` of `n` also frees `n.*`.
-static bool nameOrParentWasFreed(const NameSet & freed, const String & name)
+/// `name` or a dotted parent of `name` is in `names`.
+static bool nameOrParentIn(const NameSet & names, const String & name)
 {
     String prefix = name;
     while (true)
     {
-        if (freed.contains(prefix))
+        if (names.contains(prefix))
             return true;
 
         const auto dot = prefix.rfind('.');
@@ -555,7 +550,7 @@ static bool nameOrParentWasFreed(const NameSet & freed, const String & name)
     }
 }
 
-/// Materialize names this statement freed or cleared. Leave other missing columns for the read path.
+/// Materialize columns this statement freed or cleared. Leave other missing columns for the read path.
 static void applyStoredColumnIdentity(
     Block & block,
     const AlterCommands & commands,
@@ -592,7 +587,17 @@ static void applyStoredColumnIdentity(
     }
 
     NamesAndTypesList required;
+    NameSet required_names;
     bool materialize = false;
+
+    auto requireColumn = [&](const String & name, const DataTypePtr & type)
+    {
+        if (block.has(name) || !required_names.insert(name).second)
+            return;
+        required.emplace_back(name, type);
+        materialize = true;
+    };
+
     for (const auto & column : block)
         required.emplace_back(column.name, column.type);
 
@@ -600,10 +605,17 @@ static void applyStoredColumnIdentity(
     {
         if (block.has(column.name))
             continue;
-        if (!cleared.contains(column.name) && !nameOrParentWasFreed(freed, column.name))
+        if (!nameOrParentIn(cleared, column.name) && !nameOrParentIn(freed, column.name))
             continue;
-        required.emplace_back(column.name, column.type);
-        materialize = true;
+        requireColumn(column.name, column.type);
+    }
+
+    /// Dropping or clearing the last stored column leaves a zero-column block, whose row count is 0.
+    /// Materialize whatever physical columns remain so the saved row count survives.
+    if (block.columns() == 0 && rows > 0)
+    {
+        for (const auto & column : metadata.columns.getAllPhysical())
+            requireColumn(column.name, column.type);
     }
 
     if (!materialize || rows == 0)
@@ -622,6 +634,9 @@ static void applyStoredColumnIdentity(
     auto dag = addMissingDefaults(block, required, metadata.columns, context);
     auto actions = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context->getSettingsRef()));
     actions->execute(block);
+
+    if (block.has("_dummy"))
+        block.erase("_dummy");
 
     if (compress)
     {
@@ -712,14 +727,6 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
                 new_data->rows = data.get()->rows;
             }
 
-            StorageMemory::IdentityRewrite rewrite;
-            for (const auto & column : metadata_snapshot->getSampleBlock())
-                rewrite.before_names.push_back(column.name);
-            std::sort(rewrite.before_names.begin(), rewrite.before_names.end());
-            rewrite.commands = params;
-            rewrite.metadata = new_metadata;
-            identity_rewrites.push_back(std::move(rewrite));
-
             const bool compress = changed_settings_ptr
                 ? (*changed_settings_ptr)[MemorySetting::compress]
                 : (*memory_settings.get())[MemorySetting::compress];
@@ -733,6 +740,14 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
                 new_data->rows += block.rows();
                 new_data->bytes += block.allocatedBytes();
             }
+
+            /// Publish only after the blocks rewrite succeeds. A throw leaves history and generation unchanged.
+            IdentityRewrite rewrite;
+            rewrite.schema_generation = schema_generation + 1;
+            rewrite.commands = params;
+            rewrite.metadata = new_metadata;
+            identity_rewrites.push_back(std::move(rewrite));
+            ++schema_generation;
         }
 
         if (new_data)
@@ -743,6 +758,13 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
+
+    /// `ADD COLUMN` does not rewrite blocks, but it still changes the schema an in-flight sink was created with.
+    if (!rewrite_blocks)
+    {
+        std::lock_guard lock(mutex);
+        ++schema_generation;
+    }
 }
 
 

@@ -133,3 +133,77 @@ ALTER TABLE t_readd_mixed_marker DROP COLUMN n, ADD COLUMN IF NOT EXISTS `n.a` U
 SELECT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_readd_mixed_marker' AND active;
 SELECT id, `n.a`, `n.b` FROM t_readd_mixed_marker;
 DROP TABLE t_readd_mixed_marker;
+
+-- A rewrite must not apply to inserts created after the ALTER.
+DROP TABLE IF EXISTS t_memory_clear_then_insert;
+CREATE TABLE t_memory_clear_then_insert (x UInt8) ENGINE = Memory;
+INSERT INTO t_memory_clear_then_insert VALUES (7);
+ALTER TABLE t_memory_clear_then_insert CLEAR COLUMN x;
+INSERT INTO t_memory_clear_then_insert VALUES (42);
+SELECT x FROM t_memory_clear_then_insert ORDER BY x;
+DROP TABLE t_memory_clear_then_insert;
+
+DROP TABLE IF EXISTS t_memory_readd_then_insert;
+CREATE TABLE t_memory_readd_then_insert (x UInt8) ENGINE = Memory;
+INSERT INTO t_memory_readd_then_insert VALUES (7);
+ALTER TABLE t_memory_readd_then_insert DROP COLUMN x, ADD COLUMN IF NOT EXISTS x UInt8 DEFAULT 9;
+INSERT INTO t_memory_readd_then_insert VALUES (42);
+SELECT x FROM t_memory_readd_then_insert ORDER BY x;
+DROP TABLE t_memory_readd_then_insert;
+
+-- The column that remains was never stored. The row still has to survive.
+DROP TABLE IF EXISTS t_memory_drop_last;
+CREATE TABLE t_memory_drop_last (x UInt8) ENGINE = Memory;
+INSERT INTO t_memory_drop_last VALUES (1);
+ALTER TABLE t_memory_drop_last ADD COLUMN y UInt8;
+ALTER TABLE t_memory_drop_last DROP COLUMN x;
+SELECT count() FROM t_memory_drop_last SETTINGS optimize_trivial_count_query = 0;
+SELECT y FROM t_memory_drop_last;
+DROP TABLE t_memory_drop_last;
+
+DROP TABLE IF EXISTS t_memory_clear_nested;
+CREATE TABLE t_memory_clear_nested (n Nested(a UInt8, b UInt8)) ENGINE = Memory;
+INSERT INTO t_memory_clear_nested VALUES ([1], [2]);
+ALTER TABLE t_memory_clear_nested CLEAR COLUMN n;
+SELECT count() FROM t_memory_clear_nested SETTINGS optimize_trivial_count_query = 0;
+SELECT n.a, n.b FROM t_memory_clear_nested;
+DROP TABLE t_memory_clear_nested;
+
+-- A failed ALTER must not stay in the rewrite history.
+DROP TABLE IF EXISTS t_memory_failed_alter;
+CREATE TABLE t_memory_failed_alter (a UInt64, x UInt64) ENGINE = Memory;
+INSERT INTO t_memory_failed_alter VALUES (0, 7);
+ALTER TABLE t_memory_failed_alter DROP COLUMN x, ADD COLUMN IF NOT EXISTS x UInt64 DEFAULT intDiv(100, a); -- { serverError ILLEGAL_DIVISION }
+SELECT default_expression = '' FROM system.columns WHERE database = currentDatabase() AND table = 't_memory_failed_alter' AND name = 'x';
+INSERT INTO t_memory_failed_alter VALUES (1, 42);
+SELECT a, x FROM t_memory_failed_alter ORDER BY a;
+DROP TABLE t_memory_failed_alter;
+
+-- Exact `n` (here only a missing-column marker) must not delete stored `n.a`.
+DROP TABLE IF EXISTS t_wide_exact_over_dotted;
+CREATE TABLE t_wide_exact_over_dotted (id UInt8, n UInt8, `n.a` UInt8)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    ratio_of_defaults_for_sparse_serialization = 1.0,
+    skip_empty_columns_on_insert = 1,
+    serialization_info_version = 'with_missing_columns',
+    enable_block_number_column = 0, enable_block_offset_column = 0;
+INSERT INTO t_wide_exact_over_dotted VALUES (1, 0, 9);
+ALTER TABLE t_wide_exact_over_dotted DROP COLUMN n SETTINGS mutations_sync = 2;
+SELECT id, `n.a` FROM t_wide_exact_over_dotted;
+DROP TABLE t_wide_exact_over_dotted;
+
+-- Exact stored `n` must not rewrite independent `n.a` from a new default.
+DROP TABLE IF EXISTS t_compact_exact_over_marker;
+CREATE TABLE t_compact_exact_over_marker (id UInt8, n UInt8, `n.a` UInt8 DEFAULT 0)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_rows_for_wide_part = 1000000, min_bytes_for_wide_part = 1000000000,
+    ratio_of_defaults_for_sparse_serialization = 1.0,
+    skip_empty_columns_on_insert = 1,
+    serialization_info_version = 'with_missing_columns',
+    enable_block_number_column = 0, enable_block_offset_column = 0;
+INSERT INTO t_compact_exact_over_marker (id, n) VALUES (1, 7);
+ALTER TABLE t_compact_exact_over_marker DROP COLUMN n, MODIFY COLUMN `n.a` DEFAULT 5 SETTINGS mutations_sync = 2;
+SELECT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_compact_exact_over_marker' AND active;
+SELECT id, `n.a` FROM t_compact_exact_over_marker;
+DROP TABLE t_compact_exact_over_marker;

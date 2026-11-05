@@ -44,7 +44,11 @@ public:
 
     /// Column was dropped by a pending mutation (data in part is stale).
     /// `name` is the name the column has in the part, not in the current metadata.
-    bool isColumnDropped(const std::string & name, bool share_nested_offsets = true) const;
+    /// `part_info`, when set, keeps a dotted column when `name`'s prefix is its own column or missing-column marker.
+    bool isColumnDropped(
+        const std::string & name,
+        bool share_nested_offsets = true,
+        const IMergeTreeDataPartInfoForReader * part_info = nullptr) const;
 
     static bool isSupportedDataMutation(MutationCommand::Type type);
     static bool isSupportedAlterMutation(MutationCommand::Type type);

@@ -213,14 +213,19 @@ private:
 
     MultiVersion<MemorySettings> memory_settings;
 
-    /// Rewrites for an in-flight `INSERT` that still has `before_names`.
+    /// Stored-column rewrites an in-flight `INSERT` must replay.
+    /// `schema_generation` is the table generation after that `ALTER`.
+    /// A sink replays entries newer than the generation it captured at creation.
     struct IdentityRewrite
     {
-        Names before_names;
+        UInt64 schema_generation = 0;
         AlterCommands commands;
         StorageInMemoryMetadata metadata;
     };
     std::vector<IdentityRewrite> identity_rewrites;
+
+    /// Bumped under `mutex` on every successful `ALTER`, including one that does not rewrite blocks.
+    UInt64 schema_generation = 0;
 
     friend class ReadFromMemoryStorageStep;
 };

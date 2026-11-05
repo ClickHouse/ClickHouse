@@ -977,35 +977,38 @@ static void splitAndModifyMutationCommands(
             {
                 if (command.type == MutationCommand::Type::DROP_COLUMN || command.type == MutationCommand::Type::RENAME_COLUMN)
                 {
-                    if (has_nested_column)
+                    const auto & serialization_infos = part->getSerializationInfos();
+                    const auto marker_root = onDiskName(command.column_name);
+                    const bool exact_marker = serialization_infos.isMissingColumn(marker_root);
+                    /// Exact `n` wins over dotted `n.*`, stored or marker-only.
+                    const bool expand_nested = has_nested_column && !has_column && !exact_marker;
+
+                    if (command.type == MutationCommand::Type::RENAME_COLUMN)
+                    {
+                        if (has_nested_column)
+                        {
+                            const auto & nested = part_columns.getNested(command.column_name);
+                            chassert(!nested.empty());
+                            for (const auto & nested_column : nested)
+                                mutated_columns.emplace(nested_column.name);
+                        }
+                        else
+                            mutated_columns.emplace(command.column_name);
+                    }
+                    else if (expand_nested)
                     {
                         const auto & nested = part_columns.getNested(command.column_name);
                         chassert(!nested.empty());
                         for (const auto & nested_column : nested)
                             mutated_columns.emplace(nested_column.name);
                     }
-                    else
+                    else if (has_column)
                         mutated_columns.emplace(command.column_name);
+                    else if (exact_marker)
+                        mutated_columns.emplace(marker_root);
 
                     if (command.type == MutationCommand::Type::DROP_COLUMN)
                     {
-                        /// We need to keep the clear command so we also clear dependent indices
-                        if (command.clear)
-                        {
-                            for_interpreter.push_back(command);
-                            for_file_renames.push_back(command); /// For packed parts
-                        }
-                        else if (has_nested_column)
-                        {
-                            for (const auto & nested_column : part_columns.getNested(command.column_name))
-                                dropped_columns.emplace(nested_column.name);
-                        }
-                        else
-                            dropped_columns.emplace(command.column_name);
-
-                        /// A group can store one child and keep another as a missing-column marker.
-                        const auto & serialization_infos = part->getSerializationInfos();
-                        const auto marker_root = onDiskName(command.column_name);
                         auto push_marker = [&](const String & marker_name)
                         {
                             if (!serialization_infos.isMissingColumn(marker_name))
@@ -1021,14 +1024,37 @@ static void splitAndModifyMutationCommands(
                             for_file_renames.push_back(std::move(marker_command));
                         };
 
-                        push_marker(marker_root);
-                        if (share_nested)
+                        if (expand_nested)
                         {
+                            /// Keep the clear command so dependent indices are cleared too.
+                            if (command.clear)
+                            {
+                                for_interpreter.push_back(command);
+                                for_file_renames.push_back(command);
+                            }
+                            else
+                            {
+                                for (const auto & nested_column : part_columns.getNested(command.column_name))
+                                    dropped_columns.emplace(nested_column.name);
+                            }
+
                             const String prefix = marker_root + ".";
                             for (const auto & missing : serialization_infos.getMissingColumns())
                                 if (missing.name.starts_with(prefix))
                                     push_marker(missing.name);
                         }
+                        else if (has_column)
+                        {
+                            if (command.clear)
+                            {
+                                for_interpreter.push_back(command);
+                                for_file_renames.push_back(command);
+                            }
+                            else
+                                dropped_columns.emplace(command.column_name);
+                        }
+                        else if (exact_marker)
+                            push_marker(marker_root);
                     }
                 }
             }
@@ -1055,7 +1081,8 @@ static void splitAndModifyMutationCommands(
                 };
 
                 push_marker(name_in_part);
-                if (share_nested_offsets)
+                /// Dotted markers belong to a dropped parent only when this name is not itself a column.
+                if (share_nested_offsets && !serialization_infos.isMissingColumn(name_in_part))
                 {
                     const String prefix = name_in_part + ".";
                     for (const auto & missing : serialization_infos.getMissingColumns())
@@ -1394,19 +1421,17 @@ static void splitAndModifyMutationCommands(
                     for_interpreter.push_back(std::move(interpreter_command));
                 };
 
-                if (share_nested && source_columns.hasNested(name_in_part))
-                {
-                    for (const auto & nested_column : source_columns.getNested(name_in_part))
-                        push_source(nested_column.name);
-                }
-                else if (source_columns.has(name_in_part))
+                const bool exact_column = source_columns.has(name_in_part) || serialization_infos.isMissingColumn(name_in_part);
+                if (exact_column)
                     push_source(name_in_part);
-
-                if (serialization_infos.isMissingColumn(name_in_part))
-                    push_source(name_in_part);
-
-                if (share_nested)
+                else if (share_nested)
                 {
+                    if (source_columns.hasNested(name_in_part))
+                    {
+                        for (const auto & nested_column : source_columns.getNested(name_in_part))
+                            push_source(nested_column.name);
+                    }
+
                     const String prefix = name_in_part + ".";
                     for (const auto & missing : serialization_infos.getMissingColumns())
                         if (missing.name.starts_with(prefix))
