@@ -66,8 +66,9 @@ delete_files t
 ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(n), countIf(s = 'x') FROM t"
 
 echo '--- UPDATE writes a delete file per data file for the old rows, and one data file for the new ones'
+# A Replicated database runs the ALTER once per shard on the same files, so a second run must match no rows.
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg 1 --query "
-    ALTER TABLE t UPDATE s = 'x' WHERE n % 5 = 0 ${MUTATE};
+    ALTER TABLE t UPDATE s = 'x' WHERE n % 5 = 0 AND s != 'x' ${MUTATE};
     SELECT content, count(), sum(record_count)
     FROM system.iceberg_files WHERE database = currentDatabase() AND table = 't' GROUP BY content ORDER BY content;
 "
