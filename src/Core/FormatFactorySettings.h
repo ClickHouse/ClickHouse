@@ -659,6 +659,10 @@ When enabled, JSONs like `{"a" : 42, "a" : {"b" : 42}}` where some key is duplic
 When enabled, during parsing JSON object into JSON type regular expressions specified using SKIP REGEXP will require partial match to skip a path. When disabled, full match will be required.
 )", 0, \
         {"26.1", false, true, "Add new setting that allows to use partial match in regexp paths skip in JSON type parsing"}) \
+    DECLARE(Bool, type_json_skip_duplicate_key_detection, false, R"(
+When enabled, parsing a JSON object into the `JSON` type skips the per-object duplicate-key detection, which speeds up parsing of objects with many keys. Enable it only when objects are known to have unique keys. The guarantee is the user's: if a duplicated key is actually present, the value is not corrupted (paths that collide are still rejected or skipped as duplicates and the row is rolled back), but a duplicated key combining a literal and a nested object is no longer specially merged regardless of `type_json_allow_duplicated_key_with_literal_and_nested_object`.
+)", 0, \
+        {"26.11", false, false, "Add a setting to skip per-object duplicate-key detection when keys are known to be unique"}) \
     DECLARE(Bool, json_type_escape_dots_in_keys, false, R"(
 When enabled, dots in JSON keys will be escaped during parsing.
 )", 0, \
@@ -2020,7 +2024,7 @@ Indicate which field of protobuf oneof was found by means of setting enum value 
 )", 0, \
         {"25.9", false, false, "New setting"}) \
     DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
-When reading Parquet files, decode geometry columns as ClickHouse geo types (`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` or `Geometry`). Applies to columns described by the GeoParquet `geo` metadata and to columns annotated with the Parquet `GEOMETRY` or `GEOGRAPHY` logical type. If disabled, such columns are read as `String` with the raw WKB (or WKT) bytes, unless a geo type is requested explicitly.
+When reading Parquet files, decode geometry columns as ClickHouse geo types (`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` or `Geometry`). Applies to columns described by the GeoParquet `geo` metadata and to columns annotated with the Parquet `GEOMETRY` or `GEOGRAPHY` logical type. If disabled, such columns are read as `String` with the raw WKB (or WKT) bytes, unless a geo type is requested explicitly. Columns with a native (GeoArrow) encoding of GeoParquet 1.1 are then read as the underlying nested `Array` and `Tuple` types.
 )", 0, \
         {"25.5", false, true, "A new setting to use geo columns in parquet file"}) \
     DECLARE(Bool, input_format_parquet_detect_variant_by_structure, true, R"(
