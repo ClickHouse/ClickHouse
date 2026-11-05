@@ -44,6 +44,14 @@ namespace MergeTreeSetting
 namespace
 {
 
+ASTPtr expandUserDefinedSQLFunctions(const ASTPtr & declaration, const ContextPtr & context)
+{
+    ASTPtr expanded = declaration->clone();
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+        UserDefinedSQLFunctionVisitor::visit(expanded, context);
+    return expanded;
+}
+
 /// the real `ALTER TABLE ... ADD INDEX` or `ADD PROJECTION` validation, so `CREATE` cannot accept what `ALTER` rejects
 void checkHypotheticalObjectIsAddable(
     const MergeTreeData & merge_tree,
@@ -97,12 +105,15 @@ BlockIO createHypotheticalProjection(
             return {};
     }
 
+    /// SQL UDFs are expanded first, as for `ALTER TABLE ... ADD PROJECTION`, so the binding sees the columns they read
+    ASTPtr expanded_projection_decl = expandUserDefinedSQLFunctions(query.projection_decl, context);
+
     /// `LoadingStrictnessLevel::CREATE` is what a real `ADD PROJECTION` passes, so an invalid
     /// definition is rejected here rather than silently accepted and skipped later
     auto projection_desc = ProjectionDescription::getProjectionFromAST(
-        query.projection_decl, metadata->getColumns(), &metadata->partition_key, context, LoadingStrictnessLevel::CREATE);
+        expanded_projection_decl, metadata->getColumns(), &metadata->partition_key, context, LoadingStrictnessLevel::CREATE);
 
-    checkHypotheticalObjectIsAddable(merge_tree, metadata, query.projection_decl, context);
+    checkHypotheticalObjectIsAddable(merge_tree, metadata, expanded_projection_decl, context);
 
     store.addProjection(table_id, projection_desc, HypotheticalBinding::of(*projection_desc.definition_ast, *metadata), query.if_not_exists);
     return {};
@@ -131,8 +142,11 @@ BlockIO createHypotheticalIndex(
             return {};
     }
 
+    /// SQL UDFs are expanded first, as for `ALTER TABLE ... ADD INDEX`, so the binding sees the columns they read
+    ASTPtr expanded_index_decl = expandUserDefinedSQLFunctions(query.index_decl, context);
+
     auto index_desc = IndexDescription::getIndexFromAST(
-        query.index_decl,
+        expanded_index_decl,
         metadata->getColumns(),
         /* is_implicitly_created = */ false,
         /* escape_filenames = */ true,
@@ -143,11 +157,6 @@ BlockIO createHypotheticalIndex(
     /// column's distribution from the reported skip ratio.
     if (index_desc.expression)
         context->checkAccess(AccessType::SELECT, table_id, index_desc.expression->getRequiredColumns());
-
-    /// SQL UDFs are expanded first, as for `ALTER TABLE ... ADD INDEX`.
-    ASTPtr expanded_index_decl = query.index_decl->clone();
-    if (!UserDefinedSQLFunctionFactory::instance().empty())
-        UserDefinedSQLFunctionVisitor::visit(expanded_index_decl, context);
 
     /// The alias checks also read ALIAS column definitions that constant folding removed from `index_desc.expression`.
     const auto & columns = metadata->getColumns();
