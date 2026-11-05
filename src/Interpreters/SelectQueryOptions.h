@@ -80,6 +80,10 @@ struct SelectQueryOptions
     /// The query as received from the initiator of a distributed read, not a subquery of it.
     bool is_secondary_query_root = false;
 
+    /// The tables of the root query read their storage, even if the context has a view source with
+    /// the same name: nothing swaps the view source in for them. See `IdentifierResolver::tryResolveTableIdentifier`.
+    bool root_query_reads_real_tables = false;
+
     SelectQueryOptions( /// NOLINT(google-explicit-constructor)
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
@@ -101,6 +105,7 @@ struct SelectQueryOptions
         out.is_local_shard_plan = false;
         out.is_local_plan_for_distributed_query = false;
         out.is_secondary_query_root = false;
+        out.root_query_reads_real_tables = false;
         ++out.subquery_depth;
         out.is_subquery = true;
         return out;
@@ -221,6 +226,12 @@ struct SelectQueryOptions
     SelectQueryOptions & secondaryQueryRoot(bool value = true)
     {
         is_secondary_query_root = value;
+        return *this;
+    }
+
+    SelectQueryOptions & rootQueryReadsRealTables(bool value = true)
+    {
+        root_query_reads_real_tables = value;
         return *this;
     }
 };

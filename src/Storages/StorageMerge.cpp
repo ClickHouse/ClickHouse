@@ -2066,6 +2066,10 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         /// its children. Run only the resolve passes, same as for queries sent to remote shards.
         child_select_query_options.ignore_ast_optimizations = true;
 
+        /// A materialized view can read its source table through `merge`. The child query reads the real
+        /// parts of its table, so the table needs the real metadata, not that of the inserted block.
+        child_select_query_options.rootQueryReadsRealTables();
+
         /// Converting query to AST because types might be different in the source table.
         /// Need to resolve types again.
         auto ast = modified_query_info.query_tree->toAST();

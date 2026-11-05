@@ -286,9 +286,9 @@ void QueryTreePassManager::dump(WriteBuffer & buffer, size_t up_to_pass_index)
 }
 
 void addQueryTreePasses(
-    QueryTreePassManager & manager, bool only_analyze, bool positional_arguments_already_resolved, StoragePtr replaced_storage)
+    QueryTreePassManager & manager, bool only_analyze, bool positional_arguments_already_resolved, bool root_query_reads_real_tables)
 {
-    manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze, positional_arguments_already_resolved, std::move(replaced_storage)));
+    manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze, positional_arguments_already_resolved, root_query_reads_real_tables));
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
     manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
     /// This pass should be run for the secondary queries

@@ -415,7 +415,10 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
 
     QueryTreePassManager query_tree_pass_manager(context);
     addQueryTreePasses(
-        query_tree_pass_manager, select_query_options.only_analyze, select_query_options.positional_arguments_already_resolved, storage);
+        query_tree_pass_manager,
+        select_query_options.only_analyze,
+        select_query_options.positional_arguments_already_resolved,
+        select_query_options.root_query_reads_real_tables);
 
     /// We should not apply any query tree level optimizations on shards
     /// because it can lead to a changed header.

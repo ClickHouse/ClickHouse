@@ -422,11 +422,11 @@ void hideLambdaArgumentsShadowingAliasExpression(
 
 }
 
-QueryAnalyzer::QueryAnalyzer(bool only_analyze_, bool positional_arguments_already_resolved_, StoragePtr replaced_storage_)
+QueryAnalyzer::QueryAnalyzer(bool only_analyze_, bool positional_arguments_already_resolved_, bool root_query_reads_real_tables_)
     : identifier_resolver(node_to_projection_name)
     , only_analyze(only_analyze_)
     , positional_arguments_already_resolved(positional_arguments_already_resolved_)
-    , replaced_storage(std::move(replaced_storage_))
+    , root_query_reads_real_tables(root_query_reads_real_tables_)
 {}
 
 QueryAnalyzer::~QueryAnalyzer() = default;
@@ -434,6 +434,7 @@ QueryAnalyzer::~QueryAnalyzer() = default;
 void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context)
 {
     IdentifierResolveScope & scope = createIdentifierResolveScope(node, /*parent_scope=*/ nullptr);
+    root_scope = &scope;
 
     if (!scope.context)
         scope.context = context;
@@ -1939,8 +1940,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     /// Try to resolve table identifier from database catalog
     if (!resolve_result.resolved_identifier && identifier_resolve_context.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
     {
+        /// A lambda in the root query has its own scope, so compare the nearest query scope.
+        bool reads_real_table = root_query_reads_real_tables && scope.getNearestQueryScope() == root_scope;
         resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
-            identifier_lookup.identifier, scope.context, replaced_storage);
+            identifier_lookup.identifier, scope.context, reads_real_table);
     }
 
     /// Try to resolve identifier as a niladic function (SQL standard functions that allow omitting parentheses)

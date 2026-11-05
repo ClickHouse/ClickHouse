@@ -284,7 +284,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
 
 /// Try resolve table identifier from database catalog
 std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
-    const Identifier & table_identifier, const ContextPtr & context, const StoragePtr & replaced_storage)
+    const Identifier & table_identifier, const ContextPtr & context, bool reads_real_table)
 {
     size_t parts_size = table_identifier.getPartsSize();
     if (parts_size < 1 || parts_size > 2)
@@ -384,12 +384,11 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
     /// The inner query of an ordinary view reads the table itself.
     /// The snapshot above can be shared by every read of the table in the query, so only a copy gets the view source's types.
     ///
-    /// Do this only if the caller swaps the view source in (`replaced_storage`). A nested analysis also
-    /// has the view source in the context, but does not swap it in: for example, the analysis of a child
-    /// query of `merge` in `ReadFromMerge::createPlanForTable`. Such a node reads the real table, so it
-    /// needs the real metadata, with the keys and types of the table's parts.
+    /// The exception is `reads_real_table`: the analysis of a child query of `merge` in
+    /// `ReadFromMerge::createPlanForTable` has the view source in the context, but its child table
+    /// reads the real parts. So it needs the real metadata, with the keys and types of the parts.
     if (auto view_source = context->getViewSource();
-        view_source && view_source == replaced_storage && !context->isViewInnerQuery()
+        view_source && !reads_real_table && !context->isViewInnerQuery()
         && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted())
     {
         auto view_source_metadata = view_source->getInMemoryMetadataPtr(context, false);
@@ -448,9 +447,9 @@ static void checkAccessToTableMetadata(const TableNode & table_node, const Conte
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
-    const Identifier & table_identifier, const ContextPtr & context, const StoragePtr & replaced_storage)
+    const Identifier & table_identifier, const ContextPtr & context, bool reads_real_table)
 {
-    if (auto result = tryResolveTableIdentifier(table_identifier, context, replaced_storage))
+    if (auto result = tryResolveTableIdentifier(table_identifier, context, reads_real_table))
     {
         checkAccessToTableMetadata(*result, context);
         return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
