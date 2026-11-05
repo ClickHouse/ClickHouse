@@ -313,6 +313,45 @@ static ActionsAndName splitSingleAndFilter(ActionsDAG & dag, const ActionsDAG::N
     return ActionsAndName{std::move(split_result.first), std::move(name)};
 }
 
+/// Can the atom be evaluated before the atoms that precede it in the AND chain? It is evaluated on more rows then,
+/// so it must be cheap (no functions that are worth to execute lazily) and all its functions must be unable to throw,
+/// be stateless, have no observable side effects and be deterministic in the scope of the query. See setting `short_circuit_function_evaluation_reorder_arguments`.
+bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
+{
+    std::stack<const ActionsDAG::Node *> nodes;
+    nodes.push(node);
+    std::unordered_set<const ActionsDAG::Node *> visited{node};
+    while (!nodes.empty())
+    {
+        node = nodes.top();
+        nodes.pop();
+
+        if (node->type == ActionsDAG::ActionType::ARRAY_JOIN || node->type == ActionsDAG::ActionType::PLACEHOLDER)
+            return false;
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION && !node->column)
+        {
+            DataTypesWithConstInfo arguments;
+            arguments.reserve(node->children.size());
+            for (const auto * child : node->children)
+                arguments.push_back({child->result_type, child->column != nullptr, child->column.get()});
+
+            const auto & function = *node->function_base;
+            if (function.isStateful()
+                || function.hasObservableSideEffects()
+                || !function.isDeterministicInScopeOfQuery()
+                || function.isSuitableForShortCircuitArgumentsExecution(arguments)
+                || function.canThrow(arguments))
+                return false;
+        }
+
+        for (const auto * child : node->children)
+            if (visited.insert(child).second)
+                nodes.push(child);
+    }
+    return true;
+}
+
 /// Is the atom heavy, that is, does it contain functions that are worth to execute lazily (like `JSONExtractString`)?
 /// Only heavy atoms are worth to evaluate on fewer rows, so a cheap atom is moved only in front of heavy ones.
 static bool isHeavyAndChainAtom(const ActionsDAG::Node * node)
@@ -327,7 +366,12 @@ static bool isHeavyAndChainAtom(const ActionsDAG::Node * node)
 
         if (node->type == ActionsDAG::ActionType::FUNCTION && !node->column)
         {
-            if (node->function_base->isSuitableForShortCircuitArgumentsExecution(getDataTypesWithConstInfoFromNodes(node->children)))
+            DataTypesWithConstInfo arguments;
+            arguments.reserve(node->children.size());
+            for (const auto * child : node->children)
+                arguments.push_back({child->result_type, child->column != nullptr});
+
+            if (node->function_base->isSuitableForShortCircuitArgumentsExecution(arguments))
                 return true;
         }
 

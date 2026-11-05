@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <Columns/ColumnConst.h>
-#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 
@@ -40,6 +40,18 @@ struct NodeInfo
         return required_storage_columns == other.required_storage_columns && required_indexes == other.required_indexes;
     }
 };
+
+/// Returns the argument types of a function node, as expected by
+/// IFunctionBase::isSuitableForShortCircuitArgumentsExecution.
+/// Mirrors getDataTypesWithConstInfoFromNodes in ExpressionActions.cpp, which is file local there.
+DataTypesWithConstInfo getArgumentTypesWithConstInfo(const ActionsDAG::NodeRawConstPtrs & nodes)
+{
+    DataTypesWithConstInfo types;
+    types.reserve(nodes.size());
+    for (const auto & child : nodes)
+        types.push_back({child->result_type, child->column != nullptr});
+    return types;
+}
 
 /// Fills the info of an input column.
 /// A virtual column of an index is resolved to the name of the index whose reader fills it.
@@ -108,7 +120,7 @@ void fillRequiredColumns(
     /// FunctionDateOrDateTimeAddInterval). There is no sound can-throw oracle in the tree yet,
     /// see the TODO on canThrow in IFunctionAdaptors.h.
     if (!node_info.may_throw && node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
-        && (node->function_base->isSuitableForShortCircuitArgumentsExecution(getDataTypesWithConstInfoFromNodes(node->children))
+        && (node->function_base->isSuitableForShortCircuitArgumentsExecution(getArgumentTypesWithConstInfo(node->children))
             || node->function_base->isExpensive()))
         node_info.may_throw = true;
 }

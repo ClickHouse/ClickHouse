@@ -733,8 +733,6 @@ private:
     NameToNodeIndex index;
 };
 
-DataTypesWithConstInfo getDataTypesWithConstInfoFromNodes(const ActionsDAG::NodeRawConstPtrs & nodes);
-
 /// This is an ugly way to bypass impossibility to forward declare ActionDAG::Node.
 struct ActionDAGNodes
 {
