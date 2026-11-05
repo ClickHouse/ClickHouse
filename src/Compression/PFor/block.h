@@ -107,7 +107,14 @@ inline ALWAYS_INLINE BaseWidthChoice chooseBaseWidthWithHistogram(unsigned cnt, 
     });
 }
 
-#if PFOR_HAS_VERTICAL
+/// The SIMD exception count compares vectors, which AltiVec types as a deprecated `vector bool`, so PowerPC uses the histogram.
+#if PFOR_HAS_VERTICAL && !defined(__ALTIVEC__)
+#    define PFOR_HAS_SIMD_EXCEPTION_COUNT 1
+#else
+#    define PFOR_HAS_SIMD_EXCEPTION_COUNT 0
+#endif
+
+#if PFOR_HAS_SIMD_EXCEPTION_COUNT
 /// Chooses the base width by counting the exceptions of every candidate width with SIMD over the values' bit widths,
 /// zero-padded to `padded_cnt`: a zero width is never an exception.
 inline ALWAYS_INLINE BaseWidthChoice chooseBaseWidthWithSimd(const uint8_t * widths, unsigned cnt, unsigned padded_cnt, unsigned max_width) noexcept
@@ -139,7 +146,7 @@ inline ALWAYS_INLINE BaseWidthChoice chooseBaseWidthWithSimd(const uint8_t * wid
 template <typename T>
 inline ALWAYS_INLINE BaseWidthChoice chooseBlockBaseWidth(const T * residuals, unsigned cnt) noexcept
 {
-#if PFOR_HAS_VERTICAL
+#if PFOR_HAS_SIMD_EXCEPTION_COUNT
     if constexpr (sizeof(T) == 4)
     {
         if (cnt >= 16)
