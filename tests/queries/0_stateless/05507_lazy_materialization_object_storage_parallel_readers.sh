@@ -39,8 +39,8 @@ for i in {0..7}; do
     "
 done
 
-# The main pass reads `ts` and `k`; the lazy pass reads 1 leaf column (narrow), 10 (wide), one Tuple of 10 (nested),
-# an Array of that Tuple (10) or a Map with that Tuple as values (11).
+# The main pass reads `ts` and `k` of 8 files, so with at most 8 readers; the lazy pass reads 1 leaf column (narrow),
+# 10 (wide), one Tuple of 10 (nested), an Array of that Tuple (10) or a Map with that Tuple as values (11).
 NARROW="SELECT k, s FROM ${TABLE} ORDER BY ts, k LIMIT 3000"
 WIDE="SELECT k, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10 FROM ${TABLE} ORDER BY ts, k LIMIT 100"
 NESTED="SELECT k, t FROM ${TABLE} ORDER BY ts, k LIMIT 100"
