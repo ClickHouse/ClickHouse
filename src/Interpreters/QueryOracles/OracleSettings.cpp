@@ -35,6 +35,11 @@ std::span<const PinnedSetting> oraclePinnedSettings()
         p.push_back({"optimize_using_constraints", Field(false), "do not trust unchecked ASSUME constraints"});
         p.push_back({"convert_query_to_cnf", Field(false), "feeds optimize_using_constraints"});
 
+        /// A hash join compares a `Dynamic` key with a non-`Dynamic` one by type, unlike `equals`;
+        /// `TLP WHERE` lets the optimizer move an equality between WHERE and the JOIN keys, so a
+        /// leaked `allow_dynamic_type_in_join_keys = 1` could change semantics across rewrites.
+        p.push_back({"allow_dynamic_type_in_join_keys", Field(false), "Dynamic join-key compares by type; WHERE<->join-key relocation must not change results"});
+
         /// Neutralize session-leaked read/result caps that would truncate oracle sub-queries
         /// asymmetrically. The oracle's own caps (max_result_rows/bytes below) throw instead.
         for (const auto * cap : {"max_rows_to_read", "max_bytes_to_read",

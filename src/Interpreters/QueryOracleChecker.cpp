@@ -67,6 +67,7 @@ namespace DB
 namespace Setting
 {
 extern const SettingsBool ast_fuzzer_oracle;
+extern const SettingsJoinStrictness join_default_strictness;
 }
 
 namespace ErrorCodes
@@ -326,6 +327,14 @@ bool namesUnsafeFunctionAfterStripping(String name)
 /// alias of is.
 bool isOracleUnsafeFunctionName(String name)
 {
+    /// Aggregates the registration marks `is_order_dependent` (e.g. `groupArraySample`,
+    /// `groupFormat`, `flameGraph`, `hierarchicalKMeans`) diverge between direct evaluation and
+    /// the State/Merge rewrite. Read that from the registration instead of maintaining a partial
+    /// name list; window-function registrations are excluded (they are screened separately).
+    if (const auto properties = AggregateFunctionFactory::instance().tryGetProperties(name, NullsAction::EMPTY);
+        properties && properties->is_order_dependent && !properties->is_window_function)
+        return true;
+
     while (true)
     {
         if (non_deterministic_functions_lower.contains(Poco::toLower(name)))
@@ -841,23 +850,31 @@ bool usesFinalAnywhere(const ASTPtr & ast)
 /// ASOF JOIN tie-breaking among equal asof-column values is
 /// implementation-defined, so which right-side row a left row pairs with can
 /// change between plans — observed as a `Subquery wrap` false mismatch.
-/// Checked recursively: an ASOF join in any subquery taints the whole query.
+/// Checked recursively: such a join in any subquery taints the whole query.
 /// Joins whose result is not stable across plan rewrites: `ASOF` picks the
-/// latest matching row (tie-breaking is plan-dependent), and `ANY` / old
-/// `RightAny` pick an arbitrary matching row from the right table, so which row
-/// survives the join can differ between the reference and the rewrite even at a
-/// fixed setting. `SEMI` / `ANTI` / `ALL` are deterministic and stay eligible.
-bool hasNonDeterministicJoinAnywhere(const ASTPtr & ast)
+/// latest matching row (tie-breaking is plan-dependent); `ANY` / old `RightAny`
+/// pick an arbitrary matching row from the right table; and `SEMI` takes the
+/// other side's columns from an arbitrary match, like `ANY`. Which row survives
+/// can differ between the reference and the rewrite even at a fixed setting.
+/// A join written without an explicit strictness takes `join_default_strictness`
+/// (unless it is `LATERAL` or a cross/comma join, which are `ALL`), so a plain
+/// `LEFT JOIN` under `SET join_default_strictness = 'ANY'` must be screened too.
+bool hasNonDeterministicJoinAnywhere(const ASTPtr & ast, JoinStrictness default_strictness)
 {
     if (!ast)
         return false;
     if (const auto * join = ast->as<ASTTableJoin>())
-        if (join->strictness == JoinStrictness::Asof
-            || join->strictness == JoinStrictness::Any
-            || join->strictness == JoinStrictness::RightAny)
+    {
+        auto strictness = join->strictness;
+        if (strictness == JoinStrictness::Unspecified && !join->lateral
+            && join->kind != JoinKind::Cross && join->kind != JoinKind::Comma)
+            strictness = default_strictness;
+        if (strictness == JoinStrictness::Asof || strictness == JoinStrictness::Any
+            || strictness == JoinStrictness::RightAny || strictness == JoinStrictness::Semi)
             return true;
+    }
     for (const auto & child : ast->children)
-        if (hasNonDeterministicJoinAnywhere(child))
+        if (hasNonDeterministicJoinAnywhere(child, default_strictness))
             return true;
     return false;
 }
@@ -1103,8 +1120,18 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
                 if (row_policy && row_policy->expression)
                     definitions.push_back(row_policy->expression);
 
+                /// A stored definition (view body, column default, row policy) is expanded into the
+                /// query the oracle rewrites, so it must pass the same screens as the outer AST — the
+                /// outer AST only names the view/column, so checking it alone cannot compensate. A
+                /// view `SELECT x FROM t SETTINGS max_threads = 4`, an arbitrary-match join, a nested
+                /// thread setting, or a WITH TOTALS modifier hidden in a definition would otherwise
+                /// survive expansion and defeat the corresponding guard.
                 for (const auto & definition : definitions)
                     if (hasNonDeterministicFunctionsImpl(definition, context)
+                        || hasNonDeterministicJoinAnywhere(definition, context->getSettingsRef()[Setting::join_default_strictness])
+                        || hasNonStrippableInlineSettings(definition)
+                        || hasNestedThreadSettings(definition, nullptr)
+                        || hasGroupByTotalsModifierAnywhere(definition)
                         || referencesSystemDatabaseAnywhere(definition, context->getCurrentDatabase())
                         || referencesNonDeterministicEngineAnywhere(definition, context)
                         || referencesUnscreenedDefinitionAnywhere(definition, context, depth + 1))
@@ -2119,6 +2146,16 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
                 const auto * agg_func = aggregate_ast->as<ASTFunction>();
                 String alias = agg_to_alias[agg_func];
                 auto merge_func = makeASTFunction(agg_func->name + "Merge", make_intrusive<ASTIdentifier>(alias));
+                /// A `-Merge` takes its parameters from its own call, not from the state. Without
+                /// the clone, `uniqUpTo(10)(x)` yields inner `uniqUpToState(10)(x)` but outer
+                /// `uniqUpToMerge(_s_0)` with the default threshold `5`: the state types differ, the
+                /// combinator throws, and the oracle silently skips — dropping parameterized-aggregate
+                /// TLP coverage. (Parameters are constants in the fuzzer's corpus, so no scope capture.)
+                if (agg_func->parameters)
+                {
+                    merge_func->parameters = agg_func->parameters->clone();
+                    merge_func->children.push_back(merge_func->parameters);
+                }
                 outer_select_list->children.push_back(std::move(merge_func));
                 is_aggregate = true;
                 break;
@@ -3045,9 +3082,9 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
         }
     }
 
-    if (hasNonDeterministicJoinAnywhere(query_ast))
+    if (hasNonDeterministicJoinAnywhere(query_ast, context->getSettingsRef()[Setting::join_default_strictness]))
     {
-        LOG_TRACE(logger, "Oracle skip: ASOF / ANY JOIN (picks an arbitrary/plan-dependent matching row)");
+        LOG_TRACE(logger, "Oracle skip: ASOF / ANY / SEMI JOIN (picks an arbitrary/plan-dependent matching row)");
         return false;
     }
 
