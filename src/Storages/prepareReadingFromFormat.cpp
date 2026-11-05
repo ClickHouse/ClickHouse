@@ -869,6 +869,18 @@ std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromF
     info.format_header = std::move(main_format_header);
     info.requested_columns = std::move(main_requested_columns);
 
+    auto split_maps = [&](NameSet & main_maps, NameSet & lazy_maps)
+    {
+        for (auto it = main_maps.begin(); it != main_maps.end();)
+        {
+            if (lazy_info.format_header.has(*it))
+                lazy_maps.insert(*it);
+            it = info.format_header.has(*it) ? std::next(it) : main_maps.erase(it);
+        }
+    };
+    split_maps(info.map_columns_read_by_keys, lazy_info.map_columns_read_by_keys);
+    split_maps(info.map_columns_read_by_values, lazy_info.map_columns_read_by_values);
+
     return lazy_info;
 }
 

@@ -91,6 +91,12 @@ lazy materialization
 29	['k2','c']	[29]
 28	[]	[NULL]
 27	['k0','c']	[27]
+29	['k2','c']	[29]
+28	[]	[NULL]
+27	['k0','c']	[27]
+29	['k2','c']	[29]
+28	[]	[NULL]
+27	['k0','c']	[27]
 filter on another column
 29	['k2','c']
 28	[]
@@ -225,3 +231,5 @@ bytesice_keys	1
 bytesice_values	1
 bytesurl_keys	1
 bytesurl_values	1
+lazy_keys	1
+lazyice_values	1

@@ -72,6 +72,8 @@ SELECT id FROM file('${TYPES}') PREWHERE has(ms, 'k2') WHERE mapContainsValue(ms
 SELECT mapKeys(ms) FROM file('${TYPES}') PREWHERE id > 25 ORDER BY id;
 SELECT 'lazy materialization';
 SELECT id, mapKeys(ms), mapValues(mn) FROM file('${TYPES}') ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10;
+SELECT id, ms.keys, mn.values FROM file('${TYPES}') ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10;
+SELECT id, ms.keys, mn.values FROM t_05509_types ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10;
 SELECT 'filter on another column';
 SELECT id, mapKeys(ms) FROM file('${TYPES}') WHERE id > 5 ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1;
 SELECT id, mapValues(mn) FROM file('${TYPES}') WHERE id > 5 ORDER BY id LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1;
@@ -196,9 +198,17 @@ for setting in 0 1; do
     "
 done
 ${CLICKHOUSE_CLIENT} -m --query "
+SET use_columns_cache = 0, use_query_condition_cache = 0, query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10;
+SELECT id, mapKeys(m) FROM file('${BYTES}') ORDER BY id DESC LIMIT 3 SETTINGS optimize_functions_to_subcolumns = 0, log_comment = 'lazy_keys_0' FORMAT Null;
+SELECT id, m.keys FROM file('${BYTES}') ORDER BY id DESC LIMIT 3 SETTINGS log_comment = 'lazy_keys_1' FORMAT Null;
+SELECT id, mapValues(mv) FROM t_05509_bytes ORDER BY id DESC LIMIT 3 SETTINGS optimize_functions_to_subcolumns = 0, log_comment = 'lazyice_values_0' FORMAT Null;
+SELECT id, mv.values FROM t_05509_bytes ORDER BY id DESC LIMIT 3 SETTINGS log_comment = 'lazyice_values_1' FORMAT Null;
+"
+${CLICKHOUSE_CLIENT} -m --query "
 SYSTEM FLUSH LOGS query_log;
 -- The Iceberg and URL files have one row group, so one dictionary per leaf and a smaller ratio.
-SELECT side, if(startsWith(side, 'bytes_'), on * 4 < off, on * 2 < off)
+-- The lazy pairs share the main read of \`id\`, so only \`on < off\`.
+SELECT side, multiIf(startsWith(side, 'bytes_'), on * 4 < off, startsWith(side, 'lazy'), on < off, on * 2 < off)
 FROM
 (
     SELECT
@@ -206,7 +216,7 @@ FROM
         sumIf(ProfileEvents['ParquetDecompressedBytes'], endsWith(log_comment, '_0')) AS off,
         sumIf(ProfileEvents['ParquetDecompressedBytes'], endsWith(log_comment, '_1')) AS on
     FROM system.query_log
-    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND startsWith(log_comment, 'bytes')
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND (startsWith(log_comment, 'bytes') OR startsWith(log_comment, 'lazy'))
     GROUP BY side
 )
 ORDER BY side;
