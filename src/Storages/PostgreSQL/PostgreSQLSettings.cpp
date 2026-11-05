@@ -72,6 +72,8 @@ void PostgreSQLSettings::loadFromQuery(ASTStorage & storage_def)
 void PostgreSQLSettings::loadFromQueryContext(const Context & context, const ASTSetQuery * settings, ASTStorage * store_into)
 {
     const Settings & query_settings = context.getSettingsRef();
+    /// The values a table takes when it is attached again in the global context, e.g. on server startup.
+    const Settings * server_settings = store_into ? &context.getGlobalContext()->getSettingsRef() : nullptr;
 
     for (const auto & setting : impl->all())
     {
@@ -83,14 +85,14 @@ void PostgreSQLSettings::loadFromQueryContext(const Context & context, const AST
         if (!query_settings.has(name))
             continue;
 
-        /// Not changed yet, so it holds the default of the engine.
-        const Field default_value = setting.getValue();
         Field value = query_settings.get(name);
         impl->set(name, value);
 
-        /// A value the session sets explicitly is stored even if it equals the default of the engine: without it, the table
-        /// would take the server's value when attached again.
-        if (!store_into || (value == default_value && !query_settings.isChanged(name)))
+        /// A value equal to the server's is not stored: the table takes it again when it is attached. This depends only on the
+        /// value and the server's settings, not on whether the session changes it: in a `Replicated` database another replica
+        /// drops a forwarded setting equal to its own value, which keeps the value but loses that the session changed it. So
+        /// replicas with the same configuration store the same definition, and none stores a value the query does not set.
+        if (!store_into || value == server_settings->get(name))
             continue;
 
         if (!store_into->settings)
