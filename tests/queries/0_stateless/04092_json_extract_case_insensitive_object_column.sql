@@ -294,3 +294,13 @@ SELECT 'float type markers',
 SELECT 'negative zero',
     1 / JSONExtractFloat('{"a": [-0.0]}'::JSON, 'a', 1), 1 / JSONExtractFloat('{"a": [-0.0]}', 'a', 1),
     JSONExtractRaw('{"a": [-0.0, 0.0]}'::JSON), JSONExtractRaw('{"a": [-0.0, 0.0]}');
+
+-- With `json_type_escape_dots_in_keys` the requested key `.` is stored as `%2E`; it must not match a literal
+-- key `%2e` case-insensitively, because that is a different logical key, not a case variant.
+SET json_type_escape_dots_in_keys = 1;
+SELECT 'escaped dot vs literal %2e',
+    JSONExtractStringCaseInsensitive('{"%2e": "value"}'::JSON, '.'), JSONExtractStringCaseInsensitive('{"%2e": "value"}', '.'),
+    JSONExtractStringCaseInsensitive('{"%2e": "value"}'::JSON(max_dynamic_paths = 0), '.'),
+    JSONExtractRawCaseInsensitive('{"%2e": {"x": 1}}'::JSON, '.'), JSONExtractRawCaseInsensitive('{"%2e": {"x": 1}}', '.'),
+    JSONExtractStringCaseInsensitive('{"A.b": "value"}'::JSON, 'a.B'), JSONExtractStringCaseInsensitive('{"A.b": "value"}', 'a.B');
+SET json_type_escape_dots_in_keys = 0;

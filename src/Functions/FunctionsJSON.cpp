@@ -509,13 +509,34 @@ public:
             VectorWithMemoryTracking<String> case_insensitive_matches;
             if constexpr (is_case_insensitive)
             {
-                auto match_case_insensitive = [](std::string_view a, std::string_view b) -> bool
+                /// With `json_type_escape_dots_in_keys` a literal dot inside a key is stored as `%2E`. Folding
+                /// the case of that escape sequence would make the requested key `.` (stored as `%2E`) match an
+                /// unrelated literal key `%2e`, which is a different logical key and not a case variant. So the
+                /// escape sequence is compared as a unit: `%2E` on either side matches only `%2E` on the other.
+                const bool escape_dots_in_keys = format_settings.json.json_type_escape_dots_in_keys;
+                auto match_case_insensitive = [escape_dots_in_keys](std::string_view a, std::string_view b) -> bool
                 {
+                    static constexpr std::string_view escaped_dot = "%2E";
                     if (a.size() != b.size())
                         return false;
-                    for (size_t i = 0; i < a.size(); ++i)
+                    for (size_t i = 0; i < a.size();)
+                    {
+                        if (escape_dots_in_keys)
+                        {
+                            bool a_escaped = a.substr(i, escaped_dot.size()) == escaped_dot;
+                            bool b_escaped = b.substr(i, escaped_dot.size()) == escaped_dot;
+                            if (a_escaped != b_escaped)
+                                return false;
+                            if (a_escaped)
+                            {
+                                i += escaped_dot.size();
+                                continue;
+                            }
+                        }
                         if (!equalsCaseInsensitive(a[i], b[i]))
                             return false;
+                        ++i;
+                    }
                     return true;
                 };
 
