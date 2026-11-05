@@ -79,7 +79,6 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.use_skip_indexes_for_top_k,
         optimization_settings.use_top_k_dynamic_filtering,
         optimization_settings.use_top_k_dynamic_filtering_for_variable_length_types,
-        optimization_settings.use_top_k_dynamic_filtering_for_single_string_sort_column,
         optimization_settings.max_limit_for_top_k_optimization,
         optimization_settings.use_skip_indexes_on_data_read,
         optimization_settings.read_in_order,
@@ -763,6 +762,24 @@ void optimizeTreeSecondPass(
             /// forms with the outer plan under the same ones.
             if (local_optimization_settings.merge_expressions)
                 tryMergeExpressions(local_plan_node, nodes, makeExtraSettings(local_optimization_settings));
+
+            /// The merge after the join runtime filters ran while this plan was still opaque, so give it the
+            /// same merge, or it keeps steps the single-node plan has merged (e.g. the part of an expression
+            /// split off by pushing a runtime filter through it) and automatic parallel replicas cannot match
+            /// the two plans.
+            if (join_runtime_filters_were_added)
+            {
+                Stack local_stack;
+                const auto local_extra_settings = makeExtraSettings(local_optimization_settings);
+                traverseQueryPlan(local_stack, *local_plan_node,
+                    [&](auto & frame_node)
+                    {
+                        while (tryMergeExpressions(&frame_node, nodes, local_extra_settings)
+                               + tryMergeFilters(&frame_node, nodes, local_extra_settings))
+                        {
+                        }
+                    });
+            }
         }
         else if (auto * read_from_time_series = typeid_cast<ReadFromTimeSeriesStep *>(frame.node->step.get()))
         {
@@ -996,9 +1013,6 @@ void optimizeTreeSecondPass(
     /// distributed plans are re-optimized with `make_distributed_plan = false` and still get sharded.
     if (!optimization_settings.make_distributed_plan)
         optimizeParallelFullSortingMergeJoin(root, optimization_settings.max_threads);
-
-    /// After every pass that converts a full sorting or gives it partitions.
-    traverseQueryPlan(stack, root, [&](auto & frame_node) { disableSpreadingSmallReadUnderFullSorting(frame_node); });
 
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
 
