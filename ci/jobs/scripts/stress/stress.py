@@ -15,7 +15,7 @@ import threading
 from multiprocessing import cpu_count
 from pathlib import Path
 from subprocess import PIPE, STDOUT, Popen, call, check_output
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 # Failpoint that delays every background mutation by a bounded random amount.
 MUTATION_DELAY_FAILPOINT = "mutate_task_random_sleep_in_prepare"
@@ -91,14 +91,13 @@ def quote_identifier(name: str) -> str:
 
 class RandomDisruptor:
     """Background thread that randomly kills queries, client processes and mutations,
-    briefly stops background operations such as merges, empties caches,
-    detaches tables and restarts replicas, during stress tests.
+    briefly stops background operations such as merges, empties caches and restarts
+    replicas, during stress tests.
 
     This helps test that queries and mutations are cancelled correctly, handles
     scenarios where the client unexpectedly disconnects (issue #39803), and exercises
     operations that run while one of the background activities in `_SYSTEM_STATEMENT_PAIRS`
-    is unavailable, while the data they cache disappears, or while the table they use
-    goes away and comes back.
+    is unavailable, or while the data they cache disappears.
     """
 
     # Subprocess caps for one loop iteration: a SELECT to pick a victim, then the kill.
@@ -174,28 +173,16 @@ class RandomDisruptor:
         "DNS CACHE",
         "CONNECTIONS CACHE",
     )
-    # Only tables of `Atomic` databases are detached: `Replicated` ones reject a plain `DETACH TABLE`,
-    # and the ones in `KEEP_DATABASES` must be intact for the hung check and the log export.
-    _DETACHABLE_TABLES_QUERY = (
-        "SELECT database, name AS table FROM system.tables "
-        "WHERE engine LIKE '%MergeTree' AND NOT is_temporary "
-        "AND database IN (SELECT name FROM system.databases WHERE engine = 'Atomic') "
-        "AND database NOT IN {keep:Array(String)}"
-    )
-    # Longest an iteration can run, plus margin, so stop() outlasts one of them. A hold is the
-    # disruption, the wait and the undo back to back; on shutdown the wait collapses, but bound it
-    # for the case where stop() arrives just before the pause begins.
-    _HOLD_TIMEOUT = (
-        _SYSTEM_STATEMENT_TIMEOUT
-        + _SYSTEM_STATEMENT_PAUSE_MAX
-        + _SYSTEM_STATEMENT_RESTART_ATTEMPTS * _SYSTEM_STATEMENT_TIMEOUT
-        + (_SYSTEM_STATEMENT_RESTART_ATTEMPTS - 1) * _SYSTEM_STATEMENT_RESTART_BACKOFF
-    )
+    # Longest an iteration can run, plus margin, so stop() outlasts one of them. The pause
+    # branch is the stop, the wait and the start back to back; on shutdown the wait collapses,
+    # but bound it for the case where stop() arrives just before the pause begins.
     _JOIN_TIMEOUT = (
         max(
             _SELECT_TIMEOUT + _KILL_MUTATION_TIMEOUT,
-            # The detach branch picks its table first, and looks for it again after a failed detach.
-            2 * _SELECT_TIMEOUT + _HOLD_TIMEOUT,
+            _SYSTEM_STATEMENT_TIMEOUT
+            + _SYSTEM_STATEMENT_PAUSE_MAX
+            + _SYSTEM_STATEMENT_RESTART_ATTEMPTS * _SYSTEM_STATEMENT_TIMEOUT
+            + (_SYSTEM_STATEMENT_RESTART_ATTEMPTS - 1) * _SYSTEM_STATEMENT_RESTART_BACKOFF,
         )
         + 5
     )
@@ -352,11 +339,10 @@ class RandomDisruptor:
         params: Optional[Dict[str, str]] = None,
         quiet: bool = False,
         timeout: Optional[float] = None,
-    ) -> Tuple[Optional[bool], str]:
-        """Run `query`, returning whether it succeeded and its output. The first element is `None`
-        when the outcome is unknown: a client-side timeout does not mean the server skipped the
-        query. `quiet` logs a failure at debug level, for a query that a concurrent test routinely
-        makes fail, for example by dropping its table."""
+    ) -> Tuple[bool, str]:
+        """Run `query`, returning whether it succeeded and its output. `quiet` logs a failure at
+        debug level, for a query that a concurrent test routinely makes fail, for example by
+        dropping its table."""
         timeout = self._SYSTEM_STATEMENT_TIMEOUT if timeout is None else timeout
         # Keep the subprocess cap above --receive_timeout so the client's own timeout is the one
         # that governs, as in the mutation kill above.
@@ -369,10 +355,10 @@ class RandomDisruptor:
             result = subprocess.run(command, capture_output=True, timeout=timeout, check=False)
         except subprocess.TimeoutExpired as e:
             logging.debug("%s timed out: %s", query, e)
-            return None, ""
+            return False, ""
         except Exception as e:
             logging.warning("%s failed: %s: %s", query, type(e).__name__, e)
-            return None, ""
+            return False, ""
         if result.returncode:
             # The first line of the client's error names the exception.
             error = result.stderr.decode("utf-8", errors="replace").strip().split("\n", 1)[0]
@@ -402,58 +388,40 @@ class RandomDisruptor:
 
     def _run_system_statement(self, statement: str) -> bool:
         """Run `SYSTEM <statement>`, reporting whether it succeeded."""
-        return bool(self._run_query(f"SYSTEM {statement}", quiet=statement in self._OPTIONAL_STATEMENTS)[0])
-
-    def _hold(
-        self,
-        disrupt: Tuple[str, Callable[[], Optional[bool]]],
-        undo: Tuple[str, Callable[[], bool]],
-    ) -> None:
-        """Run a disruption, wait a random pause and undo it, each named by its description in the
-        log. The disruption returns `False` when it certainly did not happen, which skips the undo,
-        and `None` when its outcome is unknown, which undoes it without the pause."""
-        disrupt_description, disrupt_action = disrupt
-        undo_description, undo_action = undo
-        pause = random.uniform(self._SYSTEM_STATEMENT_PAUSE_MIN, self._SYSTEM_STATEMENT_PAUSE_MAX)
-        disrupted: Optional[bool] = None
-        try:
-            disrupted = disrupt_action()
-            if disrupted:
-                logging.info("%s, undoing in %.1fs", disrupt_description, pause)
-                # Interruptible, so a shutdown request cuts the pause short instead of
-                # holding stop() for the full interval.
-                self._stop_event.wait(pause)
-        finally:
-            # Also on shutdown and when the disruption raised. Retried, so one failed attempt does not
-            # leave the server disrupted; after the last one, `prepare_for_hung_check` restarts a stopped
-            # operation, and a table left detached goes away with its database at the end of the run.
-            for attempt in range(1, self._SYSTEM_STATEMENT_RESTART_ATTEMPTS + 1):
-                if disrupted is False:
-                    break
-                if undo_action():
-                    if attempt > 1:
-                        logging.info("%s succeeded on attempt %d", undo_description, attempt)
-                    break
-                attempts_left = self._SYSTEM_STATEMENT_RESTART_ATTEMPTS - attempt
-                if not attempts_left or self._stop_event.is_set():
-                    logging.error(
-                        "Failed to run %s after %d attempt%s",
-                        undo_description,
-                        attempt,
-                        "" if attempt == 1 else "s",
-                    )
-                    break
-                # Interruptible, so shutdown does not wait out the full backoff.
-                self._stop_event.wait(self._SYSTEM_STATEMENT_RESTART_BACKOFF)
+        return self._run_query(f"SYSTEM {statement}", quiet=statement in self._OPTIONAL_STATEMENTS)[0]
 
     def _pause_random_operation(self) -> None:
         """Stop a background operation server-wide for a short interval, then start it again."""
         stop_statement, start_statement = random.choice(self._SYSTEM_STATEMENT_PAIRS)
-        self._hold(
-            # A failed stop is still followed by the start: the server may have run it.
-            (f"SYSTEM {stop_statement}", lambda: self._run_system_statement(stop_statement) or None),
-            (f"SYSTEM {start_statement}", lambda: self._run_system_statement(start_statement)),
-        )
+        pause = random.uniform(self._SYSTEM_STATEMENT_PAUSE_MIN, self._SYSTEM_STATEMENT_PAUSE_MAX)
+        try:
+            if self._run_system_statement(stop_statement):
+                logging.info("SYSTEM %s, resuming in %.1fs", stop_statement, pause)
+                # Interruptible, so a shutdown request cuts the pause short instead of
+                # holding stop() for the full interval.
+                self._stop_event.wait(pause)
+        finally:
+            # Always run the start: on shutdown, and also when the stop above reported a
+            # failure, since a client-side timeout does not mean the server skipped the
+            # statement. Retried, so one failed attempt does not leave the operation
+            # stopped until `prepare_for_hung_check`'s own retry at the very end of the run.
+            for attempt in range(1, self._SYSTEM_STATEMENT_RESTART_ATTEMPTS + 1):
+                if self._run_system_statement(start_statement):
+                    if attempt > 1:
+                        logging.info("SYSTEM %s succeeded on attempt %d", start_statement, attempt)
+                    break
+                attempts_left = self._SYSTEM_STATEMENT_RESTART_ATTEMPTS - attempt
+                if not attempts_left or self._stop_event.is_set():
+                    logging.error(
+                        "Failed to run SYSTEM %s after %d attempt%s%s",
+                        start_statement,
+                        attempt,
+                        "" if attempt == 1 else "s",
+                        "" if attempts_left == 0 else " (shutting down, deferring to prepare_for_hung_check)",
+                    )
+                    break
+                # Interruptible, so shutdown does not wait out the full backoff.
+                self._stop_event.wait(self._SYSTEM_STATEMENT_RESTART_BACKOFF)
 
     def _drop_random_cache(self) -> None:
         """Empty one of the caches server-wide."""
@@ -499,38 +467,6 @@ class RandomDisruptor:
         if self._run_query(f"SYSTEM RELOAD DICTIONARY {name}", quiet=True)[0]:
             logging.info("SYSTEM RELOAD DICTIONARY %s", name)
 
-    def _detach_random_table(self) -> None:
-        """Detach a random `MergeTree` table for a short interval, then attach it again."""
-        rows = self._select_rows(
-            self._DETACHABLE_TABLES_QUERY + " ORDER BY rand() LIMIT 1",
-            {"keep": self._keep_databases_param()},
-        )
-        # Shutdown may have been requested while the SELECT above was running.
-        if not rows or self._stop_event.is_set():
-            return
-        database, table = rows[0]["database"], rows[0]["table"]
-        name = f"{quote_identifier(database)}.{quote_identifier(table)}"
-
-        def detach() -> Optional[bool]:
-            # `SYNC` waits until no query uses the table, so the `ATTACH` after the pause does not fail with "detached
-            # but still used". Quiet: a test may drop the table, or its database, at any moment.
-            if self._run_query(f"DETACH TABLE {name} SYNC", quiet=True)[0]:
-                return True
-            # A failure does not mean the table is still attached: the server removes it from the catalog first
-            # and then waits for its users, and the client may give up on that wait. Skip the attach only if the
-            # table is certainly still there.
-            succeeded, output = self._run_query(
-                "SELECT count() FROM system.tables WHERE database = {database:String} AND name = {table:String}",
-                {"database": database, "table": table},
-                timeout=self._SELECT_TIMEOUT,
-            )
-            return False if succeeded and output.strip() == "1" else None
-
-        self._hold(
-            (f"DETACH TABLE {name} SYNC", detach),
-            (f"ATTACH TABLE {name}", lambda: bool(self._run_query(f"ATTACH TABLE {name}", quiet=True)[0])),
-        )
-
     def _restart_random_replica(self) -> None:
         """Reinitialize the Keeper session and the state of a random replicated table."""
         rows = self._select_rows(
@@ -547,9 +483,9 @@ class RandomDisruptor:
     def _run(self) -> None:
         """Main loop that runs in the background thread."""
         logging.info("Random disruptor started (interval: %.1fs)", self._interval)
-        # Picked from uniformly, one per iteration. A pause and a detach hold
-        # their disruption for up to `_SYSTEM_STATEMENT_PAUSE_MAX` seconds and undo it before the
-        # iteration ends.
+        # Picked from uniformly, one per iteration. The pause is the only one whose effect
+        # outlives the iteration that started it: it holds a background operation off
+        # server-wide for up to `_SYSTEM_STATEMENT_PAUSE_MAX` seconds.
         disruptions = (
             self._kill_random_query,
             self._kill_random_client,
@@ -559,7 +495,6 @@ class RandomDisruptor:
             self._run_one_shot_statement,
             self._reload_random_dictionary,
             self._refresh_or_cancel_random_view,
-            self._detach_random_table,
             self._restart_random_replica,
         )
         while not self._stop_event.is_set():
