@@ -40,10 +40,10 @@ DROP TABLE early_candidates;
 -- The first part lacks indexes. Preserve exact fallback, hint verification,
 -- Nullable predicates and aliases selected downstream in both parts.
 DROP TABLE IF EXISTS partial_candidates;
-CREATE TABLE partial_candidates (id UInt64, k Nullable(String), s Nullable(String))
+CREATE TABLE partial_candidates (id UInt64, k String, s Nullable(String))
 ENGINE = MergeTree ORDER BY id;
 SYSTEM STOP MERGES partial_candidates;
-INSERT INTO partial_candidates VALUES (1, 'hit', 'needle phrase'), (2, NULL, NULL);
+INSERT INTO partial_candidates VALUES (1, 'hit', 'needle phrase'), (2, 'miss', NULL);
 ALTER TABLE partial_candidates ADD INDEX k_idx k TYPE text(tokenizer = 'splitByNonAlpha');
 ALTER TABLE partial_candidates ADD INDEX s_idx s TYPE text(tokenizer = ngrams(3));
 -- Row 4 contains every query trigram but not the requested phrase.
