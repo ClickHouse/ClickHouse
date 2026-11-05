@@ -1021,6 +1021,7 @@ void ReadFromRemote::addPipe(
         // Several connections to a shard are correct only when every replica reads its own part of the data,
         // which is the case only for the offset based modes (`SAMPLING_KEY`, `CUSTOM_KEY_SAMPLING`,
         // `CUSTOM_KEY_RANGE`), where the query sent to a replica carries the corresponding filter.
+        // The replicas then share one port, so a read whose consumer needs stream order uses one replica.
         //
         // In every other case a replica executes the whole query, so there should be a single connection
         // to a shard, otherwise the result of the shard is multiplied by the number of the connections:
@@ -1032,7 +1033,7 @@ void ReadFromRemote::addPipe(
         //     data.
         //
         // Distributed Top-K coordination exchanges candidates with exactly one replica of each shard.
-        if (context->canUseOffsetParallelReplicas() && !distributed_top_k_coordinator)
+        if (context->canUseOffsetParallelReplicas() && allow_reading_shard_from_several_replicas && !distributed_top_k_coordinator)
             remote_query_executor->setPoolMode(PoolMode::GET_MANY);
         else
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
@@ -1079,6 +1080,9 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
         coordinator_settings.logical_shards = shards.size();
         distributed_top_k_coordinator = std::make_shared<DistributedTopKCoordinator>(std::move(coordinator_settings));
     }
+
+    if (context->canUseOffsetParallelReplicas() && !allow_reading_shard_from_several_replicas)
+        LOG_DEBUG(log, "Reading every shard from one replica, the consumers of the read may depend on the order of its streams");
 
     Pipes pipes = addPipes(shards, output_header, unavailable_shard_tracker);
 

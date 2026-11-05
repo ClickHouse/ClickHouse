@@ -58,6 +58,8 @@ public:
 
     void setDistributedTopKCoordination(UInt64 limit_, SortDescription sort_description);
 
+    void allowReadingShardFromSeveralReplicas(bool allow) { allow_reading_shard_from_several_replicas = allow; }
+
 private:
     ClusterProxy::SelectStreamFactory::Shards shards;
     QueryProcessingStage::Enum stage;
@@ -78,6 +80,7 @@ private:
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
     std::optional<DistributedTopKCoordinator::Settings> distributed_top_k_settings;
     DistributedTopKCoordinatorPtr distributed_top_k_coordinator;
+    bool allow_reading_shard_from_several_replicas = false;
 
     /// An EXPLAIN runs extra executors of its own, whose skips are not the query's: it passes no tracker.
     Pipes addPipes(

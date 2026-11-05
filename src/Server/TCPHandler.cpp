@@ -1856,8 +1856,7 @@ void TCPHandler::processTablesStatusRequest()
             /// `StringWithMemoryTracking` (as in `processQuery`) routes the digest/hash duplicate of
             /// the potentially large request through the throwing memory-tracker path.
             StringWithMemoryTracking data(salt);
-            if (nonce.has_value())
-                data += std::to_string(nonce.value());
+            data += std::to_string(nonce.value());
             data += cluster_secret;
             data += "TablesStatusRequest";
             data += request.getAuthDigest();
@@ -2325,8 +2324,15 @@ void TCPHandler::receiveHello()
         }
 
         if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)
-            LOG_WARNING(LogFrequencyLimiter(log, 10),
-                        "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster.");
+        {
+            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                "Interserver mode is not supported for client protocol revision {}, the minimum is {}",
+                client_tcp_protocol_version, DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2);
+            session = makeSession();
+            session->onAuthenticationFailure(/* user_name= */ std::nullopt, getClientAddressNoThrow(), exception);
+            throw exception; /// NOLINT
+        }
+
         processClusterNameAndSalt();
 
         /// Reject interserver mode unless the cluster has a `<secret>`; otherwise any client
@@ -2819,7 +2825,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             throw exception; /// NOLINT
         }
 
-        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2 && !nonce.has_value())
+        if (!nonce.has_value())
         {
             auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver authentication failed (no nonce)");
             session->onAuthenticationFailure(/* user_name= */ std::nullopt, getClientAddressNoThrow(), exception);
@@ -2832,9 +2838,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         /// would allocate through `allocNoThrow` and could push the server
         /// past `max_server_memory_usage` without throwing.
         StringWithMemoryTracking data(salt);
-        // For backward compatibility
-        if (nonce.has_value())
-            data += std::to_string(nonce.value());
+        data += std::to_string(nonce.value());
         data += cluster_secret;
         data += state->query;
         data += state->query_id;

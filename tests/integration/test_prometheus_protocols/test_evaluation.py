@@ -928,6 +928,18 @@ def test_range_selectors():
         ],
     )
 
+    do_query_test(
+        "test[30s] offset 20s",
+        160,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[120, "1"], [130, "3"], [140, "4"]]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',3),('1970-01-01 00:02:20.000',4)]",
+            ]
+        ],
+    )
+
 
 def test_instant_selectors():
     do_query_test(
