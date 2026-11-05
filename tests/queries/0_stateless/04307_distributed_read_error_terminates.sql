@@ -15,6 +15,6 @@ SELECT a, sum(v) FROM t_distr_read_error GROUP BY a
 SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
     enable_join_runtime_filters = 0, max_rows_to_group_by = 0,
-    max_rows_to_read = 10, read_overflow_mode = 'throw'; -- { serverError TOO_MANY_ROWS }
+    max_rows_to_read = 10, read_overflow_mode = 'throw', distributed_plan_fallback_to_local_execution = 0; -- { serverError TOO_MANY_ROWS }
 
 DROP TABLE t_distr_read_error;

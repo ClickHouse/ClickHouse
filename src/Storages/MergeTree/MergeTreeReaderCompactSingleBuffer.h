@@ -20,12 +20,20 @@ public:
 
     /// Returns the number of rows has been read or zero if there is no columns to read.
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
-    size_t readRows(size_t from_mark,
+    size_t readRows(size_t from_mark, size_t current_range_last_mark,
                     bool continue_reading, size_t max_rows_to_read,
-                    MutableColumns & res_columns) override;
+                    MutableColumns & res_columns, Columns & shared_columns) override;
+
+    void updateReadRequestMap(MarkRangesPtr request_map) override
+    {
+        MergeTreeReaderCompact::updateReadRequestMap(request_map);
+        if (stream)
+            stream->updateReadRequestMap(std::move(request_map));
+    }
 
 private:
     MergeTreeReaderStream & getStream(const NameAndTypePair &) override { return *stream; }
+    void readGranule(size_t mark, size_t rows_to_read, MutableColumns & res_columns, const std::vector<bool> * columns_mask) override;
     void init();
 
     bool initialized = false;

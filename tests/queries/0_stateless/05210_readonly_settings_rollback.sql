@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- The failpoint applies to settings changes across all tables.
 -- It fires once and disarms itself, but it is disarmed explicitly too: a fail point is server-global
 -- state and must not stay armed if the `ALTER` fails for another reason.

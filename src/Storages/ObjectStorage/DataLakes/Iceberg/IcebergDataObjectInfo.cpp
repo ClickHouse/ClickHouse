@@ -67,7 +67,7 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
           data_manifest_file_entry_->sequence_number,
           data_manifest_file_entry_->parsed_entry->file_format,
           /* manifest_file */ data_manifest_file_entry_->manifest_file_path,
-          /* partition_id */ Iceberg::computePartitionId(data_manifest_file_entry_->parsed_entry->partition_key_value),
+          /* partition_id */ Iceberg::computePartitionId(data_manifest_file_entry_->normalized_partition_key_value),
           /* position_deletes_objects */ {},
           /* deletion_vector */ std::nullopt,
           /* equality_deletes_objects */ {},
@@ -76,6 +76,10 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
           data_manifest_file_entry_->first_row_id,
           std::move(identity_partition_columns_)}
 {
+    if (data_manifest_file_entry_->parsed_entry->split_offsets.has_value())
+        for (Int64 offset : *data_manifest_file_entry_->parsed_entry->split_offsets)
+            if (offset >= 0)
+                split_offsets.push_back(static_cast<UInt64>(offset));
 }
 
 IcebergDataObjectInfo::IcebergDataObjectInfo(const RelativePathWithMetadata & path_)

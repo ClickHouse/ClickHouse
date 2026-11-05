@@ -57,7 +57,8 @@ FROM system.query_log
 -- The secondary queries do not carry `current_database`, so match them by the database they read.
 WHERE has(databases, currentDatabase())
     AND event_date >= yesterday() AND event_time > now() - 600 AND type = 'QueryFinish' AND is_initial_query = 0
-    AND log_comment LIKE '05260\_%' AND query LIKE '%t_dist_pd%'
+    AND log_comment IN ('05260_wasm_nondeterministic', '05260_wasm_deterministic', '05260_executable_nondeterministic')
+    AND query LIKE '%t_dist_pd%'
 GROUP BY log_comment ORDER BY log_comment;
 SQL
 

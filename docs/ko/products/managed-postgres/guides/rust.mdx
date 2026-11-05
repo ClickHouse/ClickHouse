@@ -1,0 +1,327 @@
+---
+slug: /cloud/managed-postgres/guides/rust
+sidebarTitle: 'Rust (sqlx)'
+title: 'ClickHouse Managed Postgres에서 Rust (sqlx) 사용하기'
+description: 'sqlx와 axum으로 Rust 앱을 ClickHouse Managed Postgres에 연결하고, sqlx-cli로 마이그레이션을 실행한 뒤, 검증된 TLS 연결로 쿼리를 실행합니다'
+keywords: ['managed postgres', 'rust', 'sqlx', 'sqlx-cli', 'axum', 'tokio', 'rustls', 'migrations', 'pgbouncer', 'tls']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-rust-beta" />
+
+[sqlx](https://github.com/launchbadge/sqlx)는 연결 풀(connection pool)과 마이그레이션(migrations) 기능이 내장된 비동기 순수 Rust SQL 툴킷입니다. 이 가이드에서는 `sqlx-cli` 마이그레이션으로 `todos` 테이블을 생성한 뒤, 간단한 [axum](https://github.com/tokio-rs/axum) 서버에서 생성, 조회, 수정, 삭제 쿼리를 처리합니다. 모든 연결에는 인증서를 완전히 검증(certificate verification)하는 TLS가 적용됩니다.
+
+## 사전 요구 사항 {#prerequisites}
+
+* [Rust](https://www.rust-lang.org/tools/install) 1.94 이상. 이 가이드는 Rust 1.98.1, `sqlx` 0.9.0, `sqlx-cli` 0.9.0, `axum` 0.8.9 환경에서 테스트되었습니다.
+* ClickHouse Cloud 계정
+* 데이터베이스 생성에 사용할 [`psql`](https://www.postgresql.org/download/). `CREATE DATABASE` SQL 문은 [SQL 콘솔](/ko/integrations/connectors/sql-clients/sql-console)에서 실행할 수도 있습니다.
+
+## ClickHouse Managed Postgres 서비스 생성 {#create-service}
+
+ClickHouse Cloud 콘솔에서 **New service**를 클릭한 후 **Postgres**를 선택하십시오. 몇 분 내에 인스턴스가 준비됩니다. 자세한 단계별 안내는 [빠른 시작 가이드](/ko/products/managed-postgres/quickstart)를 참조하십시오.
+
+## 연결 정보 확인하기 {#connection-details}
+
+서비스의 왼쪽 사이드바에서 **Connect**를 클릭하십시오. **Directly**가 선택된 상태를 유지하고 **Use SSL**을 켜십시오. 이제 **url** 탭의 연결 URL이 `sslmode=verify-full&sslrootcert=<service-name>-ca-certificate.pem`으로 끝나며, 포트는 `5432`입니다.
+
+**Download CA certificate**를 클릭하십시오. 나중에 **Settings → CA Certificate**에서 다운로드할 수도 있습니다. 이 인증서는 인스턴스마다 고유하므로, 드라이버는 이를 사용해 실제로 해당 서버와 통신하고 있는지 검증할 수 있습니다.
+
+이 가이드에서는 앱과 `sqlx-cli` 모두 포트 `5432`를 통해 Postgres에 **직접** 연결합니다. axum 서버는 장시간 실행되는 프로세스이고 `PgPool`이 자체 연결 풀을 관리하므로, Postgres 앞에 별도의 풀러를 둘 필요가 없습니다. 마이그레이션에는 항상 직접 연결을 사용해야 합니다. 앱 인스턴스를 여러 개 실행한다면 [PgBouncer 사용하기](#pgbouncer)를 참조하십시오.
+
+## 프로젝트 설정하기 {#project-setup}
+
+프로젝트를 생성한 후 Postgres 드라이버, Tokio 런타임, `rustls` TLS 백엔드를 활성화한 `sqlx`를 추가하고, axum과 몇 가지 보조 크레이트도 함께 추가하십시오:
+
+```bash
+cargo new todo-api && cd todo-api
+cargo add sqlx --features postgres,runtime-tokio,tls-rustls,chrono
+cargo add axum dotenvy
+cargo add tokio --features full
+cargo add serde --features derive
+cargo add chrono --features serde
+```
+
+동일한 TLS 백엔드를 사용하여 `sqlx-cli`를 설치하십시오:
+
+```bash
+cargo install sqlx-cli --no-default-features --features rustls,postgres
+```
+
+<Warning>
+  **macOS에서는 `native-tls`가 아닌 `rustls`를 사용하십시오**
+
+  ClickHouse Managed Postgres는 TLS 1.3만 허용합니다. macOS에서 `native-tls` 백엔드는 시스템의 Secure Transport 라이브러리를 사용하는데, 이 라이브러리는 TLS 1.3을 지원하지 않습니다. 별도 옵션 없이 `cargo install sqlx-cli`로 설치하면 `native-tls`가 사용되며, 이후 모든 명령어가 `error occurred while attempting to establish a TLS connection: One or more parameters passed to a function were not valid.`(또는 `bad protocol version`) 오류와 함께 실패합니다. `tls-native-tls` 기능으로 빌드한 앱도 마찬가지입니다. Linux에서는 `native-tls`가 OpenSSL을 사용하므로 연결은 되지만, `ca-certificate.pem`에서 첫 번째 인증서만 로드합니다. 반면 `rustls`는 모든 플랫폼에서 TLS 1.3을 지원하며 파일에 포함된 모든 인증서를 로드합니다.
+</Warning>
+
+<Tip>
+  **기존 앱에 추가하시나요?**
+
+  `cargo new`는 건너뛰십시오. 프로젝트에서 위의 `cargo add` 및 `cargo install` 명령어를 실행한 다음 [연결 구성](#configure-connection)으로 넘어가세요. 앱에서 SQLite와 함께 sqlx를 사용하고 있다면 다음 작업을 수행하세요.
+
+  * `Cargo.toml`의 `sqlx` 기능에서 `sqlite`를 제거하고, `SqlitePool`을 `PgPool`로 대체하세요.
+  * `?` 플레이스홀더를 `$1`, `$2` 등으로 변경하세요.
+  * 마이그레이션을 Postgres 구문으로 재작성하세요. 예를 들어 `INTEGER PRIMARY KEY AUTOINCREMENT` 대신 `bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY`를 사용합니다.
+</Tip>
+
+## 연결 구성 {#configure-connection}
+
+다운로드한 CA 인증서를 프로젝트 디렉터리로 옮긴 후 파일 이름을 `ca-certificate.pem`으로 변경하십시오.
+
+애플리케이션에서 사용할 데이터베이스를 생성하십시오. `<PASSWORD>`와 호스트를 **Connect** 모달에 표시된 값으로 바꾸십시오.
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_rust;"
+```
+
+```text
+CREATE DATABASE
+```
+
+프로젝트 루트에 `.env` 파일을 생성하거나 기존 `.env` 파일의 `DATABASE_URL`을 수정하여 `guide_rust` 데이터베이스를 가리키도록 설정하십시오. 애플리케이션과 `sqlx-cli`는 모두 이 파일에서 `DATABASE_URL`을 읽습니다.
+
+```bash title=".env"
+DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_rust?sslmode=verify-full&sslrootcert=ca-certificate.pem"
+```
+
+sqlx는 URL에서 `sslmode`와 `sslrootcert`를 읽습니다. `verify-full`을 사용하면 서버 인증서가 인스턴스의 CA로 서명되었는지, 그리고 호스트명과 일치하는지 검사합니다. `sslrootcert` 경로는 명령어를 실행하는 디렉터리를 기준으로 해석됩니다. `.env` 파일은 버전 관리 대상에서 제외하십시오. 또한 비밀번호에 `@`, `/`, `#` 같은 문자가 포함되어 있다면 퍼센트 인코딩하십시오.
+
+<Warning>
+  **항상 `sslmode=verify-full`을 설정하십시오**
+
+  `sslmode`를 지정하지 않으면 sqlx는 `prefer`를 사용합니다. 이 경우 연결은 암호화되지만, `sslrootcert`를 설정했더라도 모든 인증서를 허용합니다. `verify-full`을 사용하면 CA 인증서가 없거나 잘못된 경우 `UnknownIssuer` 오류가 발생하고, IP 주소처럼 인증서와 일치하지 않는 호스트를 사용하면 `NotValidForNameContext` 오류(`sqlx-cli`에서는 `certificate not valid for name`)가 발생합니다. `sslrootcert` 경로가 잘못되었으면 `No such file or directory` 오류가 발생합니다.
+</Warning>
+
+## 마이그레이션으로 테이블 생성하기 {#migrations}
+
+마이그레이션 파일을 생성하십시오:
+
+```bash
+sqlx migrate add create_todos
+```
+
+```text
+Creating migrations/20261001142218_create_todos.sql
+```
+
+`migrations` 디렉터리에 새로 생성된 파일을 열고 테이블 정의를 추가하십시오:
+
+```sql title="migrations/<timestamp>_create_todos.sql"
+CREATE TABLE todos (
+    id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    title      text NOT NULL,
+    done       boolean NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+```
+
+마이그레이션을 적용합니다:
+
+```bash
+sqlx migrate run
+```
+
+```text
+Applied 20261001142218/migrate create todos (233.971666ms)
+```
+
+`sqlx migrate run`은 적용된 마이그레이션을 `_sqlx_migrations` 테이블에 기록하고, 이후 호출할 때는 새 마이그레이션만 실행합니다. `migrations` 디렉터리는 코드와 함께 커밋하십시오. 앱이 시작될 때 마이그레이션을 적용하려면 `main`에서 `sqlx::migrate!().run(&pool).await?`를 호출하면 됩니다. 단, 풀이 직접 연결을 사용해야 합니다.
+
+## API 빌드하기 {#query}
+
+`src/main.rs`의 내용을 라우트마다 쿼리를 하나씩 실행하는 간단한 axum 서버 코드로 대체하세요. 기존 애플리케이션에 적용하려면 `main`에서와 같은 방식으로 풀을 생성한 다음, `Todo` 구조체와 핸들러, 라우트를 기존 라우터에 추가하세요.
+
+```rust title="src/main.rs"
+use std::str::FromStr;
+
+use axum::{
+    Json, Router,
+    extract::{Path, State},
+    http::StatusCode,
+    routing::{get, patch},
+};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+
+#[derive(Serialize, sqlx::FromRow)]
+struct Todo {
+    id: i64,
+    title: String,
+    done: bool,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Deserialize)]
+struct NewTodo {
+    title: String,
+}
+
+type ApiResult<T> = Result<Json<T>, (StatusCode, String)>;
+
+// Return 404 when no row matches, and 500 for any other database error.
+fn db_error(err: sqlx::Error) -> (StatusCode, String) {
+    match err {
+        sqlx::Error::RowNotFound => (StatusCode::NOT_FOUND, "Not found\n".into()),
+        err => {
+            eprintln!("Database error: {err}");
+            (StatusCode::INTERNAL_SERVER_ERROR, "Database error\n".into())
+        }
+    }
+}
+
+// Read
+async fn list_todos(State(pool): State<PgPool>) -> ApiResult<Vec<Todo>> {
+    let todos = sqlx::query_as::<_, Todo>("SELECT * FROM todos ORDER BY id")
+        .fetch_all(&pool)
+        .await
+        .map_err(db_error)?;
+    Ok(Json(todos))
+}
+
+// Create
+async fn create_todo(State(pool): State<PgPool>, Json(new): Json<NewTodo>) -> ApiResult<Todo> {
+    let todo = sqlx::query_as::<_, Todo>("INSERT INTO todos (title) VALUES ($1) RETURNING *")
+        .bind(new.title)
+        .fetch_one(&pool)
+        .await
+        .map_err(db_error)?;
+    Ok(Json(todo))
+}
+
+// Update: toggle the done flag
+async fn toggle_todo(State(pool): State<PgPool>, Path(id): Path<i64>) -> ApiResult<Todo> {
+    let todo = sqlx::query_as::<_, Todo>("UPDATE todos SET done = NOT done WHERE id = $1 RETURNING *")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .map_err(db_error)?;
+    Ok(Json(todo))
+}
+
+// Delete
+async fn delete_todo(State(pool): State<PgPool>, Path(id): Path<i64>) -> ApiResult<Todo> {
+    let todo = sqlx::query_as::<_, Todo>("DELETE FROM todos WHERE id = $1 RETURNING *")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .map_err(db_error)?;
+    Ok(Json(todo))
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load DATABASE_URL from .env, if the variable isn't already set
+    dotenvy::dotenv().ok();
+
+    // sslmode and sslrootcert come from the URL. Not sending extra_float_digits
+    // lets the same code also connect through PgBouncer, which rejects it.
+    let options = PgConnectOptions::from_str(&std::env::var("DATABASE_URL")?)?
+        .extra_float_digits(None);
+    let pool = PgPoolOptions::new()
+        .max_connections(10)
+        .connect_with(options)
+        .await?;
+
+    // Confirm that the connection is encrypted
+    let tls: Option<String> =
+        sqlx::query_scalar("SELECT version FROM pg_stat_ssl WHERE pid = pg_backend_pid()")
+            .fetch_one(&pool)
+            .await?;
+    println!("Connected to Postgres, TLS version: {}", tls.as_deref().unwrap_or("none"));
+
+    let app = Router::new()
+        .route("/todos", get(list_todos).post(create_todo))
+        .route("/todos/{id}", patch(toggle_todo).delete(delete_todo))
+        .with_state(pool);
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3117").await?;
+    println!("Listening on http://localhost:3117/todos");
+    axum::serve(listener, app).await?;
+    Ok(())
+}
+```
+
+값은 항상 `.bind`를 사용해 매개변수(`$1`)로 전달되며, SQL 문자열에 직접 포맷팅해 넣지 않습니다. 고유한 SQL 문자열은 연결마다 한 번씩만 준비(prepare)되어 최대 100개까지 저장되는 SQL 문 캐시에 보관되며, sqlx는 캐시에서 SQL 문을 제거할 때 해당 SQL 문을 닫습니다.
+
+<Tip>
+  **컴파일 시점에 검사되는 쿼리**
+
+  이 가이드에서는 `query_as` 함수를 사용합니다. 이 함수는 실행 시점에 SQL을 검사하므로 `cargo build` 시 데이터베이스가 필요하지 않습니다. 반면 `query!` 및 `query_as!` 매크로는 컴파일 시점에 데이터베이스를 기준으로 SQL과 컬럼 타입을 검사합니다. 이 매크로는 빌드 중에 `.env`에서 `DATABASE_URL`을 읽으므로, 이 값은 직접 연결(direct connection)을 가리키도록 유지하십시오. CI 환경처럼 데이터베이스 없이 빌드해야 하는 경우에는 `cargo sqlx prepare`를 실행하고, 생성된 `.sqlx` 디렉터리를 커밋한 후 `SQLX_OFFLINE=true`를 설정하십시오.
+</Tip>
+
+## 실행 및 확인 {#verify}
+
+서버를 시작합니다.
+
+```bash
+cargo run
+```
+
+```text
+Connected to Postgres, TLS version: TLSv1.3
+Listening on http://localhost:3117/todos
+```
+
+첫 번째 줄은 `pg_stat_ssl`에서 조회한 결과로, 세션이 암호화되어 있음을 확인할 수 있습니다. 두 번째 터미널에서 할 일 항목 2개를 생성하고, 첫 번째 항목을 완료로 표시한 후 두 번째 항목을 삭제하세요:
+
+```bash
+curl -w '\n' -X POST localhost:3117/todos -H 'content-type: application/json' -d '{"title": "Try sqlx"}'
+curl -w '\n' -X POST localhost:3117/todos -H 'content-type: application/json' -d '{"title": "Write a migration"}'
+curl -w '\n' -X PATCH localhost:3117/todos/1
+curl -w '\n' -X DELETE localhost:3117/todos/2
+```
+
+각 요청은 영향을 받은 행을 반환합니다. `-w '\n'` 옵션은 각 응답 뒤에 줄바꿈을 추가하는 역할만 합니다.
+
+```text
+{"id":1,"title":"Try sqlx","done":false,"created_at":"2026-10-01T14:22:32.475739Z"}
+{"id":2,"title":"Write a migration","done":false,"created_at":"2026-10-01T14:22:32.627680Z"}
+{"id":1,"title":"Try sqlx","done":true,"created_at":"2026-10-01T14:22:32.475739Z"}
+{"id":2,"title":"Write a migration","done":false,"created_at":"2026-10-01T14:22:32.627680Z"}
+```
+
+브라우저에서 `http://localhost:3117/todos`를 열어 남은 할 일 목록을 확인하세요:
+
+```json
+[{"id":1,"title":"Try sqlx","done":true,"created_at":"2026-10-01T14:22:32.475739Z"}]
+```
+
+콘솔에서 데이터를 확인하려면 서비스의 왼쪽 사이드바에서 **SQL 콘솔**을 열고 `guide_rust`와 `public`을 차례로 펼친 다음 `todos` 테이블을 클릭하세요. 그 옆에 있는 `_sqlx_migrations` 테이블에는 마이그레이션 이력이 저장되어 있습니다. `todos` 테이블에 남아 있는 행은 다음과 같습니다:
+
+| id | title    | done | created&#95;at                |
+| -- | -------- | ---- | ----------------------------- |
+| 1  | Try sqlx | true | 2026-10-01 14:22:32.475739+00 |
+
+## PgBouncer 사용하기 {#pgbouncer}
+
+함께 제공되는 [PgBouncer](/ko/products/managed-postgres/connection#pgbouncer)를 통해 앱을 연결하려면 **Connect** 모달에서 **via PgBouncer**를 선택하고, 앱의 `DATABASE_URL`에서 포트 `6432`를 사용하십시오. CA 인증서는 동일한 것을 그대로 사용할 수 있습니다. 예를 들어 `sqlx-cli`용 `.env`는 직접 연결 설정을 그대로 두고, 앱을 시작할 때 환경 변수를 지정하면 됩니다:
+
+```bash
+DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:6432/guide_rust?sslmode=verify-full&sslrootcert=ca-certificate.pem" cargo run
+```
+
+```text
+Connected to Postgres, TLS version: none
+Listening on http://localhost:3117/todos
+```
+
+PgBouncer를 거치면 `pg_stat_ssl`은 PgBouncer 자체의 Postgres 연결 정보를 보고하므로, 확인 결과로 `none`이 출력됩니다. 하지만 애플리케이션과 PgBouncer 간의 연결은 여전히 검증됩니다. 잘못된 CA 인증서를 사용하면 마찬가지로 `UnknownIssuer` 오류가 발생하며 실패합니다.
+
+PgBouncer는 트랜잭션 풀링 모드(transaction pooling mode)로 실행되므로, 트랜잭션마다 서로 다른 Postgres 연결에서 실행될 수 있습니다. sqlx를 사용할 때는 다음 사항에 유의하십시오.
+
+* **연결**하려면 `main.rs`와 같이 `.extra_float_digits(None)`을 지정해야 합니다. sqlx는 기본적으로 `extra_float_digits`를 시작 매개변수로 전송하는데, PgBouncer는 `unsupported startup parameter: extra_float_digits` 오류를 반환하며 연결을 거부합니다. 같은 이유로 `PgConnectOptions::options`도 `unsupported startup parameter in options` 오류로 실패합니다.
+* **Prepared statement**는 기본 설정 그대로 동작합니다. sqlx는 캐시에서 제거한 SQL 문을 프로토콜 수준의 `Close` 메시지로 해제하며, PgBouncer는 트랜잭션 내부에서도 이 메시지를 처리합니다. `statement_cache_capacity(0)`은 설정하지 마십시오. 설정할 필요가 없을 뿐 아니라, 캐시를 끄면 sqlx가 이름이 지정된 SQL 문을 계속 준비하면서도 이를 닫지 않습니다.
+* 트랜잭션 외부에서 실행되는 쿼리에는 **`.persistent(false)`를 사용하지 마십시오**. 이 경우 sqlx는 이름 없는 SQL 문을 준비한 뒤 두 번째 왕복 요청에서 실행하는데, PgBouncer가 이 요청을 다른 Postgres 연결로 보낼 수 있습니다. 그러면 쿼리가 `unnamed prepared statement does not exist` 오류로 실패하거나, 아무런 오류 없이 다른 클라이언트의 SQL 문을 실행해 잘못된 결과를 반환할 수 있습니다.
+* `SET`으로 지정한 **세션 설정**은 풀의 `after_connect` 후크에서 지정한 경우를 포함해 해당 연결에 유지되지 않으며, 다른 클라이언트로 누출될 수도 있습니다. 대신 트랜잭션 내부에서 `SET LOCAL`을 사용하십시오.
+* **마이그레이션(Migrations)**에는 직접 연결을 사용해야 합니다. `sqlx-cli`와 `query!` 매크로는 항상 `extra_float_digits`를 전송하므로 PgBouncer를 통해 연결할 수 없습니다. `sqlx::migrate!`는 세션 수준의 권고 잠금(`pg_advisory_lock`)을 획득하는데, PgBouncer를 거치면 잠금 해제 요청이 다른 Postgres 연결로 전달될 수 있습니다. 이렇게 되면 풀링된 연결에 잠금이 계속 남아 있게 되고, 이후의 마이그레이션은 직접 연결을 통한 경우라도 PgBouncer가 해당 연결을 닫을 때까지 멈춘 상태로 대기합니다.
+
+## 다음 단계 {#next-steps}
+
+* [연결](/ko/products/managed-postgres/connection): 연결 문자열(connection string), PgBouncer, TLS
+* [설정](/ko/products/managed-postgres/settings): `max_connections` 등 Postgres 및 PgBouncer 매개변수
+* [읽기 레플리카](/ko/products/managed-postgres/read-replicas): 두 번째 `PgPool`로 읽기 전용 쿼리를 레플리카에 전송
+* [보안](/ko/products/managed-postgres/security): IP 액세스 목록 및 프라이빗 네트워킹

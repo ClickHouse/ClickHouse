@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 import { Image } from "/snippets/fr/components/Image.jsx";
 
-Les déploiements BYOC incluent des capacités complètes d’observability, vous permettant de surveiller vos services ClickHouse via une stack Prometheus de monitoring dédiée, ainsi que via les endpoints de métriques directement exposés par les serveurs ClickHouse. Toutes les données d’observability restent dans votre compte cloud, ce qui vous donne un contrôle total sur votre infrastructure de monitoring.
+Les déploiements BYOC incluent des capacités complètes d’observability, vous permettant de surveiller vos services ClickHouse via une stack Prometheus de monitoring dédiée, ainsi que via les endpoints de métriques directement exposés par les serveurs ClickHouse. Vos données de monitoring restent dans votre compte cloud, ce qui vous donne un contrôle total sur votre infrastructure de monitoring. La telemetry d’usage et de health limitée décrite dans les [frontières réseau](/fr/products/bring-your-own-cloud/reference/network-security#outbound-connections) constitue les seules données de monitoring exportées vers ClickHouse ; par ailleurs, les tableaux de bord de ClickHouse et, en cas d’escalation approuvée, ses ingénieurs peuvent interroger cette stack sur place via Tailscale, sans rien persister du côté de ClickHouse — voir [Accès aux données par ClickHouse](/fr/products/bring-your-own-cloud/reference/clickhouse-data-access).
 
 <div id="prometheus-monitoring">
   ## Approches de monitoring Prometheus
@@ -46,9 +46,7 @@ ClickHouse BYOC déploie une stack Prometheus de monitoring complète au sein de
 * du cluster Kubernetes et des composants système
 * des nœuds de l’infrastructure sous-jacente
 
-<div id="accessing-prometheus-stack">
-  ### Accéder à la stack Prometheus
-</div>
+### Accéder à la stack Prometheus {#accessing-prometheus-stack}
 
 Pour vous connecter à la stack Prometheus intégrée :
 
@@ -114,9 +112,7 @@ scrape_configs:
 
 Les services ClickHouse exposent un endpoint de métriques compatible avec Prometheus, que vous pouvez scraper directement à l’aide de votre propre instance Prometheus. Cette approche fournit des métriques propres à ClickHouse, mais n’inclut pas les métriques Kubernetes ni celles des services associés.
 
-<div id="metrics-endpoint">
-  ### Accès à l’endpoint de métriques
-</div>
+### Accès à l’endpoint de métriques {#metrics-endpoint}
 
 L’endpoint de métriques est disponible à l’adresse `/metrics_all` sur le point de terminaison de votre service ClickHouse :
 
@@ -171,9 +167,7 @@ GRANT SELECT(description, labels, metric, value) ON system.histogram_metrics TO 
 GRANT SELECT(description, metric, value) ON system.metrics TO scrapping_user;
 ```
 
-<div id="configuring-prometheus">
-  ### Configuration de Prometheus
-</div>
+### Configuration de Prometheus {#configuring-prometheus}
 
 Configurez votre instance Prometheus pour scraper l’endpoint de métriques ClickHouse :
 
@@ -204,9 +198,7 @@ Remplacez :
 
 Pour les équipes qui souhaitent disposer d’un ensemble de tableaux de bord prêt à l’emploi, ClickHouse propose un **ClickHouse Mixin** pour Prometheus. Il s’agit d’un tableau de bord Grafana préconfiguré, conçu spécialement pour surveiller les clusters ClickHouse.
 
-<div id="setup-grafana-mixin">
-  ### Configurer Grafana et importer le Mix-in ClickHouse
-</div>
+### Configurer Grafana et importer le Mix-in ClickHouse {#setup-grafana-mixin}
 
 Une fois votre instance Prometheus intégrée à votre stack de monitoring ClickHouse, vous pouvez visualiser les métriques dans Grafana en suivant ces étapes :
 
