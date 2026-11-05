@@ -641,7 +641,7 @@ private:
             else
             {
                 UInt64 patched = static_cast<UInt64>(literals[i]) | (bit_width < 64 ? static_cast<UInt64>(patch) << bit_width : 0);
-                literals[i] = static_cast<Int64>(static_cast<UInt64>(base) + patched);
+                literals[i] = static_cast<Int64>(common::addIgnoreOverflow(static_cast<UInt64>(base), patched));
                 ++patch_index;
                 if (patch_index < patch_list_length)
                 {

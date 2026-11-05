@@ -336,7 +336,7 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
             if (show_progress_bar)
             {
                 /// We will display profiling info only if there is enough space for it.
-                int64_t width_of_progress_bar = remaining_space - strlen(" 99%");
+                int64_t width_of_progress_bar = remaining_space - static_cast<int64_t>(strlen(" 99%"));
 
                 /// We need at least twice the space, because it will be displayed either
                 /// at right after progress bar or at left on top of the progress bar.
