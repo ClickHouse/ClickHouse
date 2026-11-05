@@ -1,12 +1,13 @@
 #include <Storages/MergeTree/WhatIf/WhatIfEstimator.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/WhatIf/HypotheticalObjectStore.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/JoinedTables.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Interpreters/PreparedSets.h>
@@ -94,19 +95,17 @@ void optimizeSharingSets(QueryPlan & plan, const ContextPtr & context, const Bui
             built_sets->sets.emplace(hash, set_and_key);
 }
 
-/// Resolve the source table from the query
-StoragePtr tryResolveSingleTable(const ASTPtr & query, const ContextPtr & context)
+/// the table of a query that reads one table
+StoragePtr tryResolveSingleTable(const QueryTreeNodePtr & query_tree)
 {
-    const auto * union_query = query->as<ASTSelectWithUnionQuery>();
-    if (!union_query || !union_query->list_of_selects || union_query->list_of_selects->children.size() != 1)
+    const auto * query_node = query_tree->as<QueryNode>();
+    if (!query_node)
         return nullptr;
-    const auto * select = union_query->list_of_selects->children.front()->as<ASTSelectQuery>();
-    if (!select)
-        return nullptr;
-    JoinedTables joined_tables(context, *select);
-    if (joined_tables.tablesCount() != 1)
-        return nullptr;
-    return joined_tables.getLeftTableStorage();
+    if (const auto * table = query_node->getJoinTree().as<TableNode>())
+        return table->getStorage();
+    if (const auto * table_function = query_node->getJoinTree().as<TableFunctionNode>())
+        return table_function->getStorage();
+    return nullptr;
 }
 
 /// only when the store held nothing for this table
@@ -396,7 +395,7 @@ WhatIfResult estimateHypotheticalObjects(
 
     if (read_steps.empty())
     {
-        auto storage = tryResolveSingleTable(select_query, local_context);
+        auto storage = tryResolveSingleTable(analyzed_query);
         const auto & store = local_context->getHypotheticalObjectStore();
         if (const auto * mt = castStorage<MergeTreeData>(storage, DeferredTable::Load).get())
         {
