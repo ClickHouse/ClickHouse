@@ -382,9 +382,9 @@ private:
     /// nullptr, a `String` column with these chars and offsets. With `null_map`, it is the nested column of a `Nullable`.
     struct Part
     {
-        const UInt8 * data;
-        size_t size;
-        const IColumn::Offset * offsets;
+        const UInt8 * data = nullptr;
+        size_t size = 0;
+        const IColumn::Offset * offsets = nullptr;
         const UInt8 * null_map = nullptr;
     };
 
