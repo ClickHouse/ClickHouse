@@ -180,9 +180,9 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_ast_dialect;
-    extern const SettingsBool allow_experimental_polyglot_dialect;
-    extern const SettingsBool allow_experimental_kusto_dialect;
-    extern const SettingsBool allow_experimental_prql_dialect;
+    extern const SettingsBool enable_polyglot_dialect;
+    extern const SettingsBool enable_kusto_dialect;
+    extern const SettingsBool enable_prql_dialect;
     extern const SettingsBool enable_trino_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
@@ -3106,8 +3106,8 @@ static BlockIO executeQueryImpl(
             }
             else if (settings[Setting::dialect] == Dialect::prql && use_request_dialect)
             {
-                if (!settings[Setting::allow_experimental_prql_dialect])
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PRQL is disabled (turn on setting 'allow_experimental_prql_dialect')");
+                if (!settings[Setting::enable_prql_dialect])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PRQL is disabled (turn on setting 'enable_prql_dialect')");
                 ParserPRQLQuery parser(max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
                 out_ast = parseQuery(parser, new_begin, new_end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
             }
@@ -3130,7 +3130,7 @@ static BlockIO executeQueryImpl(
                     max_parser_backtracks_for_query_text,
                     settings[Setting::polyglot_dialect],
                     new_end,
-                    settings[Setting::allow_experimental_polyglot_dialect]);
+                    settings[Setting::enable_polyglot_dialect]);
                 out_ast = parseQuery(parser, new_begin, new_end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
             }
             else if (settings[Setting::dialect] == Dialect::trino && use_request_dialect)
