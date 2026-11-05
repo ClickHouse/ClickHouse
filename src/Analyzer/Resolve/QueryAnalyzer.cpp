@@ -5446,6 +5446,10 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
             const auto & column_default = captured_storage_snapshot->metadata->getColumns().getDefault(alias_column_to_resolve->getColumnName());
             if (!column_default || column_default->kind != ColumnDefaultKind::Alias)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is not an ALIAS column", alias_column_to_resolve->getColumnName());
+
+            data.alias_columns_in_resolution.push_back(alias_column_to_resolve->getColumnName());
+            SCOPE_EXIT({ data.alias_columns_in_resolution.pop_back(); });
+
             alias_column_to_resolve->setExpression(buildQueryTree(column_default->expression, scope.context));
 
             IdentifierResolveScope & alias_column_resolve_scope = createIdentifierResolveScope(alias_column_to_resolve, &scope /*parent_scope*/);

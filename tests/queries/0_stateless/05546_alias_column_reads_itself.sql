@@ -1,0 +1,23 @@
+SET allow_deprecated_database_ordinary = 1;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Ordinary;
+
+-- ATTACH does not validate the definition, so the cycle is found when the column is read.
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_direct (x UInt8, c0 UInt8 ALIAS c0) ENGINE = Memory;
+SELECT c0 FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_direct; -- { serverError CYCLIC_ALIASES }
+
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_self (x UInt8, c0 Nullable(IPv6) ALIAS c0.null) ENGINE = Memory;
+SELECT c0 FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_self; -- { serverError CYCLIC_ALIASES }
+SELECT c0 FROM remote('127.0.0.1', {CLICKHOUSE_DATABASE_1:Identifier}, t_self); -- { serverError CYCLIC_ALIASES }
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.m (x UInt8, c0 Nullable(IPv6)) ENGINE = Merge({CLICKHOUSE_DATABASE_1:Identifier}, '^t_self$');
+SELECT c0 FROM {CLICKHOUSE_DATABASE_1:Identifier}.m; -- { serverError CYCLIC_ALIASES }
+
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_mutual (x UInt8, c0 Nullable(UInt8) ALIAS c1.null, c1 Nullable(UInt8) ALIAS c0) ENGINE = Memory;
+SELECT c0 FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_mutual; -- { serverError CYCLIC_ALIASES }
+
+-- Not cycles.
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_ok (x UInt8, arr Array(UInt8), a Tuple(n Nullable(UInt8)) ALIAS tuple(x), b Nullable(UInt8) ALIAS a.n, c0 Array(UInt8) ALIAS arrayMap(c0 -> c0 * 2, arr)) ENGINE = Memory;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_ok (x, arr) VALUES (3, [1, 2]);
+SELECT a, b, c0 FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_ok;
+
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

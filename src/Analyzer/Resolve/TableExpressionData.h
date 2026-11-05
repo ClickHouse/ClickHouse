@@ -52,6 +52,8 @@ struct AnalysisTableExpressionData
     /// with `column_names` by `ensureColumnMembershipSetsArePopulated()`.
     mutable std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> column_identifier_first_parts;
     mutable bool column_membership_sets_populated = false;
+    /// Names of the ALIAS columns whose expressions are being resolved, outermost first.
+    std::vector<std::string> alias_columns_in_resolution;
 
     void ensureColumnMembershipSetsArePopulated() const;
 
