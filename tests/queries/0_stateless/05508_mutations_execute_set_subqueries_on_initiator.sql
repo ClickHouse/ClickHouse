@@ -117,7 +117,23 @@ ALTER TABLE t_once DELETE WHERE e IN (SELECT tuple() FROM numbers(2000000) WHERE
 -- Under a raised limit only the 1000000-row bound stops it: the row 999000 is read, the row 1200000 is not.
 ALTER TABLE t_once DELETE WHERE k IN (SELECT number + throwIf(number = 999000) FROM numbers(2000000) SETTINGS max_block_size = 8192, max_threads = 1) SETTINGS mutations_max_literal_size_to_replace = 100000000, mutations_sync = 2; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 ALTER TABLE t_once DELETE WHERE k IN (SELECT number + throwIf(number >= 1200000) FROM numbers(2000000) SETTINGS max_block_size = 8192, max_threads = 1) SETTINGS mutations_max_literal_size_to_replace = 100000000, mutations_sync = 2;
+-- A literal cannot hold an array of more than 1000000 elements either.
+ALTER TABLE t_once DELETE WHERE [toUInt32(k)] IN (SELECT range(1000001)) SETTINGS mutations_max_literal_size_to_replace = 100000000, mutations_sync = 2;
 SELECT replaceRegexpAll(replaceAll(command, currentDatabase(), 'default'), '\\[[^\\]]+\\]', '[...]'), is_done FROM system.mutations WHERE database = currentDatabase() AND table = 't_once' ORDER BY length(mutation_id), mutation_id;
+
+SELECT '-- Subqueries that differ only in their aliases are different subqueries';
+DROP TABLE IF EXISTS t_alias;
+DROP TABLE IF EXISTS t_alias_kept;
+CREATE TABLE t_alias (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_alias SELECT number, 0 FROM numbers(10);
+CREATE TABLE t_alias_kept AS t_alias;
+INSERT INTO t_alias_kept SELECT number, 0 FROM numbers(10);
+
+-- The first subquery returns 0..4 and the second 0 and 1, but they differ only in the names of their aliases.
+ALTER TABLE t_alias UPDATE v = 1 WHERE k IN (SELECT number AS a FROM numbers(10) WHERE (number + 3 AS b) > 0 AND a < 5) AND k IN (SELECT number AS b FROM numbers(10) WHERE (number + 3 AS a) > 0 AND a < 5) SETTINGS mutations_sync = 2;
+ALTER TABLE t_alias_kept UPDATE v = 1 WHERE k IN (SELECT number AS a FROM numbers(10) WHERE (number + 3 AS b) > 0 AND a < 5) AND k IN (SELECT number AS b FROM numbers(10) WHERE (number + 3 AS a) > 0 AND a < 5) SETTINGS mutations_execute_subqueries_on_initiator = 0, mutations_sync = 2;
+SELECT arraySort(groupArray(k)) FROM t_alias WHERE v = 1;
+SELECT arraySort(groupArray(k)) FROM t_alias_kept WHERE v = 1;
 
 SELECT '-- ReplicatedMergeTree';
 DROP TABLE IF EXISTS t_replicated SYNC;
@@ -143,5 +159,7 @@ DROP TABLE t_large;
 DROP TABLE t_large_src;
 DROP TABLE t_variant_src;
 DROP TABLE t_once;
+DROP TABLE t_alias;
+DROP TABLE t_alias_kept;
 DROP TABLE t_replicated SYNC;
 DROP TABLE t_replicated_src;

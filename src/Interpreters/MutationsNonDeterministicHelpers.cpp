@@ -207,7 +207,7 @@ private:
 
     static ASTPtr getResult(const ASTPtr & subquery, bool is_exists, Data & data)
     {
-        auto key = std::make_pair(is_exists, subquery->getTreeHash(/*ignore_aliases=*/ true));
+        auto key = std::make_pair(is_exists, subquery->getTreeHash(/*ignore_aliases=*/ false));
         auto it = data.results.find(key);
         if (it == data.results.end())
             it = data.results.emplace(key, is_exists ? executeExists(subquery, data) : executeIn(subquery, data)).first;
@@ -307,6 +307,23 @@ private:
         });
 
         if (!fits)
+            return nullptr;
+
+        /// `ColumnArray::get` refuses nested arrays of more than `max_array_size_as_field` elements too.
+        bool nested_fits = true;
+        auto check_nested = [&](const IColumn & column)
+        {
+            if (const auto * nested = typeid_cast<const ColumnArray *>(&column))
+                for (size_t i = 0; i < nested->size() && nested_fits; ++i)
+                    nested_fits = nested->getSize(i) <= max_array_size_as_field;
+        };
+        for (const auto & column : columns)
+        {
+            check_nested(*column);
+            column->forEachSubcolumnRecursively(check_nested);
+        }
+
+        if (!nested_fits)
             return nullptr;
 
         size_t num_columns = columns.size();

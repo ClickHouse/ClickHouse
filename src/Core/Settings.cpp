@@ -7014,7 +7014,7 @@ Possible values:
 If true constant nondeterministic functions (e.g. function `now()`) are executed on initiator and replaced to literals in `UPDATE` and `DELETE` queries. It helps to keep data in sync on replicas while executing mutations with constant nondeterministic functions. Default value: `false`.
 )", 0) \
     DECLARE(Bool, mutations_execute_subqueries_on_initiator, false, R"(
-If true scalar subqueries and the subqueries of `IN` and `EXISTS` are executed on initiator and replaced with their results in `UPDATE` and `DELETE` queries, so the mutation no longer depends on the tables they read. The subquery of `IN` is kept if its result is larger than `mutations_max_literal_size_to_replace` or than 1000000 rows, or has a `Variant`, `Dynamic` or `JSON` type. Default value: `false`.
+If true scalar subqueries and the subqueries of `IN` and `EXISTS` are executed on initiator and replaced with their results in `UPDATE` and `DELETE` queries, so the mutation no longer depends on the tables they read. The subquery of `IN` is kept if its result is larger than `mutations_max_literal_size_to_replace`, has more than 1000000 rows or an array of more than 1000000 elements, or has a `Variant`, `Dynamic` or `JSON` type. Default value: `false`.
 )", 0) \
     DECLARE(UInt64, mutations_max_literal_size_to_replace, 16384, R"(
 The maximum size of serialized literal in bytes to replace in `UPDATE` and `DELETE` queries. Takes effect only if at least one the two settings above is enabled. Default value: 16384 (16 KiB).
