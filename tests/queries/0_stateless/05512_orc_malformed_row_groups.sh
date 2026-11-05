@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# Tag no-fasttest: the test reads the files from S3.
+# Tag no-fasttest: ORC is not built in fasttest, the test uses S3.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
