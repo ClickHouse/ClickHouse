@@ -83,7 +83,7 @@ aggregation_query()
             enable_parallel_replicas = 0, max_block_size = 1, preferred_block_size_bytes = 0,
             max_streams_for_union_step = 0, max_streams_for_union_step_to_max_threads_ratio = 0,
             merge_tree_min_rows_for_concurrent_read = 1, merge_tree_min_bytes_for_concurrent_read = 0,
-            merge_tree_use_deserialization_prefixes_cache = 1,
+            merge_tree_use_deserialization_prefixes_cache = 1, use_columns_cache = 0,
             optimize_read_in_order = 1, query_plan_remove_redundant_sorting = 0,
             query_plan_lift_up_union = 0, optimize_aggregation_in_order = 0,
             enable_adaptive_aggregator = 0, enable_lazy_columns_replication = 0,
