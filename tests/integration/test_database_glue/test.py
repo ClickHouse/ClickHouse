@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import random
+import re
 import uuid
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
@@ -1253,8 +1254,12 @@ def test_writes_schema_evolution_concurrent_add_columns(started_cluster):
 
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
     create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
 
     node.query(f"INSERT INTO {table_ref} VALUES ('123', 1);", settings=write_settings)
+    version_before = metadata_version(glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"])
 
     num_columns = 10
 
@@ -1277,6 +1282,89 @@ def test_writes_schema_evolution_concurrent_add_columns(started_cluster):
     select_cols = ", ".join(["x", "y"] + [f"col_{idx}" for idx in range(num_columns)])
     expected = "123\t1" + "\t\\N" * num_columns + "\n"
     assert node.query(f"SELECT {select_cols} FROM {table_ref} ORDER BY ALL", settings=write_settings) == expected
+
+    # Each ALTER advanced the Glue pointer by one version, so it never moved back to an older schema.
+    table = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    assert metadata_version(table) == version_before + num_columns
+    assert sorted(col["Name"] for col in table["StorageDescriptor"]["Columns"]) == sorted(columns)
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    description = node.query(f"DESCRIBE TABLE {table_ref}")
+    assert sorted(line.split("\t")[0] for line in description.strip().split("\n")) == sorted(columns)
+
+
+def metadata_version(glue_table):
+    file_name = glue_table["Parameters"]["metadata_location"].rsplit("/", 1)[1]
+    return int(re.match(r"v?(\d+)", file_name).group(1))
+
+
+def test_writes_do_not_overwrite_concurrent_glue_commit(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_concurrent_glue_commit_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+    failpoint = "iceberg_writes_pause_before_commit"
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('base');", settings=write_settings)
+    base = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    base_location = base["Parameters"]["metadata_location"]
+    # An Iceberg Java style name, whose version is unrelated to the `vN` that ClickHouse writes next.
+    external_location = f"{base_location.rsplit('/', 1)[0]}/00099-{uuid.uuid4()}.metadata.json"
+
+    def s3_url(location):
+        return "http://minio1:9001/" + location.split("://", 1)[1]
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    executor = ThreadPoolExecutor(max_workers=1)
+    try:
+        paused_insert = executor.submit(
+            node.query, f"INSERT INTO {table_ref} VALUES ('paused');", settings=write_settings, timeout=120
+        )
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+
+        # Another engine commits while the insert is paused after reading its base from Glue.
+        node.query(
+            f"INSERT INTO FUNCTION s3('{s3_url(external_location)}', '{minio_access_key}', '{minio_secret_key}', 'RawBLOB') "
+            f"SELECT * FROM s3('{s3_url(base_location)}', '{minio_access_key}', '{minio_secret_key}', 'RawBLOB')"
+        )
+        glue_client.update_table(
+            DatabaseName=root_namespace,
+            TableInput={
+                "Name": table_name,
+                "TableType": base["TableType"],
+                "StorageDescriptor": {
+                    "Location": base["StorageDescriptor"]["Location"],
+                    "Columns": base["StorageDescriptor"]["Columns"],
+                },
+                "Parameters": {
+                    **base["Parameters"],
+                    "metadata_location": external_location,
+                    "previous_metadata_location": base_location,
+                },
+            },
+        )
+
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        paused_insert.result(timeout=120)
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        executor.shutdown(wait=False)
+
+    # The insert detected the conflict and was rebuilt on top of the other commit instead of overwriting it.
+    after = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    assert after["Parameters"]["previous_metadata_location"] == external_location
+    assert metadata_version(after) == 100
+    assert [col["Name"] for col in after["StorageDescriptor"]["Columns"]] == ["x"]
+    assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == "base\npaused\n"
 
 
 def test_drop_table(started_cluster):

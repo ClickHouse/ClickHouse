@@ -5,6 +5,7 @@
 
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/glue/model/Column.h>
+#include <aws/glue/model/Table.h>
 #include <aws/glue/model/TableInput.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context_fwd.h>
@@ -140,9 +141,17 @@ private:
         size_t operator()(const CachedSchema & schema) const;
     };
 
-    /// Updates `metadata_location` and columns while preserving the rest of the Glue `TableInput`.
+    /// Updates `metadata_location` and columns while preserving the rest of the Glue table `existing`.
     /// Columns are replaced from `new_schema` if given, otherwise filled from `new_metadata` only when Glue has none.
-    Aws::Glue::Model::TableInput buildUpdatedTableInput(
+    static Aws::Glue::Model::TableInput buildUpdatedTableInput(
+        const Aws::Glue::Model::Table & existing,
+        const String & new_metadata_path,
+        const Poco::JSON::Object::Ptr & new_schema,
+        const Poco::JSON::Object::Ptr & new_metadata);
+
+    /// Moves `metadata_location` to `new_metadata_path` with `UpdateTable` guarded by `VersionId`.
+    /// Returns `false` if the pointer no longer names the base version of `new_metadata_path`.
+    bool commitTableUpdate(
         const String & namespace_name,
         const String & table_name,
         const String & new_metadata_path,

@@ -786,6 +786,8 @@ std::optional<std::string> GlueCatalog::getDefaultTableLocation(
 namespace
 {
 
+constexpr size_t MAX_UPDATE_TABLE_ATTEMPTS = 5;
+
 /// Remove `metadata/vN.metadata.json` from the S3 path to get the table location.
 String tableLocationFromMetadataPath(const String & metadata_path)
 {
@@ -870,58 +872,34 @@ void GlueCatalog::createTable(const String & namespace_name, const String & tabl
 }
 
 Aws::Glue::Model::TableInput GlueCatalog::buildUpdatedTableInput(
-    const String & namespace_name,
-    const String & table_name,
+    const Aws::Glue::Model::Table & existing,
     const String & new_metadata_path,
     const Poco::JSON::Object::Ptr & new_schema,
-    const Poco::JSON::Object::Ptr & new_metadata) const
+    const Poco::JSON::Object::Ptr & new_metadata)
 {
     Aws::Glue::Model::TableInput table_input;
-    table_input.SetName(table_name);
+    table_input.SetName(existing.GetName());
 
-    Aws::Glue::Model::StorageDescriptor sd;
-    Aws::Map<Aws::String, Aws::String> parameters;
+    /// Preserve existing Glue attributes when advancing the metadata pointer.
+    Aws::Glue::Model::StorageDescriptor sd = existing.GetStorageDescriptor();
+    Aws::Map<Aws::String, Aws::String> parameters = existing.GetParameters();
+    if (!existing.GetDescription().empty())
+        table_input.SetDescription(existing.GetDescription());
+    if (!existing.GetOwner().empty())
+        table_input.SetOwner(existing.GetOwner());
+    if (existing.RetentionHasBeenSet())
+        table_input.SetRetention(existing.GetRetention());
+    if (existing.PartitionKeysHasBeenSet())
+        table_input.SetPartitionKeys(existing.GetPartitionKeys());
+    table_input.SetTableType(existing.GetTableType().empty() ? "ICEBERG" : existing.GetTableType());
 
-    Aws::Glue::Model::GetTableRequest get_request;
-    get_request.SetDatabaseName(namespace_name);
-    get_request.SetName(table_name);
-    auto get_outcome = glue_client->GetTable(get_request);
-    if (get_outcome.IsSuccess())
-    {
-        const auto & existing = get_outcome.GetResult().GetTable();
-
-        /// Preserve existing Glue attributes when advancing the metadata pointer.
-        sd = existing.GetStorageDescriptor();
-        parameters = existing.GetParameters();
-        if (!existing.GetDescription().empty())
-            table_input.SetDescription(existing.GetDescription());
-        if (!existing.GetOwner().empty())
-            table_input.SetOwner(existing.GetOwner());
-        if (existing.RetentionHasBeenSet())
-            table_input.SetRetention(existing.GetRetention());
-        if (existing.PartitionKeysHasBeenSet())
-            table_input.SetPartitionKeys(existing.GetPartitionKeys());
-        if (!existing.GetTableType().empty())
-            table_input.SetTableType(existing.GetTableType());
-
-        if (auto it = parameters.find("metadata_location"); it != parameters.end() && !it->second.empty())
-            parameters["previous_metadata_location"] = it->second;
-    }
-    else if (get_outcome.GetError().GetErrorType() != Aws::Glue::GlueErrors::ENTITY_NOT_FOUND)
-    {
-        throw DB::Exception(
-            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-            "Exception calling GetTable for table {}.{}: {}",
-            namespace_name, table_name, get_outcome.GetError().GetMessage());
-    }
-
-    if (table_input.GetTableType().empty())
-        table_input.SetTableType("ICEBERG");
+    if (auto it = parameters.find("metadata_location"); it != parameters.end() && !it->second.empty())
+        parameters["previous_metadata_location"] = it->second;
 
     sd.SetLocation(tableLocationFromMetadataPath(new_metadata_path));
     if (new_schema)
         sd.SetColumns(glueColumnsFromIcebergSchema(new_schema));
-    else if (get_outcome.IsSuccess() && sd.GetColumns().empty())
+    else if (sd.GetColumns().empty())
     {
         /// Restore missing Glue columns from the committed Iceberg schema.
         auto schema = getCurrentSchema(new_metadata);
@@ -938,6 +916,88 @@ Aws::Glue::Model::TableInput GlueCatalog::buildUpdatedTableInput(
     return table_input;
 }
 
+bool GlueCatalog::commitTableUpdate(
+    const String & namespace_name,
+    const String & table_name,
+    const String & new_metadata_path,
+    const Poco::JSON::Object::Ptr & new_schema,
+    const Poco::JSON::Object::Ptr & new_metadata) const
+{
+    /// `new_metadata_path` is already published, so the pointer must still be at the base it was built on.
+    /// ClickHouse names it `vN` with `N - 1` parsed from the base pointer, and the file name CAS lets only one
+    /// writer publish `vN`, so a pointer with another version means a different commit has won. Then nothing
+    /// references our file and `false` lets the caller clean up and rebuild on top of the winner.
+    const Int32 base_version = DB::Iceberg::getMetadataFileAndVersion(new_metadata_path).version - 1;
+
+    bool update_sent = false;
+    for (size_t attempt = 0; attempt < MAX_UPDATE_TABLE_ATTEMPTS; ++attempt)
+    {
+        Aws::Glue::Model::GetTableRequest get_request;
+        get_request.SetDatabaseName(namespace_name);
+        get_request.SetName(table_name);
+        auto get_outcome = glue_client->GetTable(get_request);
+        if (!get_outcome.IsSuccess())
+            throw DB::Exception(
+                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                "Exception calling GetTable for table {}.{}: {}",
+                namespace_name, table_name, get_outcome.GetError().GetMessage());
+
+        const auto & existing = get_outcome.GetResult().GetTable();
+        const auto & parameters = existing.GetParameters();
+        auto current_it = parameters.find("metadata_location");
+        const String current_metadata_path = current_it == parameters.end() ? "" : current_it->second;
+
+        /// An earlier `UpdateTable` landed, but its response was lost and the retry was rejected by `VersionId`.
+        if (current_metadata_path == new_metadata_path)
+            return true;
+
+        if (!current_metadata_path.empty() && DB::Iceberg::getMetadataFileAndVersion(current_metadata_path).version != base_version)
+        {
+            if (!update_sent)
+            {
+                LOG_DEBUG(log, "Glue table {}.{} points to {} instead of version {}, commit of {} conflicts",
+                    namespace_name, table_name, current_metadata_path, base_version, new_metadata_path);
+                return false;
+            }
+
+            /// After an `UpdateTable` was sent, it may have landed and been built upon, so it must not be cleaned up.
+            auto previous_it = parameters.find("previous_metadata_location");
+            if (previous_it != parameters.end() && previous_it->second == new_metadata_path)
+                return true;
+
+            throw DB::Exception(
+                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                "Unknown outcome of commit of {} to Glue table {}.{}: it now points to {}",
+                new_metadata_path, namespace_name, table_name, current_metadata_path);
+        }
+
+        Aws::Glue::Model::UpdateTableRequest request;
+        request.SetDatabaseName(namespace_name);
+        request.SetTableInput(buildUpdatedTableInput(existing, new_metadata_path, new_schema, new_metadata));
+        /// Without it, a delayed retry could move the pointer back and drop the columns of a newer commit.
+        if (existing.VersionIdHasBeenSet())
+            request.SetVersionId(existing.GetVersionId());
+
+        update_sent = true;
+        auto response = glue_client->UpdateTable(request);
+        if (response.IsSuccess())
+            return true;
+
+        if (response.GetError().GetErrorType() != Aws::Glue::GlueErrors::CONCURRENT_MODIFICATION)
+            throw DB::Exception(
+                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                "Can not update metadata of table {}.{} in Glue catalog: {}",
+                namespace_name, table_name, response.GetError().GetMessage());
+
+        LOG_DEBUG(log, "Glue table {}.{} was modified concurrently, retrying commit of {}", namespace_name, table_name, new_metadata_path);
+    }
+
+    throw DB::Exception(
+        DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+        "Can not update metadata of table {}.{} in Glue catalog: it was modified concurrently {} times",
+        namespace_name, table_name, MAX_UPDATE_TABLE_ATTEMPTS);
+}
+
 bool GlueCatalog::updateMetadata(
     const String & namespace_name,
     const String & table_name,
@@ -945,16 +1005,7 @@ bool GlueCatalog::updateMetadata(
     Poco::JSON::Object::Ptr /*new_snapshot*/,
     Poco::JSON::Object::Ptr new_metadata) const
 {
-    Aws::Glue::Model::UpdateTableRequest request;
-    request.SetDatabaseName(namespace_name);
-    request.SetTableInput(buildUpdatedTableInput(namespace_name, table_name, new_metadata_path, nullptr, new_metadata));
-
-    auto response = glue_client->UpdateTable(request);
-
-    if (!response.IsSuccess())
-        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not update metadata in glue catalog {}", response.GetError().GetMessage());
-
-    return true;
+    return commitTableUpdate(namespace_name, table_name, new_metadata_path, nullptr, new_metadata);
 }
 
 bool GlueCatalog::updateSchema(
@@ -964,16 +1015,7 @@ bool GlueCatalog::updateSchema(
     Poco::JSON::Object::Ptr new_schema,
     Int32 /*previous_schema_id*/) const
 {
-    Aws::Glue::Model::UpdateTableRequest request;
-    request.SetDatabaseName(namespace_name);
-    request.SetTableInput(buildUpdatedTableInput(namespace_name, table_name, new_metadata_path, new_schema, nullptr));
-
-    auto response = glue_client->UpdateTable(request);
-
-    if (!response.IsSuccess())
-        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not update schema in glue catalog {}", response.GetError().GetMessage());
-
-    return true;
+    return commitTableUpdate(namespace_name, table_name, new_metadata_path, new_schema, nullptr);
 }
 
 void GlueCatalog::dropTable(const String & namespace_name, const String & table_name, bool /*delete_data*/) const

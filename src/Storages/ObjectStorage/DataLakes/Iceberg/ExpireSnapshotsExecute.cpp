@@ -792,12 +792,11 @@ ExpireSnapshotsResult expireSnapshots(
             {
                 auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
                 const auto & [namespace_name, parsed_table_name] = DataLake::parseTableName(table_name);
+                /// Nothing is deleted yet, so a conflict is retried like the metadata file conflict above.
                 if (!catalog->updateMetadata(namespace_name, parsed_table_name, catalog_filename, nullptr, metadata))
                 {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Failed to update catalog metadata after writing new metadata file. "
-                        "The table metadata may be in an inconsistent state");
+                    LOG_WARNING(log, "Catalog commit conflict during expire_snapshots, retrying ({} retries left)", max_retries);
+                    continue;
                 }
             }
         }
