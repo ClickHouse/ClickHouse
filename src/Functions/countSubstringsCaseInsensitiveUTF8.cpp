@@ -34,18 +34,18 @@ Like [`countSubstrings`](#countSubstrings) but counts case-insensitively and ass
         "Usage example",
         "SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА');",
         R"(
-┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА')─┐
-│                                                                  4 │
-└────────────────────────────────────────────────────────────────────┘
+┌─countSubstri⋯шка', 'КА')─┐
+│                        4 │
+└──────────────────────────┘
         )"
     },
     {
         "With start_pos argument",
         "SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА', 13);",
         R"(
-┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА', 13)─┐
-│                                                                      2 │
-└────────────────────────────────────────────────────────────────────────┘
+┌─countSubstri⋯, 'КА', 13)─┐
+│                        2 │
+└──────────────────────────┘
         )"
     }
     };

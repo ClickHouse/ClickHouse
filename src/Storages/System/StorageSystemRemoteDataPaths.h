@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
 
-class StorageSystemRemoteDataPaths : public StorageWithCommonVirtualColumns
+class StorageSystemRemoteDataPaths : public IStorage
 {
 public:
     explicit StorageSystemRemoteDataPaths(const StorageID & table_id_);
@@ -14,9 +14,7 @@ public:
 
     bool isSystemStorage() const override { return true; }
 
-    static VirtualColumnsDescription createVirtuals();
-
-    void readImpl(
+    void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
