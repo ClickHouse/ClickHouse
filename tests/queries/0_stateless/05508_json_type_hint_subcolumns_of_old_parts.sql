@@ -28,6 +28,13 @@ DROP TABLE IF EXISTS t_array_map;
 DROP TABLE IF EXISTS t_array_tuple;
 DROP TABLE IF EXISTS t_parent_prewhere;
 DROP TABLE IF EXISTS t_nullable_prewhere;
+DROP TABLE IF EXISTS t_omitted_patch_before;
+DROP TABLE IF EXISTS t_omitted_patch_after;
+DROP TABLE IF EXISTS t_text_index_typed;
+DROP TABLE IF EXISTS t_text_index_map;
+DROP TABLE IF EXISTS t_read_cast_path_added;
+DROP TABLE IF EXISTS t_read_cast_path_changed;
+DROP TABLE IF EXISTS t_default_dep;
 
 SELECT 'issue 123339';
 CREATE TABLE t_issue (id UInt32, j JSON) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = '1G';
@@ -243,6 +250,88 @@ INSERT INTO t_nullable_prewhere VALUES (1, 5), (2, 6);
 ALTER TABLE t_nullable_prewhere MODIFY COLUMN x Nullable(UInt32) SETTINGS mutations_sync = 0, alter_sync = 0;
 SELECT id, x.null FROM t_nullable_prewhere WHERE x > 5 ORDER BY id SETTINGS optimize_move_to_prewhere = 1;
 
+SELECT 'omitted, patch before alter';
+CREATE TABLE t_omitted_patch_before (id UInt64, data JSON(a UInt32)) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns',
+    enable_block_number_column = 1, enable_block_offset_column = 1;
+SYSTEM STOP MERGES t_omitted_patch_before;
+INSERT INTO t_omitted_patch_before VALUES (1, '{}'), (2, '{}');
+UPDATE t_omitted_patch_before SET data = '{"a" : 777}' WHERE id = 1;
+ALTER TABLE t_omitted_patch_before MODIFY COLUMN data JSON(a String) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT id, length(data.a), data.a.size FROM t_omitted_patch_before ORDER BY id;
+SELECT id, length(data.a) FROM t_omitted_patch_before ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT id, data.a FROM t_omitted_patch_before ORDER BY id;
+SELECT sum(length(data.a)) FROM t_omitted_patch_before;
+
+SELECT 'omitted, patch after alter';
+CREATE TABLE t_omitted_patch_after (id UInt64, data JSON(a UInt32)) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns',
+    enable_block_number_column = 1, enable_block_offset_column = 1;
+SYSTEM STOP MERGES t_omitted_patch_after;
+INSERT INTO t_omitted_patch_after VALUES (1, '{}'), (2, '{}');
+ALTER TABLE t_omitted_patch_after MODIFY COLUMN data JSON(a String) SETTINGS enable_json_lazy_type_hints = 1;
+UPDATE t_omitted_patch_after SET data = '{"a" : "xyz7"}' WHERE id = 1;
+SELECT id, length(data.a), data.a.size FROM t_omitted_patch_after ORDER BY id;
+SELECT id, length(data.a) FROM t_omitted_patch_after ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT id, data.a FROM t_omitted_patch_after ORDER BY id;
+
+SELECT 'text index fallback';
+CREATE TABLE t_text_index_typed (id UInt64, doc JSON(a String)) ENGINE = MergeTree PARTITION BY id < 1000 ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_text_index_typed SELECT number, if(number < 100, '{"a" : "actor003"}', '{"a" : "actor004"}') FROM numbers(200);
+ALTER TABLE t_text_index_typed MODIFY COLUMN doc JSON(a FixedString(8)) SETTINGS enable_json_lazy_type_hints = 1;
+ALTER TABLE t_text_index_typed ADD INDEX idx doc.a TYPE text(tokenizer = array) GRANULARITY 100000000;
+INSERT INTO t_text_index_typed VALUES (1000, '{"a" : "actor003"}');
+ALTER TABLE t_text_index_typed MATERIALIZE INDEX idx SETTINGS mutations_sync = 2;
+SELECT count(), sum(id) FROM t_text_index_typed WHERE doc.a LIKE '%actor003%'
+SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1, query_plan_text_index_add_hint = 1,
+    use_text_index_like_evaluation_by_dictionary_scan = 1, text_index_like_min_pattern_length = 1, text_index_like_max_postings_to_read = 0;
+SELECT count(), sum(id) FROM t_text_index_typed WHERE doc.a LIKE '%actor003%' SETTINGS use_skip_indexes = 0;
+
+CREATE TABLE t_text_index_map (id UInt64, doc JSON(a Map(String, String))) ENGINE = MergeTree PARTITION BY id < 1000 ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_text_index_map SELECT number, if(number < 100, '{"a" : {"k" : "actor003"}}', '{"a" : {"k" : "actor004"}}') FROM numbers(200);
+ALTER TABLE t_text_index_map MODIFY COLUMN doc JSON(a String) SETTINGS enable_json_lazy_type_hints = 1;
+ALTER TABLE t_text_index_map ADD INDEX idx doc.a TYPE text(tokenizer = array) GRANULARITY 100000000;
+INSERT INTO t_text_index_map VALUES (1000, '{"a" : "{\\"k\\":\\"actor003\\"}"}');
+SELECT count(), sum(id) FROM t_text_index_map WHERE doc.a LIKE '%"k":"actor003"%'
+SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1, query_plan_text_index_add_hint = 1,
+    use_text_index_like_evaluation_by_dictionary_scan = 1, text_index_like_min_pattern_length = 1, text_index_like_max_postings_to_read = 0;
+ALTER TABLE t_text_index_map MATERIALIZE INDEX idx SETTINGS mutations_sync = 2;
+SELECT count(), sum(id) FROM t_text_index_map WHERE doc.a LIKE '%"k":"actor003"%'
+SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1, query_plan_text_index_add_hint = 1,
+    use_text_index_like_evaluation_by_dictionary_scan = 1, text_index_like_min_pattern_length = 1, text_index_like_max_postings_to_read = 0;
+SELECT count(), sum(id) FROM t_text_index_map WHERE doc.a LIKE '%"k":"actor003"%' SETTINGS use_skip_indexes = 0;
+
+SELECT 'default of another column over a subcolumn';
+CREATE TABLE t_default_dep (id UInt64, data JSON(a Map(String, UInt32))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_default_dep;
+INSERT INTO t_default_dep VALUES (1, '{"a" : {"k" : 1}}'), (2, '{}');
+ALTER TABLE t_default_dep MODIFY COLUMN data JSON(a String) SETTINGS enable_json_lazy_type_hints = 1;
+ALTER TABLE t_default_dep ADD COLUMN x String DEFAULT data.a;
+SELECT id, x FROM t_default_dep ORDER BY id;
+SYSTEM START MERGES t_default_dep;
+OPTIMIZE TABLE t_default_dep FINAL;
+SELECT id, x FROM t_default_dep ORDER BY id;
+
+SELECT 'subcolumns from the cast path read only the path';
+CREATE TABLE t_read_cast_path_added (id UInt64, j JSON) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_read_cast_path_added;
+INSERT INTO t_read_cast_path_added SELECT number, concat('{"a" : [', toString(number), '], "big" : "', repeat('x', 100000), '"}') FROM numbers(3);
+ALTER TABLE t_read_cast_path_added MODIFY COLUMN j JSON(a Array(UInt32)) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT sum(length(j.a)) FROM t_read_cast_path_added SETTINGS log_comment = '05508_read_cast_path_added';
+
+CREATE TABLE t_read_cast_path_changed (id UInt64, j JSON(a UInt32)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_read_cast_path_changed;
+INSERT INTO t_read_cast_path_changed SELECT number, concat('{"a" : ', toString(number * 100), ', "big" : "', repeat('x', 100000), '"}') FROM numbers(3);
+ALTER TABLE t_read_cast_path_changed MODIFY COLUMN j JSON(a String) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT sum(length(j.a)) FROM t_read_cast_path_changed SETTINGS log_comment = '05508_read_cast_path_changed';
+
+SYSTEM FLUSH LOGS query_log;
+SELECT log_comment, read_bytes < 50000 FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment LIKE '05508_read_cast_path_%' AND type = 'QueryFinish'
+ORDER BY log_comment;
+
 DROP TABLE t_issue;
 DROP TABLE t_wide;
 DROP TABLE t_compact;
@@ -266,3 +355,10 @@ DROP TABLE t_array_map;
 DROP TABLE t_array_tuple;
 DROP TABLE t_parent_prewhere;
 DROP TABLE t_nullable_prewhere;
+DROP TABLE t_omitted_patch_before;
+DROP TABLE t_omitted_patch_after;
+DROP TABLE t_text_index_typed;
+DROP TABLE t_text_index_map;
+DROP TABLE t_read_cast_path_added;
+DROP TABLE t_read_cast_path_changed;
+DROP TABLE t_default_dep;

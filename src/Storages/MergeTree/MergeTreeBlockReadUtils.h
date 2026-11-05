@@ -18,9 +18,13 @@ NameSet injectRequiredColumns(
     bool with_subcolumns,
     Names & columns);
 
+/// The type of the column @name_in_part in the part, or the type the part recorded for it when it omitted the column.
+DataTypePtr tryGetColumnTypeInPart(const IMergeTreeDataPartInfoForReader & data_part_info_for_reader, const String & name_in_part);
+
 /// The column to read and convert to the type in the table to extract the subcolumn from, when the part stores the column
 /// as @column_type_in_part and the subcolumn of that name read from the part can differ: the column, or its typed path
-/// whose value is cast when the part stores it as a dynamic path. Nothing when the subcolumn is read from the part.
+/// whose value is cast when the part stores it as a dynamic path or with another type hint. Nothing when the subcolumn is
+/// read from the part.
 /// A part of a `JSON` column resolves any name as one of its paths, which is not the same subcolumn when the conversion
 /// changes the paths. A key subcolumn is read from the part, which is sorted and indexed by it.
 /// The patch parts in @alter_conversions are applied to the source, so it is chosen for them as well.

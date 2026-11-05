@@ -113,3 +113,34 @@ parent read by an earlier step
 1	2
 2	5
 2	0
+omitted, patch before alter
+1	3	3
+2	1	1
+1	3
+2	1
+1	777
+2	0
+4
+omitted, patch after alter
+1	4	4
+2	1	1
+1	4
+2	1
+1	xyz7
+2	0
+text index fallback
+101	5950
+101	5950
+101	5950
+101	5950
+101	5950
+default of another column over a subcolumn
+1	{"k":1}
+2	{}
+1	{"k":1}
+2	{}
+subcolumns from the cast path read only the path
+3
+7
+05508_read_cast_path_added	1
+05508_read_cast_path_changed	1

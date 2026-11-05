@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -141,7 +142,8 @@ bool injectRequiredColumnsRecursively(
             /// Parent is present but the part's (older) type lacks the requested subcolumn (metadata-only
             /// `ALTER MODIFY COLUMN T -> Nullable(T)`), or has a different one under its name (a changed `JSON` type).
             /// Read the parent (or its path that has the subcolumn) so it can be converted and the subcolumn extracted
-            /// from it, instead of being filled from the storage-type default.
+            /// from it, instead of being filled from the storage-type default. The subcolumn too: a default may depend on it.
+            add_column(column_name);
             add_column(*source_of_subcolumn);
             return true;
         }
@@ -152,6 +154,18 @@ bool injectRequiredColumnsRecursively(
             /// If there is a materialized text index in the part, use the virtual column directly.
             add_column(column_name);
             return true;
+        }
+        else if (!column_in_part && column_in_storage->isSubcolumn()
+            && !(alter_conversions && alter_conversions->isColumnDropped(column_name_in_part, share_nested)))
+        {
+            /// The part omitted the column: its source is filled from the default the part recorded, as the column is.
+            auto type_in_part = tryGetColumnTypeInPart(data_part_info_for_reader, column_name_in_part);
+            if (auto source = getSourceOfSubcolumnInPart(storage_snapshot, *column_in_storage, type_in_part, alter_conversions))
+            {
+                add_column(column_name);
+                add_column(*source);
+                return false;
+            }
         }
     }
 
@@ -294,17 +308,23 @@ bool objectPathValueIsKept(
     return std::ranges::all_of(typed_paths_in_storage, is_kept_under_path) && std::ranges::all_of(typed_paths_in_part, is_kept_under_path);
 }
 
-/// A type hint added to a path that the part stores as a dynamic path, read as a whole: it is applied by casting the
-/// path's value, which is how type hints are documented to apply to old parts. Hints of the types parsed from objects
-/// are not, because such a part stores an object as separate paths, not as the value of the path.
-bool isTypeHintCastFromDynamicPath(
+bool isTypedPathSubstream(const Substream & substream)
+{
+    return substream.type == Substream::ObjectTypedPath || substream.type == Substream::ObjectTypedSharedDataPath;
+}
+
+/// A type hint of a path that the part stores as a dynamic path or with another type hint, read as a whole: it is applied
+/// by casting the path's value, which is how type hints are documented to apply to old parts. Hints of the types parsed
+/// from objects are not, on either side, because a part stores an object as separate paths, not as the value of the path.
+bool isTypeHintCastOfPath(
     const IDataType * object_in_storage,
     const IDataType * object_in_part,
     const Substream & substream_in_storage,
     const Substream & substream_in_part)
 {
-    if ((substream_in_storage.type != Substream::ObjectTypedPath && substream_in_storage.type != Substream::ObjectTypedSharedDataPath)
-        || substream_in_part.type != Substream::ObjectDynamicPath || substream_in_storage.object_path_name != substream_in_part.object_path_name)
+    bool is_typed_path_in_part = isTypedPathSubstream(substream_in_part);
+    if (!isTypedPathSubstream(substream_in_storage) || (!is_typed_path_in_part && substream_in_part.type != Substream::ObjectDynamicPath)
+        || substream_in_storage.object_path_name != substream_in_part.object_path_name)
         return false;
 
     const auto & path = substream_in_storage.object_path_name;
@@ -313,16 +333,21 @@ bool isTypeHintCastFromDynamicPath(
 
     /// `objectPathValueIsKept` has checked that both are objects.
     const auto & typed_object_in_storage = typeid_cast<const DataTypeObject &>(*object_in_storage);
+    const auto & typed_object_in_part = typeid_cast<const DataTypeObject &>(*object_in_part);
     auto hinted_type = typed_object_in_storage.getTypedPaths().find(path);
     if (hinted_type == typed_object_in_storage.getTypedPaths().end() || hasTypedPathUnder(typed_object_in_storage, path)
-        || hasTypedPathUnder(typeid_cast<const DataTypeObject &>(*object_in_part), path))
+        || hasTypedPathUnder(typed_object_in_part, path) || DataTypeObject::canParseObjectValue(hinted_type->second))
         return false;
 
-    return !DataTypeObject::canParseObjectValue(hinted_type->second);
+    if (!is_typed_path_in_part)
+        return true;
+
+    auto type_in_part = typed_object_in_part.getTypedPaths().find(path);
+    return type_in_part != typed_object_in_part.getTypedPaths().end() && !DataTypeObject::canParseObjectValue(type_in_part->second);
 }
 
 /// The typed path of a top-level object that has @subcolumn in its value, when the part stores the path as a dynamic path
-/// whose value is cast to the hinted type (see `isTypeHintCastFromDynamicPath`).
+/// or with another type hint and its value is cast to the hinted type (see `isTypeHintCastOfPath`).
 std::optional<String> tryGetCastPathOfSubcolumn(const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part)
 {
     const auto & type_in_storage = subcolumn.getTypeInStorage();
@@ -337,14 +362,12 @@ std::optional<String> tryGetCastPathOfSubcolumn(const NameAndTypePair & subcolum
 
     const auto & typed_path = info_in_storage->substreams_path.front();
     const auto & path = typed_path.object_path_name;
-    if ((typed_path.type != Substream::ObjectTypedPath && typed_path.type != Substream::ObjectTypedSharedDataPath)
-        || !subcolumn_name.starts_with(path + "."))
+    if (!isTypedPathSubstream(typed_path) || !subcolumn_name.starts_with(path + "."))
         return std::nullopt;
 
     auto info_in_part = column_type_in_part->tryGetSubcolumnInfo(path);
     if (!info_in_part || info_in_part->substreams_path.size() != 1
-        || !isTypeHintCastFromDynamicPath(
-            type_in_storage.get(), column_type_in_part.get(), typed_path, info_in_part->substreams_path.front()))
+        || !isTypeHintCastOfPath(type_in_storage.get(), column_type_in_part.get(), typed_path, info_in_part->substreams_path.front()))
         return std::nullopt;
 
     if (!object_in_storage->getTypedPaths().at(path)->tryGetSubcolumnType(subcolumn_name.substr(path.size() + 1)))
@@ -385,10 +408,12 @@ bool isSubcolumnChangedByConversion(const NameAndTypePair & subcolumn, const Dat
     size_t last = path_in_storage.size() - 1;
     for (size_t i = 0; i <= last; ++i)
     {
+        if (i == last
+            && isTypeHintCastOfPath(type_of_substream_in_storage, type_of_substream_in_part, path_in_storage[i], path_in_part[i]))
+            return false;
+
         if (!ISerialization::isSameSubstream(path_in_storage[i], path_in_part[i]))
-            return i != last
-                || !isTypeHintCastFromDynamicPath(
-                       type_of_substream_in_storage, type_of_substream_in_part, path_in_storage[i], path_in_part[i]);
+            return true;
 
         if (isObjectPathSubstream(path_in_storage[i])
             && !objectPathValueIsKept(type_of_substream_in_storage, type_of_substream_in_part, path_in_storage[i]))
@@ -415,24 +440,27 @@ std::optional<String> getSourceOfSubcolumnForType(const NameAndTypePair & subcol
 
 }
 
+DataTypePtr tryGetColumnTypeInPart(const IMergeTreeDataPartInfoForReader & data_part_info_for_reader, const String & name_in_part)
+{
+    if (auto column_in_part = data_part_info_for_reader.getColumnsDescription().tryGetPhysical(name_in_part))
+        return column_in_part->type;
+
+    const auto * missing = data_part_info_for_reader.getSerializationInfos().getMissingColumnInfo(name_in_part);
+    return missing && !missing->type_name.empty() ? DataTypeFactory::instance().get(missing->type_name) : nullptr;
+}
+
 std::optional<String> getSourceOfSubcolumnInPart(
     const StorageSnapshotPtr & storage_snapshot,
     const NameAndTypePair & subcolumn,
     const DataTypePtr & column_type_in_part,
     const AlterConversionsPtr & alter_conversions)
 {
-    const auto & metadata = storage_snapshot->metadata;
-    if (!subcolumn.isSubcolumn() || !column_type_in_part
-        || std::ranges::contains(metadata->getColumnsRequiredForSortingKey(), subcolumn.name)
-        || std::ranges::contains(metadata->getColumnsRequiredForPartitionKey(), subcolumn.name))
+    if (!subcolumn.isSubcolumn() || !column_type_in_part)
         return std::nullopt;
 
     auto source = getSourceOfSubcolumnForType(subcolumn, column_type_in_part);
-    if (!alter_conversions)
-        return source;
-
     const auto & column_name = subcolumn.getNameInStorage();
-    for (const auto & patch : alter_conversions->getAllPatches())
+    for (const auto & patch : alter_conversions ? alter_conversions->getAllPatches() : PatchPartsForReader{})
     {
         if (source == column_name)
             break;
@@ -450,6 +478,12 @@ std::optional<String> getSourceOfSubcolumnInPart(
         if (!source || source_in_patch == column_name)
             source = std::move(source_in_patch);
     }
+
+    const auto & metadata = storage_snapshot->metadata;
+    if (source
+        && (std::ranges::contains(metadata->getColumnsRequiredForSortingKey(), subcolumn.name)
+            || std::ranges::contains(metadata->getColumnsRequiredForPartitionKey(), subcolumn.name)))
+        return std::nullopt;
 
     return source;
 }
@@ -702,23 +736,23 @@ void addPatchPartsColumns(
     const auto part_alter_conversions
         = data_part_info_for_reader.isProjectionPart() ? nullptr : data_part_info_for_reader.getAlterConversions();
 
-    /// The part extracts such a subcolumn from its source after the patches are applied to the source.
-    auto is_extracted_from_patched_column = [&](const NameAndTypePair & column)
+    /// The part extracts these subcolumns from their sources after the patches are applied to the sources.
+    NameSet extracted_from_patched_columns;
+    for (const auto & column_name : all_columns_to_read)
     {
+        auto column = storage_snapshot->getColumn(options, column_name);
         if (!column.isSubcolumn())
-            return false;
+            continue;
 
         auto column_name_in_part = column.getNameInStorage();
         if (part_alter_conversions && part_alter_conversions->isColumnRenamed(column_name_in_part))
             column_name_in_part = part_alter_conversions->getColumnOldName(column_name_in_part);
 
-        auto column_in_part = data_part_info_for_reader.getColumns().tryGetByName(column_name_in_part);
-        if (!column_in_part)
-            return false;
-
-        auto source = getSourceOfSubcolumnInPart(storage_snapshot, column, column_in_part->type, part_alter_conversions);
-        return source && all_columns_to_read_set.contains(*source);
-    };
+        auto type_in_part = tryGetColumnTypeInPart(data_part_info_for_reader, column_name_in_part);
+        auto source = getSourceOfSubcolumnInPart(storage_snapshot, column, type_in_part, part_alter_conversions);
+        if (source && all_columns_to_read_set.contains(*source))
+            extracted_from_patched_columns.insert(column_name);
+    }
 
     for (size_t i = 0; i < patch_parts.size(); ++i)
     {
@@ -729,9 +763,10 @@ void addPatchPartsColumns(
 
         for (const auto & column_name : all_columns_to_read)
         {
-            auto column_in_storage = storage_snapshot->getColumn(options, column_name);
-            if (is_extracted_from_patched_column(column_in_storage))
+            if (extracted_from_patched_columns.contains(column_name))
                 continue;
+
+            auto column_in_storage = storage_snapshot->getColumn(options, column_name);
 
             auto column_name_in_patch = column_in_storage.getNameInStorage();
 

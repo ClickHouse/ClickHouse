@@ -136,5 +136,5 @@ INSERT INTO t_json_key_safety VALUES (1, '{"a": "hello"}');
 ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Int32);
 SELECT 'lossy plain change -> metadata-only mutations:',
     count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_json_key_safety';
-SELECT j.a FROM t_json_key_safety; -- { serverError INCORRECT_DATA }
+SELECT j.a FROM t_json_key_safety; -- { serverError CANNOT_PARSE_TEXT }
 DROP TABLE t_json_key_safety;
