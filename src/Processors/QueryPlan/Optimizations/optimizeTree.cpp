@@ -613,7 +613,7 @@ void optimizeTreeSecondPass(
                 /// Exchanges do not preserve the order an in-order aggregation needs, so keep
                 /// hash aggregation whenever a distributed plan is intended.
                 if (optimization_settings.aggregation_in_order && !optimization_settings.make_distributed_plan)
-                    optimizeAggregationInOrder(*frame.node, nodes, optimization_settings);
+                    optimizeAggregationInOrder(*frame.node, nodes, optimization_settings, /*before_projections=*/true);
             }
 
             /// Traverse all children first.
@@ -658,6 +658,10 @@ void optimizeTreeSecondPass(
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
+            /// After the normal projections are chosen, except for parallel replicas (see `optimizeAggregationInOrder`).
+            if (optimization_settings.aggregation_in_order && !optimization_settings.make_distributed_plan)
+                optimizeAggregationInOrder(frame_node, nodes, optimization_settings, /*before_projections=*/false);
+
             if (optimization_settings.aggregate_partitions_independently)
                 optimizeAggregationPerPartition(frame_node, nodes, optimization_settings);
 

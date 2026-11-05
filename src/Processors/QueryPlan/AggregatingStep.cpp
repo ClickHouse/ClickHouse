@@ -1630,7 +1630,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
 
 QueryPlanStepPtr AggregatingStep::clone() const
 {
-    return std::make_unique<AggregatingStep>(
+    auto step = std::make_unique<AggregatingStep>(
         input_headers.front(),
         params,
         grouping_sets_params,
@@ -1647,6 +1647,8 @@ QueryPlanStepPtr AggregatingStep::clone() const
         memory_bound_merging_of_aggregation_results_enabled,
         explicit_sorting_required_for_aggregation_in_order
     );
+    step->order_decided_before_projections = order_decided_before_projections;
+    return step;
 }
 
 void AggregatingStep::setFinal(bool new_value)

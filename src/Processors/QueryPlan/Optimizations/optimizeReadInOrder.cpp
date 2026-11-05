@@ -2094,7 +2094,20 @@ void disableSpreadingSmallReadUnderFullSorting(QueryPlan::Node & node)
     }
 }
 
-void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
+static bool readsWithParallelReplicas(QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    FindReadingStepContext find_reading_ctx{
+        .allow_existing_order = true,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
+        .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
+    };
+    const auto * reading_node = findReadingStep(node, find_reading_ctx);
+    const auto * reading = reading_node ? typeid_cast<const ReadFromMergeTree *>(reading_node->step.get()) : nullptr;
+    return reading && reading->isParallelReadingFromReplicas();
+}
+
+void optimizeAggregationInOrder(
+    QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings, bool before_projections)
 {
     if (node.children.size() != 1)
         return;
@@ -2102,6 +2115,19 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, cons
     auto * aggregating = typeid_cast<AggregatingStep *>(node.step.get());
     if (!aggregating)
         return;
+
+    /// Parallel replicas have to read in the same order, but a replica can read the table where another one uses a
+    /// projection, so their order is decided once, from the table, before the projections. The step is visited again
+    /// above the read of a chosen projection. Otherwise the order is decided after the projections, as a read in order
+    /// rules them out.
+    if (aggregating->isOrderDecidedBeforeProjections())
+        return;
+    if (before_projections)
+    {
+        if (!readsWithParallelReplicas(*node.children.front(), optimization_settings))
+            return;
+        aggregating->setOrderDecidedBeforeProjections();
+    }
 
     if ((aggregating->inOrder() && !aggregating->explicitSortingRequired()) || aggregating->isGroupingSets())
         return;

@@ -5204,6 +5204,8 @@ Note that it disables `read_in_order_use_buffering` optimization and preliminary
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
 Enables [GROUP BY](/reference/statements/select/group-by) optimization in [SELECT](/reference/statements/select/index) queries for aggregating data in corresponding order in [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables.
 
+Projections are chosen before the order of aggregation. If a [projection](/reference/engines/table-engines/mergetree-family/mergetree#projections) reads fewer granules than the table, it is used even when it is not sorted by the `GROUP BY` key, and the aggregation then keeps all the groups in memory instead of aggregating in order.
+
 Possible values:
 
 - 0 — `GROUP BY` optimization is disabled.

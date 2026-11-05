@@ -116,6 +116,9 @@ public:
     bool explicitSortingRequired() const { return explicit_sorting_required_for_aggregation_in_order; }
     bool isGroupingSets() const { return !grouping_sets_params.empty(); }
     void applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_);
+    /// Set by `optimizeAggregationInOrder` for a read by parallel replicas, whose order is decided before the projections.
+    void setOrderDecidedBeforeProjections() { order_decided_before_projections = true; }
+    bool isOrderDecidedBeforeProjections() const { return order_decided_before_projections; }
     void applyTopKOptimization(Aggregator::Params::TopKParams top_k);
     void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker);
     bool memoryBoundMergingWillBeUsed() const;
@@ -223,6 +226,7 @@ private:
     /// group_by_sort_description contains all GROUP BY keys and is used for final merging of aggregated data.
     SortDescription sort_description_for_merging;
     SortDescription group_by_sort_description;
+    bool order_decided_before_projections = false;
 
     /// These settings are used to determine if we should resize pipeline to 1 at the end.
     bool should_produce_results_in_order_of_bucket_number;
