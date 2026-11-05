@@ -11,6 +11,7 @@ Dynamic and JSON columns whose structure changes between blocks are written with
 0	1
 1	1
 2	1
+1
 GROUP BY: each group is estimated as the part it would be
 0	1
 1	1

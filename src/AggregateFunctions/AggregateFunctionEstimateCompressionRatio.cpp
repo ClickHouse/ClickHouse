@@ -277,6 +277,8 @@ private:
         settings.low_cardinality_max_dictionary_size = config.low_cardinality_max_dictionary_size;
         settings.low_cardinality_use_single_dictionary_for_part = config.low_cardinality_use_single_dictionary_for_part;
         settings.write_statistics = ISerialization::SerializeBinaryBulkSettings::StatisticsMode::SUFFIX;
+        /// The serializations that end compressed blocks themselves (the shared data of `JSON`) do so from this size on.
+        settings.min_compress_block_size = block_size_bytes;
         settings.stream_mark_getter = [](const ISerialization::SubstreamPath &) { return MarkInCompressedFile(); };
     }
 

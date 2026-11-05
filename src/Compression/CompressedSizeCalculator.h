@@ -14,6 +14,9 @@ namespace DB
 /// Uses `codec->tryGetCompressedSize` when codec can cheaply calculate size.
 /// Otherwise compresses into a scratch buffer, discarding the output.
 /// The buffer starts small and grows up to `block_size` as the input arrives, so a stream that sees little data costs little memory.
+/// A block ends when it reaches `block_size`, at `finalize`, and at an explicit `next`, as on the stream of the MergeTree writer, a
+/// `HashingWriteBuffer` that passes `next` to its `CompressedWriteBuffer`. An explicit `next` that finds the buffer exactly full is
+/// taken for a write that did not fit.
 class CompressedSizeCalculator : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
@@ -33,6 +36,7 @@ public:
 private:
     void nextImpl() override;
     void finalizeImpl() override;
+    void compressBlock(size_t size);
 
     CompressionCodecPtr codec;
     const size_t block_size;

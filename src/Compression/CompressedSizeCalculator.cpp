@@ -38,22 +38,28 @@ CompressedSizeCalculator::CompressedSizeCalculator(CompressionCodecPtr codec_, s
 
 void CompressedSizeCalculator::nextImpl()
 {
-    /// The working buffer is the tail of `memory`, behind the bytes of the block collected before the last growth.
+    /// The working buffer is the tail of `memory`, behind the bytes of the block collected so far.
     const size_t collected = (working_buffer.begin() - memory.data()) + offset();
 
-    if (collected < block_size && !finalizing)
+    /// The buffer is full but the block is not: a write that did not fit. Grow and keep collecting; `resize` keeps the content.
+    if (collected < block_size && collected == memory.size() && !finalizing)
     {
-        /// The buffer is full but the block is not: grow and keep collecting. `resize` keeps the content.
         memory.resize(std::min(memory.size() * 2, block_size));
         internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
         working_buffer = Buffer(memory.data() + collected, memory.data() + memory.size());
         return;
     }
 
-    chassert(collected <= INT_MAX);
+    /// The block is complete, the buffer is finalized, or the serialization ends the block with `next`.
+    compressBlock(collected);
+}
+
+void CompressedSizeCalculator::compressBlock(size_t size)
+{
+    chassert(size <= INT_MAX);
     /// On-disk block layout must match CompressedWriteBuffer::nextImpl (checksum + header + payload)
     compressed_total
-        += sizeof(CityHash_v1_0_2::uint128) + getCompressedBlockSize(*codec, memory.data(), static_cast<UInt32>(collected), scratch);
+        += sizeof(CityHash_v1_0_2::uint128) + getCompressedBlockSize(*codec, memory.data(), static_cast<UInt32>(size), scratch);
     working_buffer = internal_buffer;
 }
 
@@ -61,6 +67,9 @@ void CompressedSizeCalculator::finalizeImpl()
 {
     finalizing = true;
     next();
+    /// `next` does nothing when no byte followed an explicit `next`, whose bytes are still collected.
+    if (const size_t collected = working_buffer.begin() - memory.data())
+        compressBlock(collected);
 }
 
 }

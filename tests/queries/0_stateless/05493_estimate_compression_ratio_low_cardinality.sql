@@ -79,6 +79,10 @@ FROM (SELECT number % 3 AS k, if(number < 1000, '{"a":1}', concat('{"b', toStrin
 GROUP BY k ORDER BY k
 SETTINGS max_block_size = 1000;
 
+-- The serialization of the shared typed paths of JSON ends the data stream of every granule with `next` itself. With NONE, a
+-- compressed block is never smaller than its data.
+SELECT estimateCompressionRatio('NONE')(CAST(concat('{"a":', toString(number), '}'), 'JSON(SHARED a UInt64)')) < 1 FROM numbers(10000);
+
 SELECT 'GROUP BY: each group is estimated as the part it would be';
 
 SELECT
