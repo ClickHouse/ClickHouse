@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <unordered_map>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <base/types.h>
@@ -10,7 +11,7 @@ namespace DB
 
 class JoinStep;
 
-using CardinalityByJoinStep = std::unordered_map<const JoinStep *, std::optional<UInt64>>;
+using CardinalityByJoinStep = UnorderedMapWithMemoryTracking<const JoinStep *, std::optional<UInt64>>;
 
 class JoinBranchCosts
 {
@@ -22,7 +23,7 @@ public:
 private:
     void accumulate(const QueryPlan::Node * root, const CardinalityByJoinStep & cardinality_by_join_step);
 
-    std::unordered_map<const JoinStep *, std::optional<UInt64>> cost_by_join_step;
+    UnorderedMapWithMemoryTracking<const JoinStep *, std::optional<UInt64>> cost_by_join_step;
 };
 
 }

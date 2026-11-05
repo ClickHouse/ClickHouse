@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 using namespace DB;
 
@@ -54,9 +55,9 @@ std::unique_ptr<JoinStepLogical> makeJoin(const Names & left_inputs, const Names
         SortingStep::Settings(settings));
 }
 
-std::vector<size_t> allPositions(const IQueryPlanStep & step)
+VectorWithMemoryTracking<size_t> allPositions(const IQueryPlanStep & step)
 {
-    std::vector<size_t> positions(step.getOutputHeader()->columns());
+    VectorWithMemoryTracking<size_t> positions(step.getOutputHeader()->columns());
     for (size_t position = 0; position < positions.size(); ++position)
         positions[position] = position;
     return positions;
@@ -73,7 +74,7 @@ TEST(JoinStepLogicalUnusedColumns, KeepsAColumnOfEachSideWhenInputsAreNotLeftThe
 
     const auto unneeded = join->getUnneededColumns(allPositions(*join));
     ASSERT_EQ(unneeded.size(), 2u);
-    EXPECT_EQ(unneeded[0], std::vector<size_t>({1}));
+    EXPECT_EQ(unneeded[0], VectorWithMemoryTracking<size_t>({1}));
     EXPECT_TRUE(unneeded[1].empty());
 }
 

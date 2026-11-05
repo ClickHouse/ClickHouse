@@ -9,6 +9,7 @@
 #include <bit>
 #include <limits>
 #include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -61,7 +62,7 @@ private:
 
     /// Offers the sort-merge joins of the two sides, one per equivalence class they may be merged on.
     void acceptMergeJoins(UInt result_subset, UInt lhs_subset, UInt rhs_subset, JoinKind kind, JoinStrictness strictness,
-        const SelectivityEstimate & selectivity, const std::vector<JoinActionRef *> & edges);
+        const SelectivityEstimate & selectivity, const VectorWithMemoryTracking<JoinActionRef *> & edges);
 
     struct MergeInputCandidate
     {
@@ -206,7 +207,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::mergeInputCandidates(const UIn
 template <class TDPTable, class TOptimizer>
 void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptMergeJoins(
     const UInt result_subset, const UInt lhs_subset, const UInt rhs_subset, const JoinKind kind, const JoinStrictness strictness,
-    const SelectivityEstimate & selectivity, const std::vector<JoinActionRef *> & edges)
+    const SelectivityEstimate & selectivity, const VectorWithMemoryTracking<JoinActionRef *> & edges)
 {
     const auto left_mask = static_cast<UInt32>(lhs_subset);
     const auto right_mask = static_cast<UInt32>(rhs_subset);

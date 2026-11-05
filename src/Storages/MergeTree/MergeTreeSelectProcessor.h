@@ -10,6 +10,7 @@
 #include <Interpreters/SetSpillable.h>
 
 #include <unordered_set>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -75,7 +76,7 @@ struct SkipIndexReadInput
     size_t part_starting_offset_in_query = 0;
 };
 using RangesByIndex = std::unordered_map<size_t, SkipIndexReadInput>;
-using ProjectionRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
+using ProjectionRangesByIndex = UnorderedMapWithMemoryTracking<size_t, RangesInDataParts>;
 class MergeTreeIndexReadResultPool;
 using MergeTreeIndexReadResultPoolPtr = std::shared_ptr<MergeTreeIndexReadResultPool>;
 

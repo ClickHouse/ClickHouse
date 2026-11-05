@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
@@ -141,7 +142,7 @@ ExpressionWithCost Group::getBestImplementation(const ExpressionProperties & req
 ExpressionWithCost Group::selectInputImplementation(
     const ExpressionProperties & required_properties,
     const CostConfig & cost_config,
-    const std::unordered_set<GroupExpression *> & active_path,
+    const UnorderedSetWithMemoryTracking<GroupExpression *> & active_path,
     bool input_is_self_referential) const
 {
     /// The wildcard-axis rejections below are what stop a self-referential enforcer from picking

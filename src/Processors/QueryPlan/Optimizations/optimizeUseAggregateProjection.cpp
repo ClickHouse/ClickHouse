@@ -1,4 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Storages/MergeTree/WhatIf/HypotheticalProjection.h>
@@ -72,7 +75,7 @@ namespace DB::QueryPlanOptimizations
 /// ---- BEGIN: Predicate-implication helpers (shared logic with optimizeUseNormalProjection.cpp) ----
 
 /// Extract AND-connected conjuncts from an AST expression tree.
-static void extractConjunctsFromAST(const ASTPtr & expr, std::vector<ASTPtr> & result)
+static void extractConjunctsFromAST(const ASTPtr & expr, VectorWithMemoryTracking<ASTPtr> & result)
 {
     if (const auto * func = expr->as<ASTFunction>(); func && func->name == "and" && func->arguments)
     {
@@ -208,7 +211,7 @@ static bool doesQueryFilterImplyProjectionWhere(
         }
     }
 
-    std::vector<ASTPtr> proj_conjuncts;
+    VectorWithMemoryTracking<ASTPtr> proj_conjuncts;
     extractConjunctsFromAST(projection_where, proj_conjuncts);
 
     const auto * filter_root = query_filter_node;
@@ -248,7 +251,7 @@ static const ActionsDAG::Node * buildResidualFilterNode(
     /// `extractConjunctionAtoms` yields the atoms right to left, while the rebuilt `and` is evaluated left to right.
     std::ranges::reverse(query_atoms);
 
-    std::vector<ASTPtr> proj_conjuncts;
+    VectorWithMemoryTracking<ASTPtr> proj_conjuncts;
     extractConjunctsFromAST(projection_where, proj_conjuncts);
 
     /// Keep only query atoms that do NOT match any projection-WHERE conjunct.
@@ -282,7 +285,7 @@ static const ActionsDAG::Node * buildResidualFilterNode(
 
 /// ---- END: Predicate-implication helpers ----
 
-using DAGIndex = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
+using DAGIndex = UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *>;
 static DAGIndex buildDAGIndex(const ActionsDAG & dag)
 {
     DAGIndex index;
@@ -357,7 +360,7 @@ struct AggregateFunctionMatch
     DataTypes argument_types;
 };
 
-using AggregateFunctionMatches = std::vector<AggregateFunctionMatch>;
+using AggregateFunctionMatches = VectorWithMemoryTracking<AggregateFunctionMatch>;
 
 /// Here we try to match aggregate functions from the query to
 /// aggregate functions from projection.
@@ -371,7 +374,7 @@ static std::optional<AggregateFunctionMatches> matchAggregateFunctions(
     AggregateFunctionMatches res;
 
     /// Index (projection agg function name) -> pos
-    std::unordered_map<std::string, std::vector<size_t>> projection_aggregate_functions;
+    UnorderedMapWithMemoryTracking<std::string, VectorWithMemoryTracking<size_t>> projection_aggregate_functions;
     for (size_t i = 0; i < info.aggregates.size(); ++i)
         projection_aggregate_functions[info.aggregates[i].function->getName()].push_back(i);
 
@@ -470,7 +473,7 @@ static void appendAggregateFunctions(
     const AggregateDescriptions & aggregates,
     const AggregateFunctionMatches & matched_aggregates)
 {
-    std::unordered_map<const AggregateDescription *, const ActionsDAG::Node *> inputs;
+    UnorderedMapWithMemoryTracking<const AggregateDescription *, const ActionsDAG::Node *> inputs;
 
     /// Just add all the aggregates to dag inputs.
     auto & proj_dag_outputs =  proj_dag.getOutputs();
@@ -516,7 +519,7 @@ static std::optional<ActionsDAG> analyzeAggregateProjection(
         return {};
 
     ActionsDAG::NodeRawConstPtrs query_key_nodes;
-    std::unordered_set<const ActionsDAG::Node *> proj_key_nodes;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> proj_key_nodes;
 
     {
         /// Just, filling the set above.
@@ -607,7 +610,7 @@ struct StatisticsMinMaxAggregate
 
 struct AggregateProjectionCandidates
 {
-    std::vector<AggregateProjectionCandidate> real;
+    VectorWithMemoryTracking<AggregateProjectionCandidate> real;
     std::optional<MinMaxProjectionCandidate> minmax_projection;
 
     /// This flag means that DAG for projection candidate should be used in FilterStep.
@@ -620,10 +623,10 @@ struct AggregateProjectionCandidates
     String only_count_column;
 
     /// If not empty, try to answer the aggregation from per-part column statistics.
-    std::vector<StatisticsMinMaxAggregate> statistics_min_max_aggregates;
+    VectorWithMemoryTracking<StatisticsMinMaxAggregate> statistics_min_max_aggregates;
 
     /// Why each projection that was not used could not be used.
-    std::unordered_map<String, String> reject_reasons;
+    UnorderedMapWithMemoryTracking<String, String> reject_reasons;
 };
 
 /// Check if the whole aggregation can be answered from per-part column statistics: there is no
@@ -638,7 +641,7 @@ struct AggregateProjectionCandidates
 /// policies.
 /// (Pending data mutations and patch parts are already rejected by canUseProjectionForReadingStep,
 /// and FINAL together with SAMPLE are rejected there as well.)
-static std::vector<StatisticsMinMaxAggregate> getStatisticsMinMaxAggregates(
+static VectorWithMemoryTracking<StatisticsMinMaxAggregate> getStatisticsMinMaxAggregates(
     const AggregatingStep & aggregating,
     ReadFromMergeTree & reading,
     const StorageMetadataPtr & metadata,
@@ -675,7 +678,7 @@ static std::vector<StatisticsMinMaxAggregate> getStatisticsMinMaxAggregates(
 
     const auto & columns = metadata->getColumns();
 
-    std::vector<StatisticsMinMaxAggregate> result;
+    VectorWithMemoryTracking<StatisticsMinMaxAggregate> result;
     result.reserve(aggregates.size());
 
     for (const auto & aggregate : aggregates)
@@ -765,7 +768,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     const PartitionIdToMaxBlockPtr & max_added_blocks,
     bool allow_implicit_projections,
     size_t max_set_size_for_match,
-    std::vector<const ProjectionDescription *> agg_projections)
+    VectorWithMemoryTracking<const ProjectionDescription *> agg_projections)
 {
     const auto & keys = aggregating.getParams().keys;
     const auto & aggregates = aggregating.getParams().aggregates;
@@ -898,7 +901,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     DistinctStep & distinct,
     ReadFromMergeTree & reading,
     size_t max_set_size_for_match,
-    std::vector<const ProjectionDescription *> agg_projections)
+    VectorWithMemoryTracking<const ProjectionDescription *> agg_projections)
 {
     const auto metadata = reading.getStorageMetadata();
     Block key_virtual_columns = reading.getMergeTreeData().getHeaderWithVirtualsForFilter(metadata);
@@ -977,14 +980,14 @@ static constexpr const char * STATISTICS_MIN_MAX_PROJECTION_NAME = "_statistics_
 /// can answer them exactly, and remove such parts from `remaining_select_result`. Returns a block
 /// with one row of aggregate function states, or an empty block if no part could be covered.
 static Block makeBlockWithMinMaxFromStatistics(
-    const std::vector<StatisticsMinMaxAggregate> & stats_aggregates,
+    const VectorWithMemoryTracking<StatisticsMinMaxAggregate> & stats_aggregates,
     ReadFromMergeTree::AnalysisResult & remaining_select_result,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const StorageMetadataPtr & metadata,
     const ContextPtr & context,
     const LoggerPtr & logger)
 {
-    std::vector<Field> folded_values(stats_aggregates.size());
+    VectorWithMemoryTracking<Field> folded_values(stats_aggregates.size());
     size_t covered_parts = 0;
     size_t covered_rows = 0;
     size_t covered_marks = 0;
@@ -1000,7 +1003,7 @@ static Block makeBlockWithMinMaxFromStatistics(
 
     /// The estimates of the parts whose statistics may answer the query, loaded in parallel and released once
     /// consumed; `std::nullopt` for a part that is read instead.
-    std::vector<std::optional<Estimates>> parts_estimates(parts_with_ranges.size());
+    VectorWithMemoryTracking<std::optional<Estimates>> parts_estimates(parts_with_ranges.size());
     auto part_may_use_statistics = [&](size_t part_index)
     {
         const auto & part_with_ranges = parts_with_ranges[part_index];
@@ -1058,7 +1061,7 @@ static Block makeBlockWithMinMaxFromStatistics(
     {
         const auto & part = part_with_ranges.data_part;
 
-        std::vector<const Field *> part_values(stats_aggregates.size(), nullptr);
+        VectorWithMemoryTracking<const Field *> part_values(stats_aggregates.size(), nullptr);
         for (size_t i = 0; i < stats_aggregates.size(); ++i)
         {
             const auto & stats_aggregate = stats_aggregates[i];
@@ -1236,7 +1239,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
     if (!reading)
         return result;
 
-    std::vector<const ProjectionDescription *> agg_projections;
+    VectorWithMemoryTracking<const ProjectionDescription *> agg_projections;
     for (const auto & projection : reading->getStorageMetadata()->projections)
         if (projection.type == ProjectionDescription::Type::Aggregate)
             agg_projections.push_back(&projection);

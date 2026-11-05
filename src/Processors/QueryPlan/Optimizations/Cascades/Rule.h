@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Task.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <memory>
@@ -19,19 +20,19 @@ public:
     virtual Promise getPromise() const = 0;
     virtual bool isTransformation() const = 0;
 
-    std::vector<GroupExpressionPtr> apply(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const;
+    VectorWithMemoryTracking<GroupExpressionPtr> apply(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const;
 
 protected:
-    virtual std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const = 0;
+    virtual VectorWithMemoryTracking<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const = 0;
 
     /// Inserts a rule-produced physical expression into its group and appends it to `result` when
     /// it was actually inserted (a structural duplicate is dropped). Marks the expression with
     /// this rule so it is not re-applied to its own product.
     void addPhysicalToMemo(GroupExpressionPtr expression, const ExpressionProperties & required_properties,
-        Memo & memo, std::vector<GroupExpressionPtr> & result) const;
+        Memo & memo, VectorWithMemoryTracking<GroupExpressionPtr> & result) const;
 
     /// Same, for a rule that produces one expression: returns the result list directly.
-    std::vector<GroupExpressionPtr> addPhysicalToMemo(
+    VectorWithMemoryTracking<GroupExpressionPtr> addPhysicalToMemo(
         GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const;
 
     /// Registers a two-stage split of `source_expression`: the partial expression becomes its own

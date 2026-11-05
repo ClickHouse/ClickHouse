@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -26,7 +28,7 @@ public:
     /// kept; older ones can be dropped.
     /// Example: {{0, 0}, {1, 12}, {2, 15}} - a stream at global version 11 gets version 0, at 12 to 14
     /// gets version 1, at 15 or later gets version 2.
-    using StepVersions = std::vector<StepVersion>;
+    using StepVersions = VectorWithMemoryTracking<StepVersion>;
 
     QueryPlanStepRegistry() = default;
     QueryPlanStepRegistry(const QueryPlanStepRegistry &) = delete;
@@ -62,7 +64,7 @@ private:
 
     const Entry & getEntry(const std::string & name) const;
 
-    std::unordered_map<std::string, Entry> steps;
+    UnorderedMapWithMemoryTracking<std::string, Entry> steps;
 
 };
 

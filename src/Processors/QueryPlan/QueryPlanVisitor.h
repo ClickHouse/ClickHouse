@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 
 namespace DB
@@ -16,7 +17,7 @@ protected:
         size_t next_child = 0;
     };
 
-    using StackWithParent = std::vector<FrameWithParent>;
+    using StackWithParent = VectorWithMemoryTracking<FrameWithParent>;
 
     QueryPlan::Node * root = nullptr;
     StackWithParent stack;

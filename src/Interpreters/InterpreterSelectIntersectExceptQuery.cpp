@@ -19,6 +19,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -130,7 +131,7 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
         interpreter->addStorageLimits(storage_limits);
 
     size_t num_plans = nested_interpreters.size();
-    std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans(num_plans);
     SharedHeaders headers(num_plans);
 
     for (size_t i = 0; i < num_plans; ++i)

@@ -106,6 +106,7 @@
 #include <Planner/PlannerWindowFunctions.h>
 #include <Planner/Utils.h>
 #include <base/types.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace ProfileEvents
@@ -2793,7 +2794,7 @@ void Planner::buildPlanForUnionNode()
     const auto & union_queries_nodes = union_node.getQueries().getNodes();
     size_t queries_size = union_queries_nodes.size();
 
-    std::vector<std::unique_ptr<QueryPlan>> query_plans;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> query_plans;
     query_plans.reserve(queries_size);
 
     SharedHeaders query_plans_headers;

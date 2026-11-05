@@ -1,4 +1,6 @@
 #include <Planner/PlannerCorrelatedSubqueries.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -522,10 +524,10 @@ QueryPlan addMissingCorrelatedGroupsToAggregateInput(
         lhs_plan_header->getColumnsWithTypeAndName(),
         rhs_plan_header->getColumnsWithTypeAndName());
 
-    std::vector<JoinActionRef> predicates;
+    VectorWithMemoryTracking<JoinActionRef> predicates;
     for (const auto & column_name : correlated_columns)
     {
-        std::vector<JoinActionRef> eq_arguments;
+        VectorWithMemoryTracking<JoinActionRef> eq_arguments;
         eq_arguments.push_back(join_expression_actions.findNode(get_lhs_column_name(column_name), /* is_input= */ true));
         eq_arguments.push_back(join_expression_actions.findNode(get_rhs_column_name(column_name), /* is_input= */ true));
         /// The keys identify a correlated domain tuple, where `NULL` is a value like any other (`DISTINCT` and
@@ -545,7 +547,7 @@ QueryPlan addMissingCorrelatedGroupsToAggregateInput(
         JoinOperator(join_kind, JoinStrictness::All, JoinLocality::Unspecified, std::move(predicates)),
         std::move(join_expression_actions),
         output_columns,
-        std::unordered_map<String, const ActionsDAG::Node *>{},
+        UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *>{},
         /*use_nulls_=*/false,
         JoinSettings(settings, context.planner_context->getQueryContext()->getJoinAnalyzeMode()),
         SortingStep::Settings(settings));
@@ -553,7 +555,7 @@ QueryPlan addMissingCorrelatedGroupsToAggregateInput(
     makeInternalDecorrelationJoinUnbounded(*domain_join);
 
     QueryPlan result_plan;
-    std::vector<QueryPlanPtr> plans;
+    VectorWithMemoryTracking<QueryPlanPtr> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(lhs_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
     result_plan.unitePlans(std::move(domain_join), {std::move(plans)});
@@ -779,7 +781,7 @@ QueryPlan decorrelateQueryPlan(
             JoinOperator(JoinKind::Cross),
             std::move(join_expression_actions),
             output_columns,
-            std::unordered_map<String, const ActionsDAG::Node *>{},
+            UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *>{},
             settings[Setting::join_use_nulls],
             JoinSettings(settings, context.planner_context->getQueryContext()->getJoinAnalyzeMode()),
             SortingStep::Settings(settings));
@@ -789,7 +791,7 @@ QueryPlan decorrelateQueryPlan(
         /// Add CROSS JOIN to combine data streams from left and right plans.
         QueryPlan result_plan;
 
-        std::vector<QueryPlanPtr> plans;
+        VectorWithMemoryTracking<QueryPlanPtr> plans;
         plans.emplace_back(std::make_unique<QueryPlan>(std::move(lhs_plan)));
         plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
 
@@ -999,7 +1001,7 @@ QueryPlan decorrelateQueryPlan(
 
         /// A UnionStep can have any number of inputs; every arm must be decorrelated.
         SharedHeaders query_plans_headers;
-        std::vector<QueryPlanPtr> child_plans;
+        VectorWithMemoryTracking<QueryPlanPtr> child_plans;
         query_plans_headers.reserve(node->children.size());
         child_plans.reserve(node->children.size());
         for (auto * child : node->children)
@@ -1526,10 +1528,10 @@ QueryPlan buildLogicalJoinForLateral(
         lhs_plan_header->getColumnsWithTypeAndName(),
         rhs_plan_header->getColumnsWithTypeAndName());
 
-    std::vector<JoinActionRef> predicates;
+    VectorWithMemoryTracking<JoinActionRef> predicates;
     for (const auto & column_name : correlated_subquery.correlated_column_identifiers)
     {
-        std::vector<JoinActionRef> eq_arguments;
+        VectorWithMemoryTracking<JoinActionRef> eq_arguments;
         eq_arguments.push_back(join_expression_actions.findNode(get_lhs_column_name(column_name), /* is_input= */ true));
         eq_arguments.push_back(join_expression_actions.findNode(get_rhs_column_name(column_name), /* is_input= */ true));
         /// The keys match an outer row to its correlated domain tuple, not the user's `=` predicate: an outer row
@@ -1556,7 +1558,7 @@ QueryPlan buildLogicalJoinForLateral(
         JoinOperator(join_kind_to_use, JoinStrictness::All, JoinLocality::Unspecified, std::move(predicates)),
         std::move(join_expression_actions),
         output_columns,
-        std::unordered_map<String, const ActionsDAG::Node *>{},
+        UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *>{},
         use_nulls,
         JoinSettings(settings, planner_context->getQueryContext()->getJoinAnalyzeMode()),
         SortingStep::Settings(settings));
@@ -1588,7 +1590,7 @@ QueryPlan buildLogicalJoinForLateral(
 
     QueryPlan result_plan;
 
-    std::vector<QueryPlanPtr> plans;
+    VectorWithMemoryTracking<QueryPlanPtr> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(lhs_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
 
@@ -1658,10 +1660,10 @@ QueryPlan buildLogicalJoin(
         lhs_plan_header->getColumnsWithTypeAndName(),
         rhs_plan_header->getColumnsWithTypeAndName());
 
-    std::vector<JoinActionRef> predicates;
+    VectorWithMemoryTracking<JoinActionRef> predicates;
     for (const auto & column_name : correlated_subquery.correlated_column_identifiers)
     {
-        std::vector<JoinActionRef> eq_arguments;
+        VectorWithMemoryTracking<JoinActionRef> eq_arguments;
         eq_arguments.push_back(join_expression_actions.findNode(get_lhs_column_name(column_name), /* is_input= */ true));
         eq_arguments.push_back(join_expression_actions.findNode(get_rhs_column_name(column_name), /* is_input= */ true));
         auto eq_node = JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
@@ -1677,7 +1679,7 @@ QueryPlan buildLogicalJoin(
         JoinOperator(join_kind_to_use, JoinStrictness::Any, JoinLocality::Unspecified, std::move(predicates)),
         std::move(join_expression_actions),
         output_columns,
-        std::unordered_map<String, const ActionsDAG::Node *>{},
+        UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *>{},
         /*join_use_nulls=*/false,
         JoinSettings(settings, planner_context->getQueryContext()->getJoinAnalyzeMode()),
         SortingStep::Settings(settings));
@@ -1715,7 +1717,7 @@ QueryPlan buildLogicalJoin(
 
     QueryPlan result_plan;
 
-    std::vector<QueryPlanPtr> plans;
+    VectorWithMemoryTracking<QueryPlanPtr> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(lhs_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
 

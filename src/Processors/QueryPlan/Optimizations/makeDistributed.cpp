@@ -1,4 +1,6 @@
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #if CLICKHOUSE_CLOUD
 #include <Processors/QueryPlan/ReadFromMergeTreeAtWorker.h>
@@ -140,7 +142,7 @@ std::optional<PreformattedMessage> getReasonStepUnsupportedForRemoteExecution(co
 /// The reason the first step of an optimized plan cannot execute remotely, or nullopt.
 std::optional<PreformattedMessage> getReasonPlanUnsupportedForRemoteExecution(const QueryPlan::Node & root)
 {
-    std::vector<const QueryPlan::Node *> stack{&root};
+    VectorWithMemoryTracking<const QueryPlan::Node *> stack{&root};
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -161,7 +163,7 @@ bool planContainsLogicalExchange(const QueryPlan::Node & root);
 /// merge/redistribution it stands for.
 bool planContainsLogicalExchange(const QueryPlan::Node & root)
 {
-    std::vector<const QueryPlan::Node *> stack = {&root};
+    VectorWithMemoryTracking<const QueryPlan::Node *> stack = {&root};
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -412,7 +414,7 @@ getReasonNodeCannotBeDistributed(QueryPlan::Node & node, const QueryPlanOptimiza
 /// of its owner, which the main walk judges by `isSerializable`.
 std::optional<PreformattedMessage> getReasonChildPlanSetsCannotBeShipped(QueryPlan::Node & root)
 {
-    std::vector<QueryPlan::Node *> stack{&root};
+    VectorWithMemoryTracking<QueryPlan::Node *> stack{&root};
     while (!stack.empty())
     {
         auto * node = stack.back();
@@ -445,7 +447,7 @@ getReasonPlanCannotBeDistributed(QueryPlan::Node & root, const QueryPlanOptimiza
 
     /// One walk over the main tree, stopping at the first reason. The order of the checks inside
     /// `getReasonNodeCannotBeDistributed` decides which reason a plan with several defects reports.
-    std::vector<QueryPlan::Node *> stack{&root};
+    VectorWithMemoryTracking<QueryPlan::Node *> stack{&root};
     while (!stack.empty())
     {
         auto * node = stack.back();
@@ -502,7 +504,7 @@ static void checkStepSupportedByCascades(const IQueryPlanStep & step)
 /// Rejects plans with steps the Cascades optimizer cannot distribute correctly.
 void checkCascadesSupported(const QueryPlan::Node & root)
 {
-    std::vector<const QueryPlan::Node *> stack = {&root};
+    VectorWithMemoryTracking<const QueryPlan::Node *> stack = {&root};
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -1437,7 +1439,7 @@ void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPl
         size_t next_child = 0;
     };
 
-    std::vector<Frame> stack;
+    VectorWithMemoryTracking<Frame> stack;
     stack.push_back({.node = &root});
 
     while (!stack.empty())
@@ -1524,7 +1526,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
     {
         /// Stamp build-side row estimates before the cut. After the cut a build that is another
         /// stage's output ends at an exchange source and has nothing to estimate from.
-        std::vector<QueryPlan::Node *> annotation_stack{root};
+        VectorWithMemoryTracking<QueryPlan::Node *> annotation_stack{root};
         while (!annotation_stack.empty())
         {
             auto * node = annotation_stack.back();
@@ -1550,19 +1552,19 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
         {
             QueryPlan::Node * node = nullptr;
             size_t next_child = 0;
-            std::vector<std::unique_ptr<QueryPlan>> child_plans{};
-            std::unordered_map<String, DistributedQueryTask> list_of_shards{};
+            VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> child_plans{};
+            UnorderedMapWithMemoryTracking<String, DistributedQueryTask> list_of_shards{};
             StageDependencies depends_on_stages{};
             /// True if the tasks in list_of_shards produce copies of the same data (the case right
             /// after a BroadcastExchange) rather than a partition of it.
             bool shards_are_copies = false;
         };
 
-        std::vector<Frame> stack;
+        VectorWithMemoryTracking<Frame> stack;
         stack.push_back({.node = root});
 
         std::unique_ptr<QueryPlan> current_plan = std::make_unique<QueryPlan>();
-        std::unordered_map<String, DistributedQueryTask> current_list_of_shards;     /// Tasks for shards that can be processed in parallel by the current_plan
+        UnorderedMapWithMemoryTracking<String, DistributedQueryTask> current_list_of_shards;     /// Tasks for shards that can be processed in parallel by the current_plan
         StageDependencies current_stage_depends_on;
         bool current_shards_are_copies = false;
 
@@ -1606,7 +1608,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                             single_task.parameters.parameters.erase("total_buckets");
                             single_task.parameters.parameters.erase("bucket_description");
                         }
-                        std::unordered_map<String, DistributedQueryTask> replicated;
+                        UnorderedMapWithMemoryTracking<String, DistributedQueryTask> replicated;
                         for (const auto & [shard_id, _] : shards)
                             replicated[shard_id] = single_task;
                         return replicated;
@@ -1765,7 +1767,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     }
 
                     /// Prepare tasks for the next stage
-                    std::unordered_map<String, DistributedQueryTask> destination_stage_tasks;
+                    UnorderedMapWithMemoryTracking<String, DistributedQueryTask> destination_stage_tasks;
                     for (const auto & destination_shard : list_of_exchange_shards)
                     {
                         DistributedQueryTask destination_task;
@@ -1798,7 +1800,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
             {
                 /// No children, this means that this is a leaf step.
 
-                auto populate_shards = [&](std::vector<String> shards_for_read, std::vector<String> read_buckets = {}, const String & read_bucket_param_name = {})
+                auto populate_shards = [&](Strings shards_for_read, VectorWithMemoryTracking<String> read_buckets = {}, const String & read_bucket_param_name = {})
                 {
                     if (!read_buckets.empty() && read_buckets.size() != shards_for_read.size())
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -1827,7 +1829,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                 {
                     /// Ship each bucket's authoritative marks (and FINAL borders + index) the same way the
                     /// replica path does, so the worker reads exactly its slice and does FINAL per-lane.
-                    std::vector<String> read_buckets = read_merge_tree->serializeDistributedReadBuckets();
+                    VectorWithMemoryTracking<String> read_buckets = read_merge_tree->serializeDistributedReadBuckets();
                     String read_bucket_param_name = read_merge_tree->getDistributedReadParamName();
 
                     auto worker_step = ReadFromMergeTreeAtWorker::createFrom(*read_merge_tree);
@@ -1845,7 +1847,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
 
                     /// Ship each MergeTree bucket its authoritative marks as a task parameter (object-storage
                     /// reads carry no per-bucket marks and keep using only `bucket_id` / `total_buckets`).
-                    std::vector<String> read_buckets;
+                    VectorWithMemoryTracking<String> read_buckets;
                     String read_bucket_param_name;
                     if (auto * read_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get()))
                     {
