@@ -706,7 +706,6 @@ struct SubcolumnsPathStep
     /// Names of the inputs of `actions` that are the column.
     NameSet inputs;
     std::vector<SubcolumnRead> reads;
-    /// The rewritten actions.
     std::optional<ActionsDAG> new_actions;
     /// For a join: the side the column comes from, the positions of its outputs and of its columns in the side's input.
     std::optional<JoinTableSide> join_side;
@@ -1233,7 +1232,6 @@ size_t tryPushDownSubcolumnsToReading(QueryPlan::Node * top_node, QueryPlan::Nod
         if (!ok)
             continue;
 
-        /// The functions of the subcolumns computed where the replaced reads were.
         auto build_residuals = [&](const std::vector<SubcolumnRead> & reads)
         {
             std::unordered_map<const ActionsDAG::Node *, FunctionBasePtr> residuals;
@@ -1319,7 +1317,6 @@ size_t tryPushDownSubcolumnsToReading(QueryPlan::Node * top_node, QueryPlan::Nod
             continue;
         removeInputsOfReadColumn(*top_path_step.new_actions, top_path_step.inputs);
 
-        /// The top step keeps its output header.
         Block new_top_input_header;
         for (const auto & column_with_type : top_input_header)
             if (!top_path_step.inputs.contains(column_with_type.name))
