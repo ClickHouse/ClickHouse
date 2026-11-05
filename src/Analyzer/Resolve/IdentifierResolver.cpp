@@ -692,27 +692,90 @@ bool readingIsUsableForLookup(const DataTypePtr & type, const IdentifierLookup &
     return type && (identifier_lookup.isExpressionLookup() || qualifiedMatcherCanExpandType(type));
 }
 
-/// Returns true if `identifier_view` names a column or a subcolumn of a column of the table expression
-/// that gives the identifier of `identifier_lookup` a reading, see `readingIsUsableForLookup`.
-bool tableExpressionDataCanReadIdentifier(
-    const AnalysisTableExpressionData & table_expression_data, IdentifierView identifier_view, const IdentifierLookup & identifier_lookup)
+/// Returns the declared type of a column or a subcolumn of a column of the table expression named `full_name`,
+/// or nullptr if there is none. Unlike `tryGetColumnNode` and `tryGetSubcolumnInfo`, it does not resolve the
+/// expression of an `ALIAS` column: only checking whether a competing reading exists must not evaluate a
+/// column the query does not use.
+DataTypePtr tryGetDeclaredColumnOrSubcolumnType(const AnalysisTableExpressionData & table_expression_data, std::string_view full_name)
 {
-    if (identifier_lookup.isExpressionLookup())
-        return table_expression_data.hasFullIdentifierName(identifier_view)
-            || table_expression_data.tryGetSubcolumnInfo(identifier_view.getFullName());
+    table_expression_data.ensureColumnMembershipSetsArePopulated();
+    const auto & column_nodes = table_expression_data.getColumnNodeMap();
 
-    DataTypePtr type;
-    if (table_expression_data.hasFullIdentifierName(identifier_view))
+    auto try_get_column_type = [&](std::string_view column_name) -> DataTypePtr
     {
-        if (auto column_node = table_expression_data.tryGetColumnNode(identifier_view.getFullName()))
-            type = column_node->getResultType();
-    }
-    else if (auto subcolumn_info = table_expression_data.tryGetSubcolumnInfo(identifier_view.getFullName()))
+        if (!table_expression_data.column_names.contains(column_name))
+            return nullptr;
+        auto it = column_nodes.find(column_name);
+        if (it == column_nodes.end())
+            return nullptr;
+        return it->second->getColumnType();
+    };
+
+    if (auto column_type = try_get_column_type(full_name))
+        return column_type;
+
+    for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(full_name))
     {
-        type = subcolumn_info->subcolumn_type;
+        if (auto column_type = try_get_column_type(column_name))
+        {
+            if (auto subcolumn_type = column_type->tryGetSubcolumnType(subcolumn_name))
+                return subcolumn_type;
+        }
     }
 
-    return readingIsUsableForLookup(type, identifier_lookup);
+    return nullptr;
+}
+
+/// Returns true if `IdentifierResolver::tryResolveIdentifierAsNestedPrefix` reconstructs a `Nested` value named
+/// `identifier_view` from the flattened `Array` columns of the table expression, e.g. `t` from `t.val`.
+/// Such a value is an `Array(Tuple(...))`, so it is a reading for both an expression and a matcher qualifier.
+/// The same conditions are checked against the declared types, without resolving `ALIAS` columns.
+bool tableExpressionDataCanReconstructNestedPrefix(
+    const AnalysisTableExpressionData & table_expression_data, IdentifierView identifier_view, const ContextPtr & context)
+{
+    /// `tryResolveIdentifierAsNestedPrefix` only reconstructs a prefix of one part.
+    if (identifier_view.getPartsSize() != 1)
+        return false;
+
+    const bool allow_compound = context->getSettingsRef()[Setting::analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested];
+    const auto & column_nodes = table_expression_data.getColumnNodeMap();
+
+    for (const auto & [column_name, _] : table_expression_data.column_names_and_types)
+    {
+        if (table_expression_data.subcolumn_names.contains(column_name))
+            continue;
+
+        Identifier column_identifier(column_name);
+        if (column_identifier.getPartsSize() < 2 || column_identifier.front() != identifier_view.front())
+            continue;
+
+        if (!allow_compound && column_identifier.getPartsSize() > 2)
+            continue;
+
+        auto it = column_nodes.find(column_name);
+        if (it == column_nodes.end())
+            continue;
+
+        if (typeid_cast<const DataTypeArray *>(it->second->getColumnType().get()))
+            return true;
+    }
+
+    return false;
+}
+
+/// Returns true if `identifier_view` names a column or a subcolumn of a column of the table expression, or
+/// a `Nested` value reconstructed from its columns, that gives the identifier of `identifier_lookup` a reading,
+/// see `readingIsUsableForLookup`. Only declared types are inspected, so no `ALIAS` column is resolved.
+bool tableExpressionDataCanReadIdentifier(
+    const AnalysisTableExpressionData & table_expression_data,
+    IdentifierView identifier_view,
+    const IdentifierLookup & identifier_lookup,
+    const ContextPtr & context)
+{
+    if (readingIsUsableForLookup(tryGetDeclaredColumnOrSubcolumnType(table_expression_data, identifier_view.getFullName()), identifier_lookup))
+        return true;
+
+    return tableExpressionDataCanReconstructNestedPrefix(table_expression_data, identifier_view, context);
 }
 
 }
@@ -1002,7 +1065,7 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
             /// The whole identifier can name a column of the enclosing query, e.g. a `Tuple` column `t` with an
             /// element `val` gives `t.val` a reading there. Only a column the identifier can be read from
             /// counts, so an unrelated column with the same name as the table does not hide it.
-            if (tableExpressionDataCanReadIdentifier(outer_table_expression_data, identifier, identifier_lookup))
+            if (tableExpressionDataCanReadIdentifier(outer_table_expression_data, identifier, identifier_lookup, outer_scope->context))
                 return true;
 
             /// The name a table expression is addressed by in the enclosing query. The name of an aliased
@@ -1042,7 +1105,7 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
             {
                 IdentifierView rest(identifier);
                 rest.popFirst();
-                if (tableExpressionDataCanReadIdentifier(outer_table_expression_data, rest, identifier_lookup))
+                if (tableExpressionDataCanReadIdentifier(outer_table_expression_data, rest, identifier_lookup, outer_scope->context))
                     return true;
             }
         }
