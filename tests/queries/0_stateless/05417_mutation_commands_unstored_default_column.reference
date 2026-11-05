@@ -34,6 +34,9 @@ Wide
 nested_prefix_wide	0	[]	0
 nested_prefix_wide	1	[0]	1
 nested_prefix_wide	2	[0,1]	2
+nested_prefix_match	0	[]	0
+nested_prefix_match	1	[0]	999
+nested_prefix_match	2	[0,1]	2
 subcolumn_read	0	0	0	0
 subcolumn_read	1	1	0	10
 subcolumn_read	2	2	22	20
@@ -47,6 +50,17 @@ alias	2	2	22	20
 default_subcolumn	0	98	980
 default_subcolumn	1	99	990
 default_subcolumn	2	100	1000
+Compact
+default_subcolumns_compact	0	0
+default_subcolumns_compact	1	111
+default_subcolumns_compact	2	220
+Wide
+default_subcolumns_wide	0	0
+default_subcolumns_wide	1	111
+default_subcolumns_wide	2	220
+default_subcolumns_input	0	0	0
+default_subcolumns_input	1	101	11110
+default_subcolumns_input	2	2	220
 delete	0	0	0
 delete	1	1	10
 delete	3	100	1000

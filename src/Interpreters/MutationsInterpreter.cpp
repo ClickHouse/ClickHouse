@@ -2003,27 +2003,39 @@ void MutationsInterpreter::prepare(bool dry_run)
                 return column && column->default_desc.kind == ColumnDefaultKind::Default && part_stores(name);
             };
 
-            /// An unstored ordinary column is received as its DEFAULT over the part's values, so a stage after one
-            /// that changed an input of that DEFAULT computes the column itself.
+            /// The part reader cannot compute a DEFAULT that reads a subcolumn of a column the part does not store,
+            /// or a flattened `Nested` column.
+            auto reader_reads = [&](const String & input)
+            {
+                if (columns_desc.has(input))
+                    return true;
+                auto column = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, input);
+                return column && part_stores(column->getNameInStorage());
+            };
+
             std::unordered_map<String, NameSet> columns_read_by_default;
+            NameSet not_computed_by_reader;
+            for (const auto & name : unstored_defaults)
+            {
+                const auto & inputs = columns_read_by_default[name] = getColumnsReadByDefault(columns_desc, name, is_stored);
+                if (!std::ranges::all_of(inputs, reader_reads))
+                    not_computed_by_reader.insert(name);
+            }
+
+            /// An unstored ordinary column is received as its DEFAULT over the part's values, so a stage after one
+            /// that changed an input of that DEFAULT computes the column itself, as does every stage if the reader cannot.
             NameSet changed;
             NameSet stored;
             for (auto & stage : stages)
             {
-                if (!changed.empty())
+                for (const auto & name : unstored_defaults)
                 {
-                    for (const auto & name : unstored_defaults)
-                    {
-                        if (stored.contains(name))
-                            continue;
+                    if (stored.contains(name))
+                        continue;
 
-                        auto it = columns_read_by_default.find(name);
-                        if (it == columns_read_by_default.end())
-                            it = columns_read_by_default.emplace(name, getColumnsReadByDefault(columns_desc, name, is_stored)).first;
-
-                        if (std::ranges::any_of(it->second, [&](const auto & input) { return changed.contains(input); }))
-                            stage.stale_defaults.insert(name);
-                    }
+                    if (not_computed_by_reader.contains(name)
+                        || std::ranges::any_of(columns_read_by_default.at(name), [&](const auto & input) { return changed.contains(input); }))
+                        stage.stale_defaults.insert(name);
                 }
 
                 if (stage.affects_all_columns)

@@ -87,6 +87,16 @@ SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() A
 SELECT 'nested_prefix_wide', id, n.e, a FROM t_nested_prefix_wide ORDER BY id;
 DROP TABLE t_nested_prefix_wide;
 
+-- MATERIALIZE COLUMN keeps an earlier UPDATE of the column (compact part).
+DROP TABLE IF EXISTS t_nested_prefix_match;
+CREATE TABLE t_nested_prefix_match (id Int64, n Nested(e Int64)) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000;
+INSERT INTO t_nested_prefix_match SELECT number, range(number) FROM numbers(3);
+ALTER TABLE t_nested_prefix_match ADD COLUMN a UInt64 DEFAULT length(n);
+ALTER TABLE t_nested_prefix_match UPDATE a = 999 WHERE id = 1, MATERIALIZE COLUMN a;
+SELECT 'nested_prefix_match', id, n.e, a FROM t_nested_prefix_match ORDER BY id;
+DROP TABLE t_nested_prefix_match;
+
 -- The commands also read the subcolumn the DEFAULT reads.
 DROP TABLE IF EXISTS t_subcolumn_read;
 CREATE TABLE t_subcolumn_read (id Int64, t Tuple(p Int64), y Int64) ENGINE = MergeTree ORDER BY id;
@@ -125,6 +135,47 @@ ALTER TABLE t_default_subcolumn ADD COLUMN a Int64 DEFAULT b.p * 10;
 ALTER TABLE t_default_subcolumn UPDATE x = tupleElement(b, 'p') + 98 WHERE 1, UPDATE y = a WHERE 1;
 SELECT 'default_subcolumn', id, x, y FROM t_default_subcolumn ORDER BY id;
 DROP TABLE t_default_subcolumn;
+
+-- MATERIALIZE COLUMN after an UPDATE of the column that matches no row, the DEFAULT reading subcolumns of
+-- other unstored DEFAULT columns (compact part).
+DROP TABLE IF EXISTS t_default_subcolumns_compact;
+CREATE TABLE t_default_subcolumns_compact (id Int64, x Int64) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 1000000000;
+INSERT INTO t_default_subcolumns_compact SELECT number, number FROM numbers(3);
+ALTER TABLE t_default_subcolumns_compact ADD COLUMN b Tuple(p Int64) DEFAULT tuple(x);
+ALTER TABLE t_default_subcolumns_compact ADD COLUMN arr Array(Int64) DEFAULT range(x);
+ALTER TABLE t_default_subcolumns_compact ADD COLUMN n Nullable(Int64) DEFAULT nullIf(x, 1);
+ALTER TABLE t_default_subcolumns_compact ADD COLUMN a Int64 DEFAULT b.p * 100 + arr.size0 * 10 + n.null;
+ALTER TABLE t_default_subcolumns_compact UPDATE a = -1 WHERE id = 99, MATERIALIZE COLUMN a;
+SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_default_subcolumns_compact' AND active;
+SELECT 'default_subcolumns_compact', id, a FROM t_default_subcolumns_compact ORDER BY id;
+DROP TABLE t_default_subcolumns_compact;
+
+-- Same (wide part).
+DROP TABLE IF EXISTS t_default_subcolumns_wide;
+CREATE TABLE t_default_subcolumns_wide (id Int64, x Int64) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_default_subcolumns_wide SELECT number, number FROM numbers(3);
+ALTER TABLE t_default_subcolumns_wide ADD COLUMN b Tuple(p Int64) DEFAULT tuple(x);
+ALTER TABLE t_default_subcolumns_wide ADD COLUMN arr Array(Int64) DEFAULT range(x);
+ALTER TABLE t_default_subcolumns_wide ADD COLUMN n Nullable(Int64) DEFAULT nullIf(x, 1);
+ALTER TABLE t_default_subcolumns_wide ADD COLUMN a Int64 DEFAULT b.p * 100 + arr.size0 * 10 + n.null;
+ALTER TABLE t_default_subcolumns_wide UPDATE a = -1 WHERE id = 99, MATERIALIZE COLUMN a;
+SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_default_subcolumns_wide' AND active;
+SELECT 'default_subcolumns_wide', id, a FROM t_default_subcolumns_wide ORDER BY id;
+DROP TABLE t_default_subcolumns_wide;
+
+-- Same with an UPDATE of an input in between.
+DROP TABLE IF EXISTS t_default_subcolumns_input;
+CREATE TABLE t_default_subcolumns_input (id Int64, x Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_default_subcolumns_input SELECT number, number FROM numbers(3);
+ALTER TABLE t_default_subcolumns_input ADD COLUMN b Tuple(p Int64) DEFAULT tuple(x);
+ALTER TABLE t_default_subcolumns_input ADD COLUMN arr Array(Int64) DEFAULT range(x);
+ALTER TABLE t_default_subcolumns_input ADD COLUMN n Nullable(Int64) DEFAULT nullIf(x, 1);
+ALTER TABLE t_default_subcolumns_input ADD COLUMN a Int64 DEFAULT b.p * 100 + arr.size0 * 10 + n.null;
+ALTER TABLE t_default_subcolumns_input UPDATE a = -1 WHERE id = 99, UPDATE x = x + 100 WHERE id = 1, MATERIALIZE COLUMN a;
+SELECT 'default_subcolumns_input', id, x, a FROM t_default_subcolumns_input ORDER BY id;
+DROP TABLE t_default_subcolumns_input;
 
 -- DELETE predicate and the columns DELETE writes.
 DROP TABLE IF EXISTS t_delete;
