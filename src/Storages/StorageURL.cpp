@@ -10,7 +10,6 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/Web/Configuration.h>
-#include <boost/algorithm/string/predicate.hpp>
 #include <Storages/prepareReadingFromFormat.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -73,6 +72,7 @@
 
 #include <algorithm>
 #include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
@@ -1365,12 +1365,18 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
 void StorageURLSource::addNumRowsToCache(const String & uri, size_t num_rows)
 {
+    if (!canUseNumRowsFromSchemaCache(format_settings, getContext()))
+        return;
+
     auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext());
     StorageURL::getSchemaCache(getContext()).addNumRows(cache_key, num_rows);
 }
 
 std::optional<size_t> StorageURLSource::tryGetNumRowsFromCache(const String & uri, std::optional<time_t> last_mod_time)
 {
+    if (!canUseNumRowsFromSchemaCache(format_settings, getContext()))
+        return std::nullopt;
+
     auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext());
     auto get_last_mod_time = [&]() -> std::optional<time_t>
     {
@@ -2037,7 +2043,7 @@ void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 
-    if (boost::iequals(storage->format_name, "Parquet") || boost::iequals(storage->format_name, "ORC"))
+    if (formatNeedsEagerKeyConditionSets(storage->format_name))
         prepareEagerKeyConditionSets(
             filter_actions_dag,
             storage_snapshot, info.source_header,
@@ -2187,6 +2193,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams);
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
         info.getFormatFilter(filter_actions_dag), context, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+    format_filter_info->need_row_numbers = VirtualColumnUtils::hasRowDependentVirtualColumns(info.requested_virtual_columns);
     format_filter_info->top_k_filter = top_k_filter;
 
     for (size_t i = 0; i < num_streams; ++i)
@@ -2293,8 +2300,7 @@ void StorageURLWithFailover::read(
 
 SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
-    if (http_method.empty())
-        http_method = Poco::Net::HTTPRequest::HTTP_POST;
+    const String write_method = http_method.empty() ? Poco::Net::HTTPRequest::HTTP_POST : http_method;
 
     bool has_wildcards = uri.contains(PartitionedSink::PARTITION_ID_WILDCARD);
     const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
@@ -2323,7 +2329,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             getHTTPTimeouts(context),
             compression_method,
             headers,
-            http_method);
+            write_method);
     }
 
     return std::make_shared<StorageURLSink>(
@@ -2335,7 +2341,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
         getHTTPTimeouts(context),
         compression_method,
         headers,
-        http_method);
+        write_method);
 }
 
 SchemaCache & IStorageURLBase::getSchemaCache(const ContextPtr & context)
@@ -2943,7 +2949,7 @@ AzureURLParts parseAzureURL(const String & url)
 void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(
-        args, "", format_name, context, /*with_structure=*/false, is_replayed_definition);
+        args, "", format_name, context, /*with_structure=*/false, is_replayed_definition, /*replace_not_overridable=*/true);
 
     /// Materialize the resolved URL into engine args so that DETACH/ATTACH and server restart
     /// reproduce the originally-resolved URL even if `url_base` is later changed or unset.
@@ -3217,7 +3223,7 @@ private:
             return;
 
         TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(
-            args, /*structure_=*/"", resolved_format, context, /*with_structure=*/false, is_replayed_definition);
+            args, /*structure_=*/"", resolved_format, context, /*with_structure=*/false, is_replayed_definition, /*replace_not_overridable=*/true);
     }
 
     StoragePtr nested;

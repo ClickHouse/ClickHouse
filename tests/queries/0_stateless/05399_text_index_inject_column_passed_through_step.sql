@@ -5,7 +5,6 @@
 -- column through without taking it as an input, e.g. an outer ORDER BY without the function result.
 -- https://github.com/ClickHouse/ClickHouse/issues/125855
 
-SET enable_analyzer = 1;
 SET enable_full_text_index = 1;
 SET use_query_condition_cache = 0;
 SET query_plan_execute_functions_after_sorting = 1;
