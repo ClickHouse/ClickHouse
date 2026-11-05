@@ -104,7 +104,8 @@ class TreeBuilder
 public:
     /// The nested plans of the drawn steps are appended to `nested_plans_`, which is shared by the builders of the main
     /// drawing and of the nested plans, so that the ids are unique in the whole output.
-    TreeBuilder(const PreparedFragmentGraph & prepared_, size_t max_step_description_length_, NestedPlans & nested_plans_, bool frameless_)
+    TreeBuilder(
+        const PreparedFragmentGraph & prepared_, size_t max_step_description_length_, NestedPlans & nested_plans_, bool frameless_)
         : prepared(prepared_)
         , graph(prepared.graph)
         , options(prepared.options)
@@ -220,7 +221,7 @@ private:
     }
 
     /// The name of the step and its description. The nested plans of the step are registered in `nested_plans`, to be
-    /// drawn after the main drawing, and the text ends with their ids: `← N1, N2`. Called once per step, so the ids are stable.
+    /// drawn after the main drawing, and the text ends with their ids: `← N1, N2`. Must be called once per step.
     String stepText(IQueryPlanStep & step)
     {
         String text = step.getName();
@@ -677,7 +678,8 @@ void explainAsTree(
         /// Copy: drawing appends to `nested_plans`, which invalidates references to its elements.
         const NestedPlan nested_plan = nested_plans[i];
         buf << "\nN" << i + 1 << " · nested plan of " << TextCanvas::replaceControlCharacters(nested_plan.owner) << '\n';
-        TreeBuilder(prepared, max_step_description_length, nested_plans, /*frameless=*/ true).drawNestedPlan(*nested_plan.plan, buf);
+        TreeBuilder(prepared, max_step_description_length, nested_plans, /*frameless=*/ true)
+            .drawNestedPlan(*nested_plan.plan, buf);
     }
 
     /// A plan that was not cut has no exchanges, and its one level says nothing.
