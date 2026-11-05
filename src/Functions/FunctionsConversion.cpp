@@ -3075,6 +3075,13 @@ static FunctionCast::WrapperType createEnumToLowCardinalityStringWrapper(const D
 
 FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type) const
 {
+    /// `equals` ignores the state versions of `AggregateFunction` types; the column must take the target versions.
+    if (from_type->equals(*to_type) && !haveSameAggregateStateVersions(*from_type, *to_type))
+        return [to_type](ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
+        {
+            return relabelAggregateStateVersions(arguments.front().column, to_type);
+        };
+
     /// A `Nothing` column carries no values, so it converts trivially to any target, which is what
     /// `createNothingWrapper` does. `Variant` and `Dynamic` instead resolve the source against their
     /// member list, which cannot name `Nothing`, so they need that path rather than the one below.

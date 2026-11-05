@@ -17,6 +17,8 @@ DROP TABLE IF EXISTS t_dst;
 DROP TABLE IF EXISTS t_merge;
 DROP TABLE IF EXISTS t_var;
 DROP TABLE IF EXISTS t_var_dst;
+DROP TABLE IF EXISTS t_vaf;
+DROP TABLE IF EXISTS t_aaf;
 
 CREATE TABLE t_src (ts DateTime, ts64 DateTime64(3), u UInt8) ENGINE = Memory;
 INSERT INTO t_src VALUES (1767225600, 1767225600.123, 2);
@@ -64,10 +66,11 @@ INSERT INTO t_bool SELECT 2::UInt8;
 SELECT b, b = true, toUInt8(b) FROM t_bool;
 
 SELECT 'Merge';
-CREATE TABLE t_dst (x DateTime) ENGINE = Memory;
+CREATE TABLE t_dst (x DateTime) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t_dst VALUES (1767225600);
 CREATE TABLE t_merge (x DateTime('UTC')) ENGINE = Merge(currentDatabase(), '^t_dst$');
 SELECT x, toHour(x) FROM t_merge;
+SELECT count() FROM t_merge WHERE toHour(x) = 0;
 
 SELECT 'Variant';
 CREATE TABLE t_var (x Variant(DateTime, String)) ENGINE = Memory;
@@ -80,6 +83,17 @@ INSERT INTO t_var_dst SELECT x FROM t_var;
 SELECT x FROM t_var_dst;
 SELECT CAST(x AS Variant(DateTime('UTC'), String)) FROM t_var;
 
+SELECT 'AggregateFunction state version';
+CREATE TABLE t_vaf (x Variant(AggregateFunction(0, uniq, UInt64), String)) ENGINE = Memory;
+INSERT INTO t_vaf SELECT uniqState(number)::AggregateFunction(0, uniq, UInt64)::Variant(AggregateFunction(0, uniq, UInt64), String) FROM numbers(10);
+CREATE VIEW v_vaf (x Variant(AggregateFunction(1, uniq, UInt64), String)) AS SELECT x FROM t_vaf;
+SELECT uniqMerge(s) FROM (SELECT arrayJoin(groupArray(variantElement(x, 'AggregateFunction(1, uniq, UInt64)'))) AS s FROM v_vaf);
+SELECT uniqMerge(s) FROM (SELECT arrayJoin(groupArray(variantElement(CAST(x AS Variant(AggregateFunction(1, uniq, UInt64), String)), 'AggregateFunction(1, uniq, UInt64)'))) AS s FROM t_vaf);
+CREATE TABLE t_aaf (a Array(AggregateFunction(0, uniq, UInt64))) ENGINE = Memory;
+INSERT INTO t_aaf SELECT [uniqState(number)::AggregateFunction(0, uniq, UInt64)] FROM numbers(10);
+CREATE VIEW v_aaf (a Array(AggregateFunction(1, uniq, UInt64))) AS SELECT a FROM t_aaf;
+SELECT uniqMerge(s) FROM (SELECT arrayJoin(groupArray(arrayJoin(a))) AS s FROM v_aaf);
+
 DROP VIEW v;
 DROP VIEW v_wrap;
 DROP VIEW v_cast;
@@ -88,6 +102,8 @@ DROP VIEW v_dist;
 DROP VIEW v_order;
 DROP VIEW v_order_same;
 DROP VIEW v_var;
+DROP VIEW v_vaf;
+DROP VIEW v_aaf;
 DROP TABLE t_src;
 DROP TABLE t_order;
 DROP TABLE t_local;
@@ -97,3 +113,5 @@ DROP TABLE t_merge;
 DROP TABLE t_dst;
 DROP TABLE t_var;
 DROP TABLE t_var_dst;
+DROP TABLE t_vaf;
+DROP TABLE t_aaf;

@@ -20,8 +20,13 @@ INSERT SELECT into Bool
 true	1	1
 Merge
 2026-01-01 00:00:00	0
+1
 Variant
 2026-01-01 00:00:00	DateTime(\'UTC\')
 2026-01-01 00:00:00
 2026-01-01 00:00:00
 2026-01-01 00:00:00
+AggregateFunction state version
+10
+10
+10
