@@ -76,6 +76,10 @@ hints that can hold an object
 1	Map(String, UInt32)	{'k':1,'l':2}	\N
 2	String	s	s
 3	None	\N	\N
+1	{"k":1}	7
+2	s	1
+1	{"k":1}	7
+2	s	1
 patch before alter
 1	3
 2	5
@@ -122,6 +126,17 @@ structured hint added in array
 2	[(2),(0)]
 1	[(1)]
 2	[(2),(0)]
+nested member
+1	['42','7']	[2,1]	[2,1]
+2	[]	[]	[]
+1	['42','7']	[2,1]	[2,1]
+2	[]	[]	[]
+1	['42','7']	[2,1]	[2,1]
+2	[]	[]	[]
+1	['42','7']	[2,1]	[2,1]
+2	[]	[]	[]
+1	['777']	[3]
+2	['12345']	[5]
 parent read by an earlier step
 1	2
 2	5

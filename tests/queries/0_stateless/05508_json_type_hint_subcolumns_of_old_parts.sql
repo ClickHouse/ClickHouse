@@ -21,6 +21,7 @@ DROP TABLE IF EXISTS t_typed_ancestor;
 DROP TABLE IF EXISTS t_skip;
 DROP TABLE IF EXISTS t_dynamic_hint;
 DROP TABLE IF EXISTS t_variant_hint;
+DROP TABLE IF EXISTS t_variant_in_part;
 DROP TABLE IF EXISTS t_patch_before;
 DROP TABLE IF EXISTS t_patch_merged;
 DROP TABLE IF EXISTS t_patch_after;
@@ -28,6 +29,9 @@ DROP TABLE IF EXISTS t_cast_path;
 DROP TABLE IF EXISTS t_cast_path_patch;
 DROP TABLE IF EXISTS t_array_map;
 DROP TABLE IF EXISTS t_array_tuple;
+DROP TABLE IF EXISTS t_nested_wide;
+DROP TABLE IF EXISTS t_nested_compact;
+DROP TABLE IF EXISTS t_nested_patch;
 DROP TABLE IF EXISTS t_parent_prewhere;
 DROP TABLE IF EXISTS t_nullable_prewhere;
 DROP TABLE IF EXISTS t_omitted_patch_before;
@@ -188,6 +192,15 @@ SYSTEM START MERGES t_variant_hint;
 OPTIMIZE TABLE t_variant_hint FINAL;
 SELECT id, variantType(j.a), j.a, j.a.String FROM t_variant_hint ORDER BY id;
 
+CREATE TABLE t_variant_in_part (id UInt64, j JSON(a Variant(Map(String, UInt32), String))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_variant_in_part;
+INSERT INTO t_variant_in_part VALUES (1, '{"a" : {"k" : 1}}'), (2, '{"a" : "s"}');
+ALTER TABLE t_variant_in_part MODIFY COLUMN j JSON(a String) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT id, j.a, length(j.a) FROM t_variant_in_part ORDER BY id;
+SYSTEM START MERGES t_variant_in_part;
+OPTIMIZE TABLE t_variant_in_part FINAL;
+SELECT id, j.a, length(j.a) FROM t_variant_in_part ORDER BY id;
+
 SELECT 'patch before alter';
 CREATE TABLE t_patch_before (id UInt64, data JSON(a UInt32)) ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
@@ -263,6 +276,33 @@ SELECT id, arr.a FROM t_array_tuple ORDER BY id;
 SYSTEM START MERGES t_array_tuple;
 OPTIMIZE TABLE t_array_tuple FINAL;
 SELECT id, arr.a FROM t_array_tuple ORDER BY id;
+
+SELECT 'nested member';
+CREATE TABLE t_nested_wide (id UInt64, n Nested(j JSON(a UInt32))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_nested_wide;
+INSERT INTO t_nested_wide VALUES (1, ['{"a" : 42}', '{"a" : 7}']), (2, []);
+ALTER TABLE t_nested_wide MODIFY COLUMN `n.j` Array(JSON(a String)) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT id, n.j.a, n.j.a.size, arrayMap(x -> length(x), n.j.a) FROM t_nested_wide ORDER BY id;
+SYSTEM START MERGES t_nested_wide;
+OPTIMIZE TABLE t_nested_wide FINAL;
+SELECT id, n.j.a, n.j.a.size, arrayMap(x -> length(x), n.j.a) FROM t_nested_wide ORDER BY id;
+
+CREATE TABLE t_nested_compact (id UInt64, n Nested(j JSON(a UInt32))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = '1G';
+SYSTEM STOP MERGES t_nested_compact;
+INSERT INTO t_nested_compact VALUES (1, ['{"a" : 42}', '{"a" : 7}']), (2, []);
+ALTER TABLE t_nested_compact MODIFY COLUMN `n.j` Array(JSON(a String)) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT id, n.j.a, n.j.a.size, arrayMap(x -> length(x), n.j.a) FROM t_nested_compact ORDER BY id;
+SYSTEM START MERGES t_nested_compact;
+OPTIMIZE TABLE t_nested_compact FINAL;
+SELECT id, n.j.a, n.j.a.size, arrayMap(x -> length(x), n.j.a) FROM t_nested_compact ORDER BY id;
+
+CREATE TABLE t_nested_patch (id UInt64, n Nested(j JSON(a UInt32))) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
+SYSTEM STOP MERGES t_nested_patch;
+INSERT INTO t_nested_patch VALUES (1, ['{"a" : 42}']), (2, ['{"a" : 12345}']);
+UPDATE t_nested_patch SET `n.j` = ['{"a" : 777}'] WHERE id = 1;
+ALTER TABLE t_nested_patch MODIFY COLUMN `n.j` Array(JSON(a String)) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT id, n.j.a, n.j.a.size FROM t_nested_patch ORDER BY id;
 
 SELECT 'parent read by an earlier step';
 CREATE TABLE t_parent_prewhere (id UInt64, data JSON(a UInt32)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
@@ -445,6 +485,7 @@ DROP TABLE t_typed_ancestor;
 DROP TABLE t_skip;
 DROP TABLE t_dynamic_hint;
 DROP TABLE t_variant_hint;
+DROP TABLE t_variant_in_part;
 DROP TABLE t_patch_before;
 DROP TABLE t_patch_merged;
 DROP TABLE t_patch_after;
@@ -452,6 +493,9 @@ DROP TABLE t_cast_path;
 DROP TABLE t_cast_path_patch;
 DROP TABLE t_array_map;
 DROP TABLE t_array_tuple;
+DROP TABLE t_nested_wide;
+DROP TABLE t_nested_compact;
+DROP TABLE t_nested_patch;
 DROP TABLE t_parent_prewhere;
 DROP TABLE t_nullable_prewhere;
 DROP TABLE t_omitted_patch_before;

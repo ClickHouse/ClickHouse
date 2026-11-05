@@ -91,9 +91,11 @@ IMergeTreeReader::IMergeTreeReader(
     sources_of_subcolumns.reserve(getColumns().size());
     serializations.reserve(getColumns().size());
 
+    /// Sources are resolved against the requested columns as named in the table, not converted to subcolumns of `Nested`.
+    auto original_column = original_requested_columns.begin();
     for (const auto & column : getColumns())
     {
-        const auto & source = sources_of_subcolumns.emplace_back(getSourceOfRequiredSubcolumn(column));
+        const auto & source = sources_of_subcolumns.emplace_back(getSourceOfRequiredSubcolumn(*original_column++));
         auto column_and_serialization_in_part = getColumnAndSerializationInPart(column, source.has_value());
         const auto & column_to_read = columns_to_read.emplace_back(std::move(column_and_serialization_in_part.column));
         auto & serialization = column_and_serialization_in_part.serialization;
@@ -360,7 +362,7 @@ void IMergeTreeReader::fillMissingColumns(
             /// `evaluateMissingDefaults`.
             NameSet deferred_columns;
             size_t column_index = 0;
-            for (const auto & column : converted_requested_columns)
+            for (const auto & column : original_requested_columns)
             {
                 const auto * cast_path = tryGetCastPathOfSubcolumn(column_index++, column);
                 if (cast_path && (converted_requested_columns.contains(*cast_path) || previous_step_columns.contains(*cast_path)))
