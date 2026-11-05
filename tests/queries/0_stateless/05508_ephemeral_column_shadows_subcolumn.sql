@@ -11,6 +11,9 @@ DROP TABLE IF EXISTS t_eph_memory;
 DROP TABLE IF EXISTS t_eph_buffer;
 DROP TABLE IF EXISTS t_eph_buffer_dst;
 DROP TABLE IF EXISTS t_eph_join;
+DROP TABLE IF EXISTS t_eph_mv;
+DROP TABLE IF EXISTS t_eph_mv_src;
+DROP TABLE IF EXISTS t_eph_mv_dst;
 
 CREATE TABLE t_eph_log (id UInt64, m Map(String, UInt64), `m.keys` UInt128 EPHEMERAL, a Array(UInt64), `a.size0` UInt64 EPHEMERAL,
     t Tuple(x UInt64), `t.x` String EPHEMERAL, y UInt64 DEFAULT `a.size0` * 10) ENGINE = Log;
@@ -51,6 +54,12 @@ CREATE TABLE t_eph_join (id UInt64, a Array(UInt64), `a.size0` UInt64 EPHEMERAL)
 INSERT INTO t_eph_join (id, a) VALUES (1, [1, 2, 3]);
 SELECT id, `a.size0` FROM t_eph_join; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 
+CREATE TABLE t_eph_mv_src (id UInt64, a Array(UInt64), `a.size0` UInt64 EPHEMERAL) ENGINE = Null;
+CREATE TABLE t_eph_mv_dst (id UInt64, s UInt64) ENGINE = Memory;
+CREATE MATERIALIZED VIEW t_eph_mv TO t_eph_mv_dst AS SELECT id, `a.size0` AS s FROM t_eph_mv_src;
+INSERT INTO t_eph_mv_src (id, a, `a.size0`) VALUES (1, [1, 2, 3], 7); -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+SELECT count() FROM t_eph_mv_dst;
+
 DROP TABLE t_eph_log;
 DROP TABLE t_eph_tinylog;
 DROP TABLE t_eph_stripelog;
@@ -58,3 +67,6 @@ DROP TABLE t_eph_memory;
 DROP TABLE t_eph_buffer;
 DROP TABLE t_eph_buffer_dst;
 DROP TABLE t_eph_join;
+DROP TABLE t_eph_mv;
+DROP TABLE t_eph_mv_src;
+DROP TABLE t_eph_mv_dst;
