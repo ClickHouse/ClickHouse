@@ -97,14 +97,13 @@ public:
 
     struct BloomFilterData
     {
-        /// Never modified, so the hashes of an `IN` set can be shared by the conditions of all files of a query.
         using Hashes = std::shared_ptr<const std::vector<uint64_t>>;
         using HashesForColumns = std::vector<Hashes>;
         HashesForColumns hashes_per_column;
         /// Subset of RPNElement::key_columns.
         std::vector<std::size_t> key_columns;
 
-        /// Sorts and deduplicates `hashes`, as `BloomFilter::findAnyHash` receives them.
+        /// Sorts and deduplicates `hashes` (an `IN` set can repeat a hash), as `BloomFilter::findAnyHash` receives them.
         static Hashes makeHashes(std::vector<uint64_t> hashes);
     };
 
@@ -533,8 +532,6 @@ public:
     /// Does the filter condition have any ORs?
     bool hasOnlyConjunctions() const;
 
-    /// `hash_many` returns the hashes of the values of a column of an `IN` set as `BloomFilterData::makeHashes`
-    /// does (sorted and deduplicated), or nullptr if they can't be hashed.
     void prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
                                 std::function<BloomFilterData::Hashes(size_t column_idx, const ColumnPtr &)> hash_many);
 

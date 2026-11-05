@@ -9009,9 +9009,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
 KeyCondition::BloomFilterData::Hashes KeyCondition::BloomFilterData::makeHashes(std::vector<uint64_t> hashes)
 {
-    /// Sorted, a filter can intersect the probe hashes with its own sorted value set in one merge pass
-    /// (see the Parquet `DictionaryLookup`); deduplicated, the duplicates that an `IN` set can produce -
-    /// different values whose hashes collide, or a tuple element repeated across set rows - are probed once.
     std::sort(hashes.begin(), hashes.end());
     hashes.erase(std::unique(hashes.begin(), hashes.end()), hashes.end());
     return std::make_shared<const std::vector<uint64_t>>(std::move(hashes));

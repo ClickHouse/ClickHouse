@@ -211,7 +211,6 @@ FormatFilterInfo::SetHashes FormatFilterInfo::getOrComputeSetHashes(
         entry = slot;
     }
 
-    /// The readers of one entry wait for a single computation; different entries are computed concurrently.
     std::call_once(entry->computed, [&] { entry->hashes = compute(); });
     return entry->hashes;
 }

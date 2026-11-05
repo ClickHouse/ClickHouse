@@ -2494,8 +2494,8 @@ struct DictionaryValueHashes
     /// Whether any of `probes` is among the dictionary's values.
     /// Sorting costs about log2(n) scans, so the first max(8, log2(n)) probes scan the unsorted `hashes`.
     ///
-    /// `probes` are sorted and deduplicated, as `KeyCondition::BloomFilter::findAnyHash` receives them,
-    /// so this is an intersection of two sorted sequences rather than a sequence of independent binary
+    /// `probes` are sorted and deduplicated (see `KeyCondition::BloomFilterData::makeHashes`), so
+    /// this is an intersection of two sorted sequences rather than a sequence of independent binary
     /// searches: every probe continues where the previous one stopped. A handful of query constants
     /// then costs a binary search each, while a large probe set degrades to a linear merge of the two
     /// sequences instead of `probes.size()` full-height searches over the whole vector. That matters
@@ -2524,8 +2524,7 @@ struct DictionaryValueHashes
             sorted = true;
         }
 
-        /// More probes than dictionary values (a large `IN` set): search the probes for each dictionary
-        /// value instead, so that a row group the dictionary rules out costs a search per dictionary value.
+        /// More probes than dictionary values: search the probes for each dictionary value instead.
         if (probes.size() > hashes.size())
         {
             auto probe_it = probes.begin();

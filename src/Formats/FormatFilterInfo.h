@@ -199,10 +199,7 @@ private:
 public:
     using SetHashes = std::shared_ptr<const std::vector<UInt64>>;
 
-    /// The hashes of the values of a column of an `IN` set of `key_condition`, as a format compares them with
-    /// the values of a file (e.g. the Parquet bloom and dictionary filters), computed by `compute` at most once
-    /// per query. `hash_kind` must identify everything besides the values that the hashes depend on (e.g. the
-    /// physical type of the column in the file). The result of `compute` may be nullptr.
+    /// Hashes of an `IN` set column, computed by `compute` once per query. `hash_kind` must identify all their other inputs.
     SetHashes getOrComputeSetHashes(const ColumnPtr & set_column, const String & hash_kind, const std::function<SetHashes()> & compute);
 
 private:
