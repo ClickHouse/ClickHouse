@@ -680,15 +680,16 @@ GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTable
 
     auto object_storage = configuration->createObjectStorage(getContext(), true, {});
 
-    return {object_storage, location.bucket_name, location.path};
+    String key_prefix = settings.storage_endpoint.empty() ? "" : configuration->getRawPath().path;
+    return {object_storage, location.bucket_name, location.path, key_prefix};
 }
 
 Poco::JSON::Object::Ptr GlueCatalog::loadMetadataObject(const String & metadata_uri, const TableMetadata & table_metadata) const
 {
-    auto [object_storage, bucket_name, metadata_path] = createObjectStorageForEarlyTableAccess(metadata_uri, table_metadata);
+    auto [object_storage, bucket_name, metadata_path, key_prefix] = createObjectStorageForEarlyTableAccess(metadata_uri, table_metadata);
     auto compression_method = DB::Iceberg::getCompressionMethodFromMetadataFile(metadata_uri);
     return DB::Iceberg::getMetadataJSONObject(
-        metadata_path, object_storage, nullptr, getContext(), log, compression_method, std::nullopt);
+        key_prefix + metadata_path, object_storage, nullptr, getContext(), log, compression_method, std::nullopt);
 }
 
 std::shared_ptr<GlueCatalog::CachedSchema> GlueCatalog::getCachedSchema(const String & metadata_uri, const TableMetadata & table_metadata) const
@@ -714,7 +715,7 @@ std::shared_ptr<GlueCatalog::CachedSchema> GlueCatalog::getCachedSchema(const St
 
 String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_location, const TableMetadata & table_metadata) const
 {
-    auto [object_storage, bucket_name, table_path] = createObjectStorageForEarlyTableAccess(table_location, table_metadata);
+    auto [object_storage, bucket_name, table_path, key_prefix] = createObjectStorageForEarlyTableAccess(table_location, table_metadata);
 
     auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
@@ -727,11 +728,14 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
     try
     {
         auto [metadata_version, metadata_path, compression_method] = DB::Iceberg::getLatestOrExplicitMetadataFileAndVersion(
-            object_storage, table_path, *storage_settings, nullptr, resolve_context, log.get(), std::nullopt, DB::CompressionMethod::None);
+            object_storage, key_prefix + table_path, *storage_settings, nullptr, resolve_context, log.get(), std::nullopt, DB::CompressionMethod::None);
 
         LOG_TRACE(log, "Resolved metadata path '{}' (version {}) for table location '{}'", metadata_path, metadata_version, table_location);
 
-        return "s3://" + bucket_name + "/" + metadata_path;
+        if (!metadata_path.starts_with(key_prefix))
+            throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                "Resolved metadata path '{}' is outside of the key prefix '{}' of table location '{}'", metadata_path, key_prefix, table_location);
+        return "s3://" + bucket_name + "/" + metadata_path.substr(key_prefix.size());
     }
     catch (const DB::Exception & e)
     {

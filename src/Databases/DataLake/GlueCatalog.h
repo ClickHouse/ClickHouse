@@ -182,6 +182,7 @@ private:
         DB::ObjectStoragePtr object_storage;
         String bucket_name;
         String table_path;  /// Path within bucket
+        String key_prefix;
     };
 
     ObjectStorageWithPath createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const;

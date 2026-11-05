@@ -1054,6 +1054,43 @@ def test_s3a_locations(started_cluster):
     assert node.query(f"SELECT id FROM {table_ref} ORDER BY id") == "a\nb\n"
 
 
+def test_storage_endpoint_with_key_prefix(started_cluster):
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_glue_key_prefix_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    schema = Schema(NestedField(field_id=1, name="id", field_type=StringType(), required=False))
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), UNSORTED_SORT_ORDER, dir=table_name)
+    table.append(pa.Table.from_pylist([{"id": "a"}, {"id": "b"}]))
+
+    s3_client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=minio_access_key,
+        aws_secret_access_key=minio_secret_key,
+        region_name="us-east-1",
+    )
+    prefix_bucket = f"glue-prefix-{uuid.uuid4().hex[:8]}"
+    s3_client.create_bucket(Bucket=prefix_bucket)
+    for page in s3_client.get_paginator("list_objects_v2").paginate(Bucket="warehouse-glue", Prefix=f"{table_name}/"):
+        for obj in page.get("Contents", []):
+            s3_client.copy_object(
+                Bucket=prefix_bucket,
+                Key=f"warehouse-glue/{obj['Key']}",
+                CopySource={"Bucket": "warehouse-glue", "Key": obj["Key"]},
+            )
+
+    create_clickhouse_glue_database(
+        started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": f"http://minio1:9001/{prefix_bucket}"}
+    )
+    assert "`id` Nullable(String)" in node.query(f"SHOW CREATE TABLE {table_ref}")
+    assert node.query(f"SELECT id FROM {table_ref} ORDER BY id") == "a\nb\n"
+
+
 @pytest.mark.parametrize("engine_clause", [" ENGINE = IcebergS3", ""])
 def test_create_without_engine_arguments(started_cluster, engine_clause):
     node = started_cluster.instances["node1"]
