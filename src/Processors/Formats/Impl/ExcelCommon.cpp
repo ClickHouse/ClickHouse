@@ -822,6 +822,21 @@ DataTypePtr ColumnTypeInferrer::getType(const FormatSettings & format_settings) 
     return type;
 }
 
+std::optional<UInt32> findFirstUsedColumn(ISheetReader & sheet_reader)
+{
+    std::optional<UInt32> first_column;
+    Row row;
+    while (sheet_reader.readRow(row))
+    {
+        for (const auto & [column, cell] : row.cells)
+        {
+            if (cell.type != CellType::Empty && (!first_column || column < *first_column))
+                first_column = column;
+        }
+    }
+    return first_column;
+}
+
 RangeReader::RangeReader(std::unique_ptr<ISheetReader> sheet_reader_, const FormatSettings & format_settings)
     : sheet_reader(std::move(sheet_reader_))
     , skip_empty_rows(format_settings.excel.skip_empty_rows)

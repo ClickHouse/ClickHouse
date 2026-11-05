@@ -335,6 +335,8 @@ public:
     std::optional<CellRange> getDimension() const override { return dimension; }
     bool isDate1904() const override { return date1904; }
 
+    void setDimension(const CellRange & dimension_) { dimension = dimension_; }
+
 private:
     void findSheetData();
     void readCell(Cell & cell, UInt32 & column);
@@ -484,6 +486,8 @@ std::unique_ptr<ISheetReader> XLSXWorkbook::openSheet(const String & sheet)
                         const auto * id = parser.getAttribute("id");
                         SheetInfo info;
                         info.name = name ? *name : "";
+                        /// The sheet name is an `ST_Xstring`, so it can contain `_xHHHH_` escapes.
+                        decodeOOXMLEscapes(info.name);
                         info.is_visible = !state || *state == "visible";
                         String path;
                         if (id)
@@ -520,7 +524,17 @@ std::unique_ptr<ISheetReader> XLSXWorkbook::openSheet(const String & sheet)
             style_kinds = readStyles(relationship.target);
     }
 
-    return std::make_unique<XLSXSheetReader>(readPart(sheet_paths[sheet_index]), std::move(shared_strings), std::move(style_kinds), date1904);
+    const String & sheet_path = sheet_paths[sheet_index];
+    auto reader = std::make_unique<XLSXSheetReader>(readPart(sheet_path), shared_strings, style_kinds, date1904);
+    if (!reader->getDimension())
+    {
+        /// The `dimension` element is optional. Without it, find the leftmost used column with a separate pass over the sheet,
+        /// so that the default range starts at the same column as when the element is present.
+        XLSXSheetReader scanner(readPart(sheet_path), std::move(shared_strings), std::move(style_kinds), date1904);
+        if (auto first_column = findFirstUsedColumn(scanner))
+            reader->setDimension(CellRange{.first_row = 0, .first_column = *first_column, .last_row = {}, .last_column = {}});
+    }
+    return reader;
 }
 
 

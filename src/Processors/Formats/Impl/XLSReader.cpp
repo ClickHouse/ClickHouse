@@ -908,6 +908,18 @@ std::unique_ptr<ISheetReader> XLSWorkbook::openSheet(const String & sheet)
     }
     cells.resize(unique_size);
 
+    if (!dimension)
+    {
+        /// The `DIMENSIONS` record is optional. Without it, use the leftmost used column,
+        /// so that the default range starts at the same column as when the record is present.
+        std::optional<UInt32> first_column;
+        for (const auto & record : cells)
+            if (record.cell.type != CellType::Empty && (!first_column || record.column < *first_column))
+                first_column = record.column;
+        if (first_column)
+            dimension = CellRange{.first_row = 0, .first_column = *first_column, .last_row = {}, .last_column = {}};
+    }
+
     return std::make_unique<XLSSheetReader>(std::move(cells), dimension, date1904);
 }
 

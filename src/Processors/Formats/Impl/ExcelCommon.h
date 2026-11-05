@@ -173,6 +173,9 @@ private:
   * Rows above and columns to the left of the range are skipped. Empty rows before the first non-empty row are always skipped,
   * empty rows after the last non-empty row are never returned, and empty rows in between are skipped if `skip_empty_rows` is set.
   */
+/// Reads the whole sheet and returns the leftmost column that has a non-empty cell, if any.
+std::optional<UInt32> findFirstUsedColumn(ISheetReader & sheet_reader);
+
 class RangeReader
 {
 public:
