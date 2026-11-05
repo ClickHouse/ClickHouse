@@ -13,7 +13,9 @@
 #   75 00         key "u\0"
 #   00            document terminator
 # Both the error code name and the BSON type name are read back out of the reported
-# error, so a wrong name for any of these types changes the result of the test.
+# error, so a wrong name for any of these types changes the result of the test. The eleven
+# rejected types are sent over HTTP, which reports the error in the response body, so the
+# loop needs no client process per type.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -25,8 +27,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 for type_byte in 06 07 0b 0c 0d 0e 0f 11 13 7f ff
 do
     printf '0x%s ' "$type_byte"
-    $CLICKHOUSE_CLIENT --query "SELECT * FROM format(BSONEachRow, 'u UUID', x'08000000${type_byte}750000')" 2>&1 >/dev/null \
-        | sed -n 's/.*Cannot insert BSON \(.*\) into UUID column.*(\(.*\))$/\2 \1/p' | head -n 1
+    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" \
+        -d "SELECT * FROM format(BSONEachRow, 'u UUID', x'08000000${type_byte}750000')" \
+        | sed -n 's/.*Cannot insert BSON \(.*\) into UUID column.*(\([A-Z_]*\)).*/\2 \1/p' | head -n 1
 done
 
 # The remaining type bytes 0x01..0x05, 0x08..0x0A, 0x10 and 0x12 are already named by
