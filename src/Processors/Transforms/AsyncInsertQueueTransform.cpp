@@ -174,7 +174,7 @@ void AsyncInsertQueueTransform::startFallback()
     fallback_executor->start();
 }
 
-void AsyncInsertQueueTransform::disqualify(Chunk chunk)
+void AsyncInsertQueueTransform::fallBack()
 {
     queued_eligible = false;
     held = nullptr;
@@ -186,6 +186,11 @@ void AsyncInsertQueueTransform::disqualify(Chunk chunk)
         fallback_executor->push(std::move(pending.front()));
         pending.pop_front();
     }
+}
+
+void AsyncInsertQueueTransform::disqualify(Chunk chunk)
+{
+    fallBack();
     fallback_executor->push(std::move(chunk));
 }
 
@@ -211,7 +216,6 @@ void AsyncInsertQueueTransform::onConsume(Chunk chunk)
         const size_t estimated_bytes = estimateMaterializedBytes(chunk.getColumns(), chunk.getNumRows());
         if (estimated_bytes > max_data_size)
         {
-            /// Logged apart from the reasons below: only this one rejects before the expansion.
             LOG_DEBUG(
                 logger,
                 "INSERT ... SELECT will be executed synchronously (reason: estimated block size {} exceeds "
@@ -221,28 +225,9 @@ void AsyncInsertQueueTransform::onConsume(Chunk chunk)
             return;
         }
 
-        /// Preserve chunk info across materialization, same as the pass-through chunks above and below.
-        auto chunk_infos = std::move(chunk.getChunkInfos());
-        auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
-        materializeBlockInplace(block);
-        Chunk materialized(block.getColumns(), block.rows());
-        materialized.setChunkInfos(std::move(chunk_infos));
-
-        /// The estimate is per value, so a column of varying-width values can still overshoot.
-        if (const size_t materialized_bytes = block.bytes(); materialized_bytes > max_data_size)
-        {
-            LOG_DEBUG(
-                logger,
-                "INSERT ... SELECT will be executed synchronously (reason: materialized block size {} exceeds "
-                "async_insert_max_data_size {}, estimated {})",
-                materialized_bytes, max_data_size, estimated_bytes);
-            disqualify(std::move(materialized));
-        }
-        else
-        {
-            pending.push_back(std::move(materialized));
-            held = &pending.back();
-        }
+        /// Held as is: only a diverted block is materialized, so a fallback receives the chunks unchanged.
+        pending.push_back(std::move(chunk));
+        held = &pending.back();
         return;
     }
 
@@ -268,12 +253,8 @@ AsyncInsertQueueTransform::GenerateResult AsyncInsertQueueTransform::getRemainin
 {
     if (held)
     {
-        auto block = getInputPort().getHeader().cloneWithColumns(held->detachColumns());
-        held = nullptr;
-        pending.clear();
-
         /// Defensive: a killed or timed-out SELECT is normally cancelled before this runs, so its
-        /// buffered block never reaches the queue. Guard anyway, and never divert a result the SELECT
+        /// buffered block is never written. Guard anyway, and never write a result the SELECT
         /// did not finish (a `break`-mode timeout ends it cleanly, unlike a KILL or `throw`).
         if (auto process_list_elem = context->getProcessListElement())
         {
@@ -283,6 +264,25 @@ AsyncInsertQueueTransform::GenerateResult AsyncInsertQueueTransform::getRemainin
         }
         if (isCancelled())
             return {};
+
+        auto block = getInputPort().getHeader().cloneWithColumns(held->getColumns());
+        materializeBlockInplace(block);
+
+        /// The estimate is per value, so a column of varying-width values can still overshoot.
+        if (const size_t materialized_bytes = block.bytes(); materialized_bytes > max_data_size)
+        {
+            LOG_DEBUG(
+                logger,
+                "INSERT ... SELECT will be executed synchronously (reason: materialized block size {} exceeds "
+                "async_insert_max_data_size {})",
+                materialized_bytes, max_data_size);
+            fallBack();
+            fallback_executor->finish();
+            return {};
+        }
+
+        held = nullptr;
+        pending.clear();
 
         auto async_query = query_ast->clone();
         auto & async_insert_query = async_query->as<ASTInsertQuery &>();
