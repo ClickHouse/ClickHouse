@@ -21,7 +21,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #if CLICKHOUSE_CLOUD
 #include <Dictionaries/SystemDictionaryUUIDs.h>
-#include <Interpreters/SharedDatabaseCatalog.h>
 #endif
 #include <Storages/AlterCommands.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -61,15 +60,7 @@ namespace
             return;
 
         const auto local_context = args.getLocalContext();
-
-        /// A Shared Catalog secondary re-executes the initiator's DDL and retries its queue entry forever if it throws.
-#if CLICKHOUSE_CLOUD
-        const bool is_shared_catalog_replay
-            = local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context);
-#else
-        const bool is_shared_catalog_replay = false;
-#endif
-        if (!isFreshTableDefinition(args.mode, args.query.attach_short_syntax) || is_shared_catalog_replay)
+        if (isReplayedTableDefinition(args.mode, args.query, local_context))
             return;
 
         /// These changes reach the source query's context through `applySettingsChanges`, which skips the constraints a `SET` passes.
