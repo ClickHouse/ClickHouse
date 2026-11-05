@@ -1,3 +1,4 @@
+#include <IO/CompressionLibraryErrors.h>
 #include <IO/LZMADeflatingWriteBuffer.h>
 
 namespace DB
@@ -37,8 +38,8 @@ void LZMADeflatingWriteBuffer::initialize(int compression_level)
     if (ret != LZMA_OK)
         throw Exception(
             ErrorCodes::LZMA_STREAM_ENCODER_FAILED,
-            "lzma stream encoder init failed: error code: {} lzma version: {}",
-            ret,
+            "lzma stream encoder init failed: {}; lzma version: {}",
+            lzmaErrorToString(ret),
             LZMA_VERSION_STRING);
 }
 
@@ -74,8 +75,8 @@ void LZMADeflatingWriteBuffer::nextImpl()
             if (ret != LZMA_OK)
                 throw Exception(
                     ErrorCodes::LZMA_STREAM_ENCODER_FAILED,
-                    "lzma stream encoding failed: error code: {}; lzma_version: {}",
-                    ret,
+                    "lzma stream encoding failed: {}; lzma version: {}",
+                    lzmaErrorToString(ret),
                     LZMA_VERSION_STRING);
 
         } while (lstr.avail_in > 0 || lstr.avail_out == 0);
@@ -113,8 +114,8 @@ void LZMADeflatingWriteBuffer::finalFlushBefore()
         if (ret != LZMA_OK)
             throw Exception(
                 ErrorCodes::LZMA_STREAM_ENCODER_FAILED,
-                "lzma stream encoding failed: error code: {}; lzma version: {}",
-                ret,
+                "lzma stream encoding failed: {}; lzma version: {}",
+                lzmaErrorToString(ret),
                 LZMA_VERSION_STRING);
 
     } while (lstr.avail_out == 0);

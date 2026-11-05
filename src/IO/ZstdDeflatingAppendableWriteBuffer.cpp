@@ -29,8 +29,8 @@ ZstdDeflatingAppendableWriteBuffer::ZstdDeflatingAppendableWriteBuffer(
     size_t ret = ZSTD_CCtx_setParameter(cctx.get(), ZSTD_c_compressionLevel, compression_level);
     if (ZSTD_isError(ret))
         throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED,
-                        "ZSTD stream encoder option setting failed: error code: {}; zstd version: {}",
-                        ret, ZSTD_VERSION_STRING);
+                        "ZSTD stream encoder option setting failed: {}; zstd version: {}",
+                        ZSTD_getErrorName(ret), ZSTD_VERSION_STRING);
 
     input = {nullptr, 0, 0};
     output = {nullptr, 0, 0};
