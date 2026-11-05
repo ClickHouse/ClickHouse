@@ -647,8 +647,7 @@ struct KeysOrValuesSubcolumnCreator : public ISerialization::ISubcolumnCreator
     }
 };
 
-/// The bucket of a key with a `JSON` or `Dynamic` value depends on the version that computed its hash, so a `Map`
-/// with such keys is written in one bucket, which every version reads whole.
+/// A `JSON` or `Dynamic` key hashes differently across versions, so such a `Map` is written in one bucket, read whole by every version.
 size_t getMaxBucketsInMap(const ColumnMap & column, size_t max_buckets_in_map)
 {
     return column.getNestedData().getColumn(0).hasDynamicStructure() ? 1 : max_buckets_in_map;
