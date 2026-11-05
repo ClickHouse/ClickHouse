@@ -1,0 +1,9 @@
+rows	[0,1,2,10,11,12]	6
+where_null	6
+where_eq	0
+star	0	0	\N
+star	1	1	\N
+star	2	2	\N
+star	10	10	\N
+star	11	11	\N
+star	12	12	\N

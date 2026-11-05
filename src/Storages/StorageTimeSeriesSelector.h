@@ -19,11 +19,13 @@ public:
     {
         StorageID time_series_storage_id = StorageID::createEmpty();
 
-        /// Data types of the columns `id`, `timestamp` and `value` in the TimeSeries table.
-        /// The columns returned by table function timeSeriesSelector() have these data types.
+        /// Data types of the `id` column, the timestamps and the values in the TimeSeries table.
         DataTypePtr table_id_type;
         DataTypePtr table_timestamp_type;
         DataTypePtr table_value_type;
+
+        /// Whether the samples table stores buckets of samples (see `TimeSeriesSettings::hasBucketedSamples`):
+        /// the column `samples` with an array of samples per row, or the columns `timestamp` and `value` with one sample per row.
 
         PrometheusQueryTree selector;
 
@@ -33,6 +35,16 @@ public:
         UInt32 time_scale = 0;
         DateTime64 min_time{};
         DateTime64 max_time{};
+
+        /// The columns the table function timeSeriesSelector() returns besides `id`:
+        /// `samples` (of type `Array(Tuple(table_timestamp_type, table_value_type))`); or
+        /// `timestamp` and `value` with one sample per row.
+        enum class ReturnColumns
+        {
+            Samples,
+            TimestampAndValue,
+        };
+        ReturnColumns return_columns = ReturnColumns::Samples;
     };
 
     static Configuration getConfiguration(ASTs & args, const ContextPtr & context);
