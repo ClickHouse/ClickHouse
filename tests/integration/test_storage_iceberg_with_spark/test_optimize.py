@@ -309,6 +309,13 @@ def test_optimize_mixed_format_position_delete_reference_bounds(
     )
 
 
+def get_latest_metadata(instance, table_path):
+    latest = instance.exec_in_container(
+        ["bash", "-c", f"ls -v {table_path}/metadata/v*.metadata.json | tail -1"]
+    ).strip()
+    return json.loads(instance.exec_in_container(["cat", latest]))
+
+
 def test_optimize_position_delete_other_partition_spec(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
@@ -369,6 +376,10 @@ def test_optimize_position_delete_other_partition_spec(started_cluster_iceberg_w
     assert len({f[2] for f in files}) == 1, files
     assert parquet[0] < orc[0] < parquet[1], files
 
+    # OPTIMIZE must keep the partition keys; the default spec is not spec 0, which regenerated metadata gets.
+    metadata_before = get_latest_metadata(instance, table_path)
+    assert metadata_before["default-spec-id"] != 0, metadata_before["partition-specs"]
+
     expected_ids = "0\n3\n4\n"
     assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == expected_ids
 
@@ -381,6 +392,14 @@ def test_optimize_position_delete_other_partition_spec(started_cluster_iceberg_w
     assert "POSITION_DELETE" not in instance.query(
         f"SELECT content FROM system.iceberg_files WHERE database = currentDatabase() AND table = '{TABLE_NAME}'"
     )
+
+    metadata_after = get_latest_metadata(instance, table_path)
+    changed = {
+        key: (metadata_before[key], metadata_after.get(key))
+        for key in ("partition-specs", "default-spec-id", "last-partition-id")
+        if metadata_after.get(key) != metadata_before[key]
+    }
+    assert not changed, changed
 
 
 def test_optimize_refuses_partition_tuple_of_another_arity(started_cluster_iceberg_with_spark):
@@ -412,10 +431,7 @@ def test_optimize_refuses_partition_tuple_of_another_arity(started_cluster_icebe
     create_iceberg_table("local", instance, TABLE_NAME, started_cluster_iceberg_with_spark)
 
     # Arming condition: the default spec has no fields, while the old data files carry a one-value tuple.
-    latest_metadata = instance.exec_in_container(
-        ["bash", "-c", f"ls -v {table_path}/metadata/v*.metadata.json | tail -1"]
-    ).strip()
-    metadata = json.loads(instance.exec_in_container(["cat", latest_metadata]))
+    metadata = get_latest_metadata(instance, table_path)
     default_spec = [s for s in metadata["partition-specs"] if s["spec-id"] == metadata["default-spec-id"]]
     assert len(default_spec) == 1 and default_spec[0]["fields"] == [], metadata["partition-specs"]
     data_file_partitions = sorted(
