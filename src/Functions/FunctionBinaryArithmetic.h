@@ -619,8 +619,8 @@ struct BinaryOperationImpl : BinaryOperation<A, B, Op, ResultType, can_have_divi
 
 /**
  * Binary operations with Decimals (either Decimal OP Decimal or Decimal Op Float) need to scale the args correctly.
- *  - + (plus), - (minus), * (multiply), least and greatest operations scale one of the args (which scale factor is not 1).
- *    The resulting scale is either left or the right scale.
+ *  - + (plus), - (minus), * (multiply), % (modulo, positiveModulo), least and greatest operations scale one of the args
+ *    (which scale factor is not 1). The resulting scale is either left or the right scale.
  *  - / (divide) operation scales the first argument.
  *    The resulting scale is the first one's.
  */
@@ -699,6 +699,18 @@ public:
             });
             return;
         }
+        else if constexpr (is_modulo)
+        {
+            processWithRightNullmapImpl<op_case>(a, b, c, size, right_nullmap, [&scale_a, &scale_b](const auto & left, const auto & right)
+            {
+                if (scale_a != 1)
+                    return applyScaled<true>(castToNative(left), castToNative(right), scale_a);
+                if (scale_b != 1)
+                    return applyScaled<false>(castToNative(left), castToNative(right), scale_b);
+                return apply(castToNative(left), castToNative(right));
+            });
+            return;
+        }
 
         processWithRightNullmapImpl<op_case>(
             a, b, c, size, right_nullmap,
@@ -714,7 +726,7 @@ public:
     {
         if constexpr (is_division && is_decimal_b)
             return applyScaledDiv<is_decimal_a>(castToNative(a), b, scale_a);
-        else if constexpr (is_plus_minus_compare)
+        else if constexpr (is_plus_minus_compare || is_modulo)
         {
             if (scale_a != 1)
                 return applyScaled<true>(castToNative(a), castToNative(b), scale_a);
@@ -766,6 +778,8 @@ private:
     static constexpr bool is_int_division = IsOperation<Operation>::int_div ||
                                             IsOperation<Operation>::int_div_or_zero;
     static constexpr bool is_division = is_float_division || is_int_division;
+    static constexpr bool is_modulo =       IsOperation<Operation>::modulo ||
+                                            IsOperation<Operation>::positive_modulo;
     static constexpr bool is_compare =      IsOperation<Operation>::least ||
                                             IsOperation<Operation>::greatest;
     static constexpr bool is_plus_minus_compare = is_plus_minus || is_compare;
@@ -831,7 +845,7 @@ private:
     template <bool scale_left, bool may_check_overflow = true>
     static NO_SANITIZE_UNDEFINED NativeResultType applyScaled(NativeResultType a, NativeResultType b, NativeResultType scale)
     {
-        static_assert(is_plus_minus_compare || is_multiply);
+        static_assert(is_plus_minus_compare || is_multiply || is_modulo);
         NativeResultType res;
 
         if constexpr (check_overflow && may_check_overflow)
@@ -2248,9 +2262,12 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
 
         const ResultDataType type = decimalResultType<is_multiply, is_division>(left, right);
 
+        /// `modulo` and `positiveModulo` take the result scale of a division but rescale their operands like `plus`.
+        constexpr bool scales_as_division = is_division && !is_modulo && !is_positive_modulo;
+
         const ResultType scale_a = [&]
         {
-            if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
+            if constexpr (IsDataTypeDecimal<RightDataType> && scales_as_division)
                 return right.getScaleMultiplier(); // the division impl uses only the scale_a
             else
             {
@@ -2270,7 +2287,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
                 if constexpr (is_multiply)
                     return ResultType{1};
                 else
-                    return type.scaleFactorFor(right, is_division);
+                    return type.scaleFactorFor(right, scales_as_division);
         }();
 
         /// non-vector result
