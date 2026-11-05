@@ -1319,6 +1319,13 @@ static QueryTreeNodePtr buildNumericEquality(
     const QueryTreeNodePtr & left_argument,
     const QueryTreeNodePtr & right_argument)
 {
+    if (left_argument->getResultType()->onlyNull() || right_argument->getResultType()->onlyNull())
+    {
+        auto equals_function = std::make_shared<FunctionNode>("equals");
+        equals_function->getArguments().getNodes() = {left_argument, right_argument};
+        return equals_function;
+    }
+
     const auto left_type = removeLowCardinalityAndNullable(left_argument->getResultType());
     const auto right_type = removeLowCardinalityAndNullable(right_argument->getResultType());
     const bool left_is_float = isFloat(left_type);
@@ -1340,18 +1347,23 @@ static QueryTreeNodePtr buildNumericEquality(
     auto converted_float = std::make_shared<FunctionNode>("accurateCastOrNull");
     converted_float->getArguments().getNodes() = {float_argument, std::move(exact_type_name)};
 
-    auto float_type_name = std::make_shared<ConstantNode>(float_type->getName(), std::make_shared<DataTypeString>());
+    auto nullable_float_type = makeNullable(float_type);
+    auto float_type_name = std::make_shared<ConstantNode>(nullable_float_type->getName(), std::make_shared<DataTypeString>());
     auto round_trip = std::make_shared<FunctionNode>("CAST");
     round_trip->getArguments().getNodes() = {converted_float, std::move(float_type_name)};
 
     auto round_trip_equals = std::make_shared<FunctionNode>("equals");
     round_trip_equals->getArguments().getNodes() = {float_argument, std::move(round_trip)};
+    auto round_trip_matches = std::make_shared<FunctionNode>("ifNull");
+    round_trip_matches->getArguments().getNodes() = {std::move(round_trip_equals), std::make_shared<ConstantNode>(Field{0u})};
 
     auto exact_equals = std::make_shared<FunctionNode>("equals");
     exact_equals->getArguments().getNodes() = {exact_argument, std::move(converted_float)};
+    auto exact_matches = std::make_shared<FunctionNode>("ifNull");
+    exact_matches->getArguments().getNodes() = {std::move(exact_equals), std::make_shared<ConstantNode>(Field{0u})};
 
     auto result = std::make_shared<FunctionNode>("and");
-    result->getArguments().getNodes() = {std::move(round_trip_equals), std::move(exact_equals)};
+    result->getArguments().getNodes() = {std::move(round_trip_matches), std::move(exact_matches)};
     return result;
 }
 

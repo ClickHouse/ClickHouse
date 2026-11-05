@@ -59,3 +59,13 @@ SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 1;
 SELECT x IN (y, 0.5), x NOT IN (y, 0.5)
 FROM values('x Nullable(Int64), y Nullable(Float64)', (NULL, 0.5))
 SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 0;
+
+SELECT x IN (y, NULL), x NOT IN (y, NULL)
+FROM values('x Float64, y Int64', (1., 1), (1.5, 1))
+ORDER BY y, x
+SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 0;
+
+SELECT x IN (y, NULL), x NOT IN (y, NULL)
+FROM values('x Nullable(Float64), y Int64', (NULL, 1), (1., 1), (1.5, 1))
+ORDER BY isNull(x), x
+SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 1;
