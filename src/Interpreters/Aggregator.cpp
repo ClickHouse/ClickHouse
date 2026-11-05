@@ -2218,6 +2218,9 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
     }
 #endif
 
+    /// Functions of the same `LowCardinality` argument share its used values.
+    std::vector<std::pair<const IColumn *, ColumnPtr>> low_cardinality_values;
+
     /// Adding values
     for (size_t i = 0; i < aggregate_functions.size(); ++i)
     {
@@ -2226,7 +2229,23 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
         if (use_compiled_functions && is_aggregate_function_compiled[i])
             continue;
 #endif
-        addBatchSinglePlace(row_begin, row_end, inst, res + inst->state_offset, arena);
+        if (inst->has_low_cardinality_argument)
+        {
+            const IColumn * argument = inst->batch_arguments[0];
+            auto it = std::find_if(
+                low_cardinality_values.begin(), low_cardinality_values.end(), [&](const auto & entry) { return entry.first == argument; });
+            if (it == low_cardinality_values.end())
+                it = low_cardinality_values.emplace(
+                    low_cardinality_values.end(),
+                    argument,
+                    assert_cast<const ColumnLowCardinality &>(*argument).getMinimalDictionary(row_begin, row_end - row_begin));
+
+            /// The used values in the order of their first occurrence: the state is the same as after adding every row.
+            const IColumn * values = it->second.get();
+            inst->batch_that->addBatchSinglePlace(0, values->size(), res + inst->state_offset, &values, arena);
+        }
+        else
+            addBatchSinglePlace(row_begin, row_end, inst, res + inst->state_offset, arena);
     }
 }
 
@@ -2271,15 +2290,7 @@ void Aggregator::addBatchSinglePlace(
     AggregateDataPtr place,
     Arena * arena)
 {
-    if (inst->has_low_cardinality_argument)
-    {
-        /// The used values in the order of their first occurrence: the state is the same as after adding every row.
-        auto used = assert_cast<const ColumnLowCardinality &>(*inst->batch_arguments[0])
-                        .getMinimalDictionaryEncodedColumn(row_begin, row_end - row_begin);
-        const IColumn * values = used.dictionary.get();
-        inst->batch_that->addBatchSinglePlace(0, values->size(), place, &values, arena);
-    }
-    else if (inst->offsets)
+    if (inst->offsets)
         inst->batch_that->addBatchSinglePlace(
             inst->offsets[static_cast<ssize_t>(row_begin) - 1],
             inst->offsets[static_cast<ssize_t>(row_end) - 1],

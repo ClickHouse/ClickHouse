@@ -13,18 +13,18 @@ DROP TABLE IF EXISTS t_lc;
 DROP TABLE IF EXISTS t_mem;
 DROP TABLE IF EXISTS t_plain;
 
+-- Only t_lc is a MergeTree table: it is the only one that needs a part-wide dictionary.
+CREATE TABLE t_plain (id UInt64, s String, n Nullable(String), u UInt32, fs FixedString(16), iv IntervalSecond) ENGINE = Memory;
 CREATE TABLE t_lc (id UInt64, s LowCardinality(String), n LowCardinality(Nullable(String)), u LowCardinality(UInt32),
                    fs LowCardinality(FixedString(16)), iv LowCardinality(IntervalSecond))
-    ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 100;
+    ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1000, index_granularity_bytes = '10Mi';
 CREATE TABLE t_mem AS t_lc ENGINE = Memory;
-CREATE TABLE t_plain (id UInt64, s String, n Nullable(String), u UInt32, fs FixedString(16), iv IntervalSecond)
-    ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 100;
 
 -- s: 3000 values, n: NULL in every third row, else 700 values, u: 1000, fs: 300, iv: 500; values in scrambled order.
-INSERT INTO t_lc SELECT number, concat('s', toString(number * 7919 % 3000)), if(number % 3 = 0, NULL, concat('n', toString(number * 7919 % 700))),
+INSERT INTO t_plain SELECT number, concat('s', toString(number * 7919 % 3000)), if(number % 3 = 0, NULL, concat('n', toString(number * 7919 % 700))),
     number * 7919 % 1000 * 3, toFixedString(concat('fs', toString(number * 7919 % 300)), 16), toIntervalSecond(number * 7919 % 500)
     FROM numbers(30000) SETTINGS max_insert_threads = 1;
-INSERT INTO t_plain SELECT * FROM t_lc SETTINGS max_insert_threads = 1;
+INSERT INTO t_lc SELECT * FROM t_plain SETTINGS max_insert_threads = 1;
 -- Three blocks with their own dictionaries and different values of `s`.
 INSERT INTO t_mem SELECT * FROM t_plain WHERE id * 7919 % 3000 < 1000 SETTINGS max_insert_threads = 1;
 INSERT INTO t_mem SELECT * FROM t_plain WHERE id * 7919 % 3000 >= 1000 AND id * 7919 % 3000 < 2000 SETTINGS max_insert_threads = 1;
@@ -61,12 +61,12 @@ SELECT 'mem', 'all', toString((SELECT * FROM agg_mem(m = 1, r = 0))) = toString(
 SELECT 'mem', '% 3', toString((SELECT * FROM agg_mem(m = 3, r = 0))) = toString((SELECT * FROM agg_plain(m = 3, r = 0))) SETTINGS max_block_size = 65505;
 
 -- The values themselves.
-SELECT 's', uniqExact(s), min(s), max(s), length(groupUniqArray(s)) FROM t_lc;
-SELECT 'n', uniqExact(n), min(n), max(n), length(groupUniqArray(n)) FROM t_lc;
-SELECT 'n, only NULL', uniqExact(n), min(n), max(n), length(groupUniqArray(n)) FROM t_lc WHERE id % 3 = 0;
-SELECT 'u', uniqExact(u), min(u), max(u), length(groupUniqArray(u)) FROM t_lc;
-SELECT 'fs', uniqExact(fs), min(fs), max(fs), length(groupUniqArray(fs)) FROM t_lc;
-SELECT 'iv', uniqExact(iv), min(iv), max(iv), length(groupUniqArray(iv)) FROM t_lc;
+SELECT 's', uniqExact(s), min(s), max(s), length(groupUniqArray(s)) FROM t_mem;
+SELECT 'n', uniqExact(n), min(n), max(n), length(groupUniqArray(n)) FROM t_mem;
+SELECT 'n, only NULL', uniqExact(n), min(n), max(n), length(groupUniqArray(n)) FROM t_mem WHERE id % 3 = 0;
+SELECT 'u', uniqExact(u), min(u), max(u), length(groupUniqArray(u)) FROM t_mem;
+SELECT 'fs', uniqExact(fs), min(fs), max(fs), length(groupUniqArray(fs)) FROM t_mem;
+SELECT 'iv', uniqExact(iv), min(iv), max(iv), length(groupUniqArray(iv)) FROM t_mem;
 
 -- groupUniqArray(N) keeps the first N distinct values in row order: the used values must be added in the order of their first occurrence.
 SELECT 'limit', 65505, toString((SELECT groupUniqArray(10)(s), groupUniqArray(10)(n), groupUniqArray(10)(fs) FROM t_lc))
@@ -81,10 +81,48 @@ SELECT 'uniqCombined 4096',
     = (SELECT uniqCombined(s), uniqCombined64(s) FROM (SELECT toString(number % 4096) AS s FROM numbers(12288)))
     SETTINGS max_block_size = 65505;
 
+-- One block where the default value or NULL first appears after every other value, or never. Each line compares
+-- several functions (the Aggregator), then shows a lone uniqExact (the radix partitioned uniqExact).
+SELECT 'default last',
+    (SELECT uniqExact(s), min(s), max(s), groupUniqArray(101)(s), groupUniqArray(100)(s) FROM (SELECT toLowCardinality(if(number = 99999, '', concat('k', toString(number % 100)))) AS s FROM numbers(100000)))
+    = (SELECT uniqExact(s), min(s), max(s), groupUniqArray(101)(s), groupUniqArray(100)(s) FROM (SELECT if(number = 99999, '', concat('k', toString(number % 100))) AS s FROM numbers(100000))),
+    (SELECT uniqExact(s) FROM (SELECT toLowCardinality(if(number = 99999, '', concat('k', toString(number % 100)))) AS s FROM numbers(100000)))
+    SETTINGS max_block_size = 100000, optimize_uniq_exact_radix_partitioning = 1;
+SELECT 'default unused',
+    (SELECT uniqExact(s), min(s), max(s), groupUniqArray(101)(s) FROM (SELECT toLowCardinality(concat('k', toString(number % 100))) AS s FROM numbers(100000)))
+    = (SELECT uniqExact(s), min(s), max(s), groupUniqArray(101)(s) FROM (SELECT concat('k', toString(number % 100)) AS s FROM numbers(100000))),
+    (SELECT uniqExact(s) FROM (SELECT toLowCardinality(concat('k', toString(number % 100))) AS s FROM numbers(100000)))
+    SETTINGS max_block_size = 100000, optimize_uniq_exact_radix_partitioning = 1;
+SELECT 'NULL and default last',
+    toString((SELECT uniqExact(s), min(s), max(s), groupUniqArray(101)(s) FROM (SELECT toLowCardinality(if(number = 99998, NULL, if(number = 99999, '', concat('k', toString(number % 100))))) AS s FROM numbers(100000))))
+    = toString((SELECT uniqExact(s), min(s), max(s), groupUniqArray(101)(s) FROM (SELECT if(number = 99998, NULL, if(number = 99999, '', concat('k', toString(number % 100)))) AS s FROM numbers(100000)))),
+    (SELECT uniqExact(s) FROM (SELECT toLowCardinality(if(number = 99998, NULL, if(number = 99999, '', concat('k', toString(number % 100))))) AS s FROM numbers(100000)))
+    SETTINGS max_block_size = 100000, optimize_uniq_exact_radix_partitioning = 1;
+SELECT 'NULL first, default last',
+    toString((SELECT uniqExact(s), min(s), max(s), groupUniqArray(101)(s) FROM (SELECT toLowCardinality(if(number % 3 = 0, NULL, if(number = 99998, '', concat('k', toString(number % 100))))) AS s FROM numbers(100000))))
+    = toString((SELECT uniqExact(s), min(s), max(s), groupUniqArray(101)(s) FROM (SELECT if(number % 3 = 0, NULL, if(number = 99998, '', concat('k', toString(number % 100)))) AS s FROM numbers(100000)))),
+    (SELECT uniqExact(s) FROM (SELECT toLowCardinality(if(number % 3 = 0, NULL, if(number = 99998, '', concat('k', toString(number % 100))))) AS s FROM numbers(100000)))
+    SETTINGS max_block_size = 100000, optimize_uniq_exact_radix_partitioning = 1;
+SELECT 'only NULL and default',
+    toString((SELECT uniqExact(s), min(s), max(s), groupUniqArray(s) FROM (SELECT toLowCardinality(if(number % 2 = 0, NULL, '')) AS s FROM numbers(100000))))
+    = toString((SELECT uniqExact(s), min(s), max(s), groupUniqArray(s) FROM (SELECT if(number % 2 = 0, NULL, '') AS s FROM numbers(100000)))),
+    (SELECT uniqExact(s) FROM (SELECT toLowCardinality(if(number % 2 = 0, NULL, '')) AS s FROM numbers(100000)))
+    SETTINGS max_block_size = 100000, optimize_uniq_exact_radix_partitioning = 1;
+SELECT 'only default',
+    (SELECT uniqExact(s), min(s), max(s), groupUniqArray(s) FROM (SELECT toLowCardinality(repeat('x', number % 1)) AS s FROM numbers(100000)))
+    = (SELECT uniqExact(s), min(s), max(s), groupUniqArray(s) FROM (SELECT repeat('x', number % 1) AS s FROM numbers(100000))),
+    (SELECT uniqExact(s) FROM (SELECT toLowCardinality(repeat('x', number % 1)) AS s FROM numbers(100000)))
+    SETTINGS max_block_size = 100000, optimize_uniq_exact_radix_partitioning = 1;
+
+-- A lone uniqExact of blocks that use a third of their dictionaries.
+SELECT 'radix % 3', (SELECT uniqExact(s) FROM t_mem WHERE id % 3 = 0) = (SELECT uniqExact(s) FROM t_plain WHERE id % 3 = 0),
+    (SELECT uniqExact(fs) FROM t_mem WHERE id % 3 = 0) = (SELECT uniqExact(fs) FROM t_plain WHERE id % 3 = 0)
+    SETTINGS optimize_uniq_exact_radix_partitioning = 1;
+
 -- Combinators and GROUP BY keep adding every row.
-SELECT 'if', (SELECT uniqExactIf(s, id % 2 = 0) FROM t_lc) = (SELECT uniqExactIf(s, id % 2 = 0) FROM t_plain);
-SELECT 'state', (SELECT finalizeAggregation(uniqExactState(s)) FROM t_lc) = (SELECT finalizeAggregation(uniqExactState(s)) FROM t_plain);
-SELECT 'group by', (SELECT groupArray((k, c)) FROM (SELECT id % 3 AS k, uniqExact(s) AS c FROM t_lc GROUP BY k ORDER BY k))
+SELECT 'if', (SELECT uniqExactIf(s, id % 2 = 0) FROM t_mem) = (SELECT uniqExactIf(s, id % 2 = 0) FROM t_plain);
+SELECT 'state', (SELECT finalizeAggregation(uniqExactState(s)) FROM t_mem) = (SELECT finalizeAggregation(uniqExactState(s)) FROM t_plain);
+SELECT 'group by', (SELECT groupArray((k, c)) FROM (SELECT id % 3 AS k, uniqExact(s) AS c FROM t_mem GROUP BY k ORDER BY k))
     = (SELECT groupArray((k, c)) FROM (SELECT id % 3 AS k, uniqExact(s) AS c FROM t_plain GROUP BY k ORDER BY k));
 
 DROP VIEW agg_lc;
