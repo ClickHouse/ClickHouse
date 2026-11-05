@@ -50,6 +50,19 @@ size_t convexHullCompressionThreshold(size_t size_after_compression)
 
 using CartesianMultiPoint = boost::geometry::model::multi_point<CartesianPoint, std::vector, AllocatorWithMemoryTracking>;
 
+/// The hull comparator treats `+0.0` and `-0.0` as equal, so the sign of a zero coordinate in the
+/// result would depend on which of the equal points comes first. Adding `+0.0` maps `-0.0` to `+0.0`
+/// and keeps every other finite value, which makes the result and the state independent of the order.
+template <typename Iterator>
+void canonicalizeSignedZeros(Iterator begin, Iterator end)
+{
+    for (auto it = begin; it != end; ++it)
+    {
+        it->template set<0>(it->template get<0>() + 0.0);
+        it->template set<1>(it->template get<1>() + 0.0);
+    }
+}
+
 struct GroupConvexHullData
 {
     CartesianMultiPoint points;
@@ -235,7 +248,10 @@ public:
             const size_t appended = appendConvexHullPointsBatchFromColumn(
                 *value.column, value.row_num, value.type, data.points, cursor, CONVEX_HULL_INGESTION_BATCH_SIZE, name);
             if (appended != 0)
+            {
+                canonicalizeSignedZeros(data.points.end() - appended, data.points.end());
                 data.finishAdd(name);
+            }
         }
     }
 
@@ -350,7 +366,7 @@ public:
                     getName(),
                     x,
                     y);
-            data.points.push_back(CartesianPoint(x, y));
+            data.points.push_back(CartesianPoint(x + 0.0, y + 0.0));
         }
 
         data.size_after_compression = static_cast<size_t>(size_after_compression);
