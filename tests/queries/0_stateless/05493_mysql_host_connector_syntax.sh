@@ -33,6 +33,10 @@ check "SELECT * FROM mysql('127.0.0.1\\0.example.com:1', 'db', 't', 'u', 'p')"
 # A plain host is passed through and fails to connect as usual.
 check "SELECT * FROM mysql('127.0.0.1:1', 'db', 't', 'u', 'p')"
 
+# `localhost` uses TCP to the given port, not the client library's default Unix socket.
+$CLICKHOUSE_CLIENT --send_logs_level=fatal -q "SELECT * FROM mysql('localhost:1', 'db', 't', 'u', 'p')" 2>&1 \
+    | grep -q -F "through socket" && echo "localhost: unix socket" || echo "localhost: tcp"
+
 # The `MySQL` database engine and table engine use the same connection pool.
 check "CREATE DATABASE ${CLICKHOUSE_DATABASE}_mysql ENGINE = MySQL('socket=/nonexistent/mysqld.sock', 'db', 'u', 'p')"
 check "CREATE TABLE ${CLICKHOUSE_DATABASE}.t_mysql (x UInt32) ENGINE = MySQL('socket=/nonexistent/mysqld.sock', 'db', 't', 'u', 'p'); SELECT * FROM ${CLICKHOUSE_DATABASE}.t_mysql"
