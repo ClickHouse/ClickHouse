@@ -715,6 +715,7 @@ def run_fuzz_job(check_name: str):
             logging.info("Found %d changed files to guide fuzzing", len(changed_files))
         f.write("\n".join(changed_files))
 
+    HUNG_SERVER_LOG.unlink(missing_ok=True)
     Shell.check(command=run_command, verbose=True)
 
     # Fix file ownership after running docker as root
