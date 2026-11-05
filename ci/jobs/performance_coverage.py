@@ -125,7 +125,7 @@ def run_tests(paths, output, deadline, warm_runs, manifest, save_manifest, clean
             "--jemalloc-purge",
             "disabled",
             "--prewarm-max-query-seconds",
-            "600",
+            "1800",
         ]
         sw = Utils.Stopwatch()
         state["status"] = "running"

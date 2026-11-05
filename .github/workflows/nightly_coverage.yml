@@ -11,6 +11,10 @@ on:
         type: choice
         options: ['all', 'performance']
         default: all
+      performance_shards:
+        description: With suite=performance: all or comma-separated shard numbers, e.g. 4,13
+        required: false
+        default: all
 
 concurrency:
   group: ${{ github.workflow }}

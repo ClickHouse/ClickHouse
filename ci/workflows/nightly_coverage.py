@@ -10,15 +10,32 @@ def filter_coverage_jobs(job_name):
     if not info.is_dispatch_event:
         return False, ""
     suite = info.get_workflow_input_value("suite")
+    shards = info.get_workflow_input_value("performance_shards")
+    # Older dispatches predate this optional input.
+    shards = "all" if shards is None else shards.strip()
     if suite == "all":
+        if shards != "all":
+            raise ValueError("performance_shards requires suite=performance")
         return False, ""
     if suite != "performance":
         raise ValueError(f"Unknown coverage suite: {suite!r}")
+    jobs = JobConfigs.performance_coverage_jobs
+    if shards == "all":
+        selected_shards = set(range(1, len(jobs) + 1))
+    else:
+        parts = [part.strip() for part in shards.split(",")]
+        if not all(part.isascii() and part.isdecimal() for part in parts):
+            raise ValueError(
+                "performance_shards must be 'all' or comma-separated shard numbers"
+            )
+        selected_shards = {int(part) for part in parts}
+        if not selected_shards <= set(range(1, len(jobs) + 1)):
+            raise ValueError(f"performance_shards must be between 1 and {len(jobs)}")
     selected = {
         JobConfigs.coverage_build_jobs[1].name,
-        *(job.name for job in JobConfigs.performance_coverage_jobs),
+        *(jobs[shard - 1].name for shard in selected_shards),
     }
-    return job_name not in selected, "Only performance coverage was requested"
+    return job_name not in selected, "Outside the requested performance coverage shards"
 
 
 workflow = Workflow.Config(
@@ -49,6 +66,12 @@ workflow = Workflow.Config(
             is_required=True,
             default_value="all",
             options=["all", "performance"],
+        ),
+        Workflow.Config.InputConfig(
+            name="performance_shards",
+            description="With suite=performance: all or comma-separated shard numbers, e.g. 4,13",
+            is_required=False,
+            default_value="all",
         ),
     ],
     workflow_filter_hooks=[filter_coverage_jobs],

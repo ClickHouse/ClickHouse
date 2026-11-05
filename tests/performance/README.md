@@ -208,7 +208,7 @@ still run under coverage.
 
 Coverage setup and fill statements have a 30-minute execution limit. The client
 socket timeout is one minute longer than the larger of that limit and the query
-execution limit. The CI wrapper allows 10 minutes per query statement (unless
+execution limit. The CI wrapper allows 30 minutes per query statement (unless
 the XML test specifies `max_query_seconds`) and six hours per shard, including
 a 20-minute export reserve. Each test can use the remaining collection budget;
 there is no separate one-hour limit for an entire XML file.
@@ -219,6 +219,18 @@ workflow with `suite=performance` (the scheduled run still collects all suites):
 ```bash
 gh workflow run nightly_coverage.yml --ref <branch> -f suite=performance
 ```
+
+To retry only missing shards on a corrected branch revision, keep the same
+16-way assignment and specify their numbers:
+
+```bash
+gh workflow run nightly_coverage.yml --ref <branch> -f suite=performance -f performance_shards=4,13
+```
+
+Successful shards publish independently and do not need to be rerun. Combine
+only compatible snapshots: check the binary commit, query hashes, settings, and
+completion manifests. GitHub's normal failed-job rerun uses the original commit,
+so it does not pick up collector fixes pushed afterward.
 
 The collector reuses `perf.py` for parameter expansion, query groups, settings,
 setup and teardown. It runs every expanded SQL query in each non-`long` test,
