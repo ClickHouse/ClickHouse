@@ -90,3 +90,7 @@ alias-backed-dep part columns after merge	p	d
 alias-backed-dep parent path after merge	1	72
 alias-backed-dep forced after merge	1	72
 alias-backed-dep rebuilt not merged	0	1
+joinget-dep read after drift	1	71
+joinget-dep read after drift	2	91
+joinget-dep force projection	1	71
+joinget-dep force projection	2	91

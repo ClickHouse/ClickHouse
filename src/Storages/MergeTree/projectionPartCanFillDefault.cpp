@@ -65,11 +65,15 @@ bool canFillDefault(
             || projection.metadata->virtuals.has(identifier))
             continue;
 
+        /// Not a column: a dictionary or `Join` table named by a bare identifier (`dictGet(dict, ...)`),
+        /// which the reader skips as well.
+        if (!parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, identifier))
+            continue;
+
         /// Otherwise fillable only as a late-add: a stored table column the parent part lacks too, still
         /// required by the projection, whose own default is fillable. A column the parent part stores
         /// would be filled here with a value that differs from the parent read.
-        if (!parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier)
-            || parent_part.tryGetColumn(identifier)
+        if (parent_part.tryGetColumn(identifier)
             || !projection_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier)
             || !canFillDefault(projection_part, parent_part, projection, parent_table_columns, identifier, resolving, known_fillable))
             return false;

@@ -737,3 +737,34 @@ WHERE database = currentDatabase() AND table = 't_proj_alias_backed_dep'
   AND event_type = 'MergeParts';
 
 DROP TABLE t_proj_alias_backed_dep;
+
+-- a default may name a `Join` table or a dictionary by a bare identifier, which is not a column and is
+-- never read from a part, so it must not make an otherwise fillable default unfillable
+DROP TABLE IF EXISTS t_proj_joinget_source;
+DROP TABLE IF EXISTS t_proj_joinget_default_dep;
+
+CREATE TABLE t_proj_joinget_source (id UInt64, value UInt64) ENGINE = Join(ANY, LEFT, id);
+INSERT INTO t_proj_joinget_source VALUES (7, 70), (9, 90);
+
+CREATE TABLE t_proj_joinget_default_dep
+(
+    a UInt64,
+    id UInt64,
+    c UInt64 ALIAS a + 1,
+    PROJECTION p (SELECT a, id, c ORDER BY a)
+)
+ENGINE = MergeTree ORDER BY a;
+
+INSERT INTO t_proj_joinget_default_dep (a, id) VALUES (1, 7), (2, 9);
+
+ALTER TABLE t_proj_joinget_default_dep ADD COLUMN d UInt64 DEFAULT joinGet({CLICKHOUSE_DATABASE:Identifier}.t_proj_joinget_source, 'value', id);
+ALTER TABLE t_proj_joinget_default_dep MODIFY COLUMN c UInt64 ALIAS d + 1;
+
+-- c = d + 1 = 71, 91, filled from the projection part, which stores `id`
+SELECT 'joinget-dep read after drift', a, c FROM t_proj_joinget_default_dep ORDER BY a;
+
+SELECT 'joinget-dep force projection', a, c FROM t_proj_joinget_default_dep ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+DROP TABLE t_proj_joinget_default_dep;
+DROP TABLE t_proj_joinget_source;
