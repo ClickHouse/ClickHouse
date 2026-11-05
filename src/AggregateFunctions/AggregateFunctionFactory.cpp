@@ -42,6 +42,12 @@ void AggregateFunctionFactory::registerFunction(const String & name, Value creat
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: "
             "the aggregate function {} has been provided a null constructor", name);
 
+    /// `get` applies the `Null` combinator to a function that is not a window function from the types without `LowCardinality`,
+    /// so only a window function can be created with them (see `AggregateFunctionProperties::created_with_low_cardinality_types`).
+    if (creator_with_properties.properties.created_with_low_cardinality_types && !creator_with_properties.properties.is_window_function)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: "
+            "the aggregate function {} is created with LowCardinality types but is not a window function", name);
+
     if (!aggregate_functions.emplace(name, creator_with_properties).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory: the aggregate function name '{}' is not unique",
             name);

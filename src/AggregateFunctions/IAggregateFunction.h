@@ -1198,8 +1198,9 @@ struct AggregateFunctionProperties
 
     /** The function is created from the argument types as they are written, `LowCardinality` included, so it knows how the
       * column is stored. Like every aggregate function, it declares and receives its arguments without `LowCardinality`,
-      * and so do the combinators around it. Example: `estimateCompressionRatio`, whose result depends on how the data is
-      * stored.
+      * and so do the combinators around it. Only together with `is_window_function`: the factory applies the `Null`
+      * combinator to the other functions from the types without `LowCardinality`, and the registration rejects the
+      * combination. Example: `estimateCompressionRatio`, whose result depends on how the data is stored.
       */
     bool created_with_low_cardinality_types = false;
 };
