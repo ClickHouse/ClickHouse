@@ -371,7 +371,8 @@ public:
     /// Primary key and offset conditions, then the skip indexes in `skip_index_order` (declaration order when null), then the
     /// disjunction merge. Calls `get_part_for_skip_indexes` once, only when skip indexes run, inside the
     /// `FilteringMarksWithSecondaryKeys` metric scope. Per-index counters go to `skip_index_stats` (the caller's slice of
-    /// `IndexAnalysisStats::skip_indexes`, by position in the order). Returns whether a skip index ran.
+    /// `IndexAnalysisStats::skip_indexes`, by position in the order).
+    /// Returns whether a skip index is usable for the part, applied here or deferred to the read.
     static bool analyzeSinglePart(
         const SinglePartIndexAnalysisParams & params,
         const IMergeTreeDataPartInfoForReader & part,
