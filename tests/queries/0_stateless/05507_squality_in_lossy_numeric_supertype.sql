@@ -129,3 +129,14 @@ SELECT x IN (d, f), x NOT IN (d, f)
 FROM values('x UInt256, d Decimal(18, 0), f Float64',
     ('115792089237316195423570985008687907853269984665640564039457584007913129639935', 1, 0.5))
 SETTINGS allow_lossy_numeric_supertype = 1;
+
+SELECT d IN (x, f), d NOT IN (x, f)
+FROM values('x Int64, d Decimal(18, 1), f Float64', (1, 1.0, 0.5), (1, 1.5, 0.5))
+ORDER BY d
+SETTINGS allow_lossy_numeric_supertype = 1;
+
+SELECT d IN (x, f), d NOT IN (x, f)
+FROM values('x UInt256, d Decimal256(0), f Float64',
+    ('9999999999999999999999999999999999999999999999999999999999999999999999999999',
+     '9999999999999999999999999999999999999999999999999999999999999999999999999999', 0.5))
+SETTINGS allow_lossy_numeric_supertype = 1;

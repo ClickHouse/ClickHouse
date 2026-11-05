@@ -1312,9 +1312,10 @@ static QueryTreeNodePtr buildScalarInComparison(
 }
 
 /// Builds exact equality for a heterogeneous numeric pair. Native float/integer comparisons are
-/// already exact. Decimal comparisons normalize integers and integral floats to `Int256`, avoiding
-/// narrower signed intermediates and floating-point decimal scaling. Non-integral floats keep the
-/// regular ClickHouse float/decimal comparison semantics.
+/// already exact. For a `Decimal` and an integer or integral float, check that the `Decimal` is integral
+/// and compare both integer values as `Int256`. This avoids narrower signed intermediates and the
+/// overflow-prone scale multiplication in mixed Decimal/integer comparisons. Non-integral floats
+/// keep the regular ClickHouse float/`Decimal` comparison semantics.
 static QueryTreeNodePtr buildNumericEquality(
     const QueryTreeNodePtr & left_argument,
     const QueryTreeNodePtr & right_argument)
@@ -1346,10 +1347,24 @@ static QueryTreeNodePtr buildNumericEquality(
     auto converted_integer = std::make_shared<FunctionNode>("accurateCastOrNull");
     converted_integer->getArguments().getNodes() = {numeric_argument, std::move(int256_type_name)};
 
-    auto exact_equals = std::make_shared<FunctionNode>("equals");
-    exact_equals->getArguments().getNodes() = {decimal_argument, converted_integer};
-    auto exact_matches = std::make_shared<FunctionNode>("ifNull");
-    exact_matches->getArguments().getNodes() = {std::move(exact_equals), std::make_shared<ConstantNode>(Field{0u})};
+    auto decimal_as_integer = std::make_shared<FunctionNode>("toInt256");
+    decimal_as_integer->getArguments().getNodes().push_back(decimal_argument);
+
+    auto integer_equals = std::make_shared<FunctionNode>("equals");
+    integer_equals->getArguments().getNodes() = {std::move(decimal_as_integer), converted_integer};
+    auto integer_matches = std::make_shared<FunctionNode>("ifNull");
+    integer_matches->getArguments().getNodes() = {std::move(integer_equals), std::make_shared<ConstantNode>(Field{0u})};
+
+    auto truncated_decimal = std::make_shared<FunctionNode>("trunc");
+    truncated_decimal->getArguments().getNodes().push_back(decimal_argument);
+    auto decimal_is_integer = std::make_shared<FunctionNode>("equals");
+    decimal_is_integer->getArguments().getNodes() = {decimal_argument, std::move(truncated_decimal)};
+    auto decimal_is_integer_or_false = std::make_shared<FunctionNode>("ifNull");
+    decimal_is_integer_or_false->getArguments().getNodes()
+        = {std::move(decimal_is_integer), std::make_shared<ConstantNode>(Field{0u})};
+
+    auto exact_matches = std::make_shared<FunctionNode>("and");
+    exact_matches->getArguments().getNodes() = {std::move(decimal_is_integer_or_false), std::move(integer_matches)};
 
     if (isInteger(numeric_type))
         return exact_matches;
