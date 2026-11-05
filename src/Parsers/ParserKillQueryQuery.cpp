@@ -46,6 +46,10 @@ bool ParserKillQueryQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     if (!p_where.ignore(pos, expected) || !p_where_expression.parse(pos, query->where_expression, expected))
         return false;
 
+    /// Parenthesized expressions may contain aliases, which are invalid in KILL WHERE clauses.
+    if (!query->where_expression->tryGetAlias().empty())
+        return false;
+
     if (p_sync.ignore(pos, expected))
         query->sync = true;
     else if (p_async.ignore(pos, expected))
