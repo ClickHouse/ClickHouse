@@ -1621,11 +1621,11 @@ void Reader::prepareBloomFilterCondition()
             return hash;
         };
 
-        auto hash_many = [&](size_t column_idx, const ColumnPtr & column) -> std::optional<std::vector<uint64_t>>
+        auto hash_many = [&](size_t column_idx, const ColumnPtr & column) -> KeyCondition::BloomFilterData::Hashes
         {
             const auto & pair = bf_eligible_columns.at(column_idx);
             if (!pair.has_value())
-                return std::nullopt;
+                return nullptr;
             /// The `bloom_filter_max_set_size` cutoff exists because a large queried set is unlikely to
             /// be ruled out by a probabilistic bloom filter and would make us read many filter blocks
             /// for nothing. The dictionary filter is exact and reads no extra data per value, so that
@@ -1636,11 +1636,18 @@ void Reader::prepareBloomFilterCondition()
             /// set so the dictionary filter can use it, but must not let the bloom filter probe it.
             bool exceeds_bloom_filter_cap = column->size() > options.bloom_filter_max_set_size;
             if (exceeds_bloom_filter_cap && !dict_filter_eligible_columns[column_idx])
-                return std::nullopt;
+                return nullptr;
             const auto & [primitive_idx, descriptor] = *pair;
-            auto hashes = parquetTryHashColumn(column.get(), &descriptor);
-            if (!hashes.has_value())
-                return std::nullopt;
+            auto hashes = format_filter_info->getOrComputeSetHashes(column, parquetHashKind(&descriptor),
+                [&]() -> KeyCondition::BloomFilterData::Hashes
+                {
+                    auto result = parquetTryHashColumn(column.get(), &descriptor);
+                    if (!result.has_value())
+                        return nullptr;
+                    return KeyCondition::BloomFilterData::makeHashes(std::move(*result));
+                });
+            if (!hashes)
+                return nullptr;
 
             PrimitiveColumnInfo & column_info = primitive_columns[primitive_idx];
             column_info.use_bloom_filter = true;
@@ -2487,21 +2494,20 @@ struct DictionaryValueHashes
     /// Whether any of `probes` is among the dictionary's values.
     /// Sorting costs about log2(n) scans, so the first max(8, log2(n)) probes scan the unsorted `hashes`.
     ///
-    /// For a sorted probe sequence - which is what `KeyCondition::prepareBloomFilterData` produces -
-    /// this is an intersection of two sorted sequences rather than a sequence of independent binary
+    /// `probes` are sorted and deduplicated, as `KeyCondition::BloomFilter::findAnyHash` receives them,
+    /// so this is an intersection of two sorted sequences rather than a sequence of independent binary
     /// searches: every probe continues where the previous one stopped. A handful of query constants
     /// then costs a binary search each, while a large probe set degrades to a linear merge of the two
     /// sequences instead of `probes.size()` full-height searches over the whole vector. That matters
     /// because a probe set is not always small: `prepareBloomFilterCondition` deliberately keeps
     /// hashing `IN` sets that are over the bloom filter's cap, so that the exact dictionary filter can
     /// still prune them, which means `findAnyHash` can be called with thousands of probes for one
-    /// column chunk. An out-of-order probe merely restarts the window, so the result does not depend
-    /// on the probes being sorted.
+    /// column chunk.
     bool containsAny(const std::vector<UInt64> & probes)
     {
-        for (UInt64 probe : probes)
-            if (probe == default_value_hash)
-                return true;
+        chassert(std::is_sorted(probes.begin(), probes.end()));
+        if (default_value_hash && std::binary_search(probes.begin(), probes.end(), *default_value_hash))
+            return true;
 
         if (!sorted)
         {
@@ -2516,6 +2522,22 @@ struct DictionaryValueHashes
             }
             std::sort(hashes.begin(), hashes.end());
             sorted = true;
+        }
+
+        /// More probes than dictionary values (a large `IN` set): search the probes for each dictionary
+        /// value instead, so that a row group the dictionary rules out costs a search per dictionary value.
+        if (probes.size() > hashes.size())
+        {
+            auto probe_it = probes.begin();
+            for (UInt64 hash : hashes)
+            {
+                probe_it = std::lower_bound(probe_it, probes.end(), hash);
+                if (probe_it == probes.end())
+                    return false;
+                if (*probe_it == hash)
+                    return true;
+            }
+            return false;
         }
 
         auto it = hashes.begin();

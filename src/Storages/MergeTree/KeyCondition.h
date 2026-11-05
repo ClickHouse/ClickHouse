@@ -97,10 +97,15 @@ public:
 
     struct BloomFilterData
     {
-        using HashesForColumns = std::vector<std::vector<uint64_t>>;
+        /// Never modified, so the hashes of an `IN` set can be shared by the conditions of all files of a query.
+        using Hashes = std::shared_ptr<const std::vector<uint64_t>>;
+        using HashesForColumns = std::vector<Hashes>;
         HashesForColumns hashes_per_column;
         /// Subset of RPNElement::key_columns.
         std::vector<std::size_t> key_columns;
+
+        /// Sorts and deduplicates `hashes`, as `BloomFilter::findAnyHash` receives them.
+        static Hashes makeHashes(std::vector<uint64_t> hashes);
     };
 
     struct BloomFilter
@@ -108,7 +113,7 @@ public:
         virtual ~BloomFilter() = default;
 
         /// `hashes` are the hashes of the query constants of one atom for one column. They are sorted
-        /// and deduplicated (see `prepareBloomFilterData`), which lets an implementation with a sorted
+        /// and deduplicated (see `BloomFilterData::makeHashes`), which lets an implementation with a sorted
         /// value set intersect the two sequences in one pass instead of searching for each hash
         /// separately. Returns true if any of them may be present.
         virtual bool findAnyHash(const std::vector<uint64_t> & hashes) = 0;
@@ -528,8 +533,10 @@ public:
     /// Does the filter condition have any ORs?
     bool hasOnlyConjunctions() const;
 
+    /// `hash_many` returns the hashes of the values of a column of an `IN` set as `BloomFilterData::makeHashes`
+    /// does (sorted and deduplicated), or nullptr if they can't be hashed.
     void prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
-                                std::function<std::optional<std::vector<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many);
+                                std::function<BloomFilterData::Hashes(size_t column_idx, const ColumnPtr &)> hash_many);
 
     /// Split the KeyCondition into single-column conditions AND-ed together, plus a remaining
     /// multi-column KeyCondition.

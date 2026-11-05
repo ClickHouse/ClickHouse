@@ -1,6 +1,8 @@
 #pragma once
 
 #include <exception>
+#include <functional>
+#include <map>
 #include <mutex>
 #include <unordered_set>
 #include <Interpreters/Context_fwd.h>
@@ -193,6 +195,20 @@ private:
     /// For lazily initializing the fields above.
     std::once_flag init_flag;
     std::exception_ptr init_exception;
+
+public:
+    using SetHashes = std::shared_ptr<const std::vector<UInt64>>;
+
+    /// The hashes of the values of a column of an `IN` set of `key_condition`, as a format compares them with
+    /// the values of a file (e.g. the Parquet bloom and dictionary filters), computed by `compute` at most once
+    /// per query. `hash_kind` must identify everything besides the values that the hashes depend on (e.g. the
+    /// physical type of the column in the file). The result of `compute` may be nullptr.
+    SetHashes getOrComputeSetHashes(const ColumnPtr & set_column, const String & hash_kind, const std::function<SetHashes()> & compute);
+
+private:
+    std::mutex set_hashes_mutex;
+    /// The value keeps the column alive, so that its address is not reused by another column.
+    std::map<std::pair<const IColumn *, String>, std::pair<ColumnPtr, SetHashes>> set_hashes;
 
 public:
     /// True if the format may skip rows of the file.
