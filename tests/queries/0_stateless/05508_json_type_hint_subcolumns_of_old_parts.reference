@@ -73,8 +73,43 @@ patch before alter, part merged without it
 2	12345
 1	3
 2	5
+1	3
+2	5
+1	{"a":"777"}
+2	{"a":"12345"}
 patch after alter
 1	4
 2	5
 1	xyz7
 2	12345
+hint added, subcolumns from the cast path
+1	2	2	0	3
+2	1	1	1	0
+3	0	0	1	0
+1	2	2	0	3
+2	1	1	1	0
+3	0	0	1	0
+2
+2
+1
+1
+1	2
+2	1
+1	2	2	0	3
+2	1	1	1	0
+3	0	0	1	0
+1	3
+2	1
+structured hint added in array
+1	[{'k':1}]
+2	[{'k':2,'l':3},{}]
+1	[{'k':1}]
+2	[{'k':2,'l':3},{}]
+1	[(1)]
+2	[(2),(0)]
+1	[(1)]
+2	[(2),(0)]
+parent read by an earlier step
+1	2
+2	5
+2	0

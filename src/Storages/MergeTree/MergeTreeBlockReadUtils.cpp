@@ -125,10 +125,14 @@ bool injectRequiredColumnsRecursively(
         {
             /// Resolved against the serialization the part holds for the column - which it always does, the column
             /// comes from its own list - instead of a newly built one.
-            if (!column_in_storage->isSubcolumn()
-                || (column_in_part->type->tryGetSubcolumnType(
+            std::optional<String> source_of_subcolumn;
+            if (column_in_storage->isSubcolumn())
+                source_of_subcolumn = column_in_part->type->tryGetSubcolumnType(
                         column_in_storage->getSubcolumnName(), data_part_info_for_reader.getSerialization(*column_in_part))
-                    && !isSubcolumnReadFromConvertedColumn(storage_snapshot, *column_in_storage, column_in_part->type)))
+                    ? getSourceOfSubcolumnInPart(storage_snapshot, *column_in_storage, column_in_part->type, alter_conversions)
+                    : column_in_storage->getNameInStorage();
+
+            if (!source_of_subcolumn)
             {
                 add_column(column_name);
                 return true;
@@ -136,9 +140,9 @@ bool injectRequiredColumnsRecursively(
 
             /// Parent is present but the part's (older) type lacks the requested subcolumn (metadata-only
             /// `ALTER MODIFY COLUMN T -> Nullable(T)`), or has a different one under its name (a changed `JSON` type).
-            /// Read the parent so it can be converted and the subcolumn extracted from it, instead of being filled
-            /// from the storage-type default.
-            add_column(column_in_storage->getNameInStorage());
+            /// Read the parent (or its path that has the subcolumn) so it can be converted and the subcolumn extracted
+            /// from it, instead of being filled from the storage-type default.
+            add_column(*source_of_subcolumn);
             return true;
         }
         else if (isTextIndexVirtualColumn(column_name_in_part)
@@ -297,8 +301,7 @@ bool isTypeHintCastFromDynamicPath(
     const IDataType * object_in_storage,
     const IDataType * object_in_part,
     const Substream & substream_in_storage,
-    const Substream & substream_in_part,
-    const DataTypePtr & hinted_type)
+    const Substream & substream_in_part)
 {
     if ((substream_in_storage.type != Substream::ObjectTypedPath && substream_in_storage.type != Substream::ObjectTypedSharedDataPath)
         || substream_in_part.type != Substream::ObjectDynamicPath || substream_in_storage.object_path_name != substream_in_part.object_path_name)
@@ -309,11 +312,45 @@ bool isTypeHintCastFromDynamicPath(
         return false;
 
     /// `objectPathValueIsKept` has checked that both are objects.
-    if (hasTypedPathUnder(typeid_cast<const DataTypeObject &>(*object_in_storage), path)
+    const auto & typed_object_in_storage = typeid_cast<const DataTypeObject &>(*object_in_storage);
+    auto hinted_type = typed_object_in_storage.getTypedPaths().find(path);
+    if (hinted_type == typed_object_in_storage.getTypedPaths().end() || hasTypedPathUnder(typed_object_in_storage, path)
         || hasTypedPathUnder(typeid_cast<const DataTypeObject &>(*object_in_part), path))
         return false;
 
-    return !DataTypeObject::canParseObjectValue(hinted_type);
+    return !DataTypeObject::canParseObjectValue(hinted_type->second);
+}
+
+/// The typed path of a top-level object that has @subcolumn in its value, when the part stores the path as a dynamic path
+/// whose value is cast to the hinted type (see `isTypeHintCastFromDynamicPath`).
+std::optional<String> tryGetCastPathOfSubcolumn(const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part)
+{
+    const auto & type_in_storage = subcolumn.getTypeInStorage();
+    const auto * object_in_storage = typeid_cast<const DataTypeObject *>(type_in_storage.get());
+    if (!object_in_storage || !typeid_cast<const DataTypeObject *>(column_type_in_part.get()))
+        return std::nullopt;
+
+    const auto & subcolumn_name = subcolumn.getSubcolumnName();
+    auto info_in_storage = type_in_storage->tryGetSubcolumnInfo(subcolumn_name);
+    if (!info_in_storage || info_in_storage->substreams_path.size() < 2)
+        return std::nullopt;
+
+    const auto & typed_path = info_in_storage->substreams_path.front();
+    const auto & path = typed_path.object_path_name;
+    if ((typed_path.type != Substream::ObjectTypedPath && typed_path.type != Substream::ObjectTypedSharedDataPath)
+        || !subcolumn_name.starts_with(path + "."))
+        return std::nullopt;
+
+    auto info_in_part = column_type_in_part->tryGetSubcolumnInfo(path);
+    if (!info_in_part || info_in_part->substreams_path.size() != 1
+        || !isTypeHintCastFromDynamicPath(
+            type_in_storage.get(), column_type_in_part.get(), typed_path, info_in_part->substreams_path.front()))
+        return std::nullopt;
+
+    if (!object_in_storage->getTypedPaths().at(path)->tryGetSubcolumnType(subcolumn_name.substr(path.size() + 1)))
+        return std::nullopt;
+
+    return Nested::concatenateName(subcolumn.getNameInStorage(), path);
 }
 
 /// Whether the subcolumn of the column converted from @column_type_in_part can differ from the subcolumn of that name
@@ -351,7 +388,7 @@ bool isSubcolumnChangedByConversion(const NameAndTypePair & subcolumn, const Dat
         if (!ISerialization::isSameSubstream(path_in_storage[i], path_in_part[i]))
             return i != last
                 || !isTypeHintCastFromDynamicPath(
-                       type_of_substream_in_storage, type_of_substream_in_part, path_in_storage[i], path_in_part[i], info_in_storage->data.type);
+                       type_of_substream_in_storage, type_of_substream_in_part, path_in_storage[i], path_in_part[i]);
 
         if (isObjectPathSubstream(path_in_storage[i])
             && !objectPathValueIsKept(type_of_substream_in_storage, type_of_substream_in_part, path_in_storage[i]))
@@ -365,17 +402,56 @@ bool isSubcolumnChangedByConversion(const NameAndTypePair & subcolumn, const Dat
     return !info_in_storage->data.type->equals(*info_in_part->data.type);
 }
 
-}
-
-bool isSubcolumnReadFromConvertedColumn(
-    const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part)
+std::optional<String> getSourceOfSubcolumnForType(const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part)
 {
     if (!isSubcolumnChangedByConversion(subcolumn, column_type_in_part))
-        return false;
+        return std::nullopt;
 
+    if (auto cast_path = tryGetCastPathOfSubcolumn(subcolumn, column_type_in_part))
+        return cast_path;
+
+    return subcolumn.getNameInStorage();
+}
+
+}
+
+std::optional<String> getSourceOfSubcolumnInPart(
+    const StorageSnapshotPtr & storage_snapshot,
+    const NameAndTypePair & subcolumn,
+    const DataTypePtr & column_type_in_part,
+    const AlterConversionsPtr & alter_conversions)
+{
     const auto & metadata = storage_snapshot->metadata;
-    return !std::ranges::contains(metadata->getColumnsRequiredForSortingKey(), subcolumn.name)
-        && !std::ranges::contains(metadata->getColumnsRequiredForPartitionKey(), subcolumn.name);
+    if (!subcolumn.isSubcolumn() || !column_type_in_part
+        || std::ranges::contains(metadata->getColumnsRequiredForSortingKey(), subcolumn.name)
+        || std::ranges::contains(metadata->getColumnsRequiredForPartitionKey(), subcolumn.name))
+        return std::nullopt;
+
+    auto source = getSourceOfSubcolumnForType(subcolumn, column_type_in_part);
+    if (!alter_conversions)
+        return source;
+
+    const auto & column_name = subcolumn.getNameInStorage();
+    for (const auto & patch : alter_conversions->getAllPatches())
+    {
+        if (source == column_name)
+            break;
+
+        auto column_name_in_patch = column_name;
+        const auto & patch_alter_conversions = patch.part->getAlterConversions();
+        if (patch_alter_conversions && patch_alter_conversions->isColumnRenamed(column_name_in_patch))
+            column_name_in_patch = patch_alter_conversions->getColumnOldName(column_name_in_patch);
+
+        auto column_in_patch = patch.part->getColumnsDescription().tryGetPhysical(column_name_in_patch);
+        if (!column_in_patch)
+            continue;
+
+        auto source_in_patch = getSourceOfSubcolumnForType(subcolumn, column_in_patch->type);
+        if (!source || source_in_patch == column_name)
+            source = std::move(source_in_patch);
+    }
+
+    return source;
 }
 
 bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions)
@@ -623,12 +699,13 @@ void addPatchPartsColumns(
     result.patch_columns.resize(patch_parts.size());
 
     const NameSet all_columns_to_read_set(all_columns_to_read.begin(), all_columns_to_read.end());
-    const auto part_alter_conversions = data_part_info_for_reader.getAlterConversions();
+    const auto part_alter_conversions
+        = data_part_info_for_reader.isProjectionPart() ? nullptr : data_part_info_for_reader.getAlterConversions();
 
-    /// The part extracts such a subcolumn from its column after the patches are applied to that column.
+    /// The part extracts such a subcolumn from its source after the patches are applied to the source.
     auto is_extracted_from_patched_column = [&](const NameAndTypePair & column)
     {
-        if (!column.isSubcolumn() || !all_columns_to_read_set.contains(column.getNameInStorage()))
+        if (!column.isSubcolumn())
             return false;
 
         auto column_name_in_part = column.getNameInStorage();
@@ -636,7 +713,11 @@ void addPatchPartsColumns(
             column_name_in_part = part_alter_conversions->getColumnOldName(column_name_in_part);
 
         auto column_in_part = data_part_info_for_reader.getColumns().tryGetByName(column_name_in_part);
-        return column_in_part && isSubcolumnReadFromConvertedColumn(storage_snapshot, column, column_in_part->type);
+        if (!column_in_part)
+            return false;
+
+        auto source = getSourceOfSubcolumnInPart(storage_snapshot, column, column_in_part->type, part_alter_conversions);
+        return source && all_columns_to_read_set.contains(*source);
     };
 
     for (size_t i = 0; i < patch_parts.size(); ++i)

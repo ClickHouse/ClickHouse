@@ -88,15 +88,13 @@ IMergeTreeReader::IMergeTreeReader(
     CurrentMemoryTracker::check();
 
     columns_to_read.reserve(getColumns().size());
-    subcolumns_extracted_from_converted_column.reserve(getColumns().size());
+    sources_of_subcolumns.reserve(getColumns().size());
     serializations.reserve(getColumns().size());
 
     for (const auto & column : getColumns())
     {
-        bool extracted_from_converted_column = isSubcolumnExtractedFromConvertedColumnInPart(column);
-        subcolumns_extracted_from_converted_column.push_back(extracted_from_converted_column);
-
-        auto column_and_serialization_in_part = getColumnAndSerializationInPart(column, extracted_from_converted_column);
+        const auto & source = sources_of_subcolumns.emplace_back(getSourceOfRequiredSubcolumn(column));
+        auto column_and_serialization_in_part = getColumnAndSerializationInPart(column, source.has_value());
         const auto & column_to_read = columns_to_read.emplace_back(std::move(column_and_serialization_in_part.column));
         auto & serialization = column_and_serialization_in_part.serialization;
         if (data_part_info_for_read->isCompactPart()
@@ -211,14 +209,20 @@ bool IMergeTreeReader::isSystemColumnInvalidated(size_t pos) const
 
 bool IMergeTreeReader::isSubcolumnExtractedFromConvertedColumn(size_t pos) const
 {
-    return subcolumns_extracted_from_converted_column[pos];
+    return sources_of_subcolumns[pos].has_value();
 }
 
-bool IMergeTreeReader::isSubcolumnExtractedFromConvertedColumnInPart(const NameAndTypePair & required_column) const
+const String * IMergeTreeReader::tryGetCastPathOfSubcolumn(size_t pos, const NameAndTypePair & requested_column) const
+{
+    const auto & source = sources_of_subcolumns[pos];
+    return source && *source != requested_column.getNameInStorage() ? &*source : nullptr;
+}
+
+std::optional<String> IMergeTreeReader::getSourceOfRequiredSubcolumn(const NameAndTypePair & required_column) const
 {
     /// A patch part provides a subcolumn as stored, or not at all when the patched part extracts it (see `addPatchPartsColumns`).
     if (!required_column.isSubcolumn() || data_part_info_for_read->getPartInfo().isPatch())
-        return false;
+        return std::nullopt;
 
     auto name_in_part = getStorageAndSubcolumnNameInPart(required_column).first;
     DataTypePtr type_in_part;
@@ -228,7 +232,8 @@ bool IMergeTreeReader::isSubcolumnExtractedFromConvertedColumnInPart(const NameA
              missing && !missing->type_name.empty())
         type_in_part = DataTypeFactory::instance().get(missing->type_name);
 
-    return type_in_part && isSubcolumnReadFromConvertedColumn(storage_snapshot, required_column, type_in_part);
+    return DB::getSourceOfSubcolumnInPart(
+        storage_snapshot, required_column, type_in_part, data_part_info_for_read->isProjectionPart() ? nullptr : alter_conversions);
 }
 
 void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
@@ -354,6 +359,17 @@ void IMergeTreeReader::fillMissingColumns(
                 }
             }
 
+            /// A subcolumn extracted from a path of its column that this or an earlier step reads is filled by
+            /// `evaluateMissingDefaults`.
+            NameSet deferred_columns;
+            size_t column_index = 0;
+            for (const auto & column : converted_requested_columns)
+            {
+                const auto * cast_path = tryGetCastPathOfSubcolumn(column_index++, column);
+                if (cast_path && (converted_requested_columns.contains(*cast_path) || previous_step_columns.contains(*cast_path)))
+                    deferred_columns.insert(column.name);
+            }
+
             bool share_nested = (*storage_settings)[MergeTreeSetting::share_nested_offsets];
             DB::fillMissingColumns(
                 res_columns,
@@ -366,7 +382,8 @@ void IMergeTreeReader::fillMissingColumns(
                 storage_snapshot,
                 missing_column_names,
                 share_nested,
-                previous_step_columns);
+                previous_step_columns,
+                deferred_columns);
 
             should_evaluate_missing_defaults
                 = std::any_of(res_columns.begin(), res_columns.end(), [](const auto & column) { return column == nullptr; });
@@ -424,6 +441,38 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         if (res_columns.size() != num_columns)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "invalid number of columns passed to MergeTreeReader::fillMissingColumns. "
                             "Expected {}, got {}", num_columns, res_columns.size());
+
+        /// A subcolumn extracted from a path of its column: the path is read by this step (converted and patched) or an earlier one.
+        auto find_read_column = [&](const String & name) -> std::optional<ColumnWithTypeAndName>
+        {
+            size_t pos = 0;
+            for (const auto & column : original_requested_columns)
+            {
+                if (res_columns[pos] && column.name == name)
+                    return ColumnWithTypeAndName{res_columns[pos], column.type, name};
+                ++pos;
+            }
+            if (const auto * column = additional_columns.findByName(name))
+                return *column;
+            return std::nullopt;
+        };
+
+        auto requested_column = original_requested_columns.begin();
+        for (size_t pos = 0; pos < num_columns; ++pos, ++requested_column)
+        {
+            const auto * cast_path = res_columns[pos] ? nullptr : tryGetCastPathOfSubcolumn(pos, *requested_column);
+            auto path_column = cast_path ? find_read_column(*cast_path) : std::nullopt;
+            if (!path_column)
+                continue;
+
+            auto path = cast_path->substr(requested_column->getNameInStorage().size() + 1);
+            auto subcolumn_name = requested_column->getSubcolumnName().substr(path.size() + 1);
+            auto path_type = requested_column->getTypeInStorage()->getSubcolumnType(path);
+
+            path_column->column = path_column->column->decompress()->convertToFullColumnIfConst();
+            auto subcolumn = path_type->getSubcolumn(subcolumn_name, castColumn(*path_column, path_type));
+            res_columns[pos] = castColumn({subcolumn, path_type->getSubcolumnType(subcolumn_name), ""}, requested_column->type);
+        }
 
         NameSet full_requested_columns_set;
         NamesAndTypesList full_requested_columns;

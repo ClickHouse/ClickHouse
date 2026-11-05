@@ -112,7 +112,7 @@ private:
     MergeTreePatchReaders patch_readers;
     std::vector<std::deque<PatchReadResultPtr>> patches_results;
 
-    /// For every reader, the names of the columns produced by the previous steps of the chain.
+    /// For every reader, the names of the columns produced or read by the previous steps of the chain.
     /// They don't change between blocks, so they are collected once.
     std::vector<NameSet> previous_steps_columns;
 

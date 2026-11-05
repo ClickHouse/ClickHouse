@@ -22,6 +22,12 @@ DROP TABLE IF EXISTS t_skip;
 DROP TABLE IF EXISTS t_patch_before;
 DROP TABLE IF EXISTS t_patch_merged;
 DROP TABLE IF EXISTS t_patch_after;
+DROP TABLE IF EXISTS t_cast_path;
+DROP TABLE IF EXISTS t_cast_path_patch;
+DROP TABLE IF EXISTS t_array_map;
+DROP TABLE IF EXISTS t_array_tuple;
+DROP TABLE IF EXISTS t_parent_prewhere;
+DROP TABLE IF EXISTS t_nullable_prewhere;
 
 SELECT 'issue 123339';
 CREATE TABLE t_issue (id UInt32, j JSON) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = '1G';
@@ -167,6 +173,8 @@ ALTER TABLE t_patch_merged MODIFY COLUMN data JSON(a String) SETTINGS enable_jso
 OPTIMIZE TABLE t_patch_merged FINAL;
 SELECT id, data.a FROM t_patch_merged ORDER BY id;
 SELECT id, length(data.a) FROM t_patch_merged ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT id, length(data.a) FROM t_patch_merged ORDER BY id;
+SELECT id, data FROM t_patch_merged ORDER BY id;
 
 SELECT 'patch after alter';
 CREATE TABLE t_patch_after (id UInt64, data JSON(a UInt32)) ENGINE = MergeTree ORDER BY id
@@ -177,6 +185,63 @@ ALTER TABLE t_patch_after MODIFY COLUMN data JSON(a String) SETTINGS enable_json
 UPDATE t_patch_after SET data = '{"a" : "xyz7"}' WHERE id = 1;
 SELECT id, length(data.a) FROM t_patch_after ORDER BY id;
 SELECT id, data.a FROM t_patch_after ORDER BY id;
+
+SELECT 'hint added, subcolumns from the cast path';
+CREATE TABLE t_cast_path (id UInt64, j JSON) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_cast_path;
+INSERT INTO t_cast_path VALUES (1, '{"a" : [1, 2], "n" : 5, "s" : "xyz"}'), (2, '{"a" : [3], "s" : ""}'), (3, '{}');
+ALTER TABLE t_cast_path MODIFY COLUMN j JSON(a Array(UInt32), n Nullable(UInt32), s String) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT id, length(j.a), j.a.size0, j.n.null, length(j.s) FROM t_cast_path ORDER BY id;
+SELECT id, length(j.a), j.a.size0, j.n.null, length(j.s) FROM t_cast_path ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT count() FROM t_cast_path WHERE j.n IS NULL;
+SELECT count() FROM t_cast_path WHERE j.n IS NULL SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT id FROM t_cast_path WHERE length(j.a) = 2 SETTINGS optimize_move_to_prewhere = 1;
+SELECT id FROM t_cast_path WHERE length(j.a) = 2 SETTINGS optimize_move_to_prewhere = 1, optimize_functions_to_subcolumns = 0;
+SELECT id, j.a.size0 FROM t_cast_path WHERE length(j.s) > 0 ORDER BY id SETTINGS optimize_move_to_prewhere = 1;
+SELECT id, j.a.size0 FROM t_cast_path WHERE has(j.a, 3) ORDER BY id SETTINGS optimize_move_to_prewhere = 1;
+SYSTEM START MERGES t_cast_path;
+OPTIMIZE TABLE t_cast_path FINAL;
+SELECT id, length(j.a), j.a.size0, j.n.null, length(j.s) FROM t_cast_path ORDER BY id;
+
+CREATE TABLE t_cast_path_patch (id UInt64, j JSON) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
+SYSTEM STOP MERGES t_cast_path_patch;
+INSERT INTO t_cast_path_patch VALUES (1, '{"a" : [1, 2]}'), (2, '{"a" : [3]}');
+UPDATE t_cast_path_patch SET j = '{"a" : [4, 5, 6]}' WHERE id = 1;
+ALTER TABLE t_cast_path_patch MODIFY COLUMN j JSON(a Array(UInt32)) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT id, length(j.a) FROM t_cast_path_patch ORDER BY id;
+
+SELECT 'structured hint added in array';
+CREATE TABLE t_array_map (id UInt64, arr Array(JSON)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_array_map;
+INSERT INTO t_array_map VALUES (1, ['{"a" : {"k" : 1}}']), (2, ['{"a" : {"k" : 2, "l" : 3}}', '{}']);
+ALTER TABLE t_array_map MODIFY COLUMN arr Array(JSON(a Map(String, UInt32))) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT id, arr.a FROM t_array_map ORDER BY id;
+SYSTEM START MERGES t_array_map;
+OPTIMIZE TABLE t_array_map FINAL;
+SELECT id, arr.a FROM t_array_map ORDER BY id;
+
+CREATE TABLE t_array_tuple (id UInt64, arr Array(JSON)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_array_tuple;
+INSERT INTO t_array_tuple VALUES (1, ['{"a" : {"k" : 1}}']), (2, ['{"a" : {"k" : 2}}', '{}']);
+ALTER TABLE t_array_tuple MODIFY COLUMN arr Array(JSON(a Tuple(k UInt32))) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT id, arr.a FROM t_array_tuple ORDER BY id;
+SYSTEM START MERGES t_array_tuple;
+OPTIMIZE TABLE t_array_tuple FINAL;
+SELECT id, arr.a FROM t_array_tuple ORDER BY id;
+
+SELECT 'parent read by an earlier step';
+CREATE TABLE t_parent_prewhere (id UInt64, data JSON(a UInt32)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_parent_prewhere;
+INSERT INTO t_parent_prewhere VALUES (1, '{"a" : 42}'), (2, '{"a" : 12345}');
+ALTER TABLE t_parent_prewhere MODIFY COLUMN data JSON(a String) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT id, data.a.size FROM t_parent_prewhere WHERE toString(data) != '' ORDER BY id SETTINGS optimize_move_to_prewhere = 1;
+
+CREATE TABLE t_nullable_prewhere (id UInt64, x UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_nullable_prewhere;
+INSERT INTO t_nullable_prewhere VALUES (1, 5), (2, 6);
+ALTER TABLE t_nullable_prewhere MODIFY COLUMN x Nullable(UInt32) SETTINGS mutations_sync = 0, alter_sync = 0;
+SELECT id, x.null FROM t_nullable_prewhere WHERE x > 5 ORDER BY id SETTINGS optimize_move_to_prewhere = 1;
 
 DROP TABLE t_issue;
 DROP TABLE t_wide;
@@ -195,3 +260,9 @@ DROP TABLE t_skip;
 DROP TABLE t_patch_before;
 DROP TABLE t_patch_merged;
 DROP TABLE t_patch_after;
+DROP TABLE t_cast_path;
+DROP TABLE t_cast_path_patch;
+DROP TABLE t_array_map;
+DROP TABLE t_array_tuple;
+DROP TABLE t_parent_prewhere;
+DROP TABLE t_nullable_prewhere;
