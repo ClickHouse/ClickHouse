@@ -603,11 +603,19 @@ convertFieldToORCLiteral(const ORC::Type & orc_type, const Field & field, DataTy
                 }
 
                 DecimalField<Decimal64> ts;
-                if (field.tryGet(ts))
+                if (field.tryGet(ts) && ts.getScale() <= 9)
                 {
-                    Int64 secs = (ts.getValue() / ts.getScaleMultiplier()).convertTo<Int64>();
-                    Int32 nanos = (ts.getValue() - (ts.getValue() / ts.getScaleMultiplier()) * ts.getScaleMultiplier()).convertTo<Int32>();
-                    return ORC::Literal(secs, nanos);
+                    /// The nanoseconds are not negative, as in the reference implementation and in the statistics.
+                    const Int64 value = ts.getValue().value;
+                    const Int64 multiplier = ts.getScaleMultiplier().value;
+                    Int64 secs = value / multiplier;
+                    Int64 rest = value % multiplier;
+                    if (rest < 0)
+                    {
+                        rest += multiplier;
+                        --secs;
+                    }
+                    return ORC::Literal(secs, static_cast<Int32>(rest * (1'000'000'000 / multiplier)));
                 }
                 break;
             }

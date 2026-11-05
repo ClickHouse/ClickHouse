@@ -1093,16 +1093,24 @@ public:
                 nano = 0;
             }
 
+            /// The statistics have the milliseconds rounded down and the rest of the nanoseconds, which is not negative.
+            Int64 nano_millis = nano / 1000000;
+            Int64 nano_rest = nano % 1000000;
+            if (nano_rest < 0)
+            {
+                nano_rest += 1000000;
+                --nano_millis;
+            }
             Int64 utc_seconds = secs;
             Int64 millis = 0;
             Int64 encoded_seconds = 0;
             if ((!is_utc && common::addOverflow(secs, static_cast<Int64>(context.timezone->timezoneOffset(secs)), utc_seconds))
                 || common::mulOverflow(utc_seconds, Int64{1000}, millis)
-                || common::addOverflow(millis, nano / 1000000, millis)
+                || common::addOverflow(millis, nano_millis, millis)
                 || common::subOverflow(secs + (secs < 0 && nano > 999999), epoch_offset, encoded_seconds))
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
                     "Timestamp (seconds={}, nanoseconds={}) in ORC column {} is out of the range supported by the ORC format", secs, nano, column_id);
-            index_statistics.updateTimestamp(millis, static_cast<Int32>(nano % 1000000));
+            index_statistics.updateTimestamp(millis, static_cast<Int32>(nano_rest));
 
             seconds_encoder.write(encoded_seconds);
             nanos_encoder.write(formatNanos(nano));

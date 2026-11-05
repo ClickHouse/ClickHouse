@@ -433,8 +433,20 @@ TruthValue PredicateLeaf::evaluatePredicateMinMax(const Proto::ColumnStatistics 
             {
                 Int32 min_nanos = ts->minimum_nanos ? static_cast<Int32>(*ts->minimum_nanos) - 1 : 0;
                 Int32 max_nanos = ts->maximum_nanos ? static_cast<Int32>(*ts->maximum_nanos) - 1 : 999999;
-                Literal::Timestamp min{*ts->minimum_utc / 1000, static_cast<Int32>((*ts->minimum_utc % 1000) * 1000000) + min_nanos};
-                Literal::Timestamp max{*ts->maximum_utc / 1000, static_cast<Int32>((*ts->maximum_utc % 1000) * 1000000) + max_nanos};
+                /// The milliseconds are rounded down, so the nanoseconds are not negative, as in the literals.
+                auto to_timestamp = [](Int64 millis, Int32 nanos)
+                {
+                    Int64 second = millis / 1000;
+                    Int64 rest = millis % 1000;
+                    if (rest < 0)
+                    {
+                        rest += 1000;
+                        --second;
+                    }
+                    return Literal::Timestamp{second, static_cast<Int32>(rest * 1000000) + nanos};
+                };
+                Literal::Timestamp min = to_timestamp(*ts->minimum_utc, min_nanos);
+                Literal::Timestamp max = to_timestamp(*ts->maximum_utc, max_nanos);
                 result = evaluateRange(op, literalsTo<Literal::Timestamp>(literals, [](const Literal & l) { return l.getTimestamp(); }),
                     min, max, has_null);
             }
