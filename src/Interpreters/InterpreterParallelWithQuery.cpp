@@ -63,10 +63,25 @@ BlockIO InterpreterParallelWithQuery::execute()
 
     /// Call the interpreters of all the subqueries - it may produce some pipelines which we combine together into
     /// one combined pipeline.
-    executeSubqueries(subqueries);
+    try
+    {
+        executeSubqueries(subqueries);
 
-    if (runner)
-        runner->waitForAllToFinishAndRethrowFirstError();
+        if (runner)
+            runner->waitForAllToFinishAndRethrowFirstError();
+    }
+    catch (...)
+    {
+        /// Join the workers first: they may still be adding to `io_holders`.
+        if (runner)
+            runner->waitForAllToFinish();
+
+        /// Some subqueries may have already done part of their work (e.g. `CREATE TABLE ... AS SELECT`
+        /// publishes the table before returning its fill pipeline), but their pipelines will never run now.
+        /// Report them as failed, otherwise their finish, exception and cancellation callbacks are never called.
+        onExceptionForPreparedSubqueries();
+        throw;
+    }
 
     /// We don't need our thread pool anymore.
     /// (Function executeCombinedPipeline() below will use its own thread pool.)
@@ -186,6 +201,17 @@ void InterpreterParallelWithQuery::executeSubquery(ASTPtr subquery, ContextMutab
     io_holders.push_back(std::move(query_io));
 
     /// TODO: Special processing for ON CLUSTER queries and also for queries related to a replicated database is required.
+}
+
+
+void InterpreterParallelWithQuery::onExceptionForPreparedSubqueries()
+{
+    std::lock_guard lock{mutex};
+    /// The combined pipeline was never executed. Destroy it before the subqueries release their workload resources.
+    combined_pipeline.reset();
+    for (auto & io : io_holders)
+        io.onException();
+    io_holders.clear();
 }
 
 

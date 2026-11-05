@@ -1210,6 +1210,44 @@ def test_audit_log_partially_executed_parallel_with(start_cluster):
     node_ddl.query(f"DROP TABLE {table_ok}")
 
 
+def test_audit_log_parallel_with_prepared_statement_of_failed_query(start_cluster):
+    """`CREATE TABLE ... AS SELECT` publishes the table and returns its fill pipeline, which PARALLEL WITH
+    keeps for the combined pipeline. When a later statement fails, the combined pipeline never runs, but
+    the table is already created, so the `CREATE` must still be audited (as failed). node_ddl enables only DDL."""
+    marker = f"audit_pw_gap_{uuid.uuid4().hex[:8]}"
+    table_created, table_missing = f"{marker}_created", f"{marker}_missing"
+
+    error = node_ddl.query_and_get_error(
+        f"CREATE TABLE {table_created} ENGINE = Memory AS SELECT 1 AS n"
+        f" PARALLEL WITH DROP TABLE {table_missing}",
+        settings={"max_threads": "1"},
+    )
+    assert "UNKNOWN_TABLE" in error, error
+    assert node_ddl.query(f"EXISTS TABLE {table_created}").strip() == "1"
+
+    assert_audit_log_contain_with_retry(node_ddl, f"CREATE TABLE {table_created}")
+    assert_audit_log_contain_with_retry(node_ddl, f"DROP TABLE {table_missing}")
+    log_content = node_ddl.grep_in_log(
+        marker, from_host=True, filename="clickhouse-server.audit.log"
+    )
+    lines = [line for line in log_content.strip().split("\n") if "AUDIT:" in line]
+
+    # (COMMAND, EXCEPTION_CODE, OBJECT_NAMES)
+    records = {}
+    for line in lines:
+        fields = line.split("AUDIT: ", 1)[1].split(", ")
+        assert fields[0] == "DDL", line
+        records[fields[1]] = (fields[2], fields[5])
+
+    assert set(records) == {"Create", "Drop"}, lines
+    assert records["Drop"] == ("60", f"default.{table_missing}"), lines  # UNKNOWN_TABLE
+    # The fill pipeline of the `CREATE` never ran, so it is recorded as failed.
+    assert records["Create"][0] != "0", lines
+    assert records["Create"][1] == f"default.{table_created}", lines
+
+    node_ddl.query(f"DROP TABLE {table_created}")
+
+
 def test_audit_log_parallel_with_wrapper_records_own_outcome(start_cluster):
     """The PARALLEL WITH wrapper is audited once, as MISC, with the outcome of the query as a whole,
     while a statement that PARALLEL WITH rejects (a SELECT has output and cannot be combined) gets
