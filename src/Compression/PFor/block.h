@@ -18,6 +18,8 @@
 #include <Compression/PFor/vertical.h>
 
 #include <algorithm>
+#include <bit>
+#include <cstring>
 
 namespace DB::PFor::detail
 {
@@ -63,25 +65,54 @@ inline size_t blockEncode(const T * residuals, unsigned cnt, uint8_t * out) noex
         return 1u + num_bytes;
     }
 
-    // Bit-width histogram; the count of values needing more than `width` bits is a suffix sum over it.
-    unsigned histogram[typeBits<T> + 1] = {0};
-    unsigned max_width = 0;
+    // The bit width of every value, as bytes. Both loops below vectorise, unlike the increments of a bit-width
+    // histogram, which serialise on the counter that most values of a block share.
+    alignas(16) uint8_t widths[BLOCK];
+    T all_bits = 0;
     for (unsigned i = 0; i < cnt; ++i)
     {
-        const unsigned value_width = bitWidth(residuals[i]);
-        ++histogram[value_width];
-        max_width = std::max(value_width, max_width);
+        widths[i] = static_cast<uint8_t>(std::bit_width(residuals[i]));
+        all_bits |= residuals[i];
     }
+    const unsigned max_width = static_cast<unsigned>(std::bit_width(all_bits));
 
-    // A value is an exception exactly when its width exceeds the base, so the suffix sum is already
-    // the winning width's exception count and is recorded here rather than recounted over the block.
+    // Number of values that need more than `width` bits: the exceptions of base width `width`.
+    const auto count_wider_than = [&](unsigned width) -> unsigned
+    {
+#if PFOR_HAS_VERTICAL
+        if (cnt == BLOCK)
+        {
+            using v16u8 = uint8_t __attribute__((vector_size(16)));
+            const auto w = static_cast<uint8_t>(width);
+            const v16u8 width_vector = {w, w, w, w, w, w, w, w, w, w, w, w, w, w, w, w};
+            // A comparison yields -1 in every true lane, so subtracting it counts. A lane counts at most BLOCK / 16.
+            decltype(width_vector > width_vector) counts = {};
+            for (unsigned i = 0; i < BLOCK; i += 16)
+            {
+                v16u8 chunk;
+                std::memcpy(&chunk, widths + i, 16);
+                counts -= chunk > width_vector;
+            }
+            unsigned total = 0;
+            for (unsigned lane = 0; lane < 16; ++lane)
+                total += static_cast<unsigned>(counts[lane]);
+            return total;
+        }
+#endif
+        unsigned total = 0;
+        for (unsigned i = 0; i < cnt; ++i)
+            total += widths[i] > width;
+        return total;
+    };
+
+    // A value is an exception exactly when its width exceeds the base, so the count is the winning width's
+    // exception count and is recorded here rather than recounted over the block.
     size_t best_cost = 2 + packedBytes(cnt, max_width);
     unsigned best_width = max_width;
     unsigned best_num_exceptions = 0;
-    unsigned num_exceptions_at_width = 0;
     for (int width = static_cast<int>(max_width) - 1; width >= 0; --width)
     {
-        num_exceptions_at_width += histogram[width + 1];
+        const unsigned num_exceptions_at_width = count_wider_than(static_cast<unsigned>(width));
         const unsigned patch_width = max_width - static_cast<unsigned>(width);
         const size_t cost = 3 + packedBytes(cnt, static_cast<unsigned>(width))
             + num_exceptions_at_width + packedBytes(num_exceptions_at_width, patch_width);
