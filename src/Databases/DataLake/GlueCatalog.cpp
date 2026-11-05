@@ -83,6 +83,7 @@ namespace DB::Setting
     extern const SettingsUInt64 s3_connect_timeout_ms;
     extern const SettingsUInt64 s3_request_timeout_ms;
     extern const SettingsBool iceberg_list_only_v_prefixed_metadata_files;
+    extern const SettingsS3UriStyle s3_uri_style;
 }
 
 namespace DB::ServerSetting
@@ -676,9 +677,19 @@ GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTable
     auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
     auto configuration = std::make_shared<DB::StorageS3IcebergConfiguration>(storage_settings);
-    DB::StorageObjectStorageConfiguration::initialize(*configuration, args, getContext(), false);
+    DB::ContextPtr init_context = getContext();
+    if (settings.storage_uri_style != DB::S3UriStyle::AUTO)
+    {
+        auto context_copy = DB::Context::createCopy(getContext());
+        DB::Settings init_settings = context_copy->getSettingsCopy();
+        init_settings[DB::Setting::s3_uri_style] = settings.storage_uri_style;
+        context_copy->setSettings(init_settings);
+        init_context = context_copy;
+    }
 
-    auto object_storage = configuration->createObjectStorage(getContext(), true, {});
+    DB::StorageObjectStorageConfiguration::initialize(*configuration, args, init_context, false);
+
+    auto object_storage = configuration->createObjectStorage(init_context, true, {});
 
     String key_prefix = settings.storage_endpoint.empty() ? "" : configuration->getRawPath().path;
     return {object_storage, location.bucket_name, location.path, key_prefix};
