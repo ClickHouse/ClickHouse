@@ -155,6 +155,10 @@ struct AlterCommand
     /// indicates that this command should not be applied, for example in case of if_exists=true and column doesn't exist.
     bool ignore = false;
 
+    /// Set by `prepare` for `DROP`/`CLEAR`. True when the name is its own column in the schema
+    /// before this command, so dotted `name.*` columns are not part of the drop.
+    bool targets_exact_column = false;
+
     /// Clear columns or index (don't drop from metadata)
     bool clear = false;
 

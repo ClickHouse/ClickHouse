@@ -94,6 +94,7 @@ namespace FailPoints
 {
     extern const char backup_add_empty_memory_table[];
     extern const char memory_sink_pause_before_commit[];
+    extern const char memory_write_pause_before_sink[];
 }
 
 static void applyStoredColumnIdentity(
@@ -120,12 +121,12 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         ContextPtr context_)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
+        , schema_generation(metadata_snapshot_->memory_schema_generation)
         , storage(storage_)
         , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_, context_))
         , context(std::move(context_))
     {
         std::lock_guard lock(storage.mutex);
-        schema_generation = storage.schema_generation;
 
         if (storage.is_temporary_table)
             max_temporary_table_memory_usage = context->getSettingsRef()[Setting::max_temporary_table_memory_usage];
@@ -231,7 +232,7 @@ private:
     Blocks new_blocks;
     UInt64 new_blocks_bytes = 0;
     UInt64 max_temporary_table_memory_usage = 0;
-    /// Table `schema_generation` when this sink was created.
+    /// Generation of the metadata snapshot this `INSERT` opened with.
     UInt64 schema_generation = 0;
     StorageMemory & storage;
     StorageSnapshotPtr storage_snapshot;
@@ -312,6 +313,9 @@ void StorageMemory::readImpl(
 
 SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
+    /// Metadata was captured by the caller. Pause before the sink is built so an ALTER can publish
+    /// a newer generation; the sink must keep the generation of the snapshot it was given.
+    FailPointInjection::pauseFailPoint(FailPoints::memory_write_pause_before_sink);
     return std::make_shared<MemorySink>(*this, metadata_snapshot, context);
 }
 
@@ -520,20 +524,8 @@ static void renameStoredColumn(Block & block, const String & from, const String 
     block.insert(std::move(renamed));
 }
 
-/// Exact name wins, same as `ColumnsDescription::remove`. Otherwise drop the flattened `name.*` group.
-static void eraseStoredColumn(Block & block, const String & name)
-{
-    if (block.has(name))
-    {
-        block.erase(name);
-        return;
-    }
-
-    for (const auto & nested_name : Nested::getAllNestedColumnsForTable(block, name))
-        block.erase(nested_name);
-}
-
-/// `name` or a dotted parent of `name` is in `names`.
+/// `name` or a dotted parent of `name` is in `names`. Group drops record the parent here.
+/// Exact drops are matched by name only, so `n` does not take `n.a` with it.
 static bool nameOrParentIn(const NameSet & names, const String & name)
 {
     String prefix = name;
@@ -559,8 +551,10 @@ static void applyStoredColumnIdentity(
     bool compress)
 {
     const size_t rows = block.rows();
-    NameSet freed;
-    NameSet cleared;
+    NameSet exact_freed;
+    NameSet exact_cleared;
+    NameSet group_freed;
+    NameSet group_cleared;
 
     for (const auto & command : commands)
     {
@@ -569,20 +563,32 @@ static void applyStoredColumnIdentity(
 
         if (command.type == AlterCommand::RENAME_COLUMN)
         {
-            freed.insert(command.column_name);
+            exact_freed.insert(command.column_name);
             renameStoredColumn(block, command.column_name, command.rename_to);
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
-            /// `IF EXISTS` drops only an exact name. `CLEAR` still rewrites a flattened group.
-            if (command.if_exists && !command.clear && !block.has(command.column_name))
+            /// `DROP COLUMN IF EXISTS n` is an exact-name no-op when only `n.*` exists.
+            if (command.if_exists && !command.clear && !command.targets_exact_column)
                 continue;
 
+            NameSet & freed = command.targets_exact_column ? exact_freed : group_freed;
+            NameSet & cleared = command.targets_exact_column ? exact_cleared : group_cleared;
             if (command.clear)
                 cleared.insert(command.column_name);
             else
                 freed.insert(command.column_name);
-            eraseStoredColumn(block, command.column_name);
+
+            if (command.targets_exact_column)
+            {
+                if (block.has(command.column_name))
+                    block.erase(command.column_name);
+            }
+            else
+            {
+                for (const auto & nested_name : Nested::getAllNestedColumnsForTable(block, command.column_name))
+                    block.erase(nested_name);
+            }
         }
     }
 
@@ -605,7 +611,8 @@ static void applyStoredColumnIdentity(
     {
         if (block.has(column.name))
             continue;
-        if (!nameOrParentIn(cleared, column.name) && !nameOrParentIn(freed, column.name))
+        if (!exact_freed.contains(column.name) && !exact_cleared.contains(column.name)
+            && !nameOrParentIn(group_freed, column.name) && !nameOrParentIn(group_cleared, column.name))
             continue;
         requireColumn(column.name, column.type);
     }
@@ -622,11 +629,18 @@ static void applyStoredColumnIdentity(
         return;
 
     /// With no columns, `block.rows()` is 0. One placeholder keeps `rows` for `addMissingDefaults`.
+    /// The name has to miss every real column: a user column may itself be called `_dummy`.
+    String placeholder;
     if (block.columns() == 0)
+    {
+        placeholder = "_dummy";
+        while (required_names.contains(placeholder))
+            placeholder.push_back('_');
         block.insert({
             ColumnConst::create(ColumnUInt8::create(1, static_cast<UInt8>(0)), rows),
             std::make_shared<DataTypeUInt8>(),
-            "_dummy"});
+            placeholder});
+    }
 
     for (auto & column : block)
         column.column = column.column->decompress();
@@ -635,8 +649,8 @@ static void applyStoredColumnIdentity(
     auto actions = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context->getSettingsRef()));
     actions->execute(block);
 
-    if (block.has("_dummy"))
-        block.erase("_dummy");
+    if (!placeholder.empty() && block.has(placeholder))
+        block.erase(placeholder);
 
     if (compress)
     {
@@ -748,6 +762,7 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
             rewrite.metadata = new_metadata;
             identity_rewrites.push_back(std::move(rewrite));
             ++schema_generation;
+            new_metadata.memory_schema_generation = schema_generation;
         }
 
         if (new_data)
@@ -757,14 +772,17 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
     }
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
-    setInMemoryMetadata(new_metadata);
 
     /// `ADD COLUMN` does not rewrite blocks, but it still changes the schema an in-flight sink was created with.
     if (!rewrite_blocks)
     {
         std::lock_guard lock(mutex);
         ++schema_generation;
+        new_metadata.memory_schema_generation = schema_generation;
     }
+
+    /// The generation is part of the snapshot. A sink built earlier keeps the older one.
+    setInMemoryMetadata(new_metadata);
 }
 
 

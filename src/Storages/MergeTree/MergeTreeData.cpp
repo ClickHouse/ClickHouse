@@ -14747,6 +14747,8 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     auto commands = mutations->getOnFlyMutationCommandsForPart(part);
     auto patches = mutations->getPatchesForPart(part);
     PatchPartsForReader patches_for_reader;
+    const auto storage_metadata = part->storage.getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/ false);
+    const auto & schema = storage_metadata->getColumns();
 
     /// Apply masking policies to the part
 #if CLICKHOUSE_CLOUD
@@ -14757,7 +14759,7 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     for (auto & patch : patches)
     {
         auto patch_commands = mutations->getOnFlyMutationCommandsForPart(patch.part);
-        auto patch_conversions = std::make_shared<AlterConversions>(patch_commands, PatchPartsForReader{}, query_context);
+        auto patch_conversions = std::make_shared<AlterConversions>(patch_commands, PatchPartsForReader{}, query_context, &schema);
         auto patch_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(std::move(patch.part), std::move(patch_conversions));
 
         patches_for_reader.push_back(PatchPartInfoForReader
@@ -14772,7 +14774,7 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
         });
     }
 
-    return std::make_shared<AlterConversions>(commands, patches_for_reader, query_context);
+    return std::make_shared<AlterConversions>(commands, patches_for_reader, query_context, &schema);
 }
 
 #if CLICKHOUSE_CLOUD

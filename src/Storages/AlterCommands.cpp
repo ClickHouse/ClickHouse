@@ -2031,6 +2031,8 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr
         auto & command = (*this)[i];
         /// `n Nested(...)` is stored as `n.*`. Only `ADD`/`DROP` treat that parent name as the column.
         const bool has_exact_column = columns.has(command.column_name);
+        if (command.type == AlterCommand::DROP_COLUMN)
+            command.targets_exact_column = has_exact_column;
         bool has_column = has_exact_column
             || ((command.type == AlterCommand::ADD_COLUMN || command.type == AlterCommand::DROP_COLUMN)
                 && share_nested_offsets && columns.hasNested(command.column_name));
@@ -2752,6 +2754,20 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
+static MutationCommand mutationDropColumn(const String & name, bool clear, UInt64 max_parser_depth, UInt64 max_parser_backtracks)
+{
+    auto ast = make_intrusive<ASTAlterCommand>();
+    ast->type = ASTAlterCommand::DROP_COLUMN;
+    ast->clear_column = clear;
+    ast->column = ast->children.emplace_back(make_intrusive<ASTIdentifier>(name)).get();
+
+    auto parsed = MutationCommand::parse(*ast, true, false, max_parser_depth, max_parser_backtracks);
+    if (!parsed)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot build a mutation command for column {}", backQuote(name));
+
+    return *parsed;
+}
+
 MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters, bool share_nested_offsets) const
 {
     /// Save a copy of the original metadata before applying commands.
@@ -2772,6 +2788,20 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     MutationCommands result;
     for (const auto & alter_cmd : *this)
     {
+        /// A nested parent is stored as `n.a`, `n.b`, never as `n`. Spell those children out here,
+        /// while the schema still has them, so a later `ADD` of the same names cannot be mistaken
+        /// for "the dotted columns survived, so this drop was exact".
+        const bool nested_parent = !alter_cmd.ignore && alter_cmd.type == AlterCommand::DROP_COLUMN && !alter_cmd.partition
+            && share_nested_offsets && !alter_cmd.targets_exact_column && metadata.columns.hasNested(alter_cmd.column_name)
+            && !(alter_cmd.if_exists && !alter_cmd.clear);
+        if (nested_parent)
+        {
+            for (const auto & column : metadata.columns.getNested(alter_cmd.column_name))
+                result.push_back(mutationDropColumn(column.name, alter_cmd.clear, max_parser_depth, max_parser_backtracks));
+            alter_cmd.apply(metadata, context, share_nested_offsets);
+            continue;
+        }
+
         if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context, share_nested_offsets); mutation_cmd)
         {
             result.push_back(*mutation_cmd);

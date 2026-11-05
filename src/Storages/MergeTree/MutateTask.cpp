@@ -824,6 +824,15 @@ static void splitAndModifyMutationCommands(
 {
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
+    /// Exact `n` stays exact even when the part never stored it (an alias made real, a missing
+    /// column with no marker). Dotted siblings are still in the schema. A nested-parent drop
+    /// removes them, and `CLEAR` keeps them, so those two still expand.
+    auto drop_keeps_dotted_columns = [&table_columns](const MutationCommand & command)
+    {
+        return command.type == MutationCommand::Type::DROP_COLUMN
+            && (table_columns.has(command.column_name)
+                || (!command.clear && table_columns.hasNested(command.column_name)));
+    };
     auto nameInPart = [&](String name)
     {
         if (alter_conversions->isColumnRenamed(name))
@@ -980,8 +989,8 @@ static void splitAndModifyMutationCommands(
                     const auto & serialization_infos = part->getSerializationInfos();
                     const auto marker_root = onDiskName(command.column_name);
                     const bool exact_marker = serialization_infos.isMissingColumn(marker_root);
-                    /// Exact `n` wins over dotted `n.*`, stored or marker-only.
-                    const bool expand_nested = has_nested_column && !has_column && !exact_marker;
+                    /// Exact `n` wins over dotted `n.*`, stored, marker-only, or present only in metadata.
+                    const bool expand_nested = has_nested_column && !has_column && !exact_marker && !drop_keeps_dotted_columns(command);
 
                     if (command.type == MutationCommand::Type::RENAME_COLUMN)
                     {
@@ -1082,7 +1091,7 @@ static void splitAndModifyMutationCommands(
 
                 push_marker(name_in_part);
                 /// Dotted markers belong to a dropped parent only when this name is not itself a column.
-                if (share_nested_offsets && !serialization_infos.isMissingColumn(name_in_part))
+                if (share_nested_offsets && !serialization_infos.isMissingColumn(name_in_part) && !drop_keeps_dotted_columns(command))
                 {
                     const String prefix = name_in_part + ".";
                     for (const auto & missing : serialization_infos.getMissingColumns())
@@ -1421,7 +1430,8 @@ static void splitAndModifyMutationCommands(
                     for_interpreter.push_back(std::move(interpreter_command));
                 };
 
-                const bool exact_column = source_columns.has(name_in_part) || serialization_infos.isMissingColumn(name_in_part);
+                const bool exact_column = source_columns.has(name_in_part) || serialization_infos.isMissingColumn(name_in_part)
+                    || drop_keeps_dotted_columns(command);
                 if (exact_column)
                     push_source(name_in_part);
                 else if (share_nested)
@@ -2394,16 +2404,14 @@ static NameToNameVector collectFilesForRenames(
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
             {
-                /// `RENAME a TO b, DROP b` deletes `a`. `DROP a, RENAME b TO a` still renames `b`.
+                /// `RENAME a TO b, DROP b` deletes `a` from the DROP command. Removing the streams
+                /// here as well decrements a Nested offsets stream shared with a sibling twice.
                 const bool source_dropped = std::ranges::any_of(commands_for_renames, [&](const auto & other)
                 {
                     return other.type == MutationCommand::Type::DROP_COLUMN && other.column_name == command.column_name;
                 });
                 if (source_dropped)
-                {
-                    remove_column_streams(command.column_name);
                     continue;
-                }
 
                 if (!new_part_column_names.contains(command.rename_to))
                 {

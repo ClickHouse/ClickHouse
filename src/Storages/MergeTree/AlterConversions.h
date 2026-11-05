@@ -8,6 +8,7 @@ namespace DB
 {
 
 struct StorageInMemoryMetadata;
+class ColumnsDescription;
 class IMergeTreeDataPartInfoForReader;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
@@ -23,7 +24,8 @@ public:
     AlterConversions(
         const MutationCommands & mutation_commands_,
         const PatchPartsForReader & patch_parts_,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        const ColumnsDescription * schema = nullptr);
 
     struct RenamePair
     {
@@ -132,6 +134,10 @@ private:
     /// Columns that were dropped by pending mutations.
     /// If a column with the same name is re-added, old data in parts should be ignored.
     NameSet dropped_columns;
+
+    /// Subset of `dropped_columns` whose name is an exact column, or whose dotted siblings are still
+    /// in the table schema. Those drops must not hide `name.*`.
+    NameSet exact_column_drops;
 
     /// Every name used by a pending `RENAME COLUMN` (both sides) or `DROP COLUMN` command, as written
     /// in the command, before the normalization done for `rename_map` and `dropped_columns`.

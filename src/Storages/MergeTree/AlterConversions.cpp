@@ -128,10 +128,20 @@ static MutationCommand createLightweightDeleteCommand(const MutationCommand & co
 AlterConversions::AlterConversions(
     const MutationCommands & mutation_commands_,
     const PatchPartsForReader & patch_parts_,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const ColumnsDescription * schema)
 {
     for (const auto & command : mutation_commands_)
         addMutationCommand(command, context);
+
+    if (schema)
+    {
+        for (const auto & name : dropped_columns)
+        {
+            if (schema->has(name) || schema->hasNested(name))
+                exact_column_drops.insert(name);
+        }
+    }
 
     for (const auto & patch : patch_parts_)
         addPatchPart(patch);
@@ -375,6 +385,11 @@ bool AlterConversions::isColumnDropped(
 
     const String prefix = name.substr(0, nested_prefix_end);
     if (!dropped_columns.contains(prefix))
+        return false;
+
+    /// Exact `n` (including one that was never stored) leaves `n.*` in the schema. A nested-parent
+    /// drop removes them, so only then is `n.a` dropped along with `n`.
+    if (exact_column_drops.contains(prefix))
         return false;
 
     if (part_info
