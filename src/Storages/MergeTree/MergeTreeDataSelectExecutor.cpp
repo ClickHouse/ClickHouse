@@ -1159,6 +1159,68 @@ void MergeTreeDataSelectExecutor::checkForcedSkipIndexes(const UsefulSkipIndexes
     }
 }
 
+SkipIndexOrder MergeTreeDataSelectExecutor::computeSkipIndexOrder(
+    const IMergeTreeDataPartInfoForReader & part,
+    const std::vector<MergeTreeIndexWithCondition> & useful_indices,
+    std::vector<size_t> & index_sizes_scratch)
+{
+    auto index_order = std::make_shared<std::vector<size_t>>(useful_indices.size());
+    std::iota(index_order->begin(), index_order->end(), 0);
+
+    index_sizes_scratch.clear();
+
+    for (const auto & idx : useful_indices)
+    {
+        size_t index_size = 0;
+        auto format = idx.index->getDeserializedFormat(part, idx.index->getFileName());
+
+        for (const auto & substream : format.substreams)
+        {
+            String stream_name = idx.index->getFileName() + substream.suffix;
+            /// getFileSizeOrZeroResolved resolves the on-disk name and also sizes substreams
+            /// with no checksums entry (bundled in skp_idx.packed), so the cost-based
+            /// reordering accounts for them instead of treating them as free.
+            auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::getFileSizeOrZeroResolved");
+            index_size += getIndexStreamFileSize(part, stream_name, substream.extension);
+        }
+
+        index_sizes_scratch.emplace_back(index_size);
+    }
+
+    // Move minmax indices to first positions, so they will be applied first as cheapest ones
+    ::stableSort(index_order->begin(), index_order->end(), [ &idx_sizes = std::as_const(index_sizes_scratch), &indices = std::as_const(useful_indices)](const auto & l, const auto & r)
+    {
+        const auto l_index = indices[l].index;
+        const auto r_index = indices[r].index;
+
+        const bool l_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(l_index.get());
+        const bool r_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(r_index.get());
+
+        auto l_index_priority = l_is_minmax ? 1 : 2;
+        auto r_index_priority = r_is_minmax ? 1 : 2;
+
+#if USE_USEARCH
+        // A vector similarity index (if present) is the most selective, hence move it to front
+        bool l_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(l_index.get());
+        bool r_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(r_index.get());
+        if (l_is_vectorsimilarity)
+            l_index_priority = 0;
+        if (r_is_vectorsimilarity)
+            r_index_priority = 0;
+#endif
+        // negated since we want to prioritize coarser indexes
+        const auto neg_l_granularity = -l_index->getGranularity();
+        const auto neg_r_granularity = -r_index->getGranularity();
+
+        const auto l_size = idx_sizes[l];
+        const auto r_size = idx_sizes[r];
+
+        return std::tie(l_index_priority, neg_l_granularity, l_size) < std::tie(r_index_priority, neg_r_granularity, r_size);
+    });
+
+    return index_order;
+}
+
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats)
 {
     auto & metadata_snapshot = filter_context.metadata_snapshot;
@@ -1237,58 +1299,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 }
             }
 
-            auto index_order = std::make_shared<std::vector<size_t>>(skip_indexes.useful_indices.size());
-            std::iota(index_order->begin(), index_order->end(), 0);
-
-            index_sizes.clear();
-
-            for (const auto & idx : skip_indexes.useful_indices)
-            {
-                size_t index_size = 0;
-                auto format = idx.index->getDeserializedFormat(*part.data_part, idx.index->getFileName());
-
-                for (const auto & substream : format.substreams)
-                {
-                    String stream_name = idx.index->getFileName() + substream.suffix;
-                    /// getFileSizeOrZeroResolved resolves the on-disk name and also sizes substreams
-                    /// with no checksums entry (bundled in skp_idx.packed), so the cost-based
-                    /// reordering accounts for them instead of treating them as free.
-                    index_size += part.data_part->getFileSizeOrZeroResolved(stream_name, substream.extension);
-                }
-
-                index_sizes.emplace_back(index_size);
-            }
-
-            // Move minmax indices to first positions, so they will be applied first as cheapest ones
-            ::stableSort(index_order->begin(), index_order->end(), [ &idx_sizes = std::as_const(index_sizes), &useful_indices = std::as_const(skip_indexes.useful_indices)](const auto & l, const auto & r)
-            {
-                const auto l_index = useful_indices[l].index;
-                const auto r_index = useful_indices[r].index;
-
-                const bool l_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(l_index.get());
-                const bool r_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(r_index.get());
-
-                auto l_index_priority = l_is_minmax ? 1 : 2;
-                auto r_index_priority = r_is_minmax ? 1 : 2;
-
-#if USE_USEARCH
-                // A vector similarity index (if present) is the most selective, hence move it to front
-                bool l_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(l_index.get());
-                bool r_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(r_index.get());
-                if (l_is_vectorsimilarity)
-                    l_index_priority = 0;
-                if (r_is_vectorsimilarity)
-                    r_index_priority = 0;
-#endif
-                // negated since we want to prioritize coarser indexes
-                const auto neg_l_granularity = -l_index->getGranularity();
-                const auto neg_r_granularity = -r_index->getGranularity();
-
-                const auto l_size = idx_sizes[l];
-                const auto r_size = idx_sizes[r];
-
-                return std::tie(l_index_priority, neg_l_granularity, l_size) < std::tie(r_index_priority, neg_r_granularity, r_size);
-            });
+            LoadedMergeTreeDataPartInfoForReader part_info(part.data_part, nullptr);
+            auto index_order = computeSkipIndexOrder(part_info, skip_indexes.useful_indices, index_sizes);
 
             {
                 std::lock_guard lock(order_cache.mutex);

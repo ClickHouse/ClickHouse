@@ -12,6 +12,11 @@ namespace DB
 
 class VectorSimilarityIndexCache;
 
+size_t getIndexStreamFileSize(
+    const IMergeTreeDataPartInfoForReader & data_part_info,
+    const String & stream_name,
+    const String & extension);
+
 class MergeTreeIndexReader
 {
 public:
