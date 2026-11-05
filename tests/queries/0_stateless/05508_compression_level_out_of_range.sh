@@ -21,7 +21,7 @@ function check()
 {
     local out
     out=$(${CLICKHOUSE_CLIENT} --send_logs_level=fatal "$@" 2>&1) && echo "Unexpected success"
-    grep -oE '(Compression level|Setting zstd_window_log_max =) -?[0-9]+ is out of range for [a-z0-9]+(: While executing File)?\. \([A-Z0-9_]+\)' <<< "$out"
+    grep -oE '(Compression level -?[0-9]+ is out of range for [a-z0-9]+|(bzip2 stream encoder|zstd_stream_decoder) init failed for (compression level|zstd_window_log_max =) -?[0-9]+: [A-Za-z ]+( \([A-Z_]+\))?)(: While executing File)?\. \([A-Z0-9_]+\)' <<< "$out"
 }
 
 function check_read()
