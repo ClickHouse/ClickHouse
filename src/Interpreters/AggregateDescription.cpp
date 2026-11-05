@@ -16,6 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -209,7 +210,8 @@ void serializeAggregateDescriptions(
     }
 }
 
-void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity)
+void deserializeAggregateDescriptions(
+    AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity, const Block * input_header)
 {
     UInt64 num_aggregates = 0;
     readVarUInt(num_aggregates, in);
@@ -229,6 +231,14 @@ void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBu
         {
             readStringBinary(arg_name, in);
             argument_types.emplace_back(decodeDataType(in, max_type_complexity));
+
+            if (input_header)
+            {
+                if (!input_header->has(arg_name))
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA, "Argument column '{}' of an aggregate function is not present in the input header", arg_name);
+                argument_types.back() = input_header->getByName(arg_name).type;
+            }
         }
 
         String function_name;

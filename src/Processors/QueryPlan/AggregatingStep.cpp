@@ -1514,7 +1514,8 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     }
 
     AggregateDescriptions aggregates;
-    deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
+    /// As `WindowStep`: the functions are created from the argument columns, as the planner created them.
+    deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity, ctx.input_headers.front().get());
 
     UInt64 stats_key = 0;
     if (has_stats_key)
