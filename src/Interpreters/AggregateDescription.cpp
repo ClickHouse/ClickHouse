@@ -236,7 +236,9 @@ void deserializeAggregateDescriptions(
             {
                 if (!input_header->has(arg_name))
                     throw Exception(
-                        ErrorCodes::INCORRECT_DATA, "Argument column '{}' of an aggregate function is not present in the input header", arg_name);
+                        ErrorCodes::INCORRECT_DATA,
+                        "Argument column '{}' of an aggregate function is not present in the input header",
+                        arg_name);
                 argument_types.back() = input_header->getByName(arg_name).type;
             }
         }

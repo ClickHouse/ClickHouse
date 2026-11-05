@@ -1514,8 +1514,10 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     }
 
     AggregateDescriptions aggregates;
-    /// As `WindowStep`: the functions are created from the argument columns, as the planner created them.
-    deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity, ctx.input_headers.front().get());
+    /// As `WindowStep`: the functions of a step that adds rows are created from the argument columns, as the planner created
+    /// them. A merge-only step reads aggregate states, so its input holds no argument columns and the written types stay.
+    deserializeAggregateDescriptions(
+        aggregates, ctx.in, ctx.max_type_complexity, only_merge ? nullptr : ctx.input_headers.front().get());
 
     UInt64 stats_key = 0;
     if (has_stats_key)
