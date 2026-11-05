@@ -712,6 +712,13 @@ namespace
             changed.wait(lock, [this, wanted_value]() { return value == wanted_value; });
         }
 
+        /// Returns false if the value is not `wanted_value` after `timeout`.
+        bool waitFor(bool wanted_value, std::chrono::milliseconds timeout) const
+        {
+            std::unique_lock lock{mutex};
+            return changed.wait_for(lock, timeout, [this, wanted_value]() { return value == wanted_value; });
+        }
+
     private:
         bool value;
         mutable std::mutex mutex;
@@ -833,10 +840,11 @@ namespace
                     addLogsToResult(*logs_queue, unsent_logs);
                 GRPCResult result;
                 result.mutable_exception()->set_name("FatalError");
-                sending.wait(false);
+                if (!waitWrittenOrCancelLocked())
+                    return;
                 startWriteLocked(result, /* final= */ true);
                 /// A fatal signal terminates the process when this returns.
-                sending.wait(false);
+                waitWrittenOrCancelLocked();
             }
             catch (const std::exception &) // NOLINT(bugprone-empty-catch)
             {
@@ -877,11 +885,26 @@ namespace
             sending.set(false);
         }
 
+        /// `mutex` must be locked. Runs on the signal listener thread, so a client that does not read the pending write
+        /// gets the call canceled. Returns false if it was canceled.
+        bool waitWrittenOrCancelLocked()
+        {
+            if (sending.waitFor(false, fatal_error_write_timeout))
+                return true;
+            /// The pending write completes with `ok = false`.
+            responder->cancel();
+            sending.wait(false);
+            return false;
+        }
+
         /// The faulting thread can be the call thread, stopped in the signal handler while it holds `mutex`.
         static constexpr auto fatal_error_lock_timeout = std::chrono::seconds(1);
 
+        /// For each write, well below the 300 s that the faulting thread waits for the fatal error to be handled.
+        static constexpr auto fatal_error_write_timeout = std::chrono::seconds(10);
+
         /// Guards `responder`, `finished`, `logs_queue` and `unsent_logs`. Held only for short operations, never while waiting
-        /// for the client, except by `sendFatalError`.
+        /// for the client, except by `sendFatalError`, for at most `fatal_error_write_timeout` per write.
         mutable std::timed_mutex mutex;
         std::unique_ptr<BaseResponder> responder;
         bool finished = false;
