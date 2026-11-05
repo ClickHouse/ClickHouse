@@ -61,11 +61,10 @@ SETTINGS prefer_localhost_replica = 0
 # The initiator builds a parallel-replicas executor (it has a parallel-reading coordinator but no
 # task iterator), and the inner urlCluster on a replica sends a read-task request to it. This is a
 # different, also unsupported, configuration and gets its own message.
-# enable_analyzer=1 is required: only the analyzer ships the cluster-function subquery to the
-# replicas as a secondary query that hits the gate (the old analyzer evaluates it locally and the
-# request is never sent). parallel_replicas_for_non_replicated_merge_tree=1 makes parallel replicas
-# actually distribute the MergeTree scan; parallel_replicas_local_plan=0 keeps the initiator from
-# finishing locally and cancelling the replicas before they evaluate the inner function.
+# The cluster-function subquery is shipped to the replicas as a secondary query that hits the gate.
+# parallel_replicas_for_non_replicated_merge_tree=1 makes parallel replicas actually distribute the
+# MergeTree scan; parallel_replicas_local_plan=0 keeps the initiator from finishing locally and
+# cancelling the replicas before they evaluate the inner function.
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS mt_03850 SYNC"
 $CLICKHOUSE_CLIENT --query "CREATE TABLE mt_03850 (x UInt32) ENGINE = MergeTree ORDER BY x"
 $CLICKHOUSE_CLIENT --query "INSERT INTO mt_03850 SELECT number FROM numbers(100)"
@@ -74,7 +73,7 @@ echo "--- shape 2: cluster table function under parallel replicas ---"
 $CLICKHOUSE_CLIENT --query "
 SELECT count() FROM mt_03850
 WHERE x IN (SELECT toUInt32(x) FROM urlCluster('test_cluster_two_shards', 'http://localhost:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+1', 'TSV', 'x UInt8'))
-SETTINGS enable_analyzer = 1, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0,
+SETTINGS enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0,
     max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0,
     parallel_replicas_for_cluster_engines = 0

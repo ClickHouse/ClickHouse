@@ -14,6 +14,12 @@ from ci.settings.settings import SECRET_CI_DB_CONNECTION
 class CIDBCluster:
     # Single JSON connection secret: {"url": ..., "user": ..., "password": ...}
     CONNECTION_SECRET = SECRET_CI_DB_CONNECTION
+    EXCEPTION_CODE_HEADER = "X-ClickHouse-Exception-Code"
+    # Server codes about its own load rather than about the call: too many simultaneous queries, and for the
+    # one-row `SELECT 1` probe also the memory limit (an INSERT can exceed that by itself).
+    READY_PROBE_LOAD_CODES = frozenset({202, 241})
+    INSERT_LOAD_CODES = frozenset({202})
+    TRANSPORT_ERRORS = (requests.ConnectionError, requests.Timeout, requests.exceptions.ChunkedEncodingError)
 
     @staticmethod
     def _get_secret_or_raise(info, secret_name):
@@ -38,10 +44,13 @@ class CIDBCluster:
             self.pwd = None
         self._session = None
         self._auth = {}
-        # Why the last `is_ready` or `do_insert_query` call failed, and whether
-        # CIDB answered it with a 4xx other than 408 or 429.
+        # Why the last `is_ready` or `do_insert_query` call failed, whether
+        # CIDB answered it with a 4xx other than 408 or 429, and whether CIDB
+        # itself did not answer it (a transport failure, a 5xx not from the
+        # server, or one of its own-load codes).
         self.last_error = ""
         self.last_rejected = False
+        self.last_unavailable = False
 
     def close_session(self):
         if self._session:
@@ -54,13 +63,18 @@ class CIDBCluster:
             return data.encode("utf-8")
         return data
 
-    def _record_http_error(self, response):
+    def _record_http_error(self, response, load_codes):
         self.last_error = f"HTTP {response.status_code}: {' '.join(response.text.split())[:200]}"
         self.last_rejected = response.status_code < 500 and response.status_code not in (408, 429)
+        code = response.headers.get(self.EXCEPTION_CODE_HEADER)
+        self.last_unavailable = response.status_code >= 500 and (
+            code is None or (code.isdigit() and int(code) in load_codes)
+        )
 
     def is_ready(self):
         self.last_error = "LogCluster not ready"
         self.last_rejected = False
+        self.last_unavailable = False
         if not self.url:
             conn = json.loads(self.conn_secret.get_value())
             self.url = conn.get("url")
@@ -92,7 +106,7 @@ class CIDBCluster:
                 print(
                     f"ERROR: No connection to cluster [{self.url}]: [{response.text}]"
                 )
-                self._record_http_error(response)
+                self._record_http_error(response, self.READY_PROBE_LOAD_CODES)
                 return False
             if not response.json() == 1:
                 print("ERROR: LogCluster failure 1 != 1")
@@ -100,6 +114,7 @@ class CIDBCluster:
         except Exception as ex:
             print(f"ERROR: LogCluster connection failed with exception [{ex}]")
             self.last_error = f"LogCluster connection failed: {type(ex).__name__}"
+            self.last_unavailable = isinstance(ex, self.TRANSPORT_ERRORS)
             return False
         return True
 
@@ -173,7 +188,7 @@ class CIDBCluster:
                     print(
                         f"WARNING: CIDB query failed with code {response.status_code}, text {response.text}"
                     )
-                    self._record_http_error(response)
+                    self._record_http_error(response, self.INSERT_LOAD_CODES)
                 if not self.last_rejected:
                     # A retryable error
                     time.sleep(1)
@@ -187,6 +202,7 @@ class CIDBCluster:
                 print(f"ERROR: CIDB query failed with exception: {ex}")
                 traceback.print_exc()
                 self.last_error = type(ex).__name__
+                self.last_unavailable = isinstance(ex, self.TRANSPORT_ERRORS)
                 break
         print("ERROR: Failed to query CIDB")
         return False
