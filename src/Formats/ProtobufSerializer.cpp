@@ -1980,6 +1980,8 @@ namespace
                 aggregate_function->create(data);
                 ReadBufferFromMemory buf(str.data(), str.length());
                 aggregate_function->deserialize(data, buf, std::nullopt, &arena);
+                if (!aggregate_function->hasTrivialDestructor())
+                    checkMemoryLimitForAggregateFunctionState();
                 return data;
             }
             catch (...)
