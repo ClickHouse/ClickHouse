@@ -740,7 +740,8 @@ object_storages_properties = {
     },
     "azure": {
         "check_objects_after_upload": true_false_lambda,
-        "list_object_keys_size": threshold_generator(0.2, 0.2, 1, 10 * 1024 * 1024),
+        # bits=31 as for S3: the SDK page size is a 32-bit int, so 2**64 - 1 wraps to -1
+        "list_object_keys_size": threshold_generator(0.2, 0.2, 1, 10 * 1024 * 1024, 31),
         # Floor 10, as `s3_max_part_number` above: with `max_single_part_upload_size=0` every write
         # is multipart, and a floor of 1 cannot fit even the disk's startup `checkAccess` probe, so
         # the server rejects the disk with INVALID_CONFIG_PARAMETER and never starts.

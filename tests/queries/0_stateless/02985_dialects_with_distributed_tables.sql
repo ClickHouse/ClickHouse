@@ -2,7 +2,7 @@
 
 -- Disable force_primary_key_reverse_order: creates MergeTree with ORDER BY id, LIMIT output depends on key direction
 SET force_primary_key_reverse_order = 0;
-SET allow_experimental_prql_dialect = 1;
+SET enable_prql_dialect = 1;
 
 DROP TABLE IF EXISTS shared_test_table;
 DROP TABLE IF EXISTS distributed_test_table;
