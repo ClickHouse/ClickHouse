@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """This script is used in docker images for stress tests and upgrade tests"""
 import argparse
+import json
 import logging
 import os
 import random
@@ -14,7 +15,7 @@ import threading
 from multiprocessing import cpu_count
 from pathlib import Path
 from subprocess import PIPE, STDOUT, Popen, call, check_output
-from typing import List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 # Failpoint that delays every background mutation by a bounded random amount.
 MUTATION_DELAY_FAILPOINT = "mutate_task_random_sleep_in_prepare"
@@ -25,6 +26,10 @@ MUTATION_DELAY_FAILPOINT = "mutate_task_random_sleep_in_prepare"
 # and they are created with `flush_on_detach=0`, so detaching that database
 # drops whatever is still queued and exports nothing for the rest of the run.
 KEEP_DATABASES = ("system", "ci_logs_export")
+
+# Listeners the random disruptor stops for a while, as `SYSTEM STOP LISTEN <name>`. Not `TCP` and
+# `HTTP`: `clickhouse-test`, this script and the hung check use them.
+DISRUPTED_LISTENERS = ("TCP SECURE", "HTTPS", "MYSQL", "POSTGRESQL", "GRPC", "ARROW FLIGHT", "TCP SSH")
 
 # GNU `tar` exit statuses: 0 - success, 1 - some files differ (a file changed
 # or shrank while it was being read), 2 and above - a fatal error.
@@ -79,14 +84,21 @@ def build_hung_check_info(hung_check_log: Path) -> str:
     return log_text
 
 
+def quote_identifier(name: str) -> str:
+    """`name` as a back-quoted ClickHouse identifier, escaped as `readBackQuotedString` expects."""
+    return "`" + name.replace("\\", "\\\\").replace("`", "\\`") + "`"
+
+
 class RandomDisruptor:
-    """Background thread that randomly kills queries, client processes and mutations, and
-    briefly stops background operations such as merges, during stress tests.
+    """Background thread that randomly kills queries, client processes and mutations,
+    briefly stops background operations such as merges, empties caches,
+    detaches tables and restarts replicas, during stress tests.
 
     This helps test that queries and mutations are cancelled correctly, handles
     scenarios where the client unexpectedly disconnects (issue #39803), and exercises
     operations that run while one of the background activities in `_SYSTEM_STATEMENT_PAIRS`
-    is unavailable.
+    is unavailable, while the data they cache disappears, or while the table they use
+    goes away and comes back.
     """
 
     # Subprocess caps for one loop iteration: a SELECT to pick a victim, then the kill.
@@ -119,17 +131,71 @@ class RandomDisruptor:
         ("STOP DISTRIBUTED SENDS", "START DISTRIBUTED SENDS"),
         ("STOP REPLICATED SENDS", "START REPLICATED SENDS"),
         ("STOP REPLICATION QUEUES", "START REPLICATION QUEUES"),
+        ("STOP CLEANUP", "START CLEANUP"),
+        ("STOP PULLING REPLICATION LOG", "START PULLING REPLICATION LOG"),
+        *((f"STOP LISTEN {listener}", f"START LISTEN {listener}") for listener in DISRUPTED_LISTENERS),
     )
-    # Longest an iteration can run, plus margin, so stop() outlasts one of them. The pause
-    # branch is the stop, the wait and the start back to back; on shutdown the wait collapses,
-    # but bound it for the case where stop() arrives just before the pause begins.
+    # Server-wide statements the one-shot branch runs: a lost Keeper session, objects that the
+    # running queries use going away and loading again, and memory returned to the system.
+    _ONE_SHOT_STATEMENTS = (
+        "RECONNECT ZOOKEEPER",
+        # Every replicated table at once, unlike the single table of `_restart_random_replica`.
+        "RESTART REPLICAS",
+        "FLUSH ASYNC INSERT QUEUE",
+        "UNLOAD DICTIONARIES",
+        "RELOAD FUNCTIONS",
+        "RELOAD USERS",
+        "JEMALLOC PURGE",
+        # Every refreshable materialized view at once, and the background activity of streaming tables.
+        "REFRESH ALL BACKGROUND",
+    )
+    # Statements that throw `SUPPORT_IS_DISABLED` in some builds: sanitizer builds have no jemalloc.
+    _OPTIONAL_STATEMENTS = ("JEMALLOC PURGE",)
+    # Caches the cache branch empties, one per iteration, while queries are reading through them.
+    _CACHES = (
+        "MARK CACHE",
+        "UNCOMPRESSED CACHE",
+        "INDEX MARK CACHE",
+        "INDEX UNCOMPRESSED CACHE",
+        "PRIMARY INDEX CACHE",
+        "COLUMNS CACHE",
+        "MMAP CACHE",
+        "PAGE CACHE",
+        "QUERY CACHE",
+        "QUERY CONDITION CACHE",
+        "COMPILED EXPRESSION CACHE",
+        "FILESYSTEM CACHE",
+        "SCHEMA CACHE",
+        "STATISTICS CACHE",
+        "VECTOR SIMILARITY INDEX CACHE",
+        "TEXT INDEX CACHES",
+        "ICEBERG METADATA CACHE",
+        "PARQUET METADATA CACHE",
+        "DNS CACHE",
+        "CONNECTIONS CACHE",
+    )
+    # Only tables of `Atomic` databases are detached: `Replicated` ones reject a plain `DETACH TABLE`,
+    # and the ones in `KEEP_DATABASES` must be intact for the hung check and the log export.
+    _DETACHABLE_TABLES_QUERY = (
+        "SELECT database, name AS table FROM system.tables "
+        "WHERE engine LIKE '%MergeTree' AND NOT is_temporary "
+        "AND database IN (SELECT name FROM system.databases WHERE engine = 'Atomic') "
+        "AND database NOT IN {keep:Array(String)}"
+    )
+    # Longest an iteration can run, plus margin, so stop() outlasts one of them. A hold is the
+    # disruption, the wait and the undo back to back; on shutdown the wait collapses, but bound it
+    # for the case where stop() arrives just before the pause begins.
+    _HOLD_TIMEOUT = (
+        _SYSTEM_STATEMENT_TIMEOUT
+        + _SYSTEM_STATEMENT_PAUSE_MAX
+        + _SYSTEM_STATEMENT_RESTART_ATTEMPTS * _SYSTEM_STATEMENT_TIMEOUT
+        + (_SYSTEM_STATEMENT_RESTART_ATTEMPTS - 1) * _SYSTEM_STATEMENT_RESTART_BACKOFF
+    )
     _JOIN_TIMEOUT = (
         max(
             _SELECT_TIMEOUT + _KILL_MUTATION_TIMEOUT,
-            _SYSTEM_STATEMENT_TIMEOUT
-            + _SYSTEM_STATEMENT_PAUSE_MAX
-            + _SYSTEM_STATEMENT_RESTART_ATTEMPTS * _SYSTEM_STATEMENT_TIMEOUT
-            + (_SYSTEM_STATEMENT_RESTART_ATTEMPTS - 1) * _SYSTEM_STATEMENT_RESTART_BACKOFF,
+            # The detach branch picks its table first.
+            _SELECT_TIMEOUT + _HOLD_TIMEOUT,
         )
         + 5
     )
@@ -280,74 +346,213 @@ class RandomDisruptor:
         except Exception as e:
             logging.warning("Random mutation kill failed: %s: %s", type(e).__name__, e)
 
-    def _run_system_statement(self, statement: str) -> bool:
-        """Run `SYSTEM <statement>`, reporting whether it succeeded."""
-        query = f"SYSTEM {statement}"
+    def _run_query(
+        self,
+        query: str,
+        params: Optional[Dict[str, str]] = None,
+        quiet: bool = False,
+        timeout: Optional[float] = None,
+    ) -> Tuple[Optional[bool], str]:
+        """Run `query`, returning whether it succeeded and its output. The first element is `None`
+        when the outcome is unknown: a client-side timeout does not mean the server skipped the
+        query. `quiet` logs a failure at debug level, for a query that a concurrent test routinely
+        makes fail, for example by dropping its table."""
+        timeout = self._SYSTEM_STATEMENT_TIMEOUT if timeout is None else timeout
+        # Keep the subprocess cap above --receive_timeout so the client's own timeout is the one
+        # that governs, as in the mutation kill above.
+        command = ["clickhouse", "client", f"--receive_timeout={max(timeout - 5, 5)}"]
+        # Values are passed as query parameters instead of interpolating them, as in the kills above.
+        for name, value in (params or {}).items():
+            command += [f"--param_{name}", value]
+        command += ["-q", query]
         try:
-            # Keep the subprocess cap above --receive_timeout so the client's own timeout is
-            # the one that governs, as in the mutation kill above.
-            returncode = call(
-                ["clickhouse", "client", "--receive_timeout=10", "-q", query],
-                stderr=subprocess.DEVNULL,
-                timeout=self._SYSTEM_STATEMENT_TIMEOUT,
-            )
-            if returncode:
-                logging.warning("%s exited %s", query, returncode)
-            return returncode == 0
+            result = subprocess.run(command, capture_output=True, timeout=timeout, check=False)
         except subprocess.TimeoutExpired as e:
             logging.debug("%s timed out: %s", query, e)
-            return False
+            return None, ""
         except Exception as e:
             logging.warning("%s failed: %s: %s", query, type(e).__name__, e)
-            return False
+            return None, ""
+        if result.returncode:
+            # The first line of the client's error names the exception.
+            error = result.stderr.decode("utf-8", errors="replace").strip().split("\n", 1)[0]
+            logging.log(
+                logging.DEBUG if quiet else logging.WARNING,
+                "%s exited %s: %s",
+                query,
+                result.returncode,
+                error,
+            )
+            return False, ""
+        return True, result.stdout.decode("utf-8")
 
-    def _pause_random_operation(self) -> None:
-        """Stop a background operation server-wide for a short interval, then start it again."""
-        stop_statement, start_statement = random.choice(self._SYSTEM_STATEMENT_PAIRS)
+    def _select_rows(self, query: str, params: Optional[Dict[str, str]] = None) -> List[Dict]:
+        """The rows of a `SELECT`, empty if it did not succeed."""
+        succeeded, output = self._run_query(
+            f"{query} FORMAT JSONEachRow", params, timeout=self._SELECT_TIMEOUT
+        )
+        if not succeeded:
+            return []
+        return [json.loads(line) for line in output.splitlines() if line]
+
+    @staticmethod
+    def _keep_databases_param() -> str:
+        """`KEEP_DATABASES` as an `Array(String)` parameter."""
+        return "[" + ",".join("'" + name.replace("\\", "\\\\").replace("'", "\\'") + "'" for name in KEEP_DATABASES) + "]"
+
+    def _run_system_statement(self, statement: str) -> bool:
+        """Run `SYSTEM <statement>`, reporting whether it succeeded."""
+        return bool(self._run_query(f"SYSTEM {statement}", quiet=statement in self._OPTIONAL_STATEMENTS)[0])
+
+    def _hold(
+        self,
+        disrupt: Tuple[str, Callable[[], Optional[bool]]],
+        undo: Tuple[str, Callable[[], bool]],
+    ) -> None:
+        """Run a disruption, wait a random pause and undo it, each named by its description in the
+        log. The disruption returns `False` when it certainly did not happen, which skips the undo,
+        and `None` when its outcome is unknown, which undoes it without the pause."""
+        disrupt_description, disrupt_action = disrupt
+        undo_description, undo_action = undo
         pause = random.uniform(self._SYSTEM_STATEMENT_PAUSE_MIN, self._SYSTEM_STATEMENT_PAUSE_MAX)
+        disrupted: Optional[bool] = None
         try:
-            if self._run_system_statement(stop_statement):
-                logging.info("SYSTEM %s, resuming in %.1fs", stop_statement, pause)
+            disrupted = disrupt_action()
+            if disrupted:
+                logging.info("%s, undoing in %.1fs", disrupt_description, pause)
                 # Interruptible, so a shutdown request cuts the pause short instead of
                 # holding stop() for the full interval.
                 self._stop_event.wait(pause)
         finally:
-            # Always run the start: on shutdown, and also when the stop above reported a
-            # failure, since a client-side timeout does not mean the server skipped the
-            # statement. Retried, so one failed attempt does not leave the operation
-            # stopped until `prepare_for_hung_check`'s own retry at the very end of the run.
+            # Also on shutdown and when the disruption raised. Retried, so one failed attempt does not
+            # leave the server disrupted; after the last one, `prepare_for_hung_check` restarts a stopped
+            # operation, and a table left detached goes away with its database at the end of the run.
             for attempt in range(1, self._SYSTEM_STATEMENT_RESTART_ATTEMPTS + 1):
-                if self._run_system_statement(start_statement):
+                if disrupted is False:
+                    break
+                if undo_action():
                     if attempt > 1:
-                        logging.info("SYSTEM %s succeeded on attempt %d", start_statement, attempt)
+                        logging.info("%s succeeded on attempt %d", undo_description, attempt)
                     break
                 attempts_left = self._SYSTEM_STATEMENT_RESTART_ATTEMPTS - attempt
                 if not attempts_left or self._stop_event.is_set():
                     logging.error(
-                        "Failed to run SYSTEM %s after %d attempt%s%s",
-                        start_statement,
+                        "Failed to run %s after %d attempt%s",
+                        undo_description,
                         attempt,
                         "" if attempt == 1 else "s",
-                        "" if attempts_left == 0 else " (shutting down, deferring to prepare_for_hung_check)",
                     )
                     break
                 # Interruptible, so shutdown does not wait out the full backoff.
                 self._stop_event.wait(self._SYSTEM_STATEMENT_RESTART_BACKOFF)
 
+    def _pause_random_operation(self) -> None:
+        """Stop a background operation server-wide for a short interval, then start it again."""
+        stop_statement, start_statement = random.choice(self._SYSTEM_STATEMENT_PAIRS)
+        self._hold(
+            # A failed stop is still followed by the start: the server may have run it.
+            (f"SYSTEM {stop_statement}", lambda: self._run_system_statement(stop_statement) or None),
+            (f"SYSTEM {start_statement}", lambda: self._run_system_statement(start_statement)),
+        )
+
+    def _drop_random_cache(self) -> None:
+        """Empty one of the caches server-wide."""
+        cache = random.choice(self._CACHES)
+        if self._run_system_statement(f"DROP {cache}"):
+            logging.info("SYSTEM DROP %s", cache)
+
+    def _run_one_shot_statement(self) -> None:
+        """Run one of `_ONE_SHOT_STATEMENTS`."""
+        statement = random.choice(self._ONE_SHOT_STATEMENTS)
+        if self._run_system_statement(statement):
+            logging.info("SYSTEM %s", statement)
+
+    def _refresh_or_cancel_random_view(self) -> None:
+        """Start a refresh of a random refreshable materialized view now, or cancel the running one."""
+        rows = self._select_rows(
+            "SELECT database, view FROM system.view_refreshes "
+            "WHERE database NOT IN {keep:Array(String)} ORDER BY rand() LIMIT 1",
+            {"keep": self._keep_databases_param()},
+        )
+        if not rows or self._stop_event.is_set():
+            return
+        name = f"{quote_identifier(rows[0]['database'])}.{quote_identifier(rows[0]['view'])}"
+        statement = f"{random.choice(('REFRESH', 'CANCEL'))} VIEW {name}"
+        # Quiet: a test may drop the view at any moment.
+        if self._run_query(f"SYSTEM {statement}", quiet=True)[0]:
+            logging.info("SYSTEM %s", statement)
+
+    def _reload_random_dictionary(self) -> None:
+        """Reload a random dictionary while queries read from it."""
+        rows = self._select_rows(
+            "SELECT database, name FROM system.dictionaries "
+            "WHERE database NOT IN {keep:Array(String)} ORDER BY rand() LIMIT 1",
+            {"keep": self._keep_databases_param()},
+        )
+        if not rows or self._stop_event.is_set():
+            return
+        # A dictionary from the server configuration has no database.
+        name = quote_identifier(rows[0]["name"])
+        if rows[0]["database"]:
+            name = f"{quote_identifier(rows[0]['database'])}.{name}"
+        # Quiet: the source of a test's dictionary may be gone, or fail on purpose.
+        if self._run_query(f"SYSTEM RELOAD DICTIONARY {name}", quiet=True)[0]:
+            logging.info("SYSTEM RELOAD DICTIONARY %s", name)
+
+    def _detach_random_table(self) -> None:
+        """Detach a random `MergeTree` table for a short interval, then attach it again."""
+        rows = self._select_rows(
+            self._DETACHABLE_TABLES_QUERY + " ORDER BY rand() LIMIT 1",
+            {"keep": self._keep_databases_param()},
+        )
+        # Shutdown may have been requested while the SELECT above was running.
+        if not rows or self._stop_event.is_set():
+            return
+        name = f"{quote_identifier(rows[0]['database'])}.{quote_identifier(rows[0]['table'])}"
+        # Quiet: a test may drop the table, or its database, at any moment.
+        self._hold(
+            (f"DETACH TABLE {name}", lambda: self._run_query(f"DETACH TABLE {name}", quiet=True)[0]),
+            (f"ATTACH TABLE {name}", lambda: bool(self._run_query(f"ATTACH TABLE {name}", quiet=True)[0])),
+        )
+
+    def _restart_random_replica(self) -> None:
+        """Reinitialize the Keeper session and the state of a random replicated table."""
+        rows = self._select_rows(
+            "SELECT database, table FROM system.replicas "
+            "WHERE database NOT IN {keep:Array(String)} ORDER BY rand() LIMIT 1",
+            {"keep": self._keep_databases_param()},
+        )
+        if not rows or self._stop_event.is_set():
+            return
+        name = f"{quote_identifier(rows[0]['database'])}.{quote_identifier(rows[0]['table'])}"
+        if self._run_query(f"SYSTEM RESTART REPLICA {name}", quiet=True)[0]:
+            logging.info("SYSTEM RESTART REPLICA %s", name)
+
     def _run(self) -> None:
         """Main loop that runs in the background thread."""
         logging.info("Random disruptor started (interval: %.1fs)", self._interval)
-        # Picked from uniformly, one per iteration. The pause is the only one whose effect
-        # outlives the iteration that started it: it holds a background operation off
-        # server-wide for up to `_SYSTEM_STATEMENT_PAUSE_MAX` seconds.
+        # Picked from uniformly, one per iteration. A pause and a detach hold
+        # their disruption for up to `_SYSTEM_STATEMENT_PAUSE_MAX` seconds and undo it before the
+        # iteration ends.
         disruptions = (
             self._kill_random_query,
             self._kill_random_client,
             self._kill_random_mutation,
             self._pause_random_operation,
+            self._drop_random_cache,
+            self._run_one_shot_statement,
+            self._reload_random_dictionary,
+            self._refresh_or_cancel_random_view,
+            self._detach_random_table,
+            self._restart_random_replica,
         )
         while not self._stop_event.is_set():
-            random.choice(disruptions)()
+            disruption = random.choice(disruptions)
+            try:
+                disruption()
+            except Exception as e:
+                # A broken disruption must not end the thread and with it every other one.
+                logging.warning("Random disruption %s failed: %s: %s", disruption.__name__, type(e).__name__, e)
             self._stop_event.wait(self._interval)
         logging.info("Random disruptor stopped")
 
@@ -1006,6 +1211,11 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     call_with_retry(make_query_command("SYSTEM START REPLICATED SENDS"))
     call_with_retry(make_query_command("SYSTEM START REPLICATION QUEUES"))
     call_with_retry(make_query_command("SYSTEM START VIEWS"))
+    # Stopped only by the random disruptor.
+    call_with_retry(make_query_command("SYSTEM START CLEANUP"))
+    call_with_retry(make_query_command("SYSTEM START PULLING REPLICATION LOG"))
+    for listener in DISRUPTED_LISTENERS:
+        call_with_retry(make_query_command(f"SYSTEM START LISTEN {listener}"))
     call_with_retry(make_query_command("SYSTEM DROP MARK CACHE"))
 
     # Kill other queries which known to be slow
