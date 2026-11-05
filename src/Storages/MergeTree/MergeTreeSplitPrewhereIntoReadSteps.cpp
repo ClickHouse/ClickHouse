@@ -1,6 +1,8 @@
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 
@@ -116,67 +118,230 @@ void fillRequiredColumns(
     /// delegates to it as well, through FunctionToExecutableFunctionAdaptor. It is imprecise in
     /// both directions: it reports true for merely expensive functions, and false for some
     /// functions that do throw while parsing row values (for example addDays(String, ...) via
-    /// FunctionDateOrDateTimeAddInterval). There is no sound can-throw oracle in the tree yet,
-    /// see the TODO on canThrow in IFunctionAdaptors.h.
+    /// FunctionDateOrDateTimeAddInterval). Use it to reproduce the existing step boundaries.
+    /// Splitting an alias needs the stricter IFunctionBase::canThrow contract below.
     if (!node_info.may_throw && node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
         && (node->function_base->isSuitableForShortCircuitArgumentsExecution(getArgumentTypesWithConstInfo(node->children))
             || node->function_base->isExpensive()))
         node_info.may_throw = true;
 }
 
-/// Appends the conditions combined with AND into `atoms`, descending into nested AND nodes.
-/// The order of the original conditions is preserved: `and(A, and(B, C))` yields `A, B, C`.
-/// ActionsDAG::extractConjunctionAtoms is not reused here because it walks with a stack and thus
-/// reverses sibling order, while the step boundaries below and the evaluation order promised for a
-/// user written PREWHERE both depend on the original order.
-void flattenConjunction(const ActionsDAG::Node * node, ActionsDAG::NodeRawConstPtrs & atoms)
+struct ConditionGroup
 {
-    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->getName() == "and")
-    {
-        for (const auto * child : node->children)
-            flattenConjunction(child, atoms);
-        return;
-    }
+    ActionsDAG::NodeRawConstPtrs nodes;
+    bool needs_filtered_input;
+    bool ends_cache_prefix = false;
+};
 
-    atoms.push_back(node);
+using NodesInfo = std::unordered_map<const ActionsDAG::Node *, NodeInfo>;
+
+/// Group adjacent atoms from one conjunction; a later refinement may split an existing
+/// group but must never merge its last atom with the next group's first atom.
+void appendGroups(
+    std::vector<ConditionGroup> & groups, const ActionsDAG::NodeRawConstPtrs & nodes, const NodesInfo & info, size_t cache_prefix = 0)
+{
+    for (size_t i = 0; i < nodes.size(); ++i)
+    {
+        const auto * node = nodes[i];
+        const auto & current = info.at(node);
+        if (i != 0 && i != cache_prefix && !current.may_throw && current.readsSameColumns(info.at(groups.back().nodes.front())))
+            groups.back().nodes.push_back(node);
+        else
+            groups.push_back({{node}, current.may_throw});
+        if (i + 1 == cache_prefix)
+            groups.back().ends_cache_prefix = true;
+    }
 }
 
-/// A text index hint is an alias for `and(index_input, original_predicate)`.
-/// Expose its leading index inputs immediately before that conjunct so a reader
-/// can discard rows before fetching the column used for verification. Keep the
-/// original conjunct for its result name, type and any downstream uses.
-void addTextIndexHintConditions(
-    ActionsDAG::NodeRawConstPtrs & conditions,
-    size_t & num_attributed_conditions,
-    const std::unordered_map<const ActionsDAG::Node *, NodeInfo> & nodes_info)
+/// Walk only conjunctions, in the written order. In particular, a candidate below OR or NOT
+/// cannot reject a row on its own. Keep the original DAG for its outputs and cache hashes.
+class ConjunctionSplitter
 {
-    ActionsDAG::NodeRawConstPtrs expanded;
-    expanded.reserve(conditions.size());
-    size_t attributed = 0;
-    for (size_t i = 0; i < conditions.size(); ++i)
+public:
+    ConjunctionSplitter(const PrewhereInfo & info_, const ExpressionActionsSettings & settings_)
+        : info(info_)
+        , settings(settings_)
     {
-        const auto * condition = conditions[i];
-        const auto * node = condition;
-        while (node->type == ActionsDAG::ActionType::ALIAS)
-            node = node->children.front();
+    }
 
-        if (node != condition && node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->getName() == "and"
-            && !nodes_info.at(condition).required_storage_columns.empty())
+    const ActionsDAG::Node * getConjunction(const ActionsDAG::Node * node, bool through_aliases)
+    {
+        const auto * function = node->getWithoutAlias();
+        if (function->type != ActionsDAG::ActionType::FUNCTION || !function->function_base || function->function_base->getName() != "and")
+            return nullptr;
+        if (node == function)
+            return function;
+
+        if (!through_aliases || !info.need_filter)
+            return nullptr;
+
+        if (!can_split_aliases.has_value())
         {
-            for (const auto * child : node->children)
-            {
-                if (child->type != ActionsDAG::ActionType::INPUT || nodes_info.at(child).required_indexes.empty())
-                    break;
-                expanded.push_back(child);
-            }
+            /// A sibling output may depend on seeing rows before the original filter is applied.
+            const auto & dag = info.prewhere_actions;
+            can_split_aliases
+                = std::ranges::all_of(
+                      dag.getNodes(),
+                      [](const auto & action)
+                      {
+                          return allNodeFunctions(
+                              action,
+                              [](const auto & f)
+                              { return f.isDeterministicInScopeOfQuery() && !f.isStateful() && !f.hasObservableSideEffects(); });
+                      })
+                && std::ranges::all_of(
+                      dag.getOutputs(),
+                      [&](const auto * output)
+                      { return output->result_name == info.prewhere_column_name || canEvaluateOnDifferentRows(output); });
         }
-        expanded.push_back(condition);
-        if (i + 1 == num_attributed_conditions)
-            attributed = expanded.size();
+        if (!*can_split_aliases)
+            return nullptr;
+
+        if (canEvaluateOnDifferentRows(function) || hasGuardedLastArgument(node, function))
+            return function;
+        return nullptr;
     }
-    conditions.swap(expanded);
-    num_attributed_conditions = attributed;
-}
+
+    void flatten(const ActionsDAG::Node * node, ActionsDAG::NodeRawConstPtrs & atoms, bool through_aliases)
+    {
+        if (const auto * conjunction = getConjunction(node, through_aliases))
+        {
+            for (const auto * child : conjunction->children)
+                flatten(child, atoms, through_aliases);
+        }
+        else
+            atoms.push_back(node);
+    }
+
+    /// Refine the original schedule within its existing filter and cache boundaries.
+    /// A group with an unguarded, possibly throwing expression may see rows from before
+    /// the accumulated filter is applied. Keep all steps up to that group as they were.
+    void splitAliases(std::vector<ConditionGroup> & groups, const NodesInfo & nodes_info)
+    {
+        auto can_expand = [&](const ConditionGroup & group)
+        {
+            return std::ranges::any_of(
+                group.nodes, [&](const auto * node) { return node->type == ActionsDAG::ActionType::ALIAS && getConjunction(node, true); });
+        };
+        if (std::ranges::none_of(groups, can_expand))
+            return;
+
+        std::unordered_set<size_t> to_expand;
+        for (size_t i = 0; i < groups.size(); ++i)
+        {
+            const auto & group = groups[i];
+            const bool safe = std::ranges::all_of(group.nodes, [&](const auto * node) { return canEvaluateOnDifferentRows(node); });
+            if ((group.nodes.size() == 1 || safe) && can_expand(group))
+                to_expand.insert(i);
+            else if (!group.needs_filtered_input && !safe)
+                to_expand.clear();
+        }
+        if (to_expand.empty())
+            return;
+
+        std::vector<ConditionGroup> refined;
+        for (size_t i = 0; i < groups.size(); ++i)
+        {
+            auto & group = groups[i];
+            if (!to_expand.contains(i))
+            {
+                refined.push_back(std::move(group));
+                continue;
+            }
+
+            ActionsDAG::NodeRawConstPtrs atoms;
+            for (const auto * node : group.nodes)
+                flatten(node, atoms, true);
+            const size_t first = refined.size();
+            appendGroups(refined, atoms, nodes_info);
+            refined[first].needs_filtered_input |= group.needs_filtered_input;
+            refined.back().ends_cache_prefix = group.ends_cache_prefix;
+        }
+        groups.swap(refined);
+    }
+
+private:
+    const PrewhereInfo & info;
+    const ExpressionActionsSettings & settings;
+    std::optional<bool> can_split_aliases;
+    std::unordered_map<const ActionsDAG::Node *, bool> safe_nodes;
+    std::unordered_map<const ActionsDAG::Node *, size_t> uses;
+
+    /// Splitting changes the blocks on which an argument runs. In particular, a PREWHERE
+    /// filter discards NULL, whereas a short-circuit AND still evaluates later arguments on NULL.
+    bool canEvaluateOnDifferentRows(const ActionsDAG::Node * node)
+    {
+        if (auto it = safe_nodes.find(node); it != safe_nodes.end())
+            return it->second;
+
+        bool safe = !WhichDataType(node->result_type).isFunction();
+        if (safe && node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            const auto & function = *node->function_base;
+            safe = function.isDeterministic() && !function.isStateful() && !function.hasObservableSideEffects()
+                && (function.getName() == "and" || !function.canThrow(getArgumentTypesWithConstInfo(node->children)));
+        }
+        else if (
+            node->type != ActionsDAG::ActionType::INPUT && node->type != ActionsDAG::ActionType::COLUMN
+            && node->type != ActionsDAG::ActionType::ALIAS)
+            safe = false;
+        safe = safe && std::ranges::all_of(node->children, [&](const auto * child) { return canEvaluateOnDifferentRows(child); });
+        safe_nodes.emplace(node, safe);
+        return safe;
+    }
+
+    bool hasSingleUse(const ActionsDAG::Node * node)
+    {
+        if (uses.empty())
+        {
+            for (const auto & action : info.prewhere_actions.getNodes())
+                for (const auto * child : action.children)
+                    ++uses[child];
+            for (const auto * output : info.prewhere_actions.getOutputs())
+                ++uses[output];
+        }
+
+        while (uses.at(node) == 1 && node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children.front();
+        return uses.at(node) == 1;
+    }
+
+    /// A private lazy call, and private lazy calls in its arguments, already run on the
+    /// guard's mask. A shared call may be eager, and a nested short-circuit function can
+    /// impose a different mask on its children. Keep those expressions intact.
+    bool canEvaluateOnGuardedRows(const ActionsDAG::Node * node)
+    {
+        if (canEvaluateOnDifferentRows(node))
+            return true;
+        const auto * unwrapped = node->getWithoutAlias();
+        if (unwrapped->type != ActionsDAG::ActionType::FUNCTION || !hasSingleUse(node))
+            return false;
+        const auto & function = *unwrapped->function_base;
+        IFunctionBase::ShortCircuitSettings short_circuit;
+        return function.isDeterministic() && !function.isStateful() && !function.hasObservableSideEffects()
+            && !function.isShortCircuit(short_circuit, unwrapped->children.size())
+            && function.isSuitableForShortCircuitArgumentsExecution(getArgumentTypesWithConstInfo(unwrapped->children))
+            && std::ranges::all_of(unwrapped->children, [&](const auto * child) { return canEvaluateOnGuardedRows(child); });
+    }
+
+    /// In and(input..., lazy_predicate), the eager non-null inputs already decide precisely
+    /// which rows reach the private last argument. It may throw on those rows.
+    bool hasGuardedLastArgument(const ActionsDAG::Node * alias, const ActionsDAG::Node * conjunction)
+    {
+        if (settings.short_circuit_function_evaluation == ShortCircuitFunctionEvaluation::DISABLE)
+            return false;
+
+        const auto & children = conjunction->children;
+        for (size_t i = 0; i + 1 < children.size(); ++i)
+        {
+            const auto * guard = children[i]->getWithoutAlias();
+            if (guard->type != ActionsDAG::ActionType::INPUT || canContainNull(*guard->result_type))
+                return false;
+        }
+
+        return hasSingleUse(alias) && canEvaluateOnGuardedRows(children.back());
+    }
+};
 
 /// Appends the INPUT nodes of the sub-DAG rooted at `node` to `inputs`, each at most once.
 void collectInputNodes(
@@ -336,27 +501,37 @@ bool tryBuildPrewhereSteps(
 
     /// 1. List all condition nodes that are combined with AND into PREWHERE condition
     const auto & condition_root = prewhere_info->prewhere_actions.findInOutputs(prewhere_info->prewhere_column_name);
-    const bool is_conjunction = (condition_root.type == ActionsDAG::ActionType::FUNCTION && condition_root.function_base->getName() == "and");
-    const bool has_index_filters = prewhere_info->need_filter && index_read_tasks && !index_read_tasks->empty();
-    if (!is_conjunction && !(has_index_filters && condition_root.type == ActionsDAG::ActionType::ALIAS))
+    ConjunctionSplitter splitter(*prewhere_info, actions_settings);
+    const auto * conjunction = splitter.getConjunction(&condition_root, true);
+    if (!conjunction)
         return false;
-    /// Nested conjunctions are flattened, so that a condition list like
-    /// `and(existing_prewhere, and(guard, throwing))` (built by optimizePrewhere when a moved WHERE
-    /// is merged into an existing PREWHERE) is grouped condition by condition below instead of
-    /// treating the inner AND as one atomic condition.
-    ActionsDAG::NodeRawConstPtrs condition_nodes;
-    flattenConjunction(&condition_root, condition_nodes);
 
-    /// Conditions covered by the query condition cache attribution get their own steps, unless PREWHERE was rewritten since.
-    size_t num_attributed_conditions = 0;
-    if (const auto & attribution = prewhere_info->query_condition_cache_attribution)
+    /// The cache hashes identify the original direct children, before any nested AND is split.
+    /// A rewritten prefix no longer owns the cache entry. If it still matches, place the boundary
+    /// after the last atom of its last child, never inside an expanded conjunct.
+    size_t attributed_children = 0;
+    if (const auto & attribution = prewhere_info->query_condition_cache_attribution; attribution && conjunction == &condition_root)
     {
         const auto & hashes = attribution->conjunct_hashes;
-        bool matches = !hashes.empty() && hashes.size() < condition_nodes.size();
+        bool matches = !hashes.empty() && hashes.size() < conjunction->children.size();
         for (size_t i = 0; matches && i < hashes.size(); ++i)
-            matches = condition_nodes[i]->getHash() == hashes[i];
+            matches = conjunction->children[i]->getHash() == hashes[i];
         if (matches)
-            num_attributed_conditions = hashes.size();
+            attributed_children = hashes.size();
+    }
+
+    ActionsDAG::NodeRawConstPtrs condition_nodes;
+    size_t num_attributed_conditions = 0;
+    if (conjunction != &condition_root)
+        condition_nodes.push_back(&condition_root);
+    else
+    {
+        for (size_t i = 0; i < conjunction->children.size(); ++i)
+        {
+            splitter.flatten(conjunction->children[i], condition_nodes, false);
+            if (i + 1 == attributed_children)
+                num_attributed_conditions = condition_nodes.size();
+        }
     }
 
     /// 2. Collect the set of columns that are used in the condition
@@ -365,11 +540,6 @@ bool tryBuildPrewhereSteps(
     {
         fillRequiredColumns(node, nodes_info, columns, index_read_tasks);
     }
-
-    if (has_index_filters)
-        addTextIndexHintConditions(condition_nodes, num_attributed_conditions, nodes_info);
-    if (!is_conjunction && condition_nodes.size() == 1)
-        return false;
 
     /// 3. Sort condition nodes by the number of columns used in them and the overall size of those columns
     /// TODO: not sorting for now because the conditions are already sorted by Where Optimizer
@@ -393,12 +563,10 @@ bool tryBuildPrewhereSteps(
     /// `MergeTreeWhereOptimizer` groups conditions by their physical storage columns, which makes a
     /// guard and a throwing predicate over the same column adjacent, so the may_throw check below is
     /// what keeps the guard effective.
-    std::vector<std::vector<const ActionsDAG::Node *>> condition_groups;
-    /// Indices of groups whose first condition may throw. Steps are not required to materialize their
-    /// filter, so the preceding step is asked to do it, otherwise the throwing condition is evaluated
-    /// on the rows that step rejects. Recorded for every such group regardless of which columns the
-    /// two steps read, because a step never filters the block it hands over on its own.
-    std::unordered_set<size_t> groups_requiring_filtered_input;
+    std::vector<ConditionGroup> condition_groups;
+    appendGroups(condition_groups, condition_nodes, nodes_info, num_attributed_conditions);
+    splitter.splitAliases(condition_groups, nodes_info);
+
     /// For every group, the index of the group whose step reads its columns. A group that was split
     /// from the previous one only because it may throw reads the same storage columns, so with
     /// `read_ahead_columns` its columns are read by the first step of that run and only the evaluation
@@ -407,28 +575,11 @@ bool tryBuildPrewhereSteps(
     /// convert the column or fill it from a default expression, because that runs on the whole block
     /// before any filter, so the caller decides (see `MergeTreeReaderSettings::read_ahead_prewhere_columns`).
     std::vector<size_t> group_read_step;
-    size_t num_attributed_steps = 0;
-    for (size_t i = 0; i < condition_nodes.size(); ++i)
+    for (size_t i = 0; i < condition_groups.size(); ++i)
     {
-        const auto * node = condition_nodes[i];
-        const auto & node_info = nodes_info[node];
-        const bool is_first_unattributed = num_attributed_conditions != 0 && i == num_attributed_conditions;
-        if (is_first_unattributed)
-            num_attributed_steps = condition_groups.size();
-
-        const bool same_storage_columns = !condition_groups.empty() && nodes_info[condition_groups.back().front()].readsSameColumns(node_info);
-
-        if (same_storage_columns && !node_info.may_throw && !is_first_unattributed)
-        {
-            condition_groups.back().push_back(node);
-            continue;
-        }
-
-        if (!condition_groups.empty() && node_info.may_throw)
-            groups_requiring_filtered_input.insert(condition_groups.size());
-
-        group_read_step.push_back(same_storage_columns && read_ahead_columns ? group_read_step.back() : condition_groups.size());
-        condition_groups.push_back({node});
+        const bool same_storage_columns
+            = i && nodes_info.at(condition_groups[i].nodes.front()).readsSameColumns(nodes_info.at(condition_groups[i - 1].nodes.front()));
+        group_read_step.push_back(read_ahead_columns && same_storage_columns ? group_read_step.back() : i);
     }
 
     /// Inputs of the later groups that are read by each step, see group_read_step.
@@ -440,7 +591,7 @@ bool tryBuildPrewhereSteps(
             const size_t read_step = group_read_step[group_index];
             if (read_step == group_index)
                 continue;
-            for (const auto * node : condition_groups[group_index])
+            for (const auto * node : condition_groups[group_index].nodes)
                 collectInputNodes(node, visited[read_step], inputs_read_ahead[read_step]);
         }
     }
@@ -461,7 +612,7 @@ bool tryBuildPrewhereSteps(
 
     for (size_t step_index = 0; step_index < condition_groups.size(); ++step_index)
     {
-        const auto & condition_group = condition_groups[step_index];
+        const auto & condition_group = condition_groups[step_index].nodes;
         ActionsDAGPtr step_dag = std::make_unique<ActionsDAG>();
         const ActionsDAG::Node * original_node = nullptr;
         const ActionsDAG::Node * result_node = nullptr;
@@ -535,8 +686,7 @@ bool tryBuildPrewhereSteps(
         for (size_t step_index = 0; step_index < steps.size(); ++step_index)
         {
             auto & step = steps[step_index];
-            PrewhereExprStep new_step
-            {
+            PrewhereExprStep new_step{
                 .type = PrewhereExprStep::Filter,
                 .actions = std::make_shared<ExpressionActions>(std::move(*step.actions), actions_settings),
                 .filter_column_name = step.result_node->result_name,
@@ -548,11 +698,12 @@ bool tryBuildPrewhereSteps(
                         && node_to_step[step.original_node] <= step_index),
                 /// A step that precedes a may_throw condition must materialize its filter, so that
                 /// the throwing condition is not evaluated on the rows this step rejects.
-                .need_filter = force_short_circuit_execution || groups_requiring_filtered_input.contains(step_index + 1),
+                .need_filter = force_short_circuit_execution
+                    || (step_index + 1 < condition_groups.size() && condition_groups[step_index + 1].needs_filtered_input),
                 .perform_alter_conversions = true,
                 .columns_overwritten_by_chain = {},
                 .mutation_version = std::nullopt,
-                .query_condition_cache_attribution_boundary = step_index + 1 == num_attributed_steps,
+                .query_condition_cache_attribution_boundary = condition_groups[step_index].ends_cache_prefix,
             };
 
             prewhere.steps.push_back(std::make_shared<PrewhereExprStep>(std::move(new_step)));
