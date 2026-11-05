@@ -24,15 +24,15 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
-
 MetadataStoragePtr unwrapEncryptedAndCacheLayers(DiskPtr disk)
 {
     if (disk->getDataSourceDescription().is_encrypted)
         return unwrapEncryptedAndCacheLayers(disk->getDelegateDiskIfExists());
 
     DiskObjectStoragePtr object_storage_disk = std::dynamic_pointer_cast<DiskObjectStorage>(disk);
+    if (!object_storage_disk)
+        return nullptr;
+
     MetadataStoragePtr metadata_storage = object_storage_disk->getMetadataStorage();
 
     while (auto * cache_metadata = dynamic_cast<MetadataStorageFromCacheObjectStorage *>(metadata_storage.get()))
@@ -41,6 +41,9 @@ MetadataStoragePtr unwrapEncryptedAndCacheLayers(DiskPtr disk)
     chassert(metadata_storage);
     return metadata_storage;
 }
+
+namespace
+{
 
 /// Identity of the storage that a disk reads and writes.
 struct StorageNamespace

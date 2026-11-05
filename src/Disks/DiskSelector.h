@@ -30,6 +30,9 @@ bool haveSameStorageNamespace(const DiskPtr & lhs, const DiskPtr & rhs);
 /// `cache` disk over the same disk for one.
 bool areDisksDuplicateStorage(const DiskPtr & lhs, const DiskPtr & rhs);
 
+/// The metadata storage below the `encrypted` and `cache` layers of `disk`, or nullptr if `disk` is not over an object storage disk.
+MetadataStoragePtr unwrapEncryptedAndCacheLayers(DiskPtr disk);
+
 /// Parse .xml configuration and store information about disks
 /// Mostly used for introspection.
 class DiskSelector
