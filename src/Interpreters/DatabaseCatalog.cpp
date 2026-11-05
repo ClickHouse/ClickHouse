@@ -112,6 +112,25 @@ namespace FailPoints
     extern const char database_catalog_drop_finally_after_notify[];
 }
 
+namespace
+{
+
+/// Whether the table pushes into views in the background. A proxy is looked through without creating
+/// the storage it wraps, which pushes nothing before it exists.
+bool pushesToViewsInBackground(StoragePtr table)
+{
+    for (size_t depth = 0; table && depth < max_storage_proxy_depth; ++depth)
+    {
+        const auto * proxy = dynamic_cast<const StorageProxy *>(table.get());
+        if (!proxy)
+            return table->noPushingToViewsOnInserts();
+        table = proxy->tryGetNested();
+    }
+    return false;
+}
+
+}
+
 class DatabaseNameHints : public IHints<>
 {
 public:
@@ -382,7 +401,7 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
 
         /// Tables that push into views in the background stop first, so nothing writes into the tables drained below.
         for (const auto & table : user_tables)
-            if (table && table->noPushingToViewsOnInserts())
+            if (pushesToViewsInBackground(table))
                 prepare_for_shutdown(table);
 
         for (size_t pass = 0; pass <= user_tables.size(); ++pass)
