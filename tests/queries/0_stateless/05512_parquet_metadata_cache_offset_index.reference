@@ -20,3 +20,5 @@
 05512:large_miss	0	1	0
 05512:large_hit_keeps	1	0	0
 05512:large_hit_kept	1	0	0
+clickhouse-local: weight counts the kept offset indexes 1, unchanged on reuse 1, offset index hits 3
+clickhouse-local, unsettled version token: weight unchanged 1 1, offset index hits 0
