@@ -75,6 +75,19 @@ bool isReadFromOtherReplicas(const IQueryPlanStep & step)
         || typeid_cast<const ReadFromParallelReplicasStep *>(&step);
 }
 
+void countUnmatched(RuntimeDataflowStatisticsCache::Unmatched reason)
+{
+    switch (reason)
+    {
+        case RuntimeDataflowStatisticsCache::Unmatched::PlansNotComparable:
+            ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+            return;
+        case RuntimeDataflowStatisticsCache::Unmatched::PlanWithoutParallelReplicas:
+            ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanWithoutParallelReplicas);
+            return;
+    }
+}
+
 /// The planner leaves the read from the other replicas out where it turns parallel replicas off by itself,
 /// e.g. for too few rows per replica or a correlated subquery.
 bool planReadsFromOtherReplicas(QueryPlan::Node & root)
@@ -1024,6 +1037,17 @@ void considerEnablingParallelReplicas(
     const bool remember_boundary = optimization_settings.automatic_parallel_replicas_remember_boundary;
     if (remember_boundary && optimization_settings.automatic_parallel_replicas_mode != 2)
     {
+        /// An earlier execution built the replicas plan and could not use it. Building it again would end the same way.
+        if (const auto unmatched = stats_cache.getUnmatched(root_key))
+        {
+            ProfileEvents::increment(ProfileEvents::AutomaticParallelReplicasDecidedWithoutBuildingPlan);
+            countUnmatched(*unmatched);
+            LOG_TRACE(
+                getLogger("AutoParallelReplicas"),
+                "An earlier execution of this plan could not use the plan with parallel replicas. Skipping optimization");
+            return;
+        }
+
         if (const auto remembered = stats_cache.getBoundary(root_key))
         {
             std::tie(single_replica_plan_boundary, single_replica_plan_boundary_hash)
@@ -1087,15 +1111,24 @@ void considerEnablingParallelReplicas(
     ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanBuildMicroseconds, plan_build_microseconds);
     auto plan_with_parallel_replicas = std::move(build_result.plan);
 
+    /// The ways the plan just built can turn out unusable whatever the statistics say. They depend only on the two
+    /// plans, so remember them, as a matched boundary is remembered, and spare the next executions the build.
+    auto skip_unmatched = [&](RuntimeDataflowStatisticsCache::Unmatched reason)
+    {
+        countUnmatched(reason);
+        if (remember_boundary)
+            stats_cache.setUnmatched(root_key, reason);
+    };
+
     auto * const replicas_plan_boundary = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
     if (!replicas_plan_boundary)
     {
         /// `findTopNodeOfReplicasPlan` has logged why. Without any read from the other replicas, the planner has
         /// declined parallel replicas for this query, which is not a limitation of this optimization.
         if (planReadsFromOtherReplicas(*plan_with_parallel_replicas->getRootNode()))
-            ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+            skip_unmatched(RuntimeDataflowStatisticsCache::Unmatched::PlansNotComparable);
         else
-            ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanWithoutParallelReplicas);
+            skip_unmatched(RuntimeDataflowStatisticsCache::Unmatched::PlanWithoutParallelReplicas);
         return;
     }
     LOG_TRACE(getLogger("AutoParallelReplicas"), "Top node of replicas plan: {}", replicas_plan_boundary->step->getName());
@@ -1114,7 +1147,7 @@ void considerEnablingParallelReplicas(
             pr_node_hashes.at(replicas_plan_boundary),
             explainWithHashes(*plan_with_parallel_replicas, pr_node_hashes),
             explainWithHashes(query_plan, nopr_node_hashes));
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+        skip_unmatched(RuntimeDataflowStatisticsCache::Unmatched::PlansNotComparable);
         return;
     }
 
@@ -1127,7 +1160,7 @@ void considerEnablingParallelReplicas(
     const bool found_coordinated_read = collectCoordinatedReads(*replicas_plan_boundary, *single_replica_plan_boundary, reads);
     if (!reads.usable)
     {
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+        skip_unmatched(RuntimeDataflowStatisticsCache::Unmatched::PlansNotComparable);
         LOG_TRACE(
             getLogger("AutoParallelReplicas"),
             "The single-node plan and the replicas plan do not agree about the read coordinated between the "
@@ -1136,7 +1169,7 @@ void considerEnablingParallelReplicas(
     }
     if (!found_coordinated_read)
     {
-        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+        skip_unmatched(RuntimeDataflowStatisticsCache::Unmatched::PlansNotComparable);
         LOG_TRACE(
             getLogger("AutoParallelReplicas"),
             "No read below the node whose output the replicas ship is coordinated between them, so nothing "

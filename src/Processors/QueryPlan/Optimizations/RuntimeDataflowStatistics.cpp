@@ -46,6 +46,24 @@ std::optional<RuntimeDataflowStatisticsCache::Boundary> RuntimeDataflowStatistic
 void RuntimeDataflowStatisticsCache::setBoundary(UInt64 root_key, Boundary boundary)
 {
     boundary_cache->set(root_key, std::make_shared<Boundary>(boundary));
+    /// The plans match now, whatever an earlier execution found.
+    unmatched_cache->remove(root_key);
+}
+
+std::optional<RuntimeDataflowStatisticsCache::Unmatched> RuntimeDataflowStatisticsCache::getUnmatched(UInt64 root_key) const
+{
+    if (const auto entry = unmatched_cache->get(root_key); entry && std::chrono::steady_clock::now() < entry->expires_at)
+        return entry->reason;
+    return std::nullopt;
+}
+
+void RuntimeDataflowStatisticsCache::setUnmatched(UInt64 root_key, Unmatched reason)
+{
+    /// Long enough that a query run repeatedly builds the replicas plan only now and then, short enough to notice
+    /// soon when the plans start to match.
+    static constexpr auto remember_for = std::chrono::minutes(10);
+    unmatched_cache->set(
+        root_key, std::make_shared<UnmatchedEntry>(UnmatchedEntry{.reason = reason, .expires_at = std::chrono::steady_clock::now() + remember_for}));
 }
 
 void RuntimeDataflowStatisticsCache::update(size_t key, RuntimeDataflowStatistics stats)
