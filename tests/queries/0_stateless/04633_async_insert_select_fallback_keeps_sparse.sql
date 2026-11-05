@@ -28,15 +28,27 @@ SETTINGS async_insert = 1, wait_for_async_insert = 1, async_insert_select_as_asy
 
 SELECT count() FROM t_04633_sparse_async;
 
-SYSTEM FLUSH LOGS query_log, asynchronous_insert_log;
+SYSTEM FLUSH LOGS query_log, asynchronous_insert_log, text_log;
 
 -- Fell back: nothing reached the queue.
 SELECT count() FROM system.asynchronous_insert_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND database = currentDatabase() AND table = 't_04633_sparse_async';
 
+-- It took the queue route and fell back there.
+SELECT count() FROM system.text_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+    AND logger_name = 'AsyncInsertQueueTransform'
+    AND message LIKE '%reason: the result is not a single block%'
+    AND query_id IN (
+        SELECT query_id FROM system.query_log
+        WHERE event_date >= yesterday() AND event_time >= now() - 600
+            AND current_database = currentDatabase() AND type = 'QueryFinish'
+            AND log_comment = '04633_sparse_async');
+
 -- The fallback received the same sparse blocks as the synchronous route.
-SELECT anyIf(written_bytes, log_comment = '04633_sparse_async') = anyIf(written_bytes, log_comment = '04633_sparse_sync')
+SELECT countIf(log_comment = '04633_sparse_sync'), countIf(log_comment = '04633_sparse_async'),
+    anyIf(written_bytes, log_comment = '04633_sparse_async') = anyIf(written_bytes, log_comment = '04633_sparse_sync')
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND current_database = currentDatabase() AND type = 'QueryFinish'

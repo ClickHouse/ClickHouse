@@ -253,9 +253,13 @@ AsyncInsertQueueTransform::GenerateResult AsyncInsertQueueTransform::getRemainin
 {
     if (held)
     {
+        auto block = getInputPort().getHeader().cloneWithColumns(held->getColumns());
+        materializeBlockInplace(block);
+
         /// Defensive: a killed or timed-out SELECT is normally cancelled before this runs, so its
         /// buffered block is never written. Guard anyway, and never write a result the SELECT
         /// did not finish (a `break`-mode timeout ends it cleanly, unlike a KILL or `throw`).
+        /// Checked after the expansion, so nothing slow runs between the check and either write.
         if (auto process_list_elem = context->getProcessListElement())
         {
             process_list_elem->throwIfKilled();
@@ -265,9 +269,6 @@ AsyncInsertQueueTransform::GenerateResult AsyncInsertQueueTransform::getRemainin
         if (isCancelled())
             return {};
 
-        auto block = getInputPort().getHeader().cloneWithColumns(held->getColumns());
-        materializeBlockInplace(block);
-
         /// The estimate is per value, so a column of varying-width values can still overshoot.
         if (const size_t materialized_bytes = block.bytes(); materialized_bytes > max_data_size)
         {
@@ -276,6 +277,7 @@ AsyncInsertQueueTransform::GenerateResult AsyncInsertQueueTransform::getRemainin
                 "INSERT ... SELECT will be executed synchronously (reason: materialized block size {} exceeds "
                 "async_insert_max_data_size {})",
                 materialized_bytes, max_data_size);
+            block.clear();
             fallBack();
             fallback_executor->finish();
             return {};
