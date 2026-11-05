@@ -9,6 +9,7 @@
 #include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
@@ -415,6 +416,9 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
     Block res;
     res.info = block.info;
 
+    /// `ColumnBLOB::addCast` modifies the column in place, and header entries with the same name share a column of `block`.
+    UnorderedSetWithMemoryTracking<const IColumn *> blobs_with_cast;
+
     for (const auto & elem : header)
     {
         ColumnPtr column;
@@ -451,7 +455,8 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
             const auto & col = block.getByName(elem.name);
             if (auto * blob = typeid_cast<ColumnBLOB *>(col.column->assumeMutable().get()))
             {
-                blob->addCast(col.type, elem.type);
+                if (blobs_with_cast.insert(blob).second)
+                    blob->addCast(col.type, elem.type);
                 column = col.column;
             }
             else
@@ -600,7 +605,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
     const auto & settings = context->getSettingsRef();
     const bool replica_unavailable = isReplicaUnavailable();
-    if (replica_unavailable || needToSkipUnavailableShard())
+    if (replica_unavailable || shouldSkipUnavailableShard())
     {
         /// To avoid sending the query again in the read(), we need to update the following flags:
         was_cancelled = true;
@@ -619,7 +624,10 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         if (replica_unavailable)
             finishFragmentSpanForUnavailableReplica();
         else
+        {
             finishFragmentSpanForSkippedShard("Shard is unavailable: no replicas to connect to (skipped because of `skip_unavailable_shards`)");
+            reportShardSkipped();
+        }
         return;
     }
 
@@ -843,7 +851,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         read_context->resume();
 
         const bool replica_unavailable = isReplicaUnavailable();
-        if (replica_unavailable || needToSkipUnavailableShard())
+        if (replica_unavailable || shouldSkipUnavailableShard())
         {
             /// We need to tell the coordinator not to wait for this replica.
             /// But at this point it may lead to an incomplete result set, because
@@ -859,7 +867,10 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
             if (replica_unavailable)
                 finishFragmentSpanForUnavailableReplica();
             else
+            {
                 finishFragmentSpanForSkippedShard("Shard is unavailable: lost all replica connections (skipped because of `skip_unavailable_shards`)");
+                reportShardSkipped();
+            }
             return ReadResult(Block());
         }
 
@@ -926,12 +937,11 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
                         connections->dumpAddresses(),
                         packet.exception->displayText());
 
-                reportShardSkipped();
-
                 /// The server terminated the query with this exception and will not send `EndOfStream`,
                 /// so mark the executor finished to signal end of data.
                 finished = true;
                 finishFragmentSpanForSkippedShard(packet.exception->message());
+                reportShardSkipped();
                 return ReadResult(Block{});
             }
 
@@ -1056,9 +1066,9 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
 
     /// Followers only block on the response when they actually need it (in-order modes pin
-    /// per-split parts via the response). In `Default` mode the caller discards the response,
-    /// so the round-trip would be pure overhead — skip it on both sides.
-    const bool send_response = announcement.mode != CoordinationMode::Default;
+    /// per-split parts via the response). In `Default` mode the caller needs it only when it asks
+    /// for the analyzed ranges, otherwise the round-trip would be pure overhead — skip it on both sides.
+    const bool send_response = announcement.mode != CoordinationMode::Default || announcement.wants_analyzed_ranges;
 
     announcement_received = true;
 
@@ -1195,12 +1205,11 @@ void RemoteQueryExecutor::finishUnlocked()
                             connections->dumpAddresses(),
                             packet.exception->displayText());
 
-                    reportShardSkipped();
-
                     /// The server terminated the query with this exception.
                     /// Record it before `finish` closes the span as cancelled: the first outcome wins.
                     finished = true;
                     finishFragmentSpanForSkippedShard(packet.exception->message());
+                    reportShardSkipped();
                     break;
                 }
 
@@ -1445,14 +1454,18 @@ void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
     profile_info_callback = std::move(callback);
 }
 
+bool RemoteQueryExecutor::shouldSkipUnavailableShard() const
+{
+    return context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size());
+}
+
 bool RemoteQueryExecutor::needToSkipUnavailableShard()
 {
-    if (context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size()))
-    {
-        reportShardSkipped();
-        return true;
-    }
-    return false;
+    if (!shouldSkipUnavailableShard())
+        return false;
+
+    reportShardSkipped();
+    return true;
 }
 
 void RemoteQueryExecutor::reportShardSkipped()
@@ -1467,7 +1480,7 @@ void RemoteQueryExecutor::reportShardSkipped()
     /// `max_skip_unavailable_shards_ratio` limits are exceeded, so the safety bounds apply to every
     /// silently skipped shard regardless of why it was skipped (no connections or an ignored exception).
     if (unavailable_shard_tracker)
-        unavailable_shard_tracker->onShardSkipped();
+        unavailable_shard_tracker->onShardSkipped(got_data_from_replica);
 }
 
 bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()

@@ -33,7 +33,6 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int TOP_AND_LIMIT_TOGETHER;
     extern const int WITH_TIES_WITHOUT_ORDER_BY;
-    extern const int OFFSET_FETCH_WITHOUT_ORDER_BY;
 }
 
 
@@ -779,14 +778,10 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    /// SQL standard FETCH (either following SQL standard OFFSET or following ORDER BY)
+    /// SQL standard FETCH. Only WITH TIES requires ORDER BY.
     if ((!has_offset_clause || offset_clause_has_sql_standard_row_or_rows)
         && s_fetch.ignore(pos, expected))
     {
-        /// FETCH clause must exist with "ORDER BY"
-        if (!order_expression_list)
-            throw Exception(ErrorCodes::OFFSET_FETCH_WITHOUT_ORDER_BY, "Can not use OFFSET FETCH clause without ORDER BY");
-
         if (s_first.ignore(pos, expected))
         {
             if (s_next.ignore(pos, expected))
@@ -2377,6 +2372,8 @@ You can enable dumping temporary data to the disk to restrict memory usage durin
 The [max_bytes_before_external_group_by](/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) setting determines the threshold RAM consumption for dumping `GROUP BY` temporary data to the file system. If set to 0 (the default), it is disabled.
 Alternatively, you can set [max_bytes_ratio_before_external_group_by](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_group_by), which allows to use `GROUP BY` in external memory only once the query reaches certain threshold of used memory.
 
+If the query is over the threshold because of other operators, for example a hash join that holds a large table, each thread writes every block it aggregates to disk as a separate small file, and reading many small files back costs more memory than the writes saved. The [min_bytes_before_external_group_by](/reference/settings/session-settings/min-bytes#min_bytes_before_external_group_by) setting makes a thread keep aggregating until its own state reaches the given size before it is written out.
+
 When using `max_bytes_before_external_group_by`, we recommend that you set `max_memory_usage` about twice as high (or `max_bytes_ratio_before_external_group_by=0.5`). This is necessary because there are two stages to aggregation: reading the data and forming intermediate data (1) and merging the intermediate data (2). Dumping data to the file system can only occur during stage 1. If the temporary data wasn't dumped, then stage 2 might require up to the same amount of memory as in stage 1.
 
 For example, if [max_memory_usage](/reference/settings/session-settings/max-memory-usage#max_memory_usage) was set to 10000000000 and you want to use external aggregation, it makes sense to set `max_bytes_before_external_group_by` to 10000000000, and `max_memory_usage` to 20000000000. When external aggregation is triggered (if there was at least one dump of temporary data), maximum consumption of RAM is only slightly more than `max_bytes_before_external_group_by`.
@@ -2724,7 +2721,7 @@ External sorting works much less effectively than sorting in RAM.
 
  When the `optimize_read_in_order` setting is enabled, the ClickHouse server uses the table index and reads the data in order of the `ORDER BY` key. This allows to avoid reading all data in case of specified [LIMIT](/reference/statements/select/limit). The same holds for a [`LIMIT ... AFTER ... UNTIL`](/reference/statements/select/limit#limit-after-until) range without `ALL`, which stops reading once its range has ended. So queries on big data with small limit are processed faster.
 
-Optimization works with both `ASC` and `DESC` and does not work together with the [GROUP BY](/reference/statements/select/group-by) clause. With the [FINAL](/reference/statements/select/from#final-modifier) modifier, the optimization works in the direct order of the sorting key, and for [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) tables also in the reverse order, controlled by the `optimize_read_in_reverse_order_final` setting.
+Optimization works with both `ASC` and `DESC` and does not work together with the [GROUP BY](/reference/statements/select/group-by) clause. With the [FINAL](/reference/statements/select/from#final-modifier) modifier, the optimization works in the direct order of the sorting key, and for [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) tables - as well as [Merge](/reference/engines/table-engines/special/merge) tables over them - also in the reverse order, controlled by the `optimize_read_in_reverse_order_final` setting.
 
 When the `optimize_read_in_order` setting is disabled, the ClickHouse server does not use the table index while processing `SELECT` queries.
 
@@ -3734,6 +3731,8 @@ Example:
 > • If a fractional number of rows results from the calculation, it is rounded up to the next whole number.
 
 The `FETCH` specifies the maximum number of rows that can be in the result of a query.
+`FETCH ... ONLY` works without `ORDER BY`, like `LIMIT`, but the returned rows are not guaranteed to be deterministic.
+`FETCH ... WITH TIES` requires `ORDER BY` to identify rows tied with the last selected row.
 
 The `ONLY` option is used to return rows that immediately follow the rows omitted by the `OFFSET`. In this case the `FETCH` is an alternative to the [LIMIT](/reference/statements/select/limit) clause. For example, the following query
 

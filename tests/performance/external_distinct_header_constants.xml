@@ -12,9 +12,11 @@
     <substitutions>
         <substitution>
             <name>threshold</name>
+            <!-- The spilling value stays far below the memory these queries use without spilling: close to it,
+                 thread timing decides which DISTINCT steps spill, and run times become bimodal. -->
             <values>
                 <value>0</value>
-                <value>16777216</value>
+                <value>4194304</value>
                 <value>1099511627776</value>
             </values>
         </substitution>

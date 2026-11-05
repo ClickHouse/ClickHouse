@@ -12,6 +12,9 @@ SET enable_writes_to_columns_cache = 1;
 -- Pin `max_threads` so that the read is split into the same tasks - and therefore
 -- produces the same number of cache lookups - regardless of the machine.
 SET max_threads = 1;
+-- `enable_parallel_replicas = 0`: with parallel replicas another replica may do the reads,
+-- and their `ProfileEvents` never reach the `query_log` rows checked below.
+SET enable_parallel_replicas = 0;
 SET log_queries = 1;
 
 DROP TABLE IF EXISTS t_cache_ranges;

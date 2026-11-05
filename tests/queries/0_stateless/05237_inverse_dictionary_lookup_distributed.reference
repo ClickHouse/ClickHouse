@@ -1,0 +1,42 @@
+issue 121913, local
+50
+50
+tuple(c1), equals, distributed
+100
+100
+100
+tuple(c1), like, distributed
+100
+100
+100
+tuple-typed column, distributed
+100
+100
+100
+signed simple key, distributed
+1	0
+1	0
+2	1
+2	1
+1	0
+1	0
+2	1
+2	1
+1	0
+1	0
+2	1
+2	1
+constant probes, distributed
+1	1
+1	1
+1	1
+1	1
+1	1
+1	1
+1	1
+1	1
+1	1
+1	1
+1	1
+1	1
+100

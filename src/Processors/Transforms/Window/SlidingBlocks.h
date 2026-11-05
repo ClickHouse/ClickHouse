@@ -1,13 +1,13 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+#include <Common/DequeWithMemoryTracking.h>
 
 #include <Processors/Chunk.h>
 #include <Processors/Transforms/Window/SlidingIndexes.h>
 
 #include <deque>
 #include <cstdint>
-#include <optional>
 
 namespace DB
 {
@@ -18,6 +18,13 @@ struct RowNumber
     int64_t row = 0;
 
     auto operator<=>(const RowNumber &) const noexcept = default;
+};
+
+struct RowPoint
+{
+    RowNumber location;
+    int64_t row_index_in_partition = 0;
+    int64_t peer_group_index_in_partition = 0;
 };
 
 struct SlidingBlock
@@ -46,10 +53,10 @@ public:
     RowNumber end() const;
     RowNumber next(RowNumber row) const;
     RowNumber prev(RowNumber row) const;
-    std::optional<RowNumber> move(RowNumber row, int64_t offset) const;
+    RowNumber move(RowNumber row, int64_t offset) const;
 
 private:
-    std::deque<SlidingBlock> blocks;
+    DequeWithMemoryTracking<SlidingBlock> blocks;
     int64_t first_block_number = 0;
     int64_t next_block_number = 0;
 };
