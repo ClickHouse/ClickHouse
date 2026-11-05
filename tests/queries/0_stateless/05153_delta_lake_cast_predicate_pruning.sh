@@ -425,10 +425,16 @@ check nullable_no_null_count "NOT (d::Date = '2026-01-01')" "cast_keep_nullable=
 make_table nullable_no_stats 'Nullable(Date32)' none 2026-01-01 2026-01-02
 check nullable_no_stats "d::Date = '2026-01-01'" "cast_keep_nullable=0"
 
+# Non-null partition values are exact, so a non-nullable cast still prunes partitions.
+make_table partitioned_no_nulls 'Nullable(Date32)' partition 2026-01-01 2026-01-02 2205-06-08
+check partitioned_no_nulls "d::Date = '2026-01-01'" "cast_keep_nullable=0"
+check partitioned_no_nulls "d::Date32 = '2026-01-02'" "cast_keep_nullable=0"
+check partitioned_no_nulls "d::Date != '2026-01-01'" "cast_keep_nullable=0"
+
+# A NULL partition must stay scanned in either polarity, so the cast still rejects it.
 make_table partitioned 'Nullable(Date32)' partition 2026-01-01 2026-01-02 2205-06-08 NULL
-check partitioned "d::Date = '2026-01-01'" "cast_keep_nullable=0"
-check partitioned "d::Date32 = '2026-01-02'" "cast_keep_nullable=0"
-for where in "d::Date != '2026-01-01'" "NOT (d::Date = '2026-01-01')"; do
+for where in "d::Date = '2026-01-01'" "d::Date32 = '2026-01-02'" \
+    "d::Date != '2026-01-01'" "NOT (d::Date = '2026-01-01')"; do
     for enabled in 0 1; do
         expect_error "partitioned: ${where} (engine predicate ${enabled})" \
             partitioned "${where}" "${enabled}" \
