@@ -94,6 +94,7 @@ private:
     ThreadPool::Job runWritingJob(JobReplica & job, const Block & current_block, size_t num_shards);
 
     void waitForJobs();
+    void waitForPool();
 
     /// Returns the number of blocks was written for each cluster node. Uses during exception handling.
     std::string getCurrentStateDescription();

@@ -45,6 +45,9 @@ public:
     void cancelReading() override;
     void setReadProgressCallback(ReadProgressCallbackPtr callback) override;
     void setStepProfiler(StepProfilerPtr step_profiler_) override;
+    void parkCPUUntilNextCall() override;
+    void unparkCPU() override;
+    ISlotLease * getCPULease() const override;
 
 private:
     /// Outlives graph registrations, including when construction fails.
@@ -56,6 +59,9 @@ private:
     /// Concurrency control related
     SlotAllocationPtr cpu_slots;
     AcquiredSlotPtr single_thread_cpu_slot; // cpu slot for single-thread mode to work using executeUntil()
+    bool single_thread_cpu_slot_parked = false;
+    /// `executeUntil` started inside another executor's step on the same thread and uses that step's lease.
+    bool runs_on_caller_lease = false;
     std::unique_ptr<ThreadPool> pool;
     std::mutex spawn_mutex;
 
@@ -106,6 +112,8 @@ private:
 
     // Methods for CPU scheduling
     SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control, bool lazy_allocation);
+    void parkSingleThreadCPUSlot();
+    void unparkSingleThreadCPUSlot();
     void spawnThreads(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
 };
 

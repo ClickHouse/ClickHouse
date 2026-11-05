@@ -14,6 +14,8 @@ using ReadProgressCallbackPtr = std::unique_ptr<ReadProgressCallback>;
 class StepProfiler;
 using StepProfilerPtr = std::shared_ptr<StepProfiler>;
 
+class ISlotLease;
+
 /// Runs a pipeline, a set of connected processors, until every processor is finished.
 class IExecutor
 {
@@ -37,6 +39,13 @@ public:
 
     /// Set the profiler of EXPLAIN ANALYZE.
     virtual void setStepProfiler(StepProfilerPtr step_profiler) = 0;
+
+    /// Parks the CPU slot of `executeUntil` until the next call, `unparkCPU` or destruction: the caller is idle meanwhile.
+    virtual void parkCPUUntilNextCall() = 0;
+    virtual void unparkCPU() = 0;
+
+    /// The lease of the `executeUntil` thread, if it can be parked, so a caller can publish it around its own waits.
+    virtual ISlotLease * getCPULease() const = 0;
 };
 
 using ExecutorPtr = std::shared_ptr<IExecutor>;
