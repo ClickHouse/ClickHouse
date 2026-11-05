@@ -103,9 +103,6 @@ BlockIO InterpreterDropQuery::execute()
 BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_ptr)
 {
     auto & drop = drop_query_ptr->as<ASTDropQuery &>();
-    /// A bare table name is resolved per host, and checked, by `executeDDLQueryOnCluster`.
-    if (!drop.cluster.empty() && drop.database)
-        checkDatabaseSupportsOnClusterDDL(DatabaseCatalog::instance().tryGetDatabase(drop.getDatabase()));
     if (!drop.cluster.empty() && drop.table && !drop.if_empty && !maybeRemoveOnCluster(current_query_ptr, getContext()))
     {
         DDLQueryOnClusterParams params;

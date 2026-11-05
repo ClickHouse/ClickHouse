@@ -991,6 +991,13 @@ String DatabaseDataLake::getNewTableLocation(
         if (catalog->managesTableLocation())
             return location;
 
+        /// `S3::URI` reads the object key percent-decoded, while the catalog and other engines use it as written.
+        if (DataLake::parseStorageTypeFromLocation(location) == DatabaseDataLakeStorageType::S3 && location.contains('%'))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Table location '{}' derived from {} contains '%', which is read as a percent-encoded character "
+                "of the object key, so the table would be unreadable immediately after creation",
+                location, location_source);
+
         auto without_scheme = [](const String & uri)
         {
             auto pos = uri.find("://");

@@ -2291,10 +2291,14 @@ def test_on_cluster_ddl_datalake_catalog_check_after_access_check(started_cluste
     node1.query(f"GRANT CLUSTER ON *.* TO {user}")
 
     try:
-        err = node1.query_and_get_error(
-            f"OPTIMIZE TABLE {CATALOG_NAME}.`{namespace}.{table_name}` ON CLUSTER cluster_simple", user=user
-        )
-        assert "ACCESS_DENIED" in err, err
+        for query in [
+            f"DROP DATABASE {CATALOG_NAME} ON CLUSTER cluster_simple",
+            f"DROP TABLE {CATALOG_NAME}.`{namespace}.{table_name}` ON CLUSTER cluster_simple",
+            f"ALTER TABLE {CATALOG_NAME}.`{namespace}.{table_name}` ON CLUSTER cluster_simple ADD COLUMN y Int64",
+            f"OPTIMIZE TABLE {CATALOG_NAME}.`{namespace}.{table_name}` ON CLUSTER cluster_simple",
+        ]:
+            err = node1.query_and_get_error(query, user=user)
+            assert "ACCESS_DENIED" in err, err
 
         alias_optimize = f"OPTIMIZE TABLE default.{alias_name} ON CLUSTER cluster_simple"
         err = node1.query_and_get_error(alias_optimize, user=user)
@@ -3419,6 +3423,29 @@ def test_create_table_base_location_reopened_elsewhere_rejected(started_cluster,
     )
     assert "is reopened under `storage_endpoint`" in error, error
     assert f"{reopened_prefix}{namespace}/t" in error, error
+
+    catalog = load_catalog_impl(started_cluster)
+    assert namespace not in {".".join(ns) for ns in catalog.list_namespaces()}
+
+
+def test_create_table_percent_encoded_base_location_rejected(started_cluster):
+    # The catalog writes the metadata under the key as written, while the table is reopened at the percent-decoded key.
+    node = started_cluster.instances["node1"]
+
+    namespace = f"test_ns_percent_{uuid.uuid4().hex[:8]}"
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        CATALOG_NAME,
+        {"storage_endpoint": "", "default_base_location": "s3://warehouse-rest/data%20folder"},
+    )
+
+    error = node.query_and_get_error(
+        f"CREATE TABLE {CATALOG_NAME}.`{namespace}.t` (id Int64)",
+        settings={"allow_database_iceberg": 1},
+    )
+    assert "BAD_ARGUMENTS" in error, error
+    assert f"s3://warehouse-rest/data%20folder/{namespace}/t" in error, error
 
     catalog = load_catalog_impl(started_cluster)
     assert namespace not in {".".join(ns) for ns in catalog.list_namespaces()}
