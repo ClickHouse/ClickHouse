@@ -15,7 +15,7 @@ from .prometheus_test_utils import (
 
 
 # Native histograms over the remote-write and remote-read protocols: the requests are hand-crafted, so every corner of the protocol
-# can be exercised, including what a real Prometheus never sends. See test_native_histograms_prometheus.py for a real sender.
+# can be exercised, including what a real Prometheus never sends. See test_write_read.py for a real sender.
 # A TimeSeries table of the current version stores the histograms in the `histograms` column of its samples table, in the same
 # rows as the float samples (one row per series and bucket); the stored rows are checked through the inner tables, so the checks
 # of the writes don't depend on the outer read path. Remote read returns the stored histograms as Prometheus messages (the tests
