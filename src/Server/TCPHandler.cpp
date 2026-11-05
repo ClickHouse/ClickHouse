@@ -765,13 +765,11 @@ void TCPHandler::runImpl()
                 });
 
                 /// Send structure of columns to client for function input()
-                query_state->query_context->setInputInitializer([this, &query_state] (ContextPtr context, const StoragePtr & input_storage)
+                query_state->query_context->setInputInitializer([this, &query_state] (ContextPtr context, const ColumnsDescription & columns, const Block & header)
                 {
 
                     if (context != query_state->query_context)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
-
-                    auto metadata_snapshot = input_storage->getInMemoryMetadataPtr(context, false);
 
                     std::lock_guard lock(*callback_mutex);
 
@@ -783,11 +781,11 @@ void TCPHandler::runImpl()
                     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA
                         && query_state->query_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields])
                     {
-                        sendTableColumns(*query_state, metadata_snapshot->getColumns());
+                        sendTableColumns(*query_state, columns);
                     }
 
                     /// Send block to the client - input storage structure.
-                    query_state->input_header = metadata_snapshot->getSampleBlock();
+                    query_state->input_header = header;
                     sendData(*query_state, query_state->input_header);
                     sendTimezone(*query_state);
                     out->sync();
@@ -812,11 +810,13 @@ void TCPHandler::runImpl()
 
                         query_state->block_in.reset();
                         query_state->maybe_compressed_in.reset();
+                        query_state->received_all_data_for_input = true;
                         return {};
                     }
                     catch (...)
                     {
                         query_state->stop_query = true;
+                        query_state->received_all_data_for_input = true;
                         throw;
                     }
                 });
@@ -885,6 +885,7 @@ void TCPHandler::runImpl()
                         try
                         {
                             const auto announcement_mode = announcement.mode;
+                            const bool wants_analyzed_ranges = announcement.wants_analyzed_ranges;
                             sendMergeTreeAllRangesAnnouncement(*query_state, std::move(announcement));
                             ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSent);
                             ProfileEvents::increment(
@@ -894,10 +895,13 @@ void TCPHandler::runImpl()
                             if (client_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE)
                                 return std::nullopt;
 
-                            /// `Default` mode callers discard the response; the initiator side skips
-                            /// sending it (see `RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement`).
+                            /// In `Default` mode the initiator sends the response only when it was asked for the
+                            /// analyzed ranges (see `RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement`),
+                            /// which an initiator older than this field cannot have been.
                             /// Don't block on a packet that will never arrive.
-                            if (announcement_mode == CoordinationMode::Default)
+                            if (announcement_mode == CoordinationMode::Default
+                                && (!wants_analyzed_ranges
+                                    || client_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANALYZED_RANGES_REQUEST))
                                 return std::nullopt;
 
                             return receiveAllRangesAnnouncementResponse(*query_state);
@@ -1410,6 +1414,10 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
                 return receiveQueryPlan(state);
 
             case Protocol::Client::Ping:
+                /// The result is being sent concurrently by another thread, so we cannot write to `out` here.
+                if (state.send_result_while_receiving_data_for_input)
+                    throwUnexpectedPacket(packet_type);
+
                 state.at_packet_boundary = true;  /// no body
                 writeVarUInt(Protocol::Server::Pong, *out);
                 out->finishChunk();
@@ -1682,6 +1690,13 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
         }
     }
 
+    /// INSERT ... RETURNING with the data sent by the client: the pipeline reads the data with `input` callbacks,
+    /// and the result is sent while the client is still sending the data - the client reads it between sending the blocks.
+    /// The thread reading the data holds `callback_mutex` while waiting for the data. If we sent the result under this mutex,
+    /// we would not read the data while blocked on sending the result, and the client would not read the result
+    /// while blocked on sending the data. So, until all the data is received, only the result is sent, without the mutex.
+    state.send_result_while_receiving_data_for_input = state.need_receive_data_for_input && !state.received_all_data_for_input;
+
     {
         PullingAsyncPipelineExecutor executor(pipeline);
         pipeline.setConcurrencyControl(state.query_context->getSettingsRef()[Setting::use_concurrency_control]);
@@ -1692,6 +1707,16 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
             Block block;
             while (executor.pull(block, interactive_delay / 1000))
             {
+                if (state.send_result_while_receiving_data_for_input && !state.received_all_data_for_input)
+                {
+                    if (!block.empty() && !state.io.null_format && !discard_query_data)
+                    {
+                        sendData(state, block);
+                        out->sync();
+                    }
+                    continue;
+                }
+
                 bool stop_read_return_partial_result = false;
                 {
                     std::lock_guard lock(*callback_mutex);
@@ -1805,8 +1830,7 @@ void TCPHandler::processTablesStatusRequest()
             /// `StringWithMemoryTracking` (as in `processQuery`) routes the digest/hash duplicate of
             /// the potentially large request through the throwing memory-tracker path.
             StringWithMemoryTracking data(salt);
-            if (nonce.has_value())
-                data += std::to_string(nonce.value());
+            data += std::to_string(nonce.value());
             data += cluster_secret;
             data += "TablesStatusRequest";
             data += request.getAuthDigest();
@@ -2264,8 +2288,15 @@ void TCPHandler::receiveHello()
         }
 
         if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)
-            LOG_WARNING(LogFrequencyLimiter(log, 10),
-                        "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster.");
+        {
+            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                "Interserver mode is not supported for client protocol revision {}, the minimum is {}",
+                client_tcp_protocol_version, DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2);
+            session = makeSession();
+            session->onAuthenticationFailure(/* user_name= */ std::nullopt, getClientAddressNoThrow(), exception);
+            throw exception; /// NOLINT
+        }
+
         processClusterNameAndSalt();
 
         /// Reject interserver mode unless the cluster has a `<secret>`; otherwise any client
@@ -2725,7 +2756,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             throw exception; /// NOLINT
         }
 
-        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2 && !nonce.has_value())
+        if (!nonce.has_value())
         {
             auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver authentication failed (no nonce)");
             session->onAuthenticationFailure(/* user_name= */ std::nullopt, getClientAddressNoThrow(), exception);
@@ -2738,9 +2769,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         /// would allocate through `allocNoThrow` and could push the server
         /// past `max_server_memory_usage` without throwing.
         StringWithMemoryTracking data(salt);
-        // For backward compatibility
-        if (nonce.has_value())
-            data += std::to_string(nonce.value());
+        data += std::to_string(nonce.value());
         data += cluster_secret;
         data += state->query;
         data += state->query_id;
@@ -2965,8 +2994,10 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
 
     if (scalar)
     {
-        /// Scalar value
-        state.query_context->addScalar(temporary_id.table_name, block);
+        /// Scalar value received from the client over the wire. It must not be trusted as a
+        /// server-computed scalar-subquery result (see Context::addClientScalar): otherwise a client
+        /// could name it with a row policy's scalar-subquery hash and forge the policy's result.
+        state.query_context->addClientScalar(temporary_id.table_name, block);
     }
     else if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
     {
@@ -3332,7 +3363,8 @@ void TCPHandler::sendTableColumns(QueryState & state, const ColumnsDescription &
 
     /// Send external table name (empty name is the main table)
     writeStringBinary("", *columns_buf);
-    writeStringBinary(columns.toString(/* include_comments = */ false), *columns_buf);
+    /// The client needs only names, types and defaults.
+    writeStringBinary(columns.toString(/* include_comments = */ false, /* include_codecs = */ false), *columns_buf);
 
     if (columns_buf != out.get())
         columns_buf->next();

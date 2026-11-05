@@ -13,8 +13,6 @@ CREATE TABLE clickhouse_alias_issue_2 (
     column_2 Nullable(Float32)
 ) Engine=Memory;
 
-SET enable_analyzer = 1;
-
 INSERT INTO `clickhouse_alias_issue_1`
 VALUES (1, 100), (2, 200), (3, 300);
 

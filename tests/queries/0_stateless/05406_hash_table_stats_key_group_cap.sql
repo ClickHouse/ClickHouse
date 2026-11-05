@@ -1,7 +1,8 @@
+-- Random settings limits: index_granularity=(8192, None); index_granularity_bytes=(10485760, None)
 -- An aggregation that caps its groups (the trivial GROUP BY LIMIT cutoff, or `max_rows_to_group_by` in
 -- `any`/`break` mode), or aggregates over a capped one, keeps its own hash table statistics per cap value;
 -- the next uncapped run still preallocates. A `throw` cap keeps sharing the uncapped entry. Checked through
--- `AggregationPreallocatedElementsInHashTables`; 1.2e6 groups exceed the 500e3 preallocation bound.
+-- `AggregationPreallocatedElementsInHashTables`; 6e5 groups exceed the 5e5 preallocation bound.
 
 SET max_threads = 1;
 SET enable_parallel_replicas = 0;
@@ -15,15 +16,15 @@ SET optimize_trivial_group_by_limit_query = 1;
 
 DROP TABLE IF EXISTS t_05406;
 CREATE TABLE t_05406 (k UInt64) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t_05406 SELECT number FROM numbers(1200000);
+INSERT INTO t_05406 SELECT number FROM numbers(600000);
 
 -- The planner cutoff, for a projection with aggregate functions.
 SELECT k, count() FROM t_05406 GROUP BY k FORMAT Null SETTINGS log_comment = 'q05406_1a_agg_cold';
 SELECT k, count() FROM t_05406 GROUP BY k FORMAT Null SETTINGS log_comment = 'q05406_1b_agg_warm';
 SELECT k, count() FROM t_05406 GROUP BY k LIMIT 10 FORMAT Null SETTINGS log_comment = 'q05406_1c_agg_limit';
 SELECT k, count() FROM t_05406 GROUP BY k FORMAT Null SETTINGS log_comment = 'q05406_1d_agg_after_limit';
-SELECT k, count() FROM t_05406 GROUP BY k LIMIT 1000000 FORMAT Null SETTINGS log_comment = 'q05406_1e_agg_limit_1m';
-SELECT k, count() FROM t_05406 GROUP BY k LIMIT 1000000 FORMAT Null SETTINGS log_comment = 'q05406_1f_agg_limit_1m_warm';
+SELECT k, count() FROM t_05406 GROUP BY k LIMIT 550000 FORMAT Null SETTINGS log_comment = 'q05406_1e_agg_limit_550k';
+SELECT k, count() FROM t_05406 GROUP BY k LIMIT 550000 FORMAT Null SETTINGS log_comment = 'q05406_1f_agg_limit_550k_warm';
 SELECT k, count() FROM t_05406 GROUP BY k LIMIT 10 FORMAT Null SETTINGS log_comment = 'q05406_1g_agg_limit_10_again';
 
 -- The settings pass, for a projection without aggregate functions.
@@ -50,10 +51,10 @@ SELECT s, count() FROM (SELECT k, sum(k) AS s FROM t_05406 GROUP BY k SETTINGS m
 
 -- The same cap from the settings and from the planner cutoff: the settings cap keeps the whole first block, the cutoff only 10 keys.
 -- The entries of `numbers` are shared by every database, so the cold run is not checked.
-SELECT number AS k, count() FROM numbers(1200000) GROUP BY k FORMAT Null SETTINGS max_block_size = 1200000, max_rows_to_group_by = 10, group_by_overflow_mode = 'any';
-SELECT number AS k, count() FROM numbers(1200000) GROUP BY k FORMAT Null SETTINGS max_block_size = 1200000, max_rows_to_group_by = 10, group_by_overflow_mode = 'any', log_comment = 'q05406_6a_any_block_warm';
-SELECT number AS k, count() FROM numbers(1200000) GROUP BY k LIMIT 10 FORMAT Null SETTINGS max_block_size = 1200000, log_comment = 'q05406_6b_limit_same_cap';
-SELECT number AS k, count() FROM numbers(1200000) GROUP BY k FORMAT Null SETTINGS max_block_size = 1200000, max_rows_to_group_by = 10, group_by_overflow_mode = 'any', log_comment = 'q05406_6c_any_block_after_limit';
+SELECT number AS k, count() FROM numbers(600000) GROUP BY k FORMAT Null SETTINGS max_block_size = 600000, max_rows_to_group_by = 10, group_by_overflow_mode = 'any';
+SELECT number AS k, count() FROM numbers(600000) GROUP BY k FORMAT Null SETTINGS max_block_size = 600000, max_rows_to_group_by = 10, group_by_overflow_mode = 'any', log_comment = 'q05406_6a_any_block_warm';
+SELECT number AS k, count() FROM numbers(600000) GROUP BY k LIMIT 10 FORMAT Null SETTINGS max_block_size = 600000, log_comment = 'q05406_6b_limit_same_cap';
+SELECT number AS k, count() FROM numbers(600000) GROUP BY k FORMAT Null SETTINGS max_block_size = 600000, max_rows_to_group_by = 10, group_by_overflow_mode = 'any', log_comment = 'q05406_6c_any_block_after_limit';
 
 SYSTEM FLUSH LOGS query_log;
 

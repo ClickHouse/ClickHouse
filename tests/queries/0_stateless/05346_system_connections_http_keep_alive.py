@@ -66,19 +66,22 @@ def idle_state(connection_id):
     )
 
 
-# When the keep-alive connection is open, no other connection has this client port.
+# Another connection can have the same client port, for example over the other IP version or to another server address.
+# Thus, the checks look for the connection_id of this connection.
 request("GET", "/ping")
 client_port = connection.sock.getsockname()[1]
-by_port = f"protocol = 'HTTP' AND client_port = {client_port}"
+by_port = f"SELECT connection_id FROM system.connections WHERE protocol = 'HTTP' AND client_port = {client_port}"
+ids_before_first_query = observe("SELECT connection_id FROM system.connections").split()
 
-print("--- not in the table before the first query")
-print(observe(f"SELECT count() FROM system.connections WHERE {by_port}"))
-
-print("--- the same connection_id for all requests")
 own_id_query = "SELECT connection_id FROM system.connections WHERE query_id = currentQueryID() AND status = 'active'"
 connection_id = query(own_id_query)
+
+print("--- not in the table before the first query")
+print(ids_before_first_query.count(connection_id))
+
+print("--- the same connection_id for all requests")
 print(query(own_id_query) == connection_id)
-print(observe(f"SELECT connection_id FROM system.connections WHERE {by_port}") == connection_id)
+print(connection_id in observe(by_port).split())
 
 print("--- idle between the requests")
 print(idle_state(connection_id))

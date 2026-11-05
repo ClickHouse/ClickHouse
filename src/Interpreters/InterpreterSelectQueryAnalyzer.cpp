@@ -27,6 +27,7 @@
 #include <Analyzer/Passes/DisableParallelReplicasPass.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/getResultColumnOrigins.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
@@ -207,6 +208,10 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
     // We don't want to analyze primaty key at all, see `query_plan_optimize_primary_key` below.
     ctx->setSetting("force_primary_key", false);
+    /// The automatic mode decides with its own cost model, and the row estimate that
+    /// `parallel_replicas_min_number_of_rows_per_replica` asks for is a full index analysis of the read, repeated on
+    /// every build of this plan. Every context of the plan inherits this mark, and the planner skips the estimate there.
+    ctx->setIsAutomaticParallelReplicasProbe(true);
 
     /// Building the plan below re-analyzes and re-plans the query from scratch, and for a query parallel
     /// replicas cannot read at all the result is the single-node plan again, recognized as such only
@@ -401,7 +406,8 @@ static void tweakSettingsForStreamingQuery(const ContextMutablePtr & context, co
 static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     const SelectQueryOptions & select_query_options,
     const ContextPtr & context,
-    const StoragePtr & storage)
+    const StoragePtr & storage,
+    ResultColumnOrigins & result_column_origins)
 {
     ProfileEventTimeIncrement<Microseconds> analysis_time_watch(ProfileEvents::QueryAnalysisMicroseconds);
 
@@ -418,12 +424,17 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
         || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         query_tree_pass_manager.runOnlyResolve(query_tree);
+        result_column_origins = getResultColumnOrigins(query_tree);
         /// Not an optimization: a shard plans view bodies the initiator never analyzed, so this pass has not run on them.
         DisableParallelReplicasPass{}.run(query_tree, context);
     }
     else
     {
-        query_tree_pass_manager.run(query_tree);
+        /// The origins are collected before the optimizations: they can rewrite an expression into a column
+        /// (e.g. `length(arr)` into the subcolumn `arr.size0`), but the result of an expression has no origin.
+        query_tree_pass_manager.runOnlyResolve(query_tree);
+        result_column_origins = getResultColumnOrigins(query_tree);
+        query_tree_pass_manager.runFrom(query_tree, QueryTreePassManager::resolve_passes_count);
     }
 
     if (storage)
@@ -442,7 +453,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
-    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
+    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/, result_column_origins))
     , planner(query_tree, select_query_options, post_filter_)
     , query_plan_with_parallel_replicas_builder(
           // Copy over the original `context_`, not the one adjusted by `buildContext`: the builder applies its own adjustments.
@@ -465,7 +476,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
-    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
+    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_, result_column_origins))
     , planner(query_tree, select_query_options)
     , query_plan_with_parallel_replicas_builder(
           // Copy over the original `context_`, not the one adjusted by `buildContext`: the builder applies its own adjustments.

@@ -338,6 +338,7 @@ const std::unordered_set<std::string_view> excluded_functions = {
     "timeSeriesThrowDuplicateSeriesIf",
     "timeSeriesFromGrid",
     "timeSeriesRange",
+    "timeSeriesSliceSortedArray",
     "getMacro",
     "currentProfiles",
     "defaultProfiles",
@@ -811,7 +812,7 @@ struct Operation
                 else
                     arg.type->insertDefaultInto(*mutable_column);
                 ColumnPtr column = std::move(mutable_column);
-                column = column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse();
+                column = column->convertToFullIfWrapped();
 
                 auto serialization = arg.type->getDefaultSerialization();
                 serialization->serializeTextQuoted(*column, /*row_num=*/ 0, buf, FormatSettings());
@@ -918,7 +919,7 @@ struct Operation
                     /// Wrap the column value in array.
                     DataTypePtr array_type = std::make_shared<DataTypeArray>(arg.type);
                     array_type_name = array_type->getName();
-                    ColumnPtr column = arg.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse();
+                    ColumnPtr column = arg.column->convertToFullIfWrapped();
                     MutableColumnPtr mutable_column = IColumn::mutate(std::move(column));
                     MutableColumnPtr offsets_column = ColumnArray::ColumnOffsets::create();
                     offsets_column->insert(UInt64(mutable_column->size()));
@@ -2019,7 +2020,7 @@ struct FunctionsStressTestThread
 
             /// Avoid insertRangeFrom between columns of different constness (if the function is
             /// being weird and returning different constness for different rows).
-            row_result = row_result->convertToFullColumnIfConst()->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse();
+            row_result = row_result->convertToFullIfWrapped();
             if (!mutable_result)
             {
                 chassert(mutable_valid_args.empty());
@@ -2390,7 +2391,7 @@ String formatStackTrace(const StackTrace & stack_trace)
         String address = resolved.address ? fmt::format("{}", resolved.address) : "<unknown>";
         if (resolved.kind == StackTrace::AddressKind::OtherObject)
             address += fmt::format(" in {}", resolved.object);
-        res += fmt::format("\n{}. {} {}", i, address, symbol ? demangle(symbol->name) : "?");
+        res += fmt::format("\n{}. {} {}", i, address, symbol ? demangle(symbol_index->getSymbolNameCString(*symbol)) : "?");
     }
     return res;
 }

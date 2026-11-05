@@ -87,6 +87,9 @@ struct AlterCommand
 
     String column_name;
 
+    /// For MODIFY_COLUMN of a subcolumn: its name relative to `column_name`, set by `prepare`. Empty for a column.
+    String subcolumn_name;
+
     /// For DROP/CLEAR COLUMN/INDEX ... IN PARTITION
     ASTPtr partition;
 
