@@ -576,8 +576,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
             .entry = entry_name,
             .digest = idempotency_key->digest,
             .ttl_sec = database->db_settings[DatabaseReplicatedSetting::idempotency_key_ttl_sec]};
-        /// Committed by the same multi as the entry. An expired node is replaced in place: a pruner that read it
-        /// cannot remove the replacement, and if it removed the node meanwhile, the commit fails.
+        /// Committed by the entry's multi. Both this set and the pruner's remove are versioned, so only one of them succeeds.
         if (expired_version)
             task->ops.emplace_back(zkutil::makeSetRequest(key_path, key_node.toString(), *expired_version));
         else

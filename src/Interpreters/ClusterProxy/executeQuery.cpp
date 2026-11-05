@@ -308,8 +308,7 @@ void stripInitiatorOnlySettings(Settings & settings)
         settings[Setting::parallel_replicas_for_object_storage_tables].changed = false;
     }
 
-    /// The initiator of a DDL query reads these (see `DDLIdempotencyKey.h`), and an older shard rejects the `IMPORTANT`
-    /// `idempotency_key`.
+    /// Initiator-only DDL settings; an older shard would reject the `IMPORTANT` `idempotency_key`.
     if (settings[Setting::idempotency_key].changed || !settings[Setting::idempotency_key].value.empty())
     {
         settings[Setting::idempotency_key] = "";

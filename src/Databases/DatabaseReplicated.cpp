@@ -1708,7 +1708,6 @@ void DatabaseReplicated::checkTablesForDDLIdempotencyKey(const ASTPtr & query, C
 
         if (query->as<ASTAlterQuery>())
         {
-            /// For example, `Alias` applies it to a table of another database.
             String engine_name = unwrapStorageProxy(table)->getName();
             if (!isDDLIdempotencyKeyAlterEngineSupported(engine_name))
                 throw Exception(

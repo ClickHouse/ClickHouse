@@ -121,7 +121,6 @@ void throwIfDDLIdempotencyKeyIsSet(const ContextPtr & context)
 namespace
 {
 
-/// The database and the table a supported statement is about.
 struct Target
 {
     std::shared_ptr<DatabaseReplicated> database;
@@ -419,8 +418,7 @@ BlockIO executeWithDDLIdempotencyKey(IInterpreter & interpreter, const ASTPtr & 
         if (key->state != DDLIdempotencyKey::State::Pending)
             throw;
 
-        /// Nothing was enqueued, hence nothing was executed. A replica sees the effect of a committed attempt only after
-        /// the commit, which also creates the key, so if such an effect made this attempt fail, the key is there now.
+        /// Nothing was enqueued. If the effect of a committed attempt made this one fail, its key is visible now.
         auto original_exception = std::current_exception();
         std::optional<DDLIdempotencyKeyNode> node;
         try
