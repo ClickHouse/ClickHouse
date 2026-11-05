@@ -1,3 +1,4 @@
+#include <array>
 #include <memory>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 
@@ -207,6 +208,10 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
         /*client_restricts_server_credentials=*/context->shouldRestrictUserQueryS3Credentials());
 }
 
+/// Request settings which the storage definition (arguments or named collection) takes over the `<s3>` config,
+/// see `StorageS3Configuration::getExplicitRequestSettings`.
+static constexpr std::array explicit_request_setting_names = {"upload_checksum_algorithm", "delete_checksum_algorithm"};
+
 void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
@@ -339,6 +344,14 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     structure = collection.getOrDefault<String>("structure", "auto");
 
     s3_settings->request_settings = S3::S3RequestSettings(collection, settings, /* validate_settings */ true);
+
+    /// The collection already includes query overrides. The storage refreshes its settings from the `<s3>` config,
+    /// which must not replace what the collection set.
+    for (const auto * name : explicit_request_setting_names)
+    {
+        if (collection.has(name))
+            explicit_request_settings[name] = collection.get<String>(name);
+    }
 
     s3_capabilities = std::make_unique<S3Capabilities>(getCapabilitiesFromConfig(config, "s3"));
 }
@@ -891,7 +904,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     /// Explicit arguments take priority over the `<s3>` config, both here and when the storage refreshes its settings
     /// (see `StorageS3Configuration::getExplicitRequestSettings`).
     /// Writes re-apply the `s3_*` session settings on top, so `s3_upload_checksum_algorithm` still wins for uploads.
-    for (const auto * name : {"upload_checksum_algorithm", "delete_checksum_algorithm"})
+    for (const auto * name : explicit_request_setting_names)
     {
         if (auto value = getFromPositionOrKeyValue<String>(name, args, {}, key_value_args); value.has_value())
         {
