@@ -108,6 +108,7 @@
             <allow_suspicious_variant_types>1</allow_suspicious_variant_types>
             <enable_alp_codec>1</enable_alp_codec>
             <enable_full_text_index>1</enable_full_text_index>
+            <enable_gdeflate_codec>1</enable_gdeflate_codec>
             <enable_ipcrypt>1</enable_ipcrypt>
             <enable_json_ast_dialect>1</enable_json_ast_dialect>
             <enable_lightweight_delete>1</enable_lightweight_delete>
