@@ -194,8 +194,8 @@ class RandomDisruptor:
     _JOIN_TIMEOUT = (
         max(
             _SELECT_TIMEOUT + _KILL_MUTATION_TIMEOUT,
-            # The detach branch picks its table first.
-            _SELECT_TIMEOUT + _HOLD_TIMEOUT,
+            # The detach branch picks its table first, and looks for it again after a failed detach.
+            2 * _SELECT_TIMEOUT + _HOLD_TIMEOUT,
         )
         + 5
     )
@@ -508,10 +508,26 @@ class RandomDisruptor:
         # Shutdown may have been requested while the SELECT above was running.
         if not rows or self._stop_event.is_set():
             return
-        name = f"{quote_identifier(rows[0]['database'])}.{quote_identifier(rows[0]['table'])}"
-        # Quiet: a test may drop the table, or its database, at any moment.
+        database, table = rows[0]["database"], rows[0]["table"]
+        name = f"{quote_identifier(database)}.{quote_identifier(table)}"
+
+        def detach() -> Optional[bool]:
+            # `SYNC` waits until no query uses the table, so the `ATTACH` after the pause does not fail with "detached
+            # but still used". Quiet: a test may drop the table, or its database, at any moment.
+            if self._run_query(f"DETACH TABLE {name} SYNC", quiet=True)[0]:
+                return True
+            # A failure does not mean the table is still attached: the server removes it from the catalog first
+            # and then waits for its users, and the client may give up on that wait. Skip the attach only if the
+            # table is certainly still there.
+            succeeded, output = self._run_query(
+                "SELECT count() FROM system.tables WHERE database = {database:String} AND name = {table:String}",
+                {"database": database, "table": table},
+                timeout=self._SELECT_TIMEOUT,
+            )
+            return False if succeeded and output.strip() == "1" else None
+
         self._hold(
-            (f"DETACH TABLE {name}", lambda: self._run_query(f"DETACH TABLE {name}", quiet=True)[0]),
+            (f"DETACH TABLE {name} SYNC", detach),
             (f"ATTACH TABLE {name}", lambda: bool(self._run_query(f"ATTACH TABLE {name}", quiet=True)[0])),
         )
 
