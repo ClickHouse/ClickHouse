@@ -57,6 +57,12 @@
 (UPDATE v = v + 10 WHERE (e IN (SELECT tuple() FROM numbers(2000000))) AND (k = 199))	1
 (UPDATE v = v + 100 WHERE (k IN (SELECT number FROM numbers(2000000))) AND (k = 199))	1
 (UPDATE v = v + 1000 WHERE k IN (SELECT x FROM default.t_variant_src))	1
+-- Kept as a subquery: Dynamic, JSON and QBit results
+1	101
+2	10
+(UPDATE v = v + 1 WHERE k IN (SELECT d FROM default.t_dynamic_src))	1
+(UPDATE v = v + 10 WHERE s IN (SELECT j FROM default.t_json_src))	1
+(UPDATE v = v + 100 WHERE q IN (SELECT q FROM default.t_qbit_src))	1
 -- The same subquery is executed once, and pulling stops at the limit
 2	1
 (UPDATE v = 1 WHERE (k IN (SELECT arrayJoin(_CAST([...], \'Array(UInt64)\')))) OR (v IN (SELECT arrayJoin(_CAST([...], \'Array(UInt64)\')))))	1

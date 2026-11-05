@@ -281,7 +281,7 @@ private:
 
         /// Values of these types do not survive the round trip through a literal.
         for (const auto & type : types)
-            if (anyInTypeTree(*type, [](const IDataType & node) { return isVariant(node) || isDynamic(node) || isObject(node); }))
+            if (anyInTypeTree(*type, [](const IDataType & node) { return isVariant(node) || isDynamic(node) || isObject(node) || isQBit(node); }))
                 return nullptr;
 
         MutableColumns columns;

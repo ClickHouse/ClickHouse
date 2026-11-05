@@ -102,6 +102,28 @@ ALTER TABLE t_large UPDATE v = v + 1000 WHERE k IN (SELECT x FROM t_variant_src)
 SELECT sum(v), countIf(v = 1), countIf(v = 1000), anyIf(v, k = 199) FROM t_large;
 SELECT replaceRegexpAll(replaceAll(command, currentDatabase(), 'default'), '\\[[^\\]]+\\]', '[...]'), is_done FROM system.mutations WHERE database = currentDatabase() AND table = 't_large' ORDER BY length(mutation_id), mutation_id;
 
+SELECT '-- Kept as a subquery: Dynamic, JSON and QBit results';
+DROP TABLE IF EXISTS t_kept_types;
+DROP TABLE IF EXISTS t_dynamic_src;
+DROP TABLE IF EXISTS t_json_src;
+DROP TABLE IF EXISTS t_qbit_src;
+CREATE TABLE t_kept_types (k UInt64, s String, q QBit(Float32, 4), v UInt64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_kept_types VALUES (1, '{"a":"x"}', [1, 2, 3, 4], 0), (2, '{"a":"y"}', [5, 6, 7, 8], 0);
+CREATE TABLE t_dynamic_src (d Dynamic) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_dynamic_src SELECT toUInt64(1);
+INSERT INTO t_dynamic_src SELECT 'a';
+CREATE TABLE t_json_src (j JSON) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_json_src VALUES ('{"a":"y"}');
+CREATE TABLE t_qbit_src (q QBit(Float32, 4)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_qbit_src VALUES ([1, 2, 3, 4]);
+
+ALTER TABLE t_kept_types UPDATE v = v + 1 WHERE k IN (SELECT d FROM t_dynamic_src) SETTINGS mutations_sync = 2;
+ALTER TABLE t_kept_types UPDATE v = v + 10 WHERE s IN (SELECT j FROM t_json_src) SETTINGS mutations_sync = 2;
+ALTER TABLE t_kept_types UPDATE v = v + 100 WHERE q IN (SELECT q FROM t_qbit_src) SETTINGS mutations_sync = 2;
+
+SELECT k, v FROM t_kept_types ORDER BY k;
+SELECT replaceAll(command, currentDatabase(), 'default'), is_done FROM system.mutations WHERE database = currentDatabase() AND table = 't_kept_types' ORDER BY length(mutation_id), mutation_id;
+
 SELECT '-- The same subquery is executed once, and pulling stops at the limit';
 DROP TABLE IF EXISTS t_once;
 -- Empty on purpose: the mutations below never execute a kept subquery.
@@ -177,6 +199,10 @@ DROP TABLE t_snapshot;
 DROP TABLE t_large;
 DROP TABLE t_large_src;
 DROP TABLE t_variant_src;
+DROP TABLE t_kept_types;
+DROP TABLE t_dynamic_src;
+DROP TABLE t_json_src;
+DROP TABLE t_qbit_src;
 DROP TABLE t_once;
 DROP TABLE t_alias;
 DROP TABLE t_alias_kept;
