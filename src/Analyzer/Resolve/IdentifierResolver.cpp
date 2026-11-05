@@ -10,6 +10,7 @@
 #include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 
@@ -436,9 +437,13 @@ void IdentifierResolver::checkAccessToTableMetadata(
     for (const auto & column : metadata.getColumns())
         if (is_visible(column.name))
             return;
-    /// A grant on a virtual column alone is enough to read it.
+    /// A grant on a virtual column alone is enough to read it. An `Alias` reports its target's virtual columns, so there
+    /// the grant must also hold through the whole chain.
+    const auto * alias = storage->as<StorageAlias>();
     for (const auto & column : metadata.virtuals)
-        if (is_visible(column.name))
+        if (is_visible(column.name)
+            && (!alias || alias->isTargetTableGranted(context, AccessType::SELECT, column.name)
+                || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name)))
             return;
 
     /// Not a single column of the table is visible to the user. Report the denial through the

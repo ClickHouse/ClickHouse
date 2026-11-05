@@ -15,12 +15,14 @@ ${CLICKHOUSE_CLIENT} -m --query "
     DROP VIEW IF EXISTS pv_invoker;
     DROP VIEW IF EXISTS pv_sorted;
     DROP VIEW IF EXISTS numbers;
+    DROP TABLE IF EXISTS alias_base;
     DROP TABLE IF EXISTS secret_base;
     DROP TABLE IF EXISTS sink_dist;
     DROP TABLE IF EXISTS sink_local;
 
     CREATE TABLE secret_base (x UInt32, s String) ENGINE = MergeTree ORDER BY x;
     INSERT INTO secret_base VALUES (1, 'a'), (2, 'b'), (5, 'c');
+    CREATE TABLE alias_base ENGINE = Alias('secret_base');
     CREATE VIEW pv_definer SQL SECURITY DEFINER AS SELECT x AS secret_column_1, s AS secret_column_2 FROM secret_base WHERE x < {secret_param:UInt32};
     CREATE VIEW pv_invoker SQL SECURITY INVOKER AS SELECT x AS secret_column_1, s AS secret_column_2 FROM secret_base WHERE x < {secret_param:UInt32};
     CREATE VIEW pv_sorted SQL SECURITY INVOKER AS SELECT x AS secret_column_1, s AS secret_column_2 FROM secret_base WHERE x < {secret_param:UInt32} ORDER BY {secret_sort:Identifier};
@@ -114,6 +116,13 @@ ${CLICKHOUSE_CLIENT} --query "REVOKE SELECT(_table) ON ${CLICKHOUSE_DATABASE}.pv
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT(_table) ON ${CLICKHOUSE_DATABASE}.secret_base TO ${username}"
 as_user "SELECT DISTINCT _table FROM secret_base"
 ${CLICKHOUSE_CLIENT} --query "REVOKE SELECT(_table) ON ${CLICKHOUSE_DATABASE}.secret_base FROM ${username}"
+echo "-- a grant on a virtual column of an Alias also needs the target"
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT(_table) ON ${CLICKHOUSE_DATABASE}.alias_base TO ${username}"
+expect_denied "EXPLAIN QUERY TREE SELECT * FROM alias_base"
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT(_table) ON ${CLICKHOUSE_DATABASE}.secret_base TO ${username}"
+expect_ok "SELECT _table FROM alias_base"
+${CLICKHOUSE_CLIENT} --query "REVOKE SELECT(_table) ON ${CLICKHOUSE_DATABASE}.alias_base FROM ${username}"
+${CLICKHOUSE_CLIENT} --query "REVOKE SELECT(_table) ON ${CLICKHOUSE_DATABASE}.secret_base FROM ${username}"
 
 echo "-- SHOW COLUMNS also makes the structure visible, but reading is still denied"
 ${CLICKHOUSE_CLIENT} --query "GRANT SHOW COLUMNS ON ${CLICKHOUSE_DATABASE}.pv_definer TO ${username}"
@@ -138,6 +147,7 @@ ${CLICKHOUSE_CLIENT} -m --query "
     DROP VIEW IF EXISTS pv_invoker;
     DROP VIEW IF EXISTS pv_sorted;
     DROP VIEW IF EXISTS numbers;
+    DROP TABLE IF EXISTS alias_base;
     DROP TABLE IF EXISTS secret_base;
     DROP TABLE IF EXISTS sink_dist;
     DROP TABLE IF EXISTS sink_local;
