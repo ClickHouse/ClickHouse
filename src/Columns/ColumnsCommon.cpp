@@ -368,11 +368,8 @@ namespace
         }
     }
 
-    /// For a filter that keeps most rows, with their number known. The result offsets are built first: the last one
-    /// is the exact number of elements, so `res_elems` is allocated once. (A reserve proportional to the number of kept
-    /// rows is too small when the dropped rows are shorter than average, e.g. `s != ''` drops only empty strings, and
-    /// then `res_elems` grows and is copied again.) Then each run of consecutive kept rows is copied with one `memcpy`,
-    /// and runs separated only by empty rows are merged.
+    /// The result offsets are built first, so `res_elems` is allocated once with its exact size. Then each run of
+    /// consecutive kept rows, merged across empty rows, is copied with one `memcpy`.
     template <typename T>
     NO_INLINE void filterArraysImplDense(
         const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
@@ -473,9 +470,7 @@ void filterArraysImpl(
     PaddedPODArray<T> & res_elems, IColumn::Offsets & res_offsets,
     const IColumn::Filter & filt, ssize_t result_size_hint)
 {
-    /// When at least 7/8 of the rows pass, this is faster than copying row by row, even for short rows, unless the rows
-    /// are long and almost every block of 64 rows passes whole. A hint of at least the row count does not count the
-    /// passing rows (some callers pass the row count), so it keeps the row-by-row copy.
+    /// Some callers pass the row count as the hint, which does not count the passing rows.
     if (result_size_hint > 0 && static_cast<size_t>(result_size_hint) < src_offsets.size()
         && static_cast<size_t>(result_size_hint) * 8 >= src_offsets.size() * 7)
         return filterArraysImplDense<T>(src_elems, src_offsets, res_elems, res_offsets, filt, result_size_hint);
