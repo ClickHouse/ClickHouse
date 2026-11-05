@@ -712,7 +712,6 @@ namespace
             changed.wait(lock, [this, wanted_value]() { return value == wanted_value; });
         }
 
-        /// Returns false if the value is not `wanted_value` after `timeout`.
         bool waitFor(bool wanted_value, std::chrono::milliseconds timeout) const
         {
             std::unique_lock lock{mutex};
@@ -885,8 +884,7 @@ namespace
             sending.set(false);
         }
 
-        /// `mutex` must be locked. Runs on the signal listener thread, so a client that does not read the pending write
-        /// gets the call canceled. Returns false if it was canceled.
+        /// `mutex` must be locked. Returns false if the client did not read the pending write in time and the call was canceled.
         bool waitWrittenOrCancelLocked()
         {
             if (sending.waitFor(false, fatal_error_write_timeout))
