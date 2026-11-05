@@ -292,6 +292,7 @@ public:
         bool is_parallel_reading_from_replicas;
         bool has_projections;
         bool check_row_limits;
+        bool use_primary_key = true;
         ReadFromMergeTree::AnalysisResult & result;
     };
 
@@ -359,14 +360,20 @@ public:
         MergeTreeReaderSettings reader_settings,
         LoggerPtr log);
 
-    /// Check if a skip index can be used when there are lightweight updates.
-    /// Returns an error message if the index depends on a column that will be updated on the fly.
-    /// Per-part callers pass `AlterConversions::getColumnsInvalidatingIndexes`, which also holds the
-    /// names touched by a pending `DROP COLUMN` / `RENAME COLUMN`.
+    /// Returns an error if the index depends on a column updated on the fly. A value update
+    /// (@value_updated_columns: ALTER UPDATE / patches / pending DROP COLUMN), a pending RENAME COLUMN,
+    /// or a MATERIALIZED column the read recalculates from an updated one, always makes it stale. A
+    /// value-preserving type change is tolerated when @part records the granules were built against the
+    /// current read type. Per-part callers pass `AlterConversions::getColumnsInvalidatingIndexes` as
+    /// @all_updated_columns (it also holds the names touched by a pending DROP/RENAME COLUMN).
+    /// @part is optional: some callers aggregate updated columns across parts and decide once.
     static std::expected<void, PreformattedMessage> canUseIndex(
         const MergeTreeIndexPtr & index,
         const StorageMetadataPtr & metadata_snapshot,
-        const NameSet & all_updated_columns);
+        const NameSet & all_updated_columns,
+        const NameSet & value_updated_columns,
+        const ContextPtr & context,
+        const IMergeTreeDataPart * part = nullptr);
 
     /// Whether a pending alter mutation (e.g. `MODIFY COLUMN`) or metadata mutation (`DROP COLUMN`,
     /// `RENAME COLUMN`) applies to the part. The counters of the snapshot (`hasAlterMutations`,

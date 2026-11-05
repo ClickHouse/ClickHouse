@@ -18,6 +18,8 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
+    bool hasTotals() const { return pipe.getTotalsPort() != nullptr; }
+
 private:
     /// The very sources the `Pipe` of `ReadFromPreparedSource` is built from, kept so that `clone`
     /// can produce independent copies. The parent `ReadFromPreparedSource` stays non-clonable: a
