@@ -39,7 +39,8 @@ constexpr uint64_t no_error_key = std::numeric_limits<uint64_t>::max();
     throw exception;
 }
 
-const std::string & siteParameter(const JITErrorSite & site, size_t index)
+/// A parameter of the site, for the error codes whose message has some (not every set of codes has one).
+[[maybe_unused]] const std::string & siteParameter(const JITErrorSite & site, size_t index)
 {
     if (index >= site.parameters.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A JIT error site has {} parameters, expected at least {}", site.parameters.size(), index + 1);
