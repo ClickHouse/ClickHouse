@@ -536,10 +536,7 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     {
         size_predictor->updateFilteredRowsRation(read_result.numReadRows(), num_filtered_rows);
         if (!read_result.columns.empty())
-        {
-            const auto & read_sample_block = readers_chain.getReadSampleBlock();
-            size_predictor->update(sample_block, read_result.columns, read_sample_block, read_result.num_rows);
-        }
+            size_predictor->update(sample_block, read_result.columns, read_result.num_rows);
     }
 
     Block block;

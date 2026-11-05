@@ -58,7 +58,6 @@ public:
     size_t currentMark() const;
 
     const Block & getSampleBlock() const;
-    Block getReadSampleBlock() const;
     bool isCurrentRangeFinished() const;
 
 private:

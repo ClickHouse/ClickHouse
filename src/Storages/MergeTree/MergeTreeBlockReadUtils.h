@@ -56,8 +56,6 @@ struct MergeTreeBlockSizePredictor
     /// Updates statistic for more accurate prediction
     void update(const Block & sample_block, const Columns & columns, size_t num_rows, double decay = calculateDecay());
 
-    void update(const Block & result_sample_block, const Columns & result_columns, const Block & read_sample_block, size_t num_rows, double decay = calculateDecay());
-
     /// Return current block size (after update())
     size_t getBlockSize() const
     {
@@ -126,6 +124,10 @@ protected:
     double max_size_per_row_dynamic = 0;
 
     size_t number_of_rows_in_part;
+
+    /// All columns that are read from the part, including columns that are read only by `PREWHERE` steps
+    /// and are absent from the result block. They are kept in the estimation when it is reinitialized in `update`.
+    Block columns_from_part;
 
     bool is_initialized_in_update = false;
     bool allow_subcolumns_sizes_calculation = false;
