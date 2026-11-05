@@ -233,6 +233,8 @@ struct Reader
         /// while an over-cap `IN` on the same column contributes none, so the bloom filter still prunes
         /// row groups using the smaller atoms.
         std::vector<UInt64> bloom_filter_hashes;
+        /// Number of condition atoms that probe this column's dictionary filter in one row group evaluation.
+        size_t hash_filter_atoms = 0;
 
         PrimitiveColumnInfo() = default;
         PrimitiveColumnInfo(PrimitiveColumnInfo &&) = default;

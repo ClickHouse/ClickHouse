@@ -6,14 +6,12 @@
 
 # `IN` sets larger than the bloom filter's set-size cap (`bloom_filter_max_set_size`, 100) are hashed
 # only for the exact dictionary filter of the native Parquet reader, so `findAnyHash` gets thousands of
-# probe hashes for one column chunk. The dictionary lookup intersects them with its own sorted vector
-# of value hashes in one pass over both sequences, which only works if it is oblivious to how the
-# probes and the values interleave. This test checks the pruning decisions and the results of that
-# intersection: a large set that misses every row group, one that hits a single row group, and one
-# that hits all of them, each compared against the same query with the dictionary filter disabled.
-# The sets of 20000 values have more probes than a dictionary has values, so the lookup searches the set
-# for each dictionary value instead. The two files read together hash the same set as Int32 and as Int64,
-# which must not share the hashes of the other file.
+# probe hashes for one column chunk. Each set here is the only condition on its column, so the lookup
+# searches it for each dictionary value (sets that share a column with another condition are in 05317).
+# This test checks the pruning decisions and the results of that search: a large set that misses every
+# row group, one that hits a single row group, and one that hits all of them, each compared against the
+# same query with the dictionary filter disabled. The two files read together hash the same set as Int32
+# and as Int64, which must not share the hashes of the other file.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

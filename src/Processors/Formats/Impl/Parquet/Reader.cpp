@@ -1616,6 +1616,7 @@ void Reader::prepareBloomFilterCondition()
 
             PrimitiveColumnInfo & column_info = primitive_columns[primitive_idx];
             column_info.use_bloom_filter = true;
+            ++column_info.hash_filter_atoms;
             column_info.bloom_filter_hashes.push_back(*hash);
             any_column_uses_bf = true;
             return hash;
@@ -1651,6 +1652,7 @@ void Reader::prepareBloomFilterCondition()
 
             PrimitiveColumnInfo & column_info = primitive_columns[primitive_idx];
             column_info.use_bloom_filter = true;
+            ++column_info.hash_filter_atoms;
             if (!exceeds_bloom_filter_cap)
                 /// Register the hashes for bloom-filter prefetching. For an over-cap set we skip this:
                 /// the hashes are still returned (and reach the exact dictionary filter via the
@@ -2491,11 +2493,12 @@ struct DictionaryValueHashes
     bool sorted = false;
     size_t scanned_probes = 0;
 
-    /// Whether any of `probes` is among the dictionary's values.
+    /// Whether any of `probes` is among the dictionary's values. `only_atom`: no other atom of the condition
+    /// probes this column chunk.
     /// Sorting costs about log2(n) scans, so the first max(8, log2(n)) probes scan the unsorted `hashes`.
     ///
-    /// `probes` are sorted and deduplicated (see `KeyCondition::BloomFilterData::makeHashes`), so
-    /// for at most n probes this is an intersection of two sorted sequences rather than a sequence of independent binary
+    /// `probes` are sorted and deduplicated (see `KeyCondition::BloomFilterData::makeHashes`), so once
+    /// `hashes` is sorted this is an intersection of two sorted sequences rather than a sequence of independent binary
     /// searches: every probe continues where the previous one stopped. A handful of query constants
     /// then costs a binary search each, while a large probe set degrades to a linear merge of the two
     /// sequences instead of `probes.size()` full-height searches over the whole vector. That matters
@@ -2503,14 +2506,17 @@ struct DictionaryValueHashes
     /// hashing `IN` sets that are over the bloom filter's cap, so that the exact dictionary filter can
     /// still prune them, which means `findAnyHash` can be called with thousands of probes for one
     /// column chunk.
-    bool containsAny(const std::vector<UInt64> & probes)
+    bool containsAny(const std::vector<UInt64> & probes, bool only_atom)
     {
         chassert(std::is_sorted(probes.begin(), probes.end()));
         if (default_value_hash && std::binary_search(probes.begin(), probes.end(), *default_value_hash))
             return true;
 
-        /// More probes than dictionary values: search the probes for each dictionary value, which needs no sorting.
-        if (probes.size() > hashes.size())
+        const size_t max_scanned_probes = std::max<size_t>(8, static_cast<size_t>(std::bit_width(hashes.size())));
+
+        /// More probes than dictionary values, or too many to scan for the only atom: search the probes for each
+        /// dictionary value, which needs no sorting. Several atoms on one column share one sort instead.
+        if (probes.size() > hashes.size() || (only_atom && probes.size() > max_scanned_probes))
         {
             for (UInt64 hash : hashes)
                 if (std::binary_search(probes.begin(), probes.end(), hash))
@@ -2520,7 +2526,6 @@ struct DictionaryValueHashes
 
         if (!sorted)
         {
-            const size_t max_scanned_probes = std::max<size_t>(8, static_cast<size_t>(std::bit_width(hashes.size())));
             if (scanned_probes + probes.size() <= max_scanned_probes)
             {
                 scanned_probes += probes.size();
@@ -2766,7 +2771,7 @@ bool Reader::DictionaryLookup::findAnyHash(const std::vector<uint64_t> & hashes)
     /// fall back to the column chunk's bloom filter if it has one; otherwise we can't rule out a match.
     if (!value_hashes.has_value())
         return bloom_fallback ? bloom_fallback->findAnyHash(hashes) : true;
-    return value_hashes->containsAny(hashes);
+    return value_hashes->containsAny(hashes, /*only_atom=*/ column_info.hash_filter_atoms <= 1);
 }
 
 bool Reader::applyBloomFilters(RowGroup & row_group)
