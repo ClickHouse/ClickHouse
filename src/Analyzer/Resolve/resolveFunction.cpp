@@ -1311,6 +1311,97 @@ static QueryTreeNodePtr buildScalarInComparison(
     return raw_if;
 }
 
+/// Builds exact equality for a heterogeneous numeric pair. When one side is floating-point,
+/// convert it to the other side's exact type and require the conversion to round-trip through
+/// the original floating type. The round-trip guard rejects fractional truncation in decimal
+/// conversions, while the exact-type comparison preserves integers and decimals above 2^53.
+static QueryTreeNodePtr buildNumericEquality(
+    const QueryTreeNodePtr & left_argument,
+    const QueryTreeNodePtr & right_argument)
+{
+    const auto left_type = removeLowCardinalityAndNullable(left_argument->getResultType());
+    const auto right_type = removeLowCardinalityAndNullable(right_argument->getResultType());
+    const bool left_is_float = isFloat(left_type);
+    const bool right_is_float = isFloat(right_type);
+
+    if (left_is_float == right_is_float)
+    {
+        auto equals_function = std::make_shared<FunctionNode>("equals");
+        equals_function->getArguments().getNodes() = {left_argument, right_argument};
+        return equals_function;
+    }
+
+    const auto & float_argument = left_is_float ? left_argument : right_argument;
+    const auto & exact_argument = left_is_float ? right_argument : left_argument;
+    const auto & float_type = left_is_float ? left_type : right_type;
+    const auto & exact_type = left_is_float ? right_type : left_type;
+
+    auto exact_type_name = std::make_shared<ConstantNode>(exact_type->getName(), std::make_shared<DataTypeString>());
+    auto converted_float = std::make_shared<FunctionNode>("accurateCastOrNull");
+    converted_float->getArguments().getNodes() = {float_argument, std::move(exact_type_name)};
+
+    auto float_type_name = std::make_shared<ConstantNode>(float_type->getName(), std::make_shared<DataTypeString>());
+    auto round_trip = std::make_shared<FunctionNode>("CAST");
+    round_trip->getArguments().getNodes() = {converted_float, std::move(float_type_name)};
+
+    auto round_trip_equals = std::make_shared<FunctionNode>("equals");
+    round_trip_equals->getArguments().getNodes() = {float_argument, std::move(round_trip)};
+
+    auto exact_equals = std::make_shared<FunctionNode>("equals");
+    exact_equals->getArguments().getNodes() = {exact_argument, std::move(converted_float)};
+
+    auto result = std::make_shared<FunctionNode>("and");
+    result->getArguments().getNodes() = {std::move(round_trip_equals), std::move(exact_equals)};
+    return result;
+}
+
+static QueryTreeNodePtr buildNumericScalarInComparison(
+    const QueryTreeNodePtr & left_argument,
+    const QueryTreeNodePtr & right_argument,
+    bool is_not_in,
+    bool compare_nulls)
+{
+    auto equality = buildNumericEquality(left_argument, right_argument);
+    auto default_false = std::make_shared<ConstantNode>(Field{0u});
+    auto equality_or_false = std::make_shared<FunctionNode>("ifNull");
+    equality_or_false->getArguments().getNodes() = {std::move(equality), std::move(default_false)};
+
+    QueryTreeNodePtr result = equality_or_false;
+    if (compare_nulls)
+    {
+        auto left_is_null = std::make_shared<FunctionNode>("isNull");
+        left_is_null->getArguments().getNodes().push_back(left_argument);
+        auto right_is_null = std::make_shared<FunctionNode>("isNull");
+        right_is_null->getArguments().getNodes().push_back(right_argument);
+        auto both_are_null = std::make_shared<FunctionNode>("and");
+        both_are_null->getArguments().getNodes() = {std::move(left_is_null), std::move(right_is_null)};
+
+        auto null_safe_equality = std::make_shared<FunctionNode>("or");
+        null_safe_equality->getArguments().getNodes() = {std::move(both_are_null), std::move(result)};
+        result = std::move(null_safe_equality);
+    }
+    else if (isNullableOrLowCardinalityNullable(left_argument->getResultType()))
+    {
+        auto left_is_null = std::make_shared<FunctionNode>("isNull");
+        left_is_null->getArguments().getNodes().push_back(left_argument);
+        auto null_value = std::make_shared<ConstantNode>(
+            Field{},
+            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()));
+        auto preserve_null_left = std::make_shared<FunctionNode>("if");
+        preserve_null_left->getArguments().getNodes() = {std::move(left_is_null), std::move(null_value), std::move(result)};
+        result = std::move(preserve_null_left);
+    }
+
+    if (is_not_in)
+    {
+        auto not_function = std::make_shared<FunctionNode>("not");
+        not_function->getArguments().getNodes().push_back(std::move(result));
+        result = std::move(not_function);
+    }
+
+    return result;
+}
+
 /// Builds the row-wise equivalent of membership in a heterogeneous numeric value list.
 /// A single array element type cannot preserve every integer, decimal, and floating-point
 /// candidate, while the comparison functions compare each numeric pair accurately.
@@ -1324,13 +1415,13 @@ static QueryTreeNodePtr buildNumericInComparison(
         return std::make_shared<ConstantNode>(is_not_in ? Field{1u} : Field{0u}, std::make_shared<DataTypeUInt8>());
 
     if (right_arguments.size() == 1)
-        return buildScalarInComparison(left_argument, right_arguments.front(), is_not_in, compare_nulls);
+        return buildNumericScalarInComparison(left_argument, right_arguments.front(), is_not_in, compare_nulls);
 
     auto logical_function = std::make_shared<FunctionNode>(is_not_in ? "and" : "or");
     auto & comparisons = logical_function->getArguments().getNodes();
     comparisons.reserve(right_arguments.size());
     for (const auto & right_argument : right_arguments)
-        comparisons.push_back(buildScalarInComparison(left_argument, right_argument, is_not_in, compare_nulls));
+        comparisons.push_back(buildNumericScalarInComparison(left_argument, right_argument, is_not_in, compare_nulls));
 
     return logical_function;
 }

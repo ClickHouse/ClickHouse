@@ -29,3 +29,33 @@ SETTINGS allow_lossy_numeric_supertype = 1;
 SELECT toInt128(1) IN (toInt128(65), x)
 FROM values('x Float64', 1.)
 SETTINGS allow_lossy_numeric_supertype = 1;
+
+SELECT
+    toDecimal64('9007199254740993', 0) IN (x),
+    toDecimal64('9007199254740993', 0) NOT IN (x),
+    toDecimal64('9007199254740993', 0) IN (x, 0.),
+    toDecimal64('9007199254740993', 0) NOT IN (x, 0.),
+    toDecimal64('9007199254740993', 0) IN (9007199254740992., 0.)
+FROM values('x Float64', 9007199254740992)
+SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 0;
+
+SELECT
+    toDecimal64('9007199254740993', 0) IN (x),
+    toDecimal64('9007199254740993', 0) NOT IN (x),
+    toDecimal64('9007199254740993', 0) IN (x, 0.),
+    toDecimal64('9007199254740993', 0) NOT IN (x, 0.),
+    toDecimal64('9007199254740993', 0) IN (9007199254740992., 0.)
+FROM values('x Float64', 9007199254740992)
+SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 1;
+
+SELECT x IN (y, 0.5), x NOT IN (y, 0.5)
+FROM values('x Nullable(Int64), y Nullable(Float64)', (NULL, 0.5))
+SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 1;
+
+SELECT x IN (y, 0.5), x NOT IN (y, 0.5)
+FROM values('x Nullable(Int64), y Nullable(Float64)', (NULL, NULL))
+SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 1;
+
+SELECT x IN (y, 0.5), x NOT IN (y, 0.5)
+FROM values('x Nullable(Int64), y Nullable(Float64)', (NULL, 0.5))
+SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 0;
