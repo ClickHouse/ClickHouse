@@ -20,22 +20,36 @@ optimize()
     $CH --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE ${TABLE}" 2>&1
 }
 
+# Reads apply position deletes whether or not compaction ran, so only their removal proves that OPTIMIZE ran.
+count_position_deletes()
+{
+    $CH --query "SELECT count() FROM system.iceberg_files WHERE database = currentDatabase() AND table = '${TABLE}' AND content = 'POSITION_DELETE'"
+}
+
 $CH --query "CREATE TABLE ${TABLE} (k Int64, s Nullable(String)) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') PARTITION BY s"
 $CH --query "INSERT INTO ${TABLE} SELECT number, [NULL, 'a', 'b'][number % 3 + 1] FROM numbers(30)"
 $CH --query "ALTER TABLE ${TABLE} DELETE WHERE k % 2 = 0"
+deletes_before_first=$(count_position_deletes)
 first_err=$(optimize)
+deletes_after_first=$(count_position_deletes)
 $CH --query "INSERT INTO ${TABLE} SELECT number + 100, [NULL, 'a'][number % 2 + 1] FROM numbers(10)"
 $CH --query "ALTER TABLE ${TABLE} DELETE WHERE k % 3 = 0"
 
 # The cloud build routes `OPTIMIZE` through a different code path.
 if [[ "${IS_CLOUD}" = "1" ]]; then
+    echo "first OPTIMIZE compacted the position deletes: 1"
     echo "rows matching the second DELETE: 0"
+    echo "second OPTIMIZE compacted the position deletes: 1"
     printf '17\t880\n'
 else
     [[ -n "${first_err}" ]] && echo "FAIL: first OPTIMIZE failed: ${first_err}"
+    echo "first OPTIMIZE compacted the position deletes: $(( deletes_before_first > 0 && deletes_after_first == 0 ))"
     echo "rows matching the second DELETE:" "$($CH --query "SELECT count() FROM ${TABLE} WHERE k % 3 = 0")"
+    deletes_before_second=$(count_position_deletes)
     second_err=$(optimize)
     [[ -n "${second_err}" ]] && echo "FAIL: second OPTIMIZE failed: ${second_err}"
+    deletes_after_second=$(count_position_deletes)
+    echo "second OPTIMIZE compacted the position deletes: $(( deletes_before_second > 0 && deletes_after_second == 0 ))"
     $CH --query "SELECT count(), sum(k) FROM ${TABLE}"
 fi
 
