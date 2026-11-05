@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "corpus": {
+    "repository": "https://github.com/gregrahn/sqllogictest.git",
+    "commit": "634e46492bff5c206a6eb9ba934f2cd411c74bf0"
+  },
+  "groups": [
+    {
+      "key": "evidence",
+      "file": "evidence.txt",
+      "description": "Known ClickHouse incompatibilities in the upstream evidence tests."
+    },
+    {
+      "key": "index",
+      "file": "index.txt",
+      "description": "Known ClickHouse incompatibilities in the upstream index tests."
+    },
+    {
+      "key": "random",
+      "file": "random.txt",
+      "description": "Known ClickHouse incompatibilities in the generated random-expression tests."
+    },
+    {
+      "key": "select",
+      "file": "select.txt",
+      "description": "Known ClickHouse incompatibilities in the top-level select tests."
+    }
+  ]
+}
