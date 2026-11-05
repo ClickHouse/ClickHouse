@@ -782,8 +782,8 @@ std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(
             /// into the consumer, so a replay cannot run past the intent.
             chassert(!intent_size.has_value() || consumed_messages <= *intent_size);
             /// Let's call message sink even if we couldn't pull any messages, so it can count of how many failed polled attempts did we have
-            const bool sink_requests_stop
-                = message_sink(buf, message_info, kafka_consumer->hasMorePolledMessages(), kafka_consumer->isStalled());
+            const bool sink_requests_stop = message_sink(
+                buf, message_info, kafka_consumer->hasMorePolledMessages(), kafka_consumer->isStalled(), intent_size.has_value());
             const bool intent_is_fulfilled = intent_size.has_value() && consumed_messages >= *intent_size;
             if (sink_requests_stop || intent_is_fulfilled)
             {

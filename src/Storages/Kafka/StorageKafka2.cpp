@@ -1109,7 +1109,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
         return true;
     };
 
-    KeeperHandlingConsumer::MessageSinkFunction msg_sink = [&](ReadBufferPtr buf, const KeeperHandlingConsumer::MessageInfo & msg_info, bool has_more_polled_messages, bool stalled) mutable
+    KeeperHandlingConsumer::MessageSinkFunction msg_sink = [&](ReadBufferPtr buf, const KeeperHandlingConsumer::MessageInfo & msg_info, bool has_more_polled_messages, bool stalled, bool replaying_intent) mutable
     {
         size_t new_rows = 0;
         exception_message.reset();
@@ -1228,8 +1228,14 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
                 msg_info.currentOffset());
         }
 
+        /// A replayed batch is bounded by its intent instead of the row limit: the intent may
+        /// legitimately contain more than `poll_max_block_size` rows (e.g. when messages contain
+        /// multiple rows), and the broker may deliver the intended messages in several smaller
+        /// pulls. Closing a replay at the row limit would cut it short of the intent and discard
+        /// it, over and over again. The flush interval and the failed poll limit still bound it.
+        const bool batch_is_full = !replaying_intent && total_rows >= poll_max_block_size;
         if (!has_more_polled_messages
-            && (total_rows >= poll_max_block_size || !check_time_limit() || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
+            && (batch_is_full || !check_time_limit() || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
         {
             LOG_TRACE(
                 log,

@@ -82,7 +82,7 @@ public:
     };
 
     using MessageSinkFunction
-        = std::function<bool(ReadBufferPtr, const MessageInfo &, bool /*has_more_polled_messages*/, bool /*stalled*/)>;
+        = std::function<bool(ReadBufferPtr, const MessageInfo &, bool /*has_more_polled_messages*/, bool /*stalled*/, bool /*replaying_intent*/)>;
 
     KeeperHandlingConsumer(
         const KafkaConsumer2Ptr & kafka_consumer_,
