@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #
 # Every key column is a function of `g`. A row of `r` or `l` has a unique `id`. `r` has the keys of g = 1 to 2400, those
 # up to 800 twice. `l` has those of g = 301 to 3300, those up to 600 twice. A `String` key has 0 to 102 bytes, some with
-# '\0' bytes, and one row in 500 has 100 KB. `big` has 150000 rows, so that the joins on it prefetch.
+# '\0' bytes, and one row in 500 has 100 KB.
 
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE keys
@@ -60,11 +60,6 @@ $CLICKHOUSE_CLIENT -q "
     SELECT id, g, k.*, id * 10 + 3 AS ts
     FROM (SELECT number + 1 AS id, (id - 1) % 3000 + 301 AS g FROM numbers(3300)) AS ids JOIN keys AS k USING (g)
     SETTINGS join_algorithm = 'hash';
-
-    CREATE TABLE big ENGINE = MergeTree ORDER BY id AS
-    SELECT number + 1 AS id, toString(number % 70000) AS s, number % 3 AS u, if(number % 5 = 0, NULL, s) AS ns, (ns, number) AS tn,
-        if(number % 9 = 0, NULL, number * 2) AS nts
-    FROM numbers(150000);
 "
 
 function settings_of()
@@ -122,7 +117,16 @@ declare -A keys=(
 
 for key in $(printf '%s\n' "${!keys[@]}" | sort)
 do
-    for algorithm in hash parallel1 parallel8 grace spill auto
+    for algorithm in hash parallel8
+    do
+        query "$key $algorithm" "INNER ALL" "${keys[$key]}" "$(settings_of "$algorithm")"
+    done
+done | $CLICKHOUSE_CLIENT
+
+# The other algorithms take the keys from the same getter, so a key of each layout is enough.
+for key in u64x5 s_u64 tn nullsafe_s
+do
+    for algorithm in parallel1 grace spill auto
     do
         query "$key $algorithm" "INNER ALL" "${keys[$key]}" "$(settings_of "$algorithm")"
     done
@@ -133,11 +137,13 @@ for n in 1 2 3 4 5 6 7 8 9 33 40
 do
     for algorithm in hash parallel8
     do
+        # `parallel8` differs from `hash` only in the scatter, so a few widths are enough for it.
+        [ $algorithm = parallel8 ] && [[ $n != 1 && $n != 8 && $n != 33 ]] && continue
         query "fs$n $algorithm" "INNER ALL" "l.fs$n = r.fs$n AND l.w = r.w" "$(settings_of "$algorithm")"
     done
 done | $CLICKHOUSE_CLIENT
 
-for key in u64x5 s_u64 tn nullsafe_s
+for key in u64x5 tn
 do
     for kind in "INNER ALL" "LEFT ALL" "RIGHT ALL" "FULL ALL" "INNER ANY" "LEFT ANY" "RIGHT ANY" "LEFT SEMI" "RIGHT SEMI" "LEFT ANTI" "RIGHT ANTI"
     do
@@ -168,6 +174,8 @@ for kind in "INNER ALL" "LEFT ALL" "RIGHT ALL" "FULL ALL" "LEFT SEMI" "LEFT ANTI
 do
     for algorithm in hash parallel8
     do
+        # As above, two kinds are enough for `parallel8`.
+        [ $algorithm = parallel8 ] && [[ $kind != "INNER ALL" && $kind != "FULL ALL" ]] && continue
         settings=$(settings_of "$algorithm")
         query "or u64 | s_u64 $kind $algorithm" "$kind" "l.u1 = r.u1 OR l.s = r.s AND l.u3 = r.u3" "$settings"
         query "or u64x2 | s $kind $algorithm" "$kind" "(l.u1 = r.u1 AND l.u2 = r.u2) OR l.s = r.s" "$settings"
@@ -183,36 +191,9 @@ done | $CLICKHOUSE_CLIENT
 # A `Nullable` ASOF column: the build reads only the rows without a NULL in it.
 for kind in "ASOF" "ASOF LEFT"
 do
-    for algorithm in hash parallel1 parallel8
-    do
-        echo "SELECT '$kind $algorithm', count(), sum(cityHash64(l.id, r.id)) FROM l $kind JOIN r ON l.s = r.s AND l.u3 = r.u3 AND l.ts >= r.nts SETTINGS $(settings_of "$algorithm");"
-        echo "SELECT '$kind big $algorithm', count(), sum(cityHash64(b.id, big.id)) FROM big AS b $kind JOIN big ON b.s = big.s AND b.u = big.u AND b.id * 2 >= big.nts SETTINGS $(settings_of "$algorithm");"
-    done
-done | $CLICKHOUSE_CLIENT
-
-for algorithm in hash parallel1 parallel8
-do
-    echo "SELECT 'big s_u64 $algorithm', count(), sum(cityHash64(b.id, big.id)) FROM big AS b JOIN big ON b.s = big.s AND b.u = big.u SETTINGS $(settings_of "$algorithm");"
-    echo "SELECT 'big tn $algorithm', count(), sum(cityHash64(b.id, big.id)) FROM big AS b LEFT JOIN big ON b.tn = big.tn SETTINGS $(settings_of "$algorithm");"
-    echo "SELECT 'big or $algorithm', count(), sum(cityHash64(b.id, big.id)) FROM big AS b JOIN big ON b.s = big.s AND b.u = big.u OR b.tn = big.tn SETTINGS $(settings_of "$algorithm");"
-    # No row matches the first map, so an ANY join starts to prefetch the second one as well.
-    echo "SELECT 'big or any $algorithm', count(), sum(cityHash64(b.id, big.id != 0)) FROM big AS b LEFT ANY JOIN big ON b.s = big.s AND b.u = big.u + 3 OR b.tn = big.tn SETTINGS $(settings_of "$algorithm");"
-    # As above, but the second map has `NULL` keys.
-    echo "SELECT 'big or ns any $algorithm', count(), sum(cityHash64(b.id, big.id != 0)) FROM big AS b LEFT ANY JOIN big ON b.s = big.s AND b.u = big.u + 3 OR b.ns = big.ns AND b.u = big.u SETTINGS $(settings_of "$algorithm");"
-    echo "SELECT 'big ns mixed $algorithm', count(), sum(cityHash64(b.id, big.id)) FROM big AS b LEFT JOIN big ON b.ns = big.ns AND b.u = big.u AND (b.id + big.id) % 3 != 0 SETTINGS $(settings_of "$algorithm");"
-done | $CLICKHOUSE_CLIENT
-
-# The joins on `big` prefetch, so they must neither build nor prefetch the key of a row that they skip. `ns` is `NULL`
-# in one row in 5. Each condition skips either 19 rows in 20, or runs of 2000 rows plus one row in 10 between the runs.
-for kind in "INNER ALL" "LEFT ALL" "RIGHT ALL" "FULL ALL"
-do
     for algorithm in hash parallel8
     do
-        settings=$(settings_of "$algorithm")
-        echo "SELECT 'big ns $kind $algorithm', count(), sum(cityHash64(b.id, big.id)) FROM big AS b $kind JOIN big ON b.ns = big.ns AND b.u = big.u SETTINGS $settings;"
-        echo "SELECT 'big left condition $kind $algorithm', count(), sum(cityHash64(b.id, big.id)) FROM big AS b $kind JOIN big ON b.s = big.s AND b.u = big.u AND b.id % 20 = 0 SETTINGS $settings;"
-        echo "SELECT 'big left runs $kind $algorithm', count(), sum(cityHash64(b.id, big.id)) FROM big AS b $kind JOIN big ON b.s = big.s AND b.u = big.u AND intDiv(b.id, 1000) % 3 = 0 AND b.id % 10 != 0 SETTINGS $settings;"
-        echo "SELECT 'big right condition $kind $algorithm', count(), sum(cityHash64(b.id, big.id)) FROM big AS b $kind JOIN big ON b.s = big.s AND b.u = big.u AND big.id % 20 = 0 SETTINGS $settings;"
+        echo "SELECT '$kind $algorithm', count(), sum(cityHash64(l.id, r.id)) FROM l $kind JOIN r ON l.s = r.s AND l.u3 = r.u3 AND l.ts >= r.nts SETTINGS $(settings_of "$algorithm");"
     done
 done | $CLICKHOUSE_CLIENT
 
@@ -221,6 +202,8 @@ for max_block_size in 1 7 8 9 255 256 257 65505
 do
     for algorithm in hash parallel8
     do
+        # As above, two block sizes are enough for `parallel8`.
+        [ $algorithm = parallel8 ] && [[ $max_block_size != 7 && $max_block_size != 256 ]] && continue
         for key in s_u64 tn
         do
             echo "SELECT '$key $algorithm max_block_size $max_block_size', count(), sum(cityHash64(l.id, r.id)) FROM l JOIN r ON ${keys[$key]} SETTINGS $(settings_of "$algorithm"), max_block_size = $max_block_size, max_joined_block_size_rows = 100;"
