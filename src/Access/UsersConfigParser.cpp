@@ -81,7 +81,26 @@ namespace
         for (auto & element : query.access_rights_elements)
         {
             if (query.is_revoke)
-                entity.access.revoke(element);
+            {
+                try
+                {
+                    entity.access.revoke(element);
+                }
+                catch (const Exception & e)
+                {
+                    /// Such a filter can't be revoked separately: revoke without it, as before, so existing configs keep their meaning.
+                    if (!element.hasFilter() || e.code() != ErrorCodes::BAD_ARGUMENTS)
+                        throw;
+                    LOG_WARNING(
+                        log,
+                        "Grant query '{}' of {}: {}. Revoking without the filter",
+                        string_query,
+                        entity.formatTypeWithName(),
+                        e.message());
+                    element.filter.clear();
+                    entity.access.revoke(element);
+                }
+            }
             else
                 entity.access.grant(element);
         }
