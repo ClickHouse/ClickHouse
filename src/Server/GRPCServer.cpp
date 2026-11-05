@@ -978,7 +978,7 @@ namespace
             /// The RPC is already accepted, and destroying the responder neither finishes nor cancels it:
             /// gRPC keeps the call alive, so the client would wait for a status forever, and so would
             /// `grpc::Server::Shutdown`. Cancel it, so that the client gets a terminal status right away.
-            responder->cancel();
+            call_responder->cancel();
             throw;
         }
     }

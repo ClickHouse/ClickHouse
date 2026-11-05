@@ -120,7 +120,6 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsDouble keep_free_space_elements_ratio;
     extern const FileCacheSettingsNonZeroUInt64 load_metadata_threads;
     extern const FileCacheSettingsBool load_metadata_asynchronously;
-    extern const FileCacheSettingsUInt64 background_download_threads;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
     extern const FileCacheSettingsUInt64 idle_client_ttl_sec;
     extern const FileCacheSettingsUInt64 idle_client_check_interval_sec;
