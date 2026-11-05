@@ -1054,7 +1054,7 @@ void KeeperRequestDispatcher::finalizeWaitForWriteSpans(const KeeperRequestsForS
     }
 }
 
-void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_for_session)
+void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_for_session, int32_t dispatcher_server_id)
 {
     /// When Close commits, mark the session as dead so that
     /// stale requests still sitting in the backed-up queue will be filtered.
@@ -1069,6 +1069,12 @@ void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_f
         if (it != sessions.end())
             it->second.dead.store(true);
     }
+
+    /// Only requests that this dispatcher produced can be in its in-flight batches. With the owner
+    /// known, skip the matching below for other servers' requests. (Compare with the same id that
+    /// stamped our batches, see dispatchThread.)
+    if (dispatcher_server_id != -1 && dispatcher_server_id != server->getServerID())
+        return;
 
     std::lock_guard stream_lock(request_completion_mutex);
 

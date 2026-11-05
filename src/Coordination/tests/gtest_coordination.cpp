@@ -2182,7 +2182,7 @@ struct DispatcherFixture
             snapshots_queue,
             keeper_context,
             snapshot_s3,
-            [](uint64_t, const DB::KeeperRequestForSession &) {});
+            [](uint64_t, const DB::KeeperRequestForSession &, int32_t) {});
 
         dispatcher = std::make_unique<DB::KeeperRequestDispatcher>(server.get(), router());
     }
@@ -2273,6 +2273,31 @@ TEST(KeeperDispatcher, SessionIDCommitCorrelation)
     EXPECT_EQ(RequestDispatcherAccessor::committedRequests(dispatcher, batch_idx), 1u)
         << "our own SessionID commit did not retire our request";
     EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1) << "the fully committed batch was not popped";
+}
+
+/// A commit from another server's batch must not retire our in-flight request, even with the same
+/// (session_id, xid). Our own batch and a batch of unknown owner (legacy log entry) still retire it.
+TEST(KeeperDispatcher, CommitOfOtherServerBatchIsNotMatched)
+{
+    DispatcherFixture fixture;
+    auto & dispatcher = *fixture.dispatcher;
+
+    auto first = makeWriteRequest(/*session_id=*/ 1, /*xid=*/ 1, "/first");
+    auto second = makeWriteRequest(/*session_id=*/ 1, /*xid=*/ 2, "/second");
+    size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(dispatcher, DB::KeeperRequestsForSessions{first, second});
+
+    /// The fixture's server has id 1.
+    dispatcher.onCommit(first, /*dispatcher_server_id=*/ 2);
+    EXPECT_EQ(RequestDispatcherAccessor::committedRequests(dispatcher, batch_idx), 0u)
+        << "a commit from another server's batch retired our request";
+
+    dispatcher.onCommit(first, /*dispatcher_server_id=*/ 1);
+    EXPECT_EQ(RequestDispatcherAccessor::committedRequests(dispatcher, batch_idx), 1u)
+        << "a commit from our own batch did not retire our request";
+
+    dispatcher.onCommit(second, /*dispatcher_server_id=*/ -1);
+    EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1)
+        << "a commit of unknown owner did not retire our request";
 }
 
 /// `keeper_read_wait_for_write_time_milliseconds` must be observed for both carriers of parked reads.

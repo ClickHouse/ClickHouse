@@ -39,7 +39,7 @@ bool checkDigest(const KeeperDigest & first, const KeeperDigest & second)
     return first.value == second.value;
 }
 
-void assertDigest(const KeeperRequestBatch & batch, const KeeperDigest & actual, const char * operation)
+void assertDigest(const KeeperRequestBatch & batch, const KeeperDigest & actual, std::string_view operation)
 {
     if (!checkDigest(batch.digest, actual))
     {

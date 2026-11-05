@@ -115,7 +115,9 @@ public:
     /// May block for a short time if queue is full.
     void onResponse(KeeperResponseForSession response) noexcept;
 
-    void onCommit(const KeeperRequestForSession & request_for_session);
+    /// Called for every committed request, on every server. dispatcher_server_id is the server whose
+    /// dispatcher produced the request's batch, or -1 if unknown (legacy log entry).
+    void onCommit(const KeeperRequestForSession & request_for_session, int32_t dispatcher_server_id = -1);
 
     /// KeeperRequestDispatcher is in charge of preventing response queue(s) from growing very big and OOMing.
     /// This covers KeeperRequestDispatcher's own responses_queue, and `responses` queues from all KeeperTCPHandler-s.

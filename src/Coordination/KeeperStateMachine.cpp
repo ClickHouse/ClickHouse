@@ -110,6 +110,18 @@ static bool sameSnapshotIdentity(const nuraft::snapshot & lhs, const nuraft::sna
         && lhs.get_last_log_term() == rhs.get_last_log_term();
 }
 
+/// A legacy entry from a very old leader has no zxid. Such leaders used the log index as the zxid.
+/// This is safe: the log index is never smaller than the zxid, because every log entry advances
+/// the log index, but only requests advance the zxid. Batch entries always have a zxid.
+static void assignZxidToLegacyEntry(KeeperRequestBatch & batch, uint64_t log_idx)
+{
+    if (batch.first_zxid != 0)
+        return;
+    if (batch.requests.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Request batch without zxid in log: log_idx={}, requests={}", log_idx, batch.requests.size());
+    batch.first_zxid = static_cast<int64_t>(log_idx);
+}
+
 KeeperStateMachine::KeeperStateMachine(
     KeeperResponseCallback response_callback_,
     SnapshotsQueue & snapshots_queue_,
@@ -237,14 +249,7 @@ void KeeperStateMachine::preprocessUncommittedLogEntries(uint64_t start_idx, uin
         if (entry && entry->get_val_type() == nuraft::log_val_type::app_log)
         {
             auto batch = parseRequestBatch(entry->get_buf(), /*final=*/false);
-            if (batch->first_zxid == 0)
-            {
-                /// A legacy entry from an older node that didn't assign zxids;
-                /// use the log_idx as the zxid, like the older nodes do on commit.
-                if (batch->requests.size() != 1)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Request batch without zxid in log: log_idx={}, requests={}", log_idx, batch->requests.size());
-                batch->first_zxid = log_idx;
-            }
+            assignZxidToLegacyEntry(*batch, log_idx);
             batch->log_idx = log_idx;
 
             preprocessBatch(*batch, lock_mutex);
@@ -837,13 +842,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nur
         return result;
 
     auto batch = parseRequestBatch(data, /*final=*/false);
-    if (batch->first_zxid == 0)
-    {
-        if (batch->requests.size() != 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Request batch without zxid in log: log_idx={}, requests={}", log_idx, batch->requests.size());
-        batch->first_zxid = log_idx;
-    }
-
+    assignZxidToLegacyEntry(*batch, log_idx);
     batch->log_idx = log_idx;
 
     const auto maybe_log_opentelemetry_spans = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
@@ -920,7 +919,8 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::serializeRequestInOldFormat(cons
         request->tracing_context->serialize(write_buf);
     }
 
-    /// if new fields are added, update KeeperStateMachine::ZooKeeperLogSerializationVersion along with parseRequest function and PreAppendLog callback handler
+    /// if new fields are added, update KeeperStateMachine::ZooKeeperLogSerializationVersion along with parseRequestInOldFormat,
+    /// patchSerializedRequestBatch and the PreAppendLogLeader callback handler (which adds bytes missing in older versions)
     return write_buf.getBuffer();
 }
 
@@ -1414,14 +1414,7 @@ KeeperResponseForSession KeeperStateMachine::processReconfiguration(
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
     auto batch = parseRequestBatch(data, true);
-    if (batch->first_zxid == 0)
-    {
-        /// A legacy entry from an older node that didn't assign a zxid; use the log_idx as the zxid.
-        if (batch->requests.size() != 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Request batch without zxid in log: log_idx={}, requests={}", log_idx, batch->requests.size());
-        batch->first_zxid = log_idx;
-    }
-
+    assignZxidToLegacyEntry(*batch, log_idx);
     batch->log_idx = log_idx;
 
     if (!keeper_context->localLogsPreprocessed() && !preprocessBatch(*batch, /*lock_mutex=*/ true))
@@ -1520,7 +1513,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             ProfileEvents::increment(ProfileEvents::KeeperCommits);
 
             if (commit_callback)
-                commit_callback(log_idx, request_for_session);
+                commit_callback(log_idx, request_for_session, batch->dispatcher_server_id);
         }
         catch (...)
         {
@@ -1781,17 +1774,7 @@ void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
         return;
 
     auto batch = parseRequestBatch(data, true);
-    // If we received a log from an older node, use the log_idx as the zxid
-    // log_idx will always be larger or equal to the zxid so we can safely do this
-    // (log_idx is increased for all logs, while zxid is only increased for requests)
-    // (only applies to legacy single-request entries; batch entries always carry explicit zxids)
-    if (batch->first_zxid == 0)
-    {
-        if (batch->requests.size() != 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Request batch without zxid in log: log_idx={}, requests={}", log_idx, batch->requests.size());
-        batch->first_zxid = log_idx;
-    }
-
+    assignZxidToLegacyEntry(*batch, log_idx);
     rollbackRequestBatch(*batch, false);
 }
 

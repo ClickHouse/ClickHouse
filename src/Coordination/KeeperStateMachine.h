@@ -44,7 +44,9 @@ struct KeeperSnapshotStatus
 class KeeperStateMachine : public nuraft::state_machine
 {
 public:
-    using CommitCallback = std::function<void(uint64_t, const KeeperRequestForSession &)>;
+    /// Called for every committed request: (log idx, request, dispatcher_server_id of its batch).
+    /// dispatcher_server_id is -1 if the server that produced the request is unknown (legacy entry).
+    using CommitCallback = std::function<void(uint64_t, const KeeperRequestForSession &, int32_t)>;
 
     KeeperStateMachine(
         KeeperResponseCallback response_callback_,
@@ -85,7 +87,9 @@ public:
     /// single-request format (for compatibility with clusters that have older servers).
     static std::vector<nuraft::ptr<nuraft::buffer>> serializeRequestBatch(const KeeperRequestBatch & batch, bool use_batched_format);
 
-    /// Overwrite the patchable header fields of a batch log entry produced by serializeRequestBatch.
+    /// Overwrite the leader-assigned fields (zxid, digest, and for batch entries also
+    /// committed_log_idx) of a log entry produced by serializeRequestBatch, in either format.
+    /// serialization_version and patched_fields_offset come from parseRequestBatch.
     static void patchSerializedRequestBatch(nuraft::buffer & data, ZooKeeperLogSerializationVersion serialization_version, size_t patched_fields_offset, const KeeperRequestBatch & batch);
 
     /// Parses both a batch entry and a legacy single-request entry (returned as a batch of one).

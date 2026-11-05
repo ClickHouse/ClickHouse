@@ -86,7 +86,7 @@ using KeeperRequestsForSessions = std::vector<KeeperRequestForSession>;
 
 struct KeeperRequestBatch
 {
-    std::vector<KeeperRequestForSession> requests;
+    KeeperRequestsForSessions requests;
     /// Which server's Keeper[Request]Dispatcher produced this batch. That dispatcher owns the
     /// sessions of all requests in the batch, so only that server produces responses to these
     /// requests when committing this batch (see produce_responses in KeeperStateMachine::commit).
@@ -134,7 +134,7 @@ bool checkDigest(const KeeperDigest & first, const KeeperDigest & second);
 
 /// If `batch.digest` and `actual` are comparable (same version, not NO_DIGEST) but different,
 /// logs an error and crashes.
-void assertDigest(const KeeperRequestBatch & batch, const KeeperDigest & actual, const char * operation);
+void assertDigest(const KeeperRequestBatch & batch, const KeeperDigest & actual, std::string_view operation);
 
 inline static constexpr std::string_view tmp_keeper_file_prefix = "tmp_";
 
