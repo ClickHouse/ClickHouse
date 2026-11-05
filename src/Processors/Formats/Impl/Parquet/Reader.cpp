@@ -439,6 +439,50 @@ void Reader::ensureColumnChunks(const std::vector<size_t> & column_indices)
     }
 }
 
+std::optional<std::unordered_set<UInt64>> Reader::selectRowGroups(const RowGroupSelection & row_group_selection)
+{
+    if (!std::holds_alternative<RowGroupByteRange>(row_group_selection))
+        return selectRowGroups(*file_footer, row_group_selection, nullptr);
+    ensureColumnChunks({0});
+    return selectRowGroups(*file_footer, row_group_selection, column_chunks[0].get());
+}
+
+std::optional<std::unordered_set<UInt64>> Reader::selectRowGroups(
+    const FileFooter & footer, const RowGroupSelection & row_group_selection, const FileColumnChunks * first_column)
+{
+    if (std::holds_alternative<std::monostate>(row_group_selection))
+        return std::nullopt;
+    if (const auto * row_group_ids = std::get_if<std::unordered_set<UInt64>>(&row_group_selection))
+        return *row_group_ids;
+
+    std::vector<FileColumnChunks> parsed;
+    if (!first_column)
+    {
+        deserializeColumnChunks(footer.serialized.data(), footer.serialized.size(), footer.column_chunk_offsets, {0}, parsed);
+        const bool written_by_old_duckdb = footer.metadata.created_by == "DuckDB";
+        for (auto & column : parsed[0].chunks)
+            fixUpColumnChunk(column, written_by_old_duckdb);
+        first_column = parsed.data();
+    }
+
+    const auto [range_begin, range_size] = std::get<RowGroupByteRange>(row_group_selection);
+    std::unordered_set<UInt64> selected;
+    for (size_t row_group_idx = 0; row_group_idx < footer.metadata.row_groups.size(); ++row_group_idx)
+    {
+        if (footer.numColumnChunks(row_group_idx) == 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Row group has no column chunks");
+        const auto & column = first_column->chunks[row_group_idx].meta_data;
+        Int64 offset = column.data_page_offset;
+        if (column.__isset.dictionary_page_offset && column.dictionary_page_offset > 0 && column.dictionary_page_offset < offset)
+            offset = column.dictionary_page_offset;
+        if (offset < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative column chunk offset in row group: {}", offset);
+        if (range_begin <= UInt64(offset) && UInt64(offset) - range_begin < range_size)
+            selected.insert(row_group_idx);
+    }
+    return selected;
+}
+
 void Reader::getHyperrectangleForRowGroup(size_t row_group_idx, Hyperrectangle & hyperrectangle, bool only_spatial_bbox) const
 {
     for (const PrimitiveColumnInfo & column_info : primitive_columns)
@@ -498,7 +542,8 @@ void Reader::getHyperrectangleForRowGroup(size_t row_group_idx, Hyperrectangle &
                 continue;
             }
 
-            adjustRangeFromIndexIfNeeded(range, column_info, can_be_null);
+            if (!adjustRangeFromIndexIfNeeded(range, column_info, can_be_null))
+                range = Range::createWholeUniverse();
         }
         catch (Exception & e)
         {
@@ -596,7 +641,8 @@ std::optional<Range> Reader::getTopKSortColumnRange(size_t row_group_idx) const
         /// Same validation as the static min/max pruning path: self-contradictory statistics
         /// (`min_value > max_value`) must fail closed rather than become pruning input. We get here
         /// only for chunks proven to have no nulls, hence `can_be_null = false`.
-        adjustRangeFromIndexIfNeeded(range, column_info, /*can_be_null=*/ false);
+        if (!adjustRangeFromIndexIfNeeded(range, column_info, /*can_be_null=*/ false))
+            return std::nullopt;
 
         return range;
     }
@@ -738,7 +784,7 @@ std::optional<Chunk> Reader::readMinMaxFromStatistics(const std::optional<std::u
                 if (left.isNull() || right.isNull())
                     return std::nullopt;
                 if (accurateLess(right, left))
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Statistics have min_value > max_value: {} > {}.", left, right);
+                    return std::nullopt;
 
                 if (mins[i].isNull() || accurateLess(left, mins[i]))
                     mins[i] = std::move(left);
@@ -846,7 +892,7 @@ static size_t heapBytesOfField(const Field & field)
     return field.getType() == Field::Types::String ? field.safeGet<String>().size() : 0;
 }
 
-void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read)
+void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selection)
 {
     extended_sample_block = *sample_block;
     for (const auto & col : format_filter_info->additional_columns)
@@ -1077,6 +1123,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     total_primitive_columns_in_file = schemer.primitive_column_idx;
     output_columns = std::move(schemer.output_columns);
     parseColumnChunks();
+    const auto row_groups_to_read = selectRowGroups(row_group_selection);
 
     /// Precalculate some column index mappings.
 
@@ -2832,9 +2879,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
                     = column_info.decoder.decodeField(column_index.min_values[page_idx], /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left)
                     && column_info.decoder.decodeField(column_index.max_values[page_idx], /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
 
-                if (stats_usable)
-                    adjustRangeFromIndexIfNeeded(range, column_info, can_be_null);
-                else
+                if (!stats_usable || !adjustRangeFromIndexIfNeeded(range, column_info, can_be_null))
                     range = Range::createWholeUniverse();
             }
 
@@ -2901,10 +2946,10 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
     }
 }
 
-void Reader::adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const
+bool Reader::adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const
 {
     if (accurateLess(range.right, range.left))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Statistics have min_value > max_value: {} > {}.", static_cast<const Field &>(range.left), static_cast<const Field &>(range.right));
+        return false;
 
     bool nullable = column_info.levels.back().def > 0;
     bool null_as_default = options.format.null_as_default && !column_info.output_nullable;
@@ -2940,6 +2985,7 @@ void Reader::adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnIn
         if (range.right.isNull())
             range.right_included = false;
     }
+    return true;
 }
 
 void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
@@ -3882,6 +3928,17 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
             "offset index declares rows [{}, {}). For a query without filters, use "
             "input_format_parquet_use_offset_index=0 to read the file without the offset index",
             fmt::join(column.meta->meta_data.path_in_schema, "."), rows_in_page, next_row_idx, *end_row_idx);
+
+    /// The row count in a V2 data page header can agree with the offset index while the page still
+    /// begins in the middle of a row (arrow-go splits rows across data pages V2 this way). The readers
+    /// that rely on the offset index (`skipToRowOrNextPage` and `decodePrimitiveColumn`) assume that
+    /// the page starts on a row boundary, so reject such a page instead of misreading it.
+    if (end_row_idx.has_value() && max_rep > 0 && !page.rep.empty() && page.rep[0] != 0)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Page of column {} at row {} begins in the middle of a row, but the offset index requires pages to begin on "
+            "row boundaries. Use input_format_parquet_use_offset_index=0 to read the file without the offset index",
+            fmt::join(column.meta->meta_data.path_in_schema, "."), next_row_idx);
 
     /// Don't decode def levels in the common case of non-array column that's declared nullable but
     /// contains no nulls.

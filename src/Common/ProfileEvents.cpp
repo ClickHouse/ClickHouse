@@ -115,10 +115,10 @@
     M(UniqueKeyDedupProbes, "Number of new-row keys probed against existing parts on the UNIQUE KEY INSERT write-path.", ValueType::Number) \
     M(UniqueKeyConflictOverwriteRows, "Number of new-row keys that superseded a live row in an existing part on the UNIQUE KEY INSERT write-path.", ValueType::Number) \
     M(UniqueKeyConflictIgnoredRows, "Number of incoming rows dropped by unique_key_conflict_action = ignore because the key was already live in the partition.", ValueType::Number) \
-    M(PrimaryIndexCacheHits, "Number of times an entry has been found in the primary index cache, so we didn't have to load a index file.", ValueType::Number) \
+    M(PrimaryIndexCacheHits, "Number of times an entry has been found in the primary index cache, so we didn't have to load an index file.", ValueType::Number) \
     M(StatisticsCacheHits, "Number of times the statistics of a column of a data part have been found in the statistics cache.", ValueType::Number) \
     M(StatisticsCacheMisses, "Number of times the statistics of a column of a data part have not been found in the statistics cache, so they had to be loaded from the part.", ValueType::Number) \
-    M(PrimaryIndexCacheMisses, "Number of times an entry has not been found in the primary index cache, so we had to load a index file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
+    M(PrimaryIndexCacheMisses, "Number of times an entry has not been found in the primary index cache, so we had to load an index file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
     M(IcebergMetadataFilesCacheHits, "Number of times iceberg metadata files have been found in the cache.", ValueType::Number) \
     M(IcebergMetadataFilesCacheMisses, "Number of times iceberg metadata files have not been found in the iceberg metadata cache and had to be read from (remote) disk.", ValueType::Number) \
     M(IcebergMetadataFilesCacheStaleMisses, "Number of times iceberg metadata files have been found in the cache, but were considered stale and had to be read from (remote) disk.", ValueType::Number) \
@@ -209,6 +209,7 @@
     M(TextIndexLazyBlocksSkippedResolved, "Number of packed blocks skipped because the output region was already resolved (all-ones for OR, no row left in all the posting lists applied so far for AND) in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyBlocksSkippedDense, "Number of packed blocks of consecutive row ids padded as a whole (memset for OR, increment for AND) instead of being decoded, in lazy posting list mode.", ValueType::Number) \
     M(TextIndexFilledFromFoldedPostings, "Number of times a text index virtual column was filled for all rows of a read directly from the posting lists folded during the index analysis, instead of from posting lists built for each granule.", ValueType::Number) \
+    M(TextIndexDictionaryDFABuilds, "Number of times a DFA was built from a LIKE pattern to skip dictionary blocks of a text index. Reusing an already built DFA is not counted.", ValueType::Number) \
     M(TextIndexDiscardPatternScan, "Number of times pattern-based dictionary scan in a text index was discarded because the number of posting lists to read exceeded the threshold.", ValueType::Number) \
     M(TextIndexPatternBypassCacheHits, "Number of times a text index pattern dictionary scan was skipped because an earlier scan of the same part exceeded the posting-list threshold.", ValueType::Number) \
     M(TextIndexGenericExclusionSearchAlgorithm, "Number of times the generic exclusion search algorithm is used over the text index.", ValueType::Number) \
@@ -552,7 +553,10 @@
     M(JoinNonJoinedHashTableScansSkipped, "Number of times a RIGHT or FULL hash join skipped scanning its hash table for non-joined rows, because every right key in the scanned part had matched.", ValueType::Number) \
     M(JoinDelayedJoinedTransformBlockCount, "Number of blocks emitted by DelayedJoinedBlocksWorkerTransform.", ValueType::Number) \
     M(JoinDelayedJoinedTransformRowCount, "Number of rows emitted by DelayedJoinedBlocksWorkerTransform.", ValueType::Number) \
-    M(JoinSpillingHashJoinSwitchedToGraceJoin, "Number of times a (Concurrent)HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.", ValueType::Number) \
+    M(JoinSpillingHashJoinSwitchedToGraceJoin, "Number of times a HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.", ValueType::Number) \
+    M(JoinSpillingHashJoinSwitchedToMergeJoin, "Number of times a HashJoin was switched to MergeJoin due to memory limit in SpillingHashJoin. MergeJoin is chosen instead of GraceHashJoin when the query plan requires the join to keep the row order of the left stream.", ValueType::Number) \
+    M(HashJoinBuiltWithParallelLayout, "Number of hash tables built for hash joins as several parts. Up to `max_threads` threads fill the parts at the same time, and with `max_threads = 1` one thread fills them all. The `parallel_hash_join_threshold` setting decides which hash joins are built this way.", ValueType::Number) \
+    M(HashJoinBuiltWithSerialLayout, "Number of hash tables built for hash joins as one part, one insert at a time. Each hash table counts once, so a grace hash join adds one for every bucket that it loads into memory. See HashJoinBuiltWithParallelLayout.", ValueType::Number) \
     M(JoinReorderMicroseconds, "Total time spent executing JOIN reordering algorithm.", ValueType::Microseconds) \
     M(JoinOptimizeMicroseconds, "Total time spent executing JOIN plan optimizations.", ValueType::Microseconds) \
     M(QueryPlanOptimizeMicroseconds, "Total time spent executing query plan optimizations.", ValueType::Microseconds) \
@@ -1022,6 +1026,7 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheCreatedKeyDirectories, "Number of created key directories", ValueType::Bytes) \
     M(FilesystemCacheEvictedFileSegments, "Number of file segments evicted from filesystem cache", ValueType::Number) \
     M(FilesystemCacheDowngradedFileSegments, "Number of file segments downgraded (moved) from the protected to the probationary queue in SLRU cache policy. This is an internal move within the cache, not an eviction.", ValueType::Number) \
+    M(FilesystemCachePromotedFileSegments, "Number of file segments promoted (moved) from the probationary to the protected queue in SLRU cache policy.", ValueType::Number) \
     M(FilesystemCacheBackgroundDownloadQueuePush, "Number of file segments sent for background download in filesystem cache", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedFileSegments, "Number of file segments skipped for eviction because of being in unreleasable state", ValueType::Number) \
     M(FilesystemCacheEvictionSkippedEvictingFileSegments, "Number of file segments skipped for eviction because of being in evicting state", ValueType::Number) \
@@ -1052,6 +1057,8 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheCheckCorrectnessMicroseconds, "How much time does FileCache::assertCacheCorrectness takes", ValueType::Microseconds) \
     M(FileSegmentWaitMicroseconds, "Wait on DOWNLOADING state", ValueType::Microseconds) \
     M(FileSegmentWaitTimeouts, "Number of times waiting on a DOWNLOADING file segment timed out (see `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)", ValueType::Number) \
+    M(FileSegmentWaitWithoutData, "Number of times waiting on a DOWNLOADING file segment ended because the downloader released the segment before it downloaded the awaited offset", ValueType::Number) \
+    M(FileSegmentWaitWithoutDataMicroseconds, "Time spent in the waits counted by `FileSegmentWaitWithoutData`", ValueType::Microseconds) \
     M(FileSegmentCompleteMicroseconds, "Duration of FileSegment::complete() in filesystem cache", ValueType::Microseconds) \
     M(FileSegmentLockMicroseconds, "Lock file segment time", ValueType::Microseconds) \
     M(FileSegmentWriteMicroseconds, "File segment write() time", ValueType::Microseconds) \
@@ -1161,7 +1168,7 @@ The server successfully detected this situation and will download merged part fr
     M(MetadataFromKeeperIndividualOperations, "Number of paths read or written by single or multi requests to Keeper", ValueType::Number) \
     M(MetadataFromKeeperIndividualOperationsMicroseconds, "Time spend during single or multi requests to Keeper", ValueType::Microseconds) \
     M(MetadataFromKeeperReconnects, "Number of times a reconnect to Keeper was done", ValueType::Number) \
-    M(MetadataFromKeeperBackgroundCleanupObjects, "Number of times a old deleted object clean up was performed by background task", ValueType::Number) \
+    M(MetadataFromKeeperBackgroundCleanupObjects, "Number of times an old deleted object clean up was performed by background task", ValueType::Number) \
     M(MetadataFromKeeperBackgroundCleanupTransactions, "Number of times old transaction idempotency token was cleaned up by background task", ValueType::Number) \
     M(MetadataFromKeeperBackgroundCleanupBlobs, "Number of times an empty blob layout part was cleaned up by background task", ValueType::Number) \
     M(MetadataFromKeeperBackgroundCleanupErrors, "Number of times an error was encountered in background cleanup task", ValueType::Number) \
@@ -1417,6 +1424,9 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheReceivedSlowDownPackets, "Distributed Cache client event. Total number of received SlowDown packets received from distributed cache (the server rejected a new connection because this client has too many open connections relative to its weight)", ValueType::Number) \
     M(DistrCacheSentDataPackets, "Distributed Cache client event. Total number of data packets sent to distributed cache", ValueType::Number) \
     M(DistrCacheSentDataPacketsBytes, "Distributed Cache client event. The number of bytes in Data packets sent to distributed cache", ValueType::Bytes) \
+    M(DistrCacheRequestsEndedOnRelease, "Distributed Cache client event. Number of open requests which the client had to end while releasing them (a retry which reconnected, a new request over an unfinished one, or the client going away) instead of the reader ending them explicitly", ValueType::Number) \
+    M(DistrCacheEndRequestNotSentSocketNotWritable, "Distributed Cache client event. Number of EndRequest packets which were not sent because the socket was not writable (the server stopped draining it): the connection is dropped instead and the server notices the EOF", ValueType::Number) \
+    M(DistrCacheEndRequestMicroseconds, "Distributed Cache client event. Time spent sending EndRequest packets to distributed cache", ValueType::Microseconds) \
     M(DistrCacheUnusedPackets, "Distributed Cache client event. Number of skipped unused packets from distributed cache", ValueType::Number) \
     M(DistrCacheUnusedDataPacketsBytes, "Distributed Cache client event. The number of bytes in Data packets which were ignored", ValueType::Bytes) \
     M(DistrCacheUnusedDataPacketsBytesUnknownRequest, "Distributed Cache client event. The number of bytes in ignored Data packets (part of DistrCacheUnusedDataPacketsBytes) that arrived for a request the client no longer tracks (e.g. reading was stopped via EndRequest after the server had already sent more data)", ValueType::Bytes) \
@@ -1459,11 +1469,34 @@ The server successfully detected this situation and will download merged part fr
     \
     M(DistrCacheTemporaryFilesCreated, "Distributed Cache connection event. Number of temporary files created in distributed cache", ValueType::Number) \
     M(DistrCacheTemporaryFilesBytesWritten, "Distributed Cache connection event. Number of bytes written to temporary files created in distributed cache", ValueType::Number) \
+    M(DistrCacheTemporaryFilesPublished, "Distributed Cache committed temporary-data event. Number of files published by a client", ValueType::Number) \
+    M(DistrCacheTemporaryFilesPublicationAmbiguous, "Distributed Cache committed temporary-data event. Number of ambiguous publication replies", ValueType::Number) \
+    M(DistrCacheTemporaryFilesConfirmed, "Distributed Cache committed temporary-data event. Number of publications confirmed on the original server", ValueType::Number) \
+    M(DistrCacheTemporaryFilesHandoffFailed, "Distributed Cache committed temporary-data event. Number of failed owner handoffs", ValueType::Number) \
+    M(DistrCacheTemporaryFilesConfirmationFailed, "Distributed Cache committed temporary-data event. Number of failed publication confirmations", ValueType::Number) \
+    M(DistrCacheTemporaryDataRenewBatches, "Distributed Cache committed temporary-data event. Number of renewal batches", ValueType::Number) \
+    M(DistrCacheTemporaryDataRenewBatchFailures, "Distributed Cache committed temporary-data event. Number of failed renewal batches", ValueType::Number) \
+    M(DistrCacheTemporaryDataReleaseBatches, "Distributed Cache committed temporary-data event. Number of release batches", ValueType::Number) \
+    M(DistrCacheTemporaryDataReleaseBatchFailures, "Distributed Cache committed temporary-data event. Number of failed release batches", ValueType::Number) \
+    M(DistrCacheTemporaryDataReleasesDropped, "Distributed Cache committed temporary-data event. Number of releases given up after a terminal failure or after the server-side TTL passed while retrying, left to TTL cleanup", ValueType::Number) \
+    M(DistrCacheReadFinalAckFailed, "Distributed Cache event. Number of reads whose connection was lost before the final acknowledgement; the fully received range was accepted", ValueType::Number) \
+    M(DistrCacheTemporaryDataRegistryCallbackFailures, "Distributed Cache committed temporary-data event. Number of contained temporary-data registry callback failures", ValueType::Number) \
+    M(DistrCacheTemporaryDataRegistryLockWaitMicroseconds, "Distributed Cache committed temporary-data event. Time spent waiting for the temporary-data registry mutex on contention", ValueType::Microseconds) \
+    M(DistrCacheTemporaryDataRegistryScheduleFailures, "Distributed Cache committed temporary-data event. Number of temporary-data registry task schedule failures", ValueType::Number) \
+    M(DistrCacheServerTemporaryFilesPublished, "Distributed Cache server event. Number of committed temporary files published", ValueType::Number) \
+    M(DistrCacheServerTemporaryFilesPublishRejected, "Distributed Cache server event. Number of rejected committed temporary publications", ValueType::Number) \
+    M(DistrCacheServerTemporaryFilesReleased, "Distributed Cache server event. Number of committed temporary files released", ValueType::Number) \
+    M(DistrCacheServerTemporaryFilesExpired, "Distributed Cache server event. Number of committed temporary files expired", ValueType::Number) \
+    M(DistrCacheServerTemporaryFilesExtended, "Distributed Cache server event. Number of committed temporary file TTL extensions", ValueType::Number) \
+    M(DistrCacheServerTemporaryDataControlMicroseconds, "Distributed Cache server event. Time spent processing committed temporary-data controls", ValueType::Microseconds) \
+    M(DistrCacheServerTemporaryReadRejected, "Distributed Cache server event. Number of rejected committed temporary reads", ValueType::Number) \
+    M(DistrCacheServerTemporaryCleanupScheduleFailures, "Distributed Cache server event. Number of committed temporary cleanup schedule failures", ValueType::Number) \
     \
     M(DistrCacheServerProcessRequestMicroseconds, "Distributed Cache server event. Time spent processing request on DistributedCache server side", ValueType::Microseconds) \
     M(DistrCacheServerStartRequestPackets, "Distributed Cache server event. Number of StartRequest packets in DistributedCacheServer", ValueType::Number) \
     M(DistrCacheServerContinueRequestPackets, "Distributed Cache server event. Number of ContinueRequest packets in DistributedCacheServer", ValueType::Number) \
     M(DistrCacheServerEndRequestPackets, "Distributed Cache server event. Number of EndRequest packets in DistributedCacheServer", ValueType::Number) \
+    M(DistrCacheServerRequestsClosedWithoutEndRequest, "Distributed Cache server event. Number of requests whose client closed the connection without sending EndRequest (a killed client, a client whose socket was not writable, or an old client), so the server stopped serving them on EOF. Closes driven by this server (shutdown or connection eviction) are not counted", ValueType::Number) \
     M(DistrCacheServerReceivedCredentialsRefreshPackets, "Distributed Cache server event. Number of RefreshCredentials client packets in DistributedCacheServer", ValueType::Number) \
     M(DistrCacheServerAckRequestPackets, "Distributed Cache server event. Number of AckRequest packets in DistributedCacheServer", ValueType::Number) \
     M(DistrCacheServerNewS3CachedClients, "Distributed Cache server event. The number of new cached s3 clients", ValueType::Number) \
@@ -1481,6 +1514,7 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheServerConnectionsRejectedOverLimit, "Distributed Cache server event. The number of new connections rejected with a SlowDown packet because the connecting client exceeded its share of connections", ValueType::Number) \
     M(DistrCacheServerConnectionRegistryLockWaitMicroseconds, "Distributed Cache server event. Time spent waiting for the global connection registry mutex on contention (identify, setClientWeight, eviction, and unregister when a reindex or bucket removal is due)", ValueType::Microseconds) \
     M(DistrCacheServerConnectionRegistryClientLockWaitMicroseconds, "Distributed Cache server event. Time spent waiting for a per-client connection bucket mutex on contention (register/unregister/identify/eviction)", ValueType::Microseconds) \
+    M(DistrCacheServerCommittedTemporaryFilesLockWaitMicroseconds, "Distributed Cache server event. Time spent waiting for the committed temporary-files mutex on contention.", ValueType::Microseconds) \
     \
     M(LogTest, "Number of log messages with level Test", ValueType::Number) \
     M(LogTrace, "Number of log messages with level Trace", ValueType::Number) \
