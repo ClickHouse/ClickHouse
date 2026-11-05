@@ -1241,7 +1241,6 @@ IcebergStorageSink::IcebergStorageSink(
     const StorageID & table_id_)
     : SinkToStorage(sample_block_)
     , sample_block(sample_block_)
-    /// Only a storage that uploads in the background gains from not waiting for the upload of a finished file.
     , data_file_uploads(object_storage_->supportParallelWrite()
         ? context_->getSettingsRef()[Setting::iceberg_insert_max_data_files_in_upload] : 0)
     , object_storage(object_storage_)
@@ -1458,7 +1457,6 @@ void IcebergStorageSink::finalizeBuffers()
         total_chunks_size += writer.getResultBytes();
     }
 
-    /// The commit references the data files, so their uploads must finish before it.
     data_file_uploads.finalize();
 
     if (writer_per_partition_key.empty())

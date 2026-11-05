@@ -167,7 +167,6 @@ void MultipleFileWriter::finalize()
     data_file_byte_counts.push_back(file_bytes);
     data_file_row_counts.push_back(current_file_num_rows.value_or(0));
 
-    /// For S3, schedules the upload of the rest of the file without waiting for it.
     buffer->preFinalize();
     data_file_uploads.add(std::move(buffer));
 }

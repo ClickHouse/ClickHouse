@@ -16,17 +16,13 @@ namespace DB
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
-/// Finished data files of one INSERT stream whose upload has been started by `preFinalize`, oldest first, so that
-/// the stream writes the next file while they are uploaded. Shared by the partition writers of a sink.
+/// Buffers of the finished data files of one INSERT stream after `preFinalize`, oldest first.
 class DataFileUploads
 {
 public:
     explicit DataFileUploads(size_t max_files_in_upload_);
 
-    /// Takes the buffer of a finished file after `preFinalize`; finalizes the oldest ones while more than
-    /// `max_files_in_upload` are left.
     void add(std::unique_ptr<WriteBufferFromFileBase> && buffer);
-    /// Waits for all uploads.
     void finalize();
     /// For S3, waits for the uploads in flight, so that their objects can be removed afterwards.
     void cancel() noexcept;
@@ -56,7 +52,7 @@ public:
 
     void consume(const Chunk & chunk);
     void startNewFile();
-    /// Writes the footer of the current file and hands its buffer to `data_file_uploads`, which waits for the upload.
+    /// Does not wait for the upload of the file; `data_file_uploads` does.
     void finalize();
     void release();
     void cancel();
