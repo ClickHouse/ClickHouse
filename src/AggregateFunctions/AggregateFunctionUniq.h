@@ -561,6 +561,87 @@ private:
     static constexpr bool is_able_to_parallelize_merge = Data::is_able_to_parallelize_merge;
     static constexpr bool is_parallelize_merge_prepare_needed = Data::is_parallelize_merge_prepare_needed;
     static constexpr bool is_uniques_hash_set = detail::IsUniquesHashSet<DataSet>::value;
+    static constexpr bool is_uniq_exact_set = detail::IsUniqExactSet<DataSet>::value;
+
+    /// `uniqExact` with GROUP BY: a row whose place and value equal those of the previous row is not inserted,
+    /// because inserting a key that a set already contains never changes it.
+    template <bool check_places>
+    void addBatchExact(size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset,
+        const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const
+    {
+        using Traits = detail::AggregateFunctionUniqTraits<T, ColumnType>;
+        using Key = typename DataSet::value_type;
+        static constexpr auto hint = is_able_to_parallelize_merge ? SetLevelHint::unknown : SetLevelHint::singleLevel;
+        static constexpr bool value_is_key = std::is_same_v<std::decay_t<decltype(Traits::hashExact(T{}))>, T>;
+        static constexpr size_t chunk_size = 256;
+
+        const char8_t * flags = nullptr;
+        if (if_argument_pos >= 0)
+            flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
+        const IColumn & column = *columns[0];
+
+        std::array<Key, chunk_size> keys; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first `count` entries are read
+        std::array<DataSet *, chunk_size> sets; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+        AggregateDataPtr last_place = nullptr;
+        T last_value{};
+        size_t considered = 0;
+        size_t repeats = 0;
+
+        size_t row = row_begin;
+        while (row < row_end)
+        {
+            const size_t chunk_end = row + std::min(chunk_size, row_end - row);
+            size_t count = 0;
+            size_t chunk_considered = 0;
+            for (; row < chunk_end; ++row)
+            {
+                if constexpr (check_places)
+                {
+                    if (!places[row])
+                        continue;
+                }
+                if (flags && !flags[row])
+                    continue;
+
+                ++chunk_considered;
+                AggregateDataPtr place = places[row] + place_offset;
+                const auto value = Traits::value(column, row);
+                if constexpr (value_is_key)
+                {
+                    /// Branch-free: on short runs a skip branch mispredicts more than a skipped insert saves.
+                    const bool repeated = (place == last_place) & bitEquals(value, last_value);
+                    keys[count] = value;
+                    sets[count] = &this->data(place).set;
+                    count += !repeated;
+                }
+                else
+                {
+                    if (place == last_place && bitEquals(value, last_value))
+                        continue;
+                    keys[count] = Traits::hashExact(value);
+                    sets[count++] = &this->data(place).set;
+                }
+                last_place = place;
+                last_value = value;
+            }
+
+            for (size_t i = 0; i < count; ++i)
+                sets[i]->template insert<const Key &, hint>(keys[i]);
+
+            /// Repeats are rare: the per-row loop is cheaper for the rest of the batch.
+            considered += chunk_considered;
+            repeats += chunk_considered - count;
+            if (repeats * 2 <= considered)
+            {
+                using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, ColumnType, Data>>;
+                if constexpr (check_places)
+                    Base::addBatch(row, row_end, places, place_offset, columns, arena, if_argument_pos);
+                else
+                    Base::addBatchWithNonNullPlaces(row, row_end, places, place_offset, columns, arena, if_argument_pos);
+                return;
+            }
+        }
+    }
 
 public:
     explicit AggregateFunctionUniq(const DataTypes & argument_types_)
@@ -616,6 +697,8 @@ public:
                 [&](size_t row) { return DataSet::fullHash(Traits::hash(Traits::value(*columns[0], row))); },
                 [&](AggregateDataPtr place) { return &this->data(place).set; });
         }
+        else if constexpr (is_uniq_exact_set)
+            addBatchExact</* check_places = */ true>(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
         else
             IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, ColumnType, Data>>::addBatch(
                 row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
@@ -626,6 +709,8 @@ public:
     {
         if constexpr (std::is_same_v<Data, AggregateFunctionUniqUniquesHashSetData>)
             addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+        else if constexpr (is_uniq_exact_set)
+            addBatchExact</* check_places = */ false>(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
         else
             /// Unlike its addBatch, the base's non-null variant skips the per-row places[] test.
             IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, ColumnType, Data>>::addBatchWithNonNullPlaces(

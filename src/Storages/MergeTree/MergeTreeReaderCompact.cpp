@@ -341,7 +341,12 @@ void MergeTreeReaderCompact::readData(
         {
             auto full_column = !has_substream_marks ? getFullColumnFromCache(columns_cache_for_subcolumns, name) : nullptr;
             if (full_column)
+            {
+                /// A later granule may be decoded straight into `column`, which needs the part's dynamic structure.
+                if (column.empty())
+                    column.takeExactDynamicStructureFrom(*full_column);
                 column.insertRangeFrom(*full_column, full_column->size() - rows_to_read, rows_to_read);
+            }
             else
             {
                 const auto & serialization = serializations[column_idx];
