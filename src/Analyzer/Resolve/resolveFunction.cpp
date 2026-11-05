@@ -100,6 +100,7 @@ namespace Setting
     extern const SettingsBool allow_correlated_subqueries;
     extern const SettingsBool rewrite_in_to_join;
     extern const SettingsMap additional_table_filters;
+    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 namespace
@@ -731,7 +732,8 @@ static bool isNullConstant(const QueryTreeNodePtr & node)
 static DataTypePtr getLeastSupertypeForInArrayElements(
     const QueryTreeNodes & array_elements,
     const QueryTreeNodePtr & in_first_argument,
-    bool left_is_null)
+    bool left_is_null,
+    bool allow_lossy_numeric_supertype)
 {
     DataTypes arg_types;
     arg_types.reserve(array_elements.size() + 1);
@@ -742,7 +744,7 @@ static DataTypePtr getLeastSupertypeForInArrayElements(
     for (const auto & arg : array_elements)
         arg_types.push_back(arg->getResultType());
 
-    return tryGetLeastSupertype(arg_types);
+    return tryGetLeastSupertype(arg_types, allow_lossy_numeric_supertype);
 }
 
 template <typename CastNodeToType>
@@ -1325,7 +1327,11 @@ QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
         [](const auto & arg)
         { return isNullConstant(arg) || isNullableOrLowCardinalityNullable(arg->getResultType()); });
 
-    DataTypePtr common_type = getLeastSupertypeForInArrayElements(array_elements, in_first_argument, left_is_null);
+    DataTypePtr common_type = getLeastSupertypeForInArrayElements(
+        array_elements,
+        in_first_argument,
+        left_is_null,
+        scope.context->getSettingsRef()[Setting::allow_lossy_numeric_supertype]);
     /// If no supertype exists, keep the old behaviour for non-NULL left-hand side
     /// values and let per-element `CAST` handle or reject the mismatch. For NULL
     /// left-hand side values, let `array` infer the right-hand side type on its own.

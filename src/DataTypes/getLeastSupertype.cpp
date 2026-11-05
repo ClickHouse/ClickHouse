@@ -1016,12 +1016,8 @@ DataTypePtr tryGetLossyNumericSupertype(const DataTypes & types)
 
 DataTypePtr getLeastSupertype(const DataTypes & types, bool allow_lossy_numeric)
 {
-    /// A lossless common type always wins over the lossy fallback.
-    if (auto common_type = getLeastSupertype<LeastSupertypeOnError::Null>(types))
+    if (auto common_type = tryGetLeastSupertype(types, allow_lossy_numeric))
         return common_type;
-    if (allow_lossy_numeric)
-        if (auto lossy_type = tryGetLossyNumericSupertype(types))
-            return lossy_type;
     return getLeastSupertype<LeastSupertypeOnError::Throw>(types);
 }
 
@@ -1057,6 +1053,16 @@ String getNumericVariantSupertypeHint(const DataTypePtr & type)
 DataTypePtr tryGetLeastSupertype(const DataTypes & types)
 {
     return getLeastSupertype<LeastSupertypeOnError::Null>(types);
+}
+
+DataTypePtr tryGetLeastSupertype(const DataTypes & types, bool allow_lossy_numeric)
+{
+    /// A lossless common type always wins over the lossy fallback.
+    if (auto common_type = tryGetLeastSupertype(types))
+        return common_type;
+    if (allow_lossy_numeric)
+        return tryGetLossyNumericSupertype(types);
+    return nullptr;
 }
 
 template<>

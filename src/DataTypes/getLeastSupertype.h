@@ -56,6 +56,9 @@ DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types, bool allow_lossy
 /// Same as above but return nullptr instead of throwing exception.
 DataTypePtr tryGetLeastSupertype(const DataTypes & types);
 
+/// Same as getLeastSupertype(types, allow_lossy_numeric) but return nullptr instead of throwing exception.
+DataTypePtr tryGetLeastSupertype(const DataTypes & types, bool allow_lossy_numeric);
+
 /// If `type` is a Variant whose alternatives are all numeric (after removing any
 /// Nullable/LowCardinality wrappers), returns a hint pointing at the
 /// `allow_lossy_numeric_supertype` setting, suitable for appending to an aggregate
