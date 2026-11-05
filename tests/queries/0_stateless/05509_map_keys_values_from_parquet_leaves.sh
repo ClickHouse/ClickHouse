@@ -7,12 +7,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-TYPES="${CLICKHOUSE_DATABASE}_05507_types.parquet"
-BYTES="${CLICKHOUSE_DATABASE}_05507_bytes.parquet"
-WITH_M="${CLICKHOUSE_DATABASE}_05507_d_with_m.parquet"
-WITHOUT_M="${CLICKHOUSE_DATABASE}_05507_d_without_m.parquet"
-ICEBERG_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_05507_evolved"
-ICEBERG_MIXED_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_05507_mixed"
+TYPES="${CLICKHOUSE_DATABASE}_05509_types.parquet"
+BYTES="${CLICKHOUSE_DATABASE}_05509_bytes.parquet"
+WITH_M="${CLICKHOUSE_DATABASE}_05509_d_with_m.parquet"
+WITHOUT_M="${CLICKHOUSE_DATABASE}_05509_d_without_m.parquet"
+ICEBERG_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_05509_evolved"
+ICEBERG_MIXED_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_05509_mixed"
 rm -rf "${ICEBERG_PATH}" "${ICEBERG_MIXED_PATH}"
 
 ${CLICKHOUSE_CLIENT} -m --query "
@@ -70,46 +70,46 @@ SELECT mapKeys(ms) FROM file('${TYPES}') PREWHERE id > 25 ORDER BY id;
 SELECT 'lazy materialization';
 SELECT id, mapKeys(ms), mapValues(mn) FROM file('${TYPES}') ORDER BY id DESC LIMIT 3;
 SELECT 'defaults';
-SELECT id, mapKeys(m), n FROM file('${CLICKHOUSE_DATABASE}_05507_d_*.parquet', Parquet,
+SELECT id, mapKeys(m), n FROM file('${CLICKHOUSE_DATABASE}_05509_d_*.parquet', Parquet,
     'id UInt64, m Map(String, UInt8) DEFAULT map(\'d\', 1), n String DEFAULT toString(m[\'a\'])') ORDER BY id;
-SELECT id, mapValues(m) FROM file('${CLICKHOUSE_DATABASE}_05507_d_*.parquet', Parquet,
+SELECT id, mapValues(m) FROM file('${CLICKHOUSE_DATABASE}_05509_d_*.parquet', Parquet,
     'id UInt64, m Map(String, UInt8) DEFAULT map(\'d\', 1)') ORDER BY id;
 SELECT 'row policy, additional_table_filters';
-SELECT id, mapKeys(m) FROM t_05507_policy ORDER BY id;
-SELECT count() FROM t_05507_policy WHERE has(m, 'a');
-SELECT id, mapKeys(m) FROM t_05507_filter ORDER BY id SETTINGS additional_table_filters = {'t_05507_filter': 'm[\'a\'] = 2'};
-SELECT count() FROM t_05507_filter WHERE has(m, 'b') SETTINGS additional_table_filters = {'t_05507_filter': 'm[\'a\'] = 2'};
+SELECT id, mapKeys(m) FROM t_05509_policy ORDER BY id;
+SELECT count() FROM t_05509_policy WHERE has(m, 'a');
+SELECT id, mapKeys(m) FROM t_05509_filter ORDER BY id SETTINGS additional_table_filters = {'t_05509_filter': 'm[\'a\'] = 2'};
+SELECT count() FROM t_05509_filter WHERE has(m, 'b') SETTINGS additional_table_filters = {'t_05509_filter': 'm[\'a\'] = 2'};
 SELECT 'Iceberg, schema evolution';
-SELECT id, mapKeys(a), mapKeys(m), a, s2 FROM t_05507_evolved ORDER BY id;
-SELECT id, mapValues(a) FROM t_05507_evolved ORDER BY id;
-SELECT count() FROM t_05507_evolved WHERE has(a, 'k1');
-SELECT id, mapKeys(a) FROM t_05507_evolved ORDER BY id DESC LIMIT 3;
+SELECT id, mapKeys(a), mapKeys(m), a, s2 FROM t_05509_evolved ORDER BY id;
+SELECT id, mapValues(a) FROM t_05509_evolved ORDER BY id;
+SELECT count() FROM t_05509_evolved WHERE has(a, 'k1');
+SELECT id, mapKeys(a) FROM t_05509_evolved ORDER BY id DESC LIMIT 3;
 SELECT 'Iceberg, Parquet and ORC files';
-SELECT id, mapKeys(m) FROM t_05507_mixed ORDER BY id;
-SELECT count() FROM t_05507_mixed WHERE has(m, 'k1');
-SELECT count() FROM t_05507_mixed WHERE mapContainsValueLike(m, 'o%');
+SELECT id, mapKeys(m) FROM t_05509_mixed ORDER BY id;
+SELECT count() FROM t_05509_mixed WHERE has(m, 'k1');
+SELECT count() FROM t_05509_mixed WHERE mapContainsValueLike(m, 'o%');
 "
 
 ${CLICKHOUSE_CLIENT} -m --query "
 SET allow_experimental_insert_into_iceberg = 1, allow_insert_into_iceberg = 1;
 
-CREATE TABLE t_05507_policy (id UInt64, m Map(String, UInt8)) ENGINE = File(Parquet, '${WITH_M}');
-CREATE ROW POLICY ${CLICKHOUSE_DATABASE}_05507 ON t_05507_policy USING mapContainsValue(m, 3) TO ALL;
-CREATE TABLE t_05507_filter (id UInt64, m Map(String, UInt8)) ENGINE = File(Parquet, '${WITH_M}');
+CREATE TABLE t_05509_policy (id UInt64, m Map(String, UInt8)) ENGINE = File(Parquet, '${WITH_M}');
+CREATE ROW POLICY ${CLICKHOUSE_DATABASE}_05509 ON t_05509_policy USING mapContainsValue(m, 3) TO ALL;
+CREATE TABLE t_05509_filter (id UInt64, m Map(String, UInt8)) ENGINE = File(Parquet, '${WITH_M}');
 
 -- Files written before the renames are read with the names of their own schema: there \`m\` is the current \`a\`.
-CREATE TABLE t_05507_evolved (id Int64, m Map(String, String), m2 Map(String, String), s String)
+CREATE TABLE t_05509_evolved (id Int64, m Map(String, String), m2 Map(String, String), s String)
     ENGINE = IcebergLocal('${ICEBERG_PATH}', 'Parquet');
-INSERT INTO t_05507_evolved SELECT number, map('k' || toString(number % 3), 'v' || toString(number)), map('p' || toString(number), 'q'), 's' || toString(number) FROM numbers(4);
-ALTER TABLE t_05507_evolved ADD COLUMN n Nullable(Int64);
-INSERT INTO t_05507_evolved SELECT number + 10, map('k' || toString(number % 3), 'w' || toString(number)), map('p', 'r'), 's', number FROM numbers(2);
-ALTER TABLE t_05507_evolved RENAME COLUMN s TO s2;
-ALTER TABLE t_05507_evolved RENAME COLUMN m TO a;
-ALTER TABLE t_05507_evolved RENAME COLUMN m2 TO m;
-INSERT INTO t_05507_evolved SELECT number + 20, map('a' || toString(number), 'x'), map('z', 'y' || toString(number)), 's', number FROM numbers(2);
+INSERT INTO t_05509_evolved SELECT number, map('k' || toString(number % 3), 'v' || toString(number)), map('p' || toString(number), 'q'), 's' || toString(number) FROM numbers(4);
+ALTER TABLE t_05509_evolved ADD COLUMN n Nullable(Int64);
+INSERT INTO t_05509_evolved SELECT number + 10, map('k' || toString(number % 3), 'w' || toString(number)), map('p', 'r'), 's', number FROM numbers(2);
+ALTER TABLE t_05509_evolved RENAME COLUMN s TO s2;
+ALTER TABLE t_05509_evolved RENAME COLUMN m TO a;
+ALTER TABLE t_05509_evolved RENAME COLUMN m2 TO m;
+INSERT INTO t_05509_evolved SELECT number + 20, map('a' || toString(number), 'x'), map('z', 'y' || toString(number)), 's', number FROM numbers(2);
 
-CREATE TABLE t_05507_mixed (id Int64, m Map(String, String)) ENGINE = IcebergLocal('${ICEBERG_MIXED_PATH}', 'Parquet');
-INSERT INTO t_05507_mixed SELECT number, map('k' || toString(number % 3), 'v' || toString(number)) FROM numbers(4);
+CREATE TABLE t_05509_mixed (id Int64, m Map(String, String)) ENGINE = IcebergLocal('${ICEBERG_MIXED_PATH}', 'Parquet');
+INSERT INTO t_05509_mixed SELECT number, map('k' || toString(number % 3), 'v' || toString(number)) FROM numbers(4);
 INSERT INTO TABLE FUNCTION icebergLocal('${ICEBERG_MIXED_PATH}', 'ORC', 'id Int64, m Map(String, String)')
     SELECT number + 100, map('k' || toString(number % 3), 'o' || toString(number)) FROM numbers(3);
 "
@@ -158,11 +158,11 @@ ORDER BY side;
 "
 
 ${CLICKHOUSE_CLIENT} -m --query "
-DROP ROW POLICY ${CLICKHOUSE_DATABASE}_05507 ON t_05507_policy;
-DROP TABLE t_05507_policy;
-DROP TABLE t_05507_filter;
-DROP TABLE t_05507_evolved;
-DROP TABLE t_05507_mixed;
+DROP ROW POLICY ${CLICKHOUSE_DATABASE}_05509 ON t_05509_policy;
+DROP TABLE t_05509_policy;
+DROP TABLE t_05509_filter;
+DROP TABLE t_05509_evolved;
+DROP TABLE t_05509_mixed;
 "
 rm -rf "${ICEBERG_PATH}" "${ICEBERG_MIXED_PATH}"
 rm -f "${CLICKHOUSE_USER_FILES}/${TYPES}" "${CLICKHOUSE_USER_FILES}/${BYTES}" "${CLICKHOUSE_USER_FILES}/${WITH_M}" "${CLICKHOUSE_USER_FILES}/${WITHOUT_M}"
