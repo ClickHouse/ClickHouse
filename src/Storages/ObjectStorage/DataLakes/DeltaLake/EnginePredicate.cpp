@@ -11,8 +11,8 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Core/DecimalFunctions.h>
-#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeDecimalBase.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -30,6 +30,7 @@
 #include <Parsers/ASTHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 
+#include <algorithm>
 #include <array>
 #include <limits>
 #include <optional>
@@ -208,7 +209,7 @@ namespace
         Int64 micros;
         /// Whether `micros` is the literal itself rather than its floor.
         bool exact;
-        /// The factor the comparison scales the column by; 1 when it compares at microseconds.
+        /// The ratio of the literal's ticks to microseconds; 1 when the comparison runs at microseconds.
         Int64 multiplier;
     };
 
@@ -271,15 +272,8 @@ namespace
             const auto common_type = DB::getLeastSupertype(DB::DataTypes{column_type, literal_type});
             if (!common_type->equals(*column_type))
                 return std::nullopt;
-            try
-            {
-                const auto converted = DB::castColumn({literal_type->createColumnConst(1, field), literal_type, ""}, common_type);
-                return TimestampLiteral{(*converted)[0].safeGet<DB::DecimalField<DB::DateTime64>>().getValue().value, true, 1};
-            }
-            catch (const DB::Exception &)
-            {
-                return std::nullopt;
-            }
+            const auto converted = DB::castColumn({literal_type->createColumnConst(1, field), literal_type, ""}, common_type);
+            return TimestampLiteral{(*converted)[0].safeGet<DB::DecimalField<DB::DateTime64>>().getValue().value, true, 1};
         }
 
         return std::nullopt;
@@ -291,9 +285,9 @@ namespace
         DeltaTimestampKind kind;
         Int64 micros;
         ComparisonVisitor visitor;
-        /// Above 1, the comparison scales the column up by it, so the column must be fenced to the
-        /// values for which that does not overflow.
-        Int64 multiplier;
+        /// Above 1, a row compares as its statistics say only within `[Int64 min, Int64 max] / fence_divisor`
+        /// microseconds, so the comparison is fenced to these values.
+        Int64 fence_divisor;
     };
 
     /// Matches a comparison of a column backed by a Delta `timestamp` / `timestamp_ntz` with a literal.
@@ -304,7 +298,8 @@ namespace
         bool swapped,
         DeltaTimestampKind kind,
         const ComparisonVisitors & visitors,
-        const DB::FormatSettings & format_settings)
+        const DB::FormatSettings & format_settings,
+        bool check_decimal_overflow)
     {
         /// A column declared with another type is read with a conversion that pruning does not mirror.
         const auto column_type = getTypeOrNestedType(column);
@@ -320,7 +315,18 @@ namespace
         if (!visitor)
             return std::nullopt;
 
-        return TimestampComparison{column, kind, value->micros, visitor, value->multiplier};
+        /// Outside the fence a row may compare differently from its statistics:
+        /// - with `decimal_check_overflow = 0`, a comparison at a finer scale multiplies the column by
+        ///   `multiplier` and wraps around `Int64`; with the check on, it compares exactly;
+        /// - with `date_time_overflow_behavior = 'saturate'`, the Parquet reader clamps an `INT96` timestamp
+        ///   to the `Int64` nanoseconds, while the statistics keep the value as written.
+        Int64 fence_divisor = 1;
+        if (value->multiplier > 1 && !check_decimal_overflow)
+            fence_divisor = value->multiplier;
+        if (format_settings.date_time_overflow_behavior == DB::FormatSettings::DateTimeOverflowBehavior::Saturate)
+            fence_divisor = std::max(fence_divisor, DB::DecimalUtils::scaleMultiplier<Int64>(9 - DELTA_TIMESTAMP_SCALE));
+
+        return TimestampComparison{column, kind, value->micros, visitor, fence_divisor};
     }
 }
 
@@ -490,6 +496,14 @@ uintptr_t EnginePredicate::visitPredicate(void * data, ffi::KernelExpressionVisi
     return result;
 }
 
+static void injectLiteralVisitorFault()
+{
+    fiu_do_on(DB::FailPoints::delta_kernel_fail_literal_visitor,
+    {
+        throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injecting fault for visitLiteralValue");
+    });
+}
+
 static uintptr_t visitLiteralValue(
     const DB::Field & value,
     DB::TypeIndex type_index,
@@ -498,10 +512,7 @@ static uintptr_t visitLiteralValue(
 {
     LOG_TEST(getLogger("EnginePredicate"), "Type index: {}, data type: {}", type_index, data_type->getName());
 
-    fiu_do_on(DB::FailPoints::delta_kernel_fail_literal_visitor,
-    {
-        throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injecting fault for visitLiteralValue");
-    });
+    injectLiteralVisitorFault();
 
     switch (type_index)
     {
@@ -613,8 +624,7 @@ using LiteralVisitor = uintptr_t (*)(ffi::KernelExpressionVisitorState *, Int64)
 
 static uintptr_t visitDateLiteral(ffi::KernelExpressionVisitorState * state, Int64 day)
 {
-    static const DB::DataTypePtr date32 = std::make_shared<DB::DataTypeDate32>();
-    return visitLiteralValue(DB::Field(day), DB::TypeIndex::Date32, date32, state);
+    return ffi::visit_expression_literal_date(state, static_cast<int32_t>(day));
 }
 
 static uintptr_t visitTimestampLiteral(ffi::KernelExpressionVisitorState * state, Int64 micros)
@@ -645,6 +655,7 @@ struct ColumnPredicateBuilder
                     &KernelUtils::allocateError),
                 "visit_expression_column"),
             "column");
+        injectLiteralVisitorFault();
         auto literal_id = assertValid(visit_literal(visitor_state, value), "literal");
         return assertValid(visitor(visitor_state, column_id, literal_id), "comparison");
     }
@@ -715,13 +726,12 @@ uintptr_t EngineIterator::visitTimestampComparison(
         comparison.kind == DeltaTimestampKind::TimestampNtz ? &visitTimestampNtzLiteral : &visitTimestampLiteral};
 
     auto compared = predicates.compare(comparison.visitor, comparison.micros);
-    if (comparison.multiplier == 1)
+    if (comparison.fence_divisor == 1)
         return compared;
 
-    /// The comparison multiplies the column by `multiplier`, which overflows `Int64` outside these bounds.
     /// Preserve outside-range rows: (inside AND comparison) OR (outside AND Unknown).
-    const Int64 min_micros = std::numeric_limits<Int64>::min() / comparison.multiplier;
-    const Int64 max_micros = std::numeric_limits<Int64>::max() / comparison.multiplier;
+    const Int64 min_micros = std::numeric_limits<Int64>::min() / comparison.fence_divisor;
+    const Int64 max_micros = std::numeric_limits<Int64>::max() / comparison.fence_divisor;
     auto is_in_range = predicates.andOf(
         predicates.compare(ffi::visit_predicate_ge, min_micros),
         predicates.compare(ffi::visit_predicate_le, max_micros));
@@ -838,7 +848,8 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                     {
                         if (auto comparison = matchTimestampComparison(
                                 column_node, literal_node, isConstNode(node->children[0]), *kind, *visitors,
-                                iterator_data.predicate.getFormatSettings()))
+                                iterator_data.predicate.getFormatSettings(),
+                                DB::decimalCheckComparisonOverflow(iterator_data.predicate.getContext())))
                             return visitTimestampComparison(iterator_data, *comparison);
                         return VISITOR_FAILED_OR_UNSUPPORTED;
                     }

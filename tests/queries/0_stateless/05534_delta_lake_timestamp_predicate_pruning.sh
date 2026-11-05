@@ -16,13 +16,15 @@ ROOT="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_delta_timestamp"
 trap 'rm -rf "${ROOT}" 2>/dev/null' EXIT
 rm -rf "${ROOT}"
 
-# As in 05153: everything is recorded first and executed in three batched clickhouse-local
-# launches (fixtures, checks with the engine predicate off, checks with it on). Per-query scan
-# counts are consecutive differences of the cumulative `DeltaLakeScannedFiles` counter.
+# As in 05153: everything is recorded first and executed in batched clickhouse-local launches
+# (fixtures, checks with the engine predicate off, on, and on under the old analyzer, then the
+# expected errors per mode). Per-query scan counts are consecutive differences of the cumulative
+# `DeltaLakeScannedFiles` counter.
 
 TABLES=()
-declare -A TABLE_DELTA_TYPE TABLE_STATS TABLE_PARTITIONED TABLE_NULLABLE TABLE_FILES
+declare -A TABLE_DELTA_TYPE TABLE_STATS TABLE_PARTITIONED TABLE_NULLABLE TABLE_FILES TABLE_SOURCE TABLE_DIR
 FIXTURE_QUERIES=""
+SETUP_QUERIES=""
 
 # make_table <table> <timestamp|timestamp_ntz> <full|none|millis> <data|partition> <nullable> <file>...
 # Each file is a comma-separated, sorted list of UTC timestamps, or NULL. A partition table takes one
@@ -111,21 +113,51 @@ EOF
     done
 }
 
-CHECK_TABLES=() CHECK_WHERES=() CHECK_SETTINGS=()
-OFF_ROWS=() OFF_DELTAS=() ON_ROWS=() ON_DELTAS=()
+# declare_table <name> <table> <columns>: a `DeltaLakeLocal` table over the files of <table>,
+# with the columns declared by the user instead of read from the Delta schema.
+declare_table() {
+    local name=$1 table=$2 columns=$3
+    TABLE_SOURCE[$name]="${name}"
+    TABLE_DIR[$name]="${table}"
+    SETUP_QUERIES+="
+        CREATE TABLE IF NOT EXISTS ${name} (${columns}) ENGINE = DeltaLakeLocal('${ROOT}/${table}');"
+}
 
-# check <table> <where> [settings]: rows with the engine predicate on must match the rows with
-# it off, the off run must scan every file, and the on rows and scan count go to the reference.
-check() {
-    CHECK_TABLES+=("$1")
-    CHECK_WHERES+=("$2")
-    CHECK_SETTINGS+=("${3:-}")
+ITEMS=()
+CHECK_TABLES=() CHECK_WHERES=() CHECK_SETTINGS=() CHECK_PRINT=()
+OFF_ROWS=() OFF_DELTAS=() ON_ROWS=() ON_DELTAS=() OLD_ROWS=() OLD_DELTAS=()
+ERR_TABLES=() ERR_WHERES=() ERR_SETTINGS=()
+
+record_check() {
+    ITEMS+=("check ${#CHECK_TABLES[@]}")
+    CHECK_PRINT+=("$1")
+    CHECK_TABLES+=("$2")
+    CHECK_WHERES+=("$3")
+    CHECK_SETTINGS+=("${4:-}")
+}
+
+# check <table> <where> [settings]: rows with the engine predicate on, with or without the analyzer,
+# must match the rows with it off, the off run must scan every file, and the on rows and scan
+# count go to the reference.
+check() { record_check all "$@"; }
+# check_files: the same, but only the scan count goes to the reference.
+check_files() { record_check files "$@"; }
+# check_rows_match: the same, but neither the rows nor the scan count go to the reference.
+check_rows_match() { record_check none "$@"; }
+
+# expect_same_error <table> <where> [settings]: the query must fail with the same error code with the
+# engine predicate off and on, so pruning cannot hide an exception by skipping every file.
+expect_same_error() {
+    ITEMS+=("error ${#ERR_TABLES[@]}")
+    ERR_TABLES+=("$1")
+    ERR_WHERES+=("$2")
+    ERR_SETTINGS+=("${3:-}")
 }
 
 # Rows are printed in UTC whatever the session time zone of the case.
 data_query() {
-    printf "SELECT arraySort(groupArray(ifNull(toString(ts, 'UTC'), 'NULL'))) FROM deltaLakeLocal('%s') WHERE %s%s;" \
-        "${ROOT}/$1" "$2" "${3:+ SETTINGS $3}"
+    printf "SELECT arraySort(groupArray(ifNull(toString(ts, 'UTC'), 'NULL'))) FROM %s WHERE %s%s;" \
+        "${TABLE_SOURCE[$1]:-deltaLakeLocal('${ROOT}/$1')}" "$2" "${3:+ SETTINGS $3}"
 }
 
 # Disable every applicable Parquet pruning path, so only the engine predicate can skip files.
@@ -141,12 +173,13 @@ run_batch() {
 run_checks() {
     local enabled=$1
     local -n rows_out=$2 deltas_out=$3
-    local i batch="" out
+    shift 3
+    local i batch="${SETUP_QUERIES}" out
     for i in "${!CHECK_TABLES[@]}"; do
         batch+="$(data_query "${CHECK_TABLES[$i]}" "${CHECK_WHERES[$i]}" "${CHECK_SETTINGS[$i]}")
             SELECT sumIf(value, event = 'DeltaLakeScannedFiles') FROM system.events;"
     done
-    out=$(run_batch "${enabled}" --query "${batch}")
+    out=$(run_batch "${enabled}" "$@" --query "${batch}")
     local -a lines
     mapfile -t lines <<< "${out}"
     if [[ "${#lines[@]}" != "$(( 2 * ${#CHECK_TABLES[@]} ))" ]]; then
@@ -163,19 +196,52 @@ run_checks() {
     done
 }
 
+# Prints the error codes of the recorded error cases, one per failed query, in order.
+run_errors() {
+    local enabled=$1
+    local i batch="${SETUP_QUERIES}"
+    for i in "${!ERR_TABLES[@]}"; do
+        batch+="$(data_query "${ERR_TABLES[$i]}" "${ERR_WHERES[$i]}" "${ERR_SETTINGS[$i]}")"
+    done
+    run_batch "${enabled}" --ignore-error --query "${batch}" 2>&1 >/dev/null | grep -oE 'Code: [0-9]+\. DB::Exception' || true
+}
+
 emit_results() {
-    local idx
-    for idx in "${!CHECK_TABLES[@]}"; do
+    local item kind idx
+    local -a off_errors on_errors
+    mapfile -t off_errors < <(run_errors 0)
+    mapfile -t on_errors < <(run_errors 1)
+    for item in "${ITEMS[@]}"; do
+        read -r kind idx <<< "${item}"
+        if [[ "${kind}" == error ]]; then
+            printf 'error: %s: %s%s\n' "${ERR_TABLES[$idx]}" "${ERR_WHERES[$idx]}" "${ERR_SETTINGS[$idx]:+ SETTINGS ${ERR_SETTINGS[$idx]}}"
+            if [[ "${#off_errors[@]}" != "${#ERR_TABLES[@]}" || "${#on_errors[@]}" != "${#ERR_TABLES[@]}" ]]; then
+                printf 'Expected %s failing queries, got %s with the engine predicate off and %s with it on\n' \
+                    "${#ERR_TABLES[@]}" "${#off_errors[@]}" "${#on_errors[@]}" >&2
+                return 1
+            fi
+            if [[ "${off_errors[$idx]}" == "${on_errors[$idx]}" ]]; then
+                printf 'same error\n'
+            else
+                printf 'Error %s with the engine predicate off, %s with it on\n' "${off_errors[$idx]}" "${on_errors[$idx]}"
+            fi
+            continue
+        fi
         local table="${CHECK_TABLES[$idx]}" where="${CHECK_WHERES[$idx]}" settings="${CHECK_SETTINGS[$idx]}"
-        local files=("${ROOT}/${table}/"*.parquet)
+        local files=("${ROOT}/${TABLE_DIR[$table]:-${table}}/"*.parquet)
         printf '%s: %s%s\n' "${table}" "${where}" "${settings:+ SETTINGS ${settings}}"
         diff -u <(printf '%s\n' "${OFF_ROWS[$idx]}") <(printf '%s\n' "${ON_ROWS[$idx]}")
+        diff -u <(printf '%s\n' "${OFF_ROWS[$idx]}") <(printf '%s\n' "${OLD_ROWS[$idx]}")
         if [[ "${OFF_DELTAS[$idx]}" != "${#files[@]}" ]]; then
             printf 'Unexpected unpruned file count %s for: %s\n' "${OFF_DELTAS[$idx]}" "${where}" >&2
             return 1
         fi
-        printf '%s\n' "${ON_ROWS[$idx]}"
-        printf '%s\n' "${ON_DELTAS[$idx]}"
+        if [[ "${CHECK_PRINT[$idx]}" == all ]]; then
+            printf '%s\n' "${ON_ROWS[$idx]}"
+        fi
+        if [[ "${CHECK_PRINT[$idx]}" != none ]]; then
+            printf '%s\n' "${ON_DELTAS[$idx]}"
+        fi
     done
 }
 
@@ -187,12 +253,14 @@ run_all() {
     done
     run_checks 0 OFF_ROWS OFF_DELTAS
     run_checks 1 ON_ROWS ON_DELTAS
+    # The old analyzer builds a filter of another shape; only its rows are compared.
+    run_checks 1 OLD_ROWS OLD_DELTAS --enable_analyzer=0
     emit_results
 }
 
-# Data files are at least a millisecond apart: delta-kernel lowers a literal compared with a max
-# statistic by 999 microseconds, because Spark truncates timestamp statistics to milliseconds.
-# The last-but-one file lies beyond 2262-04-11, where a column scaled to nanoseconds overflows `Int64`.
+# Apart from the two files around the epoch, data files are at least a millisecond apart: delta-kernel
+# lowers a literal compared with a max statistic by 999 microseconds, because Spark truncates timestamp
+# statistics to milliseconds. The last-but-one file lies beyond 2262-04-11, outside the `Int64` nanoseconds.
 DATA_FILES=(
     '1969-12-31 23:59:59.999999'
     '1970-01-01 00:00:00.000000'
@@ -222,6 +290,11 @@ for table in ts ntz; do
     check "${table}" "ts < toDate('2026-01-01')" "session_timezone='America/New_York'"
     check "${table}" "ts >= toDateTime('2026-01-01 00:00:01', 'UTC')"
     check "${table}" "ts < toDateTime('2026-01-01 05:30:01', 'Asia/Kolkata')"
+    # A string finer than microseconds or outside the range is parsed by the comparison and by pruning alike.
+    check_rows_match "${table}" "ts < '2026-01-01 00:00:00.1234565'"
+    check_rows_match "${table}" "ts >= '2026-01-01 00:00:00.1234565'"
+    check_rows_match "${table}" "ts > '2300-01-01 00:00:00'"
+    check_rows_match "${table}" "ts < '1899-12-31 00:00:00'"
 done
 
 # `DateTime64` constants compare by ticks, whatever their time zone; a coarser scale converts exactly.
@@ -246,23 +319,52 @@ check ntz "${NS_BETWEEN} < ts"
 check ts "ts = ${NS_BETWEEN}"
 check ts "ts != ${NS_BETWEEN}"
 check ts "NOT (ts < ${NS_BETWEEN})"
-# An exact constant is fenced: the file beyond 2262-04-11 stays scanned in either polarity.
+# By default the comparison is exact beyond 2262-04-11 too. With `decimal_check_overflow = 0` it
+# multiplies the column and wraps around, so the file beyond stays scanned in either polarity.
 check ts "ts = ${NS_EXACT}"
 check ts "NOT (ts = ${NS_EXACT})"
+check ts "ts = ${NS_EXACT}" "decimal_check_overflow=0"
+check ts "NOT (ts = ${NS_EXACT})" "decimal_check_overflow=0"
 check ts "ts < ${NS_BETWEEN}" "decimal_check_overflow=0"
 check ts "ts <= ${NS_BEFORE_EPOCH}"
+# With `date_time_overflow_behavior = 'saturate'` the Parquet reader clamps an INT96 timestamp to the
+# `Int64` nanoseconds while its statistics keep the real value, so a file reaching beyond stays scanned.
+check ts "ts = '2026-01-01 00:00:00.123456'" "date_time_overflow_behavior='saturate'"
 
 # Junctions and nested negation.
 check ts "ts BETWEEN '2026-01-01 00:00:00' AND '2026-01-01 00:00:00.5'"
-check ts "ts < '1970-01-01' OR ts > '2100-01-01'"
 check ts "NOT (ts = '2026-01-01 00:00:00.123456' AND ts > '1970-01-01')"
 
 # Untranslated forms scan every file.
+check ts "ts < '1970-01-01' OR ts > '2100-01-01'"
 check ts "ts IN ('2026-01-01 00:00:00.123456', '2026-01-02 00:00:00')"
 check ts "toDate(ts) = '2026-01-01'"
 
+# A string that does not parse fails the comparison whether or not pruning is on.
+expect_same_error ts "ts = 'abc'"
+expect_same_error ts "ts < 'abc'"
+
+# A column declared with another scale is read with a conversion that pruning does not mirror, so
+# every file is scanned. Another time zone keeps the ticks and prunes as the Delta schema does.
+# The files stay within the nanosecond `DateTime64(9)` range.
+make_table small timestamp full data false '2026-01-01 00:00:00.000000' '2026-01-01 00:00:00.123456' '2026-01-01 00:00:01.000000'
+declare_table ts_ms small "ts DateTime64(3, 'UTC')"
+declare_table ts_ns small "ts DateTime64(9, 'UTC')"
+declare_table ts_kolkata small "ts DateTime64(6, 'Asia/Kolkata')"
+check_files ts_ms "ts = '2026-01-01 00:00:00.123'"
+check_files ts_ms "ts >= '2026-01-01 00:00:01'"
+check_files ts_ns "ts = '2026-01-01 00:00:00.123456'"
+check_files ts_ns "ts >= '2026-01-01 00:00:01'"
+check ts_kolkata "ts = '2026-01-01 05:30:00.123456'"
+check ts_kolkata "ts < '2026-01-01 05:30:00.123456'"
+
 make_table nullable timestamp full data true NULL '2026-01-01 00:00:00.000000' '2026-01-01 00:00:01.000000'
 check nullable "ts = '2026-01-01 00:00:00'"
+check nullable "'2026-01-01 00:00:00.5' < ts"
+check nullable "ts < ${NS_BETWEEN}"
+check nullable "ts < ${NS_BETWEEN}" "decimal_check_overflow=0"
+check nullable "NOT (ts <= '2026-01-01 00:00:00.5')"
+check nullable "ts IS NOT NULL AND ts >= '2026-01-01 00:00:01'"
 check nullable "ts IS NULL OR ts > '2026-01-01 00:00:00.5'"
 
 make_table no_stats timestamp none data false '2026-01-01 00:00:00.000000' '2026-01-01 00:00:00.123456'
@@ -292,6 +394,10 @@ for table in part part_ntz; do
     check "${table}" "ts < ${NS_BETWEEN}"
     check "${table}" "ts > ${NS_BEFORE_EPOCH}"
     check "${table}" "ts <= ${NS_BEFORE_EPOCH}"
+    check_rows_match "${table}" "ts > '2026-01-01 00:00:00.1234565'"
+    check_rows_match "${table}" "ts <= '2026-01-01 00:00:00.1234565'"
+    check_rows_match "${table}" "ts > '2300-01-01 00:00:00'"
+    check_rows_match "${table}" "ts < '1899-12-31 00:00:00'"
 done
 
 run_all
