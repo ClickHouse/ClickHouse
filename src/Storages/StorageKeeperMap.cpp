@@ -1082,7 +1082,7 @@ bool StorageKeeperMap::dropTableData(
     {
         throw zkutil::KeeperException(Coordination::Error::ZOPERATIONTIMEOUT, "Manually triggered operation timeout");
     });
-    zookeeper->removeChildrenRecursive(zk_data_path_);
+    zookeeper->tryRemoveChildrenRecursive(zk_data_path_, /*probably_flat=*/ true);
 
     bool completely_removed = false;
     Coordination::Requests ops;
