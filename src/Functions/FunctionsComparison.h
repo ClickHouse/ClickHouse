@@ -26,6 +26,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -935,9 +936,10 @@ inline bool comparisonCanThrow(const DataTypePtr & left_type, const DataTypePtr 
         return false;
 
     /// Values of exactly the same type are compared by `IColumn::compareAt`, which reads the values
-    /// as they are stored. `Variant`, `Dynamic` and `JSON` are excluded: a comparison of those
-    /// dispatches on the type of every individual row.
-    if (left->equals(*right) && !which_left.isVariant() && !which_left.isDynamic() && !which_left.isObject())
+    /// as they are stored. Types containing `Variant`, `Dynamic` or `JSON` are excluded: comparisons
+    /// of their nested values dispatch on the type of every individual row and can throw.
+    if (left->equals(*right)
+        && !anyInTypeTree(*left, [](const IDataType & type) { return isVariant(type) || isDynamic(type) || isObject(type); }))
         return false;
 
     return true;
