@@ -305,8 +305,9 @@ private:
         settings.stream_mark_getter = [](const ISerialization::SubstreamPath &) { return MarkInCompressedFile(); };
     }
 
-    /// As `computeIndexGranularity` with the default settings: a granule holds `rows_per_granule` rows, fewer when they would
-    /// exceed `bytes_per_granule`.
+    /// As `computeIndexGranularity` with the default settings for this column alone: a granule holds `rows_per_granule` rows,
+    /// fewer when they would exceed `bytes_per_granule`. The writer counts the bytes of all columns of the table, so the granules
+    /// of a table with wide rows are smaller.
     static size_t granuleRows(const IColumn & column)
     {
         const size_t bytes_per_row = std::max<size_t>(column.byteSize() / std::max<size_t>(column.size(), 1), 1);
@@ -460,8 +461,9 @@ private:
     }
 
     /// Serializes rows after the rows added one at a time. With `write_whole_granules`, the rows that do not fill a granule wait
-    /// in the buffer for the next rows, as the writer completes a granule with the next block. A sparse column is serialized as
-    /// it is, since the buffer is not sparse.
+    /// in the buffer for the next rows, so that every granule is written at once, as in a part whose blocks hold whole granules,
+    /// whatever the blocks of the query. The writer writes the rows that complete a granule from the next block separately. A
+    /// sparse column is serialized as it is, since the buffer is not sparse.
     void addRows(Data & data_ref, const IColumn & rows, size_t offset, size_t limit) const
     {
         if (!write_whole_granules || rows.isSparse())
