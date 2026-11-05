@@ -54,8 +54,11 @@ void applyParentNullMapToExtractedSubcolumn(
 struct NullableSubcolumnCreator : public ISerialization::ISubcolumnCreator
 {
     const ColumnPtr null_map;
+    /// Whether the null map of the parent `Nullable` is serialized with `SerializationCompactNullMap`.
+    const bool compact_null_map;
 
-    explicit NullableSubcolumnCreator(const ColumnPtr & null_map_) : null_map(null_map_) {}
+    explicit NullableSubcolumnCreator(const ColumnPtr & null_map_, bool compact_null_map_ = false)
+        : null_map(null_map_), compact_null_map(compact_null_map_) {}
 
     DataTypePtr create(const DataTypePtr & prev) const override;
     SerializationPtr create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const override;

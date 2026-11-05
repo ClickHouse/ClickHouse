@@ -1,5 +1,6 @@
 #include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/Serializations/SerializationCompactNullMap.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
@@ -32,13 +33,34 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-UInt128 SerializationNullable::getHash(const SerializationPtr & nested_, bool use_default_null_map_)
+UInt128 SerializationNullable::getHash(const SerializationPtr & nested_, bool use_default_null_map_, bool compact_null_map_)
 {
     SipHash hash;
     hash.update("Nullable");
     hash.update(nested_->getHash());
     hash.update(use_default_null_map_);
+    hash.update(compact_null_map_);
     return hash.get128();
+}
+
+namespace
+{
+
+/// The state of the compact null map and the state of the nested serialization.
+struct DeserializeBinaryBulkStateNullableWithCompactNullMap : public ISerialization::DeserializeBinaryBulkState
+{
+    ISerialization::DeserializeBinaryBulkStatePtr null_map_state;
+    ISerialization::DeserializeBinaryBulkStatePtr nested_state;
+
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
+    {
+        auto new_state = std::make_shared<DeserializeBinaryBulkStateNullableWithCompactNullMap>();
+        new_state->null_map_state = null_map_state ? null_map_state->clone(context) : nullptr;
+        new_state->nested_state = nested_state ? nested_state->clone(context) : nullptr;
+        return new_state;
+    }
+};
+
 }
 
 void SerializationNullable::enumerateStreams(
@@ -51,8 +73,8 @@ void SerializationNullable::enumerateStreams(
 
     if (!use_default_null_map)
     {
-        auto null_map_serialization
-            = SerializationNamed::create(SerializationNumber<UInt8>::create(), "null", SubstreamType::NamedNullMap);
+        auto null_map_serialization = SerializationNamed::create(
+            compact_null_map ? SerializationCompactNullMap::create() : SerializationNumber<UInt8>::create(), "null", SubstreamType::NamedNullMap);
 
         bool hide_null_map_subcolumn = type_nullable ? type_nullable->getNestedType()->hasSubcolumn("null") : false;
         settings.path.push_back(hide_null_map_subcolumn ? Substream::NullMapHidden : Substream::NullMap);
@@ -79,7 +101,7 @@ void SerializationNullable::enumerateStreams(
 
     settings.path.push_back(Substream::NullableElements);
     if (type_nullable && type_nullable->getNestedType()->canBeInsideNullable())
-        settings.path.back().creator = std::make_shared<NullableSubcolumnCreator>(column_null_map);
+        settings.path.back().creator = std::make_shared<NullableSubcolumnCreator>(column_null_map, compact_null_map);
     settings.path.back().data = data;
 
     auto next_data = SubstreamData(nested)
@@ -118,9 +140,25 @@ void SerializationNullable::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsDeserializeStatesCache * cache) const
 {
-    settings.path.push_back(Substream::NullableElements);
-    nested->deserializeBinaryBulkStatePrefix(settings, state, cache);
+    if (!compact_null_map)
+    {
+        settings.path.push_back(Substream::NullableElements);
+        nested->deserializeBinaryBulkStatePrefix(settings, state, cache);
+        settings.path.pop_back();
+        return;
+    }
+
+    auto nullable_state = std::make_shared<DeserializeBinaryBulkStateNullableWithCompactNullMap>();
+
+    settings.path.push_back(Substream::NullMap);
+    nullable_state->null_map_state = SerializationCompactNullMap::deserializeStatePrefix(settings, cache);
     settings.path.pop_back();
+
+    settings.path.push_back(Substream::NullableElements);
+    nested->deserializeBinaryBulkStatePrefix(settings, nullable_state->nested_state, cache);
+    settings.path.pop_back();
+
+    state = std::move(nullable_state);
 }
 
 
@@ -156,7 +194,13 @@ void SerializationNullable::serializeBinaryBulkWithMultipleStreams(
         settings.path.push_back(Substream::NullMap);
         if (auto * stream = settings.getter(settings.path))
         {
-            if (const auto * null_map = col.tryGetNullMapData())
+            if (compact_null_map)
+            {
+                if (const size_t size = col.size(); limit == 0 || offset + limit > size)
+                    limit = size - offset;
+                SerializationCompactNullMap::serializeGranule(col.tryGetNullMapData(), offset, limit, *stream);
+            }
+            else if (const auto * null_map = col.tryGetNullMapData())
             {
                 SerializationNumber<UInt8>::serializeBinaryBulk(*null_map, *stream, offset, limit);
             }
@@ -187,6 +231,11 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
 {
     ColumnNullable & col = assert_cast<ColumnNullable &>(column);
 
+    DeserializeBinaryBulkStateNullableWithCompactNullMap * nullable_state = nullptr;
+    if (compact_null_map)
+        nullable_state = checkAndGetState<DeserializeBinaryBulkStateNullableWithCompactNullMap>(state);
+    DeserializeBinaryBulkStatePtr & nested_state = nullable_state ? nullable_state->nested_state : state;
+
     /// Read into a column without a null map while the data has no NULLs.
     if (col.empty())
         col.dropNullMapIfNoNulls();
@@ -194,51 +243,66 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
     /// The number of rows read into the null map, if the column has no null map.
     size_t num_rows_without_null_map = 0;
 
-    if (!use_default_null_map)
+    /// Append the read rows of the null map to the column. `null_map` is nullptr if they have no NULLs.
+    auto append_null_map = [&](size_t num_rows, ColumnUInt8::MutablePtr null_map)
     {
-        settings.path.push_back(Substream::NullMap);
-        if (col.hasNullMap())
+        if (null_map && memoryIsZero(null_map->getData().data(), 0, null_map->size()))
+            null_map = nullptr;
+
+        if (!null_map)
         {
-            if (insertDataFromSubstreamsCacheIfAny(cache, settings, col.getNullMapColumn()))
-            {
-                /// Data was inserted from cache.
-            }
-            else if (auto * stream = settings.getter(settings.path))
-            {
-                size_t prev_size = col.getNullMapColumn().size();
-                SerializationNumber<UInt8>::create()->deserializeBinaryBulk(col.getNullMapColumn(), *stream, limit, 0);
-                size_t n = col.getNullMapColumn().size() - prev_size;
-                addColumnWithNumReadRowsToSubstreamsCache(
-                    cache, settings.path, col.getNullMapColumn().getPtr(), n);
-            }
+            if (col.hasNullMap())
+                col.getNullMapData().resize_fill(col.getNullMapData().size() + num_rows, 0);
+            else
+                num_rows_without_null_map += num_rows;
+        }
+        else if (col.empty())
+        {
+            col.getNullMapColumnPtr() = std::move(null_map);
         }
         else
         {
-            /// Read the null map separately and add it to the column only if it has NULLs.
-            auto null_map = ColumnUInt8::create();
-            if (insertDataFromSubstreamsCacheIfAny(cache, settings, *null_map))
-            {
-                /// Data was inserted from cache.
-            }
-            else if (auto * stream = settings.getter(settings.path))
-            {
-                SerializationNumber<UInt8>::create()->deserializeBinaryBulk(*null_map, *stream, limit, 0);
-                addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, null_map->getPtr(), null_map->size());
-            }
+            col.materializeNullMap();
+            col.getNullMapColumn().insertRangeFrom(*null_map, 0, num_rows);
+        }
+    };
 
-            if (memoryIsZero(null_map->getData().data(), 0, null_map->size()))
+    if (!use_default_null_map)
+    {
+        settings.path.push_back(Substream::NullMap);
+        if (auto cached = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
+        {
+            /// Data was read by another reader of this stream.
+            const auto & [cached_column, num_rows] = *cached;
+            auto null_map = ColumnUInt8::create();
+            null_map->insertRangeFrom(*cached_column, cached_column->size() - num_rows, num_rows);
+            append_null_map(num_rows, std::move(null_map));
+        }
+        else if (auto * stream = settings.getter(settings.path))
+        {
+            ColumnUInt8::MutablePtr null_map;
+            size_t num_rows = 0;
+            if (compact_null_map)
             {
-                num_rows_without_null_map = null_map->size();
-            }
-            else if (col.empty())
-            {
-                col.getNullMapColumnPtr() = std::move(null_map);
+                auto & null_map_state = *checkAndGetState<SerializationCompactNullMap::DeserializeBinaryBulkStateCompactNullMap>(
+                    nullable_state->null_map_state);
+                std::tie(num_rows, null_map) = SerializationCompactNullMap::deserializeRows(null_map_state, *stream, limit, settings.continuous_reading);
             }
             else
             {
-                col.materializeNullMap();
-                col.getNullMapColumn().insertRangeFrom(*null_map, 0, null_map->size());
+                null_map = ColumnUInt8::create();
+                SerializationNumber<UInt8>::create()->deserializeBinaryBulk(*null_map, *stream, limit, 0);
+                num_rows = null_map->size();
             }
+
+            if (cache)
+            {
+                /// The other readers of this stream expect the read rows of the null map.
+                ColumnPtr cached_null_map = null_map ? ColumnPtr(null_map->getPtr()) : ColumnPtr(ColumnUInt8::create(num_rows, static_cast<UInt8>(0)));
+                addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, cached_null_map, num_rows);
+            }
+
+            append_null_map(num_rows, std::move(null_map));
         }
         settings.path.pop_back();
     }
@@ -248,7 +312,7 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
     const size_t prev_nested_size = nested_column.size();
 
     settings.path.push_back(Substream::NullableElements);
-    nested->deserializeBinaryBulkWithMultipleStreams(nested_column, limit, settings, state, cache);
+    nested->deserializeBinaryBulkWithMultipleStreams(nested_column, limit, settings, nested_state, cache);
     settings.path.pop_back();
 
     if (use_default_null_map && col.hasNullMap())
@@ -1102,11 +1166,13 @@ void SerializationNullable::serializeNullXML(DB::WriteBuffer & ostr)
     writeCString("\\N", ostr);
 }
 
-SerializationPtr SerializationNullable::create(const SerializationPtr & nested_, bool use_default_null_map_)
+SerializationPtr SerializationNullable::create(const SerializationPtr & nested_, bool use_default_null_map_, bool compact_null_map_)
 {
     if (!nested_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationNullable(nested_, use_default_null_map_));
-    return ISerialization::pooled(getHash(nested_, use_default_null_map_), [&] { return new SerializationNullable(nested_, use_default_null_map_); });
+        return std::shared_ptr<ISerialization>(new SerializationNullable(nested_, use_default_null_map_, compact_null_map_));
+    return ISerialization::pooled(
+        getHash(nested_, use_default_null_map_, compact_null_map_),
+        [&] { return new SerializationNullable(nested_, use_default_null_map_, compact_null_map_); });
 }
 
 bool SerializationNullable::isNullMapSubcolumn(const SubstreamPath & path)

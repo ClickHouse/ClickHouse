@@ -22,6 +22,8 @@ enum class MergeTreeNullableSerializationVersion : uint8_t
 {
     BASIC = 0,
     ALLOW_SPARSE = 1,
+    /// Includes `ALLOW_SPARSE`, and the null map is serialized with `SerializationCompactNullMap`.
+    COMPACT_NULL_MAP = 2,
 };
 
 enum class MergeTreeObjectSerializationVersion : uint8_t
