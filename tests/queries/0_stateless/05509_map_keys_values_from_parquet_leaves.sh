@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel-replicas
+# - no-parallel-replicas: parallel replicas read `file()` and Iceberg through -Cluster storages, which keep the whole-map read.
 # Map functions that need only the keys or only the values of a map (`has`, `mapKeys`, `mapContainsValue`, ...) read only
 # that side of the map from Parquet on `file()` and data lake tables. The results must not change.
 
@@ -98,6 +99,13 @@ SELECT 'Iceberg, Parquet and ORC files';
 SELECT id, mapKeys(m) FROM t_05509_mixed ORDER BY id;
 SELECT count() FROM t_05509_mixed WHERE has(m, 'k1');
 SELECT count() FROM t_05509_mixed WHERE mapContainsValueLike(m, 'o%');
+SELECT 'filters from the plan';
+SELECT id, k FROM (SELECT id, mapKeys(ms) AS k FROM file('${TYPES}')) WHERE id > 5 ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1;
+SELECT id, v FROM v_05509 WHERE id > 5 ORDER BY id LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1;
+SELECT id, mapKeys(m) FROM t_05509_filter ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1, additional_table_filters = {'t_05509_filter': 'id > 1'};
+SELECT a.id, mapKeys(a.ms) FROM file('${TYPES}') AS a INNER JOIN (SELECT number AS n FROM numbers(30) WHERE number % 2 = 0) AS b ON a.id = b.n ORDER BY a.id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1, enable_join_runtime_filters = 1, join_algorithm = 'hash';
+SELECT a.id, mapKeys(a.ms) FROM file('${TYPES}') AS a INNER JOIN numbers(30) AS b ON a.id = b.number WHERE b.number > 5 ORDER BY a.id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1, join_algorithm = 'hash';
+SELECT id, k FROM (SELECT id, mapKeys(ms) AS k FROM t_05509_types) WHERE id > 5 ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10, optimize_move_to_prewhere = 1;
 "
 
 ${CLICKHOUSE_CLIENT} -m --query "
@@ -124,6 +132,7 @@ INSERT INTO t_05509_types SELECT number,
     if(number % 7 = 0, map(), map('k' || toString(number % 3), toString(number), 'c', 'v')),
     map('k', if(number % 4 = 0, NULL, toInt32(number)))
 FROM numbers(30);
+CREATE VIEW v_05509 AS SELECT id, mapValues(mn) AS v FROM t_05509_types;
 
 CREATE TABLE t_05509_bytes (id Int64, m Map(String, String), mv Map(String, UInt8))
     ENGINE = IcebergLocal('${ICEBERG_BYTES_PATH}', 'Parquet');
@@ -151,12 +160,18 @@ ${CLICKHOUSE_CLIENT} -m --query "
 SET optimize_functions_to_subcolumns = 1;
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM file('${BYTES}') WHERE has(m, 'k3')) WHERE explain ILIKE '%m.keys%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM file('${BYTES}') WHERE mapContainsValue(mv, 3)) WHERE explain ILIKE '%mv.values%';
--- Not rewritten: the condition on the map stays movable to PREWHERE, which can skip reading \`id\`.
-SELECT count() FROM (EXPLAIN QUERY TREE SELECT id FROM file('${BYTES}') WHERE has(m, 'k3')) WHERE explain ILIKE '%m.keys%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT mapKeys(m) FROM file('${BYTES}')) WHERE explain ILIKE '%m.keys%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT mapValues(mv) FROM file('${BYTES}')) WHERE explain ILIKE '%mv.values%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM file('${BYTES}') WHERE mapContainsKey(m, 'k3')) WHERE explain ILIKE '%m.keys%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM file('${BYTES}') WHERE notHas(m, 'k3')) WHERE explain ILIKE '%m.keys%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM file('${BYTES}') WHERE mapContainsKeyLike(m, 'k%')) WHERE explain ILIKE '%m.keys%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM file('${BYTES}') WHERE mapContainsValueLike(m, '1%')) WHERE explain ILIKE '%m.values%';
 -- Not rewritten anywhere: PREWHERE reads the whole map.
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT mapKeys(m) FROM file('${BYTES}') PREWHERE has(m, 'k3')) WHERE explain ILIKE '%m.keys%';
--- Not rewritten: \`WHERE\` filters the table and the query reads another of its columns.
+-- Not rewritten: the query reads another column of the table.
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT id FROM file('${BYTES}') WHERE has(m, 'k3')) WHERE explain ILIKE '%m.keys%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT id, mapKeys(m) FROM file('${BYTES}') WHERE id > 5 ORDER BY id LIMIT 3) WHERE explain ILIKE '%m.keys%';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT id, mapKeys(m) FROM file('${BYTES}')) WHERE explain ILIKE '%m.keys%';
 SELECT count() FROM (EXPLAIN SELECT id, mapKeys(m) FROM file('${BYTES}') ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10) WHERE explain ILIKE '%LazilyReadFromFile%';
 SELECT count() FROM (EXPLAIN SELECT id, mapKeys(m) FROM t_05509_bytes ORDER BY id DESC LIMIT 3 SETTINGS query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10) WHERE explain ILIKE '%LazilyReadFromObjectStorage%';
 "
@@ -199,6 +214,7 @@ DROP TABLE t_05509_policy;
 DROP TABLE t_05509_filter;
 DROP TABLE t_05509_evolved;
 DROP TABLE t_05509_mixed;
+DROP VIEW v_05509;
 DROP TABLE t_05509_types;
 DROP TABLE t_05509_bytes;
 "

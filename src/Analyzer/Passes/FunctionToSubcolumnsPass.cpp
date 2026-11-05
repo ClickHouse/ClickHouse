@@ -58,6 +58,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsBool json_type_escape_dots_in_keys;
     extern const SettingsBool join_use_nulls;
@@ -1600,27 +1601,26 @@ public:
 
 private:
     /// On a storage whose `PREWHERE` takes only top-level columns, a `Map` is read whole if `PREWHERE` reads it or its parent
-    /// tuple, or if `WHERE` or `PREWHERE` filters its table and the query reads another column of that table.
+    /// tuple, or if the query reads another column of its table (a filter on that column can reach `PREWHERE` from the query plan).
     bool mustReadWholeMap(const ColumnInSource & map) const
     {
+        /// `additional_table_filters` adds a filter that this pass does not see.
+        if (!getSettings()[Setting::additional_table_filters].value.empty())
+            return true;
         if (columns_in_prewhere.contains(map))
             return true;
         for (size_t dot = map.column_name.find('.'); dot != String::npos; dot = map.column_name.find('.', dot + 1))
             if (columns_in_prewhere.contains(ColumnInSource{map.source, map.column_name.substr(0, dot)}))
                 return true;
 
-        auto from_map_source = [&](const ColumnInSource & column) { return column.source == map.source; };
-        if (!std::ranges::any_of(columns_in_where, from_map_source) && !std::ranges::any_of(columns_in_prewhere, from_map_source))
-            return false;
         for (const auto & [identifier, _] : identifiers_count)
             if (identifier.source == map.source && identifier.column_name != map.column_name)
                 return true;
         return false;
     }
 
-    /// Identifiers read in `PREWHERE`, and in `WHERE`.
+    /// Identifiers read in `PREWHERE`.
     ColumnInSourceSet columns_in_prewhere;
-    ColumnInSourceSet columns_in_where;
     /// `Map` identifiers with a rewrite on a storage for which storageRejectsMapSubcolumnsInPrewhere is true.
     ColumnInSourceSet maps_on_storages_rejecting_subcolumns_in_prewhere;
     /// Same as in_where_prewhere_stack, for `PREWHERE` alone.
@@ -1691,8 +1691,6 @@ private:
 
         if (!in_prewhere_stack.empty() && in_prewhere_stack.back())
             columns_in_prewhere.insert(qualified_name);
-        else if (!in_where_prewhere_stack.empty() && in_where_prewhere_stack.back())
-            columns_in_where.insert(qualified_name);
     }
 
     void enterImpl(const FunctionNode & function_node, const ColumnNode & first_argument_column_node, const QueryTreeNodePtr & column_source)
