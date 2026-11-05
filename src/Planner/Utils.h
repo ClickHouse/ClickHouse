@@ -130,6 +130,9 @@ ASTPtr parseAdditionalResultFilter(const Settings & settings);
 using UsefulSets = std::unordered_set<FutureSetPtr>;
 void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
 
+/// Adds `Expression -> ArrayJoinStep` for each `arrayJoin` function in `actions`, the rest of `actions` stays for the caller's step
+void addArrayJoinStepsForFunctions(QueryPlan & query_plan, ActionsDAG & actions, const Settings & settings);
+
 /// If the window frame is not set in sql, try to use the default frame from window function
 /// if it have any one. Otherwise return empty.
 /// If the window frame is set in sql, use it anyway.

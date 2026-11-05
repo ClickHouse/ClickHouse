@@ -57,6 +57,7 @@
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/PlannerActionsVisitor.h>
 
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
@@ -67,6 +68,9 @@ namespace Setting
 {
     extern const SettingsString additional_result_filter;
     extern const SettingsBool analyzer_compatibility_apply_final_to_all_joined_tables;
+    extern const SettingsBool enable_lazy_columns_replication;
+    extern const SettingsBool legacy_array_join_function_nondeterministic_evaluation;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsUInt64 max_bytes_to_read_leaf;
     extern const SettingsSeconds max_estimated_execution_time;
@@ -80,6 +84,7 @@ namespace Setting
     extern const SettingsUInt64 min_execution_speed_bytes;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsBool query_plan_lower_array_join_function;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsSeconds timeout_before_checking_execution_speed;
@@ -849,6 +854,60 @@ void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets)
                 }
             }
         }
+    }
+}
+
+/// arrayJoin(emptyArrayToSingle(x)) is LEFT ARRAY JOIN x, make `before` return x for the join
+static bool unpadArrayJoinArgument(ActionsDAG & before, const String & name)
+{
+    for (auto & output : before.getOutputs())
+    {
+        if (output->result_name != name)
+            continue;
+        const auto * padded = output;
+        while (padded->type == ActionsDAG::ActionType::ALIAS)
+            padded = padded->children.front();
+        if (padded->type != ActionsDAG::ActionType::FUNCTION || padded->function_base->getName() != "emptyArrayToSingle")
+            return false;
+        const auto * array = padded->children.front();
+        if (!array->result_type->equals(*padded->result_type))
+            return false;
+        output = &before.addAlias(*array, name);
+        before.removeUnusedActions(/*allow_remove_inputs=*/false);
+        return true;
+    }
+    return false;
+}
+
+void addArrayJoinStepsForFunctions(QueryPlan & query_plan, ActionsDAG & actions, const Settings & settings)
+{
+    if (!settings[Setting::query_plan_lower_array_join_function] || !actions.hasArrayJoin())
+        return;
+
+    /// a stateful function sees other blocks after the step
+    const bool legacy_evaluation = settings[Setting::legacy_array_join_function_nondeterministic_evaluation];
+    if (legacy_evaluation && actions.hasStatefulFunctions())
+        return;
+
+    /// independent joins are a cross product, so each one is its own step
+    while (auto extracted = actions.extractFirstArrayJoin(legacy_evaluation))
+    {
+        bool is_left = unpadArrayJoinArgument(extracted->before, extracted->array_join_column_name);
+
+        auto before_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(extracted->before));
+        before_step->setStepDescription("Before ARRAY JOIN");
+        query_plan.addStep(std::move(before_step));
+
+        auto array_join_step = std::make_unique<ArrayJoinStep>(
+            query_plan.getCurrentHeader(),
+            ArrayJoin{Names{extracted->array_join_column_name}, is_left},
+            /*is_unaligned=*/false,
+            settings[Setting::max_block_size],
+            settings[Setting::enable_lazy_columns_replication]);
+        array_join_step->setStepDescription("ARRAY JOIN");
+        query_plan.addStep(std::move(array_join_step));
+
+        actions = std::move(extracted->after);
     }
 }
 
