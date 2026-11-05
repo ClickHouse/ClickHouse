@@ -868,7 +868,7 @@ ALTER TABLE tab MODIFY SETTING exclude_materialize_statistics_on_merge = 'b, c';
 ALTER TABLE tab MODIFY SETTING exclude_materialize_statistics_on_merge = '';
 ```
 )", 0, \
-        {"26.10", "", "", "New setting. Excludes provided columns from statistics materialization during merges"}) \
+        {"26.11", "", "", "New setting. Excludes provided columns from statistics materialization during merges"}) \
     DECLARE(Bool, materialize_skip_indexes_on_merge, true, R"(
 When enabled, merges build and store skip indices for new parts.
 Otherwise they can be created/stored by explicit [MATERIALIZE INDEX](/reference/statements/alter/skipping-index#materialize-index)

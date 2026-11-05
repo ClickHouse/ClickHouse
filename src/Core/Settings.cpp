@@ -2482,7 +2482,7 @@ ALTER TABLE tab MATERIALIZE STATISTICS b; -- this query can be used to explicitl
 SET exclude_materialize_statistics_on_insert = DEFAULT; -- reset setting to default
 ```
 )", 0, \
-        {"26.10", "", "", "New setting. Excludes provided columns from statistics materialization during INSERTs"}) \
+        {"26.11", "", "", "New setting. Excludes provided columns from statistics materialization during INSERTs"}) \
     DECLARE_WITH_ALIAS(String, ignore_data_skipping_indexes, "", R"(
 Ignores the skipping indexes specified if used by the query.
 
