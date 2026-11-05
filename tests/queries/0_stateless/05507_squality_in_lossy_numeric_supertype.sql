@@ -69,3 +69,31 @@ SELECT x IN (y, NULL), x NOT IN (y, NULL)
 FROM values('x Nullable(Float64), y Int64', (NULL, 1), (1., 1), (1.5, 1))
 ORDER BY isNull(x), x
 SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 1;
+
+SELECT x IN (toDecimal64(1, 11), y), x NOT IN (toDecimal64(1, 11), y)
+FROM values('x Float32, y Int64', (1, 65))
+SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 0;
+
+SELECT x IN (toDecimal64(1, 11), y), x NOT IN (toDecimal64(1, 11), y)
+FROM values('x Float32, y Int64', (1, 65))
+SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 1;
+
+SELECT x IN (toDecimal128(1, 23), y), x NOT IN (toDecimal128(1, 23), y)
+FROM values('x Float64, y Int64', (1, 65))
+SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 0;
+
+SELECT x IN (toDecimal128(1, 23), y), x NOT IN (toDecimal128(1, 23), y)
+FROM values('x Float64, y Int64', (1, 65))
+SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 1;
+
+SELECT x IN (d), x NOT IN (d), x IN (d, y), x NOT IN (d, y)
+FROM values('x BFloat16, d Decimal(18, 0), y Int64', (1, 1, 65))
+SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 0;
+
+SELECT x IN (d), x NOT IN (d), x IN (d, y), x NOT IN (d, y)
+FROM values('x BFloat16, d Decimal(18, 0), y Int64', (1, 1, 65))
+SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 1;
+
+SELECT x IN (d, y), x NOT IN (d, y)
+FROM values('x Float64, d Decimal(18, 1), y Int64', (0.1, 0.1, 65))
+SETTINGS allow_lossy_numeric_supertype = 1;

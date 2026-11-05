@@ -1311,10 +1311,10 @@ static QueryTreeNodePtr buildScalarInComparison(
     return raw_if;
 }
 
-/// Builds exact equality for a heterogeneous numeric pair. When one side is floating-point,
-/// convert it to the other side's exact type and require the conversion to round-trip through
-/// the original floating type. The round-trip guard rejects fractional truncation in decimal
-/// conversions, while the exact-type comparison preserves integers and decimals above 2^53.
+/// Builds exact equality for a heterogeneous numeric pair. Native float/integer comparisons are
+/// already exact. For a float/decimal pair, serialize the float first so conversion to the decimal
+/// scale does not round during floating-point multiplication, then require a round trip through
+/// the original floating type. The exact-type comparison preserves decimals above 2^53.
 static QueryTreeNodePtr buildNumericEquality(
     const QueryTreeNodePtr & left_argument,
     const QueryTreeNodePtr & right_argument)
@@ -1343,9 +1343,19 @@ static QueryTreeNodePtr buildNumericEquality(
     const auto & float_type = left_is_float ? left_type : right_type;
     const auto & exact_type = left_is_float ? right_type : left_type;
 
+    if (!isDecimal(exact_type))
+    {
+        auto equals_function = std::make_shared<FunctionNode>("equals");
+        equals_function->getArguments().getNodes() = {left_argument, right_argument};
+        return equals_function;
+    }
+
+    auto serialized_float = std::make_shared<FunctionNode>("toString");
+    serialized_float->getArguments().getNodes().push_back(float_argument);
+
     auto exact_type_name = std::make_shared<ConstantNode>(exact_type->getName(), std::make_shared<DataTypeString>());
     auto converted_float = std::make_shared<FunctionNode>("accurateCastOrNull");
-    converted_float->getArguments().getNodes() = {float_argument, std::move(exact_type_name)};
+    converted_float->getArguments().getNodes() = {std::move(serialized_float), std::move(exact_type_name)};
 
     auto nullable_float_type = makeNullable(float_type);
     auto float_type_name = std::make_shared<ConstantNode>(nullable_float_type->getName(), std::make_shared<DataTypeString>());
