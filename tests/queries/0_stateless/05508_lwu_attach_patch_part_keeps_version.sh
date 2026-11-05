@@ -69,7 +69,7 @@ done
 
 $CLIENT --query "
     SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_no_free_threads;
-    ALTER TABLE t_rmt UPDATE a = a * 10 + 1 WHERE 1 SETTINGS alter_sync = 0, mutations_sync = 0;
+    ALTER TABLE t_rmt UPDATE a = a * 10 + 1 WHERE 1 SETTINGS alter_sync = 0, mutations_sync = 0, alter_update_mode = 'heavy';
     UPDATE t_rmt SET a = 5 WHERE id = 1;
 "
 
@@ -79,7 +79,7 @@ version=$($CLIENT --query "SELECT data_version FROM system.parts WHERE database 
 # The patch is between the two mutations, so they must not be executed as one.
 $CLIENT --query "
     ALTER TABLE t_rmt DETACH PARTITION ID '$patch_partition';
-    ALTER TABLE t_rmt UPDATE b = 1 WHERE 1 SETTINGS alter_sync = 0, mutations_sync = 0;
+    ALTER TABLE t_rmt UPDATE b = 1 WHERE 1 SETTINGS alter_sync = 0, mutations_sync = 0, alter_update_mode = 'heavy';
     ALTER TABLE t_rmt ATTACH PARTITION ID '$patch_partition';
     SYSTEM DISABLE FAILPOINT rmt_merge_selecting_task_no_free_threads;
 "
@@ -112,6 +112,9 @@ $CLIENT --query "ALTER TABLE t_src MOVE PART '$part' TO SHARD '/clickhouse/$CLIC
 # t_src_r2 has not fetched the patch, so the patches of the other replicas are checked as well.
 $CLIENT --query "SELECT 'replica without the patch', count() FROM system.parts WHERE database = currentDatabase() AND table = 't_src_r2' AND active AND startsWith(name, 'patch-')"
 $CLIENT --query "ALTER TABLE t_src_r2 MOVE PART '$part' TO SHARD '/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_dst'" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED'
+# The patches keep their updates after a setting that lightweight updates require is disabled.
+$CLIENT --query "ALTER TABLE t_src MODIFY SETTING enable_block_offset_column = 0"
+$CLIENT --query "ALTER TABLE t_src MOVE PART '$part' TO SHARD '/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_dst'" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED'
 $CLIENT --query "
     SELECT id, a FROM t_src ORDER BY id;
     SELECT count() FROM system.part_moves_between_shards WHERE database = currentDatabase();

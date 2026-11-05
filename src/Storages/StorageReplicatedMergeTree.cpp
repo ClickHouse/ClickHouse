@@ -10473,14 +10473,13 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     if (!part)
         throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} not found locally", part_name);
 
-    if (supportsLightweightUpdate())
-        assertSourceHasNoPatchesForPartition(
-            getPatchParts(getPartsOfAllReplicas(zookeeper, zookeeper_path, format_version)),
-            format_version,
-            part_info.getPartitionId(),
-            part->info.getDataVersion(),
-            zookeeper_path,
-            "MOVE PART " + part_name + " TO SHARD");
+    assertSourceHasNoPatchesForPartition(
+        getPatchParts(getPartsOfAllReplicas(zookeeper, zookeeper_path, format_version)),
+        format_version,
+        part_info.getPartitionId(),
+        part->info.getDataVersion(),
+        zookeeper_path,
+        "MOVE PART " + part_name + " TO SHARD");
 
     if (part->uuid == UUIDHelpers::Nil)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Part {} does not have an uuid assigned and it can't be moved between shards", part_name);
