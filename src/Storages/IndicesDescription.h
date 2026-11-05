@@ -105,6 +105,10 @@ void bindTextIndexPreAndPostProcessors(
     ASTIndexDeclaration & declaration, const ColumnsDescription & columns, const ContextPtr & context);
 
 /// Whether the declaration is a text index with a `preprocessor` or a `postprocessor` argument.
+/// Refuses a transform whose authorization the other hosts of an `ON CLUSTER` query cannot preserve,
+/// which is whenever they do not run it as the initiating user.
+void rejectTextIndexTransformWithoutInitiatorUser(const ASTIndexDeclaration & declaration);
+
 bool hasTextIndexPreOrPostProcessor(const ASTIndexDeclaration & declaration);
 
 /// All secondary indices in storage

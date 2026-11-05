@@ -761,6 +761,18 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             /// The hosts run the entry without the user, so the row policy is checked here before the entry is enqueued.
             checkNoRowPolicyForExport(captured_alter, default_database, context);
 
+            /// `throw_if_unresolved` means the hosts do not run the query as this user, so whatever they
+            /// resolve a transform against is not authorized by anyone.
+            if (throw_if_unresolved)
+                for (const auto & child : captured_alter.command_list->children)
+                {
+                    const auto & command = child->as<const ASTAlterCommand &>();
+                    if (command.type != ASTAlterCommand::ADD_INDEX || !command.index_decl)
+                        continue;
+                    if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
+                        rejectTextIndexTransformWithoutInitiatorUser(*declaration);
+                }
+
             /// A host without the table cannot authorize a text index transform, see `checkAddedIndexPermissions`.
             if (!table)
                 checkAddedIndexPermissions(captured_query_ptr->as<ASTAlterQuery &>(), table, context, /*bind_transforms=*/ false);

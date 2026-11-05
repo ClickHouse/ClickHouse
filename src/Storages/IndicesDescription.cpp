@@ -10,6 +10,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/DDLTask.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Storages/extractKeyExpressionList.h>
@@ -128,6 +129,20 @@ void bindTextIndexPreAndPostProcessors(
     }
 
     checkTextIndexPreAndPostProcessorPermissions(declaration, columns, context);
+}
+
+void rejectTextIndexTransformWithoutInitiatorUser(const ASTIndexDeclaration & declaration)
+{
+    if (!hasTextIndexPreOrPostProcessor(declaration))
+        return;
+
+    throw Exception(
+        ErrorCodes::INCORRECT_QUERY,
+        "A text index preprocessor or postprocessor is authorized on the host the query is submitted to, and the "
+        "other hosts resolve it against their own schema without that user. Let every host run the query as the "
+        "initiating user instead: enable the server setting distributed_ddl_use_initial_user_and_roles on every "
+        "host, and set distributed_ddl_entry_format_version to at least {}",
+        DDLLogEntry::INITIATOR_USER_VERSION);
 }
 
 bool hasTextIndexPreOrPostProcessor(const ASTIndexDeclaration & declaration)
