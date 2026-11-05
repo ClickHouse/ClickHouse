@@ -13735,13 +13735,21 @@ void forEachIndexSubstreamBase(
 
     for (const auto & index : indices)
     {
-        /// Construction failure is fatal exactly where a collision report is: on CREATE/ALTER the
-        /// creator's own error must surface, on ATTACH losing the check for one index beats refusing
-        /// to load the table.
+        /// A construction or file name error is fatal exactly where a collision report is: on CREATE/ALTER
+        /// the creator's own error must surface, on ATTACH or a replayed ALTER losing the check for one
+        /// index beats refusing the table or the committed entry.
         MergeTreeIndexPtr index_ptr;
+        String file_name;
         try
         {
             index_ptr = index_factory.get(metadata_snapshot, index, settings);
+
+            /// Inert index types (a removed type kept only so old tables still attach) hold no data
+            /// and are skipped by every write path, so they can never collide with anything.
+            if (index_ptr->isInert())
+                continue;
+
+            file_name = getIndexFileName(index.name, escape_filenames_override.value_or(index.escape_filenames));
         }
         catch (const Exception & e)
         {
@@ -13751,13 +13759,6 @@ void forEachIndexSubstreamBase(
             on_skipped_index(index, e);
             continue;
         }
-
-        /// Inert index types (a removed type kept only so old tables still attach) hold no data
-        /// and are skipped by every write path, so they can never collide with anything.
-        if (index_ptr->isInert())
-            continue;
-
-        auto file_name = getIndexFileName(index.name, escape_filenames_override.value_or(index.escape_filenames));
 
         for (const auto & substream : index_ptr->getSubstreams())
         {
