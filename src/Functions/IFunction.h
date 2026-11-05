@@ -200,6 +200,13 @@ public:
     /// Get the main function name.
     virtual String getName() const = 0;
 
+    /// True if `rhs` is the same callable for ColumnFunction concatenation.
+    /// `ColumnFunction::insertRangeFrom` keeps the destination FunctionBasePtr for all rows,
+    /// so structureEquals must only succeed when executing either instance is equivalent.
+    /// Default: the same object. Wrappers that mint a fresh IFunctionBase per chunk (e.g.
+    /// FunctionExpression) override this to compare the underlying expression identity.
+    virtual bool isEqual(const IFunctionBase & rhs) const { return this == &rhs; }
+
     /** Contributes whatever decides the values this function produces beyond its name, its
       * parameters and the types it was resolved for: a conversion, for instance, captures the
       * settings that tell it how to parse. Anything that keys an expression by a hash - the query
@@ -254,6 +261,12 @@ public:
       * Used by the `pushDownVolumeReducingFunction` query plan optimization.
       */
     virtual bool isVolumeReducing() const { return false; }
+
+    /** Returns true if the function costs far more than reading its arguments, e.g. one network
+      * request per row. Can be used to postpone the execution of such functions as much as possible
+      * (e.g. PREWHERE vs. WHERE)
+      */
+    virtual bool isExpensive() const { return false; }
 
     /** Returns true if this is a spatial predicate for which bbox-disjoint pruning is safe.
       * Specifically: if the bounding boxes of the geometry arguments are disjoint,
@@ -491,6 +504,9 @@ public:
 
     /// See IFunctionBase::isSpatialPredicate.
     virtual bool isSpatialPredicate() const { return false; }
+
+    /// See `IFunctionBase::isExpensive`.
+    virtual bool isExpensive() const { return false; }
 
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     /// For higher-order functions (functions, that have lambda expression as at least one argument).
@@ -739,6 +755,8 @@ public:
     virtual bool hasObservableSideEffects() const { return false; }
     /// See `IFunctionBase::isVolumeReducing`.
     virtual bool isVolumeReducing() const { return false; }
+    /// See `IFunctionBase::isExpensive`.
+    virtual bool isExpensive() const { return false; }
     virtual bool isSpatialPredicate() const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
