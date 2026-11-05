@@ -151,6 +151,49 @@ def test_table_override(started_cluster):
     )
 
 
+def test_sorting_key_follows_index_column_order(started_cluster):
+    pk_table = "test_sorting_key_order_primary_key"
+    ri_table = "test_sorting_key_order_replica_identity"
+    pg_manager.create_postgres_table(
+        pk_table,
+        "",
+        """CREATE TABLE "{}" (id2 integer, id1 integer, value text, PRIMARY KEY (id1, id2))""",
+    )
+    pg_manager.create_postgres_table(
+        ri_table,
+        "",
+        """CREATE TABLE "{}" (b integer NOT NULL, a integer NOT NULL, z integer NOT NULL, value text)""",
+    )
+    pg_manager.execute(f"CREATE UNIQUE INDEX {ri_table}_idx ON {ri_table} (z, b, a)")
+    pg_manager.execute(
+        f"ALTER TABLE {ri_table} REPLICA IDENTITY USING INDEX {ri_table}_idx"
+    )
+    pg_manager.execute(f"INSERT INTO {pk_table} VALUES (1, 2, 'x')")
+    pg_manager.execute(f"INSERT INTO {ri_table} VALUES (1, 2, 3, 'x')")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{pk_table},{ri_table}'"],
+    )
+    for table, order_by in [(pk_table, "id1"), (ri_table, "z")]:
+        check_tables_are_synchronized(
+            instance,
+            table,
+            postgres_database=pg_manager.get_default_database(),
+            order_by=order_by,
+        )
+
+    assert (
+        instance.query(
+            f"SELECT name, sorting_key FROM system.tables WHERE database = 'test_database' AND name IN ('{pk_table}', '{ri_table}') ORDER BY name"
+        )
+        == f"{pk_table}\tid1, id2\n{ri_table}\tz, b, a\n"
+    )
+
+    pg_manager.drop_materialized_db()
+
+
 def test_materialized_view(started_cluster):
     pg_manager.execute("DROP TABLE IF EXISTS test_table")
     pg_manager.execute(
@@ -2323,6 +2366,10 @@ def test_detach_table_with_pending_buffer(started_cluster):
     # throw on every insert: `syncTables()` then fails to flush the buffered row, so the table stays
     # in `tables_to_sync` and the consumer retries. `DETACH` removes its storage while that stale
     # entry remains - the exact precondition for the crash.
+    #
+    # The consumer must also back off between these failed retries instead of rescheduling itself
+    # immediately: retrying in a tight loop kept re-acquiring the task's mutex and could starve
+    # `DETACH TABLE` (which deactivates the task) for minutes.
     cursor = pg_manager.get_db_cursor()
     cursor.execute("DROP TABLE IF EXISTS test_detach_stuck")
     cursor.execute("DROP TABLE IF EXISTS test_detach_healthy")
@@ -2336,8 +2383,8 @@ def test_detach_table_with_pending_buffer(started_cluster):
         port=started_cluster.postgres_port,
         settings=[
             "materialized_postgresql_tables_list = 'test_detach_stuck,test_detach_healthy'",
-            "materialized_postgresql_backoff_min_ms = 100",
-            "materialized_postgresql_backoff_max_ms = 100",
+            "materialized_postgresql_backoff_min_ms = 1000",
+            "materialized_postgresql_backoff_max_ms = 1000",
         ],
     )
     # The initial snapshot must synchronize for both tables.
@@ -2349,19 +2396,28 @@ def test_detach_table_with_pending_buffer(started_cluster):
     )
 
     # A materialized view that always throws on insert. It is created without POPULATE, so it only
-    # affects rows replicated from now on (not the already-synchronized snapshot row).
-    instance.query("DROP VIEW IF EXISTS poison_mv")
+    # affects rows replicated from now on (not the already-synchronized snapshot row). Its name is
+    # unique, so that the log lines below cannot match the lines of an earlier run of this test.
+    poison_mv = f"poison_mv_{uuid.uuid4().hex}"
     instance.query(
-        "CREATE MATERIALIZED VIEW poison_mv ENGINE = MergeTree ORDER BY tuple() AS "
+        f"CREATE MATERIALIZED VIEW {poison_mv} ENGINE = MergeTree ORDER BY tuple() AS "
         "SELECT throwIf(value >= 0, 'poison') AS x FROM test_database.test_detach_stuck"
     )
 
     # This row cannot be flushed: the MV throws inside syncTables(), so test_detach_stuck stays queued
-    # in tables_to_sync and the consumer keeps retrying it. Wait for the actual push failure (a real
-    # progress signal that the sync was attempted and failed) - not the substring "poison" alone, which
-    # would also match the logged text of the CREATE MATERIALIZED VIEW query above and fire prematurely.
+    # in tables_to_sync and the consumer keeps retrying it. Wait for several actual push failures (a
+    # real progress signal that the sync was attempted and failed) - not the substring "poison" alone,
+    # which would also match the logged text of the CREATE MATERIALIZED VIEW query above.
+    start_time = time.time()
     cursor.execute("INSERT INTO test_detach_stuck VALUES (2, 2)")
-    instance.wait_for_log_line("while pushing to view default.poison_mv", timeout=60)
+    instance.wait_for_log_line(
+        f"while pushing to view default.{poison_mv}", timeout=60, repetitions=6
+    )
+    # With a fixed backoff of 1000 ms, six log lines (at most two per failed attempt) take at least
+    # two backoff intervals. Without the backoff the consumer retried back-to-back, producing these
+    # lines in a small fraction of a second.
+    elapsed = time.time() - start_time
+    assert elapsed >= 1.5, f"failed synchronization was retried without a backoff: {elapsed:.3f} s"
 
     # Before the fix this crashed the server (SIGSEGV in MaterializedPostgreSQLConsumer::syncTables()),
     # because DETACH removed the storage while the table was still queued in tables_to_sync.
@@ -2382,7 +2438,7 @@ def test_detach_table_with_pending_buffer(started_cluster):
     # a crashed `clickhouse-server`.
     assert "1" == instance.query("SELECT 1").strip()
 
-    instance.query("DROP VIEW IF EXISTS poison_mv")
+    instance.query(f"DROP VIEW IF EXISTS {poison_mv}")
     pg_manager.drop_materialized_db()
     cursor.execute("DROP TABLE IF EXISTS test_detach_stuck")
     cursor.execute("DROP TABLE IF EXISTS test_detach_healthy")
