@@ -916,6 +916,18 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsyncImpl()
             if (was_cancelled)
                 return ReadResult(Block());
 
+            /// The response is usually sent by `processAsyncControlPacketIfAny` when its descriptor becomes ready,
+            /// but the single-threaded pipeline executor resumes the source without calling `onAsyncJobReady`.
+            /// The shard waits for the response before sending anything else, so send it here before reading.
+            if (query_coordination_response_pending)
+            {
+                const auto & coordinator = extension->distributed_top_k_coordinator;
+                const size_t participant = *extension->distributed_top_k_participant;
+                if (!coordinator->isResponseReady(participant))
+                    return ReadResult(coordinator->getResponseFileDescriptor(participant));
+                sendPendingQueryCoordinationResponse();
+            }
+
             if (async_packet_in_progress)
             {
                 chassert(read_context->readPacketTypeSeparately());

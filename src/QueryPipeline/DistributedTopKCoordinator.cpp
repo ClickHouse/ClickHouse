@@ -137,7 +137,7 @@ bool DistributedTopKCoordinator::submit(size_t participant, QueryCoordinationReq
         if (state == State::Cancelled)
             rethrowCancellationLocked();
         if (participants[participant]->submitted)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical shard {} submitted distributed Top-K candidates more than once", participant);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Logical shard {} submitted distributed Top-K candidates more than once", participant);
     }
 
     validateRequest(participant, request);
@@ -152,7 +152,7 @@ bool DistributedTopKCoordinator::submit(size_t participant, QueryCoordinationReq
 
     auto & entry = *participants[participant];
     if (entry.submitted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical shard {} submitted distributed Top-K candidates more than once", participant);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Logical shard {} submitted distributed Top-K candidates more than once", participant);
 
     if (state == State::Collecting && !barrier_watch)
         barrier_watch.emplace(CLOCK_MONOTONIC_COARSE);
@@ -278,6 +278,14 @@ int DistributedTopKCoordinator::getResponseFileDescriptor(size_t participant) co
 #else
     return -1;
 #endif
+}
+
+bool DistributedTopKCoordinator::isResponseReady(size_t participant) const
+{
+    std::lock_guard lock(mutex);
+    validateParticipant(participant);
+    const auto & entry = *participants[participant];
+    return state == State::Cancelled || (entry.response && entry.signalled);
 }
 
 QueryCoordinationResponse DistributedTopKCoordinator::takeResponse(size_t participant)

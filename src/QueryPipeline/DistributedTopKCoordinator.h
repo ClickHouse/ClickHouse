@@ -54,6 +54,8 @@ public:
 
     bool hasSubmitted(size_t participant) const;
     int getResponseFileDescriptor(size_t participant) const;
+    /// True when `takeResponse` would not wait: the response is set, or the coordination was cancelled and it throws.
+    bool isResponseReady(size_t participant) const;
 
     QueryCoordinationResponse takeResponse(size_t participant);
 
