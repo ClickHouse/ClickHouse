@@ -66,6 +66,7 @@ public:
     /// nullptr if not kept.
     OffsetIndexPtr get(size_t row_group_idx, size_t column_idx) const;
     /// Keeps the entries not kept yet, while all kept entries take at most `max_bytes`. Returns whether any was added.
+    /// Keeps none if it throws.
     bool add(const std::vector<Entry> & entries);
     size_t bytes() const;
     size_t remainingBytes() const;

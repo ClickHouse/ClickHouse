@@ -6,7 +6,12 @@
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
 
+#include <Common/CurrentMemoryTracker.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
+#include <Common/scope_guard_safe.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -996,6 +1001,49 @@ TEST(ParquetLazyColumnChunks, MetadataCacheConcurrentAdds)
     /// Both the clears and the adds took effect while the readers ran.
     EXPECT_GT(loads.load(), 1);
     EXPECT_GT(cached_chunks_seen.load(), 0);
+}
+
+TEST(ParquetLazyColumnChunks, KeptOffsetIndexesAddKeepsNoneOnException)
+{
+    MainThreadStatus::getInstance();
+    KeptOffsetIndexes kept(1ul << 30);
+    std::vector<KeptOffsetIndexes::Entry> entries;
+    for (size_t i = 0; i < 4096; ++i)
+        entries.push_back({.row_group_idx = i, .column_idx = 1, .offset_index = std::make_shared<const parq::OffsetIndex>()});
+
+    const Int64 saved_untracked_memory_limit = CurrentThread::get().untracked_memory_limit;
+    const Int64 saved_hard_limit = total_memory_tracker.getHardLimit();
+    const UInt64 saved_min_allocation_size_to_throw = CurrentMemoryTracker::getMinAllocationSizeBytesToThrow();
+    auto restore_limits = [&]
+    {
+        total_memory_tracker.setHardLimit(saved_hard_limit);
+        CurrentThread::get().untracked_memory_limit = saved_untracked_memory_limit;
+        CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(saved_min_allocation_size_to_throw);
+    };
+    SCOPE_EXIT_SAFE(restore_limits());
+
+    /// Every allocation is checked, and the limit lets the first allocations of `add` succeed, not all of them.
+    CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1);
+    CurrentThread::get().untracked_memory_limit = 0;
+    CurrentThread::flushUntrackedMemory();
+    total_memory_tracker.setHardLimit(total_memory_tracker.get() + 4096);
+    bool threw = false;
+    try
+    {
+        kept.add(entries);
+    }
+    catch (const Exception &)
+    {
+        threw = true;
+    }
+    restore_limits();
+
+    ASSERT_TRUE(threw);
+    EXPECT_EQ(kept.bytes(), 0);
+    EXPECT_EQ(kept.get(0, 1), nullptr);
+    EXPECT_TRUE(kept.add(entries));
+    EXPECT_EQ(kept.bytes(), entries.size() * KeptOffsetIndexes::entryBytes(*entries[0].offset_index));
+    EXPECT_EQ(kept.get(4095, 1), entries[4095].offset_index);
 }
 
 #endif

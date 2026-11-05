@@ -584,19 +584,23 @@ bool KeptOffsetIndexes::add(const std::vector<Entry> & entries)
 {
     MemoryTrackerBlockerInThread not_charged_to_query_or_user;
     std::lock_guard lock(mutex);
-    bool added = false;
+    std::unordered_map<UInt64, OffsetIndexPtr> added;
+    size_t added_bytes = 0;
     for (const auto & entry : entries)
     {
+        UInt64 key = makeKey(entry.row_group_idx, entry.column_idx);
         size_t entry_bytes = entryBytes(*entry.offset_index);
-        if (total_bytes + entry_bytes > max_bytes)
-            continue;
-        if (offset_indexes.emplace(makeKey(entry.row_group_idx, entry.column_idx), entry.offset_index).second)
-        {
-            total_bytes += entry_bytes;
-            added = true;
-        }
+        if (total_bytes + added_bytes + entry_bytes <= max_bytes && !offset_indexes.contains(key)
+            && added.emplace(key, entry.offset_index).second)
+            added_bytes += entry_bytes;
     }
-    return added;
+    if (added.empty())
+        return false;
+    /// `reserve` first, so that `merge` does not allocate.
+    offset_indexes.reserve(offset_indexes.size() + added.size());
+    offset_indexes.merge(added);
+    total_bytes += added_bytes;
+    return true;
 }
 
 size_t KeptOffsetIndexes::bytes() const
