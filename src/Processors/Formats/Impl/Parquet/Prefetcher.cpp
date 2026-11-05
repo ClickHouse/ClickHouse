@@ -171,8 +171,10 @@ PrefetchHandle Prefetcher::registerRange(size_t offset, size_t length, bool like
     RequestState & req = requests.emplace_back();
     req.length = length;
     req.allow_incidental_read.store(likely_to_be_used || length < min_bytes_for_seek, std::memory_order_relaxed);
+    /// Created before the push_back so that the request is cancelled if it throws.
+    PrefetchHandle handle(&req);
     range_sets[0].ranges.push_back(RangeState {.request = &req, .start = offset, .end = offset + length});
-    return PrefetchHandle(&req);
+    return handle;
 }
 
 void Prefetcher::finalizeRanges()
