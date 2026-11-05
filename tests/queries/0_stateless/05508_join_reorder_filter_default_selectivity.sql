@@ -64,9 +64,28 @@ FROM
 )
 WHERE explain ILIKE '%Join:%d[no_stats~40000]%';
 
+-- 20% of the 4 rows of `nation` truncates to 0; the estimate is raised to 1 row.
+SELECT 'floor_estimate', count()
+FROM
+(
+    EXPLAIN keep_logical_steps = 1
+    SELECT avg(o_totalprice) FROM orders
+    JOIN (SELECT * FROM customer JOIN nation ON c_nationkey = n_nationkey WHERE n_name = 'GERMANY') AS cn ON c_custkey = o_custkey
+)
+WHERE explain ILIKE '%nation[no_stats~1]%';
+
 -- `o_flag = 0` keeps 99% of `orders`; 20% of it is still above `dim_small`, which stays the build side.
 SELECT count() FROM (SELECT * FROM orders WHERE o_flag = 0) AS f JOIN dim_small ON f.o_orderkey = dim_small.k
 FORMAT Null SETTINGS log_comment = '05508 unselective_filter_fact';
+
+-- The filter references both sides of the `LEFT JOIN`, so the sub-join is optimized on its own and the filter stays above it.
+SELECT count() FROM
+(
+    SELECT dim_small.k AS k FROM dim_small LEFT JOIN customer ON dim_small.k = c_custkey
+    WHERE c_nationkey = 6 OR dim_small.k < 10
+) AS s
+JOIN orders ON o_orderkey = s.k
+FORMAT Null SETTINGS log_comment = '05508 filtered_sub_join';
 
 SYSTEM FLUSH LOGS query_log;
 

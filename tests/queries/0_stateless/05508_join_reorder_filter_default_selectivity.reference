@@ -1,5 +1,7 @@
 default_estimate	1
+floor_estimate	2
 05508 filtered_dim_join_fact	1000
+05508 filtered_sub_join	2100
 05508 left_deep	101
 05508 q6	9901
 05508 q9	0

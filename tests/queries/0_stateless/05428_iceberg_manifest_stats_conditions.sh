@@ -16,6 +16,7 @@
 # - T7: a filter right above the read is also the read's own filter, and is counted once.
 # - T8: a string equality on a 12-row table is estimated at 1 row, not 0, also below an aggregation; a 5-row table
 #   without a filter keeps 1 value per column.
+# - T9: a filter that prunes no file, on a read whose columns have no statistics, keeps 20% of the rows.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -163,4 +164,13 @@ echo 'Expect 5: s has no counted NDV and 10% of 5 rows truncates to 0, so it is 
 labels "(SELECT v, s, count() AS c FROM tiny GROUP BY v, s)" v '1' ${ON}
 
 ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY ${CLICKHOUSE_DATABASE}_rp ON ${CLICKHOUSE_DATABASE}.t_rp"
+
+# T9 table: an array column has no bounds, so a read that requests only it has no column statistics.
+${CLICKHOUSE_CLIENT} ${PINS} --query "
+    CREATE TABLE arr (a Array(Int32)) ENGINE = IcebergLocal('${LAKE}/arr');
+    INSERT INTO arr SELECT [number % 5, number % 7] FROM numbers(10000);
+"
+echo '--- T9: has(a, 3), no requested column has statistics, every file overlaps'
+echo 'Expect ~2000: without column statistics, a filter that prunes no file keeps 20% of the 10000 rows.'
+labels arr 'a[1]' 'has(t.a, 3)' ${ON}
 rm -rf "${LAKE}"
