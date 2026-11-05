@@ -43,6 +43,8 @@ class IExecutor;
 
 struct ProcessListForUser;
 class QueryStatus;
+class LoadJob;
+using LoadJobPtr = std::shared_ptr<LoadJob>;
 class ThreadStatus;
 class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
@@ -80,6 +82,7 @@ struct QueryStatusInfo
     size_t written_bytes;
     Int64 memory_usage;
     Int64 peak_memory_usage;
+    Int64 spillable_memory_bytes;
     ClientInfo client_info;
     bool is_cancelled;
     CancelReason cancel_reason;
@@ -116,7 +119,8 @@ protected:
 
     /// Acquired workload resources
     QuerySlotPtr query_slot;
-    MemoryReservationPtr memory_reservation;
+    mutable std::mutex memory_reservation_mutex;
+    MemoryReservationPtr memory_reservation TSA_GUARDED_BY(memory_reservation_mutex);
 
     /// Info about all threads involved in query execution
     ThreadGroupPtr thread_group;
@@ -150,8 +154,11 @@ protected:
     /// Including EndOfStream or Exception.
     std::atomic<bool> is_all_data_sent { false };
 
+    /// Guards this query's transition between waiting for load jobs and not waiting: the first blocked
+    /// thread registers the query in the waiting counters, the last one to wake up unregisters it.
+    std::mutex waiting_mutex;
     /// Number of threads for the query that are waiting for load jobs
-    std::atomic<UInt64> waiting_threads{0};
+    UInt64 waiting_threads TSA_GUARDED_BY(waiting_mutex) = 0;
 
     /// For initialization of ProcessListForUser during process insertion.
     void setUserProcessList(ProcessListForUser * user_process_list_);
@@ -211,6 +218,7 @@ protected:
     std::optional<CurrentMetrics::Increment> num_non_internal_queries_increment;
 
     bool is_internal;
+    const bool is_ddl_or_on_cluster_internal;
 public:
     QueryStatus(
         ContextPtr context_,
@@ -250,6 +258,7 @@ public:
 
     MemoryReservation * getMemoryReservation() const
     {
+        std::lock_guard lock(memory_reservation_mutex);
         return memory_reservation.get();
     }
 
@@ -480,10 +489,18 @@ protected:
     /// limit for waiting queries. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
     std::atomic<UInt64> max_waiting_queries_amount{0};
 
+    /// amount of queries waiting for load jobs, excludes internal queries
+    std::atomic<UInt64> waiting_queries_amount{0};
+
     /// WARNING: for non-internal queries only
     void increaseQueryKindAmount(const IAST::QueryKind & query_kind);
     void decreaseQueryKindAmount(const IAST::QueryKind & query_kind);
     QueryAmount getQueryKindAmount(const IAST::QueryKind & query_kind) const;
+
+    /// WARNING: for non-internal queries only. The increase throws if `max_waiting_queries_amount`
+    /// is reached, in which case the query does not become a waiter and must not be decreased.
+    void increaseWaitingQueryAmount();
+    void decreaseWaitingQueryAmount();
 
     /// An unset `expected_user_id` cancels whatever holds the key.
     CancellationCode sendCancelToQueryImpl(
@@ -576,6 +593,9 @@ public:
         return max_waiting_queries_amount.load();
     }
 
+    void incrementWaiters(const QueryStatusPtr & status);
+    void decrementWaiters(const QueryStatusPtr & status);
+
     struct OwnQuery
     {
         String user;
@@ -601,7 +621,12 @@ public:
     /// was given exactly this pair; queries from other interfaces never match.
     CancellationCode sendCancelToPostgreSQLQuery(Int32 process_id, UInt32 secret_key);
 
-    void killAllQueries();
+    /// With except_ddl_backups_and_restores, BACKUP and RESTORE parts of ON CLUSTER operations run by the DDL worker are not cancelled.
+    void killAllQueries(bool except_ddl_backups_and_restores = false);
 };
+
+/// Waiter callbacks of the global `AsyncLoader`, see `AsyncLoader::setWaiterCallbacks`.
+void onLoadJobWaitersIncrement(const LoadJobPtr & job);
+void onLoadJobWaitersDecrement(const LoadJobPtr & job);
 
 }

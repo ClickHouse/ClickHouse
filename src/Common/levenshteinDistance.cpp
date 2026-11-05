@@ -1,4 +1,5 @@
 #include <Common/PODArray.h>
+#include <Common/StringUtils.h>
 #include <Common/iota.h>
 #include <Common/levenshteinDistance.h>
 
@@ -21,7 +22,7 @@ size_t levenshteinDistanceCaseInsensitive(const String & lhs, const String & rhs
         for (size_t i = 1; i <= n; ++i)
         {
             size_t old = row[i];
-            row[i] = std::min(prev + (std::tolower(lhs[j - 1]) != std::tolower(rhs[i - 1])),
+            row[i] = std::min(prev + (toLowerASCII(lhs[j - 1]) != toLowerASCII(rhs[i - 1])),
                               std::min(row[i - 1], row[i]) + 1);
             prev = old;
         }

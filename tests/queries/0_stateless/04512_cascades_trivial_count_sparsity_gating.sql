@@ -4,7 +4,6 @@
 -- itself under `make_distributed_plan` + `enable_cascades_optimizer` so the query counts
 -- the rows with a distributed read instead of being rejected.
 
-SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET distributed_plan_execute_locally = 1;
