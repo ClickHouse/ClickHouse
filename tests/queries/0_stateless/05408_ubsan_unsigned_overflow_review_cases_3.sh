@@ -25,3 +25,13 @@ $CLICKHOUSE_LOCAL -q "
     SETTINGS max_threads = 1, max_bytes_before_external_sort = 1, max_bytes_ratio_before_external_sort = 0,
         min_free_disk_space_for_temporary_data = 18446744073709551615
     FORMAT Null" 2>&1 | grep -o -m1 "NOT_ENOUGH_SPACE"
+
+echo "-- unrepresentable free disk space to keep for an adaptive aggregation spill"
+$CLICKHOUSE_LOCAL -q "
+    SELECT number AS k, count() FROM numbers_mt(200000) GROUP BY k
+    SETTINGS max_threads = 2, max_block_size = 1000, enable_adaptive_aggregator = 1,
+        adaptive_aggregator_freeze_threshold = 1000000000, adaptive_aggregator_freeze_threshold_bytes = 0,
+        collect_hash_table_stats_during_aggregation = 0, max_bytes_before_external_group_by = 1,
+        max_bytes_ratio_before_external_group_by = 0, min_bytes_before_external_group_by = 0,
+        min_free_disk_space_for_temporary_data = 18446744073709551615
+    FORMAT Null" 2>&1 | grep -o -m1 "NOT_ENOUGH_SPACE"

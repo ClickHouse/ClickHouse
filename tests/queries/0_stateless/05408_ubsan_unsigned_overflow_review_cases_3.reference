@@ -8,3 +8,5 @@
 4
 -- unrepresentable free disk space to keep for a spill
 NOT_ENOUGH_SPACE
+-- unrepresentable free disk space to keep for an adaptive aggregation spill
+NOT_ENOUGH_SPACE
