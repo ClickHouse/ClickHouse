@@ -57,6 +57,16 @@ The drop queries also run when the test fails, and a test whose drop queries can
 
 If your test takes more than 10 minutes, please, add tag `long` to have an opportunity to run all tests and skip long ones.
 
+### Disabling a query
+
+The performance history of a query is keyed by the test name and the query number (`query_index`, 0-based, after substitutions), so removing or reordering a query moves the history of every later query of the test. To stop running a query without that, mark it with `disabled="1"`:
+
+```xml
+<query disabled="1">SELECT [...]</query>
+```
+
+A disabled query keeps its number, and `perf.py --print-queries` still prints it, but it is not run unless `--queries-to-run` names it. On a query with substitutions, the attribute applies to all of its expansions.
+
 ### Setup queries that cannot run on the reference server
 
 A `create_query`/`fill_query` normally must succeed on both servers being compared. If your PR adds a feature the setup depends on (e.g. a new MergeTree setting), the query cannot work on the reference (master) server yet, and the test would fail the CI check. Opt out of the reference-side check with `do_not_check_in_pr="<number of your PR>"`:
@@ -121,7 +131,7 @@ How to write one:
 * Iceberg REST catalog (`requires_s3_catalog="1"`): the job-local SeaweedFS serves it on `localhost:8181`; the harness seeds the immutable table bucket `perf-catalog` (namespace `many`, tables `t1`..`t200`, one row each, `id = n`). Such a test creates one `DataLakeCatalog` database as its only exception to the `default`-only rule and drops it with `DROP DATABASE ... SYNC`; the fixed ports are part of the test text.
 * Every timed statement with side effects (`ALTER`, `INSERT`, `OPTIMIZE`, `DELETE`, table recreation) is a shell query: `perf.py` profiles a query whose timing changed (every query with `profile_all_queries`) right after its runs, each statement cut at 10 s, and a cut mutation keeps running into the next query; shell queries are not profiled. A shell query gets its settings on the client command line (`--mutations_sync 2`, `--allow_insert_into_iceberg 1`, ...); the test's `<settings>` do not apply to it.
 * Reuse `tests/benchmarks/` with `<query file="../benchmarks/<name>/queries/query_NN.sql"/>` and `<settings file="../benchmarks/<name>/settings.json"/>`.
-* There is no skip syntax for known-problem queries: keep a working query in the test (a fixed formulation, or a placeholder such as `SELECT 'Q35 skipped'`) and describe the original query, the reason and the issue link in the benchmark's README (e.g. `tests/benchmarks/tpc-ds/README.md`). A flaky query gets an issue and is removed.
+* Skip a known-problem query with `disabled="1"` (see [Disabling a query](#disabling-a-query)) or keep a working query in its place (a fixed formulation, or a placeholder such as `SELECT 'Q35 skipped'`), and describe the original query, the reason and the issue link in the benchmark's README (e.g. `tests/benchmarks/tpc-ds/README.md`). A flaky query gets an issue and is removed.
 
 Run one test locally:
 
