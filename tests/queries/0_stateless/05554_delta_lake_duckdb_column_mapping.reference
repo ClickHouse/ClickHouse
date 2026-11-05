@@ -59,14 +59,18 @@ id	s
 2	after
 id	s
 1	before
--- spark_nested_name_mode: struct field s.x renamed to s.x2 between two inserts
-1	(10,'one')	[1,2]
-2	(20,'two')	[3]
+-- spark_nested_name_mode: struct field s.x renamed to s.x2 between two inserts, structs inside an array and a map
+1	(10,'one')	[1,2]	[(1)]	{'k1':(100)}
+2	(20,'two')	[3]	[(2)]	{'k2':(200)}
 10	one
 20	two
+[1]	[100]
+[2]	[200]
 -- spark_nested_id_mode
-1	(10,'one')	[1,2]
-2	(20,'two')	[3]
+1	(10,'one')	[1,2]	[(1)]	{'k1':(100)}
+2	(20,'two')	[3]	[(2)]	{'k2':(200)}
+[1]	[100]
+[2]	[200]
 -- spark_quoted_name_mode: struct fields with a quote and a dot in their names
 id	Nullable(Int32)					
 s	Tuple(\n    `a"b` Int32,\n    `c.d` Int32)					

@@ -15,8 +15,6 @@
 #   values for every column.
 # - `id_mode_no_field_ids_logical`, `id_mode_no_field_ids_unmatched` and `invalid_nested_id_range`: the files cannot
 #   be resolved in `id` mode, ClickHouse returns default values instead of an error.
-# - `spark_nested_name_mode` and `spark_nested_id_mode` columns `ls` and `m`: struct fields inside `Array` and `Map`
-#   are not mapped to their physical names (expected `ls = [(1)]`/`[(2)]`, `m = {'k1':(100)}`/`{'k2':(200)}`).
 # - `mode_without_feature` and `mode_without_feature_v3`: the `delta.columnMapping.mode` property without the
 #   `columnMapping` feature must be ignored (expected `1 alice`, `2 bob`), but delta-kernel-rs refuses the
 #   `physicalName` annotations.
@@ -74,11 +72,13 @@ SELECT '-- spark_renamed_id_mode';
 SELECT * FROM deltaLakeLocal('$DATA/spark_renamed_id_mode') ORDER BY id;
 SELECT * FROM deltaLakeLocal('$DATA/spark_renamed_id_mode') SETTINGS delta_lake_snapshot_version = 1 FORMAT TSVWithNames;
 
-SELECT '-- spark_nested_name_mode: struct field s.x renamed to s.x2 between two inserts';
-SELECT id, s, l FROM deltaLakeLocal('$DATA/spark_nested_name_mode') ORDER BY id;
+SELECT '-- spark_nested_name_mode: struct field s.x renamed to s.x2 between two inserts, structs inside an array and a map';
+SELECT id, s, l, ls, m FROM deltaLakeLocal('$DATA/spark_nested_name_mode') ORDER BY id;
 SELECT s.x2, s.y FROM deltaLakeLocal('$DATA/spark_nested_name_mode') ORDER BY id;
+SELECT ls.a, mapValues(m).b FROM deltaLakeLocal('$DATA/spark_nested_name_mode') ORDER BY id;
 SELECT '-- spark_nested_id_mode';
-SELECT id, s, l FROM deltaLakeLocal('$DATA/spark_nested_id_mode') ORDER BY id;
+SELECT id, s, l, ls, m FROM deltaLakeLocal('$DATA/spark_nested_id_mode') ORDER BY id;
+SELECT ls.a, mapValues(m).b FROM deltaLakeLocal('$DATA/spark_nested_id_mode') ORDER BY id;
 
 SELECT '-- spark_quoted_name_mode: struct fields with a quote and a dot in their names';
 DESCRIBE deltaLakeLocal('$DATA/spark_quoted_name_mode');
