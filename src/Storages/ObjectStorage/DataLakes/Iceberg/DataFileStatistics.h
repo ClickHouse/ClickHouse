@@ -36,6 +36,7 @@ public:
 
     std::vector<std::pair<size_t, size_t>> getColumnSizes() const;
     std::vector<std::pair<size_t, size_t>> getNullCounts() const;
+    std::vector<std::pair<size_t, size_t>> getNanCounts() const;
     std::vector<std::pair<size_t, Field>> getLowerBounds() const;
     std::vector<std::pair<size_t, Field>> getUpperBounds() const;
 
@@ -47,6 +48,10 @@ private:
     std::vector<Int64> field_ids;
     std::vector<Int64> column_sizes;
     std::vector<Int64> null_counts;
+    std::vector<Int64> nan_counts;
+    /// Whether column `i` is Float32/Float64 (possibly Nullable): `nan_counts[i]` is only
+    /// meaningful for such a column, since NaN only exists for float types.
+    std::vector<bool> is_float_column;
     Ranges ranges;
     std::vector<UInt64> split_offsets;
 };
