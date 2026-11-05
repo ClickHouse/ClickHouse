@@ -422,11 +422,9 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
 static void checkAccessToTableMetadata(const TableNode & table_node, const ContextPtr & context)
 {
     const auto & storage_id = table_node.getStorageID();
-    /// The view source is the block inserted into the table, not the data of an alias's target.
     const auto * alias = isViewSource(storage_id, context) ? nullptr : table_node.getStorage()->as<StorageAlias>();
 
-    /// Temporary tables of the current session are always accessible, but a temporary `Alias` still
-    /// shows the metadata of its target.
+    /// Temporary tables of the current session are always accessible, except a temporary `Alias`: it shows its target's metadata.
     const bool is_temporary = !table_node.getTemporaryTableName().empty();
     if (is_temporary && !alias)
         return;
