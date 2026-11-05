@@ -127,7 +127,7 @@ private:
 
 /// Capture by value: buffers may outlive the storage.
 AzureBlobStorage::ContainerClientRefreshCallback makeContainerClientRefresher(
-    const AzureObjectStorage::AzureCredentialsRefreshCallback & credentials_refresh_callback)
+    const AzureBlobStorage::ConnectionParamsRefreshCallback & credentials_refresh_callback)
 {
     if (!credentials_refresh_callback)
         return {};
@@ -142,7 +142,7 @@ AzureBlobStorage::ContainerClientRefreshCallback makeContainerClientRefresher(
 }
 
 WriteBufferFromAzureDataLakeStorage::FileClientRefreshCallback makeDataLakeFileClientRefresher(
-    const AzureObjectStorage::AzureCredentialsRefreshCallback & credentials_refresh_callback, const String & blob_path)
+    const AzureBlobStorage::ConnectionParamsRefreshCallback & credentials_refresh_callback, const String & blob_path)
 {
     if (!credentials_refresh_callback)
         return {};
@@ -167,7 +167,7 @@ AzureObjectStorage::AzureObjectStorage(
     const String & object_namespace_,
     const String & description_,
     const String & common_key_prefix_,
-    AzureCredentialsRefreshCallback credentials_refresh_callback_)
+    AzureBlobStorage::ConnectionParamsRefreshCallback credentials_refresh_callback_)
     : name(name_)
     , client(std::move(client_))
     , settings(std::move(settings_))

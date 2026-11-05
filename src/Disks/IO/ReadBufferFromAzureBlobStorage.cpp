@@ -81,7 +81,7 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     String container_for_logging_,
     String expected_etag_,
     std::optional<size_t> file_size_,
-    AzureClientRefreshCallback credentials_refresh_callback_)
+    AzureBlobStorage::ContainerClientRefreshCallback credentials_refresh_callback_)
     : ReadBufferFromFileBase()
     , blob_container_client(blob_container_client_)
     , credentials_refresh_callback(std::move(credentials_refresh_callback_))

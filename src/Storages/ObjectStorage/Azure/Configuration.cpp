@@ -119,7 +119,7 @@ ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr conte
     auto settings = AzureBlobStorage::getRequestSettings(context->getSettingsRef());
     auto client = AzureBlobStorage::getContainerClient(connection_params, is_readonly);
 
-    AzureObjectStorage::AzureCredentialsRefreshCallback credentials_refresher;
+    AzureBlobStorage::ConnectionParamsRefreshCallback credentials_refresher;
     if (refresh_credentials_callback)
     {
         credentials_refresher = [refresh_credentials_callback, params = connection_params]() -> std::optional<AzureBlobStorage::ConnectionParams>

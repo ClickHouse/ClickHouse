@@ -26,7 +26,6 @@ class AzureObjectStorage : public IObjectStorage
 public:
     using ClientPtr = std::unique_ptr<AzureBlobStorage::ContainerClient>;
     using SettingsPtr = std::unique_ptr<AzureBlobStorage::RequestSettings>;
-    using AzureCredentialsRefreshCallback = AzureBlobStorage::ConnectionParamsRefreshCallback;
 
     AzureObjectStorage(
         const String & name_,
@@ -36,7 +35,7 @@ public:
         const String & object_namespace_,
         const String & description_,
         const String & common_key_prefix_,
-        AzureCredentialsRefreshCallback credentials_refresh_callback_ = {});
+        AzureBlobStorage::ConnectionParamsRefreshCallback credentials_refresh_callback_ = {});
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
@@ -207,7 +206,7 @@ private:
     mutable std::mutex client_inputs_mutex;
     std::optional<ClientInputs> client_inputs TSA_GUARDED_BY(client_inputs_mutex);
 
-    const AzureCredentialsRefreshCallback credentials_refresh_callback;
+    const AzureBlobStorage::ConnectionParamsRefreshCallback credentials_refresh_callback;
 
     LoggerPtr log;
 };
