@@ -2,7 +2,6 @@
 
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/FileCache_fwd.h>
-#include <Interpreters/FileCache/QueryLimit.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
@@ -251,7 +250,6 @@ private:
     const bool allow_seeks_after_first_read;
     const bool use_external_buffer;
     const std::shared_ptr<FilesystemCacheLog> cache_log;
-    const FileCacheQueryLimit::QueryContextHolderPtr query_context_holder;
 
     bool initialized = false;
     size_t file_offset_of_buffer_end = 0;
