@@ -400,6 +400,8 @@ private:
     ManyAggregatedData::DictionaryAggregationShards * current_dictionary_shards = nullptr;
     const IColumn * previous_single_dictionary = nullptr;
     bool dictionary_sharding_enabled = false;
+    /// Dictionary shards are not spillable: see the constructor.
+    bool spilling_under_memory_pressure = false;
     size_t dictionary_shard_offset = 0;
     /// Index of `variants` in `many_data->variants` (for `SharedKeptKeys::applied`).
     size_t variant_index = 0;

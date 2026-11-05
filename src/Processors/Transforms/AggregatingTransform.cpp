@@ -14,6 +14,10 @@
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/MemoryTrackerUtils.h>
+#include <Common/ThreadStatus.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Core/ProtocolDefines.h>
 #include <Formats/NativeReader.h>
 #include <Processors/Chunk.h>
@@ -53,6 +57,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool enable_adaptive_memory_spill_scheduler;
+}
+
 namespace FailPoints
 {
     extern const char dictionary_aggregation_low_backpressure_threshold[];
@@ -1806,6 +1815,23 @@ AggregatingTransform::AggregatingTransform(
         /// The records of the finished producers go to disk before a running producer gives up its own.
         spillables = {&adaptive_spillable->spillable, &spillable};
     }
+
+    /// `getMemoryStats` and `spill` see only `variants`, not the shared dictionary shards and the
+    /// retired dictionary results. When the query may be spilled under memory pressure, by the
+    /// adaptive memory spill scheduler or for a workload memory reservation, keep every producer
+    /// on its own spillable table across dictionary switches.
+    if (params->params.tmp_data_scope)
+    {
+        if (auto thread_group = CurrentThread::getGroup())
+        {
+            if (auto query_context = thread_group->query_context.lock())
+            {
+                const auto query_status = query_context->getProcessListElementSafe();
+                spilling_under_memory_pressure = query_context->getSettingsRef()[Setting::enable_adaptive_memory_spill_scheduler]
+                    || (query_status && query_status->getMemoryReservation());
+            }
+        }
+    }
 }
 
 AggregatingTransform::~AggregatingTransform() = default;
@@ -2002,7 +2028,7 @@ void AggregatingTransform::consume(Chunk chunk)
             if (dictionary_changed)
             {
                 ProfileEvents::increment(ProfileEvents::AggregationSingleLowCardinalityDictionarySwitches);
-                dictionary_sharding_enabled = true;
+                dictionary_sharding_enabled = !spilling_under_memory_pressure;
             }
             previous_single_dictionary = dictionary.get();
 
