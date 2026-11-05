@@ -1,18 +1,25 @@
 #pragma once
 
-#include <WindowFunctions/IWindowFunction.h>
-
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Interpreters/WindowDescription.h>
+#include <WindowFunctions/Common/WindowBounds.h>
+#include <WindowFunctions/Common/WindowFunctionRequirements.h>
+#include <WindowFunctions/IGeneralWindowFunction.h>
 
 #include <Processors/Transforms/Window/Frame.h>
 #include <Processors/Transforms/Window/Partition.h>
 #include <Processors/Transforms/Window/Peers.h>
+#include <Processors/Transforms/Window/SlidingArguments.h>
 #include <Processors/Transforms/Window/SlidingBlocks.h>
 #include <Processors/Transforms/Window/SlidingIndexes.h>
 #include <Processors/Transforms/Window/WindowTransformParams.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 
+#include <Common/AlignedBuffer.h>
+#include <Common/Arena.h>
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 
 #include <optional>
@@ -20,10 +27,23 @@
 namespace DB
 {
 
-class ExpressionActions;
-using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+struct WindowFunctionWorkspace
+{
+    AggregateFunctionPtr aggregate_function;
+    bool is_aggregate_function_state = false;
+    size_t result_column = 0;
+    VectorWithMemoryTracking<size_t> argument_column_indices;
+    mutable AlignedBuffer aggregate_function_state;
+    VectorWithMemoryTracking<const IColumn *> argument_columns;
+    Int64 cached_block_number = -1;
+};
 
-class Arena;
+struct GeneralWindowFunctionSlot
+{
+    GeneralWindowFunctionPtr function;
+    char * state = nullptr;
+    size_t function_index = 0;
+};
 
 /* Computes several window functions that share one window. The input is sorted by PARTITION BY, then by
  * ORDER BY, and arrives block by block; the transform keeps the blocks it still needs and walks them row by row.
@@ -42,35 +62,45 @@ class Arena;
  */
 class WindowTransform final : public IProcessor
 {
+    void addInputBlock(Chunk chunk);
+    void computeReadyRows();
+    void recordCurrentRowBounds();
+    void evaluateRowsBatch();
+    void packReadyBlock();
+    void updateAggregationState();
+    void writeOutCurrentRow();
+    void startNextPartition();
+    void releaseUnusedBlocks();
+
 public:
     WindowTransform(
         SharedHeader input_header_, SharedHeader output_header_,
-        const WindowDescription & window_description_, const std::vector<WindowFunctionDescription> & functions);
+        const WindowDescription & window_description_, const VectorWithMemoryTracking<WindowFunctionDescription> & functions);
 
     ~WindowTransform() override;
 
     String getName() const override { return "WindowTransform"; }
 
-    static Block transformHeader(Block header, const ExpressionActionsPtr & expression);
-
     Status prepare() override;
     void work() override;
-    void addInputBlock(Chunk chunk);
-    void computeReadyRows();
-    void startNextPartition();
-    void releaseUnusedBlocks();
 
-    void updateAggregationState();
-    void writeOutCurrentRow();
-
+private:
     /// Everything fixed at construction.
     const WindowTransformParams params;
 
     std::optional<Chunk> pending_input;
+    DequeWithMemoryTracking<Chunk> pending_outputs;
     bool input_is_finished = false;
 
-    /// One per window function.
-    std::vector<WindowFunctionWorkspace> workspaces;
+    /// The general functions with their states, and the aggregates; each names its output column.
+    VectorWithMemoryTracking<GeneralWindowFunctionSlot> general_functions;
+    VectorWithMemoryTracking<WindowFunctionWorkspace> workspaces;
+    Arena states_arena;
+    WindowFunctionRequirements required;
+
+    /// The batch being collected, starting at `batch_start`.
+    WindowBounds bounds;
+    RowNumber batch_start;
 
     /// Shared by the aggregate states of the current partition and replaced with it, so it does not grow across
     /// partitions. No result lives in it: a -State result is merged into the arena of the output column.
@@ -78,8 +108,7 @@ public:
 
     SlidingBlocks blocks;
     SlidingIndexes indexes;
-    /// The first stored block not yet passed to the consumer.
-    Int64 next_output_block_number = 0;
+    SlidingArguments arguments;
 
     Partition partition;
     Frame frame;
