@@ -163,7 +163,7 @@ void DataManifestsRewriter::collect(
         if (group.files.empty())
             continue;
         const auto & resolved_spec = resolvePartitionSpec(group.partition_spec_id, group.schema_id);
-        if (!std::ranges::all_of(resolved_spec.partition_types, canGetAvroType))
+        if (!resolved_spec.is_supported || !std::ranges::all_of(resolved_spec.partition_types, canGetAvroType))
             has_unsupported_partition_values = true;
     }
 }
@@ -214,6 +214,9 @@ void DataManifestsRewriter::writeManifest(
 
     /// Rewrite the manifest under the partition spec and the schema its source files used, not the default and the current ones.
     const auto & resolved_spec = resolvePartitionSpec(group.partition_spec_id, group.schema_id);
+    if (!resolved_spec.is_supported)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Iceberg data manifests of partition spec {} cannot be rewritten", group.partition_spec_id);
 
     std::vector<IcebergPathFromMetadata> file_paths;
     std::vector<UInt64> file_row_counts;
@@ -327,11 +330,13 @@ const DataManifestsRewriter::ResolvedPartitionSpec & DataManifestsRewriter::reso
 
     /// Partition field names and the schema source-ids they transform.
     std::vector<Int32> source_ids;
+    std::vector<String> transforms;
     for (UInt32 i = 0; i < spec_fields->size(); ++i)
     {
         auto spec_field = spec_fields->getObject(i);
         resolved.partition_columns.push_back(spec_field->getValue<String>(f_name));
         source_ids.push_back(spec_field->getValue<Int32>(f_source_id));
+        transforms.push_back(spec_field->getValue<String>(f_transform));
     }
 
     /// After schema evolution (e.g. widening `decimal(P, S)`) the partition values must be encoded under the schema the
@@ -376,6 +381,39 @@ const DataManifestsRewriter::ResolvedPartitionSpec & DataManifestsRewriter::reso
             ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No Iceberg schema defines all source columns referenced by partition spec {}", spec_id);
 
     auto schema_for_spec = persistent_table_components.schema_processor->getIcebergTableSchemaById(schema_id_for_spec);
+
+    /// The partition types are derived from `ChunkPartitioner`, which resolves the source columns among the top-level
+    /// fields only, and from the ClickHouse types, which do not tell an Iceberg `binary` from a `string`: a `binary`
+    /// partition value must be written as Avro `bytes`, but would be declared as `string`. Such specs are not rewritten.
+    auto schema_fields = schema_for_spec->getArray(f_fields);
+    for (size_t i = 0; i < source_ids.size(); ++i)
+    {
+        Poco::JSON::Object::Ptr source_field;
+        for (UInt32 j = 0; j < schema_fields->size(); ++j)
+        {
+            if (schema_fields->getObject(j)->getValue<Int32>(f_id) == source_ids[i])
+            {
+                source_field = schema_fields->getObject(j);
+                break;
+            }
+        }
+        if (!source_field)
+        {
+            /// A nested source column.
+            resolved.is_supported = false;
+            break;
+        }
+        if (source_field->isObject(f_type))
+            continue;
+        if (source_field->getValue<String>(f_type) == "binary" && !transforms[i].starts_with("bucket") && transforms[i] != "void")
+        {
+            resolved.is_supported = false;
+            break;
+        }
+    }
+    if (!resolved.is_supported)
+        return resolved_specs.emplace(std::make_pair(spec_id, files_schema_id), std::move(resolved)).first->second;
+
     auto shared_sample_block = std::make_shared<const Block>(std::move(*spec_sample_block));
     resolved.partition_types = ChunkPartitioner(spec_fields, schema_for_spec->getArray(f_fields), context, shared_sample_block).getResultTypes();
 

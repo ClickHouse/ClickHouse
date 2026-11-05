@@ -60,7 +60,7 @@ public:
     bool hasEncryptedDataFiles() const { return has_encrypted_data_files; }
 
     /// Whether a collected data file has a partition value, or the partition spec of a collected data file has a
-    /// partition type, that `generateManifestFile` cannot write.
+    /// partition type or a source column, that `generateManifestFile` cannot write.
     bool hasUnsupportedPartitionValues() const { return has_unsupported_partition_values; }
 
     /// The number of manifests `write` produces. `max_entries_per_manifest` is used only with `Grouping::SpanPartitions`.
@@ -109,6 +109,9 @@ private:
         Poco::JSON::Object::Ptr spec;
         std::vector<String> partition_columns;
         DataTypes partition_types;
+        /// False when a partition source column is nested or of the Iceberg type `binary`: then `partition_types` is
+        /// not filled, and the manifests of the spec cannot be rewritten.
+        bool is_supported = true;
     };
 
     const ResolvedPartitionSpec & resolvePartitionSpec(Int32 spec_id, Int32 files_schema_id);

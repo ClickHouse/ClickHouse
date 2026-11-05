@@ -608,6 +608,11 @@ static bool writeConsolidatedManifestFile(
             ErrorCodes::NOT_IMPLEMENTED,
             "OPTIMIZE TABLE ... MANIFEST is not supported for Iceberg tables with per-file key_metadata "
             "(encrypted data files): preserving the encryption metadata across a manifest rewrite is not implemented");
+    if (rewriter.hasUnsupportedPartitionValues())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "OPTIMIZE TABLE ... MANIFEST is not supported for Iceberg tables with partition values that cannot be written: "
+            "e.g. of a nested or `binary` source column");
 
     // Create file name generator for new metadata files
     FileNamesGenerator generator(
