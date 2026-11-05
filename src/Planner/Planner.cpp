@@ -1948,6 +1948,11 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
 
     if (expressions_analysis_result.hasSort())
         addSortingStep(query_plan, query_analysis_result, planner_context);
+    else if (query_node.isShuffle() && query_processing_info.isIntermediateStage())
+        /// With nested `Distributed` tables, the incoming streams are already shuffled by the shards below
+        /// and sorted by the internal key column. Merging them by this key keeps the result uniformly shuffled
+        /// and lets the initiator merge the streams of this server in the same way.
+        addMergeSortingStep(query_plan, query_analysis_result, planner_context, "Merge shuffled streams for SHUFFLE");
     else if (query_node.isShuffle())
         addShuffleStep(query_plan, query_analysis_result, planner_context, query_processing_info);
 
