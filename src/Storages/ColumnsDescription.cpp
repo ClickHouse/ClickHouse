@@ -1275,6 +1275,7 @@ void assertNoMatcherNodes(const QueryTreeNodePtr & node, const String & context_
 void collectAliasDependenciesFromAST(
     const ASTPtr & node,
     const NameSet & candidate_names,
+    const std::unordered_map<std::string_view, DataTypePtr> & candidate_types,
     NameSet & dependencies)
 {
     if (!node)
@@ -1284,13 +1285,31 @@ void collectAliasDependenciesFromAST(
     {
         const auto & column_name = identifier->name();
         if (candidate_names.contains(column_name))
+        {
             dependencies.insert(column_name);
+            return;
+        }
+
+        if (identifier->compound())
+        {
+            for (const auto & [parent_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(column_name))
+            {
+                String parent(parent_name);
+                auto type_it = candidate_types.find(parent_name);
+                if (candidate_names.contains(parent) && type_it != candidate_types.end()
+                    && type_it->second->tryGetSubcolumnType(subcolumn_name))
+                {
+                    dependencies.insert(std::move(parent));
+                    break;
+                }
+            }
+        }
         return;
     }
 
     for (const auto & child : node->children)
         if (child)
-            collectAliasDependenciesFromAST(child, candidate_names, dependencies);
+            collectAliasDependenciesFromAST(child, candidate_names, candidate_types, dependencies);
 }
 
 [[noreturn]] void throwDefaultCycleException(const Strings & cycle_path)
@@ -1315,10 +1334,12 @@ void collectAliasDependenciesFromAST(
  * The additional alias map is required because typed defaults are rewritten into temporary
  * aliases (e.g. `a_tmp_alter...`) before the analyzer runs, so we must consider every alias,
  * not only user-visible column names, to detect cycles that pass through those synthetic nodes.
+ * A subcolumn reference such as `j.a` is a dependency on the column `j`.
  */
 void detectRecursiveDefaultCycles(
     const ASTPtr & expression_list,
-    const NameSet & default_column_names)
+    const NameSet & default_column_names,
+    const NamesAndTypesList & all_columns)
 {
     if (!expression_list || default_column_names.empty())
         return;
@@ -1326,6 +1347,10 @@ void detectRecursiveDefaultCycles(
     const auto * list_node = expression_list->as<ASTExpressionList>();
     if (!list_node)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Default expression list node is expected to be a list node");
+
+    std::unordered_map<std::string_view, DataTypePtr> candidate_types;
+    for (const auto & column : all_columns)
+        candidate_types.emplace(column.name, column.type);
 
     NameSet alias_names;
     std::unordered_map<String, ASTPtr> alias_to_expression;
@@ -1382,7 +1407,7 @@ void detectRecursiveDefaultCycles(
         NameSet dependencies;
         if (auto it = alias_to_expression.find(vertex); it != alias_to_expression.end())
         {
-            collectAliasDependenciesFromAST(it->second, alias_names, dependencies);
+            collectAliasDependenciesFromAST(it->second, alias_names, candidate_types, dependencies);
             for (const auto & dependency : dependencies)
                 dfs(dependency);
         }
@@ -1484,7 +1509,7 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
             default_column_names.insert(alias);
     }
 
-    detectRecursiveDefaultCycles(default_expr_list, default_column_names);
+    detectRecursiveDefaultCycles(default_expr_list, default_column_names, all_columns);
 
     ColumnsDescription fake_column_descriptions(all_columns);
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
