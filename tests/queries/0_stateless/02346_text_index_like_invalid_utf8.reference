@@ -24,13 +24,21 @@ text index on Map
 -- mapContainsKeyLike
 [1]
 [1]
+Granules: 3/3
+Granules: 1/3
 -- mapContainsValueLike
 [2]
 [2]
+Granules: 3/3
+Granules: 1/3
 tokenbf_v1 index on Map
 -- mapContainsKeyLike
 [1]
 [1]
+Granules: 3/3
+Granules: 1/3
 -- mapContainsValueLike
 [2]
 [2]
+Granules: 3/3
+Granules: 1/3

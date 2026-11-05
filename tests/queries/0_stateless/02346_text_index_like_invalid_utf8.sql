@@ -87,10 +87,18 @@ SELECT '-- mapContainsKeyLike';
 SELECT groupArray(id) FROM tab WHERE mapContainsKeyLike(m, '\xF0(\x8C\xBC');
 SELECT groupArray(id) FROM tab WHERE mapContainsKeyLike(m, '\xF0(\x8C\xBC') SETTINGS use_skip_indexes = 0;
 
+SELECT extract(explain, 'Granules: [0-9]+/[0-9]+') AS explain FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM tab WHERE mapContainsKeyLike(m, '\xF0(\x8C\xBC')
+) WHERE explain LIKE '%Granules: %/%';
+
 SELECT '-- mapContainsValueLike';
 
 SELECT groupArray(id) FROM tab WHERE mapContainsValueLike(m, '\xF0(\x8C\xBC');
 SELECT groupArray(id) FROM tab WHERE mapContainsValueLike(m, '\xF0(\x8C\xBC') SETTINGS use_skip_indexes = 0;
+
+SELECT extract(explain, 'Granules: [0-9]+/[0-9]+') AS explain FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM tab WHERE mapContainsValueLike(m, '\xF0(\x8C\xBC')
+) WHERE explain LIKE '%Granules: %/%';
 
 DROP TABLE tab;
 
@@ -112,9 +120,17 @@ SELECT '-- mapContainsKeyLike';
 SELECT groupArray(id) FROM tab WHERE mapContainsKeyLike(m, '\xF0(\x8C\xBC');
 SELECT groupArray(id) FROM tab WHERE mapContainsKeyLike(m, '\xF0(\x8C\xBC') SETTINGS use_skip_indexes = 0;
 
+SELECT extract(explain, 'Granules: [0-9]+/[0-9]+') AS explain FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM tab WHERE mapContainsKeyLike(m, '\xF0(\x8C\xBC')
+) WHERE explain LIKE '%Granules: %/%';
+
 SELECT '-- mapContainsValueLike';
 
 SELECT groupArray(id) FROM tab WHERE mapContainsValueLike(m, '\xF0(\x8C\xBC');
 SELECT groupArray(id) FROM tab WHERE mapContainsValueLike(m, '\xF0(\x8C\xBC') SETTINGS use_skip_indexes = 0;
+
+SELECT extract(explain, 'Granules: [0-9]+/[0-9]+') AS explain FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM tab WHERE mapContainsValueLike(m, '\xF0(\x8C\xBC')
+) WHERE explain LIKE '%Granules: %/%';
 
 DROP TABLE tab;
