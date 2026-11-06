@@ -78,11 +78,18 @@ emulator for correctness; use native hardware for performance measurements.
 ## Validation before enabling by default
 
 Build two release binaries from the same revision and toolchain, changing only
-`ENABLE_PG83_STR`. Use separate build directories and isolated server data
-directories. Keep LLVM libc enabled in both builds so the baseline uses the
+`ENABLE_PG83_STR`. Preserve each binary and its CMake cache in a separate
+directory, and use isolated server data directories. Separate build directories
+work, as does preserving the baseline before toggling the option and reusing
+the same compiled objects. Keep LLVM libc enabled in both builds so the baseline uses the
 current ClickHouse implementations rather than the system libc.
 
-Run upstream's full correctness suite against the prefixed archive retained at
+Keep ICU and jemalloc enabled for the UTF-8 tests and the normal allocator.
+`ENABLE_LIBRARIES=OFF` disables both unless `ENABLE_ICU=ON` and
+`ENABLE_JEMALLOC=ON` are supplied explicitly. Without ICU, `lowerUTF8` and
+`upperUTF8` are absent, so their performance tests cannot run.
+
+On x86-64, run upstream's full correctness suite against the prefixed archive retained at
 `contrib/str-cmake/libstr-prefixed.a` in the candidate build directory. It uses
 the `str_` entry points and can therefore compare against an independent libc.
 Use `-fno-builtin` for the test. Exercise AVX-512 on hardware that supports it,
@@ -102,7 +109,7 @@ CC=clang python3 contrib/str/tst/roundtrip.py \
 
 Compare existing ClickHouse performance tests with `perf.py`, using at least
 seven runs per query and repeating material differences. Include
-`string_deserialization.xml`, `string_filters_during_scan.xml`,
+`string_deserialization.xml`, `substring_identity.xml`,
 `group_by_string_key_count.xml`, `string_join.xml`, and `array_concat_single.xml`,
 plus broader workloads to detect changes beyond string functions. Record CPU,
 build revision, compiler, settings, binary paths, and old/new timings. The
