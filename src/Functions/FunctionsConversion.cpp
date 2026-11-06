@@ -1020,23 +1020,21 @@ bool isGeometryToMultiGeometryUnderArrays(const IDataType & from, const IDataTyp
     return from_array && to_array && isGeometryToMultiGeometryUnderArrays(*from_array->getNestedType(), *to_array->getNestedType());
 }
 
-/// `equals` may ignore custom names, e.g. `Array(UInt8)` equals `Array(Bool)`.
-bool haveSameCustomNames(const IDataType & from, const IDataType & to)
+/// `equals` may ignore custom names, e.g. `Array(UInt8)` equals `Array(Bool)`, but a `Bool` must hold 0 or 1.
+bool convertsUInt8ToBool(const DataTypePtr & from, const DataTypePtr & to)
 {
-    const auto * from_name = from.getCustomName();
-    const auto * to_name = to.getCustomName();
-    if (static_cast<bool>(from_name) != static_cast<bool>(to_name) || (from_name && from_name->getName() != to_name->getName()))
-        return false;
+    if (isBool(to))
+        return !isBool(from);
 
-    const size_t num_children = from.getNumberOfChildren();
-    if (num_children != to.getNumberOfChildren())
+    const size_t num_children = from->getNumberOfChildren();
+    if (num_children != to->getNumberOfChildren())
         return false;
 
     for (size_t i = 0; i < num_children; ++i)
-        if (!haveSameCustomNames(*from.getChild(i), *to.getChild(i)))
-            return false;
+        if (convertsUInt8ToBool(from->getChild(i), to->getChild(i)))
+            return true;
 
-    return true;
+    return false;
 }
 
 }
@@ -2061,10 +2059,50 @@ FunctionCast::WrapperType FunctionCast::createMapWrapper(const DataTypePtr & fro
 
 FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object, bool requested_result_is_nullable) const
 {
-    /// Types that differ only in SHARED marks of typed paths have identical columns, no conversion is needed.
+    /// Types that differ only in SHARED marks of typed paths have identical columns,
+    /// so only the typed paths that turn `UInt8` into `Bool` need a conversion.
     if (const auto * from_object = checkAndGetDataType<DataTypeObject>(from_type.get());
-        from_object && from_object->equalsIgnoringSharedTypedPaths(*to_object) && haveSameCustomNames(*from_object, *to_object))
-        return createIdentityWrapper(from_type);
+        from_object && from_object->equalsIgnoringSharedTypedPaths(*to_object))
+    {
+        VectorWithMemoryTracking<std::tuple<String, DataTypePtr, DataTypePtr, WrapperType>> typed_path_wrappers;
+        for (const auto & [path, from_path_type] : from_object->getTypedPaths())
+        {
+            const auto & to_path_type = to_object->getTypedPaths().at(path);
+            if (convertsUInt8ToBool(from_path_type, to_path_type))
+                typed_path_wrappers.emplace_back(path, from_path_type, to_path_type, prepareUnpackDictionaries(from_path_type, to_path_type));
+        }
+
+        if (typed_path_wrappers.empty())
+            return createIdentityWrapper(from_type);
+
+        return [typed_path_wrappers](ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
+        {
+            const auto & column_object = assert_cast<const ColumnObject &>(*arguments.front().column);
+
+            UnorderedMapWithMemoryTracking<String, ColumnPtr> typed_paths;
+            for (const auto & [path, column] : column_object.getTypedPaths())
+                typed_paths[path] = column;
+            for (const auto & [path, from_path_type, to_path_type, wrapper] : typed_path_wrappers)
+            {
+                ColumnsWithTypeAndName path_arguments = {{typed_paths.at(path), from_path_type, ""}};
+                typed_paths[path] = wrapper(path_arguments, to_path_type, nullptr, column_object.size());
+            }
+
+            UnorderedMapWithMemoryTracking<String, ColumnPtr> dynamic_paths;
+            for (const auto & [path, column] : column_object.getDynamicPaths())
+                dynamic_paths[path] = column;
+
+            return ColumnObject::create(
+                typed_paths,
+                dynamic_paths,
+                column_object.getSharedDataPtr(),
+                column_object.getMaxDynamicPaths(),
+                column_object.getMaxDynamicPathsUpperBound(),
+                column_object.getGlobalMaxDynamicPaths(),
+                column_object.getMaxDynamicTypes(),
+                column_object.getStatistics());
+        };
+    }
 
     if (checkAndGetDataType<DataTypeString>(from_type.get()))
     {
@@ -3354,7 +3392,15 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
     if (isUInt8(from_type) && isBool(to_type))
         return createUInt8ToBoolWrapper(from_type, to_type);
 
-    if (from_type->equals(*to_type) && haveSameCustomNames(*from_type, *to_type))
+    /// We can cast IPv6 into IPv6, IPv4 into IPv4, but we should not allow to cast FixedString(16) into IPv6 as part of identity cast
+    bool safe_convert_custom_types = true;
+
+    if (const auto * to_type_custom_name = to_type->getCustomName())
+        safe_convert_custom_types = from_type->getCustomName() && from_type->getCustomName()->getName() == to_type_custom_name->getName();
+    else if (const auto * from_type_custom_name = from_type->getCustomName())
+        safe_convert_custom_types = to_type->getCustomName() && from_type_custom_name->getName() == to_type->getCustomName()->getName();
+
+    if (from_type->equals(*to_type) && safe_convert_custom_types && !convertsUInt8ToBool(from_type, to_type))
     {
         /// We can only use identity conversion for DataTypeAggregateFunction when they are strictly equivalent.
         if (typeid_cast<const DataTypeAggregateFunction *>(from_type.get()))

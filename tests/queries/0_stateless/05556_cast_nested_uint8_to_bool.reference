@@ -10,6 +10,7 @@
 [true]	1
 1
 {"a":true}	Bool	1	1
+1	Float64	Array(Nullable(Float64))
 1
 1
 [2]
@@ -18,3 +19,5 @@ true	1
 [(1.5,2.5)]	Array(Tuple(Float64, Float64))
 [[(1,2)]]
 [2]
+1	Float64
+[[(1.5,2.5)]]
