@@ -1,0 +1,19 @@
+s3 dot segment: denied READ ON S3
+s3 escaped dot segment: denied READ ON S3
+s3 backup dot segment: denied WRITE ON S3
+s3 restore dot segment: denied READ ON S3
+0
+s3 dot segment inside the filter: denied READ ON S3
+s3 empty segment: denied READ ON S3
+s3 query wildcard: denied READ ON S3
+s3 escape without a query: not denied
+azure dot segment: denied WRITE ON AZURE
+azure escape: denied WRITE ON AZURE
+azure scheme-like name: denied WRITE ON AZURE
+file escape: denied READ ON FILE
+url dot segment: denied READ ON URL
+url escape: denied READ ON URL
+azure archive escaped dot segments: denied WRITE ON AZURE
+url glob alternative: denied READ ON URL
+s3 escaped wildcard: denied READ ON S3
+s3 dot segment with the whole-source grant: not denied

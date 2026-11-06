@@ -17,6 +17,7 @@
 namespace DB
 {
 
+class AccessFlags;
 class Context;
 struct StorageID;
 
@@ -166,6 +167,11 @@ public:
     /// Normalizes `uri` as source grant filters are matched against; an unparsable URI becomes empty.
     static String normalizeURIForAccessCheck(const String & uri);
 
+    /// Checks the source grant for `uri`. A filter is matched only when it would see the location the source
+    /// accesses; any other location needs the grant on the whole source.
+    static void checkSourceAccessForURI(
+        const ContextPtr & context, const AccessFlags & flags, AccessTypeObjects::Source source, const String & uri);
+
     virtual ~ITableFunction() = default;
 
 protected:
@@ -201,9 +207,6 @@ private:
     /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
     /// privileges as if it was S3.
     virtual const char * getNonClusteredStorageEngineName() const;
-
-protected:
-    String getFunctionURINormalized() const;
 };
 
 /// Properties of table function that are independent of argument types and parameters.

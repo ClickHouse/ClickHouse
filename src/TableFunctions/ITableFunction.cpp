@@ -8,6 +8,8 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/Context.h>
 
+#include <cctype>
+
 
 namespace ProfileEvents
 {
@@ -43,7 +45,7 @@ void ITableFunction::checkSourceAccess(ContextPtr context, bool is_insert_query)
         if (is_insert_query)
             type_to_check = AccessType::WRITE;
 
-        context->getAccess()->checkAccessWithFilter(type_to_check, toStringSource(*access_object), getFunctionURINormalized());
+        checkSourceAccessForURI(context, type_to_check, *access_object, getFunctionURI());
     }
 }
 
@@ -116,11 +118,6 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
                                                        hasUnreplicatedTableDataOnDisk());
 }
 
-String ITableFunction::getFunctionURINormalized() const
-{
-    return normalizeURIForAccessCheck(getFunctionURI());
-}
-
 String ITableFunction::normalizeURIForAccessCheck(const String & uri)
 {
     try
@@ -133,6 +130,81 @@ String ITableFunction::normalizeURIForAccessCheck(const String & uri)
     {
         return "";
     }
+}
+
+namespace
+{
+
+/// Glob alternatives (`{a,..}`, `a|..`) are expanded into separate locations after the check, so they count as segments.
+bool hasDotSegment(std::string_view path)
+{
+    size_t begin = 0;
+    for (size_t i = 0; i <= path.size(); ++i)
+    {
+        if (i == path.size() || std::string_view("/{},|").contains(path[i]))
+        {
+            const std::string_view segment = path.substr(begin, i - begin);
+            if (segment == "." || segment == "..")
+                return true;
+            begin = i + 1;
+        }
+    }
+    return false;
+}
+
+/// `%2A`, `%3F`, `%7B`, `%7D` in any case.
+bool hasEscapedWildcard(std::string_view raw_path)
+{
+    for (size_t i = 0; i + 2 < raw_path.size(); ++i)
+    {
+        if (raw_path[i] != '%')
+            continue;
+        const char high = raw_path[i + 1];
+        const char low = static_cast<char>(std::toupper(static_cast<unsigned char>(raw_path[i + 2])));
+        if ((high == '2' && low == 'A') || (high == '3' && low == 'F') || (high == '7' && (low == 'B' || low == 'D')))
+            return true;
+    }
+    return false;
+}
+
+/// What a source grant filter is matched against for `uri`, or an empty string when no filter can be trusted
+/// with it, which leaves only the grant on the whole source.
+String getSourceAccessSubject(AccessTypeObjects::Source source, const String & uri)
+{
+    /// A blob path and a local path are names, used as written.
+    if (source == AccessTypeObjects::Source::AZURE || source == AccessTypeObjects::Source::FILE)
+        return hasDotSegment(uri) ? String{} : uri;
+
+    try
+    {
+        const Poco::URI decoded(uri);
+        const String & path = decoded.getPath();
+        if (hasDotSegment(path) || path.contains("//"))
+            return {};
+        const String raw_path = Poco::URI(uri, /* enable_url_encoding */ false).getPath();
+        if (source == AccessTypeObjects::Source::S3)
+        {
+            /// `S3::URI` decodes the path once, as the subject does, but folds a query into the key, where `?`
+            /// matches any character, and an escaped `*`, `?` or `{` becomes a wildcard of the key.
+            if (uri.contains('?') || hasEscapedWildcard(raw_path))
+                return {};
+        }
+        else if (raw_path.contains('%'))
+            return {};
+    }
+    catch (const Poco::Exception &)
+    {
+        return {};
+    }
+    return ITableFunction::normalizeURIForAccessCheck(uri);
+}
+
+}
+
+void ITableFunction::checkSourceAccessForURI(
+    const ContextPtr & context, const AccessFlags & flags, AccessTypeObjects::Source source, const String & uri)
+{
+    context->getAccess()->checkAccessWithFilter(flags, toStringSource(source), getSourceAccessSubject(source, uri));
 }
 
 }
