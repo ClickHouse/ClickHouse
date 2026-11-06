@@ -18,30 +18,12 @@ namespace ErrorCodes
 
 #if USE_AVRO
 
-DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_)
-{
-    field_ids.resize(schema_->size());
-    for (UInt32 i = 0; i < schema_->size(); ++i)
-    {
-        auto field = schema_->getObject(i);
-        size_t field_id = field->getValue<size_t>(Iceberg::f_id);
-        field_ids[i] =  field_id;
-    }
-}
-
-DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_, std::vector<Int64> written_field_ids)
-    : DataFileStatistics(schema_)
-{
-    if (!written_field_ids.empty())
-        field_ids = std::move(written_field_ids);
-}
-
 namespace
 {
 
 /// `getExtremes` compares with IEEE754 `<`, where -0.0 == +0.0, so which zero it returns depends on
 /// the scan order. The Iceberg spec orders -0.0 before +0.0: pick the zero by the signs present.
-void fixSignedZeroExtremes(Field & min_val, Field & max_val, const IColumn & column)
+void fixFloatSignedZeroExtremes(Field & min_val, Field & max_val, const IColumn & column)
 {
     bool min_is_zero = min_val.getType() == Field::Types::Float64 && min_val.safeGet<Float64>() == 0.0;
     bool max_is_zero = max_val.getType() == Field::Types::Float64 && max_val.safeGet<Float64>() == 0.0;
@@ -79,19 +61,14 @@ void fixSignedZeroExtremes(Field & min_val, Field & max_val, const IColumn & col
         scan(col_f64->getData());
 }
 
-}
-
-static Range getExtremeRangeFromColumn(const ColumnPtr & column)
+Range getExtremeRangeFromColumn(const ColumnPtr & column)
 {
     Field min_val;
     Field max_val;
     column->getExtremes(min_val, max_val, 0, column->size());
-    fixSignedZeroExtremes(min_val, max_val, *column);
+    fixFloatSignedZeroExtremes(min_val, max_val, *column);
     return Range(min_val, true, max_val, true);
 }
-
-namespace
-{
 
 /// Rows set in `null_map` are skipped: the nested value of a NULL row is not a real value.
 Int64 countNaNs(const IColumn & column, ConstNullMapPtr null_map)
@@ -112,6 +89,36 @@ Int64 countNaNs(const IColumn & column, ConstNullMapPtr null_map)
     return 0;
 }
 
+/// `Field` stores Float32 values as `Float64`, so this also covers Float32.
+bool isFloatNaN(const Field & value)
+{
+    return value.getType() == Field::Types::Float64 && isNaN(value.safeGet<Float64>());
+}
+
+/// `getExtremes` of an all-NaN chunk returns NaN on both sides, never on just one.
+bool isNaNRange(const Range & range)
+{
+    return isFloatNaN(range.left) && isFloatNaN(range.right);
+}
+
+}
+
+DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_)
+{
+    field_ids.resize(schema_->size());
+    for (UInt32 i = 0; i < schema_->size(); ++i)
+    {
+        auto field = schema_->getObject(i);
+        size_t field_id = field->getValue<size_t>(Iceberg::f_id);
+        field_ids[i] =  field_id;
+    }
+}
+
+DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_, std::vector<Int64> written_field_ids)
+    : DataFileStatistics(schema_)
+{
+    if (!written_field_ids.empty())
+        field_ids = std::move(written_field_ids);
 }
 
 void DataFileStatistics::update(const Chunk & chunk)
@@ -206,7 +213,6 @@ void DataFileStatistics::merge(const DataFileStatistics & other)
 
     chassert(null_counts.size() == other.null_counts.size());
     chassert(nan_counts.size() == other.nan_counts.size());
-    chassert(null_counts.size() == nan_counts.size());
     chassert(is_float_column == other.is_float_column);
     for (size_t i = 0; i < null_counts.size(); ++i)
     {
@@ -214,23 +220,6 @@ void DataFileStatistics::merge(const DataFileStatistics & other)
         nan_counts[i] += other.nan_counts[i];
         ranges[i] = uniteRanges(ranges[i], other.ranges[i]);
     }
-}
-
-namespace
-{
-
-/// `Field` stores Float32 values as `Float64`, so this also covers Float32.
-bool isFloatNaN(const Field & value)
-{
-    return value.getType() == Field::Types::Float64 && isNaN(value.safeGet<Float64>());
-}
-
-/// `getExtremes` of an all-NaN chunk returns NaN on both sides, never on just one.
-bool isNaNRange(const Range & range)
-{
-    return isFloatNaN(range.left) && isFloatNaN(range.right);
-}
-
 }
 
 bool icebergBoundLess(const Field & lhs, const Field & rhs)
