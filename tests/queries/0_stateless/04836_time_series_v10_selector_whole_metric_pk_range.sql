@@ -1,4 +1,4 @@
--- Tags: no-fasttest, long
+-- Tags: no-fasttest, long, no-msan
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 
 -- `timeSeriesSelector` (and every PromQL selector evaluated through it) filters the samples table with

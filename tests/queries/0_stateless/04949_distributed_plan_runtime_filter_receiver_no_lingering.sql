@@ -1,4 +1,5 @@
--- Tags: no-old-analyzer
+-- Tags: no-old-analyzer, no-fasttest
+-- no-fasttest: Too slow for fast test (~11s), covered by regular stateless runs.
 
 -- Local disk: an object-storage disk can stall a read for seconds, and a slow probe task would look like one that waited for the filter.
 CREATE TABLE big (bid UInt64, v UInt64) ENGINE = MergeTree ORDER BY bid SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', storage_policy = 'default';
