@@ -362,21 +362,12 @@ public:
                             ErrorCodes::ACCESS_DENIED,
                             "Cannot insert into a QueryRunner table with SQL SECURITY INVOKER without a user.");
 
-                    /// Replay the whole originating identity in one call: the external (pushed) roles, the
-                    /// credential grant limit and its expiry are restored together with the user, so a limited
-                    /// credential does not regain full rights and a pushed-role session does not fail role
-                    /// revalidation when the deferred job runs. `authentication_grants` is null in the
-                    /// DEFINER/NONE cases (a no-op).
                     job_context->setUser(
                         *user_id,
                         local_context->getExternalRoles(),
                         local_context->getAuthenticationGrants(),
                         local_context->getAuthenticationValidUntil());
 
-                    /// These are the session's *effective* current roles, which already include the external
-                    /// roles restored above. Re-apply them without the grant check: external roles are not
-                    /// locally granted, so a checked re-apply would throw `SET_NON_GRANTED_ROLE`; the locally
-                    /// granted current roles are kept and the external ones come from `setUser`.
                     job_context->setCurrentRoles(local_context->getCurrentRoles(), /*check_grants=*/ false);
                     break;
                 }
