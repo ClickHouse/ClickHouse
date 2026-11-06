@@ -8,6 +8,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Without the metadata files cache the replicas fetch the metadata of the Iceberg metadata files, which this test
+# does not count; the table takes the cache when it is created, so it is on for every query.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=1"
+
 TABLE="t_${CLICKHOUSE_DATABASE}_${RANDOM}"
 TABLE_PATH="${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/"
 trap 'rm -rf "${TABLE_PATH:?}"' EXIT

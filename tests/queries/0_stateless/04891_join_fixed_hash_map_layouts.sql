@@ -58,6 +58,8 @@ SET query_plan_join_shard_by_pk_ranges = 0;
 SET enable_join_fixed_hash_table_conversion = 1;
 SET enable_join_runtime_filters = 1;
 SET join_runtime_filter_min_probe_rows = 0;
+-- The `key*` queries check that the fixed-size map is published as a runtime filter; the `rf_serial` ones override it.
+SET join_runtime_filter_from_fixed_hash_table = 1;
 SET join_use_nulls = 1;
 
 SELECT '-- key8 uint8 inner';
