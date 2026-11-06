@@ -50,8 +50,8 @@ function check_access()
         echo "OK"
     elif echo "$output" | grep -q "ACCESS_DENIED"; then
         local reason
-        if echo "$output" | grep -q "No table on this server uses"; then
-            reason="no table on this server uses the path, SELECT ON *.* is required"
+        if echo "$output" | grep -qF "that use this path, or SELECT ON *.* if no table of this server uses it"; then
+            reason="SELECT on the tables that use the path, or SELECT ON *.*"
         elif echo "$output" | grep -q "Missing permissions: "; then
             reason=$(echo "$output" | grep -m1 -o "Missing permissions: .*). (ACCESS_DENIED)" | sed -e 's/^Missing permissions: //' -e 's/). (ACCESS_DENIED)$//')
         else
@@ -64,6 +64,12 @@ function check_access()
     fi
 }
 
+echo "-- a table the user cannot see is not named"
+check_access "$user" "ALTER TABLE dst FETCH PARTITION 1 FROM '$zk/src'"
+check_access "$user" "ALTER TABLE dst FETCH PARTITION 1 FROM '$zk/elsewhere'"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE dst FETCH PARTITION 1 FROM '$zk/elsewhere'" 2>&1 | grep -c "ACCESS_DENIED"
+$CLICKHOUSE_CLIENT -q "GRANT SHOW TABLES ON $CLICKHOUSE_DATABASE.src TO $user"
+
 echo "-- the source is not readable"
 check_access "$user" "ALTER TABLE dst FETCH PARTITION 1 FROM '$zk/src'"
 check_access "$user" "ALTER TABLE dst FETCH PART '$part' FROM '$zk/src'"
@@ -71,10 +77,6 @@ check_access "$user" "ALTER TABLE dst FETCH PARTITION 1 FROM '$zk/src//'"
 
 echo "-- a materialized view passes the command to its target, which checks the source"
 check_access "$user" "ALTER TABLE mv FETCH PARTITION 1 FROM '$zk/src'"
-
-echo "-- no table on this server uses the path"
-check_access "$user" "ALTER TABLE dst FETCH PARTITION 1 FROM '$zk/elsewhere'"
-$CLICKHOUSE_CLIENT -q "ALTER TABLE dst FETCH PARTITION 1 FROM '$zk/elsewhere'" 2>&1 | grep -c "ACCESS_DENIED"
 
 echo "-- a grant on some columns is not a grant to read the table"
 $CLICKHOUSE_CLIENT -q "GRANT SELECT(id) ON $CLICKHOUSE_DATABASE.src TO $user"
@@ -88,6 +90,7 @@ $CLICKHOUSE_CLIENT -q "
 CREATE TABLE src_r2 (id UInt32, secret String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/src', 'r2') PARTITION BY id ORDER BY id;
 SYSTEM SYNC REPLICA src_r2;
 GRANT SELECT ON $CLICKHOUSE_DATABASE.src TO $user;
+GRANT SHOW TABLES ON $CLICKHOUSE_DATABASE.src_r2 TO $user;
 "
 check_access "$user" "ALTER TABLE dst FETCH PARTITION 1 FROM '$zk/src'"
 
@@ -99,6 +102,9 @@ check_access "$user" "ALTER TABLE dst ATTACH PARTITION 1"
 check_access "$user" "ALTER TABLE dst ATTACH PART '$part'"
 $CLICKHOUSE_CLIENT --user "$user" --password "password" -q "SELECT * FROM dst ORDER BY id"
 
+echo "-- the same path on an auxiliary ZooKeeper is another source"
+check_access "$user" "ALTER TABLE dst FETCH PARTITION 1 FROM 'zookeeper2:$zk/src'"
+
 echo "-- a lazily loaded source is checked without loading it"
 $CLICKHOUSE_CLIENT -q "
 DROP DATABASE IF EXISTS $CLICKHOUSE_DATABASE_1;
@@ -109,9 +115,10 @@ DETACH DATABASE $CLICKHOUSE_DATABASE_1;
 ATTACH DATABASE $CLICKHOUSE_DATABASE_1;
 SELECT engine FROM system.tables WHERE database = '$CLICKHOUSE_DATABASE_1' AND name = 'lsrc';
 "
+$CLICKHOUSE_CLIENT -q "GRANT SHOW TABLES ON $CLICKHOUSE_DATABASE_1.lsrc TO $user"
 check_access "$user" "ALTER TABLE dst FETCH PARTITION 1 FROM '$zk/lsrc'"
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON $CLICKHOUSE_DATABASE_1.lsrc TO $user"
-$CLICKHOUSE_CLIENT --user "$user" --password "password" -q "ALTER TABLE dst FETCH PARTITION 1 FROM '$zk/lsrc'" 2>&1 | grep -c "ACCESS_DENIED"
+$CLICKHOUSE_CLIENT --user "$user" --password "password" -q "ALTER TABLE dst FETCH PARTITION 1 FROM '$zk/lsrc'" 2>&1 | grep -o -m1 "NO_ACTIVE_REPLICAS\|ACCESS_DENIED"
 $CLICKHOUSE_CLIENT -q "SELECT engine FROM system.tables WHERE database = '$CLICKHOUSE_DATABASE_1' AND name = 'lsrc'"
 
 $CLICKHOUSE_CLIENT -q "

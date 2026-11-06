@@ -8767,10 +8767,21 @@ static void assertSourceHasNoPatchesForPartition(
 /// A source on another server has no table here to check, so it requires `SELECT` on all tables.
 static void checkAccessToFetchSource(const String & zookeeper_name, const String & zookeeper_path, const ContextPtr & context)
 {
-    if (context->getAccess()->isGranted(AccessType::SELECT))
+    const auto access = context->getAccess();
+    if (access->isGranted(AccessType::SELECT))
         return;
 
     const String path = zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(zookeeper_path, /*check_starts_with_slash=*/ false);
+    const String display_path = zookeeper_name == zkutil::DEFAULT_ZOOKEEPER_NAME ? path : zookeeper_name + ":" + path;
+    auto throw_access_denied = [&]
+    {
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "{}: Not enough privileges. To fetch from ZooKeeper path {}, it's necessary to have the grant SELECT on the tables "
+            "of this server that use this path, or SELECT ON *.* if no table of this server uses it",
+            context->getUserName(), display_path);
+    };
+
     bool has_local_table = false;
     for (const auto & [_, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
@@ -8810,17 +8821,18 @@ static void checkAccessToFetchSource(const String & zookeeper_name, const String
             if (table_zookeeper_name != zookeeper_name
                 || zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(table_zookeeper_path, /*check_starts_with_slash=*/ false) != path)
                 continue;
-            context->checkAccess(AccessType::SELECT, table->getStorageID());
+
+            const StorageID table_id = table->getStorageID();
+            /// A table the user cannot see is not named.
+            if (!access->isGranted(AccessType::SHOW_TABLES, table_id.database_name, table_id.table_name))
+                throw_access_denied();
+            context->checkAccess(AccessType::SELECT, table_id);
             has_local_table = true;
         }
     }
 
     if (!has_local_table)
-        throw Exception(
-            ErrorCodes::ACCESS_DENIED,
-            "{}: Not enough privileges. No table on this server uses ZooKeeper path {}, so fetching from it requires the grant SELECT ON *.*",
-            context->getUserName(),
-            zookeeper_name == zkutil::DEFAULT_ZOOKEEPER_NAME ? path : zookeeper_name + ":" + path);
+        throw_access_denied();
 }
 
 void StorageReplicatedMergeTree::fetchPartition(
