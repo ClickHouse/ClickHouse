@@ -64,9 +64,11 @@ SYSTEM STOP MERGES t_lambda_virtual_row;
 INSERT INTO t_lambda_virtual_row SELECT number, ['a', 'b', 'c'][number % 3 + 1] FROM numbers(10);
 INSERT INTO t_lambda_virtual_row SELECT number, ['a', 'b', 'c'][number % 3 + 1] FROM numbers(10, 10);
 
+-- The lambda reaches the read, where the virtual rows are built, only through PREWHERE.
 SELECT DISTINCT k, arrayFirst(x -> x = s, ['a', 'b']) AS f FROM t_lambda_virtual_row
 WHERE arrayExists(x -> x = s, ['a', 'b']) ORDER BY k LIMIT 5
-SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, max_bytes_before_external_sort = 0, max_threads = 2;
+SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, max_bytes_before_external_sort = 0, max_threads = 2,
+    optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 
 DROP TABLE t_lambda_virtual_row;
 
@@ -74,6 +76,7 @@ DROP TABLE t_lambda_virtual_row;
 DROP TABLE IF EXISTS t_lambda_array_join;
 CREATE TABLE t_lambda_array_join (n UInt64, arrays Array(Array(UInt64))) ENGINE = Memory;
 INSERT INTO t_lambda_array_join VALUES (2, [[4, 5], []]);
+-- The ARRAY JOIN is lifted above the expressions that do not need it.
 SET query_plan_lift_up_array_join = 1;
 SELECT n, arrayMap(x -> x + n, a) FROM t_lambda_array_join ARRAY JOIN arrays AS a ORDER BY ALL;
 SELECT arrayMap(x -> x + n * 2, [n]) AS m, arrayMap(x -> x + n * 2, a) AS k FROM t_lambda_array_join ARRAY JOIN arrays AS a ORDER BY ALL;
