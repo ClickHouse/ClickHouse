@@ -1,0 +1,6 @@
+mixed: OK
+codec null: OK
+codec deflate: OK
+codec zstd: OK
+tiny: OK
+schema-evolution: OK

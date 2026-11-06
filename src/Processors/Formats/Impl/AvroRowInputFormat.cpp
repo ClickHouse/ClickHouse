@@ -36,6 +36,10 @@
 #include <Functions/DateTimeTransforms.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <array>
+#include <cstring>
+#include <limits>
+#include <memory>
 #include <fmt/format.h>
 #include <Processors/Formats/Impl/AvroConfluentSchemaRegistry.h>
 #include <base/EnumReflection.h>
@@ -1660,6 +1664,162 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
     }
 }
 
+namespace
+{
+
+/// Per-stream state for the Avro parallel-parsing segmentation engine: the file's OCF header
+/// (read only once, at the start) and its 16-byte sync marker. Prepending `header` to every
+/// emitted segment makes each segment a standalone OCF that an unchanged AvroRowInputFormat parses.
+struct AvroSegmentationState
+{
+    String header;
+    std::array<UInt8, 16> sync{};
+    bool header_read = false;
+};
+
+/// Read one Avro `long` (ZigZag varint) from `in`, appending every consumed byte to `raw`.
+/// Fails closed on a truncated varint (EOF mid-varint) or one wider than 64 bits.
+Int64 copyAvroLong(ReadBuffer & in, String & raw)
+{
+    UInt64 encoded = 0;
+    size_t shift = 0;
+    while (true)
+    {
+        if (in.eof())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of Avro input while reading a varint");
+        if (shift >= 64)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Avro varint is too long");
+        auto c = static_cast<UInt8>(*in.position());
+        ++in.position();
+        raw.push_back(static_cast<char>(c));
+        encoded |= static_cast<UInt64>(c & 0x7F) << shift;
+        if ((c & 0x80) == 0)
+            break;
+        shift += 7;
+    }
+    return static_cast<Int64>((encoded >> 1) ^ (~(encoded & 1) + 1)); /// ZigZag decode
+}
+
+void copyAvroBytes(ReadBuffer & in, String & raw, size_t n)
+{
+    size_t old = raw.size();
+    raw.resize(old + n);
+    in.readStrict(raw.data() + old, n);
+}
+
+/// An Avro `bytes`/`string`: a `long` length followed by that many bytes.
+void copyAvroString(ReadBuffer & in, String & raw)
+{
+    Int64 len = copyAvroLong(in, raw);
+    if (len < 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Negative length in Avro header string");
+    copyAvroBytes(in, raw, static_cast<size_t>(len));
+}
+
+/// Copy the OCF header verbatim (magic + metadata map + 16-byte sync) into `state`.
+void readAvroOCFHeader(ReadBuffer & in, AvroSegmentationState & state)
+{
+    String & h = state.header;
+    h.clear();
+
+    char magic[4];
+    in.readStrict(magic, 4);
+    static constexpr char expected_magic[4] = {'O', 'b', 'j', '\x01'};
+    if (memcmp(magic, expected_magic, sizeof(magic)) != 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Not an Avro object container file: magic does not match");
+    h.append(magic, sizeof(magic));
+
+    /// metadata is map<string,bytes>, one or more blocks terminated by a 0 count. A negative count
+    /// -n means n entries preceded by a `long` block byte-length (the external-writer variant).
+    while (true)
+    {
+        Int64 count = copyAvroLong(in, h);
+        if (count == 0)
+            break;
+        if (count < 0)
+        {
+            if (count == std::numeric_limits<Int64>::min())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Avro metadata block count overflow");
+            count = -count;
+            copyAvroLong(in, h); /// block byte-length: copied verbatim, value unused
+        }
+        for (Int64 i = 0; i < count; ++i)
+        {
+            copyAvroString(in, h); /// key
+            copyAvroString(in, h); /// value
+        }
+    }
+
+    char sync[16];
+    in.readStrict(sync, sizeof(sync));
+    h.append(sync, sizeof(sync));
+    memcpy(state.sync.data(), sync, sizeof(sync));
+    state.header_read = true;
+}
+
+void appendToMemory(DB::Memory<> & memory, const char * src, size_t n)
+{
+    size_t old = memory.size();
+    memory.resize(old + n);
+    memcpy(memory.data() + old, src, n);
+}
+
+Int64 copyAvroLongToMemory(ReadBuffer & in, DB::Memory<> & memory)
+{
+    String tmp;
+    Int64 v = copyAvroLong(in, tmp);
+    appendToMemory(memory, tmp.data(), tmp.size());
+    return v;
+}
+
+/// Cut the OCF into segments on block (sync) boundaries. Each segment is `header + N whole blocks`,
+/// a standalone OCF. Rows never straddle a boundary, so there is no stitch step.
+std::pair<bool, size_t> fileSegmentationEngineAvro(
+    ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows, AvroSegmentationState & state)
+{
+    if (!state.header_read)
+        readAvroOCFHeader(in, state);
+
+    appendToMemory(memory, state.header.data(), state.header.size());
+
+    size_t rows_in_segment = 0;
+    bool eof = false;
+    while (true)
+    {
+        if (in.eof())
+        {
+            eof = true;
+            break;
+        }
+
+        Int64 object_count = copyAvroLongToMemory(in, memory);
+        Int64 byte_count = copyAvroLongToMemory(in, memory);
+        if (object_count < 0 || byte_count < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative object/byte count in Avro data block");
+
+        size_t old = memory.size();
+        memory.resize(old + static_cast<size_t>(byte_count));
+        in.readStrict(memory.data() + old, static_cast<size_t>(byte_count));
+
+        char sync[16];
+        in.readStrict(sync, sizeof(sync));
+        if (memcmp(sync, state.sync.data(), sizeof(sync)) != 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Avro sync marker mismatch while segmenting the file");
+        appendToMemory(memory, sync, sizeof(sync));
+
+        rows_in_segment += static_cast<size_t>(object_count);
+
+        if (memory.size() - state.header.size() >= min_bytes)
+            break;
+        if (max_rows && rows_in_segment >= max_rows)
+            break;
+    }
+
+    return {!eof, rows_in_segment};
+}
+
+}
+
 void registerInputFormatAvro(FormatFactory & factory);
 void registerInputFormatAvro(FormatFactory & factory)
 {
@@ -1673,6 +1833,17 @@ void registerInputFormatAvro(FormatFactory & factory)
     });
 
     factory.markFormatSupportsSubsetOfColumns("Avro");
+
+    /// Parallel parsing of Avro OCF via sync-marker segmentation. Registered for "Avro" only --
+    /// "AvroConfluent" is a schema-registry-framed stream, not an OCF, so it has no header/sync/blocks.
+    factory.registerFileSegmentationEngineCreator("Avro", [](const FormatSettings &) -> FormatFactory::FileSegmentationEngine
+    {
+        auto state = std::make_shared<AvroSegmentationState>();
+        return [state](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+        {
+            return fileSegmentationEngineAvro(in, memory, min_bytes, max_rows, *state);
+        };
+    });
 
     factory.registerInputFormat("AvroConfluent",[](
         ReadBuffer & buf,
