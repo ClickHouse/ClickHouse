@@ -597,6 +597,9 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     mut_context->setSetting(
         "prefer_column_name_to_alias", query_context->getGlobalContext()->getSettingsRef()[Setting::prefer_column_name_to_alias].value);
     mut_context->setQueryKindInitial();
+    /// A projection is calculated locally from the block being written, so its query is analysed without parallel replicas,
+    /// which would replace a `[GLOBAL] IN` subquery in `query_ast` with the name of a temporary table.
+    mut_context->setSetting("enable_parallel_replicas", Field(0));
 
     bool is_aggregate = false;
     {
