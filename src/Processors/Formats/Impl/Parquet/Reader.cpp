@@ -209,6 +209,10 @@ static bool tryDecompressLZ4Hadoop(const char * data, size_t compressed_size, si
 
 static void decompress(const char * data, size_t compressed_size, size_t uncompressed_size, parq::CompressionCodec::type codec, char * out)
 {
+    /// Some writers store no bytes for an empty values section (all-null DataPageV2); most codecs reject that.
+    if (uncompressed_size == 0)
+        return;
+
     ProfileEvents::increment(ProfileEvents::ParquetDecompressedBytes, uncompressed_size);
     CompressionMethod method = CompressionMethod::None;
     switch (codec)
@@ -439,6 +443,50 @@ void Reader::ensureColumnChunks(const std::vector<size_t> & column_indices)
     }
 }
 
+std::optional<std::unordered_set<UInt64>> Reader::selectRowGroups(const RowGroupSelection & row_group_selection)
+{
+    if (!std::holds_alternative<RowGroupByteRange>(row_group_selection))
+        return selectRowGroups(*file_footer, row_group_selection, nullptr);
+    ensureColumnChunks({0});
+    return selectRowGroups(*file_footer, row_group_selection, column_chunks[0].get());
+}
+
+std::optional<std::unordered_set<UInt64>> Reader::selectRowGroups(
+    const FileFooter & footer, const RowGroupSelection & row_group_selection, const FileColumnChunks * first_column)
+{
+    if (std::holds_alternative<std::monostate>(row_group_selection))
+        return std::nullopt;
+    if (const auto * row_group_ids = std::get_if<std::unordered_set<UInt64>>(&row_group_selection))
+        return *row_group_ids;
+
+    std::vector<FileColumnChunks> parsed;
+    if (!first_column)
+    {
+        deserializeColumnChunks(footer.serialized.data(), footer.serialized.size(), footer.column_chunk_offsets, {0}, parsed);
+        const bool written_by_old_duckdb = footer.metadata.created_by == "DuckDB";
+        for (auto & column : parsed[0].chunks)
+            fixUpColumnChunk(column, written_by_old_duckdb);
+        first_column = parsed.data();
+    }
+
+    const auto [range_begin, range_size] = std::get<RowGroupByteRange>(row_group_selection);
+    std::unordered_set<UInt64> selected;
+    for (size_t row_group_idx = 0; row_group_idx < footer.metadata.row_groups.size(); ++row_group_idx)
+    {
+        if (footer.numColumnChunks(row_group_idx) == 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Row group has no column chunks");
+        const auto & column = first_column->chunks[row_group_idx].meta_data;
+        Int64 offset = column.data_page_offset;
+        if (column.__isset.dictionary_page_offset && column.dictionary_page_offset > 0 && column.dictionary_page_offset < offset)
+            offset = column.dictionary_page_offset;
+        if (offset < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative column chunk offset in row group: {}", offset);
+        if (range_begin <= UInt64(offset) && UInt64(offset) - range_begin < range_size)
+            selected.insert(row_group_idx);
+    }
+    return selected;
+}
+
 void Reader::getHyperrectangleForRowGroup(size_t row_group_idx, Hyperrectangle & hyperrectangle, bool only_spatial_bbox) const
 {
     for (const PrimitiveColumnInfo & column_info : primitive_columns)
@@ -498,7 +546,8 @@ void Reader::getHyperrectangleForRowGroup(size_t row_group_idx, Hyperrectangle &
                 continue;
             }
 
-            adjustRangeFromIndexIfNeeded(range, column_info, can_be_null);
+            if (!adjustRangeFromIndexIfNeeded(range, column_info, can_be_null))
+                range = Range::createWholeUniverse();
         }
         catch (Exception & e)
         {
@@ -596,7 +645,8 @@ std::optional<Range> Reader::getTopKSortColumnRange(size_t row_group_idx) const
         /// Same validation as the static min/max pruning path: self-contradictory statistics
         /// (`min_value > max_value`) must fail closed rather than become pruning input. We get here
         /// only for chunks proven to have no nulls, hence `can_be_null = false`.
-        adjustRangeFromIndexIfNeeded(range, column_info, /*can_be_null=*/ false);
+        if (!adjustRangeFromIndexIfNeeded(range, column_info, /*can_be_null=*/ false))
+            return std::nullopt;
 
         return range;
     }
@@ -738,7 +788,7 @@ std::optional<Chunk> Reader::readMinMaxFromStatistics(const std::optional<std::u
                 if (left.isNull() || right.isNull())
                     return std::nullopt;
                 if (accurateLess(right, left))
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Statistics have min_value > max_value: {} > {}.", left, right);
+                    return std::nullopt;
 
                 if (mins[i].isNull() || accurateLess(left, mins[i]))
                     mins[i] = std::move(left);
@@ -846,7 +896,7 @@ static size_t heapBytesOfField(const Field & field)
     return field.getType() == Field::Types::String ? field.safeGet<String>().size() : 0;
 }
 
-void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read)
+void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selection)
 {
     extended_sample_block = *sample_block;
     for (const auto & col : format_filter_info->additional_columns)
@@ -1077,6 +1127,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     total_primitive_columns_in_file = schemer.primitive_column_idx;
     output_columns = std::move(schemer.output_columns);
     parseColumnChunks();
+    const auto row_groups_to_read = selectRowGroups(row_group_selection);
 
     /// Precalculate some column index mappings.
 
@@ -2832,9 +2883,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
                     = column_info.decoder.decodeField(column_index.min_values[page_idx], /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left)
                     && column_info.decoder.decodeField(column_index.max_values[page_idx], /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
 
-                if (stats_usable)
-                    adjustRangeFromIndexIfNeeded(range, column_info, can_be_null);
-                else
+                if (!stats_usable || !adjustRangeFromIndexIfNeeded(range, column_info, can_be_null))
                     range = Range::createWholeUniverse();
             }
 
@@ -2901,10 +2950,10 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
     }
 }
 
-void Reader::adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const
+bool Reader::adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const
 {
     if (accurateLess(range.right, range.left))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Statistics have min_value > max_value: {} > {}.", static_cast<const Field &>(range.left), static_cast<const Field &>(range.right));
+        return false;
 
     bool nullable = column_info.levels.back().def > 0;
     bool null_as_default = options.format.null_as_default && !column_info.output_nullable;
@@ -2940,6 +2989,7 @@ void Reader::adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnIn
         if (range.right.isNull())
             range.right_included = false;
     }
+    return true;
 }
 
 void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
@@ -3167,14 +3217,24 @@ void Reader::decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group)
 
     int64_t prev_offset = meta.data_page_offset;
     int64_t prev_row_index = -1;
+    bool has_page_without_rows = false;
     for (const auto & loc : locations)
     {
-        if (loc.offset < prev_offset || loc.first_row_index <= prev_row_index ||
+        if (loc.offset < prev_offset || loc.first_row_index < prev_row_index ||
             loc.compressed_page_size <= 0 || loc.compressed_page_size > end_offset - loc.offset ||
             loc.first_row_index >= num_rows)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid offset index: {}, prev offset: {}, prev row: {}, end offset: {}, num rows: {}", thriftToString(loc), prev_offset, prev_row_index, end_offset, num_rows);
+        has_page_without_rows |= loc.first_row_index == prev_row_index;
         prev_offset = loc.offset + loc.compressed_page_size;
         prev_row_index = loc.first_row_index;
+    }
+
+    /// Arrow C++ gives a page with no rows (repeated columns) the next page's first_row_index. Such a
+    /// page can't be checked against the index without reading it, so neither index is used here.
+    if (has_page_without_rows)
+    {
+        column.offset_index.page_locations.clear();
+        column.use_column_index = false;
     }
 }
 
@@ -3454,10 +3514,14 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
             {
                 readRowsInPage(end_row_idx, subchunk, column, column_info);
 
+                /// Without the offset index, a page's row count doesn't prove that the next page starts a
+                /// row (arrow-go continues a row in a page with num_rows 0), so that page is checked.
                 auto & page = column.page;
+                const bool page_ends_row = page.end_row_idx.has_value() &&
+                    (column_info.levels.back().rep == 0 || !column.data_pages.empty());
                 if (page.next_row_idx == end_row_idx &&
                     (page.value_idx < page.num_values ||
-                     page.end_row_idx.has_value() ||
+                     page_ends_row ||
                      column.next_page_offset >= column.data_pages_bytes))
                     break;
 
@@ -3599,7 +3663,7 @@ void Reader::skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & co
 
         auto data = prefetcher.getRangeData(page_info.prefetch);
         const char * ptr = data.data();
-        if (!initializeDataPage(ptr, ptr + data.size(), first_row_idx, page_info.end_row_idx, *row_idx, column, column_info))
+        if (!initializeDataPage(ptr, ptr + data.size(), first_row_idx, page_info.end_row_idx, row_idx, column, column_info))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Page doesn't contain requested row");
         found_page = true;
     }
@@ -3621,7 +3685,7 @@ void Reader::skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & co
         chassert(column.next_page_offset <= all_pages.size());
         const char * ptr = all_pages.data() + column.next_page_offset;
         const char * end = all_pages.data() + all_pages.size();
-        initializeDataPage(ptr, end, page.next_row_idx, /*end_row_idx=*/ std::nullopt, row_idx.value_or(page.next_row_idx), column, column_info);
+        initializeDataPage(ptr, end, page.next_row_idx, /*end_row_idx=*/ std::nullopt, row_idx, column, column_info);
         column.next_page_offset = ptr - all_pages.data();
         if (!row_idx.has_value())
             return;
@@ -3670,7 +3734,7 @@ std::tuple<parq::PageHeader, std::span<const char>> Reader::decodeAndCheckPageHe
     return {header, page_data};
 }
 
-bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, size_t target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info)
+bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, std::optional<size_t> target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info)
 {
     PageState & page = column.page;
     /// We reuse PageState instance across pages to reuse memory in buffers like decompressed_buf.
@@ -3690,6 +3754,7 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
     std::tie(header, page.data) = decodeAndCheckPageHeader(data_ptr, data_end);
 
     /// Check if all rows of the page are filtered out, if we have enough information.
+    /// Only when seeking to a row: when advancing to the next page, it's initialized even if it has no rows.
 
     /// These signed i32 row counts are consumed below to compute `page.end_row_idx` (and the
     /// row-skip shortcut returns before the later num_values check). A negative value would
@@ -3717,7 +3782,7 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
 
         page.end_row_idx = next_row_idx + *num_rows_in_page;
 
-        if (*page.end_row_idx <= target_row_idx)
+        if (target_row_idx.has_value() && *page.end_row_idx <= *target_row_idx)
         {
             page.next_row_idx = *page.end_row_idx;
             return false;
@@ -4186,7 +4251,11 @@ static void processRepDefLevelsForSingleArray(
 void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowSubgroup * row_subgroup)
 {
     PageState & page = column.page;
-    chassert(page.initialized && page.value_idx < page.num_values);
+    chassert(page.initialized);
+    /// Some writers emit data pages with no values (Arrow C++ in repeated columns).
+    if (page.num_values == 0)
+        return;
+    chassert(page.value_idx < page.num_values);
 
     /// Note: end_row_idx == page.next_row_idx doesn't necessarily mean we're done. E.g. suppose the
     /// row end_row_idx-1 contains an array that starts in page 0 and ends inside page 1.
@@ -4576,6 +4645,9 @@ ColumnPtr & Reader::getOrFormOutputColumn(const RowGroup & row_group, RowSubgrou
     return state.column;
 }
 
+/// Shrinking reallocates a column, so it is skipped when only a little memory would be freed.
+static constexpr size_t min_bytes_to_free_by_shrinking = 4096;
+
 void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx)
 {
     {
@@ -4642,10 +4714,26 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         if (rows_pass == filter.size())
             return;
 
+        /// Columns referenced only by this subgroup can then be filtered in place.
+        block.clear();
+
         /// Filter columns that were already read.
+        const bool filter_in_place = rows_pass * 2 >= filter.size();
         for (auto & state : row_subgroup.output)
-            if (state.column)
+        {
+            if (!state.column)
+                continue;
+            if (filter_in_place && canInplaceFilter(state.column, filter_column))
+            {
+                auto mutable_column = IColumn::mutate(std::move(state.column));
+                mutable_column->filter(filter);
+                if (mutable_column->allocatedBytes() >= mutable_column->byteSize() + min_bytes_to_free_by_shrinking)
+                    mutable_column->shrinkToFit();
+                state.column = std::move(mutable_column);
+            }
+            else
                 state.column = state.column->filter(filter, /*result_size_hint=*/ rows_pass);
+        }
         materialize_replicated();
 
         /// Expand the filter to correspond to all column subchunk rows, rather than only rows that
@@ -4862,7 +4950,6 @@ void Reader::addToColumnsCacheWrite(
     /// which can be far off (for dictionary-encoded strings, it is the average length of the values of the
     /// dictionary, not of the rows), and an entry retains - and is charged for - all its memory.
     /// The column has just been formed and is not shared yet, so this reallocates it in place, without a copy.
-    static constexpr size_t min_bytes_to_free_by_shrinking = 4096;
     if (column->use_count() == 1 && column->allocatedBytes() >= column->byteSize() + min_bytes_to_free_by_shrinking)
     {
         auto mutable_column = IColumn::mutate(std::move(column));
