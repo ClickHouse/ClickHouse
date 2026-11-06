@@ -43,13 +43,15 @@ FROM (EXPLAIN PIPELINE
     ANY RIGHT JOIN psg_c AS c ON s.id = c.id
     SETTINGS join_algorithm = 'sorted_merge,hash');
 
--- The result matches a plain `hash` join.
+-- The result matches a plain `hash` join. `ANY RIGHT JOIN` keeps an arbitrary one of the several `psg_a` rows with
+-- the same `id` (which one depends on the order the parallel streams deliver them), so only the columns that are
+-- equal for all of them are compared: `s.id`, not `s.v`.
 SELECT 'grace_hash_declines_asof_result',
-    (SELECT sum(s.v + c.v), count()
+    (SELECT sum(s.id + c.v), count(), countIf(s.id != 0)
      FROM (SELECT a.id AS id, a.v AS v FROM psg_a AS a ASOF INNER JOIN psg_b AS b ON a.id = b.id AND a.ts >= b.ts SETTINGS join_algorithm = 'grace_hash,sorted_merge,hash') AS s
      ANY RIGHT JOIN psg_c AS c ON s.id = c.id
      SETTINGS join_algorithm = 'sorted_merge,hash')
-  = (SELECT sum(s.v + c.v), count()
+  = (SELECT sum(s.id + c.v), count(), countIf(s.id != 0)
      FROM (SELECT a.id AS id, a.v AS v FROM psg_a AS a ASOF INNER JOIN psg_b AS b ON a.id = b.id AND a.ts >= b.ts SETTINGS join_algorithm = 'hash') AS s
      ANY RIGHT JOIN psg_c AS c ON s.id = c.id
      SETTINGS join_algorithm = 'hash');
