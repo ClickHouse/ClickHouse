@@ -1,0 +1,7 @@
+Modified columns: `id` String -> UInt64, `s` String -> LowCardinality(String)
+Added columns: `al` UInt32
+ORDER BY uses columns: `id` String, `s` String
+PRIMARY KEY uses columns: `id` String
+PARTITION BY uses columns: `dt` String
+SAMPLE BY uses columns: `id` String
+TTL uses columns: `dt` String
