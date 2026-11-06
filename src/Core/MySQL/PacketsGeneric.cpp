@@ -35,8 +35,8 @@ OKPacket::OKPacket(
 
 size_t OKPacket::getPayloadSize() const
 {
-    /// The header, `affected_rows` and `last_insert_id` are all length-encoded values, so the
-    /// size of `last_insert_id` must be accounted for as well; it is not always one byte.
+    /// The header is one byte, and both `affected_rows` and `last_insert_id` are length-encoded,
+    /// so the size of `last_insert_id` must be accounted for as well; it is not always one byte.
     size_t result = 1 + getLengthEncodedNumberSize(affected_rows) + getLengthEncodedNumberSize(last_insert_id);
 
     if (capabilities & CLIENT_PROTOCOL_41)
