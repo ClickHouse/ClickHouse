@@ -46,9 +46,16 @@ Focus on investigating issues while [ClickHouse Observability](/clickstack/obser
 
 ClickStack consists of three core components:
 
+<div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '24px', margin: '24px 0' }}>
+  <img src="/images/clickstack/stack-illustration.svg" alt="ClickStack's three layers: ClickStack UI on top, ClickHouse for storage and querying in the middle, and OpenTelemetry for collection at the base." width="560" height="744" style={{ width: '240px', maxWidth: '100%', height: 'auto', margin: 0 }} />
+  <div style={{ flex: '1 1 240px' }}>
+
 1. **ClickStack UI** – a purpose-built frontend for exploring and visualizing observability data
-2. **OpenTelemetry collector** – a custom-built, preconfigured collector with an opinionated schema for logs, traces, and metrics
-3. **ClickHouse** – the high-performance analytical database at the heart of the stack
+2. **ClickHouse** – the high-performance analytical database at the heart of the stack
+3. **OpenTelemetry collector** – a custom-built, preconfigured collector with an opinionated schema for logs, traces, and metrics
+
+  </div>
+</div>
 
 These components can be deployed together in a fully **self-managed ClickStack Open Source** setup. See the [architecture guide](/clickstack/architecture) for how they fit together and how application state is stored.
 

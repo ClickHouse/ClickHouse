@@ -1075,12 +1075,6 @@
       "/clickstack/self-configured/migration/elastic/types"
     ]
   ],
-  "/clickstack/observability": [
-    [
-      "ClickHouse Observability",
-      "/clickstack/observability"
-    ]
-  ],
   "/clickstack/observability/api-reference": [
     [
       "Open Source",
@@ -1399,6 +1393,12 @@
     [
       "ClickHouse Observability",
       "/clickstack/observability/ingesting-data/sdks/golang"
+    ]
+  ],
+  "/clickstack/observability/ingesting-data/sdks/instrument-with-ai": [
+    [
+      "ClickHouse Observability",
+      "/clickstack/observability/ingesting-data/sdks/instrument-with-ai"
     ]
   ],
   "/clickstack/observability/ingesting-data/sdks/java": [

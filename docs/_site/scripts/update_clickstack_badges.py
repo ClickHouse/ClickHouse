@@ -22,6 +22,9 @@ for page in sorted(set(pages(json.loads((root / 'clickstack/navigation.json').re
         raise FileNotFoundError(source)
     # Mintlify serves navigation file paths; legacy slug frontmatter is not a route.
     slug = '/' + re.sub(r'/index$', '', page)
+    # Product landing pages already identify the offering in their title.
+    if slug in ('/clickstack', '/clickstack/observability'):
+        continue
     relative = page.removeprefix('clickstack/')
     product = 'Open Source'
     for prefix, label in [('observability/', 'ClickHouse Observability'), ('self-configured/', 'Self configured')]:
