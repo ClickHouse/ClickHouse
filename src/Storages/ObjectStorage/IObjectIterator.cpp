@@ -11,6 +11,7 @@
 #include <Core/Settings.h>
 #include <Core/Defines.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -125,14 +126,14 @@ std::string ObjectInfo::getPathOrPathToArchiveIfArchive() const
 
 ObjectIteratorSplitByBuckets::ObjectIteratorSplitByBuckets(
     ObjectIterator iterator_,
-    const String & format_,
+    StorageObjectStorageConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
     const ContextPtr & context_,
     const StorageID & storage_id_,
     FormatFilterInfoPtr format_filter_info_)
     : WithContext(context_)
     , iterator(iterator_)
-    , format(format_)
+    , configuration(std::move(configuration_))
     , object_storage(object_storage_)
     , format_settings(getFormatSettings(context_))
     , storage_id(storage_id_)
@@ -150,7 +151,7 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
         if (!last_object_info)
             return {};
 
-        auto splitter = FormatFactory::instance().getSplitter(format);
+        auto splitter = FormatFactory::instance().getSplitter(configuration->format);
         if (splitter)
         {
             std::vector<size_t> matching_row_groups;
@@ -189,8 +190,11 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
             }
             if (file_bucket_infos.empty())
             {
-                auto buffer = createReadBuffer(last_object_info->relative_path_with_metadata, object_storage, getContext(), log);
-                file_bucket_infos = splitter->splitToBuckets(bucket_size, *buffer, format_settings);
+                auto & object = last_object_info->relative_path_with_metadata;
+                if (!object.metadata)
+                    object.metadata = StorageObjectStorageSource::tryMakeObjectMetadataFromTableRecords(*configuration, *last_object_info, storage_id);
+                auto buffer = createReadBuffer(object, object_storage, getContext(), log);
+                file_bucket_infos = splitter->splitToBuckets(bucket_size, *buffer, object, format_settings, getContext());
             }
             for (const auto & file_bucket : file_bucket_infos)
             {

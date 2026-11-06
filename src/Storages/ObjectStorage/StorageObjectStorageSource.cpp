@@ -482,6 +482,24 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     return result;
 }
 
+std::optional<ObjectMetadata> StorageObjectStorageSource::tryMakeObjectMetadataFromTableRecords(
+    const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, const StorageID & storage_id)
+{
+    /// Parquet and ORC locate their footer from the size, so a wrong size fails the read instead of dropping rows.
+    const auto size_from_table = object_info.getFileSizeHint();
+    const auto file_format = object_info.getFileFormat().value_or(configuration.format);
+    if (!configuration.dataFilesAreImmutable()
+        || storage_id.uuid == UUIDHelpers::Nil
+        || !size_from_table
+        || !(boost::iequals(file_format, "Parquet") || boost::iequals(file_format, "ORC")))
+        return std::nullopt;
+
+    return ObjectMetadata::fromTableRecords(
+        size_from_table,
+        fmt::format("immutable:{}:{}:{}:{}", toString(storage_id.uuid), storage_id.database_name,
+                    configuration.getDataSourceDescription(), *size_from_table));
+}
+
 /// The object identifier already uses the full path, so files that share a base name in
 /// different directories do not collide. For general (non-data-lake) remote objects the path
 /// alone is not a stable identity - an object can be overwritten in place under the same path -
@@ -1405,24 +1423,16 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             auto metadata_object = object_info->relative_path_with_metadata;
             metadata_object.relative_path = path;
 
-            /// Parquet and ORC locate their footer from the size, so a wrong size fails the read instead of dropping rows.
-            const auto size_from_table = object_info->getFileSizeHint();
-            const auto file_format = object_info->getFileFormat().value_or(configuration->format);
-            const bool use_size_from_table = configuration->dataFilesAreImmutable()
-                && storage_id.uuid != UUIDHelpers::Nil
-                && size_from_table
-                && (boost::iequals(file_format, "Parquet") || boost::iequals(file_format, "ORC"))
-                && !with_tags
+            std::optional<ObjectMetadata> metadata_from_table;
+            if (!with_tags
                 && !read_from_format_info.requested_virtual_columns.contains("_etag")
                 && !read_from_format_info.requested_virtual_columns.contains("_time")
-                && !query_settings.ignore_non_existent_file;
+                && !query_settings.ignore_non_existent_file)
+                metadata_from_table = tryMakeObjectMetadataFromTableRecords(*configuration, *object_info, storage_id);
 
-            if (use_size_from_table)
+            if (metadata_from_table)
             {
-                object_info->setObjectMetadata(ObjectMetadata::fromTableRecords(
-                    size_from_table,
-                    fmt::format("immutable:{}:{}:{}:{}", toString(storage_id.uuid), storage_id.database_name,
-                                configuration->getDataSourceDescription(), *size_from_table)));
+                object_info->setObjectMetadata(*metadata_from_table);
             }
             else if (query_settings.ignore_non_existent_file)
             {

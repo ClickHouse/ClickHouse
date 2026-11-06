@@ -160,9 +160,11 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
         }
 
         String file_identifier;
+        String placement_identifier;
         if (send_over_whole_archive && object_info->isArchive())
         {
             file_identifier = getSchedulingIdentifier(object_info, send_over_whole_archive);
+            placement_identifier = file_identifier;
             LOG_TEST(log, "Will send over the whole archive {} to replicas. "
                      "This will be suboptimal, consider turning on "
                      "cluster_function_process_archive_on_multiple_nodes setting", file_identifier);
@@ -170,9 +172,10 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
         else
         {
             file_identifier = object_info->getIdentifier();
+            placement_identifier = object_info->getIdentifier(/*include_file_bucket_info=*/ false);
         }
 
-        size_t file_replica_idx = getReplicaForFile(file_identifier);
+        size_t file_replica_idx = getReplicaForFile(placement_identifier);
         if (file_replica_idx == number_of_current_replica)
         {
             LOG_TRACE(
