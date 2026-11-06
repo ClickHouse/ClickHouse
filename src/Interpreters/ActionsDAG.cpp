@@ -488,9 +488,6 @@ void ActionsDAG::Node::updateOwnHash(
             }
         }
     }
-
-    for (const auto & child : children)
-        child->updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
 }
 
 UInt64 ActionsDAG::getOutputIdentity(const std::string & name, const Block * input_header) const
