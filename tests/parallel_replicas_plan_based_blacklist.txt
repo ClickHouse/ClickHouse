@@ -24,6 +24,12 @@
 03143_cte_scope
 03156_nullable_number_tips
 
+    A `GLOBAL IN` set built from `input()` has no plan to ship, so plan-based keeps the read local
+05237_parallel_replicas_input_table_function
+
+    A read with Top-K dynamic filtering stays local (`__topKFilter` cannot be shipped), so the query does not use parallel replicas
+04717_parallel_replicas_min_rows_per_replica_right_join
+
     A query that is not distributed keeps a split aggregation and a `ParallelReplicasSplit` step
     https://github.com/ClickHouse/ClickHouse/issues/128539
 02377_optimize_sorting_by_input_stream_properties_2
