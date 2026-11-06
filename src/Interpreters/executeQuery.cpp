@@ -310,6 +310,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int FAULT_INJECTED;
     extern const int QUERY_IS_PROHIBITED;
+    extern const int QUOTA_EXCEEDED;
 }
 
 namespace FailPoints
@@ -346,7 +347,23 @@ static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
         ast.checkSize(settings[Setting::max_ast_elements]);
 }
 
-static bool getResultFromQueryResultCache(
+/// The outcome of a probe of the query result cache.
+///
+/// The probe itself does not record the cache profile events (`hasCacheEntryForKey(false)`): a query rejected by an
+/// exhausted quota over profile events must not consume another `QueryCacheHits` / `QueryCacheMisses` / `QueryCacheOnDisk*`.
+/// A hit is recorded by `getResultFromQueryResultCache` itself after the quota check, and `quota_ignored` / `hit_quota`
+/// are returned so that the caller charges the hit's profile events at the end. A miss is only marked as pending: the
+/// caller records it after the quota check of the query that is executed instead.
+struct QueryResultCacheProbeResult
+{
+    bool hit = false;
+    bool quota_ignored = false;                          ///< The cached entry was stored by a query exempt from quotas.
+    std::shared_ptr<const EnabledQuota> hit_quota;       ///< The quota to charge the profile events of reading the entry to.
+    bool miss_pending = false;                           ///< The cache missed and the miss is not recorded yet.
+    bool miss_probed_on_disk = false;                    ///< The on-disk backend was probed (for `QueryCacheOnDiskMisses`).
+};
+
+static QueryResultCacheProbeResult getResultFromQueryResultCache(
     const QueryResultCachePtr & query_cache,
     const ASTPtr & ast,
     const ContextPtr & context,
@@ -357,8 +374,10 @@ static bool getResultFromQueryResultCache(
     const LoggerPtr & logger,
     QueryResultDetails & result_details,
     QueryResultCacheOnDiskPtr query_result_cache_on_disk,
+    UInt64 normalized_query_hash,
     QueryFlags flags)
 {
+    QueryResultCacheProbeResult result;
     /// If it is a non-internal SELECT, and passive (read) use of the query result cache is enabled, and the cache knows the query,
     /// then set a pipeline with a source populated by the query result cache.
     chassert(!can_use_query_result_cache || settings_copy.has_value());
@@ -367,14 +386,14 @@ static bool getResultFromQueryResultCache(
         const bool read_from_memory_cache = (*settings_copy)[Setting::enable_reads_from_query_cache];
         const bool read_from_on_disk_cache = query_result_cache_on_disk && query_result_cache_on_disk->readsEnabled();
         if (!read_from_memory_cache && !read_from_on_disk_cache)
-            return false;
+            return result;
 
         QueryResultCache::Key key(ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
         
         /// The probes do not record the cache profile events yet (`hasCacheEntryForKey(false)`): a query rejected by an
         /// exhausted quota over profile events must not consume another `QueryCacheHits` / `QueryCacheMisses` /
         /// `QueryCacheOnDisk*`. A hit is recorded below after the quota check, a miss after the quota check of the
-        /// query that is executed instead (see `query_result_cache_miss_pending`).
+        /// query that is executed instead (see `QueryResultCacheProbeResult::miss_pending`).
         std::optional<QueryResultCacheReader> reader;
         bool probed_on_disk = false;
         if (read_from_memory_cache)
@@ -395,18 +414,18 @@ static bool getResultFromQueryResultCache(
 
         if (!reader)
         {
-            query_result_cache_miss_pending = true;
-            query_result_cache_miss_probed_on_disk = probed_on_disk;
+            result.miss_pending = true;
+            result.miss_probed_on_disk = probed_on_disk;
         }
         else
         {
             /// A query exempt from quotas stays exempt when it is served from the cache (see
             /// `QueryResultCache::Key::ignore_quota`).
-            quota_ignored = reader->entryIgnoresQuota();
-            if (!quota_ignored)
-                query_result_cache_hit_quota = context->getQuota();
-            if (query_result_cache_hit_quota)
-                query_result_cache_hit_quota->checkExceededProfileEvents(normalized_query_hash);
+            result.quota_ignored = reader->entryIgnoresQuota();
+            if (!result.quota_ignored)
+                result.hit_quota = context->getQuota();
+            if (result.hit_quota)
+                result.hit_quota->checkExceededProfileEvents(normalized_query_hash);
 
             /// Records `QueryCacheOnDiskHits` (for a hit on disk), `QueryCacheAgeSeconds`, and what reading the entry amounts
             /// to (`QueryCacheReadRows`, `QueryCacheReadBytes`, `QueryCacheOnDiskReadBytes`).
@@ -424,10 +443,10 @@ static bool getResultFromQueryResultCache(
             res.pipeline = std::move(pipeline);
             query_result_cache_usage = QueryResultCacheUsage::Read;
             LOG_DEBUG(logger, "Restore QueryPipeline from query_cache");
-            return true;
+            result.hit = true;
         }
     }
-    return false;
+    return result;
 }
 
 /// Intermediate result from the vector query plan cache restore attempt.
@@ -445,6 +464,10 @@ struct VectorQueryPlanCacheRestoreResult
     bool vector_ast_restored = false;                    ///< True if AST was successfully restored from cache
     bool skip_ast_processing = false;                    ///< True if the restored AST can skip re-normalization
     bool query_result_cache_hit = false;                 ///< True if the query result cache had a matching entry
+    /// A miss of the query result cache is not recorded yet: `tryExecuteQueryPlan` records it if the query is executed
+    /// from a cached plan, `executeQueryImpl` otherwise (after its quota checks), see `QueryResultCacheProbeResult`.
+    bool query_result_cache_miss_pending = false;        ///< True if the query result cache missed and the miss is not recorded yet
+    bool query_result_cache_miss_probed_on_disk = false; ///< True if the on-disk backend was probed
     bool can_use_query_result_cache = false;             ///< True if query result cache is eligible for this query
     QueryResultCacheOnDiskPtr query_result_cache_on_disk;///< On-disk query result cache snapshot for this query
     bool is_select = false;                              ///< True if the query is a SELECT statement
@@ -545,7 +568,16 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
                             result.query_result_cache_on_disk = QueryResultCacheOnDisk::getFromSettings(*result.settings_copy);
                         }
 
-                        result.query_result_cache_hit = getResultFromQueryResultCache(
+                        /// A cached result is charged against the quotas over profile events like the query itself, so the
+                        /// check needs the same normalized query hash that `executeQueryImpl` computes for the query.
+                        const char * query_begin = result.new_query.empty() ? begin : result.new_query.data();
+                        const char * query_end = result.new_query.empty() ? end : result.new_query.data() + result.new_query.size();
+                        const UInt64 normalized_query_hash = normalizedQueryHash(
+                            wipeSensitiveDataAndCutToLength(
+                                String(query_begin, query_end), settings[Setting::log_queries_cut_to_length], true),
+                            false);
+
+                        auto query_result_cache_probe_result = getResultFromQueryResultCache(
                             query_result_cache,
                             result.ast,
                             context,
@@ -555,7 +587,11 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
                             res,
                             logger,
                             result_details, result.query_result_cache_on_disk,
+                            normalized_query_hash,
                             flags);
+                        result.query_result_cache_hit = query_result_cache_probe_result.hit;
+                        result.query_result_cache_miss_pending = query_result_cache_probe_result.miss_pending;
+                        result.query_result_cache_miss_probed_on_disk = query_result_cache_probe_result.miss_probed_on_disk;
                         if (!result.query_result_cache_hit)
                         {
                             if (reader.hasCacheEntryForKey(true))
@@ -606,6 +642,11 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
         }
         catch (...)
         {
+            /// A failed restore is not fatal: the query is executed without the cache. A query rejected by an exhausted
+            /// quota over profile events, however, must not be executed, so its exception is propagated.
+            if (getCurrentExceptionCode() == ErrorCodes::QUOTA_EXCEEDED)
+                throw;
+
             result = VectorQueryPlanCacheRestoreResult{};
             result.vector_query_for_plan_cache.assign(begin, end);
             LOG_DEBUG(logger, "found and restore QueryPlanCache failed: {}", getCurrentExceptionMessage(false));
@@ -710,6 +751,8 @@ struct CacheProbeOutput
     bool skip_ast_processing = false;                      ///< True if restored AST skips re-normalization
     bool can_use_query_result_cache = false;               ///< True if query result cache is eligible
     bool query_result_cache_entry_exists = false;          ///< True if a query result cache entry was found
+    bool query_result_cache_miss_pending = false;          ///< True if the query result cache missed and the miss is not recorded yet
+    bool query_result_cache_miss_probed_on_disk = false;   ///< True if the on-disk backend was probed
     ASTPtr ast;                                            ///< Restored AST from cache
     std::unique_ptr<QueryPlan> cached_plan;                ///< Restored QueryPlan from cache
     size_t params_size = 0;                                ///< Number of extracted parameters
@@ -2046,6 +2089,12 @@ static std::optional<BlockIO> tryExecuteQueryPlan(
     res.exception_callbacks.push_back(std::move(exception_callback));
 
     output.cached_plan.reset();
+
+    /// The miss of the query result cache is recorded only now: `executeQueryImpl` does not run for a query that is
+    /// executed from a cached plan, so its own deferred recording would never happen.
+    if (output.query_result_cache_miss_pending)
+        QueryResultCacheReader::recordMiss(output.query_result_cache_miss_probed_on_disk);
+
     // LOG_ERROR(logger, "after buildQueryPipeline:{}us", test_watch.elapsedMicroseconds());
     return std::move(res);
 }
@@ -2088,6 +2137,10 @@ static std::optional<BlockIO> tryExecuteFromCache(
     output.skip_ast_processing = cache_result.skip_ast_processing;
     output.can_use_query_result_cache = cache_result.can_use_query_result_cache;
     output.query_result_cache_entry_exists = cache_result.query_result_cache_hit;
+    /// `tryExecuteQueryPlan` records the miss if the query is executed from a cached plan. Otherwise the query falls
+    /// through to `executeQueryImpl`, which probes the query result cache again and records the miss after its quota checks.
+    output.query_result_cache_miss_pending = cache_result.query_result_cache_miss_pending;
+    output.query_result_cache_miss_probed_on_disk = cache_result.query_result_cache_miss_probed_on_disk;
     output.ast = std::move(cache_result.ast);
     output.cached_plan = std::move(cache_result.cached_plan);
     output.params_size = cache_result.params_size;
@@ -4122,9 +4175,11 @@ static BlockIO executeQueryImpl(
         context->setCanUseQueryResultCache(can_use_query_result_cache);
         if (!async_insert)
         {
+            bool query_result_cache_miss_pending = false;
+            bool query_result_cache_miss_probed_on_disk = false;
             if (!query_result_cache_entry_exists)
             {
-                query_result_cache_entry_exists = getResultFromQueryResultCache(
+                auto query_result_cache_probe_result = getResultFromQueryResultCache(
                     query_result_cache,
                     out_ast,
                     context,
@@ -4134,7 +4189,13 @@ static BlockIO executeQueryImpl(
                     res,
                     logger,
                     result_details, query_result_cache_on_disk,
+                    normalized_query_hash,
                     flags);
+                query_result_cache_entry_exists = query_result_cache_probe_result.hit;
+                query_result_cache_miss_pending = query_result_cache_probe_result.miss_pending;
+                query_result_cache_miss_probed_on_disk = query_result_cache_probe_result.miss_probed_on_disk;
+                quota_ignored = query_result_cache_probe_result.quota_ignored;
+                query_result_cache_hit_quota = std::move(query_result_cache_probe_result.hit_quota);
             }
 
             /// Where the result columns come from. Collected for `QueryFlags::collect_result_column_origins` and to be stored with
@@ -4259,6 +4320,11 @@ static BlockIO executeQueryImpl(
                             quota->usedPerNormalizedHash(normalized_query_hash);
                         }
                     }
+
+                    /// The miss of the query result cache is recorded only now, after the quota checks: a query rejected by an
+                    /// exhausted quota over profile events does not consume another `QueryCacheMisses` / `QueryCacheOnDiskMisses`.
+                    if (query_result_cache_miss_pending)
+                        QueryResultCacheReader::recordMiss(query_result_cache_miss_probed_on_disk);
 
                     /// Invoke HTTP 100-Continue callback after quota checks are completed
                     if (http_continue_callback && !internal)
