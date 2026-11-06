@@ -11,6 +11,7 @@
 #include <Columns/ColumnString.h>
 
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/SingleValueData.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/FieldVisitorSum.h>
 #include <Common/NaNUtils.h>
@@ -800,6 +801,8 @@ auto parseArguments(const std::string & name, const DataTypes & arguments)
             name, args[0]->getName());
 
     DataTypePtr keys_type = array_type->getNestedType();
+    /// The keys are kept in a `Field`.
+    assertTypeCanBeKeptInField(name, *keys_type);
 
     DataTypes values_types;
     values_types.reserve(args.size() - 1);

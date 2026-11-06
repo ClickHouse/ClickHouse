@@ -2,6 +2,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/SingleValueData.h>
 
 #include <base/sort.h>
 #include <algorithm>
@@ -412,6 +413,9 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
     }
     else
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} does not support this number of arguments", name);
+
+    /// The values of a type without a specialization are kept in a `Field`.
+    assertTypeCanBeKeptInField(name, *argument_types[0]);
 
     if (max_elems > group_array_sorted_sort_strategy_max_elements_threshold)
         return createAggregateFunctionGroupArraySortedImpl<GroupArraySortedSort>(argument_types[0], parameters, max_elems);

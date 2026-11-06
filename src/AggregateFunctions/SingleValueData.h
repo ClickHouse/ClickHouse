@@ -438,6 +438,12 @@ static_assert(sizeof(SingleValueReference) <= SingleValueDataBase::MAX_STORAGE_S
 
 bool canUseFieldForValueData(const DataTypePtr & value_type);
 
+/// For aggregate functions that keep the values of their argument in a `Field`.
+/// A `Field` does not keep the discriminator of a `Variant` value, and `UUID` and `UUID2` share `Field::Types::UUID` with
+/// different layouts of the value. So when a `Variant` in `type` has both a `UUID` and a `UUID2` alternative, inserting such
+/// a `Field` back into the `Variant` can choose the other alternative and change the identifier. Throws in this case.
+void assertTypeCanBeKeptInField(const String & function_name, const IDataType & type);
+
 /// min, max, any, anyLast, anyHeavy, etc...
 template <template <typename, bool...> class AggregateFunctionTemplate, bool unary, bool... isMin>
 static IAggregateFunction *

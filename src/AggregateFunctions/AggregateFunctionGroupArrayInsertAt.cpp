@@ -1,5 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/SingleValueData.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -227,6 +228,8 @@ AggregateFunctionPtr createAggregateFunctionGroupArrayInsertAt(
 
     if (argument_types.size() != 2)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function groupArrayInsertAt requires two arguments.");
+
+    assertTypeCanBeKeptInField(name, *argument_types[0]);
 
     return std::make_shared<AggregateFunctionGroupArrayInsertAtGeneric>(argument_types, parameters);
 }
