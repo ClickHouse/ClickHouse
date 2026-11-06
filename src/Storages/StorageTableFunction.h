@@ -80,6 +80,20 @@ public:
     bool hasUnreplicatedTableDataOnDisk() const override { return has_unreplicated_table_data_on_disk; }
     bool supportsReplication() const override { return false; }
 
+    /// `RENAME` calls this with the database mutex held, and resolving a table function there can look up
+    /// a table in the same database (`view` analyzes its query) and deadlock. No storage a table function
+    /// yields restricts a rename, so an unresolved one has nothing to check.
+    void checkTableCanBeRenamed(const StorageID & new_name) const override
+    {
+        if (auto storage = nestedIfResolved())
+            storage->checkTableCanBeRenamed(new_name);
+    }
+    void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override
+    {
+        if (auto storage = nestedIfResolved())
+            storage->checkTableCanBeRenamedByDatabaseRename(new_database_name);
+    }
+
     /// A table defined from a table function keeps no data of its own, so `BACKUP` and `RESTORE` store and recreate only
     /// its definition. Forwarding these would run the table function, which fails while its source is missing.
     void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const override
