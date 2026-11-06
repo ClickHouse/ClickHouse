@@ -1293,6 +1293,11 @@ private:
         const IDataType * type_string = left_const ? left_type.get() : right_type.get();
         const DataTypePtr & type_to_compare = !left_const ? left_type : right_type;
 
+        /// An `Enum` is compared with a `FixedString` as its name, zero-padded like a `String` (see `executeGeneric`).
+        /// Converting the constant to an exact `Enum` value would compare it in another domain than a full column.
+        if (isFixedString(*type_string) && isEnum(removeNullable(removeLowCardinality(type_to_compare))))
+            return nullptr;
+
         Field string_value = left_const ? left_const->getField() : right_const->getField();
 
         auto is_string_not_in_enum = [this, &string_value]<typename T>(const EnumValues<T> * enum_values) -> bool
