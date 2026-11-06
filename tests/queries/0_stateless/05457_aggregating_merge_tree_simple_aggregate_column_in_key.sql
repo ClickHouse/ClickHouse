@@ -218,6 +218,33 @@ CREATE TABLE t_unselected_element (k UInt64, c SimpleAggregateFunction(sum, UInt
 PARTITION BY tupleElement(tuple(c, k), 2) ORDER BY k;
 CREATE TABLE t_unselected_nested_element (k UInt64, c SimpleAggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree
 PARTITION BY tupleElement(tupleElement(tuple(tuple(c, k)), 1), 2) ORDER BY k;
+-- Also an element of a constructed tuple that `getSubcolumn` does not select, and an ordinary element of a tuple with an aggregated
+-- element selected from a constructed tuple, by `tupleElement` or by `getSubcolumn`, at `CREATE` and when an ALTER makes the other
+-- value aggregated.
+CREATE TABLE t_unselected_subcolumn (k UInt64, c SimpleAggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree
+PARTITION BY getSubcolumn(tuple(c, k), '2') ORDER BY k;
+CREATE TABLE t_unselected_subcolumn_alter (k UInt64, c UInt64) ENGINE = AggregatingMergeTree
+PARTITION BY getSubcolumn(tuple(c, k), '2') ORDER BY k;
+ALTER TABLE t_unselected_subcolumn_alter MODIFY COLUMN c SimpleAggregateFunction(sum, UInt64);
+CREATE TABLE t_constructed_other_element (k UInt64, x Tuple(a SimpleAggregateFunction(sum, UInt64), b UInt64))
+ENGINE = AggregatingMergeTree PARTITION BY tupleElement(tupleElement(tuple(x), 1), 'b') % 2 ORDER BY k
+SETTINGS allow_tuple_element_aggregation = 1;
+CREATE TABLE t_constructed_other_element_alter (k UInt64, x Tuple(a UInt64, b UInt64))
+ENGINE = AggregatingMergeTree PARTITION BY tupleElement(tupleElement(tuple(x), 1), 'b') % 2 ORDER BY k
+SETTINGS allow_tuple_element_aggregation = 1;
+ALTER TABLE t_constructed_other_element_alter MODIFY COLUMN x Tuple(a SimpleAggregateFunction(sum, UInt64), b UInt64);
+CREATE TABLE t_constructed_other_subcolumn (k UInt64, x Tuple(a SimpleAggregateFunction(sum, UInt64), b UInt64))
+ENGINE = AggregatingMergeTree PARTITION BY getSubcolumn(tuple(x), '1.b') % 2 ORDER BY k
+SETTINGS allow_tuple_element_aggregation = 1;
+INSERT INTO t_unselected_subcolumn VALUES (1, 2);
+INSERT INTO t_unselected_subcolumn VALUES (1, 3);
+OPTIMIZE TABLE t_unselected_subcolumn FINAL;
+SELECT 'unselected subcolumn', _partition_id, k, c FROM t_unselected_subcolumn WHERE getSubcolumn(tuple(c, k), '2') = 1;
+INSERT INTO t_constructed_other_element VALUES (1, (2, 1));
+INSERT INTO t_constructed_other_element VALUES (1, (3, 1));
+OPTIMIZE TABLE t_constructed_other_element FINAL;
+SELECT 'constructed other element', _partition_id, k, x FROM t_constructed_other_element
+WHERE tupleElement(tupleElement(tuple(x), 1), 'b') % 2 = 1;
 INSERT INTO t_unselected_element VALUES (1, 2);
 INSERT INTO t_unselected_element VALUES (1, 3);
 OPTIMIZE TABLE t_unselected_element FINAL;
@@ -230,6 +257,24 @@ CREATE TABLE t_selected_nested_element (k UInt64, c SimpleAggregateFunction(sum,
 PARTITION BY tupleElement(tupleElement(tuple(tuple(c, k)), 1), 1) ORDER BY k; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_computed_from_constructed (k UInt64, c SimpleAggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree
 PARTITION BY cityHash64(tuple(c, k)) % 2 ORDER BY k; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_selected_subcolumn (k UInt64, c SimpleAggregateFunction(sum, UInt64)) ENGINE = AggregatingMergeTree
+PARTITION BY getSubcolumn(tuple(c, k), '1') ORDER BY k; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_selected_subcolumn_alter (k UInt64, c UInt64) ENGINE = AggregatingMergeTree
+PARTITION BY getSubcolumn(tuple(c, k), '1') ORDER BY k;
+ALTER TABLE t_selected_subcolumn_alter MODIFY COLUMN c SimpleAggregateFunction(sum, UInt64); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_constructed_element (k UInt64, x Tuple(a SimpleAggregateFunction(sum, UInt64), b UInt64))
+ENGINE = AggregatingMergeTree PARTITION BY tupleElement(tupleElement(tuple(x), 1), 'a') % 2 ORDER BY k
+SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_constructed_element_alter (k UInt64, x Tuple(a UInt64, b UInt64))
+ENGINE = AggregatingMergeTree PARTITION BY tupleElement(tupleElement(tuple(x), 1), 'a') % 2 ORDER BY k
+SETTINGS allow_tuple_element_aggregation = 1;
+ALTER TABLE t_constructed_element_alter MODIFY COLUMN x Tuple(a SimpleAggregateFunction(sum, UInt64), b UInt64); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_constructed_subcolumn (k UInt64, x Tuple(a SimpleAggregateFunction(sum, UInt64), b UInt64))
+ENGINE = AggregatingMergeTree PARTITION BY getSubcolumn(tuple(x), '1.a') % 2 ORDER BY k
+SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_computed_from_constructed_element (k UInt64, x Tuple(a SimpleAggregateFunction(sum, UInt64), b UInt64))
+ENGINE = AggregatingMergeTree PARTITION BY cityHash64(tupleElement(tuple(x), 1)) % 2 ORDER BY k
+SETTINGS allow_tuple_element_aggregation = 1; -- { serverError BAD_ARGUMENTS }
 SELECT 'unused defaults created';
 
 -- A sorting key of a tuple type is not supported with `allow_tuple_element_aggregation`, and is reported as such.
@@ -272,3 +317,10 @@ DROP TABLE t_unused_computed_default_alter;
 DROP TABLE t_unused_computed_default_element;
 DROP TABLE t_unselected_element;
 DROP TABLE t_unselected_nested_element;
+DROP TABLE t_unselected_subcolumn;
+DROP TABLE t_unselected_subcolumn_alter;
+DROP TABLE t_constructed_other_element;
+DROP TABLE t_constructed_other_element_alter;
+DROP TABLE t_constructed_other_subcolumn;
+DROP TABLE t_selected_subcolumn_alter;
+DROP TABLE t_constructed_element_alter;

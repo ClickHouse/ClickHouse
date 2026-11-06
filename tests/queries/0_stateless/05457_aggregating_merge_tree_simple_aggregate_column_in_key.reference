@@ -12,6 +12,8 @@ in sorting key element	1-1	(1,30)
 selectors created
 selected defaults created
 unused default	1	1	5
+unselected subcolumn	1	1	5
+constructed other element	1	1	(5,1)
 unselected element	1	1	5
 unused defaults created
 plain created
