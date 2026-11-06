@@ -1,6 +1,6 @@
 ---
 slug: /clickstack/observability/ingesting-data/vector
-description: 'Ingesting with Vector setup and configuration for ClickHouse Observability and self-managed deployments.'
+description: 'Send data to self-managed ClickHouse Observability using the Vector ClickHouse sink.'
 title: 'Ingesting with Vector'
 toc_max_heading_level: 2
 doc_type: 'guide'
@@ -8,23 +8,16 @@ keywords: ['clickstack', 'vector', 'traces', 'observability', 'telemetry']
 sidebarTitle: 'Vector'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-
 import { Image } from "/snippets/components/Image.jsx";
 import InstallingVector from '/snippets/_installing_vector.mdx';
 import VectorSampleData from '/snippets/_vector_sample_data.mdx';
 
 <Tabs>
-<Tab title="Fully managed">
-
-<BetaBadge label="Beta offering" />
+<Tab title="Self-managed">
 
 <Note>
-The ClickHouse Observability configuration for this guide is still being adapted. For the managed OTLP endpoint and authentication settings, see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry). The **Self-managed** tab contains the existing self-managed instructions.
+This guide applies only to **self-managed ClickHouse Observability**. Vector's ClickHouse sink writes directly to tables that you manage. Fully managed ClickHouse Observability requires OTLP ingestion; see [Ingesting with OpenTelemetry](/clickstack/observability/ingesting-data/opentelemetry#fully-managed) for endpoint and authentication settings.
 </Note>
-
-</Tab>
-<Tab title="Self-managed">
 
 [Vector](https://vector.dev) is a high-performance, vendor-neutral observability data pipeline. It is commonly used to collect, transform, and route logs and metrics from a wide range of sources, and is especially popular for log ingestion due to its flexibility and low resource footprint.
 
