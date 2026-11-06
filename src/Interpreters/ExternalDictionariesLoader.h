@@ -77,6 +77,9 @@ public:
     /// Resolves the name without loading the dictionary, so that access can be checked before loading.
     ResolvedDictionary resolveDictionary(const std::string & dictionary_name, ContextPtr query_context) const;
 
+    /// The same, resolving an unqualified name against the given database rather than the current database of the query.
+    ResolvedDictionary resolveDictionary(const std::string & dictionary_name, const std::string & current_database_name, ContextPtr query_context) const;
+
     /// The same, and checks that the user of `query_context` has `dictGet` on the dictionary.
     ResolvedDictionary resolveDictionaryCheckingAccess(const std::string & dictionary_name, ContextPtr query_context) const;
 

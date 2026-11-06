@@ -4285,30 +4285,57 @@ void InterpreterCreateQuery::checkDictionaryEngineAccess(ASTCreateQuery & create
     if (internal)
         return;
 
-    auto check = [&](ASTStorage & storage)
+    /// An unqualified dictionary name is resolved against the current database of the query that creates the storage
+    /// and loads the dictionary, so check the dictionary that this query resolves to.
+    const String & server_default_database = getContext()->getGlobalContext()->getCurrentDatabase();
+    String execution_database;
+    if (!create.cluster.empty())
     {
-        if (!storage.engine || storage.engine->name != "Dictionary")
-            return;
+        /// A replay of `ON CLUSTER` runs in the default database of the server.
+        execution_database = server_default_database;
+    }
+    else
+    {
+        String database_name = getContext()->resolveDatabase(create.getDatabase());
+        auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+        /// A replay in a `Replicated` database runs in that database.
+        execution_database = database && database->shouldReplicateQuery(getContext(), query_ptr) ? database_name : getContext()->getCurrentDatabase();
+    }
 
+    auto check = [&](ASTs & arguments, const String & current_database)
+    {
         /// A wrong number of arguments is reported when the storage is created.
-        auto & arguments = storage.engine->arguments;
-        if (!arguments || arguments->children.size() != 1)
+        if (arguments.size() != 1)
             return;
 
         /// Keep the name that is checked in the query, so that a replica executing it does not evaluate the argument
         /// to another dictionary.
-        arguments->children[0] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments->children[0], getContext());
-        auto dictionary_name = checkAndGetLiteralArgument<String>(arguments->children[0], "dictionary_name");
+        arguments[0] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[0], getContext());
+        auto dictionary_name = checkAndGetLiteralArgument<String>(arguments[0], "dictionary_name");
         const auto & external_loader = getContext()->getExternalDictionariesLoader();
-        StorageDictionary::checkDictionaryAccess(external_loader.resolveDictionary(dictionary_name, getContext()).id, getContext());
+        StorageDictionary::checkDictionaryAccess(external_loader.resolveDictionary(dictionary_name, current_database, getContext()).id, getContext());
+    };
+
+    auto check_engine = [&](ASTStorage & storage)
+    {
+        if (storage.engine && storage.engine->name == "Dictionary" && storage.engine->arguments)
+            check(storage.engine->arguments->children, execution_database);
     };
 
     if (create.storage)
-        check(*create.storage);
+        check_engine(*create.storage);
     if (create.targets)
     {
         for (ASTStorage * inner_engine : create.targets->getInnerEngines())
-            check(*inner_engine);
+            check_engine(*inner_engine);
+    }
+
+    /// `CREATE TABLE ... AS dictionary(...)` creates the storage with the global context, see `doCreateTable`.
+    if (create.as_table_function)
+    {
+        auto & function = create.as_table_function->as<ASTFunction &>();
+        if (function.name == "dictionary" && function.arguments)
+            check(function.arguments->children, server_default_database);
     }
 }
 

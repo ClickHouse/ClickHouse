@@ -235,7 +235,13 @@ const std::string & ExternalDictionariesLoader::ResolvedDictionary::getKey() con
 ExternalDictionariesLoader::ResolvedDictionary
 ExternalDictionariesLoader::resolveDictionary(const std::string & dictionary_name, ContextPtr query_context) const
 {
-    auto resolved = resolveDictionaryNameUnchecked(dictionary_name, query_context->getCurrentDatabase());
+    return resolveDictionary(dictionary_name, query_context->getCurrentDatabase(), query_context);
+}
+
+ExternalDictionariesLoader::ResolvedDictionary ExternalDictionariesLoader::resolveDictionary(
+    const std::string & dictionary_name, const std::string & current_database_name, ContextPtr query_context) const
+{
+    auto resolved = resolveDictionaryNameUnchecked(dictionary_name, current_database_name);
 
     if (!has(resolved.key))
     {
