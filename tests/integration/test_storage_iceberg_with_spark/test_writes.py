@@ -65,6 +65,21 @@ def test_writes(started_cluster_iceberg_with_spark, format_version, storage_type
     with pytest.raises(Exception):
         instance.query(f"INSERT INTO {TABLE_NAME} VALUES (777777777777);", settings={"allow_insert_into_iceberg": 1})
 
+    # A failed commit of a parallel insert removes the files of all its sinks.
+    instance.query("SYSTEM ENABLE FAILPOINT iceberg_writes_cleanup")
+    with pytest.raises(Exception):
+        instance.query(
+            f"INSERT INTO {TABLE_NAME} SELECT number FROM numbers(1000)",
+            settings={
+                "allow_insert_into_iceberg": 1,
+                "max_insert_threads": 4,
+                "max_threads": 4,
+                "max_block_size": 10,
+                "max_insert_block_size": 10,
+                "min_insert_block_size_rows": 10,
+                "min_insert_block_size_bytes": 1,
+            },
+        )
 
     files = default_download_directory(
         started_cluster_iceberg_with_spark,
