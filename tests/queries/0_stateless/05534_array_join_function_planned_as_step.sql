@@ -1,4 +1,4 @@
--- the planner plans the arrayJoin function as an ARRAY JOIN step, also without plan optimizations
+-- arrayJoin is planned as an ARRAY JOIN step, also without plan optimizations
 
 SET query_plan_lower_array_join_function = 1;
 SET legacy_array_join_function_nondeterministic_evaluation = 0;

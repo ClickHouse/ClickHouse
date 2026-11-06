@@ -1,4 +1,4 @@
--- the planner plans arrayJoin in additional_table_filters as an ARRAY JOIN step
+-- arrayJoin in additional_table_filters is planned as an ARRAY JOIN step
 
 SET query_plan_lower_array_join_function = 1;
 SET legacy_array_join_function_nondeterministic_evaluation = 0;

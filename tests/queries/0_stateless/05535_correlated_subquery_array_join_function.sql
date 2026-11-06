@@ -1,4 +1,4 @@
--- decorrelation passes the ArrayJoin step through
+-- arrayJoin in a correlated subquery
 
 DROP TABLE IF EXISTS t_outer;
 CREATE TABLE t_outer (k UInt32, a Array(UInt32)) ENGINE = Memory;
