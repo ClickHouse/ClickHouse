@@ -26,6 +26,9 @@ public:
     void execute(Block & block) override;
     void finalize(const MutableDataPartPtr & data_part) const override;
 
+    /// The default of a `Nested` subcolumn keeps the array sizes, which it shares with the other subcolumns.
+    static ColumnPtr createArraysOfDefaults(const IDataType & type, const IColumn & column_with_sizes);
+
 private:
     const String column_name;
     const ExpressionActionsPtr default_expression;

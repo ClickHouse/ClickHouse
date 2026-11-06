@@ -1,5 +1,6 @@
 #include <Processors/TTL/TTLColumnAlgorithm.h>
 #include <Columns/ColumnArray.h>
+#include <DataTypes/DataTypeArray.h>
 
 namespace DB
 {
@@ -32,12 +33,11 @@ TTLColumnAlgorithm::TTLColumnAlgorithm(
         new_ttl_info.ttl_finished = true;
 }
 
-/// The default of a `Nested` subcolumn keeps the array sizes, which it shares with the other subcolumns.
-static ColumnPtr createArraysOfDefaults(const IColumn & column)
+ColumnPtr TTLColumnAlgorithm::createArraysOfDefaults(const IDataType & type, const IColumn & column_with_sizes)
 {
-    const auto & column_array = assert_cast<const ColumnArray &>(column);
-    auto data = column_array.getData().cloneEmpty();
-    data->insertManyDefaults(column_array.getData().size());
+    const auto & column_array = assert_cast<const ColumnArray &>(column_with_sizes);
+    const auto & nested_type = assert_cast<const DataTypeArray &>(type).getNestedType();
+    auto data = nested_type->createColumnConstWithDefaultValue(column_array.getData().size())->convertToFullColumnIfConst();
     return ColumnArray::create(std::move(data), column_array.getOffsetsPtr());
 }
 
@@ -69,7 +69,7 @@ void TTLColumnAlgorithm::execute(Block & block)
 
         auto default_column = executeExpressionAndGetColumn(default_expression, block, default_column_name);
         if (!default_column && shares_nested_offsets)
-            default_column = createArraysOfDefaults(*column_with_type.column);
+            default_column = createArraysOfDefaults(*column_with_type.type, *column_with_type.column);
         if (default_column)
         {
             default_column = default_column->convertToFullColumnIfConst();
@@ -104,7 +104,7 @@ void TTLColumnAlgorithm::execute(Block & block)
             {
                 default_column = executeExpressionAndGetColumn(default_expression, block, default_column_name);
                 if (!default_column && shares_nested_offsets)
-                    default_column = createArraysOfDefaults(*values_column);
+                    default_column = createArraysOfDefaults(*column_with_type.type, *values_column);
                 if (default_column)
                     default_column = default_column->convertToFullColumnIfConst();
                 default_column_initialized = true;
@@ -139,7 +139,8 @@ void TTLColumnAlgorithm::finalize(const MutableDataPartPtr & data_part) const
 {
     data_part->ttl_infos.columns_ttl[column_name] = new_ttl_info;
     data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info);
-    if (is_fully_empty)
+    /// Without the column a part may lose the array sizes it shares, which the defaults above keep.
+    if (is_fully_empty && !shares_nested_offsets)
         data_part->expired_columns.insert(column_name);
 }
 
