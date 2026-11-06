@@ -97,10 +97,10 @@ public:
 
         operator const Buffer &() const { return buffer; } /// NOLINT(google-explicit-constructor)
 
-        Position begin() const { return buffer.begin(); }
-        Position end() const { return buffer.end(); }
-        size_t size() const { return buffer.size(); }
-        bool empty() const { return buffer.empty(); }
+        [[nodiscard]] Position begin() const { return buffer.begin(); }
+        [[nodiscard]] Position end() const { return buffer.end(); }
+        [[nodiscard]] size_t size() const { return buffer.size(); }
+        [[nodiscard]] bool empty() const { return buffer.empty(); }
 
         void resize(size_t size)
         {
@@ -147,7 +147,7 @@ public:
             std::swap(padded_end, other.padded_end);
         }
 
-        bool isPadded() const { return padded_end != nullptr; }
+        [[nodiscard]] bool isPadded() const { return padded_end != nullptr; }
 
     private:
         struct PaddedTag
@@ -192,7 +192,7 @@ public:
     }
 
     /// get buffer
-    const Buffer & internalBuffer() const { return internal_buffer; }
+    [[nodiscard]] const Buffer & internalBuffer() const { return internal_buffer; }
 
     /// get the part of the buffer from which you can read / write data
     WorkingBuffer & buffer() { return working_buffer; }

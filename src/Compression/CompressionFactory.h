@@ -210,7 +210,7 @@ private:
 
     /// `FirstApplicable` without a data type: a codec that compresses with the selection for no type, but keeps the
     /// description of the whole combinator (with `Default` replaced by `current_default`) to be resolved again later.
-    CompressionCodecPtr getFirstApplicableWithoutType(const ASTPtr & element, const CompressionCodecPtr & current_default) const;
+    [[nodiscard]] CompressionCodecPtr getFirstApplicableWithoutType(const ASTPtr & element, const CompressionCodecPtr & current_default) const;
 
     /// Throws if `FirstApplicable` (or a nested `Multiple`) `element` has a lossy codec among its alternatives.
     /// Used without a data type: the combinator is then selected again for the type of every column, so a lossy

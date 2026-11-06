@@ -212,7 +212,7 @@ private:
             return response->responses;
         }
 
-        size_t size() const { return num_requests; }
+        [[nodiscard]] size_t size() const { return num_requests; }
     };
 
     std::variant<std::monostate, RegularResponses, ResponsesWithFutures, MultiResponseWithFuture> responses;
