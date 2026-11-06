@@ -5,6 +5,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Huge values of settings must not lead to unsigned integer overflows (checked by UBSan).
+# The sanity checks of the settings write warnings to the logs: they are not interesting here.
+CLICKHOUSE_CLIENT=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=error/g')
 
 # The number of streams of `zeros_mt` is limited by a `LIMIT` without multiplying it.
 $CLICKHOUSE_CLIENT -q "
@@ -23,7 +25,7 @@ SELECT uniqExact(number) FROM numbers(3)
 SETTINGS count_distinct_optimization = 0, optimize_uniq_exact_radix_partitioning = 1, max_threads = 1,
     collect_hash_table_stats_during_aggregation = 0, max_bytes_before_external_group_by = 1,
     max_bytes_ratio_before_external_group_by = 0, min_bytes_before_external_group_by = 0,
-    min_free_disk_space_for_temporary_data = 18446744073709551615" 2>&1 | grep -o -E '^3$|NOT_ENOUGH_SPACE' | sed 's/NOT_ENOUGH_SPACE/3/'
+    min_free_disk_space_for_temporary_data = 18446744073709551615" 2>&1 | grep -q -E '^3$|NOT_ENOUGH_SPACE' && echo 'OK'
 
 # The row group thresholds of `Parquet` output are compared without overflowing.
 $CLICKHOUSE_CLIENT -q "
