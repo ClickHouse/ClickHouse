@@ -3,7 +3,8 @@
 # Tag no-fasttest: needs S3 (MinIO)
 
 # `SELECT count()` over Parquet files split into row group buckets must count the rows of the
-# bucket, not of the whole file, for every task.
+# bucket, not of the whole file, for every task, and must not overwrite the row count of the whole
+# file in the cache of `use_cache_for_count_from_files`, which the last query at `file` granularity reads.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -17,7 +18,7 @@ ${CLICKHOUSE_CLIENT} --output_format_parquet_row_group_size=10000 --output_forma
 echo "--- row groups"
 ${CLICKHOUSE_CLIENT} --query "SELECT num_row_groups > 1 FROM s3('${FILE}', 'test', 'testtest', 'ParquetMetadata')"
 
-for granularity in file bucket; do
+for granularity in file bucket file; do
     echo "--- ${granularity}"
     ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM s3Cluster('test_cluster_two_shards_localhost', '${FILE}', 'test', 'testtest', 'Parquet') SETTINGS cluster_table_function_split_granularity = '${granularity}', cluster_table_function_buckets_batch_size = 0"
     ${CLICKHOUSE_CLIENT} --query "SELECT count(), sum(id) FROM s3Cluster('test_cluster_two_shards_localhost', '${FILE}', 'test', 'testtest', 'Parquet') SETTINGS cluster_table_function_split_granularity = '${granularity}', cluster_table_function_buckets_batch_size = 0"
