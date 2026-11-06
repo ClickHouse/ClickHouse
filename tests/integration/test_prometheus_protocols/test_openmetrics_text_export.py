@@ -23,21 +23,23 @@ node = cluster.add_instance(
 
 _TEXT_EXPORT_METRIC = "demo_http_requests_total"
 
-# FORMAT Prometheus resolves the flat (name, value, labels, timestamp, ...) columns; the TimeSeries
-# engine does not support reading via SELECT directly, so the view joins the inner
-# timeSeriesSamples / timeSeriesTags / timeSeriesMetricFamilies table functions.
+# FORMAT Prometheus resolves the flat (name, value, labels, timestamp, ...) columns; the view joins
+# the inner timeSeriesSamples / timeSeriesTags / timeSeriesMetricFamilies table functions. A row of
+# the samples table holds the (timestamp, value) points of one series within one time bucket, so the
+# view unnests them into one row per sample.
 _PROMETHEUS_EXPORT_VIEW = """
 CREATE VIEW prometheus_exposition AS
 SELECT
     CAST(tags.metric_name AS String)                  AS name,
-    samples.value                                     AS value,
+    point.2                                           AS value,
     coalesce(CAST(metrics.help AS String), '')        AS help,
     coalesce(CAST(metrics.type AS String), '')        AS type,
     coalesce(CAST(metrics.unit AS String), '')        AS unit,
     CAST(mapFilter((k, v) -> (k != '__name__'), tags.tags) AS Map(String, String)) AS labels,
-    toUnixTimestamp64Milli(samples.timestamp)         AS timestamp
-FROM timeSeriesSamples(prometheus) AS samples
-INNER JOIN timeSeriesTags(prometheus) AS tags ON samples.id = tags.id
+    toUnixTimestamp64Milli(point.1)                   AS timestamp
+FROM timeSeriesSamples(prometheus) AS s
+ARRAY JOIN s.samples AS point
+INNER JOIN timeSeriesTags(prometheus) AS tags ON s.id = tags.id
 LEFT JOIN timeSeriesMetricFamilies(prometheus) AS metrics ON tags.metric_name = metrics.metric_family
 WHERE tags.metric_name = {metric:String}
 """
@@ -55,8 +57,9 @@ SELECT
     coalesce(CAST(metrics.type AS String), '')        AS type,
     coalesce(CAST(metrics.unit AS String), '')        AS unit,
     CAST(mapFilter((k, v) -> (k != '__name__'), tags.tags) AS Map(String, String)) AS tags,
-    [(s.timestamp, s.value)]                          AS samples
+    [point]                                           AS samples
 FROM timeSeriesSamples(prometheus) AS s
+ARRAY JOIN s.samples AS point
 INNER JOIN timeSeriesTags(prometheus) AS tags ON s.id = tags.id
 LEFT JOIN timeSeriesMetricFamilies(prometheus) AS metrics ON tags.metric_name = metrics.metric_family
 WHERE tags.metric_name = {metric:String}
