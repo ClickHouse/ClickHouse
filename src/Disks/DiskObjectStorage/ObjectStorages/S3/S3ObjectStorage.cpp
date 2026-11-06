@@ -346,6 +346,12 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         const auto & settings = query_context->getSettingsRef();
         request_settings.updateFromSettings(settings, /* if_changed */ true, settings[Setting::s3_validate_request_settings]);
     }
+    else if (const auto global_context = Context::getGlobalContextInstance();
+             !global_context || global_context->getSettingsRef()[Setting::s3_validate_request_settings])
+    {
+        /// A table merges its endpoint section into the stored settings without validating them.
+        request_settings.validateUploadSettings();
+    }
 
     ThreadPoolCallbackRunnerUnsafe<void> scheduler;
     if (write_settings.s3_allow_parallel_part_upload)

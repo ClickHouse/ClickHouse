@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -156,13 +158,13 @@ def test_disk_reload_with_contradicting_endpoint_section_is_refused(started_clus
 
 
 def test_data_lake_on_disk_takes_query_settings_on_top(started_cluster):
-    # Disk and endpoint section give min 64 MiB > max 32 MiB, the query settings raise max to 128 MiB.
+    # The endpoint section (max 8 MiB) is invalid alone, the disk raises min to 64 MiB and the query settings max to 128 MiB.
     configure(
         disk=f"<s3_min_upload_part_size>{64 * MIB}</s3_min_upload_part_size>",
         s3=endpoint(
             "d",
             "merged_disk",
-            f"<max_upload_part_size>{32 * MIB}</max_upload_part_size>",
+            f"<max_upload_part_size>{8 * MIB}</max_upload_part_size>",
         ),
     )
     settings = {"s3_max_upload_part_size": 128 * MIB, "allow_insert_into_iceberg": 1}
@@ -172,6 +174,67 @@ def test_data_lake_on_disk_takes_query_settings_on_top(started_cluster):
         "CREATE TABLE t_ice (x UInt8) ENGINE = Iceberg(path = 'iceberg_s4') SETTINGS disk = 'merged_s3'",
         settings=settings,
     )
+    # Without the query override, the merged disk and endpoint settings are rejected.
+    error = node.query_and_get_error(
+        "INSERT INTO t_ice VALUES (1)", settings={"allow_insert_into_iceberg": 1}
+    )
+    assert (
+        "max_upload_part_size (8.00 MiB) can't be less than setting min_upload_part_size (64.00 MiB)"
+        in error
+    )
     node.query("INSERT INTO t_ice VALUES (1)", settings=settings)
     assert node.query("SELECT count() FROM t_ice", settings=settings).strip() == "1"
     node.query("DROP TABLE t_ice SYNC", settings=settings)
+
+
+def test_query_settings_do_not_reach_other_endpoints(started_cluster):
+    # The restart leaves the endpoint settings to be built by the first S3 query below.
+    configure(
+        s3=endpoint("a", "a", f"<min_upload_part_size>{5 * MIB}</min_upload_part_size>")
+        + endpoint("b", "b", "")
+    )
+    url_a = f"'{MINIO}/a/x.tsv', {CREDS}, 'TSV', 'x UInt8'"
+    url_b = f"'{MINIO}/b/x.tsv', {CREDS}, 'TSV', 'x UInt8'"
+
+    node.query(
+        f"INSERT INTO FUNCTION s3({url_a}) SETTINGS s3_truncate_on_insert = 1 SELECT 1",
+        settings={"s3_max_upload_part_size": 8 * MIB},
+    )
+
+    # Another session with the default settings (min 16 MiB) does not get the 8 MiB maximum of that query.
+    node.query(
+        f"INSERT INTO FUNCTION s3({url_b}) SETTINGS s3_truncate_on_insert = 1 SELECT 2"
+    )
+    assert node.query(f"SELECT x FROM s3({url_b})").strip() == "2"
+
+
+def test_background_write_checks_endpoint_settings(started_cluster):
+    configure()
+    node.query("DROP TABLE IF EXISTS t_buf SYNC")
+    node.query("DROP TABLE IF EXISTS t_bg SYNC")
+    # Unpartitioned: the sink opens its write buffer before the insert gets a query thread group.
+    node.query(
+        f"CREATE TABLE t_bg (s String) ENGINE = S3('{MINIO}/bg/{uuid.uuid4()}.bin', {CREDS}, 'RawBLOB')"
+    )
+    node.query(
+        "CREATE TABLE t_buf (s String) ENGINE = Buffer(default, t_bg, 1, 1, 2, 1000000000, 1000000000, 1000000000, 1000000000)"
+    )
+
+    # Invalid in any combination, and a Buffer flush applies no query settings on top.
+    configure(
+        s3=endpoint(
+            "bg",
+            "bg",
+            "<upload_part_size_multiply_parts_count_threshold>0</upload_part_size_multiply_parts_count_threshold>",
+        ),
+        restart=False,
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+    node.query("INSERT INTO t_buf VALUES ('x')")
+    node.wait_for_log_line(
+        "backgroundFlush.*upload_part_size_multiply_parts_count_threshold cannot be zero"
+    )
+    assert node.query("SELECT 1").strip() == "1"
+
+    node.query("DROP TABLE t_buf SYNC")
+    node.query("DROP TABLE t_bg SYNC")
