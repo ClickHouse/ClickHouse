@@ -50,6 +50,10 @@ OK
 OK
 -- not granted column
 ACCESS_DENIED SELECT(restricted)
+-- not granted virtual column
+ACCESS_DENIED SELECT(_table)
+-- granted virtual column
+OK
 -- granted subcolumn
 OK
 -- not granted subcolumn
@@ -84,6 +88,7 @@ c_lambda
 c_field
 c_pub
 c_dict
+p_virtual
 s_a
 d_quoted
 f

@@ -101,6 +101,8 @@ check "${U_COLS}" "field of a lambda parameter" "ALTER TABLE t ADD COLUMN c_fiel
 check "${U_COLS}" "granted alias column" "ALTER TABLE t ADD COLUMN c_pub String ALIAS concat(pub, '!')"
 check "${U_COLS}" "dictionary identifier" "ALTER TABLE t ADD COLUMN c_dict String ALIAS dictGet(d, 'v', id)"
 check "${U_COLS}" "not granted column" "ALTER TABLE t ADD COLUMN c_restricted String ALIAS restricted" restricted
+check "${U_COLS}" "not granted virtual column" "ALTER TABLE t ADD COLUMN c_virtual String ALIAS _table" _table
+check "${U_PARTIAL}" "granted virtual column" "ALTER TABLE t ADD COLUMN p_virtual String ALIAS _table"
 check "${U_SUB}" "granted subcolumn" "ALTER TABLE t ADD COLUMN s_a String ALIAS tup.a"
 check "${U_SUB}" "not granted subcolumn" "ALTER TABLE t ADD COLUMN s_b String ALIAS tup.b" tup.b
 check "${U_DOT}" "quoted dotted column" "ALTER TABLE t ADD COLUMN d_quoted String ALIAS \`q.k\`"
