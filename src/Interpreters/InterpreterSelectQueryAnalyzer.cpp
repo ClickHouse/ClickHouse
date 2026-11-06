@@ -5,7 +5,6 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
-#include <Analyzer/Passes/DisableParallelReplicasPass.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
