@@ -1,7 +1,14 @@
 #include <Analyzer/Resolve/TableExpressionData.h>
+#include <Common/Exception.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CYCLIC_ALIASES;
+}
 
 void AnalysisTableExpressionData::ensureColumnMembershipSetsArePopulated() const
 {
@@ -41,16 +48,26 @@ ColumnNodePtr AnalysisTableExpressionData::tryGetColumnNode(std::string_view col
     if (it == node_map.end())
         return nullptr;
 
+    /// Checked before `unresolved_alias_columns`: a copy of this data may have started the resolution.
+    auto in_resolution_it = std::ranges::find(alias_columns_in_resolution, column_name);
+    if (in_resolution_it != alias_columns_in_resolution.end())
+    {
+        std::string cycle;
+        for (; in_resolution_it != alias_columns_in_resolution.end(); ++in_resolution_it)
+            cycle += backQuote(*in_resolution_it) + " -> ";
+        cycle += backQuote(column_name);
+        throw Exception(ErrorCodes::CYCLIC_ALIASES, "Cyclic aliases: {}", cycle);
+    }
+
     auto unresolved_it = unresolved_alias_columns.find(column_name);
     if (unresolved_it != unresolved_alias_columns.end())
     {
-        /// Erase before resolving: resolution of the ALIAS expression can look up this column again
-        /// (it is an error of cyclic aliases), and the lookup has to get the column without recursion.
-        unresolved_alias_columns.erase(unresolved_it);
         /// A copy of this data shares the nodes of the map, and could have resolved this column already.
         /// `node_map` is not changed by the resolution (only the nodes in it), so `it` remains valid.
         if (!it->second->hasExpression())
             resolve_alias_column(it->second);
+        /// Erased after resolving, so the column stays unresolved when its resolution throws.
+        unresolved_alias_columns.erase(unresolved_it);
     }
 
     return it->second;
