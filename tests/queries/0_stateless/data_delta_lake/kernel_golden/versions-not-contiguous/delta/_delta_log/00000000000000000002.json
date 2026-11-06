@@ -1,0 +1,2 @@
+{"commitInfo":{"timestamp":1603723996094,"operation":"Manual Update","operationParameters":{},"readVersion":1,"isBlindAppend":true}}
+{"add":{"path":"foo","partitionValues":{},"size":1,"modificationTime":1603723996088,"dataChange":true}}
