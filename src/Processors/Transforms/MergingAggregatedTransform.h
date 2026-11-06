@@ -1,6 +1,5 @@
 #pragma once
 #include <Processors/IAccumulatingTransform.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
@@ -39,7 +38,7 @@ private:
         AggregatingTransformParamsPtr params;
     };
 
-    using GroupingSets = VectorWithMemoryTracking<GroupingSet>;
+    using GroupingSets = std::vector<GroupingSet>;
     GroupingSets grouping_sets;
 
     UInt64 total_input_rows = 0;

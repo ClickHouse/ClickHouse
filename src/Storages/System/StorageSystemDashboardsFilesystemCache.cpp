@@ -49,6 +49,7 @@ WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
     avg(ProfileEvent_CachedReadBufferReadFromCacheBytes) AS ReadFromCache,
     avg(ProfileEvent_CachedReadBufferReadFromSourceBytes) AS ReadFromSource,
+    avg(ProfileEvent_CachedReadBufferPredownloadedBytes) AS Predownloaded,
     avg(ProfileEvent_CachedReadBufferPredownloadedFromSourceBytes) AS PredownloadedFromSource
 FROM merge('system', '^metric_log')
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
@@ -319,8 +320,7 @@ WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
     avg(ProfileEvent_FilesystemCacheEvictedFileSegments) AS Evicted,
     avg(ProfileEvent_FilesystemCacheBackgroundEvictedFileSegments) AS BackgroundEvicted,
-    avg(ProfileEvent_FilesystemCacheDowngradedFileSegments) AS Downgraded,
-    avg(ProfileEvent_FilesystemCachePromotedFileSegments) AS Promoted
+    avg(ProfileEvent_FilesystemCacheDowngradedFileSegments) AS Downgraded
 FROM merge('system', '^metric_log')
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
 GROUP BY t
@@ -465,9 +465,7 @@ WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
     toDateTimeOrDefault({to:String}, '', now()) AS to
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
     avg(ProfileEvent_FileSegmentWaitMicroseconds) / 1000000 AS WaitSeconds,
-    avg(ProfileEvent_FileSegmentWaitWithoutDataMicroseconds) / 1000000 AS WaitWithoutDataSeconds,
-    avg(ProfileEvent_FileSegmentWaitTimeouts) AS Timeouts,
-    avg(ProfileEvent_FileSegmentWaitWithoutData) AS WithoutData
+    avg(ProfileEvent_FileSegmentWaitTimeouts) AS Timeouts
 FROM merge('system', '^metric_log')
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
 GROUP BY t
@@ -484,6 +482,7 @@ SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS 
     avg(ProfileEvent_FileSegmentWriteMicroseconds) / 1000000 AS Write,
     avg(ProfileEvent_FileSegmentCompleteMicroseconds) / 1000000 AS Complete,
     avg(ProfileEvent_FileSegmentHolderCompleteMicroseconds) / 1000000 AS HolderComplete,
+    avg(ProfileEvent_FileSegmentRemoveMicroseconds) / 1000000 AS Remove,
     avg(ProfileEvent_FileSegmentIncreasePriorityMicroseconds) / 1000000 AS IncreasePriority
 FROM merge('system', '^metric_log')
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to

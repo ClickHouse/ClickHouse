@@ -457,10 +457,7 @@ CHJIT::CHJIT()
     symbol_resolver->registerSymbol("bzero", reinterpret_cast<void *>(&bzero));
 #endif
 
-    /// Initialization (not a cast) picks the right overload where libc++ declares an
-    /// overload set for fmod, and stays tidy-clean where musl declares a single C function.
-    double (*fmod_double)(double, double) = &fmod;
-    symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(fmod_double));
+    symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(static_cast<double (*)(double, double)>(&fmod)));
     /// Signed and unsigned variants must be kept together: see the comment above the extern declarations.
     symbol_resolver->registerSymbol("__divti3", reinterpret_cast<void *>(&__divti3));
     symbol_resolver->registerSymbol("__modti3", reinterpret_cast<void *>(&__modti3));
@@ -484,11 +481,6 @@ CHJIT::CompiledModule CHJIT::compileModule(std::function<void (llvm::Module &)> 
 {
     std::lock_guard lock(jit_lock);
 
-    /// A fresh context per compile: `LLVMContext` never frees the constants it interns, and the optimizer
-    /// creates new ones for every distinct literal, so a long-lived context grows without bound.
-    /// Declared before `module`, which must be destroyed first.
-    auto context = JITAllocationScope::run([] { return std::make_unique<llvm::LLVMContext>(); });
-
     /// LLVM-touching work is wrapped in `JITAllocationScope` so its allocations land in the JIT
     /// arena. Caller-side ClickHouse code that runs between LLVM calls (error handling further
     /// down, symbol-name strings, result-map population) is intentionally left outside the scopes
@@ -499,7 +491,7 @@ CHJIT::CompiledModule CHJIT::compileModule(std::function<void (llvm::Module &)> 
     /// belong in the JIT arena alongside the module itself.
     auto module = JITAllocationScope::run([&]
     {
-        auto new_module = createModuleForCompilation(*context);
+        auto new_module = createModuleForCompilation();
         compile_function(*new_module);
         return new_module;
     });
@@ -510,7 +502,7 @@ CHJIT::CompiledModule CHJIT::compileModule(std::function<void (llvm::Module &)> 
     return module_info;
 }
 
-std::unique_ptr<llvm::Module> CHJIT::createModuleForCompilation(llvm::LLVMContext & context)
+std::unique_ptr<llvm::Module> CHJIT::createModuleForCompilation()
 {
     std::unique_ptr<llvm::Module> module = std::make_unique<llvm::Module>("jit" + std::to_string(current_module_key), context);
     module->setDataLayout(layout);

@@ -57,8 +57,6 @@ struct NameAndTypePair;
 
 struct MergeTreeSettings;
 
-class StringValueFilter;
-
 /** Returns the separator byte that the HiveText output format uses at the given nesting level,
   * following Apache Hive's LazySimpleSerDe separator list: index 0 is the fields delimiter,
   * 1 the collection-items delimiter, 2 the map-keys delimiter, and deeper levels default to
@@ -160,22 +158,11 @@ public:
       * Default implementations of ...WithMultipleStreams methods will call serializeBinaryBulk, deserializeBinaryBulk for single stream.
       */
 
-    struct Substream;
-
     struct ISubcolumnCreator
     {
         virtual DataTypePtr create(const DataTypePtr & prev) const = 0;
         virtual SerializationPtr create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const = 0;
         virtual ColumnPtr create(const ColumnPtr & prev) const = 0;
-
-        /// A creator wraps whichever subcolumn was selected beneath it, but `create` receives only that
-        /// subcolumn's type, column and serialization, which cannot tell a null map from any other `UInt8`.
-        /// Returns the creator to use instead of this one, or `nullptr` to keep this one.
-        virtual std::shared_ptr<const ISubcolumnCreator> specializeForSelectedSubcolumn(const Substream &) const
-        {
-            return nullptr;
-        }
-
         virtual ~ISubcolumnCreator() = default;
     };
 
@@ -186,16 +173,6 @@ public:
         virtual ~SerializeBinaryBulkState() = default;
     };
 
-    struct DeserializeBinaryBulkState;
-    using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
-    using DeserializeBinaryBulkStatePtr = std::shared_ptr<DeserializeBinaryBulkState>;
-
-    /// Maps original states to their clones, so that a state shared by several readers stays shared among the clones.
-    struct DeserializeBinaryBulkStateCloneContext
-    {
-        std::unordered_map<const DeserializeBinaryBulkState *, DeserializeBinaryBulkStatePtr> cloned;
-    };
-
     struct DeserializeBinaryBulkState
     {
         DeserializeBinaryBulkState() = default;
@@ -203,13 +180,11 @@ public:
 
         virtual ~DeserializeBinaryBulkState() = default;
 
-        /// Returns the clone made earlier in the same context if there is one.
-        DeserializeBinaryBulkStatePtr clone(DeserializeBinaryBulkStateCloneContext & context) const;
-
-    protected:
-        /// Nested states must be cloned through clone with the same context.
-        virtual DeserializeBinaryBulkStatePtr cloneImpl(DeserializeBinaryBulkStateCloneContext &) const { return std::make_shared<DeserializeBinaryBulkState>(); }
+        virtual std::shared_ptr<DeserializeBinaryBulkState> clone() const { return std::make_shared<DeserializeBinaryBulkState>(); }
     };
+
+    using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
+    using DeserializeBinaryBulkStatePtr = std::shared_ptr<DeserializeBinaryBulkState>;
 
     struct SubstreamData
     {
@@ -326,12 +301,6 @@ public:
             ObjectSharedDataCopySizes,
             ObjectSharedDataCopyPathsIndexes,
             ObjectSharedDataCopyValues,
-            ObjectTypedSharedData,
-            ObjectTypedSharedDataHeader,
-            ObjectTypedSharedDataPathsData,
-            ObjectTypedSharedDataPathsMarks,
-            /// A SHARED typed path of Object: the identity element of the resolved path, with no file of its own.
-            ObjectTypedSharedDataPath,
             ObjectStructure,
 
             MapKeyValue,
@@ -366,14 +335,6 @@ public:
         /// Index of a bucket in Object shared data serialization or Map serialization with buckets.
         size_t bucket = 0;
 
-        /// For a stream shared with other subcolumns: this subcolumn's bytes of it, set by the serialization that knows them.
-        struct SizeHint
-        {
-            size_t compressed = 0;
-            size_t uncompressed = 0;
-        };
-        std::optional<SizeHint> size_hint;
-
         /// Data for current substream.
         SubstreamData data;
 
@@ -407,6 +368,8 @@ public:
     struct EnumerateStreamsSettings
     {
         SubstreamPath path;
+        /// When resolving a subcolumn, serializers may omit streams that cannot contribute to its lookup.
+        std::optional<std::string_view> subcolumn_name;
         bool position_independent_encoding = true;
         /// If set to false, don't enumerate dynamic subcolumns
         /// (such as dynamic types in Dynamic column or dynamic paths in JSON column).
@@ -538,13 +501,6 @@ public:
         /// compressed block at a stream boundary. Used only in MergeTree; 0 - start a new block at every boundary.
         size_t min_compress_block_size = 0;
 
-        /// False if the granule being written continues in the next call. Used only in MergeTree.
-        bool granule_is_complete = true;
-
-        /// Serialization version of the typed shared data of Object. 0 is reserved, so the field is not value-initialized.
-        MergeTreeObjectTypedSharedDataSerializationVersion object_typed_shared_data_serialization_version
-            = MergeTreeObjectTypedSharedDataSerializationVersion::V1;
-
         /// Type of MergeTree data part we serialize data from if any.
         /// Some serializations may differ from type part for more optimal deserialization.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
@@ -571,9 +527,10 @@ public:
         /// Callback to start prefetches for specific substreams during prefixes deserialization.
         StreamCallback prefixes_prefetch_callback;
         /// ThreadPool that can be used to read prefixes of subcolumns in parallel.
-        /// Setting it requires all the callbacks in these settings to be thread safe: prefixes are then
-        /// deserialized from several pool threads at once, each one owning a disjoint set of subcolumns.
         ThreadPool * prefixes_deserialization_thread_pool = nullptr;
+        /// True when an ancestor parallel prefix-deserialization level already made the callbacks above
+        /// thread safe; a nested level then reuses them instead of wrapping again (avoids a second mutex).
+        bool prefix_deserialization_callbacks_are_thread_safe = false;
 
         /// If set to true, all prefixes and suffixes should be read from separate specialized substreams.
         /// For example prefix for discriminators in Variant column should be read from a separate
@@ -629,12 +586,6 @@ public:
         /// Used by `SerializationLowCardinality` as a cheap prefilter before
         /// it verifies a single-dictionary part from the `DictionaryKeys` stream.
         std::function<bool(const SubstreamPath &, size_t max_transitions)> has_uniform_marks_callback;
-
-        /// If set, string values that do not match the filter may be replaced with empty strings
-        /// during deserialization. It is extracted from a substring search condition in PREWHERE
-        /// which is guaranteed to filter out the rows with non-matching values, so the replacement
-        /// cannot change the query result. Used only by `SerializationString`.
-        std::shared_ptr<const StringValueFilter> string_value_filter;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
@@ -817,11 +768,7 @@ public:
     static size_t getArrayLevel(const SubstreamPath & path, size_t prefix_len);
     static size_t getArrayLevel(const SubstreamPath & path) { return getArrayLevel(path, path.size()); }
     static bool hasSubcolumnForPath(const SubstreamPath & path, size_t prefix_len);
-    /// `selected_terminal` names the substream that was actually selected, for the creators that specialize
-    /// on it. It defaults to `path[prefix_len - 1]`; pass it explicitly when the selected leaf lives outside
-    /// `path`, as it does when the rest of the name was resolved dynamically (see `makeSubcolumnInfo`).
-    static SubstreamData
-    createFromPath(const SubstreamPath & path, size_t prefix_len, const Substream * selected_terminal = nullptr);
+    static SubstreamData createFromPath(const SubstreamPath & path, size_t prefix_len);
 
     /// Returns true if subcolumn doesn't actually stores any data in column and doesn't require a separate stream
     /// for writing/reading data. For example, it's a null-map subcolumn of Variant type (it's always constructed from discriminators);.

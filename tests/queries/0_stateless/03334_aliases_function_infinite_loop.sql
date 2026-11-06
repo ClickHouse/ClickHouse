@@ -1,5 +1,6 @@
 -- Tags: no-parallel
 -- ^ creates a function
+SET enable_analyzer = 1;
 DROP FUNCTION IF EXISTS f0;
 DROP VIEW IF EXISTS v0;
 CREATE FUNCTION f0 AS (x) -> toInt32((x AS c0) % 2 AS c1);

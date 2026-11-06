@@ -13,7 +13,7 @@ SELECT 'v_definer', * FROM v_definer ORDER BY y SETTINGS optimize_trivial_view_p
 SELECT 'v_definer, no pushdown', * FROM v_definer ORDER BY y SETTINGS optimize_trivial_view_pushdown_to_distributed = 0;
 SELECT 'v_dist', * FROM v_dist ORDER BY y SETTINGS optimize_trivial_view_pushdown_to_distributed = 1;
 
--- Other JOIN kinds between or around the ARRAY JOINs, and LEFT ARRAY JOIN.
+-- Other JOIN kinds between or around the ARRAY JOINs.
 CREATE TABLE r (id UInt32, k UInt32) ENGINE = MergeTree ORDER BY id;
 INSERT INTO r VALUES (1, 1), (2, 2);
 
@@ -23,7 +23,6 @@ CREATE VIEW v_asof AS SELECT id, y, k FROM t ARRAY JOIN a AS x ASOF JOIN r ON t.
 CREATE VIEW v_cross AS SELECT id, y, k FROM t ARRAY JOIN a AS x CROSS JOIN r ARRAY JOIN x AS y;
 CREATE VIEW v_left_semi AS SELECT id, y, k FROM t ARRAY JOIN a AS x LEFT SEMI JOIN r ON t.id = r.id ARRAY JOIN x AS y;
 CREATE VIEW v_right_semi AS SELECT id, y, k FROM t RIGHT SEMI JOIN r ON t.id = r.id ARRAY JOIN a AS x ARRAY JOIN x AS y;
-CREATE VIEW v_left AS SELECT id, y FROM t LEFT ARRAY JOIN a AS x LEFT ARRAY JOIN arrayFilter(e -> e > 2, x) AS y;
 
 SELECT 'v_full', * FROM v_full ORDER BY ALL SETTINGS optimize_trivial_view_pushdown_to_distributed = 1;
 SELECT 'v_paste', * FROM v_paste ORDER BY ALL SETTINGS optimize_trivial_view_pushdown_to_distributed = 1;
@@ -31,7 +30,6 @@ SELECT 'v_asof', * FROM v_asof ORDER BY ALL SETTINGS optimize_trivial_view_pushd
 SELECT 'v_cross', * FROM v_cross ORDER BY ALL SETTINGS optimize_trivial_view_pushdown_to_distributed = 1;
 SELECT 'v_left_semi', * FROM v_left_semi ORDER BY ALL SETTINGS optimize_trivial_view_pushdown_to_distributed = 1;
 SELECT 'v_right_semi', * FROM v_right_semi ORDER BY ALL SETTINGS optimize_trivial_view_pushdown_to_distributed = 1;
-SELECT 'v_left', * FROM v_left ORDER BY ALL SETTINGS optimize_trivial_view_pushdown_to_distributed = 1;
 
 -- A refreshable materialized view reading the view.
 CREATE TABLE dst (id UInt32, y UInt32) ENGINE = MergeTree ORDER BY (id, y);

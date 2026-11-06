@@ -71,7 +71,7 @@ protected:
         {
             if ((*current)->hasPendingData())
             {
-                working_buffer = (*current)->buffer().subrange((*current)->position(), (*current)->buffer().end());
+                working_buffer = Buffer((*current)->position(), (*current)->buffer().end());
                 return true;
             }
         }
@@ -93,7 +93,7 @@ protected:
             }
         }
 
-        working_buffer = (*current)->buffer().subrange((*current)->position(), (*current)->buffer().end());
+        working_buffer = Buffer((*current)->position(), (*current)->buffer().end());
         return true;
     }
 };

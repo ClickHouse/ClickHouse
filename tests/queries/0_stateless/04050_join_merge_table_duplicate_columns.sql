@@ -22,12 +22,14 @@ CREATE TABLE m AS v1 ENGINE = Merge(currentDatabase(), '^(v1|v2)$');
 SELECT _table, value
 FROM m
 INNER JOIN (SELECT value FROM d1) AS t ON m.value = t.value
-ORDER BY value;
+ORDER BY value
+SETTINGS enable_analyzer = 1;
 
 SELECT _table, value
 FROM m
 RIGHT JOIN (SELECT value FROM d1) AS t ON m.value = t.value
-ORDER BY value;
+ORDER BY value
+SETTINGS enable_analyzer = 1;
 
 DROP TABLE m;
 DROP TABLE v2;

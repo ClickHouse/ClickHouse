@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database, no-ordinary-database, no-fasttest
+# Tags: no-parallel, no-replicated-database, no-ordinary-database
 # no-parallel: The PAUSEABLE_ONCE failpoint fires exactly once globally; a concurrent DROP DATABASE
 #   from another parallel test could steal the failpoint pause from Q1, causing this test to hang.
 # no-replicated-database: Failpoints are single-server; DROP DATABASE behavior inside a replicated

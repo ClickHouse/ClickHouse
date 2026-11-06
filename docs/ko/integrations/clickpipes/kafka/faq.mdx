@@ -10,12 +10,16 @@ integration:
   - category: 'clickpipes'
 ---
 
-## Kafka ClickPipes FAQ {#faq}
+<div id="faq">
+  ## Kafka ClickPipes FAQ
+</div>
 
-### 일반 {#general}
+<div id="general">
+  ### 일반
+</div>
 
 <Accordion title="ClickPipes for Kafka는 어떻게 작동합니까?">
-  ClickPipes는 Kafka Consumer API를 사용하는 전용 아키텍처를 통해 지정된 토픽의 데이터를 읽은 다음, 특정 ClickHouse Cloud 서비스의 ClickHouse 테이블에 데이터를 삽입합니다.
+  ClickPipes는 Kafka Consumer API를 사용하는 전용 아키텍처를 통해 지정된 topic의 데이터를 읽은 다음, 특정 ClickHouse Cloud 서비스의 ClickHouse 테이블에 데이터를 삽입합니다.
 </Accordion>
 
 <Accordion title="ClickPipes와 ClickHouse Kafka 테이블 엔진의 차이점은 무엇입니까?">
@@ -33,7 +37,7 @@ integration:
 </Accordion>
 
 <Accordion title="ClickPipes for Kafka를 사용해 Kafka topic에 데이터를 쓸 수 있습니까?">
-  아니요. ClickPipes for Kafka는 Kafka 토픽의 데이터를 읽도록 설계되었으며, 데이터를 쓰기 위한 용도는 아닙니다. Kafka 토픽에 데이터를 쓰려면 전용 Kafka producer를 사용해야 합니다.
+  아니요. ClickPipes for Kafka는 Kafka topic의 데이터를 읽도록 설계되었으며, 데이터를 쓰기 위한 용도는 아닙니다. Kafka topic에 데이터를 쓰려면 전용 Kafka producer를 사용해야 합니다.
 </Accordion>
 
 <Accordion title="ClickPipes는 여러 broker를 지원합니까?">
@@ -44,15 +48,15 @@ integration:
   예, streaming용 ClickPipes는 수평 및 수직 스케일링을 모두 지원합니다.
   수평 스케일링은 더 많은 레플리카를 추가해 처리량을 높이고, 수직 스케일링은 더 집약적인 워크로드를 처리할 수 있도록 각 레플리카에 할당된 리소스(CPU 및 RAM)를 늘립니다.
   이 설정은 ClickPipe 생성 시 구성하거나, 이후 언제든지 **설정** -&gt; **고급 설정** -&gt; **스케일링**에서 변경할 수 있습니다.
-
-  ClickPipe가 AWS PrivateLink 역방향 프라이빗 엔드포인트를 사용하는 경우, 해당 엔드포인트를 공유하는 모든 ClickPipes의 레플리카 수 합계에 제한이 있습니다. 자세한 내용은 [역방향 프라이빗 엔드포인트당 레플리카 제한](/ko/integrations/clickpipes/networking/aws-privatelink#rpe-replica-limit)을 참조하십시오.
 </Accordion>
 
 <Accordion title="ClickPipes 설정 UI에서 일부 Kafka topic이 보이지 않습니다. 이유가 무엇입니까?">
-  ClickPipes 토픽 검색 UI는 기본적으로 최대 1,500개의 토픽을 표시합니다. Kafka cluster에 1,500개가 넘는 토픽이 있으면 일부 토픽이 드롭다운에 나타나지 않을 수 있습니다. 토픽이 실제로 존재하는지 확인하려면 동일한 자격 증명을 사용해 Kafka client에서 직접 확인하십시오. 존재가 확인되었고 목록 제한을 1,500개 이상으로 늘려야 한다면 ClickHouse 지원팀에 문의하십시오.
+  ClickPipes topic 검색 UI는 기본적으로 최대 1,500개의 topic을 표시합니다. Kafka cluster에 1,500개가 넘는 topic이 있으면 일부 topic이 드롭다운에 나타나지 않을 수 있습니다. topic이 실제로 존재하는지 확인하려면 동일한 자격 증명을 사용해 Kafka client에서 직접 확인하십시오. 존재가 확인되었고 목록 제한을 1,500개 이상으로 늘려야 한다면 ClickHouse 지원팀에 문의하십시오.
 </Accordion>
 
-### Azure Event Hubs {#azure-eventhubs}
+<div id="azure-eventhubs">
+  ### Azure Event Hubs
+</div>
 
 <Accordion title="Kafka surface 없이 Azure Event Hubs ClickPipe를 사용할 수 있습니까?">
   아니요. ClickPipes를 사용하려면 Event Hubs 네임스페이스에서 Kafka surface가 활성화되어 있어야 합니다. 이 기능은 **basic**보다 상위 티어에서만 사용할 수 있습니다. 자세한 내용은 [Azure Event Hubs 문서](https://learn.microsoft.com/en-us/azure/event-hubs/event-hubs-quickstart-kafka-enabled-event-hubs?tabs=passwordless#create-an-azure-event-hubs-namespace)를 참조하십시오.
