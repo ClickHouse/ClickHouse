@@ -74,7 +74,7 @@ protected:
 
     std::string getDefaultCorePath() const override;
 
-    std::vector<std::string> getCommandLineForConfig() override;
+    ArgVec getCommandLineForConfig() override;
 
 private:
     ContextMutablePtr global_context;

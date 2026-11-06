@@ -246,7 +246,7 @@ void BaseDaemon::closeFDs()
 }
 
 
-std::vector<std::string> BaseDaemon::getCommandLineForConfig()
+Poco::Util::Application::ArgVec BaseDaemon::getCommandLineForConfig()
 {
     return argv();
 }

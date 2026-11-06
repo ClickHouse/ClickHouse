@@ -164,7 +164,7 @@ protected:
     /// `argsToConfig`. By default it is `argv` as is; a daemon whose options can take values that
     /// `argsToConfig` would misparse (e.g. a value starting with `-` given as a separate argument) can
     /// return a canonicalized form instead.
-    virtual std::vector<std::string> getCommandLineForConfig();
+    virtual ArgVec getCommandLineForConfig();
 
     std::optional<DB::StatusFile> pid_file;
 
