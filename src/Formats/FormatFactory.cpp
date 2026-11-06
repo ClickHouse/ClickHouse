@@ -628,6 +628,13 @@ InputFormatPtr FormatFactory::getInputImpl(
     if (format_settings.connection_handling)
         parallel_parsing = false;
 
+    /// A column mapper (e.g. Iceberg field-id -> column name) is applied to the created format via
+    /// setColumnMapper(); ParallelParsingInputFormat cannot forward it to its per-segment parsers, so
+    /// fall back to sequential parsing when one is present rather than silently dropping it (which would
+    /// break schema resolution for columns absent from older files).
+    if (format_filter_info && format_filter_info->column_mapper)
+        parallel_parsing = false;
+
     if (parallel_parsing)
     {
         const auto & non_trivial_prefix_and_suffix_checker = creators.non_trivial_prefix_and_suffix_checker;

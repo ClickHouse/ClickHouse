@@ -12,15 +12,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 D="${CLICKHOUSE_TMP}/05556"
 
-agg="count(), sum(i), sum(cityHash64(s)), sum(length(arr)), sum(ifNull(n, 0))"
 struct="i Int64, s String, arr Array(UInt64), n Nullable(UInt32)"
 
-# Compare a sequential read with a parallel read of the same Avro file.
+# Compare a sequential read with a parallel read of the same Avro file. The comparison is the md5 of the
+# full, ordered output (ParallelParsingInputFormat preserves row order), so it detects reordering and any
+# wrong column association -- not just aggregate totals.
 check() {
-    local file="$1" structure="$2" cols="$3"
+    local file="$1" structure="$2" extra="${3:-}"
     local seq par
-    seq=$(${CLICKHOUSE_LOCAL} -q "SELECT $cols FROM file('$file', 'Avro', '$structure') SETTINGS input_format_parallel_parsing=0")
-    par=$(${CLICKHOUSE_LOCAL} -q "SELECT $cols FROM file('$file', 'Avro', '$structure') SETTINGS input_format_parallel_parsing=1, max_threads=8, min_chunk_bytes_for_parallel_parsing=4096")
+    seq=$(${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('$file', 'Avro', '$structure') SETTINGS ${extra}input_format_parallel_parsing=0 FORMAT TSV" | md5sum)
+    par=$(${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('$file', 'Avro', '$structure') SETTINGS ${extra}input_format_parallel_parsing=1, max_threads=8, min_chunk_bytes_for_parallel_parsing=4096 FORMAT TSV" | md5sum)
     [ "$seq" = "$par" ] && echo "OK" || echo "MISMATCH seq=[$seq] par=[$par]"
 }
 
@@ -30,7 +31,7 @@ ${CLICKHOUSE_LOCAL} -q "
            if(number % 3 = 0, NULL, number)::Nullable(UInt32) AS n
     FROM numbers(100000)
     INTO OUTFILE '${D}_mixed.avro' FORMAT Avro SETTINGS output_format_avro_sync_interval = 512"
-echo -n "mixed: "; check "${D}_mixed.avro" "$struct" "$agg"
+echo -n "mixed: "; check "${D}_mixed.avro" "$struct"
 
 # 2) each codec
 for codec in null deflate zstd; do
@@ -40,20 +41,18 @@ for codec in null deflate zstd; do
         FROM numbers(60000)
         INTO OUTFILE '${D}_${codec}.avro' FORMAT Avro
         SETTINGS output_format_avro_sync_interval = 256, output_format_avro_codec = '${codec}'"
-    echo -n "codec ${codec}: "; check "${D}_${codec}.avro" "$struct" "$agg"
+    echo -n "codec ${codec}: "; check "${D}_${codec}.avro" "$struct"
 done
 
 # 3) single-block / tiny file (degenerate one-segment path)
 ${CLICKHOUSE_LOCAL} -q "SELECT number::Int64 AS i FROM numbers(3) INTO OUTFILE '${D}_tiny.avro' FORMAT Avro"
-echo -n "tiny: "; check "${D}_tiny.avro" "i Int64" "count(), sum(i)"
+echo -n "tiny: "; check "${D}_tiny.avro" "i Int64"
 
 # 4) schema evolution: read a subset plus a missing-with-default column, under parallel parsing
 ${CLICKHOUSE_LOCAL} -q "
     SELECT number::Int64 AS a, toString(number) AS b, (number * 2)::Int64 AS c
     FROM numbers(50000)
     INTO OUTFILE '${D}_evo.avro' FORMAT Avro SETTINGS output_format_avro_sync_interval = 300"
-seq=$(${CLICKHOUSE_LOCAL} -q "SELECT count(), sum(a), sum(c), sum(d) FROM file('${D}_evo.avro', 'Avro', 'a Int64, c Int64, d Int32') SETTINGS input_format_avro_allow_missing_fields=1, input_format_parallel_parsing=0")
-par=$(${CLICKHOUSE_LOCAL} -q "SELECT count(), sum(a), sum(c), sum(d) FROM file('${D}_evo.avro', 'Avro', 'a Int64, c Int64, d Int32') SETTINGS input_format_avro_allow_missing_fields=1, input_format_parallel_parsing=1, max_threads=8, min_chunk_bytes_for_parallel_parsing=4096")
-echo -n "schema-evolution: "; [ "$seq" = "$par" ] && echo "OK" || echo "MISMATCH seq=[$seq] par=[$par]"
+echo -n "schema-evolution: "; check "${D}_evo.avro" "a Int64, c Int64, d Int32" "input_format_avro_allow_missing_fields=1, "
 
 rm -f "${D}"_*.avro

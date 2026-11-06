@@ -1700,11 +1700,32 @@ Int64 copyAvroLong(ReadBuffer & in, String & raw)
     return static_cast<Int64>((encoded >> 1) ^ (~(encoded & 1) + 1)); /// ZigZag decode
 }
 
+/// Grow and read in bounded steps, so an untrusted/corrupt length cannot pre-allocate gigabytes before
+/// `readStrict` discovers the input is truncated (it throws once a step cannot be filled).
+constexpr size_t AVRO_SEGMENT_COPY_STEP = 1 << 20;
+
 void copyAvroBytes(ReadBuffer & in, String & raw, size_t n)
 {
-    size_t old = raw.size();
-    raw.resize(old + n);
-    in.readStrict(raw.data() + old, n);
+    while (n)
+    {
+        size_t step = n < AVRO_SEGMENT_COPY_STEP ? n : AVRO_SEGMENT_COPY_STEP;
+        size_t old = raw.size();
+        raw.resize(old + step);
+        in.readStrict(raw.data() + old, step);
+        n -= step;
+    }
+}
+
+void copyAvroBytesToMemory(ReadBuffer & in, DB::Memory<> & memory, size_t n)
+{
+    while (n)
+    {
+        size_t step = n < AVRO_SEGMENT_COPY_STEP ? n : AVRO_SEGMENT_COPY_STEP;
+        size_t old = memory.size();
+        memory.resize(old + step);
+        in.readStrict(memory.data() + old, step);
+        n -= step;
+    }
 }
 
 /// An Avro `bytes`/`string`: a `long` length followed by that many bytes.
@@ -1797,9 +1818,7 @@ std::pair<bool, size_t> fileSegmentationEngineAvro(
         if (object_count < 0 || byte_count < 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Negative object/byte count in Avro data block");
 
-        size_t old = memory.size();
-        memory.resize(old + static_cast<size_t>(byte_count));
-        in.readStrict(memory.data() + old, static_cast<size_t>(byte_count));
+        copyAvroBytesToMemory(in, memory, static_cast<size_t>(byte_count));
 
         char sync[16];
         in.readStrict(sync, sizeof(sync));
