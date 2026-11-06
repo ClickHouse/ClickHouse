@@ -277,10 +277,10 @@ with wasi-sdk 33:
 
 | build | bytes | gzip -9 | brotli -q 11 | zstd --ultra -22 |
 | --- | ---: | ---: | ---: | ---: |
-| everything | 2168167 | 662084 | 485992 | 516615 |
-| `-DENABLE_DCL=OFF` | 1952328 | 592306 | 434975 | 462179 |
-| `-DENABLE_FORMATTING=OFF` | 1061899 | 351444 | 270185 | 289098 |
-| both off | 845233 | 273536 | 210715 | 225950 |
+| everything | 2172973 | 663928 | 487505 | 517995 |
+| `-DENABLE_DCL=OFF` | 1954701 | 593179 | 436000 | 462873 |
+| `-DENABLE_FORMATTING=OFF` | 1065750 | 353426 | 271098 | 290074 |
+| both off | 846676 | 274370 | 211253 | 226172 |
 
 The builds without formatting do not report `partial_ast`, and do not carry the capture code of the
 parsers either: `partialASTState` in `Parsers/PartialASTCapture.h` is a null pointer there at compile
@@ -317,10 +317,10 @@ Sorted by brotli, which is what a browser negotiates:
 | [`@clickhouse/parser`](https://github.com/ClickHouse/clickhouse-js-parser) 0.3.0 + `zod`, JS | 1128583 | 196944 | 153347 | 161974 |
 | [`libpg-query`](https://github.com/launchql/libpg-query-node) 17.7.4, wasm | 1150984 | 229158 | 168575 | 176785 |
 | — its emscripten glue, on top of that | 58903 | 16679 | 14888 | 15718 |
-| **this, both off** | 845233 | 273536 | 210715 | 225950 |
+| **this, both off** | 846676 | 274370 | 211253 | 226172 |
 | [`sql.js`](https://github.com/sql-js/sql.js) 1.14.1, wasm | 659730 | 322193 | 278641 | 289690 |
 | `node-sql-parser` 5.4.0, all 20+ dialects, JS | 2609025 | 504010 | 333174 | 360819 |
-| **this, everything** | 2168167 | 662084 | 485992 | 516615 |
+| **this, everything** | 2172973 | 663928 | 487505 | 517995 |
 | [`@polyglot-sql/sdk`](https://github.com/tobilg/polyglot) 0.6.2, wasm | 21656938 | 4805067 | 2020675 | 2150089 |
 
 The row to measure against is **`libpg-query`**: the same idea, a production database's own parser
