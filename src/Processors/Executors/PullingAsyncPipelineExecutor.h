@@ -2,6 +2,11 @@
 #include <functional>
 #include <memory>
 
+namespace ProfileEvents
+{
+class Counters;
+}
+
 namespace DB
 {
 
@@ -30,6 +35,10 @@ public:
     /// Set a callback that is polled every interactive_timeout_ms during pull().
     /// When set, pull() uses the timeout internally and calls the callback on each iteration.
     void setCancelCallback(std::function<bool()> callback, uint64_t interactive_timeout_ms_);
+
+    /// Count the profile events of the thread that executes the pipeline in `counters`, as `ProfileEventsScope` does.
+    /// `counters` must outlive the executor. Must be called before the first `pull`.
+    void setProfileCountersScope(ProfileEvents::Counters * counters) { profile_counters_scope = counters; }
 
     /// Methods return false if query is finished.
     /// If milliseconds > 0, returns empty object and `true` after timeout exceeded. Otherwise method is blocking.
@@ -68,6 +77,8 @@ private:
 
     std::function<bool()> cancel_callback;
     uint64_t interactive_timeout_ms = 0;
+
+    ProfileEvents::Counters * profile_counters_scope = nullptr;
 };
 
 }

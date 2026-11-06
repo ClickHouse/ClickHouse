@@ -696,6 +696,7 @@
     M(CommonBackgroundExecutorWaitMicroseconds, "Time spent waiting for completion in Common executor.", ValueType::Microseconds) \
     \
     M(MergeTreeDataWriterSkipIndicesCalculationMicroseconds, "Time spent calculating skip indices", ValueType::Microseconds) \
+    M(MergeHelperThreadUnavailable, "Number of columns that a Vertical merge read in its own thread because all threads of `max_merge_helper_threads` were used", ValueType::Number) \
     M(MergeTreeDataWriterStatisticsCalculationMicroseconds, "Time spent calculating statistics", ValueType::Microseconds) \
     M(MergeTreeDataWriterSortingBlocksMicroseconds, "Time spent sorting blocks", ValueType::Microseconds) \
     M(MergeTreeDataWriterMergingBlocksMicroseconds, "Time spent merging input blocks (for special MergeTree engines)", ValueType::Microseconds) \
@@ -2239,6 +2240,14 @@ Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
     for (Event i = Event(0); i < num_counters; ++i)
         res.counters_holder[i] = load(i);
     return res;
+}
+
+void Counters::addWithoutParents(const Snapshot & snapshot)
+{
+    const int32_t cpu = PerCPU::getCurrentCPU();
+    for (Event i = Event(0); i < num_counters; ++i)
+        if (Count amount = snapshot[i])
+            fetchAdd(i, amount, cpu);
 }
 
 static const std::array<std::string_view, END> names =
