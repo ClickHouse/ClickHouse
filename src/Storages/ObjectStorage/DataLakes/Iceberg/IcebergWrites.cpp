@@ -1241,8 +1241,15 @@ IcebergWrittenFiles::IcebergWrittenFiles(
 
 IcebergWrittenFiles::~IcebergWrittenFiles()
 {
-    if (committed)
+    if (!committed)
+        removeDataFiles();
+}
+
+void IcebergWrittenFiles::removeDataFiles()
+{
+    if (removed)
         return;
+    removed = true;
     for (const auto & [_, writer] : writers)
     {
         try
@@ -1578,7 +1585,9 @@ void IcebergStorageSink::cancelBuffers()
 
 void IcebergStorageSink::removeDataFilesAndManifests()
 {
-    /// The received files are removed by `IcebergWrittenFiles` unless committed.
+    for (const auto & files : received_files)
+        files->removeDataFiles();
+
     for (const auto & [_, writer] : writer_per_partition_key)
     {
         try

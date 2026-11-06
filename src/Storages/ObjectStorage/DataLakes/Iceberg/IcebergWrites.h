@@ -177,12 +177,18 @@ struct IcebergWrittenFiles
     /// Removes the data files unless they were committed.
     ~IcebergWrittenFiles();
 
+    /// Best-effort removal of the data files, at most once; never throws.
+    void removeDataFiles();
+
     IcebergWritersPerPartitionKey writers;
     Int64 total_rows;
     Int64 total_bytes;
     Int64 schema_id;
     Int64 partition_spec_id;
     bool committed = false;
+
+private:
+    bool removed = false;
 };
 
 using IcebergWrittenFilesPtr = std::shared_ptr<IcebergWrittenFiles>;

@@ -80,12 +80,13 @@ private:
     std::vector<UInt64> data_file_byte_counts;
     std::unique_ptr<WriteBufferFromFileBase> buffer;
     OutputFormatPtr output_format;
+    /// Used only while writing. The rest is owned, because the written files may outlive the sink, see `IcebergWrittenFiles`.
     FileNamesGenerator & filename_generator;
-    const Iceberg::IcebergPathResolver & path_resolver;
+    const Iceberg::IcebergPathResolver path_resolver;
     ObjectStoragePtr object_storage;
     ContextPtr context;
     std::optional<FormatSettings> format_settings;
-    const String& write_format;
+    const String write_format;
     SharedHeader sample_block;
     UInt64 total_bytes = 0;
 };
