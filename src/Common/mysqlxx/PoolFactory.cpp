@@ -151,11 +151,13 @@ std::string getPoolEntryName(const Poco::Util::AbstractConfiguration & config,
 }
 
 PoolWithFailover PoolFactory::get(const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_name, unsigned default_connections, unsigned max_connections, size_t max_tries)
+        const std::string & config_name, unsigned default_connections, unsigned max_connections, size_t max_tries, bool force_tcp)
 {
     std::lock_guard lock(impl->mutex);
 
     std::string entry_name = getPoolEntryName(config, config_name, max_connections);
+    if (!entry_name.empty() && force_tcp)
+        entry_name += "&force_tcp=1";
 
     /// For shared pools (share_connection=true), entry_name encodes the actual connection
     /// parameters and settings. Use it as the cache key instead of
@@ -168,7 +170,7 @@ PoolWithFailover PoolFactory::get(const Poco::Util::AbstractConfiguration & conf
     if (entry != impl->pools.end())
         return *(entry->second);
 
-    auto pool = std::make_shared<PoolWithFailover>(config, config_name, default_connections, max_connections, max_tries);
+    auto pool = std::make_shared<PoolWithFailover>(config, config_name, default_connections, max_connections, max_tries, force_tcp);
     if (!entry_name.empty())
         impl->pools.insert_or_assign(pool_key, pool);
     return *pool;

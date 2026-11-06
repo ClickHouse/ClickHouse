@@ -108,6 +108,28 @@ static void checkNoLocalInfile(
             "`enable_local_infile` cannot be enabled in a dictionary created with a DDL query. "
             "It is only accepted in a dictionary defined in a server configuration file");
 }
+
+/// For `localhost`, `socket` makes the connection go to a Unix socket of the query's choosing instead of
+/// `host`:`port`, which is all `remote_url_allow_hosts` checks.
+static void checkNoSocket(const Poco::Util::AbstractConfiguration & config, const std::string & prefix)
+{
+    if (config.has(prefix + ".socket"))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "`socket` cannot be specified in a dictionary created with a DDL query. "
+            "It is only accepted in a dictionary defined in a server configuration file");
+}
+
+/// The client library reads a host with `;` or `=` as connection options that override the configured ones (`protocol`,
+/// `socket`, `local-infile`, SSL file paths), and a host with `,` as a list of `host:port`, which the filter does not check.
+static void checkHostAndPort(const ContextPtr & context, const std::string & host, const std::string & port)
+{
+    if (host.find_first_of(";=,") != std::string::npos)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "`host` of a dictionary created with a DDL query cannot contain `;`, `=` or `,`");
+    context->getRemoteHostFilter().checkHostAndPort(host, port);
+}
 #endif
 
 void registerDictionarySourceMysql(DictionarySourceFactory & factory);
@@ -135,7 +157,10 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
         /// Every key here comes from the `CREATE DICTIONARY` query, including the keys that override a
         /// named collection, so this covers both of the branches below.
         if (created_from_ddl)
+        {
             checkNoSSLPaths(config, settings_config_prefix);
+            checkNoSocket(config, settings_config_prefix);
+        }
 
         std::optional<MySQLDictionarySource::Configuration> dictionary_configuration;
         auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix, global_context) : nullptr;
@@ -162,7 +187,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
             }
 
             for (auto & address : addresses)
-                global_context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
+                checkHostAndPort(global_context, address.first, toString(address.second));
 
             dictionary_configuration.emplace(MySQLDictionarySource::Configuration{
                 .db = named_collection->getAnyOrDefault<String>({"database", "db"}, ""),
@@ -190,7 +215,8 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                     named_collection->getAnyOrDefault<String>({"user", "username"}, ""),
                     named_collection->getOrDefault<String>("password", ""),
                     StorageMySQL::getSSLParams(*named_collection),
-                    mysql_settings));
+                    mysql_settings,
+                    /* force_tcp = */ true));
         }
         else
         {
@@ -217,10 +243,12 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                         {
                             const auto replica_prefix = settings_config_prefix + "." + replica_key;
                             checkNoSSLPaths(config, replica_prefix);
+                            checkNoSocket(config, replica_prefix);
                             checkNoLocalInfile(config, replica_prefix, settings_config_prefix);
                             /// Resolve the port the same way mysqlxx::Pool does, so the checked port
                             /// always matches the port the connection actually dials.
-                            global_context->getRemoteHostFilter().checkHostAndPort(
+                            checkHostAndPort(
+                                global_context,
                                 config.getString(replica_prefix + ".host"),
                                 toString(config.getInt(replica_prefix + ".port",
                                     config.getInt(settings_config_prefix + ".port", 3306))));
@@ -230,14 +258,20 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                 else
                 {
                     checkNoLocalInfile(config, settings_config_prefix);
-                    global_context->getRemoteHostFilter().checkHostAndPort(
+                    checkHostAndPort(
+                        global_context,
                         config.getString(settings_config_prefix + ".host"),
                         toString(config.getInt(settings_config_prefix + ".port", 3306)));
                 }
             }
 
-            pool = std::make_shared<mysqlxx::PoolWithFailover>(
-                mysqlxx::PoolFactory::instance().get(config, settings_config_prefix));
+            pool = std::make_shared<mysqlxx::PoolWithFailover>(mysqlxx::PoolFactory::instance().get(
+                config,
+                settings_config_prefix,
+                MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
+                MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,
+                MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
+                /* force_tcp = */ created_from_ddl));
         }
 
         if (dictionary_configuration->query.empty() && dictionary_configuration->table.empty())
@@ -348,30 +382,9 @@ The `table` or `where` fields cannot be used together with the `query` field. An
 There is no explicit parameter `secure`. When establishing an SSL-connection security is mandatory.
 </Note>
 
-MySQL can be connected to on a local host via sockets. To do this, set `host` and `socket`.
+MySQL can be connected to on a local host via sockets. To do this, set `host` and `socket`. This is only accepted for a dictionary defined in a server configuration file: `remote_url_allow_hosts` checks only `host` and `port`, so a `CREATE DICTIONARY` query that sets `socket`, at the source or at one of its `<replica>` entries, is rejected with `BAD_ARGUMENTS`, and such a dictionary always connects over TCP to `host`:`port`, also for `localhost`. For the same reason, its `host` cannot contain `;` or `=`, which the client library reads as a list of connection options, or `,`, which it reads as a list of hosts.
 
 Example of settings:
-
-<Tabs>
-<Tab title="DDL">
-
-```sql
-SOURCE(MYSQL(
-    host 'localhost'
-    socket '/path/to/socket/file.sock'
-    user 'clickhouse'
-    password 'qwerty'
-    db 'db_name'
-    table 'table_name'
-    where 'id=10'
-    invalidate_query 'SQL_QUERY'
-    fail_on_connection_loss 'true'
-    query 'SELECT id, value_1, value_2 FROM db_name.table_name'
-))
-```
-
-</Tab>
-<Tab title="Configuration file">
 
 ```xml
 <source>
@@ -389,9 +402,6 @@ SOURCE(MYSQL(
   </mysql>
 </source>
 ```
-
-</Tab>
-</Tabs>
 )DOCS_MD"
 #if !USE_MYSQL
             "\n\nCurrently unavailable, because this ClickHouse build does not include MySQL support."

@@ -158,7 +158,8 @@ public:
     Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & config_name,
          unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
          unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
-         const char * parent_config_name_ = nullptr);
+         const char * parent_config_name_ = nullptr,
+         bool force_tcp_ = false);
 
     /** Like with mysqlxx::Connection, either port either socket should be specified.
       * If server is localhost and socket is not empty, than socket is used. Otherwise, server and port is used.
@@ -176,7 +177,8 @@ public:
          unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
          unsigned enable_local_infile_ = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
          bool opt_reconnect_ = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT,
-         bool enable_compression_ = false);
+         bool enable_compression_ = false,
+         bool force_tcp_ = false);
 
     Pool(const Pool & other)
         : default_connections{other.default_connections},
@@ -187,7 +189,7 @@ public:
           connect_timeout{other.connect_timeout}, rw_timeout{other.rw_timeout},
           ssl_params(other.ssl_params), resolved_ssl_paths(other.resolved_ssl_paths),
           enable_local_infile{other.enable_local_infile}, opt_reconnect(other.opt_reconnect),
-          enable_compression{other.enable_compression}
+          enable_compression{other.enable_compression}, force_tcp{other.force_tcp}
     {}
 
     Pool & operator=(const Pool &) = delete;
@@ -253,6 +255,8 @@ private:
     bool enable_local_infile;
     bool opt_reconnect;
     bool enable_compression;
+    /// Connect over TCP to `server`:`port` even for `localhost`.
+    bool force_tcp = false;
 
     /// True if connection was established at least once.
     bool was_successful{false};
