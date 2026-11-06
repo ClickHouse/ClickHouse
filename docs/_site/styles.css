@@ -1833,8 +1833,7 @@ body.clickpipes_home .hero-text {
     color: #ffffff !important;
 }
 
-/* Prose links are colored by default. Dark-mode links keep an underline so they
-   remain identifiable when browser color rendering makes the yellow accent subtle.
+/* Prose links: colored without underline by default, underline appears on hover.
    Light: #135be6 blue. Dark: ClickHouse yellow #FAFF69. */
 html:not(.dark) .prose a:not(.card):not(.card *) {
     color: #135be6 !important;
@@ -1851,11 +1850,26 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
 :is(.dark) .prose a:not(.card):not(.card *) {
     color: #FAFF69 !important;
     border-bottom: none !important;
-    text-decoration: underline !important;
+    text-decoration: none !important;
     font-weight: normal !important;
 }
 .dark .prose a:not(.card):not(.card *):hover,
 :is(.dark) .prose a:not(.card):not(.card *):hover {
+    color: #FAFF69 !important;
+    text-decoration: underline !important;
+    opacity: 1;
+}
+
+/* Mintlify's list link styling can override the base prose selector in dark
+   mode. Match list items explicitly so links keep the same yellow default and
+   acquire an underline only on hover. */
+.dark .prose li a:not(.card):not(.card *),
+:is(.dark) .prose li a:not(.card):not(.card *) {
+    color: #FAFF69 !important;
+    text-decoration: none !important;
+}
+.dark .prose li a:not(.card):not(.card *):hover,
+:is(.dark) .prose li a:not(.card):not(.card *):hover {
     color: #FAFF69 !important;
     text-decoration: underline !important;
     opacity: 1;
