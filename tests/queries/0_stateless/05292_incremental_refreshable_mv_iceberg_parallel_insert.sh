@@ -37,6 +37,7 @@ ${CLICKHOUSE_CLIENT} --query "
         TO ${TGT} EMPTY
         AS SELECT k FROM ${SRC}
         SETTINGS max_insert_threads = 4, max_threads = 4, max_block_size = 100,
+            max_insert_threads_min_free_memory_per_thread = 0, max_threads_min_free_memory_per_thread = 0,
             min_insert_block_size_rows = 100, min_insert_block_size_bytes = 1,
             iceberg_insert_max_rows_in_data_file = 1000000, iceberg_insert_max_bytes_in_data_file = 1000000000
 "
