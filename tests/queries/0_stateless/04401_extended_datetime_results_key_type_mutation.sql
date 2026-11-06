@@ -355,3 +355,16 @@ SET cast_keep_nullable = 1;
 ALTER TABLE tsmp MODIFY SAMPLE BY CAST(x AS UInt32); -- { serverError ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER }
 
 DROP TABLE tsmp;
+
+-- An ALTER that changes columns also rebuilds the implicit minmax_count projection, which answers min/max
+-- of the first key column from the stored key, so its types must not follow the ALTER session either.
+-- Before the fix the optimized query returned 0, 0 instead of the scanned values.
+DROP TABLE IF EXISTS tmmc;
+CREATE TABLE tmmc (a Float64, b Float64, c Float64, d Float64) ENGINE = MergeTree() ORDER BY geoDistance(a, b, c, d);
+INSERT INTO tmmc VALUES (0, 0, 10, 10), (0, 0, 20, 20);
+ALTER TABLE tmmc ADD COLUMN extra UInt32 SETTINGS geo_distance_returns_float64_on_float64_arguments = 0;
+SELECT count() FROM (EXPLAIN SELECT min(geoDistance(a, b, c, d)), max(geoDistance(a, b, c, d)) FROM tmmc SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1, enable_parallel_replicas = 0) WHERE explain LIKE '%_minmax_count_projection%';
+SELECT min(geoDistance(a, b, c, d)), max(geoDistance(a, b, c, d)) FROM tmmc SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1, enable_parallel_replicas = 0;
+SELECT min(geoDistance(a, b, c, d)), max(geoDistance(a, b, c, d)) FROM tmmc SETTINGS optimize_use_projections = 0;
+
+DROP TABLE tmmc;
