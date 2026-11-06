@@ -1,4 +1,5 @@
 #include <Client/HistoryPicker.h>
+#include <Common/StringSearcher.h>
 #include <Common/StringUtils.h>
 #include <Common/TerminalSize.h>
 #include <Common/UTF8Helpers.h>
@@ -33,23 +34,61 @@ struct Entry
 {
     size_t index; /// Into the original history.
     std::string display;
-    std::string lower;
 };
 
-/// Everything is shown on a single line, as skim did.
-void replaceLineBreaks(std::string & s)
+/// Shows the text on a single line, as skim did, and makes control characters inert: history and pasted text
+/// must not drive the terminal. Keeps the byte offsets, so the matches found in the result apply to it as is.
+std::string toDisplay(std::string_view text)
 {
-    std::replace_if(s.begin(), s.end(), [](char c) { return c == '\n' || c == '\r' || c == '\t'; }, ' ');
+    std::string res(text);
+    for (size_t i = 0; i < res.size(); ++i)
+    {
+        auto c = static_cast<UInt8>(res[i]);
+        if (c == '\n' || c == '\r' || c == '\t')
+        {
+            res[i] = ' ';
+        }
+        else if (c < 0x20 || c == 0x7F)
+        {
+            res[i] = '?';
+        }
+        else if (c == 0xC2 && i + 1 < res.size() && static_cast<UInt8>(res[i + 1]) >= 0x80 && static_cast<UInt8>(res[i + 1]) <= 0x9F)
+        {
+            /// U+0080..U+009F, the C1 controls: some terminals execute them like the `ESC` sequences.
+            res[i] = '?';
+            res[++i] = '?';
+        }
+    }
+    return res;
+}
+
+const UInt8 * toBytes(std::string_view s)
+{
+    return reinterpret_cast<const UInt8 *>(s.data());
 }
 
 size_t displayWidth(std::string_view s)
 {
-    return UTF8::computeWidth(reinterpret_cast<const UInt8 *>(s.data()), s.size());
+    return UTF8::computeWidth(toBytes(s), s.size());
 }
 
 std::string_view truncateToWidth(std::string_view s, size_t limit)
 {
-    return s.substr(0, UTF8::computeBytesBeforeWidth(reinterpret_cast<const UInt8 *>(s.data()), s.size(), 0, limit));
+    return s.substr(0, UTF8::computeBytesBeforeWidth(toBytes(s), s.size(), 0, limit));
+}
+
+/// The end of `s` that fits in `limit` columns.
+std::string_view tailOfWidth(std::string_view s, size_t limit)
+{
+    size_t width = displayWidth(s);
+    if (width <= limit)
+        return s;
+    size_t excess = width - limit;
+    size_t drop = UTF8::computeBytesBeforeWidth(toBytes(s), s.size(), 0, excess);
+    /// The widest prefix within the excess is narrower than it when a wide character crosses the boundary.
+    if (drop < s.size() && displayWidth(s.substr(0, drop)) < excess)
+        drop += std::min<size_t>(UTF8::seqLength(static_cast<UInt8>(s[drop])), s.size() - drop);
+    return s.substr(drop);
 }
 
 void popCodePoint(std::string & s)
@@ -64,17 +103,10 @@ class Picker
 {
 public:
     Picker(int in_fd_, int out_fd_, const std::string & initial_query, const std::vector<std::string> & history_)
-        : in(in_fd_, /* buf_size */ 1), out(out_fd_), history(history_), query(initial_query)
+        : in_fd(in_fd_), out_fd(out_fd_), in(in_fd_, /* buf_size */ 1), out(out_fd_), history(history_), query(initial_query)
     {
-        auto [terminal_cols, terminal_rows] = getTerminalSize(in_fd_, out_fd_);
-        if (terminal_cols && terminal_rows)
-        {
-            rows = terminal_rows;
-            cols = terminal_cols;
-        }
-        height = std::min(rows, std::max<size_t>(4, rows * 30 / 100));
-        list_rows = height > 2 ? height - 2 : 0;
-        replaceLineBreaks(query);
+        auto [terminal_cols, terminal_rows] = getTerminalSize(in_fd, out_fd);
+        setGeometry(terminal_cols, terminal_rows);
 
         std::unordered_set<std::string_view> seen;
         entries.reserve(history.size());
@@ -82,21 +114,14 @@ public:
         {
             if (!seen.insert(history[i]).second)
                 continue;
-            Entry entry{i, history[i], {}};
-            replaceLineBreaks(entry.display);
-            entry.lower = toLowerCopyASCII(entry.display);
-            entries.push_back(std::move(entry));
+            entries.push_back(Entry{i, toDisplay(history[i])});
         }
         matches.reserve(entries.size());
     }
 
     std::string run()
     {
-        /// Reserve the area below the input (scrolling the screen if needed); the cursor stays on its last line, the prompt.
-        std::string frame;
-        for (size_t i = 0; i < height; ++i)
-            frame += "\r\n";
-        write(frame);
+        write(reserveArea());
 
         std::string result;
         try
@@ -105,44 +130,72 @@ public:
         }
         catch (...)
         {
-            write(moveToTop() + "\x1b[J\x1b[A");
+            write(clearArea());
             throw;
         }
-        write(moveToTop() + "\x1b[J\x1b[A");
+        write(clearArea());
         out.finalize();
         return result;
     }
 
 private:
+    int in_fd;
+    int out_fd;
     /// Unbuffered input: bytes typed after the picker closes belong to replxx.
     ReadBufferFromFileDescriptor in;
     WriteBufferFromFileDescriptor out;
     const std::vector<std::string> & history;
-    std::string query;
+    std::string query; /// As typed, it is the result when nothing matches.
 
-    size_t rows = 24;
-    size_t cols = 80;
+    size_t rows = 0;
+    size_t cols = 0;
     size_t height = 0;
     size_t list_rows = 0;
 
     std::vector<Entry> entries;
     std::vector<size_t> matches; /// Indexes into `entries`.
-    std::string lower_query;
-    std::vector<std::string_view> words; /// Point into `lower_query`.
+    std::string display_query;
+    std::vector<UTF8CaseInsensitiveStringSearcher> searchers; /// For the words of `display_query`, point into it.
     size_t selected = 0;
     size_t offset = 0;
 
+    void setGeometry(size_t terminal_cols, size_t terminal_rows)
+    {
+        rows = terminal_rows ? terminal_rows : 24;
+        cols = terminal_cols ? terminal_cols : 80;
+        height = std::min(rows, std::max<size_t>(4, rows * 30 / 100));
+        list_rows = height > 2 ? height - 2 : 0;
+    }
+
+    /// Returns whether the terminal was resized; then the area is drawn anew in the new size.
+    bool handleResize()
+    {
+        auto [terminal_cols, terminal_rows] = getTerminalSize(in_fd, out_fd);
+        if (terminal_cols == cols && terminal_rows == rows)
+            return false;
+        std::string frame = clearArea();
+        setGeometry(terminal_cols, terminal_rows);
+        frame += reserveArea();
+        write(frame);
+        return true;
+    }
+
     void refilter()
     {
-        lower_query = toLowerCopyASCII(query);
-        words.clear();
-        splitInto<' ', '\t'>(words, lower_query, /* token_compress */ true);
+        display_query = toDisplay(query);
+        std::vector<std::string_view> words;
+        splitInto<' '>(words, display_query, /* token_compress */ true);
+        searchers.clear();
+        searchers.reserve(words.size());
+        for (std::string_view word : words)
+            searchers.emplace_back(toBytes(word), word.size());
 
         matches.clear();
         for (size_t i = 0; i < entries.size(); ++i)
         {
-            std::string_view lower = entries[i].lower;
-            if (std::all_of(words.begin(), words.end(), [&](std::string_view w) { return lower.find(w) != std::string_view::npos; }))
+            const UInt8 * begin = toBytes(entries[i].display);
+            const UInt8 * end = begin + entries[i].display.size();
+            if (std::all_of(searchers.begin(), searchers.end(), [&](const auto & searcher) { return searcher.search(begin, end) != end; }))
                 matches.push_back(i);
         }
         selected = 0;
@@ -167,12 +220,7 @@ private:
         /// Leave the last column empty to avoid the terminal's pending-wrap state.
         size_t content_width = cols > 3 ? cols - 3 : 1;
 
-        std::string_view visible_query = query;
-        while (displayWidth(visible_query) > content_width)
-        {
-            size_t len = UTF8::seqLength(static_cast<UInt8>(visible_query.front()));
-            visible_query.remove_prefix(std::min(len, visible_query.size()));
-        }
+        std::string_view visible_query = tailOfWidth(display_query, content_width);
 
         /// Bottom-up like skim and fzf: the best match is the lowest row, right above the count and the prompt.
         std::string frame = moveToTop();
@@ -194,7 +242,7 @@ private:
                 frame += ">";
                 frame += COLOR_CURRENT_FOREGROUND;
                 frame += " ";
-                appendHighlighted(frame, text, entry.lower, COLOR_CURRENT_MATCH, COLOR_CURRENT_FOREGROUND);
+                appendHighlighted(frame, text, COLOR_CURRENT_MATCH, COLOR_CURRENT_FOREGROUND);
                 /// Erasing with the current background extends it to the whole row.
                 frame += "\x1b[K";
                 frame += COLOR_RESET;
@@ -202,7 +250,7 @@ private:
             else
             {
                 frame += "  ";
-                appendHighlighted(frame, text, entry.lower, COLOR_MATCHED, COLOR_MATCHED_END);
+                appendHighlighted(frame, text, COLOR_MATCHED, COLOR_MATCHED_END);
             }
             frame += "\r\n";
         }
@@ -225,6 +273,21 @@ private:
         return height > 1 ? "\r\x1b[" + std::to_string(height - 1) + "A" : "\r";
     }
 
+    /// The area is below the input (scrolling the screen if needed), the cursor stays on its last line, the prompt.
+    std::string reserveArea() const
+    {
+        std::string frame;
+        for (size_t i = 0; i < height; ++i)
+            frame += "\r\n";
+        return frame;
+    }
+
+    /// Erases the area and returns the cursor to the last line of the input.
+    std::string clearArea() const
+    {
+        return moveToTop() + "\x1b[J\x1b[A";
+    }
+
     void write(std::string_view data)
     {
         out.write(data.data(), data.size());
@@ -237,14 +300,18 @@ private:
         return in.read(c);
     }
 
-    /// Lowercasing keeps byte offsets, so the matches found in `lower` apply to `text`.
-    void appendHighlighted(std::string & frame, std::string_view text, std::string_view lower, std::string_view color, std::string_view color_end) const
+    void appendHighlighted(std::string & frame, std::string_view text, std::string_view color, std::string_view color_end) const
     {
         std::vector<bool> highlighted(text.size());
-        for (std::string_view word : words)
+        const UInt8 * text_begin = toBytes(text);
+        const UInt8 * text_end = text_begin + text.size();
+        for (const auto & searcher : searchers)
         {
-            for (size_t found = lower.find(word); found < text.size(); found = lower.find(word, found + 1))
-                std::fill_n(highlighted.begin() + found, std::min(word.size(), text.size() - found), true);
+            for (const UInt8 * found = searcher.search(text_begin, text_end); found != text_end;
+                 found = searcher.search(found + UTF8::seqLength(*found), text_end))
+            {
+                std::fill(highlighted.begin() + (found - text_begin), highlighted.begin() + (searcher.matchEnd(found, text_end) - text_begin), true);
+            }
         }
 
         for (size_t begin = 0; begin < text.size();)
@@ -272,7 +339,6 @@ private:
             if (buf.ends_with(PASTE_END))
             {
                 buf.resize(buf.size() - PASTE_END.size());
-                replaceLineBreaks(buf);
                 query += buf;
                 return true;
             }
@@ -334,11 +400,17 @@ private:
     std::string loop()
     {
         refilter();
-        ssize_t page = static_cast<ssize_t>(std::max<size_t>(list_rows, 1));
         while (true)
         {
             redraw();
+            /// Wake up periodically to follow the terminal size.
+            while (!in.poll(100'000))
+            {
+                if (handleResize())
+                    redraw();
+            }
 
+            ssize_t page = static_cast<ssize_t>(std::max<size_t>(list_rows, 1));
             char c;
             if (!readByte(c))
                 return {};

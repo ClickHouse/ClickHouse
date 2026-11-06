@@ -1,7 +1,8 @@
 #!/usr/bin/expect -f
 
-# Ctrl-R opens an interactive history search: words match in any order and case,
-# Esc leaves the line unchanged, and pasted text is used as the search query.
+# Ctrl-R opens an interactive history search: words match in any order and case (also non-ASCII),
+# Esc leaves the line unchanged, pasted text is used as the search query, control characters
+# from the history are not sent to the terminal, and an unmatched query is kept as typed.
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
@@ -13,7 +14,8 @@ if {[info exists env(CLICKHOUSE_TMP)]} {
 exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
 set history_file $CLICKHOUSE_TMP/$basename.history
 
-exec bash -c "rm -f $history_file"
+# Entries with a terminal control sequence and with non-ASCII letters.
+exec bash -c "printf '### 2026-01-01 00:00:00.000\\nSELECT \\x27\\033]0;zzctl\\007\\x27\\n### 2026-01-01 00:00:01.000\\nSELECT \\x27ПРИВЕТ_unicode\\x27\\n' > $history_file"
 
 log_user 0
 set timeout 60
@@ -86,6 +88,33 @@ send -- "\r"
 expect "SELECT 'alpha_marker_one'"
 send -- "\r"
 expect "alpha_marker_one"
+expect "1 row in set"
+expect ":) "
+
+# The control characters of an entry are shown as `?`.
+send -- "\022"
+expect -re {[0-9]+/[0-9]+}
+send -- "zzctl"
+expect -re {1/[0-9]+}
+expect -ex "'?\]0;"
+send -- "\033"
+expect ":) "
+
+# Case-insensitive for non-ASCII letters too.
+send -- "\022"
+expect -re {[0-9]+/[0-9]+}
+send -- "привет"
+expect -re {1/[0-9]+}
+send -- "\033"
+expect ":) "
+
+# Enter without a match keeps the multi-line query as it was, with its line break after the comment.
+send -- "\033\[200~SELECT 'multi' || 'line' -- comment\n|| '_kept'\033\[201~"
+send -- "\022"
+expect -re {0/[0-9]+}
+send -- "\r"
+send -- "\r"
+expect "multiline_kept"
 expect "1 row in set"
 expect ":) "
 
