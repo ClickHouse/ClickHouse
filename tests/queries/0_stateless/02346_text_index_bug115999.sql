@@ -688,6 +688,27 @@ WHERE hasAnyTokens(t.c.j.k, ['ell']) OR b.category = 'nonexistent';
 
 DROP TABLE t_115999_shadowed;
 
+-- Two subcolumns of one physical column flattening to the same name: a sibling field wins resolution.
+SELECT 'a sibling field shadowing a JSON path in one Tuple';
+CREATE TABLE t_115999_sibling
+(
+    group_id UInt64,
+    c Tuple(`j.k` String, j JSON(k String)),
+    INDEX idx_c JSONAllValues(c.j) TYPE text(tokenizer = ngrams(3))
+)
+ENGINE = MergeTree
+ORDER BY group_id;
+
+INSERT INTO t_115999_sibling VALUES (1, tuple('world', '{"k":"hello"}'));
+
+-- Both print 0: `c.j.k` reads the sibling string, which the index on `c.j` does not describe.
+SELECT count() FROM t_115999_sibling AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasAnyTokens(t.c.j.k, ['orl']) OR b.category = 'nonexistent';
+SELECT count() FROM t_115999_sibling AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasAnyTokens(t.c.j.k, ['orl'], 'splitByNonAlpha') OR b.category = 'nonexistent';
+
+DROP TABLE t_115999_sibling;
+
 -- A subcolumn spelled as a function is normalized before this pass runs, so both spellings forward.
 SELECT 'a subcolumn read through tupleElement or variantElement';
 CREATE TABLE t_115999_element

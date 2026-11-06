@@ -120,6 +120,9 @@ a declared column spelled like a JSON path
 1
 1
 1
+a sibling field shadowing a JSON path in one Tuple
+0
+0
 a subcolumn read through tupleElement or variantElement
 1
 1
