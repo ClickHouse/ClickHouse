@@ -49,6 +49,12 @@ azure: READ, WRITE ON AZURE
 azure_plain: READ, WRITE ON AZURE
 azure_plain_rewritable: READ, WRITE ON AZURE
 hdfs: READ, WRITE ON HDFS
+S: the types that declare no source
+local_blob_storage: allowed
+local_plain: allowed
+local_plain_rewritable: allowed
+encrypted: allowed
+1
 G: with the S3 grant
 10
 I: include needs the grant on every source, even with an s3 type
@@ -56,6 +62,9 @@ READ, WRITE ON *
 0
 Z: a from_zk type needs the grant on every source, even with an s3 object storage
 READ, WRITE ON *
+Q: a from_zk value can add locations, even with a local object storage
+READ, WRITE ON *
+0
 M: a substituted type needs the grant on every source
 READ, WRITE ON *
 allowed

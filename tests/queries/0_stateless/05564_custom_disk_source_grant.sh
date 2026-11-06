@@ -51,6 +51,8 @@ function cleanup()
         DROP TABLE IF EXISTS t_05564_n SYNC;
         DROP TABLE IF EXISTS t_05564_o SYNC;
         DROP TABLE IF EXISTS t_05564_p SYNC;
+        DROP TABLE IF EXISTS t_05564_q SYNC;
+        DROP TABLE IF EXISTS t_05564_s SYNC;
         DROP TABLE IF EXISTS t_05564_z SYNC;
         DROP DATABASE IF EXISTS ${OTHER_DB} SYNC;
         DROP USER IF EXISTS ${USER_NAME};"
@@ -143,6 +145,16 @@ for storage_type in s3_with_keeper s3_plain s3_plain_rewritable azure_blob_stora
         object_storage_type = ${storage_type}, endpoint = 'http://localhost:11111/test/05564_${DB}/p/')")"
 done
 
+echo "S: the types that declare no source"
+for storage_type in local_blob_storage local_plain local_plain_rewritable; do
+    echo "${storage_type}: $(as_user "CREATE TABLE t_05564_s ${TABLE} SETTINGS disk = disk(type = object_storage,
+        object_storage_type = ${storage_type}, path = '${CLICKHOUSE_DISKS_FILES}/05564_s_${storage_type}_${DB}/')")"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_05564_s SYNC"
+done
+echo "encrypted: $(as_user "CREATE TABLE t_05564_s ${TABLE} SETTINGS disk = disk(type = encrypted, key = '1234567812345678',
+    path = '05564_s/', disk = disk(type = local, path = '${CLICKHOUSE_DISKS_FILES}/05564_s_encrypted_${DB}/'))")"
+$CLICKHOUSE_CLIENT -q "EXISTS TABLE t_05564_s"
+
 echo "G: with the S3 grant"
 $CLICKHOUSE_CLIENT -q "GRANT READ, WRITE ON S3 TO ${USER_NAME}"
 $CLICKHOUSE_CLIENT --user "${USER_NAME}" -m -q "
@@ -160,6 +172,12 @@ echo "Z: a from_zk type needs the grant on every source, even with an s3 object 
 as_user "CREATE TABLE t_05564_z ${TABLE} SETTINGS disk = disk(name = '05564_z_${DB}', type = 'from_zk /no_such_node_05564',
     object_storage_type = s3, endpoint = 'http://localhost:11111/test/05564_${DB}/z/',
     access_key_id = clickhouse, secret_access_key = clickhouse)" --dynamic_disk_allow_from_zk=1
+
+echo "Q: a from_zk value can add locations, even with a local object storage"
+as_user "CREATE TABLE t_05564_q ${TABLE} SETTINGS disk = disk(name = '05564_q_${DB}', type = object_storage,
+    object_storage_type = local_blob_storage, path = '${CLICKHOUSE_DISKS_FILES}/05564_q_${DB}/',
+    locations = 'from_zk /no_such_node_05564')" --dynamic_disk_allow_from_zk=1
+disk_exists q
 
 echo "M: a substituted type needs the grant on every source"
 FROM_ENV_TABLE="t_05564_m ${TABLE} SETTINGS disk = disk(type = 'from_env NO_SUCH_VARIABLE_05564',

@@ -295,7 +295,7 @@ void addSourceAccessOfDiskFunction(const ASTFunction & function, AccessRightsEle
 {
     std::optional<String> type;
     std::optional<String> object_storage_type;
-    /// `include` can add backends, a substituted value is resolved elsewhere, and a repeated selector is ambiguous.
+    /// `include` and `from_zk` (spliced as XML) can add backends, `from_env` hides a selector, and a repeated selector is ambiguous.
     bool backends_not_stated = false;
 
     for (const auto & arg : function.arguments->children)
@@ -308,15 +308,15 @@ void addSourceAccessOfDiskFunction(const ASTFunction & function, AccessRightsEle
         if (!key)
             continue;
 
-        if (key->name() == "include")
+        const auto value = getDiskArgumentValue(equals->arguments->children[1]);
+        if (key->name() == "include" || (value && value->starts_with("from_zk")))
         {
             backends_not_stated = true;
         }
         else if (key->name() == "type" || key->name() == "object_storage_type")
         {
             auto & selector = key->name() == "type" ? type : object_storage_type;
-            auto value = getDiskArgumentValue(equals->arguments->children[1]);
-            if (selector || !value || value->starts_with("from_env") || value->starts_with("from_zk"))
+            if (selector || !value || value->starts_with("from_env"))
                 backends_not_stated = true;
             selector = value.value_or("");
         }
