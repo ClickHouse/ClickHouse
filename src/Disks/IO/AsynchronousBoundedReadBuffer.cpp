@@ -87,6 +87,7 @@ AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
     {
         use_page_cache = true;
         buffer_size = page_cache_block_size;
+        padded = false;
     }
     LOG_TEST(log, "Using buffer size {} while reading {}", buffer_size, file_name);
 
@@ -451,7 +452,9 @@ AsynchronousBoundedReadBuffer::~AsynchronousBoundedReadBuffer()
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        /// A killed query's prefetch fails with the query's own cancellation, which the query reports itself.
+        const bool query_killed = CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled();
+        tryLogCurrentException(log, "", query_killed ? LogsLevel::debug : LogsLevel::error);
     }
 }
 
