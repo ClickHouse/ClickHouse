@@ -25,6 +25,8 @@ DROP TABLE IF EXISTS t_variant_in_part;
 DROP TABLE IF EXISTS t_patch_before;
 DROP TABLE IF EXISTS t_patch_merged;
 DROP TABLE IF EXISTS t_patch_after;
+DROP TABLE IF EXISTS t_patch_after_mutation;
+DROP TABLE IF EXISTS t_old_patch_after_mutation;
 DROP TABLE IF EXISTS t_cast_path;
 DROP TABLE IF EXISTS t_cast_path_patch;
 DROP TABLE IF EXISTS t_array_map;
@@ -232,6 +234,26 @@ ALTER TABLE t_patch_after MODIFY COLUMN data JSON(a String) SETTINGS enable_json
 UPDATE t_patch_after SET data = '{"a" : "xyz7"}' WHERE id = 1;
 SELECT id, length(data.a) FROM t_patch_after ORDER BY id;
 SELECT id, data.a FROM t_patch_after ORDER BY id;
+
+SELECT 'patch after a pending mutation';
+CREATE TABLE t_patch_after_mutation (id UInt64, j JSON(a UInt32), x UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO t_patch_after_mutation VALUES (1, '{"a" : 42}', 0), (2, '{"a" : 12345}', 0);
+SYSTEM STOP MERGES t_patch_after_mutation;
+ALTER TABLE t_patch_after_mutation MODIFY COLUMN j JSON(a String) SETTINGS enable_json_lazy_type_hints = 1;
+ALTER TABLE t_patch_after_mutation UPDATE x = length(j.a) WHERE 1 SETTINGS mutations_sync = 0, alter_sync = 0, alter_update_mode = 'heavy';
+UPDATE t_patch_after_mutation SET j = '{"a" : "abcdefgh"}' WHERE id = 1;
+SELECT id, x, j, length(j.a) FROM t_patch_after_mutation ORDER BY id SETTINGS apply_mutations_on_fly = 1;
+SELECT id, x FROM t_patch_after_mutation WHERE length(j.a) = 8 ORDER BY id SETTINGS apply_mutations_on_fly = 1;
+
+CREATE TABLE t_old_patch_after_mutation (id UInt64, j JSON(a UInt32), x UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO t_old_patch_after_mutation VALUES (1, '{"a" : 42}', 0), (2, '{"a" : 12345}', 0);
+SYSTEM STOP MERGES t_old_patch_after_mutation;
+ALTER TABLE t_old_patch_after_mutation UPDATE x = length(toString(j.a)) WHERE 1 SETTINGS mutations_sync = 0, alter_sync = 0, alter_update_mode = 'heavy';
+UPDATE t_old_patch_after_mutation SET j = '{"a" : 1234567}' WHERE id = 1;
+ALTER TABLE t_old_patch_after_mutation MODIFY COLUMN j JSON(a String) SETTINGS enable_json_lazy_type_hints = 1, mutations_sync = 0, alter_sync = 0;
+SELECT id, x, length(j.a) FROM t_old_patch_after_mutation ORDER BY id SETTINGS apply_mutations_on_fly = 1;
 
 SELECT 'hint added, subcolumns from the cast path';
 CREATE TABLE t_cast_path (id UInt64, j JSON) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
@@ -489,6 +511,8 @@ DROP TABLE t_variant_in_part;
 DROP TABLE t_patch_before;
 DROP TABLE t_patch_merged;
 DROP TABLE t_patch_after;
+DROP TABLE t_patch_after_mutation;
+DROP TABLE t_old_patch_after_mutation;
 DROP TABLE t_cast_path;
 DROP TABLE t_cast_path_patch;
 DROP TABLE t_array_map;

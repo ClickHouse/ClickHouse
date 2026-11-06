@@ -52,6 +52,13 @@ MergeTreeReadersChain::MergeTreeReadersChain(RangeReaders range_readers_, MergeT
             previous_steps_columns[i].insert(column.name);
     }
 
+    next_steps_sources_of_subcolumns.resize(range_readers.size());
+    for (size_t i = range_readers.size(); i > 1; --i)
+    {
+        next_steps_sources_of_subcolumns[i - 2] = next_steps_sources_of_subcolumns[i - 1];
+        next_steps_sources_of_subcolumns[i - 2].merge(range_readers[i - 1].getReader()->getSourcesOfSubcolumns());
+    }
+
     for (size_t i = range_readers.size(); i > 1; --i)
     {
         if (range_readers[i - 1].getReader()->mayEvaluateMissingDefaults())
@@ -861,6 +868,31 @@ void MergeTreeReadersChain::applyPatchesAfterReader(ReadResult & result, size_t 
         columns_for_patches,
         suitable_orders,
         result.columns_for_patches);
+
+    /// A step may have moved a column to `additional_columns`, from which the next steps extract subcolumns.
+    Block sources;
+    for (const auto & column : result.additional_columns)
+    {
+        if (next_steps_sources_of_subcolumns[reader_index].contains(column.name))
+            sources.insert(column);
+    }
+
+    if (sources.empty())
+        return;
+
+    auto source_columns = sources.getColumns();
+    applyPatches(
+        sources,
+        source_columns,
+        result.patch_versions_block,
+        min_version,
+        max_version,
+        getColumnsForPatches(sources, source_columns),
+        suitable_orders,
+        result.columns_for_patches);
+
+    for (size_t i = 0; i < source_columns.size(); ++i)
+        result.additional_columns.getByName(sources.getByPosition(i).name).column = std::move(source_columns[i]);
 }
 
 void MergeTreeReadersChain::applyPatches(

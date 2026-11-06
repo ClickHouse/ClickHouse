@@ -399,6 +399,15 @@ void IMergeTreeReader::fillMissingColumns(
     }
 }
 
+NameSet IMergeTreeReader::getSourcesOfSubcolumns() const
+{
+    NameSet res;
+    for (const auto & source : sources_of_subcolumns)
+        if (source)
+            res.insert(*source);
+    return res;
+}
+
 bool IMergeTreeReader::mayEvaluateMissingDefaults() const
 {
     if (!may_evaluate_missing_defaults)

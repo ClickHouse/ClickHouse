@@ -86,6 +86,9 @@ public:
     /// Re-extracts the subcolumns whose sources, named in @patched_columns, were patched after `evaluateMissingDefaults`.
     void extractSubcolumnsOfPatchedSources(Columns & res_columns, const NameSet & patched_columns) const;
 
+    /// The columns that subcolumns are extracted from (see `getSourceOfRequiredSubcolumn`).
+    NameSet getSourcesOfSubcolumns() const;
+
     /// Whether `fillMissingColumns` may leave a requested column to `evaluateMissingDefaults`.
     bool mayEvaluateMissingDefaults() const;
 
