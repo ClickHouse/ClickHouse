@@ -49,6 +49,8 @@ DROP TABLE IF EXISTS t_read_cast_path_changed;
 DROP TABLE IF EXISTS t_read_cast_path_array;
 DROP TABLE IF EXISTS t_read_cast_path_tuple;
 DROP TABLE IF EXISTS t_scalar_sibling;
+DROP TABLE IF EXISTS t_read_cast_path_map;
+DROP TABLE IF EXISTS t_scalar_sibling_map;
 DROP TABLE IF EXISTS t_default_dep;
 
 SELECT 'issue 123339';
@@ -487,12 +489,24 @@ INSERT INTO t_read_cast_path_tuple SELECT number, CAST(tuple(concat('{"a" : ', t
 ALTER TABLE t_read_cast_path_tuple MODIFY COLUMN tup Tuple(t JSON(a String)) SETTINGS mutations_sync = 0, alter_sync = 0;
 SELECT sum(length(tup.t.a)), sum(tup.t.a.size) FROM t_read_cast_path_tuple SETTINGS log_comment = '05508_read_cast_path_tuple';
 
+CREATE TABLE t_read_cast_path_map (id UInt64, m Map(String, JSON(a UInt32))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_read_cast_path_map;
+INSERT INTO t_read_cast_path_map SELECT number, map('k', concat('{"a" : ', toString(number * 100), ', "big" : "', repeat('x', 100000), '"}')) FROM numbers(3);
+ALTER TABLE t_read_cast_path_map MODIFY COLUMN m Map(String, JSON(a String)) SETTINGS mutations_sync = 0, alter_sync = 0;
+SELECT sum(arraySum(m.values.a.size)) FROM t_read_cast_path_map SETTINGS log_comment = '05508_read_cast_path_map';
+
 SELECT 'a scalar member next to a JSON member is read and cast as stored';
 CREATE TABLE t_scalar_sibling (id UInt64, tup Tuple(a UInt64, b String, j JSON)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
 SYSTEM STOP MERGES t_scalar_sibling;
 INSERT INTO t_scalar_sibling SELECT number, CAST(tuple(number * 7, 'x', concat('{"big" : "', repeat('x', 100000), '"}')), 'Tuple(a UInt64, b String, j JSON)') FROM numbers(3);
 ALTER TABLE t_scalar_sibling MODIFY COLUMN tup Tuple(a String, b UInt64, j JSON) SETTINGS mutations_sync = 0, alter_sync = 0;
 SELECT id, tup.a FROM t_scalar_sibling ORDER BY id SETTINGS log_comment = '05508_read_scalar_sibling';
+
+CREATE TABLE t_scalar_sibling_map (id UInt64, m Map(String, Tuple(a UInt64, b String, j JSON))) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_scalar_sibling_map;
+INSERT INTO t_scalar_sibling_map SELECT number, map('k', CAST(tuple(number * 7, 'x', concat('{"big" : "', repeat('x', 100000), '"}')), 'Tuple(a UInt64, b String, j JSON)')) FROM numbers(3);
+ALTER TABLE t_scalar_sibling_map MODIFY COLUMN m Map(String, Tuple(a String, b UInt64, j JSON)) SETTINGS mutations_sync = 0, alter_sync = 0;
+SELECT id, m.values.a FROM t_scalar_sibling_map ORDER BY id SETTINGS log_comment = '05508_read_scalar_sibling_map';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, read_bytes < 50000 FROM system.query_log
@@ -543,4 +557,6 @@ DROP TABLE t_read_cast_path_changed;
 DROP TABLE t_read_cast_path_array;
 DROP TABLE t_read_cast_path_tuple;
 DROP TABLE t_scalar_sibling;
+DROP TABLE t_read_cast_path_map;
+DROP TABLE t_scalar_sibling_map;
 DROP TABLE t_default_dep;

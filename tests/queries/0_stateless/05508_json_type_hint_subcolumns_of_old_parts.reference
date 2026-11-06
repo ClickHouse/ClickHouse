@@ -212,12 +212,18 @@ subcolumns from the cast path read only the path
 7	7
 7
 7	7
+7
 a scalar member next to a JSON member is read and cast as stored
 0	0
 1	7
 2	14
+0	['0']
+1	['7']
+2	['14']
 05508_read_cast_path_added	1
 05508_read_cast_path_array	1
 05508_read_cast_path_changed	1
+05508_read_cast_path_map	1
 05508_read_cast_path_tuple	1
 05508_read_scalar_sibling	1
+05508_read_scalar_sibling_map	1

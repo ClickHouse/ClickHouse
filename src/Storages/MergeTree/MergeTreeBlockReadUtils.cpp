@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -226,6 +227,9 @@ const IDataType * getTypeOfSubstream(const IDataType * type, const Substream & s
         case Substream::ArrayElements:
             if (const auto * array = typeid_cast<const DataTypeArray *>(type))
                 return array->getNestedType().get();
+            /// A `Map` is serialized as its nested `Array(Tuple(keys, values))`.
+            if (const auto * map = typeid_cast<const DataTypeMap *>(type))
+                return getTypeOfSubstream(map->getNestedType().get(), substream);
             return nullptr;
         case Substream::NullableElements:
             if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type))
@@ -358,7 +362,7 @@ bool isTypeHintCastOfPath(
 }
 
 /// The typed path with @subcolumn in its value when that value is cast to the hint (see `isTypeHintCastOfPath`). The path's object
-/// is the column or an element of its `Array` / `Tuple` wrappers.
+/// is the column or an element of its `Array` / `Map` / `Tuple` wrappers.
 std::optional<String> tryGetCastPathOfSubcolumn(const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part)
 {
     const auto & type_in_storage = subcolumn.getTypeInStorage();
