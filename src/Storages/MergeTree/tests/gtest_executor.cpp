@@ -149,6 +149,28 @@ private:
 };
 
 
+class DestructionTrackingExecutableTask : public IExecutableTask
+{
+public:
+    explicit DestructionTrackingExecutableTask(std::latch & destroyed_)
+        : destroyed(destroyed_)
+    {
+    }
+
+    ~DestructionTrackingExecutableTask() override { destroyed.count_down(); }
+
+    bool executeStep() override { return false; }
+    void cancel() noexcept override { }
+    StorageID getStorageID() const override { return {"test", "destruction_tracking"}; }
+    void onCompleted() override { }
+    Priority getPriority() const override { return {}; }
+    String getQueryId() const override { return "test::destruction_tracking"; }
+
+private:
+    std::latch & destroyed;
+};
+
+
 TEST(Executor, Simple)
 {
     auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>
@@ -279,6 +301,51 @@ TEST(Executor, SchedulingPauseWaitsForTaskDestruction)
         auto final_pause = executor->pauseScheduling();
         ASSERT_TRUE(final_pause.waitForIdle(deadline));
     }
+    executor->wait();
+}
+
+
+TEST(Executor, SchedulingCallerDoesNotRetainAcceptedTask)
+{
+    std::latch scheduling_caller_held(1);
+    std::latch release_scheduling_caller(1);
+    std::latch task_destroyed(1);
+
+    auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>(
+        ThreadName::TEST_SCHEDULER,
+        1, // threads
+        1, // max_tasks
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds);
+
+    auto task = std::make_shared<DestructionTrackingExecutableTask>(task_destroyed);
+    std::weak_ptr<IExecutableTask> weak_task = task;
+    auto scheduling_caller = std::async(
+        std::launch::async,
+        [&, task = std::move(task)]() mutable
+        {
+            const bool scheduled = executor->trySchedule(std::move(task));
+            scheduling_caller_held.count_down();
+            release_scheduling_caller.wait();
+            return scheduled;
+        });
+
+    scheduling_caller_held.wait();
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    auto pause = executor->pauseScheduling();
+    const bool became_idle = pause.waitForIdle(deadline);
+    EXPECT_TRUE(became_idle);
+    EXPECT_TRUE(task_destroyed.try_wait());
+    EXPECT_TRUE(weak_task.expired());
+    EXPECT_EQ(scheduling_caller.wait_for(std::chrono::milliseconds(0)), std::future_status::timeout);
+
+    release_scheduling_caller.count_down();
+    EXPECT_TRUE(scheduling_caller.get());
     executor->wait();
 }
 
