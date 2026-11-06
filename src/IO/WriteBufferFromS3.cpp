@@ -184,6 +184,12 @@ void WriteBufferFromS3::preFinalize()
             do_single_part_upload = true;
     }
 
+    if (!do_single_part_upload && client_ptr->isClientForGCS() && write_settings.object_storage_write_if_none_match == "*")
+        throw S3Exception(
+            Aws::S3::S3Errors::UNKNOWN,
+            "GCS conditional create of {} must be a single PUT. CompleteMultipartUpload ignores preconditions.",
+            key);
+
     if (do_single_part_upload)
     {
         if (detached_part_data.empty())
