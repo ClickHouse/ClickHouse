@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Processors/TopKThresholdTracker.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
@@ -207,7 +208,8 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                     const auto & global_row_index
                         = key_dag.addFunction(FunctionFactory::instance().get("plus", context), {&part_offset, &part_starting_offset}, {});
                     key_dag.getOutputs() = {&global_row_index};
-                    const String global_row_index_name = global_row_index.result_name;
+                    const String global_row_index_name(runtime_filter_global_row_index_node_name);
+                    chassert(global_row_index.result_name == global_row_index_name);
                     total_offset_condition.emplace(
                         filter_dag,
                         context,

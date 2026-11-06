@@ -3164,7 +3164,9 @@ bool areAllSkipIndexColumnsInPrimaryKey(const KeyDescription & primary_key, cons
 static bool isRuntimeFilterGlobalRowIndexUsable(const StorageInMemoryMetadata & metadata)
 {
     const auto & columns = metadata.getColumns();
-    return !columns.has("_part_offset") && !columns.has("_part_starting_offset");
+    /// A column with the name of the pruning predicate's node would be taken for that node by the primary key and skip indexes.
+    return !columns.has("_part_offset") && !columns.has("_part_starting_offset")
+        && !columns.has(String(runtime_filter_global_row_index_node_name));
 }
 
 void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(

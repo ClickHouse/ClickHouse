@@ -1172,6 +1172,7 @@ static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
         const auto & part_offset = findOrAddInput(dag, "_part_offset", uint64_type);
         const auto & part_starting_offset = findOrAddInput(dag, "_part_starting_offset", uint64_type);
         key_node_ptr = &dag.addFunction(FunctionFactory::instance().get("plus", context), {&part_offset, &part_starting_offset}, {});
+        chassert(key_node_ptr->result_name == runtime_filter_global_row_index_node_name);
     }
     else
         key_node_ptr = &dag.addInput(column_name, column_type);

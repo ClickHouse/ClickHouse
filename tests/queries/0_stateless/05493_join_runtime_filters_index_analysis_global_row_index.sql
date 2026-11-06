@@ -95,6 +95,34 @@ WHERE a._part_starting_offset + a._part_offset = b.g
 ORDER BY a.id
 SETTINGS log_comment = '05493_global_row_index_shadowed';
 
+-- A column named like the node of the pruning predicate, which `CREATE TABLE ... AS SELECT` creates without an alias,
+-- would be taken for the global row index by the primary key and skip indexes, so the join is not pruned by it.
+DROP TABLE IF EXISTS t_rf_global_row_index_name_pk;
+DROP TABLE IF EXISTS t_rf_global_row_index_name_skip;
+CREATE TABLE t_rf_global_row_index_name_pk (id UInt64, `plus(_part_offset, _part_starting_offset)` UInt64)
+ENGINE = MergeTree ORDER BY `plus(_part_offset, _part_starting_offset)` SETTINGS index_granularity = 16, index_granularity_bytes = '10Mi';
+CREATE TABLE t_rf_global_row_index_name_skip
+(
+    id UInt64,
+    `plus(_part_offset, _part_starting_offset)` UInt64,
+    INDEX idx `plus(_part_offset, _part_starting_offset)` TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 16, index_granularity_bytes = '10Mi';
+INSERT INTO t_rf_global_row_index_name_pk SELECT number, number + 10000 FROM numbers(1600);
+INSERT INTO t_rf_global_row_index_name_skip SELECT number, number + 10000 FROM numbers(1600);
+
+SELECT a.id FROM t_rf_global_row_index_name_pk AS a, (SELECT toUInt64(5) AS g) AS b
+WHERE a._part_starting_offset + a._part_offset = b.g
+SETTINGS log_comment = '05493_global_row_index_name_collision_pk';
+
+SELECT a.id FROM t_rf_global_row_index_name_pk AS a, (SELECT toUInt64(5) AS g) AS b
+WHERE a._part_starting_offset + a._part_offset = b.g
+SETTINGS join_runtime_filter_exact_values_limit = 0, log_comment = '05493_global_row_index_name_collision_pk_range';
+
+SELECT a.id FROM t_rf_global_row_index_name_skip AS a, (SELECT toUInt64(5) AS g) AS b
+WHERE a._part_starting_offset + a._part_offset = b.g
+SETTINGS log_comment = '05493_global_row_index_name_collision_skip';
+
 SYSTEM FLUSH LOGS query_log;
 
 -- A part can be analyzed more than once by a query (when its index read result is rebuilt), which adds its granules
@@ -110,7 +138,8 @@ SELECT
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
     AND log_comment IN ('05493_global_row_index', '05493_global_row_index_swapped', '05493_global_row_index_and_offset',
-        '05493_part_and_offset', '05493_global_row_index_shadowed')
+        '05493_part_and_offset', '05493_global_row_index_shadowed', '05493_global_row_index_name_collision_pk',
+        '05493_global_row_index_name_collision_pk_range', '05493_global_row_index_name_collision_skip')
 GROUP BY log_comment
 ORDER BY log_comment;
 
@@ -128,3 +157,5 @@ GROUP BY log_comment;
 
 DROP TABLE t_rf_global_row_index;
 DROP TABLE t_rf_global_row_index_shadowed;
+DROP TABLE t_rf_global_row_index_name_pk;
+DROP TABLE t_rf_global_row_index_name_skip;
