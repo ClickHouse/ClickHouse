@@ -139,7 +139,7 @@ private:
 
     std::unordered_map<String, TaskStatePtr> tasks TSA_GUARDED_BY(tasks_mutex);
     /// Ids cancelled before their start arrived. Bounded: past the cap the oldest is dropped.
-    static constexpr size_t MAX_CANCELLED_BEFORE_START = 100000;
+    static constexpr size_t MAX_CANCELLED_BEFORE_START = 1000;
     std::unordered_set<String> cancelled_before_start TSA_GUARDED_BY(tasks_mutex);
     std::deque<String> cancelled_before_start_order TSA_GUARDED_BY(tasks_mutex);
     std::mutex tasks_mutex;
