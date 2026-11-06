@@ -5,9 +5,11 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/IASTHash.h>
+#include <Storages/ColumnDefault.h>
 
 #include <map>
 #include <mutex>
+#include <optional>
 #include <vector>
 
 namespace DB
@@ -15,25 +17,34 @@ namespace DB
 
 struct StorageInMemoryMetadata;
 
-/// what a hypothetical definition binds to in the table: the type and default of each column it names,
-/// and the table settings; only `CREATE` validates a definition, `EXPLAIN WHATIF` compares this
+/// what a hypothetical definition binds to in the table: the columns its analysis read, the ordered expansion
+/// of each matcher, and the table settings; only `CREATE` validates a definition, `EXPLAIN WHATIF` compares this
 struct HypotheticalBinding
 {
-    /// a name that is not a column maps to an empty string
-    std::map<String, String> columns;
-    /// tree hashes of the bound defaults, because `columns` hides what `query_masking_rules` match
-    std::map<String, IASTHash> defaults;
-    /// the storage columns behind `columns`
-    NameSet storage_columns;
-    /// the ordered expansion of `*`
-    Names wildcard;
+    struct Column
+    {
+        String name_in_storage;
+        String type;
+        std::optional<ColumnDefaultKind> default_kind;
+        IASTHash default_hash{};
+        /// masked by `query_masking_rules`, so only for the reason
+        String default_text;
+
+        bool operator==(const Column & other) const
+        {
+            return type == other.type && default_kind == other.default_kind && default_hash == other.default_hash;
+        }
+    };
+
+    std::map<String, Column> columns;
+    std::vector<std::pair<ASTPtr, Names>> expansions;
     String settings;
 
-    static HypotheticalBinding of(const IAST & definition, const StorageInMemoryMetadata & metadata);
+    static HypotheticalBinding of(const IndexDescription & index, const StorageInMemoryMetadata & metadata);
     static HypotheticalBinding of(const ProjectionDescription & projection, const StorageInMemoryMetadata & metadata);
 
-    /// empty when nothing changed, otherwise what changed; a change needs SELECT on the bound columns
-    String changeTo(const HypotheticalBinding & current, const ContextPtr & context, const StorageID & table_id) const;
+    /// empty when nothing changed, otherwise what changed; a change needs SELECT on the columns it names
+    String changeIn(const StorageInMemoryMetadata & metadata, const ContextPtr & context, const StorageID & table_id) const;
 };
 
 /// Session-scoped store for hypothetical indexes and projections, used by EXPLAIN WHATIF

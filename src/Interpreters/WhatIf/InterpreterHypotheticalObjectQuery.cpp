@@ -197,7 +197,7 @@ BlockIO createHypotheticalIndex(
     /// sparse_grams), so construct once here instead of failing later inside EXPLAIN WHATIF
     MergeTreeIndexFactory::instance().get(metadata, index_desc, *merge_tree.getSettings());
 
-    store.add(table_id, index_desc, HypotheticalBinding::of(*index_desc.definition_ast, *metadata), query.if_not_exists);
+    store.add(table_id, index_desc, HypotheticalBinding::of(index_desc, *metadata), query.if_not_exists);
     return {};
 }
 

@@ -1,10 +1,15 @@
 #include <Interpreters/WhatIf/HypotheticalObjectStore.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Analyzer/MatcherNode.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTColumnsTransformers.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/Exception.h>
@@ -23,66 +28,118 @@ namespace ErrorCodes
 namespace
 {
 
-void bindColumn(const String & name, const ColumnsDescription & columns, HypotheticalBinding & binding);
-
-void bindIdentifiers(const IAST & ast, const ColumnsDescription & columns, HypotheticalBinding & binding)
+std::optional<HypotheticalBinding::Column> describeColumn(const String & name, const ColumnsDescription & columns)
 {
-    if (const auto * identifier = ast.as<ASTIdentifier>())
-        bindColumn(identifier->name(), columns, binding);
-    else if (ast.as<ASTAsterisk>() || ast.as<ASTColumnsRegexpMatcher>())
-    {
-        /// the order decides positional arguments such as `GROUP BY 1`
-        binding.wildcard = columns.getOrdinary().getNames();
-        for (const auto & name : binding.wildcard)
-            bindColumn(name, columns, binding);
-    }
-    for (const auto & child : ast.children)
-        bindIdentifiers(*child, columns, binding);
-}
-
-void bindColumn(const String & name, const ColumnsDescription & columns, HypotheticalBinding & binding)
-{
-    auto [it, inserted] = binding.columns.try_emplace(name);
-    if (!inserted)
-        return;
     const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
     if (!column)
-        return;
-    binding.storage_columns.insert(column->getNameInStorage());
-    it->second = column->type->getName();
-    if (const auto column_default = columns.getDefault(column->getNameInStorage()))
+        return std::nullopt;
+    HypotheticalBinding::Column result;
+    result.name_in_storage = column->getNameInStorage();
+    result.type = column->type->getName();
+    if (const auto column_default = columns.getDefault(result.name_in_storage))
     {
-        it->second += fmt::format(" {} {}", toString(column_default->kind), column_default->expression->formatForErrorMessage());
-        binding.defaults[name] = column_default->expression->getTreeHash(/*ignore_aliases=*/false);
-        bindIdentifiers(*column_default->expression, columns, binding);
+        result.default_kind = column_default->kind;
+        result.default_hash = column_default->expression->getTreeHash(/*ignore_aliases=*/false);
+        result.default_text = column_default->expression->formatForErrorMessage();
     }
+    return result;
 }
 
-String describeChange(const HypotheticalBinding & stored, const HypotheticalBinding & current)
+String describe(const std::optional<HypotheticalBinding::Column> & column)
 {
-    auto report = [](const String & name, const String & before, const String & after)
+    if (!column)
+        return "absent";
+    if (!column->default_kind)
+        return column->type;
+    return fmt::format("{} {} {}", column->type, toString(*column->default_kind), column->default_text);
+}
+
+/// false when the column is bound already, or the name is not a column, such as `_part_offset`
+bool bindColumn(const String & name, const ColumnsDescription & columns, HypotheticalBinding & binding)
+{
+    if (binding.columns.contains(name))
+        return false;
+    auto column = describeColumn(name, columns);
+    if (!column)
+        return false;
+    binding.columns.emplace(name, std::move(*column));
+    return true;
+}
+
+/// the storage columns that an expression reads, also through `ALIAS` columns
+void collectReads(const IAST & ast, const ColumnsDescription & columns, NameSet & names)
+{
+    if (const auto * identifier = ast.as<ASTIdentifier>())
     {
-        auto describe = [](const String & column) { return column.empty() ? String("absent") : column; };
-        return fmt::format("column {} was {}, now {}", backQuote(name), describe(before), describe(after));
-    };
-    /// a name on one side only is reached through a column that changed, so report the columns on both sides first
-    for (const auto & [name, before] : stored.columns)
-        if (const auto it = current.columns.find(name); it != current.columns.end() && it->second != before)
-            return report(name, before, it->second);
-    for (const auto & [name, before] : stored.columns)
-        if (!before.empty() && !current.columns.contains(name))
-            return report(name, before, {});
-    for (const auto & [name, after] : current.columns)
-        if (!after.empty() && !stored.columns.contains(name))
-            return report(name, {}, after);
-    for (const auto & [name, before] : stored.defaults)
-        if (const auto it = current.defaults.find(name); it != current.defaults.end() && it->second != before)
-            return fmt::format("the default of column {} changed", backQuote(name));
-    if (stored.wildcard != current.wildcard)
-        return fmt::format("the columns under `*` were ({}), now ({})", fmt::join(stored.wildcard, ", "), fmt::join(current.wildcard, ", "));
-    if (stored.settings != current.settings)
-        return "the table settings changed";
-    return {};
+        const auto column = describeColumn(identifier->name(), columns);
+        if (column && names.insert(column->name_in_storage).second && column->default_kind == ColumnDefaultKind::Alias)
+            collectReads(*columns.getDefault(column->name_in_storage)->expression, columns, names);
+    }
+    for (const auto & child : ast.children)
+        collectReads(*child, columns, names);
+}
+
+/// as `ReplaceAliasByExpressionMatcher`, a lambda parameter masks a column of the same name
+void bindAliases(const IAST & ast, const ColumnsDescription & columns, const NameSet & masked, HypotheticalBinding & binding)
+{
+    if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
+    {
+        NameSet inner = masked;
+        for (auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
+            inner.insert(std::move(name));
+        bindAliases(*function->arguments->children[1], columns, inner, binding);
+        return;
+    }
+    if (const auto * identifier = ast.as<ASTIdentifier>())
+    {
+        const auto & name = identifier->name();
+        /// an `ALIAS` expression is written at table scope
+        if (!masked.contains(name) && columns.hasAlias(name) && bindColumn(name, columns, binding))
+            bindAliases(*columns.getDefault(name)->expression, columns, {}, binding);
+    }
+    /// an `APPLY` lambda is not in `children`
+    if (const auto * apply = ast.as<ASTColumnsApplyTransformer>(); apply && apply->lambda)
+        bindAliases(*apply->lambda, columns, masked, binding);
+    for (const auto & child : ast.children)
+        bindAliases(*child, columns, masked, binding);
+}
+
+/// the analyzer reads a projection with every column as ordinary, so a matcher expands over all of them
+Names expand(const IAST & matcher, const ColumnsDescription & columns)
+{
+    const auto * regexp = matcher.as<ASTColumnsRegexpMatcher>();
+    MatcherNode node = regexp ? MatcherNode(regexp->getPattern()) : MatcherNode();
+    Names names;
+    for (const auto & column : columns.getAll())
+        if (node.isMatchingColumn(column.name))
+            names.push_back(column.name);
+    return names;
+}
+
+void bindExpansions(const ASTPtr & ast, const ColumnsDescription & columns, HypotheticalBinding & binding)
+{
+    if (ast->as<ASTAsterisk>() || ast->as<ASTColumnsRegexpMatcher>())
+    {
+        auto names = expand(*ast, columns);
+        for (const auto & name : names)
+            bindColumn(name, columns, binding);
+        binding.expansions.emplace_back(ast, std::move(names));
+    }
+    for (const auto & child : ast->children)
+        bindExpansions(child, columns, binding);
+}
+
+HypotheticalBinding bindDefinition(const ASTPtr & definition, const Names & required_columns, const StorageInMemoryMetadata & metadata)
+{
+    HypotheticalBinding binding;
+    const auto & columns = metadata.getColumns();
+    for (const auto & name : required_columns)
+        bindColumn(name, columns, binding);
+    bindAliases(*definition, columns, {}, binding);
+    bindExpansions(definition, columns, binding);
+    if (metadata.hasSettingsChanges())
+        binding.settings = metadata.getSettingsChanges()->formatWithSecretsOneLine();
+    return binding;
 }
 
 bool sameTable(const StorageID & a, const StorageID & b)
@@ -164,33 +221,48 @@ bool eraseOrThrow(
 
 }
 
-HypotheticalBinding HypotheticalBinding::of(const IAST & definition, const StorageInMemoryMetadata & metadata)
+HypotheticalBinding HypotheticalBinding::of(const IndexDescription & index, const StorageInMemoryMetadata & metadata)
 {
-    HypotheticalBinding binding;
-    bindIdentifiers(definition, metadata.getColumns(), binding);
-    if (metadata.hasSettingsChanges())
-        binding.settings = metadata.getSettingsChanges()->formatWithSecretsOneLine();
-    return binding;
+    return bindDefinition(index.definition_ast, index.expression->getRequiredColumns(), metadata);
 }
 
 HypotheticalBinding HypotheticalBinding::of(const ProjectionDescription & projection, const StorageInMemoryMetadata & metadata)
 {
-    auto binding = of(*projection.definition_ast, metadata);
-    /// the walk does not reach an `APPLY` lambda, which is not in `children`, so the columns the analyzer resolved are bound too
-    for (const auto & name : projection.required_columns)
-        bindColumn(name, metadata.getColumns(), binding);
-    return binding;
+    return bindDefinition(projection.definition_ast, projection.required_columns, metadata);
 }
 
-String HypotheticalBinding::changeTo(const HypotheticalBinding & current, const ContextPtr & context, const StorageID & table_id) const
+String HypotheticalBinding::changeIn(const StorageInMemoryMetadata & metadata, const ContextPtr & context, const StorageID & table_id) const
 {
-    auto change = describeChange(*this, current);
-    if (change.empty())
-        return change;
-    /// the change describes bound columns, so it needs SELECT on them, as they were at CREATE and as they are now
-    NameSet names = storage_columns;
-    names.insert(current.storage_columns.begin(), current.storage_columns.end());
-    context->checkAccess(AccessType::SELECT, table_id, Names(names.begin(), names.end()));
+    const auto & current = metadata.getColumns();
+    String change;
+    NameSet names;
+    for (const auto & [name, before] : columns)
+    {
+        names.insert(before.name_in_storage);
+        const auto now = describeColumn(name, current);
+        if (now && now->default_kind == ColumnDefaultKind::Alias)
+            collectReads(*current.getDefault(now->name_in_storage)->expression, current, names);
+        if (!change.empty() || now == before)
+            continue;
+        /// defaults that differ only in masked text describe the same
+        if (describe(before) == describe(now))
+            change = fmt::format("the default of column {} changed", backQuote(name));
+        else
+            change = fmt::format("column {} was {}, now {}", backQuote(name), describe(before), describe(now));
+    }
+    for (const auto & [matcher, before] : expansions)
+    {
+        auto now = expand(*matcher, current);
+        if (change.empty() && now != before)
+            change = fmt::format(
+                "the columns under `{}` were ({}), now ({})", matcher->formatForErrorMessage(), fmt::join(before, ", "), fmt::join(now, ", "));
+        names.insert(now.begin(), now.end());
+    }
+    if (change.empty() && settings != (metadata.hasSettingsChanges() ? metadata.getSettingsChanges()->formatWithSecretsOneLine() : ""))
+        change = "the table settings changed";
+    /// the change describes bound columns, so it needs SELECT on them, as they were and as they are now
+    if (!change.empty())
+        context->checkAccess(AccessType::SELECT, table_id, Names(names.begin(), names.end()));
     return change;
 }
 

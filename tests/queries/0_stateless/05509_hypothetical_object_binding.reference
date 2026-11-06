@@ -7,4 +7,4 @@ status:       not_applicable
 reason:       Hypothetical index no longer matches the table: column `b` was UInt64, now UInt32. Run CREATE HYPOTHETICAL INDEX again
 a new column under SELECT * makes the projection not applicable
 status:       not_applicable
-reason:       Hypothetical projection no longer matches the table: column `d` was absent, now UInt64. Run CREATE HYPOTHETICAL PROJECTION again
+reason:       Hypothetical projection no longer matches the table: the columns under `*` were (a, b, c), now (a, b, c, d). Run CREATE HYPOTHETICAL PROJECTION again

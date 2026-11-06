@@ -229,8 +229,7 @@ WhatIfCandidateResult evaluateIndex(
     }
 
     const auto & metadata = read_step->getStorageMetadata();
-    const auto change = hypothetical.binding.changeTo(
-        HypotheticalBinding::of(*hypothetical.index.definition_ast, *metadata), context, data.getStorageID());
+    const auto change = hypothetical.binding.changeIn(*metadata, context, data.getStorageID());
     if (!change.empty())
     {
         result.status = WhatIfCandidateResult::NotApplicable;
