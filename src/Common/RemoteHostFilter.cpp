@@ -118,6 +118,10 @@ bool RemoteHostFilter::checkForDirectEntry(const std::string & str) const
         /// Allow everything by default.
         return true;
 
+    /// Connectors take the host as a C string and stop at the first NUL, so the checked string must not contain one.
+    if (str.contains('\0'))
+        return false;
+
     std::lock_guard guard(hosts_mutex);
 
     if (primary_hosts.contains(str))
