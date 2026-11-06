@@ -385,8 +385,8 @@ concept PreparedKeyGetter = std::derived_from<KeyGetter, PreparedJoinKeys<KeyGet
 /// - 16 bytes or more: the unkeyed `sipHash128Padded` of the string with bit 7 of byte 15 set. No short key has that
 ///   bit set, so a hashed key never equals a short one. Two long strings whose other 127 hash bits match share a key.
 ///
-/// `build` reads up to 7 bytes past the end of the string and `buildRange` up to 16; the chars of a `ColumnString` have
-/// that padding.
+/// `build` and `buildRange` read up to 16 bytes from the start of a string; the chars of a `ColumnString` have that
+/// padding.
 struct PackedStringJoinKey
 {
     static constexpr size_t max_inline_size = UnhashedPackedStringRef::MAX_SMALL_LEN;
@@ -398,7 +398,7 @@ struct PackedStringJoinKey
     static ALWAYS_INLINE UInt128 build(const char * data, size_t size)
     {
         if (size <= max_inline_size)
-            return std::bit_cast<UInt128>(UnhashedPackedStringRef::build(data, size));
+            return std::bit_cast<UInt128>(UnhashedPackedStringRef::buildShort(data, size));
 
         UInt128 key = sipHash128Padded(data, size);
         key.items[1] |= hashed_flag;

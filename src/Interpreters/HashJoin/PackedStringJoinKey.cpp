@@ -25,39 +25,11 @@ using SipHashStrings::chunk_rows;
 constexpr uint8_t first_long_bucket = 2;
 static_assert(PackedStringJoinKey::max_inline_size == first_long_bucket * sizeof(UInt64) - 1);
 
-/// A struct and not a `std::array`, because the hardened `operator[]` of `std::array` would check the bounds on every row.
-struct ShortKeyMasks
-{
-    alignas(16) UInt8 bytes[16][16];
-};
-
-/// For `size` at most 15, `short_key_masks.bytes[size]` has 0xFF in the bytes [0, size) and `size` shifted left by
-/// `SMALL_LEN_SHIFT_IN_BYTE` in byte 15.
-constexpr ShortKeyMasks short_key_masks = []
-{
-    ShortKeyMasks masks{};
-    for (size_t size = 0; size < 16; ++size)
-    {
-        std::fill_n(masks.bytes[size], size, 0xFF);
-        masks.bytes[size][15] = static_cast<UInt8>(size << UnhashedPackedStringRef::SMALL_LEN_SHIFT_IN_BYTE);
-    }
-    return masks;
-}();
-
-/// Writes `UnhashedPackedStringRef::build` of the string into `key`. `size` must be at most 15. It reads 16 bytes from `data`.
+/// Writes `UnhashedPackedStringRef::buildShort` of the string into `key`. `size` must be at most 15. It reads 16 bytes from `data`.
 ALWAYS_INLINE void shortKey(const char * data, size_t size, UInt128 * key)
 {
-    /// Two `UInt64` words, because clang reads them with one 16-byte load. From a byte array, clang loads bytes 0 to 14
-    /// as 8 + 4 + 2 + 1 bytes.
-    UInt64 words[2];
-    UInt64 mask[2];
-    memcpy(words, data, sizeof(words));
-    /// A table of masks instead of a branch on `size`.
-    memcpy(mask, short_key_masks.bytes[size], sizeof(mask));
-    words[0] &= mask[0];
-    /// Setting byte 15 to 0xFF makes the AND keep byte 15 of the mask, which holds the size.
-    words[1] = (words[1] | (UInt64(0xFF) << 56)) & mask[1];
-    memcpy(key, words, sizeof(words));
+    const auto ref = UnhashedPackedStringRef::buildShort(data, size);
+    memcpy(key, &ref, sizeof(ref));
 }
 
 /// Builds the keys of 1 to `chunk_rows` rows. Row `r` is the chars [offsets[r], offsets[r + 1]): for the rows
@@ -139,7 +111,7 @@ void buildChunk(const char * chars, const UInt64 * offsets, const UInt8 * skip, 
             buckets[num_long] = bucket;
             num_long += bucket >= first_long_bucket;
             /// `hashRows` overwrites the keys of the long rows, so for them `% 16` only has to keep the index into
-            /// `short_key_masks` in range. `% 16` is one AND, while `std::min` would need a compare and a select.
+            /// the mask table of `buildShort` in range. `% 16` is one AND, while `std::min` would need a compare and a select.
             shortKey(chars + offsets[r], (offsets[r + 1] - offsets[r]) % 16, keys + r);
         }
     }
