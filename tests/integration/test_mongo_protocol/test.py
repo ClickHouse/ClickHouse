@@ -3236,3 +3236,104 @@ def test_values_keep_their_categories(started_cluster):
     numbers.delete_many({"x": {"$gt": "0"}})
     assert numbers.count_documents({}) == 2
     numbers.drop()
+
+
+def top_level_bson_keys(raw):
+    """The names of the top-level elements of an encoded BSON document, in their order and with
+    repetitions, which a decoded `dict` would hide."""
+    sizes = {0x01: 8, 0x08: 1, 0x09: 8, 0x0A: 0, 0x10: 4, 0x11: 8, 0x12: 8, 0x13: 16}
+    keys = []
+    position = 4
+    while raw[position] != 0:
+        element_type = raw[position]
+        end = raw.index(b"\x00", position + 1)
+        keys.append(raw[position + 1 : end].decode())
+        position = end + 1
+        if element_type in (0x03, 0x04):
+            position += struct.unpack("<i", raw[position : position + 4])[0]
+        elif element_type == 0x02:
+            position += 4 + struct.unpack("<i", raw[position : position + 4])[0]
+        else:
+            position += sizes[element_type]
+    return keys
+
+
+def test_wire_results_keep_wide_integers_field_paths_and_fresh_metadata(started_cluster):
+    """An integer wider than 64 bits comes back exactly; the columns `a` and `a.b` of one result
+    come back as the literal keys they are, whatever their order; a message holding more documents
+    than a write batch is rejected while it is decoded; and the generated queries do not read the
+    query cache, which does not follow the changes of a table."""
+    from bson.codec_options import CodecOptions
+    from bson.decimal128 import Decimal128
+    from bson.raw_bson import RawBSONDocument
+
+    node = cluster.instances["node"]
+    database = make_client()["db"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+
+    node.query("DROP TABLE IF EXISTS db.wide_integers", password="123")
+    node.query(
+        "CREATE TABLE db.wide_integers (id Int32, x UInt128, xs Array(Int256), f Float64) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+    node.query(
+        "INSERT INTO db.wide_integers VALUES (1, 18446744073709551617, [-170141183460469231731687303715884105729, 3], 1e20)",
+        password="123",
+    )
+    [document] = list(database["wide_integers"].find({}, {"_id": 0}))
+    assert document["x"] == Decimal128("18446744073709551617"), document
+    assert document["xs"] == ["-170141183460469231731687303715884105729", 3], document
+    assert document["f"] == 1e20 and isinstance(document["f"], float), document
+    assert database["wide_integers"].distinct("x") == [Decimal128("18446744073709551617")]
+    node.query("DROP TABLE db.wide_integers", password="123")
+
+    raw_database = make_client()["db"].with_options(codec_options=CodecOptions(document_class=RawBSONDocument))
+    for columns, expected in [
+        ("`a.b` UInt32, a UInt32", ["a.b", "a"]),
+        ("a UInt32, `a.b` UInt32", ["a", "a.b"]),
+        ("`x.a` UInt32, `x.a.b` UInt32, `x.c` UInt32", ["x.a", "x.a.b", "x"]),
+    ]:
+        node.query("DROP TABLE IF EXISTS db.field_path_conflicts", password="123")
+        node.query(f"CREATE TABLE db.field_path_conflicts ({columns}) ENGINE = MergeTree ORDER BY tuple()", password="123")
+        node.query("INSERT INTO db.field_path_conflicts VALUES (1, 2, 3)" if "x.c" in columns else "INSERT INTO db.field_path_conflicts VALUES (1, 2)", password="123")
+        [document] = list(raw_database["field_path_conflicts"].find({}, {"_id": 0}))
+        assert top_level_bson_keys(document.raw) == expected, (columns, bson.decode(document.raw))
+    node.query("DROP TABLE db.field_path_conflicts", password="123")
+
+    # A sequence of empty documents on a `ping`: the most a write batch holds is decoded, one more
+    # closes the connection before anything is executed, as a second body does.
+    sock = connect_raw()
+    try:
+        sock.sendall(encode_op_msg_with_sequence({"ping": 1, "$db": "admin"}, "documents", [{}] * 100000))
+        assert read_op_msg(sock)["ok"] == 1
+        sock.sendall(encode_op_msg_with_sequence({"ping": 1, "$db": "admin"}, "documents", [{}] * 100001))
+        assert sock.recv(16) == b""
+    finally:
+        sock.close()
+    sock = connect_raw()
+    try:
+        frame = encode_op_msg({"ping": 1, "$db": "admin"})
+        second_body = b"\x00" + bson.encode({"ping": 1, "$db": "admin"})
+        frame = struct.pack("<i", len(frame) + len(second_body)) + frame[4:] + second_body
+        sock.sendall(frame)
+        assert sock.recv(16) == b""
+    finally:
+        sock.close()
+
+    node.query("DROP USER IF EXISTS mongo_query_cache", password="123")
+    node.query(
+        "CREATE USER mongo_query_cache IDENTIFIED WITH plaintext_password BY 'mongo_pass' "
+        "SETTINGS use_query_cache = 1, query_cache_system_table_handling = 'save'",
+        password="123",
+    )
+    node.query("GRANT SELECT, INSERT, SHOW ON db.* TO mongo_query_cache", password="123")
+    node.query("DROP TABLE IF EXISTS db.query_cache_types", password="123")
+    node.query("CREATE TABLE db.query_cache_types (x Int64) ENGINE = MergeTree ORDER BY tuple()", password="123")
+    collection = make_client(user="mongo_query_cache", password="mongo_pass", database="db")["db"]["query_cache_types"]
+    collection.insert_one({"x": 1})
+    node.query("ALTER TABLE db.query_cache_types MODIFY COLUMN x Int32", password="123")
+    with pytest.raises(pymongo.errors.OperationFailure, match="out of the range"):
+        collection.insert_one({"x": 2147483648})
+    assert node.query("SELECT x FROM db.query_cache_types", password="123") == "1\n"
+    node.query("DROP TABLE db.query_cache_types", password="123")
+    node.query("DROP USER mongo_query_cache", password="123")

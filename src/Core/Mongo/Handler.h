@@ -133,6 +133,18 @@ CollectionRef getCollectionRef(const Document & command, const String & command_
   */
 void appendTypedValue(bson_t * document, const String & key, const rapidjson::Value & value, const DataTypePtr & type);
 
+/** The prefix of the string `parseQueryResult` keeps an integer as when it does not fit a 64-bit
+  * integer. A zero byte, which the JSON of a result only has escaped inside a string.
+  */
+inline constexpr std::string_view wide_integer_marker{"\0", 1};
+
+/** Parses the `FORMAT JSON` output of a query. RapidJSON reads an integer that does not fit a 64-bit
+  * one - the value of a `UInt128` column, for example - as a double, which loses its low digits,
+  * so such an integer is kept as its text behind `wide_integer_marker`, for `appendTypedValue` to
+  * encode exactly.
+  */
+void parseQueryResult(rapidjson::Document & result, const String & output);
+
 /// The names and types of the columns of a parsed `FORMAT JSON` result, from its `meta`.
 std::vector<std::pair<String, DataTypePtr>> extractResultColumns(const rapidjson::Document & result_json);
 

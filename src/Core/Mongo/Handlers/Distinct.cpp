@@ -118,8 +118,7 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
     auto output = executor->execute(sql_query, {}, getMaxTimeSettings(json_representation, "distinct"));
 
     rapidjson::Document result_json;
-    if (result_json.Parse<rapidjson::kParseFullPrecisionFlag>(output.data()).HasParseError())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not parse the result of the query");
+    parseQueryResult(result_json, output);
 
     auto columns = extractResultColumns(result_json);
     if (columns.size() != 1 || columns[0].first != "_id")

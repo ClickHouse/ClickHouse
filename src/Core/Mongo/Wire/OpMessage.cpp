@@ -8,6 +8,7 @@
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int LIMIT_EXCEEDED;
 extern const int NOT_IMPLEMENTED;
 }
 
@@ -77,6 +78,13 @@ void OpMessageSection::deserialize(ReadBuffer & in)
 
         while (in.count() < section_end)
         {
+            /// The bound is checked before a document is read: an empty document takes five bytes,
+            /// so a frame could otherwise make millions of them before any later check.
+            if (documents.size() >= max_documents)
+                throw Exception(
+                    ErrorCodes::LIMIT_EXCEEDED,
+                    "The document sequences of a Mongo message hold more than {} documents",
+                    MAX_WRITE_BATCH_SIZE);
             Document doc;
             doc.deserialize(in);
             documents.push_back(std::move(doc));
@@ -110,15 +118,31 @@ void OpMessage::deserialize(ReadBuffer & in)
 
     /// `in` holds exactly the payload of one message, so reading until it is exhausted
     /// can neither consume a part of the next message nor stop in the middle of this one.
+    /// A message has exactly one body - the command - and its document sequences together hold at
+    /// most `MAX_WRITE_BATCH_SIZE` documents, the most a write command takes, whatever the command
+    /// is. Both are checked while the message is read, before it is authenticated.
+    bool has_body = false;
+    size_t sequence_documents = 0;
     while (!in.eof())
     {
+        if (sections.size() >= MAX_SECTIONS)
+            throw Exception(ErrorCodes::LIMIT_EXCEEDED, "A Mongo message has more than {} sections", MAX_SECTIONS);
         OpMessageSection section;
+        section.max_documents = MAX_WRITE_BATCH_SIZE - sequence_documents;
         section.deserialize(in);
+        if (section.kind == 0)
+        {
+            if (has_body)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "A Mongo message has more than one body section");
+            has_body = true;
+        }
+        else
+            sequence_documents += section.documents.size();
         sections.push_back(std::move(section));
     }
 
-    if (sections.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mongo message without sections");
+    if (!has_body)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mongo message without a body section");
 }
 
 void OpMessage::serialize(WriteBuffer & out) const

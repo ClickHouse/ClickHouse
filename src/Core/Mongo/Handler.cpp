@@ -1,5 +1,6 @@
 #include <Core/Mongo/Handler.h>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <memory>
@@ -242,6 +243,45 @@ void appendLargeUInt64(bson_t * document, const String & key, UInt64 value)
         bson_append_utf8(document, key.data(), key_length, text.data(), static_cast<int>(text.size()));
 }
 
+/** The text of an integer of the result that does not fit a 64-bit integer, which `parseQueryResult`
+  * keeps as a string behind `wide_integer_marker`; `std::nullopt` for any other value.
+  */
+std::optional<std::string_view> getWideIntegerText(const rapidjson::Value & value)
+{
+    if (!value.IsString())
+        return std::nullopt;
+    std::string_view text(value.GetString(), value.GetStringLength());
+    if (!text.starts_with(wide_integer_marker))
+        return std::nullopt;
+    text.remove_prefix(wide_integer_marker.size());
+    if (text.empty())
+        return std::nullopt;
+    for (size_t i = text.front() == '-'; i < text.size(); ++i)
+        if (!isNumericASCII(text[i]))
+            return std::nullopt;
+    return text;
+}
+
+/** Appends an integer that does not fit a 64-bit integer, the value of a wide integer column such as
+  * `UInt128`. It goes as a BSON decimal128 when its significant digits fit one, which holds it
+  * exactly; a larger one stays a string with all of its digits, as a decimal that decimal128 cannot
+  * hold does (see `appendTypedValue`), rather than a double that loses its low digits.
+  */
+void appendWideInteger(bson_t * document, const String & key, std::string_view text)
+{
+    const int key_length = static_cast<int>(key.size());
+    if (auto significant = significantDecimalDigits(text))
+    {
+        bson_decimal128_t decimal;
+        if (bson_decimal128_from_string(significant->c_str(), &decimal))
+        {
+            bson_append_decimal128(document, key.data(), key_length, &decimal);
+            return;
+        }
+    }
+    bson_append_utf8(document, key.data(), key_length, text.data(), static_cast<int>(text.size()));
+}
+
 /// Appends a JSON value whose column type says no more than the JSON itself: the shape of the
 /// value is kept, and a number becomes the narrowest of `int32`/`int64`/`double` that holds it.
 void appendUntypedValue(bson_t * document, const String & key, const rapidjson::Value & value)
@@ -277,6 +317,19 @@ void appendUntypedValue(bson_t * document, const String & key, const rapidjson::
     else if (value.IsNumber())
     {
         bson_append_double(document, key.data(), key_length, value.GetDouble());
+    }
+    else if (auto wide_integer = getWideIntegerText(value))
+    {
+        /** Without a column type the text may also be a float - a `Float64` of a `JSON` column is
+          * written as `100000000000000000000` - which never has more than 17 significant digits, the
+          * most that the shortest text of a double has. Such a text stays the double it always was;
+          * a longer one is the exact value of a wide integer.
+          */
+        auto significant = significantDecimalDigits(*wide_integer);
+        if (significant && significant->find('E') <= 17 + significant->starts_with('-'))
+            bson_append_double(document, key.data(), key_length, parseFromString<Float64>(*wide_integer));
+        else
+            appendWideInteger(document, key, *wide_integer);
     }
     else if (value.IsString())
     {
@@ -389,6 +442,16 @@ void appendTypedValue(bson_t * document, const String & key, const rapidjson::Va
             bson_append_int64(document, key.data(), key_length, static_cast<Int64>(unsigned_value));
         else
             appendLargeUInt64(document, key, unsigned_value);
+        return;
+    }
+    if (auto wide_integer = getWideIntegerText(value))
+    {
+        /// An integer out of the range of a 64-bit one, see `parseQueryResult`: a float written
+        /// without an exponent, such as `100000000000000000000`, or the value of a wide integer.
+        if (which.isFloat())
+            bson_append_double(document, key.data(), key_length, parseFromString<Float64>(*wide_integer));
+        else
+            appendWideInteger(document, key, *wide_integer);
         return;
     }
     if (which.isFloat() && value.IsString())
@@ -650,6 +713,80 @@ Document buildCursorReply(const std::vector<Document> & selected, const Collecti
 
 }
 
+namespace
+{
+
+/** The SAX events of the result, forwarded to `document` - except a number, which the reader passes
+  * as its text, see `parseQueryResult`.
+  */
+struct QueryResultHandler
+{
+    rapidjson::Document & document;
+    rapidjson::Reader number_reader;
+    std::string buffer;
+
+    bool Null() { return document.Null(); }
+    bool Bool(bool b) { return document.Bool(b); }
+    bool Int(int i) { return document.Int(i); }
+    bool Uint(unsigned i) { return document.Uint(i); }
+    bool Int64(int64_t i) { return document.Int64(i); }
+    bool Uint64(uint64_t i) { return document.Uint64(i); }
+    bool Double(double d) { return document.Double(d); }
+    bool String(const char * str, rapidjson::SizeType length, bool copy) { return document.String(str, length, copy); }
+    bool StartObject() { return document.StartObject(); }
+    bool Key(const char * str, rapidjson::SizeType length, bool copy) { return document.Key(str, length, copy); }
+    bool EndObject(rapidjson::SizeType member_count) { return document.EndObject(member_count); }
+    bool StartArray() { return document.StartArray(); }
+    bool EndArray(rapidjson::SizeType element_count) { return document.EndArray(element_count); }
+
+    bool RawNumber(const char * str, rapidjson::SizeType length, bool /* copy */)
+    {
+        std::string_view text(str, length);
+        if (isWideInteger(text))
+        {
+            buffer.assign(wide_integer_marker);
+            buffer.append(text);
+            return document.String(buffer.data(), static_cast<rapidjson::SizeType>(buffer.size()), /* copy= */ true);
+        }
+        /// Any other number is read as the reader would have read it.
+        buffer.assign(text);
+        rapidjson::StringStream stream(buffer.c_str());
+        return !number_reader.Parse<rapidjson::kParseFullPrecisionFlag>(stream, document).IsError();
+    }
+
+    /// Whether `text` is an integer that does not fit an `Int64` or a `UInt64`.
+    static bool isWideInteger(std::string_view text)
+    {
+        const bool negative = text.starts_with('-');
+        std::string_view digits = text.substr(negative);
+        if (digits.empty() || !std::all_of(digits.begin(), digits.end(), isNumericASCII))
+            return false;
+        while (digits.size() > 1 && digits.front() == '0')
+            digits.remove_prefix(1);
+        const std::string_view limit = negative ? "9223372036854775808" : "18446744073709551615";
+        return digits.size() > limit.size() || (digits.size() == limit.size() && digits > limit);
+    }
+};
+
+}
+
+void parseQueryResult(rapidjson::Document & result, const String & output)
+{
+    bool parsed = false;
+    /// `Populate` makes the value the handler leaves on the stack of the document its root.
+    auto generator = [&](rapidjson::Document & document)
+    {
+        QueryResultHandler handler{.document = document, .number_reader = {}, .buffer = {}};
+        rapidjson::Reader reader;
+        rapidjson::StringStream stream(output.c_str());
+        parsed = !reader.Parse<rapidjson::kParseNumbersAsStringsFlag | rapidjson::kParseFullPrecisionFlag>(stream, handler).IsError();
+        return parsed;
+    };
+    result.Populate(generator);
+    if (!parsed)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not parse the result of the query");
+}
+
 std::vector<Document> executeSelectIntoCursor(
     const String & sql_query,
     const CollectionRef & collection,
@@ -673,12 +810,12 @@ std::vector<Document> executeSelectIntoCursor(
         auto output = executor->execute(sql_query, {}, client_settings);
 
         rapidjson::Document result_json;
-        if (result_json.Parse<rapidjson::kParseFullPrecisionFlag>(output.data()).HasParseError())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not parse the result of the query");
+        parseQueryResult(result_json, output);
 
         auto columns = extractResultColumns(result_json);
 
         FieldTree tree;
+        std::set<std::string_view, std::less<>> column_names;
         for (size_t i = 0; i < columns.size(); ++i)
         {
             /// Every dot of a column name is a level of nested documents, built and serialized
@@ -688,10 +825,38 @@ std::vector<Document> executeSelectIntoCursor(
                     ErrorCodes::LIMIT_EXCEEDED,
                     "The column '{}' of the result names a document nested deeper than {} levels",
                     columns[i].first.substr(0, 100), max_result_nesting_depth);
-            /// A conflict - the columns `a` and `a.b` in one result - keeps the dotted name as
-            /// the literal key it always was, rather than dropping the column.
-            if (!insertColumnPath(tree, columns[i].first, i))
-                tree.entries.push_back({.name = columns[i].first, .column = i, .subtree = nullptr});
+            column_names.insert(columns[i].first);
+        }
+
+        /** A conflict - the columns `a` and `a.b` in one result, where `a` would be both a value and
+          * a document - keeps the names of all the columns involved as the literal keys they are,
+          * whatever the order of the columns: `{"a": 1, "a.b": 2}`. Building the tree of the column
+          * that comes first would either put the key `a` twice into the document or make the key of
+          * the other column depend on the order. A column whose name repeats is the same value, the
+          * one the row of the result holds under that name, and is sent once.
+          */
+        std::set<std::string_view> conflicting;
+        for (const auto & name : column_names)
+        {
+            for (size_t dot = name.find('.'); dot != String::npos; dot = name.find('.', dot + 1))
+            {
+                std::string_view ancestor(name.data(), dot);
+                if (column_names.contains(ancestor))
+                {
+                    conflicting.insert(ancestor);
+                    conflicting.insert(name);
+                }
+            }
+        }
+
+        std::set<std::string_view> added;
+        for (size_t i = 0; i < columns.size(); ++i)
+        {
+            const auto & name = columns[i].first;
+            if (!added.insert(name).second)
+                continue;
+            if (conflicting.contains(name) || !insertColumnPath(tree, name, i))
+                tree.entries.push_back({.name = name, .column = i, .subtree = nullptr});
         }
 
         auto data_it = result_json.FindMember("data");
