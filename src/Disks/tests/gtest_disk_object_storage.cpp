@@ -481,8 +481,7 @@ TEST_F(DiskObjectStorageTest, AppendFileTxReadFailDoesNotDeleteFile)
     // Commit fails because the failpoint fires during WriteFileOperation::execute()
     EXPECT_THROW(tx->commit(), DB::Exception);
 
-    // Without the fix: WriteFileOperation::undo() sees !prev_data and deletes the file.
-    // With the fix: undo() sees file_existed==true and preserves the file.
+    // The read fails before the write, so WriteFileOperation::undo() has nothing to revert and keeps the file.
     EXPECT_TRUE(disk->existsFile(file_name));
     EXPECT_EQ(readAll(*disk->readFile(file_name, {})), file_content);
     waitBlobsCount(disk, 1);
