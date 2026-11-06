@@ -419,8 +419,7 @@ public:
         /// and by the config reload of server disks, which rebuilds the client unconditionally.
         bool force_client_rebuild = false;
 
-        /// Validate the merged request settings before installing them. Set by the config reload of server disks,
-        /// whose background operations use them with no query settings on top.
+        /// Validate the merged request settings before installing them (disks: no query settings are applied on top).
         bool validate_merged_settings = false;
     };
     virtual void applyNewSettings(

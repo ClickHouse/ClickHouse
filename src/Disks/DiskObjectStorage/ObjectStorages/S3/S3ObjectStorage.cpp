@@ -788,8 +788,7 @@ void S3ObjectStorage::applyNewSettings(
 {
     std::unique_ptr<S3Settings> settings_from_config = std::make_unique<S3Settings>();
 
-    /// A disk checks its own section as at creation and the merged result below; for a table this is the <s3>
-    /// layer under the endpoint and query settings, checked per query in readObject and writeObject.
+    /// A table's merged settings are validated per query, in readObject and writeObject.
     settings_from_config->loadFromConfigForObjectStorage(
         config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(),
         /* validate_settings */ for_disk_s3 && context->getSettingsRef()[Setting::s3_validate_request_settings]);
