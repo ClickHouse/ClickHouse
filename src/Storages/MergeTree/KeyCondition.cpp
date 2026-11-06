@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/TypeTree.h>
@@ -1625,8 +1626,8 @@ void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
 
             /// So far we only support the case of two arguments.
             if (2 == curve.arguments.size()
-                && !WhichDataType(removeLowCardinality(curve.arguments[0].type)).isUInt64()
-                && !WhichDataType(removeLowCardinality(curve.arguments[1].type)).isUInt64())
+                && !WhichDataType(removeNullable(removeLowCardinality(curve.arguments[0].type))).isUInt64()
+                && !WhichDataType(removeNullable(removeLowCardinality(curve.arguments[1].type))).isUInt64())
                 key_space_filling_curves.push_back(std::move(curve));
         }
     }
@@ -2395,7 +2396,7 @@ static bool castValuesAreTheOnlyMatches(const IColumn & floats, const IColumn & 
 ///
 /// A wider `Decimal` converts its integer to `Float64` in several rounding steps, so any float is reported for it, and so is
 /// any other float, also a `BFloat16` or one inside a `Dynamic` value: `Float32` is stored as `Float64` in a `Field` as well.
-static bool floatValuesMissKeyValues(
+bool floatValuesMissKeyValues(
     ColumnPtr column, DataTypePtr type, const DataTypePtr & key_expression_input_type, const DataTypePtr & comparison_type)
 {
     if (!anyInTypeTree(*key_expression_input_type, [](const IDataType & input_type) { return isColumnedAsDecimal(input_type); }))
@@ -5343,6 +5344,27 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
         return;
     }
 
+    /// `empty(s)` and `notEmpty(s)` of a string are the same as `s = ''` and `s != ''`
+    /// (`ConvertEmptyStringComparisonToFunctionPass` rewrites the latter to the former).
+    /// Analyze them as these comparisons, so that keys computed from the string, like `cityHash64(s)`, are used as well.
+    if (num_args == 1 && (func_name == "empty" || func_name == "notEmpty"))
+    {
+        const auto * arg_dag_node = func.getArgumentAt(0).getDAGNode();
+        if (arg_dag_node && isString(removeNullable(removeLowCardinality(arg_dag_node->result_type))))
+        {
+            const auto string_type = std::make_shared<DataTypeString>();
+            const ColumnWithTypeAndName empty_string{string_type->createColumnConst(1, Field(String())), string_type, {}};
+            extractComparisonAtomsForKeyArgument(
+                func.getArgumentAt(0),
+                info,
+                func_name == "empty" ? "equals" : "notEquals",
+                empty_string,
+                allow_relaxed_pruning,
+                group);
+            return;
+        }
+    }
+
     /// Unary functions over a key expression, like isNull(key), empty(key), etc.
     if (num_args == 1)
     {
@@ -5364,8 +5386,7 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
             throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
 
         /// empty/notEmpty produce a meaningful range only for String key columns.
-        /// For Nullable(String) they are the same as the comparisons with an empty string,
-        /// which are analyzed with the same ranges.
+        /// Usually, they are analyzed as the comparisons with an empty string above.
         if ((func_name == "empty" || func_name == "notEmpty") && !isString(removeNullable(key_expr_type)))
             return;
 
