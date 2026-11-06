@@ -14,7 +14,14 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/logger_useful.h>
 
-#if USE_AVRO
+#if USE_AVRO_RUST
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
+#include <Formats/FormatFactory.h>
+#include <Processors/Formats/Impl/Avro/AvroOcfReader.h>
+#include <Processors/Formats/Impl/Avro/AvroRustPlan.h>
+#elif USE_AVRO
 #include <GenericDatum.hh>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #endif
@@ -237,7 +244,46 @@ void collectReplacedFileGroups(
     /// Only a layout 2 instant with a completion time is Avro, the others are JSON.
     if (instant.getFileName().contains('_'))
     {
-#if USE_AVRO
+#if USE_AVRO_RUST
+        auto buffer = createReadBuffer(instant, object_storage, context, log);
+        AvroRust::OcfReader reader(*buffer);
+        constexpr auto field_name = "partitionToReplaceFileIds";
+        const auto string_type = std::make_shared<DataTypeString>();
+        const Block header{{std::make_shared<DataTypeMap>(string_type, std::make_shared<DataTypeArray>(string_type)), field_name}};
+        /// Validate original Avro kinds before column conversion loses null arrays or the distinction between bytes and strings.
+        /// Logical annotations on an Avro string do not change its type for Hudi, so decode directly into `String`, not `UUID`.
+        auto validate = [message = fmt::format(
+            "Unexpected type of partitionToReplaceFileIds in Hudi instant {}", instant.relative_path)](
+            std::string_view column, AvroRust::Node node, size_t depth) -> std::optional<String>
+        {
+            if (column != field_name)
+                return std::nullopt;
+            const auto kind = node.kind();
+            constexpr AvroKind expected[] = {AVRO_KIND_MAP, AVRO_KIND_ARRAY, AVRO_KIND_STRING};
+            if (kind == AVRO_KIND_UNION || (depth == 0 && kind == AVRO_KIND_NULL)
+                || (depth < std::size(expected) && kind == expected[depth]))
+                return std::nullopt;
+            return message;
+        };
+        AvroRust::Plan plan(header, reader.schema(), true, true, getFormatSettings(context), {}, std::move(validate));
+        AvroRust::forEachDecodedBatch(
+            reader,
+            plan,
+            header,
+            [&](MutableColumns & columns, const std::vector<std::vector<UInt8>> &, UInt64 rows)
+            {
+                for (size_t row = 0; row < rows; ++row)
+                {
+                    const Field field = (*columns[0])[row];
+                    for (const Field & entry : field.safeGet<Map>())
+                    {
+                        const auto & partition_and_file_ids = entry.safeGet<Tuple>();
+                        for (const Field & file_id : partition_and_file_ids[1].safeGet<Array>())
+                            add(partition_and_file_ids[0].safeGet<String>(), file_id.safeGet<String>());
+                    }
+                }
+            });
+#elif USE_AVRO
         /// NOLINTBEGIN(clang-analyzer-core.uninitialized.UndefReturn)
         /// A false positive on the `*std::any_cast` of `avro::GenericDatum::value`.
         Iceberg::forEachAvroEntry(

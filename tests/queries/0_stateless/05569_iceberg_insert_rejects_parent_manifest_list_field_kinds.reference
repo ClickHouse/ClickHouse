@@ -1,0 +1,12 @@
+manifest_path bytes
+ICEBERG_SPECIFICATION_VIOLATION
+1
+manifest_length int
+ICEBERG_SPECIFICATION_VIOLATION
+1
+partition_spec_id long
+ICEBERG_SPECIFICATION_VIOLATION
+1
+the types of the specification
+inserted
+2

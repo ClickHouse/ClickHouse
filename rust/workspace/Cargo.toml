@@ -7,5 +7,6 @@ members = [
     "vortex",
     "pco",
     "wasmtime",
+    "avro",
 ]
 resolver = "2"

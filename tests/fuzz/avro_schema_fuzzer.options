@@ -1,0 +1,6 @@
+[libfuzzer]
+timeout = 20
+rss_limit_mb = 4096
+max_len = 8192
+use_value_profile = 1
+dict = avro.dict

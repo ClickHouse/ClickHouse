@@ -3,6 +3,10 @@
 version = 4
 
 [[package]]
+name = "_ch_rust_avro"
+version = "0.1.0"
+
+[[package]]
 name = "_ch_rust_pco"
 version = "0.1.0"
 dependencies = [

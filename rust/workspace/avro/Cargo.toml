@@ -1,0 +1,18 @@
+[package]
+edition = "2021"
+name = "_ch_rust_avro"
+version = "0.1.0"
+
+# Zero third-party dependencies on purpose: the decoder parses attacker-controlled
+# bytes (schemas, container files, Kafka messages), so nothing is vendored and
+# there is no supply chain to audit besides this crate.
+[dependencies]
+
+[lib]
+# `staticlib` is what ClickHouse links; `rlib` lets `cargo test` build the
+# integration tests under `tests/`.
+crate-type = ["staticlib", "rlib"]
+
+[lints.rust]
+# Only `src/ffi.rs` and `src/outbuf.rs` opt out, with an inner attribute in those files.
+unsafe_code = "deny"

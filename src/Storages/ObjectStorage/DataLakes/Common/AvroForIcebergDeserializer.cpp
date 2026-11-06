@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <sstream>
 #include <Core/ColumnWithTypeAndName.h>
@@ -11,23 +12,222 @@
 
 #if USE_AVRO
 
+#include <Columns/ColumnTuple.h>
+#include <Core/Block.h>
+#include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Processors/Formats/Impl/JSONObjectEachRowRowOutputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <base/find_symbols.h>
+#include <Common/CurrentThread.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
+
+#if USE_AVRO_RUST
+#include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Processors/Formats/Impl/Avro/AvroOcfReader.h>
+#include <Processors/Formats/Impl/Avro/AvroRustPlan.h>
+#include <Processors/Formats/Impl/Avro/AvroRustSchema.h>
+#endif
+
+#include <fmt/ranges.h>
 
 namespace DB::ErrorCodes
 {
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace DB::Iceberg
 {
 
 using namespace DB;
+
+namespace
+{
+
+/// A file that is not a valid Avro file, or is one that does not have the shape of a metadata file, is reported with
+/// the path of the file. Root-type violations belong to the metadata contract; parser and codec failures retain the
+/// legacy error code.
+[[noreturn]] void rethrowAsMetadataError(const std::exception & e, const IcebergPathFromMetadata & manifest_file_path)
+{
+    const auto * db_exception = dynamic_cast<const Exception *>(&e);
+    const int code = db_exception && db_exception->code() == ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION
+        ? ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION : ErrorCodes::INCORRECT_DATA;
+    throw Exception(code, "Cannot read Iceberg avro manifest file '{}': {}", manifest_file_path, e.what());
+}
+
+#if USE_AVRO_RUST
+void checkRecordRoot(const AvroRust::OcfReader & file_reader)
+{
+    const auto root = file_reader.schema().root();
+    if (root.kind() != AVRO_KIND_RECORD)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Avro file has root schema type {}, but Iceberg and Paimon metadata entries must be records",
+            AvroRust::kindName(static_cast<UInt8>(root.kind())));
+}
+
+/// The kind of the values of a node: a union of `null` and one other type is that other type, as for the legacy
+/// `avro::GenericDatum` reader, which judged a value by the type of the branch it holds. A union of several types stays a
+/// union, and a union of nothing but `null` is `null`.
+AvroKind valueKind(AvroRust::Node node)
+{
+    if (node.kind() != AVRO_KIND_UNION)
+        return node.kind();
+    size_t non_null_branches = 0;
+    std::optional<AvroRust::Node> non_null_branch;
+    for (UInt32 i = 0; i < node.childCount(); ++i)
+    {
+        const auto branch = node.child(i);
+        if (branch.kind() != AVRO_KIND_NULL)
+        {
+            ++non_null_branches;
+            non_null_branch = branch;
+        }
+    }
+    if (non_null_branches == 0)
+        return AVRO_KIND_NULL;
+    return non_null_branches == 1 ? valueKind(*non_null_branch) : AVRO_KIND_UNION;
+}
+
+/// The kinds of the top level fields of the root record, by name.
+std::unordered_map<std::string, UInt8> topLevelFieldKinds(const AvroRust::OcfReader & file_reader)
+{
+    const auto root = file_reader.schema().root();
+    std::unordered_map<std::string, UInt8> result;
+    for (UInt32 i = 0; i < root.childCount(); ++i)
+        result.emplace(std::string(root.fieldName(i)), static_cast<UInt8>(valueKind(root.child(i))));
+    return result;
+}
+
+/// The one Avro kind that a reader asking for `type` accepts: the one that the legacy `avro::GenericDatum` accessors
+/// `value<String>`, `value<Int32>` and `value<Int64>` accept.
+AvroKind requiredKind(const DataTypePtr & type)
+{
+    switch (WhichDataType(type).idx)
+    {
+        case TypeIndex::String:
+            return AVRO_KIND_STRING;
+        case TypeIndex::Int32:
+            return AVRO_KIND_INT;
+        case TypeIndex::Int64:
+            return AVRO_KIND_LONG;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading a metadata field of type {} is not supported", type->getName());
+    }
+}
+
+/// `Plan` converts what it can into the requested type: an Avro `int` or `double` into `Int64`, `bytes`, `fixed` or an
+/// `enum` into `String`. A metadata reader that asks for a type has to get exactly the Avro type that the legacy
+/// `avro::GenericDatum` reader accepted for it, a `string` (with or without a logical annotation) for `String`, an `int`
+/// for `Int32` and a `long` for `Int64`, so, before the `Plan` is compiled, each field of `fields` is compared with the
+/// kind of its Avro type in the schema of the file, not with the ClickHouse type that the schema inference gives it, which
+/// has already coalesced `bytes` with `string`. A union with null counts as its other branch, since a null is rejected when
+/// it is read. Only the node of the field is looked at, so a field that is not requested does not matter. A field that does
+/// not exist is left to the `Plan`, which reports it.
+void checkFieldTypes(const AvroRust::OcfReader & file_reader, const NamesAndTypesList & fields)
+{
+    for (const auto & field : fields)
+    {
+        auto node = file_reader.schema().root();
+        bool found = true;
+        std::string_view rest = field.name;
+        while (found)
+        {
+            const auto dot = rest.find('.');
+            const auto segment = rest.substr(0, dot);
+            found = false;
+            if (node.kind() != AVRO_KIND_RECORD)
+                break;
+            for (UInt32 i = 0; i < node.childCount(); ++i)
+            {
+                if (node.fieldName(i) == segment)
+                {
+                    node = node.child(i);
+                    found = true;
+                    break;
+                }
+            }
+            if (dot == std::string_view::npos)
+                break;
+            rest.remove_prefix(dot + 1);
+        }
+        if (!found)
+            continue;
+
+        const auto expected_kind = requiredKind(field.type);
+        const auto actual_kind = valueKind(node);
+        if (actual_kind != expected_kind)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Got wrong data type for key {}, expected Avro {}, got {}",
+                field.name,
+                AvroRust::kindName(static_cast<UInt8>(expected_kind)),
+                AvroRust::kindName(static_cast<UInt8>(actual_kind)));
+    }
+}
+
+/// The whole record of a file as one `Tuple` column, one element per top level field, exactly as the schema inference
+/// types it. `Plan` decodes the fields of `header` (all of them here) straight into the elements.
+struct RecordShape
+{
+    std::shared_ptr<const DataTypeTuple> data_type;
+    Block header;
+    Strings names;
+    DataTypes types;
+};
+
+RecordShape inferRecordShape(const AvroRust::OcfReader & file_reader)
+{
+    checkRecordRoot(file_reader);
+    auto data_type = std::dynamic_pointer_cast<const DataTypeTuple>(AvroRust::inferType(file_reader.schema().root()));
+    ColumnsWithTypeAndName header_columns;
+    header_columns.reserve(data_type->getElements().size());
+    for (size_t i = 0; i < data_type->getElements().size(); ++i)
+        header_columns.emplace_back(data_type->getElements()[i], data_type->getElementNames()[i]);
+    return {data_type, Block(header_columns), data_type->getElementNames(), data_type->getElements()};
+}
+
+/// Per top level field, one flag per row that tells an Avro null from a value, allocated only once a null is met in a
+/// field whose type is not `Nullable`: such a field holds the default value of its type for the null. Appends the flags
+/// of a batch of `batch_rows` rows that starts at `first_row`; `missing[i][row]` is set for a value that was not read:
+/// the Avro null of a union.
+void appendNullFlags(
+    std::vector<std::vector<UInt8>> & null_flags,
+    const DataTypes & types,
+    const std::vector<std::vector<UInt8>> & missing,
+    size_t first_row,
+    size_t batch_rows)
+{
+    for (size_t i = 0; i < null_flags.size(); ++i)
+    {
+        if (types[i]->isNullable() || std::none_of(missing[i].begin(), missing[i].end(), [](UInt8 flag) { return flag != 0; }))
+            continue;
+        null_flags[i].resize(first_row + batch_rows, 0);
+        std::copy(missing[i].begin(), missing[i].end(), null_flags[i].begin() + first_row);
+    }
+}
+
+/// The flags of the fields that have a null, by the name of the field, for `total_rows` rows.
+std::unordered_map<std::string, std::vector<UInt8>>
+takeNullFlags(std::vector<std::vector<UInt8>> && null_flags, const Strings & names, size_t total_rows)
+{
+    std::unordered_map<std::string, std::vector<UInt8>> result;
+    for (size_t i = 0; i < null_flags.size(); ++i)
+    {
+        if (null_flags[i].empty())
+            continue;
+        null_flags[i].resize(total_rows, 0);
+        result.emplace(names[i], std::move(null_flags[i]));
+    }
+    return result;
+}
+#endif
+
+}
 
 AvroForIcebergDeserializer::AvroForIcebergDeserializer(
     std::unique_ptr<ReadBufferFromFileBase> buffer_,
@@ -37,6 +237,40 @@ try
     : manifest_file_path(manifest_file_path_)
 {
     auto buffer = std::move(buffer_);
+#if USE_AVRO_RUST
+    AvroRust::OcfReader file_reader(*buffer);
+    const auto record = inferRecordShape(file_reader);
+
+    AvroRust::Plan plan(record.header, file_reader.schema(), /* allow_missing_fields = */ true, /* null_as_default = */ true, format_settings);
+    MutableColumns columns = record.header.cloneEmptyColumns();
+    std::vector<std::vector<UInt8>> missing;
+    std::vector<std::vector<UInt8>> null_flags(columns.size());
+    size_t total_rows = 0;
+    while (file_reader.nextBlock())
+    {
+        /// Decode in bounded batches so declared block rows neither reserve all memory up front nor defer cancellation
+        /// until the whole block is materialized.
+        while (file_reader.rowsLeft())
+        {
+            const UInt64 batch_rows = std::min<UInt64>(file_reader.rowsLeft(), CANCELLATION_CHECK_PERIOD_ROWS);
+            file_reader.decodeRows(plan, batch_rows, columns, missing);
+            appendNullFlags(null_flags, record.types, missing, total_rows, batch_rows);
+            total_rows += batch_rows;
+        }
+    }
+
+    metadata = file_reader.metadata();
+    bytes_read = buffer->count();
+    for (auto & column : columns)
+        column->finalize();
+    null_rows = takeNullFlags(std::move(null_flags), record.names, total_rows);
+    field_kinds = topLevelFieldKinds(file_reader);
+    if (columns.empty())
+        parsed_column = ColumnTuple::create(total_rows);
+    else
+        parsed_column = ColumnTuple::create(std::move(columns));
+    parsed_column_data_type = record.data_type;
+#else
     auto manifest_file_reader
         = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer), MAX_AVRO_SCHEMA_DEPTH);
 
@@ -58,12 +292,148 @@ try
     bytes_read = buffer->count();
     parsed_column = std::move(columns[0]);
     parsed_column_data_type = std::dynamic_pointer_cast<const DataTypeTuple>(data_type);
+#endif
     parsed_manifest_file_entries.resize(parsed_column->size());
 }
 catch (const std::exception & e)
 {
-    throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot read Iceberg avro manifest file '{}': {}", manifest_file_path_, e.what());
+    rethrowAsMetadataError(e, manifest_file_path_);
 }
+
+#if USE_AVRO_RUST
+AvroForIcebergDeserializer::AvroForIcebergDeserializer(
+    const IcebergPathFromMetadata & manifest_file_path_,
+    std::shared_ptr<const DataTypeTuple> data_type,
+    MutableColumns columns,
+    size_t rows_,
+    std::unordered_map<std::string, std::vector<UInt8>> null_rows_,
+    std::unordered_map<std::string, UInt8> field_kinds_,
+    const std::map<std::string, std::vector<uint8_t>> & metadata_,
+    size_t bytes_read_)
+    : manifest_file_path(manifest_file_path_)
+    , parsed_column(columns.empty() ? ColumnTuple::create(rows_) : ColumnTuple::create(std::move(columns)))
+    , parsed_column_data_type(std::move(data_type))
+    , metadata(metadata_)
+    , bytes_read(bytes_read_)
+    , null_rows(std::move(null_rows_))
+    , field_kinds(std::move(field_kinds_))
+{
+    parsed_manifest_file_entries.resize(parsed_column->size());
+}
+
+void AvroForIcebergDeserializer::forEachBatch(
+    std::unique_ptr<ReadBufferFromFileBase> buffer_,
+    const IcebergPathFromMetadata & manifest_file_path,
+    const DB::FormatSettings & format_settings,
+    const std::function<void(const AvroForIcebergDeserializer & batch)> & callback)
+{
+    bool in_callback = false;
+    try
+    {
+        auto buffer = std::move(buffer_);
+        AvroRust::OcfReader file_reader(*buffer);
+        const auto record = inferRecordShape(file_reader);
+        const auto field_kinds = topLevelFieldKinds(file_reader);
+        AvroRust::Plan plan(record.header, file_reader.schema(), /* allow_missing_fields = */ true, /* null_as_default = */ true, format_settings);
+        AvroRust::forEachDecodedBatch(
+            file_reader,
+            plan,
+            record.header,
+            [&](MutableColumns & columns, const std::vector<std::vector<UInt8>> & missing, UInt64 rows)
+            {
+                std::vector<std::vector<UInt8>> null_flags(columns.size());
+                appendNullFlags(null_flags, record.types, missing, 0, rows);
+                for (auto & column : columns)
+                    column->finalize();
+                const AvroForIcebergDeserializer batch(
+                    manifest_file_path,
+                    record.data_type,
+                    std::move(columns),
+                    rows,
+                    takeNullFlags(std::move(null_flags), record.names, rows),
+                    field_kinds,
+                    file_reader.metadata(),
+                    buffer->count());
+                in_callback = true;
+                callback(batch);
+                in_callback = false;
+            });
+    }
+    catch (const std::exception & e)
+    {
+        if (in_callback)
+            throw;
+        rethrowAsMetadataError(e, manifest_file_path);
+    }
+}
+
+void AvroForIcebergDeserializer::forEachColumnsBatch(
+    std::unique_ptr<ReadBufferFromFileBase> buffer_,
+    const IcebergPathFromMetadata & manifest_file_path,
+    const DB::FormatSettings & format_settings,
+    const NamesAndTypesList & fields,
+    const std::function<void(const Columns & columns, size_t rows)> & callback)
+{
+    bool in_callback = false;
+    try
+    {
+        auto buffer = std::move(buffer_);
+        AvroRust::OcfReader file_reader(*buffer);
+        checkRecordRoot(file_reader);
+        checkFieldTypes(file_reader, fields);
+
+        /// `Nullable`, to tell an Avro null from a value: a null would otherwise be read as the default value.
+        ColumnsWithTypeAndName header_columns;
+        for (const auto & field : fields)
+            header_columns.emplace_back(makeNullable(field.type), field.name);
+        const Block header(header_columns);
+        const Names names = fields.getNames();
+
+        std::unique_ptr<AvroRust::Plan> plan;
+        try
+        {
+            plan = std::make_unique<AvroRust::Plan>(
+                header, file_reader.schema(), /* allow_missing_fields = */ false, /* null_as_default = */ true, format_settings);
+        }
+        catch (const Exception & e)
+        {
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "The file does not have the required fields {}: {}",
+                fmt::join(names, ", "),
+                e.message());
+        }
+
+        AvroRust::forEachDecodedBatch(
+            file_reader,
+            *plan,
+            header,
+            [&](MutableColumns & columns, const std::vector<std::vector<UInt8>> &, UInt64 rows)
+            {
+                Columns values;
+                values.reserve(columns.size());
+                for (size_t i = 0; i < columns.size(); ++i)
+                {
+                    const auto & nullable = assert_cast<const ColumnNullable &>(*columns[i]);
+                    const auto & null_map = nullable.getNullMapData();
+                    if (std::any_of(null_map.begin(), null_map.end(), [](UInt8 is_null) { return is_null != 0; }))
+                        throw Exception(
+                            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "The field {} of the file has a null value, but it is required", names[i]);
+                    values.push_back(nullable.getNestedColumnPtr());
+                }
+                in_callback = true;
+                callback(values, rows);
+                in_callback = false;
+            });
+    }
+    catch (const std::exception & e)
+    {
+        if (in_callback)
+            throw;
+        rethrowAsMetadataError(e, manifest_file_path);
+    }
+}
+#endif
 
 size_t AvroForIcebergDeserializer::rows() const
 {
@@ -77,10 +447,15 @@ bool AvroForIcebergDeserializer::hasPath(const std::string & path) const
 
 TypeIndex AvroForIcebergDeserializer::getTypeForPath(const std::string & path) const
 {
+    return WhichDataType(getDataTypeForPath(path)).idx;
+}
+
+DataTypePtr AvroForIcebergDeserializer::getDataTypeForPath(const std::string & path) const
+{
     auto & subcolumn_with_type = extractSubcolumnWithType(path);
     if (!subcolumn_with_type.has_value())
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Cannot find column {} in manifest file {}", path, manifest_file_path);
-    return WhichDataType(subcolumn_with_type->second).idx;
+    return subcolumn_with_type->second;
 }
 
 Int64 AvroForIcebergDeserializer::getFormatVersionFromManifestFileMetadata() const
@@ -533,6 +908,26 @@ Field AvroForIcebergDeserializer::getValueFromRowByName(
     current_column->get(row_num, result);
     return result;
 }
+
+#if USE_AVRO_RUST
+bool AvroForIcebergDeserializer::isNullInRow(size_t row_num, const std::string & field) const
+{
+    if (row_num >= rows())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Row {} is out of range of manifest file {} with {} rows", row_num, manifest_file_path, rows());
+
+    const auto it = null_rows.find(field);
+    return it != null_rows.end() && it->second[row_num] != 0;
+}
+
+std::optional<UInt8> AvroForIcebergDeserializer::getAvroKindOfField(const std::string & field) const
+{
+    const auto it = field_kinds.find(field);
+    if (it == field_kinds.end())
+        return std::nullopt;
+    return it->second;
+}
+#endif
 
 std::optional<std::string> AvroForIcebergDeserializer::tryGetAvroMetadataValue(std::string metadata_key) const
 {

@@ -44,6 +44,7 @@
 #cmakedefine01 USE_LIBURING
 #cmakedefine01 USE_SILK
 #cmakedefine01 USE_AVRO
+#cmakedefine01 USE_AVRO_RUST
 #cmakedefine01 USE_CAPNP
 #cmakedefine01 USE_PARQUET
 #cmakedefine01 USE_ORC
