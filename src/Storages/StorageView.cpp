@@ -21,6 +21,7 @@
 #include <Storages/StorageView.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/SelectQueryDescription.h>
 
@@ -663,6 +664,47 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
     };
 
     return find_storage(inner_query_tree.get(), context);
+}
+
+bool StorageView::readRequiresFullQuery() const
+{
+    std::vector<std::pair<ASTPtr, String>> nodes;
+    auto add_view_query = [&](const StorageView & view)
+    {
+        const auto metadata = view.getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+        if (const auto & inner_query = metadata->getSelectQuery().inner_query)
+            nodes.emplace_back(inner_query, view.getStorageID().database_name);
+    };
+    add_view_query(*this);
+
+    const auto context = Context::getGlobalContextInstance();
+    while (!nodes.empty())
+    {
+        auto [node, database] = std::move(nodes.back());
+        nodes.pop_back();
+
+        if (const auto * table_identifier = node->as<ASTTableIdentifier>())
+        {
+            StorageID storage_id = table_identifier->getTableId();
+            if (storage_id.database_name.empty())
+                storage_id.database_name = database;
+
+            if (const auto storage = DatabaseCatalog::instance().tryGetTable(storage_id, context); storage)
+            {
+                if (storage->readRequiresFullQuery())
+                    return true;
+                if (const auto view = castStorage<StorageView>(storage, DeferredTable::Load))
+                    add_view_query(*view);
+            }
+        }
+        else
+        {
+            for (const auto & child : node->children)
+                if (child)
+                    nodes.emplace_back(child, database);
+        }
+    }
+    return false;
 }
 
 bool StorageView::isSealed(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const

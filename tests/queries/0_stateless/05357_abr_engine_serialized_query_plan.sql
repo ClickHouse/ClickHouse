@@ -5,6 +5,8 @@
 SET allow_experimental_abr = 1;
 SET enable_analyzer = 1, serialize_query_plan = 1, prefer_localhost_replica = 0;
 
+DROP VIEW IF EXISTS abr_view_of_view;
+DROP VIEW IF EXISTS abr_view;
 DROP TABLE IF EXISTS dist_abr;
 DROP TABLE IF EXISTS dist_serialized_10;
 DROP TABLE IF EXISTS abr;
@@ -35,6 +37,19 @@ SETTINGS log_comment = '05357_distributed';
 SELECT count() FROM dist_serialized_10
 WHERE key IN (SELECT key FROM abr WHERE ts >= toDateTime('2026-06-01 00:01:00'));
 
+-- Without inlining, a view is read as the view itself, which passes the filter of the outer query to the `ABR` table it
+-- reads, directly or through another view.
+CREATE VIEW abr_view AS SELECT * FROM abr;
+CREATE VIEW abr_view_of_view AS SELECT ts, value FROM abr_view;
+
+SELECT count(), max(value) FROM remote('127.0.0.2', currentDatabase(), 'abr_view')
+WHERE ts >= toDateTime('2026-06-01 00:00:00')
+SETTINGS analyzer_inline_views = 0;
+
+SELECT count(), max(value) FROM remote('127.0.0.2', currentDatabase(), 'abr_view_of_view')
+WHERE ts >= toDateTime('2026-06-01 00:00:00')
+SETTINGS analyzer_inline_views = 0;
+
 -- The queries on the shard chose interval 1 from their time filter.
 -- The shard runs in the default database of its connection, so its entries are found through the initial queries.
 SYSTEM FLUSH LOGS query_log;
@@ -52,6 +67,8 @@ WHERE type = 'QueryFinish'
             AND log_comment IN ('05357_remote', '05357_distributed')
             AND event_date >= yesterday());
 
+DROP VIEW abr_view_of_view;
+DROP VIEW abr_view;
 DROP TABLE dist_abr;
 DROP TABLE dist_serialized_10;
 DROP TABLE abr;
