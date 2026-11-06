@@ -1,0 +1,20 @@
+Direct join is still chosen
+1
+Direct join result
+0	0
+1	150
+2	300
+3	450
+4	600
+5	750
+6	900
+7	
+8	
+9	
+Reading the dictionary directly still works
+1000	499500
+3	3
+500	500
+999	999
+Dictionary joined as the left side goes through a read
+7
