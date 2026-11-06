@@ -744,7 +744,7 @@ void Aggregator::adoptSourceCells(Table & table, const ForEachCell & for_each_ce
 {
     task.places.clear();
     task.source_slots.clear();
-    for_each_cell([&](const auto & key, AggregateDataPtr * mapped, size_t hash)
+    for_each_cell([&](const auto & key, [[maybe_unused]] AggregateDataPtr * mapped, size_t hash)
     {
         if (!filter.takes(hash))
         {
