@@ -9229,6 +9229,13 @@ std::function<void()> MergeTreeData::makeTooManyPartsCheck(const ContextPtr & qu
     };
 }
 
+InsertStartGate::TooManyPartsLimits MergeTreeData::getTooManyPartsLimits(const ContextPtr & query_context)
+{
+    /// The settings of `delayInsertOrThrowIfNeeded` that may make it throw. The other ones are table-level.
+    const auto & query_settings = query_context->getSettingsRef();
+    return {query_settings[Setting::parts_to_throw_insert], query_settings[Setting::dead_blobs_to_throw_insert]};
+}
+
 void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw, bool allow_delay) const
 {
     const auto settings = getSettings();

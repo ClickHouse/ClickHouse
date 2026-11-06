@@ -871,7 +871,7 @@ void registerHiddenDependentViewsPreWriteChecks(
                 auto outcome = std::make_shared<InsertStartGate::DeferredOutcome>();
                 auto gate = gates->get(target->getStorageID());
                 gate->addCheck({view_context, merge_tree->makeTooManyPartsCheck(view_context), /*deferred=*/ nullptr, view, outcome,
-                                /*enforced_later=*/ false});
+                                /*enforced_later=*/ false, MergeTreeData::getTooManyPartsLimits(view_context)});
                 /// Not enforced by the forwarding sink: the sink of the view does it.
                 result.push_back({origin.forwarded_to, std::move(gate), std::move(outcome), /* enforced_here= */ false});
             }
@@ -974,7 +974,7 @@ void registerHiddenPreWriteChecksImpl(
         /// The gate is keyed the same way as the gates of the sinks the nested INSERT creates, see `createSink`.
         auto gate = gates->get(storage->getStorageID());
         gate->addCheck({context, merge_tree->makeTooManyPartsCheck(context), outcome, origin.enforced_by, /*isolated=*/ nullptr,
-                        /*enforced_later=*/ !origin.enforced_here});
+                        /*enforced_later=*/ !origin.enforced_here, MergeTreeData::getTooManyPartsLimits(context)});
         result.push_back({origin.forwarded_to, std::move(gate), std::move(outcome), origin.enforced_here});
     }
 }

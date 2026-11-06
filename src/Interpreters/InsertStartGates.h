@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/StorageIDMaybeEmpty.h>
+#include <base/types.h>
 
 #include <algorithm>
 #include <exception>
@@ -43,6 +44,16 @@ public:
         std::exception_ptr exception;
     };
 
+    /// The query-level limits a `Too many parts` check depends on: the table-level ones are the same for every
+    /// check of one table. See `Check::limits`.
+    struct TooManyPartsLimits
+    {
+        UInt64 parts_to_throw_insert = 0;
+        UInt64 dead_blobs_to_throw_insert = 0;
+
+        bool operator==(const TooManyPartsLimits &) const = default;
+    };
+
     /// The pre-write check of one sink. `key` identifies the context the check runs with: the checks of
     /// the parallel sinks of one stream are the same and are run only once. `check` must not keep the
     /// sink alive - the gate may outlive it, see `addCheck`.
@@ -74,6 +85,13 @@ public:
         /// reached by several branches with different `SQL SECURITY` contexts, so their outcome is not handed
         /// to a check of another branch: the forwarding sink enforces it before the nested INSERT starts anyway.
         bool enforced_later = false;
+        /// For an isolated check: the effective limits it runs with (see `MergeTreeData::getTooManyPartsLimits`).
+        /// The same hidden view may be reached by several branches of the query whose contexts carry different
+        /// limits (e.g. through views with different `SQL SECURITY DEFINER` profiles in front of it, while the
+        /// view itself preserves the incoming settings), so the view alone does not identify the branch. The
+        /// checks of one table with the same limits have the same outcome in one decision, so a late sink observes
+        /// the outcome of the check registered in advance for its view with its own limits.
+        TooManyPartsLimits limits;
     };
 
     /// `InsertStartGates::get` moves the checks of a merged gate without allocating, so it cannot fail half way.
@@ -119,18 +137,39 @@ public:
 
         if (done)
         {
-            if ((check.deferred || check.isolated) && !check.enforced_by.expired())
+            if (check.deferred && !check.enforced_by.expired())
             {
-                const auto & failed = check.deferred ? failed_deferred_enforced_later : failed_isolated;
-                auto & own_outcome = check.deferred ? check.deferred : check.isolated;
-                for (const auto & [enforced_by, outcome] : failed)
+                for (const auto & [enforced_by, outcome] : failed_deferred_enforced_later)
                 {
                     if (sameOwner(enforced_by, check.enforced_by))
                     {
-                        own_outcome->exception = outcome->exception;
+                        check.deferred->exception = outcome->exception;
                         break;
                     }
                 }
+            }
+            else if (check.isolated && !check.enforced_by.expired())
+            {
+                /// The outcome of the check registered in advance for the same view with the same limits. If there is
+                /// none - the branch of the late sink was not foreseen - the view does not write if any check of the
+                /// view failed: rejecting a view whose errors are ignored only loses the rows of that view, while
+                /// accepting it could write past the limits of a stricter branch.
+                const DecidedIsolatedCheck * same_limits = nullptr;
+                const DecidedIsolatedCheck * any_failed = nullptr;
+                for (const auto & decided : decided_isolated)
+                {
+                    if (!sameOwner(decided.view, check.enforced_by))
+                        continue;
+                    if (decided.limits == check.limits)
+                    {
+                        same_limits = &decided;
+                        break;
+                    }
+                    if (!any_failed && decided.outcome->exception)
+                        any_failed = &decided;
+                }
+                if (const auto * source = same_limits ? same_limits : any_failed)
+                    check.isolated->exception = source->outcome->exception;
             }
             return;
         }
@@ -185,7 +224,7 @@ public:
             }
             failed_deferred.reserve(num_deferred);
             failed_deferred_enforced_later.reserve(num_deferred_enforced_later);
-            failed_isolated.reserve(num_isolated);
+            decided_isolated.reserve(num_isolated);
 
             try
             {
@@ -196,6 +235,10 @@ public:
                         check.check();
                         continue;
                     }
+
+                    /// Recorded before the check runs: its outcome is filled in below if it fails.
+                    if (check.isolated && !check.enforced_by.expired())
+                        decided_isolated.push_back({check.enforced_by, check.limits, check.isolated});
 
                     try
                     {
@@ -219,8 +262,6 @@ public:
                         else
                         {
                             check.isolated->exception = std::current_exception();
-                            if (!check.enforced_by.expired())
-                                failed_isolated.emplace_back(check.enforced_by, check.isolated);
                         }
                     }
                 }
@@ -315,9 +356,16 @@ private:
     /// after the decision, see `addCheck`.
     std::vector<std::pair<std::weak_ptr<const void>, std::shared_ptr<DeferredOutcome>>> failed_deferred_enforced_later;
 
-    /// The isolated checks with an owner (`Check::enforced_by`) that failed when the decision was made, with
-    /// their owners. Consulted by an isolated check registered after the decision, see `addCheck`.
-    std::vector<std::pair<std::weak_ptr<const void>, std::shared_ptr<DeferredOutcome>>> failed_isolated;
+    /// The isolated checks with an owner (`Check::enforced_by`) that took part in the decision, whatever their
+    /// outcome, with their owners and limits. Consulted by an isolated check registered after the decision, see
+    /// `addCheck`.
+    struct DecidedIsolatedCheck
+    {
+        std::weak_ptr<const void> view;
+        TooManyPartsLimits limits;
+        std::shared_ptr<DeferredOutcome> outcome;
+    };
+    std::vector<DecidedIsolatedCheck> decided_isolated;
 
     /// Set only while the gate is not `done`: from then on every sink holding this gate observes the
     /// decision of `forward_to` instead. Never changes once set.

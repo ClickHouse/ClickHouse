@@ -39,6 +39,7 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
+#include <Interpreters/InsertStartGates.h>
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
 #include <Common/ThreadPool_fwd.h>
@@ -952,6 +953,10 @@ public:
     /// keeps the pending decision of a query (see `InsertStartGates`) after the query and its sinks are
     /// gone, until it flushes the rows of the query, and the check must still use the limits of that query.
     std::function<void()> makeTooManyPartsCheck(const ContextPtr & query_context) const;
+
+    /// The query-level limits the check of `makeTooManyPartsCheck` depends on: two checks of the table with the
+    /// same limits have the same outcome against the same state of the table, see `InsertStartGate::Check::limits`.
+    static InsertStartGate::TooManyPartsLimits getTooManyPartsLimits(const ContextPtr & query_context);
 
     /// If the table contains too many unfinished mutations, sleep for a while to give them time to execute.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
