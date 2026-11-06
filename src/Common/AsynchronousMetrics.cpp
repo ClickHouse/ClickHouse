@@ -1,7 +1,6 @@
 #include <utility>
 #include <Core/ServerSettings.h>
 #include <IO/MMappedFileCache.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/UncompressedCache.h>
@@ -30,7 +29,6 @@
 
 #include <boost/locale/date_time_facet.hpp>
 
-#include <charconv>
 #include <ranges>
 #include <string_view>
 
@@ -546,57 +544,6 @@ void applyAsynchronousMetricsKeyValuesMode(AsynchronousMetricValues & values, As
     /// A legacy name is the name that the very same measurement had before the change, so it never collides
     /// with the name of another metric.
     values.merge(legacy_values);
-}
-
-AsynchronousMetricKeyValues readCPUFrequenciesFromProcCPUInfo(ReadBuffer & in)
-{
-    // We need the following lines:
-    // processor : 4
-    // cpu MHz : 4052.941
-    // They contain tabs and are interspersed with other info.
-
-    std::optional<Int32> core_id = 0;
-    AsynchronousMetricKeyValues cpu_frequencies;
-    std::string s;
-    while (!in.eof())
-    {
-        // We don't have any backslash escape sequences in /proc/cpuinfo, so
-        // this function will read the line until EOL, which is exactly what
-        // we need.
-        readEscapedStringUntilEOL(s, in);
-        // It doesn't read the EOL itself, and the last line may have none.
-        checkChar('\n', in);
-
-        static constexpr std::string_view PROCESSOR = "processor";
-        if (s.starts_with(PROCESSOR))
-        {
-            /// s390x example: processor 0: version = FF, identification = 039C88, machine = 3906
-            /// non s390x example: processor : 0
-            auto core_id_start = std::ssize(PROCESSOR);
-            while (core_id_start < std::ssize(s) && !isNumericASCII(s[core_id_start]))
-                ++core_id_start;
-
-            Int32 parsed = 0;
-            auto [_, ec] = std::from_chars(s.data() + core_id_start, s.data() + s.size(), parsed);
-            if (ec == std::errc())
-                core_id = parsed;
-            else
-                core_id.reset();
-        }
-        else if (s.starts_with("cpu MHz") && core_id)
-        {
-            if (auto colon = s.find(':'); colon != String::npos)
-            {
-                ReadBufferFromString value(std::string_view(s).substr(colon + 1));
-                skipWhitespaceIfAny(value);
-                Float64 mhz = 0;
-                if (tryReadText(mhz, value))
-                    cpu_frequencies[toString(*core_id)] = mhz;
-            }
-        }
-    }
-
-    return cpu_frequencies;
 }
 
 namespace
@@ -2076,7 +2023,45 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         try
         {
             cpuinfo->rewind();
-            auto cpu_frequencies = readCPUFrequenciesFromProcCPUInfo(*cpuinfo);
+
+            // We need the following lines:
+            // processor : 4
+            // cpu MHz : 4052.941
+            // They contain tabs and are interspersed with other info.
+
+            int core_id = 0;
+            AsynchronousMetricKeyValues cpu_frequencies;
+            while (!cpuinfo->eof())
+            {
+                std::string s;
+                // We don't have any backslash escape sequences in /proc/cpuinfo, so
+                // this function will read the line until EOL, which is exactly what
+                // we need.
+                readEscapedStringUntilEOL(s, *cpuinfo);
+                // It doesn't read the EOL itself.
+                ++cpuinfo->position();
+
+                static constexpr std::string_view PROCESSOR = "processor";
+                if (s.starts_with(PROCESSOR))
+                {
+                    /// s390x example: processor 0: version = FF, identification = 039C88, machine = 3906
+                    /// non s390x example: processor : 0
+                    auto core_id_start = std::ssize(PROCESSOR);
+                    while (core_id_start < std::ssize(s) && !std::isdigit(s[core_id_start]))
+                        ++core_id_start;
+
+                    core_id = std::stoi(s.substr(core_id_start));
+                }
+                else if (s.starts_with("cpu MHz"))
+                {
+                    if (auto colon = s.find_first_of(':'))
+                    {
+                        auto mhz = std::stod(s.substr(colon + 2));
+                        cpu_frequencies[toString(core_id)] = mhz;
+                    }
+                }
+            }
+
             if (!cpu_frequencies.empty())
                 new_values["CPUFrequencyMHz"] = { "cpu", std::move(cpu_frequencies),
                     "The current frequency of every CPU core, in MHz, keyed by the CPU core number. Most of the modern CPUs adjust the frequency dynamically for power saving and Turbo Boosting." };

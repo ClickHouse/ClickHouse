@@ -1,6 +1,7 @@
 -- Tags: no-fasttest
 -- Test LATERAL JOIN support
 
+SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
 SET allow_experimental_lateral_join = 1;
 SET join_use_nulls = 1;
