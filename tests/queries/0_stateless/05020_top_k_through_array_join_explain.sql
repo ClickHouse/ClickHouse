@@ -20,6 +20,8 @@ SET use_skip_indexes_for_top_k = 0;
 SET use_top_k_dynamic_filtering = 0;
 -- The fused element filter case needs the filter fused into `ARRAY JOIN`.
 SET query_plan_fuse_filter_into_array_join = 1;
+-- The `LIMIT BY` case shows the per-stream `LIMIT BY` hint that this pushes into `Sorting`.
+SET query_plan_push_limit_by_into_sort = 1;
 
 SELECT '-- disabled: Sorting remains above ArrayJoin';
 EXPLAIN PLAN description = 0
