@@ -76,5 +76,29 @@ SELECT count() > 0 FROM (
     WHERE t_ann_left.id = 12345 AND assumeNotNull(nullIf(t_ann_left.val, 0) + 42)
 ) WHERE explain ILIKE '%Type: inner%';
 
+-- The ANY conversions also evaluate the filter for matched rows, over the constants computed below the
+-- join. The join materializes them, so for a matched row `assumeNotNull` returns 42 at runtime, not the
+-- type default of the constant fold, and the conversion to ANTI must not drop the matches.
+DROP TABLE IF EXISTS t_ann_matched;
+CREATE TABLE t_ann_matched (id UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_ann_matched SELECT number FROM numbers(3);
+
+SELECT count() FROM t_ann_left ANY LEFT JOIN (SELECT id, 0 AS c FROM t_ann_matched) AS m ON t_ann_left.id = m.id
+WHERE assumeNotNull(nullIf(m.c, 0) + 42);
+
+SELECT count() FROM (SELECT id, 0 AS c FROM t_ann_matched) AS m ANY RIGHT JOIN t_ann_left ON t_ann_left.id = m.id
+WHERE assumeNotNull(nullIf(m.c, 0) + 42);
+
+SELECT count() FROM t_ann_left ANY LEFT JOIN (SELECT id, 0 AS c FROM t_ann_matched) AS m ON t_ann_left.id = m.id
+WHERE assumeNotNull(nullIf(m.c, 0) + 42)
+SETTINGS join_use_nulls = 1;
+
+-- A conjunct that is FALSE for every matched row still allows the conversion to ANTI.
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT count() FROM t_ann_left ANY LEFT JOIN (SELECT id, 0 AS c, 1 AS d FROM t_ann_matched) AS m ON t_ann_left.id = m.id
+    WHERE m.d = 0 AND assumeNotNull(nullIf(m.c, 0) + 42)
+) WHERE explain ILIKE '%Strictness: anti%';
+
 DROP TABLE t_ann_left;
 DROP TABLE t_ann_right;
+DROP TABLE t_ann_matched;

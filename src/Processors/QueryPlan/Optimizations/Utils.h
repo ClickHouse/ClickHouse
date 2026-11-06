@@ -82,6 +82,8 @@ enum class FilterResult
 
 [[nodiscard]] bool dagReadsUnspecifiedValueUnderNull(const ActionsDAG & dag);
 
+[[nodiscard]] bool nodeReadsUnspecifiedValueUnderNull(const ActionsDAG::Node * root);
+
 /// True when the expression holds a function that is non-deterministic within the query (`rand`), stateful
 /// (`rowNumberInAllBlocks`, `aiEmbed`), or has observable side effects (`sleep`), so an observer can see how
 /// many times and on which rows it was evaluated.

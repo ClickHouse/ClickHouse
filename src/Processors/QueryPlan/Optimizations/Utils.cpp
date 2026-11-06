@@ -164,6 +164,8 @@ bool valueUnderNullMapIsNotRead(const IFunctionBase & function)
     return argument_types.empty() || !argument_types.front()->isNullable();
 }
 
+}
+
 bool nodeReadsUnspecifiedValueUnderNull(const ActionsDAG::Node * root)
 {
     std::unordered_set<const ActionsDAG::Node *> visited;
@@ -179,8 +181,6 @@ bool nodeReadsUnspecifiedValueUnderNull(const ActionsDAG::Node * root)
         stack.insert(stack.end(), node->children.begin(), node->children.end());
     }
     return false;
-}
-
 }
 
 bool dagReadsUnspecifiedValueUnderNull(const ActionsDAG & dag)
