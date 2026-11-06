@@ -3024,7 +3024,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// Preserve top-level `NULL` membership before complex values are cast to a
                     /// common array element type. `Array` and `Map` cannot be wrapped in `Nullable`,
                     /// so that conversion would otherwise turn the `NULL` into a default value.
-                    const bool source_has_null = std::any_of(tuple_args.begin(), tuple_args.end(), isNullConstant);
+                    const bool source_has_null = std::any_of(tuple_args.begin(), tuple_args.end(),
+                        [](const auto & arg) { return isNullConstant(arg) || arg->getResultType()->onlyNull(); });
 
                     /// convert tuple to array and rewrite to has()
                     QueryTreeNodePtr array_arg = convertTupleToArray(tuple_args, in_first_argument, scope, expand_single_tuple_value, compare_nulls);
