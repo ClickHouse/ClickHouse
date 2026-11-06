@@ -36,6 +36,12 @@ struct HashMethodContextSettings
     /// Whether the aggregation is a lone `count()` with its counter kept in the hash-table mapped
     /// slot instead of a state. Caches that copy a mapped value are invalid in that mode.
     bool simple_count = false;
+    /// Whether a found cell's mapped value may be null and revived in place: an external
+    /// aggregation that keeps the admitted keys in the table flushes their states and leaves the
+    /// cells with null states (see `Aggregator::keepsKeysAcrossSpills`). The revival must reach
+    /// the cell, so a no-cache state must hand out table cells, never per-block copies of the
+    /// mapped value.
+    bool revivable_states = false;
 };
 
 /// Generic context for HashMethod. Context is shared between multiple threads, all methods must be thread-safe.

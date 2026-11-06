@@ -308,10 +308,9 @@ public:
         /// keys are bounded, but their aggregate states are not (`uniqExact`, `groupArray`,
         /// `topK`, the exact quantiles), so external aggregation has to stay available. A table
         /// rebuilt to the kept keys holds nothing but kept keys, so flushing it to disk cannot
-        /// leak a dropped key into the result; the flush empties the table, which under
-        /// `no_more_keys` would drop the remaining rows of the kept keys, so the `Aggregator`
-        /// re-seeds it from `AggregatedDataVariants::kept_keys_seed` right after the flush and
-        /// keeps aggregating exactly.
+        /// leak a dropped key into the result; the flush leaves the kept keys in the table with
+        /// null states (see `Aggregator::keepsKeysAcrossSpills`), so the remaining rows of those
+        /// keys keep being aggregated exactly.
         /// A table that has not been rebuilt yet may not spill — it still holds arbitrary keys.
         /// Created by `AggregatingStep` when the cutoff is armed; null otherwise.
         struct SharedKeptKeysControl
@@ -638,9 +637,10 @@ public:
       */
     std::vector<AggregatedChunk> convertBlockToTwoLevel(const Columns & columns, size_t rows) const;
 
-    /// For external aggregation. With `capture_kept_keys_seed` the flush snapshots the keys it
-    /// writes out, for the caller to put back into the emptied table (see `keepsKeysAcrossSpills`).
-    void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0, bool capture_kept_keys_seed = false) const;
+    /// For external aggregation. Under a kept-keys cap the flush leaves the admitted keys in the
+    /// table with null states (see `keepsKeysAcrossSpills`), unless `is_final_flush` says there
+    /// are no rows left to aggregate and the table can be released wholesale.
+    void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0, bool is_final_flush = false) const;
 
     /// Flushes the table on request of the memory scheduler; returns the released bytes.
     /// Requires a two-level or convertible table and temporary data storage.
@@ -805,6 +805,15 @@ private:
     /// are compiled, everything generically otherwise.
     void createAggregateStates(AggregateDataPtr & aggregate_data, bool use_compiled_functions) const;
 
+    /// Fresh aggregate states for a kept key found with a null state: a spill flushed its states
+    /// and left the key in the table (see `keepsKeysAcrossSpills`).
+    AggregateDataPtr reviveKeptKey(Arena * aggregates_pool, bool use_compiled_functions = false) const
+    {
+        AggregateDataPtr place = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+        createAggregateStates(place, use_compiled_functions);
+        return place;
+    }
+
     /** Call `destroy` methods for states of aggregate functions.
       * Used in the exception handler for aggregation, since RAII in this case is not applicable.
       */
@@ -824,10 +833,13 @@ private:
         AggregateDataPtr overflow_row = nullptr) const;
 
     /// Process one data block, aggregate the data into a hash table.
+    /// `key_arena` is the arena the keys are materialized in (see `keysArena`); every lookup
+    /// goes through it, while `aggregates_pool` keeps serving the aggregate states.
     template <bool for_sub_range, typename Method>
     void executeImpl(
         Method & method,
         Arena * aggregates_pool,
+        Arena * key_arena,
         size_t row_begin,
         size_t row_end,
         ColumnRawPtrs & key_columns,
@@ -843,6 +855,7 @@ private:
         State & state,
         const ColumnRawPtrs & key_columns,
         Arena * aggregates_pool,
+        Arena * key_arena,
         size_t row_begin,
         size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
@@ -871,6 +884,7 @@ private:
         State & state,
         const ColumnRawPtrs & key_columns,
         Arena * aggregates_pool,
+        Arena * key_arena,
         size_t row_begin,
         size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
@@ -896,6 +910,7 @@ private:
         State & state,
         const ColumnRawPtrs & key_columns,
         Arena * aggregates_pool,
+        Arena * key_arena,
         size_t row_begin,
         size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
@@ -1209,7 +1224,7 @@ private:
         AggregatedDataVariants & data_variants,
         Method & method,
         TemporaryBlockStreamHolder & out,
-        bool capture_kept_keys_seed) const;
+        bool keep_admitted_keys) const;
 
     /// Parameters for parallel merge workers for single level.
     struct ParallelMergeWorker
@@ -1392,6 +1407,10 @@ private:
     /// `untruncated_keys`, when non-null, receives what every group's key - kept or skipped - would occupy
     /// materialized, measured one key at a time on a single reused row, so the accounting stays bounded,
     /// together with a bounded sample of those keys.
+    /// `keep_unspilled_keys` is the external-aggregation flush of a table that keeps its admitted
+    /// keys (see `keepsKeysAcrossSpills`): the conversion emits only the cells that accumulated
+    /// states, leaves every cell in place with a null state (a zero inline count), and does not
+    /// clear the table.
     template <typename Method, typename Table>
     requires MapAggregationMethod<Method>
     Chunks convertToBlockImpl(
@@ -1405,9 +1424,11 @@ private:
         size_t max_rows_per_block = 0,
         bool allow_having_prefilter = false,
         UntruncatedAggregationKeys * untruncated_keys = nullptr,
-        bool keep_table_buffer = false) const;
+        bool keep_table_buffer = false,
+        bool keep_unspilled_keys = false) const;
 
     /// A set method skips the inline-count and compiled-function paths; it only emits keys.
+    /// `keep_unspilled_keys` never applies: a set's spills are refused under the kept-keys cap.
     template <typename Method, typename Table>
     requires SetAggregationMethod<Method>
     Chunks convertToBlockImpl(
@@ -1421,7 +1442,8 @@ private:
         size_t max_rows_per_block = 0,
         bool allow_having_prefilter = false,
         UntruncatedAggregationKeys * untruncated_keys = nullptr,
-        bool keep_table_buffer = false) const;
+        bool keep_table_buffer = false,
+        bool keep_unspilled_keys = false) const;
 
     template <typename Mapped>
     void insertAggregatesIntoColumns(
@@ -1456,8 +1478,14 @@ private:
         UntruncatedAggregationKeys * untruncated_keys) const;
 
     template <typename Method, typename Table>
-    Chunks
-    convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows, bool return_single_block, size_t max_rows_per_block) const;
+    Chunks convertToBlockImplNotFinal(
+        Method & method,
+        Table & data,
+        Arenas & aggregates_pools,
+        size_t rows,
+        bool return_single_block,
+        size_t max_rows_per_block,
+        bool keep_unspilled_keys) const;
 
     /// `untruncated_keys`, when non-null and the bucket goes through a conversion that materializes
     /// only some of its groups (the Top-K one or the HAVING pre-filter), receives the byte size all
@@ -1479,7 +1507,8 @@ private:
         Int32 bucket,
         UntruncatedAggregationKeys * untruncated_keys,
         size_t * full_group_count,
-        bool keep_table_buffer = false) const;
+        bool keep_table_buffer = false,
+        bool keep_unspilled_keys = false) const;
 
     /// The dispatch over the two-level variants of the conversion above, with its parameters.
     AggregatedChunk convertOneBucketToChunk(
@@ -1699,18 +1728,42 @@ private:
     /// May permanently abandon the cutoff, so call it only when the spill would proceed.
     bool spillAllowedUnderKeptKeysCutoff(bool no_more_keys, const AggregatedDataVariants & result) const;
 
-    /// Re-inserts the keys of the last flush, with empty states, into the table it emptied, so
-    /// they keep aggregating instead of being dropped by the `ANY` overflow mode. No-op unless
-    /// the flush captured them.
-    void reseedKeptKeysAfterSpill(AggregatedDataVariants & result) const;
-
-    /// A plain `max_rows_to_group_by` with `ANY`: every flush puts the keys it wrote out back
-    /// into the emptied table, so the limit counts every key ever admitted instead of restarting
-    /// at each flush, and it bounds what is retained. The shared cutoff manages its own set.
+    /// Whether the admitted keys survive external-aggregation spills in the hash table itself,
+    /// under a `group_by_overflow_mode = ANY` cap (a plain `max_rows_to_group_by` or the cutoff
+    /// of the trivial `GROUP BY ... LIMIT`): a spill writes out only the cells that accumulated
+    /// states, hands the state arenas over to the written blocks, and leaves every key in the
+    /// live table with a null state; the first later row of such a key allocates it a fresh one.
+    /// So the limit counts every key ever admitted, the rows of admitted keys keep aggregating
+    /// after their states were flushed, and a flush never rewrites keys that got no new rows.
+    /// The keys must then outlive the state arenas: `keysArena` gives the arena to materialize
+    /// them in. A set method has no states, so a flush could free nothing - its table holds only
+    /// the admitted keys, which must stay in memory anyway - and it is excluded here; its spills
+    /// are refused instead while the cap is deciding admission (`spillAllowedUnderKeptKeysCutoff`).
     bool keepsKeysAcrossSpills() const
     {
         return params.max_rows_to_group_by != 0 && params.group_by_overflow_mode == OverflowMode::ANY
-            && !params.shared_kept_keys_control;
+            && params.aggregates_size != 0;
+    }
+
+    /// An abandoned cutoff stops capping the tables entirely (see `Params::SharedKeptKeysControl`),
+    /// so the set of admitted keys is unbounded and must not be retained across spills.
+    bool keptKeysCutoffAbandoned() const
+    {
+        return params.shared_kept_keys_control && params.shared_kept_keys_control->isAbandoned();
+    }
+
+    /// Whether a spill right now must leave the admitted keys in the table.
+    bool keepsKeysAtSpill() const { return keepsKeysAcrossSpills() && !keptKeysCutoffAbandoned(); }
+
+    /// The arena `result`'s keys are materialized in: a surviving arena of their own under
+    /// `keepsKeysAcrossSpills`, the common state pool otherwise.
+    Arena * keysArena(AggregatedDataVariants & result) const
+    {
+        if (!keepsKeysAcrossSpills())
+            return result.aggregates_pool;
+        if (!result.keys_arena)
+            result.keys_arena = std::make_shared<Arena>();
+        return result.keys_arena.get();
     }
 
     void ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data) const;

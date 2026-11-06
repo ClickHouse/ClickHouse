@@ -155,8 +155,8 @@ void AggregatedDataVariants::resetAfterStateOwnershipTransfer()
     aggregator = nullptr;
     type = Type::EMPTY;
     restricted_to_kept_keys = false;
-    kept_keys_seed = nullptr;
     kept_keys_rebuild_in_progress = false;
+    keys_arena = nullptr;
 }
 
 size_t AggregatedDataVariants::allocatedBytes() const
@@ -164,6 +164,8 @@ size_t AggregatedDataVariants::allocatedBytes() const
     size_t res = 0;
     for (const auto & pool : aggregates_pools)
         res += pool->allocatedBytes();
+    if (keys_arena)
+        res += keys_arena->allocatedBytes();
 
     switch (type)
     {
@@ -186,6 +188,8 @@ size_t AggregatedDataVariants::usedArenaBytes() const
     size_t res = 0;
     for (const auto & pool : aggregates_pools)
         res += pool->usedBytes();
+    if (keys_arena)
+        res += keys_arena->usedBytes();
     return res;
 }
 

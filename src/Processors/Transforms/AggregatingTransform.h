@@ -94,11 +94,10 @@ struct ManyAggregatedData
     {
         std::mutex mutex;
         std::atomic<bool> frozen{false};
-        /// Kept keys + empty aggregate states in the mergeable block layout.
+        /// Kept keys + empty aggregate states in the mergeable block layout, for rebuilding every
+        /// stream's table around the frozen set.
         /// Written once under `mutex`; immutable after `frozen` is set (readers synchronize
-        /// with an acquire load of `frozen`). Shared with every rebuilt
-        /// `AggregatedDataVariants::kept_keys_seed`, which the `Aggregator` re-seeds from after
-        /// an external-aggregation spill.
+        /// with an acquire load of `frozen`).
         ConstBlockPtr seed;
         /// Per-variant: the variant was rebuilt to the kept key set. Written only by the variant's
         /// owning stream during consumption; read by the last finishing stream in `initGenerate`,
@@ -204,9 +203,9 @@ private:
 
     /// On the branches that do not share one kept key set (`skip_merging`, a single stream, the
     /// sharded aggregation) every stream caps itself, so its table already holds nothing but its
-    /// own kept keys. Capture them as the stream's seed so that external aggregation stays
-    /// available under the cutoff (see `Aggregator::spillAllowedUnderKeptKeysCutoff`).
-    void capturePerStreamKeptKeysSeed();
+    /// own kept keys. Mark it restricted so that external aggregation stays available under the
+    /// cutoff (see `Aggregator::spillAllowedUnderKeptKeysCutoff`).
+    void markPerStreamKeptKeys();
 
     /// To read the data that was flushed into the temporary data file.
     Processors processors;

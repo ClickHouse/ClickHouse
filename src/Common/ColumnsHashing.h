@@ -68,11 +68,14 @@ public:
 
     explicit LowCardinalityDictionaryCache(const HashMethodContextSettings & settings)
         : simple_count(settings.simple_count)
+        , revivable_states(settings.revivable_states)
         , cache(CurrentMetrics::end(), CurrentMetrics::end(), settings.max_threads)
     {}
 
     /// See `HashMethodContextSettings::simple_count`.
     const bool simple_count;
+    /// See `HashMethodContextSettings::revivable_states`.
+    const bool revivable_states;
 
     CachedValuesPtr get(const DictionaryKey & key) { return cache.get(key); }
     void set(const DictionaryKey & key, const CachedValuesPtr & mapped) { cache.set(key, mapped); }
@@ -124,9 +127,11 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
     PaddedPODArray<UInt64> filled_visit_cache_indexes;
 
-    /// With the inline count the mapped value is the counter itself, so no copy of it may be handed out:
-    /// `emplaceKey` and `findKey` then return the table cell and never fill `mapped_cache` or `visit_cache`.
-    /// The inline count runs only through `StateNoCache`, so the cached state has it off at compile time.
+    /// With the inline count the mapped value is the counter itself, and with revivable states a
+    /// found cell may need its null mapped replaced in place, so no copy of it may be handed out:
+    /// `emplaceKey` and `findKey` then return the table cell and never fill `mapped_cache` or
+    /// `visit_cache`. Both modes run their mutating lookups only through `StateNoCache`, so the
+    /// cached state has this off at compile time.
     bool mapped_in_table_only = false;
 
     ALWAYS_INLINE bool mappedInTableOnly() const { return !use_cache && mapped_in_table_only; }
@@ -179,7 +184,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         }
 
         if constexpr (has_mapped && !use_cache)
-            mapped_in_table_only = lcd_cache && lcd_cache->simple_count;
+            mapped_in_table_only = lcd_cache && (lcd_cache->simple_count || lcd_cache->revivable_states);
         else
             chassert(!lcd_cache || !lcd_cache->simple_count);
 
