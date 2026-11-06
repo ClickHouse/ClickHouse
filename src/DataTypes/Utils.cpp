@@ -389,20 +389,37 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
     return false;
 }
 
-/// The names a relabelling cast must not change, one per node of the type tree.
-static std::vector<String> getNamesKeptByRelabelling(const IDataType & type)
+/// The names a relabelling cast must not change, one per node; it relabels the state versions of outer states only.
+static void appendNamesKeptByRelabelling(const IDataType & type, bool in_arguments, std::vector<String> & names)
 {
-    std::vector<String> names;
     forEachInTypeTree(type, [&](const IDataType & child)
     {
         if (const auto * aggregate_type = typeid_cast<const DataTypeAggregateFunction *>(&child))
-            names.push_back(aggregate_type->getNameWithoutVersion());
+        {
+            String name = aggregate_type->getFunctionName() + DataTypeAggregateFunction::formatParameters(aggregate_type->getParameters());
+            if (in_arguments)
+                name += " version " + std::to_string(aggregate_type->getVersion());
+            names.push_back(std::move(name));
+            for (const auto & argument : aggregate_type->getArgumentsDataTypes())
+                appendNamesKeptByRelabelling(*argument, /*in_arguments=*/ true, names);
+        }
         else if (WhichDataType(child).isUInt8())
             names.push_back(child.getName() == "Bool" ? "Bool" : "");
         else
             names.emplace_back();
     });
+}
+
+static std::vector<String> getNamesKeptByRelabelling(const IDataType & type)
+{
+    std::vector<String> names;
+    appendNamesKeptByRelabelling(type, /*in_arguments=*/ false, names);
     return names;
+}
+
+bool isRelabellingCast(const IDataType & from, const IDataType & to)
+{
+    return from.equals(to) && getNamesKeptByRelabelling(from) == getNamesKeptByRelabelling(to);
 }
 
 bool needsConvertingCast(const IDataType & from, const IDataType & to)

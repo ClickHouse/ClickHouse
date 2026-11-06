@@ -1,4 +1,5 @@
 #include <Functions/FunctionsConversion.h>
+#include <DataTypes/Utils.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/iota.h>
@@ -2480,8 +2481,8 @@ FunctionCast::WrapperType FunctionCast::createVariantWrapper(const DataTypePtr &
     {
         if (const auto * to_variant = checkAndGetDataType<DataTypeVariant>(to_type.get()))
         {
-            /// Equal Variants have the same alternatives in the same order, so the column is reused.
-            if (from_variant->equals(*to_variant))
+            /// Equal Variants have the same alternatives in the same order, so a relabelling cast reuses the column.
+            if (isRelabellingCast(*from_variant, *to_variant))
                 return createIdentityWrapper(from_type);
             return createVariantToVariantWrapper(*from_variant, *to_variant);
         }
@@ -3075,8 +3076,8 @@ static FunctionCast::WrapperType createEnumToLowCardinalityStringWrapper(const D
 
 FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type) const
 {
-    /// `equals` ignores the state versions of `AggregateFunction` types; the column must take the target versions.
-    if (from_type->equals(*to_type) && !haveSameAggregateStateVersions(*from_type, *to_type))
+    /// `equals` ignores the state versions of `AggregateFunction` types; a relabelling cast gives the column the target versions.
+    if (isRelabellingCast(*from_type, *to_type) && !haveSameAggregateStateVersions(*from_type, *to_type))
         return [to_type](ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
         {
             return relabelAggregateStateVersions(arguments.front().column, to_type);

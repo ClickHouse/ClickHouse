@@ -33,6 +33,10 @@ AggregateFunction state version
 10
 10
 10
+AggregateFunction over a time zone
+0
+0
+0
 AggregateFunction of another function with the same state
 [3.6]
 [3.6]

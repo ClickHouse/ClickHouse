@@ -18,6 +18,7 @@ DROP TABLE IF EXISTS t_var;
 DROP TABLE IF EXISTS t_var_dst;
 DROP TABLE IF EXISTS t_vaf;
 DROP TABLE IF EXISTS t_aaf;
+DROP TABLE IF EXISTS t_any_mixed;
 DROP TABLE IF EXISTS t_qaf_nested;
 DROP TABLE IF EXISTS t_vaf_nested;
 DROP TABLE IF EXISTS t_mlocal;
@@ -92,6 +93,10 @@ CREATE TABLE t_var_dst (x Variant(DateTime('UTC'), String)) ENGINE = Memory;
 INSERT INTO t_var_dst SELECT x FROM t_var;
 SELECT x FROM t_var_dst;
 SELECT CAST(x AS Variant(DateTime('UTC'), String)) FROM t_var;
+-- Equal Variants whose alternatives differ in more than a relabelling still need a conversion.
+SELECT CAST(quantilesState(0.9)(number)::Variant(AggregateFunction(quantiles(0.9), UInt64), String) AS Variant(AggregateFunction(quantiles(0.1), UInt64), String)) FROM numbers(100); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT CAST([2::UInt8]::Variant(Array(UInt8), String) AS Variant(Array(Bool), String)); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT CAST(CAST(quantilesState(0.9)(number), 'Variant(AggregateFunction(0, quantiles(0.9), UInt64), String)') AS Variant(AggregateFunction(1, quantile, UInt64), String)) FROM numbers(5); -- { serverError CANNOT_CONVERT_TYPE }
 
 SELECT 'AggregateFunction state version';
 CREATE TABLE t_vaf (x Variant(AggregateFunction(0, uniq, UInt64), String)) ENGINE = Memory;
@@ -103,6 +108,15 @@ CREATE TABLE t_aaf (a Array(AggregateFunction(0, uniq, UInt64))) ENGINE = Memory
 INSERT INTO t_aaf SELECT [uniqState(number)::AggregateFunction(0, uniq, UInt64)] FROM numbers(10);
 CREATE VIEW v_aaf (a Array(AggregateFunction(1, uniq, UInt64))) AS SELECT a FROM t_aaf;
 SELECT uniqMerge(s) FROM (SELECT arrayJoin(groupArray(arrayJoin(a))) AS s FROM v_aaf);
+
+SELECT 'AggregateFunction over a time zone';
+CREATE VIEW v_any_tz (s AggregateFunction(any, DateTime('UTC'))) AS SELECT anyState(toDateTime(1767225600)) AS s;
+SELECT toHour(finalizeAggregation(s)) FROM v_any_tz;
+SELECT toHour(finalizeAggregation(s)) FROM v_any_tz SETTINGS analyzer_inline_views = 1;
+CREATE TABLE t_any_mixed (s AggregateFunction(any, Tuple(DateTime, AggregateFunction(uniq, UInt64)))) ENGINE = Memory;
+INSERT INTO t_any_mixed SELECT anyState(tuple(toDateTime(1767225600), u)) FROM (SELECT uniqState(number) AS u FROM numbers(10));
+CREATE VIEW v_any_mixed (s AggregateFunction(any, Tuple(DateTime('UTC'), AggregateFunction(uniq, UInt64)))) AS SELECT s FROM t_any_mixed;
+SELECT toHour(finalizeAggregation(s).1) FROM v_any_mixed SETTINGS analyzer_inline_views = 1;
 
 SELECT 'AggregateFunction of another function with the same state';
 -- States of another function, or nested in a state, are not relabelled: the view fails to finalize them, the inlined view keeps the source type.
@@ -128,6 +142,8 @@ DROP VIEW v_dist;
 DROP VIEW v_var;
 DROP VIEW v_vaf;
 DROP VIEW v_aaf;
+DROP VIEW v_any_tz;
+DROP VIEW v_any_mixed;
 DROP VIEW v_qaf;
 DROP VIEW v_qaf_nested;
 DROP VIEW v_vaf_nested;
@@ -141,6 +157,7 @@ DROP TABLE t_var;
 DROP TABLE t_var_dst;
 DROP TABLE t_vaf;
 DROP TABLE t_aaf;
+DROP TABLE t_any_mixed;
 DROP TABLE t_qaf_nested;
 DROP TABLE t_vaf_nested;
 DROP TABLE t_merge_dist;
