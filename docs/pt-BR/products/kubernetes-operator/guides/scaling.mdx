@@ -12,10 +12,12 @@ Você escala um cluster editando as contagens de réplicas e shards no recurso p
 Este guia explica como escalar réplicas e shards de `ClickHouseCluster`, como escalar com segurança o quórum de um `KeeperCluster` e quais condições observar enquanto uma operação de escalonamento está em andamento.
 
 <Note>
-  Um `ClickHouseCluster` sempre precisa de um Keeper, definido por meio de `spec.keeperClusterRef` ou `spec.externalKeeper` — o operador coordena o cluster por meio dele, independentemente do tamanho. Para executar mais de uma réplica por shard, os dados também precisam estar em tabelas `ReplicatedMergeTree`, já que é a replicação que permite que uma segunda réplica atenda as mesmas linhas.
+  Um `ClickHouseCluster` sempre precisa de um Keeper, referenciado pelo campo obrigatório `spec.keeperClusterRef` — o operador coordena o cluster por meio dele, independentemente do tamanho. Para executar mais de uma réplica por shard, os dados também precisam estar em tabelas `ReplicatedMergeTree`, já que é a replicação que permite que uma segunda réplica atenda as mesmas linhas.
 </Note>
 
-## Escalonamento de réplicas {#scaling-replicas}
+<div id="scaling-replicas">
+  ## Escalonamento de réplicas
+</div>
 
 `spec.replicas` define o número de réplicas em cada shard. Cada réplica roda em seu próprio StatefulSet chamado `<cluster>-clickhouse-<shard>-<replica>`, portanto, um cluster com `shards: 2` e `replicas: 3` executa seis StatefulSets.
 
@@ -30,7 +32,9 @@ spec:
 
 Ao aumentar a escala, o operador cria os novos StatefulSets por réplica, aguarda que cada pod do Kubernetes fique pronto e, em seguida, sincroniza o esquema com as novas réplicas (consulte [Sincronização automática de esquema](#automatic-schema-sync)). Ao reduzir a escala, ele remove os StatefulSets excedentes e limpa os registros obsoletos de réplica do banco de dados replicado deixados pelas réplicas removidas.
 
-## Escalonamento de shards {#scaling-shards}
+<div id="scaling-shards">
+  ## Escalonamento de shards
+</div>
 
 `spec.shards` define o número de shards. Cada novo shard adiciona um conjunto completo de StatefulSets por réplica, e o operador cria um [PodDisruptionBudget por shard](/pt-BR/products/kubernetes-operator/guides/configuration#pod-disruption-budgets) para que uma interrupção em um shard não seja contabilizada em outro.
 
@@ -42,7 +46,9 @@ spec:
 
 Cada shard contém uma porção distinta dos dados, e o operador não copia nem move linhas entre shards. Uma tabela `Distributed` ou um esquema de roteamento explícito decide em qual shard uma linha ficará, de modo que adicionar um shard dá às novas escritas um lugar para serem direcionadas sem mexer nas linhas já armazenadas nos shards existentes.
 
-## Sincronização automática de esquema {#automatic-schema-sync}
+<div id="automatic-schema-sync">
+  ## Sincronização automática de esquema
+</div>
 
 Quando `spec.settings.enableDatabaseSync` é `true` (o padrão), o operador mantém o esquema alinhado conforme a topologia muda:
 
@@ -53,7 +59,9 @@ Isso cobre bancos de dados `Replicated` e motores de banco de dados de integraç
 
 Defina `enableDatabaseSync: false` para desativar esse comportamento, por exemplo, quando uma ferramenta externa é responsável pela propagação do esquema. O operador então informa o motivo `SchemaSyncDisabled` na condição `SchemaInSync`.
 
-## Condições para acompanhar {#scaling-conditions}
+<div id="scaling-conditions">
+  ## Condições para acompanhar
+</div>
 
 Acompanhe o progresso do recurso personalizado enquanto a operação de escalonamento estiver em execução:
 
@@ -75,7 +83,9 @@ kubectl get clickhousecluster sample -o yaml | sed -n '/conditions:/,/^[^ ]/p'
 
 Uma operação de escala é concluída quando `ClusterSizeAligned` informa `UpToDate`, `SchemaInSync` informa `ReplicasInSync` e `Ready` informa `AllShardsReady`.
 
-## Escalonamento do Keeper {#scaling-keeper}
+<div id="scaling-keeper">
+  ## Escalonamento do Keeper
+</div>
 
 Um `KeeperCluster` opera com um quórum RAFT, portanto o operador altera seus membros **uma réplica por vez** e apenas enquanto o cluster estiver em um estado estável. Isso protege o quórum: um cluster `2F+1` tolera `F` membros indisponíveis, então um cluster de 3 nós continua funcionando com um membro ausente, e um cluster de 5 nós, com dois.
 

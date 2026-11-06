@@ -41,10 +41,10 @@ head_sha = None
 class JobTypes:
     STATELESS = "Stateless"
     INTEGRATION = "Integration"
-    AST_FUZZER = "AST fuzzer"
+    AST_FUZZER = "AST Fuzzer"
     BUILD = "Build"
     FORMATTER = "Formatter"
-    LACASA_FUZZER = "La Casa Del Dolor"
+    BUZZ_FUZZER = "Buzz"
     DOCKER = "Docker"
     COMPATIBILITY = "Compatibility"
     INSTALL = "Install"
@@ -100,11 +100,11 @@ class CreateIssue:
         print(f"- Body:\n{body}")
         print("-" * 100)
         body = (
-            "_Important: This issue was automatically generated and will be closed as trash. "
-            "Do not create trash. Please take a look at this issue, provide the analysis, and remove this line._\n\n"
+            "_Important: This issue was automatically generated and is used by CI for matching failures. "
+            "DO NOT modify the body content. DO NOT remove labels._\n\n"
         ) + body
 
-        if not UserPrompt.confirm("Proceed with issue creation (highly not recommended)?"):
+        if not UserPrompt.confirm("Proceed with issue creation?"):
             return ""
 
         return Issue.create_from(
@@ -244,7 +244,7 @@ Test output:
             print("Cannot handle OOM errors - skip")
             return False
         if (
-            any(key in job_result.name for key in ("Buzz", "AST", "La Casa", "Unit tests"))
+            any(key in job_result.name for key in ("Buzz", "AST", "Unit tests"))
             and job_result.results
         ):
             return True
@@ -286,7 +286,7 @@ Test output:
                 issue_url = cls.create_gh_issue_on_fuzzer_or_stress_finding(
                     result, job_name, **kw
                 )
-        elif any(key in job_name for key in ("Buzz", "AST", "La Casa", "Stress", "Unit tests")):
+        elif any(key in job_name for key in ("Buzz", "AST", "Stress", "Unit tests")):
             if "Unit tests" in job_name and result.name == job_name:
                 result.name = cls.extract_unit_test_title(result)
             issue_url = cls.create_gh_issue_on_fuzzer_or_stress_finding(

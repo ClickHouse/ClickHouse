@@ -17,16 +17,20 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 * 有关版本发布时间，请参阅 [发布状态](/zh/resources/changelogs/cloud/release-status) 页面
 
 <Note>
-  借助 ClickHouse Cloud 中的 [MBB](/zh/products/cloud/features/autoscaling/make-before-break)，在升级事件中，历史系统表数据最多会保留 30 天。
+  我们正在引入一种新的升级机制，即我们称之为 &quot;make before break&quot; (简称 MBB) 的理念。采用这种新方法后，在升级过程中，我们会先添加更新后的副本，再移除旧副本。这样可以让升级更加平滑，并尽可能减少对正在运行的工作负载的影响。
+
+  作为这项变更的一部分，在升级事件中，历史系统表数据最多会保留 30 天。此外，对于 AWS 或 GCP 上的服务，早于 2024 年 12 月 19 日的任何系统表数据，以及对于 Azure 上的服务，早于 2025 年 1 月 14 日的任何系统表数据，在迁移到新的组织层级时都不会被保留。
 </Note>
 
-## 版本兼容性 {#version-compatibility}
+<div id="version-compatibility">
+  ## 版本兼容性
+</div>
 
 创建 服务 时，[`compatibility`](/zh/reference/settings/session-settings/compatibility#compatibility) 设置会被设为该 服务 初始预配时 ClickHouse Cloud 提供的最新 ClickHouse 版本。
 
 `compatibility` 设置允许你使用旧版本中各项设置的默认值。当你的 服务 升级到新版本时，`compatibility` 设置中指定的版本不会改变。这意味着，在你首次创建 服务 时已存在的设置，其默认值不会发生变化 (除非你已经覆盖了这些默认值，在这种情况下，它们会在升级后继续保留) 。
 
-在 ClickHouse Cloud 中，你无法直接管理 服务 的 服务 级默认 `compatibility` 设置——如果你想更改 服务 默认 `compatibility` 设置所使用的版本，则必须[联系 ClickHouse 支持团队](https://clickhouse.com/support/program)。不过，你可以使用标准的 ClickHouse 设置机制，在 user、role、profile、query 或 session 级别覆盖 `compatibility` 设置，例如在 session 中使用 `SET compatibility = '26.8'`，或在 query 中使用 `SETTINGS [other settings,] compatibility = '26.8'`。
+你无法管理 服务 的 服务 级默认 `compatibility` 设置。如果你想更改 服务 默认 `compatibility` 设置所使用的版本，则必须[联系支持团队](https://clickhouse.com/support/program)。不过，你可以使用标准的 ClickHouse 设置机制，在 user、role、profile、query 或 session 级别覆盖 `compatibility` 设置，例如在 session 中使用 `SET compatibility = '22.3'`，或在 query 中使用 `SETTINGS compatibility = '22.3'`。
 
 <div id="maintenance-mode">
   ## 维护模式
@@ -109,7 +113,9 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
   * 切换到更慢的渠道不会将您的服务降级；您的服务会继续停留在当前版本，直到该渠道有更新版本可用。例如：从 Regular 切换到 Slow，或从 Fast 切换到 Regular 或 Slow
 </Note>
 
-## 计划升级 {#scheduled-upgrades}
+<div id="scheduled-upgrades">
+  ## 计划升级
+</div>
 
 <EnterprisePlanFeatureBadge feature="计划升级" linking_verb_are="true" />
 

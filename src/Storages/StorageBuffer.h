@@ -88,7 +88,6 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
     bool isRemote() const override;
-    bool readRequiresAnalyzedQuery() const override;
     bool readsFromOtherTables() const override { return static_cast<bool>(destination_id); }
     StoragePtr getDestinationTable() const;
 
@@ -137,7 +136,6 @@ public:
     /// Distributed). Fails closed like supportsPrewhere(): no destination means no rewrite.
     bool supportsOptimizationToSubcolumns() const override;
     bool supportsOptimizationToTupleElementSubcolumns() const override;
-    bool hasBucketedMapSerialization() const override;
     bool supportsFinal() const override { return true; }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;

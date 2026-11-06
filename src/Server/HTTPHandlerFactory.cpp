@@ -1,7 +1,6 @@
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/HTTPHandler.h>
 #include <Server/HTTPHandlerFactory.h>
-#include <Server/HTTPQueryConstructor.h>
 #include <Server/IServer.h>
 #include <Server/IndexRequestHandler.h>
 #include <Server/InterserverIOHTTPHandler.h>
@@ -11,7 +10,6 @@
 #include <Server/StaticRequestHandler.h>
 #include <Server/WebUIRequestHandler.h>
 #include <Server/WebTerminalRequestHandler.h>
-#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <boost/algorithm/string/predicate.hpp>
@@ -39,11 +37,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int INVALID_CONFIG_PARAMETER;
-}
-
-namespace ServerSetting
-{
-    extern const ServerSettingsBool http_allow_path_requests;
 }
 
 namespace
@@ -671,32 +664,24 @@ void addCatchAllQueryHandlerFactory(
     {
         HTTPHandlerConnectionConfig connection_config;
         connection_config.default_session_user = default_session_user;
-        return std::make_unique<DynamicQueryHandler>(
-            server, connection_config, "query", std::nullopt, "", path_hints, /* parse_http_path_ */ true, /* allow_path_table_uploads_ */ true);
+        return std::make_unique<DynamicQueryHandler>(server, connection_config, "query", std::nullopt, "", path_hints);
     };
     /// Path-as-file routing is gated by a single server-level flag (`http_allow_path_requests`,
-    /// default on), evaluated here at routing time — before authentication, where the connecting
+    /// default off), evaluated here at routing time — before authentication, where the connecting
     /// user is unknown. The per-user `http_allow_database_as_path` / `http_allow_table_as_file` /
     /// `http_allow_filters_as_path` settings then control, after authentication, whether a routed
     /// path is actually interpreted (see `HTTPHandler::processQuery`). When the server flag is off,
-    /// path requests are not claimed at all, so unknown paths return a plain pre-auth 404
+    /// path requests are not claimed at all, so unknown paths keep returning a plain pre-auth 404
     /// (`NotFoundHandler`).
-    ///
-    /// The value is read from the configuration and not from `Context::getServerSettings`, which
-    /// holds the startup-time snapshot; the fallback is taken from the settings declaration so the
-    /// two cannot drift apart.
-    static const bool default_allow_path_requests = ServerSettings{}[ServerSetting::http_allow_path_requests];
-    const bool allow_path_requests = config.getBool("http_allow_path_requests", default_allow_path_requests);
+    const bool allow_path_requests = config.getBool("http_allow_path_requests", false);
     auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
     query_handler->addFilter([allow_path_requests](const auto & request)
         {
             const auto & method = request.getMethod();
-            const bool is_get_or_head = method == Poco::Net::HTTPRequest::HTTP_GET
-                                     || method == Poco::Net::HTTPRequest::HTTP_HEAD;
-            const bool is_post_or_options = method == Poco::Net::HTTPRequest::HTTP_POST
-                                         || method == Poco::Net::HTTPRequest::HTTP_OPTIONS;
-            const bool is_put = method == Poco::Net::HTTPRequest::HTTP_PUT
-                             && !mayBeParsedAsMultipartFormData(request);
+            bool is_get_or_head = method == Poco::Net::HTTPRequest::HTTP_GET
+                               || method == Poco::Net::HTTPRequest::HTTP_HEAD;
+            bool is_post_or_options = method == Poco::Net::HTTPRequest::HTTP_POST
+                                   || method == Poco::Net::HTTPRequest::HTTP_OPTIONS;
 
             /// An `OPTIONS` request is a CORS preflight (and the web-UI connectivity health-check).
             /// `HTTPHandler::handleRequest` answers it via `processOptionsRequest` before
@@ -709,7 +694,7 @@ void addCatchAllQueryHandlerFactory(
             if (method == Poco::Net::HTTPRequest::HTTP_OPTIONS)
                 return true;
 
-            if (!is_get_or_head && !is_post_or_options && !is_put)
+            if (!is_get_or_head && !is_post_or_options)
                 return false;
 
             /// Everything below is the path-as-file extension. Skip it unless path requests are
@@ -718,12 +703,6 @@ void addCatchAllQueryHandlerFactory(
             /// `HTTPHandler::processQuery`; this server-level flag is only the routing-time gate.)
             if (!allow_path_requests)
                 return false;
-
-            if (is_put)
-            {
-                if (!hasHTTPPathFormatSuffix(request.getURI()))
-                    return false;
-            }
 
             /// Skip the path-as-file routing for clients sending an `Authorization` header with a
             /// scheme ClickHouse does not implement (e.g. `AWS4-HMAC-SHA256`, used by

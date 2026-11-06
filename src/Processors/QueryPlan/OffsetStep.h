@@ -30,8 +30,6 @@ public:
     /// topmost replica step.
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
-    size_t getOffset() const { return offset; }
-
 private:
     void updateOutputHeader() override
     {

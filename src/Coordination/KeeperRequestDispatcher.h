@@ -115,9 +115,7 @@ public:
     /// May block for a short time if queue is full.
     void onResponse(KeeperResponseForSession response) noexcept;
 
-    /// Called for every committed request, on every server. dispatcher_server_id is the server whose
-    /// dispatcher produced the request's batch, or -1 if unknown (legacy log entry).
-    void onCommit(const KeeperRequestForSession & request_for_session, int32_t dispatcher_server_id = -1);
+    void onCommit(const KeeperRequestForSession & request_for_session);
 
     /// KeeperRequestDispatcher is in charge of preventing response queue(s) from growing very big and OOMing.
     /// This covers KeeperRequestDispatcher's own responses_queue, and `responses` queues from all KeeperTCPHandler-s.
@@ -127,10 +125,6 @@ public:
 
 private:
     friend class KeeperRequestDispatcherTestAccessor;
-
-    static void initializeWaitForWriteSpan(
-        const KeeperRequestForSession & read_request, UInt64 wait_start_us = ZooKeeperOpentelemetrySpans::now());
-    static void finalizeWaitForWriteSpans(const KeeperRequestsForSessions & reads);
 
     /// Suppose we get a write request from some session and put it in batch B and send that
     /// batch to leader. While B is still in flight, we get a read request from the same session.
@@ -144,14 +138,8 @@ private:
         /// do the read right there.
         bool add(KeeperRequestForSession & request_for_session)
         {
-            /// The wait starts when the read arrives, not when the lock is acquired, so read the
-            /// clock here - it also keeps it out of a critical section that `dispatchThread` and
-            /// `onCommit` contend for.
-            const UInt64 wait_start_us = ZooKeeperOpentelemetrySpans::now();
-
             if (!lock())
                 return false;
-            initializeWaitForWriteSpan(request_for_session, wait_start_us);
             reads.push_back(std::move(request_for_session));
             unlock(Status::Available);
             return true;
@@ -266,7 +254,6 @@ private:
         {
             committed_requests = 0;
             intermediate_reads_idx = 0;
-
             late_reads.activate(std::move(initial_late_reads));
             active.store(true);
         }
@@ -326,6 +313,11 @@ private:
     NonblockingBoundedQueue<KeeperRequestForSession> requests_queue;
     std::atomic<int64_t> requests_queue_bytes {};
 
+    /// TODO: Currently responses to all requests are formed on all nodes, and go through this queue
+    ///       and through responseThread and session id lookup on all nodes, and all except one node
+    ///       discard the response. Consider adding server id to the request so that we can tell
+    ///       early that response is not needed. It would also save time in
+    ///       KeeperRequestDispatcher::onCommit, we won't have to check most requests against the queue.
     /// TODO: Maybe we should remove this and pass responses directly to KeeperTCPHandler queues.
     ///       But this intermediate queue may in theory improve performance: it's much cheaper to
     ///       push a batch of responses to this queue than to push individual responses to the

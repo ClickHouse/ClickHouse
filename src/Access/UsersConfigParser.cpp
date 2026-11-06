@@ -1,5 +1,4 @@
 #include <Access/UsersConfigParser.h>
-#include <Access/AccessEntityIO.h>
 #include <Access/Quota.h>
 #include <Access/RowPolicy.h>
 #include <Access/User.h>
@@ -63,8 +62,6 @@ namespace
         if (!ast)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse grant query. Error: {}", error_message);
 
-        checkAccessEntityHasNoQueryParameters(ast);
-
         auto & query = ast->as<ASTGrantQuery &>();
 
         if (query.roles && query.is_revoke)
@@ -81,37 +78,17 @@ namespace
         for (auto & element : query.access_rights_elements)
         {
             if (query.is_revoke)
-            {
-                try
-                {
-                    entity.access.revoke(element);
-                }
-                catch (const Exception & e)
-                {
-                    /// Such a filter can't be revoked separately: revoke without it, as before, so existing configs keep their meaning.
-                    if (!element.hasFilter() || e.code() != ErrorCodes::BAD_ARGUMENTS)
-                        throw;
-                    LOG_WARNING(
-                        log,
-                        "Grant query '{}' of {}: {}. Revoking without the filter",
-                        string_query,
-                        entity.formatTypeWithName(),
-                        e.message());
-                    element.filter.clear();
-                    entity.access.revoke(element);
-                }
-            }
+                entity.access.revoke(element);
             else
                 entity.access.grant(element);
         }
 
         if (query.roles)
         {
-            const auto role_names = query.roles->names ? query.roles->names->toStrings() : Strings{};
             std::vector<UUID> roles_to_grant;
-            roles_to_grant.reserve(role_names.size());
+            roles_to_grant.reserve(query.roles->size());
 
-            for (const auto & role_name : role_names)
+            for (const auto & role_name : query.roles->names)
             {
                 auto role_id = UsersConfigParser::generateID(AccessEntityType::ROLE, role_name);
                 if (!role_ids_from_users_config.contains(role_id))

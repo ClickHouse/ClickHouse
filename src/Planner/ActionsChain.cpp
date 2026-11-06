@@ -67,12 +67,10 @@ bool sameConstantValue(const Field & lhs, const Field & rhs)
 
 ActionsChainStep::ActionsChainStep(ActionsAndProjectInputsFlagPtr actions_,
     bool use_actions_nodes_as_output_columns_,
-    ColumnsWithTypeAndName additional_output_columns_,
-    NameSet additional_input_columns_)
+    ColumnsWithTypeAndName additional_output_columns_)
     : actions(std::move(actions_))
     , use_actions_nodes_as_output_columns(use_actions_nodes_as_output_columns_)
     , additional_output_columns(std::move(additional_output_columns_))
-    , additional_input_columns(std::move(additional_input_columns_))
 {
     initialize();
 }
@@ -197,7 +195,6 @@ void ActionsChainStep::initialize()
 {
     auto required_columns_names = actions->dag.getRequiredColumnsNames();
     input_columns_names = NameSet(required_columns_names.begin(), required_columns_names.end());
-    input_columns_names.insert(additional_input_columns.begin(), additional_input_columns.end());
 
     available_output_columns.clear();
 
@@ -232,7 +229,7 @@ void ActionsChain::finalize(const NameSet & source_const_inputs)
 
     /// For last chain step there are no columns required in child nodes
     NameSet empty_child_input_columns;
-    steps.back()->finalizeInputAndOutputColumns(empty_child_input_columns, source_const_inputs);
+    steps.back().get()->finalizeInputAndOutputColumns(empty_child_input_columns, source_const_inputs);
 
     Int64 steps_last_index = steps.size() - 1;
     for (Int64 i = steps_last_index; i >= 1; --i)

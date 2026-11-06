@@ -24,7 +24,7 @@ In most self-managed deployments, ingest and query share the same nodes. In this
 <Accordion title="Assumptions">
 - A **10x compression ratio** for storage - typically conservative for logs and traces.
 - Query SLAs of a P50 of 1.5 seconds and a P99 of 5 seconds.
-- We assume most queries occur over recent data, following a log-normal distribution that peaks at around one hour and tails out to around six hours. Users may wish to provision dedicated compute to query older data. In ClickHouse Cloud this can be idle (thus not incurring costs) when not in use.
+- We assume most queries occur over recent data, following a log-normal distribution that peaks at around one hour and tails out to around six hours. Users may wish to provision dedicated compute to query older data. In ClickHouse Cloud this can be idle (thus not incuring costs) when not in use.
 - While query compute can be scaled independently of ingest compute, it remains intrinsically linked to ingest volume. We assume as ingest increases, data density grows, resulting in larger scan volumes at query time and consequently higher query compute requirements.
 </Accordion>
 
