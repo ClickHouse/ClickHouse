@@ -6,6 +6,18 @@ set (DEFAULT_LIBS "-nodefaultlibs")
 # Wire compiler-rt runtimes (builtins/sanitizers/XRay) into the link flags.
 include (cmake/compiler_rt_link.cmake)
 
+option (ENABLE_PG83_STR "Use pg83/str for x86-64 string and memory functions" OFF)
+if (ENABLE_PG83_STR)
+    if (NOT ARCH_AMD64 OR SANITIZE OR SANITIZE_COVERAGE)
+        message (FATAL_ERROR "ENABLE_PG83_STR requires an x86-64 Linux build without sanitizers")
+    endif ()
+
+    set (STR_LIBRARY "${CMAKE_BINARY_DIR}/contrib/str-cmake/libstr.a")
+    target_link_libraries (global-libs INTERFACE ch_contrib::str)
+    # Load the definitions before other archives, including LLVM libc and Rust runtimes.
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--whole-archive ${STR_LIBRARY} -Wl,--no-whole-archive")
+endif ()
+
 # `libllvmlibc` supplies both the math functions and the SIMD memory functions
 # (`memcpy`/`memmove`/`memset`/`memcmp`/`bcmp`/`memmem`). Disabling it on
 # x86_64/aarch64 reverts all of them to the system libc, including `memcpy` —
