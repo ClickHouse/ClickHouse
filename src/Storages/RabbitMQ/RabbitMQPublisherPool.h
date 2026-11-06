@@ -59,6 +59,8 @@ private:
     /// Needed to generate unique channel ids.
     std::atomic<size_t> publisher_id = 1;
 
+    /// The network is only touched outside of the mutex. Therefore publishers are taken out of `idle_publishers`
+    /// before they are checked or disconnected, also in `cleanupIdlePublishers`.
     std::mutex mutex;
     std::vector<IdlePublisher> idle_publishers;
     bool is_shutdown = false;

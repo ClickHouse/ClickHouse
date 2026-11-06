@@ -29,7 +29,6 @@ RabbitMQPublisherPool::RabbitMQPublisherPool(
 
 RabbitMQPublisherPtr RabbitMQPublisherPool::acquire()
 {
-    /// The network is only touched outside of the mutex.
     while (auto idle = popIdlePublisher())
     {
         if (!isExpired(*idle) && idle->publisher->isReusable())
