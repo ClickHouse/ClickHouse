@@ -9,6 +9,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/Arena.h>
 #include <Common/FieldVisitorSum.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
@@ -24,6 +25,7 @@
 #include <base/EnumReflection.h>
 
 #include <algorithm>
+#include <bit>
 #include <cstring>
 #include <type_traits>
 
@@ -92,6 +94,22 @@ namespace
 template <typename T>
 concept SumMapDirectKey = std::is_trivially_copyable_v<T> && !std::is_same_v<T, std::string_view>;
 
+template <typename K>
+struct SumMapKeyHash
+{
+    size_t operator()(K key) const
+    {
+        if constexpr (is_decimal<K>)
+            return SumMapKeyHash<typename K::NativeType>{}(key.value);
+        else if constexpr (is_big_int_v<K> && sizeof(K) == sizeof(UInt128))
+            return UInt128Hash{}(std::bit_cast<UInt128>(key));
+        else if constexpr (is_big_int_v<K> && sizeof(K) == sizeof(UInt256))
+            return UInt256Hash{}(std::bit_cast<UInt256>(key));
+        else
+            return DefaultHash<K>{}(key);
+    }
+};
+
 /// Primary template (unspecialized)
 template <typename K>
 struct SumMapKeyTraits;
@@ -101,8 +119,8 @@ template <SumMapDirectKey K>
 struct SumMapKeyTraits<K>
 {
     using MapKey = K;
-    using MapType = HashMap<K, char *>;
-    using FilterSet = HashSet<K>;
+    using MapType = HashMap<K, char *, SumMapKeyHash<K>>;
+    using FilterSet = HashSet<K, SumMapKeyHash<K>>;
 
     /// Canonicalize floats: collapse -0.0 → +0.0 and all NaN payloads → quiet_NaN (HashMap uses bitEquals).
     static K normalizeKey(K key)

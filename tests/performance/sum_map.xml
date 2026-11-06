@@ -13,6 +13,15 @@
                <value>sumMapWithOverflow</value>
            </values>
        </substitution>
+        <substitution>
+           <name>wide_key</name>
+           <values>
+               <value>k_int128</value>
+               <value>k_int256</value>
+               <value>k_decimal128</value>
+               <value>k_decimal256</value>
+           </values>
+       </substitution>
     </substitutions>
 
     <!-- Original dataset (keep table name for CI backward compat with old queries) -->
@@ -94,10 +103,26 @@
     <!-- Filtered: multiple value columns -->
     <query>SELECT sumMapFiltered([0, 5, 10, 15, 20])(key, v1, v2, v3) FROM sum_map_multi FORMAT Null</query>
 
+    <!-- Wide keys whose 64-bit words are equal (they cancel out when folded with XOR), or that differ
+         only in the highest word: catches key hashes that do not mix all words of 128- and 256-bit keys -->
+    <create_query>
+        CREATE TABLE sum_map_wide ENGINE Memory AS
+        SELECT
+            arrayMap(x -> toInt128(number * 10 + x + 1) * (bitShiftLeft(toInt128(1), 64) + 1), range(10)) AS k_int128,
+            arrayMap(x -> bitShiftLeft(toInt256(number * 10 + x + 1), 192), range(10)) AS k_int256,
+            arrayMap(k -> toDecimal128(k, 0), k_int128) AS k_decimal128,
+            arrayMap(k -> toDecimal256(k, 0), k_int256) AS k_decimal256,
+            arrayMap(x -> intDiv(number, x + 1), range(10)) AS val
+        FROM numbers(20000)
+    </create_query>
+
+    <query>SELECT sumMap({wide_key}, val) FROM sum_map_wide FORMAT Null</query>
+
     <drop_query>DROP TABLE IF EXISTS sum_map_100000</drop_query>
     <drop_query>DROP TABLE IF EXISTS sum_map_str</drop_query>
     <drop_query>DROP TABLE IF EXISTS sum_map_float</drop_query>
     <drop_query>DROP TABLE IF EXISTS sum_map_multi</drop_query>
     <drop_query>DROP TABLE IF EXISTS sum_map_highcard</drop_query>
     <drop_query>DROP TABLE IF EXISTS sum_map_nullable</drop_query>
+    <drop_query>DROP TABLE IF EXISTS sum_map_wide</drop_query>
 </test>
