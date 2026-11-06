@@ -39,6 +39,7 @@
 #    include <Common/filesystemHelpers.h>
 #    include <Common/parseAddress.h>
 #    include <Common/parseRemoteDescription.h>
+#    include <Common/RemoteHostFilter.h>
 #    include <Common/setThreadName.h>
 
 #if CLICKHOUSE_CLOUD
@@ -682,6 +683,14 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
             configuration.username = safeGetLiteralValue<String>(arguments[2], engine_name);
             configuration.password = safeGetLiteralValue<String>(arguments[3], engine_name);
         }
+
+        /// Same policy as the `PostgreSQL` database engine: skip only the server's own metadata replay.
+        if (!(args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH))
+        {
+            for (const auto & address : configuration.addresses)
+                args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
+        }
+
         mysql_settings->loadFromQueryContext(args.context, *engine_define);
         if (engine_define->settings)
             mysql_settings->loadFromQuery(*engine_define);
@@ -740,7 +749,7 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 
 **Engine Parameters**
 
-- `host:port` — MySQL server address.
+- `host:port` — MySQL server address. The host must be a plain host name or IP address and is reached over TCP at the given port, also for `localhost`: Unix sockets are not supported. Other host syntax of the MySQL client library, such as connection strings or comma-separated host lists, is rejected.
 - `database` — Remote database name.
 - `user` — MySQL user.
 - `password` — User password.
