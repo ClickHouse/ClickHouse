@@ -45,8 +45,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        /// `Variant` and `Dynamic` store `NULL` internally and cannot be nested in `Nullable`.
-        if (arguments.size() == 2 && (isVariant(arguments[0]) || isDynamic(arguments[0])))
+        if (arguments.size() == 2 && canContainNull(*arguments[0]))
             return arguments[0];
 
         return IFunction::getReturnTypeImpl(arguments);
@@ -54,9 +53,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// Keep the column-aware signature path for ordinary types and bypass only the
-        /// `Nullable(T)` result construction that these two types do not support.
-        if (arguments.size() == 2 && (isVariant(arguments[0].type) || isDynamic(arguments[0].type)))
+        if (arguments.size() == 2 && canContainNull(*arguments[0].type))
             return arguments[0].type;
 
         return IFunction::getReturnTypeImpl(arguments);
@@ -79,8 +76,7 @@ public:
         auto func_if = if_resolver->build(if_columns);
         auto if_res = func_if->execute(if_columns, result_type, input_rows_count, /* dry_run = */ false);
 
-        /// The `if` implementation has already placed `NULL` in these columns.
-        if (isVariant(result_type) || isDynamic(result_type))
+        if (canContainNull(*result_type))
             return if_res;
 
         return makeNullable(if_res);
