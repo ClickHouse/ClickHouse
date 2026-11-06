@@ -9,10 +9,10 @@
 DROP TABLE IF EXISTS t_pr_ship_limit;
 DROP TABLE IF EXISTS t_pr_ship_limit_2;
 
-CREATE TABLE t_pr_ship_limit (n UInt64) ENGINE = MergeTree ORDER BY n SETTINGS index_granularity = 1024;
-CREATE TABLE t_pr_ship_limit_2 (n UInt64) ENGINE = MergeTree ORDER BY n SETTINGS index_granularity = 1024;
-INSERT INTO t_pr_ship_limit SELECT number FROM numbers(1000000);
-INSERT INTO t_pr_ship_limit_2 SELECT number FROM numbers(1000000);
+CREATE TABLE t_pr_ship_limit (n UInt64) ENGINE = MergeTree ORDER BY n SETTINGS index_granularity = 128;
+CREATE TABLE t_pr_ship_limit_2 (n UInt64) ENGINE = MergeTree ORDER BY n SETTINGS index_granularity = 128;
+INSERT INTO t_pr_ship_limit SELECT number FROM numbers(100000);
+INSERT INTO t_pr_ship_limit_2 SELECT number FROM numbers(100000);
 
 SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 3;
@@ -35,9 +35,9 @@ SELECT 'exact_rows_before_limit', countIf(explain LIKE '%local LIMIT%') FROM (EX
 SELECT '--- the same results as classic parallel replicas';
 SELECT 'plain', count(), uniqExact(n) FROM (SELECT * FROM t_pr_ship_limit LIMIT 100);
 SELECT 'offset', count(), uniqExact(n) FROM (SELECT * FROM t_pr_ship_limit LIMIT 100 OFFSET 50);
-SELECT 'deep offset', count(), uniqExact(n) FROM (SELECT * FROM t_pr_ship_limit LIMIT 1000 OFFSET 999500);
+SELECT 'deep offset', count(), uniqExact(n) FROM (SELECT * FROM t_pr_ship_limit LIMIT 1000 OFFSET 99500);
 SELECT 'filter', count(), countIf(m % 3 = 1) FROM (SELECT n + 1 AS m FROM t_pr_ship_limit WHERE n % 3 = 0 LIMIT 100);
-SELECT 'deep offset, classic', count(), uniqExact(n) FROM (SELECT * FROM t_pr_ship_limit LIMIT 1000 OFFSET 999500) SETTINGS parallel_replicas_plan_based = 0;
+SELECT 'deep offset, classic', count(), uniqExact(n) FROM (SELECT * FROM t_pr_ship_limit LIMIT 1000 OFFSET 99500) SETTINGS parallel_replicas_plan_based = 0;
 
 SELECT '--- rows_before_limit_at_least';
 SELECT 1 AS x FROM t_pr_ship_limit LIMIT 5 FORMAT JSON SETTINGS exact_rows_before_limit = 1, output_format_write_statistics = 0;
