@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <param_x>UInt64_1</param_x>
+        </default>
+    </profiles>
+</clickhouse>

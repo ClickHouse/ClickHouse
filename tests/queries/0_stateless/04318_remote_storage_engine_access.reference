@@ -20,3 +20,6 @@ x	UInt64
 -- 4. an Alias target: with the privilege on its target, the structure is inferred
 x	UInt64
 x	UInt64
+-- 5. a non-append refresh re-creates the target, and the local-shard check still runs
+refresh runs while the definer is granted
+1
