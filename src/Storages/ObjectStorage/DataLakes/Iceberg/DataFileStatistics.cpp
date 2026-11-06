@@ -36,11 +36,59 @@ DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_, std::vect
         field_ids = std::move(written_field_ids);
 }
 
+namespace
+{
+
+/// `column->getExtremes()` already skips NULL/NaN correctly, but compares via plain IEEE754 `<`,
+/// where -0.0 == +0.0 - so a tie at zero is resolved by scan order, not by sign, unlike the
+/// Iceberg spec's "Bounds for Float and Double" rule that -0.0 sorts strictly below +0.0. Fix the
+/// sign only in that narrow case, by checking which signs of zero are actually present.
+void fixSignedZeroExtremes(Field & min_val, Field & max_val, const IColumn & column)
+{
+    bool min_is_zero = min_val.getType() == Field::Types::Float64 && min_val.safeGet<Float64>() == 0.0;
+    bool max_is_zero = max_val.getType() == Field::Types::Float64 && max_val.safeGet<Float64>() == 0.0;
+    if (!min_is_zero && !max_is_zero)
+        return;
+
+    const auto * nullable_col = checkAndGetColumn<ColumnNullable>(&column);
+    ConstNullMapPtr null_map = nullable_col ? &nullable_col->getNullMapData() : nullptr;
+    const IColumn & nested_col = nullable_col ? nullable_col->getNestedColumn() : column;
+
+    auto scan = [&](const auto & data)
+    {
+        bool has_neg_zero = false;
+        bool has_pos_zero = false;
+        for (size_t i = 0; i < data.size() && !(has_neg_zero && has_pos_zero); ++i)
+        {
+            if (null_map && (*null_map)[i])
+                continue;
+            if (data[i] != 0)
+                continue;
+            if (signBit(data[i]))
+                has_neg_zero = true;
+            else
+                has_pos_zero = true;
+        }
+        if (min_is_zero && has_neg_zero)
+            min_val = Field(static_cast<Float64>(-0.0));
+        if (max_is_zero && has_pos_zero)
+            max_val = Field(static_cast<Float64>(0.0));
+    };
+
+    if (const auto * col_f32 = checkAndGetColumn<ColumnFloat32>(&nested_col))
+        scan(col_f32->getData());
+    else if (const auto * col_f64 = checkAndGetColumn<ColumnFloat64>(&nested_col))
+        scan(col_f64->getData());
+}
+
+}
+
 static Range getExtremeRangeFromColumn(const ColumnPtr & column)
 {
     Field min_val;
     Field max_val;
     column->getExtremes(min_val, max_val, 0, column->size());
+    fixSignedZeroExtremes(min_val, max_val, *column);
     return Range(min_val, true, max_val, true);
 }
 
@@ -189,6 +237,20 @@ bool isNaNRange(const Range & range)
     return isFloatNaN(range.left) && isFloatNaN(range.right);
 }
 
+/// `accurateLess` treats -0.0 and +0.0 as equal, but the Iceberg spec orders -0.0 first, so a tie
+/// between the two zeros is broken by the sign instead of by argument order.
+bool boundLess(const Field & lhs, const Field & rhs)
+{
+    if (lhs.getType() == Field::Types::Float64 && rhs.getType() == Field::Types::Float64)
+    {
+        Float64 l = lhs.safeGet<Float64>();
+        Float64 r = rhs.safeGet<Float64>();
+        if (l == 0 && r == 0)
+            return signBit(l) && !signBit(r);
+    }
+    return Range::less(lhs, rhs);
+}
+
 }
 
 Range DataFileStatistics::uniteRanges(const Range & left, const Range & right)
@@ -207,9 +269,9 @@ Range DataFileStatistics::uniteRanges(const Range & left, const Range & right)
         return left;
 
     return Range(
-        Range::less(left.left, right.left) ? left.left : right.left,
+        boundLess(left.left, right.left) ? left.left : right.left,
         true,
-        Range::less(right.right, left.right) ? left.right : right.right,
+        boundLess(right.right, left.right) ? left.right : right.right,
         true);
 }
 
