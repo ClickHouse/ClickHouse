@@ -22,8 +22,6 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Common/escapeForFileName.h>
 
-#include <filesystem>
-
 #include <boost/container/flat_set.hpp>
 #include <boost/range/algorithm/copy.hpp>
 
@@ -33,8 +31,6 @@
 
 namespace DB
 {
-
-namespace fs = std::filesystem;
 
 namespace ErrorCodes
 {
