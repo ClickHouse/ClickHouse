@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+USER_NAME="u_${CLICKHOUSE_DATABASE}"
+DISK="d_${CLICKHOUSE_DATABASE}"
+ADMIN_RESOURCE="ra_${CLICKHOUSE_DATABASE}"
+USER_RESOURCE="ru_${CLICKHOUSE_DATABASE}"
+USER_WORKLOAD="wu_${CLICKHOUSE_DATABASE}"
+
+cleanup() {
+    ${CLICKHOUSE_CLIENT} -q "DROP WORKLOAD IF EXISTS ${USER_WORKLOAD}; DROP RESOURCE IF EXISTS ${USER_RESOURCE}; DROP RESOURCE IF EXISTS ${ADMIN_RESOURCE}; DROP USER IF EXISTS ${USER_NAME}"
+}
+trap cleanup EXIT
+cleanup
+
+${CLICKHOUSE_CLIENT} -q "
+    CREATE USER ${USER_NAME} NOT IDENTIFIED;
+    GRANT CREATE, DROP ON *.* TO ${USER_NAME};
+    CREATE RESOURCE ${ADMIN_RESOURCE} (READ DISK ${DISK})"
+
+echo "--- CREATE and DROP do not include the workload and resource privileges ---"
+for privilege in "CREATE TABLE" "DROP TABLE" "CREATE WORKLOAD" "CREATE RESOURCE" "DROP WORKLOAD" "DROP RESOURCE"; do
+    echo "${privilege}: $(${CLICKHOUSE_CLIENT} --user "${USER_NAME}" -q "CHECK GRANT ${privilege} ON *.*")"
+done
+${CLICKHOUSE_CLIENT} --user "${USER_NAME}" -q "CREATE RESOURCE ${USER_RESOURCE} (READ DISK ${DISK})" 2>&1 | grep -o -m1 'ACCESS_DENIED'
+${CLICKHOUSE_CLIENT} --user "${USER_NAME}" -q "CREATE WORKLOAD ${USER_WORKLOAD}" 2>&1 | grep -o -m1 'ACCESS_DENIED'
+${CLICKHOUSE_CLIENT} --user "${USER_NAME}" -q "DROP RESOURCE ${ADMIN_RESOURCE}" 2>&1 | grep -o -m1 'ACCESS_DENIED'
+${CLICKHOUSE_CLIENT} --user "${USER_NAME}" -q "DROP WORKLOAD IF EXISTS ${USER_WORKLOAD}" 2>&1 | grep -o -m1 'ACCESS_DENIED'
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.resources WHERE name = '${ADMIN_RESOURCE}'"
+
+${CLICKHOUSE_CLIENT} -q "GRANT CREATE WORKLOAD, CREATE RESOURCE, DROP WORKLOAD, DROP RESOURCE ON *.* TO ${USER_NAME}"
+
+echo "--- the privileges granted explicitly ---"
+${CLICKHOUSE_CLIENT} -q "SHOW GRANTS FOR ${USER_NAME}" | sed "s/${USER_NAME}/u/"
+${CLICKHOUSE_CLIENT} --user "${USER_NAME}" -q "CREATE RESOURCE ${USER_RESOURCE} (READ DISK ${DISK})" && echo "create resource ok"
+${CLICKHOUSE_CLIENT} --user "${USER_NAME}" -q "CREATE WORKLOAD ${USER_WORKLOAD}" && echo "create workload ok"
+${CLICKHOUSE_CLIENT} --user "${USER_NAME}" -q "DROP WORKLOAD ${USER_WORKLOAD}" && echo "drop workload ok"
+${CLICKHOUSE_CLIENT} --user "${USER_NAME}" -q "DROP RESOURCE ${USER_RESOURCE}" && echo "drop resource ok"
