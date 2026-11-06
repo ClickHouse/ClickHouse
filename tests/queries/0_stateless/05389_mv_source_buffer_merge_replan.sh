@@ -55,10 +55,11 @@ CREATE MATERIALIZED VIEW mv_buffer_not_in_table TO dst AS
         (SELECT count() FROM buf WHERE x NOT IN src_dup) AS value
     FROM src_dup;
 
--- The query planned again for the blocks of 'buf' is the one sent to 'dist', where 'src' is the table.
+-- The query planned again for the blocks of 'buf' is the one sent to 'dist', where 'src' is the table: the join keeps
+-- 9 rows, with the block 0, without the join 10.
 CREATE MATERIALIZED VIEW mv_buffer_join TO dst AS
     SELECT 'buffer_join' AS name, count() AS block_rows,
-        (SELECT count() FROM buf AS b JOIN src AS s ON b.x = s.x) AS value
+        (SELECT count() FROM buf AS b JOIN src AS s ON b.x = s.x + 1) AS value
     FROM src;
 
 INSERT INTO src VALUES (1), (2), (3);
@@ -83,11 +84,12 @@ SELECT 'append_refresh', * FROM dst ORDER BY name;
 -- A refreshable view reading the source table has no inserted block, so it reads the table.
 TRUNCATE TABLE dst;
 CREATE MATERIALIZED VIEW ${CLICKHOUSE_DATABASE_1}.rmv_read REFRESH EVERY 1 YEAR APPEND TO ${CLICKHOUSE_DATABASE}.dst EMPTY AS
-    SELECT 'buffer_in_table' AS name, count() AS block_rows, (SELECT count() FROM buf WHERE x IN src_dup) AS value
+    SELECT 'buffer_in' AS name, count() AS block_rows,
+        (SELECT count() FROM buf WHERE x IN (SELECT x FROM src_dup WHERE x < 105)) AS value
     FROM ${CLICKHOUSE_DATABASE}.src_dup
     UNION ALL
-    SELECT 'merge_in_table', count(),
-        (SELECT count() FROM merge(${CLICKHOUSE_DATABASE}, '^(src_dup|dist)\$') WHERE x >= 100 AND x IN src_dup)
+    SELECT 'merge_in', count(),
+        (SELECT count() FROM merge(${CLICKHOUSE_DATABASE}, '^(src_dup|dist)\$') WHERE x >= 100 AND x IN (SELECT x FROM src_dup WHERE x < 105))
     FROM ${CLICKHOUSE_DATABASE}.src_dup;
 SYSTEM REFRESH VIEW ${CLICKHOUSE_DATABASE_1}.rmv_read;
 SYSTEM WAIT VIEW ${CLICKHOUSE_DATABASE_1}.rmv_read;
