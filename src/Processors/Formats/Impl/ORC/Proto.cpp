@@ -885,7 +885,7 @@ std::string Metadata::serialize() const
 void Footer::parse(std::string_view data)
 {
     /// The statistics are parsed after the types, to limit their number by the number of columns.
-    std::vector<std::string_view> statistics_data;
+    VectorWithMemoryTracking<std::string_view> statistics_data;
     parseMessage(data, [&](WireReader & r, UInt32 field, WireType type)
     {
         switch (field)
