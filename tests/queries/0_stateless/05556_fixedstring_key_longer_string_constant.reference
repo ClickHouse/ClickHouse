@@ -1,0 +1,54 @@
+pk =	2	2
+pk = reversed	2	2
+pk <=>	2	2
+pk !=	3	3
+pk <	1	1
+pk <=	3	3
+pk >	2	2
+pk >=	4	4
+pk BETWEEN	2	2
+pk = 5 bytes	2	2
+nullable =	2	2
+nullable <	1	1
+nullable >=	4	4
+nullable !=	3	3
+lc =	2	2
+lc <	1	1
+lc >=	4	4
+lc !=	3	3
+partition =	2	2
+partition <	1	1
+partition >=	4	4
+partition !=	3	3
+minmax =	2	2
+minmax <	1	1
+minmax >=	4	4
+minmax !=	3	3
+expr =	2	2
+expr <	1	1
+expr >=	4	4
+expr !=	3	3
+const Nullable	2	2
+const LowCardinality	2	2
+const Variant	2	2
+const Dynamic	2	2
+nullable <=> 3 bytes	1
+nullable <=> 4 bytes	1
+nullable <=> 2 bytes	2	2
+pk <=> Nullable	1
+lc <=>	2	2
+pk = nonzero tail	0	0
+pk < nonzero tail	3	3
+pk > nonzero tail	2	2
+Parts: 1 | Granules: 3
+Granules: 3/5
+Parts: 1 | Granules: 3
+Granules: 3/5
+Parts: 1 | Granules: 1
+Granules: 1/5
+Parts: 1 | Granules: 1
+Granules: 1/5
+Parts: 1 | Granules: 3
+Granules: 3/5
+parquet =	2	2
+parquet >=	4	4
