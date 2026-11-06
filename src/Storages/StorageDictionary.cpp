@@ -14,7 +14,10 @@
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Processors/Sources/DelayedSource.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/StorageSnapshot.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -208,7 +211,7 @@ void StorageDictionary::checkTableCanBeDetached() const
 
 Pipe StorageDictionary::read(
     const Names & column_names,
-    const StorageSnapshotPtr & /*storage_snapshot*/,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
@@ -229,7 +232,19 @@ Pipe StorageDictionary::read(
     if (!has_dict_get && !has_select)
         local_context->checkAccess(AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
 
-    return dictionary->read(column_names, max_block_size, threads);
+    /// IDictionary::read can be expensive: HashedDictionary walks every key right away. The planner
+    /// calls this at plan time, and a direct JOIN (or an EXPLAIN) never pulls from the pipe, so
+    /// build it only once something asks for data.
+    auto header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
+
+    auto lazily_read_dictionary = [dictionary, column_names, max_block_size, threads]() -> QueryPipelineBuilder
+    {
+        QueryPipelineBuilder builder;
+        builder.init(dictionary->read(column_names, max_block_size, threads));
+        return builder;
+    };
+
+    return createDelayedPipe(std::move(header), std::move(lazily_read_dictionary), /*add_totals_port=*/ false, /*add_extremes_port=*/ false);
 }
 
 std::shared_ptr<const IDictionary> StorageDictionary::getDictionary() const
