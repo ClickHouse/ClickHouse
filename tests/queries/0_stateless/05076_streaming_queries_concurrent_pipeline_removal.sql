@@ -1,5 +1,4 @@
 -- Tags: no-parallel-replicas
-SET enable_analyzer = 1;
 SET enable_streaming_queries = 1;
 
 CREATE TABLE t_concurrent_pipeline_removal (n UInt64)

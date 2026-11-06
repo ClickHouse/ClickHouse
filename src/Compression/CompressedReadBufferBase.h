@@ -40,6 +40,8 @@ protected:
     /// Report decompression errors as CANNOT_DECOMPRESS, not CORRUPTED_DATA
     bool external_data;
 
+    UInt64 statistics_hint = 0;
+
     /// Read compressed data into compressed_buffer. Get size of decompressed data from block header. Checksum if need.
     ///
     /// If always_copy is true then even if the compressed block is already stored in compressed_in.buffer()
@@ -54,7 +56,7 @@ protected:
 
     /// This method can change location of `to` to avoid unnecessary copy if data is uncompressed.
     /// It is more efficient for compression codec NONE but not suitable if you want to decompress into specific location.
-    void decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum);
+    void decompress(BufferBase::WorkingBuffer & to, size_t size_decompressed, size_t size_compressed_without_checksum);
 
     /// Adds diagnostics to the error message.
     void addDiagnostics(Exception & e) const;
@@ -72,6 +74,9 @@ public:
     {
         disable_checksum = true;
     }
+
+    /// Identifies the column this buffer reads, see LZ4StatisticsHint.h.
+    void setStatisticsHint(UInt64 hint) { statistics_hint = hint; }
 
     /// Some compressed read buffer can do useful seek operation
     virtual void seek(size_t /* offset_in_compressed_file */, size_t /* offset_in_decompressed_block */);

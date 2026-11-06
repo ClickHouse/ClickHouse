@@ -1,7 +1,5 @@
 -- Tags: no-parallel-replicas
 
-set enable_analyzer = 1;
-
 drop table if exists mt_deferred sync;
 
 CREATE TABLE mt_deferred(
