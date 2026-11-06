@@ -879,17 +879,13 @@ size_t StorageABR::chooseBestTable(SelectQueryInfo & query_info, ContextPtr cont
     /// If no table in the allowed range covers the query's time range, the
     /// query falls back to the table at last_suffix rather than a coarser one.
     /// The retries after a fallback error do not go beyond last_suffix either.
-    UInt64 first_suffix = context->getSettingsRef()[Setting::abr_first_table_suffix];
-    if (first_suffix == 0)
-        first_suffix = sample_intervals.front();
-
-    const size_t start = getTableIndexFromSuffix(first_suffix);
+    const size_t start = getFirstCandidateTableIndex(context);
     const size_t end = getLastCandidateTableIndex(context);
     if (start > end)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "abr_first_table_suffix ({}) must be less than or equal to abr_last_table_suffix ({})",
-            first_suffix,
+            sample_intervals[start],
             sample_intervals[end]);
 
     /// Store minimum dates for each table in the selected range, indexed by (i - start)
@@ -953,6 +949,14 @@ size_t StorageABR::getTableIndexFromSuffix(UInt64 suffix) const
     return it - sample_intervals.begin();
 }
 
+size_t StorageABR::getFirstCandidateTableIndex(const ContextPtr & context) const
+{
+    const UInt64 first_suffix = context->getSettingsRef()[Setting::abr_first_table_suffix];
+    if (first_suffix == 0)
+        return 0;
+    return getTableIndexFromSuffix(first_suffix);
+}
+
 size_t StorageABR::getLastCandidateTableIndex(const ContextPtr & context) const
 {
     const UInt64 last_suffix = context->getSettingsRef()[Setting::abr_last_table_suffix];
@@ -989,7 +993,7 @@ size_t StorageABR::pickFallbackTable(
 
 void StorageABR::read(
     QueryPlan & query_plan,
-    const Names & /* column_names */,
+    const Names & column_names,
     const StorageSnapshotPtr & /* storage_snapshot */,
     SelectQueryInfo & query_info,
     ContextPtr context,
@@ -1018,6 +1022,13 @@ void StorageABR::read(
             getStorageID().getNameForLogs(), getStorageID().getFullTableName(), time_column);
 
     const size_t last_table_idx = getLastCandidateTableIndex(context);
+
+    /// The table is chosen by inspecting the data of every candidate source table, and the query may be retried on any of them,
+    /// so the reader must be allowed to read all of them, before anything about them is resolved or revealed.
+    Names checked_columns = column_names;
+    checked_columns.insert(checked_columns.end(), retention_expr_col_names.begin(), retention_expr_col_names.end());
+    for (size_t i = getFirstCandidateTableIndex(context); i <= last_table_idx; ++i)
+        context->checkAccess(AccessType::SELECT, source_table_ids.at(i), checked_columns);
 
     /// The source tables are resolved once, so that the table is chosen and read from the same tables,
     /// and they are kept alive only for the duration of the query.
@@ -1072,7 +1083,8 @@ tables with the setting `allow_experimental_abr`: `SET allow_experimental_abr = 
 
 The source tables are expected to follow a naming convention of `{table_prefix}_{sample_interval}`, where `sample_interval`
 distinguishes the granularity. The engine never writes; data must be ingested directly into the source tables. Creating
-an `ABR` table requires `SHOW COLUMNS` on all its source tables, and reading from it requires `SELECT` on them.
+an `ABR` table requires `SHOW COLUMNS` on all its source tables, and reading from it requires `SELECT` on all
+the source tables the query may be executed on, from the one of `abr_first_table_suffix` to the one of `abr_last_table_suffix`.
 
 The source tables are registered as dependencies of the `ABR` table: they are loaded and restored from a backup before it, and
 dropping or renaming one of them while the `ABR` table exists is refused, unless `check_table_dependencies` is disabled.

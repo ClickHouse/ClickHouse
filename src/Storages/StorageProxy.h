@@ -27,6 +27,7 @@ public:
     String getName() const override { return "Proxy"; }
 
     bool isRemote() const override { return getNested()->isRemote(); }
+    bool producesMergeableState(const ContextPtr & query_context) const override { return getNested()->producesMergeableState(query_context); }
     bool readRequiresAnalyzedQuery() const override { return getNested()->readRequiresAnalyzedQuery(); }
     bool readRequiresFullQuery() const override { return getNested()->readRequiresFullQuery(); }
     std::vector<StoragePtr> getUnderlyingStorages() const override { return getNested()->getUnderlyingStorages(); }
