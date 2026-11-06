@@ -92,4 +92,12 @@ A
 C
 skip-no-name-returns
 fails
+skip-below-finite-glob-returned-through-another-parent
+f
+g
+f
+g
+g
+f
+g
 alive

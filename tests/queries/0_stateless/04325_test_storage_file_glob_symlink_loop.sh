@@ -369,6 +369,24 @@ ln -s ../chains/s3 "$TEST_DIR_ABS/siblings/root/b"
 cp -a "$TEST_DIR_ABS/siblings" "$TEST_DIR_ABS/unreachable"
 rm "$TEST_DIR_ABS/unreachable/root/b"
 
+# A directory skipped below a finite `*`, returned through another parent: `parents/root/a` reaches `A` through
+# 40 links, so `A/child` fails with `ELOOP`, while `root/z` reaches the same `B` as `C/child`. In `parents_swapped`
+# the short name is walked first.
+mkdir -p "$TEST_DIR_ABS/parents/root" "$TEST_DIR_ABS/parents/chains" "$TEST_DIR_ABS/parents/data/A" "$TEST_DIR_ABS/parents/data/B/x" "$TEST_DIR_ABS/parents/data/C"
+printf "f\n" > "$TEST_DIR_ABS/parents/data/B/f.txt"
+printf "g\n" > "$TEST_DIR_ABS/parents/data/B/x/g.txt"
+ln -s ../B "$TEST_DIR_ABS/parents/data/A/child"
+ln -s ../B "$TEST_DIR_ABS/parents/data/C/child"
+for i in $(seq 1 38); do
+    ln -s "s$((i + 1))" "$TEST_DIR_ABS/parents/chains/s$i"
+done
+ln -s ../data/A "$TEST_DIR_ABS/parents/chains/s39"
+ln -s ../chains/s1 "$TEST_DIR_ABS/parents/root/a"
+ln -s ../data/C "$TEST_DIR_ABS/parents/root/z"
+cp -a "$TEST_DIR_ABS/parents" "$TEST_DIR_ABS/parents_swapped"
+ln -snf ../data/C "$TEST_DIR_ABS/parents_swapped/root/a"
+ln -snf ../chains/s1 "$TEST_DIR_ABS/parents_swapped/root/z"
+
 trap 'rm -rf "$TEST_DIR_ABS"' EXIT
 
 # Ancestor-loop symlink: `loop/dir1/dir2/loop_to_root` points back at `loop/dir1`,
@@ -594,6 +612,12 @@ $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/siblings/root/b
 echo "skip-no-name-returns"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/unreachable/root/**/*.txt', 'TSV', 'val String')" 2>&1 \
     | grep -qF "Cannot expand the glob: Too many levels of symbolic links" && echo "fails"
+
+echo "skip-below-finite-glob-returned-through-another-parent"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/*/*/**/*.txt', 'TSV', 'val String') ORDER BY val"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/z/*/**/*.txt', 'TSV', 'val String') ORDER BY val"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/*/*/x/**/*.txt', 'TSV', 'val String')"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents_swapped/root/*/*/**/*.txt', 'TSV', 'val String') ORDER BY val"
 
 # Server alive afterwards.
 $CLICKHOUSE_CLIENT --query "SELECT 'alive'"

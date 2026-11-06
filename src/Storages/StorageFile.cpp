@@ -320,11 +320,20 @@ void notePathLimitSkip(
     const fs::path target = fs::canonical(innermost.canonical / tail, target_ec);
     if (symlink_limit && target_ec == std::errc::too_many_symbolic_link_levels)
         return;
+    std::string walk_key;
+    std::error_code walk_ec;
     if (!target_ec && walk_suffix)
     {
-        const auto visited = pruning.visited_frames.find(target.string() + '\0' + *walk_suffix);
-        if (visited != pruning.visited_frames.end() && (visited->second.walking || !visited->second.unresolved))
-            return;
+        /// The literal components before the first glob of `walk_suffix` are part of the walked frame's directory.
+        const size_t literal_end = walk_suffix->substr(0, walk_suffix->find_first_of("*?{")).rfind('/');
+        const fs::path walked = literal_end ? fs::canonical(target / walk_suffix->substr(1, literal_end), walk_ec) : target;
+        if (!walk_ec)
+        {
+            walk_key = walked.string() + '\0' + walk_suffix->substr(literal_end);
+            const auto visited = pruning.visited_frames.find(walk_key);
+            if (visited != pruning.visited_frames.end() && (visited->second.walking || !visited->second.unresolved))
+                return;
+        }
     }
 
     SkippedYield yield = if_file;
@@ -336,13 +345,15 @@ void notePathLimitSkip(
         const bool is_directory = !target_ec && fs::is_directory(target, type_ec);
         yield = target_ec || type_ec ? SkippedYield::Unknown : (is_directory ? if_directory : if_file);
     }
+    if (yield == SkippedYield::Walk && (walk_ec == std::errc::no_such_file_or_directory || walk_ec == std::errc::not_a_directory))
+        yield = SkippedYield::None;
     if (yield != SkippedYield::None)
     {
         PruningState::SkippedPath skipped{ec, path, &innermost, innermost.matches_before_retries.size(), false, {}, false};
-        if (yield == SkippedYield::Walk && !target_ec)
+        if (yield == SkippedYield::Walk && !walk_key.empty())
         {
             skipped.is_walk = true;
-            skipped.key = target.string() + '\0' + *walk_suffix;
+            skipped.key = std::move(walk_key);
         }
         else if (yield == SkippedYield::Match)
         {
@@ -709,9 +720,13 @@ void listFilesWithRegexpMatchingImpl(
             skipUnresolvableOrThrow(is_dir_ec, full_path);
             /// Only an entry this level can select may hide a match.
             if (recursive || skip_regex || re2::RE2::FullMatch(file_name, matcher))
-                notePathLimitSkip(is_dir_ec, full_path, recursive ? &suffix_with_globs : nullptr, pruning,
-                                  recursive ? SkippedYield::Walk : (looking_for_directory ? SkippedYield::Unknown : SkippedYield::None),
+            {
+                const std::string rest = looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : "";
+                const std::string * walk_suffix = recursive ? &suffix_with_globs : (patternHasGlobstarSegment(rest) ? &rest : nullptr);
+                notePathLimitSkip(is_dir_ec, full_path, walk_suffix, pruning,
+                                  walk_suffix ? SkippedYield::Walk : (looking_for_directory ? SkippedYield::Unknown : SkippedYield::None),
                                   looking_for_directory ? SkippedYield::None : SkippedYield::Match);
+            }
             continue;
         }
 
