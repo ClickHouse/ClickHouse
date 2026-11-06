@@ -197,7 +197,7 @@ void ScatterByPartitionTransform::generateOutputChunks()
         /// A chunk without columns: only the number of rows matters.
         if (columns.empty())
         {
-            std::vector<size_t> counts(output_size);
+            VectorWithMemoryTracking<size_t> counts(output_size);
             for (auto output_index : selector)
                 ++counts[output_index];
             for (size_t i = 0; i < output_size; ++i)

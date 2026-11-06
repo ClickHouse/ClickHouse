@@ -5,9 +5,10 @@
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/IProcessor.h>
 #include <Processors/ISimpleTransform.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Common/PODArray.h>
+#include <Common/VectorWithMemoryTracking.h>
 
-#include <deque>
 #include <optional>
 #include <pcg_random.hpp>
 
@@ -115,10 +116,10 @@ private:
     /// are not accumulated (they are nullptr).
     Columns empty_columns;
     size_t accumulated_rows = 0;
-    std::vector<Columns> chunks;
+    VectorWithMemoryTracking<Columns> chunks;
 
-    std::vector<MutableColumns> buckets;
-    std::vector<size_t> bucket_rows;
+    VectorWithMemoryTracking<MutableColumns> buckets;
+    VectorWithMemoryTracking<size_t> bucket_rows;
     size_t num_buckets = 0;
     size_t next_bucket = 0;
 
@@ -191,7 +192,7 @@ public:
 private:
     struct Input
     {
-        std::deque<Chunk> chunks;
+        DequeWithMemoryTracking<Chunk> chunks;
         size_t offset = 0;
         size_t buffered_rows = 0;
         std::optional<UInt64> population;
@@ -208,7 +209,7 @@ private:
 
     pcg64 rng;
 
-    std::vector<Input> inputs_state;
+    VectorWithMemoryTracking<Input> inputs_state;
     bool populations_known = false;
     UInt64 total_population = 0;
     UInt64 remaining_output = 0;
@@ -230,7 +231,7 @@ public:
     Status prepare() override;
 
 private:
-    std::vector<std::deque<Chunk>> queues;
+    VectorWithMemoryTracking<DequeWithMemoryTracking<Chunk>> queues;
     size_t current_input = 0;
 };
 

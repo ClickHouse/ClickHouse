@@ -205,7 +205,7 @@ void ShuffleTransform::consume(Chunk chunk)
 
 void ShuffleTransform::scatterIntoBuckets()
 {
-    std::vector<size_t> chunk_rows;
+    VectorWithMemoryTracking<size_t> chunk_rows;
     chunk_rows.swap(bucket_rows);
 
     if (accumulated_rows == 0)
@@ -227,7 +227,7 @@ void ShuffleTransform::scatterIntoBuckets()
     /// twice the memory of the data). The bucket numbers are not stored: they are generated twice from the same state
     /// of the random generator, the first time only to count the rows.
     {
-        std::vector<size_t> expected_rows(num_buckets, 0);
+        VectorWithMemoryTracking<size_t> expected_rows(num_buckets, 0);
         if (num_buckets == 1)
         {
             expected_rows[0] = accumulated_rows;
