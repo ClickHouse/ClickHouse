@@ -319,12 +319,47 @@ UInt64 ActionsDAG::Node::getHash() const
     return hash_state.get64();
 }
 
+namespace
+{
+
+UInt128 getSubtreeHash(
+    const ActionsDAG::Node * root,
+    std::unordered_map<const ActionsDAG::Node *, UInt128> & hashes,
+    bool build_independent, const Block * input_header, bool with_variable_size_constant_values)
+{
+    std::vector<std::pair<const ActionsDAG::Node *, size_t>> stack;
+    if (!hashes.contains(root))
+        stack.emplace_back(root, 0);
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+        const auto * node = frame.first;
+        if (frame.second < node->children.size())
+        {
+            const auto * child = node->children[frame.second];
+            ++frame.second;
+            if (!hashes.contains(child))
+                stack.emplace_back(child, 0); /// invalidates `frame`, which is not used again in this iteration
+            continue;
+        }
+        SipHash hash_state;
+        node->updateOwnHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
+        hash_state.update(node->children.size());
+        for (const auto * child : node->children)
+            hash_state.update(hashes.at(child));
+        hashes.emplace(node, hash_state.get128());
+        stack.pop_back();
+    }
+    return hashes.at(root);
+}
+
+}
+
 void ActionsDAG::Node::updateHash(
     SipHash & hash_state, bool build_independent, const Block * input_header, bool with_variable_size_constant_values) const
 {
-    updateOwnHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
-    for (const auto & child : children)
-        child->updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
+    std::unordered_map<const Node *, UInt128> hashes;
+    hash_state.update(getSubtreeHash(this, hashes, build_independent, input_header, with_variable_size_constant_values));
 }
 
 void ActionsDAG::Node::updateOwnHash(
@@ -563,30 +598,10 @@ UInt64 ActionsDAG::getHash() const
 void ActionsDAG::updateHash(
     SipHash & hash_state, bool build_independent, const Block * input_header, bool with_variable_size_constant_values) const
 {
-    struct Frame
-    {
-        const ActionsDAG::Node * const node;
-        size_t next_child = 0;
-    };
-
-    std::stack<Frame> stack;
-    for (const auto & node : outputs)
-        stack.push({.node = node});
-
-    while (!stack.empty())
-    {
-        auto & frame = stack.top();
-        if (frame.next_child == frame.node->children.size())
-        {
-            frame.node->updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
-            stack.pop();
-        }
-        else
-        {
-            stack.push({.node = frame.node->children[frame.next_child]});
-            ++frame.next_child;
-        }
-    }
+    std::unordered_map<const Node *, UInt128> hashes;
+    hash_state.update(outputs.size());
+    for (const auto * output : outputs)
+        hash_state.update(getSubtreeHash(output, hashes, build_independent, input_header, with_variable_size_constant_values));
 }
 
 ActionsDAG::ActionsDAG(const NamesAndTypesList & inputs_)
@@ -2769,6 +2784,56 @@ bool ActionsDAG::hasUnsafeHiddenLambdaBody(const Node & node, const std::functio
     return false;
 }
 
+std::unordered_set<const ActionsDAG::Node *> ActionsDAG::getInputsReadByRepresentation(const Node & root, NodeRawConstPtrs * outermost_readers)
+{
+    return getInputsReadByRepresentation(NodeRawConstPtrs{&root}, outermost_readers);
+}
+
+std::unordered_set<const ActionsDAG::Node *> ActionsDAG::getInputsReadByRepresentation(const NodeRawConstPtrs & roots, NodeRawConstPtrs * outermost_readers)
+{
+    /// A lambda body reads the call's arguments too: the ones it does not capture arrive as formal parameters.
+    static constexpr auto is_representation_read = [](const IFunctionBase & function) { return !function.isDeterministic(); };
+    auto call_reads_representation = [](const Node * node)
+    {
+        if (hasUnsafeHiddenLambdaBody(*node, is_representation_read))
+            return true;
+        for (const auto * argument : node->children)
+            if (hasUnsafeHiddenLambdaBody(*argument, is_representation_read))
+                return true;
+        return false;
+    };
+
+    std::unordered_set<const Node *> result;
+    std::vector<std::pair<const Node *, bool>> to_visit;
+    for (const auto * root : roots)
+        to_visit.emplace_back(root, false);
+    std::unordered_set<const Node *> visited_reading_value;
+    std::unordered_set<const Node *> visited_reading_representation;
+    std::unordered_set<const Node *> readers_seen;
+    while (!to_visit.empty())
+    {
+        auto [node, reads_representation] = to_visit.back();
+        to_visit.pop_back();
+
+        if (!reads_representation && (!node->isDeterministic() || call_reads_representation(node)))
+        {
+            reads_representation = true;
+            if (outermost_readers && readers_seen.insert(node).second)
+                outermost_readers->push_back(node);
+        }
+        auto & visited = reads_representation ? visited_reading_representation : visited_reading_value;
+        if (!visited.insert(node).second)
+            continue;
+
+        if (reads_representation && node->type == ActionType::INPUT)
+            result.insert(node);
+
+        for (const auto * child : node->children)
+            to_visit.emplace_back(child, reads_representation);
+    }
+    return result;
+}
+
 bool ActionsDAG::hasInputNameShadowedByComputedNode() const
 {
     std::unordered_set<std::string_view> input_names;
@@ -4271,38 +4336,11 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
 
     if (!cross_type_allowed_nodes.empty())
     {
-        /// A lambda body reads the call's arguments too: the ones it does not capture arrive as formal parameters.
-        static constexpr auto is_representation_read = [](const IFunctionBase & function) { return !function.isDeterministic(); };
-        auto call_reads_representation = [](const Node * node)
-        {
-            if (hasUnsafeHiddenLambdaBody(*node, is_representation_read))
-                return true;
-            for (const auto * argument : node->children)
-                if (hasUnsafeHiddenLambdaBody(*argument, is_representation_read))
-                    return true;
-            return false;
-        };
         auto reads_replaced_input_representation = [&](const Node * conjunct)
         {
-            std::vector<std::pair<const Node *, bool>> to_visit{{conjunct, false}};
-            std::unordered_set<const Node *> visited_reading_value;
-            std::unordered_set<const Node *> visited_reading_representation;
-            while (!to_visit.empty())
-            {
-                auto [node, reads_representation] = to_visit.back();
-                to_visit.pop_back();
-
-                reads_representation |= !node->isDeterministic() || call_reads_representation(node);
-                auto & visited = reads_representation ? visited_reading_representation : visited_reading_value;
-                if (!visited.insert(node).second)
-                    continue;
-
-                if (reads_representation && node->type == ActionType::INPUT && cross_type_allowed_nodes.contains(node))
+            for (const auto * input : getInputsReadByRepresentation(*conjunct))
+                if (cross_type_allowed_nodes.contains(input))
                     return true;
-
-                for (const auto * child : node->children)
-                    to_visit.emplace_back(child, reads_representation);
-            }
             return false;
         };
 

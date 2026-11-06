@@ -1747,10 +1747,10 @@ def test_rabbitmq_virtual_columns_with_materialized_view(rabbitmq_cluster, db, u
                      rabbitmq_max_block_size=100,
                      rabbitmq_format = 'JSONEachRow';
         CREATE TABLE {db}.view (key UInt64, value UInt64,
-            exchange_name String, channel_id String, delivery_tag UInt64, redelivered UInt8) ENGINE = MergeTree()
+            exchange_name String, channel_id String, delivery_tag UInt64, redelivered UInt8, table_name String) ENGINE = MergeTree()
             ORDER BY key;
         CREATE MATERIALIZED VIEW {db}.consumer TO {db}.view AS
-        SELECT *, _exchange_name as exchange_name, _channel_id as channel_id, _delivery_tag as delivery_tag, _redelivered as redelivered
+        SELECT *, _exchange_name as exchange_name, _channel_id as channel_id, _delivery_tag as delivery_tag, _redelivered as redelivered, _table as table_name
         FROM {db}.rabbitmq_virtuals_mv;
     """
     )
@@ -1779,6 +1779,7 @@ def test_rabbitmq_virtual_columns_with_materialized_view(rabbitmq_cluster, db, u
     result = instance.query(
         f"SELECT key, value, exchange_name, SUBSTRING(channel_id, 1, 3), delivery_tag, redelivered FROM {db}.view ORDER BY delivery_tag"
     )
+    table_name_result = instance.query(f"SELECT table_name, count() FROM {db}.view GROUP BY table_name")
     exchange = f"{unique}_virtuals_mv"
     expected = "\n".join(
         [f"{i}\t{i}\t{exchange}\t1_0\t{i+1}\t0" for i in range(10)]
@@ -1793,6 +1794,7 @@ def test_rabbitmq_virtual_columns_with_materialized_view(rabbitmq_cluster, db, u
     )
 
     assert TSV(result) == TSV(expected)
+    assert table_name_result == "rabbitmq_virtuals_mv\t10\n"
 
 
 def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster, db, unique):

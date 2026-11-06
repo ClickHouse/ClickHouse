@@ -39,7 +39,8 @@
                 "products/cloud/features/autoscaling/make-before-break",
                 "products/cloud/features/autoscaling/idling",
                 "products/cloud/features/autoscaling/scaling-recommendations",
-                "products/cloud/features/autoscaling/scheduled-scaling"
+                "products/cloud/features/autoscaling/scheduled-scaling",
+                "products/cloud/features/scaling/preparing-for-traffic-spikes"
               ]
             },
             {
@@ -128,6 +129,7 @@
               "pages": [
                 "products/cloud/guides/security/cloud-access-management/manage-my-account",
                 "products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+                "products/cloud/guides/security/cloud-access-management/approved-domains",
                 "products/cloud/reference/security/console-roles",
                 "products/cloud/guides/security/cloud-access-management/manage-custom-roles"
               ]
