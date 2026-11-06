@@ -107,4 +107,3 @@ try:
 finally:
     admin(f'DROP USER {user}')
 PYTHON
-
