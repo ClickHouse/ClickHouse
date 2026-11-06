@@ -62,10 +62,16 @@ export OTEL_SERVICE_NAME='my-python-app'
 Run your application with automatic instrumentation:
 
 ```shell
+export OTEL_LOG_LEVEL='warning'
+export OTEL_PYTHON_LOG_AUTO_INSTRUMENTATION='false'
 opentelemetry-instrument python app.py
 ```
 
 Replace `app.py` with your application's entry file.
+
+`OTEL_LOG_LEVEL` sets the SDK's logging level. Set it to `warning` to capture the test message below, or `info` for lower-severity application logs. The SDK defaults to `ERROR` when no level is configured.
+
+The ClickStack SDK already installs a log exporter. Setting `OTEL_PYTHON_LOG_AUTO_INSTRUMENTATION=false` prevents OpenTelemetry's logging instrumentation from adding another exporter and duplicating log records; the SDK still exports logs.
 
 ## Verify ingestion {#verify-ingestion}
 
@@ -83,6 +89,6 @@ Request headers and bodies can contain sensitive data. Enable capture only for d
 
 ## Troubleshooting {#troubleshooting}
 
-If logs are missing, check your application's logging level. Python's default threshold is `WARNING`; set your logger's level to capture lower-severity messages.
+If logs are missing, check `OTEL_LOG_LEVEL` and your application's logger and handler levels. Set them to capture the severity of the messages you expect.
 
 For instrumentation and exporter troubleshooting, see the [OpenTelemetry Python troubleshooting guide](https://opentelemetry.io/docs/zero-code/python/troubleshooting/).

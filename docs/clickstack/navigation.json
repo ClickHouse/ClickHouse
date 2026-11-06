@@ -185,6 +185,7 @@
                   "group": "Language SDKs",
                   "pages": [
                     "clickstack/observability/ingesting-data/sdks/index",
+                    "clickstack/observability/ingesting-data/sdks/instrument-with-ai",
                     "clickstack/observability/ingesting-data/sdks/browser",
                     "clickstack/observability/ingesting-data/sdks/nodejs",
                     "clickstack/observability/ingesting-data/sdks/python",

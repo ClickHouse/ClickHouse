@@ -125,6 +125,8 @@ use_v3_api:
 apm_config:
   enabled: true
   apm_dd_url: "YOUR_DATADOG_URL"
+  features:
+    - disable-convert-traces
 
 # Log destination
 logs_enabled: true
@@ -139,6 +141,10 @@ remote_configuration:
 ```
 
 Replace `YOUR_DATADOG_URL` with the full destination URL and `YOUR_DATADOG_HOST_PORT` with its `hostname:port`, without a scheme. Set `logs_no_ssl` to the value specified for your destination.
+
+<Note>
+`disable-convert-traces` keeps Agent trace payloads compatible with the Datadog receiver. With Datadog Agent 7.85.2 and collector core 0.155.0, the Agent's default indexed payload was accepted with HTTP 200 but produced no spans. Use the setting above for trace forwarding, and preserve any other entries in your existing `apm_config.features` list.
+</Note>
 
 Keep your existing log collection integrations and application tracing configuration. These settings change where the Agent sends telemetry; they do not enable log collection for individual applications or add instrumentation. If you configure the Agent through [environment variables](https://docs.datadoghq.com/agent/guide/environment-variables/), update the corresponding settings there too, including `DD_API_KEY`.
 
@@ -168,6 +174,8 @@ Generate fresh application activity, then open ClickHouse Observability and sele
 - **Metrics:** search for a metric emitted by your application or Agent. For a DogStatsD test, emit a named gauge and check its value.
 
 Check the Agent status for delivery errors if data does not appear. Verify the hostname, port, API key, and your service's network access settings. Confirm that the Agent is collecting the relevant signal and that any environment-variable overrides use the same destination.
+
+For traces, verify a known trace ID rather than relying only on successful Agent delivery counters. If a service filter hides the trace, search by `TraceId`: the receiver can use the tracer's base service as the resource service name while retaining a per-span service override in the `service.name` span attribute. Set `DD_SERVICE` in your application's tracing configuration to establish its base service name.
 
 ## Supported signals {#supported-signals}
 
