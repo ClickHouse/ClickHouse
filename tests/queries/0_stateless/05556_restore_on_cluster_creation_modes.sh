@@ -24,6 +24,8 @@ function restore()
 
 restore t1 "" "create_table = true, create_access = true, create_function = true"
 restore t2 "" "create_table = false, create_database = false"
+restore t1 "" "create_table = true"
+restore t6 "" "create_table = false"
 restore t3 "ON CLUSTER test_shard_localhost" "create_table = 'must-exist', create_database = 'must-exist'"
 restore t4 "ON CLUSTER test_shard_localhost" "create_table = 'must-exist'"
 restore t5 "ON CLUSTER test_shard_localhost" "create_table = 'create', create_access = 'create', create_function = 'create', create_named_collection = 'create', create_workloads_and_resources = 'create'"
