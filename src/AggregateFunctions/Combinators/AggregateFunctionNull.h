@@ -632,6 +632,92 @@ public:
 };
 
 
+/** `Variant` and `Dynamic` store `NULL` as one of their values instead of using
+  * `ColumnNullable`. Keep the original columns and types for the nested aggregate,
+  * but skip rows where any such argument contains `NULL`.
+  */
+class AggregateFunctionInternalNulls final
+    : public AggregateFunctionNullBase<false, false, AggregateFunctionInternalNulls>
+{
+public:
+    AggregateFunctionInternalNulls(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
+        : AggregateFunctionNullBase<false, false, AggregateFunctionInternalNulls>(std::move(nested_function_), arguments, params)
+        , number_of_arguments(arguments.size())
+        , has_internal_nulls(number_of_arguments)
+    {
+        for (size_t i = 0; i < number_of_arguments; ++i)
+            has_internal_nulls[i] = canContainNull(*arguments[i]) && !arguments[i]->isNullable();
+    }
+
+    using IAggregateFunction::argument_types;
+    using IAggregateFunction::parameters;
+
+    AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
+    {
+        auto nested_function_for_merging_final = this->nested_function->getAggregateFunctionForMergingFinal();
+        if (nested_function_for_merging_final.get() != this->nested_function.get())
+            return std::make_shared<AggregateFunctionInternalNulls>(
+                nested_function_for_merging_final, argument_types, parameters);
+        return IAggregateFunction::getAggregateFunctionForMergingFinal();
+    }
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    {
+        for (size_t i = 0; i < number_of_arguments; ++i)
+            if (has_internal_nulls[i] && columns[i]->isNullAt(row_num))
+                return;
+
+        this->nested_function->add(this->nestedPlace(place), columns, row_num, arena);
+    }
+
+    void addBatchSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        std::unique_ptr<UInt8[]> null_map = std::make_unique_for_overwrite<UInt8[]>(row_end);
+        bool has_non_null_row = false;
+
+        for (size_t row = row_begin; row < row_end; ++row)
+        {
+            bool is_null = false;
+            for (size_t argument = 0; argument < number_of_arguments; ++argument)
+            {
+                if (has_internal_nulls[argument] && columns[argument]->isNullAt(row))
+                {
+                    is_null = true;
+                    break;
+                }
+            }
+
+            null_map[row] = is_null;
+            has_non_null_row |= !is_null;
+        }
+
+        if (!has_non_null_row)
+            return;
+
+        this->nested_function->addBatchSinglePlaceNotNull(
+            row_begin, row_end, this->nestedPlace(place), columns, null_map.get(), arena, if_argument_pos);
+    }
+
+    void addManyDefaults(
+        AggregateDataPtr __restrict,
+        const IColumn **,
+        size_t,
+        Arena *) const override
+    {
+    }
+
+private:
+    const size_t number_of_arguments;
+    std::vector<bool> has_internal_nulls;
+};
+
+
 template <bool result_is_nullable, bool serialize_flag>
 class AggregateFunctionNullVariadic final : public AggregateFunctionNullBase<
                                                 result_is_nullable,

@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionNothing.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -104,6 +105,16 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     /// Aggregate functions such as any_value_respect_nulls are considered window functions in that sense
     auto properties = tryGetProperties(name, action);
     bool is_window_function = properties.has_value() && properties->is_window_function;
+
+    auto get_impl = [&](const DataTypes & types, const Array & params, bool has_null_arguments)
+    {
+        auto function = getImpl(name, action, types, params, out_properties, has_null_arguments, state_variant);
+        if (function && !is_window_function && std::any_of(types.begin(), types.end(),
+                [](const auto & type) { return canContainNull(*type) && !type->isNullable(); }))
+            function = std::make_shared<AggregateFunctionInternalNulls>(function, types, params);
+        return function;
+    };
+
     if (!is_window_function && std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
         [](const auto & type) { return type->isNullable(); }))
     {
@@ -118,7 +129,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         bool has_null_arguments = std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
             [](const auto & type) { return type->onlyNull(); });
 
-        AggregateFunctionPtr nested_function = getImpl(name, action, nested_types, nested_parameters, out_properties, has_null_arguments, state_variant);
+        AggregateFunctionPtr nested_function = get_impl(nested_types, nested_parameters, has_null_arguments);
 
         // Pure window functions are not real aggregate functions. Applying
         // combinators doesn't make sense for them, they must handle the
@@ -129,7 +140,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
             return combinator->transformAggregateFunction(nested_function, out_properties, types_without_low_cardinality, parameters);
     }
 
-    auto with_original_arguments = getImpl(name, action, types_without_low_cardinality, parameters, out_properties, false, state_variant);
+    auto with_original_arguments = get_impl(types_without_low_cardinality, parameters, false);
 
     if (!with_original_arguments)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory returned nullptr");
