@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS text_ngram;
 DROP TABLE IF EXISTS text_map;
 DROP TABLE IF EXISTS text_sparse;
 DROP TABLE IF EXISTS text_cjk;
+DROP TABLE IF EXISTS text_preproc;
 
 SELECT 'ngrambf_v1';
 
@@ -169,6 +170,25 @@ SELECT extract(explain, 'Granules: [0-9]+/[0-9]+') AS explain FROM (
     EXPLAIN indexes = 1 SELECT count() FROM text_cjk WHERE s LIKE 'hello world'
 ) WHERE explain LIKE '%Granules: %/%';
 
+SELECT 'text index with ngrams and a toValidUTF8 preprocessor';
+
+CREATE TABLE text_preproc (id UInt32, s String, INDEX idx s TYPE text(tokenizer = ngrams(3), preprocessor = toValidUTF8(s)))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+
+INSERT INTO text_preproc VALUES (1, '\xC3\xA9bc'), (2, 'ab\xC3\xA9'), (3, 'hello world');
+
+SELECT arraySort(groupArray(id)) FROM text_preproc WHERE s LIKE '%\xA9bc%';
+SELECT arraySort(groupArray(id)) FROM text_preproc WHERE s LIKE '%\xA9bc%' SETTINGS use_skip_indexes = 0;
+SELECT arraySort(groupArray(id)) FROM text_preproc WHERE startsWith(s, 'ab\xC3');
+SELECT arraySort(groupArray(id)) FROM text_preproc WHERE startsWith(s, 'ab\xC3') SETTINGS use_skip_indexes = 0;
+
+SELECT extract(explain, 'Granules: [0-9]+/[0-9]+') AS explain FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM text_preproc WHERE s LIKE '%\xA9bc%'
+) WHERE explain LIKE '%Granules: %/%';
+SELECT extract(explain, 'Granules: [0-9]+/[0-9]+') AS explain FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM text_preproc WHERE s LIKE '%hello%'
+) WHERE explain LIKE '%Granules: %/%';
+
 DROP TABLE ngram;
 DROP TABLE ngram_map;
 DROP TABLE sparse;
@@ -176,3 +196,4 @@ DROP TABLE text_ngram;
 DROP TABLE text_map;
 DROP TABLE text_sparse;
 DROP TABLE text_cjk;
+DROP TABLE text_preproc;
