@@ -1416,7 +1416,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_asan_ubsan, targeted)' --workflow "PR" --ci --timestamp
 
   integration_tests_amd_asan_ubsan_db_disk_targeted:
-    runs-on: [self-hosted, pr-amd-medium]
+    runs-on: [self-hosted, pr-amd-large]
     needs: [build_amd_asan_ubsan, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCB0YXJnZXRlZCk=') }}
     name: "Integration tests (amd_asan_ubsan, db disk, targeted)"
