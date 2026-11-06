@@ -29,8 +29,8 @@ You will need to enable the relevant settings below to use the `DataLakeCatalog`
 SET allow_database_iceberg = 1;
 SET allow_database_unity_catalog = 1;
 SET allow_database_glue_catalog = 1;
-SET allow_experimental_database_hms_catalog = 1;
-SET allow_experimental_database_paimon_rest_catalog = 1;
+SET enable_database_hms_catalog = 1;
+SET enable_database_paimon_rest_catalog = 1;
 ```
 
 Databases with the `DataLakeCatalog` engine can be created using the following syntax:
