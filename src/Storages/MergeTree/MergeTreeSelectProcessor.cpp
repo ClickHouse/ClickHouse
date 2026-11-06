@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 
 #include <Columns/Collator.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnLazy.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -719,7 +720,10 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             }
 
             if (!task)
+            {
+                top_k_all_tasks_read = true;
                 break;
+            }
 
             /// QueryConditionCache needs the concrete part's storage id; skip for borrowed parts.
             if (storage_id.empty() && task->getInfo().data_part_info->getDataPart())
@@ -762,7 +766,8 @@ MergeTreeSelectProcessor::~MergeTreeSelectProcessor()
     writeTopKQueryConditionCacheEntries();
 }
 
-/// The first row that sorts first among `[begin, end)` of an integer column; nullopt for other columns.
+/// The first row that sorts first among `[begin, end)` of a column type `findExtreme*Index` supports (integers, Decimal32,
+/// Decimal64, DateTime64); nullopt for other columns.
 template <typename... ColumnTypes>
 static std::optional<size_t> findTopKBestRowOfIntegers(const IColumn & column, size_t begin, size_t end, int direction)
 {
@@ -815,6 +820,7 @@ void MergeTreeSelectProcessor::recordTopKBestValues(const MergeTreeReadTask & cu
         return;
 
     static constexpr size_t max_pending_granules = 100'000;
+    static constexpr size_t max_pending_bytes = 16 * 1024 * 1024;
     num_pending_top_k_granules += result.result_rows_per_mark.size();
     /// Sparse and LowCardinality columns are compared by their values, as the sorting transforms do.
     const ColumnPtr column_holder = typeid_cast<const ColumnLazy *>(result.chunk.getColumns()[*top_k_column_position].get())
@@ -854,7 +860,8 @@ void MergeTreeSelectProcessor::recordTopKBestValues(const MergeTreeReadTask & cu
         std::optional<size_t> best_row;
         if (!collator)
             best_row = findTopKBestRowOfIntegers<
-                ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64, ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64>(
+                ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64, ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
+                ColumnDecimal<Decimal32>, ColumnDecimal<Decimal64>, ColumnDecimal<DateTime64>>(
                 column, begin, end, direction);
         if (!best_row && !collator)
             best_row = findTopKBestRowOfStrings(column, begin, end, direction);
@@ -870,6 +877,13 @@ void MergeTreeSelectProcessor::recordTopKBestValues(const MergeTreeReadTask & cu
             }
         }
         best_values.emplace_back(mark, column[*best_row]);
+        pending_top_k_bytes += sizeof(Field) + column.byteSizeAt(*best_row);
+        if (pending_top_k_bytes > max_pending_bytes)
+        {
+            top_k_granules_incomplete = true;
+            pending_top_k_granules.clear();
+            return;
+        }
         begin = end;
     }
 }
@@ -877,6 +891,10 @@ void MergeTreeSelectProcessor::recordTopKBestValues(const MergeTreeReadTask & cu
 void MergeTreeSelectProcessor::writeTopKQueryConditionCacheEntries() noexcept
 {
     if (pending_top_k_granules.empty() || top_k_granules_incomplete)
+        return;
+
+    /// A cancelled read, or one that stopped before the pool ran out of tasks, may have seen only part of a granule.
+    if (is_cancelled || !top_k_all_tasks_read)
         return;
 
     try

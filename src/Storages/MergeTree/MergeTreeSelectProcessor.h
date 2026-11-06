@@ -268,6 +268,11 @@ private:
     std::optional<size_t> top_k_column_position;
     std::vector<PendingTopKGranules> pending_top_k_granules;
     size_t num_pending_top_k_granules = 0;
+    /// Approximate memory held by `pending_top_k_granules`: the kept values can be long strings.
+    size_t pending_top_k_bytes = 0;
+    /// Set once the pool has no task left. Without it the read was cut short (cancelled, or the query needed no more
+    /// rows), and a granule that was only partly read must not be recorded from the rows seen so far.
+    bool top_k_all_tasks_read = false;
     /// Set if some rows of the read could not be attributed to their granules: then nothing is written.
     bool top_k_granules_incomplete = false;
 
