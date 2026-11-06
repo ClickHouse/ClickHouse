@@ -96,6 +96,9 @@ public:
     /// The table is chosen from the filters of the query, and the whole query is retried on another table.
     bool readRequiresFullQuery() const override { return true; }
 
+    /// `ABR` is read-only, so `TRUNCATE ALL TABLES` skips it, and truncates its source tables instead.
+    bool supportsTruncate() const override { return false; }
+
     ColumnSizeByName getColumnSizes() const override;
     bool supportsPrewhere() const override;
     bool canMoveConditionsToPrewhere() const override;
