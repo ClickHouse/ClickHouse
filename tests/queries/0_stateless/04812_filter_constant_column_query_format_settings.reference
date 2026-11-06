@@ -1,2 +1,0 @@
-enabled	1	Bool, Const(size = 1, UInt8(size = 1))	1
-disabled	1	Bool, UInt8(size = 1)	1

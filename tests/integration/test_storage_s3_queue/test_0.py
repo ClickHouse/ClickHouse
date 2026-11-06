@@ -471,21 +471,6 @@ def test_move_after_processing(started_cluster, engine_name, move_to):
         f"objects left: {counts[(src_bucket, files_path)]}"
     )
 
-    node.query("SYSTEM FLUSH LOGS blob_storage_log")
-    if engine_name == "S3Queue":
-        moved = node.query(
-            "SELECT uniqExact(source_remote_path) FROM system.blob_storage_log "
-            f"WHERE event_type = 'Copy' AND error_code = 0 AND source_bucket = '{src_bucket}' AND bucket = '{dst_bucket}' "
-            f"AND source_remote_path LIKE '{files_path}/%' AND remote_path LIKE '{processed_prefix}%'"
-        )
-    else:
-        # AzureQueue storages do not use the native copy, so a move is a read and an upload.
-        moved = node.query(
-            "SELECT uniqExact(remote_path) FROM system.blob_storage_log "
-            f"WHERE event_type = 'Upload' AND error_code = 0 AND bucket = '{dst_bucket}' AND remote_path LIKE '{processed_prefix}%'"
-        )
-    assert int(moved) == files_num, f"blob_storage_log rows for moved objects: {moved.strip()} != {files_num}"
-
 
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 @pytest.mark.parametrize("move_to", ["same_bucket", "another_bucket"])

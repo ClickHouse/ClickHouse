@@ -21,15 +21,15 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
 MetadataStoragePtr unwrapEncryptedAndCacheLayers(DiskPtr disk)
 {
     if (disk->getDataSourceDescription().is_encrypted)
         return unwrapEncryptedAndCacheLayers(disk->getDelegateDiskIfExists());
 
     DiskObjectStoragePtr object_storage_disk = std::dynamic_pointer_cast<DiskObjectStorage>(disk);
-    if (!object_storage_disk)
-        return nullptr;
-
     MetadataStoragePtr metadata_storage = object_storage_disk->getMetadataStorage();
 
     while (auto * cache_metadata = dynamic_cast<MetadataStorageFromCacheObjectStorage *>(metadata_storage.get()))
@@ -37,6 +37,8 @@ MetadataStoragePtr unwrapEncryptedAndCacheLayers(DiskPtr disk)
 
     chassert(metadata_storage);
     return metadata_storage;
+}
+
 }
 
 void DiskSelector::assertInitialized() const
@@ -123,10 +125,7 @@ try
     }
     if (!has_default_disk)
     {
-        auto tracked_config = DiskFactory::trackImplicitLocalDisk(DEFAULT_DISK_NAME, config, config_prefix + "." + DEFAULT_DISK_NAME, context);
-        auto default_disk = std::make_shared<DiskLocal>(DEFAULT_DISK_NAME, context->getPath(), 0, context, config, config_prefix);
-        default_disk->keepConfigurationAlive(tracked_config);
-        recordDisk(DEFAULT_DISK_NAME, std::move(default_disk));
+        recordDisk(DEFAULT_DISK_NAME, std::make_shared<DiskLocal>(DEFAULT_DISK_NAME, context->getPath(), 0, context, config, config_prefix));
     }
 
     if (!has_local_disk && (context->getApplicationType() == Context::ApplicationType::DISKS))
@@ -178,7 +177,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
         {
             auto disk = old_disks_minus_new_disks[disk_name];
 
-            factory.applyNewSettings(disk, disk_name, config, disk_config_prefix, context, result->getDisksMap());
+            disk->applyNewSettings(config, context, disk_config_prefix, result->getDisksMap());
 
             old_disks_minus_new_disks.erase(disk_name);
         }

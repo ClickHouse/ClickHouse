@@ -17,11 +17,10 @@ INSERT INTO t_build_u8 SELECT toUInt8(number) FROM numbers(50);
 INSERT INTO t_probe_nullable SELECT if(number % 50 = 0, NULL, toInt32(number % 250)) FROM numbers(20000);
 INSERT INTO t_probe_i32 SELECT toInt32(number % 250 - 100) FROM numbers(20000);
 
+SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0; -- The descriptors are not serialized with the query plan.
 
 SET join_algorithm = 'hash', max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
--- Only a join with the serial layout converts its map.
-SET hash_join_layout = 'serial', query_plan_join_shard_by_pk_ranges = 0;
 SET enable_join_runtime_filters = 1, enable_join_fixed_hash_table_conversion = 1, join_runtime_filter_from_fixed_hash_table = 1;
 -- The join order optimizer may put the small table on the probe side (for example when
 -- `query_plan_optimize_join_order_randomize` is on and `query_plan_join_swap_table` is `false`, so the
