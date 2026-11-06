@@ -226,6 +226,17 @@ the source of a subcolumn a pending mutation reads stays readable
 2	12345
 1	2	42
 2	5	12345
+a source read again after a pending mutation gets the patches written before it
+1	8	abcdefgh
+2	5	12345
+1	8	abcdefgh
+1	8	abcdefgh
+1	8	abcdefgh
+2	5	12345
+1	8	abcdefgh
+a subcolumn passed between pending mutations gets the patches written between them
+1	2	2	42
+2	5	3	abc
 05508_read_cast_path_added	1
 05508_read_cast_path_array	1
 05508_read_cast_path_changed	1

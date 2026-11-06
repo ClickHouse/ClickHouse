@@ -821,17 +821,18 @@ void addPatchPartsColumns(
 
         for (const auto & column_name : all_columns_to_read)
         {
-            if (extracted_from_patched_columns.contains(column_name))
-                continue;
-
             auto column_in_storage = storage_snapshot->getColumn(options, column_name);
-
             auto column_name_in_patch = column_in_storage.getNameInStorage();
 
             if (alter_conversions && alter_conversions->isColumnRenamed(column_name_in_patch))
                 column_name_in_patch = alter_conversions->getColumnOldName(column_name_in_patch);
 
             if (!patch_part_columns.hasPhysical(column_name_in_patch))
+                continue;
+
+            /// Also patched directly when the patch's type has the same subcolumn, as a later step may read it.
+            if (extracted_from_patched_columns.contains(column_name)
+                && getSourceOfSubcolumnForType(column_in_storage, patch_part_columns.getPhysical(column_name_in_patch).type))
                 continue;
 
             /// Add requested column name, not the column name in patch, for correct query analysis and applying patches.

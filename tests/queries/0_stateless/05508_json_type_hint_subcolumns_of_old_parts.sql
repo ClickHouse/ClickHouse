@@ -54,6 +54,9 @@ DROP TABLE IF EXISTS t_scalar_sibling_map;
 DROP TABLE IF EXISTS t_default_dep;
 DROP TABLE IF EXISTS t_mutation_source_wide;
 DROP TABLE IF EXISTS t_mutation_source_compact;
+DROP TABLE IF EXISTS t_mutation_source_patch_wide;
+DROP TABLE IF EXISTS t_mutation_source_patch_compact;
+DROP TABLE IF EXISTS t_chained_mutations;
 
 SELECT 'issue 123339';
 CREATE TABLE t_issue (id UInt32, j JSON) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = '1G';
@@ -526,6 +529,39 @@ ALTER TABLE t_mutation_source_compact MODIFY COLUMN j JSON(a String) SETTINGS en
 ALTER TABLE t_mutation_source_compact UPDATE x = j.a.size WHERE 1 SETTINGS mutations_sync = 0, alter_sync = 0, alter_update_mode = 'heavy';
 SELECT id, x, j.a FROM t_mutation_source_compact ORDER BY id SETTINGS apply_mutations_on_fly = 1;
 
+SELECT 'a source read again after a pending mutation gets the patches written before it';
+CREATE TABLE t_mutation_source_patch_wide (id UInt64, j JSON(a UInt32), x UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO t_mutation_source_patch_wide VALUES (1, '{"a" : 42}', 0), (2, '{"a" : 12345}', 0);
+SYSTEM STOP MERGES t_mutation_source_patch_wide;
+ALTER TABLE t_mutation_source_patch_wide MODIFY COLUMN j JSON(a String) SETTINGS enable_json_lazy_type_hints = 1;
+UPDATE t_mutation_source_patch_wide SET j = '{"a" : "abcdefgh"}' WHERE id = 1;
+ALTER TABLE t_mutation_source_patch_wide UPDATE x = j.a.size WHERE 1 SETTINGS mutations_sync = 0, alter_sync = 0, alter_update_mode = 'heavy';
+SELECT id, x, j.a FROM t_mutation_source_patch_wide ORDER BY id SETTINGS apply_mutations_on_fly = 1;
+SELECT id, x, j.a FROM t_mutation_source_patch_wide WHERE j.a = 'abcdefgh' SETTINGS apply_mutations_on_fly = 1;
+SELECT id, x, j.a FROM t_mutation_source_patch_wide WHERE j.a = 'abcdefgh' SETTINGS apply_mutations_on_fly = 1, optimize_move_to_prewhere = 0;
+
+CREATE TABLE t_mutation_source_patch_compact (id UInt64, j JSON(a UInt32), x UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = '1G', enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO t_mutation_source_patch_compact VALUES (1, '{"a" : 42}', 0), (2, '{"a" : 12345}', 0);
+SYSTEM STOP MERGES t_mutation_source_patch_compact;
+ALTER TABLE t_mutation_source_patch_compact MODIFY COLUMN j JSON(a String) SETTINGS enable_json_lazy_type_hints = 1;
+UPDATE t_mutation_source_patch_compact SET j = '{"a" : "abcdefgh"}' WHERE id = 1;
+ALTER TABLE t_mutation_source_patch_compact UPDATE x = j.a.size WHERE 1 SETTINGS mutations_sync = 0, alter_sync = 0, alter_update_mode = 'heavy';
+SELECT id, x, j.a FROM t_mutation_source_patch_compact ORDER BY id SETTINGS apply_mutations_on_fly = 1;
+SELECT id, x, j.a FROM t_mutation_source_patch_compact WHERE j.a = 'abcdefgh' SETTINGS apply_mutations_on_fly = 1;
+
+SELECT 'a subcolumn passed between pending mutations gets the patches written between them';
+CREATE TABLE t_chained_mutations (id UInt64, j JSON(a UInt32), x UInt64, y UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO t_chained_mutations VALUES (1, '{"a" : 42}', 0, 0), (2, '{"a" : 12345}', 0, 0);
+SYSTEM STOP MERGES t_chained_mutations;
+ALTER TABLE t_chained_mutations MODIFY COLUMN j JSON(a String) SETTINGS enable_json_lazy_type_hints = 1;
+ALTER TABLE t_chained_mutations UPDATE x = j.a.size WHERE 1 SETTINGS mutations_sync = 0, alter_sync = 0, alter_update_mode = 'heavy';
+UPDATE t_chained_mutations SET j = '{"a" : "abc"}' WHERE id = 2;
+ALTER TABLE t_chained_mutations UPDATE y = j.a.size WHERE 1 SETTINGS mutations_sync = 0, alter_sync = 0, alter_update_mode = 'heavy';
+SELECT id, x, y, j.a FROM t_chained_mutations ORDER BY id SETTINGS apply_mutations_on_fly = 1;
+
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, read_bytes < 50000 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment LIKE '05508_read_%' AND type = 'QueryFinish'
@@ -580,3 +616,6 @@ DROP TABLE t_scalar_sibling_map;
 DROP TABLE t_default_dep;
 DROP TABLE t_mutation_source_wide;
 DROP TABLE t_mutation_source_compact;
+DROP TABLE t_mutation_source_patch_wide;
+DROP TABLE t_mutation_source_patch_compact;
+DROP TABLE t_chained_mutations;

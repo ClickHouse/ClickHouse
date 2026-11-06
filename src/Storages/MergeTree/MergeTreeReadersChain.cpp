@@ -484,6 +484,10 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
             result.columns_for_patches);
     };
 
+    /// A column an earlier step has read too (see `getReadTaskColumns`) is read again from the part, so every patch applies again.
+    for (const auto & column : result_header)
+        removeDataVersionForColumn(result.patch_versions_block, column.name);
+
     apply_patches(ColumnForPatch::Order::BeforeConversions);
 
     /// Apply alter conversions for columns read by this step.
