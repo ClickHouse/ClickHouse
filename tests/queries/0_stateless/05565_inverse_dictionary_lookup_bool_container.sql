@@ -21,6 +21,9 @@ SELECT 'ab = [true] on', count() FROM probe WHERE dictGet('d_bool', 'ab', id) = 
 SELECT 'ab = [true] off', count() FROM probe WHERE dictGet('d_bool', 'ab', id) = [true] SETTINGS optimize_inverse_dictionary_lookup = 0;
 SELECT 'b = 2 on', count() FROM probe WHERE dictGet('d_bool', 'b', id) = 2 SETTINGS optimize_inverse_dictionary_lookup = 1;
 SELECT 'b = 2 off', count() FROM probe WHERE dictGet('d_bool', 'b', id) = 2 SETTINGS optimize_inverse_dictionary_lookup = 0;
+SET optimize_inverse_dictionary_lookup = 1;
+SELECT 'b = 1 plan', countIf(explain ILIKE '%dictGet%' OR explain ILIKE '%dictionary(%') FROM (EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM probe WHERE dictGet('d_bool', 'b', id) = 1);
+SELECT 'ab = [2] plan', countIf(explain ILIKE '%dictGet%' OR explain ILIKE '%dictionary(%') FROM (EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM probe WHERE dictGet('d_bool', 'ab', id) = [toUInt8(2)]);
 
 DROP DICTIONARY d_bool;
 DROP TABLE src_bool;

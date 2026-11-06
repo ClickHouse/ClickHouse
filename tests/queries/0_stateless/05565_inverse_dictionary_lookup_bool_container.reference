@@ -8,3 +8,5 @@ ab = [true] on	1
 ab = [true] off	1
 b = 2 on	0
 b = 2 off	0
+b = 1 plan	0
+ab = [2] plan	1

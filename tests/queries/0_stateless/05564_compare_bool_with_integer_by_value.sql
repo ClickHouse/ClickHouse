@@ -1,4 +1,4 @@
--- Comparisons of `Bool` with integers inside arrays, maps, JSON and under `<=>` do not depend on the operand order or on index analysis.
+-- Comparisons of `Bool` with integers inside arrays, maps, JSON, under `<=>` and in `has` functions do not depend on the operand order or on index analysis.
 
 SET allow_suspicious_low_cardinality_types = 1;
 SELECT 'arr eq', CAST([true], 'Array(Nullable(Bool))') = [toUInt8(2)], [toUInt8(2)] = CAST([true], 'Array(Nullable(Bool))');
@@ -39,6 +39,11 @@ DROP TABLE t_uint_arr;
 SELECT 'tuple variant', CAST([(true, 'x')], 'Array(Tuple(Nullable(Bool), Variant(Bool, String)))') = CAST([(2, 'x')], 'Array(Tuple(UInt8, Variant(Bool, String)))'), CAST([(2, 'x')], 'Array(Tuple(UInt8, Variant(Bool, String)))') = CAST([(true, 'x')], 'Array(Tuple(Nullable(Bool), Variant(Bool, String)))');
 SELECT 'keep tuple variant', CAST([(true, 'x')], 'Array(Tuple(Nullable(Bool), Variant(Bool, String)))') = CAST([(1, 'x')], 'Array(Tuple(UInt8, Variant(Bool, String)))');
 SELECT 'exists', arrayExists(x -> x = [toUInt8(2)], [CAST([true], 'Array(Nullable(Bool))')]) SETTINGS optimize_rewrite_array_exists_to_has = 0;
+SELECT 'has col', has(a, [toUInt8(2)]), indexOf(a, [toUInt8(2)]), countEqual(a, [toUInt8(2)]), has(b, CAST([true], 'Array(Nullable(Bool))')) FROM (SELECT materialize([CAST([true], 'Array(Nullable(Bool))')]) AS a, materialize([[toUInt8(2)]]) AS b);
+SELECT 'exists col', arrayExists(x -> x = [toUInt8(2)], a) FROM (SELECT materialize([CAST([true], 'Array(Nullable(Bool))')]) AS a) SETTINGS optimize_rewrite_array_exists_to_has = 1;
+SELECT 'exists col noopt', arrayExists(x -> x = [toUInt8(2)], a) FROM (SELECT materialize([CAST([true], 'Array(Nullable(Bool))')]) AS a) SETTINGS optimize_rewrite_array_exists_to_has = 0;
+SELECT 'has any', hasAny(CAST([true], 'Array(Nullable(Bool))'), [toUInt8(2)]), hasAny([toUInt8(2)], CAST([true], 'Array(Nullable(Bool))')), hasAll(CAST([true], 'Array(Nullable(Bool))'), [toUInt8(2)]), hasAll([toUInt8(2)], CAST([true], 'Array(Nullable(Bool))')), hasSubstr(CAST([true], 'Array(Nullable(Bool))'), [toUInt8(2)]), hasSubstr([toUInt8(2)], CAST([true], 'Array(Nullable(Bool))'));
+SELECT 'keep has', has(a, [toUInt8(1)]), hasAny(CAST([true], 'Array(Nullable(Bool))'), [toUInt8(1)]), hasAll(CAST([true, false], 'Array(Nullable(Bool))'), [toUInt8(0)]) FROM (SELECT materialize([CAST([true], 'Array(Nullable(Bool))')]) AS a);
 
 DROP TABLE IF EXISTS t_key;
 CREATE TABLE t_key (arr Array(Nullable(Bool))) ENGINE = MergeTree ORDER BY arr SETTINGS index_granularity = 8, allow_nullable_key = 1;
@@ -47,4 +52,5 @@ SELECT 'key lt', count() FROM t_key WHERE arr < [toUInt8(2)] SETTINGS use_primar
 SELECT 'key lt noidx', count() FROM t_key WHERE arr < [toUInt8(2)] SETTINGS use_primary_key = 0;
 SELECT 'key eq', count() FROM t_key WHERE arr = [toUInt8(2)] SETTINGS use_primary_key = 1;
 SELECT 'key eq noidx', count() FROM t_key WHERE arr = [toUInt8(2)] SETTINGS use_primary_key = 0;
+SELECT 'key lt plan', countIf(explain ILIKE '%Condition: (arr in (-Inf, [2]))%') FROM (EXPLAIN indexes = 1 SELECT arr FROM t_key WHERE arr < [toUInt8(2)] SETTINGS use_primary_key = 1, enable_parallel_replicas = 0);
 DROP TABLE t_key;
