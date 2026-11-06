@@ -10,9 +10,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/TimezoneMixin.h>
-#include <DataTypes/TypeTree.h>
 #include <DataTypes/transformTypesRecursively.h>
 
 #include <Columns/getLeastSuperColumn.h>
@@ -159,8 +157,8 @@ Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUni
 namespace
 {
 
-/// `equals` ignores a `Decimal` precision and a captured time zone, which a CAST between `equals` types only
-/// relabels; any other difference it ignores keeps the branch's type.
+/// `equals` ignores a `Decimal` precision and a captured time zone, which a CAST between `equals` types only relabels;
+/// a leaf that differs in anything else keeps the branch's type for the whole column.
 DataTypePtr getBranchTargetType(const DataTypePtr & branch_type, const DataTypePtr & common_type)
 {
     if (isVariant(branch_type))
@@ -182,19 +180,7 @@ DataTypePtr getBranchTargetType(const DataTypePtr & branch_type, const DataTypeP
         return left->getName() == right->getName() ? left : nullptr;
     });
 
-    if (!target)
-        return branch_type;
-
-    bool has_unsorted_variant = anyInTypeTree(*target, [](const IDataType & type)
-    {
-        const auto * variant = typeid_cast<const DataTypeVariant *>(&type);
-        if (!variant)
-            return false;
-        const auto & alternatives = variant->getVariants();
-        return !std::is_sorted(
-            alternatives.begin(), alternatives.end(), [](const DataTypePtr & lhs, const DataTypePtr & rhs) { return lhs->getName() < rhs->getName(); });
-    });
-    return has_unsorted_variant ? branch_type : target;
+    return target ? target : branch_type;
 }
 
 }

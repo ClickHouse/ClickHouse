@@ -6,6 +6,9 @@ EXCEPT ALL, Variant result
 time zone
 0
 0
+time zone, DateTime64
+0
+0
 result type
 x
 Decimal(9, 2)
@@ -16,6 +19,11 @@ t
 Tuple(Variant(String, UInt8), Decimal(38, 7))
 ('a',2)
 (1,1)
+Geometry in a tuple
+t
+Tuple(Geometry, Decimal(38, 7))
+((0,0),1)
+((1,1),2)
 same type name, different captured time zone
 0
 0

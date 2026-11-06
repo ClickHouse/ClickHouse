@@ -22,11 +22,17 @@ SELECT a + b AS r, variantType(r) FROM (SELECT * FROM t_int EXCEPT ALL SELECT * 
 SELECT 'time zone';
 SELECT toHour(x) FROM (SELECT materialize(toDateTime(1767225600, 'UTC')) AS x UNION ALL SELECT materialize(toDateTime(1767225600, 'Asia/Tokyo'))) ORDER BY 1;
 
+SELECT 'time zone, DateTime64';
+SELECT toHour(x) FROM (SELECT materialize(toDateTime64(1767225600, 3, 'UTC')) AS x UNION ALL SELECT materialize(toDateTime64(1767225600, 3, 'Asia/Tokyo'))) ORDER BY 1;
+
 SELECT 'result type';
 SELECT x FROM (SELECT materialize(1.5::Decimal(5, 2)) AS x UNION ALL SELECT materialize(7::UInt8)) ORDER BY x FORMAT TSVWithNamesAndTypes;
 
 SELECT 'nested in a tuple with a Variant';
 SELECT t FROM (SELECT materialize(tuple(1::UInt8::Variant(UInt8, String), toDecimal128(1, 7)::Decimal(35, 7))) AS t UNION ALL SELECT materialize(tuple('a'::Variant(UInt8, String), 2::UInt32))) ORDER BY toString(t) FORMAT TSVWithNamesAndTypes;
+
+SELECT 'Geometry in a tuple';
+SELECT t FROM (SELECT materialize(tuple((0., 0.)::Point::Geometry, toDecimal128(1, 7)::Decimal(35, 7))) AS t UNION ALL SELECT materialize(tuple((1., 1.)::Point::Geometry, 2::UInt32))) ORDER BY toString(t) FORMAT TSVWithNamesAndTypes;
 
 SELECT 'same type name, different captured time zone';
 SET session_timezone = 'UTC';
