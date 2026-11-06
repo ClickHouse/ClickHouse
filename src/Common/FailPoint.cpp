@@ -168,6 +168,7 @@ static struct InitFiu
     REGULAR(check_table_query_delay_for_part) \
     ONCE(check_table_inject_retryable_zk_error) \
     ONCE(check_table_inject_shutdown_abort) \
+    ONCE(check_table_inject_no_keeper) \
     ONCE(check_table_inject_part_check_cancelled) \
     REGULAR(database_catalog_throw_on_table_shutdown) \
     REGULAR(database_catalog_throw_on_table_prepare_shutdown) \
