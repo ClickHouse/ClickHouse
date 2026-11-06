@@ -137,20 +137,6 @@ inline Int64 firstNonNegativeDate(const DateLUTImpl & time_zone)
     return std::partition_point(lut, lut + DATE_LUT_SIZE, [](const DateLUTImpl::Values & values) { return values.date < 0; })->date;
 }
 
-/// `ToDateTimeImpl<Saturate>::execute` of a `Date` (`UInt16`) as a `DateTime` (`UInt32`): the day limited to
-/// `max_day_num` (`MAX_DATETIME_DAY_NUM`), then `DateLUTImpl::fromDayNum`, the start of that day raised to `saturated`.
-inline llvm::Value * compileDateToDateTimeSaturated(llvm::IRBuilder<> & b, llvm::Value * value, const DateLUTImpl & time_zone, Int64 max_day_num)
-{
-    using Values = DateLUTImpl::Values;
-    auto * int64_type = b.getInt64Ty();
-    auto * lut = compileLUTPointer(b, time_zone);
-    auto * day_num = b.CreateBinaryIntrinsic(llvm::Intrinsic::umin, b.CreateZExt(value, int64_type), b.getInt64(max_day_num));
-    auto * index = b.CreateAdd(day_num, b.getInt64(DateLUTImpl::getDayNumOffsetEpoch()));
-    auto * date = b.CreateLoad(int64_type, compileLUTFieldPointer(b, lut, index, offsetof(Values, date)));
-    auto * saturated = b.CreateBinaryIntrinsic(llvm::Intrinsic::smax, date, b.getInt64(firstNonNegativeDate(time_zone)));
-    return b.CreateTrunc(saturated, b.getInt32Ty());
-}
-
 /// `offset_is_whole_number_of_hours_during_epoch` (`multiple` 3600) and `offset_is_whole_number_of_minutes_during_epoch`
 /// (`multiple` 60) of `DateLUTImpl`: every day that starts after the epoch starts at a multiple of `multiple`. The constructor
 /// checks the days it computes; the rest of the table repeats the last of them.
