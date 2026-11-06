@@ -18,6 +18,7 @@
 #include <Common/FieldVisitors.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
@@ -949,6 +950,23 @@ size_t StorageABR::getTableIndexFromSuffix(UInt64 suffix) const
     return it - sample_intervals.begin();
 }
 
+void StorageABR::checkTableCanBeRenamed(const StorageID & new_name) const
+{
+    const auto table_id = getStorageID();
+    if (new_name.database_name != table_id.database_name)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot move table {} with the `ABR` engine to another database: its source tables are found in its own database. "
+            "Create a new `ABR` table in database {} instead",
+            table_id.getNameForLogs(), backQuoteIfNeed(new_name.database_name));
+}
+
+void StorageABR::rename(const String & /* new_path_to_table_data */, const StorageID & new_table_id)
+{
+    /// A database that is not `Atomic` does not call `checkTableCanBeRenamed`, but renames the table before anything is committed.
+    checkTableCanBeRenamed(new_table_id);
+    renameInMemory(new_table_id);
+}
+
 size_t StorageABR::getFirstCandidateTableIndex(const ContextPtr & context) const
 {
     const UInt64 first_suffix = context->getSettingsRef()[Setting::abr_first_table_suffix];
@@ -1153,6 +1171,8 @@ whole, across all attempts. The candidate tables are the chosen table and the co
   the source tables instead.
 - `ABR` does not support `additional_table_filters` for the `ABR` table, or for a table that reads from it. Add the condition
   to the query instead.
+- An `ABR` table cannot be moved to another database with `RENAME TABLE` or `EXCHANGE TABLES`, because its source tables are
+  found in its own database. Renaming it within its database, or renaming the whole database, is supported.
 - An `ABR` table can only be the leftmost table of a `JOIN`. To join it on another side, read it through a subquery with a
   condition on its time column: `JOIN (SELECT ... FROM abr_table WHERE ts >= ...)`.
 - An `ABR` table cannot be read from a serialized query plan, which does not carry the filters of the query. With
