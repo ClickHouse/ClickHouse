@@ -1,5 +1,3 @@
--- Tags: no-parallel-replicas
--- Tag no-parallel-replicas: asserts on `text_log` of the initial query, but with parallel replicas the join may be built on a remote replica, whose messages carry another query id
 -- Test on-the-fly conversion of hash table to fixed hash table in hash join.
 
 DROP TABLE IF EXISTS t_left;
@@ -18,8 +16,6 @@ INSERT INTO t_right_i64 VALUES (0, 'r0'), (2, 'r2'), (4, 'r4');
 INSERT INTO t_right_neg VALUES (-2, 'r-2'), (0, 'r0'), (2, 'r2');
 
 SET join_algorithm = 'hash';
--- Only a join with the serial layout converts its map.
-SET hash_join_layout = 'serial', query_plan_join_shard_by_pk_ranges = 0;
 SET enable_join_fixed_hash_table_conversion = 1;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 SET query_plan_read_in_order_through_join = 0;
@@ -70,7 +66,7 @@ SELECT '-- ALL INNER Int32 - AUTO JOIN';
 SELECT t_left.id, val, rval FROM t_left ALL INNER JOIN t_right_i32 ON t_left.id = t_right_i32.id ORDER BY t_left.id SETTINGS join_algorithm = 'auto';
 
 SELECT '-- ALL INNER Int32 - GRACE HASH JOIN';
-SELECT t_left.id, val, rval FROM t_left ALL INNER JOIN t_right_i32 ON t_left.id = t_right_i32.id ORDER BY t_left.id SETTINGS join_algorithm = 'grace_hash', max_bytes_before_external_join = 100000;
+SELECT t_left.id, val, rval FROM t_left ALL INNER JOIN t_right_i32 ON t_left.id = t_right_i32.id ORDER BY t_left.id SETTINGS join_algorithm = 'grace_hash';
 
 SELECT '-- ALL INNER Int64';
 SELECT t_left.id, val, rval FROM t_left ALL INNER JOIN t_right_i64 ON t_left.id = t_right_i64.id ORDER BY t_left.id;

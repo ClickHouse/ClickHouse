@@ -60,25 +60,11 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
 
         String encoding_name = column_obj->getValue<std::string>("encoding");
         GeoEncoding geo_encoding = {};
-        /// The geometry type implied by a native (GeoArrow) encoding.
-        std::optional<GeoType> native_type;
 
         if (encoding_name == "WKB")
             geo_encoding = GeoEncoding::WKB;
         else if (encoding_name == "WKT")
             geo_encoding = GeoEncoding::WKT;
-        else if (encoding_name == "point")
-            native_type = GeoType::Point;
-        else if (encoding_name == "linestring")
-            native_type = GeoType::LineString;
-        else if (encoding_name == "polygon")
-            native_type = GeoType::Polygon;
-        else if (encoding_name == "multipoint")
-            native_type = GeoType::MultiPoint;
-        else if (encoding_name == "multilinestring")
-            native_type = GeoType::MultiLineString;
-        else if (encoding_name == "multipolygon")
-            native_type = GeoType::MultiPolygon;
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect encoding name in geo json metadata: {}", encoding_name);
 
@@ -114,15 +100,6 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
         else
         {
             result_type = GeoType::Mixed;
-        }
-
-        if (native_type)
-        {
-            /// A native encoding can store only one geometry type, and `geometry_types` can only
-            /// repeat it (possibly with Z or M coordinates, which are then rejected when the data is
-            /// read, because the struct has more fields than the two of `Point`).
-            geo_encoding = GeoEncoding::Native;
-            result_type = *native_type;
         }
 
         GeoColumnMetadata meta;
