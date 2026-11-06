@@ -1,0 +1,10 @@
+-- arrayJoin, DESC
+not applied
+1	4	42
+1	4	42
+-- arrayJoin, ASC
+1	4	42
+1	4	42
+-- without arrayJoin, the optimization still applies
+Granules: 1/3
+1	11	[]

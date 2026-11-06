@@ -1,0 +1,40 @@
+-- max and argMax
+A	12	989
+B	12	977
+A	12	989
+B	12	977
+-- min and argMin
+A	1	1000
+B	1	988
+A	1	1000
+B	1	988
+-- DISTINCT
+A
+B
+A
+B
+-- LIMIT BY
+A	12	989
+A	12	989
+B	12	977
+B	12	977
+A	12	989
+A	12	989
+B	12	977
+B	12	977
+-- filter on m
+A	992
+B	980
+A	992
+B	980
+-- rows read by both shards
+max_by_sorting_key_distinct_off	48
+max_by_sorting_key_distinct_on	16
+max_by_sorting_key_filter_off	48
+max_by_sorting_key_filter_on	16
+max_by_sorting_key_limit_by_off	48
+max_by_sorting_key_limit_by_on	32
+max_by_sorting_key_max_off	48
+max_by_sorting_key_max_on	16
+max_by_sorting_key_min_off	48
+max_by_sorting_key_min_on	32
