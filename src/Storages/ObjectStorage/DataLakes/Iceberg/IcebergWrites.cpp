@@ -1192,8 +1192,6 @@ void generateManifestList(
                             /// When a path filter is supplied, copy only the matching entries.
                             if (!carry_forward_manifest_paths.empty() && !carry_forward_manifest_paths.contains(old_manifest_path))
                                 continue;
-                            if (!skip_manifest_paths.empty() && skip_manifest_paths.contains(old_manifest_path))
-                                continue;
                             avro::GenericDatum new_datum(schema.root());
                             avro::GenericRecord & new_entry = new_datum.value<avro::GenericRecord>();
 

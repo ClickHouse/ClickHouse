@@ -21,6 +21,8 @@ Miri is not part of this job.
 """
 
 import os
+import shlex
+import shutil
 from pathlib import Path
 
 from ci.defs.defs import ToolSet
@@ -59,8 +61,17 @@ def write_cargo_config():
     return True
 
 
+def remove_fixtures():
+    # A Python callable rather than `rm -rf` in a shell: the checkout path is not shell-safe, and an
+    # error other than a missing directory must fail the step instead of being ignored.
+    if os.path.lexists(fixtures_dir):
+        shutil.rmtree(fixtures_dir)
+    return True
+
+
 def cargo_test(profile_args):
-    return f"cargo test -p _ch_rust_avro --offline --locked {profile_args} --manifest-path {current_directory}/rust/workspace/Cargo.toml"
+    manifest_path = shlex.quote(f"{current_directory}/rust/workspace/Cargo.toml")
+    return f"cargo test -p _ch_rust_avro --offline --locked {profile_args} --manifest-path {manifest_path}"
 
 
 def main():
@@ -96,7 +107,10 @@ def main():
         results.append(
             Result.from_commands_run(
                 name="Install Fixture Generator",
-                command=(f"python3 -m pip install --no-cache-dir --target {python_deps_dir} -r {crate_dir}/tests/requirements.txt"),
+                command=(
+                    f"python3 -m pip install --no-cache-dir --target {shlex.quote(python_deps_dir)} "
+                    f"-r {shlex.quote(f'{crate_dir}/tests/requirements.txt')}"
+                ),
                 with_log=True,
                 retries=3,
             )
@@ -106,9 +120,9 @@ def main():
             Result.from_commands_run(
                 name="Generate Fixtures",
                 command=[
-                    f"rm -rf {fixtures_dir}",
-                    f"python3 {crate_dir}/tests/gen_fixtures.py {current_directory} {fixtures_dir}",
-                    f"python3 {crate_dir}/tests/gen_random.py {fixtures_dir}",
+                    remove_fixtures,
+                    f"python3 {shlex.quote(f'{crate_dir}/tests/gen_fixtures.py')} {shlex.quote(current_directory)} {shlex.quote(fixtures_dir)}",
+                    f"python3 {shlex.quote(f'{crate_dir}/tests/gen_random.py')} {shlex.quote(fixtures_dir)}",
                 ],
                 with_log=True,
             )
