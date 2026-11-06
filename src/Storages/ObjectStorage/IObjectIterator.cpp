@@ -208,6 +208,12 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
                 pending_objects_info.push(std::move(copy_object_info));
             }
         }
+        else
+        {
+            /// Formats other than `Parquet` have no internal blocks, so the file stays one task.
+            /// Dropping it here would make `bucket` granularity return no rows.
+            pending_objects_info.push(std::move(last_object_info));
+        }
     }
 
     auto result = pending_objects_info.front();
