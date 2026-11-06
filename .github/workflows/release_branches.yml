@@ -526,7 +526,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_darwin)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   build_arm_v80compat:
-    runs-on: [self-hosted, arm-medium-cpu]
+    runs-on: [self-hosted, arm-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV92ODBjb21wYXQp') }}
     name: "Build (arm_v80compat)"
@@ -594,7 +594,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_illumos)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   build_amd_compat:
-    runs-on: [self-hosted, arm-medium-cpu]
+    runs-on: [self-hosted, arm-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9jb21wYXQp') }}
     name: "Build (amd_compat)"
