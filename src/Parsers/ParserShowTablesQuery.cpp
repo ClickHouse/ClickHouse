@@ -589,7 +589,9 @@ The `FINAL` modifier merges all grants from the user and its granted roles (with
 
 The `FOR QUERY` clause shows only the grants that the access checks of the given `SELECT` query consult, for example `SHOW GRANTS FOR user1 FOR QUERY SELECT column1 FROM table1` can return `GRANT SELECT(column1) ON default.table1 TO user1`.
 The grants are merged with the granted roles as with `FINAL`, and partial revokes are shown as `REVOKE` rows.
-The query is analyzed with the privileges of the current user, like `EXPLAIN`, and it is not executed, so checks made on other servers or only during the execution are not reflected.
+For a source grant with a filter, such as `READ ON S3('<regexp>')`, every filter of that source is shown, not only the ones matching the query.
+The query is analyzed and its pipeline is built with the privileges of the current user, as `EXPLAIN PIPELINE` does: the pipeline is not executed, but scalar subqueries are evaluated and some table functions, such as `traceView`, run their own queries.
+Checks made on other servers or only during the execution are not reflected.
 The clause is experimental and requires the setting [`allow_experimental_show_grants_for_query`](/reference/settings/session-settings/allow-experimental#allow_experimental_show_grants_for_query).
 
 ## SHOW CREATE USER {#show-create-user}

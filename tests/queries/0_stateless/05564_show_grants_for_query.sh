@@ -16,9 +16,10 @@ u6="${prefix}u6"
 u7="${prefix}u7"
 u8="${prefix}u8"
 u9="${prefix}u9"
+u10="${prefix}u10"
 caller="${prefix}caller"
 r1="${prefix}r1"
-all_users="$u1, $u2, $u3, $u4, $u5, $u6, $u7, $u8, $u9, $caller"
+all_users="$u1, $u2, $u3, $u4, $u5, $u6, $u7, $u8, $u9, $u10, $caller"
 csv_file="${CLICKHOUSE_TEST_UNIQUE_NAME}.csv"
 
 function client()
@@ -51,7 +52,7 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_alias_table_engine=1 -n -q "
         SOURCE(CLICKHOUSE(TABLE 'dsrc' DB '${CLICKHOUSE_DATABASE}')) LAYOUT(FLAT()) LIFETIME(0);
     INSERT INTO FUNCTION file('${csv_file}', 'CSV', 'a UInt8') SELECT 1;
 
-    CREATE USER $u1, $u2, $u3, $u4, $u5, $u6, $u7, $u8, $u9, $caller;
+    CREATE USER $u1, $u2, $u3, $u4, $u5, $u6, $u7, $u8, $u9, $u10, $caller;
     CREATE ROLE $r1;
     GRANT $r1 TO $u1;
     GRANT SELECT ON *.*, INSERT ON *.* TO $r1;
@@ -70,6 +71,9 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_alias_table_engine=1 -n -q "
     REVOKE SELECT(v2) ON d FROM $u8;
     GRANT SELECT ON system.opentelemetry_span_log TO $u9;
     GRANT SELECT(a) ON t2 TO $u9;
+    GRANT CREATE TEMPORARY TABLE ON *.* TO $u10;
+    GRANT READ ON URL('http://127.0.0.1:1/a.*') TO $u10;
+    GRANT READ ON URL('http://127.0.0.1:1/b.*') TO $u10;
     GRANT SHOW USERS ON *.* TO $caller;
     GRANT SELECT ON d TO $caller;
 "
@@ -89,6 +93,9 @@ client -q "SHOW GRANTS FOR $u3 FOR QUERY SELECT a FROM t2"
 echo "--- 5: JOIN, IN subquery and scalar subquery"
 client -q "SHOW GRANTS FOR $u2 FOR QUERY SELECT t2.a FROM t2 JOIN t3 ON t2.a = t3.x WHERE t2.a IN (SELECT x FROM t3) AND (SELECT max(y) FROM t3) > 0"
 
+echo "--- 5b: the pipeline of the query is not executed"
+client -q "SHOW GRANTS FOR $u2 FOR QUERY SELECT throwIf(a = 1) FROM t2"
+
 echo "--- 6: trivial count"
 client -q "SHOW GRANTS FOR $u2 FOR QUERY SELECT count() FROM t2"
 
@@ -98,6 +105,9 @@ client -q "SHOW GRANTS FOR $u4 FOR QUERY SELECT a FROM al"
 
 echo "--- 7: table function with a source"
 client -q "SHOW GRANTS FOR $u5 FOR QUERY SELECT a FROM file('${csv_file}', 'CSV', 'a UInt8')"
+
+echo "--- 7b: a source grant with a filter: every filter of the source is shown"
+client -q "SHOW GRANTS FOR $u10 FOR QUERY SELECT * FROM url('http://127.0.0.1:1/a.tsv', LineAsString)"
 
 echo "--- 8: WITH GRANT OPTION is kept"
 client -q "SHOW GRANTS FOR $u2 FOR QUERY SELECT x FROM t3"

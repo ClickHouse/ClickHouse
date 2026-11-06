@@ -8,6 +8,8 @@ GRANT SELECT(a) ON default.t2 TO u2
 --- 5: JOIN, IN subquery and scalar subquery
 GRANT SELECT(a) ON default.t2 TO u2
 GRANT SELECT(x, y) ON default.t3 TO u2 WITH GRANT OPTION
+--- 5b: the pipeline of the query is not executed
+GRANT SELECT(a) ON default.t2 TO u2
 --- 6: trivial count
 GRANT SELECT(a) ON default.t2 TO u2
 --- 6b: Alias table
@@ -18,6 +20,10 @@ GRANT SELECT(a) ON default.t2 TO u4
 --- 7: table function with a source
 GRANT CREATE TEMPORARY TABLE ON *.* TO u5
 GRANT FILE ON *.* TO u5
+--- 7b: a source grant with a filter: every filter of the source is shown
+GRANT CREATE TEMPORARY TABLE ON *.* TO u10
+GRANT URL ON *.* TO u10
+GRANT URL ON *.* TO u10
 --- 8: WITH GRANT OPTION is kept
 GRANT SELECT(x) ON default.t3 TO u2 WITH GRANT OPTION
 --- 9: SQL SECURITY INVOKER view, SQL SECURITY DEFINER view
