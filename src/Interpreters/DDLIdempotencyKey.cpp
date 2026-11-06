@@ -24,8 +24,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 
-#include <Poco/Timestamp.h>
-
 
 namespace DB
 {
@@ -83,8 +81,19 @@ bool isDDLIdempotencyKeyNodeExpired(Int64 mtime_ms, UInt64 ttl_sec, Int64 now)
     return now > modified && static_cast<UInt64>(now - modified) > ttl_sec;
 }
 
+std::optional<Int64> getDDLIdempotencyKeeperTime(const ZooKeeperPtr & zookeeper, const String & keys_path)
+{
+    Coordination::Stat stat;
+    auto code = zookeeper->trySet(keys_path, "", -1, &stat);
+    if (code == Coordination::Error::ZNONODE)
+        return {};
+    if (code != Coordination::Error::ZOK)
+        throw zkutil::KeeperException::fromPath(code, keys_path);
+    return stat.mtime / 1000;
+}
+
 std::optional<DDLIdempotencyKeyNode> tryReadDDLIdempotencyKeyNode(
-    const ZooKeeperPtr & zookeeper, const String & path, std::optional<int32_t> * expired_version)
+    const ZooKeeperPtr & zookeeper, const String & path, Int64 now, std::optional<int32_t> * expired_version)
 {
     String data;
     Coordination::Stat stat;
@@ -92,7 +101,7 @@ std::optional<DDLIdempotencyKeyNode> tryReadDDLIdempotencyKeyNode(
         return {};
 
     auto node = DDLIdempotencyKeyNode::parse(data);
-    if (isDDLIdempotencyKeyNodeExpired(stat.mtime, node.ttl_sec, Poco::Timestamp().epochTime()))
+    if (isDDLIdempotencyKeyNodeExpired(stat.mtime, node.ttl_sec, now))
     {
         if (expired_version)
             *expired_version = stat.version;

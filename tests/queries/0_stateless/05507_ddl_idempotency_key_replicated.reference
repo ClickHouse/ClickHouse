@@ -135,3 +135,6 @@ OK
 OK
 OK
 1
+-- an expired key is pruned without a later key commit
+OK
+0

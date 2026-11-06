@@ -1650,7 +1650,11 @@ String DatabaseReplicated::getDDLIdempotencyKeyPath(const String & key) const
 std::optional<DDLIdempotencyKeyNode> DatabaseReplicated::tryReadDDLIdempotencyKey(const String & key) const
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::tryReadDDLIdempotencyKey");
-    return tryReadDDLIdempotencyKeyNode(getZooKeeper(), getDDLIdempotencyKeyPath(key));
+    auto zookeeper = getZooKeeper();
+    auto now = getDDLIdempotencyKeeperTime(zookeeper, fs::path(zookeeper_path) / "idempotency");
+    if (!now)
+        return {};
+    return tryReadDDLIdempotencyKeyNode(zookeeper, getDDLIdempotencyKeyPath(key), *now);
 }
 
 BlockIO DatabaseReplicated::getDDLIdempotencyKeyAnswer(const String & entry_name, ContextPtr query_context, DDLGuardPtr && database_guard) const

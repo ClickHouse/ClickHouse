@@ -14,6 +14,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 R1="${CLICKHOUSE_DATABASE}_r1"
 Y1="${CLICKHOUSE_DATABASE}_y1"
+Z1="${CLICKHOUSE_DATABASE}_z1"
 ATOMIC="${CLICKHOUSE_DATABASE}_atomic"
 ZK="/test/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 OTHER_USER="u_${CLICKHOUSE_DATABASE}"
@@ -33,7 +34,7 @@ function q()
 
 function cleanup()
 {
-    for db in $R1 $Y1 $ATOMIC; do
+    for db in $R1 $Y1 $Z1 $ATOMIC; do
         q "DROP DATABASE IF EXISTS $db SYNC"
     done
     q "DROP USER IF EXISTS $OTHER_USER, $DROP_USER"
@@ -293,3 +294,16 @@ done
 keyed k13 "ALTER TABLE $Y1.e ADD COLUMN c UInt8"
 has_column "$Y1" e c
 
+echo "-- an expired key is pruned without a later key commit"
+q "CREATE DATABASE $Z1 ENGINE = Replicated('$ZK/z', 's1', 'r1') SETTINGS idempotency_key_ttl_sec = 1"
+plain "CREATE TABLE $Z1.e (x UInt8) ENGINE = Memory" > /dev/null
+keyed k25 "ALTER TABLE $Z1.e ADD COLUMN c UInt8"
+# A replica prunes when its database starts, then hourly.
+deadline=$((SECONDS + 60))
+while [ $SECONDS -lt $deadline ]; do
+    q "DETACH DATABASE $Z1"
+    q "ATTACH DATABASE $Z1"
+    [ "$(q "SELECT count() FROM system.zookeeper WHERE path = '$ZK/z/idempotency'")" = 0 ] && break
+    sleep 1
+done
+q "SELECT count() FROM system.zookeeper WHERE path = '$ZK/z/idempotency'"

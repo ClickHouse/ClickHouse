@@ -560,8 +560,12 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
         /// Every earlier entry has either committed or can no longer commit, and a later attempt with the key waits
         /// for this entry, so this read decides whether the statement has already committed.
         String key_path = database->getDDLIdempotencyKeyPath(idempotency_key->key);
+        /// The Keeper clock, so that a replica with a fast clock does not run the statement again before the key expires.
+        Coordination::Stat entry_stat;
+        if (!zookeeper->exists(entry_path, &entry_stat))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Log entry {} does not exist", entry_path);
         std::optional<int32_t> expired_version;
-        if (auto key_node = tryReadDDLIdempotencyKeyNode(zookeeper, key_path, &expired_version))
+        if (auto key_node = tryReadDDLIdempotencyKeyNode(zookeeper, key_path, entry_stat.ctime / 1000, &expired_version))
         {
             checkDDLIdempotencyKeyDigest(*idempotency_key, *key_node);
             idempotency_key->state = DDLIdempotencyKey::State::Answered;
@@ -878,15 +882,19 @@ bool DatabaseReplicatedDDLWorker::canRemoveQueueEntry(const String & entry_name,
 void DatabaseReplicatedDDLWorker::cleanupAuxiliaryNodes(const ZooKeeperPtr & zookeeper)
 {
     /// Expired keys are already treated as absent, so pruning them only reclaims space.
-    Int64 now = Poco::Timestamp().epochTime();
-    if (last_idempotency_keys_prune_time && now < last_idempotency_keys_prune_time + IDEMPOTENCY_KEYS_PRUNE_PERIOD_SEC)
+    Int64 local_now = Poco::Timestamp().epochTime();
+    if (last_idempotency_keys_prune_time && local_now < last_idempotency_keys_prune_time + IDEMPOTENCY_KEYS_PRUNE_PERIOD_SEC)
         return;
-    last_idempotency_keys_prune_time = now;
+    last_idempotency_keys_prune_time = local_now;
 
     String keys_path = fs::path(database->zookeeper_path) / "idempotency";
     Strings names;
     if (zookeeper->tryGetChildren(keys_path, names) != Coordination::Error::ZOK || names.empty())
         return;
+    auto keeper_now = getDDLIdempotencyKeeperTime(zookeeper, keys_path);
+    if (!keeper_now)
+        return;
+    Int64 now = *keeper_now;
 
     Strings paths;
     for (const auto & name : names)

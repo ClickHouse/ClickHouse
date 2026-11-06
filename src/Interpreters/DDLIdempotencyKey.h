@@ -61,11 +61,15 @@ struct DDLIdempotencyKeyNode
 
 String getDDLIdempotencyKeyNodeName(const String & key);
 
-/// An expired node is reported as absent; then `expired_version` (if given) is set to its version.
+/// An expired node is reported as absent; then `expired_version` (if given) is set to its version. `now` is in seconds.
 std::optional<DDLIdempotencyKeyNode> tryReadDDLIdempotencyKeyNode(
-    const ZooKeeperPtr & zookeeper, const String & path, std::optional<int32_t> * expired_version = nullptr);
+    const ZooKeeperPtr & zookeeper, const String & path, Int64 now, std::optional<int32_t> * expired_version = nullptr);
 
 bool isDDLIdempotencyKeyNodeExpired(Int64 mtime_ms, UInt64 ttl_sec, Int64 now);
+
+/// The current time of Keeper in seconds, read from a write to `keys_path`, the parent of the key nodes, so that the
+/// clock of a replica does not expire keys. Empty if the parent does not exist, i.e. no key was ever committed.
+std::optional<Int64> getDDLIdempotencyKeeperTime(const ZooKeeperPtr & zookeeper, const String & keys_path);
 
 /// Adds the requests that commit the key node with the log entry: they create it, or replace the expired node of version
 /// `expired_version`, and update its parent, which fences `tryRemoveExpiredDDLIdempotencyKeyNode`.
