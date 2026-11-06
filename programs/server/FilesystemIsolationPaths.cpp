@@ -1,6 +1,8 @@
 #include <FilesystemIsolationPaths.h>
 
 #include <Core/Defines.h>
+#include <Common/Config/ConfigProcessor.h>
+#include <Common/Jemalloc.h>
 #include <Common/filesystemHelpers.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
@@ -61,7 +63,8 @@ public:
     Collector(const Poco::Util::AbstractConfiguration & config_, const std::string & config_path, const std::string & working_directory_)
         : config(config_)
         , working_directory(working_directory_)
-        , config_directory(absolute(fs::path(config_path).parent_path().string(), working_directory))
+        , config_file(absolute(config_path, working_directory_))
+        , config_directory(config_file.parent_path())
         , data_path(absolute(config.getString("path", DBMS_DEFAULT_PATH), working_directory))
     {
     }
@@ -87,6 +90,7 @@ public:
         addLogs();
         addCertificates();
         addBridge();
+        addJemallocProfiles();
         addExtraPaths();
 
         return std::move(paths);
@@ -95,6 +99,7 @@ public:
 private:
     const Poco::Util::AbstractConfiguration & config;
     const fs::path working_directory;
+    const fs::path config_file;
     const fs::path config_directory;
     const fs::path data_path;
     std::vector<FilesystemIsolationPath> paths;
@@ -186,10 +191,21 @@ private:
                 addLocation(absolute(value, base), access, fmt::format("`{}`", key));
     }
 
+    /// A configuration file and the files merged into it from `<name>.d` and `conf.d`, with the targets of the
+    /// symbolic links among them, which can be outside the directory of the configuration file. They are read again
+    /// when the configuration is reloaded.
+    void addConfigFileWithMergeFiles(const fs::path & file, const std::string & source)
+    {
+        addLocation(file, Access::ReadOnly, source);
+        for (const auto & merge_file : ConfigProcessor::getConfigMergeFiles(file.string()))
+            addLocation(merge_file, Access::ReadOnly, fmt::format("merged into {}", source));
+    }
+
     void addConfigFiles()
     {
         /// The main configuration file, `config.d` and the other files next to it, watched for changes.
         add(config_directory, Access::ReadOnly, "the directory of the configuration file");
+        addConfigFileWithMergeFiles(config_file, "the configuration file");
         addKeyLocation("include_from", Access::ReadOnly, working_directory);
 
         /// A relative path is looked up next to the configuration file first.
@@ -202,12 +218,23 @@ private:
                 return;
             const fs::path next_to_config = absolute(value, config_directory);
             std::error_code error;
-            addLocation(fs::exists(next_to_config, error) ? next_to_config : absolute(value, working_directory), Access::ReadOnly, fmt::format("`{}`", key));
+            addConfigFileWithMergeFiles(fs::exists(next_to_config, error) ? next_to_config : absolute(value, working_directory), fmt::format("`{}`", key));
         };
         add_users_config("users_config");
-        add_users_config("user_directories.users_xml.path");
-        addKey("user_directories.local_directory.path", Access::ReadWrite, working_directory);
-        addKey("user_directories.local.path", Access::ReadWrite, working_directory);
+
+        /// Every entry of `user_directories`, with the same names of the types as in
+        /// `AccessControl::addStoragesFromUserDirectoriesConfig`.
+        Poco::Util::AbstractConfiguration::Keys user_directories;
+        config.keys("user_directories", user_directories);
+        for (const auto & entry : user_directories)
+        {
+            std::string type = entry.substr(0, entry.find('['));
+            const std::string key = fmt::format("user_directories.{}.path", entry);
+            if (type == "users_xml" || type == "users.xml" || type == "users_config")
+                add_users_config(key);
+            else if (type == "local_directory" || type == "local")
+                addKey(key, Access::ReadWrite, working_directory);
+        }
 
         for (const auto * name : {"dictionaries_config", "user_defined_executable_functions_config", "user_defined_executable_function_drivers_config"})
             for (const auto & key : getMultipleKeys("", name))
@@ -244,7 +271,9 @@ private:
         for (const auto & key : getMultipleKeys("backups", "allowed_path"))
             add(absolute(config.getString(key), data_path), Access::ReadWrite, fmt::format("`{}`", key));
 
-        if (config.getString("named_collections_storage.type", "").starts_with("local"))
+        /// The same default as in `NamedCollectionsMetadataStorage::create`; both `local` and `local_encrypted` keep the
+        /// collections in this directory.
+        if (config.getString("named_collections_storage.type", "local").starts_with("local"))
             addKey("named_collections_storage.path", Access::ReadWrite, working_directory);
 
         Poco::Util::AbstractConfiguration::Keys caches;
@@ -328,6 +357,21 @@ private:
     void addBridge()
     {
         add(fs::path(config.getString("application.dir", "/usr/bin")) / "clickhouse-odbc-bridge", Access::ReadOnly, "the ODBC bridge");
+    }
+
+    /// The directory of the heap profiles that jemalloc writes, if its option `prof_prefix` names one, for example
+    /// with `MALLOC_CONF=prof_prefix:/var/log/clickhouse-server/jemalloc/clickhouse`. Without it, the profiles go to
+    /// `/tmp`, which is private and writable.
+    void addJemallocProfiles()
+    {
+#if USE_JEMALLOC
+        const char * prefix = nullptr;
+        if (!Jemalloc::tryGetValue("opt.prof_prefix", prefix) || !prefix)
+            return;
+        const fs::path prefix_path(prefix);
+        if (prefix_path.has_parent_path())
+            add(absolute(prefix_path.parent_path().string(), working_directory), Access::ReadWrite, "the option `prof_prefix` of jemalloc");
+#endif
     }
 
     void addExtraPaths()
