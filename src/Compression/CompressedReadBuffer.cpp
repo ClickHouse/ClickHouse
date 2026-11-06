@@ -17,7 +17,7 @@ bool CompressedReadBuffer::nextImpl()
     chassert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
 
     memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
-    working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
+    working_buffer = WorkingBuffer::fromPaddedStorage(memory, 0, size_decompressed);
 
     decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
 
@@ -58,7 +58,7 @@ size_t CompressedReadBuffer::readBig(char * to, size_t n)
             chassert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
 
             memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
-            working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
+            working_buffer = WorkingBuffer::fromPaddedStorage(memory, 0, size_decompressed);
 
             decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
             pos = working_buffer.begin();
