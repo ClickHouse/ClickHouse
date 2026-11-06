@@ -1211,7 +1211,8 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
     bool compare_nulls,
     const ProjectionNames & arguments_projection_names,
     const ProjectionNames & parameters_projection_names,
-    IdentifierResolveScope & scope)
+    IdentifierResolveScope & scope,
+    bool source_has_null)
 {
     auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
 
@@ -1229,7 +1230,10 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
         QueryTreeNodePtr match_result = has_fn;
         resolveFunction(match_result, scope);
 
-        QueryTreeNodePtr no_match_result = std::make_shared<ConstantNode>(Field{0u});
+        QueryTreeNodePtr no_match_result = source_has_null
+            ? std::make_shared<ConstantNode>(
+                Field{}, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()))
+            : std::make_shared<ConstantNode>(Field{0u});
         const auto * array_type = typeid_cast<const DataTypeArray *>(removeNullable(array_arg->getResultType()).get());
         if (array_type && canContainNull(*array_type->getNestedType()))
         {
@@ -2814,7 +2818,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                 compare_nulls,
                                 arguments_projection_names,
                                 parameters_projection_names,
-                                scope);
+                                scope,
+                                false /*source_has_null*/);
                     }
 
                     const bool left_is_tuple = isTuple(removeNullable(in_first_argument->getResultType()));
@@ -2897,7 +2902,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         compare_nulls,
                         arguments_projection_names,
                         parameters_projection_names,
-                        scope);
+                        scope,
+                        false /*source_has_null*/);
 
                 /// Case 2: tuple(..) -> convert to array, then rewrite to has()
                 if (is_tuple_type && !left_argument_is_lambda)
@@ -3015,6 +3021,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         return ProjectionNames{proj};
                     }
 
+                    /// Preserve top-level `NULL` membership before complex values are cast to a
+                    /// common array element type. `Array` and `Map` cannot be wrapped in `Nullable`,
+                    /// so that conversion would otherwise turn the `NULL` into a default value.
+                    const bool source_has_null = std::any_of(tuple_args.begin(), tuple_args.end(), isNullConstant);
+
                     /// convert tuple to array and rewrite to has()
                     QueryTreeNodePtr array_arg = convertTupleToArray(tuple_args, in_first_argument, scope, expand_single_tuple_value, compare_nulls);
                     return buildHasExpression(
@@ -3025,7 +3036,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         compare_nulls,
                         arguments_projection_names,
                         parameters_projection_names,
-                        scope);
+                        scope,
+                        source_has_null);
                 }
 
                 /// Case 3: scalar-returning function -> rewrite to a row-wise comparison.
