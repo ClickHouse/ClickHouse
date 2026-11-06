@@ -10,5 +10,9 @@
 # It links `_poco_net` and `common` only, so it builds in seconds and stays available even
 # while parts of `src/` do not compile for Windows.
 
-add_executable (clickhouse-windows-selftest windows-selftest.cpp)
+#
+# `PlatformFileIO.cpp` is compiled in directly rather than linked from `dbms`, for the same reason: it
+# depends on nothing but `base`.
+add_executable (clickhouse-windows-selftest windows-selftest.cpp "${ClickHouse_SOURCE_DIR}/src/IO/PlatformFileIO.cpp")
+target_include_directories (clickhouse-windows-selftest PRIVATE "${ClickHouse_SOURCE_DIR}/src")
 target_link_libraries (clickhouse-windows-selftest PRIVATE _poco_net common readpassphrase)

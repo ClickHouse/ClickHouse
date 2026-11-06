@@ -15,10 +15,11 @@ namespace DB
 ///
 /// The Windows CRT differs from POSIX in three ways that matter here, none of which a typedef
 /// fixes: `_read`/`_write` take their count as an `unsigned int` rather than a `size_t`; there is
-/// no `pread`/`pwrite` at all; and `fdatasync` is spelled `_commit`. The positional forms go
-/// through `ReadFile`/`WriteFile` with an `OVERLAPPED` offset, which - unlike `_lseeki64` followed
-/// by `_read` - leaves the descriptor's shared file position alone, as `pread` promises and as
-/// concurrent readers of one file depend on.
+/// no `pread`/`pwrite` at all; and `fdatasync` is spelled `_commit`. The positional read goes
+/// through `ReadFile` with an `OVERLAPPED` offset on a second handle to the same file, opened by
+/// `ReOpenFile`: on the descriptor's own synchronous handle such a read would still move the
+/// shared file position, while `pread` promises to leave it alone, and concurrent users of one
+/// descriptor depend on that.
 ///
 /// All of these report failure the way the POSIX calls do: `-1` with `errno` set.
 

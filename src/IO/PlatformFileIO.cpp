@@ -107,13 +107,39 @@ Int64 platformPRead(int fd, char * to, size_t bytes, size_t offset)
     if (handle == INVALID_HANDLE_VALUE)
         return -1;
 
+    /// Like `pread` on a pipe or a terminal: there is no offset to read at.
+    if (GetFileType(handle) != FILE_TYPE_DISK)
+    {
+        errno = ESPIPE;
+        return -1;
+    }
+
+    /// The descriptors here are synchronous handles, and on a synchronous handle `ReadFile` with an
+    /// `OVERLAPPED` offset reads at that offset but still moves the file position to the end of what
+    /// it read - the position that `platformRead` and every other user of the descriptor continues
+    /// from (e.g. `clickhouse-local` reading the same `stdin` again in a later query). Restoring the
+    /// position afterwards would race with those users. So the read goes through a second handle,
+    /// opened for the same file by `ReOpenFile`: it is a separate file object with its own position,
+    /// and only that position moves.
+    auto * read_handle = ReOpenFile(handle, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0);
+    if (read_handle == INVALID_HANDLE_VALUE)
+    {
+        const DWORD error = GetLastError();
+        errno = error == ERROR_ACCESS_DENIED || error == ERROR_SHARING_VIOLATION ? EACCES : EIO;
+        return -1;
+    }
+
     OVERLAPPED overlapped = makeOffset(offset);
     DWORD bytes_read = 0;
-    if (!ReadFile(handle, to, clampCount(bytes), &bytes_read, &overlapped))
+    const bool success = ReadFile(read_handle, to, clampCount(bytes), &bytes_read, &overlapped);
+    const DWORD error = success ? ERROR_SUCCESS : GetLastError();
+    CloseHandle(read_handle);
+
+    if (!success)
     {
         /// Reading at or past the end with an explicit offset is reported as an error rather than
         /// as a short read; it is the end of the file, not a failure.
-        if (GetLastError() == ERROR_HANDLE_EOF)
+        if (error == ERROR_HANDLE_EOF)
             return 0;
         errno = EIO;
         return -1;

@@ -19,6 +19,8 @@
 #include <base/getMemoryAmount.h>
 #include <base/lgamma_r.h>
 
+#include <IO/PlatformFileIO.h>
+
 #include <readpassphrase.h>
 #include <readpassphrase_win32.h>
 
@@ -27,7 +29,10 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <exception>
+#include <fcntl.h>
+#include <io.h>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -430,6 +435,50 @@ void passphraseLineLeavesTheRestOfTheInputUnread()
     CloseHandle(read_end);
 }
 
+
+/// `platformPRead` must not move the position of the descriptor, as `pread` does not: `clickhouse-local`
+/// reads the same `stdin` descriptor again in every query, positionally or sequentially depending on
+/// `storage_file_read_method`. On the synchronous handle of a descriptor, `ReadFile` with an explicit
+/// offset would still move the shared file position to the end of what it read.
+void positionalReadLeavesTheDescriptorPositionAlone()
+{
+    char temp_dir[MAX_PATH + 1];
+    char temp_file[MAX_PATH + 1];
+    check(GetTempPathA(sizeof(temp_dir), temp_dir) != 0 && GetTempFileNameA(temp_dir, "chp", 0, temp_file) != 0,
+        "a temporary file name can be made");
+    const std::string path = temp_file;
+
+    {
+        const int fd = DB::platformOpenFile(path, O_WRONLY | O_TRUNC);
+        check(fd >= 0, "the temporary file can be opened for writing");
+        if (fd < 0)
+            return;
+        const std::string data = "0123456789";
+        check(DB::platformWrite(fd, data.data(), data.size()) == static_cast<Int64>(data.size()), "the data is written");
+        ::_close(fd);
+    }
+
+    const int fd = DB::platformOpenFile(path, O_RDONLY);
+    check(fd >= 0, "the temporary file can be opened for reading");
+    if (fd >= 0)
+    {
+        char buf[16] = {};
+        check(DB::platformRead(fd, buf, 2) == 2 && std::string(buf, 2) == "01", "a sequential read starts at the beginning");
+
+        check(DB::platformPRead(fd, buf, 3, 6) == 3 && std::string(buf, 3) == "678", "a positional read reads at its offset");
+        check(::_lseeki64(fd, 0, SEEK_CUR) == 2, "a positional read leaves the descriptor position where it was");
+
+        check(DB::platformPRead(fd, buf, 4, 8) == 2 && std::string(buf, 2) == "89", "a positional read up to the end is short");
+        check(DB::platformPRead(fd, buf, 4, 10) == 0, "a positional read at the end reads nothing");
+
+        check(DB::platformRead(fd, buf, 3) == 3 && std::string(buf, 3) == "234",
+            "the next sequential read continues from where the previous one ended");
+        ::_close(fd);
+    }
+
+    DeleteFileA(path.c_str());
+}
+
 }
 
 
@@ -452,6 +501,7 @@ int main(int, char **)
     lgammaRIsReentrant();
     alignedAllocationsOfZeroBytesSucceedAndReportTheirSize();
     alignedAllocationsRejectSizesThatOverflowTheOverhead();
+    positionalReadLeavesTheDescriptorPositionAlone();
 
     std::cout << (failures ? "FAILED: " + std::to_string(failures) + " check(s)\n" : "OK\n");
     return failures ? 1 : 0;
