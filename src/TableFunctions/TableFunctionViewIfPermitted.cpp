@@ -123,7 +123,8 @@ StoragePtr TableFunctionViewIfPermitted::executeImpl(
     }
     else
     {
-        storage = else_table_function->execute(else_ast, context, table_name);
+        storage = else_table_function->execute(
+            else_ast, context, table_name, /*cached_columns_=*/ {}, /*use_global_context=*/ false, is_insert_query);
     }
 
     storage->startup();
