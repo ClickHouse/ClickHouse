@@ -554,6 +554,37 @@ bool hasStringConstant(const ASTPtr & ast)
     return false;
 }
 
+/// Whether a checkable constant holds an integer, which may be an element of an array.
+bool hasIntegerConstant(const ASTPtr & ast)
+{
+    if (const auto * literal = ast->as<ASTLiteral>())
+    {
+        const auto type = literal->value.getType();
+        return type == Field::Types::UInt64 || type == Field::Types::Int64 || type == Field::Types::UInt128
+            || type == Field::Types::Int128 || type == Field::Types::UInt256 || type == Field::Types::Int256;
+    }
+    const auto * function = ast->as<ASTFunction>();
+    if (!function || !function->arguments || function->name != "array")
+        return false;
+    for (const auto & argument : function->arguments->children)
+        if (hasIntegerConstant(argument))
+            return true;
+    return false;
+}
+
+/// A copy of an array constant with every element that has fractional digits replaced by `0`, which
+/// keeps only the integers to check, see `makeRepresentableConstant`.
+ASTPtr withoutFractionalElements(const ASTPtr & ast)
+{
+    const auto * function = ast->as<ASTFunction>();
+    if (!function || !function->arguments || function->name != "array")
+        return hasFractionalConstant(ast) ? make_intrusive<ASTLiteral>(Field(UInt64(0))) : ast->clone();
+    auto result = makeASTFunction("array");
+    for (const auto & argument : function->arguments->children)
+        result->arguments->children.push_back(withoutFractionalElements(argument));
+    return result;
+}
+
 /// The check of `withFoldedCheck` alone, to be evaluated along with a value.
 ASTPtr makeFoldedGuard(ASTPtr failed, const String & message)
 {
@@ -601,6 +632,7 @@ ASTPtr makeRepresentableConstant(ASTPtr value, ASTPtr type, const String & messa
     /// `0.1` goes into a `Float32` column, which `accurateCast` would reject as inexact. An integer is
     /// checked against the type of the column itself, which does not hold `16777217` exactly.
     const bool fractional = hasFractionalConstant(value);
+    ASTPtr original_type = type->clone();
     if (fractional)
         type = makeASTFunction(
             "replaceRegexpAll",
@@ -611,6 +643,12 @@ ASTPtr makeRepresentableConstant(ASTPtr value, ASTPtr type, const String & messa
     elements.push_back(converted);
     if (string_check)
         elements.push_back(std::move(string_check));
+
+    /// An array may mix doubles with integers, as in `[16777217, 0.1]`. The type for the doubles
+    /// would let the integers through as well, so the integers alone are also checked against the
+    /// type of the column.
+    if (fractional && hasIntegerConstant(value))
+        elements.push_back(makeASTFunction("accurateCast", withoutFractionalElements(value), std::move(original_type)));
 
     /** `accurateCast` turns any number into a `Bool` - `2` becomes `true`, and in an array it even
       * keeps the `2` - so the value is also converted to the type with an enumeration of `0` and

@@ -1,0 +1,15 @@
+-- an integer next to a double in an array of Float32
+(CANNOT_CONVERT_TYPE)
+(CANNOT_CONVERT_TYPE)
+(CANNOT_CONVERT_TYPE)
+(CANNOT_CONVERT_TYPE)
+0
+1	[1]	[[1]]
+2	[2]	[[2]]
+4	[3,0.25]	[[16777216,0.5]]
+-- $divide of decimals
+{"q":2.5,"r":2.5,"c":2.5,"i":2.5}
+{"id":2}
+2
+4
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)

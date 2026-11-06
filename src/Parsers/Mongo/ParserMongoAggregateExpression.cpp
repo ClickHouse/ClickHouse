@@ -1180,10 +1180,30 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
     {
         auto arguments = parseArguments(argument);
         requireArgumentCount(name, arguments, 2);
-        return withValue(arguments[1], [&](const ASTPtr & divisor)
+        return withValues(arguments, [&](const std::vector<ASTPtr> & values)
         {
+            const auto & dividend = values[0];
+            const auto & divisor = values[1];
+            /** The quotient of decimals keeps the scale of the dividend, so `5 / 2` of decimals would
+              * be `2`, while Mongo keeps the fraction of a decimal quotient. When either operand is
+              * a decimal, the dividend is widened to a `Decimal256` with at least 20 digits after the
+              * point, as for `$avg`. The choice is made by the types, which are constants, see
+              * `makeConstantChoice`.
+              */
+            auto has_decimal = makeASTFunction(
+                "match",
+                makeASTFunction("toTypeName", makeASTFunction("tuple", dividend->clone(), divisor->clone())),
+                makeLiteral(Field(String(R"(\bDecimal)"))));
+            auto widened_dividend = makeASTFunction(
+                "tupleElement",
+                makeASTFunction(
+                    "tuple",
+                    makeASTFunction(
+                        "plus", dividend->clone(), makeASTFunction("toDecimal256", makeLiteral(Field(UInt64(0))), makeLiteral(Field(UInt64(20))))),
+                    dividend->clone()),
+                makeASTFunction("if", std::move(has_decimal), makeLiteral(Field(UInt64(1))), makeLiteral(Field(UInt64(2)))));
             return withRowGuard(
-                makeASTFunction("divide", arguments[0], divisor->clone()),
+                makeASTFunction("divide", std::move(widened_dividend), divisor->clone()),
                 makeASTFunction("equals", divisor->clone(), makeLiteral(Field(UInt64(0)))),
                 "'$divide' cannot divide by zero");
         });
