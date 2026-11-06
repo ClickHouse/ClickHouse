@@ -169,7 +169,8 @@ DataTypePtr tupleElementHint(const DataTypePtr & hint, const String & child_name
 
 DataTypePtr tupleElementHintByPosition(const DataTypePtr & hint, size_t pos)
 {
-    const auto * tuple = typeid_cast<const DataTypeTuple *>(stripHint(hint).get());
+    const DataTypePtr stripped = stripHint(hint);
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(stripped.get());
     if (tuple && pos < tuple->getElements().size())
         return tuple->getElements()[pos];
     return nullptr;
