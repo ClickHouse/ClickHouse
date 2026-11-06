@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -14,6 +15,7 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -61,7 +63,8 @@ public:
     using CachePtr = std::shared_ptr<Cache>;
 
     RuntimeDataflowStatisticsCache()
-        : stats_cache(std::make_shared<Cache>(CurrentMetrics::end(), CurrentMetrics::end(), 1024 * 1024 * 1024, 0))
+        : stats_cache(std::make_shared<Cache>(CurrentMetrics::end(), CurrentMetrics::end(), 100_MiB, 1'000'000))
+        , boundary_cache(std::make_shared<BoundaryCache>(CurrentMetrics::end(), CurrentMetrics::end(), 100_MiB, 1'000'000))
     {
     }
 
@@ -69,8 +72,26 @@ public:
 
     void update(size_t key, RuntimeDataflowStatistics stats);
 
+    /// The keys of the single-replica plan's boundary - the node matched to the top of the replicas plan - and of
+    /// the read below it that parallel replicas coordinate, both found by an earlier execution, so that a later one
+    /// can find its statistics without building a replicas plan to match against.
+    struct Boundary
+    {
+        UInt64 boundary_hash = 0;
+        UInt64 coordinated_read_hash = 0;
+    };
+
+    /// `root_key` combines the single-replica plan's root hash with the settings that can move the boundary
+    /// without changing that plan.
+    std::optional<Boundary> getBoundary(UInt64 root_key) const;
+
+    void setBoundary(UInt64 root_key, Boundary boundary);
+
 private:
+    using BoundaryCache = DB::CacheBase<UInt64, Boundary>;
+
     CachePtr stats_cache;
+    std::shared_ptr<BoundaryCache> boundary_cache;
 };
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache();
@@ -168,6 +189,16 @@ public:
     {
     }
 
+    /// A permutation putting the sample into the order the replicas send it in. Evaluated only for a
+    /// block that is actually sampled, since building it costs a sort of the block's key columns.
+    using KeyOrderProvider = std::function<IColumn::Permutation()>;
+
+    /// Sort the sample by the group by keys before pricing it. Call this when the replicas' partial
+    /// aggregation uses memory-bound merging, and so sorts its output that way before sending it, while
+    /// the plan the sample is taken from does not. Left in hash table order such a sample compresses
+    /// several times worse than what it is meant to price.
+    void setReplicasSendOutputInKeyOrder() { replicas_send_output_in_key_order = true; }
+
     void recordOutputChunk(const Chunk & chunk, const Block & header);
 
     void recordAggregationStateSizes(AggregatedDataVariants & variant, ssize_t bucket);
@@ -223,7 +254,17 @@ private:
     /// `full_bytes` overrides the byte count taken from the columns, for callers whose columns
     /// are only a sample of the dataflow being accounted.
     static void
-    recordColumns(Statistics & statistics, size_t num_rows, const ColumnsWithTypeAndName & cols, std::optional<size_t> full_bytes = {});
+    recordColumns(
+        Statistics & statistics,
+        size_t num_rows,
+        const ColumnsWithTypeAndName & cols,
+        std::optional<size_t> full_bytes = {},
+        const KeyOrderProvider & key_order = {});
+
+    KeyOrderProvider keyOrderProviderFor(
+        const Columns & columns, const ColumnNumbers & keys_positions, const DataTypes & key_types) const;
+
+    bool replicas_send_output_in_key_order = false;
 
     const std::shared_ptr<RuntimeDataflowStatisticsBlock> block;
     const bool duplicated;

@@ -47,6 +47,8 @@ public:
     void setStepProfiler(StepProfilerPtr step_profiler_) override;
 
 private:
+    /// Outlives graph registrations, including when construction fails.
+    QueryStatusPtr process_list_element;
     ExecutingGraphPtr graph;
 
     ExecutorTasks tasks;
@@ -55,22 +57,6 @@ private:
     SlotAllocationPtr cpu_slots;
     AcquiredSlotPtr single_thread_cpu_slot; // cpu slot for single-thread mode to work using executeUntil()
     std::unique_ptr<ThreadPool> pool;
-    std::mutex spawn_mutex;
-
-    /// Pipeline's max thread count (captured from execute(num_threads)).
-    size_t max_pipeline_threads = 1;
-
-    /// Current setMax target. Written by initializeExecution before any worker thread exists,
-    /// then read and updated only under `spawn_mutex` from the upscaling block. Non-atomic
-    /// because all mutations are serialized by spawn_mutex and initial write happens-before
-    /// any spawned worker via the ThreadPool barrier in initializeExecution.
-    size_t desired_threads = 1;
-
-    /// Accumulates spawn_count from pushTasks calls that couldn't acquire `spawn_mutex`
-    /// (another thread was already handling the spawn). The thread that owns the mutex
-    /// drains this counter before deciding the new setMax target, so no demand is ever
-    /// silently dropped.
-    std::atomic<size_t> pending_demand{0};
 
     /// Flag that checks that initializeExecution was called.
     bool is_execution_initialized = false;
@@ -84,8 +70,6 @@ private:
     std::atomic_bool cancelled_reading = false;
 
     LoggerPtr log = getLogger("PipelineExecutor");
-
-    QueryStatusPtr process_list_element;
 
     ReadProgressCallbackPtr read_progress_callback;
     StepProfilerPtr step_profiler;
@@ -102,10 +86,13 @@ private:
     void executeStepImpl(size_t thread_num, WorkloadResources && resources, std::atomic_bool * yield_flag = nullptr);
     void executeSingleThread(size_t thread_num, WorkloadResources && resources);
     void finish();
+    void detachSpillables();
 
     // Methods for CPU scheduling
     SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control, bool lazy_allocation);
-    void spawnThreads(AcquiredSlotPtr slot) TSA_REQUIRES(spawn_mutex);
+    /// Start a thread for `slot` (if any) and for every other granted slot, until `tasks` has no capacity left.
+    /// Lock-free: any thread calls it after a task while `tasks` has requested threads.
+    void spawnThreads(AcquiredSlotPtr slot);
 };
 
 }

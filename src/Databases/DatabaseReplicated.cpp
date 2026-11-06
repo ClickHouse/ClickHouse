@@ -137,6 +137,7 @@ namespace FailPoints
     extern const char database_replicated_pause_after_snapshot_identity_check[];
     extern const char database_replicated_pause_after_database_name_fetch[];
     extern const char database_replicated_throw_on_stop_replication[];
+    extern const char database_replicated_restore_table_created_by_other_replica[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -496,6 +497,7 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
     Strings unfiltered_hosts;
     Strings hosts;
     Strings host_ids;
+    Strings host_groups;
 
     auto zookeeper = getZooKeeper();
     constexpr int max_retries = 10;
@@ -504,6 +506,7 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
     while (++iteration <= max_retries)
     {
         host_ids.resize(0);
+        host_groups.resize(0);
         Coordination::Stat stat;
         unfiltered_hosts = zookeeper->getChildren(zookeeper_path + "/replicas", &stat);
         if (unfiltered_hosts.empty())
@@ -511,28 +514,42 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
                             "It's possible if the first replica is not fully created yet "
                             "or if the last replica was just dropped or due to logical error", zookeeper_path);
 
+        ::sort(unfiltered_hosts.begin(), unfiltered_hosts.end());
+
+        /// Read the replica group of every replica in a single batch; it's used to filter hosts
+        /// and/or to carry the group of every address of the cluster (e.g. `system.clusters` shows it).
+        /// Hosts are sorted beforehand so that `hosts`, `host_groups` and `host_ids` keep index alignment.
+        std::vector<String> group_paths;
+        group_paths.reserve(unfiltered_hosts.size());
+        for (const auto & host : unfiltered_hosts)
+            group_paths.emplace_back(zookeeper_path + "/replicas/" + host + "/replica_group");
+
+        auto replica_groups = zookeeper->tryGet(group_paths);
+
         if (all_groups)
         {
+            /// The cluster consists of the replicas of all the groups.
             hosts = unfiltered_hosts;
+            host_groups.resize(hosts.size());
+            for (size_t i = 0; i < hosts.size(); ++i)
+            {
+                if (replica_groups[i].error == Coordination::Error::ZOK)
+                    host_groups[i] = std::move(replica_groups[i].data);
+            }
         }
         else
         {
+            /// The cluster consists of the replicas of the local replica group only.
             hosts.clear();
-            std::vector<String> paths;
-            for (const auto & host : unfiltered_hosts)
-                paths.push_back(zookeeper_path + "/replicas/" + host + "/replica_group");
-
-            auto replica_groups = zookeeper->tryGet(paths);
-
-            for (size_t i = 0; i < paths.size(); ++i)
+            for (size_t i = 0; i < unfiltered_hosts.size(); ++i)
             {
                 if (replica_groups[i].data == replica_group_name)
                     hosts.push_back(unfiltered_hosts[i]);
             }
+            host_groups.assign(hosts.size(), replica_group_name);
         }
 
         Int32 cversion = stat.cversion;
-        ::sort(hosts.begin(), hosts.end());
 
         std::vector<String> host_paths;
         host_paths.reserve(hosts.size());
@@ -567,6 +584,7 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
 
     chassert(!hosts.empty());
     chassert(hosts.size() == host_ids.size());
+    chassert(hosts.size() == host_groups.size());
     String current_shard;
     Shards shards;
     for (size_t i = 0; i < hosts.size(); ++i)
@@ -583,7 +601,7 @@ DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_gro
             shards.emplace_back();
         }
         String hostname = unescapeForFileName(host_port);
-        shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica), {}});
+        shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica), {}, std::move(host_groups[i])});
     }
 
     if (shards.empty())
@@ -2371,7 +2389,7 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(
         create.attach = true;
 
     if (create.select && create.isView())
-        ApplyWithSubqueryVisitor::visit(*create.select);
+        ApplyWithSubqueryVisitor::visit(*create.select, /*max_expanded_ast_elements=*/ 0); /// Bounded when it was created.
 
     return ast;
 }
@@ -2974,7 +2992,10 @@ void DatabaseReplicated::createTableRestoredFromBackup(
     /// IRestoreCoordination::acquireCreatingTableInReplicatedDatabase() and then for other nodes this function returns false which means
     /// this table is already being created by some other node.
     String table_name = create_table_query->as<const ASTCreateQuery &>().getTable();
-    if (restore_coordination->acquireCreatingTableInReplicatedDatabase(getZooKeeperPath(), table_name))
+    bool acquired = restore_coordination->acquireCreatingTableInReplicatedDatabase(getZooKeeperPath(), table_name);
+    /// Pretend that another replica has acquired the creation of the table but has not created it (yet).
+    fiu_do_on(FailPoints::database_replicated_restore_table_created_by_other_replica, { acquired = false; });
+    if (acquired)
     {
         DatabaseAtomic::createTableRestoredFromBackup(create_table_query, local_context, restore_coordination, timeout_ms);
     }
@@ -2984,8 +3005,14 @@ void DatabaseReplicated::createTableRestoredFromBackup(
     /// TODO: The following code doesn't look very reliable, probably we need to rewrite it somehow.
     auto timeout = std::chrono::milliseconds{timeout_ms};
     auto start_time = std::chrono::steady_clock::now();
+    /// Check for cancellation (`KILL QUERY`, or the cancellation of all backups and restores on shutdown)
+    /// as `RestorerFromBackup` does: otherwise a cancelled restore keeps waiting here for the whole timeout.
+    auto process_list_element = local_context->getProcessListElementSafe();
     while (!isTableExist(table_name, local_context))
     {
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
+
         waitForReplicaToProcessAllEntries(50);
 
         auto elapsed = std::chrono::steady_clock::now() - start_time;
@@ -3306,6 +3333,10 @@ node2 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY
 
 ## Settings {#settings}
 The following settings are supported:
+
+<Note>
+The `default_replica_path`, `default_replica_shard_name` and `default_replica_name` settings were introduced in ClickHouse 25.10. On earlier versions these settings are not recognized, and configuring them fails with `Code: 115. DB::Exception: Unknown setting '<name>': in DatabaseReplicated config`.
+</Note>
 
 | Setting                                                                      | Default                        | Description                                                                                                                                                                                                                                                                                                                           |
 |------------------------------------------------------------------------------|--------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|

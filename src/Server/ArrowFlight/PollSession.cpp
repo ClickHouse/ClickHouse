@@ -71,6 +71,7 @@ bool PollSession::getNextBlock(Block & block)
 {
     if (!executor->pull(block))
         return false;
+    removeSpecialColumnRepresentations(block);
     if (block_modifier)
         block_modifier(query_context, block);
     return true;

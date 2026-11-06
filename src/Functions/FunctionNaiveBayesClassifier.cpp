@@ -28,6 +28,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -143,6 +144,19 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     size_t getNumberOfArguments() const override { return 2; }
+
+    /// There is no types-only answer: legality depends on the *value* of the first argument —
+    /// the named dictionary must have the `NAIVE_BAYES` layout. Decline this entry point (as it
+    /// behaved before the documentation-only signature was added) instead of letting the
+    /// declarative path accept shapes the authoritative resolver rejects with `BAD_ARGUMENTS`.
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "getReturnType is not implemented for {}: the dictionary layout can only be validated "
+            "when the value of the first argument is known",
+            getName());
+    }
 };
 
 
@@ -152,10 +166,20 @@ class FunctionNaiveBayesClassifier : public FunctionNaiveBayesBase
 public:
     using FunctionNaiveBayesBase::FunctionNaiveBayesBase;
 
+    using FunctionNaiveBayesBase::getReturnTypeImpl;
+
     static constexpr auto name = "naiveBayesClassifier";
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionNaiveBayesClassifier>(context_); }
 
     String getName() const override { return name; }
+
+    /// Documentation-only — the legacy `getReturnTypeImpl` stays authoritative because the
+    /// validation also checks that the dictionary has the NAIVE_BAYES layout, which requires
+    /// runtime access to the dictionary registry.
+    String getSignatureString() const override
+    {
+        return "(const String, MaybeNullable(String)) -> MaybeNullable(UInt32)";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -202,10 +226,18 @@ class FunctionNaiveBayesClassifierWithProb : public FunctionNaiveBayesBase
 public:
     using FunctionNaiveBayesBase::FunctionNaiveBayesBase;
 
+    using FunctionNaiveBayesBase::getReturnTypeImpl;
+
     static constexpr auto name = "naiveBayesClassifierWithProb";
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionNaiveBayesClassifierWithProb>(context_); }
 
     String getName() const override { return name; }
+
+    /// Documentation-only, see FunctionNaiveBayesClassifier.
+    String getSignatureString() const override
+    {
+        return "(const String, MaybeNullable(String)) -> MaybeNullable(Tuple(class_id UInt32, probability Float64))";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -270,10 +302,19 @@ class FunctionNaiveBayesClassifierWithAllProbs : public FunctionNaiveBayesBase
 public:
     using FunctionNaiveBayesBase::FunctionNaiveBayesBase;
 
+    using FunctionNaiveBayesBase::getReturnTypeImpl;
+
     static constexpr auto name = "naiveBayesClassifierWithAllProbs";
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionNaiveBayesClassifierWithAllProbs>(context_); }
 
     String getName() const override { return name; }
+
+    /// Documentation-only, see FunctionNaiveBayesClassifier. The array result is never
+    /// wrapped in Nullable (a NULL input row yields an empty array instead).
+    String getSignatureString() const override
+    {
+        return "(const String, MaybeNullable(String)) -> Array(Tuple(class_id UInt32, probability Float64))";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

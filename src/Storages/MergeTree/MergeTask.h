@@ -26,6 +26,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeProgress.h>
+#include <Storages/MergeTree/StreamBaseManifest.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/PartitionActionBlocker.h>
@@ -246,6 +247,8 @@ private:
         NamesAndTypesList gathering_columns{};
         NameSet merge_required_columns{};
         NamesAndTypesList merging_columns{};
+        /// Subcolumns used by the merging algorithm, read in addition to `merging_columns`.
+        Names merging_subcolumns{};
         NamesAndTypesList merging_columns_expired_by_ttl{};
         NamesAndTypesList storage_columns{};
         NamesAndTypesList virtual_columns{};
@@ -291,6 +294,9 @@ private:
         std::promise<MergeTreeData::MutableDataPartPtr> promise{};
 
         WrittenOffsetSubstreams written_offset_substreams{};
+        /// One per merge, i.e. per part directory: shared by the horizontal writer, every vertical
+        /// per-column writer and MergeTextIndexesTask.
+        StreamBaseManifestPtr stream_base_manifest{std::make_shared<StreamBaseManifest>()};
         PlainMarksByName cached_marks;
         PlainMarksByName cached_index_marks;
 
