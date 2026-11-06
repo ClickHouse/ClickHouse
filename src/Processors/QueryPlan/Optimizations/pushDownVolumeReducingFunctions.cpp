@@ -1315,6 +1315,14 @@ size_t tryPushDownSubcolumnsToReading(QueryPlan::Node * top_node, QueryPlan::Nod
             if (!path_step.actions)
                 continue;
 
+            /// A filter that removes its filter column cannot pass it on as a carried column.
+            if (const auto * filter = typeid_cast<const FilterStep *>(path_step.node->step.get());
+                filter && filter->removesFilterColumn() && carried_above_step[i].contains(filter->getFilterColumnName()))
+            {
+                ok = false;
+                break;
+            }
+
             auto residuals = build_residuals(path_step.reads);
             path_step.new_actions = replaceSubcolumnReads(*path_step.actions, path_step.reads, residuals);
             if (!ok || !path_step.new_actions)

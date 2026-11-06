@@ -291,6 +291,11 @@ SELECT arrayStringConcat(arraySort(arrayFilter(x -> x != '', groupArray(arrayStr
 SELECT groupArray(r) FROM (SELECT s.tup.a FROM (SELECT * FROM t) AS s FULL JOIN t2 ON s.id = t2.id ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r;
 SELECT groupArray(r) FROM (SELECT s.tup.a FROM (SELECT * FROM t) AS s FULL JOIN t2 ON s.id = t2.id ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r SETTINGS query_plan_push_down_volume_reducing_functions = 0;
 
+SELECT 'N33 WHERE on the subcolumn, pushed down below a join';
+SELECT arrayStringConcat(arraySort(arrayFilter(x -> x != '', groupArray(arrayStringConcat(arraySort(arrayFilter(x -> x != 'id', splitByString(', ', replaceRegexpOne(explain, '^.*Output: ', '')))), ', ')))), ' | ') FROM (EXPLAIN SELECT s.tup.a, s.n.null FROM (SELECT * FROM t) AS s LEFT JOIN t2 ON s.id = t2.id WHERE s.n.null) WHERE explain LIKE '% Output:%';
+SELECT groupArray(r) FROM (SELECT s.tup.a, s.n.null FROM (SELECT * FROM t) AS s LEFT JOIN t2 ON s.id = t2.id WHERE s.n.null ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r;
+SELECT groupArray(r) FROM (SELECT s.tup.a, s.n.null FROM (SELECT * FROM t) AS s LEFT JOIN t2 ON s.id = t2.id WHERE s.n.null ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r SETTINGS query_plan_push_down_volume_reducing_functions = 0;
+
 SELECT 'N6 ORDER BY the column';
 SELECT arrayStringConcat(arraySort(arrayFilter(x -> x != '', groupArray(arrayStringConcat(arraySort(arrayFilter(x -> x != 'id', splitByString(', ', replaceRegexpOne(explain, '^.*Output: ', '')))), ', ')))), ' | ') FROM (EXPLAIN SELECT tup.a FROM (SELECT * FROM t ORDER BY tup)) WHERE explain LIKE '% Output:%';
 SELECT groupArray(r) FROM (SELECT tup.a FROM (SELECT * FROM t ORDER BY tup) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r;
