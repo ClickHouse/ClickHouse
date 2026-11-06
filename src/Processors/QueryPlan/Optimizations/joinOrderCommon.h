@@ -124,22 +124,13 @@ inline SelectivityEstimate computeSelectivity(
 }
 
 /// Expected number of rows an inner join of `lhs_rows` x `rhs_rows` keeps under `selectivity`.
-/// When a side has no row estimate we cannot tell which side is the key, so the join is costed as
-/// before the FK->PK heuristic: the missing row estimate counts as 1 row and the selectivity is the
-/// NDV upper bound (`reported_value`), whatever `reliable` says. A join with an unknown relation must
-/// not look more expensive than that, otherwise the only relations with known sizes (for example,
-/// those with hash-table statistics hints) are pushed to the end of the join order, and a key whose
-/// relation has a known size must keep making the join with it cheap even when the other side is a
-/// sub-join of unknown size. With both sizes known, an equi join without reliable NDV is assumed to
-/// be FK->PK (the smaller side is a unique key), so it keeps the larger side. Without any equi
-/// condition (cross or range-only join) the result is the full product.
-inline double estimateJoinedRows(
-    const SelectivityEstimate & selectivity, std::optional<UInt64> lhs_rows, std::optional<UInt64> rhs_rows)
+/// An equi join without reliable NDV is assumed to be FK->PK (the smaller side is a unique key), so
+/// it keeps the larger side. Without any equi condition (cross or range-only join) the result is the
+/// full product.
+inline double estimateJoinedRows(const SelectivityEstimate & selectivity, UInt64 lhs_rows, UInt64 rhs_rows)
 {
-    double lhs = static_cast<double>(lhs_rows.value_or(1));
-    double rhs = static_cast<double>(rhs_rows.value_or(1));
-    if (!lhs_rows || !rhs_rows)
-        return selectivity.reported_value * lhs * rhs;
+    double lhs = static_cast<double>(lhs_rows);
+    double rhs = static_cast<double>(rhs_rows);
     if (selectivity.reliable)
         return selectivity.value * lhs * rhs;
     if (selectivity.has_equi)
@@ -193,7 +184,7 @@ inline std::optional<UInt64> estimateJoinCardinality(
         return static_cast<UInt64>(semi_rows);
     }
 
-    double joined_rows = std::max(estimateJoinedRows(selectivity, left_rows, right_rows), 1.0);
+    double joined_rows = std::max(estimateJoinedRows(selectivity, *left_rows, *right_rows), 1.0);
 
     if (join_kind == JoinKind::Left)
         joined_rows = std::max(joined_rows, lhs);
@@ -223,7 +214,7 @@ inline std::optional<UInt64> estimateJoinCardinality(
 
 inline double computeJoinCost(const DPJoinEntryPtr & left, const DPJoinEntryPtr & right, const SelectivityEstimate & selectivity)
 {
-    return left->cost + right->cost + estimateJoinedRows(selectivity, left->estimated_rows, right->estimated_rows);
+    return left->cost + right->cost + estimateJoinedRows(selectivity, left->estimated_rows.value(), right->estimated_rows.value());
 }
 
 /// Per-row costs relative to a hash table probe, fitted on `parallel_hash` and `full_sorting_merge` timings of `MergeTree`

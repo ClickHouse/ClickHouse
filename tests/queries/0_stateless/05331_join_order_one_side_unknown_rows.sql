@@ -1,8 +1,6 @@
 -- Join order of TPC-H Q5 when only some relations have row estimates and none has NDV statistics,
 -- as for Iceberg tables whose build sides got sizes from the hash table statistics cache.
--- A join with a relation of unknown size is costed as before the FK->PK heuristic, so the key of
--- `orders` (a relation with a known size) keeps making the join of `lineitem` with the `customer` x `orders`
--- sub-join cheap, and that sub-join is built first.
+-- A relation of unknown size leaves no cost to compare join orders by, so the written join order is kept.
 -- https://github.com/ClickHouse/ClickHouse/issues/120921
 
 SET explain_query_plan_default = 'legacy';

@@ -121,7 +121,7 @@ ${CLICKHOUSE_CLIENT} ${PINS} --query "
 "
 T4="SELECT count() FROM l JOIN o ON l.lo = o.id JOIN c ON o.oc = c.id JOIN g ON c.cg = g.id WHERE g.id = 2"
 echo '--- T4: plan, manifest statistics off'
-echo 'Expect no row estimates: without the manifest statistics the Iceberg reads have none, so neither have the joins above them.'
+echo 'Expect no row estimates: without the manifest statistics the Iceberg reads have none, so neither have the joins above them, and the written join order is kept.'
 ${CLICKHOUSE_CLIENT} ${PINS} ${OFF} --query "
     SELECT trimLeft(explain) FROM (EXPLAIN keep_logical_steps = 1, actions = 1 ${T4}) WHERE explain LIKE '%Join: %'"
 echo '--- T4: plan, manifest statistics on'
@@ -134,7 +134,7 @@ ${CLICKHOUSE_CLIENT} ${PINS} ${OFF} --query_id="${CLICKHOUSE_DATABASE}_t4_off" -
 ${CLICKHOUSE_CLIENT} ${PINS} ${ON} --query_id="${CLICKHOUSE_DATABASE}_t4_on" --query "${T4}"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 echo '--- T4: JoinBuildTableRowCount, manifest statistics off and on'
-echo 'Expect off: g (1) + o (10000) + l x o (30000) = 40001; on: g (1) + c x g (200) + o x c x g (2000) = 2201.'
+echo 'Expect off, in the written order: o (10000) + c (200) + g (1) = 10201; on: g (1) + c x g (200) + o x c x g (2000) = 2201.'
 ${CLICKHOUSE_CLIENT} --query "
     SELECT replaceOne(query_id, currentDatabase() || '_t4_', ''), ProfileEvents['JoinBuildTableRowCount']
     FROM system.query_log

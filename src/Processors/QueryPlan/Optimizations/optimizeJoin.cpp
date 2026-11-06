@@ -1195,10 +1195,13 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     Strings relations_without_statistics;
     Strings relations_estimated_from_data_lake_metadata;
     std::vector<UInt8> leaf_imprecise(query_graph.relation_stats.size());
+    BitSet relations_without_estimate;
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
         leaf_imprecise[i] = rel.imprecise_estimate;
+        if (!rel.estimated_rows)
+            relations_without_estimate.set(i);
 
         relation_infos[BitSet().set(i)] = RelationEstimateInfo{
             .name = rel.table_name.empty() ? fmt::format("R{}", i) : rel.table_name,
@@ -1578,7 +1581,10 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 .imprecise_estimate = imprecise_estimate,
                 .composite = true};
 
-            join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
+            /// A graph with a relation without a row estimate keeps its written join tree (see `optimizeJoinOrder`). A sub-tree of it
+            /// whose relations all have one is not marked optimized, so it is reordered on its own when the plan traversal reaches it.
+            if (!relations_without_estimate || areIntersecting(entry->relations, relations_without_estimate))
+                join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
 
             auto & new_node = nodes.emplace_back();
 
