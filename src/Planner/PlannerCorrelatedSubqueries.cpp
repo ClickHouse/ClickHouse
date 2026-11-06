@@ -40,7 +40,6 @@
 #include <Planner/Utils.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -911,14 +910,6 @@ QueryPlan decorrelateQueryPlan(
 
         node->step->updateInputHeader(input_header);
 
-        decorrelated_query_plan.addStep(std::move(node->step));
-        return decorrelated_query_plan;
-    }
-    if (typeid_cast<ArrayJoinStep *>(node->step.get()))
-    {
-        /// the step expands each row on its own and copies the other columns, so the correlated columns pass through it
-        auto decorrelated_query_plan = decorrelateQueryPlan(context, node->children.front());
-        node->step->updateInputHeader(decorrelated_query_plan.getCurrentHeader());
         decorrelated_query_plan.addStep(std::move(node->step));
         return decorrelated_query_plan;
     }
