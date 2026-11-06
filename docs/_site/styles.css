@@ -1868,6 +1868,10 @@ html:not(.dark) .prose a:not(.card):not(.card *):hover {
     color: #FAFF69 !important;
     text-decoration: none !important;
 }
+.dark .prose li a:not(.card):not(.card *) strong,
+:is(.dark) .prose li a:not(.card):not(.card *) strong {
+    color: inherit !important;
+}
 .dark .prose li a:not(.card):not(.card *):hover,
 :is(.dark) .prose li a:not(.card):not(.card *):hover {
     color: #FAFF69 !important;
