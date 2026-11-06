@@ -682,7 +682,8 @@ SELECT count() FROM t_115999_shadowed AS t INNER JOIN t_115999_side AS b ON t.gr
 WHERE hasAnyTokens(t.j.other::String, ['ell']) OR b.category = 'nonexistent';
 SELECT count() FROM t_115999_shadowed AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
 WHERE hasAnyTokens(t.j.typed, ['ell']) OR b.category = 'nonexistent';
--- The indexed JSON value may itself sit inside a physical column.
+-- Tracked gap, prints 0: a path under a `Tuple` is not provably the indexed value's rather than a
+-- sibling's, so the tokenizer is not forwarded.
 SELECT count() FROM t_115999_shadowed AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
 WHERE hasAnyTokens(t.c.j.k, ['ell']) OR b.category = 'nonexistent';
 
@@ -694,18 +695,25 @@ CREATE TABLE t_115999_sibling
 (
     group_id UInt64,
     c Tuple(`j.k` String, j JSON(k String)),
-    INDEX idx_c JSONAllValues(c.j) TYPE text(tokenizer = ngrams(3))
+    d Tuple(t Tuple(`j.k` String, j JSON(k String))),
+    INDEX idx_c JSONAllValues(c.j) TYPE text(tokenizer = ngrams(3)),
+    INDEX idx_d JSONAllValues(d.t.j) TYPE text(tokenizer = ngrams(3))
 )
 ENGINE = MergeTree
 ORDER BY group_id;
 
-INSERT INTO t_115999_sibling VALUES (1, tuple('world', '{"k":"hello"}'));
+INSERT INTO t_115999_sibling VALUES (1, tuple('world', '{"k":"hello"}'), tuple(tuple('world', '{"k":"hello"}')));
 
 -- Both print 0: `c.j.k` reads the sibling string, which the index on `c.j` does not describe.
 SELECT count() FROM t_115999_sibling AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
 WHERE hasAnyTokens(t.c.j.k, ['orl']) OR b.category = 'nonexistent';
 SELECT count() FROM t_115999_sibling AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
 WHERE hasAnyTokens(t.c.j.k, ['orl'], 'splitByNonAlpha') OR b.category = 'nonexistent';
+-- The same one `Tuple` deeper.
+SELECT count() FROM t_115999_sibling AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasAnyTokens(t.d.t.j.k, ['orl']) OR b.category = 'nonexistent';
+SELECT count() FROM t_115999_sibling AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasAnyTokens(t.d.t.j.k, ['orl'], 'splitByNonAlpha') OR b.category = 'nonexistent';
 
 DROP TABLE t_115999_sibling;
 

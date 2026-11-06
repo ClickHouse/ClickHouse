@@ -11,9 +11,7 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 #include <DataTypes/DataTypeMapHelpers.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
@@ -94,18 +92,6 @@ std::optional<String> columnOwning(const StorageInMemoryMetadata & metadata, con
         return column->getNameInStorage();
 
     return {};
-}
-
-/// A Tuple element spelled with dots claims the flattened name outright, ahead of any path below it.
-bool hasElementNamed(const StorageInMemoryMetadata & metadata, const String & column_name, const String & element)
-{
-    auto options = GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns();
-    const auto column = metadata.getColumns().tryGetColumn(options, column_name);
-    if (!column)
-        return false;
-
-    const auto * tuple = typeid_cast<const DataTypeTuple *>(removeNullable(column->type).get());
-    return tuple && std::ranges::find(tuple->getElementNames(), element) != tuple->getElementNames().end();
 }
 
 /// Spelled the way `IndexDescription::column_names` is.
@@ -483,14 +469,9 @@ private:
                 if (!matched)
                     return false;
 
-                /// A declared column of that name is read instead, unless it contains the indexed value.
+                /// A declared column of that name is read instead; only the indexed column may own it.
                 const auto owner = columnOwning(*metadata, carrier);
-                if (!owner || matched->json_column_name == *owner)
-                    return true;
-                if (!matched->json_column_name.starts_with(*owner + "."))
-                    return false;
-
-                return !hasElementNamed(*metadata, *owner, carrier.substr(owner->size() + 1));
+                return !owner || *owner == matched->json_column_name;
             };
 
             const bool describes = std::ranges::any_of(carriers.names, [&](const String & carrier)
