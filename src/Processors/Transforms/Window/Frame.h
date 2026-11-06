@@ -23,6 +23,7 @@ public:
     void advance(const SlidingBlocks & blocks, const RowPoint & current, const PartitionBounds & partition);
 
     [[nodiscard]] const FrameBounds & bounds() const;
+    [[nodiscard]] Int64 firstRowToRead() const;
 
 private:
     const WindowTransformParams & params;

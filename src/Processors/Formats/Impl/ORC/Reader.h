@@ -153,6 +153,7 @@ private:
 
     void startNextStripe();
     void loadStripeIndex();
+    UInt64 numberOfRowGroups() const;
     void pickRowGroups();
     void seekToRowGroup(size_t row_group);
     [[nodiscard]] UInt64 advanceToNextRowGroup(UInt64 current_row) const;

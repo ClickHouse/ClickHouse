@@ -36,10 +36,9 @@ struct SlidingBlock
     /// Helper data
     const int64_t rows_count = 0;
     const int64_t block_number = 0;
+    const int64_t begin_position = 0;
+    const int64_t end_position = 0;
     const SlidingIndex index;
-
-    /// Output
-    mutable MutableColumns result_columns;
 };
 
 class SlidingBlocks
@@ -47,6 +46,7 @@ class SlidingBlocks
 public:
     SlidingBlock & add(Chunk chunk, Columns materialized_columns, SlidingIndex index);
     [[nodiscard]] const SlidingBlock & blockAt(int64_t block_number) const;
+    [[nodiscard]] const SlidingBlock & front() const;
     void pop();
 
     [[nodiscard]] RowNumber begin() const;
@@ -54,11 +54,13 @@ public:
     [[nodiscard]] RowNumber next(RowNumber row) const;
     [[nodiscard]] RowNumber prev(RowNumber row) const;
     [[nodiscard]] RowNumber move(RowNumber row, int64_t offset) const;
+    [[nodiscard]] int64_t positionOf(RowNumber row) const;
 
 private:
     DequeWithMemoryTracking<SlidingBlock> blocks;
     int64_t first_block_number = 0;
     int64_t next_block_number = 0;
+    int64_t end_position = 0;
 };
 
 }

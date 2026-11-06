@@ -40,6 +40,8 @@ struct ObjectInfo
 
     virtual ~ObjectInfo() = default;
 
+    [[nodiscard]] virtual std::shared_ptr<ObjectInfo> clone() const { return std::make_shared<ObjectInfo>(*this); }
+
     [[nodiscard]] virtual std::string getFileName() const { return relative_path_with_metadata.getFileName(); }
     [[nodiscard]] virtual std::string getPath() const { return relative_path_with_metadata.relative_path; }
     [[nodiscard]] virtual bool isArchive() const { return false; }

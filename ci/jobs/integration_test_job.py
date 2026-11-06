@@ -2064,7 +2064,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         test_env["CLICKHOUSE_TESTS_PER_TEST_COVERAGE_DIR"] = per_test_coverage_dir
         # No continuous mode (see cluster.py) and no profile merge: the coverage is
         # taken from the servers' `system.coverage_log`, not from .profraw files.
-        test_env["LLVM_PROFILE_FILE"] = "it-%4m.profraw"
+        test_env["LLVM_PROFILE_FILE"] = os.devnull
     elif is_llvm_coverage:
         # %c enables continuous mode: the counters are memory-mapped into the
         # file and updated as the code runs, so the file is structurally valid

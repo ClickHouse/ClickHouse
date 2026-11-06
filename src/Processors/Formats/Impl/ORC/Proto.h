@@ -157,9 +157,9 @@ struct TimestampStatistics
     /// In milliseconds since the epoch in UTC.
     std::optional<Int64> minimum_utc;
     std::optional<Int64> maximum_utc;
-    /// The sub-millisecond part of the nanoseconds plus one, if not zero.
-    std::optional<Int32> minimum_nanos;
-    std::optional<Int32> maximum_nanos;
+    /// The sub-millisecond part of the nanoseconds plus one, if not zero. Unvalidated when read from a file.
+    std::optional<UInt64> minimum_nanos;
+    std::optional<UInt64> maximum_nanos;
 };
 
 struct BinaryStatistics
@@ -203,7 +203,8 @@ struct RowIndex
 {
     std::vector<RowIndexEntry> entry;
 
-    void parse(std::string_view data);
+    /// The limits of the number of the repeated objects keep a small malformed message from allocating much memory.
+    void parse(std::string_view data, size_t max_entries);
     [[nodiscard]] std::string serialize() const;
 };
 
@@ -218,7 +219,7 @@ struct BloomFilterIndex
 {
     std::vector<BloomFilter> bloom_filter;
 
-    void parse(std::string_view data);
+    void parse(std::string_view data, size_t max_entries);
 };
 
 enum class StreamKind : UInt32
@@ -269,7 +270,7 @@ struct StripeFooter
     /// Non-zero if the stripe has encrypted columns, which are not supported.
     size_t encryption_variants = 0;
 
-    void parse(std::string_view data);
+    void parse(std::string_view data, size_t max_columns);
     [[nodiscard]] std::string serialize() const;
 };
 
@@ -317,7 +318,7 @@ struct Metadata
 {
     std::vector<StripeStatistics> stripe_stats;
 
-    void parse(std::string_view data);
+    void parse(std::string_view data, size_t max_stripes, size_t max_columns);
     [[nodiscard]] std::string serialize() const;
 };
 

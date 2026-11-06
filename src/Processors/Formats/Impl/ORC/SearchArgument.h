@@ -51,6 +51,7 @@ public:
         Int64 second = 0;
         Int32 nanos = 0;
 
+        /// Rounded down, as the nanoseconds are not negative.
         [[nodiscard]] Int64 getMillis() const { return second * 1000 + nanos / 1000000; }
         auto operator<=>(const Timestamp &) const = default;
     };
