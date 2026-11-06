@@ -40,8 +40,8 @@ SELECT groupArray(id) FROM (SELECT id FROM deltaLakeLocal('$T') WHERE s = 'updat
 SELECT groupArray(id) FROM (SELECT id FROM deltaLakeLocal('$T') WHERE s = 'updated' ORDER BY id) SETTINGS delta_lake_snapshot_version = 5;
 
 SELECT '-- tiny blocks';
-SELECT count(), sum(id), sum(length(s)) FROM deltaLakeLocal('$T') SETTINGS max_block_size = 3, max_threads = 1;
-SELECT count(), sum(id), sum(length(s)) FROM deltaLakeLocal('$T') SETTINGS max_block_size = 1000000;
+SELECT count(), sum(id), sum(length(s)) FROM deltaLakeLocal('$T') SETTINGS max_block_size = 3, input_format_parquet_max_block_size = 3, max_threads = 1;
+SELECT count(), sum(id), sum(length(s)) FROM deltaLakeLocal('$T') SETTINGS max_block_size = 1000000, input_format_parquet_max_block_size = 1000000;
 
 SELECT '-- virtual columns';
 SELECT count(), uniqExact(_path), uniqExact(_file), min(_data_lake_snapshot_version), max(_data_lake_snapshot_version) FROM deltaLakeLocal('$T');
