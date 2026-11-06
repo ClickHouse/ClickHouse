@@ -2918,13 +2918,19 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                     /// tight loop, starving the rest of the queue until an in-region replica produces the part.
                     ///
                     /// Measure how long *this replica* has actually been deferring this entry for same-region
-                    /// fetching, derived from the number of defers. We deliberately do not use `entry.create_time`:
+                    /// fetching, from the time of its first defer. We deliberately do not use `entry.create_time`:
                     /// a replica recovering from a backlog can pick up an entry whose creation time is already
                     /// older than the timeout and would then immediately fetch from any region, recreating the
-                    /// cross-region fan-out this feature is meant to avoid.
-                    auto same_region_waited_seconds
-                        = static_cast<Int64>(entry.wait_for_fetching_from_same_region)
-                        * (*getSettings())[MergeTreeSetting::geo_replication_control_leader_wait].totalSeconds();
+                    /// cross-region fan-out this feature is meant to avoid. Nor do we derive it from the number of
+                    /// defers multiplied by `geo_replication_control_leader_wait`: with a zero retry interval that
+                    /// product never grows, and the timeout would never fire.
+                    time_t now = time(nullptr);
+                    if (entry.wait_for_fetching_from_same_region == 0)
+                    {
+                        std::lock_guard lock(queue.state_mutex);
+                        entry.same_region_wait_start_time = now;
+                    }
+                    auto same_region_waited_seconds = static_cast<Int64>(now - entry.same_region_wait_start_time);
                     if (same_region_waited_seconds < (*getSettings())[MergeTreeSetting::geo_replication_control_leader_wait_timeout].totalSeconds())
                     {
                         {

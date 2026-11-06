@@ -104,14 +104,16 @@ def test_follower_only_fetch_from_leader(start_cluster):
             node.query("DROP TABLE IF EXISTS us_table SYNC")
 
 
-def test_follower_fetch_from_leader_timeout(start_cluster):
+# A zero retry interval must not disable the timeout: the wait is measured from the first defer.
+@pytest.mark.parametrize("leader_wait", [1, 0])
+def test_follower_fetch_from_leader_timeout(start_cluster, leader_wait):
     try:
         for i, node in enumerate(
             [apac1, apac2, us3]
         ):  # apac1 will become leader of APAC
             node.query(
                 f"CREATE TABLE us_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/us_table', '{i}') ORDER BY tuple() PARTITION BY key "
-                + "SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 2;"
+                + f"SETTINGS geo_replication_control_leader_wait = {leader_wait}, geo_replication_control_leader_wait_timeout = 2;"
             )
             time.sleep(1)
 
