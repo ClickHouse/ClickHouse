@@ -257,6 +257,7 @@ check ntz "ts < '1899-12-31 00:00:00'"
 check ts "ts < '20260102'" "date_time_input_format='basic'"
 check ts "ts >= '20260102'" "cast_string_to_date_time_mode='basic'"
 # The mode is the one the comparison was built with: here the outer query's, not the subquery's that reads.
+# Pruning confirms the converted literal with the comparison itself, which carries that mode.
 for mode in best_effort basic; do
     TABLE_SOURCE[ts_${mode}]="(SELECT * FROM deltaLakeLocal('${ROOT}/ts') SETTINGS cast_string_to_date_time_mode='${mode}')"
     TABLE_DIR[ts_${mode}]=ts
@@ -282,9 +283,9 @@ check ntz "${NS_BETWEEN} < ts"
 check ts "ts = ${NS_BETWEEN}"
 check ts "ts != ${NS_BETWEEN}"
 check ts "NOT (ts < ${NS_BETWEEN})"
-# By default a column value that overflows when scaled is compared exactly, so the file beyond 2262-04-11
-# is skipped. With `decimal_check_overflow = 0` the comparison multiplies the column and wraps around there,
-# so that file stays scanned in either polarity.
+# With `decimal_check_overflow = 0` the comparison multiplies the column and wraps around beyond 2262-04-11.
+# Pruning cannot read that setting of the comparison, so the file there stays scanned in either polarity,
+# with the setting on too.
 check ts "ts = ${NS_EXACT}"
 check ts "NOT (ts = ${NS_EXACT})"
 check ts "ts < ${NS_EXACT}"
@@ -363,7 +364,7 @@ check nullable_as_default "ts = toDateTime64(0, 6, 'UTC')"
 check nullable_as_default "NOT (ts >= '2026-01-01 00:00:00')"
 
 # Before 1677-09-21 a row also leaves the `Int64` nanoseconds: with `decimal_check_overflow = 0` the 1600 row
-# wraps around and compares above the constant, so its file stays scanned.
+# wraps around and compares above the constant, so its file stays scanned whenever the column is scaled.
 make_table ancient timestamp full data false '1600-01-01 00:00:00.000000' '2026-01-01 00:00:00.000000'
 check ancient "ts > ${NS_BETWEEN}" "decimal_check_overflow=0"
 check ancient "${NS_BETWEEN} < ts" "decimal_check_overflow=0"

@@ -962,34 +962,22 @@ struct ComparisonParams
     void updateHash(SipHash & hash) const;
 };
 
-/// Gives the parameters a comparison was built with to code that mirrors the comparison outside its
-/// execution, such as data skipping in a table engine, so that it converts the operands the same way.
-class WithComparisonParams
-{
-public:
-    explicit WithComparisonParams(ComparisonParams params_) : params(std::move(params_)) {}
-    virtual ~WithComparisonParams() = default;
-
-    const ComparisonParams & getComparisonParams() const { return params; }
-
-protected:
-    const ComparisonParams params;
-};
-
 template <template <typename, typename> class Op, typename Name, bool is_null_safe_cmp_mode = false>
-class FunctionComparison final : public IFunction, public WithComparisonParams
+class FunctionComparison final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(context ? ComparisonParams(context) : ComparisonParams()); }
 
-    explicit FunctionComparison(ComparisonParams params_) : WithComparisonParams(std::move(params_)) {}
+    explicit FunctionComparison(ComparisonParams params_) : params(std::move(params_)) {}
 
     bool ALWAYS_INLINE  useDefaultImplementationForNulls() const override { return is_null_safe_cmp_mode ? false : true; }
     bool ALWAYS_INLINE  useDefaultImplementationForVariant() const override { return is_null_safe_cmp_mode ? false : params.use_variant_default_implementation; }
     bool isNameInsensitive() const override { return true; }
 private:
+    const ComparisonParams params;
+
     static ComparisonOrderDomain getComparisonOrderDomainForType(const DataTypePtr & type)
     {
         using Kind = ComparisonOrderDomain::Kind;
