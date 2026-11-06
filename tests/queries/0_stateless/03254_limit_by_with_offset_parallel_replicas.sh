@@ -34,7 +34,7 @@ CREATE TABLE test_fetch(a Int32, b Int32) Engine = MergeTree ORDER BY ();
 INSERT INTO test_fetch VALUES(1, 1), (2, 1), (3, 4), (3, 3), (5, 4), (0, 6), (5, 7);
 "
 
-for enable_analyzer in 1; do
+for enable_analyzer in {0..1}; do
   for enable_parallel_replicas in {0..1}; do
     ${CLICKHOUSE_CLIENT} --query="
     set enable_analyzer=${enable_analyzer};

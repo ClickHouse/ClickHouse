@@ -9,10 +9,9 @@ workflow = Workflow.Config(
     name="NightlyFuzzers",
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
-    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         *[
-            j.set_provides([ArtifactNames.AMD_FUZZERS, ArtifactNames.FUZZERS_CORPUS])
+            j.set_provides([ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS])
             for j in JobConfigs.special_build_jobs
             if "fuzzers" in j.name
         ],

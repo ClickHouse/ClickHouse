@@ -5,7 +5,6 @@
         <storage_path>/var/lib/clickhouse/coordination</storage_path>
         <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
         <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
-        <data_storage_path>/var/lib/clickhouse/coordination/data</data_storage_path>
 
         <coordination_settings>
             <!-- TODO(mstetsyuk): evaluate if this is needed -->

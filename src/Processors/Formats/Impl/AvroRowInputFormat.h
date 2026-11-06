@@ -4,17 +4,20 @@
 
 #if USE_AVRO
 
-#include <map>
 #include <unordered_map>
+#include <map>
 #include <vector>
-#include <Formats/FormatSchemaInfo.h>
+
 #include <Formats/FormatSettings.h>
+#include <Formats/FormatSchemaInfo.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
+
 #include <DataFile.hh>
 #include <Decoder.hh>
 #include <Schema.hh>
 #include <ValidSchema.hh>
+
 
 namespace DB
 {
@@ -32,7 +35,6 @@ class Block;
 /// levels, so 256 is more than enough.
 static constexpr size_t MAX_AVRO_SCHEMA_DEPTH = 256;
 
-class ConfluentSchemaRegistry;
 class AvroInputStreamReadBufferAdapter : public avro::InputStream
 {
 public:
@@ -56,9 +58,10 @@ public:
     AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
     AvroDeserializer(DataTypePtr data_type, const std::string & column_name, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
 
+    /// Not movable: stored closures capture `this` and references into `symbolic_skip_fn_map`.
     AvroDeserializer(const AvroDeserializer &) = delete;
     AvroDeserializer & operator=(const AvroDeserializer &) = delete;
-    AvroDeserializer(AvroDeserializer &&) = default;
+    AvroDeserializer(AvroDeserializer &&) = delete;
     AvroDeserializer & operator=(AvroDeserializer &&) = delete;
 
     void deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
@@ -76,7 +79,7 @@ private:
         enum Type {Noop, Deserialize, Skip, Record, Union, Nested};
         Type type;
         /// Deserialize
-        int target_column_idx{};
+        int target_column_idx;
         DeserializeFn deserialize_fn;
         /// Skip
         SkipFn skip_fn;
@@ -159,10 +162,6 @@ private:
     /// This is to avoid infinite recursion when  Avro schema contains self-references. e.g. LinkedList
     std::map<avro::Name, SkipFn> symbolic_skip_fn_map;
 
-    /// Guard against infinite recursion in createDeserializeFn and createAction
-    /// when Avro schema contains cyclic symbolic references (e.g. TypeA -> TypeB -> TypeA).
-    std::unordered_set<std::string> symbolic_deserialize_guard;
-
     bool null_as_default = false;
 
     const FormatSettings & settings;
@@ -199,6 +198,8 @@ public:
     AvroConfluentRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
     String getName() const override { return "AvroConfluentRowInputFormat"; }
 
+    class SchemaRegistry;
+
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     void readPrefix() override;
@@ -206,7 +207,7 @@ private:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
 
-    std::shared_ptr<ConfluentSchemaRegistry> schema_registry;
+    std::shared_ptr<SchemaRegistry> schema_registry;
     using SchemaId = uint32_t;
     std::unordered_map<SchemaId, AvroDeserializer> deserializer_cache;
     const AvroDeserializer & getOrCreateDeserializer(SchemaId schema_id);
@@ -216,20 +217,15 @@ private:
     FormatSettings format_settings;
 };
 
-class AvroSchemaReader final : public ISchemaReader
+class AvroSchemaReader : public ISchemaReader
 {
 public:
     AvroSchemaReader(ReadBuffer & in_, bool confluent_, const FormatSettings & format_settings_);
 
     NamesAndTypesList readSchema() override;
 
-    /// If `allow_nullable_tuple_type` is false, a union [null, record] is converted to a plain
-    /// Tuple instead of Nullable(Tuple). Schema inference passes
-    /// schema_inference_allow_nullable_tuple_type here, because otherwise it would return a type
-    /// that CREATE TABLE rejects.
-    static DataTypePtr avroNodeToDataType(avro::NodePtr node, bool allow_nullable_tuple_type = true);
+    static DataTypePtr avroNodeToDataType(avro::NodePtr node);
 private:
-    static DataTypePtr avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names, bool allow_nullable_tuple_type);
 
     bool confluent;
     const FormatSettings format_settings;

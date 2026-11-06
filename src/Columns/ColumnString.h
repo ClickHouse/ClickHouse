@@ -10,6 +10,7 @@
 #include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <base/defines.h>
 
@@ -127,8 +128,6 @@ public:
         return sizeAt(n) == 0;
     }
 
-    bool hasOnlyTypeDefaults() const override;
-
     void insert(const Field & x) override
     {
         const String & s = x.safeGet<String>();
@@ -214,17 +213,16 @@ public:
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
 
-    void batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const override;
-
-    void serializeAsComparable(size_t n, String & out) const override;
-    void batchSerializeAsComparable(size_t num_rows, VectorWithMemoryTracking<String> & out, const IColumn::Permutation * permutation, const UInt8 * null_map) const override;
+    void batchSerializeValueIntoMemory(std::vector<char *> & memories, const IColumn::SerializationSettings * settings) const override;
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+
+    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
-    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
+    WeakHash32 getWeakHash32() const override;
 
     void updateHashFast(SipHash & hash) const override;
 
@@ -255,9 +253,9 @@ public:
 
     void insertManyDefaults(size_t length) override
     {
-        /// Only the offsets grow: a default string appends no characters.
-        const auto last = offsets.back(); /// By value: `resize_fill` may reallocate.
-        offsets.resize_fill(offsets.size() + length, last);
+        auto last = offsets.back();
+        for (size_t i = 0; i < length; ++i)
+            offsets.push_back(last);
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -270,15 +268,8 @@ public:
         return memcmpSmallAllowOverflow15(chars.data() + offsetAt(n), sizeAt(n), rhs.chars.data() + rhs.offsetAt(m), rhs.sizeAt(m));
     }
 
-#if USE_EMBEDDED_COMPILER
-    bool isComparatorCompilable() const override;
-    llvm::Value * compileComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * /*nan_direction_hint*/) const override;
-#endif
-
     /// Variant of compareAt for string comparison with respect of collation.
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int, const Collator & collator) const override;
-
-    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const override;
 
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, Permutation & res) const override;
@@ -301,7 +292,7 @@ public:
 
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor) override;
+    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
     void shrinkToFit() override;
 
     void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;

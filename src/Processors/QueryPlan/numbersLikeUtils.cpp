@@ -5,7 +5,6 @@
 #include <Core/Settings.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/Pipe.h>
@@ -75,35 +74,6 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
 
     const auto & query = query_info.query->as<ASTSelectQuery &>();
 
-    /// `arrayJoin` (function or `ARRAY JOIN` clause) changes row cardinality after the
-    /// source has run. Pushing the outer `LIMIT` into the source would truncate input
-    /// rows BEFORE expansion, silently dropping output rows when arrays are empty or
-    /// producing wrong rows when arrays expand. See issue #82279 and the sibling guards
-    /// in the query-plan optimizer passes (`liftUpFunctions`, `optimizeLazyMaterialization`,
-    /// `optimizeTopK`, `topKThroughJoin`, `pushLimitByIntoSort`,
-    /// `optimizePrimaryKeyConditionAndLimit`).
-    ///
-    /// The `arrayJoin` function call appears in the SELECT clause, while the `ARRAY JOIN`
-    /// clause is stored separately in `arrayJoinExpressionList()` (the clause itself is
-    /// already an array-join operation, regardless of what its expressions contain).
-    /// Both forms must reject pushdown.
-    /// The function may sit in any clause, e.g. only in WHERE through a WITH alias, and still multiply the rows.
-    ///
-    /// The whole query is walked on purpose, and the walk is deliberately not narrowed to the
-    /// definitions an alias substitution can still reach. Under the old analyzer a top-level
-    /// `WITH arrayJoin(...) AS unused` survives into this AST even when nothing references it,
-    /// so such a query is classified as row-expanding although it expands nothing. That costs no
-    /// behaviour: the verdict is consumed only through `getLimitFromQueryInfo`, whose only readers
-    /// are the `limit` hint of `ReadFromSystemNumbersStep` and `ReadFromSystemPrimesStep`, and the
-    /// outer `LIMIT` still reaches those sources through the plan. Refusing the hint therefore
-    /// cannot make a bounded query read more rows, while a missed `arrayJoin` would be a
-    /// correctness bug - so the asymmetry is resolved in favour of the conservative answer.
-    /// `05183_unreferenced_with_array_join_limit_pushdown` pins the user-visible half of this.
-    if (expressionContainsArrayJoin(query_info.query))
-        return false;
-    if (query.arrayJoinExpressionList().first)
-        return false;
-
     /// Just ignore some minor cases, such as:
     ///     select * from system.numbers order by number asc limit 10
     return !query.distinct
@@ -113,9 +83,7 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
         /// For the analyzer, window will be deleted from AST, so we should not use query.window()
         && !query_info.has_window
         && !query_info.additional_filter_ast
-        && !query.limit_with_ties
-        && !query.limitAfter()
-        && !query.limitUntil();
+        && !query.limit_with_ties;
 }
 
 }

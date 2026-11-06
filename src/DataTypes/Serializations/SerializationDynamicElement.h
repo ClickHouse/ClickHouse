@@ -5,6 +5,7 @@
 namespace DB
 {
 
+
 /// Serialization for Dynamic element when we read it as a subcolumn.
 class SerializationDynamicElement final : public SerializationWrapper
 {
@@ -24,17 +25,11 @@ private:
     /// type; see SerializationVariantElement::nullable_added_by_extraction.
     bool nullable_added_by_extraction;
 
+public:
     SerializationDynamicElement(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_, bool nullable_added_by_extraction_)
         : SerializationWrapper(nested_), shared_variant_serialization(shared_variant_serialization_), dynamic_element_name(dynamic_element_name_), nested_subcolumn(nested_subcolumn_), is_null_map_subcolumn(is_null_map_subcolumn_), nullable_added_by_extraction(nullable_added_by_extraction_)
     {
     }
-
-public:
-    static UInt128 getHash(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_, bool nullable_added_by_extraction_);
-    static SerializationPtr create(const SerializationPtr & nested_, const SerializationPtr & shared_variant_serialization_, const String & dynamic_element_name_, const String & nested_subcolumn_, bool is_null_map_subcolumn_, bool nullable_added_by_extraction_);
-    size_t allocatedBytes() const override;
-    bool supportsPooling() const override { return SerializationWrapper::supportsPooling() && shared_variant_serialization->supportsPooling(); }
-    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -63,7 +58,8 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,

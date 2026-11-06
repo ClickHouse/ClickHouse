@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
@@ -25,7 +26,7 @@ namespace ErrorCodes
 // Simhash: String -> UInt64
 // Minhash: String -> (UInt64, UInt64)
 template <typename Impl, typename Name, bool is_simhash, bool is_arg = false>
-class FunctionsStringHash final : public IFunction
+class FunctionsStringHash : public IFunction
 {
 public:
     static constexpr auto name = Name::name;

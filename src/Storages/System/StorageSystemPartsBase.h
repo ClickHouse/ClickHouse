@@ -1,7 +1,9 @@
 #pragma once
 
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Formats/FormatSettings.h>
+#include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageProxy.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 
@@ -75,7 +77,7 @@ public:
 
             info.engine = info.storage->getName();
 
-            info.data = dynamic_cast<MergeTreeData *>(info.storage.get());
+            info.data = castStorage<MergeTreeData>(info.storage, DeferredTable::Skip).get();
             if (!info.data)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown engine {}", info.engine);
 
@@ -111,10 +113,10 @@ public:
 
 /** Implements system table 'parts' which allows to get information about data parts for tables of MergeTree family.
   */
-class StorageSystemPartsBase : public StorageWithCommonVirtualColumns
+class StorageSystemPartsBase : public IStorage
 {
 public:
-    void readImpl(
+    void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -123,8 +125,6 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
-
-    static VirtualColumnsDescription createVirtuals();
 
     bool isSystemStorage() const override { return true; }
 

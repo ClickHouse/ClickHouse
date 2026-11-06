@@ -124,11 +124,6 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
     select.setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, {});
     select.setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, {});
     select.limit_by_all = false;
-    /// The `LIMIT AFTER`/`UNTIL` boundaries are analyzed unconditionally too (appendLimitRange) and may
-    /// refer to columns of the removed joined table.
-    select.setExpression(ASTSelectQuery::Expression::LIMIT_AFTER, {});
-    select.setExpression(ASTSelectQuery::Expression::LIMIT_UNTIL, {});
-    select.limit_after_all = false;
     /// LIMIT ... WITH TIES requires an ORDER BY clause, which was just removed;
     /// a stale flag would be a logical error in InterpreterSelectQuery.
     select.limit_with_ties = false;
@@ -158,17 +153,15 @@ SharedHeader getHeaderForProcessingStage(
         case QueryProcessingStage::MAX:
         {
             ASTPtr query = query_info.query;
-            bool query_rewritten_for_join = false;
             if (const auto * select = query_info.query->as<ASTSelectQuery>(); select && hasJoin(*select))
             {
-                query_rewritten_for_join = true;
                 if (!query_info.syntax_analyzer_result)
                 {
                     if (!query_info.planner_context)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query is not analyzed: no planner context");
 
                     const auto & query_node = query_info.query_tree->as<QueryNode &>();
-                    auto join_tree = query_node.getJoinTreeNodeTyped();
+                    const auto & join_tree = query_node.getJoinTree();
                     auto left_table_expression = extractLeftTableExpression(join_tree);
 
                     auto & table_expression_data = query_info.planner_context->getTableExpressionDataOrThrow(left_table_expression);
@@ -197,23 +190,8 @@ SharedHeader getHeaderForProcessingStage(
                 auto storage = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(),
                                                                                         storage_snapshot->getAllColumnsDescription(),
                                                                                         storage_snapshot);
-                /// Reuse the already-analyzed query tree (the query-tree ctor applies no passes) instead of
-                /// re-analyzing the reconstructed AST. Re-analysis re-runs the query-tree optimizer, which is
-                /// not idempotent here and can drop a column, yielding a header inconsistent with the one the
-                /// initiator computed from the same tree.
-                if (query_info.query_tree && !query_rewritten_for_join)
-                {
-                    /// replaceStorageInQueryTree does a cloneAndReplace, so the original tree is untouched.
-                    QueryTreeNodePtr query_tree = query_info.query_tree;
-                    replaceStorageInQueryTree(query_tree, context, storage);
-                    result = InterpreterSelectQueryAnalyzer::getSampleBlock(
-                        query_tree, context, SelectQueryOptions(processed_stage).analyze());
-                }
-                else
-                {
-                    InterpreterSelectQueryAnalyzer interpreter(query, context, SelectQueryOptions(processed_stage).analyze(), storage);
-                    result = interpreter.getSampleBlock();
-                }
+                InterpreterSelectQueryAnalyzer interpreter(query, context, SelectQueryOptions(processed_stage).analyze(), storage);
+                result = interpreter.getSampleBlock();
             }
             else
             {

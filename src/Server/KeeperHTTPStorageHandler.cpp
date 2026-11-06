@@ -11,7 +11,6 @@
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Coordination/CoordinationSettings.h>
 
 namespace DB
 {
@@ -19,11 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-namespace CoordinationSetting
-{
-    extern const CoordinationSettingsUInt64 max_request_size;
 }
 
 namespace
@@ -65,12 +59,11 @@ std::optional<int32_t> getVersionFromRequest(const HTTPServerRequest & request)
     }
 }
 
-std::string getRawBytesFromRequest(HTTPServerRequest & request, const KeeperContextPtr & keeper_context)
+std::string getRawBytesFromRequest(HTTPServerRequest & request, const size_t max_request_size)
 {
     std::string request_data;
     auto stream = request.getStream();
 
-    size_t max_request_size = keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_size];
     if (max_request_size > 0)
     {
         LimitReadBuffer limited_stream(*stream, LimitReadBuffer::Settings{
@@ -115,10 +108,10 @@ bool setErrorResponseForZKCode(const Coordination::Error error, HTTPServerRespon
 
 KeeperHTTPStorageHandler::KeeperHTTPStorageHandler(
     std::shared_ptr<KeeperHTTPClient> keeper_client_,
-    KeeperContextPtr keeper_context_)
+    size_t max_request_size_)
     : log(getLogger("KeeperHTTPStorageHandler"))
     , keeper_client(std::move(keeper_client_))
-    , keeper_context(std::move(keeper_context_))
+    , max_request_size(max_request_size_)
 {
 }
 
@@ -225,7 +218,7 @@ void KeeperHTTPStorageHandler::performZooKeeperSetRequest(
         return;
     }
 
-    const auto error = keeper_client->get()->trySet(storage_path, getRawBytesFromRequest(request, keeper_context), maybe_request_version.value());
+    const auto error = keeper_client->get()->trySet(storage_path, getRawBytesFromRequest(request, max_request_size), maybe_request_version.value());
 
     if (setErrorResponseForZKCode(error, response))
         return;
@@ -238,7 +231,7 @@ void KeeperHTTPStorageHandler::performZooKeeperSetRequest(
 void KeeperHTTPStorageHandler::performZooKeeperCreateRequest(
     const std::string & storage_path, HTTPServerRequest & request, HTTPServerResponse & response) const
 {
-    const auto error = keeper_client->get()->tryCreate(storage_path, getRawBytesFromRequest(request, keeper_context), zkutil::CreateMode::Persistent);
+    const auto error = keeper_client->get()->tryCreate(storage_path, getRawBytesFromRequest(request, max_request_size), zkutil::CreateMode::Persistent);
 
     if (setErrorResponseForZKCode(error, response))
         return;

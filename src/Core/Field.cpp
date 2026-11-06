@@ -1,5 +1,5 @@
-#include <base/defines.h>
 #include <Common/Exception.h>
+#include <Common/checkStackSize.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorWriteBinary.h>
@@ -311,7 +311,7 @@ bool Field::operator<= (const Field & rhs) const
         {
             static constexpr int nan_direction_hint = 1; /// Put NaN at the end
             Float64 f1 = get<Float64>();
-            Float64 f2 = rhs.get<Float64>();
+            Float64 f2 = get<Float64>();
             return FloatCompareHelper<Float64>::less(f1, f2, nan_direction_hint)
                 || FloatCompareHelper<Float64>::equals(f1, f2, nan_direction_hint);
         }
@@ -368,8 +368,11 @@ bool Field::operator== (const Field & rhs) const
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Bad type of Field");
 }
 
-static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
+Field getBinaryValue(UInt8 type, ReadBuffer & buf)
 {
+    /// Containers are read recursively, and the nesting depth comes from the data.
+    checkStackSize();
+
     switch (static_cast<Field::Types::Which>(type))
     {
         case Field::Types::Null:
@@ -378,7 +381,7 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         }
         case Field::Types::UInt64:
         {
-            UInt64 value = 0;
+            UInt64 value;
             readVarUInt(value, buf);
             return value;
         }
@@ -414,7 +417,7 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         }
         case Field::Types::Int64:
         {
-            Int64 value = 0;
+            Int64 value;
             readVarInt(value, buf);
             return value;
         }
@@ -432,14 +435,14 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         }
         case Field::Types::Float64:
         {
-            Float64 value = 0;
+            Float64 value;
             readFloatBinary(value, buf);
             return value;
         }
         case Field::Types::String:
         {
             std::string value;
-            readStringBinary(value, buf);
+            readStringBinaryGrowing(value, buf);
             return value;
         }
         case Field::Types::Array:
@@ -469,19 +472,19 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         case Field::Types::AggregateFunctionState:
         {
             AggregateFunctionStateData value;
-            readStringBinary(value.name, buf);
-            readStringBinary(value.data, buf);
+            readStringBinaryGrowing(value.name, buf);
+            readStringBinaryGrowing(value.data, buf);
             return value;
         }
         case Field::Types::Bool:
         {
-            UInt8 value = 0;
+            UInt8 value;
             readBinary(value, buf);
             return bool(value);
         }
         case Field::Types::Decimal32:
         {
-            Decimal<Int32> value{};
+            Decimal<Int32> value;
             readBinary(value, buf);
             UInt32 scale = 0 ;
             readBinary(scale, buf);
@@ -489,7 +492,7 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         }
         case Field::Types::Decimal64:
         {
-            Decimal<Int64> value{};
+            Decimal<Int64> value;
             readBinary(value, buf);
             UInt32 scale = 0;
             readBinary(scale, buf);
@@ -497,7 +500,7 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         }
         case Field::Types::Decimal128:
         {
-            Decimal<Int128> value{};
+            Decimal<Int128> value;
             readBinary(value, buf);
             UInt32 scale = 0;
             readBinary(scale, buf);
@@ -505,7 +508,7 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         }
         case Field::Types::Decimal256:
         {
-            Decimal<Int256> value{};
+            Decimal<Int256> value;
             readBinary(value, buf);
             UInt32 scale = 0;
             readBinary(scale, buf);
@@ -519,7 +522,7 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
 
 void readBinaryArray(Array & x, ReadBuffer & buf)
 {
-    size_t size = 0;
+    size_t size;
     readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
@@ -543,7 +546,7 @@ void writeText(const Array & x, WriteBuffer & buf)
 
 void readBinary(Tuple & x, ReadBuffer & buf)
 {
-    size_t size = 0;
+    size_t size;
     readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
@@ -566,7 +569,7 @@ void writeText(const Tuple & x, WriteBuffer & buf)
 
 void readBinary(Map & x, ReadBuffer & buf)
 {
-    size_t size = 0;
+    size_t size;
     readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
@@ -589,15 +592,15 @@ void writeText(const Map & x, WriteBuffer & buf)
 
 void readBinary(Object & x, ReadBuffer & buf)
 {
-    size_t size = 0;
+    size_t size;
     readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
     {
-        UInt8 type = 0;
+        UInt8 type;
         String key;
         readBinary(type, buf);
-        readBinary(key, buf);
+        readStringBinaryGrowing(key, buf);
         x[key] = getBinaryValue(type, buf);
     }
 }
@@ -636,9 +639,9 @@ template <typename T>
 void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
 {
     assertChar('\'', buf);
-    T value{};
-    UInt32 scale = 0;
-    int32_t exponent = 0;
+    T value;
+    UInt32 scale;
+    int32_t exponent;
     uint32_t max_digits = static_cast<uint32_t>(-1);
     readDigits<true>(buf, value, max_digits, exponent, true);
     if (exponent > 0)
@@ -693,7 +696,7 @@ void writeFieldBinary(const Field & x, WriteBuffer & buf)
 
 Field readFieldBinary(ReadBuffer & buf)
 {
-    UInt8 type = 0;
+    UInt8 type;
     readBinary(type, buf);
     return getBinaryValue(type, buf);
 }
@@ -960,7 +963,7 @@ template bool decimalLessOrEqual<DateTime64>(DateTime64 x, DateTime64 y, UInt32 
 template bool decimalLessOrEqual<Time64>(Time64 x, Time64 y, UInt32 x_scale, UInt32 y_scale);
 
 
-static void writeText(const Null & x, WriteBuffer & buf)
+void writeText(const Null & x, WriteBuffer & buf)
 {
     if (x.isNegativeInfinity())
         writeText("-Inf", buf);
@@ -978,72 +981,6 @@ String fieldToString(const Field & x)
             return toString(value);
         },
         x);
-}
-
-void normalizeBoolFields(Field & field)
-{
-    if (field.getType() == Field::Types::Bool)
-    {
-        field = field.safeGet<UInt64>();
-    }
-    else if (field.getType() == Field::Types::Tuple)
-    {
-        auto & tuple = field.safeGet<Tuple>();
-        for (auto & elem : tuple)
-            normalizeBoolFields(elem);
-    }
-    else if (field.getType() == Field::Types::Array)
-    {
-        auto & array = field.safeGet<Array>();
-        for (auto & elem : array)
-            normalizeBoolFields(elem);
-    }
-    else if (field.getType() == Field::Types::Map)
-    {
-        auto & map = field.safeGet<Map>();
-        for (auto & elem : map)
-            normalizeBoolFields(elem);
-    }
-}
-
-bool anyFieldSatisfies(const Field & field, bool (*predicate)(const Field &))
-{
-    /// Walked with an explicit worklist, like the copy and destroy paths above, so the native stack
-    /// depth does not follow the nesting depth of a value that arrives from data rather than a literal.
-    absl::InlinedVector<const Field *, 16> pending{&field};
-
-    while (!pending.empty())
-    {
-        const Field * current = pending.back();
-        pending.pop_back();
-
-        if (predicate(*current))
-            return true;
-
-        switch (current->getType())
-        {
-            case Field::Types::Array:
-                for (const Field & element : current->safeGet<Array>())
-                    pending.push_back(&element);
-                break;
-            case Field::Types::Tuple:
-                for (const Field & element : current->safeGet<Tuple>())
-                    pending.push_back(&element);
-                break;
-            case Field::Types::Map:
-                for (const Field & element : current->safeGet<Map>())
-                    pending.push_back(&element);
-                break;
-            case Field::Types::Object:
-                for (const auto & [_, element] : current->safeGet<Object>())
-                    pending.push_back(&element);
-                break;
-            default:
-                break;
-        }
-    }
-
-    return false;
 }
 
 std::string_view fieldTypeToString(Field::Types::Which type)
@@ -1142,8 +1079,8 @@ template NearestFieldType<std::decay_t<Map>> & Field::safeGet<Map>() &;
 template NearestFieldType<std::decay_t<Object>> & Field::safeGet<Object>() &;
 template NearestFieldType<std::decay_t<Tuple>> & Field::safeGet<Tuple>() &;
 template NearestFieldType<std::decay_t<CustomType>> & Field::safeGet<CustomType>() &;
-/// `unsigned long` is not covered by the list above where it is a type of its own.
-#if defined(LONG_IS_A_DISTINCT_TYPE)
+/// In Darwin unsigned long does not match any of the UInt* types
+#ifdef OS_DARWIN
 template NearestFieldType<std::decay_t<unsigned long>> & Field::safeGet<unsigned long>() &;
 #endif
 }
