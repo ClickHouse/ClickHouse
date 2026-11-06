@@ -1,14 +1,33 @@
 #pragma once
 
 #include <bit>
+#include <cstdint>
 #include <cstring>
+#include <limits>
 #include <string_view>
 
 #include <base/StringViewHash.h>
 #include <base/defines.h>
 
-/// PackedStringRef is a compact, 16-byte string representation that encodes
-/// payload and tag bits inside two 64-bit words.
+/// The two words of a value. Without a hash they are 4-byte aligned, so that a row can hold the value at any multiple
+/// of 4 bytes. `PackedStringRef` keeps the 8-byte alignment of its hash table cells.
+template <size_t HASH_BYTES>
+struct PackedStringRefWords
+{
+    uint64_t low;
+    uint64_t high;
+};
+
+template <>
+struct __attribute__((packed, aligned(4))) PackedStringRefWords<0>
+{
+    uint64_t low;
+    uint64_t high;
+};
+
+/// `PackedStringRefT` is a compact, 16-byte string representation that encodes
+/// payload and tag bits inside two 64-bit words. `HASH_BYTES` is the size of the content
+/// hash that starts a small or medium value: 4 in `PackedStringRef`, 0 in `UnhashedPackedStringRef`.
 ///
 /// Every field lives at a fixed byte offset inside the struct. The packed
 /// pointer and the 64-bit large length are stored in little-endian byte order
@@ -20,7 +39,7 @@
 /// values built by the same code on the same host.
 ///
 /// ------------------------------------------------------------
-/// Byte layout (16 bytes total):
+/// Byte layout of `PackedStringRef` (16 bytes total):
 ///
 ///   bytes  0..3  : hash32         (small / medium)
 ///                  low 32 bits of length (large)
@@ -44,16 +63,25 @@
 ///   - isEmpty()  : high == 0
 ///
 /// ------------------------------------------------------------
-/// `UnhashedPackedStringRef` uses the same tag byte and large encoding but stores
-/// no hash and has no medium encoding: the small payload starts at byte 0 and
-/// holds up to 15 bytes.
+/// `UnhashedPackedStringRef` has no hash and no medium encoding: a small string of
+/// up to 15 bytes starts at byte 0, and every longer string is large. The tag byte
+/// and the large encoding are the same as above:
+///
+///   bytes  0..14 : the string, then zeros (small)
+///   bytes  0..7  : length (large)
+///   bytes  8..14 : low 56 bits of pointer in little-endian byte order (large)
+///   byte   15    : tag byte, as above
+///
+/// Two small values are equal as 16 bytes if and only if their strings are equal.
+/// A large value holds the address of its string, so the values of equal strings at
+/// different addresses differ.
 template <size_t HASH_BYTES>
-struct PackedStringRefT
+struct PackedStringRefT : PackedStringRefWords<HASH_BYTES>
 {
     static_assert(HASH_BYTES == 0 || HASH_BYTES == 4);
 
-    uint64_t low;
-    uint64_t high;
+    using PackedStringRefWords<HASH_BYTES>::low;
+    using PackedStringRefWords<HASH_BYTES>::high;
 
     static constexpr size_t HASH_SIZE_BYTES = HASH_BYTES;
     static constexpr size_t SMALL_PAYLOAD_OFFSET = HASH_SIZE_BYTES;
@@ -218,10 +246,12 @@ public:
     }
 
     ALWAYS_INLINE size_t heapSize() const
-        requires(HASH_BYTES > 0)
     {
-        if (isMedium())
-            return getMediumSize();
+        if constexpr (HASH_BYTES > 0)
+        {
+            if (isMedium())
+                return getMediumSize();
+        }
         if (isLarge())
             return getLargeSize();
         return 0;
@@ -230,7 +260,6 @@ public:
     /// The out-of-line bytes of a medium or large string, `heapSize` of them: both encodings
     /// keep the pointer in the same low 56 bits.
     ALWAYS_INLINE const char * getHeapPtr() const
-        requires(HASH_BYTES > 0)
     {
         return reinterpret_cast<const char *>(loadLE(rawBytes() + sizeof(uint64_t), PACKED_POINTER_BYTES));
     }
@@ -242,8 +271,8 @@ public:
     }
 
     /// Copies the value to `dst` and returns the end of the copy. A small value is copied as the
-    /// whole 16-byte ref, which is cheaper than a variable length copy, so `dst` must have 15
-    /// writable bytes past the value.
+    /// whole 16-byte ref, which is cheaper than a variable length copy, so 16 bytes at `dst` must
+    /// be writable, even when the value is empty.
     ALWAYS_INLINE char8_t * copyTo(char8_t * dst) const
         requires(HASH_BYTES == 0)
     {
@@ -256,15 +285,18 @@ public:
         return dst + getSmallSize();
     }
 
+    /// A small string is viewed in place, so the view is valid while this value is.
     ALWAYS_INLINE explicit operator std::string_view() const
-        requires(HASH_BYTES > 0)
     {
         if (isEmpty())
             return {};
         if (isSmall())
             return {getSmallPtr(), getSmallSize()};
-        if (isMedium())
-            return {getMediumPtr(), getMediumSize()};
+        if constexpr (HASH_BYTES > 0)
+        {
+            if (isMedium())
+                return {getMediumPtr(), getMediumSize()};
+        }
         return {getLargePtr(), getLargeSize()};
     }
 
@@ -272,7 +304,6 @@ public:
     /// which the tag byte holds. Used to rebind a key to memory that outlives the bytes it viewed
     /// (see `keyHolderPersistKey`).
     ALWAYS_INLINE void setHeapPointer(const char * ptr)
-        requires(HASH_BYTES > 0)
     {
         chassert(heapSize() != 0);
         chassert((reinterpret_cast<uintptr_t>(ptr) >> (PACKED_POINTER_BYTES * 8)) == 0);
@@ -352,6 +383,14 @@ public:
         return r;
     }
 
+    /// Returns the ref of any string. For a string of at most 15 bytes it reads 16 bytes from `ptr`, as `buildShort` does.
+    /// Code that knows the length class should call `buildShort` or `buildLong`.
+    static ALWAYS_INLINE PackedStringRefT build(const char * ptr, size_t len)
+        requires(HASH_BYTES == 0)
+    {
+        return len <= MAX_SMALL_LEN ? buildShort(ptr, len) : buildLong(ptr, len);
+    }
+
     /// Returns the ref of a string longer than 15 bytes. The ref points to `ptr`.
     static ALWAYS_INLINE PackedStringRefT buildLong(const char * ptr, size_t len)
         requires(HASH_BYTES == 0)
@@ -361,10 +400,14 @@ public:
         return r;
     }
 
-    /// Returns the ref of a string of at most 15 bytes. It reads 16 bytes from `ptr`.
+    /// Returns the ref of a string of at most 15 bytes. It reads 16 bytes from `ptr`, even for an empty string, so 16
+    /// bytes at `ptr` must be readable. `ColumnString::Chars` provides them: a `PaddedPODArray` has 63 readable bytes
+    /// after its end.
     static ALWAYS_INLINE PackedStringRefT buildShort(const char * ptr, size_t len)
         requires(HASH_BYTES == 0)
     {
+        chassert(len <= MAX_SMALL_LEN);
+
         /// Two `uint64_t` words, because clang reads them with one 16-byte load. From a byte array, clang loads bytes 0 to 14
         /// as 8 + 4 + 2 + 1 bytes.
         uint64_t words[2];
@@ -447,6 +490,23 @@ inline ALWAYS_INLINE bool operator==(PackedStringRef lhs, PackedStringRef rhs)
 
         return false;
     }
+}
+
+/// Two values are equal if their strings are. Small values are equal when their 16 bytes are. Large values with different
+/// addresses are compared by content.
+inline ALWAYS_INLINE bool operator==(UnhashedPackedStringRef lhs, UnhashedPackedStringRef rhs)
+{
+    if (lhs.low == rhs.low && lhs.high == rhs.high)
+        return true;
+
+    if (!lhs.isLarge() || !rhs.isLarge() || lhs.getLargeSize() != rhs.getLargeSize())
+        return false;
+
+#if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
+    return memequalWide(lhs.getLargePtr(), rhs.getLargePtr(), lhs.getLargeSize());
+#else
+    return memcmp(lhs.getLargePtr(), rhs.getLargePtr(), lhs.getLargeSize()) == 0;
+#endif
 }
 
 namespace ZeroTraits
