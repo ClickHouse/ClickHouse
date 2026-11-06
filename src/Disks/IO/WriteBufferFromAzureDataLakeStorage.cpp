@@ -12,8 +12,10 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
+#include <Common/HTTPConnectionInfo.h>
 
 #include <azure/core/io/body_stream.hpp>
+#include <azure/storage/common/storage_credential.hpp>
 #include <azure/storage/files/datalake/datalake_options.hpp>
 
 
@@ -248,6 +250,14 @@ Azure::Storage::Files::DataLake::DataLakeFileSystemClient makeAdlsGen2FileSystem
         auth_method);
 }
 
+String getAdlsGen2Url(const AzureBlobStorage::Endpoint & endpoint, const AzureBlobStorage::AuthMethod & auth_method)
+{
+    const auto * connection_string = std::get_if<AzureBlobStorage::ConnectionString>(&auth_method);
+    if (connection_string && endpoint.sas_auth.empty() && endpoint.additional_params.empty())
+        return Azure::Storage::_internal::ParseConnectionString(connection_string->toUnderType()).DataLakeServiceUrl.GetAbsoluteUrl();
+    return buildAdlsGen2FileUrl(endpoint, /*blob_path=*/ "");
+}
+
 WriteBufferFromAzureDataLakeStorage::WriteBufferFromAzureDataLakeStorage(
     const AzureBlobStorage::Endpoint & endpoint_,
     const AzureBlobStorage::AuthMethod & auth_method_,
@@ -338,6 +348,10 @@ void WriteBufferFromAzureDataLakeStorage::runWithRetries(
                 error_message);
     };
 
+    /// One row is written for the whole retry sequence, so when the operation is retried the
+    /// connection columns of that row report zeroes: its elapsed time covers every attempt, and no
+    /// single socket describes it.
+    HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
     Stopwatch watch;
     size_t backoff_ms = 100;
     for (size_t attempt = 1; attempt < ADLFS_MAX_RETRIES; ++attempt)

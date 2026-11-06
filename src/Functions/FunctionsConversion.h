@@ -1567,7 +1567,7 @@ struct ConvertThroughParsing
             size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset : fixed_string_size;
 
             ReadBufferFromMemory read_buffer(chars->data() + current_offset, string_size);
-            read_buffer.setPadded();
+            read_buffer.setPaddedStorage(*chars, current_offset, string_size);
 
             if constexpr (exception_mode == ConvertFromStringExceptionMode::Throw)
             {
@@ -4191,6 +4191,9 @@ private:
         {
             auto nested_convert = [this](ColumnsWithTypeAndName & args, const DataTypePtr & to_type) -> ColumnPtr
             {
+                /// Types without values are not converted, so they cannot fail the conversion.
+                if (args[0].column->empty())
+                    return nullptr;
                 return executeInternal(args, to_type, args[0].column->size(), /*to_nullable=*/ false);
             };
 

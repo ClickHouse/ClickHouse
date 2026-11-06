@@ -133,6 +133,9 @@ Azure::Storage::Files::DataLake::DataLakeFileSystemClient makeAdlsGen2FileSystem
 
 bool isAdlsGen2Endpoint(const AzureBlobStorage::Endpoint & endpoint);
 
+/// The URL of the service that the clients of `makeAdlsGen2FileClient` send requests to.
+String getAdlsGen2Url(const AzureBlobStorage::Endpoint & endpoint, const AzureBlobStorage::AuthMethod & auth_method);
+
 /// Path of the staging sibling for `blob_path`, or an empty string if no suffix fits the key limit.
 /// Exposed for unit testing.
 String makeAdlsGen2StagingPath(const String & blob_path, const String & random_suffix);
