@@ -96,8 +96,7 @@ struct DataFilePartitionHasher
     }
 };
 
-/// The recorded partition of every live data file of the mutated snapshot, by the data file path as the
-/// `_iceberg_metadata_file_path` virtual column carries it.
+/// The recorded partition of every live data file of the mutated snapshot, keyed by its `_iceberg_metadata_file_path` value.
 struct DataFilePartitions
 {
     /// Node-based, so the pointers in `by_data_file` stay valid.
@@ -117,7 +116,6 @@ struct DataFileWriteResultWithStats
 using DeleteFileWriteResultByPartition = std::unordered_map<DataFilePartition, DeleteFileWriteResult, DataFilePartitionHasher>;
 using DeleteFileStatisticsByPartition = std::unordered_map<DataFilePartition, DataFileStatistics, DataFilePartitionHasher>;
 
-/// Position delete files by the partition of the data files whose positions they hold.
 struct DeleteFileWriteResultWithStats
 {
     DeleteFileWriteResultByPartition files_by_partition;
@@ -230,7 +228,6 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
             ColumnWithTypeAndName col_data_filename = block.getByPosition(col_data_filename_index);
             ColumnWithTypeAndName col_position = block.getByPosition(col_position_index);
 
-            /// Rows of one data file arrive in runs, so its partition is looked up once per run.
             std::vector<const DataFilePartition *> block_partitions;
             std::unordered_map<const DataFilePartition *, size_t> block_partition_indices;
             IColumn::Selector selector(block.rows());

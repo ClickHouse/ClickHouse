@@ -238,7 +238,8 @@ public:
 
     const ResolvedPartitionSpec & resolve(Int32 spec_id, Int32 files_schema_id);
 
-    /// Return the raw metadata schema object for a given schema-id, used as the verbatim Avro `schema` header of a rewritten manifest so its data-file bounds resolve under the same schema the files were written with.
+    /// Return the schema object for a schema-id from the metadata, else the copy registered from a manifest header. It is the verbatim
+    /// Avro `schema` header of a written manifest, so its data-file bounds resolve under the schema the files were written with.
     Poco::JSON::Object::Ptr getSchema(Int32 schema_id) const;
 
 private:
