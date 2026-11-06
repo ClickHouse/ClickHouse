@@ -197,6 +197,7 @@ AddingDefaultsTransform::AddingDefaultsTransform(
     , column_defaults(columns.getDefaults())
     , input_format(input_format_)
     , context(context_)
+    , default_expressions_sets(createDefaultExpressionsSets())
 {
 }
 
@@ -331,7 +332,9 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
                                    std::make_shared<DataTypeUInt8>(), "_dummy"});
 
         /// Evaluate defaults for the ready columns
-        auto dag = evaluateMissingDefaults(evaluate_block, required_columns_list, columns, context, false);
+        auto dag = evaluateMissingDefaults(
+            evaluate_block, required_columns_list, columns, context, /*save_unneeded_columns=*/ false,
+            /*null_as_default=*/ false, /*allow_reading_tables=*/ true, default_expressions_sets.get());
         if (dag)
         {
             auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(header, dag->getRequiredColumnsNames(), context);

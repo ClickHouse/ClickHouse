@@ -14,6 +14,9 @@ class IInputFormat;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+class DefaultExpressionsSets;
+using DefaultExpressionsSetsPtr = std::shared_ptr<DefaultExpressionsSets>;
+
 /// Adds defaults to columns using BlockDelayedDefaults bitmask attached to Block by child InputStream.
 class AddingDefaultsTransform final : public ISimpleTransform
 {
@@ -36,6 +39,9 @@ private:
     const ColumnDefaults column_defaults;
     IInputFormat & input_format;
     ContextPtr context;
+
+    /// The sets of the defaults that read a table (`x IN table`), built once for all chunks rather than per chunk.
+    const DefaultExpressionsSetsPtr default_expressions_sets;
 
     /// The default-expression actions are built per chunk inside `transform`, so `onCancel`
     /// needs a published handle to the instance that is executing right now to forward
