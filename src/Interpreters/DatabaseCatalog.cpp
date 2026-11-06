@@ -978,7 +978,11 @@ namespace
 /// `candidate_in_a_new_namespace` is then the first candidate skipped because its namespace of tables does not
 /// exist yet, if any (for the error message).
 std::optional<StorageID> resolveHierarchicalNameForCreationImpl(
-    const DatabaseCatalog & catalog, const StorageID & table_id, ContextPtr context_, std::optional<StorageID> & candidate_in_a_new_namespace)
+    const DatabaseCatalog & catalog,
+    const StorageID & table_id,
+    ContextPtr context_,
+    const DatabaseCatalog::HasTablesWithPrefix & has_tables_with_prefix,
+    std::optional<StorageID> & candidate_in_a_new_namespace)
 {
     String current_database = context_->getCurrentDatabase();
     String database_as_written = table_id.database_name.empty() ? current_database : table_id.database_name;
@@ -1004,7 +1008,10 @@ std::optional<StorageID> resolveHierarchicalNameForCreationImpl(
         {
             /// The unquoted parts of the name became a namespace of the table: it must exist already.
             String table_prefix = joinHierarchicalName(candidate_table_parts, 0, candidate_table_parts.size() - table_name_parts) + '.';
-            if (!DatabaseCatalog::hasTablesWithPrefix(*database, table_prefix, context_))
+            bool namespace_exists = has_tables_with_prefix
+                ? has_tables_with_prefix(*database, table_prefix)
+                : DatabaseCatalog::hasTablesWithPrefix(*database, table_prefix, context_);
+            if (!namespace_exists)
             {
                 if (!candidate_in_a_new_namespace)
                     candidate_in_a_new_namespace = candidate;
@@ -1020,13 +1027,15 @@ std::optional<StorageID> resolveHierarchicalNameForCreationImpl(
 
 }
 
-std::optional<StorageID> DatabaseCatalog::tryResolveHierarchicalNameForCreation(const StorageID & table_id, ContextPtr context_) const
+std::optional<StorageID> DatabaseCatalog::tryResolveHierarchicalNameForCreation(
+    const StorageID & table_id, ContextPtr context_, const HasTablesWithPrefix & has_tables_with_prefix) const
 {
     std::optional<StorageID> candidate_in_a_new_namespace;
-    return resolveHierarchicalNameForCreationImpl(*this, table_id, context_, candidate_in_a_new_namespace);
+    return resolveHierarchicalNameForCreationImpl(*this, table_id, context_, has_tables_with_prefix, candidate_in_a_new_namespace);
 }
 
-StorageID DatabaseCatalog::resolveHierarchicalNameForCreation(const StorageID & table_id, ContextPtr context_) const
+StorageID DatabaseCatalog::resolveHierarchicalNameForCreation(
+    const StorageID & table_id, ContextPtr context_, const HasTablesWithPrefix & has_tables_with_prefix) const
 {
     String current_database = context_->getCurrentDatabase();
     String database_as_written = table_id.database_name.empty() ? current_database : table_id.database_name;
@@ -1034,7 +1043,7 @@ StorageID DatabaseCatalog::resolveHierarchicalNameForCreation(const StorageID & 
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
 
     std::optional<StorageID> candidate_in_a_new_namespace;
-    if (auto placement = resolveHierarchicalNameForCreationImpl(*this, table_id, context_, candidate_in_a_new_namespace))
+    if (auto placement = resolveHierarchicalNameForCreationImpl(*this, table_id, context_, has_tables_with_prefix, candidate_in_a_new_namespace))
         return *placement;
 
     if (candidate_in_a_new_namespace)

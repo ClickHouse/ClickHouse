@@ -62,6 +62,30 @@ void InterpreterRenameQuery::resolveHierarchicalNames(ASTRenameQuery & rename, b
         return database && database->isTableExist(table_id.table_name, context);
     };
 
+    /// The namespace of tables (`ns.*`) where a destination is placed, as the earlier elements leave the tables: in
+    /// `RENAME TABLE a.x TO a."ns.y", a.z TO a.ns.t` the first element creates the namespace `ns.` that the second one uses.
+    auto has_tables_with_prefix = [&](const IDatabase & database, const String & prefix)
+    {
+        const String database_name = database.getDatabaseName();
+        for (auto it = renamed.rbegin(); it != renamed.rend(); ++it)
+        {
+            if (it->second && it->first.database_name == database_name && it->first.table_name.starts_with(prefix)
+                && *renamed_state(it->first))
+                return true;
+        }
+
+        auto filter = TablesFilter::createLike(prefix + "%");
+        for (auto iterator = database.getTablesIteratorWithHint(
+                 context, [&](const String & table_name) { return table_name.starts_with(prefix); }, /*skip_not_loaded*/ false, filter);
+             iterator->isValid();
+             iterator->next())
+        {
+            if (renamed_state(StorageID(database_name, iterator->name())).value_or(true))
+                return true;
+        }
+        return false;
+    };
+
     for (auto & elem : rename.getElements())
     {
         /// The source is the existing table the name refers to.
@@ -100,9 +124,9 @@ void InterpreterRenameQuery::resolveHierarchicalNames(ASTRenameQuery & rename, b
         if (rename.exchange)
             to = catalog.resolveHierarchicalName(to_as_written, context);
         else if (is_on_cluster)
-            to = catalog.tryResolveHierarchicalNameForCreation(to_as_written, context);
+            to = catalog.tryResolveHierarchicalNameForCreation(to_as_written, context, has_tables_with_prefix);
         else
-            to = catalog.resolveHierarchicalNameForCreation(to_as_written, context);
+            to = catalog.resolveHierarchicalNameForCreation(to_as_written, context, has_tables_with_prefix);
         if (to && (to->database_name != (elem.to.database ? elem.to.getDatabase() : current_database) || to->table_name != to_as_written.table_name))
             rename.setTableNames(elem.to, to->database_name, to->table_name);
 

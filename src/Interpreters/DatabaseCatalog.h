@@ -199,11 +199,16 @@ public:
     /// `CREATE TABLE c` inside `USE a.b`), the database must have tables in that namespace already (`b.*`).
     /// The first table of a namespace is created by quoting the name: `CREATE TABLE a."b.c"`.
     /// Throws UNKNOWN_DATABASE when there is no candidate.
-    StorageID resolveHierarchicalNameForCreation(const StorageID & table_id, ContextPtr context_) const;
+    /// `has_tables_with_prefix` replaces `hasTablesWithPrefix` for the check of the namespace: `RENAME` checks it against
+    /// the tables as the preceding elements of the same query leave them.
+    using HasTablesWithPrefix = std::function<bool(const IDatabase & database, const String & prefix)>;
+    StorageID resolveHierarchicalNameForCreation(
+        const StorageID & table_id, ContextPtr context_, const HasTablesWithPrefix & has_tables_with_prefix = {}) const;
     /// The same, but returns nothing instead of throwing when no candidate exists here. A query executed ON CLUSTER
     /// ships the name as written then: the database may exist on the other hosts only, and every host resolves the
     /// name against its own catalog.
-    std::optional<StorageID> tryResolveHierarchicalNameForCreation(const StorageID & table_id, ContextPtr context_) const;
+    std::optional<StorageID> tryResolveHierarchicalNameForCreation(
+        const StorageID & table_id, ContextPtr context_, const HasTablesWithPrefix & has_tables_with_prefix = {}) const;
 
     struct HierarchicalDatabase
     {
