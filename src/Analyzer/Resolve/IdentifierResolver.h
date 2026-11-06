@@ -8,12 +8,17 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage_fwd.h>
 
+#include <Storages/IStorage_fwd.h>
+
 namespace DB
 {
 
 struct GetColumnsOptions;
 struct IdentifierResolveScope;
 struct AnalysisTableExpressionData;
+struct StorageID;
+struct StorageSnapshot;
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 class QueryNode;
 class JoinNode;
@@ -128,6 +133,13 @@ public:
         const Identifier & table_identifier,
         const ContextPtr & context,
         const StoragePtr & replaced_storage = nullptr);
+
+    /// Throw `ACCESS_DENIED` unless the user may see at least one column of the table.
+    static void checkAccessToTableMetadata(
+        const StoragePtr & storage,
+        const StorageID & storage_id,
+        const StorageSnapshotPtr & storage_snapshot,
+        const ContextPtr & context);
 
     /// Suggest a same/similar-named table when a table identifier cannot be resolved,
     /// possibly in another database (e.g. `system.functions` for a bare `functions`).
