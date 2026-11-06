@@ -64,7 +64,7 @@ public:
     void setRawPath(const Path & p) override { path = p; }
     const String & getRawURI() const override { return url; }
     /// The raw URI is only the authority, so grants never filter paths, and any path is checked as the authority.
-    String getURIForAccessCheck(const String & /*path*/) const override { return url; }
+    String getURIForAccessCheck(const String & /*write_path*/) const override { return url; }
 
     const Paths & getPaths() const override { return paths; }
     void setPaths(const Paths & paths_) override

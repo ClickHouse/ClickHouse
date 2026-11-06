@@ -386,19 +386,39 @@ const StorageObjectStorageConfiguration::Path & StorageObjectStorageConfiguratio
     return read_path;
 }
 
-String StorageObjectStorageConfiguration::getURIForAccessCheck(const String & path) const
+String StorageObjectStorageConfiguration::getURIForAccessCheck(const String & write_path) const
 {
-    /// The path is replaced in the parsed URI, not in the raw one, because the raw URI can spell the path
+    /// The URI as the user typed it, which passed the source access check, e.g. `http://host/bucket/data/{_partition_id}.tsv`,
+    /// and the path inside the storage that it names, e.g. `data/{_partition_id}.tsv`.
+    const String & granted_uri = getRawURI();
+    const String granted_path = getRawPath().path;
+
+    /// When the URI is the path itself, e.g. for `azureBlobStorage`, the path is used as is: parsing it as a URI
+    /// would decode escapes like `%41`, which are literal characters of the path.
+    if (granted_uri == granted_path)
+        return write_path;
+
+    /// The path is replaced in the parsed URI, not in the typed string, because the typed URI can spell the path
     /// differently from the decoded path that is written to, e.g. `%7B_partition_id%7D` for `{_partition_id}`.
     try
     {
-        Poco::URI uri(getRawURI());
-        const String uri_path = uri.getPath();
-        const String raw_path = getRawPath().path;
-        if (!uri_path.ends_with(raw_path))
+        Poco::URI uri(granted_uri);
+        /// The decoded path component of the URI, e.g. `/bucket/data/{_partition_id}.tsv`.
+        String granted_uri_path = uri.getPath();
+        /// `setSchemaHash` expands `{_schema_hash}` in the getRawPath().path, but not in the getRawURI().
+        /// So we need to replace the SCHEMA_HASH_WILDCARD in the granted_uri_path with the schema_hash.
+        if (!schema_hash.empty())
+            boost::replace_all(granted_uri_path, SCHEMA_HASH_WILDCARD, schema_hash);
+        if (!granted_uri_path.ends_with(granted_path))
             return {};
 
-        uri.setPath(uri_path.substr(0, uri_path.size() - raw_path.size()) + path);
+        /// The part of the URI path before the storage path, e.g. `/bucket/` for a path-style S3 URI.
+        const String uri_path_prefix = granted_uri_path.substr(0, granted_uri_path.size() - granted_path.size());
+
+        /// `setPath` decodes its argument, but the write path is already decoded, so a `%` in it is a literal character.
+        String encoded_write_uri_path;
+        Poco::URI::encode(uri_path_prefix + write_path, "", encoded_write_uri_path);
+        uri.setPath(encoded_write_uri_path);
         return uri.toString();
     }
     catch (const Poco::Exception &)

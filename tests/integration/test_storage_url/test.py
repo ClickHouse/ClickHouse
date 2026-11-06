@@ -885,18 +885,21 @@ def test_partitioned_write_filtered_grant():
         )
         return None if error else data
 
-    def s3_keys(prefix):
-        """List the keys under `prefix` in the MinIO bucket."""
-        return [obj.object_name for obj in cluster.minio_client.list_objects(cluster.minio_bucket, prefix=prefix, recursive=True)]
+    def s3_keys(prefix, bucket=cluster.minio_bucket):
+        """List the keys under `prefix` in a MinIO bucket."""
+        return [obj.object_name for obj in cluster.minio_client.list_objects(bucket, prefix=prefix, recursive=True)]
 
     node1.query(f"CREATE USER {user}")
     node1.query(f"GRANT CREATE TEMPORARY TABLE ON *.*, NAMED COLLECTION ON url_file TO {user}")
     # The filter is matched against the normalized URI, which omits the default port of the scheme.
     node1.query(f"GRANT WRITE ON URL('^http://nginx/{allowed}/.*$') TO {user}")
     node1.query(f"GRANT WRITE ON S3('^{minio_url}/{allowed}/.*$') TO {user}")
-    # Only files named like `<number>.tsv` in a directory with a dot, `versioned.<suffix>/`.
+    # Keys starting with `allowed_<suffix>-`, so that `{_partition_id}` can be in the first segment of the key.
+    node1.query(f"GRANT WRITE ON S3('^{minio_url}/{allowed}-.*$') TO {user}")
+    # Only file names without a dot, such as the template `{_partition_id}.tsv` and `1.tsv`, in a directory with a dot,
+    # `versioned.<suffix>/`.
     versioned = f"versioned.{suffix}"
-    node1.query(f"GRANT WRITE ON S3('^{minio_url}/versioned\\\\.{suffix}/[0-9]+\\\\.tsv$') TO {user}")
+    node1.query(f"GRANT WRITE ON S3('^{minio_url}/versioned\\\\.{suffix}/[^./]+\\\\.tsv$') TO {user}")
 
     try:
         # Happy path: `url`: a partition inside the granted prefix is written.
@@ -938,6 +941,16 @@ def test_partitioned_write_filtered_grant():
         )
         assert s3_keys(f"{versioned}/") == [f"{versioned}/1.tsv"]
         assert s3_keys(f"versioned.1.{suffix}/") == []
+
+        # Reject: a partition id that makes the key fully qualified, `allowed_<suffix>-s3://root2/owned_<suffix>_1.tsv`,
+        # which the object storage would write as `owned_<suffix>_1.tsv` into the bucket `root2`, while the checked URI
+        # is in the granted bucket. A plain partition id with the same template is written.
+        qualified_template = f"{allowed}-{{_partition_id}}.tsv"
+        assert insert_s3_error(qualified_template, safe_partition) == ""
+        assert s3_keys(f"{allowed}-") == [f"{allowed}-1.tsv"]
+        other_bucket_partition = f"PARTITION BY concat('s3://{cluster.minio_bucket_2}/owned_{suffix}_', toString(column1))"
+        assert "refers to another bucket" in insert_s3_error(qualified_template, other_bucket_partition)
+        assert s3_keys(f"owned_{suffix}_", bucket=cluster.minio_bucket_2) == []
 
         # A partitioned table with the `S3` engine is not checked against the source grants of the user who
         # inserts into it, so it keeps working with a destination outside the prefix the user could write to.

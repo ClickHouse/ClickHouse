@@ -17,11 +17,16 @@
 namespace
 {
 
-String uriForAccessCheck(const String & raw_uri, const String & path)
+String uriForAccessCheck(const String & granted_uri, const String & write_path, const String & schema_hash = "")
 {
     DB::StorageS3Configuration configuration;
-    configuration.url = DB::S3::URI(raw_uri);
-    return configuration.getURIForAccessCheck(path);
+    configuration.url = DB::S3::URI(granted_uri);
+    if (!schema_hash.empty())
+    {
+        configuration.setPaths({configuration.getRawPath()});
+        configuration.setSchemaHash(schema_hash);
+    }
+    return configuration.getURIForAccessCheck(write_path);
 }
 
 }
@@ -65,6 +70,42 @@ TEST(URIForAccessCheck, S3KeyIsEncoded)
         "http://minio1:9001/root/data/a%20b%3F.tsv");
 }
 
+/// A `%` in the key is a literal character: `%61` must not be checked as `a`, which is a different object.
+TEST(URIForAccessCheck, S3LiteralPercentEscape)
+{
+    EXPECT_EQ(
+        uriForAccessCheck("http://minio1:9001/root/allowed/{_partition_id}.tsv", "allowed/%61.tsv"),
+        "http://minio1:9001/root/allowed/%2561.tsv");
+}
+
+/// A `%` that does not start an escape is a valid key too.
+TEST(URIForAccessCheck, S3LonePercent)
+{
+    EXPECT_EQ(
+        uriForAccessCheck("http://minio1:9001/root/allowed/{_partition_id}.tsv", "allowed/100%.tsv"),
+        "http://minio1:9001/root/allowed/100%25.tsv");
+}
+
+/// Encoded dot segments in the key are literal characters, so they stay encoded and are not resolved as `..`.
+TEST(URIForAccessCheck, S3EncodedDotSegments)
+{
+    EXPECT_EQ(
+        uriForAccessCheck("http://minio1:9001/root/allowed/{_partition_id}.tsv", "allowed/%2E%2E/x.tsv"),
+        "http://minio1:9001/root/allowed/%252E%252E/x.tsv");
+}
+
+/// `{_schema_hash}` is expanded in the key but not in the raw URI, which must not prevent building the URI.
+TEST(URIForAccessCheck, S3SchemaHash)
+{
+    const String schema_hash = "0123456789abcdef0123456789abcdef";
+    EXPECT_EQ(
+        uriForAccessCheck(
+            "http://minio1:9001/root/allowed/{_schema_hash}/{_partition_id}.tsv",
+            "allowed/" + schema_hash + "/a.tsv",
+            schema_hash),
+        "http://minio1:9001/root/allowed/" + schema_hash + "/a.tsv");
+}
+
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
@@ -72,11 +113,11 @@ TEST(URIForAccessCheck, S3KeyIsEncoded)
 namespace
 {
 
-String azureURIForAccessCheck(const String & raw_path, const String & path)
+String azureURIForAccessCheck(const String & granted_path, const String & write_path)
 {
     DB::StorageAzureConfiguration configuration;
-    configuration.setRawPath(DB::StorageObjectStorageConfiguration::Path{raw_path});
-    return configuration.getURIForAccessCheck(path);
+    configuration.setRawPath(DB::StorageObjectStorageConfiguration::Path{granted_path});
+    return configuration.getURIForAccessCheck(write_path);
 }
 
 }
@@ -87,11 +128,10 @@ TEST(URIForAccessCheck, AzureBlobPath)
     EXPECT_EQ(azureURIForAccessCheck("data/{_partition_id}.tsv", "data/a.tsv"), "data/a.tsv");
 }
 
-/// When the raw URI does not end with the raw path, the key cannot be placed in it: the result is empty,
-/// and then only an unfiltered grant allows the write.
-TEST(URIForAccessCheck, AzureMismatchIsEmpty)
+/// The blob path is not parsed as a URI, so escapes in it are kept as literal characters.
+TEST(URIForAccessCheck, AzurePercentEscapes)
 {
-    EXPECT_EQ(azureURIForAccessCheck("data/%41/{_partition_id}.tsv", "data/%41/a.tsv"), "");
+    EXPECT_EQ(azureURIForAccessCheck("data/%41/{_partition_id}.tsv", "data/%41/a.tsv"), "data/%41/a.tsv");
 }
 
 #endif

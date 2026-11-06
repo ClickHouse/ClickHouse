@@ -4,6 +4,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Common/FullyQualifiedObjectPath.h>
 #include <Common/isValidUTF8.h>
 #include <Core/Settings.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -173,6 +174,15 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
 
     validateNamespace(configuration->getNamespace(), configuration);
     validateKey(file_path);
+
+    /// A partition id can make the key fully qualified, e.g. if a partition id like `other-bucket/x.tsv`
+    /// is used for the template `{_partition_id}.tsv`, and the object storage would then write to that
+    /// bucket instead of the one whose URI is checked below.
+    if (!configuration->supportsFullyQualifiedPaths() && trySplitFullyQualifiedObjectPath(file_path))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The key {} of a partition refers to another bucket or container, which is not allowed",
+            file_path);
 
     /// The partition id comes from the data, so its destination is checked before anything is written to it.
     /// The key is checked before it is looked up too, so that an existing object outside the grant is not disclosed.
