@@ -657,9 +657,9 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
             {
                 cancellation_exception_origin = e.origin();
             }
-            catch (...)
+            catch (...) // NOLINT(bugprone-empty-catch)
             {
-                /// `copyMutableException` shares non-Poco exceptions, so pointer equality suffices.
+                /// Ok: `copyMutableException` shares non-Poco exceptions, so pointer equality suffices.
             }
         }
     }
@@ -794,6 +794,7 @@ bool QueryStatus::isStoredCancellationException(const std::exception_ptr & excep
     }
     catch (...)
     {
+        /// Ok: non-Poco exceptions are matched by pointer equality above.
         return false;
     }
 }
