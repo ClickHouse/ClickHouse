@@ -58,6 +58,14 @@ std::optional<String> tryGetStringInputName(const ActionsDAG::Node * node)
     return node->result_name;
 }
 
+std::optional<String> tryGetStringOrLowCardinalityInputName(const ActionsDAG::Node * node)
+{
+    node = skipAliases(node);
+    if (node->type != ActionsDAG::ActionType::INPUT || !isString(removeNullable(removeLowCardinality(node->result_type))))
+        return {};
+    return node->result_name;
+}
+
 std::optional<String> tryGetConstString(const ActionsDAG::Node * node)
 {
     node = skipAliases(node);
@@ -331,6 +339,141 @@ void tryExtractConditionsFromAtom(const ActionsDAG::Node * atom, ConditionsByCol
     }
 }
 
+/// With `conjunction_nodes`, collects the `and` nodes of the conjunction and the nodes of every conjunct that rejects the empty
+/// `column_name`, together with their nodes that read the column directly.
+bool filterNodeRejectsEmptyString(
+    const ActionsDAG::Node * filter_node,
+    const String & column_name,
+    std::unordered_set<const ActionsDAG::Node *> * conjunction_nodes = nullptr)
+{
+    bool rejects = false;
+    std::vector<const ActionsDAG::Node *> stack;
+    stack.push_back(skipAliases(filter_node));
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (node->type != ActionsDAG::ActionType::FUNCTION)
+            continue;
+
+        const String & name = node->function_base->getName();
+        if (name == "and")
+        {
+            if (conjunction_nodes)
+                conjunction_nodes->insert(node);
+            for (const auto * child : node->children)
+                stack.push_back(skipAliases(child));
+            continue;
+        }
+
+        bool node_rejects = false;
+        if (name == "notEmpty" && node->children.size() == 1)
+        {
+            node_rejects = tryGetStringOrLowCardinalityInputName(node->children[0]) == column_name;
+        }
+        else if ((name == "notEquals" || name == "greater" || name == "less") && node->children.size() == 2)
+        {
+            for (size_t column_pos : {0, 1})
+            {
+                if ((name == "greater" && column_pos != 0) || (name == "less" && column_pos != 1))
+                    continue;
+                auto constant = tryGetConstString(node->children[1 - column_pos]);
+                if (constant && constant->empty() && tryGetStringOrLowCardinalityInputName(node->children[column_pos]) == column_name)
+                    node_rejects = true;
+            }
+        }
+
+        if (node_rejects)
+        {
+            if (!conjunction_nodes)
+                return true;
+            rejects = true;
+            conjunction_nodes->insert(node);
+            continue;
+        }
+
+        /// The conditions of string value filters never match the empty string.
+        ConditionsByColumn conditions_by_column;
+        tryExtractConditionsFromAtom(node, conditions_by_column);
+        auto it = conditions_by_column.find(column_name);
+        if (it != conditions_by_column.end() && !it->second.conditions.empty())
+        {
+            if (!conjunction_nodes)
+                return true;
+            rejects = true;
+            conjunction_nodes->insert(node);
+            conjunction_nodes->insert(it->second.allowed_readers.begin(), it->second.allowed_readers.end());
+        }
+    }
+    return rejects;
+}
+
+}
+
+bool filterRejectsEmptyString(const ActionsDAG & filter_dag, const String & filter_column_name, const String & column_name)
+{
+    const auto * root = filter_dag.tryFindInOutputs(filter_column_name);
+    return root && filterNodeRejectsEmptyString(root, column_name);
+}
+
+bool filterRejectsEmptyString(const ActionsDAG & filter_dag, const String & column_name)
+{
+    const auto & outputs = filter_dag.getOutputs();
+    return outputs.size() == 1 && filterNodeRejectsEmptyString(outputs.front(), column_name);
+}
+
+bool filterReadsColumnOnlyInConjunctsRejectingEmptyString(
+    const ActionsDAG & dag, const String & filter_column_name, const String & column_name)
+{
+    const auto * root = dag.tryFindInOutputs(filter_column_name);
+    if (!root)
+        return false;
+    std::unordered_set<const ActionsDAG::Node *> conjunction_nodes;
+    if (!filterNodeRejectsEmptyString(root, column_name, &conjunction_nodes))
+        return false;
+
+    /// A replaced value changes the result of every node that depends on the column, so all of them must be part of the
+    /// conjunction, where the only effect is that the filter rejects the row. Aliases are transparent: their consumers are checked.
+    std::unordered_map<const ActionsDAG::Node *, bool> depends_on_column;
+    std::vector<const ActionsDAG::Node *> stack;
+    for (const auto & node : dag.getNodes())
+    {
+        stack.push_back(&node);
+        while (!stack.empty())
+        {
+            const auto * current = stack.back();
+            if (depends_on_column.contains(current))
+            {
+                stack.pop_back();
+                continue;
+            }
+
+            bool children_known = true;
+            bool depends = current->type == ActionsDAG::ActionType::INPUT && current->result_name == column_name;
+            for (const auto * child : current->children)
+            {
+                auto it = depends_on_column.find(child);
+                if (it == depends_on_column.end())
+                {
+                    children_known = false;
+                    stack.push_back(child);
+                }
+                else
+                    depends = depends || it->second;
+            }
+
+            if (children_known)
+            {
+                depends_on_column.emplace(current, depends);
+                stack.pop_back();
+            }
+        }
+
+        if (depends_on_column.at(&node) && node.type != ActionsDAG::ActionType::INPUT && node.type != ActionsDAG::ActionType::ALIAS
+            && !conjunction_nodes.contains(&node))
+            return false;
+    }
+    return true;
 }
 
 bool likePatternHasStringValueFilterConditions(const String & pattern)
