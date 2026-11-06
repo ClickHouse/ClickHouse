@@ -558,9 +558,25 @@ std::pair<ResponsePtr, Undo> TestKeeperListWithOptionsRequest::process(TestKeepe
     response.expected_with_stat = options.with_stat;
     response.expected_with_data = options.with_data;
 
-    if (options_version != ListOptionsVersion::V1 || path.empty() || path[0] != '/')
+    if ((options_version != ListOptionsVersion::V1 && options_version != ListOptionsVersion::V2) || path.empty() || path[0] != '/')
     {
         response.error = Error::ZMARSHALLINGERROR;
+        return { std::make_shared<ListWithOptionsResponse>(response), {} };
+    }
+
+    try
+    {
+        options.validate();
+    }
+    catch (const Exception &)
+    {
+        response.error = Error::ZBADARGUMENTS;
+        return { std::make_shared<ListWithOptionsResponse>(response), {} };
+    }
+
+    if (options_version == ListOptionsVersion::V2 && (options.shuffle || options.recursive))
+    {
+        response.error = Error::ZBADARGUMENTS;
         return { std::make_shared<ListWithOptionsResponse>(response), {} };
     }
     const auto root = container.find(path);
@@ -573,6 +589,8 @@ std::pair<ResponsePtr, Undo> TestKeeperListWithOptionsRequest::process(TestKeepe
     response.stat = root->second.stat;
     const String prefix = descendantsPrefix(path);
     std::vector<TestKeeper::Container::const_iterator> candidates;
+    const bool lexicographic = options_version == ListOptionsVersion::V2;
+    const std::string_view start_after = options.startAfter();
     bool limit_reached = false;
     for (auto it = container.upper_bound(prefix); it != container.end() && it->first.starts_with(prefix); ++it)
     {
@@ -584,7 +602,7 @@ std::pair<ResponsePtr, Undo> TestKeeperListWithOptionsRequest::process(TestKeepe
             || (options.filter == ListRequestType::EPHEMERAL_ONLY && !is_ephemeral))
             continue;
 
-        if (!options.shuffle)
+        if (!options.shuffle && !lexicographic)
         {
             /// One additional matching candidate is enough to determine truncation.
             if (options.max_results != 0 && candidates.size() >= options.max_results)
@@ -607,16 +625,27 @@ std::pair<ResponsePtr, Undo> TestKeeperListWithOptionsRequest::process(TestKeepe
             return std::pair{lhs_rank, lhs_relative} < std::pair{rhs_rank, rhs_relative};
         });
     }
+    else if (lexicographic)
+    {
+        std::ranges::sort(candidates, [&](const auto & lhs, const auto & rhs)
+        {
+            return lhs->first.substr(prefix.size()) < rhs->first.substr(prefix.size());
+        });
+    }
 
     for (const auto & it : candidates)
     {
+        const String relative = it->first.substr(prefix.size());
+        if (!start_after.empty() && relative <= start_after)
+            continue;
+
         if (options.max_results != 0 && response.names.size() >= options.max_results)
         {
             response.truncated = true;
             break;
         }
 
-        response.names.emplace_back(it->first.substr(prefix.size()));
+        response.names.emplace_back(relative);
         if (options.with_stat)
             response.stats.emplace_back(it->second.stat);
         if (options.with_data)
@@ -923,6 +952,7 @@ TestKeeper::TestKeeper(const zkutil::ZooKeeperArgs & args_)
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::TRY_REMOVE);
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA);
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::LIST_WITH_OPTIONS);
+    keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::LIST_WITH_OPTIONS_V2);
 
     processing_thread = ThreadFromGlobalPool([this] { processingThread(); });
 }
@@ -1231,6 +1261,8 @@ void TestKeeper::listWithOptions(
     TestKeeperListWithOptionsRequest request;
     request.path = path;
     request.options_version = requiredListOptionsVersion(options);
+    if (request.options_version == ListOptionsVersion::V2 && !isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_OPTIONS_V2))
+        throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListWithOptions start_after pagination is not supported by the server");
     request.options = options;
 
     RequestInfo request_info;

@@ -1,6 +1,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
@@ -193,6 +194,7 @@ TEST(ZooKeeperTest, ListWithOptionsWireRoundTrip)
         .recursive = true,
         .max_results = 17,
         .shuffle = true,
+        .start_after = std::nullopt,
     };
 
     WriteBufferFromOwnString request_out;
@@ -226,6 +228,85 @@ TEST(ZooKeeperTest, ListWithOptionsWireRoundTrip)
     ReadBufferFromString response_in(response_out.str());
     dynamic_cast<ZooKeeperListWithOptionsResponse &>(*decoded_response).readImpl(response_in);
     EXPECT_TRUE(response_in.eof());
+}
+
+TEST(ZooKeeperTest, ListWithOptionsV2WireRoundTrip)
+{
+    ZooKeeperListWithOptionsRequest request;
+    request.path = "/cursor/page";
+    request.options_version = ListOptionsVersion::V2;
+    request.options = {
+        .filter = ListRequestType::ALL,
+        .with_stat = false,
+        .with_data = false,
+        .recursive = false,
+        .max_results = 100,
+        .shuffle = false,
+        .start_after = "child-42",
+    };
+
+    WriteBufferFromOwnString request_out;
+    request.writeImpl(request_out);
+    auto decoded_request = ZooKeeperRequestFactory::instance().get(OpNum::ListWithOptions);
+    auto & decoded = dynamic_cast<ZooKeeperListWithOptionsRequest &>(*decoded_request);
+    ReadBufferFromString request_in(request_out.str());
+    decoded.readImpl(request_in);
+
+    EXPECT_TRUE(request_in.eof());
+    EXPECT_EQ(decoded.options_version, ListOptionsVersion::V2);
+    EXPECT_EQ(decoded.options.max_results, 100u);
+    ASSERT_TRUE(decoded.options.paginates());
+    EXPECT_EQ(decoded.options.startAfter(), "child-42");
+}
+
+TEST(ZooKeeperTest, RequiredListOptionsVersionSelectsV2ForEmptyCursor)
+{
+    ListOptions first_page;
+    first_page.start_after = "";
+    EXPECT_EQ(requiredListOptionsVersion(first_page), ListOptionsVersion::V2);
+
+    ListOptions legacy;
+    EXPECT_EQ(requiredListOptionsVersion(legacy), ListOptionsVersion::V1);
+
+    ListOptions continuation;
+    continuation.start_after = "child";
+    EXPECT_EQ(requiredListOptionsVersion(continuation), ListOptionsVersion::V2);
+
+    ListOptions shuffle;
+    shuffle.shuffle = true;
+    EXPECT_EQ(requiredListOptionsVersion(shuffle), ListOptionsVersion::V1);
+}
+
+TEST(ZooKeeperTest, ListWithOptionsRequestBytesSizeCountsCursor)
+{
+    ListWithOptionsRequest short_cursor;
+    short_cursor.path = "/p";
+    short_cursor.options.start_after = "a";
+
+    ListWithOptionsRequest long_cursor = short_cursor;
+    long_cursor.options.start_after = String(4096, 'z');
+
+    EXPECT_EQ(long_cursor.bytesSize() - short_cursor.bytesSize(), 4095u);
+}
+
+TEST(ZooKeeperTest, ListWithOptionsV2EmptyCursorWireRoundTrip)
+{
+    ZooKeeperListWithOptionsRequest request;
+    request.path = "/first/page";
+    request.options_version = ListOptionsVersion::V2;
+    request.options.start_after = "";
+
+    WriteBufferFromOwnString request_out;
+    request.writeImpl(request_out);
+    auto decoded_request = ZooKeeperRequestFactory::instance().get(OpNum::ListWithOptions);
+    auto & decoded = dynamic_cast<ZooKeeperListWithOptionsRequest &>(*decoded_request);
+    ReadBufferFromString request_in(request_out.str());
+    decoded.readImpl(request_in);
+
+    EXPECT_TRUE(request_in.eof());
+    EXPECT_EQ(decoded.options_version, ListOptionsVersion::V2);
+    ASSERT_TRUE(decoded.options.paginates());
+    EXPECT_TRUE(decoded.options.startAfter().empty());
 }
 
 TEST(ZooKeeperTest, Create2ResponseWireRoundTrip)

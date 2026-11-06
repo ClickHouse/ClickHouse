@@ -24,9 +24,11 @@
 #include <fmt/format.h>
 #include <pcg_random.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <mutex>
+#include <ranges>
 #include <set>
 #include <shared_mutex>
 #include <string>
@@ -398,6 +400,39 @@ TEST(KeeperStorage, BackgroundFlushAndMerge)
     /// Direct children of /a are the surviving /a/k* plus /a/b (grandchildren /a/b/c* are excluded).
     EXPECT_EQ(count_living_children("/a"), size_t(num_k - num_removed + 1));
     EXPECT_EQ(count_living_children("/a/b"), size_t(num_c));
+
+    auto paged_names = [&](const std::string & parent, uint32_t page_size)
+    {
+        std::vector<std::string> names;
+        std::string cursor;
+        bool truncated = true;
+        while (truncated)
+        {
+            std::vector<std::string> page;
+            storage.listDirectChildrenPage(NodePath(parent).withCalculatedHash(), cursor, page_size, page, truncated);
+            names.insert(names.end(), page.begin(), page.end());
+            if (page.empty())
+                break;
+            cursor = page.back();
+        }
+        return names;
+    };
+    auto living_sorted = [&](const std::string & parent)
+    {
+        DB::Arena arena;
+        ChildrenSet2 children;
+        storage.listCommittedChildrenNames(NodePath(parent).withCalculatedHash(), children, arena);
+        std::vector<std::string> names;
+        for (const auto & entry : children.set)
+        {
+            if (entry.action != NodeAction::Remove)
+                names.emplace_back(entry.str());
+        }
+        std::ranges::sort(names);
+        return names;
+    };
+    EXPECT_EQ(paged_names("/a", 50), living_sorted("/a"));
+    EXPECT_EQ(paged_names("/a/b", 17), living_sorted("/a/b"));
 
     /// node_count_delta summed across the run and memtables must equal the true node count:
     /// /a + /a/b + surviving /a/k* + /a/b/c* (the removed /a/k* net out to zero).
@@ -830,6 +865,83 @@ TEST(KeeperStorage, WriteThrottling)
     storage.sorted_runs.clear();
     storage.recalculateWriteThrottling();
     EXPECT_EQ(storage.write_throttling_us.load(), 0u);
+}
+
+/// Cursor pagination over flushed sorted runs, with a newer memtable tombstone hiding one child.
+TEST(KeeperStorage, ListDirectChildrenPageAcrossRunsAndTombstones)
+{
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    (*settings)[DB::CoordinationSetting::committed_memtable_size] = 256;
+    (*settings)[DB::CoordinationSetting::memtable_block_size] = 128;
+    (*settings)[DB::CoordinationSetting::file_block_size] = 128;
+    (*settings)[DB::CoordinationSetting::sorted_file_uncompressed_size] = 256;
+    (*settings)[DB::CoordinationSetting::min_files_to_merge] = 64;
+    (*settings)[DB::CoordinationSetting::max_files_to_merge] = 64;
+
+    auto keeper_context = std::make_shared<DB::KeeperContext>(/*standalone_keeper*/ true, settings);
+    DB::SharedMutex storage_mutex;
+    StorageState storage(keeper_context, &storage_mutex);
+    storage.memory_only = true;
+    storage.startup();
+
+    const std::string payload(64, 'x');
+    auto append = [&](NodeAction action, const std::string & path)
+    {
+        FullNode node;
+        node.action = action;
+        node.path = NodePath(path);
+        node.data_ptr = payload.data();
+        node.stats.data_size = action == NodeAction::Remove ? 0 : static_cast<uint32_t>(payload.size());
+        storage.appendCommittedNode(node);
+    };
+
+    {
+        std::lock_guard lock(storage_mutex);
+        append(NodeAction::Create, "/p");
+        for (const auto * name : {"a", "c", "e", "g", "i"})
+            append(NodeAction::Create, std::string("/p/") + name);
+    }
+
+    bool flushed = false;
+    for (int attempt = 0; attempt < 4000 && !flushed; ++attempt)
+    {
+        {
+            std::shared_lock lock(storage_mutex);
+            flushed = storage.immutable_memtables.empty() && !storage.sorted_runs.empty();
+        }
+        if (!flushed)
+            std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+    ASSERT_TRUE(flushed);
+
+    {
+        std::lock_guard lock(storage_mutex);
+        append(NodeAction::Remove, "/p/c");
+        append(NodeAction::Create, "/p/d");
+    }
+
+    std::vector<std::string> paged;
+    {
+        std::shared_lock lock(storage_mutex);
+        ASSERT_FALSE(storage.sorted_runs.empty());
+
+        std::string cursor;
+        bool truncated = true;
+        while (truncated)
+        {
+            std::vector<std::string> page;
+            storage.listDirectChildrenPage(NodePath("/p").withCalculatedHash(), cursor, /*max_results*/ 2, page, truncated);
+            EXPECT_LE(page.size(), 2u);
+            paged.insert(paged.end(), page.begin(), page.end());
+            if (page.empty())
+                break;
+            cursor = page.back();
+        }
+    }
+
+    EXPECT_EQ(paged, (std::vector<std::string>{"a", "d", "e", "g", "i"}));
+
+    storage.shutdown();
 }
 
 #endif

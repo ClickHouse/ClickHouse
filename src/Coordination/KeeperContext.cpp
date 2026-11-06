@@ -84,6 +84,7 @@ KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr co
         KeeperFeatureFlag::TRY_REMOVE,
         KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA,
         KeeperFeatureFlag::LIST_WITH_OPTIONS,
+        KeeperFeatureFlag::LIST_WITH_OPTIONS_V2,
         KeeperFeatureFlag::MAX_REQUEST_SIZE,
     };
 

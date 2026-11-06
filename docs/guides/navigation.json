@@ -125,6 +125,7 @@
               "group": "Keeper",
               "pages": [
                 "guides/oss/deployment-and-scaling/keeper/index",
+                "guides/oss/deployment-and-scaling/keeper/list-with-options",
                 "guides/oss/deployment-and-scaling/keeper/ssl-zookeeper"
               ]
             },

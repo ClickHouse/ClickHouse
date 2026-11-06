@@ -6,6 +6,8 @@
 
 #include <base/defines.h>
 
+#include <absl/functional/function_ref.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -99,6 +101,22 @@ struct KeeperNodesStorage
     /// List children names without data.
     /// (Implementation should not rely on getNumChildren() stat because it may be inaccurate for system nodes.)
     virtual std::vector<std::string> listCommittedChildrenNames(std::string_view path) const = 0;
+
+    /// Paginated direct children in lexicographic order, strictly greater than `start_after`.
+    /// An empty `start_after` is the first page. When `max_results` is zero, no limit.
+    virtual void listCommittedDirectChildrenPaginated(
+        std::string_view path,
+        std::string_view start_after,
+        uint32_t max_results,
+        std::vector<std::string> & out,
+        bool & truncated) const = 0;
+
+    /// Living direct children strictly after `start_after`, in lexicographic order.
+    /// `on_name` returns false to stop. The view is valid only for that call.
+    virtual void visitCommittedDirectChildrenAfter(
+        std::string_view path,
+        std::string_view start_after,
+        absl::FunctionRef<bool(std::string_view name)> on_name) const = 0;
 
     /// Directly create or mutate a committed node. Used to set up system nodes and by tests.
     virtual bool addCommittedNodeIfNotExists(std::string_view path, const KeeperNodeStats & stats, std::string_view data, bool update_parent_num_children, uint64_t * out_digest) = 0;

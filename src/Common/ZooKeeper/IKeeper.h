@@ -17,6 +17,7 @@
 #include <memory>
 #include <cstdint>
 #include <span>
+#include <string_view>
 #include <functional>
 
 #include <fmt/format.h>
@@ -569,6 +570,7 @@ enum class ListRequestType : uint8_t
 enum class ListOptionsVersion : int32_t
 {
     V1 = 1,
+    V2 = 2,
 };
 
 struct ListOptions
@@ -579,6 +581,13 @@ struct ListOptions
     bool recursive = false;
     uint32_t max_results = 0;
     bool shuffle = false;
+    /// Engaged (including an empty string) requests lexicographic pagination on options version V2:
+    /// names strictly greater than the cursor, first page when the cursor is empty.
+    /// Disengaged keeps the legacy V1 unordered `max_results` prefix.
+    std::optional<String> start_after;
+
+    bool paginates() const { return start_after.has_value(); }
+    std::string_view startAfter() const { return start_after ? std::string_view(*start_after) : std::string_view{}; }
 
     void validate() const;
 };
@@ -633,7 +642,7 @@ struct ListWithOptionsRequest : virtual Request
     String getPath() const override { return path; }
     size_t bytesSize() const override
     {
-        return path.size() + sizeof(options_version) + sizeof(options);
+        return path.size() + sizeof(options_version) + sizeof(options) + options.startAfter().size();
     }
 };
 
