@@ -49,6 +49,7 @@
 #include <Interpreters/misc.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsComparison.h>
 #include <Functions/grouping.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageProxy.h>
@@ -1311,223 +1312,64 @@ static QueryTreeNodePtr buildScalarInComparison(
     return raw_if;
 }
 
-/// Builds exact equality for a heterogeneous numeric pair. Native float/integer comparisons are
-/// already exact. For a `Decimal` and an integer or integral float, check that the `Decimal` is integral
-/// and compare both integer values as `Int256`. Floats are decoded from their `Float64` representation
-/// and round-tripped to prove that they are integral. This avoids formatter range limits, narrower signed
-/// intermediates, and the overflow-prone scale multiplication in mixed Decimal/integer comparisons.
-/// Non-integral floats keep the regular ClickHouse float/`Decimal` comparison semantics.
+static QueryTreeNodePtr buildResolvedFunction(
+    const String & name,
+    QueryTreeNodes arguments,
+    const ContextPtr & context)
+{
+    auto function = std::make_shared<FunctionNode>(name);
+    function->getArguments().getNodes() = std::move(arguments);
+    function->resolveAsFunction(FunctionFactory::instance().get(name, context));
+    return function;
+}
+
+/// Builds one bounded equality node for a heterogeneous numeric pair. The resolver is attached
+/// directly so query-scope aliases cannot replace the internal comparison implementation.
 static QueryTreeNodePtr buildNumericEquality(
     const QueryTreeNodePtr & left_argument,
-    const QueryTreeNodePtr & right_argument)
+    const QueryTreeNodePtr & right_argument,
+    const ContextPtr & context)
 {
-    if (left_argument->getResultType()->onlyNull() || right_argument->getResultType()->onlyNull())
-    {
-        auto equals_function = std::make_shared<FunctionNode>("equals");
-        equals_function->getArguments().getNodes() = {left_argument, right_argument};
-        return equals_function;
-    }
-
-    const auto left_type = removeLowCardinalityAndNullable(left_argument->getResultType());
-    const auto right_type = removeLowCardinalityAndNullable(right_argument->getResultType());
-    const bool left_is_decimal = isDecimal(left_type);
-    const bool right_is_decimal = isDecimal(right_type);
-
-    if (left_is_decimal == right_is_decimal)
-    {
-        auto equals_function = std::make_shared<FunctionNode>("equals");
-        equals_function->getArguments().getNodes() = {left_argument, right_argument};
-        return equals_function;
-    }
-
-    const auto & decimal_argument = left_is_decimal ? left_argument : right_argument;
-    const auto & numeric_argument = left_is_decimal ? right_argument : left_argument;
-    const auto & numeric_type = left_is_decimal ? right_type : left_type;
-
-    QueryTreeNodePtr converted_integer;
-    QueryTreeNodePtr float_can_convert;
-    QueryTreeNodePtr float64_argument;
-    if (isInteger(numeric_type))
-    {
-        auto int256_type_name = std::make_shared<ConstantNode>("Int256", std::make_shared<DataTypeString>());
-        auto accurate_cast = std::make_shared<FunctionNode>("accurateCastOrNull");
-        accurate_cast->getArguments().getNodes() = {numeric_argument, std::move(int256_type_name)};
-        converted_integer = std::move(accurate_cast);
-    }
-    else
-    {
-        auto to_float64 = std::make_shared<FunctionNode>("toFloat64");
-        to_float64->getArguments().getNodes().push_back(numeric_argument);
-        float64_argument = std::move(to_float64);
-
-        auto is_finite = std::make_shared<FunctionNode>("isFinite");
-        is_finite->getArguments().getNodes().push_back(float64_argument);
-        auto absolute_value = std::make_shared<FunctionNode>("abs");
-        absolute_value->getArguments().getNodes().push_back(float64_argument);
-        auto is_in_decimal_range = std::make_shared<FunctionNode>("less");
-        is_in_decimal_range->getArguments().getNodes()
-            = {std::move(absolute_value), std::make_shared<ConstantNode>(Field{1e76})};
-        auto can_convert = std::make_shared<FunctionNode>("and");
-        can_convert->getArguments().getNodes() = {std::move(is_finite), std::move(is_in_decimal_range)};
-        float_can_convert = can_convert;
-
-        auto safe_float = std::make_shared<FunctionNode>("if");
-        safe_float->getArguments().getNodes()
-            = {can_convert, float64_argument, std::make_shared<ConstantNode>(Field{0.0})};
-        auto float_bits = std::make_shared<FunctionNode>("reinterpretAsUInt64");
-        float_bits->getArguments().getNodes().push_back(std::move(safe_float));
-
-        auto shifted_exponent = std::make_shared<FunctionNode>("bitShiftRight");
-        shifted_exponent->getArguments().getNodes()
-            = {float_bits, std::make_shared<ConstantNode>(Field{UInt64{52}})};
-        auto exponent = std::make_shared<FunctionNode>("bitAnd");
-        exponent->getArguments().getNodes()
-            = {std::move(shifted_exponent), std::make_shared<ConstantNode>(Field{UInt64{2047}})};
-
-        auto fraction = std::make_shared<FunctionNode>("bitAnd");
-        fraction->getArguments().getNodes()
-            = {float_bits, std::make_shared<ConstantNode>(Field{UInt64{4503599627370495}})};
-        auto significand = std::make_shared<FunctionNode>("bitOr");
-        significand->getArguments().getNodes()
-            = {std::move(fraction), std::make_shared<ConstantNode>(Field{UInt64{4503599627370496}})};
-        auto significand_as_int256 = std::make_shared<FunctionNode>("toInt256");
-        significand_as_int256->getArguments().getNodes().push_back(std::move(significand));
-
-        auto exponent_as_int64 = std::make_shared<FunctionNode>("toInt64");
-        exponent_as_int64->getArguments().getNodes().push_back(exponent);
-        auto shift = std::make_shared<FunctionNode>("minus");
-        shift->getArguments().getNodes()
-            = {std::move(exponent_as_int64), std::make_shared<ConstantNode>(Field{Int64{1075}})};
-        auto shift_is_nonnegative = std::make_shared<FunctionNode>("greaterOrEquals");
-        shift_is_nonnegative->getArguments().getNodes()
-            = {shift, std::make_shared<ConstantNode>(Field{Int64{0}})};
-
-        auto left_shift_amount = std::make_shared<FunctionNode>("if");
-        left_shift_amount->getArguments().getNodes()
-            = {shift_is_nonnegative, shift, std::make_shared<ConstantNode>(Field{Int64{0}})};
-        auto magnitude_left = std::make_shared<FunctionNode>("bitShiftLeft");
-        magnitude_left->getArguments().getNodes() = {significand_as_int256, std::move(left_shift_amount)};
-
-        auto negate_shift = std::make_shared<FunctionNode>("negate");
-        negate_shift->getArguments().getNodes().push_back(shift);
-        auto right_shift_amount = std::make_shared<FunctionNode>("if");
-        right_shift_amount->getArguments().getNodes()
-            = {shift_is_nonnegative, std::make_shared<ConstantNode>(Field{Int64{0}}), std::move(negate_shift)};
-        auto magnitude_right = std::make_shared<FunctionNode>("bitShiftRight");
-        magnitude_right->getArguments().getNodes() = {significand_as_int256, std::move(right_shift_amount)};
-
-        auto magnitude = std::make_shared<FunctionNode>("if");
-        magnitude->getArguments().getNodes()
-            = {std::move(shift_is_nonnegative), std::move(magnitude_left), std::move(magnitude_right)};
-
-        auto sign_bit = std::make_shared<FunctionNode>("bitAnd");
-        sign_bit->getArguments().getNodes()
-            = {float_bits, std::make_shared<ConstantNode>(Field{UInt64{9223372036854775808ULL}})};
-        auto is_negative = std::make_shared<FunctionNode>("notEquals");
-        is_negative->getArguments().getNodes()
-            = {std::move(sign_bit), std::make_shared<ConstantNode>(Field{UInt64{0}})};
-        auto negative_magnitude = std::make_shared<FunctionNode>("negate");
-        negative_magnitude->getArguments().getNodes().push_back(magnitude);
-        auto signed_magnitude = std::make_shared<FunctionNode>("if");
-        signed_magnitude->getArguments().getNodes()
-            = {std::move(is_negative), std::move(negative_magnitude), std::move(magnitude)};
-
-        auto exponent_is_zero = std::make_shared<FunctionNode>("equals");
-        exponent_is_zero->getArguments().getNodes()
-            = {exponent, std::make_shared<ConstantNode>(Field{UInt64{0}})};
-        auto zero_int256 = std::make_shared<FunctionNode>("toInt256");
-        zero_int256->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(Field{Int64{0}}));
-        auto decoded_integer = std::make_shared<FunctionNode>("if");
-        decoded_integer->getArguments().getNodes()
-            = {std::move(exponent_is_zero), std::move(zero_int256), std::move(signed_magnitude)};
-        converted_integer = std::move(decoded_integer);
-    }
-
-    auto decimal_as_integer = std::make_shared<FunctionNode>("toInt256");
-    decimal_as_integer->getArguments().getNodes().push_back(decimal_argument);
-
-    auto integer_equals = std::make_shared<FunctionNode>("equals");
-    integer_equals->getArguments().getNodes() = {std::move(decimal_as_integer), converted_integer};
-    auto integer_matches = std::make_shared<FunctionNode>("ifNull");
-    integer_matches->getArguments().getNodes() = {std::move(integer_equals), std::make_shared<ConstantNode>(Field{0u})};
-
-    auto truncated_decimal = std::make_shared<FunctionNode>("trunc");
-    truncated_decimal->getArguments().getNodes().push_back(decimal_argument);
-    auto decimal_is_integer = std::make_shared<FunctionNode>("equals");
-    decimal_is_integer->getArguments().getNodes() = {decimal_argument, std::move(truncated_decimal)};
-    auto decimal_is_integer_or_false = std::make_shared<FunctionNode>("ifNull");
-    decimal_is_integer_or_false->getArguments().getNodes()
-        = {std::move(decimal_is_integer), std::make_shared<ConstantNode>(Field{0u})};
-
-    auto exact_matches = std::make_shared<FunctionNode>("and");
-    exact_matches->getArguments().getNodes() = {std::move(decimal_is_integer_or_false), std::move(integer_matches)};
-
-    if (isInteger(numeric_type))
-        return exact_matches;
-
-    auto approximate_equals = std::make_shared<FunctionNode>("equals");
-    approximate_equals->getArguments().getNodes() = {decimal_argument, numeric_argument};
-    auto approximate_matches = std::make_shared<FunctionNode>("ifNull");
-    approximate_matches->getArguments().getNodes() = {std::move(approximate_equals), std::make_shared<ConstantNode>(Field{0u})};
-
-    auto converted_float = std::make_shared<FunctionNode>("toFloat64");
-    converted_float->getArguments().getNodes().push_back(converted_integer);
-    auto roundtrip_equals = std::make_shared<FunctionNode>("equals");
-    roundtrip_equals->getArguments().getNodes() = {float64_argument, std::move(converted_float)};
-    auto roundtrip_matches = std::make_shared<FunctionNode>("ifNull");
-    roundtrip_matches->getArguments().getNodes()
-        = {std::move(roundtrip_equals), std::make_shared<ConstantNode>(Field{0u})};
-    auto exact_float_conversion = std::make_shared<FunctionNode>("and");
-    exact_float_conversion->getArguments().getNodes() = {std::move(float_can_convert), std::move(roundtrip_matches)};
-
-    auto result = std::make_shared<FunctionNode>("if");
-    result->getArguments().getNodes()
-        = {std::move(exact_float_conversion), std::move(exact_matches), std::move(approximate_matches)};
-    return result;
+    auto equality = std::make_shared<FunctionNode>("equals");
+    equality->getArguments().getNodes() = {left_argument, right_argument};
+    equality->resolveAsFunction(createExactNumericEqualityFunction(context));
+    return equality;
 }
 
 static QueryTreeNodePtr buildNumericScalarInComparison(
     const QueryTreeNodePtr & left_argument,
     const QueryTreeNodePtr & right_argument,
     bool is_not_in,
-    bool compare_nulls)
+    bool compare_nulls,
+    const ContextPtr & context)
 {
-    auto equality = buildNumericEquality(left_argument, right_argument);
+    auto equality = buildNumericEquality(left_argument, right_argument, context);
     auto default_false = std::make_shared<ConstantNode>(Field{0u});
-    auto equality_or_false = std::make_shared<FunctionNode>("ifNull");
-    equality_or_false->getArguments().getNodes() = {std::move(equality), std::move(default_false)};
+    auto equality_or_false = buildResolvedFunction(
+        "ifNull", {std::move(equality), std::move(default_false)}, context);
 
     QueryTreeNodePtr result = equality_or_false;
     if (compare_nulls)
     {
-        auto left_is_null = std::make_shared<FunctionNode>("isNull");
-        left_is_null->getArguments().getNodes().push_back(left_argument);
-        auto right_is_null = std::make_shared<FunctionNode>("isNull");
-        right_is_null->getArguments().getNodes().push_back(right_argument);
-        auto both_are_null = std::make_shared<FunctionNode>("and");
-        both_are_null->getArguments().getNodes() = {std::move(left_is_null), std::move(right_is_null)};
-
-        auto null_safe_equality = std::make_shared<FunctionNode>("or");
-        null_safe_equality->getArguments().getNodes() = {std::move(both_are_null), std::move(result)};
-        result = std::move(null_safe_equality);
+        auto left_is_null = buildResolvedFunction("isNull", {left_argument}, context);
+        auto right_is_null = buildResolvedFunction("isNull", {right_argument}, context);
+        auto both_are_null = buildResolvedFunction(
+            "and", {std::move(left_is_null), std::move(right_is_null)}, context);
+        result = buildResolvedFunction("or", {std::move(both_are_null), std::move(result)}, context);
     }
     else if (isNullableOrLowCardinalityNullable(left_argument->getResultType()))
     {
-        auto left_is_null = std::make_shared<FunctionNode>("isNull");
-        left_is_null->getArguments().getNodes().push_back(left_argument);
+        auto left_is_null = buildResolvedFunction("isNull", {left_argument}, context);
         auto null_value = std::make_shared<ConstantNode>(
             Field{},
             std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()));
-        auto preserve_null_left = std::make_shared<FunctionNode>("if");
-        preserve_null_left->getArguments().getNodes() = {std::move(left_is_null), std::move(null_value), std::move(result)};
-        result = std::move(preserve_null_left);
+        result = buildResolvedFunction(
+            "if", {std::move(left_is_null), std::move(null_value), std::move(result)}, context);
     }
 
     if (is_not_in)
     {
-        auto not_function = std::make_shared<FunctionNode>("not");
-        not_function->getArguments().getNodes().push_back(std::move(result));
-        result = std::move(not_function);
+        result = buildResolvedFunction("not", {std::move(result)}, context);
     }
 
     return result;
@@ -1540,21 +1382,23 @@ static QueryTreeNodePtr buildNumericInComparison(
     const QueryTreeNodePtr & left_argument,
     const QueryTreeNodes & right_arguments,
     bool is_not_in,
-    bool compare_nulls)
+    bool compare_nulls,
+    const ContextPtr & context)
 {
     if (right_arguments.empty())
         return std::make_shared<ConstantNode>(is_not_in ? Field{1u} : Field{0u}, std::make_shared<DataTypeUInt8>());
 
     if (right_arguments.size() == 1)
-        return buildNumericScalarInComparison(left_argument, right_arguments.front(), is_not_in, compare_nulls);
+        return buildNumericScalarInComparison(
+            left_argument, right_arguments.front(), is_not_in, compare_nulls, context);
 
-    auto logical_function = std::make_shared<FunctionNode>(is_not_in ? "and" : "or");
-    auto & comparisons = logical_function->getArguments().getNodes();
+    QueryTreeNodes comparisons;
     comparisons.reserve(right_arguments.size());
     for (const auto & right_argument : right_arguments)
-        comparisons.push_back(buildNumericScalarInComparison(left_argument, right_argument, is_not_in, compare_nulls));
+        comparisons.push_back(buildNumericScalarInComparison(
+            left_argument, right_argument, is_not_in, compare_nulls, context));
 
-    return logical_function;
+    return buildResolvedFunction(is_not_in ? "and" : "or", std::move(comparisons), context);
 }
 
 /// converts tuple to array with proper type handling
@@ -3171,8 +3015,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         && getLeastSupertypeForInArrayElements(array_elements, in_first_argument, false, true))
                     {
                         auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
-                        node = buildNumericInComparison(in_first_argument, array_elements, is_not_in, compare_nulls);
-                        resolveFunction(node, scope);
+                        node = buildNumericInComparison(
+                            in_first_argument, array_elements, is_not_in, compare_nulls, scope.context);
                         return ProjectionNames{proj};
                     }
 
@@ -3227,9 +3071,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     const bool is_number_comparison = isNumber(removeNullable(removeLowCardinality(left_type)))
                         && isNumber(removeNullable(removeLowCardinality(right_type)));
                     if (is_number_comparison)
-                        node = buildNumericScalarInComparison(fn_args[0], right_argument, is_not_in, compare_nulls);
-                    else
-                        node = buildScalarInComparison(fn_args[0], right_argument, is_not_in, compare_nulls);
+                    {
+                        node = buildNumericScalarInComparison(
+                            fn_args[0], right_argument, is_not_in, compare_nulls, scope.context);
+                        return ProjectionNames{proj};
+                    }
+
+                    node = buildScalarInComparison(fn_args[0], right_argument, is_not_in, compare_nulls);
                     resolveFunction(node, scope);
                     return ProjectionNames{proj};
                 }

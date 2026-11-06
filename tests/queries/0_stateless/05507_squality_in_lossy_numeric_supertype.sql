@@ -171,3 +171,19 @@ FROM values('d Decimal(76, 0), x Float64, y Int64',
     ('999999999999999949387135297074018866963645011013410073083904', 1e60, 65))
 ORDER BY d
 SETTINGS allow_lossy_numeric_supertype = 1;
+
+
+-- Generated exact numeric comparisons stay bounded when nested.
+SELECT d IN (toFloat64(d IN (toFloat64(d IN (toFloat64(d IN (x)))))))
+FROM values('d Decimal(18,0), x Float64', (1,1))
+SETTINGS max_expanded_ast_elements = 1000;
+
+-- Generated helpers bind to built-ins rather than scoped lambdas.
+WITH (v -> v) AS trunc
+SELECT d IN (materialize(x)), d NOT IN (materialize(x))
+FROM values('d Decimal(18,1), x Int64', (1.5,1));
+
+-- Exercise the bounded comparison over a non-trivial vector.
+SELECT count()
+FROM numbers(1000000)
+WHERE toDecimal64(number, 0) IN (materialize(toFloat64(number)));
