@@ -20,6 +20,7 @@ DROP TABLE IF EXISTS mid;
 DROP TABLE IF EXISTS nation_log;
 DROP TABLE IF EXISTS sorted_a;
 DROP TABLE IF EXISTS sorted_b;
+DROP TABLE IF EXISTS shrunk;
 
 -- Merges would build statistics on the tables of several parts.
 CREATE TABLE orders (o_orderkey Int32, o_custkey Int32, o_totalprice Decimal(15, 2), o_flag UInt8)
@@ -32,6 +33,7 @@ CREATE TABLE mid (k Int32) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistic
 CREATE TABLE nation_log (n_nationkey Int32, n_name String) ENGINE = Log;
 CREATE TABLE sorted_a (k UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE sorted_b (k UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE shrunk (k Int32) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
 
 -- Parts without statistics, as written before 26.8.
 SET materialize_statistics_on_insert = 0;
@@ -44,6 +46,7 @@ INSERT INTO mid SELECT number FROM numbers(50000);
 INSERT INTO nation_log SELECT * FROM nation;
 INSERT INTO sorted_a SELECT number FROM numbers(1000);
 INSERT INTO sorted_b SELECT number FROM numbers(1000);
+INSERT INTO shrunk SELECT number FROM numbers(100000);
 
 SELECT avg(o_totalprice) FROM orders
 JOIN (SELECT * FROM customer JOIN nation ON c_nationkey = n_nationkey WHERE n_name = 'WAKANDA') AS cn ON c_custkey = o_custkey
@@ -143,6 +146,15 @@ SELECT count() FROM mid JOIN
 ) AS s ON s.k = mid.k
 FORMAT Null SETTINGS log_comment = '05508 cache_grouped_join_2', collect_hash_table_stats_during_joins = 1, use_hash_table_stats_for_join_reordering = 1;
 
+-- The first run builds `shrunk` with 100000 rows; after it shrinks to 1000, its primary index count bounds the rows, so the stale
+-- hash table statistics do not replace it and `shrunk` stays the build side.
+SELECT count() FROM mid JOIN shrunk ON shrunk.k = mid.k
+FORMAT Null SETTINGS log_comment = '05508 cache_primary_index_1', query_plan_join_swap_table = 'false', collect_hash_table_stats_during_joins = 1, use_hash_table_stats_for_join_reordering = 1;
+TRUNCATE TABLE shrunk;
+INSERT INTO shrunk SELECT number FROM numbers(1000);
+SELECT count() FROM mid JOIN shrunk ON shrunk.k = mid.k
+FORMAT Null SETTINGS log_comment = '05508 cache_primary_index_2', collect_hash_table_stats_during_joins = 1, use_hash_table_stats_for_join_reordering = 1;
+
 -- The graph keeps its written order for `nation_log`, but `sorted_a JOIN sorted_b`, whose inputs have estimates, is still optimized
 -- on its own: with 50M rows each (from the hints) read in order by the key, it is a merge join.
 SELECT 'merge_join_sub_tree', count()
@@ -173,3 +185,4 @@ DROP TABLE mid;
 DROP TABLE nation_log;
 DROP TABLE sorted_a;
 DROP TABLE sorted_b;
+DROP TABLE shrunk;

@@ -5,6 +5,8 @@ merge_join_sub_tree	1
 05508 cache_aggregation_2	50000
 05508 cache_grouped_join_1	109000
 05508 cache_grouped_join_2	60000
+05508 cache_primary_index_1	100000
+05508 cache_primary_index_2	1000
 05508 cache_read_1	99000
 05508 cache_read_2	50000
 05508 cache_sub_join_1	209910

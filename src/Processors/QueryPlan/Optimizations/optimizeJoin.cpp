@@ -640,10 +640,12 @@ static size_t addChildQueryGraph(
     RelationStats stats = estimateReadRowsCount(*node);
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
+    /// A primary index count bounds the rows read, so a larger cached count is stale.
+    const bool replace_imprecise = stats.imprecise_estimate && stats.source != RowEstimateSource::PrimaryIndex;
     if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache
-        && (!stats.estimated_rows || stats.imprecise_estimate || num_rows_from_cache.value() < stats.estimated_rows.value()))
+        && (!stats.estimated_rows || replace_imprecise || num_rows_from_cache.value() < stats.estimated_rows.value()))
     {
-        /// A measured row count replaces an imprecise estimate and beats statistics (take the minimum); mark it a precise cache value.
+        /// A measured row count replaces an imprecise estimate and beats the others (take the minimum); mark it a precise cache value.
         stats.estimated_rows = num_rows_from_cache;
         stats.imprecise_estimate = false;
         stats.source = RowEstimateSource::HashTableCache;
