@@ -87,6 +87,7 @@ polymorphic_parts_l.xml                                  # type UInt64 in CREATE
 polymorphic_parts_m.xml                                  # type UInt64 in CREATE ... AS hits_10m_single
 polymorphic_parts_s.xml                                  # type UInt64 in CREATE ... AS hits_10m_single
 prewhere_column_sizes_pruned_parts.xml                   # JSON column
+prewhere_subcolumn_read_steps.xml                        # JSON column
 prewhere_subcolumns.xml                                  # JSON column
 projection_materialize.xml                               # ALTER ADD_PROJECTION, ALTER DROP_PROJECTION
 qbit_distance_transposed_micro.xml                       # QBit column
