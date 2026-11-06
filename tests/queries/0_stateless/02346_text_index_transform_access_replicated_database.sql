@@ -32,10 +32,12 @@ ENGINE = MergeTree ORDER BY id; -- { serverError FUNCTION_NOT_ALLOWED }
 
 SELECT '3. ALTER ADD INDEX ON CLUSTER is denied.';
 
+-- The hosts do not run the query as the initiating user unless `distributed_ddl_use_initial_user_and_roles`
+-- is enabled, so a transform is refused outright.
 CREATE TABLE tab_on_cluster (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
 
 ALTER TABLE tab_on_cluster ON CLUSTER test_shard_localhost
-    ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val)) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }
+    ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val)) GRANULARITY 1; -- { serverError INCORRECT_QUERY }
 
 SELECT '4. CREATE TABLE ON CLUSTER is denied on the legacy entry-format path.';
 
@@ -82,7 +84,7 @@ SELECT '7. Also with ON CLUSTER.';
 
 ALTER TABLE tab_on_cluster_alias ON CLUSTER test_shard_localhost
     RENAME COLUMN mangled TO renamed,
-    ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = renamed) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }
+    ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = renamed) GRANULARITY 1; -- { serverError INCORRECT_QUERY }
 
 DROP TABLE tab_on_cluster_alias;
 
@@ -105,13 +107,7 @@ SET distributed_ddl_entry_format_version = DEFAULT;
 
 DROP TABLE tab_as_source;
 
-SELECT '9. ALTER ADD INDEX ON CLUSTER with a transform needs the table on the initiator.';
-
--- Without the table the initiator cannot expand an `ALIAS` column used in the transform.
-ALTER TABLE tab_missing_on_initiator ON CLUSTER test_shard_localhost
-    ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(val)) GRANULARITY 1; -- { serverError UNKNOWN_TABLE }
-
-SELECT '10. Accepted with the privilege.';
+SELECT '9. Accepted with the privilege, except ON CLUSTER.';
 
 SET allow_introspection_functions = 1;
 
@@ -119,7 +115,7 @@ ALTER TABLE {CLICKHOUSE_DATABASE_2:Identifier}.tab
     ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val)) GRANULARITY 1 FORMAT Null;
 
 ALTER TABLE tab_on_cluster ON CLUSTER test_shard_localhost
-    ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val)) GRANULARITY 1 FORMAT Null;
+    ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val)) GRANULARITY 1; -- { serverError INCORRECT_QUERY }
 
 DROP TABLE tab_on_cluster;
 DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier} FORMAT Null;

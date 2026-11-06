@@ -2,7 +2,3 @@
 idx
 2. The same with a text index transform, on the local host.
 idx_text
-3. An index kept by IF NOT EXISTS is authorized against the alias the statement renames.
-FUNCTION_NOT_ALLOWED
-4. And it is sent bound to the expansion of that alias.
-1	0
