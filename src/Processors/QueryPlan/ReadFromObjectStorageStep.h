@@ -100,6 +100,8 @@ private:
     /// What the main read keeps besides `required_names` when columns are split off.
     NameSet getNamesToKeepInMainRead(const NameSet & required_names) const;
 
+    RuntimeFilterLookupPtr getJoinRuntimeFilterLookup() const;
+
     StorageID storage_id;
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationPtr configuration;

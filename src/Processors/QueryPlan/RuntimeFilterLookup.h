@@ -468,6 +468,13 @@ struct RuntimeFilterIndexAnalysisDescriptor
 };
 using RuntimeFilterIndexAnalysisDescriptors = std::vector<RuntimeFilterIndexAnalysisDescriptor>;
 
+/// The JOIN runtime filters every row of a read passes, with the lookup they are registered in.
+struct JoinRuntimeFiltersForPruning
+{
+    RuntimeFilterIndexAnalysisDescriptors descriptors;
+    RuntimeFilterLookupPtr lookup;
+};
+
 /// Whether a runtime filter over a key of this type tracks the [min, max] envelope, i.e.
 /// can produce a range predicate even after the exact value set overflows into a bloom filter.
 bool runtimeFilterKeySupportsMinMaxRange(const DataTypePtr & type);

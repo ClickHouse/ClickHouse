@@ -46,6 +46,7 @@ public:
     std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const override { return underlying->getMatchedBuckets(); }
     std::vector<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override { return underlying->getTopKBestValuesOfBuckets(); }
     bool isTopKFilterApplied() const override { return underlying->isTopKFilterApplied(); }
+    bool isJoinRuntimeFilterApplied() const override { return underlying->isJoinRuntimeFilterApplied(); }
     bool isMinMaxFromStatisticsApplied() const override { return underlying->isMinMaxFromStatisticsApplied(); }
     void cacheFilterColumnStatistics() override { underlying->cacheFilterColumnStatistics(); }
 
