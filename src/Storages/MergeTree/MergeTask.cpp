@@ -963,8 +963,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
         /// A due `TTL ... GROUP BY ... SET` assignment can give such a column non-default values. The TTL step
         /// that expired columns add applies due TTLs even when TTL merges are stopped.
+        /// A patch can also force the TTL step for a part whose TTL looked not due before the patch.
         NameSet group_by_ttl_set_columns;
-        if (has_due_ttl)
+        if (has_due_ttl || ctx->need_remove_expired_values)
             for (const auto & group_by_ttl : global_ctx->metadata_snapshot->getGroupByTTLs())
                 for (const auto & set_part : group_by_ttl.set_parts)
                     group_by_ttl_set_columns.insert(set_part.column_name);
