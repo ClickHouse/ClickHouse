@@ -1664,7 +1664,9 @@ QueryPlan buildLogicalJoin(
         std::vector<JoinActionRef> eq_arguments;
         eq_arguments.push_back(join_expression_actions.findNode(get_lhs_column_name(column_name), /* is_input= */ true));
         eq_arguments.push_back(join_expression_actions.findNode(get_rhs_column_name(column_name), /* is_input= */ true));
-        auto eq_node = JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
+        /// The join matches an outer row to the result evaluated for its correlated-domain tuple.
+        /// A nullable correlated value is a domain value of its own and must match on both sides.
+        auto eq_node = JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::NullSafeEquals));
         predicates.push_back(std::move(eq_node));
     }
 
