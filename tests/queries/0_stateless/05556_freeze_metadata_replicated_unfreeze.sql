@@ -1,7 +1,8 @@
--- Tags: zookeeper, no-fasttest, no-replicated-database
+-- Tags: zookeeper, no-fasttest, no-replicated-database, no-shared-merge-tree
 -- Tag zookeeper: only ReplicatedMergeTree stores freeze metadata next to a frozen part
 -- Tag no-fasttest: the s3_disk storage policy is installed only with EXPORT_S3_STORAGE_POLICIES=1, which --fast-test turns off
 -- Tag no-replicated-database: an explicit ReplicatedMergeTree path and replica name are not accepted inside a Replicated database
+-- Tag no-shared-merge-tree: FreezeMetaData exists only for ReplicatedMergeTree on a zero-copy disk; the private runner rewrites the engine to SharedMergeTree, which refuses the local-metadata disk s3_disk
 
 -- ALTER TABLE ... FREEZE of a ReplicatedMergeTree part on a disk that supports zero-copy
 -- replication stores a freeze-metadata file next to the frozen part, and ALTER TABLE ... UNFREEZE
