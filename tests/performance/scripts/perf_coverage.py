@@ -27,7 +27,12 @@ class CoverageCollector:
         self.client = client
         self.directory = Path(directory)
         self.test_name = test_name
-        self.queries = queries
+        # The runner can mark disabled queries explicitly. Keep active query
+        # hashes compatible with older manifests without a false flag.
+        self.queries = [
+            {key: value for key, value in query.items() if key != "disabled" or value}
+            for query in queries
+        ]
         self.warm_runs = warm_runs
         self.names = []
         self.directory.mkdir(parents=True, exist_ok=True)
@@ -89,6 +94,8 @@ class CoverageCollector:
             self.stop()
 
     def collect_query(self, query_index, execute):
+        if self.queries[query_index].get("disabled"):
+            raise ValueError("Cannot collect a disabled query")
         # No timing loop or profiler pass. The first execution also warms the
         # query; the repeated executions retain their union under one identity.
         with self.phase("first", query_index):
@@ -99,6 +106,18 @@ class CoverageCollector:
 
     def finish(self, settings):
         self.stop()
+        expected = {f"{self.test_name}.setup", f"{self.test_name}.teardown"}
+        for index, query in enumerate(self.queries):
+            if not query.get("disabled"):
+                expected.update(
+                    f"{self.test_name}.query{index}.{query_hash(query)[:16]}.{phase}"
+                    for phase in ("first", "warm")
+                )
+        if (
+            len(self.names) != len(expected)
+            or {entry["test_name"] for entry in self.names} != expected
+        ):
+            raise RuntimeError("Incomplete coverage query/setup/teardown phases")
         seen = set()
         rows = 0
         # Write in the same six-column format as the integration file sink.

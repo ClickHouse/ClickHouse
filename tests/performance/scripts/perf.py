@@ -854,11 +854,6 @@ if args.table_engine and not root.findall("create_query"):
 # endpoint. (Done after the `--print-queries` / `--print-settings` early exits so
 # those read-only paths are unaffected.)
 has_shell_queries = any(q["kind"] == "shell" for q in test_queries)
-if has_shell_queries and args.coverage_output:
-    # A script can run `clickhouse-local` or several client processes. Arming
-    # only the server would silently miss those processes' coverage.
-    print("skipped\tShell queries require subprocess coverage collection")
-    sys.exit(0)
 if has_shell_queries and (args.user != "default" or args.password != "" or args.secure):
     raise Exception(
         'Shell-script queries (<query type="shell">) do not support the '
@@ -981,6 +976,10 @@ servers = [
 # Setup statements like `OPTIMIZE ... FINAL` are silent for long; raise the 300 s default under `--long`.
 driver_options = {"send_receive_timeout": 30 * 60} if args.long else {}
 if args.coverage_output:
+    if has_shell_queries:
+        # Scripts can start other processes whose coverage is not collected.
+        print("skipped\tShell queries require subprocess coverage collection")
+        sys.exit(0)
     # LLVM instrumentation makes large fills slower. Wait past the server's
     # setup or query limit so it can return its timeout exception.
     driver_options["send_receive_timeout"] = max(

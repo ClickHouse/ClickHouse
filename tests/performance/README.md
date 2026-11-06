@@ -209,9 +209,42 @@ still run under coverage.
 Coverage setup and fill statements have a 30-minute execution limit. The client
 socket timeout is one minute longer than the larger of that limit and the query
 execution limit. The CI wrapper allows 30 minutes per query statement (unless
-the XML test specifies `max_query_seconds`) and six hours per shard, including
+the XML test specifies `max_query_seconds`) and twelve hours per shard, including
 a 20-minute export reserve. Each test can use the remaining collection budget;
 there is no separate one-hour limit for an entire XML file.
+
+Shard assignment uses measured instrumented runtimes in
+`ci/jobs/performance_coverage_timings.json`. Whole XML files are sorted from
+longest to shortest, with lexical ties, then placed on the least-loaded shard.
+The weights include test setup and teardown. The load prediction also includes
+measured shard-level fixture and export overhead. The first 808 timings comprise
+478 measured whole-test wall times and 330 measured stage totals with an estimated
+wrapper cost; they are not release-query medians.
+
+Discovery defines the test universe, so a newly added XML is included without
+editing the timing table. New tests use the table's upper-quartile runtime as an
+explicit estimate. Changed XML, included fragments, SQL or settings use the
+larger of that estimate and its previous runtime. Deleted tests disappear automatically. New and changed
+tests are listed in the job manifest; they are never assigned zero cost. Long
+and shell-query XMLs retain explicit skipped entries but do not affect load.
+Every discovered XML belongs to exactly one shard, including these exclusions.
+The same source revision, timing table and shard count reproduce the assignment.
+Updating any of them may move tests; a resumed shard rejects changed assignments.
+
+Inspect the current deterministic assignment without starting a server:
+
+```bash
+python3 -m ci.jobs.performance_coverage_sharding --show-plan --shards 16
+```
+
+To refresh the weights, download completed shard manifests and run this from the
+repository root. The command uses fresh per-test wall times from compatible
+first-plus-one-warm jobs, takes the median for repeated measurements, and ignores
+restored tests. Commit the updated timing table after reviewing the new balance:
+
+```bash
+python3 -m ci.jobs.performance_coverage_sharding --update-timings tmp/coverage-*/manifest.json
+```
 
 To collect just performance coverage on a PR branch, dispatch the existing
 workflow with `suite=performance` (the scheduled run still collects all suites):
@@ -250,36 +283,19 @@ cache may choose another executable even at the same workflow revision; recovery
 must not rely on that choice. A mismatch remains an error. The checksum is not
 the compressed download's checksum or its S3 ETag.
 
-Manual recovery can set `performance_max_hours=12` when a large whole XML does
-not fit the default six-hour job budget. This does not change the scheduled
-collector's six-hour budget, test assignment, query set, or repetition policy.
-The outer CI timeout is twelve hours to accommodate this explicit option.
+The default scheduled and manual budget is twelve hours. A single measured
+`string_sort.xml` needs 6h36m51s with instrumentation; assigning it to its own
+shard cannot make the complete collection fit six hours. The budget is a limit,
+not a target runtime. The first measured balance predicts about 6h46m for the
+slowest shard, including fixture and export overhead; actual CI validation is
+needed, and new tests or runtime variation can change that prediction.
+`performance_max_hours=6` remains available for explicitly shorter manual runs.
 
 ```bash
 gh workflow run nightly_coverage.yml --ref <branch> \
     -f suite=performance -f performance_shards=4,13 \
     -f performance_resume_from=<full-sha> -f performance_max_hours=12 \
     -f performance_binary_url=<original-artifact-url> \
-    -f performance_binary_sha256=<unpacked-binary-sha256>
-```
-
-If a whole shard still exceeds that budget, set `performance_recovery_shard`
-to its original shard number and leave `performance_shards=all`. This manual
-mode partitions that original assignment across eight recovery jobs, using the
-first eight job slots. Their manifests identify the original shard and each
-partition explicitly. Together they include every original test exactly once;
-scheduled collection continues to use the original sixteen assignments.
-The source archive must record a matching binary checksum. Each job validates
-the original full assignment and restores only complete tests in its partition;
-an interrupted XML restarts from setup. Each complete partition publishes its
-own CIDB snapshot, so consumers must verify all eight manifests before treating
-the original shard as complete.
-
-```bash
-gh workflow run nightly_coverage.yml --ref <branch> \
-    -f suite=performance -f performance_shards=all \
-    -f performance_recovery_shard=2 -f performance_resume_from=<full-sha> \
-    -f performance_max_hours=12 -f performance_binary_url=<original-artifact-url> \
     -f performance_binary_sha256=<unpacked-binary-sha256>
 ```
 

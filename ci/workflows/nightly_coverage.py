@@ -2,7 +2,7 @@ from praktika import Workflow
 
 from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs
 from ci.defs.job_configs import JobConfigs
-from ci.jobs.performance_coverage_resume import RECOVERY_PARTITIONS, validate_options
+from ci.jobs.performance_coverage_resume import validate_options
 from ci.praktika.info import Info
 
 
@@ -13,31 +13,20 @@ def filter_coverage_jobs(job_name):
     suite = info.get_workflow_input_value("suite")
     shards = info.get_workflow_input_value("performance_shards")
     resume_from = info.get_workflow_input_value("performance_resume_from") or ""
-    recovery_shard = info.get_workflow_input_value("performance_recovery_shard") or ""
-    max_hours = info.get_workflow_input_value("performance_max_hours") or "6"
+    max_hours = info.get_workflow_input_value("performance_max_hours") or "12"
     binary_url = info.get_workflow_input_value("performance_binary_url") or ""
     binary_sha256 = info.get_workflow_input_value("performance_binary_sha256") or ""
-    validate_options(resume_from, max_hours, binary_url, binary_sha256, recovery_shard)
+    validate_options(resume_from, max_hours, binary_url, binary_sha256)
     # Older dispatches predate this optional input.
     shards = "all" if shards is None else shards.strip()
     if suite == "all":
-        if (
-            shards != "all"
-            or resume_from
-            or max_hours != "6"
-            or binary_url
-            or recovery_shard
-        ):
+        if shards != "all" or resume_from or max_hours != "12" or binary_url:
             raise ValueError("Performance recovery inputs require suite=performance")
         return False, ""
     if suite != "performance":
         raise ValueError(f"Unknown coverage suite: {suite!r}")
     jobs = JobConfigs.performance_coverage_jobs
-    if recovery_shard:
-        if shards != "all":
-            raise ValueError("Split recovery requires performance_shards=all")
-        selected_shards = set(range(1, RECOVERY_PARTITIONS + 1))
-    elif shards == "all":
+    if shards == "all":
         selected_shards = set(range(1, len(jobs) + 1))
     else:
         parts = [part.strip() for part in shards.split(",")]
@@ -97,16 +86,10 @@ workflow = Workflow.Config(
             default_value="",
         ),
         Workflow.Config.InputConfig(
-            name="performance_recovery_shard",
-            description="Split one original performance shard (1-16) into eight recovery jobs; requires resume and performance_shards=all",
-            is_required=False,
-            default_value="",
-        ),
-        Workflow.Config.InputConfig(
             name="performance_max_hours",
             description="Performance collection job budget including export reserve",
             is_required=False,
-            default_value="6",
+            default_value="12",
             options=["6", "12"],
         ),
         Workflow.Config.InputConfig(
