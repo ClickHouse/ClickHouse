@@ -116,7 +116,7 @@ $CLICKHOUSE_CLIENT --allow_experimental_kafka_offsets_storage_in_keeper 1 -q "
              kafka_format = 'JSONEachRow',
              kafka_max_block_size = 100,
              kafka_keeper_path = '$KEEPER_PATH',
-             kafka_replica_name = 'r1';
+             kafka_replica_name = '{replica}';
 "
 
 # Create destination table
