@@ -3,7 +3,8 @@
 # Ctrl-R opens an interactive history search: words match in any order and case (also non-ASCII),
 # Esc leaves the line unchanged, pasted text is used as the search query, control characters
 # from the history are not sent to the terminal, an unmatched query is kept as typed, the query
-# can be edited in the middle, and a match beyond the screen width is scrolled into view.
+# can be edited in the middle, a match beyond the screen width is scrolled into view, and Esc keeps
+# the cursor position in the line.
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
@@ -107,6 +108,18 @@ expect -re {[0-9]+/[0-9]+}
 send -- "привет"
 expect -re {1/[0-9]+}
 send -- "\033"
+expect ":) "
+
+# Esc also keeps the cursor position in the line: `_` is inserted where it was.
+send -- "SELECT 'cursor' || 'kept'"
+send -- "\033\[D\033\[D\033\[D\033\[D\033\[D"
+send -- "\022"
+expect -re {[0-9]+/[0-9]+}
+send -- "\033"
+expect ":) "
+send -- "_\r"
+expect "cursor_kept"
+expect "1 row in set"
 expect ":) "
 
 # Left moves the cursor: `zzb`, Left, `a` searches for `zzab`.

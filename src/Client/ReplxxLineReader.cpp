@@ -753,6 +753,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             }
 
             std::string current_query(rx.get_state().text());
+            const int cursor_position = rx.get_state().cursor_position();
             std::string new_query;
             /// Keep the input visible and open the picker below its end.
             rx.set_state(replxx::Replxx::State(current_query.c_str(), std::numeric_limits<int>::max()));
@@ -777,6 +778,11 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
                 /// (see historyNavigate).
                 suppress_hints_once = true;
                 rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
+            }
+            else
+            {
+                /// Nothing picked: the cursor goes back to where it was.
+                rx.set_state(replxx::Replxx::State(current_query.c_str(), cursor_position));
             }
 
             if (bracketed_paste_enabled)
