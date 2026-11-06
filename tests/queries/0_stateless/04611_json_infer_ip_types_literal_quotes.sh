@@ -12,7 +12,7 @@ SETTINGS="--input_format_try_infer_ipv4=1 --input_format_try_infer_ipv6=1"
 check_string()
 {
     # shellcheck disable=SC2086
-    $CLICKHOUSE_CLIENT $SETTINGS -q "SELECT toTypeName(c1) LIKE '%String', length(c1) FROM format($1, '$2')"
+    $CLICKHOUSE_CLIENT $SETTINGS -q "SELECT toTypeName(c1) IN ('String', 'Nullable(String)'), length(c1) FROM format($1, '$2')"
 }
 
 check_ip()
@@ -27,7 +27,7 @@ for ip in "192.168.1.1" "2001:db8::1"; do
     check_string TSVRaw "\'$ip\'\n"
     check_string CSV "\"\'$ip\'\"\n"
     # shellcheck disable=SC2086
-    $CLICKHOUSE_CLIENT $SETTINGS -q "SELECT toTypeName(a) LIKE '%String', length(a) FROM format(TSKV, 'a=\'$ip\'\n')"
+    $CLICKHOUSE_CLIENT $SETTINGS -q "SELECT toTypeName(a) IN ('String', 'Nullable(String)'), length(a) FROM format(TSKV, 'a=\'$ip\'\n')"
 done
 
 echo 'Quoted and nested values infer IP types'
