@@ -759,6 +759,7 @@ private:
     /// Uses a `HashJoin` as its schema delegate and row-store owner while building and probing its
     /// own partitioned maps. It needs the access the join methods have.
     friend class PartitionedHashJoin;
+    friend class HashJoinClause;
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
     friend class HashJoinMethods;

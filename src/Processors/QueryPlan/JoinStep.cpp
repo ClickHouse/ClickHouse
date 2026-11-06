@@ -237,7 +237,8 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         });
     }
 
-    if (join->supportParallelJoin() && (min_block_size_rows > 0 || min_block_size_bytes > 0))
+    /// Skip when the join already caps blocks at `max_joined_block_size_*`. Squashing would only copy.
+    if (join->supportParallelJoin() && !join->emitsSizedOutputBlocks() && (min_block_size_rows > 0 || min_block_size_bytes > 0))
     {
         const auto & table_join = join->getTableJoin();
         const size_t max_rows = table_join.maxJoinedBlockRows();

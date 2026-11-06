@@ -1,0 +1,23 @@
+sequential keys, inner, no right columns	66667	1
+sequential keys, left, no right columns	200000	1
+sequential keys, semi left, no right columns	66667	1
+sequential keys, anti left, no right columns	133333	1
+sequential keys, inner, right columns read	66667	1
+sequential keys, left, right columns read	200000	1
+sequential keys, right, right columns read	66667	1
+sequential keys, full, right columns read	200000	1
+hashed keys, inner, no right columns	66939	1
+hashed keys, left, no right columns	200000	1
+hashed keys, semi left, no right columns	66939	1
+hashed keys, anti left, no right columns	133061	1
+hashed keys, inner, right columns read	66939	1
+hashed keys, left, right columns read	200000	1
+hashed keys, right, right columns read	66939	1
+hashed keys, full, right columns read	200000	1
+-- first rows
+0	810	1000270
+3	2994	1000998
+4	1608	1000536
+0	810	1000270
+3	2994	1000998
+4	1608	1000536
