@@ -10,6 +10,7 @@
 #include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 
@@ -237,11 +238,12 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
         if (prefix_size != 1)
             continue;
 
-        auto column_node = table_expression_data.tryGetColumnNode(column_name);
-        if (!column_node)
+        const auto & column_node_map = table_expression_data.getColumnNodeMap();
+        auto column_node_it = column_node_map.find(column_name);
+        if (column_node_it == column_node_map.end())
             continue;
 
-        auto column_type = column_node->getColumnType();
+        auto column_type = column_node_it->second->getColumnType();
 
         for (size_t i = 0; i < prefix_size; ++i)
         {
@@ -255,7 +257,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
         if (!column_type)
             continue;
 
-        nested_column_nodes.push_back(column_node);
+        nested_column_nodes.push_back(table_expression_data.tryGetColumnNode(column_name));
         nested_types.push_back(column_type);
         nested_names_array.push_back(suffix.getFullName());
     }
@@ -374,18 +376,22 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     storage->updateExternalDynamicMetadataIfExists(context);
     auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+    auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
 
     /// The view source holds the block pushed to a materialized view with the types it was
     /// converted to; the catalog table may have been altered since. Take the types from it, but
     /// keep the catalog storage so engine checks (FINAL, SAMPLE, `_shard_num`) see the real table.
     /// `replaceStorageInQueryTree` swaps the view source in for execution after the passes.
     /// The inner query of an ordinary view reads the table itself.
+    /// The snapshot above can be shared by every read of the table in the query, so only a copy gets the view source's types.
     if (auto view_source = context->getViewSource();
         view_source && !context->isViewInnerQuery()
         && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted())
-        metadata_snapshot = view_source->getInMemoryMetadataPtr(context, false);
+    {
+        auto view_source_metadata = view_source->getInMemoryMetadataPtr(context, false);
+        storage_snapshot = storage_snapshot->clone(view_source_metadata, storage_snapshot->data);
+    }
 
-    auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
     /// Pass the user-requested storage_id explicitly instead of letting the
     /// TableNode ctor read storage->getStorageID(), which can be mutated by
     /// a concurrent renameInMemory between tryGetTable and this point.
@@ -407,29 +413,39 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
 /// check the planner performs later for the columns the query actually reads, and a query that
 /// can be executed can always be analyzed. Table expressions constructed programmatically
 /// (e.g. by `MutationsInterpreter`) do not pass through here and keep their own access semantics.
-static void checkAccessToTableMetadata(const TableNode & table_node, const ContextPtr & context)
+void IdentifierResolver::checkAccessToTableMetadata(
+    const StoragePtr & storage,
+    const StorageID & storage_id,
+    const StorageSnapshotPtr & storage_snapshot,
+    const ContextPtr & context)
 {
-    /// Temporary tables of the current session are always accessible.
-    if (!table_node.getTemporaryTableName().empty())
-        return;
-
-    const auto & storage_id = table_node.getStorageID();
     if (!storage_id.hasDatabase())
         return;
 
-    if (isInsertedDataOfTableFunction(table_node.getStorage(), storage_id, context))
+    if (isInsertedDataOfTableFunction(storage, storage_id, context))
         return;
 
     /// Probe the raw rights so that probing does not pollute `used_privileges` of the query log.
     /// `SELECT` is checked in addition to `SHOW_COLUMNS` because the implicit `SELECT` on the
     /// `system` and `information_schema` databases is granted after implications are derived.
     const auto access_rights = context->getAccess()->getAccessRightsWithImplicit();
-    for (const auto & column : table_node.getStorageSnapshot()->metadata->getColumns())
+    auto is_visible = [&](const String & column_name)
     {
-        if (access_rights->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
-            || access_rights->isGranted(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name, column.name))
+        return access_rights->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column_name)
+            || access_rights->isGranted(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name, column_name);
+    };
+    const auto & metadata = *storage_snapshot->metadata;
+    for (const auto & column : metadata.getColumns())
+        if (is_visible(column.name))
             return;
-    }
+    /// A grant on a virtual column alone is enough to read it. An `Alias` reports its target's virtual columns, so there
+    /// the grant must also hold through the whole chain.
+    const auto * alias = storage->as<StorageAlias>();
+    for (const auto & column : metadata.virtuals)
+        if (is_visible(column.name)
+            && (!alias || alias->isTargetTableGranted(context, AccessType::SELECT, column.name)
+                || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, column.name)))
+            return;
 
     /// Not a single column of the table is visible to the user. Report the denial through the
     /// standard check, so the message and the query log get the table-level requirement without
@@ -441,7 +457,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabas
 {
     if (auto result = tryResolveTableIdentifier(table_identifier, context))
     {
-        checkAccessToTableMetadata(*result, context);
+        /// Temporary tables of the current session are always accessible.
+        if (result->getTemporaryTableName().empty())
+            checkAccessToTableMetadata(result->getStorage(), result->getStorageID(), result->getStorageSnapshot(), context);
         return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
     }
 
