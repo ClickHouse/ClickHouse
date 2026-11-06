@@ -206,7 +206,7 @@ def test_mismatched_pair_is_rejected():
     # Only the key is rotated: the pair is inconsistent.
     node.exec_in_container(["bash", "-c", f"cp {config_dir}/second.key {config_dir}/cur.key"])
     node.query("SYSTEM RELOAD CONFIG")
-    assert node.contains_in_log("Private key does not match the certificate")
+    assert node.contains_in_log("does not match the certificate (")
     assert curl_ok("first")
 
     # The cert follows: the new pair is accepted.
