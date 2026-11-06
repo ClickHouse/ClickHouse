@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- no-fasttest: the Parquet format is not built in the fast-test image.
-
 -- The Parquet bloom-filter and dictionary-filter row-group legs hash the stored side in physical space
 -- (the dictionary is materialized as the decoded type and cast to the physical type, and the file's own
 -- bloom filter holds digests of the physical values) but hash query constants of the requested type.

@@ -1,7 +1,7 @@
 #pragma once
 #include "config.h"
 
-#if USE_ARROW || USE_PARQUET
+#if USE_ARROW_LIBRARY
 
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Formats/FormatSettings.h>
