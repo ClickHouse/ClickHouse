@@ -607,14 +607,16 @@ static void applyStoredColumnIdentity(
     for (const auto & column : block)
         required.emplace_back(column.name, column.type);
 
+    auto wasRetired = [&](const String & name)
+    {
+        return exact_freed.contains(name) || exact_cleared.contains(name)
+            || nameOrParentIn(group_freed, name) || nameOrParentIn(group_cleared, name);
+    };
+
     for (const auto & column : metadata.columns.getAllPhysical())
     {
-        if (block.has(column.name))
-            continue;
-        if (!exact_freed.contains(column.name) && !exact_cleared.contains(column.name)
-            && !nameOrParentIn(group_freed, column.name) && !nameOrParentIn(group_cleared, column.name))
-            continue;
-        requireColumn(column.name, column.type);
+        if (!block.has(column.name) && wasRetired(column.name))
+            requireColumn(column.name, column.type);
     }
 
     /// Dropping or clearing the last stored column leaves a zero-column block, whose row count is 0.

@@ -824,9 +824,8 @@ static void splitAndModifyMutationCommands(
 {
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
-    /// Exact `n` stays exact even when the part never stored it (an alias made real, a missing
-    /// column with no marker). Dotted siblings are still in the schema. A nested-parent drop
-    /// removes them, and `CLEAR` keeps them, so those two still expand.
+    /// True when `name.*` must be left alone. An exact column stays exact even if this part
+    /// never stored it. A non-clear drop of a nested parent is already one command per child.
     auto drop_keeps_dotted_columns = [&table_columns](const MutationCommand & command)
     {
         return command.type == MutationCommand::Type::DROP_COLUMN
@@ -1430,10 +1429,9 @@ static void splitAndModifyMutationCommands(
                     for_interpreter.push_back(std::move(interpreter_command));
                 };
 
-                /// A stored column or a missing-column marker is cleared in place. A name that
-                /// exists only in metadata stays exact, so it is not expanded onto `name.*`, and
-                /// `CLEAR` does not run: there is no stream, and running it rebuilds every index
-                /// over that name and writes the columns those indices read.
+                /// Only a stored column or a missing-column marker has data to clear. Clearing a
+                /// name that exists only in metadata rebuilds indices over it and writes the
+                /// columns those indices read.
                 const bool stored_or_marker = source_columns.has(name_in_part) || serialization_infos.isMissingColumn(name_in_part);
                 if (stored_or_marker)
                     push_source(name_in_part);
