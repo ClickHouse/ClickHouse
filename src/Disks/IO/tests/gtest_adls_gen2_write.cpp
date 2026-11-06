@@ -13,7 +13,9 @@
 
 #include <base/EnumReflection.h>
 #include <base/types.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <Common/Exception.h>
+#include <Common/HTTPConnectionInfo.h>
 #include <Common/Logger.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
@@ -41,6 +43,8 @@ struct RecordedRequest
     String path;
     String query;
     Azure::Core::CaseInsensitiveMap headers;
+    /// Whether the request went out inside an armed `HTTPConnectionInfoScope`.
+    bool connection_info_captured = false;
 
     String header(const String & name) const
     {
@@ -120,6 +124,7 @@ public:
         recorded.path = request.GetUrl().GetPath();
         recorded.query = request.GetUrl().GetRelativeUrl();
         recorded.headers = request.GetHeaders();
+        recorded.connection_info_captured = isHTTPConnectionInfoCaptureEnabled();
         const Op op = classifyRequest(recorded);
         requests.push_back(recorded);
 
@@ -220,6 +225,7 @@ struct WriteFixture
         = std::make_shared<AzureBlobStorage::StaticCredential>("token", std::chrono::system_clock::now() + std::chrono::hours(1));
     WriteSettings write_settings;
     AzureBlobStorage::RequestSettings request_settings;
+    BlobStorageLogWriterPtr blob_log;
 
     /// SDK-level retries the caller asks for. Production passes a non-zero value here, so the tests
     /// that pin single-shot behaviour must leave it non-zero: the writer is responsible for turning
@@ -247,7 +253,9 @@ struct WriteFixture
             FINAL_BLOB_PATH,
             /*buf_size_=*/ DBMS_DEFAULT_BUFFER_SIZE,
             write_settings,
-            std::make_shared<AzureBlobStorage::RequestSettings>(request_settings));
+            std::make_shared<AzureBlobStorage::RequestSettings>(request_settings),
+            /*container_for_logging_=*/ String{},
+            blob_log);
     }
 
     /// Requests of a kind, in order.
@@ -1192,6 +1200,33 @@ TEST(AdlsGen2Write, NonFabricDfsHostIsNotRetargeted)
     for (const auto & request : fixture.transport->requests)
         EXPECT_EQ(request.host, "myacct.dfs.core.windows.net")
             << String{magic_enum::enum_name(classifyRequest(request))} << " " << request.path;
+}
+
+/// A `system.blob_storage_log` row reports the connection only of a request issued inside an armed
+/// `HTTPConnectionInfoScope`, so every request the writer logs must be in one, and none when nothing is
+/// logged.
+TEST(AdlsGen2Write, LoggedRequestsCaptureTheirConnection)
+{
+    for (const bool logged : {true, false})
+    {
+        WriteFixture fixture;
+        if (logged)
+            fixture.blob_log = std::make_shared<BlobStorageLogWriter>();
+
+        auto buffer = fixture.makeBuffer();
+        writeSomeData(*buffer);
+        buffer->finalize();
+
+        std::vector<String> ops;
+        for (const auto & request : fixture.transport->requests)
+            ops.push_back(String{magic_enum::enum_name(classifyRequest(request))});
+        const std::vector<String> expected{"Create", "Append", "Flush", "Rename"};
+        ASSERT_EQ(ops, expected);
+
+        for (const auto & request : fixture.transport->requests)
+            EXPECT_EQ(request.connection_info_captured, logged)
+                << String{magic_enum::enum_name(classifyRequest(request))} << (logged ? " with" : " without") << " a blob log";
+    }
 }
 
 /// The error for a key that cannot be staged has to be actionable. Since only the file name may be

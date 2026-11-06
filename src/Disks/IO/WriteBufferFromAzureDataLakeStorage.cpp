@@ -415,6 +415,8 @@ void WriteBufferFromAzureDataLakeStorage::runOnceRetryingForbidden(
                 error_message);
     };
 
+    /// As in `runWithRetries`, one row covers every attempt.
+    HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
     Stopwatch watch;
     size_t backoff_ms = 100;
     for (size_t attempt = 1;; ++attempt)
