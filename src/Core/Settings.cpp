@@ -1462,6 +1462,10 @@ Possible values:
 Since v25.4, `INSERT ... SELECT` from a `ReplicatedMergeTree` or `SharedMergeTree` source can also be parallelized across replicas. To enable it:
 - `parallel_distributed_insert_select = 2`
 - `enable_parallel_replicas = 1`
+
+:::note
+The rewritten query, including every expression of the `SELECT` (subqueries, UDFs, and so on), is executed on the shards under the credentials of the cluster configuration — the same trust model as other shard-side processing, such as the subqueries of a non-`GLOBAL` `IN`. Configure an interserver secret (the `secret` element of the cluster configuration) if shard-side reads must be authorized as the calling user.
+:::
 )", 0) \
     DECLARE(UInt64, distributed_group_by_no_merge, 0, R"(
 Do not merge aggregation states from different servers for distributed query processing, you can use this in case it is for certain that there are different keys on different shards
@@ -6847,7 +6851,6 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE(Bool, query_plan_read_in_order_through_join, true, "Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.", 0) \
     DECLARE(Bool, query_plan_aggregation_in_order, true, R"(
 Toggles the aggregation in-order query-plan-level optimization.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
@@ -6860,6 +6863,11 @@ Possible values:
 
 - 0 - Disable
 - 1 - Enable
+)", 0) \
+    DECLARE(BoolForce, query_plan_read_in_order_through_join, true, R"(
+Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.
+
+For a join other than `LEFT`, the read stays in order only when every part of the left table announces a virtual row (see [`read_in_order_use_virtual_row`](#read_in_order_use_virtual_row)); without the virtual rows the merge after the join may read far more than the limit needs. The value `force` keeps the read in order regardless.
 )", 0) \
     DECLARE(Bool, query_plan_remove_redundant_sorting, true, R"(
 Toggles a query-plan-level optimization which removes redundant sorting steps, e.g. in subqueries.

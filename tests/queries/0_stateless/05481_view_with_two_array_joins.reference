@@ -1,0 +1,38 @@
+v	1	1
+v	1	2
+v	1	3
+v_definer	1	1
+v_definer	1	2
+v_definer	1	3
+v_definer, no pushdown	1	1
+v_definer, no pushdown	1	2
+v_definer, no pushdown	1	3
+v_dist	1	1
+v_dist	1	2
+v_dist	1	3
+v_full	1	1	1
+v_full	1	2	1
+v_full	1	3	1
+v_paste	1	1	0
+v_paste	1	2	0
+v_paste	1	3	1
+v_asof	1	1	1
+v_asof	1	2	1
+v_asof	1	3	1
+v_cross	1	1	1
+v_cross	1	1	2
+v_cross	1	2	1
+v_cross	1	2	2
+v_cross	1	3	1
+v_cross	1	3	2
+v_left_semi	1	1	1
+v_left_semi	1	2	1
+v_left_semi	1	3	1
+v_right_semi	1	1	1
+v_right_semi	1	2	1
+v_right_semi	1	3	1
+mv	1	1
+mv	1	2
+mv	1	3
+v_dist_plain pushdown	1
+v_dist no pushdown	1
