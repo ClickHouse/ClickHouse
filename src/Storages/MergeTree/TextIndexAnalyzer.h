@@ -67,7 +67,8 @@ public:
         void markFailed();
         void markBypassed();
         void addMissingToken(std::string_view token);
-        void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range);
+        /// `embedded_postings` are the clipped embedded postings, or nullptr if there are none.
+        void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range, const PostingList * embedded_postings);
         void addRowsRange(RowsRange token_rows_range);
         void addPostings(std::string_view token, const PostingList & token_postings);
         bool needReadPostings() const { return tokens_with_read_postings.size() < tokens.size(); }
@@ -108,6 +109,10 @@ public:
     /// One key range per pattern, or nothing when some pattern can match tokens anywhere in the dictionary.
     std::optional<std::vector<TokenKeyRange>> getPatternTokenKeyRanges() const;
     bool canFilterTokensByLiterals() const;
+    bool canIntersectDictionary() const { return !pattern_cursors.empty(); }
+    /// Like `TextIndexDictionaryDFA::Cursor::next`, but for the union of all pattern DFAs: `token` matches if any
+    /// DFA accepts it, and `lower_bound` is the smallest lower bound of all DFAs.
+    TextIndexDictionaryDFA::Cursor::Result nextPatternToken(std::string_view token, String & lower_bound);
     /// Appends, ascending, the tokens `addTokenToPatterns` accepts, running it only on those holding a pattern's literal.
     void matchTokensByLiterals(const ColumnString & tokens, PaddedPODArray<UInt8> & candidate_marks, std::vector<size_t> & matched_indices);
     /// Marks all pattern queries as bypassed (e.g. dictionary scan budget exhausted).
@@ -150,6 +155,7 @@ private:
     absl::flat_hash_set<const OptimizedRegularExpression *> per_token_patterns;
     /// This analyzer's own copies of the patterns that use re2, because threads that share one re2 object contend on its cache.
     std::deque<OptimizedRegularExpression> own_patterns;
+    std::vector<TextIndexDictionaryDFA::Cursor> pattern_cursors;
 
     /* Fields updated dynamically during text index analysis. */
 
