@@ -277,6 +277,16 @@ mkdir -p "$TEST_DIR_ABS/latematch/root/aaa" "$TEST_DIR_ABS/latematch/root/mmm"
 ln -s .. "$TEST_DIR_ABS/latematch/root/aaa/back"
 printf "row1\n" > "$TEST_DIR_ABS/latematch/root/mmm/zzz.txt"
 
+# How many symlinks one lookup may follow: 40 on Linux, 32 on macOS. The link counts below are for 40.
+mkdir -p "$TEST_DIR_ABS/limit"
+touch "$TEST_DIR_ABS/limit/l0"
+SYMLINK_LIMIT=0
+for i in $(seq 1 100); do
+    ln -s "l$((i - 1))" "$TEST_DIR_ABS/limit/l$i"
+    [ -e "$TEST_DIR_ABS/limit/l$i" ] || break
+    SYMLINK_LIMIT=$i
+done
+
 # Three names for one directory with different symlink budgets: `budget/root/a` and `root/b`
 # resolve through 40 links (the Linux limit), so `child` below them fails with `ELOOP`, while
 # `root/z` reaches the same `data/A` through one link and can read `child/missing.txt`. The walk
@@ -285,10 +295,10 @@ mkdir -p "$TEST_DIR_ABS/budget/root" "$TEST_DIR_ABS/budget/chains" "$TEST_DIR_AB
 printf "A\n" > "$TEST_DIR_ABS/budget/data/A/visible.txt"
 printf "B\n" > "$TEST_DIR_ABS/budget/data/B/missing.txt"
 ln -s ../B "$TEST_DIR_ABS/budget/data/A/child"
-for i in $(seq 1 38); do
+for i in $(seq 1 $((SYMLINK_LIMIT - 2))); do
     ln -s "s$((i + 1))" "$TEST_DIR_ABS/budget/chains/s$i"
 done
-ln -s ../data/A "$TEST_DIR_ABS/budget/chains/s39"
+ln -s ../data/A "$TEST_DIR_ABS/budget/chains/s$((SYMLINK_LIMIT - 1))"
 ln -s ../chains/s1 "$TEST_DIR_ABS/budget/root/a"
 ln -s ../chains/s1 "$TEST_DIR_ABS/budget/root/b"
 ln -s ../data/A "$TEST_DIR_ABS/budget/root/z"
@@ -303,10 +313,10 @@ printf "B\n" > "$TEST_DIR_ABS/budget2/data/B/B.txt"
 printf "C\n" > "$TEST_DIR_ABS/budget2/data/C/C.txt"
 ln -s ../B "$TEST_DIR_ABS/budget2/data/A/child"
 ln -s ../C "$TEST_DIR_ABS/budget2/data/B/child"
-for i in $(seq 1 38); do
+for i in $(seq 1 $((SYMLINK_LIMIT - 2))); do
     ln -s "s$((i + 1))" "$TEST_DIR_ABS/budget2/chains/s$i"
 done
-ln -s ../data/A "$TEST_DIR_ABS/budget2/chains/s39"
+ln -s ../data/A "$TEST_DIR_ABS/budget2/chains/s$((SYMLINK_LIMIT - 1))"
 ln -s ../chains/s1 "$TEST_DIR_ABS/budget2/root/a"
 ln -s ../chains/s2 "$TEST_DIR_ABS/budget2/root/b"
 ln -s ../data/A "$TEST_DIR_ABS/budget2/root/z"
@@ -319,7 +329,8 @@ ln -snf ../chains/s2/child "$TEST_DIR_ABS/budget3/root/a"
 ln -snf ../chains/s1 "$TEST_DIR_ABS/budget3/root/b"
 
 # A file whose path through `longname/root/a` exceeds `PATH_MAX` while its directory's does not, so
-# only its size lookup fails. `root/z` names the same directory through a chain of short symlinks.
+# only its size lookup fails. `root/z` names the same directory through a chain of short symlinks, relative
+# because macOS fails a lookup whose path, with a symlink's target spliced in, exceeds `PATH_MAX`.
 PATH_MAX_LEN=$(getconf PATH_MAX "$USER_FILES_PATH")
 LONG_ALIAS="$TEST_DIR_ABS/longname/root/a"
 mkdir -p "$TEST_DIR_ABS/longname/root" "$TEST_DIR_ABS/longname/hops"
@@ -333,17 +344,17 @@ while [ "$SEGMENT_LEN" -gt 0 ]; do
 done
 mkdir -p "$TEST_DIR_ABS/longname/data$LONG_DIR"
 (cd "$TEST_DIR_ABS/longname/data" && printf "L\n" > "${LONG_DIR#/}/a_long_filename.txt")
-HOP_TARGET="$TEST_DIR_ABS/longname/data"
+HOP_TARGET="../data"
 HOP=0
 REST="$LONG_DIR"
 while [ -n "$REST" ]; do
     ln -s "$HOP_TARGET/$(echo "$REST" | cut -d/ -f2-5)" "$TEST_DIR_ABS/longname/hops/h$HOP"
-    HOP_TARGET="$TEST_DIR_ABS/longname/hops/h$HOP"
+    HOP_TARGET="h$HOP"
     REST=$(echo "$REST" | cut -d/ -f6-)
     [ -n "$REST" ] && REST="/$REST"
     HOP=$((HOP + 1))
 done
-ln -s "$HOP_TARGET" "$TEST_DIR_ABS/longname/root/z"
+ln -s "../hops/$HOP_TARGET" "$TEST_DIR_ABS/longname/root/z"
 
 # A later skip a name resolves: `siblings/root/a` reaches `A` through 40 links and skips both entries of `A/d`;
 # `root/b`, through 38, resolves only the one listed second, whose target is one link closer. The targets are
@@ -353,15 +364,15 @@ printf "A\n" > "$TEST_DIR_ABS/siblings/data/A/A.txt"
 printf "C\n" > "$TEST_DIR_ABS/siblings/data/C/C.txt"
 ln -s ../../slot_p "$TEST_DIR_ABS/siblings/data/A/d/p"
 ln -s ../../slot_q "$TEST_DIR_ABS/siblings/data/A/d/q"
-FIRST_LISTED=$(ls -U "$TEST_DIR_ABS/siblings/data/A/d" | head -n 1)
-SECOND_LISTED=$(ls -U "$TEST_DIR_ABS/siblings/data/A/d" | tail -n 1)
+FIRST_LISTED=$(find "$TEST_DIR_ABS/siblings/data/A/d" -mindepth 1 -maxdepth 1 | head -n 1 | sed 's#.*/##')
+SECOND_LISTED=$(find "$TEST_DIR_ABS/siblings/data/A/d" -mindepth 1 -maxdepth 1 | tail -n 1 | sed 's#.*/##')
 ln -s C "$TEST_DIR_ABS/siblings/data/hop"
 ln -s hop "$TEST_DIR_ABS/siblings/data/slot_$FIRST_LISTED"
 ln -s C "$TEST_DIR_ABS/siblings/data/slot_$SECOND_LISTED"
-for i in $(seq 1 38); do
+for i in $(seq 1 $((SYMLINK_LIMIT - 2))); do
     ln -s "s$((i + 1))" "$TEST_DIR_ABS/siblings/chains/s$i"
 done
-ln -s ../data/A "$TEST_DIR_ABS/siblings/chains/s39"
+ln -s ../data/A "$TEST_DIR_ABS/siblings/chains/s$((SYMLINK_LIMIT - 1))"
 ln -s ../chains/s1 "$TEST_DIR_ABS/siblings/root/a"
 ln -s ../chains/s3 "$TEST_DIR_ABS/siblings/root/b"
 
@@ -377,10 +388,10 @@ printf "f\n" > "$TEST_DIR_ABS/parents/data/B/f.txt"
 printf "g\n" > "$TEST_DIR_ABS/parents/data/B/x/g.txt"
 ln -s ../B "$TEST_DIR_ABS/parents/data/A/child"
 ln -s ../B "$TEST_DIR_ABS/parents/data/C/child"
-for i in $(seq 1 38); do
+for i in $(seq 1 $((SYMLINK_LIMIT - 2))); do
     ln -s "s$((i + 1))" "$TEST_DIR_ABS/parents/chains/s$i"
 done
-ln -s ../data/A "$TEST_DIR_ABS/parents/chains/s39"
+ln -s ../data/A "$TEST_DIR_ABS/parents/chains/s$((SYMLINK_LIMIT - 1))"
 ln -s ../chains/s1 "$TEST_DIR_ABS/parents/root/a"
 ln -s ../data/C "$TEST_DIR_ABS/parents/root/z"
 cp -a "$TEST_DIR_ABS/parents" "$TEST_DIR_ABS/parents_swapped"
