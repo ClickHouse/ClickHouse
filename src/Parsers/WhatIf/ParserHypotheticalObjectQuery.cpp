@@ -210,6 +210,7 @@ Clears every hypothetical index defined in the current session, regardless of ta
 - Hypothetical indexes live only in the **current session** — they are invisible to other sessions and discarded when the session ends.
 - Defining or dropping one builds no index and never affects ordinary queries against the table. Empirical `EXPLAIN WHATIF` does read table data to build the candidate index in memory, and that scan counts against the session's read limits and quotas.
 - Inspect the current session's hypothetical indexes via [`system.hypothetical_indexes`](/reference/system-tables/hypothetical_indexes).
+- `CREATE` records the columns that the index reads, with their types and defaults. If an `ALTER` later changes or drops one of them, `EXPLAIN WHATIF` reports `status: not_applicable` and names the change. Run `CREATE HYPOTHETICAL INDEX` again to use the new structure.
 
 ## Limitations {#limitations}
 
@@ -291,6 +292,7 @@ Clears every hypothetical projection defined in the current session, regardless 
 - Hypothetical projections live only in the **current session** — they are invisible to other sessions and discarded when the session ends.
 - Defining or dropping one builds no projection and never affects ordinary queries against the table.
 - Inspect the current session's hypothetical projections via [`system.hypothetical_projections`](/reference/system-tables/hypothetical_projections).
+- `CREATE` records the columns that the projection reads, with their types and defaults, and the ordered list of columns that each `*` or `COLUMNS('regexp')` matches. If an `ALTER` later changes one of them, `EXPLAIN WHATIF` reports `status: not_applicable` and names the change. Run `CREATE HYPOTHETICAL PROJECTION` again to use the new structure.
 
 ## Required privileges {#required-privileges}
 
