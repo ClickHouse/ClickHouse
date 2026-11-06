@@ -4472,6 +4472,16 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
             "ReplicatedMergeTree. Turn it off with `ALTER TABLE ... MODIFY SETTING table_readonly = 0` first.",
             backQuoteIfNeed(create.getTable()));
 
+    /// `LOOKUP INDEX` is rejected for `ReplicatedMergeTree`: its metadata in Keeper is not understood by
+    /// replicas of older versions. The check must precede the side effects below, which persist the
+    /// replicated definition before the `StorageReplicatedMergeTree` constructor would reject it.
+    if (to_replicated && hasNonEmptyLookupIndices(create.columns_list))
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot attach table {} as replicated: experimental `LOOKUP INDEX` is not supported for `ReplicatedMergeTree`. "
+            "Drop the lookup indices with `ALTER TABLE ... DROP LOOKUP INDEX` first.",
+            backQuoteIfNeed(create.getTable()));
+
     const bool ordinary_database = database->getEngineName() == "Ordinary";
     const bool temporary_uuid = to_replicated && ordinary_database;
     if (temporary_uuid)
