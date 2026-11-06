@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-replicated-database
 # no-fasttest: the Kafka engine is not built in fasttest
+# no-replicated-database: named collections created by SQL are not replicated
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -25,7 +26,7 @@ $CLICKHOUSE_CLIENT -q "
 
 logs=$($CLICKHOUSE_CLIENT --send_logs_level=trace -q "
     SELECT * FROM kafka_probe LIMIT 1 SETTINGS stream_like_engine_allow_direct_select = 1
-" 2>&1 >/dev/null | grep -E 'set property|\[rdk:')
+" 2>&1 >/dev/null | grep -E 'set property|\[rdk:' | sed "s/${CLICKHOUSE_DATABASE}/<database>/g")
 
 echo "log_cb property hidden: $(grep -c 'set property log_cb:\[HIDDEN\]' <<< "$logs")"
 echo "librdkafka configuration dump logged: $(grep -c 'log_cb = ' <<< "$logs" | sed 's/^[1-9][0-9]*$/1/')"
