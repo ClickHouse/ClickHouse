@@ -899,7 +899,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
         .withSubcolumns(with_subcolumns);
 
-    auto add_step = [&](const PrewhereExprStep & step)
+    auto add_step = [&](const PrewhereExprStep & step, bool is_on_fly_mutation_step)
     {
         /// Computation results from previous steps might be used in the current step as well. In such a case these
         /// computed columns will be present in the current step inputs. They don't need to be read from the disk so
@@ -923,6 +923,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         }
 
         const bool has_adaptive_granularity = data_part_info_for_reader.getIndexGranularityInfo().mark_type.adaptive;
+        const size_t num_required_columns = step_column_names.size();
 
         /// If part has non-adaptive granularity we always have to read at least one column
         /// because we cannot determine the correct size of the last granule without reading data.
@@ -935,9 +936,17 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
         /// More columns could have been added, filter them as well by the list of columns from previous steps.
         Names columns_to_read_in_step;
-        for (const auto & name : step_column_names)
+        for (size_t i = 0; i < step_column_names.size(); ++i)
         {
-            if (columns_from_previous_steps.emplace(name).second)
+            const auto & name = step_column_names[i];
+            /// An on-fly mutation ends with a projection to its own columns, so a column injected here to fill or extract
+            /// another one does not reach the next steps, which read it again if they need it.
+            if (is_on_fly_mutation_step && i >= num_required_columns)
+            {
+                if (!columns_from_previous_steps.contains(name))
+                    columns_to_read_in_step.push_back(name);
+            }
+            else if (columns_from_previous_steps.emplace(name).second)
                 columns_to_read_in_step.push_back(name);
         }
 
@@ -952,7 +961,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     };
 
     for (const auto & step : mutation_steps)
-        add_step(*step);
+        add_step(*step, /*is_on_fly_mutation_step=*/ step->actions != nullptr);
 
     if (prewhere_info || row_level_filter || !index_read_tasks.empty())
     {
@@ -967,7 +976,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
             &storage_snapshot->metadata->getColumns());
 
         for (const auto & step : prewhere_actions.steps)
-            add_step(*step);
+            add_step(*step, /*is_on_fly_mutation_step=*/ false);
     }
 
     /// Remove columns read in prewehere from the list of columns to read.

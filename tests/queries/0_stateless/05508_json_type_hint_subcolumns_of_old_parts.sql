@@ -52,6 +52,8 @@ DROP TABLE IF EXISTS t_scalar_sibling;
 DROP TABLE IF EXISTS t_read_cast_path_map;
 DROP TABLE IF EXISTS t_scalar_sibling_map;
 DROP TABLE IF EXISTS t_default_dep;
+DROP TABLE IF EXISTS t_mutation_source_wide;
+DROP TABLE IF EXISTS t_mutation_source_compact;
 
 SELECT 'issue 123339';
 CREATE TABLE t_issue (id UInt32, j JSON) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = '1G';
@@ -508,6 +510,22 @@ INSERT INTO t_scalar_sibling_map SELECT number, map('k', CAST(tuple(number * 7, 
 ALTER TABLE t_scalar_sibling_map MODIFY COLUMN m Map(String, Tuple(a String, b UInt64, j JSON)) SETTINGS mutations_sync = 0, alter_sync = 0;
 SELECT id, m.values.a FROM t_scalar_sibling_map ORDER BY id SETTINGS log_comment = '05508_read_scalar_sibling_map';
 
+SELECT 'the source of a subcolumn a pending mutation reads stays readable';
+CREATE TABLE t_mutation_source_wide (id UInt64, j JSON(a UInt32), x UInt64) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_mutation_source_wide VALUES (1, '{"a" : 42}', 0), (2, '{"a" : 12345}', 0);
+SYSTEM STOP MERGES t_mutation_source_wide;
+ALTER TABLE t_mutation_source_wide MODIFY COLUMN j JSON(a String) SETTINGS enable_json_lazy_type_hints = 1;
+ALTER TABLE t_mutation_source_wide UPDATE x = j.a.size WHERE 1 SETTINGS mutations_sync = 0, alter_sync = 0, alter_update_mode = 'heavy';
+SELECT id, x, j.a FROM t_mutation_source_wide ORDER BY id SETTINGS apply_mutations_on_fly = 1;
+SELECT id, j.a FROM t_mutation_source_wide WHERE x > 2 ORDER BY id SETTINGS apply_mutations_on_fly = 1;
+
+CREATE TABLE t_mutation_source_compact (id UInt64, j JSON(a UInt32), x UInt64) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = '1G';
+INSERT INTO t_mutation_source_compact VALUES (1, '{"a" : 42}', 0), (2, '{"a" : 12345}', 0);
+SYSTEM STOP MERGES t_mutation_source_compact;
+ALTER TABLE t_mutation_source_compact MODIFY COLUMN j JSON(a String) SETTINGS enable_json_lazy_type_hints = 1;
+ALTER TABLE t_mutation_source_compact UPDATE x = j.a.size WHERE 1 SETTINGS mutations_sync = 0, alter_sync = 0, alter_update_mode = 'heavy';
+SELECT id, x, j.a FROM t_mutation_source_compact ORDER BY id SETTINGS apply_mutations_on_fly = 1;
+
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, read_bytes < 50000 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment LIKE '05508_read_%' AND type = 'QueryFinish'
@@ -560,3 +578,5 @@ DROP TABLE t_scalar_sibling;
 DROP TABLE t_read_cast_path_map;
 DROP TABLE t_scalar_sibling_map;
 DROP TABLE t_default_dep;
+DROP TABLE t_mutation_source_wide;
+DROP TABLE t_mutation_source_compact;

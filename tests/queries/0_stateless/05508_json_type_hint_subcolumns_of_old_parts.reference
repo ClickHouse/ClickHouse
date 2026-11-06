@@ -220,6 +220,12 @@ a scalar member next to a JSON member is read and cast as stored
 0	['0']
 1	['7']
 2	['14']
+the source of a subcolumn a pending mutation reads stays readable
+1	2	42
+2	5	12345
+2	12345
+1	2	42
+2	5	12345
 05508_read_cast_path_added	1
 05508_read_cast_path_array	1
 05508_read_cast_path_changed	1
