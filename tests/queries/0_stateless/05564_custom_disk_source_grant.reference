@@ -14,6 +14,12 @@ READ, WRITE ON S3
 D: ON CLUSTER
 READ, WRITE ON S3
 0
+D2: ON CLUSTER, legacy entry format, engine from default_table_engine
+READ, WRITE ON S3
+0
+D3: the same for the inner table of a materialized view
+READ, WRITE ON S3
+0
 E: database metadata disk
 READ, WRITE ON S3
 0
@@ -33,6 +39,11 @@ N: unknown type
 READ, WRITE ON *
 G: with the S3 grant
 10
+I: include needs the grant on every source, even with an s3 type
+READ, WRITE ON *
+0
+Z: a from_zk type needs the grant on every source, even with an s3 object storage
+READ, WRITE ON *
 M: a substituted type needs the grant on every source
 READ, WRITE ON *
 allowed

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-replicated-database, no-shared-merge-tree
 # Tag no-fasttest: needs MinIO
-# Tag no-replicated-database: creates a user
+# Tag no-replicated-database: ON CLUSTER arms, and arms that create databases
 # Tag no-shared-merge-tree: a database metadata disk, as in 05099_create_database_with_inline_disk
 
 # Defining a disk in SQL needs the SOURCES grant of every backend it declares, like the table functions do.
@@ -41,11 +41,15 @@ function cleanup()
         DROP TABLE IF EXISTS t_05564_b SYNC;
         DROP TABLE IF EXISTS t_05564_c SYNC;
         DROP TABLE IF EXISTS ${DB}.t_05564_d SYNC;
+        DROP TABLE IF EXISTS ${DB}.t_05564_d2 SYNC;
+        DROP TABLE IF EXISTS ${DB}.mv_05564_d3 SYNC;
+        DROP TABLE IF EXISTS t_05564_i SYNC;
         DROP TABLE IF EXISTS t_05564_j SYNC;
         DROP TABLE IF EXISTS t_05564_k SYNC;
         DROP TABLE IF EXISTS t_05564_l SYNC;
         DROP TABLE IF EXISTS t_05564_m SYNC;
         DROP TABLE IF EXISTS t_05564_n SYNC;
+        DROP TABLE IF EXISTS t_05564_z SYNC;
         DROP DATABASE IF EXISTS ${OTHER_DB} SYNC;
         DROP USER IF EXISTS ${USER_NAME};"
 }
@@ -55,6 +59,7 @@ cleanup
 $CLICKHOUSE_CLIENT -m -q "
     CREATE USER ${USER_NAME} IDENTIFIED WITH no_password;
     GRANT CREATE TABLE, ALTER SETTINGS, SELECT, INSERT, DROP TABLE ON ${DB}.* TO ${USER_NAME};
+    GRANT CREATE VIEW ON ${DB}.* TO ${USER_NAME};
     GRANT TABLE ENGINE ON MergeTree TO ${USER_NAME};"
 
 TABLE="(id UInt64) ENGINE = MergeTree ORDER BY id"
@@ -82,6 +87,17 @@ $CLICKHOUSE_CLIENT -q "GRANT CLUSTER ON *.* TO ${USER_NAME}"
 as_user "CREATE TABLE ${DB}.t_05564_d ON CLUSTER test_shard_localhost ${TABLE} SETTINGS disk = $(s3_disk d)" \
     --distributed_ddl_output_mode=none
 disk_exists d
+
+echo "D2: ON CLUSTER, legacy entry format, engine from default_table_engine"
+as_user "CREATE TABLE ${DB}.t_05564_d2 ON CLUSTER test_shard_localhost (id UInt64) ORDER BY id SETTINGS disk = $(s3_disk d2)" \
+    --distributed_ddl_entry_format_version=2 --distributed_ddl_output_mode=none
+disk_exists d2
+
+echo "D3: the same for the inner table of a materialized view"
+as_user "CREATE MATERIALIZED VIEW ${DB}.mv_05564_d3 ON CLUSTER test_shard_localhost ORDER BY id
+    SETTINGS disk = $(s3_disk d3) AS SELECT id FROM ${DB}.t_05564_c" \
+    --distributed_ddl_entry_format_version=2 --distributed_ddl_output_mode=none
+disk_exists d3
 
 echo "E: database metadata disk"
 $CLICKHOUSE_CLIENT -q "GRANT CREATE DATABASE ON ${OTHER_DB}.* TO ${USER_NAME}"
@@ -120,6 +136,17 @@ $CLICKHOUSE_CLIENT --user "${USER_NAME}" -m -q "
     CREATE TABLE t_05564_a ${TABLE} SETTINGS disk = $(s3_disk a);
     INSERT INTO t_05564_a SELECT number FROM numbers(10);
     SELECT count() FROM t_05564_a;"
+
+echo "I: include needs the grant on every source, even with an s3 type"
+as_user "CREATE TABLE t_05564_i ${TABLE} SETTINGS disk = disk(name = '05564_i_${DB}', type = s3,
+    endpoint = 'http://localhost:11111/test/05564_${DB}/i/', access_key_id = clickhouse, secret_access_key = clickhouse,
+    include = 'no_such_include_05564')" --dynamic_disk_allow_include=1
+disk_exists i
+
+echo "Z: a from_zk type needs the grant on every source, even with an s3 object storage"
+as_user "CREATE TABLE t_05564_z ${TABLE} SETTINGS disk = disk(name = '05564_z_${DB}', type = 'from_zk /no_such_node_05564',
+    object_storage_type = s3, endpoint = 'http://localhost:11111/test/05564_${DB}/z/',
+    access_key_id = clickhouse, secret_access_key = clickhouse)" --dynamic_disk_allow_from_zk=1
 
 echo "M: a substituted type needs the grant on every source"
 FROM_ENV_TABLE="t_05564_m ${TABLE} SETTINGS disk = disk(type = 'from_env NO_SUCH_VARIABLE_05564',

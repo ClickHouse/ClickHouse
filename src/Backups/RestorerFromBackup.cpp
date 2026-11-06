@@ -383,7 +383,8 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                         DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, context);
                 }
 
-                if (!database_exists_so_nothing_is_created && database_info.create_database_query)
+                /// Not tied to the existence check: nothing checks the disk again if the database is dropped before it is created.
+                if (database_info.create_database_query)
                     required_access.append_range(DiskFromAST::getSourceAccess(database_info.create_database_query));
             }
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-replicated-database, no-shared-merge-tree
 # Tag no-fasttest: needs MinIO
-# Tag no-replicated-database: creates a user
+# Tag no-replicated-database: creates and restores databases
 # Tag no-shared-merge-tree: a database metadata disk, as in 05099_create_database_with_inline_disk
 
 # `RESTORE` creates tables and databases with internal queries, so it checks the source grants of the custom disks
@@ -69,6 +69,11 @@ $CLICKHOUSE_CLIENT -q "EXISTS TABLE t_05565_restored"
 echo "database"
 as_user "RESTORE DATABASE ${SOURCE_DB} AS ${RESTORED_DB} FROM ${DATABASE_BACKUP} FORMAT Null"
 $CLICKHOUSE_CLIENT -q "EXISTS DATABASE ${RESTORED_DB}"
+
+echo "database that exists now"
+$CLICKHOUSE_CLIENT -q "CREATE DATABASE ${RESTORED_DB}"
+as_user "RESTORE DATABASE ${SOURCE_DB} AS ${RESTORED_DB} FROM ${DATABASE_BACKUP} SETTINGS create_database = 'if-not-exists' FORMAT Null"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE ${RESTORED_DB} SYNC"
 
 echo "with the S3 grant"
 $CLICKHOUSE_CLIENT -q "GRANT READ, WRITE ON S3 TO ${USER_NAME}"
