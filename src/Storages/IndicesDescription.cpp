@@ -32,23 +32,30 @@ namespace ErrorCodes
 namespace
 {
 
-/// Only the `preprocessor` and `postprocessor` arguments contain column expressions.
-void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDescription & columns)
+/// Calls `fn` with the value of each `preprocessor` / `postprocessor` argument of a text index.
+template <typename F>
+void forEachTransformArgument(const ASTPtr & arguments, F && fn)
 {
-    using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
     for (const auto & child : arguments->children)
     {
-        const auto * func = child->as<ASTFunction>();
+        auto * func = child->as<ASTFunction>();
         if (!func || func->name != "equals" || !func->arguments || func->arguments->children.size() != 2)
             continue;
 
         const auto * key = func->arguments->children[0]->as<ASTIdentifier>();
         if (key && (key->name() == "preprocessor" || key->name() == "postprocessor"))
-        {
-            ReplaceAliasToExprVisitor::Data data{columns, {}, /*reject_lambda_capture=*/ true};
-            ReplaceAliasToExprVisitor{data}.visit(func->arguments->children[1]);
-        }
+            fn(func->arguments->children[1]);
     }
+}
+
+void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDescription & columns)
+{
+    using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+    forEachTransformArgument(arguments, [&](ASTPtr & expression)
+    {
+        ReplaceAliasToExprVisitor::Data data{columns, {}, /*reject_lambda_capture=*/ true};
+        ReplaceAliasToExprVisitor{data}.visit(expression);
+    });
 }
 
 void resolveFunctionsAsUser(const ASTPtr & ast, const ContextPtr & context)
@@ -62,17 +69,9 @@ void resolveFunctionsAsUser(const ASTPtr & ast, const ContextPtr & context)
 
 void checkTransformPermissions(const ASTPtr & arguments, const ContextPtr & context)
 {
-    for (const auto & child : arguments->children)
+    forEachTransformArgument(arguments, [&](ASTPtr & argument)
     {
-        const auto * func = child->as<ASTFunction>();
-        if (!func || func->name != "equals" || !func->arguments || func->arguments->children.size() != 2)
-            continue;
-
-        const auto * key = func->arguments->children[0]->as<ASTIdentifier>();
-        if (!key || (key->name() != "preprocessor" && key->name() != "postprocessor"))
-            continue;
-
-        auto expression = func->arguments->children[1]->clone();
+        auto expression = argument->clone();
         /// Inlines SQL UDF bodies, as `TreeRewriter` does, so a function used only inside one is seen.
         if (!UserDefinedSQLFunctionFactory::instance().empty())
             UserDefinedSQLFunctionVisitor::visit(expression, context);
@@ -80,7 +79,7 @@ void checkTransformPermissions(const ASTPtr & arguments, const ContextPtr & cont
         /// Resolving a name runs the function's `create`, where `checkAccess` lives. Names only:
         /// building the expression would report its type errors from here, not from the validator.
         resolveFunctionsAsUser(expression, context);
-    }
+    });
 }
 
 }
@@ -111,17 +110,9 @@ bool hasTextIndexPreOrPostProcessor(const ASTIndexDeclaration & declaration)
     if (!type || Poco::toLower(type->name) != TEXT_INDEX_NAME || !type->arguments)
         return false;
 
-    for (const auto & child : type->arguments->children)
-    {
-        const auto * func = child->as<ASTFunction>();
-        if (!func || func->name != "equals" || !func->arguments || func->arguments->children.size() != 2)
-            continue;
-
-        const auto * key = func->arguments->children[0]->as<ASTIdentifier>();
-        if (key && (key->name() == "preprocessor" || key->name() == "postprocessor"))
-            return true;
-    }
-    return false;
+    bool found = false;
+    forEachTransformArgument(type->arguments, [&](ASTPtr &) { found = true; });
+    return found;
 }
 
 IndexDescription::IndexDescription(const IndexDescription & other)
