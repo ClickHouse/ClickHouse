@@ -652,3 +652,27 @@ SELECT maxMap(arrayMap(x -> x % 300, range(1000)), arrayMap(x -> if(x % 2 = 0, t
 SELECT 'Long arrays multiple value columns';
 SELECT sumMap(arrayMap(x -> x % 300, range(1000)), arrayMap(x -> toUInt8(x % 256), range(1000)), arrayMap(x -> toDecimal32(x, 2), range(1000)))
     = (SELECT (groupArray(k), groupArray(s1), groupArray(s2)) FROM (SELECT number % 300 AS k, sum(toUInt8(number % 256)) AS s1, sum(toDecimal32(number, 2)) AS s2 FROM numbers(1000) GROUP BY k ORDER BY k));
+
+-- ===================== Many groups with small maps =====================
+
+-- Many groups with few keys each must fit in a small memory limit.
+SELECT 'Many small groups sumMap';
+SELECT count(), sum(length(m.1)), sum(arraySum(m.2))
+FROM (SELECT sumMap([number % 10], [toUInt64(1)]) AS m FROM numbers(100000) GROUP BY number)
+SETTINGS max_threads = 1, max_memory_usage = '100Mi';
+
+SELECT 'Many small groups String keys';
+SELECT count(), sum(length(m.1)), sum(arraySum(m.2))
+FROM (SELECT sumMap([toString(number % 10)], [toUInt64(1)]) AS m FROM numbers(100000) GROUP BY number)
+SETTINGS max_threads = 1, max_memory_usage = '100Mi';
+
+SELECT 'Many small groups minMap and maxMap';
+SELECT count(), sum(length(mn.1)), sum(arraySum(mn.2)), sum(arraySum(mx.2))
+FROM (SELECT minMap([number % 10], [number]) AS mn, maxMap([number % 10], [number]) AS mx FROM numbers(100000) GROUP BY number)
+SETTINGS max_threads = 1, max_memory_usage = '100Mi';
+
+-- Three keys per group: the map grows beyond its initial size.
+SELECT 'Many small groups three keys';
+SELECT count(), sum(length(m.1)), sum(arraySum(m.2))
+FROM (SELECT sumMap([number % 10, number % 10 + 10, number % 10 + 20], [number + 1, 1, 2]) AS m FROM numbers(100000) GROUP BY number)
+SETTINGS max_threads = 1, max_memory_usage = '100Mi';

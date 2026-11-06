@@ -12,6 +12,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/HashTable/HashTableAllocator.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/NaNUtils.h>
 #include <Common/assert_cast.h>
@@ -94,6 +95,17 @@ namespace
 template <typename T>
 concept SumMapDirectKey = std::is_trivially_copyable_v<T> && !std::is_same_v<T, std::string_view>;
 
+/// Each group of `GROUP BY` has its own map, and most maps have few keys.
+/// Keep the first few cells inside the state, so a small map needs no heap allocation.
+constexpr size_t SUM_MAP_INITIAL_SIZE_DEGREE = 2;
+
+/// `HashTableGrower` takes one byte, and `HashTableGrowerWithPrecalculation` takes a cache line.
+/// Smaller states are faster when there are many groups.
+using SumMapGrower = HashTableGrower<SUM_MAP_INITIAL_SIZE_DEGREE>;
+
+template <typename Cell>
+using SumMapAllocator = HashTableAllocatorWithStackMemory<(1ULL << SUM_MAP_INITIAL_SIZE_DEGREE) * sizeof(Cell)>;
+
 template <typename K>
 struct SumMapKeyHash
 {
@@ -119,7 +131,7 @@ template <SumMapDirectKey K>
 struct SumMapKeyTraits<K>
 {
     using MapKey = K;
-    using MapType = HashMap<K, char *, SumMapKeyHash<K>>;
+    using MapType = HashMap<K, char *, SumMapKeyHash<K>, SumMapGrower, SumMapAllocator<HashMapCell<K, char *, SumMapKeyHash<K>>>>;
     using FilterSet = HashSet<K, SumMapKeyHash<K>>;
 
     /// Canonicalize floats: collapse -0.0 → +0.0 and all NaN payloads → quiet_NaN (HashMap uses bitEquals).
@@ -190,7 +202,8 @@ template <>
 struct SumMapKeyTraits<std::string_view>
 {
     using MapKey = std::string_view;
-    using MapType = HashMapWithSavedHash<std::string_view, char *>;
+    using MapType = HashMapWithSavedHash<std::string_view, char *, DefaultHash<std::string_view>, SumMapGrower,
+        SumMapAllocator<HashMapCellWithSavedHash<std::string_view, char *, DefaultHash<std::string_view>>>>;
     using FilterSet = HashSetWithSavedHash<std::string_view>;
 
     static std::string_view extractKey(const IColumn & key_col, size_t offset)

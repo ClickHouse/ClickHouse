@@ -118,6 +118,10 @@
 
     <query>SELECT sumMap({wide_key}, val) FROM sum_map_wide FORMAT Null</query>
 
+    <!-- Many groups with small maps -->
+    <query>SELECT {func}([number % 10], [number]) FROM numbers(2000000) GROUP BY number % 500000 FORMAT Null</query>
+    <query>SELECT {func}(range(5), arrayMap(x -> number + x, range(5))) FROM numbers(2000000) GROUP BY number % 200000 FORMAT Null</query>
+
     <drop_query>DROP TABLE IF EXISTS sum_map_100000</drop_query>
     <drop_query>DROP TABLE IF EXISTS sum_map_str</drop_query>
     <drop_query>DROP TABLE IF EXISTS sum_map_float</drop_query>
