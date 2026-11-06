@@ -34,7 +34,9 @@
 #include <Functions/FunctionFactory.h>
 #include <Parsers/parseQuery.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Access/ContextAccess.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageView.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -74,8 +76,8 @@
 #include <Common/formatReadable.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
-#include <Interpreters/HypotheticalObjectStore.h>
-#include <Storages/MergeTree/WhatIfEstimator.h>
+#include <Interpreters/WhatIf/HypotheticalObjectStore.h>
+#include <Storages/MergeTree/WhatIf/WhatIfEstimator.h>
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -96,6 +98,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool explain_syntax_single_record;
+    extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsBool use_concurrency_control;
@@ -208,6 +211,11 @@ namespace
             /// `EXPLAIN SYNTAX` would fail for users that can query the view but not its inner
             /// tables. Leave the original parameterized call intact in that case.
             if (metadata->sql_security_type && metadata->sql_security_type != SQLSecurityType::INVOKER)
+                return;
+
+            /// The inlined body is the view definition, which needs `SHOW COLUMNS` on the view, as `SHOW CREATE` does.
+            const auto view_id = storage->getStorageID();
+            if (!query_context->getAccess()->isGranted(AccessType::SHOW_COLUMNS, view_id.getDatabaseName(), view_id.getTableName()))
                 return;
 
             auto view_query = metadata->getSelectQuery().inner_query->clone();
@@ -1244,6 +1252,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 auto optimization_settings = QueryPlanOptimizationSettings(context);
                 optimization_settings.keep_logical_steps = settings.keep_logical_steps;
                 optimization_settings.is_explain = true;
+                optimization_settings.use_skip_indexes_on_data_read_at_execution = getContext()->getSettingsRef()[Setting::use_skip_indexes_on_data_read];
                 optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
                 plan.optimize(optimization_settings);
 
@@ -1321,6 +1330,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
                 auto optimization_settings = QueryPlanOptimizationSettings(context);
                 optimization_settings.is_explain = true;
+                optimization_settings.use_skip_indexes_on_data_read_at_execution = getContext()->getSettingsRef()[Setting::use_skip_indexes_on_data_read];
                 optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
                 auto pipeline = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
 
@@ -1390,7 +1400,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             // Collect the selected marks, rows, parts during build query pipeline.
             // Hold on to the returned QueryPipelineBuilderPtr because `plan` may have pointers into
             // it (through QueryPlanResourceHolder).
-            auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+            auto optimization_settings = QueryPlanOptimizationSettings(context);
+            optimization_settings.use_skip_indexes_on_data_read_at_execution = getContext()->getSettingsRef()[Setting::use_skip_indexes_on_data_read];
+            auto builder = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
 
             plan.explainEstimate(res_columns);
             insert_buf = false;

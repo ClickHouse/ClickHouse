@@ -5588,6 +5588,9 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             VectorWithMemoryTracking<size_t> skip_analysis_arguments_indexes(table_function_node_typed.getArguments().getNodes().size());
             std::iota(skip_analysis_arguments_indexes.begin(), skip_analysis_arguments_indexes.end(), 0);
             table_function_node_typed.resolve({}, parameterized_view_storage, scope_context, std::move(skip_analysis_arguments_indexes));
+            IdentifierResolver::checkAccessToTableMetadata(
+                table_function_node_typed.getStorage(), table_function_node_typed.getStorageID(),
+                table_function_node_typed.getStorageSnapshot(), scope_context);
             return;
         }
 
