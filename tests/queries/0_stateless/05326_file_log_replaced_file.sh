@@ -47,123 +47,143 @@ function rows_after()
     ${CLICKHOUSE_CLIENT} -q "SELECT groupArray(a) FROM (SELECT a FROM $1 ORDER BY a)"
 }
 
-# The view is created after the replacement, so its first read happens before the table applies the events about it.
-# The value appended at the end is read in a later round than the new file.
-echo '-- moved over'
-seq 100 109 > "${base}/replace/a.csv"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_replace (a UInt64) ENGINE = FileLog('${base}/replace/', 'CSV') SETTINGS ${settings}"
-wait_watched file_log_replace "${base}/replace"
-seq 200 209 > "${base}/outside/a.csv"
-mv "${base}/outside/a.csv" "${base}/replace/a.csv"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE dst_replace (a UInt64) ENGINE = MergeTree ORDER BY a"
-${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW mv_replace TO dst_replace AS SELECT a FROM file_log_replace"
-wait_count dst_replace 10
-echo 999 >> "${base}/replace/a.csv"
-rows_after dst_replace 999
-
-echo '-- rotated'
-seq 100 109 > "${base}/rotate/a.csv"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_rotate (a UInt64) ENGINE = FileLog('${base}/rotate/', 'CSV') SETTINGS ${settings}"
-wait_watched file_log_rotate "${base}/rotate"
-# The rotated file has a saved offset (its first five values are skipped), larger than the size of the new file.
-${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG file_log_rotate FILE 'a.csv' OFFSET 20"
-# As `logrotate` does in its default `create` mode.
-mv "${base}/rotate/a.csv" "${base}/rotate/a.csv.1"
-seq 200 202 > "${base}/rotate/a.csv"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE dst_rotate (a UInt64) ENGINE = MergeTree ORDER BY a"
-${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW mv_rotate TO dst_rotate AS SELECT a FROM file_log_rotate"
-wait_count dst_rotate 8
-echo 999 >> "${base}/rotate/a.csv"
-rows_after dst_rotate 999
-
-echo '-- symlink moved over'
-seq 100 109 > "${base}/link/a.csv"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_link (a UInt64) ENGINE = FileLog('${base}/link/', 'CSV') SETTINGS ${settings}, max_threads = 1"
-wait_watched file_log_link "${base}/link"
-seq 300 309 > "${base}/outside/t.csv"
-ln -s "${base}/outside/t.csv" "${base}/outside/l.csv"
-mv "${base}/outside/l.csv" "${base}/link/a.csv"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE dst_link (a UInt64) ENGINE = MergeTree ORDER BY a"
-${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW mv_link TO dst_link AS SELECT a FROM file_log_link"
-wait_count dst_link 10
-# Appends to the target are not seen, so the later value is in a new file; one stream reads the files in order.
-echo 999 > "${base}/link/z.csv"
-rows_after dst_link 999
-
-echo '-- symlink target replaced'
-seq 300 309 > "${base}/outside/u.csv"
-ln -s "${base}/outside/u.csv" "${base}/target/a.csv"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_target (a UInt64) ENGINE = FileLog('${base}/target/', 'CSV') SETTINGS ${settings}, max_threads = 1"
-wait_watched file_log_target "${base}/target"
-${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG file_log_target FILE 'a.csv' OFFSET 20"
-# The symlink stays and nothing changes in the watched directory. The old target is kept, so the new one has another inode.
-mv "${base}/outside/u.csv" "${base}/outside/u.csv.1"
-seq 400 409 > "${base}/outside/u.csv"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE dst_target (a UInt64) ENGINE = MergeTree ORDER BY a"
-${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW mv_target TO dst_target AS SELECT a FROM file_log_target"
-wait_count dst_target 10
-echo 999 > "${base}/target/z.csv"
-rows_after dst_target 999
-# Now the symlink leads to a file that is read as z.csv, so a reset of a.csv cannot take effect.
-ln "${base}/target/z.csv" "${base}/outside/u.new"
-mv "${base}/outside/u.new" "${base}/outside/u.csv"
-${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG file_log_target FILE 'a.csv'" 2>&1 | grep -o -m1 BAD_ARGUMENTS
-
-echo '-- symlink targets rotated'
-echo 100 > "${base}/outside/r1"
-echo 200 > "${base}/outside/r2"
-ln -s "${base}/outside/r1" "${base}/rotated/a.csv"
-ln -s "${base}/outside/r2" "${base}/rotated/b.csv"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_rotated (a UInt64) ENGINE = FileLog('${base}/rotated/', 'CSV') SETTINGS ${settings}"
-wait_watched file_log_rotated "${base}/rotated"
-# Nothing changes in the watched directory: a.csv leads to the file of b.csv, b.csv to a new file.
-function rotate_targets()
+function moved_over()
 {
-    mv "${base}/outside/r1" "${base}/outside/r1.$1"
-    mv "${base}/outside/r2" "${base}/outside/r1"
-    echo "$2" > "${base}/outside/r2"
-    # Where the watcher reports a replaced target (macOS), its events are applied before the next read.
-    wait_watched file_log_rotated "${base}/rotated" "v$1_"
+    # The view is created after the replacement, so its first read happens before the table applies the events about it.
+    # The value appended at the end is read in a later round than the new file.
+    echo '-- moved over'
+    seq 100 109 > "${base}/replace/a.csv"
+    ${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_replace (a UInt64) ENGINE = FileLog('${base}/replace/', 'CSV') SETTINGS ${settings}"
+    wait_watched file_log_replace "${base}/replace"
+    seq 200 209 > "${base}/outside/a.csv"
+    mv "${base}/outside/a.csv" "${base}/replace/a.csv"
+    ${CLICKHOUSE_CLIENT} -q "CREATE TABLE dst_replace (a UInt64) ENGINE = MergeTree ORDER BY a"
+    ${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW mv_replace TO dst_replace AS SELECT a FROM file_log_replace"
+    wait_count dst_replace 10
+    echo 999 >> "${base}/replace/a.csv"
+    rows_after dst_replace 999
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE mv_replace; DROP TABLE dst_replace; DROP TABLE file_log_replace"
 }
-rotate_targets 1 300
-for _ in 1 2; do
-    ${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_rotated"
-done | sort -n | xargs
-rotate_targets 2 400
-${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG file_log_rotated"
-${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT groupArray(a) FROM (SELECT a FROM file_log_rotated ORDER BY a)"
 
-echo '-- single file'
-printf '1\n2\n3\n' > "${base}/single/s.csv"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_single (a UInt64) ENGINE = FileLog('${base}/single/s.csv', 'CSV')"
-${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT groupArray(a) FROM (SELECT a FROM file_log_single ORDER BY a)"
-printf '10\n20\n30\n40\n' > "${base}/outside/s.csv"
-mv "${base}/outside/s.csv" "${base}/single/s.csv"
-${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT groupArray(a) FROM (SELECT a FROM file_log_single ORDER BY a)"
-printf '50\n60\n70\n80\n' > "${base}/outside/s.csv"
-mv "${base}/outside/s.csv" "${base}/single/s.csv"
-${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG file_log_single FILE 's.csv' OFFSET 6"
-${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT groupArray(a) FROM (SELECT a FROM file_log_single ORDER BY a)"
-# The offset set after a replacement is also kept when the table is attached again before reading.
-printf '90\n100\n' > "${base}/outside/s.csv"
-mv "${base}/outside/s.csv" "${base}/single/s.csv"
-${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG file_log_single FILE 's.csv' OFFSET 3"
-${CLICKHOUSE_CLIENT} -q "DETACH TABLE file_log_single"
-${CLICKHOUSE_CLIENT} -q "ATTACH TABLE file_log_single"
-${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT groupArray(a) FROM (SELECT a FROM file_log_single ORDER BY a)"
+function rotated()
+{
+    echo '-- rotated'
+    seq 100 109 > "${base}/rotate/a.csv"
+    ${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_rotate (a UInt64) ENGINE = FileLog('${base}/rotate/', 'CSV') SETTINGS ${settings}"
+    wait_watched file_log_rotate "${base}/rotate"
+    # The rotated file has a saved offset (its first five values are skipped), larger than the size of the new file.
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG file_log_rotate FILE 'a.csv' OFFSET 20"
+    # As `logrotate` does in its default `create` mode.
+    mv "${base}/rotate/a.csv" "${base}/rotate/a.csv.1"
+    seq 200 202 > "${base}/rotate/a.csv"
+    ${CLICKHOUSE_CLIENT} -q "CREATE TABLE dst_rotate (a UInt64) ENGINE = MergeTree ORDER BY a"
+    ${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW mv_rotate TO dst_rotate AS SELECT a FROM file_log_rotate"
+    wait_count dst_rotate 8
+    echo 999 >> "${base}/rotate/a.csv"
+    rows_after dst_rotate 999
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE mv_rotate; DROP TABLE dst_rotate; DROP TABLE file_log_rotate"
+}
 
-${CLICKHOUSE_CLIENT} -q "DROP TABLE mv_replace"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE dst_replace"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_replace"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE mv_rotate"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE dst_rotate"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_rotate"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE mv_link"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE dst_link"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_link"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE mv_target"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE dst_target"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_target"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_rotated"
-${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_single"
+function symlink_moved_over()
+{
+    echo '-- symlink moved over'
+    seq 100 109 > "${base}/link/a.csv"
+    ${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_link (a UInt64) ENGINE = FileLog('${base}/link/', 'CSV') SETTINGS ${settings}, max_threads = 1"
+    wait_watched file_log_link "${base}/link"
+    seq 300 309 > "${base}/outside/t.csv"
+    ln -s "${base}/outside/t.csv" "${base}/outside/l.csv"
+    mv "${base}/outside/l.csv" "${base}/link/a.csv"
+    ${CLICKHOUSE_CLIENT} -q "CREATE TABLE dst_link (a UInt64) ENGINE = MergeTree ORDER BY a"
+    ${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW mv_link TO dst_link AS SELECT a FROM file_log_link"
+    wait_count dst_link 10
+    # Appends to the target are not seen, so the later value is in a new file; one stream reads the files in order.
+    echo 999 > "${base}/link/z.csv"
+    rows_after dst_link 999
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE mv_link; DROP TABLE dst_link; DROP TABLE file_log_link"
+}
+
+function symlink_target_replaced()
+{
+    echo '-- symlink target replaced'
+    seq 300 309 > "${base}/outside/u.csv"
+    ln -s "${base}/outside/u.csv" "${base}/target/a.csv"
+    ${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_target (a UInt64) ENGINE = FileLog('${base}/target/', 'CSV') SETTINGS ${settings}, max_threads = 1"
+    wait_watched file_log_target "${base}/target"
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG file_log_target FILE 'a.csv' OFFSET 20"
+    # The symlink stays and nothing changes in the watched directory. The old target is kept, so the new one has another inode.
+    mv "${base}/outside/u.csv" "${base}/outside/u.csv.1"
+    seq 400 409 > "${base}/outside/u.csv"
+    ${CLICKHOUSE_CLIENT} -q "CREATE TABLE dst_target (a UInt64) ENGINE = MergeTree ORDER BY a"
+    ${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW mv_target TO dst_target AS SELECT a FROM file_log_target"
+    wait_count dst_target 10
+    echo 999 > "${base}/target/z.csv"
+    rows_after dst_target 999
+    # Now the symlink leads to a file that is read as z.csv, so a reset of a.csv cannot take effect.
+    ln "${base}/target/z.csv" "${base}/outside/u.new"
+    mv "${base}/outside/u.new" "${base}/outside/u.csv"
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG file_log_target FILE 'a.csv'" 2>&1 | grep -o -m1 BAD_ARGUMENTS
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE mv_target; DROP TABLE dst_target; DROP TABLE file_log_target"
+}
+
+function symlink_targets_rotated()
+{
+    echo '-- symlink targets rotated'
+    echo 100 > "${base}/outside/r1"
+    echo 200 > "${base}/outside/r2"
+    ln -s "${base}/outside/r1" "${base}/rotated/a.csv"
+    ln -s "${base}/outside/r2" "${base}/rotated/b.csv"
+    ${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_rotated (a UInt64) ENGINE = FileLog('${base}/rotated/', 'CSV') SETTINGS ${settings}"
+    wait_watched file_log_rotated "${base}/rotated"
+    # Nothing changes in the watched directory: a.csv leads to the file of b.csv, b.csv to a new file.
+    function rotate_targets()
+    {
+        mv "${base}/outside/r1" "${base}/outside/r1.$1"
+        mv "${base}/outside/r2" "${base}/outside/r1"
+        echo "$2" > "${base}/outside/r2"
+        # Where the watcher reports a replaced target (macOS), its events are applied before the next read.
+        wait_watched file_log_rotated "${base}/rotated" "v$1_"
+    }
+    rotate_targets 1 300
+    for _ in 1 2; do
+        ${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_rotated"
+    done | sort -n | xargs
+    rotate_targets 2 400
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG file_log_rotated"
+    ${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT groupArray(a) FROM (SELECT a FROM file_log_rotated ORDER BY a)"
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_rotated"
+}
+
+function single_file()
+{
+    echo '-- single file'
+    printf '1\n2\n3\n' > "${base}/single/s.csv"
+    ${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_single (a UInt64) ENGINE = FileLog('${base}/single/s.csv', 'CSV')"
+    ${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT groupArray(a) FROM (SELECT a FROM file_log_single ORDER BY a)"
+    printf '10\n20\n30\n40\n' > "${base}/outside/s.csv"
+    mv "${base}/outside/s.csv" "${base}/single/s.csv"
+    ${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT groupArray(a) FROM (SELECT a FROM file_log_single ORDER BY a)"
+    printf '50\n60\n70\n80\n' > "${base}/outside/s.csv"
+    mv "${base}/outside/s.csv" "${base}/single/s.csv"
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG file_log_single FILE 's.csv' OFFSET 6"
+    ${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT groupArray(a) FROM (SELECT a FROM file_log_single ORDER BY a)"
+    # The offset set after a replacement is also kept when the table is attached again before reading.
+    printf '90\n100\n' > "${base}/outside/s.csv"
+    mv "${base}/outside/s.csv" "${base}/single/s.csv"
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG file_log_single FILE 's.csv' OFFSET 3"
+    ${CLICKHOUSE_CLIENT} -q "DETACH TABLE file_log_single"
+    ${CLICKHOUSE_CLIENT} -q "ATTACH TABLE file_log_single"
+    ${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT groupArray(a) FROM (SELECT a FROM file_log_single ORDER BY a)"
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_single"
+}
+
+# The cases are independent, so they run at the same time to keep the test short.
+cases="moved_over rotated symlink_moved_over symlink_target_replaced symlink_targets_rotated single_file"
+for c in $cases; do
+    "$c" > "${base}/$c.out" &
+done
+wait
+for c in $cases; do
+    cat "${base}/$c.out"
+done
+
 rm -rf "${base:?}"
