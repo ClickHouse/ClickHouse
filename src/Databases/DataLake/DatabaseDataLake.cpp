@@ -4,6 +4,8 @@
 #include <array>
 #include <memory>
 #include <Databases/DataLake/DatabaseDataLake.h>
+#include <Access/ContextAccess.h>
+#include <Access/Common/AccessFlags.h>
 #include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
 #include <Databases/DataLake/HiveCatalog.h>
@@ -42,6 +44,7 @@
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageNull.h>
+#include <TableFunctions/ITableFunction.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
@@ -116,8 +119,8 @@ namespace Setting
     extern const SettingsBool allow_database_iceberg;
     extern const SettingsBool allow_database_unity_catalog;
     extern const SettingsBool allow_database_glue_catalog;
-    extern const SettingsBool allow_experimental_database_hms_catalog;
-    extern const SettingsBool allow_experimental_database_paimon_rest_catalog;
+    extern const SettingsBool enable_database_hms_catalog;
+    extern const SettingsBool enable_database_paimon_rest_catalog;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool iceberg_list_only_v_prefixed_metadata_files;
     extern const SettingsBool log_queries;
@@ -813,7 +816,9 @@ DatabaseDataLake::TableEngineArgs DatabaseDataLake::buildTableEngineArgs(
             static_credentials->addCredentialsToEngineArgs(result.args);
             result.static_credentials_applied = true;
         }
-        else if (!lightweight && table_metadata.requiresCredentials() && !catalogConfiguresStorageAccess(catalog))
+        /// HDFS authenticates (e.g. with Kerberos) through the server's `hdfs` configuration, not through engine arguments.
+        else if (!lightweight && table_metadata.requiresCredentials() && !catalogConfiguresStorageAccess(catalog)
+                 && result.storage_type != DatabaseDataLakeStorageType::HDFS)
         {
             throw Exception(
                ErrorCodes::BAD_ARGUMENTS,
@@ -1296,8 +1301,10 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
 
     const auto is_secondary_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
+    /// A stateful table runs background compaction, which cannot write to the read-only HDFS storage below.
     const bool want_stateful = use_stateful_tables && !lightweight
         && !can_use_parallel_replicas
+        && storage_type != DatabaseDataLakeStorageType::HDFS
         && (*storage_settings)[DataLakeStorageSetting::allow_experimental_iceberg_compaction]
         && catalog->getTableFormat(table_metadata) == DataLake::DataLakeTableFormat::ICEBERG;
     if (want_stateful)
@@ -1336,6 +1343,21 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     /// no table structure in table definition AST.
     StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
 
+#if USE_HDFS
+    if (auto * hdfs_configuration = dynamic_cast<StorageHDFSConfiguration *>(configuration.get()))
+    {
+        /// HDFS is read with the server's own identity, so require the same `READ ON HDFS` grant as `icebergHDFS`,
+        /// matched against the same URI: the HDFS authority, without the path.
+        context_->getAccess()->checkAccessWithFilter(
+            AccessType::READ,
+            toStringSource(AccessTypeObjects::Source::HDFS),
+            ITableFunction::normalizeURIForAccessCheck(hdfs_configuration->getRawURI()));
+        /// Writes reach HDFS through many entrypoints (`INSERT` and its cluster variant, `ALTER`, `OPTIMIZE`, `DROP`...) and
+        /// would use the server's own identity, so rather than authorizing each, catalog tables on HDFS are read-only.
+        hdfs_configuration->setReadOnly();
+    }
+#endif
+
 #if USE_AWS_S3
     /// Amazon S3 Tables rejects user-defined object metadata (`x-amz-meta-*`) in its data buckets with
     /// `S3TablesUnsupportedHeader`, so don't stamp the idempotency id on the objects written into its tables.
@@ -1365,7 +1387,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         return catalog->getCredentialsConfigurationCallback(storage_id, table_metadata);
     };
 
-    if (can_use_parallel_replicas && !is_secondary_query)
+    if (can_use_parallel_replicas && !is_secondary_query && !context_->isSQLSecurityOverriddenBody())
     {
         auto storage_id = StorageID(getDatabaseName(), name, table_uuid);
         auto storage_cluster = std::make_shared<StorageObjectStorageCluster>(
@@ -2140,11 +2162,11 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
             {
                 if (!args.create_query.attach
-                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_hms_catalog])
+                    && !args.context->getSettingsRef()[Setting::enable_database_hms_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DatabaseDataLake with Iceberg Hive catalog is experimental. "
-                                    "To allow its usage, enable setting allow_experimental_database_hms_catalog");
+                                    "To allow its usage, enable setting enable_database_hms_catalog");
                 }
 
                 break;
@@ -2152,11 +2174,11 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::PAIMON_REST:
             {
                 if (!args.create_query.attach
-                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_paimon_rest_catalog])
+                    && !args.context->getSettingsRef()[Setting::enable_database_paimon_rest_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DatabaseDataLake with Paimon Rest catalog is experimental. "
-                                    "To allow its usage, enable setting allow_experimental_database_paimon_rest_catalog");
+                                    "To allow its usage, enable setting enable_database_paimon_rest_catalog");
                 }
 
                 break;
@@ -2240,8 +2262,8 @@ You will need to enable the relevant settings below to use the `DataLakeCatalog`
 SET allow_database_iceberg = 1;
 SET allow_database_unity_catalog = 1;
 SET allow_database_glue_catalog = 1;
-SET allow_experimental_database_hms_catalog = 1;
-SET allow_experimental_database_paimon_rest_catalog = 1;
+SET enable_database_hms_catalog = 1;
+SET enable_database_paimon_rest_catalog = 1;
 ```
 
 Databases with the `DataLakeCatalog` engine can be created using the following syntax:
