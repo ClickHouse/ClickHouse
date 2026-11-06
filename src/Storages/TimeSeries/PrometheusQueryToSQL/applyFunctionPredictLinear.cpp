@@ -119,7 +119,7 @@ PredictionOffset getPredictionOffset(SQLQueryPiece & scalar_argument, ConverterC
 }
 
 
-/// Fixed @ shifts horizons: horizon of grid point i becomes
+/// A fixed @ or an offset shifts horizons: horizon of grid point i becomes
 /// `horizon + (shift_at_start + i * step_in_seconds)`.
 struct HorizonShift
 {
@@ -150,15 +150,17 @@ ASTPtr makePredictions(ASTPtr && regression, PredictionOffset && prediction_offs
 
     if (horizon_shift)
     {
-        horizon = makeASTFunction(
-            "plus",
-            std::move(horizon),
-            makeASTFunction(
+        ASTPtr shift = make_intrusive<ASTLiteral>(horizon_shift->shift_at_start);
+        if (horizon_shift->step_in_seconds != 0)
+        {
+            shift = makeASTFunction(
                 "plus",
-                make_intrusive<ASTLiteral>(horizon_shift->shift_at_start),
-                makeASTFunction("multiply", make_intrusive<ASTIdentifier>("i"), make_intrusive<ASTLiteral>(horizon_shift->step_in_seconds))));
-        lambda_parameters.push_back("i");
-        arrays.push_back(makeASTFunction("range", make_intrusive<ASTLiteral>(horizon_shift->grid_size)));
+                std::move(shift),
+                makeASTFunction("multiply", make_intrusive<ASTIdentifier>("i"), make_intrusive<ASTLiteral>(horizon_shift->step_in_seconds)));
+            lambda_parameters.push_back("i");
+            arrays.push_back(makeASTFunction("range", make_intrusive<ASTLiteral>(horizon_shift->grid_size)));
+        }
+        horizon = makeASTFunction("plus", std::move(horizon), std::move(shift));
     }
 
     ASTPtr prediction = makeASTFunction(
@@ -210,9 +212,9 @@ SQLQueryPiece applyFunctionPredictLinear(
 
     ASTs aggregate_function_arguments = getToGridAggregateFunctionArguments(range_argument, context);
 
-    /// A fixed @ on the range vector freezes the sample window at the fixed timestamp.
+    /// A fixed @ on the range vector freezes the sample window, and an offset shifts it back.
     const auto * fixed_at_node = getFixedAtModifier(range_argument);
-    const auto aggregation_range = getRangeAggregationRange(fixed_at_node, node_range, context);
+    const auto aggregation_range = getRangeAggregationRange(range_argument, node_range, context);
     const size_t result_grid_size = stepsInTimeSeriesRange(start_time, end_time, step);
 
     /// A range vector made from a scalar has no `group` column. The result is still a vector grid with one series without
@@ -272,6 +274,15 @@ SQLQueryPiece applyFunctionPredictLinear(
             .shift_at_start = DecimalUtils::convertTo<Float64>(
                 DurationType{start_time.value - aggregation_range.start_time.value}, context.result_timestamp_scale),
             .step_in_seconds = DecimalUtils::convertTo<Float64>(step, context.result_timestamp_scale),
+            .grid_size = result_grid_size};
+    }
+    else if (aggregation_range.start_time != start_time)
+    {
+        /// An offset shifts only the sample window back, the prediction is still made from the evaluation time.
+        horizon_shift = HorizonShift{
+            .shift_at_start = DecimalUtils::convertTo<Float64>(
+                DurationType{start_time.value - aggregation_range.start_time.value}, context.result_timestamp_scale),
+            .step_in_seconds = 0,
             .grid_size = result_grid_size};
     }
 

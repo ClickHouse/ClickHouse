@@ -7,3 +7,15 @@
 1
 --- a non-sensitive parameter value is still visible ---
 1
+--- the query text and bound query parameters must NOT appear in text_log ---
+0	0	0	0
+--- their Request URI lines are logged with [HIDDEN] ---
+1	1	1	1
+--- the credential reached executeQuery, which masks it ---
+1
+--- the clickhouse.uri span attribute hides the query text ---
+1
+--- the SQL-defined handler hides its receive parameter and param_* in the Request URI line ---
+0	1
+--- a case variant of the query parameter name is hidden in the Request URI line ---
+0	1
