@@ -562,6 +562,13 @@ void listFilesWithRegexpMatchingImpl(
         /// directory); in that case keep the byte count at zero but still return the path.
         std::error_code size_ec;
         const size_t file_size = fs::file_size(absolute_path, size_ec);
+        /// `realpath` can resolve a path the kernel refuses: a spelling over `PATH_MAX`, or one symlink more on macOS.
+        if (!pruning.active_frames.empty()
+            && (size_ec == std::errc::too_many_symbolic_link_levels || size_ec == std::errc::filename_too_long))
+        {
+            notePathLimitSkip(size_ec, candidate, nullptr, pruning, SkippedYield::Match, SkippedYield::Match);
+            return;
+        }
         add_matched_path(absolute_path.string(), size_ec ? 0 : file_size);
         return;
     }

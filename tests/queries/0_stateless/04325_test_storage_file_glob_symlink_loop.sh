@@ -356,6 +356,25 @@ while [ -n "$REST" ]; do
 done
 ln -s "../hops/$HOP_TARGET" "$TEST_DIR_ABS/longname/root/z"
 
+# A file named by a literal whose spelling through `<dir>/root/lll...` exceeds `PATH_MAX` while its directory's and its
+# resolved path do not, so `realpath` resolves it and only the kernel refuses it. Sized per directory, as the directory
+# name is part of the spelling. `longliteral/root/z` is a short name; `longliteral_lone` has none.
+make_long_literal() {
+    local alias="$TEST_DIR_ABS/$1/root/$(printf '%250s' | tr ' ' l)" dir="" len segments i
+    mkdir -p "$TEST_DIR_ABS/$1/root" "$TEST_DIR_ABS/$1/data"
+    ln -s ../data "$alias"
+    len=$(( PATH_MAX_LEN - 4 - ${#alias} ))
+    segments=$(( (len + 200) / 201 ))
+    for i in $(seq 1 $segments); do
+        dir="$dir/$(printf "%$(( (len - segments) / segments + (i <= (len - segments) % segments ? 1 : 0) ))s" | tr ' ' y)"
+    done
+    mkdir -p "$TEST_DIR_ABS/$1/data$dir"
+    printf "T\n" > "$TEST_DIR_ABS/$1/data$dir/f.txt"
+}
+make_long_literal longliteral
+ln -s ../data "$TEST_DIR_ABS/longliteral/root/z"
+make_long_literal longliteral_lone
+
 # A later skip a name resolves: `siblings/root/a` reaches `A` through 40 links and skips both entries of `A/d`;
 # `root/b`, through 38, resolves only the one listed second, whose target is one link closer. The targets are
 # assigned after reading the directory's order, so the first skip is the unresolvable one on any filesystem.
@@ -643,6 +662,12 @@ $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget3/root/z/
 echo "shorter-alias-after-path-max-size-lookup"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/longname/root/**/*.txt', 'TSV', 'val String')"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/longname/root/z/**/*.txt', 'TSV', 'val String')"
+
+echo "shorter-alias-after-path-max-literal"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/longliteral/root/**/f.txt', 'TSV', 'val String')"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/longliteral/root/z/**/f.txt', 'TSV', 'val String')"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/longliteral_lone/root/**/f.txt', 'TSV', 'val String')" 2>&1 \
+    | grep -qF "Cannot expand the glob: File name too long" && echo "fails"
 
 echo "alias-resolving-a-later-skip"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/siblings/root/**/*.txt', 'TSV', 'val String') ORDER BY val"

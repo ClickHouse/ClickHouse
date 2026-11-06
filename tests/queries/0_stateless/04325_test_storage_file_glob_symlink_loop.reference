@@ -85,6 +85,10 @@ C
 shorter-alias-after-path-max-size-lookup
 L
 L
+shorter-alias-after-path-max-literal
+T
+T
+fails
 alias-resolving-a-later-skip
 A
 C
