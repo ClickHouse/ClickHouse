@@ -1,0 +1,35 @@
+arr eq	0	0
+arr ne	1	1
+arr lt	1	1
+arr ndf	0	0
+arr df	1	1
+arr lc	0	0
+arr arr	0	0
+arr tuple	0	0
+tuple arr	0	0
+map eq	0	0
+map lt	1	1
+map key	0	0
+tuple named	0	0
+json	0	0
+json arr	0	0
+map json	0	0
+scalar ndf	0	0
+scalar df	1	1
+scalar ndf lc	0	0
+tuple ndf	0	0
+keep 0/1	1	1	1	1	0
+keep bool	1	1	1
+keep json	1	1
+keep variant	1
+keep lc	0	0	0	0
+cols	2	2	2	2	2	2
+cols scalar ndf	2	2
+cross	0	0
+tuple variant	0	0
+keep tuple variant	1
+exists	0
+key lt	3000
+key lt noidx	3000
+key eq	0
+key eq noidx	0

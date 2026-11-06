@@ -6109,7 +6109,7 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
 
             if (!float_literal_was_rewritten)
             {
-                DataTypePtr common_type = tryGetLeastSupertype(DataTypes{key_expr_type_not_null, const_type});
+                DataTypePtr common_type = tryGetLeastSupertypeForComparison(key_expr_type_not_null, const_type);
                 if (!common_type)
                     return std::nullopt;
 

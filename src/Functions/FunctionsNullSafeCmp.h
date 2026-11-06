@@ -297,7 +297,7 @@ public:
         }
 
         // get common type for null-safe comparison
-        DataTypePtr common_type = tryGetLeastSupertype(DataTypes{arguments[0].type, arguments[1].type});
+        DataTypePtr common_type = tryGetLeastSupertypeForComparison(arguments[0].type, arguments[1].type);
         auto left_nested_type = removeLowCardinalityAndNullable(arguments[0].type);
         auto right_nested_type = removeLowCardinalityAndNullable(arguments[1].type);
         // an aligned string-vs-non-string element cannot take the no-supertype nested path below

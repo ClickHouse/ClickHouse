@@ -468,6 +468,12 @@ bool canReplaceWithDictGetKeys(
     if (dictget_function_name != "dictGet" && !dict_attr_col_type->equals(*dictget_return_type))
         return false;
 
+    /// `dictGetKeys` converts the constant into the attribute type, which turns every nonzero integer into `true`
+    /// where the attribute has a `Bool`, while `=` compares such values as integers.
+    if (!const_arg_type->equals(*dict_attr_col_type)
+        && anyInTypeTree(*dict_attr_col_type, [](const IDataType & type) { return isBool(type.getPtr()); }))
+        return false;
+
     /// `=` coerces both sides to a least common supertype at the comparison site, while
     /// `dictGetKeys` casts the comparison value to the attribute type internally. For the rewrite
     /// to be equivalent, the supertype must be the attribute type itself. Otherwise the internal
