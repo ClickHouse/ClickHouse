@@ -153,18 +153,37 @@ namespace
         if (dictionary_size > num_special_positions)
         {
             size_t regular_left = dictionary_size - num_special_positions;
-            for (; row < end; ++row)
+            /// A block that repeats the previous row (e.g. a sorted column) is skipped with vector compares.
+            constexpr size_t block_size = 32 / sizeof(T);
+            while (row < end)
             {
-                const T position = data[row];
-                if (seen_data[position])
-                    continue;
-                seen_data[position] = 1;
-                positions[num_positions++] = position;
-                if (position >= num_special_positions && --regular_left == 0)
+                const size_t block_end = std::min(row + block_size, end);
+                if (row != begin && block_end - row == block_size)
                 {
-                    ++row;
-                    break;
+                    bool all_same = true;
+                    for (size_t i = 0; i < block_size; ++i)
+                        all_same &= data[row + i] == data[row + i - 1];
+                    if (all_same)
+                    {
+                        row = block_end;
+                        continue;
+                    }
                 }
+
+                size_t found_regular = 0;
+                for (; row < block_end; ++row)
+                {
+                    const T position = data[row];
+                    if (!seen_data[position]) [[unlikely]]
+                    {
+                        seen_data[position] = 1;
+                        positions[num_positions++] = position;
+                        found_regular += position >= num_special_positions;
+                    }
+                }
+                if (found_regular >= regular_left)
+                    break;
+                regular_left -= found_regular;
             }
         }
 

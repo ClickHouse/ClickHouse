@@ -13,6 +13,7 @@ DROP VIEW IF EXISTS agg_plain;
 DROP TABLE IF EXISTS t_lc;
 DROP TABLE IF EXISTS t_mem;
 DROP TABLE IF EXISTS t_plain;
+DROP TABLE IF EXISTS t_runs;
 
 -- Only t_lc is a MergeTree table: it is the only one that needs a part-wide dictionary.
 CREATE TABLE t_plain (id UInt64, s String, n Nullable(String), u UInt32, fs FixedString(16), iv IntervalSecond) ENGINE = Memory;
@@ -120,6 +121,22 @@ SELECT 'radix % 3', (SELECT uniqExact(s) FROM t_mem WHERE id % 3 = 0) = (SELECT 
     (SELECT uniqExact(fs) FROM t_mem WHERE id % 3 = 0) = (SELECT uniqExact(fs) FROM t_plain WHERE id % 3 = 0)
     SETTINGS optimize_uniq_exact_radix_partitioning = 1;
 
+-- Sorted runs, s of 64 rows, n of 50 rows with NULL and the default: `id < 10000` uses about half of the dictionaries.
+CREATE TABLE t_runs (id UInt64, s LowCardinality(String), n LowCardinality(Nullable(String)), sp String, np Nullable(String)) ENGINE = Memory;
+INSERT INTO t_runs SELECT number, sp, np, sp, np FROM (SELECT number, concat('r', toString(intDiv(number, 64) % 300)) AS sp,
+    multiIf(intDiv(number, 50) % 7 = 3, NULL, intDiv(number, 50) % 11 = 5, '', concat('r', toString(intDiv(number, 50) % 300))) AS np
+    FROM numbers(30000)) SETTINGS max_insert_threads = 1;
+SELECT 'runs', 10000,
+    toString((SELECT uniqExact(s), min(s), max(s), groupUniqArray(10)(s), uniqExact(n), min(n), max(n), groupUniqArray(10)(n) FROM t_runs WHERE id < 10000))
+    = toString((SELECT uniqExact(sp), min(sp), max(sp), groupUniqArray(10)(sp), uniqExact(np), min(np), max(np), groupUniqArray(10)(np) FROM t_runs WHERE id < 10000)),
+    (SELECT uniqExact(s) FROM t_runs WHERE id < 10000) = (SELECT uniqExact(sp) FROM t_runs WHERE id < 10000)
+    SETTINGS enable_parallel_replicas = 0, optimize_uniq_exact_radix_partitioning = 1;
+SELECT 'runs', 30000,
+    toString((SELECT uniqExact(s), min(s), max(s), groupUniqArray(10)(s), uniqExact(n), min(n), max(n), groupUniqArray(10)(n) FROM t_runs WHERE id < 30000))
+    = toString((SELECT uniqExact(sp), min(sp), max(sp), groupUniqArray(10)(sp), uniqExact(np), min(np), max(np), groupUniqArray(10)(np) FROM t_runs WHERE id < 30000)),
+    (SELECT uniqExact(s) FROM t_runs WHERE id < 30000) = (SELECT uniqExact(sp) FROM t_runs WHERE id < 30000)
+    SETTINGS enable_parallel_replicas = 0, optimize_uniq_exact_radix_partitioning = 1;
+
 -- Combinators and GROUP BY keep adding every row.
 SELECT 'if', (SELECT uniqExactIf(s, id % 2 = 0) FROM t_mem) = (SELECT uniqExactIf(s, id % 2 = 0) FROM t_plain);
 SELECT 'state', (SELECT finalizeAggregation(uniqExactState(s)) FROM t_mem) = (SELECT finalizeAggregation(uniqExactState(s)) FROM t_plain);
@@ -132,3 +149,4 @@ DROP VIEW agg_plain;
 DROP TABLE t_lc;
 DROP TABLE t_mem;
 DROP TABLE t_plain;
+DROP TABLE t_runs;
