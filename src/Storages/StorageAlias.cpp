@@ -344,11 +344,11 @@ void StorageAlias::checkAlterIsPossible(const AlterCommands & commands, ContextP
                 *command.default_expression, target_metadata->getColumnsWithVirtuals(), target->supportsSubcolumns()).empty();
         }
 
-        if (reads_target_columns)
+        if (reads_target_columns || command.type == AlterCommand::RENAME_COLUMN)
         {
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
-                "A column expression that reads columns of the target table cannot be applied through an alias, "
+                "A column expression that reads columns of the target table, or a column rename, cannot be applied through an alias, "
                 "because the target's grants are not checked for it. Execute the ALTER directly on the target table: {}.{}",
                 backQuoteIfNeed(target_database),
                 backQuoteIfNeed(target_table));

@@ -627,6 +627,12 @@ void addRequiredSelectForCommand(
     std::optional<ColumnsDescription> & columns,
     const ContextPtr & context)
 {
+    if (command.type == ASTAlterCommand::RENAME_COLUMN)
+    {
+        required_access.emplace_back(AccessType::SELECT, database, table, getIdentifierName(command.column));
+        return;
+    }
+
     if (command.type != ASTAlterCommand::ADD_COLUMN && command.type != ASTAlterCommand::MODIFY_COLUMN)
         return;
 

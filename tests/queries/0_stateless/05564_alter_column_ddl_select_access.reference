@@ -26,13 +26,19 @@ ACCESS_DENIED SELECT(pub_tup)
 ACCESS_DENIED SELECT(restricted)
 -- alias table, expression
 NOT_IMPLEMENTED
+-- alias table, rename
+NOT_IMPLEMENTED
 -- alias table, constant
 OK
 -- alias table, lambda only
 OK
+-- rename
+ACCESS_DENIED SELECT(restricted)
 -- granted column
 OK
 -- modify, granted column
+OK
+-- rename, granted column
 OK
 -- lambda parameter
 OK
@@ -73,7 +79,7 @@ q.k
 k
 via_alias_const
 via_alias_lambda
-ok_default
+ok_default2
 c_lambda
 c_field
 c_pub

@@ -672,7 +672,7 @@ Examples of how this hierarchy is treated:
 - The `ATTACH` operation needs the [CREATE](#create) privilege.
 - The `DETACH` operation needs the [DROP](#drop) privilege.
 - To stop mutation by the [KILL MUTATION](/reference/statements/kill#kill-mutation) query, you need to have a privilege to start this mutation. For example, if you want to stop the `ALTER UPDATE` query, you need the `ALTER UPDATE`, `ALTER TABLE`, or `ALTER` privilege.
-- `ALTER ADD COLUMN` and `ALTER MODIFY COLUMN` with a `DEFAULT`, `MATERIALIZED`, `ALIAS` or `EPHEMERAL` expression also need the `SELECT` privilege on the columns the expression reads. Through an `Alias` table, an expression that reads columns of the target table is refused; run it on the target table.
+- `ALTER ADD COLUMN` and `ALTER MODIFY COLUMN` with a `DEFAULT`, `MATERIALIZED`, `ALIAS` or `EPHEMERAL` expression also need the `SELECT` privilege on the columns the expression reads, and `ALTER RENAME COLUMN` needs `SELECT` on the renamed column. Through an `Alias` table, a column rename and an expression that reads columns of the target table are refused; run them on the target table.
 
 ### BACKUP {#backup}
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # ALTER ADD/MODIFY COLUMN with an expression needs SELECT on the columns the expression reads,
-# and an Alias table refuses such an expression when it reads columns of the target table.
+# ALTER RENAME COLUMN needs SELECT on the renamed column, and an Alias table refuses both forms.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -39,7 +39,7 @@ ${CLICKHOUSE_CLIENT} -m --query "
         SOURCE(CLICKHOUSE(TABLE 'dict_src' DB '${DB}')) LIFETIME(0) LAYOUT(FLAT());
 
     CREATE USER ${U_PARTIAL};
-    GRANT SELECT, ALTER ADD COLUMN, ALTER MODIFY COLUMN ON ${DB}.t TO ${U_PARTIAL};
+    GRANT SELECT, ALTER ADD COLUMN, ALTER MODIFY COLUMN, ALTER RENAME COLUMN ON ${DB}.t TO ${U_PARTIAL};
     REVOKE SELECT(restricted), SELECT(\`n.secret\`), SELECT(pub_tup) ON ${DB}.t FROM ${U_PARTIAL};
     CREATE USER ${U_COLS};
     GRANT SELECT(id, pub, arr), ALTER ADD COLUMN ON ${DB}.t TO ${U_COLS};
@@ -89,10 +89,13 @@ check "${U_PARTIAL}" "nested prefix" "ALTER TABLE t ADD COLUMN a_nested String A
 check "${U_PARTIAL}" "subcolumn of an alias column" "ALTER TABLE t ADD COLUMN a_alias_sub String ALIAS pub_tup.s" pub_tup
 check "${U_PARTIAL}" "ephemeral column" "ALTER TABLE t ADD COLUMN a_eph String DEFAULT eph" restricted
 check default "alias table, expression" "ALTER TABLE t_alias ADD COLUMN via_alias String DEFAULT upper(other)"
+check default "alias table, rename" "ALTER TABLE t_alias RENAME COLUMN other TO other2"
 check default "alias table, constant" "ALTER TABLE t_alias ADD COLUMN via_alias_const String DEFAULT 'k'"
 check default "alias table, lambda only" "ALTER TABLE t_alias ADD COLUMN via_alias_lambda Array(UInt8) DEFAULT arrayMap(x -> x + 1, [1])"
+check "${U_PARTIAL}" "rename" "ALTER TABLE t RENAME COLUMN restricted TO s2" restricted
 check "${U_PARTIAL}" "granted column" "ALTER TABLE t ADD COLUMN ok_default String DEFAULT toString(id)"
 check "${U_PARTIAL}" "modify, granted column" "ALTER TABLE t MODIFY COLUMN other String DEFAULT concat('o', toString(id))"
+check "${U_PARTIAL}" "rename, granted column" "ALTER TABLE t RENAME COLUMN ok_default TO ok_default2"
 check "${U_COLS}" "lambda parameter" "ALTER TABLE t ADD COLUMN c_lambda Array(UInt64) ALIAS arrayMap(x -> x + id, [1, 2])"
 check "${U_COLS}" "field of a lambda parameter" "ALTER TABLE t ADD COLUMN c_field Array(String) ALIAS arrayMap(x -> x.restricted, arr)"
 check "${U_COLS}" "granted alias column" "ALTER TABLE t ADD COLUMN c_pub String ALIAS concat(pub, '!')"
@@ -106,7 +109,7 @@ check "${U_FULL}" "full access" "ALTER TABLE t ADD COLUMN f String ALIAS concat(
 echo "-- full access, read"
 ${CLICKHOUSE_CLIENT} --user "${U_FULL}" --query "SELECT f FROM t ORDER BY id"
 echo "-- added columns"
-${CLICKHOUSE_CLIENT} --query "SELECT ok_default, c_lambda, c_field, s_a, d_quoted FROM t ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "SELECT ok_default2, c_lambda, c_field, s_a, d_quoted FROM t ORDER BY id"
 echo "-- schema"
 ${CLICKHOUSE_CLIENT} --query "SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 't' ORDER BY position"
 
