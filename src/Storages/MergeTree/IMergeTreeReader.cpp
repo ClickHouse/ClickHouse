@@ -352,9 +352,11 @@ void IMergeTreeReader::fillMissingColumns(
                         /// (`n.x` next to `n.x.y`) records a column of another type.
                         const SerializationInfoByName::MissingColumnInfo * marker_info = nullptr;
                         String leaf_subcolumn;
+                        DataTypePtr current_leaf_type;
                         if (auto leaf_length = findLeafLengthOfNestedSubcolumn(column))
                         {
                             const auto & subcolumn_name = column.getSubcolumnName();
+                            current_leaf_type = column.getTypeInStorage()->tryGetSubcolumnType(subcolumn_name.substr(0, *leaf_length));
                             String leaf_name = Nested::concatenateName(column.getNameInStorage(), subcolumn_name.substr(0, *leaf_length));
                             if (*leaf_length < subcolumn_name.size())
                                 leaf_subcolumn = subcolumn_name.substr(*leaf_length + 1);
@@ -376,16 +378,25 @@ void IMergeTreeReader::fillMissingColumns(
                             {
                                 auto frozen_type = DataTypeFactory::instance().get(marker_info->type_name);
                                 frozen_column = frozen_type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
+
+                                /// The marker records the type of the column when the part was written. The column is read
+                                /// in its current type: `columns_to_read` carries that type for a column found under the name
+                                /// of the `Nested` column, so `performRequiredConversions` does not convert it after a pending
+                                /// `MODIFY COLUMN`. Convert the frozen value here instead. The whole leaf is converted before
+                                /// its subcolumn is extracted, because the requested subcolumn may exist only in the current
+                                /// type (`n.x.null` after `Array(UInt64)` became `Array(Nullable(UInt64))`).
+                                if (current_leaf_type && !frozen_type->equals(*current_leaf_type))
+                                {
+                                    frozen_column = castColumn({frozen_column, frozen_type, column.name}, current_leaf_type);
+                                    frozen_type = current_leaf_type;
+                                }
+
                                 if (!leaf_subcolumn.empty())
                                 {
                                     frozen_column = frozen_type->getSubcolumn(leaf_subcolumn, frozen_column);
                                     frozen_type = frozen_type->getSubcolumnType(leaf_subcolumn);
                                 }
 
-                                /// The marker records the type of the column when the part was written. The column is read
-                                /// in its current type: `columns_to_read` carries that type for a column found under the name
-                                /// of the `Nested` column, so `performRequiredConversions` does not convert it after a pending
-                                /// `MODIFY COLUMN`. Convert the frozen value here instead.
                                 if (!frozen_type->equals(*column.type))
                                     frozen_column = castColumn({frozen_column, frozen_type, column.name}, column.type);
                             }
