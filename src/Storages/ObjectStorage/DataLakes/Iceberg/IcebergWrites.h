@@ -168,37 +168,35 @@ void generateManifestList(
     const std::vector<Int64> & entry_row_counts = {},
     const std::vector<Int64> & entry_file_counts = {});
 
-using IcebergWritersPerPartitionKey = std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter, ChunkPartitioner::PartitionKeyHasher>;
-
-/// The data files written by one of the parallel sinks of an insert, sent to `IcebergCommit`.
-struct IcebergWrittenFiles
+/// The data files of one partition written by one sink. Shared by the sink and `IcebergCommit`.
+struct IcebergPartitionFiles
 {
-    IcebergWrittenFiles(IcebergWritersPerPartitionKey writers_, Int64 total_rows_, Int64 total_bytes_, Int64 schema_id_, Int64 partition_spec_id_);
+    IcebergPartitionFiles(ChunkPartitioner::PartitionKey partition_key_, MultipleFileWriter writer_, Int64 schema_id_, Int64 partition_spec_id_);
     /// Removes the data files unless they were committed.
-    ~IcebergWrittenFiles();
+    ~IcebergPartitionFiles();
 
     /// Best-effort removal of the data files, at most once; never throws.
     void removeDataFiles();
 
-    IcebergWritersPerPartitionKey writers;
-    Int64 total_rows;
-    Int64 total_bytes;
-    Int64 schema_id;
-    Int64 partition_spec_id;
+    const ChunkPartitioner::PartitionKey partition_key;
+    MultipleFileWriter writer;
+    const Int64 schema_id;
+    const Int64 partition_spec_id;
     bool committed = false;
 
 private:
     bool removed = false;
 };
 
-using IcebergWrittenFilesPtr = std::shared_ptr<IcebergWrittenFiles>;
+using IcebergPartitionFilesPtr = std::shared_ptr<IcebergPartitionFiles>;
 
+/// The files a chunk was written to, passed with the chunk from `IcebergStorageSink` to `IcebergCommit`.
 struct IcebergWrittenFilesInfo : public ChunkInfoCloneable<IcebergWrittenFilesInfo>
 {
-    explicit IcebergWrittenFilesInfo(IcebergWrittenFilesPtr files_) : files(std::move(files_)) {}
+    explicit IcebergWrittenFilesInfo(std::vector<IcebergPartitionFilesPtr> files_) : files(std::move(files_)) {}
     IcebergWrittenFilesInfo(const IcebergWrittenFilesInfo & other) = default;
 
-    IcebergWrittenFilesPtr files;
+    std::vector<IcebergPartitionFilesPtr> files;
 };
 
 class IcebergStorageSink final : public SinkToStorage
@@ -225,14 +223,14 @@ public:
     void onException(std::exception_ptr exception) override;
     void setFinishedByCommitSink() override { send_files_to_commit = true; }
 
-    /// Used by `IcebergCommit`: takes the files written by a parallel sink and commits all of them in one snapshot.
-    void addWrittenFiles(IcebergWrittenFilesPtr files);
+    /// Used by `IcebergCommit`: collects the files written by the parallel sinks and commits all of them in one snapshot.
+    void addWrittenFiles(const std::vector<IcebergPartitionFilesPtr> & files);
     void commit();
 
 private:
     LoggerPtr log = getLogger("IcebergStorageSink");
     SharedHeader sample_block;
-    IcebergWritersPerPartitionKey writer_per_partition_key;
+    std::unordered_map<ChunkPartitioner::PartitionKey, IcebergPartitionFilesPtr, ChunkPartitioner::PartitionKeyHasher> files_per_partition_key;
     std::unordered_map<ChunkPartitioner::PartitionKey, std::vector<Field>, ChunkPartitioner::PartitionKeyHasher> last_fields_of_last_chunks;
     std::unordered_map<String, size_t> column_name_to_column_index;
     ObjectStoragePtr object_storage;
@@ -244,8 +242,6 @@ private:
     KeyDescription sort_description;
     Int64 total_rows = 0;
     Int64 total_chunks_size = 0;
-
-    GenerateResult getRemaining() override;
 
     void finalizeBuffers();
     void releaseBuffers();
@@ -264,11 +260,11 @@ private:
     /// The snapshot referencing the written files is committed, so they must never be removed.
     bool committed = false;
 
-    /// The sink sends its files to `IcebergCommit` instead of committing them.
+    /// The sink sends its files to `IcebergCommit` with the chunks instead of committing them.
     bool send_files_to_commit = false;
-    bool files_sent = false;
     /// Files of the parallel sinks, received by `IcebergCommit`.
-    std::vector<IcebergWrittenFilesPtr> received_files;
+    std::vector<IcebergPartitionFilesPtr> received_files;
+    std::unordered_set<const IcebergPartitionFiles *> received_files_set;
     std::vector<std::pair<const ChunkPartitioner::PartitionKey *, const MultipleFileWriter *>> writers_to_commit;
 
     /// The manifests are written once and reused on commit retries.
