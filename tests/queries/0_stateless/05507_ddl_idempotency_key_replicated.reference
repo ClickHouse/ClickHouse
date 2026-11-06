@@ -1,0 +1,157 @@
+-- the key needs enable_ddl_idempotency_key
+SUPPORT_IS_DISABLED
+-- EXCHANGE twice without a key swaps back, with a key it swaps once
+OK
+OK
+c
+OK
+OK
+b
+-- ALTER ADD COLUMN
+OK
+DUPLICATE_COLUMN
+OK
+OK
+OK
+OK
+the retry made 0 log entries
+1
+1
+-- the IF EXISTS of an ALTER command is not refused
+OK
+OK
+the retry made 0 log entries
+-- RENAME and DROP
+OK
+TABLE_ALREADY_EXISTS
+OK
+OK
+OK
+UNKNOWN_TABLE
+OK
+OK
+1
+0
+-- a retry is answered from the key although a later statement dropped the table
+OK
+OK
+OK
+-- CREATE
+OK
+TABLE_ALREADY_EXISTS
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+the retry made 0 log entries
+OK
+OK
+the retry made 0 log entries
+1
+1
+1
+1
+1
+-- ALTER of a view, a materialized view with TO and a Buffer table
+OK
+OK
+the retry made 0 log entries
+altered
+OK
+OK
+the retry made 0 log entries
+altered
+OK
+OK
+the retry made 0 log entries
+altered
+-- a key used by another statement or user
+IDEMPOTENCY_KEY_MISMATCH
+ACCESS_DENIED
+IDEMPOTENCY_KEY_MISMATCH
+-- the output clauses of the retry do not matter
+OK
+-- nor does a retry wait for replicas to sync if the original did not ask for it
+OK
+-- an answer from the key requires the access the statement requires
+OK
+OK
+ACCESS_DENIED
+OK
+OK
+OK
+OK
+-- a recreated user with the same name is another user
+IDEMPOTENCY_KEY_MISMATCH
+-- a failed attempt records nothing
+DUPLICATE_COLUMN
+OK
+OK
+1
+-- refused statements
+refused
+refused
+refused
+refused
+refused
+refused
+refused
+refused
+refused
+refused
+refused
+refused
+refused
+refused
+refused
+refused
+refused
+refused
+refused
+refused
+refused
+refused
+refused
+refused
+refused
+refused
+refused
+refused
+refused
+OK
+0
+1
+0
+-- a user without the access is refused before the database or the key is looked at
+ACCESS_DENIED
+ACCESS_DENIED
+no Keeper write
+-- a key in the settings of a statement nested in another query is refused
+IDEMPOTENCY_KEY_NOT_SUPPORTED
+IDEMPOTENCY_KEY_NOT_SUPPORTED
+0
+0
+-- the key travels neither with the settings of the log entry nor with its text
+OK
+OK
+1
+OK
+OK
+OK
+0
+1
+-- the key is not sent to the shards of a distributed query
+1
+1	0
+-- keys expire
+OK
+OK
+OK
+1
+-- an expired key is pruned without a later key commit
+OK
+0

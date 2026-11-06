@@ -2584,3 +2584,267 @@ def test_mixed_alter_races_replicated_alter_metadata(started_cluster):
     )
     main_node.query("DROP DATABASE IF EXISTS mixed_race SYNC")
     competing_node.query("DROP DATABASE IF EXISTS mixed_race SYNC")
+
+
+def test_ddl_idempotency_key(started_cluster):
+    def keyed(key, **extra):
+        return {"enable_ddl_idempotency_key": 1, "idempotency_key": key, **extra}
+
+    def log_size(zk_path):
+        return main_node.query(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{zk_path}/log'"
+        )
+
+    for node in [main_node, dummy_node]:
+        node.query("DROP DATABASE IF EXISTS idem_a SYNC")
+        node.query("DROP DATABASE IF EXISTS idem_b SYNC")
+        node.query("DROP DATABASE IF EXISTS idem_ttl_a SYNC")
+        node.query("DROP DATABASE IF EXISTS idem_ttl_b SYNC")
+
+    # A retry through a replica that names the database differently and was created after the entry: it is answered
+    # from the key without waiting for that replica, which never executes the entry.
+    main_node.query(
+        "CREATE DATABASE idem_a ENGINE = Replicated('/test/ddl_idempotency_key', 'shard1', 'replica1')"
+    )
+    main_node.query("CREATE TABLE idem_a.a (x UInt8) ENGINE = Memory COMMENT 'a'")
+    main_node.query("CREATE TABLE idem_a.b (x UInt8) ENGINE = Memory COMMENT 'b'")
+    main_node.query("EXCHANGE TABLES idem_a.a AND idem_a.b", settings=keyed("k1"))
+    main_node.query("CREATE TABLE idem_a.c (x UInt8) ENGINE = Memory")
+
+    dummy_node.query(
+        "CREATE DATABASE idem_b ENGINE = Replicated('/test/ddl_idempotency_key', 'shard1', 'replica2')"
+    )
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA idem_b")
+
+    size = log_size("/test/ddl_idempotency_key")
+    dummy_node.query(
+        "EXCHANGE TABLES idem_b.a AND idem_b.b",
+        settings=keyed(
+            "k1", distributed_ddl_output_mode="throw", distributed_ddl_task_timeout=20
+        ),
+    )
+    assert log_size("/test/ddl_idempotency_key") == size
+    main_node.query("SYSTEM SYNC DATABASE REPLICA idem_a")
+    for node, db in [(main_node, "idem_a"), (dummy_node, "idem_b")]:
+        assert (
+            node.query(
+                f"SELECT comment FROM system.tables WHERE database = '{db}' AND name = 'a'"
+            )
+            == "b\n"
+        )
+
+    # The TTL stored with the key decides on every replica, whatever the TTL of the replica that reads it.
+    main_node.query(
+        "CREATE DATABASE idem_ttl_a ENGINE = Replicated('/test/ddl_idempotency_key_ttl', 'shard1', 'replica1') "
+        "SETTINGS idempotency_key_ttl_sec = 1"
+    )
+    dummy_node.query(
+        "CREATE DATABASE idem_ttl_b ENGINE = Replicated('/test/ddl_idempotency_key_ttl', 'shard1', 'replica2')"
+    )
+    main_node.query("CREATE TABLE idem_ttl_a.t (x UInt8) ENGINE = Memory")
+    main_node.query("ALTER TABLE idem_ttl_a.t ADD COLUMN c UInt8", settings=keyed("k2"))
+    main_node.query("ALTER TABLE idem_ttl_a.t DROP COLUMN c")
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA idem_ttl_b")
+
+    assert_eq_with_retry(
+        dummy_node,
+        "ALTER TABLE idem_ttl_b.t ADD COLUMN c UInt8; "
+        "SELECT count() FROM system.columns WHERE database = 'idem_ttl_b' AND table = 't' AND name = 'c'",
+        "1",
+        retry_count=30,
+        settings=keyed("k2", distributed_ddl_output_mode="none"),
+    )
+
+    for node in [main_node, dummy_node]:
+        node.query("DROP DATABASE IF EXISTS idem_a SYNC")
+        node.query("DROP DATABASE IF EXISTS idem_b SYNC")
+        node.query("DROP DATABASE IF EXISTS idem_ttl_a SYNC")
+        node.query("DROP DATABASE IF EXISTS idem_ttl_b SYNC")
+
+
+# The failure modes of #95963: each case holds the first attempt of a keyed `EXCHANGE TABLES` (not idempotent on its
+# own) at a moment of its commit, breaks something, retries through another replica and checks that the statement
+# was committed exactly once.
+IDEM_NODES = [main_node, dummy_node, competing_node]
+
+
+def idem_create(db):
+    zk_path = f"/test/{db}_{generate_random_string()}"
+    for node in IDEM_NODES:
+        node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+    for i, node in enumerate(IDEM_NODES, start=1):
+        node.query(
+            f"CREATE DATABASE {db} ENGINE = Replicated('{zk_path}', 'shard1', 'replica{i}')"
+        )
+    for table in ["a", "b"]:
+        main_node.query(
+            f"CREATE TABLE {db}.{table} (x UInt8) ENGINE = Memory COMMENT '{table}'",
+            settings={"distributed_ddl_task_timeout": 0},
+        )
+    for node in IDEM_NODES:
+        node.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
+    return zk_path
+
+
+def idem_exchange(db, key, **extra):
+    settings = {
+        "enable_ddl_idempotency_key": 1,
+        "idempotency_key": key,
+        "distributed_ddl_task_timeout": 0,
+        **extra,
+    }
+    return f"EXCHANGE TABLES {db}.a AND {db}.b", settings
+
+
+def idem_log_size(zk_path):
+    return main_node.query(
+        f"SELECT count() FROM system.zookeeper WHERE path = '{zk_path}/log'"
+    )
+
+
+def idem_assert_committed(db, zk_path, times):
+    names = main_node.query(
+        f"SELECT name FROM system.zookeeper WHERE path = '{zk_path}/log' AND value LIKE '%EXCHANGE%'"
+    ).split()
+    committed = [
+        name
+        for name in names
+        if main_node.query(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{zk_path}/log/{name}' AND name = 'committed'"
+        )
+        == "1\n"
+    ]
+    assert len(committed) == times, (names, committed)
+    for node in IDEM_NODES:
+        node.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
+        assert node.query(
+            f"SELECT comment FROM system.tables WHERE database = '{db}' AND name = 'a'"
+        ) == ("b\n" if times % 2 else "a\n")
+
+
+def idem_drop(db):
+    for node in IDEM_NODES:
+        node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+
+
+def idem_hold(node, failpoint, sql, settings):
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    request = node.get_query_request(sql, settings=settings)
+    node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+    return request
+
+
+def test_ddl_idempotency_key_initiator_killed_before_commit(started_cluster):
+    db = "idem_kill_before"
+    zk_path = idem_create(db)
+    sql, settings = idem_exchange(db, "k")
+    request = idem_hold(
+        competing_node,
+        "database_replicated_idempotency_key_pause_before_commit",
+        sql,
+        settings,
+    )
+    competing_node.stop_clickhouse(kill=True)
+    assert request.get_answer_and_error()[1] != ""
+    try:
+        # The entry of the killed attempt stays uncommitted until its Keeper session expires, then the retry runs.
+        main_node.query(sql, settings=settings)
+    finally:
+        competing_node.start_clickhouse()
+    idem_assert_committed(db, zk_path, 1)
+    idem_drop(db)
+
+
+def test_ddl_idempotency_key_initiator_killed_after_commit(started_cluster):
+    db = "idem_kill_after"
+    zk_path = idem_create(db)
+    sql, settings = idem_exchange(db, "k")
+    request = idem_hold(
+        competing_node,
+        "database_replicated_idempotency_key_pause_after_commit",
+        sql,
+        settings,
+    )
+    competing_node.stop_clickhouse(kill=True)
+    assert request.get_answer_and_error()[1] != ""
+    size = idem_log_size(zk_path)
+    try:
+        main_node.query(sql, settings=settings)
+        assert idem_log_size(zk_path) == size
+    finally:
+        competing_node.start_clickhouse()
+    idem_assert_committed(db, zk_path, 1)
+    idem_drop(db)
+
+
+def test_ddl_idempotency_key_initiator_isolated_before_commit(started_cluster):
+    db = "idem_isolated_before"
+    zk_path = idem_create(db)
+    sql, settings = idem_exchange(db, "k")
+    failpoint = "database_replicated_idempotency_key_pause_before_commit"
+    request = idem_hold(competing_node, failpoint, sql, settings)
+    with PartitionManager() as pm:
+        pm.drop_instance_zk_connections(competing_node)
+        competing_node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+        assert request.get_answer_and_error()[1] != ""
+        main_node.query(sql, settings=settings)
+    idem_assert_committed(db, zk_path, 1)
+    idem_drop(db)
+
+
+def test_ddl_idempotency_key_first_attempt_delayed(started_cluster):
+    db = "idem_delayed"
+    zk_path = idem_create(db)
+    sql, settings = idem_exchange(db, "k")
+    failpoint = "database_replicated_idempotency_key_pause_before_enqueue"
+    request = idem_hold(competing_node, failpoint, sql, settings)
+    try:
+        main_node.query(sql, settings=settings)
+    finally:
+        competing_node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+    assert request.get_answer_and_error() == ("", "")
+    idem_assert_committed(db, zk_path, 1)
+    idem_drop(db)
+
+
+def test_ddl_idempotency_key_retry_before_replica_applied(started_cluster):
+    db = "idem_not_applied"
+    zk_path = idem_create(db)
+    sql, settings = idem_exchange(db, "k")
+    main_node.query("SYSTEM ENABLE FAILPOINT database_replicated_stop_entry_execution")
+    try:
+        competing_node.query(sql, settings=settings)
+        size = idem_log_size(zk_path)
+        # The retry waits for the replicas that the original waited for, here for this replica itself.
+        error = main_node.query_and_get_error(
+            sql,
+            settings={
+                **settings,
+                "distributed_ddl_task_timeout": 2,
+                "distributed_ddl_output_mode": "throw",
+            },
+        )
+        assert "TIMEOUT_EXCEEDED" in error
+        assert idem_log_size(zk_path) == size
+    finally:
+        main_node.query(
+            "SYSTEM DISABLE FAILPOINT database_replicated_stop_entry_execution"
+        )
+    idem_assert_committed(db, zk_path, 1)
+    idem_drop(db)
+
+
+def test_ddl_idempotency_key_concurrent_attempts_on_replicas(started_cluster):
+    db = "idem_concurrent"
+    zk_path = idem_create(db)
+    # Every attempt has found no key before any of them is released, so the log alone has to order them.
+    failpoint = "database_replicated_idempotency_key_pause_after_first_probe"
+    for i in range(1, 11):
+        sql, settings = idem_exchange(db, f"k{i}")
+        requests = [idem_hold(node, failpoint, sql, settings) for node in IDEM_NODES]
+        for node in IDEM_NODES:
+            node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+        for request in requests:
+            assert request.get_answer_and_error() == ("", "")
+        idem_assert_committed(db, zk_path, i)
+    idem_drop(db)

@@ -16,7 +16,8 @@ public:
         const String & zk_replicas_path,
         ContextPtr context_,
         const Strings & hosts_to_wait,
-        DDLGuardPtr && database_guard_);
+        DDLGuardPtr && database_guard_,
+        bool entry_may_be_removed_ = false);
 
     String getName() const override { return "ReplicatedDatabaseQueryStatus"; }
 

@@ -108,6 +108,8 @@ public:
     /// `convert_to_replicated` flag `DatabaseOrdinary` acts upon while loading the table.
     static void clearTransactionMetadata(const String & table_data_path, ContextPtr local_context);
 
+    AccessRightsElements getRequiredAccess() const;
+
 private:
     struct TableProperties
     {
@@ -126,7 +128,6 @@ private:
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
     void validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties);
     void setEngine(ASTCreateQuery & create) const;
-    AccessRightsElements getRequiredAccess() const;
 
     /// The part of `getRequiredAccess` for settings that send the table's data elsewhere, checked again once
     /// `setEngine` has resolved an engine inherited through `AS`, which `getRequiredAccess` cannot see.
