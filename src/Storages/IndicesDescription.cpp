@@ -90,11 +90,18 @@ void checkTextIndexPreAndPostProcessorPermissions(const IndexDescription & index
         checkTransformPermissions(index.arguments, context);
 }
 
-void rejectTextIndexTransformWithoutInitiatorUser(const ASTIndexDeclaration & declaration)
+bool hasTextIndexPreOrPostProcessor(const IndexDescription & index)
 {
-    if (!hasTextIndexPreOrPostProcessor(declaration))
-        return;
+    if (index.type != TEXT_INDEX_NAME || !index.arguments)
+        return false;
 
+    bool found = false;
+    forEachTransformArgument(index.arguments, [&](ASTPtr &) { found = true; });
+    return found;
+}
+
+[[noreturn]] static void throwTransformNeedsInitiatorUser()
+{
     throw Exception(
         ErrorCodes::INCORRECT_QUERY,
         "A text index preprocessor or postprocessor is authorized on the host the query is submitted to, and the "
@@ -102,6 +109,18 @@ void rejectTextIndexTransformWithoutInitiatorUser(const ASTIndexDeclaration & de
         "initiating user instead: enable the server setting distributed_ddl_use_initial_user_and_roles on every "
         "host, and set distributed_ddl_entry_format_version to at least {}",
         DDLLogEntry::INITIATOR_USER_VERSION);
+}
+
+void rejectTextIndexTransformWithoutInitiatorUser(const ASTIndexDeclaration & declaration)
+{
+    if (hasTextIndexPreOrPostProcessor(declaration))
+        throwTransformNeedsInitiatorUser();
+}
+
+void rejectTextIndexTransformWithoutInitiatorUser(const IndexDescription & index)
+{
+    if (hasTextIndexPreOrPostProcessor(index))
+        throwTransformNeedsInitiatorUser();
 }
 
 bool hasTextIndexPreOrPostProcessor(const ASTIndexDeclaration & declaration)

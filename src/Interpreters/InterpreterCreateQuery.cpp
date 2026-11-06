@@ -171,6 +171,7 @@ namespace Setting
 
 namespace ServerSetting
 {
+    extern const ServerSettingsBool distributed_ddl_use_initial_user_and_roles;
     extern const ServerSettingsBool ignore_empty_sql_security_in_create_view_query;
 }
 
@@ -4157,10 +4158,21 @@ BlockIO InterpreterCreateQuery::execute()
                         alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
                         throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}",
                                         StorageID{create.as_database, create.as_table}.getNameForLogs());
+                    /// The query dispatches `AS src`, so each host materializes its own source, which
+                    /// may define the transform differently from the one authorized here.
+                    const bool workers_use_initiator_user
+                        = getContext()->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles]
+                        && on_cluster_version >= DDLLogEntry::INITIATOR_USER_VERSION;
+
                     auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
                     for (const auto & index : as_storage_metadata->getSecondaryIndices())
-                        if (!index.isImplicitlyCreated())
-                            checkTextIndexPreAndPostProcessorPermissions(index, getContext());
+                    {
+                        if (index.isImplicitlyCreated())
+                            continue;
+                        if (!workers_use_initiator_user)
+                            rejectTextIndexTransformWithoutInitiatorUser(index);
+                        checkTextIndexPreAndPostProcessorPermissions(index, getContext());
+                    }
                 }
             }
 

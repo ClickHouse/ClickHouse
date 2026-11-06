@@ -94,9 +94,11 @@ void checkTextIndexPreAndPostProcessorPermissions(const IndexDescription & index
 
 /// Refuses a transform when the other hosts of an `ON CLUSTER` query do not run it as the initiator.
 void rejectTextIndexTransformWithoutInitiatorUser(const ASTIndexDeclaration & declaration);
+void rejectTextIndexTransformWithoutInitiatorUser(const IndexDescription & index);
 
 /// Whether the declaration is a text index with a `preprocessor` or a `postprocessor` argument.
 bool hasTextIndexPreOrPostProcessor(const ASTIndexDeclaration & declaration);
+bool hasTextIndexPreOrPostProcessor(const IndexDescription & index);
 
 /// All secondary indices in storage
 struct IndicesDescription : public std::vector<IndexDescription>, IHints<>

@@ -1,9 +1,9 @@
 -- Tags: zookeeper, no-replicated-database
--- no-replicated-database: the test creates its own Replicated database and runs ON CLUSTER
+-- no-replicated-database: the test creates its own Replicated database
 
--- A Replicated database and `ON CLUSTER` both hand the DDL to nodes that run it without the
--- submitting user, so the permission check has to happen on the node it was submitted to. See
--- 02346_text_index_transform_access for the checks themselves.
+-- A Replicated database hands the DDL to replicas that apply it without the submitting user, so the
+-- permission check happens on the node it was submitted to. See 02346_text_index_transform_access
+-- for the checks themselves, and 02346_text_index_transform_on_cluster for `ON CLUSTER`.
 
 SET allow_introspection_functions = 0;
 
@@ -44,26 +44,7 @@ ALTER TABLE {CLICKHOUSE_DATABASE_2:Identifier}.tab_alias
     RENAME COLUMN mangled TO renamed,
     ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = renamed) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }
 
-SELECT '4. Indices inherited by CREATE TABLE AS ON CLUSTER are denied on the legacy entry-format path.';
-
--- The worker copies the source's indices with no user, so the initiator authorizes them.
-SET allow_introspection_functions = 1;
-CREATE TABLE tab_as_source
-(
-    id UInt64,
-    val String,
-    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val))
-)
-ENGINE = MergeTree ORDER BY id;
-SET allow_introspection_functions = 0;
-
-SET distributed_ddl_entry_format_version = 2;
-CREATE TABLE tab_as_copy ON CLUSTER test_shard_localhost AS tab_as_source; -- { serverError FUNCTION_NOT_ALLOWED }
-SET distributed_ddl_entry_format_version = DEFAULT;
-
-DROP TABLE tab_as_source;
-
-SELECT '5. Accepted with the privilege.';
+SELECT '4. Accepted with the privilege.';
 
 SET allow_introspection_functions = 1;
 
