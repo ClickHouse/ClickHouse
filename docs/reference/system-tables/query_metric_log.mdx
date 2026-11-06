@@ -1761,12 +1761,16 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_RuntimeFilterLookupsBeforeBuildFinished` ([UInt64](/reference/data-types/int-uint)) — Number of blocks looked up in a JOIN Runtime Filter whose build side had not finished yet, which pass through unfiltered
 - `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Elapsed time of post-processing steps after building the right JOIN side.
 - `ProfileEvent_JoinBuildRowStoreMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Elapsed time transforming the right JOIN side payload into row-major format.
-- `ProfileEvent_AIInputTokens` ([UInt64](/reference/data-types/int-uint)) — Total prompt tokens consumed across all AI function calls in the query.
+- `ProfileEvent_AIInputTokens` ([UInt64](/reference/data-types/int-uint)) — Total prompt tokens consumed across all AI function calls in the query, including cache reads and writes.
 - `ProfileEvent_AIOutputTokens` ([UInt64](/reference/data-types/int-uint)) — Total completion tokens consumed across all AI function calls in the query.
+- `ProfileEvent_AICacheReadTokens` ([UInt64](/reference/data-types/int-uint)) — Prompt tokens read from the provider cache, as reported by AI chat providers. Included in AIInputTokens.
+- `ProfileEvent_AICacheWriteTokens` ([UInt64](/reference/data-types/int-uint)) — Prompt tokens written to the provider cache, as reported by AI chat providers. Included in AIInputTokens.
 - `ProfileEvent_AIAPICalls` ([UInt64](/reference/data-types/int-uint)) — Number of HTTP requests dispatched to AI providers.
 - `ProfileEvent_AIAPICallsRetried` ([UInt64](/reference/data-types/int-uint)) — Number of AI provider requests retried after a transient failure.
 - `ProfileEvent_AIAPICallsFailed` ([UInt64](/reference/data-types/int-uint)) — Number of AI provider requests that failed after all retries.
 - `ProfileEvent_AIAPICallsThrottled` ([UInt64](/reference/data-types/int-uint)) — Number of AI provider requests rejected with HTTP 429 (Too Many Requests).
+- `ProfileEvent_AIRequestMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent in AI provider requests, including failed attempts and response parsing, excluding retry backoff. Summed across threads.
+- `ProfileEvent_AIRetryBackoffMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent waiting before retries of failed AI provider requests. Summed across threads.
 - `ProfileEvent_AIRowsProcessed` ([UInt64](/reference/data-types/int-uint)) — Number of rows that received an AI result.
 - `ProfileEvent_AIRowsSkipped` ([UInt64](/reference/data-types/int-uint)) — Number of rows that received a default value due to quota or error.
 - `ProfileEvent_YTsaurusLookupThrottled` ([UInt64](/reference/data-types/int-uint)) — Number of lookup requests to YTsaurus that were throttled
