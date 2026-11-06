@@ -1,0 +1,103 @@
+{
+  "upstream": "https://github.com/pg83/str",
+  "upstream_commit": "21ad0a33534c63096e2d2ee879a9f435cd474a3c",
+  "arm_workbench_commit": "2a45c5a",
+  "note": "Selected original function bodies; unused public candidates omitted. Shared header uses its own u8 typedef. Integration objects require separate validation.",
+  "units": [
+    {
+      "source": "dev/lab/kernels/aarch64_neon_bulk.c",
+      "source_sha256": "310cbe08ecd77938a80c7a9e3ba394aaa7d8f8867eb2b2e762a29dcb7175cec9",
+      "functions": [
+        "copy64",
+        "copy_bulk",
+        "kl_memcpy_neon_bulk128",
+        "kl_memmove_neon_bulk64",
+        "fill64",
+        "fill_bulk",
+        "kl_memset_neon_bulk128"
+      ],
+      "integration_sha256": "534c777d63faf3707541c046e7a955aeb8ff8f94f9c89de4092c43e7a4230c52"
+    },
+    {
+      "source": "dev/lab/kernels/aarch64_neon_extra.c",
+      "source_sha256": "44d88a114fb44bb27eee110f5ebdd1a83373185fb8daff4b769d50947b2e5a60",
+      "functions": [
+        "difference_mask",
+        "compare_block",
+        "compare_word",
+        "kl_memcmp_neon_words",
+        "kl_memchr_neon_blocks",
+        "copy_string",
+        "kl_strcpy_neon_first16",
+        "span_bitmap",
+        "span_small",
+        "kl_strspn_neon_adaptive",
+        "kl_strcspn_neon_adaptive"
+      ],
+      "integration_sha256": "2d872d884450753a0e3db97f4a3b24558bbd25fafc7981595dd33a7659d54eb4"
+    },
+    {
+      "source": "dev/lab/kernels/aarch64_neon_length.c",
+      "source_sha256": "a13db34bc964355a4a8d6aa607d33534e4de700143c2c50ee1cabe9f7128bb6d",
+      "functions": [
+        "zero32",
+        "first32",
+        "length32",
+        "tail128",
+        "kl_strlen_neon_prefix32_tail128"
+      ],
+      "integration_sha256": "d118559f51cff69badc27a09408803b13022389da7ec39b6d636a824347e2981"
+    },
+    {
+      "source": "dev/lab/kernels/aarch64_neon_membership.c",
+      "source_sha256": "81532a9a3b4b4f9050847b72c0b3bf10f663862269b77f346fa8e2b907ac2bdc",
+      "functions": [
+        "table_index",
+        "scan_table",
+        "kl_strspn_neon_table",
+        "kl_strcspn_neon_table"
+      ],
+      "integration_sha256": "0c4b8d2eac2f5d000dd2b35c83d86b2a6cf6bfdfe2d3b46900e62b4b57655d29"
+    },
+    {
+      "source": "dev/lab/kernels/aarch64_neon_strings.c",
+      "source_sha256": "f170fa9f9701f2cd26c1b5a3f7cf1b4429a92538619741c35ad542e4c80586ee",
+      "functions": [
+        "left",
+        "difference",
+        "kl_strcmp_neon_block16",
+        "compare_groups",
+        "compare_tail",
+        "kl_strcmp_neon_first16_tail64"
+      ],
+      "integration_sha256": "795dcb144372cf68cee493879dd54daefb39291e8d08fd7af6481e7e972bf084"
+    },
+    {
+      "source": "dev/lab/kernels/aarch64_sve_bulk.c",
+      "source_sha256": "708f4e8fcdf3f37bb52837e0cfd817683951f881ad82bea93f1de4b673f82bd0",
+      "functions": [
+        "copy_prefix",
+        "fill_prefix",
+        "kl_memcpy_sve_bulk128",
+        "kl_memmove_sve_bulk64",
+        "kl_memset_sve_bulk128"
+      ],
+      "integration_sha256": "a2fdf6cacb1ddc53e3b1d1f7bbfb8b776cdbd9257ed052149bb3203b3df114c1"
+    },
+    {
+      "source": "dev/lab/kernels/aarch64_sve_extra.c",
+      "source_sha256": "0e2265252ccd1e2d553e268aede3ba0ae2947edbf7f15a5c63d2ecd642871c73",
+      "functions": [
+        "first_true",
+        "kl_memchr_sve_pred1",
+        "copy_predicated",
+        "finish_vector",
+        "copy_tail64",
+        "copy_split",
+        "kl_strcpy_sve_split64",
+        "kl_strcat_sve_split64"
+      ],
+      "integration_sha256": "e6f6cc1b227385ff953d290c2ef436a2a52a72fb396e307fd2b5e3e3f15d4f71"
+    }
+  ]
+}

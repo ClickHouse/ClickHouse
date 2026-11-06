@@ -3,7 +3,7 @@
 `ENABLE_PG83_STR=ON` replaces the libc entry points for `memcpy`, `memmove`,
 `memset`, `memcmp`, `strlen`, `strcpy`, `strcat`, `strcmp`, `strspn`, `strcspn`,
 and `memchr` with [pg83/str](https://github.com/pg83/str). The option is off by
-default and requires Linux x86-64 without sanitizers. Other LLVM libc functions,
+default and requires Linux x86-64 or AArch64 without sanitizers. Other LLVM libc functions,
 including `bcmp`, `memmem`, and the math functions, keep their existing providers.
 
 The submodule pins upstream commit `21ad0a33534c63096e2d2ee879a9f435cd474a3c`.
@@ -25,6 +25,55 @@ pointers, and its frame-removal pass is disabled to preserve frame-chain
 profiling. Source-level debug information is disabled because the pass does not
 remap it to the rewritten code. Function symbols remain available. Native
 profiling must verify that stacks traverse the rewritten functions correctly.
+
+## Experimental AArch64 provider
+
+The AArch64 extension lives in `aarch64/` while the upstream submodule retains
+its published x86 revision. Only selected kernel bodies and their helpers are
+included from our ARM workbench; `aarch64/provenance.json` records source hashes
+and the selection. The MIT license is included. This makes an ARM build
+reproducible without depending on an unpublished fork commit.
+
+The ARM objects use the compiler output directly, retaining unwind information
+and frame pointers. Baseline objects use `-march=armv8-a`; separate SVE objects
+use `-march=armv8-a+sve` and scalable vector length. Valid NEON implementations
+are available before constructors run. A constructor checks Linux `AT_HWCAP`
+and atomically installs SVE entry points on supported hosts. Each SVE entry
+checks the calling thread's current vector length: the tuned kernels run only
+at 16 bytes, the measured and modeled length. Other lengths use NEON. No
+process or thread vector-length setting is changed by the library.
+
+The overlapping strong definitions are excluded from the existing Arm
+optimized-routines archive only while this option is enabled. Its `strchr`
+and `strnlen` remain in use. LLVM libc math and other memory routines retain
+their existing providers. Sanitizer and sanitizer-coverage builds reject the
+experimental option so their interceptors remain authoritative.
+
+The workbench has partial machine-code proof coverage. Those proofs do not
+certify newly compiled integration objects, the dispatcher, or the complete
+ClickHouse executable. This option remains experimental and disabled by default.
+
+On a native AArch64 glibc host, test the prefixed archive against the independent
+host libc, including protected pages and oversized early-match `memchr`:
+
+```sh
+clang -O2 -fno-builtin contrib/str-cmake/test_aarch64.c \
+    build_candidate/contrib/str-cmake/libstr-prefixed.a \
+    -o build_candidate/str-contract-test
+build_candidate/str-contract-test > build_candidate/test_str_contract.log 2>&1
+clang -O2 -fno-builtin -DSTR_TEST_NO_SVE -Wl,--wrap=getauxval \
+    contrib/str-cmake/test_aarch64.c \
+    build_candidate/contrib/str-cmake/libstr-prefixed.a \
+    -o build_candidate/str-contract-neon-test
+build_candidate/str-contract-neon-test > build_candidate/test_str_contract_neon.log 2>&1
+```
+
+The second test masks the SVE feature in the archive's feature-detection call
+and exercises its actual NEON dispatch path. The test also calls the provider
+from `.preinit_array`, before constructors run. An optional numeric argument to
+the test requests that SVE vector length with `prctl`; unavailable lengths
+return status 77. Test other vector lengths on supporting hardware or an
+emulator for correctness; use native hardware for performance measurements.
 
 ## Validation before enabling by default
 

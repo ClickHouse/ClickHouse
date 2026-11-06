@@ -1,13 +1,19 @@
 set (STR_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/str")
 
-if (NOT OS_LINUX OR NOT ARCH_AMD64 OR SANITIZE OR SANITIZE_COVERAGE)
-    message (FATAL_ERROR "pg83/str requires an x86-64 Linux build without sanitizers")
+if (NOT OS_LINUX OR NOT (ARCH_AMD64 OR ARCH_AARCH64) OR SANITIZE OR SANITIZE_COVERAGE)
+    message (FATAL_ERROR "pg83/str requires an x86-64 or AArch64 Linux build without sanitizers")
 endif ()
 
-find_package (Python3 REQUIRED COMPONENTS Interpreter)
 if (NOT OBJCOPY_PATH)
     message (FATAL_ERROR "pg83/str requires objcopy to export the libc symbols")
 endif ()
+
+if (ARCH_AARCH64)
+    include (aarch64.cmake)
+    return ()
+endif ()
+
+find_package (Python3 REQUIRED COMPONENTS Interpreter)
 
 set (str_objects)
 foreach (unit sse2 sse42 avx2 evex evex512 dispatch)
