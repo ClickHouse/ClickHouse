@@ -584,7 +584,7 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
     if (data.data_size > request_settings[S3RequestSetting::max_upload_part_size])
     {
         throw Exception(
-            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            ErrorCodes::LOGICAL_ERROR,
             "Part size exceeded max_upload_part_size. {}, part number {}, part size {}, max_upload_part_size {}",
             getShortLogDetails(),
             part_number,
