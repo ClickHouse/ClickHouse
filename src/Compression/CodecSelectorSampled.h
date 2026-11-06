@@ -28,18 +28,16 @@ public:
     CompressionCodecPtr codecToUse() const override;
 
 private:
+    /// The smallest output so far wins, among equals the raw block, then the earlier candidate.
     struct Ranking
     {
         std::optional<size_t> best; /// Index into `candidates`, empty when the raw block wins
         UInt32 best_size;
         UInt32 runner_up_size;
     };
-
-    /// The smallest output so far wins, among equals the raw block, then the earlier candidate.
     Ranking rank() const;
     UInt32 rawSize() const { return ICompressionCodec::getHeaderSize() + source_size; }
 
-private:
     /// `candidates` in pool order, [0] the default codec.
     const Codecs candidates;
     const UInt64 selection_period;
