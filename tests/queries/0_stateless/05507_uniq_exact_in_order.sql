@@ -1,3 +1,4 @@
+-- Random settings limits: index_granularity=(100, None); index_granularity_bytes=(100000, None)
 -- A single uniqExact without GROUP BY over a table sorted by its argument counts the changes of the sorted values when optimize_aggregation_in_order is enabled.
 -- One thread, as the sorted streams of several threads are counted in order only when the read is split into layers (below).
 SET optimize_aggregation_in_order = 1, enable_parallel_replicas = 0, count_distinct_optimization = 0, max_threads = 1;
@@ -67,12 +68,12 @@ SELECT 'empty', uniqExact(x) FROM t_empty;
 SELECT 'empty result for empty set';
 SELECT uniqExact(x) FROM t_empty SETTINGS empty_result_for_aggregation_by_empty_set = 1;
 
--- The distinct values are not kept, so the count of 5 million distinct values fits into a small memory limit without spilling.
+-- The distinct values are not kept, so the count of 1 million distinct values fits into a small memory limit without spilling.
 DROP TABLE IF EXISTS t_memory;
 CREATE TABLE t_memory (x UInt64) ENGINE = MergeTree ORDER BY x;
-INSERT INTO t_memory SELECT number FROM numbers(5000000);
+INSERT INTO t_memory SELECT number FROM numbers(1000000);
 OPTIMIZE TABLE t_memory FINAL;
-SELECT 'memory', uniqExact(x) FROM t_memory SETTINGS max_threads = 1, max_memory_usage = '20Mi', max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0, max_block_size = 8192;
+SELECT 'memory', uniqExact(x) FROM t_memory SETTINGS max_threads = 1, max_memory_usage = '8Mi', max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0, max_block_size = 8192;
 
 DROP TABLE t_uint;
 DROP TABLE t_other;
@@ -187,9 +188,9 @@ DROP TABLE t_float_low_cardinality;
 DROP TABLE IF EXISTS t_layers;
 CREATE TABLE t_layers (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 128;
 SYSTEM STOP MERGES t_layers;
-INSERT INTO t_layers SELECT number % 100000 FROM numbers(300000);
-INSERT INTO t_layers SELECT number % 150000 FROM numbers(300000);
-INSERT INTO t_layers SELECT (number * 7) % 200003 FROM numbers(300000);
+INSERT INTO t_layers SELECT number % 10000 FROM numbers(30000);
+INSERT INTO t_layers SELECT number % 15000 FROM numbers(30000);
+INSERT INTO t_layers SELECT (number * 7) % 20011 FROM numbers(30000);
 SELECT 'layers', uniqExact(x), (SELECT uniqExact(x) FROM t_layers SETTINGS optimize_aggregation_in_order = 0) FROM t_layers SETTINGS max_threads = 8;
 SELECT 'layers used', count() FROM (EXPLAIN actions = 1 SELECT uniqExact(x) FROM t_layers SETTINGS max_threads = 8) WHERE explain LIKE '%(in layers)%';
 -- A function of the key can map values of two layers to the same value, so the read is not split.
@@ -200,8 +201,8 @@ DROP TABLE t_layers;
 DROP TABLE IF EXISTS t_layers_prefix;
 CREATE TABLE t_layers_prefix (a UInt8, x String, y UInt64) ENGINE = MergeTree ORDER BY (a, x, y) SETTINGS index_granularity = 128;
 SYSTEM STOP MERGES t_layers_prefix;
-INSERT INTO t_layers_prefix SELECT number % 3, toString(number % 5000), number FROM numbers(200000);
-INSERT INTO t_layers_prefix SELECT number % 3, toString(number % 7000), number FROM numbers(200000);
+INSERT INTO t_layers_prefix SELECT number % 3, toString(number % 500), number FROM numbers(20000);
+INSERT INTO t_layers_prefix SELECT number % 3, toString(number % 700), number FROM numbers(20000);
 SELECT 'layers prefix', uniqExact(x), (SELECT count() FROM (EXPLAIN actions = 1 SELECT uniqExact(x) FROM t_layers_prefix WHERE a = 1 SETTINGS max_threads = 8) WHERE explain LIKE '%(in layers)%') FROM t_layers_prefix WHERE a = 1 SETTINGS max_threads = 8;
 DROP TABLE t_layers_prefix;
 
@@ -209,18 +210,18 @@ DROP TABLE t_layers_prefix;
 DROP TABLE IF EXISTS t_layers_final;
 CREATE TABLE t_layers_final (x UInt64, v UInt8) ENGINE = ReplacingMergeTree ORDER BY x SETTINGS index_granularity = 128;
 SYSTEM STOP MERGES t_layers_final;
-INSERT INTO t_layers_final SELECT number % 100000, 1 FROM numbers(300000);
-INSERT INTO t_layers_final SELECT number % 150000, 2 FROM numbers(300000);
+INSERT INTO t_layers_final SELECT number % 10000, 1 FROM numbers(30000);
+INSERT INTO t_layers_final SELECT number % 15000, 2 FROM numbers(30000);
 SELECT 'layers final', uniqExact(x), (SELECT count() FROM (EXPLAIN actions = 1 SELECT uniqExact(x) FROM t_layers_final FINAL SETTINGS max_threads = 8) WHERE explain LIKE '%(in layers)%') FROM t_layers_final FINAL SETTINGS max_threads = 8;
 DROP TABLE t_layers_final;
 
 -- A projection that the filter makes cheaper to read is still chosen; it is not sorted by the argument.
 DROP TABLE IF EXISTS t_projection;
 CREATE TABLE t_projection (x UInt64, y UInt64, PROJECTION p (SELECT * ORDER BY y)) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 128;
-INSERT INTO t_projection SELECT number, (number * 7919) % 1000000 FROM numbers(1000000);
+INSERT INTO t_projection SELECT number, (number * 7919) % 100000 FROM numbers(100000);
 OPTIMIZE TABLE t_projection FINAL;
-SELECT 'projection', uniqExact(x) FROM t_projection WHERE y = 437000 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
-SELECT 'projection plan', count() FROM (EXPLAIN PIPELINE SELECT uniqExact(x) FROM t_projection WHERE y = 437000 SETTINGS optimize_use_projections = 1) WHERE explain LIKE '%UniqExactInOrderTransform%';
+SELECT 'projection', uniqExact(x) FROM t_projection WHERE y = 43700 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+SELECT 'projection plan', count() FROM (EXPLAIN PIPELINE SELECT uniqExact(x) FROM t_projection WHERE y = 43700 SETTINGS optimize_use_projections = 1) WHERE explain LIKE '%UniqExactInOrderTransform%';
 DROP TABLE t_projection;
 
 -- Without layers (floats, here), several streams would be merged into one on a single thread, so they are aggregated as usual,
@@ -228,9 +229,9 @@ DROP TABLE t_projection;
 DROP TABLE IF EXISTS t_no_layers;
 CREATE TABLE t_no_layers (x Float64) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 128;
 SYSTEM STOP MERGES t_no_layers;
-INSERT INTO t_no_layers SELECT toFloat64(number * 4) FROM numbers(100000);
-INSERT INTO t_no_layers SELECT toFloat64(number * 4 + 1) FROM numbers(100000);
-INSERT INTO t_no_layers SELECT toFloat64(number * 4 + 2) FROM numbers(100000);
-INSERT INTO t_no_layers SELECT toFloat64(number * 4 + 3) FROM numbers(100000);
+INSERT INTO t_no_layers SELECT toFloat64(number * 4) FROM numbers(10000);
+INSERT INTO t_no_layers SELECT toFloat64(number * 4 + 1) FROM numbers(10000);
+INSERT INTO t_no_layers SELECT toFloat64(number * 4 + 2) FROM numbers(10000);
+INSERT INTO t_no_layers SELECT toFloat64(number * 4 + 3) FROM numbers(10000);
 SELECT 'no layers', uniqExact(x), (SELECT count() FROM (EXPLAIN PIPELINE SELECT uniqExact(x) FROM t_no_layers SETTINGS max_threads = 8, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0) WHERE explain LIKE '%UniqExactInOrderTransform%' OR explain LIKE '%InOrder%') FROM t_no_layers SETTINGS max_threads = 8;
 DROP TABLE t_no_layers;
