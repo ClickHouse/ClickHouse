@@ -254,10 +254,10 @@ void TTLAggregationAlgorithm::execute(Block & block)
             if (need_to_flush_aggregation_state)
             {
                 if (rows_with_current_key)
-                {
-                    some_rows_were_aggregated = true;
                     calculateAggregates(aggregate_columns, current_key_start, rows_with_current_key);
-                }
+                /// The state may also hold a group carried over from the previous block.
+                if (!aggregation_result.empty())
+                    some_rows_were_aggregated = true;
                 finalizeAggregates(result_columns);
 
                 current_key_start = rows_aggregated;
