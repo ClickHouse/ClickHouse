@@ -32,6 +32,7 @@
 #include <IO/SipHashingWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Core/Defines.h>
 #include <Core/SortDescription.h>
 #include <Planner/PlannerActionsVisitor.h>
 
@@ -44,6 +45,7 @@
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeSet.h>
@@ -67,6 +69,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
     extern const int TOO_DEEP_RECURSION;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 namespace
@@ -1699,6 +1702,13 @@ void ActionsDAG::foldFilterPredicateThroughMaterialize(
 
     filter_column_name = std::move(folded_name);
     remove_filter_column = true;
+}
+
+ColumnConstPtr ActionsDAG::tryFoldPredicateThroughMaterialize(const Node * node)
+{
+    FoldCache fold_cache;
+    auto folded = tryFoldPredicate(node, fold_cache);
+    return folded ? folded->column : nullptr;
 }
 
 void ActionsDAG::deduplicateSubtrees()
@@ -5313,15 +5323,27 @@ static void deserializeCapture(LambdaCapture & capture, ReadBuffer & in, size_t 
 
     UInt64 num_names = 0;
     readVarUInt(num_names, in);
-    capture.captured_names.resize(num_names);
-    for (auto & name : capture.captured_names)
+    if (num_names > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Suspiciously many captured names ({}) in a serialized lambda (maximum: {})",
+            num_names, DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS);
+    VectorWithMemoryTracking<String> names(num_names);
+    for (auto & name : names)
         readStringBinary(name, in);
+    capture.captured_names.assign(std::make_move_iterator(names.begin()), std::make_move_iterator(names.end()));
 
     UInt64 num_types = 0;
     readVarUInt(num_types, in);
-    capture.captured_types.resize(num_types);
-    for (auto & type : capture.captured_types)
+    /// The names and the types are written in lock-step; a mismatch would later make
+    /// `FunctionExpression` index past `argument_names` when the lambda is executed.
+    if (num_types != num_names)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Serialized lambda capture has {} captured types but {} captured names",
+            num_types, num_names);
+    VectorWithMemoryTracking<DataTypePtr> types(num_types);
+    for (auto & type : types)
         type = decodeDataType(in, max_type_complexity);
+    capture.captured_types.assign(std::make_move_iterator(types.begin()), std::make_move_iterator(types.end()));
 
     UInt64 num_args = 0;
     readVarUInt(num_args, in);
@@ -5431,6 +5453,11 @@ static void serializeConstant(
 /// The maximum nesting depth of lambda captures in a deserialized `ActionsDAG`.
 /// The serialized data may come from a client, and the deserialization is recursive.
 static constexpr size_t MAX_ACTIONS_DAG_DESERIALIZATION_DEPTH = 1000;
+
+/// The maximum number of nodes in a deserialized `ActionsDAG`. The nodes have to be preallocated
+/// (children may reference nodes that come later in the stream), so the declared count must be
+/// bounded before it sizes the allocation.
+static constexpr size_t MAX_ACTIONS_DAG_DESERIALIZATION_NODES = 1'000'000;
 
 static void checkActionsDAGDeserializationDepth(size_t nesting_depth)
 {
@@ -5683,10 +5710,16 @@ ActionsDAG ActionsDAG::deserialize(
     size_t nodes_size = 0;
     readVarUInt(nodes_size, in);
 
-    std::list<Node> nodes;
-    std::unordered_map<size_t, Node *> id_to_node;
+    if (nodes_size > MAX_ACTIONS_DAG_DESERIALIZATION_NODES)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Suspiciously many nodes ({}) in a serialized ActionsDAG (maximum: {})",
+            nodes_size, MAX_ACTIONS_DAG_DESERIALIZATION_NODES);
+
+    Nodes nodes;
+    VectorWithMemoryTracking<Node *> id_to_node;
+    id_to_node.reserve(nodes_size);
     for (size_t i = 0; i < nodes_size; ++i)
-        id_to_node.emplace(i, &nodes.emplace_back(Node{}));
+        id_to_node.push_back(&nodes.emplace_back());
 
     for (size_t i = 0; i < nodes_size; ++i)
     {
@@ -5703,12 +5736,19 @@ ActionsDAG ActionsDAG::deserialize(
 
         size_t children_size = 0;
         readVarUInt(children_size, in);
+        if (children_size > MAX_ACTIONS_DAG_DESERIALIZATION_NODES)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Suspiciously many children ({}) of a serialized ActionsDAG node (maximum: {})",
+                children_size, MAX_ACTIONS_DAG_DESERIALIZATION_NODES);
+        /// Children may repeat a node, so the count is not bounded by the number of nodes.
+        VectorWithMemoryTracking<const Node *> children;
         for (size_t j = 0; j < children_size; ++j)
         {
             size_t child_id = 0;
             readVarUInt(child_id, in);
-            node.children.push_back(id_to_node.at(child_id));
+            children.push_back(id_to_node.at(child_id));
         }
+        node.children.assign(children.begin(), children.end());
 
         UInt8 column_flags = 0;
         readIntBinary(column_flags, in);
@@ -5812,6 +5852,11 @@ ActionsDAG ActionsDAG::deserialize(
 
     size_t inputs_size = 0;
     readVarUInt(inputs_size, in);
+
+    if (inputs_size > nodes_size)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Serialized ActionsDAG has more inputs ({}) than nodes ({})", inputs_size, nodes_size);
+
     std::vector<const Node *> inputs;
     std::unordered_set<const Node *> inputs_set;
     inputs.reserve(inputs_size);
@@ -5835,7 +5880,12 @@ ActionsDAG ActionsDAG::deserialize(
 
     size_t outputs_size = 0;
     readVarUInt(outputs_size, in);
-    std::vector<const Node *> outputs;
+    if (outputs_size > MAX_ACTIONS_DAG_DESERIALIZATION_NODES)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Suspiciously many outputs ({}) in a serialized ActionsDAG (maximum: {})",
+            outputs_size, MAX_ACTIONS_DAG_DESERIALIZATION_NODES);
+    /// Outputs may repeat a node, so the count is not bounded by the number of nodes.
+    VectorWithMemoryTracking<const Node *> outputs;
     outputs.reserve(outputs_size);
     for (size_t i = 0; i < outputs_size; ++i)
     {
@@ -5853,7 +5903,7 @@ ActionsDAG ActionsDAG::deserialize(
     ActionsDAG dag;
     dag.nodes = std::move(nodes);
     dag.inputs = std::move(inputs);
-    dag.outputs = std::move(outputs);
+    dag.outputs.assign(outputs.begin(), outputs.end());
 
     return dag;
 }
