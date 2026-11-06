@@ -4568,7 +4568,7 @@ std::future<void> executeQueryInBackground(std::string_view query, ContextMutabl
     };
 
     MemoryTrackerSwitcher task_memory_scope(&total_memory_tracker);
-    auto source = std::allocate_shared<SourceContext>(
+    auto source_context = std::allocate_shared<SourceContext>(
         GlobalMemoryAllocator<SourceContext>{}, CurrentThread::getGroup(), context);
 
     struct ExecutionStart
@@ -4596,7 +4596,7 @@ std::future<void> executeQueryInBackground(std::string_view query, ContextMutabl
     };
 
     auto background_query_execution_started = std::allocate_shared<ExecutionStart>(GlobalMemoryAllocator<ExecutionStart>{});
-    context->getBackgroundQueryPool().scheduleOrThrow([query_text = String(query), source = std::move(source), background_query_execution_started]() mutable
+    context->getBackgroundQueryPool().scheduleOrThrow([query_text = String(query), source = std::move(source_context), background_query_execution_started]() mutable
     {
         try
         {
