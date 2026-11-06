@@ -62,6 +62,7 @@ WITH plotted AS
         FROM system.dashboards
         WHERE dashboard = 'Filesystem cache overview'
     )
+-- `BlockQueueTimePerOp` is published only after a block device served IO operations, so an idle host lacks it.
 SELECT DISTINCT name FROM plotted
-WHERE name NOT IN (SELECT metric FROM system.asynchronous_metrics)
+WHERE name NOT IN (SELECT metric FROM system.asynchronous_metrics) AND name != 'BlockQueueTimePerOp'
 ORDER BY name;
