@@ -402,6 +402,7 @@ add_object_library(clickhouse_interpreters_filecache Interpreters/FileCache)
 add_object_library(clickhouse_interpreters_hash_join Interpreters/HashJoin)
 add_object_library(clickhouse_interpreters_adaptive_aggregation Interpreters/AdaptiveAggregation)
 add_object_library(clickhouse_interpreters_access Interpreters/Access)
+add_object_library(clickhouse_interpreters_whatif Interpreters/WhatIf)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
 add_object_library(clickhouse_interpreters_jit Interpreters/JIT)
@@ -428,6 +429,7 @@ add_object_library(clickhouse_storages_mergetree_compaction_parts_collectors Sto
 add_object_library(clickhouse_storages_mergetree_compaction_parts_finders Storages/MergeTree/Compaction/PartsFinders)
 add_object_library(clickhouse_storages_mergetree_patch_parts Storages/MergeTree/PatchParts)
 add_object_library(clickhouse_storages_mergetree_projection_index Storages/MergeTree/ProjectionIndex)
+add_object_library(clickhouse_storages_mergetree_whatif Storages/MergeTree/WhatIf)
 add_object_library(clickhouse_storages_statistics Storages/Statistics)
 add_object_library(clickhouse_storages_s3queue Storages/ObjectStorageQueue)
 add_object_library(clickhouse_storages_materializedview Storages/MaterializedView)
@@ -521,6 +523,8 @@ add_object_library(clickhouse_processors_formats_impl Processors/Formats/Impl)
 add_object_library(clickhouse_processors_transforms Processors/Transforms)
 add_object_library(clickhouse_processors_transforms_window Processors/Transforms/Window)
 add_object_library(clickhouse_window_functions WindowFunctions)
+add_object_library(clickhouse_window_functions_common WindowFunctions/Common)
+add_object_library(clickhouse_window_functions_general WindowFunctions/General)
 add_object_library(clickhouse_processors_sources Processors/Sources)
 add_object_library(clickhouse_processors_sinks Processors/Sinks)
 add_object_library(clickhouse_processors_merges Processors/Merges)
@@ -559,23 +563,25 @@ add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 # TUs where libcxx hardening needs to be disabled are specified here.
 set_property(SOURCE
     Columns/IColumn.cpp                        # hashjoin_with_large_output
-    Processors/Transforms/WindowTransform.cpp  # window functions
-    Processors/Transforms/Window/SlidingBlocks.cpp  # window functions
-    Processors/Transforms/Window/SlidingIndexes.cpp  # window functions
-    Processors/Transforms/Window/Partition.cpp  # window functions
-    Processors/Transforms/Window/Peers.cpp  # window functions
-    Processors/Transforms/Window/Frame.cpp  # window functions
-    Processors/Transforms/Window/WindowTransformParams.cpp  # window functions
-    WindowFunctions/WindowFunctionRank.cpp                   # window functions
-    WindowFunctions/WindowFunctionDenseRank.cpp              # window functions
-    WindowFunctions/WindowFunctionRowNumber.cpp              # window functions
-    WindowFunctions/WindowFunctionNtile.cpp                  # window functions
-    WindowFunctions/WindowFunctionPercentRank.cpp            # window functions
-    WindowFunctions/WindowFunctionCumeDist.cpp               # window functions
-    WindowFunctions/WindowFunctionNthValue.cpp               # window functions
-    WindowFunctions/WindowFunctionLagLead.cpp                # window functions
-    WindowFunctions/WindowFunctionExponentialTimeDecayed.cpp # window functions
-    WindowFunctions/WindowFunctionNonNegativeDerivative.cpp  # window functions
+    Processors/Transforms/WindowTransform.cpp                        # window functions
+    Processors/Transforms/Window/SlidingBlocks.cpp                   # window functions
+    Processors/Transforms/Window/SlidingArguments.cpp                # window functions
+    Processors/Transforms/Window/SlidingIndexes.cpp                  # window functions
+    Processors/Transforms/Window/Partition.cpp                       # window functions
+    Processors/Transforms/Window/Peers.cpp                           # window functions
+    Processors/Transforms/Window/Frame.cpp                           # window functions
+    Processors/Transforms/Window/WindowTransformParams.cpp           # window functions
+    WindowFunctions/Common/WindowArguments.cpp                       # window functions
+    WindowFunctions/General/WindowFunctionRank.cpp                   # window functions
+    WindowFunctions/General/WindowFunctionDenseRank.cpp              # window functions
+    WindowFunctions/General/WindowFunctionRowNumber.cpp              # window functions
+    WindowFunctions/General/WindowFunctionNtile.cpp                  # window functions
+    WindowFunctions/General/WindowFunctionPercentRank.cpp            # window functions
+    WindowFunctions/General/WindowFunctionCumeDist.cpp               # window functions
+    WindowFunctions/General/WindowFunctionNthValue.cpp               # window functions
+    WindowFunctions/General/WindowFunctionLagLead.cpp                # window functions
+    WindowFunctions/General/WindowFunctionExponentialTimeDecayed.cpp # window functions
+    WindowFunctions/General/WindowFunctionNonNegativeDerivative.cpp  # window functions
     Interpreters/Aggregator.cpp                # destroy_aggregate_states
     Common/IntervalTree.cpp                    # range_hashed_dictionary
     PROPERTY COMPILE_FLAGS "-U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE")
@@ -589,6 +595,10 @@ add_object_library(clickhouse_processors_formats_impl_vortex Processors/Formats/
 
 if (USE_ARROW)
     add_object_library(clickhouse_processors_formats_impl_arrow_ipc Processors/Formats/Impl/ArrowIPC)
+endif()
+
+if (USE_ORC)
+    add_object_library(clickhouse_processors_formats_impl_orc Processors/Formats/Impl/ORC)
 endif()
 
 if (TARGET ch_contrib::nuraft)
@@ -930,11 +940,6 @@ if (TARGET ch_contrib::liburing)
 endif()
 
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::fast_float)
-
-if (USE_ORC)
-    target_link_libraries(dbms PUBLIC ${ORC_LIBRARIES})
-    target_include_directories(dbms SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} "${PROJECT_BINARY_DIR}/contrib/orc/c++/include")
-endif ()
 
 if (TARGET ch_contrib::rocksdb)
     target_link_libraries(dbms PUBLIC ch_contrib::rocksdb)
