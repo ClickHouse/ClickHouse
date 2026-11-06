@@ -714,7 +714,7 @@ public:
 
 private:
     const size_t number_of_arguments;
-    std::vector<bool> has_internal_nulls;
+    VectorWithMemoryTracking<UInt8> has_internal_nulls;
 };
 
 
