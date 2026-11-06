@@ -88,6 +88,7 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.enable_group_by_top_k_optimization,
         optimization_settings.top_k_optimization_observation_rows,
         optimization_settings.top_k_optimization_shared_boundary,
+        optimization_settings.max_rows_to_group_by,
         optimization_settings.enable_group_by_top_k_dynamic_filtering,
         optimization_settings.use_query_condition_cache_for_top_k,
         optimization_settings.is_explain,
@@ -272,7 +273,11 @@ void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettin
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
 void checkCascadesSupported(const QueryPlan::Node & root);
-void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void applyParallelReplicas(
+    QueryPlan & query_plan,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    const Optimization::ExtraSettings & extra_settings);
 
 /// Rule for passes under `make_distributed_plan`: a pass that can turn a serializable step into a
 /// non-serializable one, or insert one (read-in-order, distinct-in-order, aggregation-in-order,
@@ -484,7 +489,7 @@ void optimizeTreeSecondPass(
     /// alone (with `make_distributed_plan = 0`) keeps the normal single-node optimizer.
     const bool cascades_active = make_distributed_plan && optimization_settings.enable_cascades_optimizer;
 
-    applyParallelReplicas(query_plan, nodes, optimization_settings);
+    applyParallelReplicas(query_plan, nodes, optimization_settings, extra_settings);
 
     /// Lazy materialization for plans with joins works on the join expressions, so it runs while the joins
     /// are still logical. That is after PREWHERE optimization, which needs a filter right above the read,
@@ -1018,13 +1023,14 @@ void optimizeTreeSecondPass(
     /// After every pass that converts a full sorting or gives it partitions.
     traverseQueryPlan(stack, root, [&](auto & frame_node) { disableSpreadingSmallReadUnderFullSorting(frame_node); });
 
-    considerEnablingParallelReplicas(optimization_settings, root, query_plan);
-
     /// Run after every optimization that can rewrite aggregation, sorting, projections,
     /// distributed fragments, or parallel replicas. This placement makes the pass a pure
     /// admission check: no later optimization needs to retract the heap or its synthetic sort.
+    /// Automatic parallel replicas runs later, but replaces the whole plan by one optimized on its own.
     if (optimization_settings.enable_group_by_top_k_optimization)
     {
+        if (optimization_settings.distributed_group_by_top_k)
+            applyGroupByTopKOfInitiator(root, nodes, optimization_settings.distributed_group_by_top_k, extra_settings);
         traverseQueryPlan(stack, root, [&](auto & frame_node) { tryOptimizeGroupByTopK(&frame_node, nodes, extra_settings); });
     }
 
@@ -1034,6 +1040,9 @@ void optimizeTreeSecondPass(
         traverseQueryPlan(
             stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
     }
+
+    /// After every pass that changes the plan, so that the plan it measures and switches is the settled one.
+    considerEnablingParallelReplicas(optimization_settings, root, query_plan);
 
     /// Last: it reads the final consumers of every remote read.
     allowReadingShardsFromSeveralReplicas(root);

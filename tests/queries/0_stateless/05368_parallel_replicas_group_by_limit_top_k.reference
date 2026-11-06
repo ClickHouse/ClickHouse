@@ -1,0 +1,29 @@
+2	16
+3	25
+4	20
+2	16
+3	25
+4	20
+2	16
+3	25
+4	20
+2	16
+3	25
+4	20
+2	16
+3	25
+4	20
+2	16
+3	25
+4	20
+05368_replicas_plan_based	1
+05368_replicas_query_plan	1
+05368_replicas_query_text	1
+Sorting (Sorting for GROUP BY top-K)
+Top-K: limit=3, columns=1, directions=[1]
+0
+0
+0
+0	1
+1	1
+2	1

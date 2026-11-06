@@ -13,9 +13,12 @@ prefix of the GROUP BY keys:
     partial side: a key rejected by a shard-local heap cannot be in the
     global top-N, and the initiator's final sort + LIMIT discards any group
     a remote eviction left incomplete.
-  * without ORDER BY (`GROUP BY ... LIMIT N`) - stays final-only: the
-    synthesized sort that makes this shape safe cannot be placed above the
-    initiator's merge, so the pushdown must never fire on followers.
+  * without ORDER BY (`GROUP BY ... LIMIT N`) - stays final-only over a
+    Distributed table.  With parallel replicas the initiator synthesizes a
+    sort over all the keys above its merge, which makes the shape the one with
+    ORDER BY, and tells the replicas to put the heap on their partial
+    aggregation (`distributed_group_by_top_k`).  A follower never decides
+    that on its own: the clause guards below protect the shape with ORDER BY.
 
 The data is deliberately skewed so a heap would actually filter rows:
 shard 1 has many distinct small keys (fills an N=10 heap on its own),
@@ -817,13 +820,11 @@ def test_parallel_replicas_no_order_by(start_cluster, max_parallel_replicas):
 def test_parallel_replicas_no_order_by_serialize_query_plan(
     start_cluster, parallel_replicas_local_plan
 ):
-    """The no-ORDER-BY shape must not push the heap to the followers even
-    though a serialized plan can carry top-K parameters: the synthesized sort
-    that makes the shape safe cannot be placed above the initiator's merge, so
-    each follower would truncate its group set independently and merged groups
-    would come back incomplete.  The outer merge plan must show neither a
-    stale `Top-K` annotation nor the synthetic sort, regardless of whether the
-    initiator also executes a local fragment.
+    """With parallel replicas, the no-ORDER-BY shape gets the synthetic sort
+    above the initiator's merge, so the initiator keeps the smallest groups of
+    the merged ones and each follower may prune its partial aggregation.  The
+    result must be the smallest groups, regardless of whether the initiator
+    also executes a local fragment.
     """
     table = "t_pr"
     _create_replicated_shards(table)
@@ -840,18 +841,19 @@ def test_parallel_replicas_no_order_by_serialize_query_plan(
         f"EXPLAIN actions = 1 {inner}",
         settings=dict(settings_base, enable_group_by_top_k_optimization=1),
     )
-    assert "Top-K:" not in plan, plan
-    assert "Sorting for GROUP BY top-K" not in plan, plan
+    assert "Sorting for GROUP BY top-K" in plan, plan
+    if parallel_replicas_local_plan:
+        assert "Top-K:" in plan, plan
 
-    outer = f"SELECT sum(k), sum(s), count() FROM ({inner})"
-    off = node1.query(
-        outer, settings=dict(settings_base, enable_group_by_top_k_optimization=0)
+    expected = node1.query(
+        f"SELECT k, sum(v) AS s FROM {table} GROUP BY k ORDER BY k LIMIT 100",
+        settings={"enable_parallel_replicas": 0},
     )
     on = node1.query(
-        outer, settings=dict(settings_base, enable_group_by_top_k_optimization=1)
+        inner, settings=dict(settings_base, enable_group_by_top_k_optimization=1)
     )
-    assert off == on, (
-        "serialized parallel replicas changed the no-ORDER-BY result.\n"
+    assert expected == on, (
+        "serialized parallel replicas did not return the smallest groups.\n"
         f"  parallel_replicas_local_plan={parallel_replicas_local_plan}\n"
-        f"  off:\n{off}\n  on:\n{on}\n"
+        f"  expected:\n{expected}\n  on:\n{on}\n"
     )

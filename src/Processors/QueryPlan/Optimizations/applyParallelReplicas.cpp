@@ -337,13 +337,18 @@ class ApplyParallelReplicasVisitor : public QueryPlanVisitor<ApplyParallelReplic
 {
     QueryPlan::Nodes & nodes;
     const QueryPlanOptimizationSettings & optimization_settings;
+    const Optimization::ExtraSettings & extra_settings;
 
 public:
     ApplyParallelReplicasVisitor(
-        QueryPlan::Node * root_, QueryPlan::Nodes & nodes_, const QueryPlanOptimizationSettings & optimization_settings_)
+        QueryPlan::Node * root_,
+        QueryPlan::Nodes & nodes_,
+        const QueryPlanOptimizationSettings & optimization_settings_,
+        const Optimization::ExtraSettings & extra_settings_)
         : QueryPlanVisitor<ApplyParallelReplicasVisitor>(root_)
         , nodes(nodes_)
         , optimization_settings(optimization_settings_)
+        , extra_settings(extra_settings_)
     {
     }
 
@@ -519,6 +524,11 @@ public:
             partial_aggregation_node.step->setStepDescription("partial");
             partial_aggregation_node.children = {original_split_node->children.front()};
 
+            /// The heap the aggregation would get under `ORDER BY ... LIMIT`, before the fragment is serialized, so that the
+            /// replicas run it too.
+            if (stack.size() >= 3)
+                applyOrderedGroupByTopKToSplit(limitAbove(stack.size() - 3), parent_node, *partial_aggregation_step, extra_settings);
+
             /// Add gather
             auto & new_split_node = nodes.emplace_back();
             new_split_node.step = std::make_unique<ParallelReplicasSplitStep>(partial_aggregation_node.step->getOutputHeader());
@@ -592,6 +602,16 @@ public:
     }
 
 private:
+    /// The `Limit` of `GROUP BY ... ORDER BY ... LIMIT`: the node of the frame `index`, or of one of the two frames above it,
+    /// with the sort and the expression in between.
+    QueryPlan::Node * limitAbove(size_t index) const
+    {
+        for (size_t i = 0; i < 3 && i <= index; ++i)
+            if (auto * node = stack[index - i].node; typeid_cast<const LimitStep *>(node->step.get()))
+                return node;
+        return nullptr;
+    }
+
     /// True if any ancestor LIMIT must read till the end (`exact_rows_before_limit`).
     bool mustReadTillEnd() const
     {
@@ -901,16 +921,21 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
         parent->children[i] = make_split_above(parent->children[i]);
 }
 
-void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings &);
+void applyParallelReplicas(
+    QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings &, const Optimization::ExtraSettings &);
 
-void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings)
+void applyParallelReplicas(
+    QueryPlan & query_plan,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & settings,
+    const Optimization::ExtraSettings & extra_settings)
 {
     if (!settings.enable_parallel_replicas)
         return;
 
     insertParallelReplicasSplit(query_plan, nodes);
 
-    ApplyParallelReplicasVisitor(query_plan.getRootNode(), nodes, settings).visit();
+    ApplyParallelReplicasVisitor(query_plan.getRootNode(), nodes, settings, extra_settings).visit();
 
     ConvertToDistributedVisitor(query_plan).visit();
 }
