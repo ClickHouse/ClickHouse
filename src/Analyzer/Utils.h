@@ -308,6 +308,10 @@ bool typeNeedsExactLiteralSerialization(const IDataType & type);
 /// below an `Object` whose JSON text carries no discriminator, it is not.
 ASTPtr columnConstantToExactLiteralAST(const ColumnPtr & column, size_t row, const DataTypePtr & type, bool date_time_as_numbers);
 
+/// The same value as `makeCastToTypeNameAST(columnConstantToExactLiteralAST(column, row, type, true), type->getName())`, but
+/// decimal-backed leaves under `Nullable`, `Array`, `Tuple` and `Map` only are carried as one `Decimal(76, S)` literal.
+ASTPtr columnConstantToCompactExactLiteralAST(const ColumnPtr & column, size_t row, const DataTypePtr & type);
+
 /// Wrap `value` in `_CAST(value, type_name)`, but skip the wrapping when `value` is already a
 /// `_CAST(..., type_name)` to the same type (e.g. the exact carrier produced for a scalar
 /// Decimal/DateTime64/Time64 constant), avoiding a redundant identity cast in the serialized AST.

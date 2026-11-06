@@ -1,3 +1,4 @@
+#include <Analyzer/Utils.h>
 #include <Core/Block.h>
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
@@ -128,10 +129,7 @@ public:
 
         Block scalar{{std::move(column), type, "_constant"}};
         if (worthConvertingScalarToLiteral(scalar, data.max_literal_size))
-        {
-            auto literal = make_intrusive<ASTLiteral>(std::move(field));
-            ast = addTypeConversionToAST(std::move(literal), type->getName());
-        }
+            ast = columnConstantToCompactExactLiteralAST(scalar.getByPosition(0).column, 0, type);
     }
 };
 

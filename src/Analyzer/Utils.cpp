@@ -28,6 +28,7 @@
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnDynamic.h>
@@ -2041,6 +2042,43 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
 ASTPtr columnConstantToExactLiteralAST(const ColumnPtr & column, size_t row, const DataTypePtr & type, bool date_time_as_numbers)
 {
     return columnConstantToExactLiteralASTImpl(column, row, type, date_time_as_numbers);
+}
+
+ASTPtr columnConstantToCompactExactLiteralAST(const ColumnPtr & column, size_t row, const DataTypePtr & type)
+{
+    const bool has_member_types = anyInTypeTree(*type, [](const IDataType & nested)
+    {
+        WhichDataType which(nested);
+        return which.isVariant() || which.isDynamic() || which.isObject() || which.isQBit();
+    });
+
+    if (typeNeedsExactLiteralSerialization(*type) && !has_member_types)
+    {
+        auto carrier_type = rewriteTypeTree(type, [](const DataTypePtr & node) -> DataTypePtr
+        {
+            if (auto scale = tryGetDecimalScale(*node))
+                return std::make_shared<DataTypeDecimal256>(DecimalUtils::max_precision<Decimal256>, *scale);
+            return node;
+        }, CustomizationPolicy::Keep);
+        auto carrier = castColumn({column->cut(row, 1), type, ""}, carrier_type);
+
+        /// `String -> Decimal(76, S)` rejects a value of more than 76 digits.
+        const auto bound = DecimalUtils::scaleMultiplier<Int256>(DecimalUtils::max_precision<Decimal256>);
+        bool fits = true;
+        auto check_fits = [&](const IColumn & subcolumn)
+        {
+            if (const auto * decimals = typeid_cast<const ColumnDecimal<Decimal256> *>(&subcolumn))
+                fits = fits && std::ranges::none_of(decimals->getData(), [&](const Decimal256 & x) { return x.value <= -bound || x.value >= bound; });
+        };
+        check_fits(*carrier);
+        carrier->forEachSubcolumnRecursively(check_fits);
+
+        if (fits)
+            return makeCastToTypeNameAST(
+                makeCastToTypeNameAST(make_intrusive<ASTLiteral>((*carrier)[0]), carrier_type->getName()), type->getName());
+    }
+
+    return makeCastToTypeNameAST(columnConstantToExactLiteralAST(column, row, type, /*date_time_as_numbers=*/ true), type->getName());
 }
 
 ASTPtr makeCastToTypeNameAST(ASTPtr value, const String & type_name)

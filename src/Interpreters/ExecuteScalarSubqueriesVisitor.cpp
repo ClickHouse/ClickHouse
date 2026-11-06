@@ -355,10 +355,22 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     if (data.only_analyze || !settings[Setting::enable_scalar_subquery_optimization] || worthConvertingScalarToLiteral(scalar, data.max_literal_size)
         || !data.getContext()->hasQueryContext())
     {
-        auto lit = make_intrusive<ASTLiteral>((*scalar.safeGetByPosition(0).column)[0]);
-        lit->alias = subquery_alias;
-        lit->setPreferAliasToColumnName(prefer_alias_to_column_name);
-        ast = addTypeConversionToAST(std::move(lit), scalar.safeGetByPosition(0).type->getName());
+        if (data.replace_only_to_literals)
+        {
+            /// A mutation command is stored as text, so the literal must read back as the same value.
+            const auto & result = scalar.safeGetByPosition(0);
+            ast = columnConstantToCompactExactLiteralAST(result.column, 0, result.type);
+            auto & cast = ast->as<ASTFunction &>();
+            cast.alias = subquery_alias;
+            cast.setPreferAliasToColumnName(prefer_alias_to_column_name);
+        }
+        else
+        {
+            auto lit = make_intrusive<ASTLiteral>((*scalar.safeGetByPosition(0).column)[0]);
+            lit->alias = subquery_alias;
+            lit->setPreferAliasToColumnName(prefer_alias_to_column_name);
+            ast = addTypeConversionToAST(std::move(lit), scalar.safeGetByPosition(0).type->getName());
+        }
 
         /// If only analyze was requested the expression is not suitable for constant folding, disable it.
         if (data.only_analyze)
