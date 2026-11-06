@@ -265,16 +265,21 @@ ResolvedExpressionList resolveExpressionList(const Block & header, const ASTPtr 
 class DefaultExpressionsSets
 {
 public:
-    /// Make `collectSets` find the sets built before instead of registering new ones.
-    void registerIn(PreparedSets & prepared_sets)
+    /// Collect the sets of `expression` into `planner_context`, finding the sets built before instead of registering
+    /// new ones. The collection runs under the lock, because it modifies the shared sets it finds: a `GLOBAL IN` marks
+    /// its set with `markExternalTableExpected`, which other threads collecting the same set would write concurrently.
+    void collect(QueryTreeNodePtr & expression, PlannerContextPtr planner_context)
     {
         std::lock_guard lock(mutex);
+        auto & prepared_sets = planner_context->getPreparedSets();
         for (const auto & subquery : sets.getSubqueries())
             prepared_sets.addOrReplaceSubquery(subquery);
+
+        collectSetsAndSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
     }
 
     /// Build the sets of `planner_context` that are not built yet, and remember them.
-    /// Return false if another thread has built one of them meanwhile, after `registerIn`: the actions refer to the
+    /// Return false if another thread has built one of them meanwhile, after `collect`: the actions refer to the
     /// set of this thread, so they have to be built again to use that set, rather than to build the same set twice.
     bool build(const PlannerContextPtr & planner_context, const ContextPtr & context)
     {
@@ -344,9 +349,9 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
     if (reused_sets)
-        reused_sets->registerIn(planner_context->getPreparedSets());
-
-    collectSetsAndSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
+        reused_sets->collect(expression, planner_context);
+    else
+        collectSetsAndSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
 
     auto actions = buildActionsDAGFromExpressionNode(expression, header.getColumnsWithTypeAndName(), planner_context, {}).first;
     chassert(expression->getChildren().size() == actions.getOutputs().size());
