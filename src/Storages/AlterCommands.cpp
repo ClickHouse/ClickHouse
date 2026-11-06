@@ -2754,12 +2754,16 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
-static MutationCommand mutationDropColumn(const String & name, bool clear, UInt64 max_parser_depth, UInt64 max_parser_backtracks)
+static MutationCommand mutationDropColumn(
+    const String & name, bool clear, const ASTPtr & partition, UInt64 max_parser_depth, UInt64 max_parser_backtracks)
 {
     auto ast = make_intrusive<ASTAlterCommand>();
     ast->type = ASTAlterCommand::DROP_COLUMN;
     ast->clear_column = clear;
     ast->column = ast->children.emplace_back(make_intrusive<ASTIdentifier>(name)).get();
+    /// A partition-scoped `CLEAR` keeps that restriction on every child command.
+    if (partition)
+        ast->partition = ast->children.emplace_back(partition->clone()).get();
 
     auto parsed = MutationCommand::parse(*ast, true, false, max_parser_depth, max_parser_backtracks);
     if (!parsed)
@@ -2788,16 +2792,15 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     MutationCommands result;
     for (const auto & alter_cmd : *this)
     {
-        /// A nested parent is stored as `n.a`, `n.b`, never as `n`. Spell those children out here,
-        /// while the schema still has them, so a later `ADD` of the same names cannot be mistaken
-        /// for "the dotted columns survived, so this drop was exact".
-        const bool nested_parent = !alter_cmd.ignore && alter_cmd.type == AlterCommand::DROP_COLUMN && !alter_cmd.partition
+        /// Expand a nested parent while this command's schema still has its children.
+        const bool nested_parent = !alter_cmd.ignore && alter_cmd.type == AlterCommand::DROP_COLUMN
             && share_nested_offsets && !alter_cmd.targets_exact_column && metadata.columns.hasNested(alter_cmd.column_name)
             && !(alter_cmd.if_exists && !alter_cmd.clear);
         if (nested_parent)
         {
             for (const auto & column : metadata.columns.getNested(alter_cmd.column_name))
-                result.push_back(mutationDropColumn(column.name, alter_cmd.clear, max_parser_depth, max_parser_backtracks));
+                result.push_back(mutationDropColumn(
+                    column.name, alter_cmd.clear, alter_cmd.clear ? alter_cmd.partition : nullptr, max_parser_depth, max_parser_backtracks));
             alter_cmd.apply(metadata, context, share_nested_offsets);
             continue;
         }

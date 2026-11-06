@@ -207,3 +207,36 @@ ALTER TABLE t_compact_exact_over_marker DROP COLUMN n, MODIFY COLUMN `n.a` DEFAU
 SELECT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_compact_exact_over_marker' AND active;
 SELECT id, `n.a` FROM t_compact_exact_over_marker;
 DROP TABLE t_compact_exact_over_marker;
+
+-- Re-adding `x` and renaming it in one statement keeps the replacement default.
+DROP TABLE IF EXISTS t_memory_readd_rename;
+CREATE TABLE t_memory_readd_rename (id UInt8, x UInt8) ENGINE = Memory;
+INSERT INTO t_memory_readd_rename VALUES (1, 7);
+ALTER TABLE t_memory_readd_rename DROP COLUMN x, ADD COLUMN IF NOT EXISTS x UInt8 DEFAULT 9, RENAME COLUMN x TO y;
+SELECT id, y FROM t_memory_readd_rename;
+DROP TABLE t_memory_readd_rename;
+
+-- A default that closes a dependency cycle must not change stored rows or later inserts.
+DROP DICTIONARY IF EXISTS d_memory_cycle;
+DROP TABLE IF EXISTS t_memory_cycle;
+CREATE TABLE t_memory_cycle (id UInt64, x UInt8) ENGINE = Memory;
+INSERT INTO t_memory_cycle VALUES (1, 7);
+CREATE DICTIONARY d_memory_cycle (id UInt64, x UInt8)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 't_memory_cycle' DB currentDatabase()))
+LAYOUT(FLAT())
+LIFETIME(0);
+ALTER TABLE t_memory_cycle DROP COLUMN x, ADD COLUMN IF NOT EXISTS x UInt8 DEFAULT dictGetUInt8(concat(currentDatabase(), '.d_memory_cycle'), 'x', id) + 1; -- { serverError INFINITE_LOOP }
+SELECT x FROM t_memory_cycle;
+INSERT INTO t_memory_cycle VALUES (2, 42);
+SELECT x FROM t_memory_cycle ORDER BY id;
+SELECT default_expression = '' FROM system.columns WHERE database = currentDatabase() AND table = 't_memory_cycle' AND name = 'x';
+DROP DICTIONARY d_memory_cycle;
+DROP TABLE t_memory_cycle;
+
+-- Rewriting a temporary table checks `max_temporary_table_memory_usage` before publishing.
+SET max_temporary_table_memory_usage = 4096;
+CREATE TEMPORARY TABLE t_memory_temp_limit (x UInt8) ENGINE = Memory;
+INSERT INTO t_memory_temp_limit VALUES (7);
+ALTER TABLE t_memory_temp_limit DROP COLUMN x, ADD COLUMN IF NOT EXISTS x String DEFAULT repeat('a', 100000); -- { serverError TOO_MANY_BYTES }
+SELECT x FROM t_memory_temp_limit;

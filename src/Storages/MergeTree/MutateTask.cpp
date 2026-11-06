@@ -824,13 +824,10 @@ static void splitAndModifyMutationCommands(
 {
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
-    /// True when `name.*` must be left alone. An exact column stays exact even if this part
-    /// never stored it. A non-clear drop of a nested parent is already one command per child.
-    auto drop_keeps_dotted_columns = [&table_columns](const MutationCommand & command)
+    /// `getMutationCommands` already expanded parent drops. A command that still names `n` is exact.
+    auto drop_keeps_dotted_columns = [](const MutationCommand & command)
     {
-        return command.type == MutationCommand::Type::DROP_COLUMN
-            && (table_columns.has(command.column_name)
-                || (!command.clear && table_columns.hasNested(command.column_name)));
+        return command.type == MutationCommand::Type::DROP_COLUMN;
     };
     auto nameInPart = [&](String name)
     {

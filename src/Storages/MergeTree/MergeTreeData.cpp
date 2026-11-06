@@ -14763,6 +14763,36 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
     return true;
 }
 
+/// On-fly `CLEAR`/`DROP` `IN PARTITION` applies only to that partition.
+static bool dropCommandAppliesToPart(const MutationCommand & command, const MergeTreeDataPartPtr & part, const ContextPtr & context)
+{
+    if (command.type != MutationCommand::Type::DROP_COLUMN)
+        return true;
+
+    const auto alter = command.ast();
+    if (!alter)
+        return true;
+
+    if (alter->partition)
+    {
+        const auto command_partition_id = part->storage.getPartitionIDFromQuery(ASTPtr(alter->partition), context);
+        return part->info.getPartitionId() == command_partition_id;
+    }
+
+    if (alter->partitions)
+    {
+        for (const auto & partition_ast : alter->partitions->children)
+        {
+            const auto command_partition_id = part->storage.getPartitionIDFromQuery(partition_ast, context);
+            if (part->info.getPartitionId() == command_partition_id)
+                return true;
+        }
+        return false;
+    }
+
+    return true;
+}
+
 AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     const MergeTreeDataPartPtr & part,
     const MutationsSnapshotPtr & mutations,
@@ -14773,6 +14803,7 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     )
 {
     auto commands = mutations->getOnFlyMutationCommandsForPart(part);
+    std::erase_if(commands, [&](const MutationCommand & command) { return !dropCommandAppliesToPart(command, part, query_context); });
     auto patches = mutations->getPatchesForPart(part);
     PatchPartsForReader patches_for_reader;
     const auto storage_metadata = part->storage.getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/ false);

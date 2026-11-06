@@ -55,3 +55,42 @@ ALTER TABLE t_exact_compact DROP COLUMN n SETTINGS mutations_sync = 2;
 SELECT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_exact_compact' AND active;
 SELECT id, `n.a` FROM t_exact_compact;
 DROP TABLE t_exact_compact;
+
+-- Exact `n` became physical after the alias was removed. Clearing it must not delete scalar `n.a`.
+DROP TABLE IF EXISTS t_exact_clear_wide;
+CREATE TABLE t_exact_clear_wide (id UInt8, n UInt8 ALIAS id, `n.a` UInt8)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    enable_block_number_column = 0, enable_block_offset_column = 0;
+INSERT INTO t_exact_clear_wide (id, `n.a`) VALUES (1, 9);
+ALTER TABLE t_exact_clear_wide MODIFY COLUMN n REMOVE ALIAS;
+ALTER TABLE t_exact_clear_wide CLEAR COLUMN n, DROP COLUMN n SETTINGS mutations_sync = 2;
+SELECT id, `n.a` FROM t_exact_clear_wide;
+DROP TABLE t_exact_clear_wide;
+
+DROP TABLE IF EXISTS t_exact_clear_compact;
+CREATE TABLE t_exact_clear_compact (id UInt8, n UInt8 ALIAS id, `n.a` UInt8)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_rows_for_wide_part = 1000000, min_bytes_for_wide_part = 1000000000,
+    enable_block_number_column = 0, enable_block_offset_column = 0;
+INSERT INTO t_exact_clear_compact (id, `n.a`) VALUES (1, 9);
+ALTER TABLE t_exact_clear_compact MODIFY COLUMN n REMOVE ALIAS;
+ALTER TABLE t_exact_clear_compact CLEAR COLUMN n, DROP COLUMN n SETTINGS mutations_sync = 2;
+SELECT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_exact_clear_compact' AND active;
+SELECT id, `n.a` FROM t_exact_clear_compact;
+DROP TABLE t_exact_clear_compact;
+
+-- Parent `CLEAR` of scalar `n.a` applies on read and after the mutation, only in that partition.
+DROP TABLE IF EXISTS t_parent_clear_partition;
+CREATE TABLE t_parent_clear_partition (id UInt8, `n.a` UInt8)
+ENGINE = MergeTree PARTITION BY id ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    enable_block_number_column = 0, enable_block_offset_column = 0;
+INSERT INTO t_parent_clear_partition VALUES (1, 7), (2, 8);
+SYSTEM STOP MERGES t_parent_clear_partition;
+ALTER TABLE t_parent_clear_partition CLEAR COLUMN n IN PARTITION 1 SETTINGS mutations_sync = 0, alter_sync = 0;
+SELECT id, `n.a` FROM t_parent_clear_partition ORDER BY id;
+SYSTEM START MERGES t_parent_clear_partition;
+ALTER TABLE t_parent_clear_partition UPDATE `n.a` = `n.a` WHERE 0 SETTINGS mutations_sync = 2, alter_sync = 2;
+SELECT id, `n.a` FROM t_parent_clear_partition ORDER BY id;
+DROP TABLE t_parent_clear_partition;

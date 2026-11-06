@@ -563,8 +563,13 @@ static void applyStoredColumnIdentity(
 
         if (command.type == AlterCommand::RENAME_COLUMN)
         {
+            /// `DROP`, `ADD`, `RENAME` must record the retirement under the final name.
+            const bool retired = exact_freed.contains(command.column_name) || exact_cleared.contains(command.column_name)
+                || nameOrParentIn(group_freed, command.column_name) || nameOrParentIn(group_cleared, command.column_name);
             exact_freed.insert(command.column_name);
             renameStoredColumn(block, command.column_name, command.rename_to);
+            if (retired)
+                exact_freed.insert(command.rename_to);
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
@@ -685,6 +690,14 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
 
     const bool rewrite_blocks = changesStoredColumns(params);
 
+    std::shared_ptr<const BlocksWithCounts> previous_blocks;
+    MultiVersion<MemorySettings>::Version previous_settings;
+    size_t previous_rewrite_count = 0;
+    UInt64 previous_generation = 0;
+    bool published_blocks = false;
+    bool published_settings = false;
+    bool published_rewrite = false;
+
     if (params.isSettingsAlter() || rewrite_blocks)
     {
         std::unique_ptr<MemorySettings> changed_settings_ptr;
@@ -708,6 +721,10 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
         /// Installed under `mutex` together with the rewritten blocks, so that an `INSERT` finishing meanwhile
         /// (`MemorySink::onFinish`) evicts by either the old or the new limits, and never reads freed settings.
         std::lock_guard lock(mutex);
+        previous_blocks = data.get();
+        previous_settings = memory_settings.get();
+        previous_rewrite_count = identity_rewrites.size();
+        previous_generation = schema_generation;
 
         std::unique_ptr<BlocksWithCounts> new_data;
         if (shrink_limits)
@@ -757,6 +774,10 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
                 new_data->bytes += block.allocatedBytes();
             }
 
+            /// Reject a temporary table that would exceed its limit before publishing blocks.
+            if (is_temporary_table)
+                checkTemporaryTableMemoryUsage(new_data->bytes, context->getSettingsRef()[Setting::max_temporary_table_memory_usage]);
+
             /// Publish only after the blocks rewrite succeeds. A throw leaves history and generation unchanged.
             IdentityRewrite rewrite;
             rewrite.schema_generation = schema_generation + 1;
@@ -765,15 +786,46 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
             identity_rewrites.push_back(std::move(rewrite));
             ++schema_generation;
             new_metadata.memory_schema_generation = schema_generation;
+            published_rewrite = true;
         }
 
         if (new_data)
+        {
             setData(std::move(new_data));
+            published_blocks = true;
+        }
         if (changed_settings_ptr)
+        {
             memory_settings.set(std::move(changed_settings_ptr));
+            published_settings = true;
+        }
     }
 
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
+    try
+    {
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
+    }
+    catch (...)
+    {
+        /// A rejected metadata commit must not keep the staged blocks or rewrite history.
+        if (published_blocks || published_settings || published_rewrite)
+        {
+            std::lock_guard lock(mutex);
+            if (published_rewrite)
+            {
+                identity_rewrites.resize(previous_rewrite_count);
+                schema_generation = previous_generation;
+            }
+            if (published_settings)
+            {
+                auto restored_settings = std::make_unique<MemorySettings>(*previous_settings);
+                memory_settings.set(std::move(restored_settings));
+            }
+            if (published_blocks)
+                setData(std::make_unique<BlocksWithCounts>(*previous_blocks));
+        }
+        throw;
+    }
 
     /// `ADD COLUMN` does not rewrite blocks, but it still changes the schema an in-flight sink was created with.
     if (!rewrite_blocks)
