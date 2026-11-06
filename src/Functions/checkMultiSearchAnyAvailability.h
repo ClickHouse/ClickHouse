@@ -25,18 +25,20 @@ inline bool multiSearchAnyNeedsAhoCorasick(size_t needles_count, bool force_daac
     return force_daachorse || needles_count > std::numeric_limits<UInt8>::max();
 }
 
-inline void checkMultiSearchAnyAvailability(
-    [[maybe_unused]] std::string_view function_name, [[maybe_unused]] size_t needles_count, [[maybe_unused]] bool force_daachorse)
+inline bool isMultiSearchAnyAvailable(size_t needles_count, bool force_daachorse)
 {
-#if !USE_AHO_CORASICK
-    if (multiSearchAnyNeedsAhoCorasick(needles_count, force_daachorse))
+    return USE_AHO_CORASICK || !multiSearchAnyNeedsAhoCorasick(needles_count, force_daachorse);
+}
+
+inline void checkMultiSearchAnyAvailability(std::string_view function_name, size_t needles_count, bool force_daachorse)
+{
+    if (!isMultiSearchAnyAvailable(needles_count, force_daachorse))
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Function {} requires Aho-Corasick support which is not available in this build "
             "(needed for more than 255 patterns, or when force_daachorse_for_multi_search is set). "
             "Either recompile with Aho-Corasick support enabled or reduce patterns to 255 or fewer.",
             function_name);
-#endif
 }
 
 }
