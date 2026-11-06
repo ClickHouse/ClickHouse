@@ -1,24 +1,6 @@
--- UPDATE of the sign and version columns of the Collapsing and Replacing engines.
+-- UPDATE of the version column of ReplacingMergeTree.
 
 SET mutations_sync = 2;
-
-SELECT '-- Sign column';
-CREATE TABLE c (key UInt64, value String, sign Int8) ENGINE = CollapsingMergeTree(sign) ORDER BY key
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
-
-INSERT INTO c SETTINGS optimize_on_insert = 0 VALUES (1, 'a', 1), (2, 'b', 1), (3, 'c', 1);
--- The cancel rows were inserted with the wrong sign.
-INSERT INTO c SETTINGS optimize_on_insert = 0 VALUES (1, 'cancel', 1), (2, 'cancel', 1);
-SELECT * FROM c FINAL ORDER BY key;
-
-ALTER TABLE c UPDATE sign = -1 WHERE key = 1 AND value = 'cancel';
-SELECT * FROM c FINAL ORDER BY key;
-
-UPDATE c SET sign = -1 WHERE key = 2 AND value = 'cancel';
-SELECT * FROM c FINAL ORDER BY key;
-
-OPTIMIZE TABLE c FINAL;
-SELECT * FROM c ORDER BY key;
 
 SELECT '-- Version column';
 CREATE TABLE r (key UInt64, value String, ver UInt64) ENGINE = ReplacingMergeTree(ver) ORDER BY key

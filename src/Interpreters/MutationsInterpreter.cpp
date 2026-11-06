@@ -678,6 +678,9 @@ static NameSet getKeyColumns(const MutationsInterpreter::Source & source, const 
         key_columns.insert(col);
     /// We don't process sample_by_ast separately because it must be among the primary key columns.
 
+    if (!merge_tree_data->merging_params.sign_column.empty())
+        key_columns.insert(merge_tree_data->merging_params.sign_column);
+
     return key_columns;
 }
 
@@ -694,6 +697,13 @@ static void validateUpdateColumns(
 
     const auto & storage_columns = storage_snapshot->metadata->columns;
     const auto & virtual_columns = storage_snapshot->metadata->virtuals;
+
+    /// The sign column may be a subcolumn, so recomputing the column it belongs to changes it as well.
+    for (const auto & key_column : key_columns)
+    {
+        if (auto column = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, key_column))
+            key_storage_columns.insert(column->getNameInStorage());
+    }
     for (const auto & column_name : updated_columns)
     {
         if (key_columns.contains(column_name))
