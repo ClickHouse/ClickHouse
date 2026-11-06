@@ -507,7 +507,15 @@ TruthValue checkInBloomFilter(PredicateDataType type, const Literal & literal, c
                 found = bf.testBytes(s.data(), s.size());
                 break;
             }
-            case PredicateDataType::TIMESTAMP: found = bf.testLong(literal.getTimestamp().getMillis()); break;
+            case PredicateDataType::TIMESTAMP:
+            {
+                /// The writers round the negative milliseconds differently: the Java one down, the C++ one toward zero.
+                const auto timestamp = literal.getTimestamp();
+                const Int64 millis_down = timestamp.getMillis();
+                const bool has_fraction = timestamp.second < 0 && timestamp.nanos % 1000000 != 0;
+                found = bf.testLong(millis_down) || (has_fraction && bf.testLong(millis_down + 1));
+                break;
+            }
             case PredicateDataType::DATE: found = bf.testLong(literal.getDate()); break;
             case PredicateDataType::BOOLEAN: found = true; break;
         }

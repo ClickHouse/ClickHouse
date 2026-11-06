@@ -35,3 +35,11 @@ $CLICKHOUSE_LOCAL -q "
     SELECT number, fromUnixTimestamp64Nano([-2000000000, -999500000, -500000000][number + 1], 'UTC') AS t FROM numbers(3)
     INTO OUTFILE '$FILE' TRUNCATE FORMAT ORC SETTINGS output_format_orc_row_index_stride = 1"
 check "t = fromUnixTimestamp64Nano(-999500000, 'UTC')"
+
+# A file from PyArrow (the C++ writer of ORC) with a bloom filter, which rounds the negative milliseconds toward zero,
+# and one row in each row group: the bloom filter must keep the matching rows.
+for value in -2000000000 -1 -999500000 -1500000 1000000000; do
+    $CLICKHOUSE_LOCAL -q "
+        SELECT $value, count() FROM file('$CUR_DIR/data_orc/timestamps_before_epoch_pyarrow_bloom_filter.orc', 'ORC', 't Nullable(DateTime64(9))')
+        WHERE t = fromUnixTimestamp64Nano($value)"
+done
