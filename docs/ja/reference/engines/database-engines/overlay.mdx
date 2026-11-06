@@ -1,0 +1,53 @@
+---
+description: 'Overlay データベースエンジンは、既存の複数のデータベースに含まれるテーブルの和集合を公開します。'
+sidebarTitle: 'Overlay'
+slug: /engines/database-engines/overlay
+title: 'Overlay'
+doc_type: 'reference'
+---
+
+`Overlay` データベースエンジンは、既存の複数のデータベースに含まれるテーブルの和集合を公開します。
+
+## データベースの作成 {#creating-a-database}
+
+```sql
+CREATE DATABASE overlay_db
+ENGINE = Overlay(db1[, db2, ...]);
+```
+
+テーブル名は、ソースデータベースを列挙された順に検索して解決されます。該当する名前のテーブルを最初に持つデータベースが採用されます。
+
+このデータベース自体はテーブルを所有しません。Overlay データベースの各テーブルは、ソースデータベースのテーブルに対する [`Alias`](/ja/reference/engines/table-engines/special/alias) テーブルとして動作し、読み取りと書き込みはソーステーブルに対して行われます。
+Overlay データベース内のテーブルに対する `CREATE`、`DROP`、`RENAME`、`ATTACH`、`DETACH` はサポートされていません。
+
+ソースデータベースはアクセスのたびに名前で解決されます。そのため、ソースデータベースが削除されるとそのテーブルは Overlay データベースから消え、再作成されると再び表示されます。
+`Overlay` データベースを別の `Overlay` データベースのソースとして使用することはできません。
+
+## アクセス制御 {#access-control}
+
+`Alias` テーブルと同様に、overlay データベースのテーブルを操作するには、overlay データベースとソーステーブルの両方に対する権限が必要であり、両方の行ポリシーが適用されます。
+overlay データベースのテーブルは、overlay データベースとソーステーブルの両方を参照できるユーザー (つまり両方に対して `SHOW TABLES` 権限を持つユーザー) にのみ表示されます。
+名前は、ユーザーがその名前のテーブルを参照できる最初のソースデータベースで解決されます。ユーザーから参照できないテーブルは、存在しないものとみなされてスキップされます。
+
+## 例 {#example}
+
+```sql
+CREATE DATABASE db1;
+CREATE DATABASE db2;
+CREATE TABLE db1.a (x UInt8) ENGINE = Memory;
+CREATE TABLE db2.b (y String) ENGINE = Memory;
+INSERT INTO db2.b VALUES ('Hello');
+CREATE DATABASE overlay_db ENGINE = Overlay(db1, db2);
+SELECT name, engine FROM system.tables WHERE database = 'overlay_db' ORDER BY name;
+SELECT * FROM overlay_db.b;
+```
+
+```response
+┌─name─┬─engine─┐
+│ a    │ Alias  │
+│ b    │ Alias  │
+└──────┴────────┘
+┌─y─────┐
+│ Hello │
+└───────┘
+```

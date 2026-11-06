@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "Session Settings",
+  "group": "세션 설정",
   "pages": [
     "ko/reference/settings/session-settings/additional",
     "ko/reference/settings/session-settings/aggregate",
@@ -35,6 +35,7 @@
     "ko/reference/settings/session-settings/cluster",
     "ko/reference/settings/session-settings/cluster-table",
     "ko/reference/settings/session-settings/collect-hash",
+    "ko/reference/settings/session-settings/columns-cache",
     "ko/reference/settings/session-settings/compatibility",
     "ko/reference/settings/session-settings/compatibility-ignore",
     "ko/reference/settings/session-settings/compile",
@@ -115,6 +116,7 @@
     "ko/reference/settings/session-settings/log",
     "ko/reference/settings/session-settings/log-queries",
     "ko/reference/settings/session-settings/log-query",
+    "ko/reference/settings/session-settings/logsql",
     "ko/reference/settings/session-settings/low-cardinality",
     "ko/reference/settings/session-settings/materialize",
     "ko/reference/settings/session-settings/materialize-statistics-on-insert",
@@ -257,6 +259,7 @@
     "ko/reference/settings/session-settings/vector-search",
     "ko/reference/settings/session-settings/wait-for",
     "ko/reference/settings/session-settings/webassembly-udf",
+    "ko/reference/settings/session-settings/weight-lowering",
     "ko/reference/settings/session-settings/write-through-distributed-cache",
     "ko/reference/settings/session-settings/other"
   ],

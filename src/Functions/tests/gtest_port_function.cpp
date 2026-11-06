@@ -32,8 +32,15 @@ FunctionBasePtr buildFunction(const String & name, const DataTypes & argument_ty
 
     ColumnsWithTypeAndName arguments;
     arguments.reserve(argument_types.size());
-    for (const auto & argument_type : argument_types)
-        arguments.emplace_back(ColumnWithTypeAndName{nullptr, argument_type, ""});
+    for (size_t i = 0; i < argument_types.size(); ++i)
+    {
+        /// `port`'s optional default (argument 1) is a constant argument: the declarative
+        /// signature `(String, [const UInt16]) -> UInt16` enforces `const`, so the resolver must
+        /// see a constant column there, exactly as it does for a constant in a real query. Other
+        /// positions are passed type-only (a null column), matching how the analyzer resolves them.
+        ColumnPtr column = (i == 1) ? argument_types[i]->createColumnConst(1, argument_types[i]->getDefault()) : nullptr;
+        arguments.emplace_back(ColumnWithTypeAndName{column, argument_types[i], ""});
+    }
 
     return resolver->build(arguments);
 }
