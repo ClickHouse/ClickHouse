@@ -2183,7 +2183,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
     const auto select_in_partition = [&]() -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
     {
-        /// Nothing wakes the waits below when the query is cancelled, so they check its status between slices.
+        /// Nothing wakes the waits below when the query is cancelled, so they check its status between slices and when they end.
         QueryStatusPtr query_status;
         if (auto query_context = CurrentThread::tryGetQueryContext())
             query_status = query_context->getProcessListElementSafe();
@@ -2213,6 +2213,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                         break;
                     }
                 }
+                check_query_status();
                 if (!ok)
                     return std::unexpected(SelectMergeFailure{
                         .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
@@ -2264,6 +2265,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                         notified = currently_processing_in_background_condition.wait_for(
                             lock, std::min(timeout - elapsed, check_period), merge_finished);
                     }
+                    check_query_status();
 
                     if (!notified)
                         return std::unexpected(SelectMergeFailure{

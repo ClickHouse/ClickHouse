@@ -12,11 +12,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 KILL_ID="${CLICKHOUSE_TEST_UNIQUE_NAME}_kill"
 KILL_OUT="${CLICKHOUSE_TMP}/${KILL_ID}.out"
+KILL_RELEASE_ID="${CLICKHOUSE_TEST_UNIQUE_NAME}_kill_release"
+KILL_RELEASE_OUT="${CLICKHOUSE_TMP}/${KILL_RELEASE_ID}.out"
+SUCCESS_ID="${CLICKHOUSE_TEST_UNIQUE_NAME}_success"
 
 function cleanup()
 {
     $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_mutate_task_pause_in_prepare"
-    rm -f "$KILL_OUT"
+    rm -f "$KILL_OUT" "$KILL_RELEASE_OUT"
 }
 trap cleanup EXIT
 
@@ -56,6 +59,33 @@ $CLICKHOUSE_CLIENT -q "
 # The queries above ended because they were cancelled, not because the mutation finished.
 $CLICKHOUSE_CLIENT -q "SELECT is_done FROM system.mutations WHERE database = currentDatabase() AND table = 't'"
 
-$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_mutate_task_pause_in_prepare"
+# 4. A KILL sent together with the release of the mutation still stops the OPTIMIZE: its wait can end on the
+#    finished mutation, and it must not go on to merge the partition.
+$CLICKHOUSE_CLIENT --query_id "$KILL_RELEASE_ID" -q "
+    OPTIMIZE TABLE t PARTITION ID '0' FINAL SETTINGS optimize_throw_if_noop = 1
+" > "$KILL_RELEASE_OUT" 2>&1 &
+wait_for_query_to_start "$KILL_RELEASE_ID" 120 $!
+$CLICKHOUSE_CLIENT -q "
+    KILL QUERY WHERE query_id = '$KILL_RELEASE_ID' ASYNC FORMAT Null;
+    SYSTEM DISABLE FAILPOINT mt_mutate_task_pause_in_prepare;
+"
+wait
+grep -o -m1 'Code: 394' "$KILL_RELEASE_OUT"
 wait_for_mutation t mutation_2.txt
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
+
+# 5. Without a cancellation, a waiting OPTIMIZE FINAL merges as soon as the mutation it waits for finishes.
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE t2 (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
+    SETTINGS lock_acquire_timeout_for_background_operations = 30;
+    INSERT INTO t2 VALUES (0, 0);
+    SYSTEM ENABLE FAILPOINT mt_mutate_task_pause_in_prepare;
+    ALTER TABLE t2 UPDATE v = v + 1 WHERE 1;
+    SYSTEM WAIT FAILPOINT mt_mutate_task_pause_in_prepare PAUSE;
+"
+$CLICKHOUSE_CLIENT --query_id "$SUCCESS_ID" -q "OPTIMIZE TABLE t2 FINAL SETTINGS optimize_throw_if_noop = 1" &
+OPTIMIZE_PID=$!
+wait_for_query_to_start "$SUCCESS_ID" 120 $OPTIMIZE_PID
+$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_mutate_task_pause_in_prepare"
+wait $OPTIMIZE_PID && echo "OPTIMIZE merged after the mutation finished"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t2"
