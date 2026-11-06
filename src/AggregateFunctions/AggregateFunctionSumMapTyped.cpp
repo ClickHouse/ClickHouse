@@ -1127,6 +1127,11 @@ public:
         readVarUInt(size, buf);
 
         FormatSettings format_settings;
+        /// `Bool` keys and values must be read as integers: the underlying `UInt8` can exceed 1
+        /// (e.g. a version 0 state of summed `Bool` values, or keys taken from `sumMapWithOverflow`
+        /// over `Bool`), and `SerializationBool` would otherwise collapse every nonzero value to 1.
+        /// Same as the generic path.
+        format_settings.binary.read_bool_field_as_int = true;
 
         for (size_t i = 0; i < size; ++i)
         {

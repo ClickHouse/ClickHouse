@@ -323,6 +323,30 @@ SELECT sumMapMerge(s) FROM (
     SELECT sumMapState(['hello', 'world', 'hello'], [1, 2, 3]) AS s
 );
 
+-- `Bool` keys and values whose underlying `UInt8` exceeds 1 must survive a state round-trip.
+-- Version 0 serializes `Bool` values with the input type, so `010102` is key 1 with the sum 2.
+SELECT 'State round-trip Bool values, version 0';
+SELECT finalizeAggregation(CAST(unhex('010102') AS AggregateFunction(0, sumMap, Array(UInt8), Array(Bool))));
+SELECT finalizeAggregation(CAST(unhex('010102') AS AggregateFunction(0, sumMapFiltered([1]), Array(UInt8), Array(Bool))));
+SELECT finalizeAggregation(CAST(unhex('01010002') AS AggregateFunction(0, sumMap, Array(UInt8), Array(Nullable(Bool)))));
+SELECT arrayMap(x -> toUInt8(x), finalizeAggregation(CAST(unhex('010102') AS AggregateFunction(0, sumMapWithOverflow, Array(UInt8), Array(Bool)))).2);
+
+DROP TABLE IF EXISTS summap_typed_bool_values;
+CREATE TABLE summap_typed_bool_values (s AggregateFunction(0, sumMap, Array(UInt8), Array(Bool))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO summap_typed_bool_values SELECT sumMapState([1::UInt8], [true]) FROM numbers(2);
+SELECT sumMapMerge(s) FROM summap_typed_bool_values;
+DROP TABLE summap_typed_bool_values;
+
+-- `sumMapWithOverflow` over `Bool` values yields a `Bool` holding 2; used as a key it must stay distinct from 1.
+SELECT 'State round-trip Bool keys';
+DROP TABLE IF EXISTS summap_typed_bool_keys;
+CREATE TABLE summap_typed_bool_keys (s AggregateFunction(sumMap, Array(Bool), Array(UInt64))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO summap_typed_bool_keys
+    WITH (SELECT sumMapWithOverflow([1::UInt8], [true]) FROM numbers(2)).2 AS two
+    SELECT sumMapState(arrayConcat(two, [true]), [10::UInt64, 20]);
+SELECT arrayMap(x -> toUInt8(x), r.1), r.2 FROM (SELECT sumMapMerge(s) AS r FROM summap_typed_bool_keys);
+DROP TABLE summap_typed_bool_keys;
+
 -- ===================== Multi-row aggregation =====================
 
 SELECT 'Multi-row aggregation';
