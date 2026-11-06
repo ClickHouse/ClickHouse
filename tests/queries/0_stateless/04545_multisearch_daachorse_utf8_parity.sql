@@ -24,6 +24,12 @@ SELECT (SELECT multiSearchAnyCaseInsensitiveUTF8('Ⱥ', ['ⱥ']) SETTINGS force_d
 SELECT (SELECT multiSearchAnyCaseInsensitiveUTF8('a Ⱥ b', ['ⱥ']) SETTINGS force_daachorse_for_multi_search = 1)
      = (SELECT multiSearchAnyCaseInsensitiveUTF8('a Ⱥ b', ['ⱥ']) SETTINGS force_daachorse_for_multi_search = 0);
 
+-- KELVIN SIGN (U+212A) matches only itself, although `Poco::Unicode::toLower` maps it to 'k'.
+SELECT (SELECT multiSearchAnyCaseInsensitiveUTF8(materialize('K'), ['k']) SETTINGS force_daachorse_for_multi_search = 1)
+     = (SELECT multiSearchAnyCaseInsensitiveUTF8(materialize('K'), ['k']) SETTINGS force_daachorse_for_multi_search = 0);
+SELECT (SELECT multiSearchAnyCaseInsensitiveUTF8(materialize('k'), ['K']) SETTINGS force_daachorse_for_multi_search = 1)
+     = (SELECT multiSearchAnyCaseInsensitiveUTF8(materialize('k'), ['K']) SETTINGS force_daachorse_for_multi_search = 0);
+
 -- Malformed bytes embedded between valid content must not glue neighbours into a false match.
 SELECT (SELECT multiSearchAnyCaseInsensitiveUTF8(concat('x', unhex('E4'), 'a'), ['xa']) SETTINGS force_daachorse_for_multi_search = 1)
      = (SELECT multiSearchAnyCaseInsensitiveUTF8(concat('x', unhex('E4'), 'a'), ['xa']) SETTINGS force_daachorse_for_multi_search = 0);
@@ -33,4 +39,5 @@ SELECT
     multiSearchAnyCaseInsensitiveUTF8(unhex('E441'), ['a']),
     multiSearchAnyCaseInsensitiveUTF8(unhex('E4'), [unhex('00')]),
     multiSearchAnyCaseInsensitiveUTF8('Ⱥ', ['ⱥ']),
-    multiSearchAnyCaseInsensitiveUTF8('a Ⱥ b', ['ⱥ']);
+    multiSearchAnyCaseInsensitiveUTF8('a Ⱥ b', ['ⱥ']),
+    multiSearchAnyCaseInsensitiveUTF8(materialize('K'), ['k']);

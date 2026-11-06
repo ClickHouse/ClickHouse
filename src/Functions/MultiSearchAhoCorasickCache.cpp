@@ -13,8 +13,8 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
+#include <Common/StringSearcher.h>
 #include <Common/UTF8Helpers.h>
-#include <Poco/Unicode.h>
 
 namespace CurrentMetrics
 {
@@ -74,7 +74,7 @@ bool appendFoldedForMultiSearch(MultiSearchCaseMode case_mode, const char * data
 
         UInt8 folded[4];
         const size_t folded_size = UTF8::convertCodePointToUTF8(
-            Poco::Unicode::toLower(static_cast<int>(*code_point)), reinterpret_cast<char *>(folded), sizeof(folded));
+            utf8CaseFold(static_cast<int>(*code_point)), reinterpret_cast<char *>(folded), sizeof(folded));
         output.insert(folded, folded + folded_size);
         pos += UTF8::seqLength(*pos);
     }
