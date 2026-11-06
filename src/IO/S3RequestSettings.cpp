@@ -222,20 +222,21 @@ void S3RequestSettings::validateUploadSettings()
             ReadableSize((*this)[S3RequestSetting::strict_upload_part_size].value),
             ReadableSize((*this)[S3RequestSetting::max_upload_part_size].value));
 
+    /// `copyS3File` splits by min and max even when a strict size is set.
+    if (!(*this)[S3RequestSetting::min_upload_part_size])
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting min_upload_part_size ({}) cannot be zero",
+            ReadableSize((*this)[S3RequestSetting::min_upload_part_size].value));
+
+    if ((*this)[S3RequestSetting::max_upload_part_size] < (*this)[S3RequestSetting::min_upload_part_size])
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting max_upload_part_size ({}) can't be less than setting min_upload_part_size ({})",
+            ReadableSize((*this)[S3RequestSetting::max_upload_part_size].value), ReadableSize((*this)[S3RequestSetting::min_upload_part_size].value));
+
     if (!(*this)[S3RequestSetting::strict_upload_part_size])
     {
-        if (!(*this)[S3RequestSetting::min_upload_part_size])
-            throw Exception(
-                ErrorCodes::INVALID_SETTING_VALUE,
-                "Setting min_upload_part_size ({}) cannot be zero",
-                ReadableSize((*this)[S3RequestSetting::min_upload_part_size].value));
-
-        if ((*this)[S3RequestSetting::max_upload_part_size] < (*this)[S3RequestSetting::min_upload_part_size])
-            throw Exception(
-                ErrorCodes::INVALID_SETTING_VALUE,
-                "Setting max_upload_part_size ({}) can't be less than setting min_upload_part_size ({})",
-                ReadableSize((*this)[S3RequestSetting::max_upload_part_size].value), ReadableSize((*this)[S3RequestSetting::min_upload_part_size].value));
-
         if (!(*this)[S3RequestSetting::upload_part_size_multiply_factor])
             throw Exception(
                 ErrorCodes::INVALID_SETTING_VALUE,
