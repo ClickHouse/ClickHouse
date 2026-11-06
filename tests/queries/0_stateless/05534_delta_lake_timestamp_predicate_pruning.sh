@@ -21,6 +21,8 @@ rm -rf "${ROOT}"
 # `DeltaLakeScannedFiles` counter.
 
 TABLES=()
+# Raw microseconds of the values that `toDateTime64` cannot write: it saturates before 1900.
+declare -A RAW_MICROS=(['1600-01-01 00:00:00.000000']=-11676096000000000)
 declare -A TABLE_DELTA_TYPE TABLE_STATS TABLE_PARTITIONED TABLE_NULLABLE TABLE_FILES TABLE_SOURCE TABLE_DIR
 FIXTURE_QUERIES=""
 SETUP_QUERIES=""
@@ -45,6 +47,8 @@ make_table() {
             select="SELECT toInt32(${i}) AS id"
         elif [[ "${values}" == NULL ]]; then
             select="SELECT CAST(NULL AS Nullable(DateTime64(6, 'UTC'))) AS ts"
+        elif [[ -n "${RAW_MICROS[$values]:-}" ]]; then
+            select="SELECT fromUnixTimestamp64Micro(toInt64(${RAW_MICROS[$values]}), 'UTC') AS ts"
         elif [[ "${nullable}" == true ]]; then
             select="SELECT toNullable(toDateTime64(arrayJoin(['${values//,/\',\'}']), 6, 'UTC')) AS ts"
         else
@@ -239,7 +243,7 @@ run_all() {
 # lowers a literal compared with a max statistic by 999 microseconds, because Spark truncates timestamp
 # statistics to milliseconds. The last-but-one file lies beyond 2262-04-11, outside the `Int64` nanoseconds:
 # a row there may compare differently from its statistics (see below), so that file is not skipped when the
-# comparison scales the column up or the constant is on or beyond that range.
+# comparison scales the column up with `decimal_check_overflow = 0` or the constant is on or beyond that range.
 DATA_FILES=(
     '1969-12-31 23:59:59.999999'
     '1970-01-01 00:00:00.000000'
@@ -281,6 +285,13 @@ done
 # epoch in `basic`.
 check ts "ts < '20260102'" "date_time_input_format='basic'"
 check ts "ts >= '20260102'" "cast_string_to_date_time_mode='basic'"
+# The mode is the one the comparison was built with: here the outer query's, not the subquery's that reads.
+TABLE_SOURCE[ts_best_effort]="(SELECT * FROM deltaLakeLocal('${ROOT}/ts') SETTINGS cast_string_to_date_time_mode='best_effort')"
+TABLE_DIR[ts_best_effort]=ts
+TABLE_SOURCE[ts_basic]="(SELECT * FROM deltaLakeLocal('${ROOT}/ts') SETTINGS cast_string_to_date_time_mode='basic')"
+TABLE_DIR[ts_basic]=ts
+check ts_best_effort "ts > '20260102'" "cast_string_to_date_time_mode='basic'"
+check ts_basic "ts < '20260102'"
 
 # `DateTime64` constants compare by ticks, whatever their time zone; a coarser scale converts exactly.
 check ts "ts = toDateTime64('2026-01-01 05:30:00.123456', 6, 'Asia/Kolkata')"
@@ -304,8 +315,9 @@ check ntz "${NS_BETWEEN} < ts"
 check ts "ts = ${NS_BETWEEN}"
 check ts "ts != ${NS_BETWEEN}"
 check ts "NOT (ts < ${NS_BETWEEN})"
-# With `decimal_check_overflow = 0` the comparison multiplies the column and wraps around beyond
-# 2262-04-11, so the file beyond stays scanned in either polarity.
+# By default a column value that overflows when scaled is compared exactly, so the file beyond 2262-04-11
+# is skipped. With `decimal_check_overflow = 0` the comparison multiplies the column and wraps around there,
+# so that file stays scanned in either polarity.
 check ts "ts = ${NS_EXACT}"
 check ts "NOT (ts = ${NS_EXACT})"
 check ts "ts < ${NS_EXACT}"
@@ -382,6 +394,13 @@ declare_table nullable_as_default nullable "ts DateTime64(6, 'UTC')"
 check nullable_as_default "ts < '2000-01-01 00:00:00'"
 check nullable_as_default "ts = toDateTime64(0, 6, 'UTC')"
 check nullable_as_default "NOT (ts >= '2026-01-01 00:00:00')"
+
+# Before 1677-09-21 a row also leaves the `Int64` nanoseconds: with `decimal_check_overflow = 0` the 1600 row
+# wraps around and compares above the constant, so its file stays scanned.
+make_table ancient timestamp full data false '1600-01-01 00:00:00.000000' '2026-01-01 00:00:00.000000'
+check ancient "ts > ${NS_BETWEEN}" "decimal_check_overflow=0"
+check ancient "${NS_BETWEEN} < ts" "decimal_check_overflow=0"
+check ancient "ts > ${NS_BETWEEN}"
 
 make_table no_stats timestamp none data false '2026-01-01 00:00:00.000000' '2026-01-01 00:00:00.123456'
 check no_stats "ts = '2026-01-01 00:00:00.123456'"

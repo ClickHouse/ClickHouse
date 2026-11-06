@@ -35,7 +35,6 @@ public:
         : filter(filter_)
         , exception(exception_)
         , context(context_)
-        , format_settings(makeComparisonFormatSettings(context_))
         , timestamp_columns(std::move(timestamp_columns_))
     {
         predicate = this;
@@ -53,7 +52,6 @@ public:
 
     const DB::ActionsDAG & getFilterDAG() const { return filter; }
     DB::ContextPtr getContext() const { return context; }
-    const DB::FormatSettings & getFormatSettings() const { return format_settings; }
 
     const DeltaTimestampColumn * getTimestampColumn(const String & column_name) const
     {
@@ -74,14 +72,10 @@ private:
     std::exception_ptr & exception;
     /// Context for accessing settings
     DB::ContextPtr context;
-    /// The settings `FunctionComparison` converts a literal with, so that pruning sees the same value.
-    const DB::FormatSettings format_settings;
     /// See `TableSchemaResult`.
     const DeltaTimestampColumns timestamp_columns;
 
     static uintptr_t visitPredicate(void * data, ffi::KernelExpressionVisitorState * state);
-
-    static DB::FormatSettings makeComparisonFormatSettings(const DB::ContextPtr & context_);
 };
 
 std::shared_ptr<EnginePredicate> getEnginePredicate(
