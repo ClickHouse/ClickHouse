@@ -143,17 +143,12 @@ IProcessor::Status LazyReadFromMergeTreeSource::prepare(const UpdatedInputPorts 
         return Status::Finished;
     }
 
-    if (!output.canPush())
-        return Status::PortFull;
-
-    if (lazy_materializing_rows)
-        return Status::UpdatePipeline;
-
     /// Here we reading inputs as long as they are ready, to parallelize reading.
     /// But the chunks should be processed in the order of parts and ranges.
     /// So we keep the chunks in the list to keep the order.
-
-    if (next_input_to_process != inputs.end())
+    /// It is done before checking the output: an updated port is reported only once, and a reader whose chunk
+    /// is left in its port does not read further until its turn in the loop below.
+    if (!lazy_materializing_rows && next_input_to_process != inputs.end())
     {
         for (const auto * input_port : updated_input_ports)
         {
@@ -166,6 +161,12 @@ IProcessor::Status LazyReadFromMergeTreeSource::prepare(const UpdatedInputPorts 
             }
         }
     }
+
+    if (!output.canPush())
+        return Status::PortFull;
+
+    if (lazy_materializing_rows)
+        return Status::UpdatePipeline;
 
     while (next_input_to_process != inputs.end())
     {
@@ -290,6 +291,7 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
             lazy_materializing_rows);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), log_name);
+        source->keepReadingOnPartialResult();
         source->addTotalRowsApprox(total_rows);
 
         processors.emplace_back(std::move(source));

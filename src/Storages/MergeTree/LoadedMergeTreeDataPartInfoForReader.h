@@ -48,6 +48,8 @@ public:
 
     IndexPtr getIndexPtr() const override { return data_part->getIndex(); }
 
+    MergeTreePartMinMaxIndexPtr getMinMaxIndex() const override { return data_part->getMinMaxIndex(); }
+
     DataPartStoragePtr getDataPartStorage() const override { return data_part->getDataPartStoragePtr(); }
 
     const NamesAndTypesList & getColumns() const override { return data_part->getColumns(); }
@@ -86,6 +88,8 @@ public:
 
     const MergeTreeDataPartChecksums & getChecksums() const override { return data_part->checksums; }
 
+    const SecondaryIndexColumnTypes & getSecondaryIndexColumnTypes() const override { return data_part->getSecondaryIndexColumnTypes(); }
+
     void reportBroken() override { data_part->storage.reportBrokenPart(data_part); }
 
     size_t getMarksCount() const override { return data_part->getMarksCount(); }
@@ -101,6 +105,11 @@ public:
     SerializationPtr getSerialization(const NameAndTypePair & column) const override { return data_part->getSerialization(column.name); }
 
     SerializationPtr tryGetSerialization(const String & column_name) const override { return data_part->tryGetSerialization(column_name); }
+
+    SerializationPtr tryGetSubcolumnSerialization(const String & column_name, const String & subcolumn_name) const override
+    {
+        return data_part->tryGetSubcolumnSerialization(column_name, subcolumn_name);
+    }
 
     String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
 

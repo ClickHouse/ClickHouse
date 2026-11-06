@@ -304,6 +304,12 @@ private:
 
     Model::HeadObjectOutcome headObjectInternal(HeadObjectRequest & request) const;
 
+    /// GCS ignores `If-None-Match` on PUT, and an AWS4-signed request cannot also carry
+    /// `x-goog-if-generation-match` (GCS rejects the mix). So an HMAC create-if-absent is
+    /// signed with GOOG4 instead, with generation 0, which succeeds only when the object does not exist.
+    bool isGCSCreateIfAbsentWithHMAC(const Model::PutObjectRequest & request) const;
+    Model::PutObjectOutcome putObjectWithGOOG4Signature(const Model::PutObjectRequest & request) const;
+
     /// True only if the object at `key` carries `idempotency_id`, i.e. whoever set it wrote the object.
     /// One HeadObject. Logs a failed proof, at warning level if asked.
     bool isObjectWrittenWithIdempotencyId(
@@ -356,6 +362,8 @@ private:
 class ClientFactory
 {
 public:
+    static constexpr size_t AES256_KEY_BYTES = 32;
+
     ~ClientFactory();
 
     static ClientFactory & instance();
@@ -384,6 +392,20 @@ public:
         std::optional<std::string> opt_disk_name,
         const HTTPRequestThrottler & request_throttler,
         const String & protocol = "https");
+
+    /// The configuration keeps a reference to the filter, so the filter must not be a temporary.
+    PocoHTTPClientConfiguration createClientConfiguration(
+        const String & force_region,
+        const RemoteHostFilter && remote_host_filter,
+        unsigned int s3_max_redirects,
+        const PocoHTTPClientConfiguration::RetryStrategy & retry_strategy,
+        bool s3_slow_all_threads_after_network_error,
+        bool s3_slow_all_threads_after_retryable_error,
+        bool enable_s3_requests_logging,
+        bool for_disk_s3,
+        std::optional<std::string> opt_disk_name,
+        const HTTPRequestThrottler & request_throttler,
+        const String & protocol = "https") = delete;
 
 private:
     ClientFactory();
