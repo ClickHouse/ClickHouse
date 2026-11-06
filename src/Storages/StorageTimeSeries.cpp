@@ -1089,7 +1089,6 @@ The _samples_ table must have columns:
 Columns the engine creates itself get time-series compression codecs:
 `timestamp CODEC(Delta, T64, ZSTD(3))` and `value CODEC(ALP, ZSTD(3))`. Near-monotonic timestamps barely
 compress under generic codecs and can otherwise dominate the on-disk size of the samples table.
-The engine enables `ALP` for its inner samples and recent samples tables without requiring `enable_alp_codec` to be set.
 See also [Adjusting types of columns](#adjusting-column-types).
 
 ### Recent samples table {#recent-samples-table}

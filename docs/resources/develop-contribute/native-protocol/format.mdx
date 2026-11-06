@@ -1449,7 +1449,7 @@ The method byte also encodes the [column-level codecs](/reference/statements/cre
 
 The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs that have since been removed; they are reserved and not reused.
 
-`0x9c` (`ALP`) is a **beta** lossless codec for `Float32` and `Float64` (adaptive lossless floating-point compression).
+`0x9c` (`ALP`) is a lossless codec for `Float32` and `Float64` (adaptive lossless floating-point compression).
 
 `0x9d` (`SZ3`) is an **experimental**, error-bounded *lossy* codec for `Float32`, `Float64`, and `Array` of those types. A table can be created with `CODEC(SZ3)` only when the `enable_sz3_codec` setting is set, but the method byte is always accepted on decompression so that previously written data stays readable.
 

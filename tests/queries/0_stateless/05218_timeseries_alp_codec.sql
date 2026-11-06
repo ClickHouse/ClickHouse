@@ -3,9 +3,8 @@
 -- so they look the table up in the `default` database, see https://github.com/ClickHouse/ClickHouse/issues/118130.
 
 SET allow_experimental_time_series_table = 1;
-SET enable_alp_codec = 0;
 
--- Generated samples and recent samples use `ALP` without enabling it for the session.
+-- Generated samples and recent samples use `ALP`.
 CREATE TABLE ts_alp64 ENGINE = TimeSeries;
 SELECT type, compression_codec, count()
 FROM system.columns
@@ -13,7 +12,6 @@ WHERE database = currentDatabase() AND name = 'value'
     AND (table LIKE '.inner_id.samples.%' OR table LIKE '.inner_id.recentsamples.%')
 GROUP BY type, compression_codec
 ORDER BY type, compression_codec;
-SELECT toUInt8(getSetting('enable_alp_codec'));
 
 -- Keep floating-point bit patterns, including the Prometheus stale marker.
 INSERT INTO ts_alp64 (metric_name, tags, samples)
