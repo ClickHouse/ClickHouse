@@ -39,10 +39,8 @@ DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_, std::vect
 namespace
 {
 
-/// `column->getExtremes()` already skips NULL/NaN correctly, but compares via plain IEEE754 `<`,
-/// where -0.0 == +0.0 - so a tie at zero is resolved by scan order, not by sign, unlike the
-/// Iceberg spec's "Bounds for Float and Double" rule that -0.0 sorts strictly below +0.0. Fix the
-/// sign only in that narrow case, by checking which signs of zero are actually present.
+/// `getExtremes` compares with IEEE754 `<`, where -0.0 == +0.0, so which zero it returns depends on
+/// the scan order. The Iceberg spec orders -0.0 before +0.0: pick the zero by the signs present.
 void fixSignedZeroExtremes(Field & min_val, Field & max_val, const IColumn & column)
 {
     bool min_is_zero = min_val.getType() == Field::Types::Float64 && min_val.safeGet<Float64>() == 0.0;
@@ -95,8 +93,7 @@ static Range getExtremeRangeFromColumn(const ColumnPtr & column)
 namespace
 {
 
-/// Counts NaN among a Float32/Float64 column's non-null values. Rows set in `null_map` are skipped:
-/// a NULL row's nested value is not a real float, so it must not also be tallied as NaN.
+/// Rows set in `null_map` are skipped: the nested value of a NULL row is not a real value.
 Int64 countNaNs(const IColumn & column, ConstNullMapPtr null_map)
 {
     auto count = [&](const auto & data) -> Int64
@@ -146,8 +143,7 @@ void DataFileStatistics::update(const Chunk & chunk)
                 null_counts[i] += v;
         }
         const IColumn & nested_col = nullable_col ? nullable_col->getNestedColumn() : *col;
-        /// `isNativeFloat()` is exactly Float32/Float64, excluding BFloat16 (which `countNaNs`
-        /// below cannot handle - it isn't a `ColumnFloat32`/`ColumnFloat64` - and is out of scope here).
+        /// Not `isFloat`: it includes BFloat16, which `countNaNs` does not handle.
         is_float_column[i] = WhichDataType(nested_col.getDataType()).isNativeFloat();
         nan_counts[i] += countNaNs(nested_col, null_map);
         ranges[i] = uniteRanges(ranges[i], getExtremeRangeFromColumn(col));
@@ -223,15 +219,13 @@ void DataFileStatistics::merge(const DataFileStatistics & other)
 namespace
 {
 
-/// `Field` has no Float32 slot (see Field.h): a Float32 column's values are always stored as
-/// Field::Types::Float64, so this one check also covers Float32.
+/// `Field` stores Float32 values as `Float64`, so this also covers Float32.
 bool isFloatNaN(const Field & value)
 {
     return value.getType() == Field::Types::Float64 && isNaN(value.safeGet<Float64>());
 }
 
-/// Whether `range` is the "no usable value" sentinel: an all-NaN chunk's own extremes are NaN on
-/// both sides at once (see `ColumnVector::getExtremes`), never on just one.
+/// `getExtremes` of an all-NaN chunk returns NaN on both sides, never on just one.
 bool isNaNRange(const Range & range)
 {
     return isFloatNaN(range.left) && isFloatNaN(range.right);
@@ -253,10 +247,8 @@ bool icebergBoundLess(const Field & lhs, const Field & rhs)
 
 Range DataFileStatistics::uniteRanges(const Range & left, const Range & right)
 {
-    /// `Range::less` (via `accurateLess`) deliberately ranks NaN above every real value, for
-    /// generic ordering purposes (sorting, index range analysis). That is the wrong rule here: an
-    /// all-NaN chunk/file must not push a real bound out, so a NaN side is excluded instead of
-    /// compared.
+    /// `Range::less` ranks NaN above every real value, so an all-NaN range would win the upper bound.
+    /// Iceberg bounds exclude NaN, so such a range is skipped instead of compared.
     bool left_is_nan = isNaNRange(left);
     bool right_is_nan = isNaNRange(right);
     if (left_is_nan && right_is_nan)

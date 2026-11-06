@@ -148,7 +148,7 @@ bool canDumpIcebergStats(const Field & field, DataTypePtr type)
             return true;
         case TypeIndex::Float32:
         case TypeIndex::Float64:
-            /// The Iceberg spec requires NaN to be excluded from lower/upper bounds.
+            /// The Iceberg spec excludes NaN from bounds.
             return !isNaN(field.safeGet<Float64>());
         default:
             return false;
@@ -325,7 +325,7 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
         case TypeIndex::Float64:
             return dumpValue(field.safeGet<Float64>());
         case TypeIndex::Float32:
-            /// `Field` has no Float32 slot either (see Field.h); narrow before dumping, same as Int32 above.
+            /// `Field` stores Float32 as `Float64`: narrow it, or 8 bytes would be written instead of 4.
             return dumpValue(static_cast<Float32>(field.safeGet<Float32>()));
         default:
         {

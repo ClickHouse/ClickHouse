@@ -20,8 +20,7 @@ namespace DB
 
 #if USE_AVRO
 
-/// The order of Iceberg lower/upper bounds: `accurateLess`, except that -0.0 sorts before +0.0
-/// (spec: "Bounds for Float and Double"), where `accurateLess` treats the two zeros as equal.
+/// `accurateLess`, except that -0.0 sorts before +0.0, as the Iceberg spec requires for bounds.
 bool icebergBoundLess(const Field & lhs, const Field & rhs);
 
 class DataFileStatistics
@@ -53,8 +52,7 @@ private:
     std::vector<Int64> column_sizes;
     std::vector<Int64> null_counts;
     std::vector<Int64> nan_counts;
-    /// Whether column `i` is Float32/Float64 (possibly Nullable): `nan_counts[i]` is only
-    /// meaningful for such a column, since NaN only exists for float types.
+    /// Float32/Float64, possibly Nullable: only these columns get a `nan_value_counts` entry.
     std::vector<bool> is_float_column;
     Ranges ranges;
     std::vector<UInt64> split_offsets;

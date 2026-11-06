@@ -5,9 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# All partitions of one INSERT must land in a single manifest, so the partition summary below
-# actually aggregates across different partition values instead of each manifest trivially
-# holding just one.
+# One manifest for all partitions of an INSERT, so the summary aggregates several partition values.
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --iceberg_insert_single_manifest_for_all_partitions=1"
 
 PREFIX="t_${CLICKHOUSE_DATABASE}_${RANDOM}"
@@ -23,9 +21,8 @@ cleanup()
 }
 trap cleanup EXIT
 
-# Creates a `(f <float_type>)` table partitioned by `f` itself, inserts `values` (one row per
-# partition), and prints the manifest-list `partitions[1]` summary for that one partition field:
-# contains_null/contains_nan plus the decoded lower/upper bound.
+# Creates a table partitioned by `f`, inserts one row per partition and prints the manifest-list
+# summary of `f`.
 run_case()
 {
     local suffix="$1" float_type="$2" reinterpret_fn="$3" values="$4"
@@ -55,23 +52,21 @@ run_case()
     "
 }
 
-# Case A: a NaN partition sets contains_nan but is excluded from lower/upper_bound.
+# Case A/B: a NaN partition sets contains_nan but is excluded from the bounds.
 run_case A Float32 reinterpretAsFloat32 '(1.5), (3.5), (nan)'
 run_case B Float64 reinterpretAsFloat64 '(1.5), (3.5), (nan)'
 
-# Case C: no NaN partition - contains_nan stays NULL (never set), bound is the plain min/max.
+# Case C/D: no NaN partition: contains_nan stays NULL, the bounds are the plain min/max.
 run_case C Float32 reinterpretAsFloat32 '(1.5), (3.5)'
 run_case D Float64 reinterpretAsFloat64 '(1.5), (3.5)'
 
-# Case E/F: Iceberg orders -0.0 before +0.0 (spec: "Bounds for Float and Double"), unlike IEEE754
-# comparison, where they're equal. lower_bound must be -0.0, not +0.0, even though both occur.
-# hex() proves the sign bit, since toString() may not render it.
+# Case E/F: -0.0 sorts before +0.0 (spec: "Bounds for Float and Double"). The hex dump below checks
+# the exact bits.
 run_case E Float32 reinterpretAsFloat32 '(0.0), (-0.0), (5.5), (nan)'
 run_case F Float64 reinterpretAsFloat64 '(0.0), (-0.0), (5.5), (nan)'
 
-# Case G/H: only the two zeros, so both bounds come from a -0.0/+0.0 tie: lower must be -0.0 and
-# upper +0.0. The partitions are folded in hash order, not insertion order, but with a
-# first-seen-wins tie-break one of the two bounds is wrong whichever zero comes first.
+# Case G/H: only the two zeros: lower must be -0.0, upper +0.0. Partitions are folded in hash order,
+# but a first-wins tie-break gets one of the bounds wrong in either order.
 run_case G Float32 reinterpretAsFloat32 '(0.0), (-0.0)'
 run_case H Float64 reinterpretAsFloat64 '(0.0), (-0.0)'
 
