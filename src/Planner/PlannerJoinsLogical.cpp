@@ -31,6 +31,7 @@
 
 #include <Dictionaries/IDictionary.h>
 #include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DirectJoin.h>
 #include <Interpreters/FullSortingMergeJoin.h>
@@ -192,6 +193,12 @@ struct JoinCondition
     }
 };
 
+/// Whether the default of `from` converted to `to` is the default of `to`, which is not the case for `0` and `Nullable`.
+static bool conversionKeepsDefault(const DataTypePtr & from, const DataTypePtr & to)
+{
+    return castColumn({from->createColumnConstWithDefaultValue(1), from, ""}, to)->isDefaultAt(0);
+}
+
 static std::unordered_map<String, const ActionsDAG::Node *>
 buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext & builder_context)
 {
@@ -243,6 +250,34 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
             return arg;
         };
 
+        /// The key of a joined row is the merged key, so a default component under a non-default merged key
+        /// is a fill of a lower FULL JOIN, and it must stay the default after the conversion.
+        auto cast_filled_component = [&result_type, &changed_types, &builder_context](auto & dag, const auto & nodes)
+        {
+            const auto * component = nodes.at(0);
+            const auto * merged = nodes.at(1);
+            const auto & context = builder_context.planner_context->getQueryContext();
+            auto add_default = [&dag](const DataTypePtr & type)
+            {
+                return &dag.addColumn(
+                    type->createColumnConstWithDefaultValue(0), type, calculateConstantActionNodeName(type->getDefault(), type));
+            };
+            auto add_function = [&dag, &context](const String & name, ActionsDAG::NodeRawConstPtrs children)
+            {
+                return &dag.addFunction(FunctionFactory::instance().get(name, context), std::move(children), {});
+            };
+
+            const auto * is_fill = add_function("and", {
+                add_function("equals", {component, add_default(component->result_type)}),
+                add_function("not", {add_function("equals", {merged, add_default(merged->result_type)})})});
+            const auto * value = add_function("if", {is_fill, add_default(result_type), &dag.addCast(*component, result_type, {}, context)});
+            if (!value->result_type->equals(*result_type))
+                value = &dag.addCast(*value, result_type, {}, context);
+            changed_types[component->result_name] = &dag.addAlias(*value, component->result_name);
+            return component;
+        };
+
+        std::vector<size_t> args_to_cast;
         for (size_t inner_column_index = 0; inner_column_index < inner_columns.size(); ++inner_column_index)
         {
             const auto & inner_column = inner_columns[inner_column_index];
@@ -252,19 +287,28 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
             const bool keep_original_type = preserved_side == inner_column_side;
 
             auto & arg = args.emplace_back(builder_context.addExpression(inner_column));
-            if (!arg.getType()->equals(*result_type) && !keep_original_type)
-            {
-                arg = JoinActionRef::transform({arg}, cast_to_super);
-            }
-
             if (arg.fromNone())
                 arg.setSourceRelations(BitSet().set(0));
+
+            if (!arg.getType()->equals(*result_type) && !keep_original_type)
+                args_to_cast.push_back(inner_column_index);
         }
 
         auto rhs = args.back();
-        args.pop_back();
+        std::vector<JoinActionRef> left_args(args.begin(), std::prev(args.end()));
+        auto lhs = left_args.size() == 1 ? left_args.front() : JoinActionRef::transform(left_args, using_concat_function);
 
-        auto lhs = args.size() == 1 ? args.front() : JoinActionRef::transform(args, using_concat_function);
+        for (size_t index : args_to_cast)
+        {
+            const auto & arg = args[index];
+            const auto & arg_type = arg.getType();
+            const bool is_merged_key_component = left_args.size() > 1 && index < left_args.size();
+            if (is_merged_key_component && !conversionKeepsDefault(arg_type, result_type)
+                && arg_type->isComparableForEquality() && lhs.getType()->isComparableForEquality())
+                JoinActionRef::transform({arg, lhs}, cast_filled_component);
+            else
+                JoinActionRef::transform({arg}, cast_to_super);
+        }
 
         /// For ASOF join, the last column in USING list is the ASOF column
         if (join_operator.strictness == JoinStrictness::Asof && i == num_nodes - 1)
