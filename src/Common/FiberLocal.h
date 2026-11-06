@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -103,12 +104,19 @@ public:
 
     static Holder create();
 
+    /// A value lives in the least significant bytes of the slot word, which is also how `fiberLocalSlotDefault`
+    /// writes the defaults. These are the first bytes of the word on little-endian and the last ones on big-endian.
+    static constexpr size_t valueOffset(size_t size) noexcept
+    {
+        return std::endian::native == std::endian::big ? sizeof(uintptr_t) - size : 0;
+    }
+
     template <typename T, size_t slot>
     static T load() noexcept
     {
         uintptr_t word = load<slot>();
         T value;
-        std::memcpy(&value, &word, sizeof(T));
+        std::memcpy(&value, reinterpret_cast<const char *>(&word) + valueOffset(sizeof(T)), sizeof(T));
         return value;
     }
 
@@ -116,7 +124,7 @@ public:
     static void store(T value) noexcept
     {
         uintptr_t word = 0;
-        std::memcpy(&word, &value, sizeof(T));
+        std::memcpy(reinterpret_cast<char *>(&word) + valueOffset(sizeof(T)), &value, sizeof(T));
         store<slot>(word);
     }
 
