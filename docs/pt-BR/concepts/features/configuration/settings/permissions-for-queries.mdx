@@ -9,130 +9,67 @@ doc_type: 'reference'
 As consultas no ClickHouse podem ser divididas nos seguintes tipos:
 
 1. Consultas de leitura de dados: `SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`.
-2. Consultas de escrita de dados: `INSERT`, `OPTIMIZE`, [`DELETE`](/pt-BR/reference/statements/delete), [`UPDATE`](/pt-BR/reference/statements/update), `ALTER TABLE ... DELETE`, `ALTER TABLE ... UPDATE`.
+2. Consultas de escrita de dados: `INSERT`, `OPTIMIZE`.
 3. Consultas de alteração de configurações: `SET`, `USE`.
-4. Consultas [DDL](https://en.wikipedia.org/wiki/Data_definition_language): `CREATE`, `ALTER`, `RENAME`, `EXCHANGE`, `ATTACH`, `DETACH`, `DROP`, `TRUNCATE`.
-5. Consultas de gerenciamento de acesso: [`GRANT`](/pt-BR/reference/statements/grant), [`REVOKE`](/pt-BR/reference/statements/revoke), e `CREATE`, `ALTER` e `DROP` de usuários, funções, row policy, masking policy, quotas e settings profile. Consulte [controle de acesso e gerenciamento de contas](/pt-BR/concepts/features/security/access-rights).
-6. `KILL QUERY`.
-
-`ALTER TABLE ... DELETE` e `ALTER TABLE ... UPDATE` alteram os dados, e não os metadados da tabela, e é
-por isso que estão listados acima como consultas de escrita de dados. Elas exigem os privilégios `ALTER DELETE` e
-`ALTER UPDATE`, os mesmos exigidos pelas instruções `DELETE` e `UPDATE`
-independentes. Esses privilégios pertencem ao grupo de privilégios `ALTER TABLE`, portanto `allow_ddl = 0`
-recusa as quatro instruções em uma tabela persistente.
+4. Consultas [DDL](https://en.wikipedia.org/wiki/Data_definition_language): `CREATE`, `ALTER`, `RENAME`, `ATTACH`, `DETACH`, `DROP` `TRUNCATE`.
+5. `KILL QUERY`.
 
 As configurações a seguir regulam as permissões do usuário por tipo de consulta:
 
-## readonly {#readonly}
+<div id="readonly">
+  ## readonly
+</div>
 
-Restringe quais consultas uma sessão pode executar. Os valores da configuração, seu padrão e quais configurações
-cada valor permite alterar estão descritos na
-[referência de configurações](/pt-BR/reference/settings/session-settings/other#readonly); esta seção descreve quais
-classes de consulta cada valor permite.
+Restringe as permissões para consultas de leitura de dados, escrita de dados e alteração de configurações.
 
-Quando definido como 1, permite consultas como:
+Quando definido como 1, permite:
 
-* Consultas de leitura (como `SELECT` e consultas equivalentes).
-* Consultas que modificam apenas o contexto da sessão (como `USE`).
+* Todos os tipos de consultas de leitura (como SELECT e consultas equivalentes).
+* Consultas que modificam apenas o contexto da sessão (como USE).
 
-Quando definido como 2, permite as anteriores mais `SET`, `CREATE TEMPORARY TABLE` e `RESTORE`. Um `RESTORE` pode
-criar uma tabela e carregar dados nela, portanto `readonly = 2` não impede, por si só, que uma sessão
-escreva; já `readonly = 1` o recusa.
+Quando definido como 2, permite o acima, além de:
 
-`BACKUP` não é restringido por `readonly` em nenhum valor: uma sessão que tenha os privilégios para fazer backup de uma
-tabela pode gravar um backup mesmo com `readonly = 1`. Não conte com `readonly` para impedir backups.
+* SET e CREATE TEMPORARY TABLE
 
-A maioria das table functions exige o privilégio `CREATE TEMPORARY TABLE`, portanto um `SELECT` que leia de uma delas é
-recusado com `readonly = 1`, mas não com `readonly = 2`. Algumas, como `numbers`, são permitidas em modo
-somente leitura.
-
-Para qualquer valor acima de 0, nada do que segue é permitido em uma tabela persistente: consultas de escrita de dados
-(`INSERT`, `OPTIMIZE`, `DELETE`, `UPDATE`, `ALTER TABLE ... DELETE`, `ALTER TABLE ... UPDATE`) ou consultas
-DDL (`CREATE`, `ALTER TABLE`, `ALTER VIEW`, `RENAME`, `EXCHANGE`, `ATTACH`, `DETACH`, `DROP`,
-`TRUNCATE TABLE`). Instruções `SYSTEM` que exigem um privilégio do grupo `SYSTEM`, bem como `CREATE`, `ALTER`
-e `DROP` de usuários, funções, row policies, masking policies, cotas e settings profiles, também não são
-permitidos. O gerenciamento de named collections é uma exceção: `readonly` não restringe
-`CREATE NAMED COLLECTION`, `ALTER NAMED COLLECTION` nem `DROP NAMED COLLECTION`.
-
-Conceder um privilégio com `GRANT` também é recusado, mas nem toda instrução de gerenciamento de acesso é: um `REVOKE`
-local e `GRANT CURRENT GRANTS` não são condicionados por `readonly`, de modo que uma sessão somente leitura ainda pode revogar
-um privilégio que possua com grant option e propagar seus próprios grants para outro usuário.
-Revogar um privilégio `ON CLUSTER` é recusado.
-
-Tabelas temporárias estão isentas de ambas as configurações: uma sessão que pode criar uma também pode executar `ALTER` nela,
-inserir dados nela e removê-la.
-
-<Note>
-  Pela [interface HTTP](/pt-BR/concepts/features/interfaces/http), uma requisição cujo método não seja `POST` é executada
-  com `readonly = 2` caso o valor efetivo fosse 0. Um valor mais restritivo já definido pelas
-  configurações do usuário ou por um settings profile é mantido. `PUT` e `DELETE` são isentos quando chegam a um
-  [handler](/pt-BR/reference/statements/create/handler) definido em SQL que os aceite, de modo que tal requisição pode
-  modificar dados quando o `readonly` efetivo for 0; caso contrário, use o método `POST` para modificar dados.
-
-  Em uma requisição elevada dessa forma, um parâmetro `readonly` na string de consulta é recusado com
-  `Cannot modify 'readonly' setting in readonly mode`, a menos que indique o valor que a requisição já possui.
-
-  Existe uma forma de proibir o usuário de alterar apenas configurações específicas, e uma forma de permitir a alteração
-  apenas de configurações específicas sob as restrições de `readonly = 1`. Para detalhes, consulte
-  [restrições nas configurações](/pt-BR/concepts/features/configuration/settings/constraints-on-settings), que também
-  desaconselha tornar a própria configuração `readonly`
-  [alterável em modo somente leitura](/pt-BR/concepts/features/configuration/settings/constraints-on-settings#readonly-changeable-in-readonly).
-</Note>
-
-## allow_ddl {#allow_ddl}
-
-Permite ou nega consultas [DDL](https://en.wikipedia.org/wiki/Data_definition_language) em bancos de dados,
-tabelas, views, dicionários, funções definidas pelo usuário, workloads, resources e handlers definidos em SQL.
+<Tip>
+  Consultas como EXISTS, DESCRIBE, EXPLAIN, SHOW PROCESSLIST etc. equivalem a SELECT, porque apenas fazem SELECT em tabelas do sistema.
+</Tip>
 
 Valores possíveis:
 
-* 0 — A execução de uma consulta em um objeto persistente que exija qualquer um dos seguintes privilégios é
-  bloqueada: `CREATE DATABASE`, `DROP DATABASE`, `CREATE TABLE`, `CREATE VIEW`, `ALTER TABLE`,
-  `ALTER VIEW`, `DROP TABLE`, `DROP VIEW`, `TRUNCATE`, `CREATE DICTIONARY`, `DROP DICTIONARY`,
-  `CREATE FUNCTION`, `DROP FUNCTION`, `CREATE WORKLOAD`, `DROP WORKLOAD`, `CREATE RESOURCE`,
-  `DROP RESOURCE`, `CREATE HANDLER`, `ALTER HANDLER`, `DROP HANDLER`. `RENAME`, `EXCHANGE`,
-  `ATTACH` e `DETACH` também precisam desses privilégios e, por isso, também são bloqueados — exceto
-  `ALTER TABLE ... ATTACH PARTITION` e `ATTACH PART`, que precisam apenas de `INSERT` e não são bloqueados por
-  esta configuração, embora `readonly` os bloqueie em uma tabela persistente.
-  `ATTACH PARTITION ... FROM` precisa também de `ALTER DELETE` e é bloqueado. Conceder e revogar
-  esses privilégios não é bloqueado.
-* 1 — Nada é bloqueado por esta configuração.
+* 0 — Consultas de leitura, escrita e alteração de configurações são permitidas.
+* 1 — Somente consultas de leitura de dados são permitidas.
+* 2 — Consultas de leitura de dados e alteração de configurações são permitidas.
+
+Valor padrão: 0
+
+<Note>
+  Depois de definir `readonly = 1`, o usuário não pode alterar as configurações `readonly` e `allow_ddl` na sessão atual.
+
+  Ao usar o método `GET` na [interface HTTP](/pt-BR/concepts/features/interfaces/http), `readonly = 1` é definido automaticamente. Para modificar dados, use o método `POST`.
+
+  Definir `readonly = 1` impede que o usuário altere configurações. Há uma forma de impedir que o usuário altere apenas configurações específicas. Também há uma forma de permitir a alteração apenas de configurações específicas mesmo com as restrições de `readonly = 1`. Para mais detalhes, consulte [restrições nas configurações](/pt-BR/concepts/features/configuration/settings/constraints-on-settings).
+</Note>
+
+<div id="allow_ddl">
+  ## allow_ddl
+</div>
+
+Permite ou bloqueia [consultas DDL](https://en.wikipedia.org/wiki/Data_definition_language).
+
+Valores possíveis:
+
+* 0 — consultas DDL não são permitidas.
+* 1 — consultas DDL são permitidas.
 
 Valor padrão: 1
 
 <Note>
   Você não pode executar `SET allow_ddl = 1` se `allow_ddl = 0` na sessão atual.
-
-  `allow_ddl` não restringe consultas de gerenciamento de acesso: `GRANT`, `REVOKE` e `CREATE`, `ALTER` e
-  `DROP` de usuários, funções, row policies, masking policies, cotas e settings profiles não são afetados por
-  ele. `CREATE TEMPORARY TABLE` e o gerenciamento de named collections também não são afetados, assim como
-  `ALTER DATABASE ... MODIFY SETTING`, `ALTER DATABASE ... MODIFY COMMENT` e `UNDROP TABLE`, que
-  `readonly` também não restringe. Dentro de um `CREATE` ou `ALTER` de um usuário, de uma função ou de um settings
-  profile, uma cláusula `SETTINGS allow_ddl = 1` é recusada enquanto a sessão atual tiver `allow_ddl = 0`,
-  enquanto uma cláusula `SETTINGS allow_ddl = 0` é aceita. Uma configuração embutida é verificada em relação às
-  constraints de settings da própria sessão, razão pela qual `SET allow_ddl = 1` também é recusado.
 </Note>
 
 <Info>
   **KILL QUERY**
 
-  Encerrar as próprias consultas não exige o privilégio `KILL QUERY`, portanto funciona com qualquer combinação
-  de `readonly` e `allow_ddl`. Exige, porém, `SELECT` em `system.processes`, exceto no caso de
-  `KILL QUERY WHERE query_id = '<id>'`, que cancela a sua própria consulta com esse id sem ler essa
-  tabela. Encerrar uma consulta que pertence a outro usuário, bem como qualquer `KILL QUERY ... ON CLUSTER`, exige o
-  privilégio `KILL QUERY`, que `readonly = 1` e `readonly = 2` recusam.
+  `KILL QUERY` pode ser executado com qualquer combinação das configurações readonly e allow&#95;ddl.
 </Info>
-
-## Outras configurações relevantes {#other-relevant-settings}
-
-* [`allow_introspection_functions`](/pt-BR/reference/settings/session-settings/allow#allow_introspection_functions)
-  é a terceira configuração que participa da decisão de permissão em si, junto com `readonly` e
-  `allow_ddl`. Quando está desabilitada, a execução de uma função de introspecção é bloqueada. Já a concessão
-  do privilégio `INTROSPECTION` não é bloqueada.
-* [`allow_non_metadata_alters`](/pt-BR/reference/settings/session-settings/allow#allow_non_metadata_alters)
-  não é uma configuração de permissão, mas restringe ainda mais o `ALTER TABLE`: quando está desabilitada, um comando
-  que altera a definição da tabela é recusado em tabelas da família `MergeTree` caso sua aplicação
-  implique reescrever dados em disco (`DROP COLUMN`, `RENAME COLUMN`, uma mudança de tipo com `MODIFY COLUMN`, `MODIFY TTL`).
-  `CLEAR COLUMN`, `CLEAR INDEX` e `CLEAR PROJECTION` também são recusados, ainda que deixem a
-  definição inalterada. Instruções que são, elas próprias, mutações, como `ALTER TABLE ... DELETE`,
-  `ALTER TABLE ... UPDATE` e `ALTER TABLE ... MATERIALIZE INDEX`, não são afetadas.

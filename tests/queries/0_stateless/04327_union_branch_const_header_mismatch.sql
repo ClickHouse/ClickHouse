@@ -113,10 +113,12 @@ SELECT a, c FROM (
 -- https://github.com/ClickHouse/ClickHouse/issues/107951 (site 11). A second path to the same
 -- IntersectOrExceptStep divergence: one branch folds a column to Const(Nullable(Nothing)) (here via
 -- QUALIFY + LIMIT 0 over a const-NULL CTE) while the sibling keeps the full Nullable(Nothing) column.
+-- QUALIFY is only implemented in the Analyzer, so pin it (CI randomizes enable_analyzer).
 WITH cte AS (SELECT DISTINCT NULL WHERE isNullable('') GROUP BY 1)
 SELECT DISTINCT *, toNullable(NULL) FROM cte QUALIFY materialize(100) LIMIT 0
 INTERSECT DISTINCT
-SELECT toNullable(NULL), * FROM cte;
+SELECT toNullable(NULL), * FROM cte
+SETTINGS enable_analyzer = 1;
 
 -- Filter push-down rebuilds the UnionStep assuming it forwards every branch header
 -- unchanged. With a divergent Const across shards (each remote shard folds randConstant()
@@ -146,9 +148,11 @@ SELECT toNullable(NULL), * FROM cte;
 WITH cte AS (SELECT DISTINCT NULL WHERE isNullable('') GROUP BY 1 WITH TOTALS)
 SELECT DISTINCT *, toNullable(NULL) FROM cte QUALIFY materialize(100) LIMIT 0
 INTERSECT DISTINCT
-SELECT *, NULL FROM cte GROUP BY ALL;
+SELECT *, NULL FROM cte GROUP BY ALL
+SETTINGS enable_analyzer = 1;
 
 WITH cte AS (SELECT DISTINCT NULL WHERE isNullable('') GROUP BY 1 WITH TOTALS)
 SELECT DISTINCT *, toNullable(NULL) FROM cte QUALIFY materialize(100) LIMIT 0
 EXCEPT DISTINCT
-SELECT *, NULL FROM cte GROUP BY ALL;
+SELECT *, NULL FROM cte GROUP BY ALL
+SETTINGS enable_analyzer = 1;

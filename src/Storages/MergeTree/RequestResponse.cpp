@@ -50,7 +50,7 @@ String ParallelReadRequest::describe() const
 {
     String result
         = fmt::format("replica_num {}, stream {}, min_num_of_marks {}, ", replica_num, stream_id, min_marks_per_request);
-    result += description.describeShort();
+    result += description.describe();
     return result;
 }
 
@@ -102,7 +102,7 @@ void ParallelReadResponse::serialize(WriteBuffer & out, UInt64 replica_pr_protoc
 
 String ParallelReadResponse::describe() const
 {
-    return fmt::format("{}. Finish: {}", description.describeShort(), finish);
+    return fmt::format("{}. Finish: {}", description.describe(), finish);
 }
 
 void ParallelReadResponse::deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version)
@@ -143,14 +143,12 @@ void InitialAllRangesAnnouncement::serialize(
         writeIntBinary(min_marks_per_request, out);
     if (initiator_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID)
         writeStringBinary(stream_id, out);
-    if (initiator_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANALYZED_RANGES_REQUEST)
-        writeBinary(wants_analyzed_ranges, out);
 }
 
 
 String InitialAllRangesAnnouncement::describe()
 {
-    return fmt::format("replica {}, mode {}, {}", replica_num, mode, description.describeShort());
+    return fmt::format("replica {}, mode {}, {}", replica_num, mode, description.describe());
 }
 
 InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version)
@@ -185,13 +183,7 @@ InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffe
     String stream_id;
     if (replica_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID)
         readStringBinary(stream_id, in);
-
-    bool wants_analyzed_ranges = false;
-    if (replica_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANALYZED_RANGES_REQUEST)
-        readBinary(wants_analyzed_ranges, in);
-
-    return InitialAllRangesAnnouncement{
-        mode, description, replica_num, mark_segment_size, min_marks_per_request, std::move(stream_id), wants_analyzed_ranges};
+    return InitialAllRangesAnnouncement{mode, description, replica_num, mark_segment_size, min_marks_per_request, std::move(stream_id)};
 }
 
 

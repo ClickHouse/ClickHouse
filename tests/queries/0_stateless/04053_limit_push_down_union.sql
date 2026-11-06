@@ -1,4 +1,5 @@
 SET explain_query_plan_default = 'legacy';
+SET enable_analyzer = 1;
 
 -- Test that LIMIT is pushed down into UNION ALL branches.
 -- https://github.com/ClickHouse/ClickHouse/issues/23239

@@ -1,0 +1,28 @@
+<clickhouse>
+    <!--
+        Custom HTTP protocol endpoint that references a non-`http_handlers*` top-level section
+        via <protocols><X><handlers>NAME</handlers></X></protocols>.
+        The server must accept the referenced top-level section during unknown-key validation,
+        because `createHandlerFactory` resolves it as the handler config key for that endpoint.
+    -->
+    <protocols>
+        <alt_http>
+            <type>http</type>
+            <host>0.0.0.0</host>
+            <port>8124</port>
+            <handlers>my_custom_handlers</handlers>
+        </alt_http>
+    </protocols>
+
+    <my_custom_handlers>
+        <rule>
+            <methods>GET</methods>
+            <url>/my_custom_endpoint</url>
+            <handler>
+                <type>static</type>
+                <response_content>Hello from custom handlers</response_content>
+            </handler>
+        </rule>
+        <defaults/>
+    </my_custom_handlers>
+</clickhouse>
