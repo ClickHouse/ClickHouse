@@ -298,9 +298,9 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze, bool 
 
     manager.addPass(std::make_unique<DictGetTupleElementPass>());
     manager.addPass(std::make_unique<ConvertEmptyStringComparisonToFunctionPass>());
-    /// Before FunctionToSubcolumnsPass, which rewrites `mapValues(m)` out of reach of the index.
-    manager.addPass(std::make_unique<TextIndexFunctionsTokenizerPass>());
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
+    /// After it, so a subcolumn spelled as a function is already normalized under its guards.
+    manager.addPass(std::make_unique<TextIndexFunctionsTokenizerPass>());
 
     manager.addPass(std::make_unique<ConvertLogicalExpressionToCNFPass>());
     manager.addPass(std::make_unique<RegexpFunctionRewritePass>());

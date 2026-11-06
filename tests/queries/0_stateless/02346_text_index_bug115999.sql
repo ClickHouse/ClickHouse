@@ -683,6 +683,31 @@ WHERE hasAnyTokens(t.j.typed, ['ell']) OR b.category = 'nonexistent';
 
 DROP TABLE t_115999_shadowed;
 
+-- A subcolumn spelled as a function is normalized before this pass runs, so both spellings forward.
+SELECT 'a subcolumn read through tupleElement or variantElement';
+CREATE TABLE t_115999_element
+(
+    group_id UInt64,
+    tp Tuple(k String),
+    vr Variant(String, UInt64),
+    INDEX idx_tp tp.k TYPE text(tokenizer = ngrams(3)),
+    INDEX idx_vr vr.String TYPE text(tokenizer = ngrams(3))
+)
+ENGINE = MergeTree
+ORDER BY group_id;
+
+INSERT INTO t_115999_element VALUES (1, tuple('hello'), 'hello');
+
+SELECT count() FROM t_115999_element AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasAnyTokens(tupleElement(t.tp, 'k'), ['ell']) OR b.category = 'nonexistent';
+SELECT count() FROM t_115999_element AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasAnyTokens(tupleElement(t.tp, 1), ['ell']) OR b.category = 'nonexistent';
+SELECT count() FROM t_115999_element AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasAnyTokens(variantElement(t.vr, 'String'), ['ell']) OR b.category = 'nonexistent';
+SELECT count() FROM t_115999_element WHERE hasAnyTokens(tp.k, ['ell']);
+
+DROP TABLE t_115999_element;
+
 -- A Distributed table carries no indexes of its own, so the initiator has to reach the shards' local
 -- table by name; otherwise a predicate it evaluates itself disagrees with the shard-local scans.
 SELECT 'a Distributed haystack, predicate on the initiator';
