@@ -355,22 +355,49 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (isIEJoinPreferred(join_operator, join_step->getJoinSettings()))
         return false;
 
+    /// The suppression flag records only the latest decision: a join re-visited because of it (see
+    /// `optimizeTree`) that now gets its filter must not be visited again, or every later re-run would
+    /// plant one more `BuildRuntimeFilterStep` per key with a fresh rendezvous key.
+    join_step->resetRuntimeFilterSuppressedForSortedMerge();
+
+    const auto is_sorted_merge = [](JoinAlgorithm algorithm)
+    {
+        return algorithm == JoinAlgorithm::SORTED_MERGE || algorithm == JoinAlgorithm::PARALLEL_SORTED_MERGE;
+    };
+    /// `sorted_merge` / `parallel_sorted_merge` are selectable only when the join inputs can be read in the
+    /// order of the join keys. The predicate is memoized on the step, and `buildPhysicalJoin` uses the same
+    /// one, so this pass and the algorithm selection cannot disagree.
+    const auto sorted_merge_is_selectable = [&]
+    {
+        return optimization_settings.read_in_order && join_step->inputsCanBeReadInJoinKeyOrder(node);
+    };
+
     /// For `ASOF`, pruning `join_algorithms` below would force `hash` even if the user picked
     /// `full_sorting_merge`: unlike other strictnesses, `HashJoin` can't run every `ASOF` join (narrower column
     /// types, no spill). Skip the filter if pruning would change the algorithm actually chosen; the algorithms
-    /// excluded below never run `ASOF`, so they fall through regardless of list order.
+    /// excluded below never run `ASOF`, so they fall through regardless of list order. So does a
+    /// `sorted_merge` / `parallel_sorted_merge` whose inputs cannot be read in the join key order.
     if (join_operator.strictness == JoinStrictness::Asof)
     {
         const auto first_candidate = std::ranges::find_if(
             join_algorithms,
-            [](JoinAlgorithm algorithm)
+            [&](JoinAlgorithm algorithm)
             {
+                if (is_sorted_merge(algorithm))
+                    return sorted_merge_is_selectable();
                 return algorithm != JoinAlgorithm::DIRECT && algorithm != JoinAlgorithm::IE_JOIN
                     && algorithm != JoinAlgorithm::GRACE_HASH && algorithm != JoinAlgorithm::PARTIAL_MERGE
                     && algorithm != JoinAlgorithm::PREFER_PARTIAL_MERGE && algorithm != JoinAlgorithm::DEFAULT;
             });
-        if (first_candidate == join_algorithms.end()
-            || *first_candidate != JoinAlgorithm::HASH)
+        if (first_candidate == join_algorithms.end())
+            return false;
+        if (is_sorted_merge(*first_candidate))
+        {
+            /// See the suppression below: the merge join wins, and it cannot use a runtime filter.
+            join_step->setRuntimeFilterSuppressedForSortedMerge();
+            return false;
+        }
+        if (*first_candidate != JoinAlgorithm::HASH)
             return false;
     }
 
@@ -385,20 +412,11 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// filter would also erase the merge algorithms from the list below, silently overriding the
     /// priority order the user asked for - the defining feature of these two algorithms. When the inputs
     /// cannot be read in order, those algorithms are not selectable anyway, so the filter (and the erase)
-    /// stays. The predicate is memoized on the step, and `buildPhysicalJoin` uses the same one, so the
-    /// two passes cannot disagree.
-    ///
-    /// The suppression flag records only the latest decision: a join re-visited because of it (see
-    /// `optimizeTree`) that now gets its filter must not be visited again, or every later re-run would
-    /// plant one more `BuildRuntimeFilterStep` per key with a fresh rendezvous key.
+    /// stays.
     ///
     /// A list without either sorted-merge variant keeps the runtime-filter policy it had before these
     /// algorithms existed: e.g. `partial_merge,hash` still gets its filter, and the filter removes `partial_merge`.
-    join_step->resetRuntimeFilterSuppressedForSortedMerge();
-    const bool has_sorted_merge_algorithm = std::ranges::any_of(
-        join_algorithms,
-        [](JoinAlgorithm algorithm)
-        { return algorithm == JoinAlgorithm::SORTED_MERGE || algorithm == JoinAlgorithm::PARALLEL_SORTED_MERGE; });
+    const bool has_sorted_merge_algorithm = std::ranges::any_of(join_algorithms, is_sorted_merge);
     if (has_sorted_merge_algorithm)
     {
         for (auto algorithm : join_algorithms)
@@ -423,9 +441,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
                 break;
 
-            if ((algorithm == JoinAlgorithm::SORTED_MERGE || algorithm == JoinAlgorithm::PARALLEL_SORTED_MERGE)
-                && optimization_settings.read_in_order
-                && join_step->inputsCanBeReadInJoinKeyOrder(node))
+            if (is_sorted_merge(algorithm) && sorted_merge_is_selectable())
             {
                 /// `applyParallelReplicas` may later invalidate the eligibility; the pass is then re-run
                 /// for the joins skipped here, so the fall-through algorithm gets its filter back.
