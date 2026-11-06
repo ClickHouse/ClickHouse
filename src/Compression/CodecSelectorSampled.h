@@ -39,6 +39,7 @@ private:
     Ranking rank() const;
     UInt32 rawSize() const { return ICompressionCodec::getHeaderSize() + source_size; }
 
+private:
     /// `candidates` in pool order, [0] the default codec.
     const Codecs candidates;
     const UInt64 selection_period;
