@@ -348,7 +348,11 @@ The `table` or `where` fields cannot be used together with the `query` field. An
 There is no explicit parameter `secure`. When establishing an SSL-connection security is mandatory.
 </Note>
 
-MySQL can be connected to on a local host via sockets. To do this, set `host` and `socket`.
+MySQL can be connected to on a local host via sockets. To do this, set `host` to `localhost` and `socket`. For any other `host`, `socket` is ignored and the connection goes over TCP. Without `socket`, the connection goes over TCP to `port`, also for `localhost`.
+
+<Note>
+`remote_url_allow_hosts` checks only `host` and `port`: the path in `socket` is not checked.
+</Note>
 
 Example of settings:
 

@@ -1,0 +1,312 @@
+--- cdf-table-with-cdc-and-dvs: empty comments
+2	insert	25
+11	delete	22
+11	update_postimage	20
+--- cdf-table: schema
+id	Nullable(Int32)					
+name	Nullable(String)					
+birthday	Nullable(Date32)					
+_change_type	String					
+_commit_version	Int64					
+_commit_timestamp	DateTime64(6)					
+--- cdf-table: filter on the CDF columns
+5	update_postimage
+6	update_postimage
+7	update_postimage
+--- cdf-table [0, latest]
+1	Steve	2023-12-22	insert	0
+2	Bob	2023-12-23	insert	0
+3	Dave	2023-12-23	insert	0
+4	Kate	2023-12-23	insert	0
+5	Emily	2023-12-24	insert	0
+6	Carl	2023-12-24	insert	0
+7	Dennis	2023-12-24	insert	0
+8	Claire	2023-12-25	insert	0
+9	Ada	2023-12-25	insert	0
+10	Borb	2023-12-25	insert	0
+2	Bob	2023-12-22	update_postimage	1
+3	Dave	2023-12-22	update_postimage	1
+4	Kate	2023-12-22	update_postimage	1
+2	Bob	2023-12-23	update_preimage	1
+3	Dave	2023-12-23	update_preimage	1
+4	Kate	2023-12-23	update_preimage	1
+5	Emily	2023-12-29	update_postimage	2
+6	Carl	2023-12-29	update_postimage	2
+7	Dennis	2023-12-29	update_postimage	2
+5	Emily	2023-12-24	update_preimage	2
+6	Carl	2023-12-24	update_preimage	2
+7	Dennis	2023-12-24	update_preimage	2
+7	Dennis	2023-12-29	delete	3
+--- cdf-table-non-partitioned [0, latest]
+1	Steve	2024-04-14	1	true	3.14	1	insert	0
+2	Bob	2024-04-15	1	true	3.14	1	insert	0
+3	Dave	2024-04-15	2	true	3.14	1	insert	0
+4	Kate	2024-04-15	3	true	3.14	1	insert	0
+5	Emily	2024-04-16	4	true	3.14	1	insert	0
+6	Carl	2024-04-16	5	true	3.14	1	insert	0
+7	Dennis	2024-04-16	6	true	3.14	1	insert	0
+8	Claire	2024-04-17	7	true	3.14	1	insert	0
+9	Ada	2024-04-17	8	true	3.14	1	insert	0
+10	Borb	2024-04-17	99999999999999999	true	3.14	1	insert	0
+2	Bob	2024-04-14	1	true	3.14	1	update_postimage	1
+3	Dave	2024-04-14	2	true	3.14	1	update_postimage	1
+4	Kate	2024-04-14	3	true	3.14	1	update_postimage	1
+2	Bob	2024-04-15	1	true	3.14	1	update_preimage	1
+3	Dave	2024-04-15	2	true	3.14	1	update_preimage	1
+4	Kate	2024-04-15	3	true	3.14	1	update_preimage	1
+5	Emily	2024-04-14	4	true	3.14	1	update_postimage	2
+6	Carl	2024-04-14	5	true	3.14	1	update_postimage	2
+7	Dennis	2024-04-14	6	true	3.14	1	update_postimage	2
+5	Emily	2024-04-16	4	true	3.14	1	update_preimage	2
+6	Carl	2024-04-16	5	true	3.14	1	update_preimage	2
+7	Dennis	2024-04-16	6	true	3.14	1	update_preimage	2
+7	Dennis	2024-04-14	6	true	3.14	1	delete	3
+1	Alex	2024-04-14	1	true	3.14	1	insert	4
+2	Alan	2024-04-15	1	true	3.14	1	insert	4
+--- cdf-table-with-dv [0, latest]
+0	insert	0
+1	insert	0
+2	insert	0
+3	insert	0
+4	insert	0
+5	insert	0
+6	insert	0
+7	insert	0
+8	insert	0
+9	insert	0
+0	delete	1
+9	delete	1
+0	insert	2
+9	insert	2
+0	delete	3
+1	delete	3
+4	delete	3
+5	delete	3
+1	insert	4
+4	insert	4
+3	delete	5
+0	insert	5
+5	insert	5
+3	insert	6
+--- cdf-table-with-cdc-and-dvs [0, latest]
+1	initial	insert	0
+2	insert1	insert	1
+3	insert1-delete1	insert	1
+4	insert1-delete2	insert	1
+5	insert1-delete2	insert	1
+3	insert1-delete1	delete	2
+3	insert1-delete1	insert	4
+4	insert1-delete2	delete	5
+5	insert1-delete2	delete	5
+4	insert1-delete2	insert	7
+5	insert2	insert	8
+1	update1	update_postimage	9
+2	update1	update_postimage	9
+3	update1	update_postimage	9
+1	initial	update_preimage	9
+2	insert1	update_preimage	9
+3	insert1-delete1	update_preimage	9
+1	update1	delete	10
+2	update2	update_postimage	12
+2	update1	update_preimage	12
+6	insert3	insert	14
+7	insert3	insert	14
+8	insert4	insert	15
+9	insert4	insert	15
+7	insert3	delete	16
+8	insert4	delete	16
+10	merge1-insert	insert	18
+11	merge1-insert	insert	18
+9	merge1-update	update_postimage	18
+9	insert4	update_preimage	18
+11		update_postimage	20
+11	merge1-insert	update_preimage	20
+11		delete	22
+12	merge2-insert	insert	22
+2	update2	delete	24
+3	update1	delete	24
+4	insert1-delete2	delete	24
+5	insert2	delete	24
+6	insert3	delete	24
+9	merge1-update	delete	24
+0	new	insert	25
+1	after-large-delete	insert	25
+2		insert	25
+--- cdf-table-simple [0, 0]
+0	insert	0
+1	insert	0
+2	insert	0
+3	insert	0
+4	insert	0
+5	insert	0
+6	insert	0
+7	insert	0
+8	insert	0
+9	insert	0
+--- cdf-table-simple [1, 1]
+0	delete	1
+1	delete	1
+2	delete	1
+3	delete	1
+4	delete	1
+5	delete	1
+6	delete	1
+7	delete	1
+8	delete	1
+9	delete	1
+--- cdf-table-simple [2, 2]
+20	insert	2
+21	insert	2
+22	insert	2
+23	insert	2
+24	insert	2
+--- cdf-table-simple [0, 2]
+0	insert	0
+1	insert	0
+2	insert	0
+3	insert	0
+4	insert	0
+5	insert	0
+6	insert	0
+7	insert	0
+8	insert	0
+9	insert	0
+0	delete	1
+1	delete	1
+2	delete	1
+3	delete	1
+4	delete	1
+5	delete	1
+6	delete	1
+7	delete	1
+8	delete	1
+9	delete	1
+20	insert	2
+21	insert	2
+22	insert	2
+23	insert	2
+24	insert	2
+--- cdf-table-update-ops [0, 2]
+0	insert	0
+1	insert	0
+2	insert	0
+3	insert	0
+4	insert	0
+5	insert	0
+6	insert	0
+7	insert	0
+8	insert	0
+9	insert	0
+20	update_pre	1
+21	update_pre	1
+22	update_pre	1
+23	update_pre	1
+24	update_pre	1
+30	update_post	2
+31	update_post	2
+32	update_post	2
+33	update_post	2
+34	update_post	2
+--- cdf-table-data-change [0, 1]
+0	insert	0
+1	insert	0
+2	insert	0
+3	insert	0
+4	insert	0
+5	insert	0
+6	insert	0
+7	insert	0
+8	insert	0
+9	insert	0
+--- cdf-table-partitioned [0, 2]
+0	old	0	insert	0
+1	old	1	insert	0
+2	old	0	insert	0
+3	old	1	insert	0
+4	old	0	insert	0
+5	old	1	insert	0
+3	old	1	delete	1
+1	new	1	update_postimage	1
+1	old	1	update_preimage	1
+0	old	0	delete	2
+2	old	0	delete	2
+4	old	0	delete	2
+--- cdf-table-backtick-column-names [0, latest]
+2	10	(1,2)	insert	0
+4	10	(1,2)	insert	0
+1	10	(1,2)	insert	1
+3	10	(1,2)	insert	1
+5	10	(1,2)	insert	1
+--- cdf-table-delete-unconditional [0, latest]
+0	insert	0
+1	insert	0
+2	insert	0
+3	insert	0
+4	insert	0
+5	insert	0
+6	insert	0
+7	insert	0
+8	insert	0
+9	insert	0
+0	delete	1
+1	delete	1
+2	delete	1
+3	delete	1
+4	delete	1
+5	delete	1
+6	delete	1
+7	delete	1
+8	delete	1
+9	delete	1
+--- cdf-table-delete-conditional-all-rows [0, latest]
+0	insert	0
+1	insert	0
+2	insert	0
+3	insert	0
+4	insert	0
+5	insert	0
+6	insert	0
+7	insert	0
+8	insert	0
+9	insert	0
+0	delete	1
+1	delete	1
+2	delete	1
+3	delete	1
+4	delete	1
+5	delete	1
+6	delete	1
+7	delete	1
+8	delete	1
+9	delete	1
+--- cdf-table-delete-conditional-two-rows [0, latest]
+0	insert	0
+1	insert	0
+2	insert	0
+3	insert	0
+4	insert	0
+5	insert	0
+6	insert	0
+7	insert	0
+8	insert	0
+9	insert	0
+2	delete	1
+8	delete	1
+--- cdf-column-mapping-name-mode [1, latest]
+2	Bob	250	update_postimage	2
+2	Bob	200	update_preimage	2
+4	David	400	insert	3
+1	Alice	100	delete	4
+--- cdf-column-mapping-name-mode-3-7 [1, latest]
+2	Bob	250	update_postimage	2
+2	Bob	200	update_preimage	2
+4	David	400	insert	3
+1	Alice	100	delete	4
+--- cdf-column-mapping-id-mode [1, latest]
+2	Frank	275	update_postimage	2
+2	Frank	250	update_preimage	2
+4	Henry	450	insert	3
+3	Grace	350	delete	4
+--- invalid ranges
+BAD_ARGUMENTS
+DELTA_KERNEL_ERROR

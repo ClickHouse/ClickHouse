@@ -409,7 +409,7 @@ SQLQueryPiece applyFunctionOverRange(
     auto argument = std::move(arguments[0]);
 
     const auto * fixed_at_node = getFixedAtModifier(argument);
-    const auto aggregation_range = getRangeAggregationRange(fixed_at_node, node_range, context);
+    const auto aggregation_range = getRangeAggregationRange(argument, node_range, context);
 
     SQLQueryPiece res = argument;
     res.node = node;
