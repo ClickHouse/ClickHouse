@@ -85,4 +85,11 @@ C
 shorter-alias-after-path-max-size-lookup
 L
 L
+alias-resolving-a-later-skip
+A
+C
+A
+C
+skip-no-name-returns
+fails
 alive

@@ -345,6 +345,30 @@ while [ -n "$REST" ]; do
 done
 ln -s "$HOP_TARGET" "$TEST_DIR_ABS/longname/root/z"
 
+# A later skip a name resolves: `siblings/root/a` reaches `A` through 40 links and skips both entries of `A/d`;
+# `root/b`, through 38, resolves only the one listed second, whose target is one link closer. The targets are
+# assigned after reading the directory's order, so the first skip is the unresolvable one on any filesystem.
+mkdir -p "$TEST_DIR_ABS/siblings/root" "$TEST_DIR_ABS/siblings/chains" "$TEST_DIR_ABS/siblings/data/A/d" "$TEST_DIR_ABS/siblings/data/C"
+printf "A\n" > "$TEST_DIR_ABS/siblings/data/A/A.txt"
+printf "C\n" > "$TEST_DIR_ABS/siblings/data/C/C.txt"
+ln -s ../../slot_p "$TEST_DIR_ABS/siblings/data/A/d/p"
+ln -s ../../slot_q "$TEST_DIR_ABS/siblings/data/A/d/q"
+FIRST_LISTED=$(ls -U "$TEST_DIR_ABS/siblings/data/A/d" | head -n 1)
+SECOND_LISTED=$(ls -U "$TEST_DIR_ABS/siblings/data/A/d" | tail -n 1)
+ln -s C "$TEST_DIR_ABS/siblings/data/hop"
+ln -s hop "$TEST_DIR_ABS/siblings/data/slot_$FIRST_LISTED"
+ln -s C "$TEST_DIR_ABS/siblings/data/slot_$SECOND_LISTED"
+for i in $(seq 1 38); do
+    ln -s "s$((i + 1))" "$TEST_DIR_ABS/siblings/chains/s$i"
+done
+ln -s ../data/A "$TEST_DIR_ABS/siblings/chains/s39"
+ln -s ../chains/s1 "$TEST_DIR_ABS/siblings/root/a"
+ln -s ../chains/s3 "$TEST_DIR_ABS/siblings/root/b"
+
+# Without `root/b` no name the pattern produces reaches `C`.
+cp -a "$TEST_DIR_ABS/siblings" "$TEST_DIR_ABS/unreachable"
+rm "$TEST_DIR_ABS/unreachable/root/b"
+
 trap 'rm -rf "$TEST_DIR_ABS"' EXIT
 
 # Ancestor-loop symlink: `loop/dir1/dir2/loop_to_root` points back at `loop/dir1`,
@@ -561,6 +585,15 @@ $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget3/root/z/
 echo "shorter-alias-after-path-max-size-lookup"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/longname/root/**/*.txt', 'TSV', 'val String')"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/longname/root/z/**/*.txt', 'TSV', 'val String')"
+
+echo "alias-resolving-a-later-skip"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/siblings/root/**/*.txt', 'TSV', 'val String') ORDER BY val"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/siblings/root/b/**/*.txt', 'TSV', 'val String') ORDER BY val"
+
+# A file only names over the symlink limit reach fails the glob, as any other unreadable path does.
+echo "skip-no-name-returns"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/unreachable/root/**/*.txt', 'TSV', 'val String')" 2>&1 \
+    | grep -qF "Cannot expand the glob: Too many levels of symbolic links" && echo "fails"
 
 # Server alive afterwards.
 $CLICKHOUSE_CLIENT --query "SELECT 'alive'"
