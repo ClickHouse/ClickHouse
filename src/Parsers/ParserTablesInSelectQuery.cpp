@@ -769,7 +769,7 @@ key4    f    2    3    4            0    0    \N
 
 ## JOIN with an arbitrary ON condition {#join-with-an-arbitrary-on-condition}
 
-The `ON` section may be an arbitrary boolean expression over the columns of both tables, such as a range check, an arithmetic comparison, or a call to a scalar function. When it contains no equality between the two tables, there is no JOIN key to match rows on. A pair of inequality conditions is executed by `ie_join` whenever that algorithm is listed in [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm), with no requirement that it come first, because no other `join_algorithm` value can execute such a condition. The default value `direct,hash,ie_join` includes it. Any other condition is executed as a [block nested loop join](https://en.wikipedia.org/wiki/Nested_loop_join): the right table is materialized and the condition is evaluated on every pair of rows. An `ALL INNER JOIN` takes the equivalent form of a `CROSS JOIN` with the condition as a filter.
+The `ON` section may be an arbitrary boolean expression over the columns of both tables, such as a range check, an arithmetic comparison, or a call to a scalar function. When it contains no equality between the two tables, there is no JOIN key to match rows on. A pair of inequality conditions is executed by `ie_join` whenever that algorithm is listed in [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm), with no requirement that it come first, because no other `join_algorithm` value can execute such a condition. The default value of `join_algorithm` includes `ie_join` since version 26.8. Any other condition is executed as a [block nested loop join](https://en.wikipedia.org/wiki/Nested_loop_join): the right table is materialized and the condition is evaluated on every pair of rows. An `ALL INNER JOIN` takes the equivalent form of a `CROSS JOIN` with the condition as a filter.
 
 The block nested loop join supports every JOIN type and strictness except `ASOF JOIN`, `PASTE JOIN` and `ANY FULL JOIN`. It is not one of the `join_algorithm` values: it is the last resort, used only when no other algorithm can execute the condition. In `EXPLAIN` output it appears as a `BlockNestedLoopJoin` step. When [`allow_block_nested_loop_join`](/reference/settings/session-settings/allow#allow_block_nested_loop_join) is disabled, a query that would need it is rejected with `INVALID_JOIN_ON_EXPRESSION`.
 
@@ -854,7 +854,7 @@ To match `NULL` values, compare the JOIN keys with the `isNotDistinctFrom` funct
 SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
 ```
 
-```markdown
+```response
 ┌─name────┬─score─┐
 │ Alice   │    90 │
 │ Bob     │     0 │
@@ -1108,9 +1108,7 @@ For a `GLOBAL RIGHT JOIN` with `ALL`, `ANY`, `SEMI`, or `ANTI` strictness whose 
 
 Be careful when using `GLOBAL`. For more information, see the [Distributed subqueries](/reference/statements/in#distributed-subqueries) section.
 
-## Usage recommendations {#usage-recommendations}
-
-### Processing of empty or NULL cells {#processing-of-empty-or-null-cells}
+## Processing of empty or NULL cells {#processing-of-empty-or-null-cells}
 
 In the result of an outer JOIN, the columns of the other table are empty for a row without a match. The [`join_use_nulls`](/reference/settings/session-settings/join#join_use_nulls) setting defines how ClickHouse fills these cells:
 
@@ -1119,7 +1117,7 @@ In the result of an outer JOIN, the columns of the other table are empty for a r
 
 A row in which at least one of the JOIN keys is `NULL` is not joined, as described in [NULL and NaN values in JOIN keys](#null-values-in-join-keys).
 
-### Syntax {#syntax}
+## USING clause {#using-clause}
 
 The `USING` clause specifies one or more columns to join on, and establishes the equality of these columns:
 
@@ -1178,7 +1176,7 @@ The session settings that affect the semantics, planning, execution, and memory 
 - [JOIN memory management and spilling](/concepts/features/operations/select/join-memory-management) — memory limits and spilling to disk
 - [JOIN Settings](/concepts/features/operations/select/join-settings) — the session settings that affect JOINs
 - [Minimize and optimize JOINs](/concepts/best-practices/minimize-optimize-joins) — best practices, with benchmarked examples
-- [`IN` operator](/reference/statements/in) — often cheaper than a JOIN for an existence check
+- [`IN` operator](/reference/statements/in) — tests whether a value is in the result of a subquery
 - [Dictionaries](/concepts/features/dictionaries) — an alternative to joining a small dimension table
 - [`Join` table engine](/reference/engines/table-engines/special/join) — keeps a prepared right-hand side in memory
 - Blog: [ClickHouse: A Blazingly Fast DBMS with Full SQL Join Support - Part 1](https://clickhouse.com/blog/clickhouse-fully-supports-joins)
