@@ -338,7 +338,13 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     auto updated_query_tree = replaceTableExpressionsWithDummyTables(query_tree, table_nodes, query_context, &replacement_map);
     /// Disable parallel replicas to collect filters, in every (sub)query: each one is planned with its own context,
     /// which the clone still shares with the original tree, and an `IN` subquery keeps its real tables.
-    traverseQueryTree(updated_query_tree, Everything{}, [](const QueryTreeNodePtr & node)
+    /// A materialized CTE keeps its contexts: the plan built for it here is stored in the handle the query shares and executes.
+    auto not_materialized_cte = [](const QueryTreeNodePtr & parent, const QueryTreeNodePtr & child)
+    {
+        const auto * table_node = parent->as<TableNode>();
+        return !table_node || child != table_node->getMaterializedCTESubquery();
+    };
+    traverseQueryTree(updated_query_tree, not_materialized_cte, [](const QueryTreeNodePtr & node)
     {
         if (auto * query_node = node->as<QueryNode>())
         {
