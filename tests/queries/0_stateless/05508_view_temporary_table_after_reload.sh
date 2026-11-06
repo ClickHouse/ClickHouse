@@ -13,6 +13,8 @@ RDB="${CLICKHOUSE_DATABASE}_2"
 $CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none --query "
 CREATE DATABASE ${DB} ENGINE = Atomic;
 CREATE DATABASE ${RDB} ENGINE = Replicated('/test/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/rdb', 'shard1', 'replica1');
+CREATE TABLE ${CLICKHOUSE_DATABASE}.tmp_shadow (id UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO ${CLICKHOUSE_DATABASE}.tmp_shadow VALUES (9);
 USE ${DB};
 CREATE TABLE ${DB}.tmp_shadow (id UInt64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO ${DB}.tmp_shadow VALUES (2);
@@ -43,6 +45,9 @@ CREATE VIEW ${DB}.v_dictget AS SELECT dictGet('dict', 'val', id) AS id FROM tmp_
 CREATE VIEW ${DB}.v_rt AS SELECT id FROM rt;
 CREATE VIEW ${DB}.v_rdb AS SELECT id FROM ${RDB}.rsrc;
 CREATE VIEW ${RDB}.v_in_rdb AS SELECT id FROM ${RDB}.rsrc;
+CREATE VIEW ${DB}.v_definer SQL SECURITY DEFINER AS SELECT id FROM tmp_shadow;
+CREATE VIEW ${DB}.v_none SQL SECURITY NONE AS SELECT id FROM tmp_shadow;
+CREATE TABLE ${DB}.t_check (x UInt64, CONSTRAINT c CHECK x <= (SELECT max(id) FROM ${DB}.v_shadow)) ENGINE = MergeTree ORDER BY x;
 "
 
 # Reload the views from their metadata in a session without the temporary tables.
@@ -52,7 +57,7 @@ for db in ${DB} ${RDB}; do
 done
 
 # A new session reads its own temporary tables through the views.
-for view in ${DB}.{v_from,v_join,v_in,v_scalar,v_shadow,v_tview,v_view,v_mv,v_rmv,v_dict,v_dictget,v_rt,v_rdb} ${RDB}.v_in_rdb; do
+for view in ${DB}.{v_from,v_join,v_in,v_scalar,v_shadow,v_tview,v_view,v_mv,v_rmv,v_dict,v_dictget,v_rt,v_rdb,v_definer,v_none} ${RDB}.v_in_rdb; do
     $CLICKHOUSE_CLIENT --query "
     CREATE TEMPORARY TABLE tmp_src (id UInt64);
     CREATE TEMPORARY TABLE tmp_shadow (id UInt64);
@@ -62,6 +67,12 @@ for view in ${DB}.{v_from,v_join,v_in,v_scalar,v_shadow,v_tview,v_view,v_mv,v_rm
     SELECT '${view#*.}', groupArray(id) FROM ${view};
     " 2>&1 | grep -m1 -oE "^v_[a-z_]+\s\[[0-9,]*\]$|UNKNOWN_[A-Z]+"
 done
+
+# Without a temporary table of that name the view reads the table of its database,
+# also when a constraint of another table reads the view while that table is attached.
+$CLICKHOUSE_CLIENT --query "CREATE TEMPORARY TABLE tmp_shadow (id UInt64); ALTER TABLE ${DB}.v_shadow MODIFY COMMENT 'c'"
+$CLICKHOUSE_CLIENT --query "SELECT 'v_shadow', groupArray(id) FROM ${DB}.v_shadow"
+$CLICKHOUSE_CLIENT --query "SELECT 't_check', count() FROM ${DB}.t_check" 2>&1 | grep -m1 -oE "^t_check\s[0-9]+$|[A-Z_]{12,}"
 
 $CLICKHOUSE_CLIENT --query "DROP DATABASE ${DB}"
 $CLICKHOUSE_CLIENT --query "DROP DATABASE ${RDB}"

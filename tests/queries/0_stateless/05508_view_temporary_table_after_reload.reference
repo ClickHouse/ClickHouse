@@ -11,4 +11,8 @@ v_dict	[5]
 v_dictget	[5]
 v_rt	[6]
 v_rdb	[7]
+v_definer	[2]
+v_none	[2]
 v_in_rdb	[7]
+v_shadow	[2]
+t_check	0

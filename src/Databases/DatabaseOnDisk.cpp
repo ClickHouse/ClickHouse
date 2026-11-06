@@ -106,8 +106,8 @@ void qualifyNamesFromLegacyMetadata(ASTCreateQuery & ast_create_query, const Str
         return;
 
     AddDefaultDatabaseVisitor visitor(context, database_name);
-    /// The SELECT of an ordinary view is resolved only under the reading query, where an unqualified
-    /// name may be a temporary table of its session, which `CREATE` leaves unqualified on purpose.
+    /// `StorageView` repairs the SELECT of an ordinary view itself: an unqualified name there may be a
+    /// temporary table of the reading session, which `CREATE` leaves unqualified on purpose.
     if (ast_create_query.select && ast_create_query.is_materialized_view)
         visitor.visitTableExpressions(*ast_create_query.select);
     if (ast_create_query.columns_list)
