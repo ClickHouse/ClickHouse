@@ -17,6 +17,8 @@ node1 = cluster.add_instance(
     with_nginx=True,
     with_minio=True,
 )
+# The worker of `test_cluster_node2`; `forbidden_authorization` changes only node1's configuration.
+node2 = cluster.add_instance("node2", main_configs=["configs/conf.xml"])
 
 @pytest.fixture(scope="module", autouse=True)
 def setup_node():
@@ -922,6 +924,24 @@ def test_url_userinfo_with_forbidden_authorization(query):
     # The userinfo is sent as Basic credentials in the `Authorization` header.
     reset_index_page_server_stats()
     node1.query(query)
+    assert authorization_requests() > 0
+
+    reset_index_page_server_stats()
+    with forbidden_authorization():
+        assert_authorization_forbidden(node1.query_and_get_error(query))
+    assert authorization_requests() == 0
+
+
+def test_url_cluster_userinfo_refused_by_initiator():
+    # node1 refuses the URL before node2, which does not forbid the header, gets it. The userinfo is in the second
+    # failover option, so the URL as a whole has none.
+    query = (
+        "SELECT sum(x) FROM urlCluster('test_cluster_node2', "
+        "'http://127.0.0.1:1/data/2025/part1.tsv|http://user:pass@resolver:8087/data/2025/part1.tsv', "
+        "'TSV', 'x UInt64') SETTINGS http_max_tries = 1"
+    )
+    reset_index_page_server_stats()
+    assert node1.query(query) == "3\n"
     assert authorization_requests() > 0
 
     reset_index_page_server_stats()
