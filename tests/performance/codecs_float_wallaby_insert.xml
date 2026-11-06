@@ -1,7 +1,9 @@
 <!-- The `Wallaby` codec does not exist on the reference server, so its create queries are marked
      `do_not_check_in_pr` and this test runs on the new server only. Once the codec is on master,
-     fold these values into `codecs_float_insert.xml` and delete this file. -->
-<test>
+     fold these values into `codecs_float_insert.xml` and delete this file.
+     The Iceberg configuration is off (`iceberg="0"`): a column codec is a `MergeTree` feature, and a
+     test that runs on the new server only leaves that configuration nothing to compare, so its report fails. -->
+<test iceberg="0">
     <settings>
         <allow_suspicious_codecs>1</allow_suspicious_codecs>
     </settings>
