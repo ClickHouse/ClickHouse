@@ -496,7 +496,8 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     /// The RemoteSink constructor sends the query to the shard and reads its header,
                     /// so a missing table or any other "before processing" exception surfaces here.
                     job.pipeline = QueryPipeline(std::make_shared<RemoteSink>(
-                        *job.connection_entry, timeouts, query_string, settings, context->getClientInfo()));
+                        *job.connection_entry, timeouts, query_string, settings, context->getClientInfo(),
+                        context->getProcessListElementSafe()));
                     job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
                     job.executor->start();
                 }

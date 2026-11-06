@@ -6895,6 +6895,14 @@ Automatically choose implicit projections to perform SELECT query
 Enables using projections to filter part ranges even when projections are not selected to perform SELECT query.
 )", 0, \
         {"25.6", false, true, "New setting"}) \
+    DECLARE(Float, optimize_projection_skip_index_ratio, 0.5, R"(
+When `use_skip_indexes_on_data_read` is enabled, the base table's skip indexes are applied at data-read time, so the mark count that a normal projection candidate is compared against is estimated by the primary key only. If the best normal projection candidate reads more than this fraction of that estimate, and the base table has skip indexes usable for the query, the skip indexes are applied to the base table during planning and the refined mark count is used for the comparison. `0` always applies them, `1` keeps the primary-key-only comparison. Aggregate projections are not affected.
+
+Possible values:
+
+- A float in the range `[0, 1]`.
+)", 0, \
+        {"26.11", 1.0, 0.5, "New setting controlling when projection selection applies the base table's deferred skip indexes before comparing costs: the extra pass runs only if the best projection candidate reads more than this fraction of the parent's primary-key-only mark estimate. The previous value 1.0 restores the pre-existing behavior: with ratio = 1 the refinement never runs, because it could only matter for candidates that the primary-key-only comparison rejects anyway."}) \
     DECLARE(Bool, force_optimize_projection, false, R"(
 Enables or disables the obligatory use of [projections](/reference/engines/table-engines/mergetree-family/mergetree#projections) in `SELECT` queries, when projection optimization is enabled (see [optimize_use_projections](#optimize_use_projections) setting).
 
@@ -7113,7 +7121,7 @@ Possible values:
 )", 0, \
         {"26.7", false, false, "New setting to enable in-memory caching of parsed Paimon metadata files (manifest lists and manifests). For persistent Paimon table engines it must be enabled before metadata initialization; table functions evaluate it per query. Avoids repeated downloads and deserialization of metadata files from object storage on subsequent queries."}) \
     DECLARE(UInt64, iceberg_metadata_staleness_ms, 0, R"(
-If non-zero, skip fetching iceberg metadata from remote catalog if there is a cached metadata snapshot, more recent than the given staleness window. Zero means to always fetch the latest metadata version from the remote catalog. Setting this a non-zero trades staleness to a lower latency of read operations.
+If non-zero, skip fetching the latest Iceberg metadata version (from the remote catalog, from `metadata/version-hint.text` with `iceberg_use_version_hint`, or by listing the metadata files) if there is a cached one, more recent than the given staleness window. Zero means to always fetch the latest metadata version. Setting this a non-zero trades staleness to a lower latency of read operations.
 )", 0, \
         {"26.3", 0, 0, "New setting allowing using cached metadata version at READ operations to prevent fetching from remote catalog"}) \
     DECLARE(Bool, iceberg_list_only_v_prefixed_metadata_files, false, R"(
