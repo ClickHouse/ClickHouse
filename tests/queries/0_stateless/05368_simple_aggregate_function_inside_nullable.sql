@@ -34,6 +34,10 @@ SELECT sumSimpleStateIf(toNullable(number), number > 0) AS x, toTypeName(x), hex
 SELECT sumSimpleStateIf(if(number < 5, NULL, toNullable(number)), number > 0) AS x, toTypeName(x), hex(sumSimpleStateIfState(if(number < 5, NULL, toNullable(number)), number > 0)) FROM numbers(3);
 SELECT argMax(m, toNullable(k)) AS x, toTypeName(x), argMax(m, if(k > 5, toNullable(k), NULL)) AS y, toTypeName(y) FROM t;
 SELECT (SELECT CAST(1, 'SimpleAggregateFunction(max, SimpleAggregateFunction(sum, UInt64))')) AS x, toTypeName(x);
+CREATE TABLE mut (k UInt32, x Nullable(UInt64), y Nullable(UInt64)) ENGINE = MergeTree ORDER BY k;
+INSERT INTO mut VALUES (1, 0, 0);
+ALTER TABLE mut UPDATE x = (SELECT m FROM t), y = (SELECT m FROM t WHERE 0) WHERE 1 SETTINGS mutations_sync = 2, mutations_execute_subqueries_on_initiator = 1;
+SELECT x, y FROM mut;
 CREATE TABLE d AS t ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), t, m);
 SELECT count() FROM d WHERE m = 40 SETTINGS optimize_skip_unused_shards = 1;
 SELECT nullIf(m, 0) FROM t; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
@@ -42,7 +46,7 @@ INSERT INTO FUNCTION file(currentDatabase() || '_05368.orc', 'ORC', 'a Nullable(
 SELECT max(a), toTypeName(any(a)) FROM file(currentDatabase() || '_05368.orc', 'ORC', 'a SimpleAggregateFunction(max, Int128)') SETTINGS input_format_null_as_default = 1;
 INSERT INTO FUNCTION file(currentDatabase() || '_05368.arrow', 'Arrow', 'a Nullable(Int128)') SELECT toInt128(number) FROM numbers(2) UNION ALL SELECT NULL SETTINGS engine_file_truncate_on_insert = 1;
 SELECT max(a), toTypeName(any(a)) FROM file(currentDatabase() || '_05368.arrow', 'Arrow', 'a SimpleAggregateFunction(max, Int128)') SETTINGS input_format_null_as_default = 1;
-INSERT INTO FUNCTION file(currentDatabase() || '_05368_composite.arrow', 'Arrow', 'l Array(UInt64), t Tuple(a UInt64, b String), m Map(String, UInt64), u Tuple(a UInt64, b String)') SELECT [1, 2], (1, 'a'), map('a', 1), (2, 'b') SETTINGS engine_file_truncate_on_insert = 1;
-SELECT * FROM file(currentDatabase() || '_05368_composite.arrow', 'Arrow', 'l SimpleAggregateFunction(groupArrayArray, Array(UInt64)), t SimpleAggregateFunction(anyLast, Tuple(a UInt64, b String)), m SimpleAggregateFunction(sumMap, Map(String, UInt64)), u SimpleAggregateFunction(anyLast, Tuple(UInt64, String))');
+INSERT INTO FUNCTION file(currentDatabase() || '_05368_composite.arrow', 'Arrow', 'l Array(UInt64), t Tuple(a UInt64, b String), m Map(String, UInt64), u Tuple(a Int128, b String)') SELECT [1, 2], (1, 'a'), map('a', 1), (toInt128(2), 'b') SETTINGS engine_file_truncate_on_insert = 1;
+SELECT * FROM file(currentDatabase() || '_05368_composite.arrow', 'Arrow', 'l SimpleAggregateFunction(groupArrayArray, Array(UInt64)), t SimpleAggregateFunction(anyLast, Tuple(a UInt64, b String)), m SimpleAggregateFunction(sumMap, Map(String, UInt64)), u SimpleAggregateFunction(anyLast, Tuple(Int128, String))');
 INSERT INTO FUNCTION file(currentDatabase() || '_05368_opaque.arrow', 'Arrow') SELECT CAST(42::Dynamic, 'SimpleAggregateFunction(any, Dynamic)') AS d SETTINGS output_format_arrow_unsupported_types = 'binary', engine_file_truncate_on_insert = 1;
 SELECT hex(CAST(d AS String)), toTypeName(d) FROM file(currentDatabase() || '_05368_opaque.arrow', 'Arrow', 'd SimpleAggregateFunction(any, Dynamic)');
