@@ -3766,6 +3766,8 @@ llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWith
 ///   tables compare floating-point keys bitwise and keep distinct payloads apart;
 /// - a `Date32`, because day numbers out of the type range are saturated to `0000-01-01` and
 ///   `9999-12-31` when formatted (see `ToStringMonotonicity`);
+/// - a `Time` or `Time64`, because the whole-seconds part is clamped to `[-999:59:59, 999:59:59]`
+///   when formatted, so every value outside that window renders as the boundary value;
 /// - a type-erased type such as `Variant`, `Dynamic` or `Object`, whose alternatives render into a
 ///   common text space: `toString(1::Variant(Int64, String))` equals `toString('1'::Variant(Int64, String))`;
 /// - a `Bool` when `bool_true_representation` and `bool_false_representation` coincide in `format_settings`.
@@ -3783,6 +3785,8 @@ inline bool renderingCollapsesDistinctValues(const DataTypePtr & type, const For
             collapses = collapses || !date_time->getTimeZone().hasFixedOffset();
         else if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(&nested))
             collapses = collapses || !date_time64->getTimeZone().hasFixedOffset();
+        else if (isTime(nested) || isTime64(nested))
+            collapses = true;
         else if (isFloat(nested) || isDate32(nested) || isVariant(nested) || isDynamic(nested) || isObject(nested))
             collapses = true;
         else if (isUInt8(nested) && nested.getName() == "Bool")
