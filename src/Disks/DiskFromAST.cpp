@@ -301,7 +301,8 @@ void addSourceAccessOfDiskFunction(const ASTFunction & function, AccessRightsEle
     for (const auto & arg : function.arguments->children)
     {
         const auto * equals = arg->as<ASTFunction>();
-        if (!equals || equals->name != "equals" || !equals->arguments || equals->arguments->children.size() != 2)
+        /// The arguments `getDiskConfigurationFromASTImpl` reads: it takes the first two operands of a longer `equals` too.
+        if (!equals || equals->name != "equals" || !equals->arguments || equals->arguments->children.size() < 2)
             continue;
         const auto * key = equals->arguments->children[0]->as<ASTIdentifier>();
         if (!key)

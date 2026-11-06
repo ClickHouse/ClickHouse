@@ -37,6 +37,18 @@ READ, WRITE ON *
 0
 N: unknown type
 READ, WRITE ON *
+O: a key = value argument written as equals() with an extra operand
+READ, WRITE ON S3
+0
+P: the source each object storage type declares
+s3_with_keeper: READ, WRITE ON S3
+s3_plain: READ, WRITE ON S3
+s3_plain_rewritable: READ, WRITE ON S3
+azure_blob_storage: READ, WRITE ON AZURE
+azure: READ, WRITE ON AZURE
+azure_plain: READ, WRITE ON AZURE
+azure_plain_rewritable: READ, WRITE ON AZURE
+hdfs: READ, WRITE ON HDFS
 G: with the S3 grant
 10
 I: include needs the grant on every source, even with an s3 type

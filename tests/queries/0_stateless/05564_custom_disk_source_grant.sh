@@ -49,6 +49,8 @@ function cleanup()
         DROP TABLE IF EXISTS t_05564_l SYNC;
         DROP TABLE IF EXISTS t_05564_m SYNC;
         DROP TABLE IF EXISTS t_05564_n SYNC;
+        DROP TABLE IF EXISTS t_05564_o SYNC;
+        DROP TABLE IF EXISTS t_05564_p SYNC;
         DROP TABLE IF EXISTS t_05564_z SYNC;
         DROP DATABASE IF EXISTS ${OTHER_DB} SYNC;
         DROP USER IF EXISTS ${USER_NAME};"
@@ -129,6 +131,17 @@ disk_exists l
 
 echo "N: unknown type"
 as_user "CREATE TABLE t_05564_n ${TABLE} SETTINGS disk = disk(type = no_such_disk_type_05564, endpoint = 'http://localhost:11111/test/05564_${DB}/n/')"
+
+echo "O: a key = value argument written as equals() with an extra operand"
+as_user "CREATE TABLE t_05564_o ${TABLE} SETTINGS disk = disk(name = '05564_o_${DB}', equals(type, 's3', 0),
+    endpoint = 'http://localhost:11111/test/05564_${DB}/o/', access_key_id = clickhouse, secret_access_key = clickhouse)"
+disk_exists o
+
+echo "P: the source each object storage type declares"
+for storage_type in s3_with_keeper s3_plain s3_plain_rewritable azure_blob_storage azure azure_plain azure_plain_rewritable hdfs; do
+    echo "${storage_type}: $(as_user "CREATE TABLE t_05564_p ${TABLE} SETTINGS disk = disk(type = object_storage,
+        object_storage_type = ${storage_type}, endpoint = 'http://localhost:11111/test/05564_${DB}/p/')")"
+done
 
 echo "G: with the S3 grant"
 $CLICKHOUSE_CLIENT -q "GRANT READ, WRITE ON S3 TO ${USER_NAME}"
