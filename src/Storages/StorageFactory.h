@@ -19,6 +19,8 @@ namespace DB
 class Context;
 class ASTCreateQuery;
 class ASTStorage;
+class AccessRightsElements;
+class SettingsChanges;
 struct StorageID;
 struct ConstraintsDescription;
 
@@ -48,6 +50,9 @@ public:
     /// The settings a table's engine arguments give, for an engine whose creator takes settings from them: the
     /// changes the stored arguments make, which apply before the `SETTINGS` clause.
     using SettingsFromEngineArgumentsFn = SettingsChanges(const ASTs & engine_args);
+    /// The grants needed by settings that make a table send its data to another place, e.g. the move destination of a queue.
+    /// Returns nothing if `changes` set no such place. It reads only the changes, so the table need not exist on this host.
+    using GetExportAccessFn = AccessRightsElements(const SettingsChanges & changes);
 
     struct Arguments
     {
@@ -100,6 +105,7 @@ public:
         EnumerateEngineSettingsFn * enumerate_engine_settings_fn = nullptr;
         IsInheritedSettingFn * is_inherited_setting_fn = nullptr;
         SettingsFromEngineArgumentsFn * settings_from_engine_arguments_fn = nullptr;
+        GetExportAccessFn * get_export_access_fn = nullptr;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -142,6 +148,7 @@ public:
         .enumerate_engine_settings_fn = nullptr,
         .is_inherited_setting_fn = nullptr,
         .settings_from_engine_arguments_fn = nullptr,
+        .get_export_access_fn = nullptr,
     }, Documentation documentation = {});
 
     /// Whether a table of the engine takes the setting from elsewhere when its definition does not state it: a format
@@ -181,6 +188,13 @@ public:
 
     const StorageFeatures & getStorageFeatures(const String & storage_name) const;
 
+    /// See `GetExportAccessFn`. For the engine of the table and the inner engines of a materialized view or a `TimeSeries`
+    /// table. An unknown engine needs nothing here: creating it fails later.
+    AccessRightsElements getExportAccess(const ASTCreateQuery & create) const;
+    /// The grants of every engine for which `changes` send the data elsewhere. It does not depend on the engine of the table,
+    /// so `ALTER ... ON CLUSTER` can be authorized on an initiator that does not have the table or has another engine.
+    AccessRightsElements getExportAccessOfAnyEngine(const SettingsChanges & changes) const;
+
 private:
     Storages storages;
 };
@@ -193,5 +207,11 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args);
 /// Whether the definition is replayed (attach, DDL replay, Keeper recovery, Shared Catalog replay)
 /// rather than written by the user now. Refusing a replayed definition would block loading or retry forever.
 bool isReplayedTableDefinition(LoadingStrictnessLevel mode, const ASTCreateQuery & query, const ContextPtr & local_context);
+
+/// Rejects a definition of a table with its own unreplicated data on disk when `database_replicated_allow_only_replicated_engine`
+/// restricts the `Replicated` database it is created in. The same restriction as in `InterpreterCreateQuery::doCreateTable`
+/// (see `IStorage::hasUnreplicatedTableDataOnDisk`), for engines that must check it before the storage is constructed, because
+/// the construction itself has effects or can fail for an unrelated reason (e.g. schema inference opens the source).
+void throwIfUnreplicatedTableDataNotAllowed(const StorageFactory::Arguments & args);
 
 }
