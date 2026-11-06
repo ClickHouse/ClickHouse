@@ -53,6 +53,29 @@ SELECT x, (SELECT squality_alias_scope_wildcard.* FROM squality_alias_scope_wild
 FROM squality_alias_scope_wildcard
 ORDER BY x;
 
+CREATE TABLE squality_alias_scope_outer (y UInt64) ENGINE = Memory;
+CREATE TABLE squality_alias_scope_array (x Array(UInt64)) ENGINE = Memory;
+INSERT INTO squality_alias_scope_outer VALUES (4);
+INSERT INTO squality_alias_scope_array VALUES ([1, 2]);
+
+-- A parent table alias participates in the same nearest-scope lookup as an original table name.
+SELECT y, (SELECT squality_alias_scope_wildcard.* FROM squality_alias_scope_wildcard AS inner_table LIMIT 1)
+FROM squality_alias_scope_outer AS squality_alias_scope_wildcard;
+
+-- Correlated matcher columns use the owning scope's post-ARRAY JOIN column.
+SELECT x, (SELECT squality_alias_scope_array.* FROM squality_alias_scope_array AS inner_table LIMIT 1)
+FROM squality_alias_scope_array ARRAY JOIN x
+ORDER BY x;
+
+-- Correlated matcher columns receive the owning scope's nullable grouping-key transformation.
+SET group_by_use_nulls = 1;
+SELECT
+    toTypeName(squality_alias_scope_wildcard.x),
+    (SELECT toTypeName(squality_alias_scope_wildcard.*) FROM squality_alias_scope_wildcard AS inner_table LIMIT 1)
+FROM squality_alias_scope_wildcard
+GROUP BY ROLLUP(squality_alias_scope_wildcard.x)
+ORDER BY squality_alias_scope_wildcard.x NULLS FIRST;
+
 CREATE TABLE squality_alias_scope_semi_left (x UInt64) ENGINE = Memory;
 CREATE TABLE squality_alias_scope_semi_right (x UInt64) ENGINE = Memory;
 INSERT INTO squality_alias_scope_semi_left VALUES (1);
@@ -66,5 +89,7 @@ FROM squality_alias_scope_semi_left LEFT SEMI JOIN squality_alias_scope_semi_rig
 
 DROP TABLE squality_alias_scope;
 DROP TABLE squality_alias_scope_wildcard;
+DROP TABLE squality_alias_scope_outer;
+DROP TABLE squality_alias_scope_array;
 DROP TABLE squality_alias_scope_semi_left;
 DROP TABLE squality_alias_scope_semi_right;

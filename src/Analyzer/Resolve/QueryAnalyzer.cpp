@@ -2538,7 +2538,10 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     {
         for (auto * parent_scope = scope.parent_scope; parent_scope; parent_scope = parent_scope->parent_scope)
         {
-            auto parent_resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(table_identifier_lookup, *parent_scope);
+            auto parent_resolve_result
+                = tryResolveIdentifierFromAliases(table_identifier_lookup, *parent_scope, identifier_resolve_settings);
+            if (!parent_resolve_result.resolved_identifier)
+                parent_resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(table_identifier_lookup, *parent_scope);
             if (!parent_resolve_result.resolved_identifier)
                 continue;
 
@@ -2646,14 +2649,30 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
         matched_columns,
         *table_expression_scope);
 
-    updateMatchedColumnsFromJoinUsing(
-        result_matched_column_nodes_with_names,
-        /*is_qualified_matcher=*/ true,
-        matcher_node_typed.getQualifiedIdentifier(),
-        *table_expression_scope);
-
     if (table_expression_scope != &scope)
     {
+        /// Resolve every generated parent column through the same expression path as an explicit
+        /// `qualifier.column` reference. This applies `ARRAY JOIN`, nullable grouping-key, and
+        /// `JOIN USING` transformations in the scope that owns the table before the column is
+        /// registered as correlated in the current scope.
+        for (auto & [matched_column_node, column_name] : result_matched_column_nodes_with_names)
+        {
+            Identifier explicit_identifier = matcher_node_typed.getQualifiedIdentifier();
+            explicit_identifier.push_back(column_name);
+            auto explicit_lookup = IdentifierLookup{explicit_identifier, IdentifierLookupContext::EXPRESSION};
+            auto explicit_resolve_result = tryResolveIdentifier(explicit_lookup, *table_expression_scope, identifier_resolve_settings);
+            if (!explicit_resolve_result.resolved_identifier)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Qualified matcher {} resolved table {}, but its column {} could not be resolved in the owning scope",
+                    matcher_node->formatASTForErrorMessage(),
+                    table_expression_node->formatASTForErrorMessage(),
+                    column_name);
+
+            matched_column_node = explicit_resolve_result.resolved_identifier;
+            node_to_projection_name.emplace(matched_column_node, explicit_identifier.getFullName());
+        }
+
         bool has_correlated_columns = false;
         for (const auto & column_with_name : result_matched_column_nodes_with_names)
             has_correlated_columns |= checkCorrelatedColumn(&scope, column_with_name.first);
@@ -2664,6 +2683,14 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
                 " (Enable `allow_correlated_subqueries` setting to allow correlated subqueries execution). In scope {}",
                 matcher_node->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
+    }
+    else
+    {
+        updateMatchedColumnsFromJoinUsing(
+            result_matched_column_nodes_with_names,
+            /*is_qualified_matcher=*/ true,
+            matcher_node_typed.getQualifiedIdentifier(),
+            *table_expression_scope);
     }
 
     return result_matched_column_nodes_with_names;
