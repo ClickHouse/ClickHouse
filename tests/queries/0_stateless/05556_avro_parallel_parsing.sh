@@ -69,4 +69,13 @@ ${CLICKHOUSE_LOCAL} -q "
     INTO OUTFILE '${D}_wide.avro' FORMAT Avro SETTINGS output_format_avro_sync_interval = 256"
 echo -n "wide-random-bytes: "; check "${D}_wide.avro" "i Int64, s String"
 
+# 6) large multi-MiB blocks read with a tiny read buffer. This drives the stepped, amortized segment
+# growth in the segmentator (each block is copied in bounded steps that repeatedly grow the buffer past
+# its capacity) over many buffer refills; the parallel read must still match the sequential one.
+${CLICKHOUSE_LOCAL} -q "
+    SELECT number::Int64 AS i, randomString(4000) AS s
+    FROM numbers(8000)
+    INTO OUTFILE '${D}_bigblk.avro' FORMAT Avro SETTINGS output_format_avro_sync_interval = 4194304"
+echo -n "large-blocks-small-buffer: "; check "${D}_bigblk.avro" "i Int64, s String" "max_read_buffer_size=4096, "
+
 rm -f "${D}"_*.avro

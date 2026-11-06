@@ -6,3 +6,4 @@ codec snappy: OK
 tiny: OK
 schema-evolution: OK
 wide-random-bytes: OK
+large-blocks-small-buffer: OK

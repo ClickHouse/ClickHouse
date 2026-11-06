@@ -1736,7 +1736,10 @@ void copyAvroBytesToMemory(ReadBuffer & in, DB::Memory<> & memory, size_t n)
     {
         size_t step = n < AVRO_SEGMENT_COPY_STEP ? n : AVRO_SEGMENT_COPY_STEP;
         size_t old = memory.size();
-        memory.resize(old + step);
+        /// Grow the segment amortized: an exact `resize` reallocates the whole buffer on every append,
+        /// which is quadratic under the ASan/TSan allocators (see `saveUpToPosition`, BSONEachRow). Still
+        /// bounded -- the step is capped, so a corrupt block length cannot pre-reserve gigabytes.
+        memory.resizeAmortized(old + step);
         in.readStrict(memory.data() + old, step);
         n -= step;
     }
@@ -1795,7 +1798,9 @@ void readAvroOCFHeader(ReadBuffer & in, AvroSegmentationState & state)
 void appendToMemory(DB::Memory<> & memory, const char * src, size_t n)
 {
     size_t old = memory.size();
-    memory.resize(old + n);
+    /// Amortized growth: a segment is built from many small appends (block counts, sync markers), and an
+    /// exact `resize` would reallocate the whole segment on each one -- quadratic under ASan/TSan.
+    memory.resizeAmortized(old + n);
     memcpy(memory.data() + old, src, n);
 }
 
