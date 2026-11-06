@@ -72,6 +72,7 @@
 #include <Common/HTTPConnectionPool.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/SQLClusters/SQLClusterFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 #include <Server/ConnectionRegistry.h>
 #include <Server/createServer.h>
@@ -2540,6 +2541,7 @@ try
     setPointInPolygonCacheMaxSizeInBytes(point_in_polygon_cache_size);
 
     NamedCollectionFactory::instance().loadIfNot();
+    SQLClusterFactory::instance().loadIfNot();
     SQLDefinedHandlersFactory::instance().loadIfNot();
     FileCacheFactory::instance().loadDefaultCaches(config(), global_context);
 

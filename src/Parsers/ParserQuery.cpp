@@ -10,6 +10,7 @@
 #include <Parsers/ParserDropIndexQuery.h>
 #include <Parsers/ParserDropNamedCollectionQuery.h>
 #include <Parsers/ParserAlterNamedCollectionQuery.h>
+#include <Parsers/ParserSQLClusterQuery.h>
 #include <Parsers/ParserCreateHandlerQuery.h>
 #include <Parsers/ParserDropHandlerQuery.h>
 #include <Parsers/ParserDropQuery.h>
@@ -119,6 +120,9 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCreateNamedCollectionQuery create_named_collection_p;
     ParserDropNamedCollectionQuery drop_named_collection_p;
     ParserAlterNamedCollectionQuery alter_named_collection_p;
+    ParserCreateSQLClusterQuery create_sql_cluster_p;
+    ParserAlterSQLClusterQuery alter_sql_cluster_p;
+    ParserDropSQLClusterQuery drop_sql_cluster_p;
     ParserCreateHandlerQuery create_handler_p(end);
     ParserDropHandlerQuery drop_handler_p;
     ParserCreateIndexQuery create_index_p;
@@ -145,6 +149,9 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || create_named_collection_p.parse(pos, node, expected)
         || drop_named_collection_p.parse(pos, node, expected)
         || alter_named_collection_p.parse(pos, node, expected)
+        || create_sql_cluster_p.parse(pos, node, expected)
+        || alter_sql_cluster_p.parse(pos, node, expected)
+        || drop_sql_cluster_p.parse(pos, node, expected)
         || create_handler_p.parse(pos, node, expected)
         || drop_handler_p.parse(pos, node, expected)
         || create_index_p.parse(pos, node, expected)

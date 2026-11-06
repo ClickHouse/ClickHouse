@@ -430,7 +430,8 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
         shards,
         params,
         shard_ids,
-        shard_scope_key);
+        shard_scope_key,
+        Cluster::SourceId::DISCOVERY);
     return cluster;
 }
 
