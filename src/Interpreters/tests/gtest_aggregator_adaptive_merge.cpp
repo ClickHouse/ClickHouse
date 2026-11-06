@@ -194,7 +194,9 @@ TEST_P(AggregatorAdaptiveMerge, SourceStateLifetimes)
                 sources.push_back(std::move(source));
             }
 
-            auto & table = sources.front()->key64_two_level->data;
+            /// The producers index their single-level tables instead of converting them to two-level. The
+            /// single-level table hashes keys like the two-level one, whose buckets the adaptive merge uses.
+            auto & table = sources.front()->key64->data;
             const auto bucket = static_cast<Int32>(
                 AggregatedDataWithUInt64KeyTwoLevel::getBucketFromHash(table.hash(UInt64{1})));
             aggregator.prepareAdaptiveTopKPruning(*session, sources.size(), /*external_merge=*/false, /*collects_statistics=*/false);
