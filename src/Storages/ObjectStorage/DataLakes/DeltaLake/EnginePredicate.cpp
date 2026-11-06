@@ -86,49 +86,95 @@ namespace
         return nullable->getNestedType();
     }
 
-    /// Kernel visitor for `left OP right` over two expression IDs:
-    /// `visit_predicate_eq`, `_ne`, `_lt`, `_le`, `_gt`, `_ge`.
-    using ComparisonVisitor = uintptr_t (*)(ffi::KernelExpressionVisitorState *, uintptr_t, uintptr_t);
-
-    struct ComparisonVisitors
+    enum class ComparisonOperator : uint8_t
     {
-        ComparisonVisitor direct;
-        /// Reads the comparison with its operands swapped (`literal OP column`).
-        ComparisonVisitor mirrored;
-        /// The same two readings against `q`, the floor of a literal that falls strictly between
-        /// two adjacent column values `q` and `q + 1`. Null for `=` and `!=`: no column value equals
-        /// such a literal, and the comparison is left untranslated.
-        ComparisonVisitor direct_inexact;
-        ComparisonVisitor mirrored_inexact;
-
-        ComparisonVisitor forOperands(bool swapped) const
-        {
-            return swapped ? mirrored : direct;
-        }
-
-        ComparisonVisitor forOperands(bool swapped, bool exact) const
-        {
-            if (exact)
-                return forOperands(swapped);
-            return swapped ? mirrored_inexact : direct_inexact;
-        }
+        Equals,
+        NotEquals,
+        Less,
+        LessOrEquals,
+        Greater,
+        GreaterOrEquals,
     };
 
-    std::optional<ComparisonVisitors> getComparisonVisitors(const String & name)
+    std::optional<ComparisonOperator> parseComparisonOperator(const String & name)
     {
         if (name == DB::NameEquals::name)
-            return ComparisonVisitors{&ffi::visit_predicate_eq, &ffi::visit_predicate_eq, nullptr, nullptr};
+            return ComparisonOperator::Equals;
         if (name == DB::NameNotEquals::name)
-            return ComparisonVisitors{&ffi::visit_predicate_ne, &ffi::visit_predicate_ne, nullptr, nullptr};
+            return ComparisonOperator::NotEquals;
         if (name == DB::NameLess::name)
-            return ComparisonVisitors{&ffi::visit_predicate_lt, &ffi::visit_predicate_gt, &ffi::visit_predicate_le, &ffi::visit_predicate_gt};
+            return ComparisonOperator::Less;
         if (name == DB::NameLessOrEquals::name)
-            return ComparisonVisitors{&ffi::visit_predicate_le, &ffi::visit_predicate_ge, &ffi::visit_predicate_le, &ffi::visit_predicate_gt};
+            return ComparisonOperator::LessOrEquals;
         if (name == DB::NameGreater::name)
-            return ComparisonVisitors{&ffi::visit_predicate_gt, &ffi::visit_predicate_lt, &ffi::visit_predicate_gt, &ffi::visit_predicate_le};
+            return ComparisonOperator::Greater;
         if (name == DB::NameGreaterOrEquals::name)
-            return ComparisonVisitors{&ffi::visit_predicate_ge, &ffi::visit_predicate_le, &ffi::visit_predicate_gt, &ffi::visit_predicate_le};
+            return ComparisonOperator::GreaterOrEquals;
         return std::nullopt;
+    }
+
+    /// `literal OP column` read as `column OP' literal`.
+    ComparisonOperator mirror(ComparisonOperator op)
+    {
+        switch (op)
+        {
+            case ComparisonOperator::Equals:
+            case ComparisonOperator::NotEquals:
+                return op;
+            case ComparisonOperator::Less:
+                return ComparisonOperator::Greater;
+            case ComparisonOperator::LessOrEquals:
+                return ComparisonOperator::GreaterOrEquals;
+            case ComparisonOperator::Greater:
+                return ComparisonOperator::Less;
+            case ComparisonOperator::GreaterOrEquals:
+                return ComparisonOperator::LessOrEquals;
+        }
+        UNREACHABLE();
+    }
+
+    /// `column OP x` for `x` strictly between two adjacent column values `q` and `q + 1`, read as a
+    /// comparison with `q`. Nullopt for `=` and `!=`: no column value equals such `x`, and the
+    /// comparison is left untranslated.
+    std::optional<ComparisonOperator> againstFloor(ComparisonOperator op)
+    {
+        switch (op)
+        {
+            case ComparisonOperator::Equals:
+            case ComparisonOperator::NotEquals:
+                return std::nullopt;
+            case ComparisonOperator::Less:
+            case ComparisonOperator::LessOrEquals:
+                return ComparisonOperator::LessOrEquals;
+            case ComparisonOperator::Greater:
+            case ComparisonOperator::GreaterOrEquals:
+                return ComparisonOperator::Greater;
+        }
+        UNREACHABLE();
+    }
+
+    /// Kernel visitor for `left OP right` over two expression IDs.
+    using ComparisonVisitor = uintptr_t (*)(ffi::KernelExpressionVisitorState *, uintptr_t, uintptr_t);
+
+    /// The visitor for `column OP literal`.
+    ComparisonVisitor getComparisonVisitor(ComparisonOperator op)
+    {
+        switch (op)
+        {
+            case ComparisonOperator::Equals:
+                return &ffi::visit_predicate_eq;
+            case ComparisonOperator::NotEquals:
+                return &ffi::visit_predicate_ne;
+            case ComparisonOperator::Less:
+                return &ffi::visit_predicate_lt;
+            case ComparisonOperator::LessOrEquals:
+                return &ffi::visit_predicate_le;
+            case ComparisonOperator::Greater:
+                return &ffi::visit_predicate_gt;
+            case ComparisonOperator::GreaterOrEquals:
+                return &ffi::visit_predicate_ge;
+        }
+        UNREACHABLE();
     }
 
     /// The parameters the comparison converts its operands with. They come from the context the query
@@ -158,7 +204,7 @@ namespace
     /// Converts the literal and selects its visitor; returns nullopt when translation is unsafe.
     std::optional<DateComparison> matchDateComparison(
         const DB::ActionsDAG::Node * node,
-        const ComparisonVisitors & visitors)
+        ComparisonOperator op)
     {
         const auto * conversion = node->children[0];
         const auto * literal = node->children[1];
@@ -215,7 +261,7 @@ namespace
             column,
             static_cast<Int32>(value.safeGet<Int32>()),
             result_type->getTypeId() == DB::TypeIndex::Date,
-            visitors.forOperands(swapped)};
+            getComparisonVisitor(swapped ? mirror(op) : op)};
     }
 
     /// Scale of the `DateTime64` that a Delta `timestamp` / `timestamp_ntz` is read as: microseconds.
@@ -334,7 +380,7 @@ namespace
         const DB::ActionsDAG::Node * literal,
         bool swapped,
         const DeltaTimestampColumn & delta_column,
-        const ComparisonVisitors & visitors,
+        ComparisonOperator op,
         const DB::ComparisonParams * params)
     {
         /// A column declared with another type is read with a conversion that pruning does not mirror.
@@ -351,9 +397,15 @@ namespace
         if (!value)
             return std::nullopt;
 
-        const auto visitor = visitors.forOperands(swapped, value->exact);
-        if (!visitor)
-            return std::nullopt;
+        auto column_op = swapped ? mirror(op) : op;
+        if (!value->exact)
+        {
+            const auto floor_op = againstFloor(column_op);
+            if (!floor_op)
+                return std::nullopt;
+            column_op = *floor_op;
+        }
+        const auto visitor = getComparisonVisitor(column_op);
 
         /// The finest `DateTime64` is nanoseconds, so the comparison scales the column up by at most 1000:
         /// the fence covers the scaled comparison too. With `decimal_check_overflow` it compares a value
@@ -826,7 +878,7 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                     return ffi::visit_predicate_not(iterator_data.state, column);
                 }
             }
-            else if (auto visitors = getComparisonVisitors(func_name))
+            else if (auto op = parseComparisonOperator(func_name))
             {
                 if (node->children.size() != 2)
                 {
@@ -871,7 +923,7 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                     if (const auto * delta_column = iterator_data.predicate.getTimestampColumn(column_node->result_name))
                     {
                         if (auto comparison = matchTimestampComparison(
-                                column_node, literal_node, isConstNode(node->children[0]), *delta_column, *visitors,
+                                column_node, literal_node, isConstNode(node->children[0]), *delta_column, *op,
                                 getComparisonParams(*node)))
                             return visitTimestampComparison(iterator_data, *comparison);
                         return VISITOR_FAILED_OR_UNSUPPORTED;
@@ -928,11 +980,11 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                         return VISITOR_FAILED_OR_UNSUPPORTED;
                     }
 
-                    auto visitor = visitors->forOperands(isConstNode(node->children[0]));
+                    auto visitor = getComparisonVisitor(isConstNode(node->children[0]) ? mirror(*op) : *op);
                     return visitor(iterator_data.state, column, constant);
                 }
 
-                if (auto comparison = matchDateComparison(node, *visitors))
+                if (auto comparison = matchDateComparison(node, *op))
                     return visitComparisonOverDateConversion(iterator_data, *comparison);
             }
 
