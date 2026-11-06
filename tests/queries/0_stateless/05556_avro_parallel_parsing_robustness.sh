@@ -4,9 +4,10 @@
 
 # Robustness of the Avro OCF sync-marker segmentation (used for parallel parsing) against hand-crafted
 # container bytes that the ClickHouse Avro writer never produces: a sync marker embedded inside a value,
-# the negative-count metadata-map encoding, and a block with an oversized declared length over truncated
-# input. The segmentator parses raw container bytes by itself, so it must handle all three the same way
-# the sequential reader does -- without a false split, a misparse, or an exception.
+# the negative-count metadata-map encoding, a block with an oversized declared length over truncated input,
+# an overflowing varint, a negative object count, and a final block missing its trailing sync marker. The
+# segmentator parses raw container bytes by itself, so it must handle the well-formed cases exactly as the
+# sequential reader does and reject every malformed one cleanly (an exception, never a hang or a crash).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -69,6 +70,16 @@ open(base + "_oversized.avro", "wb").write(header + good + bad)
 #    segmentator's varint reader must reject it rather than silently drop the high bits.
 overflow_varint = b"\x80" * 9 + b"\x02"
 open(base + "_overflow.avro", "wb").write(header + overflow_varint)
+
+# 5) A data block with a negative object (record) count. The segmentator must reject it, not spin forever
+#    on a block it can neither advance past nor consume.
+neg_obj = enc_long(-5) + enc_long(10) + (b"x" * 10) + SYNC
+open(base + "_negobjcount.avro", "wb").write(header + neg_obj)
+
+# 6) A container whose final block is missing its trailing 16-byte sync marker (truncated). The block body
+#    is intact, so this must still be rejected (fail closed), not accepted as a clean end of file.
+last = enc_long(3) + enc_long(3) + b"\x02ab"                 # one record "ab", no sync appended
+open(base + "_truncsync.avro", "wb").write(header + good + last)
 PY
 
 # Parallel vs sequential must agree as a multiset for the two well-formed files.
@@ -97,5 +108,7 @@ echo -n "marker-in-payload: "; check "${D}_marker.avro"
 echo -n "negative-count-metadata: "; check "${D}_negcount.avro"
 echo -n "oversized-length rejected: "; expect_error "${D}_oversized.avro" "Cannot read all data"
 echo -n "overflow-varint rejected: "; expect_error "${D}_overflow.avro" "Avro varint overflows 64 bits"
+echo -n "negative-object-count rejected: "; expect_error "${D}_negobjcount.avro" "Negative object/byte count"
+echo -n "truncated-sync rejected: "; expect_error "${D}_truncsync.avro" "Cannot read all data"
 
 rm -f "${D}"_*.avro
