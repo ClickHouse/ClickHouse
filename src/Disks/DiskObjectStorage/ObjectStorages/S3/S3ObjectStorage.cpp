@@ -794,7 +794,7 @@ void S3ObjectStorage::applyNewSettings(
 {
     std::unique_ptr<S3Settings> settings_from_config = std::make_unique<S3Settings>();
 
-    /// A table's merged settings are validated per query, in readObject and writeObject.
+    /// A table is validated below, with the query settings on top.
     settings_from_config->loadFromConfigForObjectStorage(
         config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(),
         /* validate_settings */ for_disk_s3 && context->getSettingsRef()[Setting::s3_validate_request_settings]);
@@ -834,17 +834,26 @@ void S3ObjectStorage::applyNewSettings(
         apply_endpoint_settings();
     }
 
-    if (options.validate_merged_settings && context->getSettingsRef()[Setting::s3_validate_request_settings])
+    if (context->getSettingsRef()[Setting::s3_validate_request_settings])
     {
-        try
+        if (options.validate_merged_settings)
         {
-            modified_settings->request_settings.validateUploadSettings();
+            try
+            {
+                modified_settings->request_settings.validateUploadSettings();
+            }
+            catch (const Exception & e)
+            {
+                /// Not rethrown: the rest of the config reload must still be applied.
+                LOG_ERROR(log, "The new S3 settings of disk {} were not applied, it keeps its current settings: {}", disk_name, e.message());
+                return;
+            }
         }
-        catch (const Exception & e)
+        else if (!for_disk_s3 && context->hasQueryContext() && !context->isBackgroundContext())
         {
-            /// Not rethrown: the rest of the config reload must still be applied.
-            LOG_ERROR(log, "The new S3 settings of disk {} were not applied, it keeps its current settings: {}", disk_name, e.message());
-            return;
+            /// The check of readObject and writeObject, done before the query settings are stored in the table.
+            auto request_settings = modified_settings->request_settings;
+            request_settings.updateFromSettings(context->getSettingsRef(), /* if_changed */ true);
         }
     }
 

@@ -212,6 +212,26 @@ def test_query_settings_do_not_reach_other_endpoints(started_cluster):
     assert node.query(f"SELECT x FROM s3({url_b})").strip() == "2"
 
 
+def test_table_does_not_keep_rejected_query_settings(started_cluster):
+    configure(
+        s3=endpoint("p", "p", f"<min_upload_part_size>{5 * MIB}</min_upload_part_size>")
+    )
+    node.query("DROP TABLE IF EXISTS t_p SYNC")
+    node.query(
+        f"CREATE TABLE t_p (x UInt8) ENGINE = S3('{MINIO}/p/{uuid.uuid4()}.tsv', {CREDS}, 'TSV')"
+    )
+    insert = "INSERT INTO t_p SETTINGS s3_truncate_on_insert = 1 VALUES (1)"
+    error = node.query_and_get_error(
+        insert, settings={"s3_max_upload_part_size": 4 * MIB}
+    )
+    assert "can't be less than setting min_upload_part_size" in error
+
+    # The next query with the default settings is not affected.
+    node.query(insert)
+    assert node.query("SELECT x FROM t_p").strip() == "1"
+    node.query("DROP TABLE t_p SYNC")
+
+
 def test_background_write_checks_endpoint_settings(started_cluster):
     configure()
     node.query("DROP TABLE IF EXISTS t_buf SYNC")
