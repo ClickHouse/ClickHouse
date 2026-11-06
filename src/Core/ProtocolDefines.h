@@ -372,6 +372,10 @@ static constexpr auto DBMS_MIN_REVISION_WITH_MERGE_COMBINATOR_STATE_VERSION = 54
 /// while it sends the data of the INSERT, and before `EndOfStream`.
 static constexpr auto DBMS_MIN_REVISION_WITH_INSERT_RETURNING = 54495;
 
+/// `ssh_key` authentication signs a length-prefixed message that includes a binding to the TLS session
+/// (RFC 9266 `tls-exporter`), and the server sends the challenge in the `SSHChallengeWithBinding` packet.
+static constexpr auto DBMS_MIN_REVISION_WITH_SSH_CHANNEL_BINDING = 54496;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -380,5 +384,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_INSERT_RETURNING = 54495;
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54495;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54496;
 }

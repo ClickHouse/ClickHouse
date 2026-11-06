@@ -1,0 +1,10 @@
+--- plaintext port
+1
+--- secure port
+1
+--- passthrough to the secure port: one TLS session between the client and the server
+1
+--- relay with its own TLS session to the secure port
+AUTHENTICATION_FAILED
+--- relay from TLS to the plaintext port
+AUTHENTICATION_FAILED

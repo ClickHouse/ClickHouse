@@ -16,6 +16,7 @@ TEST(ProtocolPacketToString, ServerValid)
     EXPECT_EQ(Protocol::Server::toString(Protocol::Server::Hello), "Hello");
     EXPECT_EQ(Protocol::Server::toString(Protocol::Server::Exception), "Exception");
     EXPECT_EQ(Protocol::Server::toString(Protocol::Server::SSHChallenge), "SSHChallenge");
+    EXPECT_EQ(Protocol::Server::toString(Protocol::Server::SSHChallengeWithBinding), "SSHChallengeWithBinding");
 }
 
 TEST(ProtocolPacketToString, ServerOutOfRange)
