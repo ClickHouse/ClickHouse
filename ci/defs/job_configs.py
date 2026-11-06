@@ -111,6 +111,7 @@ else:
 
 # Submodules with test data only. They do not affect the builds, so a bump of them must not rebuild the binaries.
 test_data_submodules = [
+    "./contrib/arrow-testing",
     "./contrib/parquet-testing",
 ]
 
@@ -356,8 +357,8 @@ class JobConfigs:
     )
     code_review = Job.Config(
         name=JobNames.CODE_REVIEW,
-        runs_on=RunnerLabels.ARM_TINY,
-        command="python3 ./ci/jobs/copilot_review_job.py --codex",
+        runs_on=RunnerLabels.ARM_SMALL_REVIEW,
+        command="python3 ./ci/jobs/codex_review_job.py",
         allow_failure=True,
         enable_gh_auth=True,
     )

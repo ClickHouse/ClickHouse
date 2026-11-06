@@ -52,8 +52,7 @@ can open an issue, but only its author and maintainers can edit its body.
 PRs authored by an agent that already triages its own failures are skipped
 (`SELF_TRIAGING_AUTHORS`); their post-merge runs are not.
 
-The agent is the `codex` CLI; unlike `copilot_review_job.py` there is no
-`copilot` backend, since Copilot authenticates with the GitHub token itself.
+The agent is the `codex` CLI, as in `codex_review_job.py`.
 Set `AI_FUZZ_TRIAGE=0` to disable triage entirely.
 """
 

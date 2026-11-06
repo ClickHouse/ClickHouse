@@ -1,8 +1,8 @@
 """
-Shared helpers for jobs that drive a coding agent (Codex, Copilot).
+Shared helpers for jobs that drive a coding agent (Codex).
 
 Used by the AI code review job and the AI fuzz triage step, so the robot
-rotation, the model choice, and the auth sequences live in one place. The
+tokens, the model choice, and the auth sequences live in one place. The
 agents run as CLIs today; helpers for calling them through an API belong here too.
 """
 
@@ -12,11 +12,8 @@ import urllib.parse
 
 from ci.praktika import Secret
 
-# Robot gh tokens. Used by both backends — Copilot authenticates against
-# GitHub with one of these directly; Codex needs gh authed so the agent's
-# shelled-out `gh` calls succeed. Each attempt picks one in a randomised
-# rotation so a single robot's rate limit or token issue does not fail
-# every attempt.
+# Robot gh tokens the AI fuzz triage files and edits issues with, picked at
+# random so a single robot's rate limit or token issue does not fail every run.
 ROBOT_NAMES = [
     "/ci/robot-ch-test-poll-copilot",
     "/ci/robot-ch-test-poll-1-copilot",
@@ -27,7 +24,7 @@ ROBOT_NAMES = [
 OPENAI_KEY_SECRET = "/ci/llm/openai_api_key"
 
 # One model for every agent consumer, so review and triage quality
-# stay comparable across backends and jobs.
+# stay comparable across jobs.
 MODEL = "gpt-6.1-sol"
 # `gpt-6.1-sol` refuses some inputs with "This content was flagged for possible
 # cybersecurity risk"; the remaining attempts then use `FALLBACK_MODEL`. When it is
@@ -59,18 +56,6 @@ def robot_token(robot_name):
     return Secret.Config(
         name=robot_name, type=Secret.Type.AWS_SSM_PARAMETER, region="us-east-1"
     ).get_value()
-
-
-def gh_auth_with_robot_token(gh_config_dir, robot_name):
-    """Authenticate gh CLI in a scoped GH_CONFIG_DIR using the given robot token."""
-    print(f"Using robot: {robot_name}")
-    subprocess.run(
-        ["gh", "auth", "login", "--with-token"],
-        input=robot_token(robot_name),
-        text=True,
-        check=True,
-        env={**os.environ, "GH_CONFIG_DIR": gh_config_dir},
-    )
 
 
 def openai_api_key():
