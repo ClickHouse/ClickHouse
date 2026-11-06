@@ -1,5 +1,6 @@
 #include <Analyzer/Utils.h>
 #include <Core/Block.h>
+#include <Core/ConstantValue.h>
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -109,12 +110,14 @@ public:
         if (builder->isDeterministic() || !builder->isDeterministicInScopeOfQuery())
             return;
 
-        Field field;
+        ColumnPtr column;
         DataTypePtr type;
 
         try
         {
-            std::tie(field, type) = evaluateConstantExpression(ast, data.context);
+            auto value = evaluateConstantExpressionAsColumn(ast, data.context);
+            column = value.getColumn()->convertToFullColumnIfConst();
+            type = value.getType();
         }
         catch (...)
         {
@@ -123,9 +126,6 @@ public:
             /// It's bad pattern but it's quite hard to implement it in another way.
             return;
         }
-
-        auto column = type->createColumn();
-        column->insert(field);
 
         Block scalar{{std::move(column), type, "_constant"}};
         if (worthConvertingScalarToLiteral(scalar, data.max_literal_size))

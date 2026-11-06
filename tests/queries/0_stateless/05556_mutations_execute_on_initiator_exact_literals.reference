@@ -6,3 +6,5 @@
 1	2024-01-01	Date
 0	0
 (UPDATE v = v + 32 WHERE has(_CAST(_CAST([\'10098259200\'], \'Array(Decimal(76, 3))\'), \'Array(DateTime64(3, \\\'UTC\\\'))\'), d))
+1	42	UInt64
+0

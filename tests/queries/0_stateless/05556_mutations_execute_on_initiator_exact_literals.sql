@@ -6,6 +6,8 @@ DROP DICTIONARY IF EXISTS t_exact_literals_dict;
 DROP TABLE IF EXISTS t_exact_literals_dict_src;
 DROP TABLE IF EXISTS t_exact_literals_variant;
 DROP TABLE IF EXISTS t_exact_literals_json;
+DROP TABLE IF EXISTS t_exact_literals_join;
+DROP TABLE IF EXISTS t_exact_literals_join_dst;
 
 CREATE TABLE t_exact_literals (k UInt8, d DateTime64(3, 'UTC'), n Nullable(DateTime64(9, 'UTC')), t Time64(1), x Decimal(9, 2), y Decimal(76, 0), v UInt64 DEFAULT 0)
     ENGINE = MergeTree ORDER BY k;
@@ -46,14 +48,25 @@ CREATE TABLE t_exact_literals_json (k UInt8, j JSON) ENGINE = MergeTree ORDER BY
 INSERT INTO t_exact_literals_json VALUES (1, '{}');
 ALTER TABLE t_exact_literals_json UPDATE j = (SELECT '{"a":"2024-01-01"}'::JSON) WHERE k = 1;
 
+-- a nondeterministic function keeps the member type of its value: 42 also fits the Date member
+CREATE TABLE t_exact_literals_join (k UInt64, x Variant(Date, UInt64)) ENGINE = Join(ANY, LEFT, k);
+INSERT INTO t_exact_literals_join SELECT 1, 42::UInt64::Variant(Date, UInt64);
+CREATE TABLE t_exact_literals_join_dst (k UInt8, x Variant(Date, UInt64)) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_exact_literals_join_dst SELECT 1, 1::UInt64::Variant(Date, UInt64);
+ALTER TABLE t_exact_literals_join_dst UPDATE x = joinGet('t_exact_literals_join', 'x', toUInt64(1)) WHERE k = 1;
+
 SELECT k, d, n, t, x, y, v FROM t_exact_literals ORDER BY k;
 SELECT k, x, variantType(x), v, y, dynamicType(y) FROM t_exact_literals_variant ORDER BY k;
 SELECT k, j.a, dynamicType(j.a) FROM t_exact_literals_json ORDER BY k;
 SELECT countIf(command LIKE '%SELECT%'), countIf(command LIKE '%dictGet%') FROM system.mutations
-    WHERE database = currentDatabase() AND table IN ('t_exact_literals', 't_exact_literals_variant');
+    WHERE database = currentDatabase() AND table IN ('t_exact_literals', 't_exact_literals_variant', 't_exact_literals_json');
 -- an array is carried as one literal
 SELECT command FROM system.mutations WHERE database = currentDatabase() AND table = 't_exact_literals' AND command LIKE '%has(%';
+SELECT k, x, variantType(x) FROM t_exact_literals_join_dst ORDER BY k;
+SELECT countIf(command LIKE '%joinGet%') FROM system.mutations WHERE database = currentDatabase() AND table = 't_exact_literals_join_dst';
 
+DROP TABLE t_exact_literals_join_dst;
+DROP TABLE t_exact_literals_join;
 DROP TABLE t_exact_literals_json;
 DROP TABLE t_exact_literals_variant;
 DROP DICTIONARY t_exact_literals_dict;
