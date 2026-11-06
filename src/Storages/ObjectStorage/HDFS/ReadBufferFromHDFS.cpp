@@ -134,7 +134,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
 
         if (bytes_read)
         {
-            working_buffer = internal_buffer;
+            setWorkingBufferFromInternal();
             working_buffer.resize(bytes_read);
             file_offset += bytes_read;
             if (read_settings.remote_throttler)
@@ -272,7 +272,7 @@ bool ReadBufferFromHDFS::nextImpl()
 
         if (result)
         {
-            BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset()); /// use the buffer returned by `impl`
+            setWorkingBuffer(impl->buffer(), impl->offset()); /// use the buffer returned by `impl`
             total_bytes_read.fetch_add(working_buffer.size(), std::memory_order_relaxed);
         }
 

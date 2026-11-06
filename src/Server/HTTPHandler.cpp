@@ -270,6 +270,11 @@ HTTPHandler::HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & 
 HTTPHandler::~HTTPHandler() = default;
 
 
+String HTTPHandler::getURIForLogging(const HTTPServerRequest & request) const
+{
+    return maskSensitiveQueryParametersInURI(request.getURI(), [this](const std::string & name) { return isQueryTextParameter(name); });
+}
+
 bool HTTPHandler::authenticateUser(HTTPServerRequest & request, HTMLForm & params, HTTPServerResponse & response)
 {
     return authenticateUserByHTTP(request, params, response, *session, request_credentials, connection_config, server.context(), log);
@@ -286,7 +291,7 @@ void HTTPHandler::processQuery(
 {
     using namespace Poco::Net;
 
-    LOG_TRACE(log, "Request URI: {}", maskSensitiveQueryParametersInURI(request.getURI()));
+    LOG_TRACE(log, "Request URI: {}", getURIForLogging(request));
 
     if (!authenticateUser(request, params, response))
         return; // '401 Unauthorized' response with 'Negotiate' has been sent at this point.
@@ -934,8 +939,6 @@ void HTTPHandler::processQuery(
         chooseCompressionMethod({}, http_request_compression_method_str),
         zstd_window_log_max,
         snappy_mode);
-    LOG_DEBUG(getLogger("HTTPServerRequest"), "creating in_post id {}", size_t(in_post.get()));
-
 
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
@@ -1042,9 +1045,9 @@ void HTTPHandler::processQuery(
         /// right identifier parts instead of being split on every `.`.
         String qualified_table;
         if (!path_info.database.empty())
-            qualified_table = backQuoteIfNeed(path_info.database) + "." + backQuoteIfNeed(path_info.table);
+            qualified_table = backQuote(path_info.database) + "." + backQuote(path_info.table);
         else
-            qualified_table = backQuoteIfNeed(path_info.table);
+            qualified_table = backQuote(path_info.table);
 
         /// Validate up-front that the table from the URL path actually exists, so a typo like
         /// `/sashboards` produces a single clean response that combines the closest table-name
@@ -1679,7 +1682,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             context->getOpenTelemetrySpanLog());
         thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
         thread_trace_context->root_span.addAttribute(
-            "clickhouse.uri", [&] { return maskSensitiveQueryParametersInURI(request.getURI()); });
+            "clickhouse.uri", [&] { return getURIForLogging(request); });
         thread_trace_context->root_span.addAttribute("http.referer", request.get("Referer", ""));
         thread_trace_context->root_span.addAttribute("http.user.agent", request.get("User-Agent", ""));
         thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
@@ -1832,6 +1835,12 @@ bool DynamicQueryHandler::customizeQueryParam(NameToNameMap & query_parameters, 
     return false;
 }
 
+bool DynamicQueryHandler::isQueryTextParameter(const std::string & name) const
+{
+    /// Case-insensitive, like the params.get(param_name) lookup in getQuery.
+    return Poco::icompare(name, param_name) == 0 || startsWith(name, QUERY_PARAMETER_NAME_PREFIX);
+}
+
 std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body)
 {
     /// Only the built-in catch-all enables path uploads. Config-defined handlers keep their query parameters.
@@ -1913,6 +1922,11 @@ bool PredefinedQueryHandler::customizeQueryParam(NameToNameMap & query_parameter
     }
 
     return false;
+}
+
+bool PredefinedQueryHandler::isQueryTextParameter(const std::string & name) const
+{
+    return receive_params.contains(name) || startsWith(name, QUERY_PARAMETER_NAME_PREFIX);
 }
 
 void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, ContextMutablePtr context, ReadBuffer & body)
