@@ -101,6 +101,8 @@ public:
 
     String getName() const override { return name; }
 
+    const TopKThresholdTrackerPtr & getThresholdTracker() const { return threshold_tracker; }
+
     bool isVariadic() const override { return false; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
     bool isSuitableForConstantFolding() const override { return false; }
@@ -295,6 +297,15 @@ FunctionOverloadResolverPtr createInternalFunctionTopKFilterResolver(
 {
     return std::make_shared<FunctionToOverloadResolverAdaptor>(
         std::make_shared<FunctionTopKFilter>(threshold_tracker_, std::move(rows_equal_to_threshold_dropped)));
+}
+
+TopKThresholdTrackerPtr getTopKFilterThresholdTracker(const IFunctionBase & function)
+{
+    const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(&function);
+    if (!adaptor)
+        return nullptr;
+    const auto * top_k_filter = typeid_cast<const FunctionTopKFilter *>(adaptor->getFunction().get());
+    return top_k_filter ? top_k_filter->getThresholdTracker() : nullptr;
 }
 
 }

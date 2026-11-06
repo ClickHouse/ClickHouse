@@ -16,4 +16,9 @@ using TopKThresholdTrackerPtr = std::shared_ptr<ITopKThresholdTracker>;
 FunctionOverloadResolverPtr createInternalFunctionTopKFilterResolver(
     TopKThresholdTrackerPtr threshold_tracker_, std::shared_ptr<std::atomic<bool>> rows_equal_to_threshold_dropped = nullptr);
 
+class IFunctionBase;
+
+/// The threshold tracker of a built `__topKFilter` function, nullptr for any other function.
+TopKThresholdTrackerPtr getTopKFilterThresholdTracker(const IFunctionBase & function);
+
 }
