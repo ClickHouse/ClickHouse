@@ -2069,13 +2069,19 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
         {
             const auto & to_path_type = to_object->getTypedPaths().at(path);
             if (convertsUInt8ToBool(from_path_type, to_path_type))
-                typed_path_wrappers.emplace_back(path, from_path_type, to_path_type, prepareUnpackDictionaries(from_path_type, to_path_type));
+                typed_path_wrappers.emplace_back(path, from_path_type, to_path_type, nullptr);
         }
 
         if (typed_path_wrappers.empty())
             return createIdentityWrapper(from_type);
 
-        return [typed_path_wrappers](ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
+        /// A plain CAST cannot fail between these path types and, unlike `accurateCastOrNull`, keeps their declared layout.
+        auto path_cast = std::make_shared<FunctionCast>(
+            settings, cast_name, MonotonicityForRange{}, argument_types, return_type, diagnostic, CastType::nonAccurate);
+        for (auto & [path, from_path_type, to_path_type, wrapper] : typed_path_wrappers)
+            wrapper = path_cast->prepareUnpackDictionaries(from_path_type, to_path_type);
+
+        return [path_cast, typed_path_wrappers](ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
         {
             const auto & column_object = assert_cast<const ColumnObject &>(*arguments.front().column);
 

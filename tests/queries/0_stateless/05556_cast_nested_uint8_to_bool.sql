@@ -16,6 +16,9 @@ SELECT CAST([toUInt8(2)]::Dynamic AS Array(Bool)) AS a, toUInt8(a[1]);
 SELECT toUInt8(CAST(CAST([toUInt8(2)] AS Variant(Array(UInt8), String)) AS Array(Bool))[1]);
 SELECT CAST(CAST('{"a":2}' AS JSON(a UInt8)) AS JSON(a Bool)) AS j, toTypeName(j.a), toUInt8(j.a), j.a = true;
 SELECT toUInt8(k.a), dynamicType(k.b), dynamicType(k.c) FROM (SELECT CAST('{"a":2,"b":1.0,"c":[1.0,2.0]}'::JSON(a UInt8) AS JSON(a Bool)) AS k);
+SELECT j, toUInt8(tupleElement(j.a, 1)) FROM (SELECT accurateCastOrNull(materialize('{"a":[2]}'::JSON(a Tuple(UInt8))), 'JSON(a Tuple(Bool))') AS j);
+SELECT j, toUInt8(tupleElement(j.a[1], 1)) FROM (SELECT accurateCastOrNull('{"a":[[2]]}'::JSON(a Array(Tuple(UInt8))), 'JSON(a Array(Tuple(Bool)))') AS j);
+SELECT j, toUInt8(tupleElement(j.a, 1)) FROM (SELECT accurateCastOrDefault(materialize('{"a":[2]}'::JSON(a Tuple(UInt8))), 'JSON(a Tuple(Bool))') AS j);
 SELECT toUInt8(accurateCast([toUInt8(2)], 'Array(Bool)')[1]);
 
 DROP TABLE IF EXISTS t;
