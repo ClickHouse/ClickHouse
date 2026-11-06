@@ -47,8 +47,7 @@ std::span<const CompressionCodecPtr> CodecSelectorSampled::codecsToTry()
         if (!winner || in_sample)
         {
             /// A stream with a single candidate is not adaptive.
-            if (candidates.size() > 1)
-                ProfileEvents::increment(ProfileEvents::AdaptiveCodecBlocksPriced);
+            ProfileEvents::increment(ProfileEvents::AdaptiveCodecBlocksPriced, candidates.size() > 1);
             return candidates;
         }
         return std::span(candidates).subspan(*winner, 1);
