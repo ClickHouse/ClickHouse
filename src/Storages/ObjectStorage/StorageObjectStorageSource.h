@@ -90,6 +90,9 @@ public:
     static std::string getUniqueStoragePathIdentifier(
         const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info = true);
 
+    static std::optional<ObjectMetadata> tryMakeObjectMetadataFromTableRecords(
+        const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, const StorageID & storage_id);
+
     /// Compose the Query Condition Cache key (`part_name`) for an object, or return nullopt when the
     /// object cannot be safely cached and caching must be skipped (fail-close). Exposed for testing:
     /// the safety-critical contract is that a weak etag (e.g. HDFS) never keys the cache.
@@ -203,9 +206,10 @@ protected:
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info,
         bool need_only_count,
-        ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key = nullptr);
+        ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key = nullptr,
+        bool prefetch_input_format = false);
 
-    ReaderHolder createReader();
+    ReaderHolder createReader(bool prefetch_input_format = false);
 
     /// Writes `pending_top_k_query_condition_cache_entries` to the query condition cache.
     void writePendingTopKQueryConditionCacheEntries();
@@ -417,6 +421,8 @@ public:
         bool isArchive() const override { return true; }
 
         size_t fileSizeInArchive() const override { return file_info.uncompressed_size; }
+
+        std::shared_ptr<ObjectInfo> clone() const override { return std::make_shared<ObjectInfoInArchive>(*this); }
 
         const ObjectInfoPtr archive_object;
         const std::string path_in_archive;

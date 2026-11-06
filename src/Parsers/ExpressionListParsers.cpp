@@ -3337,6 +3337,9 @@ static bool isArrayConstructorWithKeyword(IParser::Pos pos)
                 if (depth == 0)
                     return true;
                 break;
+            /// The statement ends before the bracket is closed.
+            case TokenType::Semicolon:
+                return false;
             default:
                 break;
         }

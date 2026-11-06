@@ -187,10 +187,16 @@ namespace
         return path.substr(0, position);
     }
 
+    String getObjectStorageHash(const IObjectStorage & object_storage)
+    {
+        const String description = object_storage.getDescription();
+        return sipHash128String(description.substr(0, description.find('?')) + '\0' + object_storage.getObjectsNamespace());
+    }
+
     String getPageCachePathForObjectStorage(const RelativePathWithMetadata & object_info, const ObjectStoragePtr & object_storage)
     {
         if (object_storage->getType() != ObjectStorageType::Web)
-            return "s3:" + object_info.getPath();
+            return fmt::format("s3:{}:{}", getObjectStorageHash(*object_storage), object_info.getPath());
 
         if (!object_info.read_source_index)
             return "web:" + object_info.getPath();
@@ -466,6 +472,24 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
         result = getArchiveEntryKey(result, object_info.archive_entry_index);
 
     return result;
+}
+
+std::optional<ObjectMetadata> StorageObjectStorageSource::tryMakeObjectMetadataFromTableRecords(
+    const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, const StorageID & storage_id)
+{
+    /// Parquet and ORC locate their footer from the size, so a wrong size fails the read instead of dropping rows.
+    const auto size_from_table = object_info.getFileSizeHint();
+    const auto file_format = object_info.getFileFormat().value_or(configuration.format);
+    if (!configuration.dataFilesAreImmutable()
+        || storage_id.uuid == UUIDHelpers::Nil
+        || !size_from_table
+        || !(boost::iequals(file_format, "Parquet") || boost::iequals(file_format, "ORC")))
+        return std::nullopt;
+
+    return ObjectMetadata::fromTableRecords(
+        size_from_table,
+        fmt::format("immutable:{}:{}:{}:{}", toString(storage_id.uuid), storage_id.database_name,
+                    configuration.getDataSourceDescription(), *size_from_table));
 }
 
 /// The object identifier already uses the full path, so files that share a base name in
@@ -1216,7 +1240,8 @@ Chunk StorageObjectStorageSource::generate()
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
             && !format_filter_info->hasFilter()
             && !hasAttachedDeletes(*reader.getObjectInfo())
-            && !reader.getObjectInfo()->rows_to_read)
+            && !reader.getObjectInfo()->rows_to_read
+            && !reader.getObjectInfo()->file_bucket_info)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -1266,6 +1291,9 @@ void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_inf
     if (!isCompressionMethodHintAuto(configuration->compression_method))
         return;
 
+    if (!canUseNumRowsFromSchemaCache(format_settings, read_context))
+        return;
+
     const auto cache_key = getKeyForSchemaCache(
         getUniqueStoragePathIdentifier(*configuration, object_info),
         object_info.getFileFormat().value_or(configuration->format),
@@ -1274,7 +1302,7 @@ void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_inf
     schema_cache.addNumRows(cache_key, num_rows);
 }
 
-StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader()
+StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(bool prefetch_input_format)
 {
     return createReader(
         0,
@@ -1292,7 +1320,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         parser_shared_resources,
         format_filter_info,
         need_only_count,
-        top_k_query_condition_cache_key);
+        top_k_query_condition_cache_key,
+        prefetch_input_format);
 }
 
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(
@@ -1311,7 +1340,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     FormatParserSharedResourcesPtr parser_shared_resources,
     FormatFilterInfoPtr format_filter_info,
     bool need_only_count,
-    ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key)
+    ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key,
+    bool prefetch_input_format)
 {
     ObjectInfoPtr object_info;
     bool use_top_k_query_condition_cache_key = false;
@@ -1378,24 +1408,16 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             auto metadata_object = object_info->relative_path_with_metadata;
             metadata_object.relative_path = path;
 
-            /// Parquet and ORC locate their footer from the size, so a wrong size fails the read instead of dropping rows.
-            const auto size_from_table = object_info->getFileSizeHint();
-            const auto file_format = object_info->getFileFormat().value_or(configuration->format);
-            const bool use_size_from_table = configuration->dataFilesAreImmutable()
-                && storage_id.uuid != UUIDHelpers::Nil
-                && size_from_table
-                && (boost::iequals(file_format, "Parquet") || boost::iequals(file_format, "ORC"))
-                && !with_tags
+            std::optional<ObjectMetadata> metadata_from_table;
+            if (!with_tags
                 && !read_from_format_info.requested_virtual_columns.contains("_etag")
                 && !read_from_format_info.requested_virtual_columns.contains("_time")
-                && !query_settings.ignore_non_existent_file;
+                && !query_settings.ignore_non_existent_file)
+                metadata_from_table = tryMakeObjectMetadataFromTableRecords(*configuration, *object_info, storage_id);
 
-            if (use_size_from_table)
+            if (metadata_from_table)
             {
-                object_info->setObjectMetadata(ObjectMetadata::fromTableRecords(
-                    size_from_table,
-                    fmt::format("immutable:{}:{}:{}:{}", toString(storage_id.uuid), storage_id.database_name,
-                                configuration->getDataSourceDescription(), *size_from_table)));
+                object_info->setObjectMetadata(*metadata_from_table);
             }
             else if (query_settings.ignore_non_existent_file)
             {
@@ -1525,6 +1547,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (!isCompressionMethodHintAuto(configuration->compression_method))
             return std::nullopt;
 
+        if (!canUseNumRowsFromSchemaCache(format_settings, context_))
+            return std::nullopt;
+
         const auto cache_key = getKeyForSchemaCache(
             getUniqueStoragePathIdentifier(*configuration, *object_info),
             object_info->getFileFormat().value_or(configuration->format),
@@ -1562,7 +1587,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     const bool headers_requested = read_from_format_info.requested_virtual_columns.contains("_headers");
 
     std::optional<size_t> num_rows_from_cache
-        = need_only_count && !headers_requested && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
+        = need_only_count && !headers_requested && !object_info->file_bucket_info
+            && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
         ? try_get_num_rows_from_cache() : std::nullopt;
 
     if (num_rows_from_cache)
@@ -1926,6 +1952,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (need_only_count)
             input_format->needOnlyCount();
 
+        if (prefetch_input_format)
+            input_format->prefetch();
+
         builder.init(Pipe(input_format));
 
         if (!identity_partition_columns.empty())
@@ -2119,7 +2148,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
 std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource::createReaderAsync()
 {
-    return create_reader_scheduler([=, this] { return createReader(); }, Priority{});
+    return create_reader_scheduler([=, this] { return createReader(/* prefetch_input_format */ true); }, Priority{});
 }
 
 ObjectMetadata getObjectMetadataForRead(const IObjectStorage & object_storage, const RelativePathWithMetadata & object, bool with_tags)
@@ -2311,6 +2340,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         else
         {
             SipHash hash;
+            hash.update(getObjectStorageHash(*object_storage));
             hash.update(object_info.getPath());
             hash.update(*content_token);
 
