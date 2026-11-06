@@ -1253,9 +1253,9 @@ void TCPHandler::runImpl()
                 /// is then waiting for the end of the query and accepts the final report, the same as
                 /// on the success path (`sendInsertProfileEvents` checks the query kind and the protocol
                 /// version). In other states the clients do not expect them before the `Exception`.
-                if (query_scope && (query_state->streaming_select_result || query_state->sending_interactive_updates))
+                if (query_scope.initialized && (query_state->streaming_select_result || query_state->sending_interactive_updates))
                     sendSelectProfileEvents(*query_state);
-                else if (query_scope && query_state->need_receive_data_for_insert && query_state->read_all_data
+                else if (query_scope.initialized && query_state->need_receive_data_for_insert && query_state->read_all_data
                     && query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
                     sendInsertProfileEvents(*query_state, /* final_report = */ true);
             }
