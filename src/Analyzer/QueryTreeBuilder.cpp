@@ -832,9 +832,15 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         else
         {
             const auto & group_concat_aliases = GroupConcatImpl<false>::getNameAndAliases();
+            const auto function_name_lowercase = Poco::toLower(function->name);
             if (!function->name.empty() && std::any_of(
                     group_concat_aliases.begin(), group_concat_aliases.end(),
-                    [&](const std::string &s) { return Poco::toLower(s) == Poco::toLower(function->name); })
+                    [&](const std::string &s)
+                    {
+                        /// `f(DISTINCT x, sep)` is parsed as `fDistinct(x, sep)`
+                        const auto alias_lowercase = Poco::toLower(s);
+                        return function_name_lowercase == alias_lowercase || function_name_lowercase == alias_lowercase + "distinct";
+                    })
                 && function->arguments && function->arguments->children.size() == 2)
             {
                 result = setSecondArgumentAsParameter(function, context);
