@@ -581,6 +581,26 @@ public:
             parent_node->children = {&new_split_node};
             return;
         }
+
+        /// A `LIMIT` without `ORDER BY` can take any rows, so each replica can stop after `limit + offset`
+        /// of its own rows, like a shard does in classic parallel replicas. Otherwise every replica reads
+        /// its whole share, and the initiator cancels it once it has enough. The original step stays on the
+        /// initiator above the split: it applies the offset and the final limit to the union of the streams.
+        const auto * limit_step = typeid_cast<const LimitStep *>(parent_step);
+        if (limit_step && !limit_step->withTies() && !limit_step->alwaysReadTillEnd() && !mustReadTillEnd())
+        {
+            const auto local_limit = limit_step->getLimitWithOffset();
+            if (!local_limit || *local_limit == 0)
+                return;
+
+            auto * fragment_child = original_split_node->children.front();
+            auto & local_limit_node = nodes.emplace_back();
+            local_limit_node.step = std::make_unique<LimitStep>(fragment_child->step->getOutputHeader(), *local_limit, 0);
+            local_limit_node.step->setStepDescription("local LIMIT");
+            local_limit_node.children = {fragment_child};
+            original_split_node->children = {&local_limit_node};
+            return;
+        }
     }
 
 private:
