@@ -168,7 +168,9 @@ std::pair<int, std::vector<std::string>> captureCommand(const std::vector<std::s
 }
 
 /// Run two commands connected by a pipe: lhs | rhs.
-/// Returns the exit code of the rhs process.
+/// Returns the exit code of the rhs process if lhs succeeded, and the exit code of lhs otherwise
+/// (-1 if it was killed by a signal), like a shell with `set -o pipefail`: otherwise a failure of lhs
+/// before it produced any output would go unnoticed, as rhs successfully processes empty input.
 int runPipeline(const std::vector<std::string> & lhs, const std::vector<std::string> & rhs)
 {
     int pipefd[2];
@@ -219,6 +221,8 @@ int runPipeline(const std::vector<std::string> & lhs, const std::vector<std::str
     while (waitpid(lhs_pid, &lhs_status, 0) < 0 && errno == EINTR) {}
     while (waitpid(rhs_pid, &rhs_status, 0) < 0 && errno == EINTR) {}
 
+    if (!WIFEXITED(lhs_status) || WEXITSTATUS(lhs_status) != 0)
+        return WIFEXITED(lhs_status) ? WEXITSTATUS(lhs_status) : -1;
     return WIFEXITED(rhs_status) ? WEXITSTATUS(rhs_status) : -1;
 }
 
@@ -400,11 +404,33 @@ bool manageClickHouseUser(
             return s;
         };
 
+        /// Read the shipped configuration from a copy in a separate directory, like entrypoint.sh: in place,
+        /// `extract-from-config` would merge `users.d` into it as well, and a `default` user customised there
+        /// would look unchanged.
+        char tmp_dir_template[] = "/tmp/docker-init-users-XXXXXX";
+        if (!mkdtemp(tmp_dir_template))
+        {
+            std::cerr << "docker-init: error: cannot create a temporary directory in /tmp: "
+                      << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
+            return false;
+        }
+        const fs::path tmp_dir = tmp_dir_template;
+        const fs::path users_xml_copy = tmp_dir / fs::path(abs_users_xml).filename();
+        fs::copy_file(abs_users_xml, users_xml_copy, ec);
+        if (ec)
+        {
+            std::cerr << "docker-init: error: cannot copy " << abs_users_xml << " to " << users_xml_copy
+                      << ": " << ec.message() << "\n";
+            fs::remove_all(tmp_dir, ec);
+            return false;
+        }
+
         auto [c1, original] = captureCommand({
             g_clickhouse_binary, "extract-from-config",
-            "--config-file", abs_users_xml,
+            "--config-file", users_xml_copy.string(),
             "--key", "users.default", "--try",
         });
+        fs::remove_all(tmp_dir, ec);
         auto [c2, processed] = captureCommand({
             g_clickhouse_binary, "extract-from-config",
             "--config-file", config_file,
@@ -1087,12 +1113,22 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
     std::string password_file = getEnv("CLICKHOUSE_PASSWORD_FILE");
     if (!password_file.empty())
     {
+        /// Fail closed: continuing with an empty password would create the requested user
+        /// without a password and open to the network.
         std::ifstream pf(password_file);
-        if (pf.is_open())
-            std::getline(pf, clickhouse_password);
-        else
-            std::cerr << "docker-init: warning: cannot read CLICKHOUSE_PASSWORD_FILE '"
+        if (!pf.is_open())
+        {
+            std::cerr << "docker-init: error: cannot open CLICKHOUSE_PASSWORD_FILE '"
                       << password_file << "': " << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
+            return 1;
+        }
+        std::getline(pf, clickhouse_password);
+        if (pf.bad())
+        {
+            std::cerr << "docker-init: error: cannot read CLICKHOUSE_PASSWORD_FILE '"
+                      << password_file << "': " << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
+            return 1;
+        }
     }
 
     std::string access_management = getEnv("CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT", "0");
