@@ -16,7 +16,8 @@ enum class StoreMethod
     /// Can be used with any types.
     EMPTY,
 
-    /// A const scalar value stored in `SQLQueryPiece::scalar_value`; produced by a float literal.
+    /// A const scalar value stored in `SQLQueryPiece::scalar_value`.
+    /// CONST_SCALAR is produced by a float literal or a constant expression in a prometheus query.
     /// Can be used with types ResultType::SCALAR, ResultType::INSTANT_VECTOR, ResultType::RANGE_VECTOR.
     CONST_SCALAR,
 
@@ -53,8 +54,7 @@ enum class StoreMethod
     /// Data are stored in two columns:
     /// - `group` (UInt64),
     /// - `samples` (Array(Tuple(timestamp, value)): the samples of a time series sorted by timestamp, where `timestamp` has
-    ///   the type of the timestamps in the TimeSeries table (or `ConverterContext::result_timestamp_type` after applying an offset)
-    ///   and `value` has the type of the values in the table (Float64 or Float32)).
+    ///   the type of the timestamps in the TimeSeries table and `value` has the type of the values in the table (Float64 or Float32)).
     /// A row usually holds one time bucket of the samples table.
     /// SAMPLES is produced by selectors over a table storing buckets of samples.
     SAMPLES,
