@@ -294,8 +294,19 @@ public:
         {
             ColumnPtr value_cmp = executeNullableWithoutSupertype({left, right}, input_rows_count);
             const auto & value_data = assert_cast<const ColumnUInt8 &>(*value_cmp).getData();
+            /// `executeNullableWithoutSupertype` takes the NULLs only from a `ColumnNullable`, while a `Dynamic` or a `Variant`
+            /// element of a tuple keeps its own NULLs. So take the NULLs of both full operands into account here.
+            ColumnPtr left_full = left.column->convertToFullColumnIfConst();
+            ColumnPtr right_full = right.column->convertToFullColumnIfConst();
             for (size_t i = 0; i < input_rows_count; ++i)
-                res_data[i] = is_equal_mode ? value_data[i] : !value_data[i];
+            {
+                const bool left_is_null = left_full->isNullAt(i);
+                const bool right_is_null = right_full->isNullAt(i);
+                if (left_is_null || right_is_null)
+                    res_data[i] = left_is_null && right_is_null;
+                else
+                    res_data[i] = is_equal_mode ? value_data[i] : !value_data[i];
+            }
             return res;
         }
 
