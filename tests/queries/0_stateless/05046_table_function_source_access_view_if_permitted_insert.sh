@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# no-replicated-database: its replicated access storage widens `GRANT READ ON URL` to `READ` and `WRITE`
+# (https://github.com/ClickHouse/ClickHouse/issues/111402), so none of the denials below would fire.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
