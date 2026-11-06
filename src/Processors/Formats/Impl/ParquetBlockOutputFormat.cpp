@@ -183,33 +183,44 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
     staging_bytes = 0;
 }
 
+bool ParquetBlockOutputFormat::writeEncodedRowGroups()
+{
+    if (!pool)
+        return true;
+
+    std::unique_lock lock(mutex);
+
+    /// Wait for background work to complete.
+    while (true)
+    {
+        reapCompletedRowGroups(lock);
+
+        if (background_exception)
+            std::rethrow_exception(background_exception);
+
+        if (is_stopped)
+            return false;
+
+        if (row_groups.empty())
+            return true;
+
+        CurrentThread::checkIfNotCancelled();
+        condvar.wait(lock);
+    }
+}
+
+void ParquetBlockOutputFormat::writePendingDataImpl()
+{
+    writeEncodedRowGroups();
+}
+
 void ParquetBlockOutputFormat::finalizeImpl()
 {
     if (!staging_chunks.empty())
         writeRowGroup(std::move(staging_chunks));
 
-    if (pool)
-    {
-        std::unique_lock lock(mutex);
-
-        /// Wait for background work to complete.
-        while (true)
-        {
-            reapCompletedRowGroups(lock);
-
-            if (background_exception)
-                std::rethrow_exception(background_exception);
-
-            if (is_stopped)
-                return;
-
-            if (row_groups.empty())
-                break;
-
-            CurrentThread::checkIfNotCancelled();
-            condvar.wait(lock);
-        }
-    }
+    if (!writeEncodedRowGroups())
+        return;
 
     if (file_state.offset == 0)
     {
