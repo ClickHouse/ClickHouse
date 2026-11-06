@@ -10,7 +10,10 @@ namespace ErrorCodes
 }
 
 void FutureMergedMutatedPart::assign(
-    MergeTreeData::DataPartsVector parts_, MergeTreeData::DataPartsVector patch_parts_, ProjectionDescriptionRawPtr projection)
+    MergeTreeData::DataPartsVector parts_,
+    MergeTreeData::DataPartsVector patch_parts_,
+    ProjectionDescriptionRawPtr projection,
+    const MergeTreeSettingsPtr & base_settings)
 {
     if (parts_.empty())
         return;
@@ -28,7 +31,8 @@ void FutureMergedMutatedPart::assign(
         max_level = std::max(max_level, part->info.level);
     }
 
-    auto chosen_format = parts_.front()->storage.choosePartFormat(sum_bytes_uncompressed, sum_rows, max_level + 1, projection);
+    auto chosen_format
+        = parts_.front()->storage.choosePartFormat(sum_bytes_uncompressed, sum_rows, max_level + 1, projection, base_settings);
     future_part_type = std::min(future_part_type, chosen_format.part_type);
 
     /// The storage type needs no clamping to the sources: merges always rewrite the data, and a

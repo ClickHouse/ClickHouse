@@ -71,6 +71,10 @@ namespace S3RequestSetting
 {
     extern const S3RequestSettingsUInt64 list_object_keys_size;
     extern const S3RequestSettingsUInt64 objects_chunk_size_to_delete;
+    extern const S3RequestSettingsUInt64 max_single_part_upload_size;
+    extern const S3RequestSettingsUInt64 min_upload_part_size;
+    extern const S3RequestSettingsUInt64 max_upload_part_size;
+    extern const S3RequestSettingsUInt64 max_inflight_parts_for_one_file;
 }
 
 
@@ -367,6 +371,33 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         attributes,
         std::move(scheduler),
         disk_write_settings);
+}
+
+MultipartUploadMemory S3ObjectStorage::getWriteBufferMemory(const WriteSettings & write_settings) const
+{
+    /// Every upload buffer WriteBufferFromS3 can hold at once, derived by getMultipartUploadMemory from the
+    /// same allocation settings and in-flight limit the writer itself uses - so a strict_upload_part_size
+    /// disk (a fixed-size allocation policy) and an unlimited max_inflight_parts_for_one_file are both
+    /// accounted for. These come from this storage's own request settings (background writes do not apply
+    /// query/session settings, see writeObject above). The in-flight limit is the EFFECTIVE one: writeObject
+    /// hands the writer a parallel-upload scheduler only when s3_allow_parallel_part_upload is set, and
+    /// without one every upload runs inline, so the writer cannot hold the configured number of detached
+    /// buffers at once (see getEffectiveMaxInflightParts). That flag comes from the write settings of the
+    /// writer's caller, not from the disk configuration.
+    /// Keep the settings version alive: a concurrent config reload may replace it in applyNewSettings.
+    const auto settings_ptr = s3_settings.get();
+    const auto & request_settings = settings_ptr->request_settings;
+    auto memory = getMultipartUploadMemory(
+        getUploadBufferAllocationSettings(request_settings),
+        getEffectiveMaxInflightParts(
+            request_settings[S3RequestSetting::max_inflight_parts_for_one_file],
+            IObjectStorage::patchSettings(write_settings).s3_allow_parallel_part_upload));
+    /// writeObject starts the writer from adaptive_write_buffer_initial_size when use_adaptive_write_buffer is set.
+    memory.initial_buffer_size = getMultipartUploadInitialBufferSize(
+        write_settings.use_adaptive_write_buffer, write_settings.adaptive_write_buffer_initial_size);
+    /// Otherwise it starts from the buf_size passed to writeObject, which only the caller knows.
+    memory.initial_buffer_size_follows_caller = !write_settings.use_adaptive_write_buffer;
+    return memory;
 }
 
 

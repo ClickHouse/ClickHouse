@@ -19,7 +19,8 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     WrittenOffsetSubstreams * written_offset_substreams,
     bool try_adaptive_codec,
     PackedFilesWriter * external_packed_skip_indices_writer,
-    StreamBaseManifestPtr stream_base_manifest)
+    StreamBaseManifestPtr stream_base_manifest,
+    const ContextPtr & writer_context)
     : IMergedBlockOutputStream(
           std::move(data_settings),
           data_part->getDataPartStoragePtr(),
@@ -34,9 +35,10 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || prewarm_caches.primary_index_cache;
 
     /// Granularity is never recomputed while writing only columns.
+    const auto settings_context = writer_context ? writer_context : data_part->storage.getContext();
     MergeTreeWriterSettings writer_settings(
-        data_part->storage.getContext()->getSettingsRef(),
-        data_part->storage.getContext()->getWriteSettings(),
+        settings_context->getSettingsRef(),
+        settings_context->getWriteSettings(),
         storage_settings,
         data_part,
         data_part->index_granularity_info.mark_type.adaptive,

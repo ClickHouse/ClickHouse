@@ -21,6 +21,9 @@ enum MergeTreeSequentialSourceType
 /// If the part has lightweight delete mask then the deleted rows are filtered out.
 /// `prefetch_begin_of_range`: prefetch the beginning of the range when the source is created.
 /// `allow_remote_fs_prefetch`: if false, the source does not prefetch at all.
+/// `force_read_through_cache` is the table-level `force_read_through_cache_for_merges` the read runs
+/// with: a merge passes the value from its frozen settings snapshot, so that the read buffer sizes match
+/// its memory reservation.
 Pipe createMergeTreeSequentialSource(
     MergeTreeSequentialSourceType type,
     const MergeTreeData & storage,
@@ -34,7 +37,9 @@ Pipe createMergeTreeSequentialSource(
     bool apply_deleted_mask,
     bool read_with_direct_io,
     bool prefetch_begin_of_range,
-    bool allow_remote_fs_prefetch);
+    bool allow_remote_fs_prefetch,
+    bool force_read_through_cache,
+    ContextPtr context);
 
 class QueryPlan;
 
@@ -53,6 +58,7 @@ void createReadFromPartStep(
     bool read_with_direct_io,
     bool prefetch_begin_of_range,
     bool allow_remote_fs_prefetch,
+    bool force_read_through_cache,
     ContextPtr context,
     LoggerPtr log);
 

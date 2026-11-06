@@ -28,10 +28,23 @@ struct FutureMergedMutatedPart
     MergeType merge_type = MergeType::Regular;
     bool final = false;
 
+    /// The default codec of the result part of a merge, resolved once before the merge's memory
+    /// reservation is priced (see `CompactionStatistics::resolveMergedPartCodec`). Both the estimate and
+    /// `MergeTask` use it, so a change of `default_compression_codec` or of the server's `<compression>`
+    /// configuration after admission cannot make the merge compress with a codec the reservation did
+    /// not price. Unset for mutations and for merges that resolve their codec at execution time.
+    std::optional<MergeTreeData::PartCompressionCodec> merged_part_codec;
+
     const MergeTreePartition & getPartition() const { return parts.front()->partition; }
     bool isResultPatch() const { return !parts.empty() && parts.front()->info.isPatch();}
 
-    void assign(MergeTreeData::DataPartsVector parts_, MergeTreeData::DataPartsVector patch_parts_, ProjectionDescriptionRawPtr projection);
+    /// `base_settings`, when set, replaces the live table settings in the part-format decision - a merge
+    /// freezes the settings it runs with at selection time (see `MergeTreeData::choosePartFormat`).
+    void assign(
+        MergeTreeData::DataPartsVector parts_,
+        MergeTreeData::DataPartsVector patch_parts_,
+        ProjectionDescriptionRawPtr projection,
+        const MergeTreeSettingsPtr & base_settings = {});
     void assign(MergeTreeData::DataPartsVector parts_, MergeTreeData::DataPartsVector patch_parts_, MergeTreeDataPartFormat future_part_format);
 
     /// Raise the mutation version of the result part above what `assign` derived from the sources.

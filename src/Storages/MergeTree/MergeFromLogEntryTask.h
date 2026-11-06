@@ -3,6 +3,7 @@
 #include <memory>
 #include <utility>
 
+#include <Common/MemoryTracker.h>
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTask.h>
@@ -58,6 +59,10 @@ private:
     MergeTreeData::MutableDataPartPtr part;
 
     Priority priority;
+
+    /// Memory reserved in advance for the merge's input/output IO buffers. Released in `finalize` as soon
+    /// as `merge_task` is reset, or at the latest when the task is destroyed. See MergeMemoryReservation.
+    MergeMemoryReservation memory_reservation;
 
     MergeTaskPtr merge_task;
 
