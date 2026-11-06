@@ -2962,6 +2962,10 @@ These codecs are designed to make compression more effective by exploiting speci
 
 `ALP(variant)` — Adaptive lossless compression for floating-point data. Supports `Float32` and `Float64`. For details, see [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
 
+<Tip>
+In most scenarios, `ALP` is the best codec ClickHouse offers for `Float32` and `Float64` columns.
+</Tip>
+
 The codec accepts an optional variant argument:
 
 - `ALP()` or `ALP(AUTO)` (default) — Uses STD and falls back to RD based on the estimated compressed size.
