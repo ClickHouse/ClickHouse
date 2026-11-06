@@ -428,12 +428,26 @@ TruthValue PredicateLeaf::evaluatePredicateMinMax(const Proto::ColumnStatistics 
         case PredicateDataType::TIMESTAMP:
         {
             const auto & ts = stats.timestamp_statistics;
-            if (ts && ts->minimum_utc && ts->maximum_utc)
+            /// The stored nanoseconds are the sub-millisecond part plus one; malformed ones disable the pruning.
+            auto valid_nanos = [](const std::optional<UInt64> & nanos) { return !nanos || (*nanos >= 1 && *nanos <= 1'000'000); };
+            if (ts && ts->minimum_utc && ts->maximum_utc && valid_nanos(ts->minimum_nanos) && valid_nanos(ts->maximum_nanos))
             {
-                Int32 min_nanos = ts->minimum_nanos ? *ts->minimum_nanos - 1 : 0;
-                Int32 max_nanos = ts->maximum_nanos ? *ts->maximum_nanos - 1 : 999999;
-                Literal::Timestamp min{*ts->minimum_utc / 1000, static_cast<Int32>((*ts->minimum_utc % 1000) * 1000000) + min_nanos};
-                Literal::Timestamp max{*ts->maximum_utc / 1000, static_cast<Int32>((*ts->maximum_utc % 1000) * 1000000) + max_nanos};
+                Int32 min_nanos = ts->minimum_nanos ? static_cast<Int32>(*ts->minimum_nanos) - 1 : 0;
+                Int32 max_nanos = ts->maximum_nanos ? static_cast<Int32>(*ts->maximum_nanos) - 1 : 999999;
+                /// The milliseconds are rounded down, so the nanoseconds are not negative, as in the literals.
+                auto to_timestamp = [](Int64 millis, Int32 nanos)
+                {
+                    Int64 second = millis / 1000;
+                    Int64 rest = millis % 1000;
+                    if (rest < 0)
+                    {
+                        rest += 1000;
+                        --second;
+                    }
+                    return Literal::Timestamp{second, static_cast<Int32>(rest * 1000000) + nanos};
+                };
+                Literal::Timestamp min = to_timestamp(*ts->minimum_utc, min_nanos);
+                Literal::Timestamp max = to_timestamp(*ts->maximum_utc, max_nanos);
                 result = evaluateRange(op, literalsTo<Literal::Timestamp>(literals, [](const Literal & l) { return l.getTimestamp(); }),
                     min, max, has_null);
             }
@@ -494,7 +508,15 @@ TruthValue checkInBloomFilter(PredicateDataType type, const Literal & literal, c
                 found = bf.testBytes(s.data(), s.size());
                 break;
             }
-            case PredicateDataType::TIMESTAMP: found = bf.testLong(literal.getTimestamp().getMillis()); break;
+            case PredicateDataType::TIMESTAMP:
+            {
+                /// The writers round the negative milliseconds differently: the Java one down, the C++ one toward zero.
+                const auto timestamp = literal.getTimestamp();
+                const Int64 millis_down = timestamp.getMillis();
+                const bool has_fraction = timestamp.second < 0 && timestamp.nanos % 1000000 != 0;
+                found = bf.testLong(millis_down) || (has_fraction && bf.testLong(millis_down + 1));
+                break;
+            }
             case PredicateDataType::DATE: found = bf.testLong(literal.getDate()); break;
             case PredicateDataType::BOOLEAN: found = true; break;
         }

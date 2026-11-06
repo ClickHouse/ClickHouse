@@ -100,9 +100,14 @@ UInt32 NO_SANITIZE_UNSIGNED_OVERFLOW CompressionCodecFPC::getMaxCompressedDataSi
 namespace
 {
 
+bool isApplicableToType(const IDataType & column_type)
+{
+    return WhichDataType(column_type).isNativeFloat();
+}
+
 UInt8 getFloatByteWidth(const IDataType & column_type)
 {
-    if (!WhichDataType(column_type).isNativeFloat())
+    if (!isApplicableToType(column_type))
         throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Codec 'FPC' is not applicable for {} because the data type is not Float*",
@@ -153,7 +158,7 @@ void registerCodecFPC(CompressionCodecFactory & factory)
 
         return std::make_shared<CompressionCodecFPC>(float_width, level);
     };
-    factory.registerCompressionCodecWithType("FPC", method_code, codec_builder);
+    factory.registerCompressionCodecWithType("FPC", method_code, codec_builder, {.is_applicable_to_type = isApplicableToType});
 }
 
 namespace

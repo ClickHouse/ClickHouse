@@ -171,7 +171,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
 
     if (bytes_read)
     {
-        working_buffer = internal_buffer;
+        setWorkingBufferFromInternal();
         working_buffer.resize(bytes_read);
     }
     else

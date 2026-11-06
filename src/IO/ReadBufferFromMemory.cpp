@@ -17,14 +17,14 @@ off_t ReadBufferFromMemoryHelper<Derived>::seekImpl(off_t offset, int whence)
     auto & derived = static_cast<Derived &>(*this);
     auto & pos = derived.pos;
     auto & internal_buffer = derived.internal_buffer;
-    auto & working_buffer = derived.working_buffer;
 
     if (whence == SEEK_SET)
     {
         if (offset >= 0 && internal_buffer.begin() + offset <= internal_buffer.end())
         {
             pos = internal_buffer.begin() + offset;
-            working_buffer = internal_buffer; /// We need to restore `working_buffer` in case the position was at EOF before this seek().
+            /// Restore `working_buffer` in case the position was at EOF before this seek.
+            derived.setWorkingBufferFromInternal();
             return static_cast<size_t>(pos - internal_buffer.begin());
         }
         throw Exception(
@@ -39,7 +39,8 @@ off_t ReadBufferFromMemoryHelper<Derived>::seekImpl(off_t offset, int whence)
         if (new_pos >= internal_buffer.begin() && new_pos <= internal_buffer.end())
         {
             pos = new_pos;
-            working_buffer = internal_buffer; /// We need to restore `working_buffer` in case the position was at EOF before this seek().
+            /// Restore `working_buffer` in case the position was at EOF before this seek.
+            derived.setWorkingBufferFromInternal();
             return static_cast<size_t>(pos - internal_buffer.begin());
         }
         throw Exception(
@@ -79,7 +80,7 @@ ReadBufferFromMemoryFileBase::ReadBufferFromMemoryFileBase(bool owns_memory,
     if (owns_memory)
         std::memcpy(internal_buffer.begin(), data.data(), data.size());
 
-    working_buffer = internal_buffer;
+    setWorkingBufferFromInternal();
 }
 
 }
