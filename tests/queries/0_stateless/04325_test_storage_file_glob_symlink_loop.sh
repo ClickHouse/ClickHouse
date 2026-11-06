@@ -311,6 +311,40 @@ ln -s ../chains/s1 "$TEST_DIR_ABS/budget2/root/a"
 ln -s ../chains/s2 "$TEST_DIR_ABS/budget2/root/b"
 ln -s ../data/A "$TEST_DIR_ABS/budget2/root/z"
 
+# A skip into an incomplete frame: `budget3/root/a` reaches `B` through 40 links and cannot resolve
+# `B/child`, then `root/b` reaches `A` through 40 links and cannot resolve `A/child`, which names that
+# `B`. `root/z` must still walk `A` to reach `C`.
+cp -a "$TEST_DIR_ABS/budget2" "$TEST_DIR_ABS/budget3"
+ln -snf ../chains/s2/child "$TEST_DIR_ABS/budget3/root/a"
+ln -snf ../chains/s1 "$TEST_DIR_ABS/budget3/root/b"
+
+# A file whose path through `longname/root/a` exceeds `PATH_MAX` while its directory's does not, so
+# only its size lookup fails. `root/z` names the same directory through a chain of short symlinks.
+PATH_MAX_LEN=$(getconf PATH_MAX "$USER_FILES_PATH")
+LONG_ALIAS="$TEST_DIR_ABS/longname/root/a"
+mkdir -p "$TEST_DIR_ABS/longname/root" "$TEST_DIR_ABS/longname/hops"
+ln -s ../data "$LONG_ALIAS"
+LONG_DIR=""
+SEGMENT_LEN=$(( PATH_MAX_LEN - 12 - ${#LONG_ALIAS} ))
+while [ "$SEGMENT_LEN" -gt 0 ]; do
+    [ "$SEGMENT_LEN" -gt 200 ] && SEGMENT_LEN=200
+    LONG_DIR="$LONG_DIR/$(printf "%${SEGMENT_LEN}s" | tr ' ' x)"
+    SEGMENT_LEN=$(( PATH_MAX_LEN - 12 - ${#LONG_ALIAS} - ${#LONG_DIR} ))
+done
+mkdir -p "$TEST_DIR_ABS/longname/data$LONG_DIR"
+(cd "$TEST_DIR_ABS/longname/data" && printf "L\n" > "${LONG_DIR#/}/a_long_filename.txt")
+HOP_TARGET="$TEST_DIR_ABS/longname/data"
+HOP=0
+REST="$LONG_DIR"
+while [ -n "$REST" ]; do
+    ln -s "$HOP_TARGET/$(echo "$REST" | cut -d/ -f2-5)" "$TEST_DIR_ABS/longname/hops/h$HOP"
+    HOP_TARGET="$TEST_DIR_ABS/longname/hops/h$HOP"
+    REST=$(echo "$REST" | cut -d/ -f6-)
+    [ -n "$REST" ] && REST="/$REST"
+    HOP=$((HOP + 1))
+done
+ln -s "$HOP_TARGET" "$TEST_DIR_ABS/longname/root/z"
+
 trap 'rm -rf "$TEST_DIR_ABS"' EXIT
 
 # Ancestor-loop symlink: `loop/dir1/dir2/loop_to_root` points back at `loop/dir1`,
@@ -519,6 +553,14 @@ $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/budget/data
 echo "further-alias-after-incomplete-retry"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget2/root/**/*.txt', 'TSV', 'val String') ORDER BY val"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget2/root/z/**/*.txt', 'TSV', 'val String') ORDER BY val"
+
+echo "further-alias-after-skip-into-incomplete-frame"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget3/root/**/*.txt', 'TSV', 'val String') ORDER BY val"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget3/root/z/**/*.txt', 'TSV', 'val String') ORDER BY val"
+
+echo "shorter-alias-after-path-max-size-lookup"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/longname/root/**/*.txt', 'TSV', 'val String')"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/longname/root/z/**/*.txt', 'TSV', 'val String')"
 
 # Server alive afterwards.
 $CLICKHOUSE_CLIENT --query "SELECT 'alive'"

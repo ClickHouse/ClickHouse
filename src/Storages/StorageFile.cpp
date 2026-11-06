@@ -273,7 +273,7 @@ struct PruningState
 
 /// Records an `ELOOP` or `ENAMETOOLONG` on `path` in the frames being walked, unless no name for them
 /// can do better: a loop that also fails from the innermost canonical directory, or a directory walked
-/// with `descent_suffix`.
+/// with `descent_suffix` that is on the stack or left nothing unresolved.
 void notePathLimitSkip(
     const std::error_code & ec, const std::string & path, const std::string * descent_suffix, PruningState & pruning)
 {
@@ -289,8 +289,12 @@ void notePathLimitSkip(
     const fs::path target = fs::canonical(innermost.canonical / tail, target_ec);
     if (symlink_limit && target_ec == std::errc::too_many_symbolic_link_levels)
         return;
-    if (!target_ec && descent_suffix && pruning.visited_frames.contains(target.string() + '\0' + *descent_suffix))
-        return;
+    if (!target_ec && descent_suffix)
+    {
+        const auto visited = pruning.visited_frames.find(target.string() + '\0' + *descent_suffix);
+        if (visited != pruning.visited_frames.end() && (visited->second.walking || !visited->second.unresolved))
+            return;
+    }
 
     for (auto * frame : pruning.active_frames)
         if (!frame->unresolved)
@@ -302,8 +306,11 @@ bool resolvesUnresolved(const VisitedFrame & frame, const std::string & prefix)
 {
     if (!frame.unresolved)
         return false;
+    const std::string path = prefix + *frame.unresolved;
     std::error_code ec;
-    (void)fs::status(prefix + *frame.unresolved, ec);
+    (void)fs::status(path, ec);
+    if (ec)
+        skipUnresolvableOrThrow(ec, path);
     return !ec;
 }
 
@@ -628,6 +635,7 @@ void listFilesWithRegexpMatchingImpl(
                 const size_t file_size = it->file_size(ec);
                 if (ec)
                 {
+                    notePathLimitSkip(ec, full_path, nullptr, pruning);
                     ec.clear();
                     continue;
                 }
