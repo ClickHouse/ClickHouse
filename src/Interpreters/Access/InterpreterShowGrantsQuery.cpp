@@ -255,8 +255,7 @@ AccessRights InterpreterShowGrantsQuery::getAccessCheckedByQuery() const
 {
     const auto & show_query = query_ptr->as<const ASTShowGrantsQuery &>();
 
-    /// The query is analyzed with the caller's access, like `EXPLAIN PIPELINE`, in its own query context
-    /// so that only its checks are recorded.
+    /// Analyzed like `EXPLAIN PIPELINE`, in its own query context so that only its checks are recorded.
     auto analysis_context = Context::createCopy(getContext());
     analysis_context->makeQueryContext();
     analysis_context->getQueryPrivilegesInfoPtr()->startRecordingAccess();
