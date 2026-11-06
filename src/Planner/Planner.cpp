@@ -707,10 +707,8 @@ ALWAYS_INLINE void addExpressionStep(
     if (expression_actions->project_input)
         actions.appendInputsForUnusedColumns(*query_plan.getCurrentHeader());
 
-    appendSetsFromActionsDAG(actions, useful_sets);
-    addArrayJoinStepsForFunctions(query_plan, actions, planner_context->getQueryContext()->getSettingsRef());
-
     auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(actions));
+    appendSetsFromActionsDAG(expression_step->getExpression(), useful_sets);
     expression_step->setStepDescription(step_description);
     query_plan.addStep(std::move(expression_step));
 }
@@ -733,15 +731,13 @@ ALWAYS_INLINE void addFilterStep(
     if (filter_analysis_result.filter_actions->project_input)
         actions.appendInputsForUnusedColumns(*query_plan.getCurrentHeader());
 
-    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
-    appendSetsFromActionsDAG(actions, useful_sets);
-    addArrayJoinStepsForFunctions(query_plan, actions, settings);
-
     auto where_step = std::make_unique<FilterStep>(query_plan.getCurrentHeader(),
         std::move(actions),
         filter_analysis_result.filter_column_name,
         filter_analysis_result.remove_filter_column);
-    where_step->setOptimizeConstantColumnsAfterFilter(settings[Setting::optimize_constant_columns_after_filter]);
+    where_step->setOptimizeConstantColumnsAfterFilter(
+        planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_constant_columns_after_filter]);
+    appendSetsFromActionsDAG(where_step->getExpression(), useful_sets);
     where_step->setStepDescription(step_description);
     query_plan.addStep(std::move(where_step));
 }
@@ -2357,20 +2353,18 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     if (!query_plan.isInitialized())
         return;
 
-    appendSetsFromActionsDAG(filter_info.actions, useful_sets);
+    auto filter_step = std::make_unique<FilterStep>(query_plan.getCurrentHeader(),
+        std::move(filter_info.actions),
+        filter_info.column_name,
+        filter_info.do_remove_column);
+    filter_step->setStepDescription("additional result filter");
+    appendSetsFromActionsDAG(filter_step->getExpression(), useful_sets);
 
     /// The extremes are computed before `LIMIT`, and the result filter, which comes after it, must not filter them either.
     const bool bypass_extremes = settings[Setting::extremes];
     if (bypass_extremes)
         query_plan.addStep(std::make_unique<DetachExtremesStep>(query_plan.getCurrentHeader()));
 
-    addArrayJoinStepsForFunctions(query_plan, filter_info.actions, settings);
-
-    auto filter_step = std::make_unique<FilterStep>(query_plan.getCurrentHeader(),
-        std::move(filter_info.actions),
-        filter_info.column_name,
-        filter_info.do_remove_column);
-    filter_step->setStepDescription("additional result filter");
     query_plan.addStep(std::move(filter_step));
 
     if (bypass_extremes)
