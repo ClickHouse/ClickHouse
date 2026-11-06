@@ -50,7 +50,10 @@ using MaterializedCTEUseCount = std::unordered_map<MaterializedCTEPtr, size_t>;
 ///
 /// Single post-order pass over the whole tree. Returns the per-`MaterializedCTEPtr` use-count map;
 /// an empty map means no materialized CTEs are present (driver fast-exits).
-MaterializedCTEUseCount mergeDuplicateMaterializedCTEs(const QueryTreeNodePtr & node, const ContextPtr & context)
+MaterializedCTEUseCount mergeDuplicateMaterializedCTEs(
+    const QueryTreeNodePtr & node,
+    const ContextPtr & context,
+    ReusedMaterializedCTEs & shared_bodies)
 {
     /// Quirk: `UnionNode::updateTreeHashImpl`/`isEqualImpl` ignore `CompareOptions` entirely and
     /// always hash/compare `is_cte`, `cte_name`, `is_materialized`; `QueryNode::updateTreeHashImpl`
@@ -82,6 +85,10 @@ MaterializedCTEUseCount mergeDuplicateMaterializedCTEs(const QueryTreeNodePtr & 
         /// re-registered and throw `TABLE_ALREADY_EXISTS`.
         if (!table_node->isMaterializedCTE())
             return;
+
+        /// A shared body has readers outside this tree.
+        if (table_node->sharesMaterializedCTEBody())
+            shared_bodies.insert(table_node->getMaterializedCTE());
 
         const auto & subquery = table_node->getMaterializedCTESubquery();
         MergeKey key{table_node->getMaterializedCTE()->cte_name, subquery->getTreeHash(compare_options)};
@@ -140,7 +147,7 @@ public:
             if (table_node->isMaterializedCTE())
             {
                 const auto & materialized_cte = table_node->getMaterializedCTE();
-                if (!reused_materialized_cte.contains(materialized_cte))
+                if (!reused_materialized_cte.contains(materialized_cte) && !table_node->sharesMaterializedCTEBody())
                 {
                     /// If the materialized CTE is not reused, we can inline it and remove the temporary table from the context.
                     /// If table is not removed from Context, it would cause an exception in distributed queries,
@@ -167,7 +174,8 @@ private:
 
 void inlineMaterializedCTEIfNeeded(QueryTreeNodePtr & node, ContextPtr context)
 {
-    auto use_count = mergeDuplicateMaterializedCTEs(node, context);
+    ReusedMaterializedCTEs shared_bodies;
+    auto use_count = mergeDuplicateMaterializedCTEs(node, context, shared_bodies);
 
     /// Fast exit: no materialized CTEs in the query -> nothing to register or inline,
     /// skip the second traversal and cloneAndReplace entirely.
@@ -181,6 +189,8 @@ void inlineMaterializedCTEIfNeeded(QueryTreeNodePtr & node, ContextPtr context)
     for (const auto & [materialized_cte, count] : use_count)
         if (count >= 2 || materialized_cte->is_referenced_from_recursive_cte_member)
             reused_materialized_cte.insert(materialized_cte);
+    for (const auto & materialized_cte : shared_bodies)
+        reused_materialized_cte.insert(materialized_cte);
 
     if (context->hasQueryContext())
     {

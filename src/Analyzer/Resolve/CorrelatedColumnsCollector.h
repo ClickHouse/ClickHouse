@@ -1,11 +1,13 @@
 #pragma once
 
 #include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace DB
@@ -67,7 +69,7 @@ private:
 
             for (const auto & child : current->getChildren())
             {
-                if (child)
+                if (child && enterSharedMaterializedCTEBody(current, child, entered_shared_bodies))
                     nodes_to_process.push_back(child);
             }
         }
@@ -75,6 +77,7 @@ private:
 
     const std::unordered_map<QueryTreeNodePtr, IdentifierResolveScope> & node_to_scope_map;
     QueryTreeNodes correlated_columns;
+    std::unordered_set<const IQueryTreeNode *> entered_shared_bodies;
 };
 
 }

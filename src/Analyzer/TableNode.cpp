@@ -195,8 +195,17 @@ void TableNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 
     if (isMaterializedCTE())
     {
-        buffer << '\n' << std::string(indent + 2, ' ') << "MATERIALIZED CTE SUBQUERY\n";
-        getMaterializedCTESubquery()->dumpTreeImpl(buffer, format_state, indent + 4);
+        const auto & subquery = getMaterializedCTESubquery();
+        buffer << '\n' << std::string(indent + 2, ' ') << "MATERIALIZED CTE SUBQUERY";
+
+        if (sharesMaterializedCTEBody() && !format_state.enterSharedMaterializedCTEBody(subquery.get()))
+        {
+            buffer << " id: " << format_state.getNodeId(subquery.get());
+            return;
+        }
+
+        buffer << '\n';
+        subquery->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 }
 
@@ -251,6 +260,7 @@ QueryTreeNodePtr TableNode::cloneImpl() const
     result_table_node->temporary_table_name = temporary_table_name;
 
     result_table_node->materialized_cte = materialized_cte;
+    result_table_node->share_materialized_cte_body = share_materialized_cte_body;
 
     return result_table_node;
 }

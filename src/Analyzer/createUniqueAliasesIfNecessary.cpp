@@ -19,8 +19,10 @@ class CreateUniqueTableAliasesVisitor : public InDepthQueryTreeVisitorWithContex
 public:
     using Base = InDepthQueryTreeVisitorWithContext<CreateUniqueTableAliasesVisitor>;
 
-    explicit CreateUniqueTableAliasesVisitor(const ContextPtr & context)
-        : Base(context)
+    explicit CreateUniqueTableAliasesVisitor(
+        const ContextPtr & context,
+        std::unordered_set<const IQueryTreeNode *> * shared_bodies = nullptr)
+        : Base(context, 0, shared_bodies)
     {
         // Insert a fake node on top of the stack.
         scope_nodes_stack.push_back(std::make_shared<LambdaNode>(std::make_shared<LambdaArgumentsNode>(Names{}), nullptr, false));
@@ -118,7 +120,7 @@ public:
                 auto arg = function_node->getArguments().getNodes().back();
                 /// Avoid aliasing IN `table`
                 if (arg->getNodeType() != QueryTreeNodeType::TABLE)
-                    CreateUniqueTableAliasesVisitor(getContext()).visit(function_node->getArguments().getNodes().back());
+                    CreateUniqueTableAliasesVisitor(getContext(), &getEnteredSharedBodies()).visit(function_node->getArguments().getNodes().back());
             }
         }
     }
