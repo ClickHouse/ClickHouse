@@ -21,7 +21,7 @@ trap cleanup EXIT
 # Creates a `(f32, i Nullable(Int32), f64)` table (floats Nullable unless `f32_type`/`f64_type` are
 # given), inserts `values` into f32/f64 (`i` stays NULL) and prints `null_value_counts` and
 # `nan_value_counts`. `i` (field id 2, between the floats) must never get a NaN count.
-# With `split`, each row is its own chunk (see `05507` for why `numbers` and Parquet are used).
+# With `split`, each row is its own chunk (see `iceberg_insert_float_bounds` for why `numbers` and Parquet are used).
 run_case()
 {
     local suffix="$1" values="$2" split="${3:-}"
