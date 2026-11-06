@@ -43,3 +43,23 @@ SELECT count(), (SELECT count() FROM t_sparsity_pending_readd WHERE x != 0 SETTI
 
 SYSTEM START MERGES t_sparsity_pending_readd;
 DROP TABLE t_sparsity_pending_readd;
+
+-- A pending `RENAME COLUMN` or `DROP COLUMN` of another column does not change the meaning of the
+-- `num_defaults` stored for `x`, so the rewrite is still applied to `count() WHERE x = 0`.
+-- It is not applied to the renamed column.
+DROP TABLE IF EXISTS t_sparsity_pending_rename_other;
+CREATE TABLE t_sparsity_pending_rename_other (x Int64, y Int64, z Int64) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9, compute_exact_num_defaults_for_sparse_columns = 1;
+SYSTEM STOP MERGES t_sparsity_pending_rename_other;
+INSERT INTO t_sparsity_pending_rename_other VALUES (0, 100, 1), (0, 200, 2), (1, 0, 3);
+
+ALTER TABLE t_sparsity_pending_rename_other RENAME COLUMN y TO w, DROP COLUMN z SETTINGS alter_sync = 0, mutations_sync = 0;
+
+SELECT count() FROM t_sparsity_pending_rename_other WHERE x = 0 SETTINGS enable_parallel_replicas = 0;
+SELECT count() FROM t_sparsity_pending_rename_other WHERE w = 0 SETTINGS enable_parallel_replicas = 0;
+
+SELECT countIf(explain LIKE '%Optimized trivial count with sparsity filter%') FROM (EXPLAIN SELECT count() FROM t_sparsity_pending_rename_other WHERE x = 0 SETTINGS enable_parallel_replicas = 0);
+SELECT countIf(explain LIKE '%Optimized trivial count with sparsity filter%') FROM (EXPLAIN SELECT count() FROM t_sparsity_pending_rename_other WHERE w = 0 SETTINGS enable_parallel_replicas = 0);
+
+SYSTEM START MERGES t_sparsity_pending_rename_other;
+DROP TABLE t_sparsity_pending_rename_other;
