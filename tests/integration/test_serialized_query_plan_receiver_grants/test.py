@@ -212,6 +212,42 @@ def test_receiver_evaluates_its_own_scalar_subquery_over_server_state(
     )
 
 
+@pytest.fixture
+def initiator_only_database():
+    initiator.query("CREATE DATABASE db1")
+    for node, database in ((initiator, "db1"), (receiver, "default")):
+        node.query(
+            f"CREATE TABLE {database}.lim (v UInt32) ENGINE = MergeTree ORDER BY v"
+        )
+        node.query(f"INSERT INTO {database}.lim VALUES (1), (2)")
+        node.query(f"GRANT SELECT ON {database}.lim TO u")
+    yield
+    initiator.query("DROP DATABASE db1")
+    receiver.query("DROP TABLE lim")
+
+
+# The subquery of the entry reads `lim` of the current database, which is `db1` only on the initiator. The receiver
+# plans the entry with its own current database, and the set of the initiator's plan is neither resolved nor built.
+@pytest.mark.parametrize("serialize_query_plan", [0, 1])
+def test_receiver_resolves_the_subquery_of_additional_table_filters_itself(
+    receiver_grant, initiator_grant_y, initiator_only_database, serialize_query_plan
+):
+    receiver_grant("x, y")
+    settings = {
+        "serialize_query_plan": serialize_query_plan,
+        "additional_table_filters": "{'default.m': 'y IN (SELECT v FROM lim)'}",
+    }
+    assert (
+        initiator.query(
+            "SELECT count() FROM default.dist",
+            user="u",
+            database="db1",
+            settings=settings,
+        )
+        == "2\n"
+    )
+
+
 @pytest.mark.parametrize("serialize_query_plan", [0, 1])
 def test_receiver_checks_its_own_max_columns_to_read(
     receiver_profile, serialize_query_plan

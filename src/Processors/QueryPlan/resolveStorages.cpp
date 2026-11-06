@@ -173,7 +173,11 @@ static std::unique_ptr<ExpressionStep> makeStepWithoutAdditionalFilter(
 }
 
 static QueryPlanResourceHolder replaceReadingFromTable(
-    QueryPlan::Node & node, QueryPlan::Nodes & nodes, const ContextPtr & context, const ParentNodes & parents)
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    const ContextPtr & context,
+    const ParentNodes & parents,
+    std::unordered_set<const FutureSet *> & removed_filter_sets)
 {
     const auto * reading_from_table = typeid_cast<const ReadFromTableStep *>(node.step.get());
     const auto * reading_from_table_function = typeid_cast<const ReadFromTableFunctionStep *>(node.step.get());
@@ -406,6 +410,13 @@ static QueryPlanResourceHolder replaceReadingFromTable(
             QueryPlan::Node * filter_node = &node;
             for (UInt64 i = 0; i < reading_from_table->getAdditionalFilter()->steps_above; ++i)
                 filter_node = parents.at(filter_node);
+            UsefulSets filter_sets;
+            UsefulSets kept_sets;
+            appendSetsFromActionsDAG(typeid_cast<const FilterStep &>(*filter_node->step).getExpression(), filter_sets);
+            appendSetsFromActionsDAG(step_without_additional_filter->getExpression(), kept_sets);
+            for (const auto & set : filter_sets)
+                if (!kept_sets.contains(set))
+                    removed_filter_sets.insert(set.get());
             filter_node->step = std::move(step_without_additional_filter);
         }
     }
@@ -474,6 +485,8 @@ static QueryPlanResourceHolder replaceReadingFromTable(
 void QueryPlan::resolveStorages(const ContextPtr & context)
 {
     ParentNodes parents;
+    std::unordered_set<const FutureSet *> removed_filter_sets;
+    std::vector<QueryPlan::Node *> delayed_creating_sets_nodes;
     std::stack<QueryPlan::Node *> stack;
     stack.push(getRootNode());
     while (!stack.empty())
@@ -481,17 +494,8 @@ void QueryPlan::resolveStorages(const ContextPtr & context)
         auto * node = stack.top();
         stack.pop();
 
-        if (const auto * delayed_creating_sets = typeid_cast<const DelayedCreatingSetsStep *>(node->step.get()))
-        {
-            for (const auto & set : delayed_creating_sets->getSets())
-            {
-                auto * set_plan = set->getQueryPlan();
-                set_plan->resolveStorages(context);
-                /// The set-source plan is kept aside, so the contexts its resolved reads captured must be handed to
-                /// this plan for a fallback to reach them, as the planner does for the set sources it builds.
-                takeContextsFrom(*set_plan);
-            }
-        }
+        if (typeid_cast<const DelayedCreatingSetsStep *>(node->step.get()))
+            delayed_creating_sets_nodes.push_back(node);
 
         for (auto * child : node->children)
         {
@@ -500,7 +504,32 @@ void QueryPlan::resolveStorages(const ContextPtr & context)
         }
 
         if (node->children.empty())
-            addResources(replaceReadingFromTable(*node, nodes, context, parents));
+            addResources(replaceReadingFromTable(*node, nodes, context, parents, removed_filter_sets));
+    }
+
+    for (auto * node : delayed_creating_sets_nodes)
+    {
+        if (!removed_filter_sets.empty())
+        {
+            /// A set that no column of the plan refers to any more is held only by the step that builds it.
+            auto & delayed_creating_sets = typeid_cast<DelayedCreatingSetsStep &>(*node->step);
+            auto sets = delayed_creating_sets.detachSets();
+            std::erase_if(sets, [&](const auto & set) { return removed_filter_sets.contains(set.get()) && set.use_count() == 1; });
+            node->step = std::make_unique<DelayedCreatingSetsStep>(
+                delayed_creating_sets.getInputHeaders().front(),
+                std::move(sets),
+                delayed_creating_sets.getNetworkTransferLimits(),
+                delayed_creating_sets.getPreparedSetsCache());
+        }
+
+        for (const auto & set : typeid_cast<const DelayedCreatingSetsStep &>(*node->step).getSets())
+        {
+            auto * set_plan = set->getQueryPlan();
+            set_plan->resolveStorages(context);
+            /// The set-source plan is kept aside, so the contexts its resolved reads captured must be handed to
+            /// this plan for a fallback to reach them, as the planner does for the set sources it builds.
+            takeContextsFrom(*set_plan);
+        }
     }
 }
 

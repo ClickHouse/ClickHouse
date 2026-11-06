@@ -72,6 +72,30 @@ for table in rp_mf_merge rp_mf_leaf; do
             additional_table_filters = {'${CLICKHOUSE_DATABASE}.${table}': 'x < 100 AND arrayJoin([1, 1])'}"
     done
 done
+
+# The set of an `IN` subquery in the entry is built once. Prints the count and whether each secondary
+# query built one set.
+for sqp in 1 0; do
+    query_id="${CLICKHOUSE_DATABASE}_in_set_${sqp}_${RANDOM}"
+    echo -n "IN set atf on rp_mf_leaf sqp=${sqp} "
+    ${CLICKHOUSE_CLIENT} --query_id "${query_id}" -q "SELECT count() FROM rp_mf_dist_leaf
+        SETTINGS ${SETTINGS}, serialize_query_plan = ${sqp}, use_index_for_in_with_subqueries = 0,
+        additional_table_filters = {'${CLICKHOUSE_DATABASE}.rp_mf_leaf': 'y IN (SELECT number FROM numbers(10))'}" | tr '\n' ' '
+    # Secondary queries publish their log rows after the initiator has already returned.
+    for _ in $(seq 1 60); do
+        ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+        sets=$(${CLICKHOUSE_CLIENT} -q "
+            SELECT countIf(ProfileEvents['SetsBuiltFromSubquery'] = 1) = count() FROM system.query_log
+            WHERE type = 'QueryFinish' AND NOT is_initial_query AND event_date >= yesterday()
+              AND initial_query_id = '${query_id}'
+              -- A secondary query logs current_database = 'default', not the test database.
+              AND current_database IN ['default', currentDatabase()]
+            HAVING count() > 0")
+        [ -n "${sets}" ] && break
+        sleep 0.5
+    done
+    echo "${sets}"
+done
 ${CLICKHOUSE_CLIENT} -m -q "
 DROP ROW POLICY rp_mf_all ON rp_mf_leaf;
 DROP TABLE rp_mf_dist_leaf;
