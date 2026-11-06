@@ -288,7 +288,7 @@ The response is a `CloseSessionResult` with one of these statuses:
 - `CLOSED`: the session was closed, or no named session was in use (in which case the action succeeds as a no-op).
 - `NOT_CLOSABLE`: session closing is disabled because `enable_arrow_close_session` is `false` in the server config.
 
-When a session is closed, prepared statements created in that session are released (see [ClosePreparedStatement](#closepreparedstatement)).
+The named session is released when the `CloseSession` RPC completes, the same way as `x-clickhouse-session-close`. When a session is closed, prepared statements created in that session are released (see [ClosePreparedStatement](#closepreparedstatement)). A later request that reuses the same `x-clickhouse-session-id` creates a new named session.
 
 ```python
 # Close the session from the current Flight call context
