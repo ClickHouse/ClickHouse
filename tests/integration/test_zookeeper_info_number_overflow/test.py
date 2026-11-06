@@ -22,6 +22,13 @@ keeper = cluster.add_instance(
     stay_alive=True,
 )
 
+# A server whose second ZooKeeper host `keeper:9997` is a mock which reports a
+# `Zxid` without the 0x prefix.
+node = cluster.add_instance(
+    "node",
+    main_configs=["configs/use_keeper_short_zxid.xml"],
+)
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -32,16 +39,20 @@ def started_cluster():
             os.path.join(SCRIPT_DIR, "mock_keeper_4lw.py"), "/mock_keeper_4lw.py"
         )
         keeper.exec_in_container(["python3", "/mock_keeper_4lw.py"], detach=True)
+        keeper.exec_in_container(
+            ["python3", "/mock_keeper_4lw.py", "9997", "5"], detach=True
+        )
 
-        mock_address = (cluster.get_instance_ip("keeper"), 9998)
-        for _ in range(100):
-            try:
-                socket.create_connection(mock_address, timeout=1).close()
-                break
-            except OSError:
-                time.sleep(0.1)
-        else:
-            raise Exception("Mock four letter command endpoint did not start")
+        for port in (9998, 9997):
+            mock_address = (cluster.get_instance_ip("keeper"), port)
+            for _ in range(100):
+                try:
+                    socket.create_connection(mock_address, timeout=1).close()
+                    break
+                except OSError:
+                    time.sleep(0.1)
+            else:
+                raise Exception("Mock four letter command endpoint did not start")
 
         yield cluster
     finally:
@@ -100,3 +111,10 @@ def test_keeper_asynchronous_metrics_file_descriptor_counts(started_cluster):
 
     assert 0 < float(open_fd) < 2**31
     assert float(max_fd) == -1 or float(max_fd) >= float(open_fd)
+
+
+def test_zookeeper_info_zxid_without_prefix(started_cluster):
+    # A `Zxid` without the 0x prefix fails the query with a proper error.
+    node.query_with_retry("SELECT count() FROM system.zookeeper WHERE path = '/'")
+    error = node.query_and_get_error("SELECT zxid FROM system.zookeeper_info")
+    assert "CANNOT_PARSE_NUMBER" in error and "Zxid" in error
