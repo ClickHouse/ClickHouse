@@ -1,9 +1,6 @@
 #include <Disks/DiskType.h>
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
-
-#include <Common/Exception.h>
-
 #include <Poco/String.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -24,8 +21,6 @@ MetadataStorageType metadataTypeFromString(const String & type)
         return MetadataStorageType::PlainRewritable;
     if (check_type == "web")
         return MetadataStorageType::StaticWeb;
-    if (check_type == "web_index")
-        return MetadataStorageType::WebIndex;
     if (check_type == "keeper")
         return MetadataStorageType::Keeper;
     if (check_type == "memory")
@@ -89,15 +84,6 @@ String DataSourceDescription::toString() const
 {
     return fmt::format("{} (description = '{}', is_encrypted = {}, is_cached = {}, zookeeper_name = '{}')",
                        name(), description, is_encrypted, is_cached, zookeeper_name);
-}
-
-bool isDiskObjectStorage(std::shared_ptr<const IDisk> disk)
-{
-    while (auto delegate_disk = disk->getDelegateDiskIfExists())
-        disk = delegate_disk;
-
-    return std::dynamic_pointer_cast<const DiskObjectStorage>(disk) != nullptr;
-
 }
 
 }

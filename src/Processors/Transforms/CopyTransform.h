@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/Chunk.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 
@@ -12,7 +11,7 @@ class Block;
 
 /// Transform which has single input and num_outputs outputs.
 /// Read chunk from input and copy it to all outputs.
-class CopyTransform final : public IProcessor
+class CopyTransform : public IProcessor
 {
 public:
     CopyTransform(SharedHeader header, size_t num_outputs);
@@ -20,15 +19,11 @@ public:
     String getName() const override { return "Copy"; }
     Status prepare() override;
 
-    bool requiresAllOutputsPushable() const override { return true; }
-
     InputPort & getInputPort() { return inputs.front(); }
 
 private:
     Port::Data data;
-    VectorWithMemoryTracking<char> was_output_processed;
-    /// Inputs are not requested before an output asks for data.
-    bool was_output_needed = false;
+    std::vector<char> was_output_processed;
 
     Status prepareGenerate();
     Status prepareConsume();

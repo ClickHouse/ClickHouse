@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <cmath>
 #include <cfloat>
-#include <Common/NaNUtils.h>
 
 namespace DB
 {
@@ -97,7 +96,7 @@ public:
         data.add(value);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -136,9 +135,7 @@ public:
         }
 
         auto [t_statistic, p_value] = data.getResult();
-        /// A NaN p-value is kept, as `std::max` would turn it into zero.
-        if (!isNaN(p_value))
-            p_value = std::min(1.0, std::max(0.0, p_value));
+        p_value = std::min(1.0, std::max(0.0, p_value));
 
         auto & column_stat = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(0));
         auto & column_value = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(1));

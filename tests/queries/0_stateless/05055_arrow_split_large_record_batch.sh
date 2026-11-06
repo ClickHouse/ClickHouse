@@ -46,7 +46,6 @@ run "LowCardinality"     "toLowCardinality(repeat(toString(number % 4), 64))"   
 run "Array(String)"      "[repeat('z', 64)]"                                          512
 run "Map"                "map('k', repeat('m', 64))"                                  512
 run "Tuple"              "(repeat('p', 64), repeat('q', 64))"                         512
-run "Variant"            "if(number % 2, number, repeat('v', 64))::Variant(UInt64, String)" 512
 # Only the offsets mode gives `FixedString` a buffer the bound applies to; the default maps it to a
 # fixed-width Arrow type instead.
 run "FixedString" "toFixedString(repeat('f', 64), 64)" 512 ", output_format_arrow_fixed_string_as_fixed_byte_array = 0"

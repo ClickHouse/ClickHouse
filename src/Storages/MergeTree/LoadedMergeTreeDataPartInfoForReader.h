@@ -30,25 +30,21 @@ public:
 
     const MergeTreePartInfo & getPartInfo() const override { return data_part->info; }
 
-    const MergeTreePartition & getPartition() const override { return data_part->partition; }
-
     Int64 getMinDataVersion() const override
     {
         return data_part->info.isPatch()
-            ? data_part->getPatchPartIndex().getMinDataVersion()
+            ? data_part->getSourcePartsSet().getMinDataVersion()
             : data_part->info.getDataVersion();
     }
 
     Int64 getMaxDataVersion() const override
     {
         return data_part->info.isPatch()
-            ? data_part->getPatchPartIndex().getMaxDataVersion()
+            ? data_part->getSourcePartsSet().getMaxDataVersion()
             : data_part->info.getDataVersion();
     }
 
     IndexPtr getIndexPtr() const override { return data_part->getIndex(); }
-
-    MergeTreePartMinMaxIndexPtr getMinMaxIndex() const override { return data_part->getMinMaxIndex(); }
 
     DataPartStoragePtr getDataPartStorage() const override { return data_part->getDataPartStoragePtr(); }
 
@@ -62,10 +58,6 @@ public:
 
     std::optional<size_t> getColumnPosition(const String & column_name) const override { return data_part->getColumnPosition(column_name); }
 
-    std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const override { return data_part->tryGetColumn(column_name); }
-
-    bool isSystemColumnInvalidated(const String & column_name) const override { return data_part->isSystemColumnInvalidated(column_name); }
-
     AlterConversionsPtr getAlterConversions() const override { return alter_conversions; }
 
     String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const override
@@ -73,22 +65,7 @@ public:
         return data_part->getColumnNameWithMinimumCompressedSize(available_columns);
     }
 
-    String getParentPartName() const override { return data_part->getParentPartName(); }
-
-    ColumnSize getColumnSize(const String & column_name) const override { return data_part->getColumnSize(column_name); }
-
-    std::shared_ptr<const std::unordered_map<String, ColumnSize>> getColumnSizes() const override
-    {
-        return data_part->getColumnSizes();
-    }
-
-    CompressionCodecPtr getDefaultCompressionCodec() const override { return data_part->default_codec; }
-
-    ColumnSize getSubcolumnSize(const String & subcolumn_name) const override { return data_part->getSubcolumnSize(subcolumn_name); }
-
     const MergeTreeDataPartChecksums & getChecksums() const override { return data_part->checksums; }
-
-    const SecondaryIndexColumnTypes & getSecondaryIndexColumnTypes() const override { return data_part->getSecondaryIndexColumnTypes(); }
 
     void reportBroken() override { data_part->storage.reportBrokenPart(data_part); }
 
@@ -104,25 +81,23 @@ public:
 
     SerializationPtr getSerialization(const NameAndTypePair & column) const override { return data_part->getSerialization(column.name); }
 
-    SerializationPtr tryGetSerialization(const String & column_name) const override { return data_part->tryGetSerialization(column_name); }
-
-    SerializationPtr tryGetSubcolumnSerialization(const String & column_name, const String & subcolumn_name) const override
-    {
-        return data_part->tryGetSubcolumnSerialization(column_name, subcolumn_name);
-    }
-
     String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
 
-    UUID getTableUUID() const override { return data_part->storage.getStorageID().uuid; }
+    MergeTreeData::DataPartPtr getDataPart() const { return data_part; }
 
-    MergeTreeSettingsPtr getStorageSettings() const override { return data_part->storage.getSettings(); }
+    void setReadHints(const RangesInDataPartReadHints & read_hints_, const NamesAndTypesList & read_columns) override
+    {
+        if (read_columns.contains("_distance"))
+            read_hints = read_hints_;
+    }
 
-    std::shared_ptr<const IMergeTreeDataPart> getDataPart() const override { return data_part; }
+    const RangesInDataPartReadHints & getReadHints() const override { return read_hints; }
 
     size_t getRowCount() const override { return data_part->rows_count; }
 private:
     MergeTreeData::DataPartPtr data_part;
     AlterConversionsPtr alter_conversions;
+    RangesInDataPartReadHints read_hints;
 };
 
 }
