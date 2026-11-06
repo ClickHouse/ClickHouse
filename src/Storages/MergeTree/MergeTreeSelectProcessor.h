@@ -16,6 +16,9 @@ namespace DB
 
 struct PrewhereExprInfo;
 
+class ITopKThresholdTracker;
+using TopKThresholdTrackerPtr = std::shared_ptr<ITopKThresholdTracker>;
+
 struct LazilyReadInfo;
 using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
 
@@ -29,6 +32,8 @@ struct ChunkAndProgress
     bool is_finished = false;
     /// Mark ranges that were read in this call (used for per-block virtual row generation).
     MarkRanges read_mark_ranges;
+    /// The mark and number of rows of each granule with rows in `chunk`, see `MergeTreeReadTask::BlockAndProgress`.
+    std::vector<std::pair<size_t, size_t>> result_rows_per_mark;
 };
 
 class ParallelReadingExtension
@@ -144,8 +149,9 @@ public:
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         MergeTreeIndexBuildContextPtr merge_tree_index_build_context_ = {},
-        LazyMaterializingRowsPtr lazy_materializing_rows_ = {},
-        const ColumnsDescription * columns_ = nullptr);
+        LazyMaterializingRowsPtr lazy_materializing_rows_ = {});
+
+    ~MergeTreeSelectProcessor();
 
     String getName() const;
     std::span<ISpillable * const> getSpillables() const { return set_spillables.get(); }
@@ -176,8 +182,7 @@ public:
         const ExpressionActionsSettings & actions_settings,
         bool enable_multiple_prewhere_read_steps,
         bool force_short_circuit_execution,
-        bool read_ahead_prewhere_columns,
-        const ColumnsDescription * columns = nullptr);
+        bool read_ahead_prewhere_columns);
 
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
 
@@ -245,6 +250,29 @@ private:
     std::optional<ChunkAndProgress> pending_virtual_row;
 
     ChunkAndProgress buildVirtualRowFromIndex(const MergeTreeReadTask & current_task, const MarkRanges & read_mark_ranges) const;
+
+    /// A TopK read records a granule in the query condition cache once its rows all sort strictly beyond the threshold.
+    /// The threshold tightens while the read goes on, so the granules read early are checked again, by the best value
+    /// of the sort column among their rows that passed PREWHERE, when the processor is destroyed: then the threshold is
+    /// final. The same is done for files, see `StorageFileSource::writePendingTopKQueryConditionCacheEntries`.
+    struct PendingTopKGranules
+    {
+        UUID table_uuid;
+        String part_name;
+        size_t marks_count = 0;
+        bool has_final_mark = false;
+        std::vector<std::pair<size_t, Field>> best_values;
+    };
+    TopKThresholdTrackerPtr top_k_threshold_tracker;
+    /// Position of the sort column in `result_header`.
+    std::optional<size_t> top_k_column_position;
+    std::vector<PendingTopKGranules> pending_top_k_granules;
+    size_t num_pending_top_k_granules = 0;
+    /// Set if some rows of the read could not be attributed to their granules: then nothing is written.
+    bool top_k_granules_incomplete = false;
+
+    void recordTopKBestValues(const MergeTreeReadTask & current_task, const ChunkAndProgress & result);
+    void writeTopKQueryConditionCacheEntries() noexcept;
 
     LoggerPtr log = getLogger("MergeTreeSelectProcessor");
     std::atomic<bool> is_cancelled{false};

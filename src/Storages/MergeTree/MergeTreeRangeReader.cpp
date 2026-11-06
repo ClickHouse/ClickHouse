@@ -54,30 +54,6 @@ LoggerPtr getMergeTreeRangeReaderLogger()
     return log;
 }
 
-static bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & filter_column)
-{
-    if (!column)
-        return true;
-
-    if (filter_column == column)
-        return false;
-
-    if (column->use_count() > 1)
-        return false;
-
-    bool can_inplace = true;
-    column->forEachSubcolumn([&](const ColumnPtr & subcolumn)
-    {
-        if (!can_inplace)
-            return;
-
-        if (!canInplaceFilter(subcolumn, filter_column))
-            can_inplace = false;
-    });
-
-    return can_inplace;
-}
-
 FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
     : const_description(*column_)
 {
@@ -564,6 +540,57 @@ MarkRanges MergeTreeRangeReader::ReadResult::computeUnmatchedMarkRanges() const
         }
     }
 
+    return result;
+}
+
+std::vector<std::pair<size_t, size_t>> MergeTreeRangeReader::ReadResult::computeResultRowsPerMark() const
+{
+    if (rows_per_granule.empty() || num_rows == 0)
+        return {};
+
+    /// `rows_per_granule` lost only the filtered tails of the granules; the rows filtered inside them are dropped by
+    /// `final_filter`, unless it was not applied yet (then `columns` hold every row the granules have left).
+    const UInt8 * filter = nullptr;
+    if (num_rows != total_rows_per_granule)
+    {
+        if (!final_filter.present() || final_filter.size() != total_rows_per_granule || final_filter.countBytesInFilter() != num_rows)
+            return {};
+        filter = final_filter.getData().data();
+    }
+
+    /// The mark of each granule, as in `computeUnmatchedMarkRanges`.
+    const size_t i_start = started_ranges.empty() ? rows_per_granule.size() : started_ranges[0].num_granules_read_before_start;
+    if (i_start != 0 && !in_progress_start_mark.has_value())
+        return {};
+
+    std::vector<std::pair<size_t, size_t>> result;
+    size_t pos = 0;
+    size_t total_result_rows = 0;
+    size_t range_idx = 0;
+    for (size_t i = 0; i < rows_per_granule.size(); ++i)
+    {
+        size_t mark;
+        if (i < i_start)
+        {
+            mark = *in_progress_start_mark + i;
+        }
+        else
+        {
+            while (range_idx + 1 < started_ranges.size() && started_ranges[range_idx + 1].num_granules_read_before_start <= i)
+                ++range_idx;
+            mark = started_ranges[range_idx].range.begin + (i - started_ranges[range_idx].num_granules_read_before_start);
+        }
+
+        const size_t granule_rows = rows_per_granule[i];
+        const size_t result_rows = filter ? countBytesInFilter(filter, pos, pos + granule_rows) : granule_rows;
+        pos += granule_rows;
+        total_result_rows += result_rows;
+        if (result_rows)
+            result.emplace_back(mark, result_rows);
+    }
+
+    if (total_result_rows != num_rows)
+        return {};
     return result;
 }
 
@@ -1918,12 +1945,10 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             result.columns.erase(result.columns.begin() + filter_column_pos);
 
         FilterWithCachedCount current_filter(current_step_filter);
-        /// Null when predicate_statistics_sample_rate = 0 (default). countBytesInFilter()
-        /// is an O(rows) scan that the following optimize() does not otherwise need, so
-        /// keep it behind the guard.
-        if (performance_counters)
-            performance_counters->rows_passed_filter += current_filter.countBytesInFilter();
         result.optimize(current_filter, can_read_incomplete_granules, false);
+        /// Null when predicate_statistics_sample_rate = 0 (default). Counts the rows that passed all steps so far.
+        if (performance_counters)
+            performance_counters->rows_passed_filter += result.final_filter.present() ? result.final_filter.countBytesInFilter() : result.num_rows;
 
         if (prewhere_info->need_filter && !result.filterWasApplied())
         {

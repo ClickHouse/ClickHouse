@@ -1,7 +1,14 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 
+#include <Columns/Collator.h>
 #include <Columns/ColumnLazy.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/FilterDescription.h>
+#include <Common/findExtreme.h>
+#include <base/memcmpSmall.h>
+#include <Functions/FunctionTopKFilter.h>
+#include <Processors/TopKThresholdTracker.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Common/CurrentThread.h>
@@ -240,8 +247,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
     MergeTreeIndexBuildContextPtr merge_tree_index_build_context_,
-    LazyMaterializingRowsPtr lazy_materializing_rows_,
-    const ColumnsDescription * columns_)
+    LazyMaterializingRowsPtr lazy_materializing_rows_)
     : pool(std::move(pool_))
     , algorithm(std::move(algorithm_))
     , row_level_filter(row_level_filter_)
@@ -254,8 +260,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
           actions_settings,
           reader_settings_.enable_multiple_prewhere_read_steps,
           reader_settings_.force_short_circuit_execution,
-          reader_settings_.read_ahead_prewhere_columns,
-          columns_))
+          reader_settings_.read_ahead_prewhere_columns))
     , reader_settings(reader_settings_)
     , prewhere_filters_by_top_k_threshold(prewhereFiltersByTopKThreshold(prewhere_info, reader_settings))
     , result_header(transformHeader(pool->getHeader(), row_level_filter, prewhere_info))
@@ -333,6 +338,35 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
                 }
                 break;
             }
+        }
+    }
+
+    /// Find the sort column and the threshold of the `__topKFilter` in PREWHERE, see `PendingTopKGranules`.
+    if (prewhere_filters_by_top_k_threshold && prewhere_condition_for_query_condition_cache)
+    {
+        const ActionsDAG::Node * top_k_filter = nullptr;
+        auto is_top_k_filter = [](const ActionsDAG::Node * node)
+        {
+            return node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "__topKFilter";
+        };
+        for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
+        {
+            if (output->result_name != prewhere_info->prewhere_column_name)
+                continue;
+            if (is_top_k_filter(output))
+                top_k_filter = output;
+            else if (output->type == ActionsDAG::ActionType::FUNCTION && output->function_base->getName() == "and")
+                for (const auto * child : output->children)
+                    if (is_top_k_filter(child))
+                        top_k_filter = child;
+            break;
+        }
+
+        if (top_k_filter && top_k_filter->children.size() == 1 && top_k_filter->children.front()->type == ActionsDAG::ActionType::INPUT)
+        {
+            top_k_threshold_tracker = getTopKFilterThresholdTracker(*top_k_filter->function_base);
+            if (top_k_threshold_tracker)
+                top_k_column_position = result_header.findPositionByName(top_k_filter->children.front()->result_name);
         }
     }
 
@@ -427,8 +461,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     const ExpressionActionsSettings & actions_settings,
     bool enable_multiple_prewhere_read_steps,
     bool force_short_circuit_execution,
-    bool read_ahead_prewhere_columns,
-    const ColumnsDescription * columns)
+    bool read_ahead_prewhere_columns)
 {
     PrewhereExprInfo prewhere_actions;
 
@@ -450,7 +483,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     }
 
     if (prewhere_info &&
-        (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution, columns, read_ahead_prewhere_columns, &index_read_tasks)))
+        (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution, read_ahead_prewhere_columns, &index_read_tasks)))
     {
         PrewhereExprStep prewhere_step
         {
@@ -541,7 +574,8 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
 
         return ChunkAndProgress{
             .chunk = std::move(chunk), .num_read_rows = res.num_read_rows, .num_read_bytes = res.num_read_bytes,
-            .is_finished = false, .read_mark_ranges = std::move(res.read_mark_ranges)};
+            .is_finished = false, .read_mark_ranges = std::move(res.read_mark_ranges),
+            .result_rows_per_mark = std::move(res.result_rows_per_mark)};
     }
 
     /// Suppress PREWHERE attribution when a reader earlier in the chain (skip-index or projection-index)
@@ -563,7 +597,7 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
         current_task.addQueryConditionCacheAttributableMarks(res.query_condition_cache_attributable_marks);
     }
 
-    return {Chunk(), res.num_read_rows, res.num_read_bytes, false, std::move(res.read_mark_ranges)};
+    return {Chunk(), res.num_read_rows, res.num_read_bytes, false, std::move(res.read_mark_ranges), {}};
 }
 
 void MergeTreeSelectProcessor::setVirtualRowConversions(
@@ -619,7 +653,7 @@ ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromIndex(
     auto part_level = data_part_info->getPartInfo().level;
     chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(part_level, pk_block, virtual_row_conversions));
 
-    return {std::move(chunk), 0, 0, false, {}};
+    return {std::move(chunk), 0, 0, false, {}, {}};
 }
 
 ChunkAndProgress MergeTreeSelectProcessor::read()
@@ -703,6 +737,9 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 
         auto result = readCurrentTask(*task, *algorithm);
 
+        if (top_k_column_position && result.chunk.getNumRows())
+            recordTopKBestValues(*task, result);
+
         /// Emit a virtual row update after each block, carrying the next mark's PK boundary.
         /// This allows MergingSortedTransform to reprioritize sources when:
         /// - PREWHERE filters all rows (merge gets updated position without actual data)
@@ -717,7 +754,181 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         return result;
     }
 
-    return {Chunk(), 0, 0, true, {}};
+    return {Chunk(), 0, 0, true, {}, {}};
+}
+
+MergeTreeSelectProcessor::~MergeTreeSelectProcessor()
+{
+    writeTopKQueryConditionCacheEntries();
+}
+
+/// The first row that sorts first among `[begin, end)` of an integer column; nullopt for other columns.
+template <typename... ColumnTypes>
+static std::optional<size_t> findTopKBestRowOfIntegers(const IColumn & column, size_t begin, size_t end, int direction)
+{
+    std::optional<size_t> best_row;
+    auto try_column = [&]<typename ColumnType>(std::type_identity<ColumnType>)
+    {
+        const auto * typed_column = typeid_cast<const ColumnType *>(&column);
+        if (!typed_column)
+            return false;
+        const auto * data = typed_column->getData().data();
+        best_row = direction > 0 ? findExtremeMinIndex(data, begin, end) : findExtremeMaxIndex(data, begin, end);
+        return true;
+    };
+    (try_column(std::type_identity<ColumnTypes>{}) || ...);
+    return best_row;
+}
+
+/// The same for a `String` column, compared as `ColumnString::compareAt` does. Nothing sorts before an empty string, so
+/// in ascending order the scan stops at the first one: rows that only a later filter drops, such as the empty strings
+/// of `WHERE s != '' ORDER BY s`, pass `__topKFilter` and would be compared one by one otherwise.
+static std::optional<size_t> findTopKBestRowOfStrings(const IColumn & column, size_t begin, size_t end, int direction)
+{
+    const auto * string_column = typeid_cast<const ColumnString *>(&column);
+    if (!string_column)
+        return std::nullopt;
+
+    size_t best_row = begin;
+    std::string_view best = string_column->getDataAt(begin);
+    for (size_t row = begin + 1; row < end && !(direction > 0 && best.empty()); ++row)
+    {
+        std::string_view value = string_column->getDataAt(row);
+        /// Unsigned bytes, as `ColumnString::compareAt`: compared as `char`, UTF-8 bytes would sort before ASCII.
+        if (direction * memcmpSmallAllowOverflow15(
+                reinterpret_cast<const UInt8 *>(value.data()), value.size(), reinterpret_cast<const UInt8 *>(best.data()), best.size()) < 0)
+        {
+            best = value;
+            best_row = row;
+        }
+    }
+    return best_row;
+}
+
+void MergeTreeSelectProcessor::recordTopKBestValues(const MergeTreeReadTask & current_task, const ChunkAndProgress & result)
+{
+    /// The guards of the PREWHERE writes to the query condition cache, see `read`.
+    const auto & data_part_info = current_task.getInfo().data_part_info;
+    if (top_k_granules_incomplete || !reader_settings.use_query_condition_cache || !data_part_info->getDataPart()
+        || current_task.readersChainCanSkipMarksBeforePrewhere(prewhere_filters_by_top_k_threshold)
+        || current_task.appliesMutationsBeforePrewhere() || row_level_filter)
+        return;
+
+    static constexpr size_t max_pending_granules = 100'000;
+    num_pending_top_k_granules += result.result_rows_per_mark.size();
+    /// Sparse and LowCardinality columns are compared by their values, as the sorting transforms do.
+    const ColumnPtr column_holder = typeid_cast<const ColumnLazy *>(result.chunk.getColumns()[*top_k_column_position].get())
+        ? nullptr
+        : result.chunk.getColumns()[*top_k_column_position]->convertToFullColumnIfConst()->convertToFullColumnIfSparse()->convertToFullColumnIfLowCardinality();
+    if (result.result_rows_per_mark.empty() || num_pending_top_k_granules > max_pending_granules || !column_holder)
+    {
+        top_k_granules_incomplete = true;
+        pending_top_k_granules.clear();
+        return;
+    }
+
+    String part_name = data_part_info->isProjectionPart()
+        ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName())
+        : data_part_info->getPartName();
+    const UUID table_uuid = data_part_info->getDataPart()->storage.getStorageID().uuid;
+    if (pending_top_k_granules.empty() || pending_top_k_granules.back().part_name != part_name
+        || pending_top_k_granules.back().table_uuid != table_uuid)
+        pending_top_k_granules.push_back(PendingTopKGranules{
+            .table_uuid = table_uuid,
+            .part_name = std::move(part_name),
+            .marks_count = data_part_info->getIndexGranularity().getMarksCount(),
+            .has_final_mark = data_part_info->getIndexGranularity().hasFinalMark(),
+            .best_values = {}});
+    auto & best_values = pending_top_k_granules.back().best_values;
+
+    /// The same order as `__topKFilter` and the sorting transforms: "best" means "sorts first".
+    const IColumn & column = *column_holder;
+    const int direction = top_k_threshold_tracker->getDirection();
+    const int nulls_direction = top_k_threshold_tracker->getNullsDirection();
+    const Collator * collator = top_k_threshold_tracker->getCollator().get();
+
+    size_t begin = 0;
+    for (const auto & [mark, num_rows] : result.result_rows_per_mark)
+    {
+        const size_t end = begin + num_rows;
+        std::optional<size_t> best_row;
+        if (!collator)
+            best_row = findTopKBestRowOfIntegers<
+                ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64, ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64>(
+                column, begin, end, direction);
+        if (!best_row && !collator)
+            best_row = findTopKBestRowOfStrings(column, begin, end, direction);
+        if (!best_row)
+        {
+            best_row = begin;
+            for (size_t row = begin + 1; row < end; ++row)
+            {
+                int res = collator ? column.compareAtWithCollation(row, *best_row, column, nulls_direction, *collator)
+                                   : column.compareAt(row, *best_row, column, nulls_direction);
+                if (direction * res < 0)
+                    best_row = row;
+            }
+        }
+        best_values.emplace_back(mark, column[*best_row]);
+        begin = end;
+    }
+}
+
+void MergeTreeSelectProcessor::writeTopKQueryConditionCacheEntries() noexcept
+{
+    if (pending_top_k_granules.empty() || top_k_granules_incomplete)
+        return;
+
+    try
+    {
+        /// Once `__topKFilter` drops the rows equal to the threshold, the rows of a granule that tie with it may be gone.
+        const auto & rows_equal_to_threshold_dropped = reader_settings.top_k_filter_rows_equal_to_threshold_dropped;
+        if (rows_equal_to_threshold_dropped && rows_equal_to_threshold_dropped->load(std::memory_order_relaxed))
+            return;
+
+        /// The threshold only tightens, so a granule whose rows all sort strictly beyond it now holds no row of the result:
+        /// `__topKFilter` keeps the rows equal to the threshold, as they may still tie-break into the result.
+        const auto & tracker = *top_k_threshold_tracker;
+        if (!tracker.isSet())
+            return;
+
+        auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+        if (!query_condition_cache)
+            return;
+        for (auto & entry : pending_top_k_granules)
+        {
+            /// A granule read in parts (not expected: the cache reads whole granules) is beyond only if every part is.
+            std::ranges::stable_sort(entry.best_values, {}, [](const auto & value) { return value.first; });
+            MarkRanges beyond;
+            for (size_t i = 0; i < entry.best_values.size();)
+            {
+                const size_t mark = entry.best_values[i].first;
+                bool is_beyond = true;
+                for (; i < entry.best_values.size() && entry.best_values[i].first == mark; ++i)
+                    is_beyond = is_beyond && !tracker.isValueInsideThreshold(entry.best_values[i].second);
+                if (!is_beyond)
+                    continue;
+                if (!beyond.empty() && beyond.back().end == mark)
+                    ++beyond.back().end;
+                else
+                    beyond.emplace_back(mark, mark + 1);
+            }
+
+            if (!beyond.empty())
+                query_condition_cache->write(
+                    entry.table_uuid,
+                    entry.part_name,
+                    prewhere_condition_for_query_condition_cache->first,
+                    prewhere_condition_for_query_condition_cache->second,
+                    beyond,
+                    entry.marks_count,
+                    entry.has_final_mark);
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "While writing the TopK granules to the query condition cache");
+    }
 }
 
 /// Cancels all internal operations for this select processor, including cancelling any ongoing index reads.

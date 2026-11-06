@@ -205,6 +205,10 @@ public:
         /// because it captures individual filtered-out granules even in partially-passing batches.
         MarkRanges unmatched_mark_ranges;
         MarkRanges query_condition_cache_attributable_marks;
+        /// The mark and number of rows of each granule with rows in `block`, in block order (see
+        /// `MergeTreeRangeReader::ReadResult::computeResultRowsPerMark`). Populated only for a TopK read that
+        /// records its granules in the query condition cache.
+        std::vector<std::pair<size_t, size_t>> result_rows_per_mark;
         size_t row_count = 0;
         size_t num_read_rows = 0;
         size_t num_read_bytes = 0;
