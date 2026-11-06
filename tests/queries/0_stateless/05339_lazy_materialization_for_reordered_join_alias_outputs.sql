@@ -2,7 +2,6 @@
 -- an input and output an alias of it, as for the columns of a subquery: pruning the alias removes the input too, and
 -- the join must not return it any more.
 
-SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_lazy_materialization_for_join = 1;
 SET query_plan_max_limit_for_lazy_materialization = 100;

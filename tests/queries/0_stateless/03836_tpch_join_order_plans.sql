@@ -81,7 +81,6 @@ INSERT INTO orders    VALUES (1, 1, 'O', 1.0, '1994-01-01', '1-URGENT', 'C1', 0,
 INSERT INTO lineitem  VALUES (1, 1, 1, 1, 1.0, 1.0, 0.0, 0.0, 'N', 'O', '1994-02-01', '1994-01-15', '1994-02-05', 'DELIVER IN PERSON', 'SHIP', '');
 
 SET explain_query_plan_default = 'legacy';
-SET allow_experimental_analyzer = 1;
 SET enable_join_runtime_filters = 0;
 SET use_join_disjunctions_push_down = 1;
 SET query_plan_optimize_join_order_limit = 10;
@@ -94,6 +93,9 @@ SET enable_cascades_optimizer = 1;
 -- The test profile installed in CI sets a non-zero max_rows_to_group_by, which keeps
 -- aggregations local.  Pin it to 0 so distributed two-phase aggregation is exercised.
 SET max_rows_to_group_by = 0;
+-- It also sets `max_rows_in_distinct` and `max_bytes_in_distinct`, which keep a `DISTINCT` on one node.
+SET max_rows_in_distinct = 0;
+SET max_bytes_in_distinct = 0;
 -- `IN (subquery)` runs as a set built on the initiator (the default): the set values ship with
 -- the worker tasks and filter at the reads. `rewrite_in_to_join` stays off; the explicit
 -- rewrite is covered by 04653 and by the per-query variants below.

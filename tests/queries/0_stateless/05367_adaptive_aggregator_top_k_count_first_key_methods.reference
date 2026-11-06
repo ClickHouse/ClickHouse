@@ -1,0 +1,13 @@
+Number key	1	1	10	1	0
+Number key in source cells	1	1	10	1	0
+Packed string key	1	1	10	1	0
+Legacy string key	1	1	10	1	0
+Legacy string key in source cells	1	1	10	1	0
+Serialized keys	1	1	10	1	0
+Wide fixed keys	1	1	10	1	0
+Full large top	1	1	300	1	0
+Limit above the groups of a unit	1	1	65536	1	0
+Spilled number key	1	1	10	1	1
+Spilled packed string key	1	1	10	1	1
+Spilled legacy string key	1	1	10	1	1
+Spilled serialized keys	1	1	10	1	1
