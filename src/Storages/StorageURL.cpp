@@ -1253,8 +1253,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         for (const auto & [param, value] : params)
             request_uri.addQueryParameter(param, value);
 
-        /// Outside of the `try` below: an option whose credentials <http_forbid_headers> forbids must fail the read,
-        /// not fall through to the next one.
+        /// Not inside the `try` below: a forbidden option must fail the read, not fall through to the next one.
         setCredentialsFromURL(credentials, request_uri, context_->getHTTPHeaderFilter());
 
         const auto & settings = context_->getSettingsRef();

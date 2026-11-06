@@ -327,10 +327,10 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
         settings,
         request_context->getServerSettings());
 
-    /// Carry the same HTTP request semantics as direct `url()` reads: credentials from the URL
-    /// userinfo, `max_http_get_redirects`, and `enable_url_encoding`.
     auto get_metadata_from_uri = [&](const Poco::URI & uri, const Poco::Net::HTTPBasicCredentials & credentials) -> std::optional<ObjectMetadata>
     {
+        /// Carry the same HTTP request semantics as direct `url()` reads: credentials from the URL
+        /// userinfo, `max_http_get_redirects`, and `enable_url_encoding`.
         auto create_probe_buffer = [&](const String & method)
         {
             auto read_settings = request_context->getReadSettings();
@@ -431,8 +431,6 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
     for (const auto & url : urls)
     {
         const Poco::URI uri(url, enable_url_encoding);
-        /// Outside of the `try` below: an option whose credentials <http_forbid_headers> forbids must fail the request,
-        /// not fall through to the next one.
         Poco::Net::HTTPBasicCredentials credentials;
         setCredentialsFromURL(credentials, uri, request_context->getHTTPHeaderFilter());
         try

@@ -148,9 +148,6 @@ void ConfluentSchemaRegistry::applyAuth(const Poco::URI & url, Poco::Net::HTTPRe
 {
     if (!url.getUserInfo().empty())
     {
-        /// The userinfo is sent in the `Authorization` header, which <http_forbid_headers> may forbid. It is checked here,
-        /// when the request is sent, for `url`, the URL of the request, which can have a userinfo the base URL has not:
-        /// `http:http://user:password@host/` has no authority, and its path resolves to `http://user:password@host/schemas/ids/1`.
         Context::getGlobalContextInstance()->getHTTPHeaderFilter().checkURIUserInfo(url);
 
         Poco::Net::HTTPCredentials http_credentials;

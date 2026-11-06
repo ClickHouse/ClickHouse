@@ -23,16 +23,12 @@ public:
     void checkHeaders(HTTPHeaderEntries & entries) const;
     void checkHeaders(NormalizedHTTPHeaderEntries & entries) const;
 
-    /// Basic credentials are sent in the `Authorization` header, so they are rejected like an explicit
-    /// `Authorization` header when <http_forbid_headers> forbids it. Credentials with an empty username
-    /// send no header, see `ReadWriteBufferFromHTTP::prepareRequest`, so they are not checked.
+    /// Throws if the `Authorization` header that sends these credentials is forbidden. An empty username sends no header.
     void checkBasicCredentials(const Poco::Net::HTTPBasicCredentials & credentials) const;
-    /// The same for a sender that turns any non-empty userinfo of a URL into Basic credentials, even without a username,
-    /// such as `ConfluentSchemaRegistry::applyAuth`. The userinfo of the other URLs goes through `setCredentialsFromURL`.
+    /// The same for a sender that sends any non-empty userinfo of `uri` as Basic credentials, even without a username.
     void checkURIUserInfo(const Poco::URI & uri) const;
 
 private:
-    /// Checks a synthetic `Authorization` header and appends `reason` to the error.
     void checkAuthorizationHeader(const std::string & reason) const;
 
     /// Header names are case-insensitive (RFC 9110 5.1): entries are stored

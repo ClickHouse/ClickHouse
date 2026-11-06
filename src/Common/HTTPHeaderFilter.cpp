@@ -75,8 +75,7 @@ void HTTPHeaderFilter::checkURIUserInfo(const Poco::URI & uri) const
 
 void HTTPHeaderFilter::checkAuthorizationHeader(const std::string & reason) const
 {
-    /// Only the name decides whether a header is forbidden, and a Base64 value of Basic credentials
-    /// cannot contain CR or LF, so a placeholder stands in for the real value.
+    /// A forbidden header is matched by name, and a Base64 value has no CR or LF, so a placeholder value suffices.
     HTTPHeaderEntries entries{{"Authorization", "Basic"}};
     try
     {

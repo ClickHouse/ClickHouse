@@ -384,8 +384,7 @@ public:
 };
 
 /// Fills `credentials` from the userinfo component of `uri` (e.g. `http://user:pass@host`).
-/// The credentials are sent in the `Authorization` header, so this throws if `header_filter` forbids that header
-/// and the userinfo has a username: the check is here, where every request that sends a userinfo gets its credentials.
+/// Throws if `header_filter` forbids the `Authorization` header, which sends them, and the userinfo has a username.
 void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri, const HTTPHeaderFilter & header_filter);
 
 }

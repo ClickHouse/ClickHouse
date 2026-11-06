@@ -368,7 +368,7 @@ MetadataStorageFromIndexPages::IndexPage MetadataStorageFromIndexPages::readInde
     const bool enable_url_encoding = settings[Setting::enable_url_encoding];
 
     /// Carry the same HTTP request semantics as direct `url()` reads: honor `enable_url_encoding`,
-    /// follow up to `max_http_get_redirects` redirects, and authenticate with `credentials`, parsed from
+    /// follow up to `max_http_get_redirects` redirects, and authenticate with credentials parsed from
     /// the URL's userinfo (e.g. `http://user:pass@host`).
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(
         settings,
@@ -569,8 +569,6 @@ bool MetadataStorageFromIndexPages::tryListDirectory(
         {
             const auto & listing_url = listing_urls[i];
             const Poco::URI listing_uri(listing_url, enable_url_encoding);
-            /// Outside of the `try` below: an option whose credentials <http_forbid_headers> forbids must fail the listing,
-            /// not fall through to the next one.
             Poco::Net::HTTPBasicCredentials credentials;
             setCredentialsFromURL(credentials, listing_uri, request_context->getHTTPHeaderFilter());
             try
