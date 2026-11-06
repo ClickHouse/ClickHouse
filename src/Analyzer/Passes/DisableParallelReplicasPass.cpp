@@ -2,10 +2,13 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -28,6 +31,20 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (dry_run)
+        {
+            /// A `MergeTree` table is read with the context of the query around it. Any other storage may plan a
+            /// query of its own when it is read (the body of a view, with its own settings), which this tree does
+            /// not show, so whether it reads with parallel replicas is unknown.
+            StoragePtr storage;
+            if (const auto * table_node = node->as<TableNode>())
+                storage = table_node->getStorage();
+            else if (const auto * table_function_node = node->as<TableFunctionNode>())
+                storage = table_function_node->getStorage();
+            if (storage && !storage->isMergeTree())
+                reads_storage_with_own_query = true;
+        }
+
         if (is_correlated)
             return;
 
@@ -59,12 +76,13 @@ public:
             union_node->getMutableContext()->setSetting("allow_experimental_parallel_reading_from_replicas", String("0"));
     }
 
-    bool disablesEverywhere() const { return is_correlated && !kept_in_some_query; }
+    bool disablesEverywhere() const { return is_correlated && !kept_in_some_query && !reads_storage_with_own_query; }
 
 private:
     const bool dry_run;
     bool is_correlated = false;
     bool kept_in_some_query = false;
+    bool reads_storage_with_own_query = false;
 };
 
 
