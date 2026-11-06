@@ -9,6 +9,7 @@
 #include <Columns/ColumnSet.h>
 #include <Core/SortDescription.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Utils.h>
 #include <Interpreters/PreparedSets.h>
@@ -855,6 +856,19 @@ bool allOutputsDependsOnlyOnAllowedNodes(
 }
 
 
+/// Whether a cast keeps every value. Besides `canBeSafelyCast`, accepts an unsigned integer widened into a larger
+/// signed one: `canBeSafelyCast` rejects it, but it is the common type of an unsigned and a signed join key.
+static bool isValuePreservingCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
+{
+    if (canBeSafelyCast(from_type, to_type))
+        return true;
+    if (isNullableOrLowCardinalityNullable(from_type) && !isNullableOrLowCardinalityNullable(to_type))
+        return false;
+    const auto from = removeNullable(removeLowCardinality(from_type));
+    const auto to = removeNullable(removeLowCardinality(to_type));
+    return isUInt(from) && isInt(to) && to->getSizeOfValueInMemory() > from->getSizeOfValueInMemory();
+}
+
 std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG::Node * predicate)
 {
     std::vector<RuntimeFilterIndexAnalysisDescriptor> res;
@@ -904,7 +918,7 @@ std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(cons
         {
             /// A cast that can change values (e.g. narrowing) maps rows to keys the pruning would not see.
             if (key_arg->type == ActionsDAG::ActionType::FUNCTION
-                && !canBeSafelyCast(key_arg->children.front()->result_type, key_arg->result_type))
+                && !isValuePreservingCast(key_arg->children.front()->result_type, key_arg->result_type))
             {
                 lossy_cast = true;
                 break;

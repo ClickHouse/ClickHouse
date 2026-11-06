@@ -44,6 +44,16 @@ SELECT a.id FROM t_rf_lossy_cast AS a, (SELECT toUInt64(300) AS x) AS b
 WHERE a.id = b.x ORDER BY a.id
 SETTINGS log_comment = '05495_primary_key_widening';
 
+-- An unsigned key widened into a larger signed type keeps every value too: this is the common type of an unsigned and
+-- a signed join key.
+SELECT a.id FROM t_rf_lossy_cast AS a, (SELECT toInt64(300) AS x) AS b
+WHERE a.id = b.x ORDER BY a.id
+SETTINGS log_comment = '05495_primary_key_unsigned_to_signed';
+
+SELECT a.id FROM t_rf_lossy_cast AS a, (SELECT toInt128(300) AS x) AS b
+WHERE a._part_starting_offset + a._part_offset = b.x ORDER BY a.id
+SETTINGS log_comment = '05495_global_row_index_unsigned_to_signed';
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT
@@ -54,7 +64,7 @@ FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
     AND log_comment IN ('05495_global_row_index_narrowing', '05495_global_row_index_narrowing_range',
         '05495_primary_key_narrowing', '05495_primary_key_narrowing_range', '05495_global_row_index_widening',
-        '05495_primary_key_widening')
+        '05495_primary_key_widening', '05495_primary_key_unsigned_to_signed', '05495_global_row_index_unsigned_to_signed')
 GROUP BY log_comment
 ORDER BY log_comment;
 

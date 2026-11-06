@@ -97,18 +97,34 @@ SETTINGS log_comment = '05493_global_row_index_shadowed';
 
 SYSTEM FLUSH LOGS query_log;
 
+-- A part can be analyzed more than once by a query (when its index read result is rebuilt), which adds its granules
+-- to the counters again, so exact counts are not checked. With exact values, each part keeps 1 of its 100 granules,
+-- so the kept share is 1% however many times a part is analyzed.
 SELECT
     log_comment,
-    argMax(ProfileEvents['RuntimeFilterIndexAnalysisReads'], event_time) > 0,
-    argMax(ProfileEvents['RuntimeFilterGranulesConsidered'], event_time),
-    argMax(ProfileEvents['RuntimeFilterGranulesDropped'], event_time),
-    argMax(ProfileEvents['SelectedMarks'], event_time)
+    argMax(ProfileEvents['RuntimeFilterIndexAnalysisReads'], event_time_microseconds) > 0,
+    intDivOrZero(
+        (argMax(ProfileEvents['RuntimeFilterGranulesConsidered'], event_time_microseconds)
+            - argMax(ProfileEvents['RuntimeFilterGranulesDropped'], event_time_microseconds)) * 100,
+        argMax(ProfileEvents['RuntimeFilterGranulesConsidered'], event_time_microseconds))
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
     AND log_comment IN ('05493_global_row_index', '05493_global_row_index_swapped', '05493_global_row_index_and_offset',
-        '05493_part_and_offset', '05493_global_row_index_range', '05493_global_row_index_shadowed')
+        '05493_part_and_offset', '05493_global_row_index_shadowed')
 GROUP BY log_comment
 ORDER BY log_comment;
+
+-- The range keeps a different share of each part, so only check that it drops some granules and keeps some.
+SELECT
+    log_comment,
+    argMax(ProfileEvents['RuntimeFilterIndexAnalysisReads'], event_time_microseconds) > 0,
+    argMax(ProfileEvents['RuntimeFilterGranulesDropped'], event_time_microseconds) > 0,
+    argMax(ProfileEvents['RuntimeFilterGranulesDropped'], event_time_microseconds)
+        < argMax(ProfileEvents['RuntimeFilterGranulesConsidered'], event_time_microseconds)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+    AND log_comment = '05493_global_row_index_range'
+GROUP BY log_comment;
 
 DROP TABLE t_rf_global_row_index;
 DROP TABLE t_rf_global_row_index_shadowed;
