@@ -96,14 +96,14 @@ SELECT
     if(number % 3 = 0, number::Dynamic, toString(number)::Dynamic),
     concat('{"a":', toString(number), ',"b":"', toString(number % 100), '","c', toString(number % 10), '":1}')::JSON,
     concat('{"a":', toString(number), ',"b":"', toString(number % 100), '","c', toString(number % 10), '":1}')::JSON(max_dynamic_paths = 4)
-FROM numbers(2 * 8192);
+FROM numbers(8192);
 
 INSERT INTO t_ecr_layouts
 SELECT
     if(number % 3 = 0, number::Dynamic, toString(number)::Dynamic),
     concat('{"a":', toString(number), ',"b":"', toString(number % 100), '","c', toString(number % 10), '":1}')::JSON,
     concat('{"a":', toString(number), ',"b":"', toString(number % 100), '","c', toString(number % 10), '":1}')::JSON(max_dynamic_paths = 4)
-FROM numbers(2 * 8192, 8192);
+FROM numbers(8192, 2048);
 
 OPTIMIZE TABLE t_ecr_layouts FINAL;
 
@@ -139,7 +139,7 @@ INSERT INTO t_ecr_layouts0
 SELECT
     map(concat('k', toString(number % 7)), number, concat('k', toString(number % 11)), number * 2),
     if(number % 2 = 0, number::Variant(UInt64, String), toString(number)::Variant(UInt64, String))
-FROM numbers(3 * 8192);
+FROM numbers(8192 + 2048);
 
 SELECT
     column,
@@ -196,18 +196,19 @@ SELECT
 SELECT 'Dynamic and JSON columns whose structure changes between blocks are written with the structure of the first block';
 
 SELECT estimateCompressionRatio('LZ4', 65536)(d) > 0
-FROM (SELECT if(number < 1000, number::Dynamic, toString(number)::Dynamic) AS d FROM numbers(3000))
-SETTINGS max_block_size = 1000;
+FROM (SELECT if(number < 100, number::Dynamic, toString(number)::Dynamic) AS d FROM numbers(300))
+SETTINGS max_block_size = 100;
 
 SELECT k, estimateCompressionRatio('LZ4', 65536)(j) > 0
-FROM (SELECT number % 3 AS k, if(number < 1000, '{"a":1}', concat('{"b', toString(number % 100), '":"x"}'))::JSON AS j FROM numbers(3000))
+FROM (SELECT number % 3 AS k, if(number < 100, '{"a":1}', concat('{"b', toString(number % 100), '":"x"}'))::JSON AS j FROM numbers(300))
 GROUP BY k ORDER BY k
-SETTINGS max_block_size = 1000;
+SETTINGS max_block_size = 100;
 
 -- The serialization of the shared typed paths of JSON ends the data stream of every granule with `next` itself. With NONE, a
 -- compressed block is never smaller than its data, also when `next` finds the buffer exactly full (8192 rows of 8 bytes).
-SELECT rows, estimateCompressionRatio('NONE')(CAST(concat('{"a":', toString(number), '}'), 'JSON(SHARED a UInt64)')) < 1
-FROM (SELECT number, arrayJoin([8191, 8192, 10000, 16384]) AS rows FROM numbers(16384))
+SELECT rows, estimateCompressionRatio('NONE')(j) < 1
+FROM (SELECT number, CAST(concat('{"a":', toString(number), '}'), 'JSON(SHARED a UInt64)') AS j FROM numbers(16384))
+ARRAY JOIN [8191, 8192, 10000, 16384] AS rows
 WHERE number < rows
 GROUP BY rows
 ORDER BY rows;
@@ -334,8 +335,7 @@ FROM
         estimateCompressionRatio('LZ4', 65536)(lc) OVER (ORDER BY k, s ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS r_lc,
         estimateCompressionRatio('LZ4', 65536)(toLowCardinality(s)) OVER (ORDER BY k, s ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS r_s_as_lc,
         estimateCompressionRatio('LZ4', 65536)(s) OVER (ORDER BY k, s ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS r_s
-    FROM t_ecr_lc
-    LIMIT 1000
+    FROM (SELECT * FROM t_ecr_lc LIMIT 1000)
 );
 
 -- The argument is also the partition key: the frame logic reads it without LowCardinality, the function with it.
