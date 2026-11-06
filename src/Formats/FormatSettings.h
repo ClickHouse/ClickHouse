@@ -6,10 +6,15 @@
 #include <base/types.h>
 #include <base/unit.h>
 
+#include <limits>
 #include <string_view>
 
 namespace DB
 {
+
+/// Arrow offsets its `Utf8`, `Binary` and `List` buffers with 32-bit integers, and the Apache Arrow
+/// builders additionally reject the last representable value.
+constexpr UInt64 MAX_ARROW_BUFFER_SIZE = std::numeric_limits<Int32>::max() - 1;
 
 /**
   * Various tweaks for input/output formats. Text serialization/deserialization
@@ -226,6 +231,8 @@ struct FormatSettings
         ArrowUnsupportedTypes output_unsupported_types = ArrowUnsupportedTypes::BINARY;
         UInt64 output_record_batch_rows = 0;
         UInt64 output_record_batch_bytes = 0;
+        /// Upper bound on one record batch, as opposed to the targets above, which combine small blocks.
+        UInt64 output_max_record_batch_bytes = MAX_ARROW_BUFFER_SIZE;
     } arrow{};
 
     struct AvroSchemaRegistryTimeouts
@@ -359,6 +366,7 @@ struct FormatSettings
         bool type_json_skip_null_typed_paths = false;
         std::optional<size_t> max_dynamic_subcolumns_in_json_type_parsing = std::nullopt;
         bool type_json_allow_duplicated_key_with_literal_and_nested_object = false;
+        bool type_json_skip_duplicate_key_detection = false;
         bool type_json_use_partial_match_to_skip_paths_by_regexp = true;
         bool pretty_print = true;
         char pretty_print_indent = ' ';
