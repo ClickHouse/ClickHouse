@@ -645,10 +645,11 @@ cppkafka::Configuration KafkaConfigLoader::getProducerConfiguration(TKafkaStorag
     conf.set("client.id", params.client_id);
     conf.set("client.software.name", VERSION_NAME);
     conf.set("client.software.version", VERSION_DESCRIBE);
-    /// Pre-seeded for the same reason as in getConsumerConfiguration(); producers don't attach a
-    /// statistics callback, but they are short-lived: the events that librdkafka enqueues until the
-    /// handle is polled on flush or destroyed are negligible.
-    conf.set("statistics.interval.ms", "3000");
+    /// Producers keep the "0" default: a producer lives as long as the INSERT (which is not
+    /// bounded), produce() polls only on RD_KAFKA_RESP_ERR__QUEUE_FULL, and librdkafka enqueues
+    /// statistics events even without a callback - an enabled default would grow the reply queue
+    /// for the whole insert. Consumer statistics don't depend on producer ones.
+    conf.set("statistics.interval.ms", "0");
 
     updateConfigurationFromConfig(loadProducerConfig, conf, storage, params);
 
