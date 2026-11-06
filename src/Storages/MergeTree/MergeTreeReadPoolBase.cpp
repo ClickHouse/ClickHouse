@@ -437,6 +437,7 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
 #endif
     );
     read_task_info.read_hints = part_with_ranges.read_hints;
+    read_task_info.bernoulli_filter = part_with_ranges.bernoulli_filter;
     if (const auto * uk_read_snapshot = tryGetDeleteBitmapSnapshot(*storage_snapshot))
     {
         if (auto delete_bitmap = uk_read_snapshot->bitmapAt(data_part->info); !delete_bitmap->empty())

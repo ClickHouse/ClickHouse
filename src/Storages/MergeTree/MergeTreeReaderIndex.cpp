@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReaderIndex.h>
 
+#include <Storages/MergeTree/BernoulliGranuleFilter.h>
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Common/ProfileEvents.h>
@@ -20,19 +21,20 @@ namespace ErrorCodes
 
 bool MergeTreeReaderIndex::canSkipAnyMark() const
 {
-    return index_read_result && index_read_result->canSkipAnyMark();
+    return (index_read_result && index_read_result->canSkipAnyMark()) || bernoulli_filter != nullptr;
 }
 
 bool MergeTreeReaderIndex::canSkipAnyMarkBesidesTopKPrimaryKey() const
 {
-    return index_read_result && index_read_result->canSkipAnyMarkBesidesTopKPrimaryKey();
+    return (index_read_result && index_read_result->canSkipAnyMarkBesidesTopKPrimaryKey()) || bernoulli_filter != nullptr;
 }
 
 MergeTreeReaderIndex::MergeTreeReaderIndex(
     const IMergeTreeReader * main_reader_,
     MergeTreeIndexReadResultPtr index_read_result_,
     const PaddedPODArray<UInt64> * lazy_materializing_rows_,
-    ConstDeleteBitmapPtr delete_bitmap_)
+    ConstDeleteBitmapPtr delete_bitmap_,
+    BernoulliGranuleFilterPtr bernoulli_filter_)
     : IMergeTreeReader(
           main_reader_->data_part_info_for_read,
           {},
@@ -48,9 +50,10 @@ MergeTreeReaderIndex::MergeTreeReaderIndex(
     , lazy_materializing_rows(lazy_materializing_rows_)
     , delete_bitmap(std::move(delete_bitmap_))
     , main_reader(main_reader_)
+    , bernoulli_filter(std::move(bernoulli_filter_))
 {
-    chassert(lazy_materializing_rows || delete_bitmap || index_read_result);
-    chassert(lazy_materializing_rows || delete_bitmap || index_read_result->skip_index_read_result || index_read_result->projection_index_read_result);
+    chassert(lazy_materializing_rows || delete_bitmap || index_read_result || bernoulli_filter);
+    chassert(lazy_materializing_rows || delete_bitmap || bernoulli_filter || index_read_result->skip_index_read_result || index_read_result->projection_index_read_result);
 }
 
 size_t MergeTreeReaderIndex::readRows(
@@ -91,13 +94,12 @@ size_t MergeTreeReaderIndex::readRows(
         max_rows_to_read = 0;
 
     /// The filter's length before this call: each filter below appends this call's rows after it.
-    const size_t filter_rows_before = res_columns.front() ? res_columns.front()->size() : 0;
+    MutableColumnPtr & filter_column = res_columns.front();
+    const size_t filter_rows_before = filter_column ? filter_column->size() : 0;
 
     /// If projection index is available, attempt to construct the filter column
     if (index_read_result && index_read_result->projection_index_read_result)
     {
-        MutableColumnPtr & filter_column = res_columns.front();
-
         if (filter_column == nullptr)
         {
             filter_column = ColumnUInt8::create();
@@ -120,8 +122,6 @@ size_t MergeTreeReaderIndex::readRows(
 
     if (lazy_materializing_rows)
     {
-        MutableColumnPtr & filter_column = res_columns.front();
-
         if (filter_column == nullptr)
         {
             filter_column = ColumnUInt8::create();
@@ -156,8 +156,35 @@ size_t MergeTreeReaderIndex::readRows(
         }
     }
 
+    /// Apply Bernoulli sampling filter.
+    if (bernoulli_filter && max_rows_to_read > 0)
+    {
+        if (filter_column == nullptr)
+            filter_column = ColumnUInt8::create();
+        else if (!typeid_cast<const ColumnUInt8 *>(filter_column.get()))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Illegal type {} of filter column for Bernoulli sampling. Must be UInt8",
+                filter_column->getName());
+
+        auto & filter_data = static_cast<ColumnUInt8 &>(*filter_column).getData();
+
+        /// If projection or lazy-materializing filters above already appended entries
+        /// for these rows, AND Bernoulli with them. Otherwise just append.
+        bool has_prior_filter = filter_data.size() > filter_rows_before;
+        if (has_prior_filter)
+        {
+            size_t filter_start = filter_data.size() - max_rows_to_read;
+            bernoulli_filter->andWithFilter(filter_data, filter_start, starting_row, max_rows_to_read);
+        }
+        else
+        {
+            bernoulli_filter->appendToFilter(filter_data, starting_row, max_rows_to_read);
+        }
+    }
+
     if (delete_bitmap && max_rows_to_read > 0)
-        appendDeleteBitmapFilter(res_columns.front(), filter_rows_before, starting_row, max_rows_to_read);
+        appendDeleteBitmapFilter(filter_column, filter_rows_before, starting_row, max_rows_to_read);
 
     current_row += max_rows_to_read;
     return max_rows_to_read;
@@ -180,7 +207,8 @@ void MergeTreeReaderIndex::appendDeleteBitmapFilter(
 
 bool MergeTreeReaderIndex::canSkipMark(size_t mark)
 {
-    return index_read_result && index_read_result->canSkipMark(mark, data_part_info_for_read->getIndexGranularity());
+    return (index_read_result && index_read_result->canSkipMark(mark, data_part_info_for_read->getIndexGranularity()))
+        || (bernoulli_filter && bernoulli_filter->canSkipMark(mark));
 }
 
 }

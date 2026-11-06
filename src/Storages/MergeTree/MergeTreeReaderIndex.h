@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/MergeTree/BernoulliGranuleFilter_fwd.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 
 namespace DB
@@ -27,7 +28,8 @@ public:
         const IMergeTreeReader * main_reader_,
         MergeTreeIndexReadResultPtr index_read_result_,
         const PaddedPODArray<UInt64> * lazy_materializing_rows_,
-        ConstDeleteBitmapPtr delete_bitmap_);
+        ConstDeleteBitmapPtr delete_bitmap_,
+        BernoulliGranuleFilterPtr bernoulli_filter_ = nullptr);
 
     size_t readRows(
         size_t from_mark,
@@ -47,7 +49,12 @@ public:
     size_t getResultColumnCount() const override { return 1; }
 
     bool producesFilterOnly() const override { return true; }
-    bool mustApplyFilter() const override { return lazy_materializing_rows != nullptr || delete_bitmap != nullptr; }
+    bool mustApplyFilter() const override
+    {
+        /// Bernoulli filter is the only filter for rows that pass PREWHERE;
+        /// deferring it would emit unsampled rows to downstream steps.
+        return lazy_materializing_rows != nullptr || delete_bitmap != nullptr || bernoulli_filter != nullptr;
+    }
 
 private:
     void appendDeleteBitmapFilter(MutableColumnPtr & filter_column, size_t filter_rows_before, size_t starting_row, size_t num_rows) const;
@@ -61,6 +68,8 @@ private:
     ConstDeleteBitmapPtr delete_bitmap;
 
     const IMergeTreeReader * main_reader;
+
+    BernoulliGranuleFilterPtr bernoulli_filter;
 
     /// Current row position used when continuing reads across multiple calls.
     size_t current_row = 0;
