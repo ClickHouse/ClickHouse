@@ -27,6 +27,16 @@ Defines the approximate size of a batch (in bytes) used in distributed processin
 
 This is an internal setting that should not be used directly. The initiator of a query with a cluster table function sets it for the replicas to the serialized filter on the table, so that the replicas drop the rows that do not pass it before sending them.
 
+## cluster_table_function_split_by_split_offsets {#cluster_table_function_split_by_split_offsets}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting."}]}]}/>
+
+With `bucket` split granularity, when the table metadata records the file size and the row group offsets (`split_offsets` in Iceberg), cut files into byte ranges on these offsets without reading them; each task reads the row groups that start in its range. Otherwise, and on a hit in the query condition cache, the initiator reads the footer of every file.
+
+Requires all servers of the cluster to support it: a task with a byte range cannot be sent to a server of an older version.
+
 ## cluster_table_function_split_granularity {#cluster_table_function_split_granularity}
 
 <SettingsInfoBlock type="ObjectStorageGranularityLevel" default_value="file" />
