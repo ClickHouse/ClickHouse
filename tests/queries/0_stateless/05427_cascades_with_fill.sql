@@ -9,7 +9,6 @@ CREATE TABLE t_cascades_fill (a UInt64, g UInt64, b String) ENGINE = MergeTree O
 SYSTEM STOP MERGES t_cascades_fill;
 INSERT INTO t_cascades_fill SELECT number * 4, number % 20 * 3, toString(number) FROM numbers(200);
 
-SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_execute_locally = 1;
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 -- Without it a rejected plan runs locally and still gives the correct result.

@@ -151,7 +151,7 @@ private:
             return false;
 
         memory.resize(size_decompressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
-        working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
+        working_buffer = WorkingBuffer::fromPaddedStorage(memory, 0, size_decompressed);
 
         decompress(working_buffer.begin(), size_decompressed, size_compressed_without_checksum);
 
