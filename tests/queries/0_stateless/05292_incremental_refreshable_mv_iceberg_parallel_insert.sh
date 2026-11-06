@@ -29,17 +29,15 @@ ${CLICKHOUSE_CLIENT} --query "
     PARTITION BY icebergBucket(2, k)
 "
 
-# Small blocks spread the round over all the parallel sinks. The data file limits are above the round size,
-# so each sink writes at most one file per partition: more than two files in a round mean several sinks.
+# The commit-order source may deliver a round in few chunks, so how many sinks get rows is not deterministic:
+# that the parallel sinks of one insert commit together is checked with plain inserts in 05508.
 ${CLICKHOUSE_CLIENT} --query "
     CREATE MATERIALIZED VIEW ${MV}
         REFRESH EVERY 10 YEAR APPEND INCREMENTAL
         TO ${TGT} EMPTY
         AS SELECT k FROM ${SRC}
         SETTINGS max_insert_threads = 4, max_threads = 4, max_block_size = 100,
-            max_insert_threads_min_free_memory_per_thread = 0, max_threads_min_free_memory_per_thread = 0,
-            min_insert_block_size_rows = 100, min_insert_block_size_bytes = 1,
-            iceberg_insert_max_rows_in_data_file = 1000000, iceberg_insert_max_bytes_in_data_file = 1000000000
+            min_insert_block_size_rows = 100, min_insert_block_size_bytes = 1
 "
 
 function refresh_round()
@@ -59,8 +57,7 @@ ${CLICKHOUSE_CLIENT} --query "
         operation,
         summary['added-records'],
         summary['changed-partition-count'],
-        summary['clickhouse.refresh-cursor'] != '',
-        toUInt64(summary['added-data-files']) > 2
+        summary['clickhouse.refresh-cursor'] != ''
     FROM system.iceberg_history
     WHERE database = currentDatabase() AND table = '${TGT}'
     ORDER BY made_current_at
