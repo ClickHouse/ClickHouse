@@ -374,8 +374,12 @@ void PrettyBlockOutputFormat::writingThread()
     {
         while (!finish)
         {
-            if (std::cv_status::timeout == mono_chunk_condvar.wait_for(lock, saturatedMilliseconds(format_settings.pretty.squash_consecutive_ms))
-                || watch.elapsedMilliseconds() > format_settings.pretty.squash_max_wait_ms)
+            bool timed_out = std::cv_status::timeout
+                == mono_chunk_condvar.wait_for(lock, saturatedMilliseconds(format_settings.pretty.squash_consecutive_ms));
+            /// After `stopThread` or `onCancel` the rest is written by `writeSuffix` or not at all.
+            if (finish)
+                break;
+            if (timed_out || watch.elapsedMilliseconds() > format_settings.pretty.squash_max_wait_ms)
             {
                 writeMonoChunkIfNeeded();
                 watch.restart();
@@ -1236,6 +1240,18 @@ void PrettyBlockOutputFormat::stopThread()
         finish = true;
         mono_chunk_condvar.notify_one();
     }
+}
+
+void PrettyBlockOutputFormat::onCancel() noexcept
+{
+    if (!format_settings.pretty.squash_consecutive_ms || mono_block)
+        return;
+
+    /// `writingThread` writes `out` only under `writing_mutex` and while `finish` is not set,
+    /// so the owner of `out` can cancel it after this.
+    std::lock_guard lock(writing_mutex);
+    finish = true;
+    mono_chunk_condvar.notify_one();
 }
 
 PrettyBlockOutputFormat::~PrettyBlockOutputFormat()
