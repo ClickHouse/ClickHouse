@@ -479,7 +479,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestBatchOperationsEmpty)
     changelog_reader.init(5, 0);
 }
 
-TEST_P(CoordinationTestWithCompression, ChangelogTestBatchOperationsInvalidSize)
+TYPED_TEST(CoordinationChangelogTest, ChangelogTestBatchOperationsInvalidSize)
 {
     ChangelogDirTest test("./logs");
     this->setLogDirectory("./logs");
@@ -487,7 +487,6 @@ TEST_P(CoordinationTestWithCompression, ChangelogTestBatchOperationsInvalidSize)
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
         DB::FlushSettings(),
-        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog.init(0, 0);
     auto entry = getLogEntry("hello_world", 10);
