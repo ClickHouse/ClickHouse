@@ -27,6 +27,23 @@ struct SelectQueryInfo;
 
 class PackedFilesWriter;
 
+class ITopKThresholdTracker;
+using TopKThresholdTrackerPtr = std::shared_ptr<ITopKThresholdTracker>;
+
+/// Shared by all processors of one TopK read that record, at the end of the read, the granules whose rows all sort
+/// strictly beyond the final threshold, see `MergeTreeSelectProcessor::writeTopKQueryConditionCacheEntries`.
+struct TopKFinalThresholdWrites
+{
+    TopKThresholdTrackerPtr threshold_tracker;
+    /// The sort column, as the `__topKFilter` in PREWHERE reads it.
+    String column_name;
+    /// Marks and best values kept by all processors of the read.
+    const size_t max_payload_bytes = 64 * 1024 * 1024;
+    std::atomic<size_t> reserved_payload_bytes{0};
+    /// Set by a processor that gave up: the others stop collecting.
+    std::atomic<bool> stopped{false};
+};
+
 enum class CompactPartsReadMethod : uint8_t
 {
     SingleBuffer,
@@ -111,6 +128,8 @@ struct MergeTreeReaderSettings
     /// PREWHERE-filtered granules, so the entries are only reused under the same TopK plan, part
     /// set, and threshold-determining predicate. Unset for non-TopK reads.
     std::optional<UInt64> query_condition_cache_top_k_salt;
+    /// Set for a TopK read whose granules beyond the final threshold are recorded under that salt.
+    std::shared_ptr<TopKFinalThresholdWrites> query_condition_cache_top_k_final_threshold;
     /// `TopKFilterInfo::rows_equal_to_threshold_dropped`: once set, a granule left without rows by the filter may hold rows
     /// of the result, so the read records nothing more in the query condition cache.
     std::shared_ptr<std::atomic<bool>> top_k_filter_rows_equal_to_threshold_dropped;

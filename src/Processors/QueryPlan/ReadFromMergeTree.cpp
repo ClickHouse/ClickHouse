@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <base/sort.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
 
 #include <Storages/MergeTree/Streaming/Subscription/MergeTreeBoundsSubscription.h>
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSource.h>
@@ -5455,6 +5456,30 @@ size_t ReadFromMergeTree::getNumStreamsWhenNothingToRead(const AnalysisResult & 
     return result.split_parts.layers.size();
 }
 
+/// Whether every part stores every one of the columns with the table's type: then the values read for the parts are
+/// the stored ones, never computed from the table metadata.
+static bool partsStoreColumns(const RangesInDataParts & parts, const NameSet & column_names, const ColumnsDescription & columns)
+{
+    for (const auto & name : column_names)
+    {
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+        if (!column)
+            continue;
+
+        const String name_in_storage = column->getNameInStorage();
+        const auto type = columns.getPhysical(name_in_storage).type;
+        for (const auto & part : parts)
+        {
+            const auto & data_part = part.data_part;
+            auto column_in_part = data_part->tryGetColumn(name_in_storage);
+            if (!column_in_part || !column_in_part->type->equals(*type) || !data_part->hasColumnFiles(*column_in_part)
+                || data_part->getSerializationInfos().isMissingColumn(name_in_storage))
+                return false;
+        }
+    }
+    return true;
+}
+
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[maybe_unused]] const BuildQueryPipelineSettings & settings)
 {
     auto & result = getAnalysisResult();
@@ -5723,6 +5748,24 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         if (query_info.filter_actions_dag)
             boost::hash_combine(salt, query_info.filter_actions_dag->getOutputs().front()->getHash());
         reader_settings.query_condition_cache_top_k_salt = salt;
+
+        /// The granules beyond the final threshold are recorded for the sort column types with a non-virtual best
+        /// value scan, see `MergeTreeSelectProcessor::recordTopKBestValues`.
+        const auto & tracker = top_k_filter_info->threshold_tracker;
+        const auto sort_column = top_k_filter_info->data_type->createColumn();
+        NameSet read_columns(all_column_names.begin(), all_column_names.end());
+        if (query_info.prewhere_info)
+            for (const auto & column_name : query_info.prewhere_info->prewhere_actions.getRequiredColumnsNames())
+                read_columns.insert(column_name);
+        if (tracker && !tracker->getCollator()
+            && (canFindTopKBestRowOfNumbers(*sort_column) || typeid_cast<const ColumnString *>(sort_column.get()))
+            && partsStoreColumns(result.parts_with_ranges, read_columns, storage_snapshot->metadata->getColumns()))
+        {
+            auto final_threshold = std::make_shared<TopKFinalThresholdWrites>();
+            final_threshold->threshold_tracker = tracker;
+            final_threshold->column_name = top_k_filter_info->column_name;
+            reader_settings.query_condition_cache_top_k_final_threshold = std::move(final_threshold);
+        }
     }
 
     if (top_k_filter_info)
@@ -6868,12 +6911,13 @@ void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
     /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
     /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, turn the
     /// cache off for this read: a TopK read can drop granules during execution depending on the running
-    /// `__topKFilter` threshold, so writing threshold-oblivious QCC entries is unsound.
+    /// `__topKFilter` threshold, so writing threshold-oblivious QCC entries is unsound. The same when a
+    /// masking policy rewrites the columns at read time for this user, which no cache key holds.
     /// Use `allow_query_condition_cache` rather than mutating `reader_settings` directly: it is the
     /// step's persistent "this read must not use the cache" flag, it is carried over by `clone`, and it
     /// disables the cache both for index analysis (`selectRangesToReadImpl`) and for the reader
     /// (`initializePipeline` derives `reader_settings.use_query_condition_cache` from it).
-    if (!context->getSettingsRef()[Setting::use_query_condition_cache_for_top_k])
+    if (!context->getSettingsRef()[Setting::use_query_condition_cache_for_top_k] || data.hasEnabledMaskingPolicies(context))
         disableQueryConditionCache();
 
     /// A TopK granule-skip decision recorded for one part is computed against the running
@@ -6883,8 +6927,10 @@ void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
     /// *different* part is dropped or mutated and the threshold that made the granule skippable
     /// no longer holds. Fold a hash of the whole part-set snapshot into the salt so that any
     /// change to the set of parts read (`DROP PARTITION`, mutation, merge, new `INSERT`) yields a
-    /// fresh key and the now-stale decisions of the unchanged parts are never reused.
+    /// fresh key and the now-stale decisions of the unchanged parts are never reused. The column
+    /// list of the metadata goes in too, as for the columns cache, so does a change of the columns.
     SipHash parts_hash;
+    parts_hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
     for (const auto & part_with_ranges : getParts())
     {
         const auto & data_part = part_with_ranges.data_part;

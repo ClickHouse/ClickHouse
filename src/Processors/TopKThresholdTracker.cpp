@@ -2,10 +2,14 @@
 #include <shared_mutex>
 #include <Processors/TopKThresholdTracker.h>
 #include <Columns/Collator.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Core/CompareHelper.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/TypeTree.h>
+#include <Common/findExtreme.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -195,6 +199,48 @@ TopKThresholdTrackerPtr createTopKThresholdTracker(const SortColumnDescription &
     }
 
     return std::make_shared<TopKThresholdTrackerGeneric>(sort_desc, data_type.getPtr());
+}
+
+namespace
+{
+
+template <typename... ColumnTypes, typename F>
+bool castToOneOf(const IColumn & column, F && f)
+{
+    auto try_column = [&]<typename ColumnType>(std::type_identity<ColumnType>)
+    {
+        const auto * typed_column = typeid_cast<const ColumnType *>(&column);
+        if (typed_column)
+            f(*typed_column);
+        return typed_column != nullptr;
+    };
+    return (try_column(std::type_identity<ColumnTypes>{}) || ...);
+}
+
+template <typename F>
+bool castToTopKBestRowColumn(const IColumn & column, F && f)
+{
+    return castToOneOf<
+        ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64, ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
+        ColumnDecimal<Decimal32>, ColumnDecimal<Decimal64>, ColumnDecimal<DateTime64>>(column, std::forward<F>(f));
+}
+
+}
+
+std::optional<size_t> findTopKBestRowOfNumbers(const IColumn & column, size_t begin, size_t end, int direction)
+{
+    std::optional<size_t> best_row;
+    castToTopKBestRowColumn(column, [&](const auto & typed_column)
+    {
+        const auto * data = typed_column.getData().data();
+        best_row = direction > 0 ? findExtremeMinIndex(data, begin, end) : findExtremeMaxIndex(data, begin, end);
+    });
+    return best_row;
+}
+
+bool canFindTopKBestRowOfNumbers(const IColumn & column)
+{
+    return castToTopKBestRowColumn(column, [](const auto &) {});
 }
 
 }
