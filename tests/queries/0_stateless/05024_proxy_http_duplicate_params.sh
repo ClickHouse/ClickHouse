@@ -97,6 +97,7 @@ if [ "$READY" -ne 1 ]; then
         echo "2"
         echo "3"
         echo "4"
+        echo "UNKNOWN_SETTING"
         exit 0
     fi
     echo "proxy did not start" >&2
@@ -116,3 +117,7 @@ curl -s --max-time 10 "http://127.0.0.1:${PROXY_PORT}/?query=SELECT%201&query=IN
 curl -s --max-time 10 --data-binary 'SELECT 2' "http://127.0.0.1:${PROXY_PORT}/"
 curl -s --max-time 10 -H 'Expect: 100-continue' --expect100-timeout 30 --data-binary '/* comment */ SELECT 3' "http://127.0.0.1:${PROXY_PORT}/"
 curl -s --max-time 10 -H 'Transfer-Encoding: chunked' --data-binary 'SELECT 4' "http://127.0.0.1:${PROXY_PORT}/"
+# Parameter names are case-insensitive for the server (`HTMLForm`), so `Query` is the first occurrence
+# of `query` here and the proxy must route by it. The server also rejects the mixed-case name as an
+# unknown setting, and that error proves the request reached the live server, not the unreachable pool.
+curl -s --max-time 10 "http://127.0.0.1:${PROXY_PORT}/?Query=SELECT%201&query=INSERT%20INTO%20nonexistent%20VALUES" | grep -o 'UNKNOWN_SETTING' | head -n1

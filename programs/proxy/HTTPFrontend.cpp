@@ -255,20 +255,27 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
     std::optional<String> param_query;
     bool param_decompress = false;
 
+    /// The server looks up `user`, `password`, `session_id`, `query` and `decompress` in an `HTMLForm`,
+    /// whose `NameValueCollection` compares names case-insensitively, so `?Query=INSERT...&query=SELECT...`
+    /// executes the `INSERT`. Match these names case-insensitively too, or a client could route by one value
+    /// and have the backend act on another. `database` is different: it is a setting, and the server applies
+    /// settings by their exact name, so it is matched exactly.
+    auto is_param = [](const String & key, const char * name) { return Poco::icompare(key, name) == 0; };
+
     Poco::URI uri(target);
     for (const auto & [key, value] : uri.getQueryParameters())
     {
-        if (key == "user")
+        if (is_param(key, "user"))
             assign_first(param_user, value);
-        else if (key == "password")
+        else if (is_param(key, "password"))
             param_password = true;
         else if (key == "database")
             param_database = value;     /// Unlike the above, a setting: the server applies them in order, so the last one wins.
-        else if (key == "session_id")
+        else if (is_param(key, "session_id"))
             assign_first(param_session_id, value);
-        else if (key == "query")
+        else if (is_param(key, "query"))
             assign_first(param_query, value);
-        else if (key == "decompress")
+        else if (is_param(key, "decompress"))
             param_decompress |= value != "0" && !value.empty();
     }
 
