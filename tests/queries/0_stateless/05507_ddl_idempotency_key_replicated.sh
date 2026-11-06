@@ -252,6 +252,12 @@ tables_named "$R1" r
 tables_named "$R1" a
 has_column "$ATOMIC" at y
 
+echo "-- a user without the access is refused before the database or the key is looked at"
+version=$(q "SELECT version FROM system.zookeeper WHERE path = '$ZK/r' AND name = 'idempotency'")
+keyed k27 "CREATE TABLE $ATOMIC.na (x UInt8) ENGINE = Memory" "user=$OTHER_USER"
+keyed k27 "CREATE TABLE $R1.na (x UInt8) ENGINE = Memory" "user=$OTHER_USER"
+[ "$(q "SELECT version FROM system.zookeeper WHERE path = '$ZK/r' AND name = 'idempotency'")" = "$version" ] && echo "no Keeper write"
+
 echo "-- a key in the settings of a statement nested in another query is refused"
 q "GRANT CREATE TABLE ON $R1.ea TO $OTHER_USER"
 q "GRANT TABLE ENGINE ON MergeTree TO $OTHER_USER"

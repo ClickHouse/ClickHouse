@@ -171,8 +171,9 @@ namespace
 
 struct Target
 {
-    std::shared_ptr<DatabaseReplicated> database;
+    String database_name;
     String table;
+    std::shared_ptr<DatabaseReplicated> database;
 };
 
 [[noreturn]] void throwNotSupported(const String & what)
@@ -228,7 +229,8 @@ void checkCreateQuery(const ASTCreateQuery & create)
 }
 
 /// Throws for the statements the key cannot be honoured for: those with an effect before or outside the commit of their
-/// log entry, and those that make more than one entry or none. Returns the database and the table the statement names.
+/// log entry, and those that make more than one entry or none. Returns the names of the database and the table the
+/// statement names, without looking the database up.
 Target getTarget(const IAST & ast, const ContextPtr & context)
 {
     String database_name;
@@ -305,11 +307,7 @@ Target getTarget(const IAST & ast, const ContextPtr & context)
         database_name = context->getCurrentDatabase();
     }
 
-    auto database = std::dynamic_pointer_cast<DatabaseReplicated>(DatabaseCatalog::instance().tryGetDatabase(database_name));
-    if (!database)
-        throwNotSupported("databases with an engine other than Replicated");
-
-    return {std::move(database), std::move(table_name)};
+    return {.database_name = std::move(database_name), .table = std::move(table_name), .database = nullptr};
 }
 
 /// The statement as it is written in the log of the database, without what may differ between attempts that are the
@@ -350,7 +348,8 @@ String computeDigest(const IAST & ast, const ContextPtr & context)
     return getHexUIntLowercase(hash.get128());
 }
 
-/// The access the statement itself requires, so that a retry answered from the key is authorized as the statement would be.
+/// The access the statement itself requires, so that a retry answered from the key is authorized as the statement would be,
+/// and a user without it learns nothing about the database or the key.
 AccessRightsElements getRequiredAccess(const IInterpreter & interpreter, const IAST & ast, const Target & target, const ContextPtr & context)
 {
     if (const auto * create = typeid_cast<const InterpreterCreateQuery *>(&interpreter))
@@ -360,12 +359,11 @@ AccessRightsElements getRequiredAccess(const IInterpreter & interpreter, const I
     if (typeid_cast<const InterpreterAlterQuery *>(&interpreter))
     {
         AccessRightsElements required_access;
-        const String & database_name = target.database->getDatabaseName();
         for (const auto & child : ast.as<const ASTAlterQuery &>().command_list->children)
         {
             auto command_access = InterpreterAlterQuery::getRequiredAccessForCommand(
                 child->as<const ASTAlterCommand &>(),
-                database_name,
+                target.database_name,
                 target.table,
                 InterpreterAlterQuery::getRowExistsColumnKind(nullptr, context),
                 context);
@@ -387,7 +385,7 @@ void checkRequiredAccess(const IInterpreter & interpreter, const IAST & ast, con
 
     /// A DROP checks the flag of the kind of the object, which may be gone now: `DROP TABLE` also drops a view or an
     /// `ENGINE = Dictionary` table.
-    const String & database_name = target.database->getDatabaseName();
+    const String & database_name = target.database_name;
     const auto access = context->getAccess();
     if (drop->is_dictionary)
         context->checkAccess(AccessType::DROP_DICTIONARY, database_name, target.table);
@@ -399,14 +397,8 @@ void checkRequiredAccess(const IInterpreter & interpreter, const IAST & ast, con
 }
 
 BlockIO answerFromKey(
-    const DDLIdempotencyKey & key,
-    const DDLIdempotencyKeyNode & node,
-    const IInterpreter & interpreter,
-    const IAST & ast,
-    const Target & target,
-    const ContextMutablePtr & context)
+    const DDLIdempotencyKey & key, const DDLIdempotencyKeyNode & node, const Target & target, const ContextMutablePtr & context)
 {
-    checkRequiredAccess(interpreter, ast, target, context);
     checkDDLIdempotencyKeyDigest(key, node);
     key.state = DDLIdempotencyKey::State::Answered;
 
@@ -444,6 +436,10 @@ BlockIO executeWithDDLIdempotencyKey(IInterpreter & interpreter, const ASTPtr & 
         throwNotSupported("statements nested in another query, like PARALLEL WITH or EXECUTE AS");
 
     Target target = getTarget(*ast, context);
+    checkRequiredAccess(interpreter, *ast, target, context);
+    target.database = std::dynamic_pointer_cast<DatabaseReplicated>(DatabaseCatalog::instance().tryGetDatabase(target.database_name));
+    if (!target.database)
+        throwNotSupported("databases with an engine other than Replicated");
 
     auto key = std::make_shared<DDLIdempotencyKey>();
     key->key = context->getSettingsRef()[Setting::idempotency_key];
@@ -452,7 +448,7 @@ BlockIO executeWithDDLIdempotencyKey(IInterpreter & interpreter, const ASTPtr & 
 
     /// Before the interpreter, because a committed attempt may have dropped or changed the table the statement names.
     if (auto node = target.database->tryReadDDLIdempotencyKey(key->key))
-        return answerFromKey(*key, *node, interpreter, *ast, target, context);
+        return answerFromKey(*key, *node, target, context);
 
     FailPointInjection::pauseFailPoint(FailPoints::database_replicated_idempotency_key_pause_after_first_probe);
 
@@ -479,7 +475,7 @@ BlockIO executeWithDDLIdempotencyKey(IInterpreter & interpreter, const ASTPtr & 
         }
         if (!node)
             std::rethrow_exception(original_exception);
-        return answerFromKey(*key, *node, interpreter, *ast, target, context);
+        return answerFromKey(*key, *node, target, context);
     }
 
     if (key->state == DDLIdempotencyKey::State::Pending)

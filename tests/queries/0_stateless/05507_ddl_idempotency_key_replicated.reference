@@ -113,6 +113,10 @@ OK
 0
 1
 0
+-- a user without the access is refused before the database or the key is looked at
+ACCESS_DENIED
+ACCESS_DENIED
+no Keeper write
 -- a key in the settings of a statement nested in another query is refused
 IDEMPOTENCY_KEY_NOT_SUPPORTED
 IDEMPOTENCY_KEY_NOT_SUPPORTED
