@@ -1370,6 +1370,13 @@ void AvroRowInputFormat::readPrefix()
 
 bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
+    /// Under parallel parsing each segment is a standalone OCF (the `Avro` file-segmentation engine
+    /// prepends the header to every segment), so the reader must be initialized once per segment. The
+    /// base `read` only calls `readPrefix` for the first segment -- it gates on `total_rows == 0`, and
+    /// `setRowsReadBefore` makes `total_rows` non-zero for every later segment -- so initialize lazily.
+    if (!file_reader_ptr)
+        readPrefix();
+
     if (file_reader_ptr->hasMore())
     {
         file_reader_ptr->decr();
@@ -1387,6 +1394,9 @@ bool AvroRowInputFormat::supportsCountRows() const
 
 size_t AvroRowInputFormat::countRows(size_t max_block_size)
 {
+    if (!file_reader_ptr)
+        readPrefix();
+
     size_t num_rows = 0;
     while (file_reader_ptr->hasMore() && num_rows < max_block_size)
     {

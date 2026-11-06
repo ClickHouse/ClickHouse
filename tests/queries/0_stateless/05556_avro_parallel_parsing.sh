@@ -14,14 +14,15 @@ D="${CLICKHOUSE_TMP}/05556"
 
 struct="i Int64, s String, arr Array(UInt64), n Nullable(UInt32)"
 
-# Compare a sequential read with a parallel read of the same Avro file. The comparison is the md5 of the
-# full, ordered output (ParallelParsingInputFormat preserves row order), so it detects reordering and any
-# wrong column association -- not just aggregate totals.
+# Compare a sequential read with a parallel read of the same Avro file. The pipeline below the format does
+# not preserve row order for a `SELECT *` over `file` (parallel streams interleave -- this is true for every
+# format, not just Avro), so the comparison is the md5 of the full output sorted as a multiset. That detects
+# row loss, duplication and any wrong column association across every column -- not just aggregate totals.
 check() {
     local file="$1" structure="$2" extra="${3:-}"
     local seq par
-    seq=$(${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('$file', 'Avro', '$structure') SETTINGS ${extra}input_format_parallel_parsing=0 FORMAT TSV" | md5sum)
-    par=$(${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('$file', 'Avro', '$structure') SETTINGS ${extra}input_format_parallel_parsing=1, max_threads=8, min_chunk_bytes_for_parallel_parsing=4096 FORMAT TSV" | md5sum)
+    seq=$(${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('$file', 'Avro', '$structure') SETTINGS ${extra}input_format_parallel_parsing=0 FORMAT TSV" | sort | md5sum)
+    par=$(${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('$file', 'Avro', '$structure') SETTINGS ${extra}input_format_parallel_parsing=1, max_threads=8, min_chunk_bytes_for_parallel_parsing=4096 FORMAT TSV" | sort | md5sum)
     [ "$seq" = "$par" ] && echo "OK" || echo "MISMATCH seq=[$seq] par=[$par]"
 }
 
@@ -34,7 +35,7 @@ ${CLICKHOUSE_LOCAL} -q "
 echo -n "mixed: "; check "${D}_mixed.avro" "$struct"
 
 # 2) each codec
-for codec in null deflate zstd; do
+for codec in null deflate zstd snappy; do
     ${CLICKHOUSE_LOCAL} -q "
         SELECT number::Int64 AS i, toString(number) AS s, range(number % 6) AS arr,
                if(number % 3 = 0, NULL, number)::Nullable(UInt32) AS n
@@ -54,5 +55,14 @@ ${CLICKHOUSE_LOCAL} -q "
     FROM numbers(50000)
     INTO OUTFILE '${D}_evo.avro' FORMAT Avro SETTINGS output_format_avro_sync_interval = 300"
 echo -n "schema-evolution: "; check "${D}_evo.avro" "a Int64, c Int64, d Int32" "input_format_avro_allow_missing_fields=1, "
+
+# 5) wide random-byte values across many blocks. The segmentation jumps over each block by its declared
+# byte length rather than scanning for the 16-byte sync marker, so a value whose bytes happen to contain
+# the sync sequence must not cause a false split -- random 200-byte strings exercise that.
+${CLICKHOUSE_LOCAL} -q "
+    SELECT number::Int64 AS i, randomString(200) AS s
+    FROM numbers(20000)
+    INTO OUTFILE '${D}_wide.avro' FORMAT Avro SETTINGS output_format_avro_sync_interval = 256"
+echo -n "wide-random-bytes: "; check "${D}_wide.avro" "i Int64, s String"
 
 rm -f "${D}"_*.avro
