@@ -1175,37 +1175,14 @@ StoragePtr DatabaseDataLake::maybeCreateTableInExternalCatalog(ContextPtr contex
     catalog->createTableAtDefaultLocation(namespace_name, table_name, metadata_object);
     LOG_DEBUG(log, "Created table {} in the catalog of database {}", name, backQuoteIfNeed(getDatabaseName()));
 
-    return loadCreatedTable(*catalog, name, context_);
-}
+    auto storage = tryGetTableImpl(name, context_, /* lightweight */ false, /* ignore_if_not_iceberg */ false);
+    if (!storage)
+        throw Exception(
+            ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Table {} was created in the catalog of database {}, but the catalog does not return it",
+            name, backQuoteIfNeed(getDatabaseName()));
 
-StoragePtr DatabaseDataLake::loadCreatedTable(const DataLake::ICatalog & catalog, const String & name, ContextPtr context_) const
-{
-    try
-    {
-        auto storage = tryGetTableImpl(name, context_, /* lightweight */ false, /* ignore_if_not_iceberg */ false);
-        if (!storage)
-            throw Exception(
-                ErrorCodes::DATALAKE_DATABASE_ERROR,
-                "Table {} was created in the catalog of database {}, but the catalog does not return it",
-                name, backQuoteIfNeed(getDatabaseName()));
-        return storage;
-    }
-    catch (Exception & e)
-    {
-        const auto [namespace_name, table_name] = DataLake::parseTableName(name);
-
-        /// A failed CREATE leaves no table behind. The table has no data yet, so the catalog has only the metadata file to purge.
-        try
-        {
-            catalog.dropTable(namespace_name, table_name, /* delete_data */ true);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, fmt::format("Failed to drop table {} from the catalog of database {} after a failed create", name, backQuoteIfNeed(getDatabaseName())));
-            e.addMessage("Table {} may still exist in the catalog of database {}", name, backQuoteIfNeed(getDatabaseName()));
-        }
-        throw;
-    }
+    return storage;
 }
 
 bool DatabaseDataLake::empty() const
