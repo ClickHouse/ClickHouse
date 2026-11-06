@@ -387,6 +387,11 @@ void StorageKafka2::activateAndReschedule()
         {
             consecutive_activate_failures++;
             activating_task->scheduleAfter(next_failure_retry_ms);
+
+            /// The table is inactive (e.g. a Keeper outage): the consumer tasks are stopped, but
+            /// the handles keep enqueueing statistics events - serve them. After scheduleAfter(),
+            /// so a blocked acquire cannot delay the next retry.
+            drainIdleConsumerEvents();
         }
     }
     catch (...)
@@ -397,6 +402,7 @@ void StorageKafka2::activateAndReschedule()
         /// We couldn't activate table let's set it into readonly mode if necessary
         /// We do this after scheduling the task in case it throws
         partialShutdown();
+        drainIdleConsumerEvents();
         tryLogCurrentException(log, "Failed to restart the table. Will try again");
     }
 }
@@ -1370,11 +1376,8 @@ void StorageKafka2::threadFunc(size_t idx)
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    /// Serve librdkafka callbacks (statistics, error events) when this task is not streaming: while there
-    /// is no attached materialized view (or streaming is stopped / dependencies are not ready), nobody
-    /// polls this consumer, and events would accumulate in the librdkafka reply queue indefinitely (a live
-    /// memory leak, slow consumer shutdown). Draining them here is what makes it safe to keep statistics
-    /// enabled by default for StorageKafka2.
+    /// Serve librdkafka callbacks (statistics, error events) when this task is not streaming:
+    /// otherwise nobody polls this consumer and the events pile up in the reply queue.
     if (!incremented_mv_streamers && !task->stream_cancelled)
         pollIdleConsumerEvents(idx);
 
@@ -1517,16 +1520,14 @@ void StorageKafka2::pollIdleConsumerEvents(size_t idx)
             std::lock_guard lock(consumers_mutex);
             if (idx >= consumers.size() || !consumers[idx])
                 return;
-            /// Don't create a librdkafka handle just to poll an empty queue: a table that has never been
-            /// streamed from has nothing to drain. Also skip consumers that are busy right now (a direct
-            /// SELECT serves the callbacks itself while it holds the consumer).
+            /// Skip consumers without a handle (never streamed from: nothing to drain) and busy
+            /// ones (a direct SELECT serves the events itself while it holds the consumer).
             if (!consumers[idx]->hasConsumer() || consumers[idx]->isInUse())
                 return;
         }
 
-        /// A consumer can be acquired by a direct SELECT in between the check above and the acquisition;
-        /// acquireConsumer() then waits (bounded by kafka_consumer_acquire_timeout_ms), which is harmless:
-        /// the SELECT serves the events itself, so a timeout here only skips one drain round.
+        /// A direct SELECT may grab the consumer in between: the bounded acquire then just skips
+        /// this drain round.
         auto consumer = acquireConsumer(idx);
         SCOPE_EXIT({ releaseConsumer(std::move(consumer)); });
         consumer->drainKafkaEvents();
@@ -1536,6 +1537,24 @@ void StorageKafka2::pollIdleConsumerEvents(size_t idx)
         /// Don't let a failure to drain events break the background task; it is retried on the next cycle.
         tryLogCurrentException(log, fmt::format("Failed to poll events of consumer #{}", idx));
     }
+}
+
+void StorageKafka2::drainIdleConsumerEvents()
+{
+    if (shutdown_called)
+        return;
+
+    /// The consumer tasks are stopped while the table is inactive (e.g. a Keeper outage), but the
+    /// Kafka handles stay alive and keep enqueueing statistics events; without this drain the
+    /// backlog grows for the whole duration of the outage. A single invocation drains an
+    /// arbitrarily deep backlog, so the bounded activation backoff keeps the queues bounded.
+    size_t consumers_count = 0;
+    {
+        std::lock_guard lock(consumers_mutex);
+        consumers_count = consumers.size();
+    }
+    for (size_t idx = 0; idx < consumers_count; ++idx)
+        pollIdleConsumerEvents(idx);
 }
 
 void StorageKafka2::cleanConsumers()

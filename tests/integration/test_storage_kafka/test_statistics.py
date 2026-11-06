@@ -2,7 +2,7 @@ import time
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, ZOOKEEPER_CONTAINERS
 from helpers.test_tools import TSV
 import helpers.kafka.common as k
 
@@ -164,6 +164,73 @@ def test_statistics_survive_mv_detach(kafka_cluster):
             check_callback=lambda x: len(TSV(x)) == 2,
         )
         assert TSV(instance.query("SELECT * FROM test.dst ORDER BY a")) == TSV("message_1\nmessage_2")
+
+
+def test_statistics_survive_keeper_outage(kafka_cluster):
+    """StorageKafka2 must keep serving librdkafka statistics while the table is inactive during
+    a Keeper outage (the drain from the activation task); without it, the events accumulate in
+    the reply queue for the whole duration of the outage."""
+    topic_name = "topic_statistics_outage"
+
+    create_kafka_query = k.generate_new_create_table_query(
+        "kafka", "a String", topic_list=topic_name, format="LineAsString"
+    )
+
+    with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
+        instance.query(
+            f"""
+            CREATE TABLE test.dst (a String) ENGINE = MergeTree() ORDER BY tuple();
+            {create_kafka_query};
+            CREATE MATERIALIZED VIEW test.kafka_mv TO test.dst AS SELECT a FROM test.kafka;
+            """
+        )
+
+        k.kafka_produce(kafka_cluster, topic_name, ["message_1"])
+        instance.query_with_retry(
+            "SELECT * FROM test.dst",
+            retry_count=60,
+            sleep_time=1,
+            check_callback=lambda x: len(TSV(x)) == 1,
+        )
+        wait_for_statistics("kafka")
+
+        # Kill Keeper: the session expires (default session_timeout is 30s) and the table goes
+        # inactive - the consumer tasks stop, and only the activation task keeps running,
+        # retrying with a bounded backoff. The consumers stay alive, and librdkafka keeps
+        # emitting statistics on every interval.
+        cluster.kill_zookeeper_nodes(list(ZOOKEEPER_CONTAINERS))
+        try:
+            # Allow time for the session to expire and for the activation task to notice
+            # (it ticks every 60s while the table is healthy), so that by the snapshot below
+            # the table is inactive for certain.
+            time.sleep(150)
+            # While the table is inactive the drain from the activation task is the only
+            # thing serving the events: rdkafka_stat must keep advancing.
+            ts_inactive = get_stat_ts("kafka")
+            deadline = time.monotonic() + 60
+            ts_fresh = None
+            while time.monotonic() < deadline:
+                ts_fresh = get_stat_ts("kafka")
+                if ts_fresh is not None and ts_inactive is not None and ts_fresh > ts_inactive:
+                    break
+                time.sleep(2)
+            assert ts_fresh is not None and ts_inactive is not None and ts_fresh > ts_inactive, (
+                f"rdkafka_stat is stale while the table is inactive (ts {ts_inactive} -> {ts_fresh}): "
+                "statistics events are not served during a Keeper outage"
+            )
+        finally:
+            cluster.start_zookeeper_nodes(list(ZOOKEEPER_CONTAINERS))
+
+        # After the outage the table re-activates and consumption continues without losses.
+        k.kafka_produce(kafka_cluster, topic_name, ["message_2"])
+        instance.query_with_retry(
+            "SELECT * FROM test.dst",
+            retry_count=120,
+            sleep_time=1,
+            check_callback=lambda x: len(TSV(x)) == 2,
+        )
+        assert TSV(instance.query("SELECT * FROM test.dst ORDER BY a")) == TSV("message_1\nmessage_2")
+        wait_for_statistics("kafka")
 
 
 if __name__ == "__main__":
