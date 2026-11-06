@@ -335,7 +335,8 @@ DatasetHandle DatasetHandle::openEphemeral(const DatasetOptions & options, const
         ProfileEvents::increment(ProfileEvents::LanceRuntimeInit, after_init - before_init);
 
     auto impl = std::make_shared<Impl>(dataset.get(), options);
-    dataset.release();
+    /// `Impl` owns the dataset now; the returned pointer is the one it already holds.
+    static_cast<void>(dataset.release());
     return DatasetHandle(std::move(impl));
 }
 
