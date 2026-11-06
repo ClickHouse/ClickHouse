@@ -3802,6 +3802,7 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
             lambda_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
     lambdas_in_resolve_process.insert(lambda_with_hash);
+    SCOPE_EXIT({ lambdas_in_resolve_process.erase(lambda_with_hash); });
 
     size_t arguments_size = lambda_arguments.size();
     if (lambda_arguments_nodes_size != arguments_size)
@@ -3841,8 +3842,6 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
 
     /// Lambda body expression is resolved as standard query expression node.
     auto result_projection_names = resolveExpressionNode(lambda_to_resolve.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-
-    lambdas_in_resolve_process.erase(lambda_with_hash);
 
     return result_projection_names;
 }
@@ -5450,9 +5449,22 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
             const auto & column_default = captured_storage_snapshot->metadata->getColumns().getDefault(alias_column_to_resolve->getColumnName());
             if (!column_default || column_default->kind != ColumnDefaultKind::Alias)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is not an ALIAS column", alias_column_to_resolve->getColumnName());
+
+            data.alias_columns_in_resolution.push_back(alias_column_to_resolve->getColumnName());
+            bool alias_column_resolved = false;
+            SCOPE_EXIT({
+                data.alias_columns_in_resolution.pop_back();
+                if (!alias_column_resolved)
+                    alias_column_to_resolve->setExpression(nullptr);
+            });
+
             alias_column_to_resolve->setExpression(buildQueryTree(column_default->expression, scope.context));
 
-            IdentifierResolveScope & alias_column_resolve_scope = createIdentifierResolveScope(alias_column_to_resolve, &scope /*parent_scope*/);
+            auto [scope_it, scope_inserted] = node_to_scope_map.try_emplace(alias_column_to_resolve, alias_column_to_resolve, &scope /*parent_scope*/);
+            /// The scope exists only if an earlier resolution of this column threw, and holds the state of that attempt.
+            if (!scope_inserted)
+                scope_it->second = IdentifierResolveScope(alias_column_to_resolve, &scope /*parent_scope*/);
+            IdentifierResolveScope & alias_column_resolve_scope = scope_it->second;
             alias_column_resolve_scope.table_expression_data_for_alias_resolution = &data;
             alias_column_resolve_scope.context = scope.context;
 
@@ -5467,6 +5479,7 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
             auto & resolved_expression = alias_column_to_resolve->getExpression();
             if (resolved_expression->getResultType()->getName() != alias_column_to_resolve->getResultType()->getName())
                 resolved_expression = buildCastFunction(resolved_expression, alias_column_to_resolve->getResultType(), scope.context, true);
+            alias_column_resolved = true;
         };
 
         data.setColumnNodeMapPopulator(std::move(populator), std::move(alias_column_resolver));
@@ -5560,6 +5573,9 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             VectorWithMemoryTracking<size_t> skip_analysis_arguments_indexes(table_function_node_typed.getArguments().getNodes().size());
             std::iota(skip_analysis_arguments_indexes.begin(), skip_analysis_arguments_indexes.end(), 0);
             table_function_node_typed.resolve({}, parameterized_view_storage, scope_context, std::move(skip_analysis_arguments_indexes));
+            IdentifierResolver::checkAccessToTableMetadata(
+                table_function_node_typed.getStorage(), table_function_node_typed.getStorageID(),
+                table_function_node_typed.getStorageSnapshot(), scope_context);
             return;
         }
 
