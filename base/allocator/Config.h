@@ -164,8 +164,9 @@ inline constexpr bool use_after_free_detection =
 
 /// --- Per-platform features ---------------------------------------------------------------------------------------
 
-/// JEMALLOC_RETAIN: keep unused virtual memory mapped instead of unmapping it.
-inline constexpr bool retain = os_linux;
+/// JEMALLOC_RETAIN: keep unused virtual memory mapped instead of unmapping it. Enabled on Darwin too, to avoid stranded
+/// anonymous memory (like `contrib/jemalloc-cmake`).
+inline constexpr bool retain = os_linux || os_darwin;
 
 /// JEMALLOC_DSS is compiled in everywhere except Darwin (the allocator never uses sbrk; this only affects reporting).
 inline constexpr bool have_sbrk = !os_darwin;

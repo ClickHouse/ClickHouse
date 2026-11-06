@@ -27,6 +27,10 @@ class ThreadState;
 /// jemalloc: ncpus (`src/jemalloc.c`). Defined in Init.cpp.
 extern unsigned num_cpus;
 
+/// The bound on the CPU ids returned by `sched_getcpu` (`nr_cpu_ids` on Linux, from `/sys/devices/system/cpu/possible`);
+/// 0 if unknown. Set during initialization. jemalloc: ncpus_possible. Defined in InitState.cpp.
+extern unsigned num_cpus_possible;
+
 /// With `JEMALLOC_LAZY_LOCK` (FreeBSD) mutexes are not locked until the process goes multi-threaded: the
 /// `pthread_create` wrapper sets this. Elsewhere `isThreaded()` is the constant true.
 /// jemalloc: isthreaded

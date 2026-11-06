@@ -145,7 +145,7 @@ int threadArena(
                 /// Setting `thread.arena` to an arena in the auto range means "resume automatic per-CPU selection"
                 /// rather than pinning to a specific per-CPU arena: a thread bound to a manual arena is never
                 /// reclaimed by percpu (see `arenaChooseImpl`), so without this it would stay pinned forever.
-                perCPUArenaUpdate(thread_state, perCPUArenaChoose());
+                perCPUArenaUpdate(thread_state, perCPUArenaChooseClamped());
                 return 0;
             }
         }

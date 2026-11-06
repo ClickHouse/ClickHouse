@@ -181,7 +181,23 @@ ALLOCATOR_ALWAYS_INLINE unsigned perCPUArenaIdxLimit(PerCPUArenaMode mode)
         }
         return num_cpus / 2;
     }
+    /// Cover every possible CPU id, not just the affinity mask: arenas are indexed by the raw `sched_getcpu`. Unused
+    /// slots are never initialized.
+    if (mode == PerCPUArenaMode::PerCPU && num_cpus_possible > num_cpus)
+        return num_cpus_possible;
     return num_cpus;
+}
+
+/// As `perCPUArenaChoose`, but clamped: the affinity mask can grow past a masked (lying) `cpu/possible` file, so wrap
+/// instead of indexing past the reserved arena range.
+/// jemalloc: percpu_arena_choose_clamped
+ALLOCATOR_ALWAYS_INLINE unsigned perCPUArenaChooseClamped()
+{
+    unsigned arena_idx = perCPUArenaChoose();
+    unsigned idx_limit = perCPUArenaIdxLimit(options.per_cpu_arena);
+    if (ALLOCATOR_UNLIKELY(arena_idx >= idx_limit))
+        arena_idx %= idx_limit;
+    return arena_idx;
 }
 
 /// Migrates the thread to the arena of `cpu` (and reassociates its tcache).
@@ -230,7 +246,7 @@ ALLOCATOR_ALWAYS_INLINE Arena * arenaChooseImpl(ThreadState & thread_state, Aren
     if (config::have_per_cpu_arena && perCPUArenaEnabled(options.per_cpu_arena) && !internal
         && (arenaIdxGet(result) < perCPUArenaIdxLimit(options.per_cpu_arena)) && (result->last_thread != &thread_state))
     {
-        unsigned idx = perCPUArenaChoose();
+        unsigned idx = perCPUArenaChooseClamped();
         if (arenaIdxGet(result) != idx)
         {
             perCPUArenaUpdate(thread_state, idx);

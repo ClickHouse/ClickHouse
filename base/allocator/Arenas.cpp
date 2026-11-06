@@ -206,7 +206,7 @@ Arena * arenaChooseHard(ThreadState & thread_state, bool internal)
 
     if (config::have_per_cpu_arena && perCPUArenaEnabled(options.per_cpu_arena))
     {
-        unsigned choose = perCPUArenaChoose();
+        unsigned choose = perCPUArenaChooseClamped();
         result = arenaGet(thread_state_ptr, choose, true);
         /// The arena may fail to initialize (out of memory). Unlike jemalloc, report the failure to the caller
         /// instead of dereferencing a null pointer.

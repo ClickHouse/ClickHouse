@@ -25,6 +25,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <type_traits>
+#include <fcntl.h>
 #include <pthread.h>
 #include <sched.h>
 #include <unistd.h>
@@ -139,6 +140,76 @@ long affinityCPUCount()
 }
 #endif
 
+/// The highest CPU id in the affinity mask, or -1 if unknown.
+/// jemalloc: malloc_cpu_max_affinity_id (static)
+int mallocCPUMaxAffinityID()
+{
+#if defined(__linux__) || defined(__FreeBSD__)
+    CPUSet set;
+    if constexpr (config::have_sched_setaffinity)
+        sched_getaffinity(0, sizeof(set), &set);
+    else
+        pthread_getaffinity_np(pthread_self(), sizeof(set), &set);
+    for (int i = int(sizeof(set) * 8); i-- > 0;)
+    {
+        if (CPU_ISSET(i, &set))
+            return i;
+    }
+#endif
+    return -1;
+}
+
+/// The bound on the CPU ids returned by `sched_getcpu` (`nr_cpu_ids` on Linux). Fixed at boot, unlike the affinity
+/// mask or the online set. Returns 0 if unknown.
+/// jemalloc: malloc_ncpus_possible (static)
+unsigned mallocNumCPUsPossible()
+{
+#if defined(__linux__)
+    char buf[64];
+
+    int fd = openFile("/sys/devices/system/cpu/possible", O_RDONLY | O_CLOEXEC);
+    if (fd == -1)
+        return 0;
+    ssize_t num_read = readFD(fd, buf, sizeof(buf) - 1);
+    closeFile(fd);
+    /// Full buffer: possibly truncated mid-number.
+    if (num_read <= 0 || num_read == ssize_t(sizeof(buf) - 1))
+        return 0;
+
+    /// Range list, e.g. "0-63\n"; use the max id + 1, the set may have holes.
+    unsigned max_id = 0;
+    unsigned current = 0;
+    bool seen_digit = false;
+    for (ssize_t i = 0; i < num_read; ++i)
+    {
+        if (buf[i] >= '0' && buf[i] <= '9')
+        {
+            current = current * 10 + unsigned(buf[i] - '0');
+            seen_digit = true;
+        }
+        else
+        {
+            if (seen_digit && current > max_id)
+                max_id = current;
+            current = 0;
+            seen_digit = false;
+        }
+    }
+    if (seen_digit && current > max_id)
+        max_id = current;
+    if (max_id + 1 >= MALLOCX_ARENA_LIMIT)
+        return 0;
+    /// online <= possible on a real kernel; a smaller bound means the file is masked (e.g. by a container) and cannot
+    /// be trusted.
+    long cpu_online = sysconf(_SC_NPROCESSORS_ONLN);
+    if (cpu_online > 0 && max_id + 1 < unsigned(cpu_online))
+        return 0;
+    return max_id + 1;
+#else
+    return 0;
+#endif
+}
+
 }
 
 bool mallocIsInitializer()
@@ -173,6 +244,10 @@ bool mallocCPUCountIsDeterministic()
 #if defined(__linux__) || defined(__FreeBSD__)
     long cpu_affinity = affinityCPUCount();
     if (cpu_affinity != cpu_configuration)
+        return false;
+    /// Matching counts are not enough: `sched_getcpu` returns raw ids, so a holey or offset mask (e.g. cpuset {4} with
+    /// masked sysfs) still breaks percpu indexing.
+    if (mallocCPUMaxAffinityID() + 1 != cpu_affinity)
         return false;
 #endif
     return true;
@@ -320,10 +395,17 @@ bool mallocInitHardRecursible()
     malloc_init_state = malloc_init_recursible;
 
     num_cpus = mallocNumCPUs();
+    num_cpus_possible = mallocNumCPUsPossible();
     if (options.per_cpu_arena != PerCPUArenaMode::Disabled)
     {
         bool cpu_count_is_deterministic = mallocCPUCountIsDeterministic();
-        if (!cpu_count_is_deterministic)
+        /// percpu mode sizes arenas by `num_cpus_possible`, which bounds `sched_getcpu` regardless of the affinity
+        /// mask, so a non-deterministic CPU count is harmless.
+        int max_affinity_id = mallocCPUMaxAffinityID();
+        bool per_cpu_safe = (options.per_cpu_arena == PerCPUArenaMode::PerCPUUninitialized
+                             || options.per_cpu_arena == PerCPUArenaMode::PerCPU)
+            && num_cpus_possible >= num_cpus && max_affinity_id >= 0 && unsigned(max_affinity_id) < num_cpus_possible;
+        if (!cpu_count_is_deterministic && !per_cpu_safe)
         {
             /// If the number of CPUs is not deterministic, and narenas is not specified, disable per CPU arenas since
             /// they may not detect CPU IDs properly.
