@@ -458,13 +458,11 @@ MemoryWorker::MemoryWorker(
     if (config.use_cgroup)
     {
 #if defined(OS_LINUX)
-        static constexpr uint64_t cgroups_memory_usage_tick_ms{50};
-        std::optional<std::string> cgroups_v2_path;
         try
         {
+            static constexpr uint64_t cgroups_memory_usage_tick_ms{50};
+
             const auto [cgroup_path, version] = ICgroupsReader::getCgroupsPath();
-            if (version == ICgroupsReader::CgroupsVersion::V2)
-                cgroups_v2_path = cgroup_path;
             LOG_INFO(
                 getLogger("CgroupsReader"),
                 "Will create cgroup reader from '{}' (cgroups version: {})",
@@ -525,23 +523,6 @@ MemoryWorker::MemoryWorker(
             cgroup_memory_levels.clear();
             cgroups_v2_lookup.reset();
             source = MemoryUsageSource::None;
-
-            /// The `memory` controller was disabled between the lookup and the open: follow it as after a failed tick.
-            /// `memory.current` without `memory.stat` is not a removal: gVisor's cgroup v2 never has `memory.stat`.
-            std::error_code ec;
-            if (cgroups_v2_path
-                && ((getCurrentExceptionCode() == ErrorCodes::FILE_DOESNT_EXIST
-                     && fs::exists(fs::path(*cgroups_v2_path) / "memory.stat", ec))
-                    || (!fs::exists(fs::path(*cgroups_v2_path) / "memory.current", ec) && !ec)))
-            {
-                source = MemoryUsageSource::Cgroups;
-                if (rss_update_period_ms == 0)
-                    rss_update_period_ms = cgroups_memory_usage_tick_ms;
-                cgroups_v2_lookup.emplace();
-                cgroups_v2_lookup->dir = cgroups_v2_path;
-                cgroups_v2_lookup->reopen = true;
-                return;
-            }
         }
 #endif
     }
@@ -615,19 +596,33 @@ std::vector<MemoryWorker::CgroupMemoryLevel> MemoryWorker::openCgroupsV2MemoryLe
 
 bool MemoryWorker::lookUpCgroupsV2MemoryFiles()
 {
-    auto dir = getCgroupsV2PathContainingFile("memory.current");
-    if (dir == cgroups_v2_lookup->dir && !cgroups_v2_lookup->reopen)
-        return false;
-
+    std::optional<std::string> dir;
     std::shared_ptr<ICgroupsReader> reader;
     std::vector<CgroupMemoryLevel> levels;
-    if (dir)
+    bool failed = false;
+    try
     {
-        reader = ICgroupsReader::createCgroupsReader(ICgroupsReader::CgroupsVersion::V2, *dir);
-        levels = openCgroupsV2MemoryLevels(*dir);
+        dir = getCgroupsV2PathContainingFile("memory.current");
+        if (dir == cgroups_v2_lookup->dir && !cgroups_v2_lookup->reopen)
+            return false;
+
+        if (dir)
+        {
+            reader = ICgroupsReader::createCgroupsReader(ICgroupsReader::CgroupsVersion::V2, *dir);
+            levels = openCgroupsV2MemoryLevels(*dir);
+        }
+    }
+    catch (...)
+    {
+        /// Handled as if no cgroup was visible, so the lookup is retried in `cgroups_v2_lookup_period`, not on the next tick.
+        tryLogCurrentException(log, "Cannot look up the cgroup memory files");
+        dir.reset();
+        reader.reset();
+        levels.clear();
+        failed = true;
     }
 #if !USE_JEMALLOC && HAS_MEMORY_STATISTICS_OS
-    else if (!os_memory_statistics)
+    if (!dir && !os_memory_statistics)
         os_memory_statistics = std::make_unique<MemoryStatisticsOS>();
 #endif
 
@@ -635,7 +630,7 @@ bool MemoryWorker::lookUpCgroupsV2MemoryFiles()
     cgroups_reader = std::move(reader);
     cgroup_memory_levels = std::move(levels);
 
-    if (dir != cgroups_v2_lookup->dir)
+    if (dir != cgroups_v2_lookup->dir && !failed)
     {
         if (dir)
             LOG_INFO(log, "Reopened the cgroup memory files from '{}', the nearest cgroup with memory.current now (was '{}')",

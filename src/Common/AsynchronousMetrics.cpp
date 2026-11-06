@@ -1974,8 +1974,17 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     }
 
     /// The nearest `memory.max` and `memory.stat` move when the parent toggles the `memory` controller; removed ones give ENODEV.
-    if (auto dir = getCgroupsV2PathContainingFile("memory.current"); dir != cgroupmem_dir)
-        openCgroupv2MemoryFiles(dir);
+    try
+    {
+        if (auto dir = getCgroupsV2PathContainingFile("memory.current"); dir != cgroupmem_dir)
+            openCgroupv2MemoryFiles(dir);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        if (cgroupmem_dir)
+            openCgroupv2MemoryFiles({});
+    }
     if (cgroupmem_limit_in_bytes && cgroupmem_reader)
     {
         try
@@ -2028,7 +2037,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
             if (cgroupmem_dir)
-                openCgroupv2MemoryFiles(getCgroupsV2PathContainingFile("memory.current"));
+                openCgroupv2MemoryFiles({});
         }
     }
     if (meminfo)
