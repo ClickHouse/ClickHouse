@@ -960,8 +960,9 @@ static bool isMatchedOnExactBoundaryByOtherTableExpression(
 /// A table name of several parts (`a.b` for the table `a.b`), or relative to the current database (`t` for the table
 /// `db`.`ns.t` inside `USE db.ns`), is a qualifier only since table names are hierarchical (see
 /// `DatabaseCatalog`), so it must not take precedence over the qualifiers that already denoted another table expression
-/// before: the explicit alias of another table expression equal to the first part (`a` in `... CROSS JOIN t AS a`), or the
-/// database and the table name of another table expression matched exactly (the table `b` of the database `a`).
+/// before: the explicit alias of another table expression equal to the first part (`a` in `... CROSS JOIN t AS a`), the
+/// table name of another table expression equal to the first part (`a` in `... CROSS JOIN r.a`), or the database and the
+/// table name of another table expression matched exactly (the table `b` of the database `a`).
 /// Only the table expressions of the same scope (the sources of a join) compete: the nearest scope still wins.
 static bool isQualifiedByOtherTableExpression(
     const Identifier & identifier,
@@ -977,6 +978,9 @@ static bool isQualifiedByOtherTableExpression(
             continue;
 
         if (check_alias && other_table_expression_node->hasAlias() && other_table_expression_node->getAlias() == path_start)
+            return true;
+
+        if (check_alias && !other_table_expression_data.table_name.empty() && other_table_expression_data.table_name == path_start)
             return true;
 
         bool other_crosses_boundary = false;
