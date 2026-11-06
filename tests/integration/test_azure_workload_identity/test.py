@@ -168,7 +168,7 @@ def test_delta_lake_follows_the_session(started_cluster):
     if int(delta_node.query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLakeAzure'").strip()) == 0:
         pytest.skip("DeltaLakeAzure engine is not available")
 
-    allow ={"s3_allow_server_credentials_in_user_queries": 1}
+    allow = {"s3_allow_server_credentials_in_user_queries": 1}
     kernel = {"allow_experimental_delta_kernel_rs": 1, "azure_sdk_max_retries": 0}
     delta_node.query("DROP TABLE IF EXISTS t_delta SYNC")
     # `ATTACH` loads the table lazily, so nothing is read before the first query and no Delta log is needed.
@@ -197,6 +197,39 @@ def test_delta_lake_follows_the_session(started_cluster):
     assert any(hit["authorization"] for hit in get_delta_node_hits(started_cluster, "storage_hits")[before_storage:])
 
     delta_node.query("DROP TABLE t_delta SYNC")
+
+
+def test_delta_lake_cached_stats_follow_the_session(started_cluster):
+    """With a pinned snapshot version, a restricted session does not get the row count an opted-in session cached:
+    `count()` is refused without a token request."""
+
+    if int(delta_node.query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLakeAzure'").strip()) == 0:
+        pytest.skip("DeltaLakeAzure engine is not available")
+
+    allow = {"s3_allow_server_credentials_in_user_queries": 1}
+    pinned = {
+        "allow_experimental_delta_kernel_rs": 1,
+        "azure_sdk_max_retries": 0,
+        "delta_lake_snapshot_version": 0,
+        "optimize_trivial_count_query": 1,
+    }
+    delta_node.query("DROP TABLE IF EXISTS t_delta_stats SYNC")
+    delta_node.query(
+        f"ATTACH TABLE t_delta_stats UUID '{uuid.uuid4()}' (c Int64) ENGINE = DeltaLakeAzure('http://127.0.0.1:{TOKEN_PORT}/account', 'cont', 'stats_table/')",
+        settings=allow,
+    )
+
+    # The opted-in session loads snapshot 0 from the mock's Delta log and caches its stats.
+    assert delta_node.query("SELECT count() FROM t_delta_stats", settings={**allow, **pinned}).strip() == "3"
+
+    before_tokens = len(get_delta_node_hits(started_cluster, "hits"))
+    before_storage = len(get_delta_node_hits(started_cluster, "storage_hits"))
+    error = delta_node.query_and_get_error("SELECT count() FROM t_delta_stats", settings=pinned)
+    assert "ACCESS_DENIED" in error
+    assert get_delta_node_hits(started_cluster, "hits")[before_tokens:] == []
+    assert get_delta_node_hits(started_cluster, "storage_hits")[before_storage:] == []
+
+    delta_node.query("DROP TABLE t_delta_stats SYNC")
 
 
 def test_truncate_follows_the_session(started_cluster):
