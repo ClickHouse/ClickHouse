@@ -26,7 +26,7 @@ namespace ProfileEvents
 {
     extern const Event Query;
     extern const Event SelectQuery;
-    extern const Event AdaptiveAggregationSpillBacklogSheds;
+    extern const Event ZooKeeperWatchResponse;
 }
 
 /// Drive the real `Thread` -> `User` -> `global_counters` chain: every thread increments its own
@@ -297,8 +297,8 @@ TEST(ProfileEvents, AbsentColdPagesReadAsZeroWithoutAllocating)
 TEST(ProfileEvents, ConcurrentFirstColdUpdatesAndSnapshots)
 {
     ProfileEvents::Counters counters(VariableContext::Process, nullptr);
-    /// This event was appended after the public frequency ranking and remains cold.
-    const auto cold_event = ProfileEvents::AdaptiveAggregationSpillBacklogSheds;
+    /// Use a public event outside the hot and non-allocating catalogues.
+    const auto cold_event = ProfileEvents::ZooKeeperWatchResponse;
     constexpr size_t num_threads = 8;
     constexpr size_t increments = 10'000;
     std::barrier<> start(num_threads + 1);
@@ -331,7 +331,7 @@ TEST(ProfileEvents, ConcurrentFirstColdUpdatesAndSnapshots)
 
 TEST(ProfileEvents, PreallocateColdEventAcrossParentsAndCPUs)
 {
-    const auto event = ProfileEvents::AdaptiveAggregationSpillBacklogSheds;
+    const auto event = ProfileEvents::ZooKeeperWatchResponse;
     const auto global_before = ProfileEvents::global_counters[event];
     ProfileEvents::Counters user(VariableContext::User);
     ProfileEvents::Counters process(VariableContext::Process, &user);
@@ -403,12 +403,12 @@ TEST(ProfileEvents, PreallocateColdEventAcrossParentsAndCPUs)
 TEST(ProfileEventsDeathTest, MissingReservationIsRejected)
 {
     ProfileEvents::Counters counters(VariableContext::Process, nullptr);
-    EXPECT_DEATH(counters.incrementNonAllocating(ProfileEvents::AdaptiveAggregationSpillBacklogSheds), "");
+    EXPECT_DEATH(counters.incrementNonAllocating(ProfileEvents::ZooKeeperWatchResponse), "");
 }
 
 TEST(ProfileEventsDeathTest, ReservationDoesNotCoverANewParent)
 {
-    const auto event = ProfileEvents::AdaptiveAggregationSpillBacklogSheds;
+    const auto event = ProfileEvents::ZooKeeperWatchResponse;
     ProfileEvents::Counters counters(VariableContext::Thread, nullptr);
     counters.preallocate(event);
     ProfileEvents::Counters parent(VariableContext::Process, nullptr);
@@ -423,7 +423,7 @@ TEST(ProfileEventsDeathTest, ReservationDoesNotCoverANewParent)
 
 TEST(ProfileEventsDeathTest, SharedParentReservationDoesNotCoverANewWorker)
 {
-    const auto event = ProfileEvents::AdaptiveAggregationSpillBacklogSheds;
+    const auto event = ProfileEvents::ZooKeeperWatchResponse;
     ProfileEvents::Counters parent(VariableContext::Process, nullptr);
     ProfileEvents::Counters submitting_thread(VariableContext::Thread, &parent);
     submitting_thread.preallocate(event);
@@ -439,7 +439,7 @@ TEST(ProfileEventsDeathTest, SharedParentReservationDoesNotCoverANewWorker)
 
 TEST(ProfileEvents, ColdTimerPreparesBeforeCleanup)
 {
-    const auto event = ProfileEvents::AdaptiveAggregationSpillBacklogSheds;
+    const auto event = ProfileEvents::ZooKeeperWatchResponse;
     ProfileEvents::Counters parent(VariableContext::Process, nullptr);
     ProfileEvents::Counters counters(VariableContext::Thread, &parent);
     std::optional<ProfileEvents::Timer> timer;
@@ -463,7 +463,7 @@ TEST(ProfileEventsDeathTest, OrdinaryColdAllocationChecksTheDenyGuard)
     EXPECT_DEATH(
         {
             DENY_ALLOCATIONS_IN_SCOPE;
-            counters.increment(ProfileEvents::AdaptiveAggregationSpillBacklogSheds);
+            counters.increment(ProfileEvents::ZooKeeperWatchResponse);
         },
         "cold page allocation");
 }

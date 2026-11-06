@@ -11,7 +11,7 @@
 
 namespace ProfileEvents
 {
-    extern const Event AdaptiveAggregationSpillBacklogSheds;
+    extern const Event ZooKeeperWatchResponse;
 }
 
 namespace
@@ -55,7 +55,7 @@ private:
         DENY_ALLOCATIONS_IN_SCOPE;
         /// The nonallocating API rejects missing backing even in release builds, where
         /// the allocation-denial macro is disabled. The event is deliberately cold.
-        ProfileEvents::incrementNonAllocating(ProfileEvents::AdaptiveAggregationSpillBacklogSheds);
+        ProfileEvents::incrementNonAllocating(ProfileEvents::ZooKeeperWatchResponse);
         ++reservation_checks;
     }
 
@@ -69,7 +69,7 @@ void checkReservation(bool timed, bool timed_success)
     std::thread worker([=]() TSA_NO_THREAD_SAFETY_ANALYSIS
     {
         DB::ThreadStatus status;
-        const auto event = ProfileEvents::AdaptiveAggregationSpillBacklogSheds;
+        const auto event = ProfileEvents::ZooKeeperWatchResponse;
         ProfileEvents::Count published = 0;
         ReservationCheckingMutex mutex(timed_success);
         {

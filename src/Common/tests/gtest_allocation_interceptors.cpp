@@ -26,7 +26,7 @@ namespace DB::ErrorCodes
 
 namespace ProfileEvents
 {
-    extern const Event AdaptiveAggregationSpillBacklogSheds;
+    extern const Event ZooKeeperWatchResponse;
     extern const Event GlobalMemoryLimitExceeded;
     extern const Event QueryMemoryLimitExceeded;
 }
@@ -115,7 +115,7 @@ TEST(AllocationInterceptors, SharedColdBackingDoesNotChargeTheTriggeringQuery)
         {
             ProfileEvents::Counters user(VariableContext::User, nullptr);
             ProfileEvents::Counters thread(VariableContext::Thread, &user);
-            thread.preallocate(ProfileEvents::AdaptiveAggregationSpillBacklogSheds);
+            thread.preallocate(ProfileEvents::ZooKeeperWatchResponse);
             status.flushUntrackedMemory();
             EXPECT_EQ(query.get(), before);
         }
@@ -123,7 +123,7 @@ TEST(AllocationInterceptors, SharedColdBackingDoesNotChargeTheTriggeringQuery)
         EXPECT_EQ(query.get(), before);
         {
             ProfileEvents::Counters process(VariableContext::Process, nullptr);
-            process.preallocate(ProfileEvents::AdaptiveAggregationSpillBacklogSheds);
+            process.preallocate(ProfileEvents::ZooKeeperWatchResponse);
             status.flushUntrackedMemory();
             EXPECT_GT(query.get(), before);
         }
