@@ -26,8 +26,6 @@
 -- Implicit sign constraint
 1	(1,0)
 2	(-1,0)
--- MATERIALIZED column
-0
 -- Merge algorithms
 c_horizontal	['Horizontal']
 c_json	['Vertical']

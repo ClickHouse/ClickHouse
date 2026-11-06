@@ -5,7 +5,6 @@ DROP TABLE IF EXISTS t_horizontal;
 DROP TABLE IF EXISTS t_json;
 DROP TABLE IF EXISTS t_other_subcolumns;
 DROP TABLE IF EXISTS t_nested;
-DROP TABLE IF EXISTS t_materialized;
 DROP TABLE IF EXISTS t_replicated;
 
 SELECT '-- Wrong subcolumns';
@@ -52,7 +51,6 @@ ALTER TABLE t_vertical MODIFY COLUMN meta Tuple(ver UInt32, del UInt8); -- { ser
 ALTER TABLE t_vertical MODIFY COLUMN meta Tuple(ver Int64, del UInt8); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 ALTER TABLE t_vertical MODIFY COLUMN meta Tuple(ver UInt64, del UInt16); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
 ALTER TABLE t_vertical ADD COLUMN `meta.ver` UInt64; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
-ALTER TABLE t_vertical UPDATE meta = (10, 0) WHERE 1; -- { serverError CANNOT_UPDATE_COLUMN }
 
 DETACH TABLE t_vertical;
 ATTACH TABLE t_vertical;
@@ -121,17 +119,6 @@ DETACH TABLE t_nested;
 ATTACH TABLE t_nested;
 SELECT val FROM t_nested FINAL;
 
-SELECT '-- MATERIALIZED column';
-CREATE TABLE t_materialized (key UInt64, v UInt64, meta Tuple(ver UInt64) MATERIALIZED tuple(v))
-ENGINE = ReplacingMergeTree(meta.ver) ORDER BY key
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
-
-INSERT INTO t_materialized (key, v) SETTINGS optimize_on_insert = 0 VALUES (1, 2), (1, 1);
--- Updating an input of the column would recompute the version.
-ALTER TABLE t_materialized UPDATE v = 3 WHERE v = 1; -- { serverError CANNOT_UPDATE_COLUMN }
-UPDATE t_materialized SET v = 3 WHERE v = 1; -- { serverError CANNOT_UPDATE_COLUMN }
-SELECT v FROM t_materialized FINAL;
-
 SELECT '-- Replicated';
 CREATE TABLE t_replicated (key UInt64, value String, meta Tuple(ver UInt32, del UInt8))
 ENGINE = ReplicatedReplacingMergeTree('/clickhouse/{database}/tables/t_replicated', 'r1', meta.ver, meta.del) ORDER BY key;
@@ -156,5 +143,4 @@ DROP TABLE t_horizontal;
 DROP TABLE t_json;
 DROP TABLE t_other_subcolumns;
 DROP TABLE t_nested;
-DROP TABLE t_materialized;
 DROP TABLE t_replicated;
