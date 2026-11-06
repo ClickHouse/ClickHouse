@@ -5,8 +5,9 @@
 # initiator infers the structure and the format from the same request(s), like the plain `url` does.
 # The server's own HTTP interface is used as the endpoint: it executes the `POST` body as a query, so
 # `system.query_log` counts the requests. Format detection may send several requests (one per tried
-# format), so the counts are compared with the plain `url` instead of being pinned: the clustered read
-# repeats the detection on the worker, which gives `2 * plain - 1` requests (one read request only).
+# format), so the counts are compared with the plain `url` instead of being pinned: the initiator sends
+# the detected format and structure to the worker, so the worker does not repeat the detection and the
+# clustered read sends exactly as many requests as the plain `url`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -35,6 +36,6 @@ function requests()
 $CLICKHOUSE_CLIENT --query "
     SELECT
         $(requests plain) > 1,
-        $(requests cluster) = 2 * $(requests plain) - 1,
-        $(requests replicas) = 2 * $(requests plain) - 1,
+        $(requests cluster) = $(requests plain),
+        $(requests replicas) = $(requests plain),
         $(requests explicit)"
