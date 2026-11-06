@@ -999,10 +999,12 @@ void StorageABR::read(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    if (getEffectiveRowPolicyFilter(*this, context))
+    /// `ABR` executes the query on a source table, where a row policy of this table cannot be applied. Neither can the
+    /// policy of a table that reads this one, such as an `Alias`, which the planner passes in `row_level_filter`.
+    if (query_info.row_level_filter || getEffectiveRowPolicyFilter(*this, context))
         throw Exception(ErrorCodes::ACCESS_DENIED,
-            "Row policies on table {} are not supported: the `ABR` engine executes the query on a source table, "
-            "where they cannot be applied. Define them on the source tables instead",
+            "Row policies on table {}, or on a table that reads from it, are not supported: the `ABR` engine "
+            "executes the query on a source table, where they cannot be applied. Define them on the source tables instead",
             getStorageID().getNameForLogs());
 
     /// `ABR` runs the whole query on a source table. As the left table of a JOIN, it runs the whole query, which the planner expects.
@@ -1129,7 +1131,8 @@ whole, across all attempts. The candidate tables are the chosen table and the co
 
 - `ABR` is read-only. `INSERT`, `ALTER` and mutations must target the source tables directly.
 - All source tables must share an identical column set.
-- `ABR` does not support row policies directly. Define them on the source tables instead.
+- `ABR` does not support row policies on the `ABR` table, or on a table that reads from it such as an `Alias`. Define them on
+  the source tables instead.
 - An `ABR` table can only be the leftmost table of a `JOIN`. To join it on another side, read it through a subquery with a
   condition on its time column: `JOIN (SELECT ... FROM abr_table WHERE ts >= ...)`.
 - An `ABR` table cannot be read from a serialized query plan, which does not carry the filters of the query. With

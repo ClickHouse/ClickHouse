@@ -5,6 +5,7 @@
 SET allow_experimental_abr = 1;
 SET session_timezone = 'UTC';
 
+DROP TABLE IF EXISTS abr_alias;
 DROP TABLE IF EXISTS abr;
 DROP TABLE IF EXISTS row_policy_test_1;
 DROP TABLE IF EXISTS row_policy_test_10;
@@ -16,6 +17,8 @@ DROP ROW POLICY IF EXISTS 03586_abr_filter ON abr;
 DROP ROW POLICY IF EXISTS 03586_abr_always_true ON abr;
 DROP ROW POLICY IF EXISTS 03586_abr_other_users ON abr;
 DROP ROW POLICY IF EXISTS 03586_abr_current_user_always_true ON abr;
+DROP ROW POLICY IF EXISTS 03586_alias_filter ON abr_alias;
+DROP ROW POLICY IF EXISTS 03586_alias_always_true ON abr_alias;
 
 -- Table 1: High resolution (sample_interval = 1)
 CREATE TABLE row_policy_test_1 (
@@ -121,6 +124,31 @@ SELECT count() FROM abr WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL
 SELECT count() FROM abr WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 99 HOUR SETTINGS enable_analyzer = 1;
 DROP ROW POLICY 03586_abr_other_users ON abr;
 DROP ROW POLICY 03586_abr_current_user_always_true ON abr;
+
+-- Test 9: The row policy of a table that reads the ABR table, such as an `Alias`, reaches `ABR` as the row-level filter
+-- of the read, which cannot be applied to the query executed on the source table either, so it is rejected too.
+CREATE TABLE abr_alias ENGINE = Alias('abr');
+CREATE ROW POLICY 03586_alias_filter ON abr_alias USING account_id = 'acct_A' AS permissive TO ALL;
+SELECT count() FROM abr_alias WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 99 HOUR SETTINGS enable_analyzer = 0; -- { serverError ACCESS_DENIED }
+SELECT count() FROM abr_alias WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 99 HOUR SETTINGS enable_analyzer = 1; -- { serverError ACCESS_DENIED }
+SELECT count() FROM abr_alias WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 99 HOUR SETTINGS enable_analyzer = 0, optimize_move_to_prewhere = 0; -- { serverError ACCESS_DENIED }
+SELECT count() FROM abr_alias WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 99 HOUR SETTINGS enable_analyzer = 1, optimize_move_to_prewhere = 0; -- { serverError ACCESS_DENIED }
+DROP ROW POLICY 03586_alias_filter ON abr_alias;
+
+-- An always-true policy on the alias filters nothing, so it is not rejected.
+CREATE ROW POLICY 03586_alias_always_true ON abr_alias USING 1 AS permissive TO ALL;
+SELECT count() FROM abr_alias WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 99 HOUR SETTINGS enable_analyzer = 0;
+SELECT count() FROM abr_alias WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 99 HOUR SETTINGS enable_analyzer = 1;
+DROP ROW POLICY 03586_alias_always_true ON abr_alias;
+
+-- Policies on the source tables still apply through the alias.
+CREATE ROW POLICY 03586_filter_account ON row_policy_test_1 USING account_id = 'acct_A' AS permissive TO ALL;
+CREATE ROW POLICY 03586_filter_account ON row_policy_test_10 USING account_id = 'acct_A' AS permissive TO ALL;
+SELECT count() FROM abr_alias WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 99 HOUR SETTINGS enable_analyzer = 0;
+SELECT count() FROM abr_alias WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 99 HOUR SETTINGS enable_analyzer = 1;
+DROP ROW POLICY 03586_filter_account ON row_policy_test_1;
+DROP ROW POLICY 03586_filter_account ON row_policy_test_10;
+DROP TABLE abr_alias;
 
 DROP TABLE IF EXISTS abr;
 DROP TABLE IF EXISTS row_policy_test_1;
