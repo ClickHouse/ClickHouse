@@ -322,6 +322,39 @@ const std::vector<Chart> & getCharts()
             },
         },
         {
+            /// A share of CPU time normalized per core, so replicas are averaged, not summed.
+            "OS IO wait (share of CPU time, normalized)",
+            {
+                {"IOWaitNormalized", "avg(value)"},
+            },
+            "asynchronous_metric_log",
+            "metric = 'OSIOWaitTimeNormalized'",
+        },
+        {
+            /// The metric exists per block device; the busiest device is the one that saturates.
+            "Busiest block device active time (seconds/second)",
+            {
+                {"ActiveTime", "max(value)"},
+            },
+            "asynchronous_metric_log",
+            "startsWith(metric, 'BlockActiveTime_')",
+        },
+        {
+            "Busiest block device queue time per operation (seconds)",
+            {
+                {"QueueTimePerOp", "max(value)"},
+            },
+            "asynchronous_metric_log",
+            "startsWith(metric, 'BlockQueueTimePerOp_')",
+        },
+        {
+            "Local IO throttling sleep (seconds/second)",
+            {
+                {"Read", "sum(ProfileEvent_LocalReadThrottlerSleepMicroseconds) / 1000000"},
+                {"Write", "sum(ProfileEvent_LocalWriteThrottlerSleepMicroseconds) / 1000000"},
+            },
+        },
+        {
             "IO pressure stall (seconds/second)",
             {
                 {"Some", "sumIf(value, endsWith(metric, '_some')) / 1000000"},
