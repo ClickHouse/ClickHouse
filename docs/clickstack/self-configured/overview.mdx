@@ -8,26 +8,24 @@ keywords: ['clickstack', 'observability', 'logs', 'monitoring', 'platform']
 ---
 
 <Note>
-This page covers **self-managed ClickHouse Observability**. For the recommended fully managed experience, see the documentation [here](/clickstack/observability/overview).
+This page covers **self-managed ClickHouse Observability**. Fully managed is recommended for most teams. [Compare the offerings](/clickstack/observability/overview#compare-the-offerings) to choose the right option for your team.
 </Note>
 
 **Self-managed ClickHouse Observability** is an observability platform for SREs, developers, and their AI agents, built on open-source ClickStack. Search, query, and correlate OpenTelemetry logs, traces, and metrics alongside session replays, with control over ingestion and database configuration. It suits teams that need to customize schemas, tune query performance, or choose how to size and scale their service.
 
 Investigate through the ClickStack UI or connect your own agents through the [MCP server](/clickstack/observability/mcp). Use search and trace exploration for everyday investigations, and SQL to analyze request details, custom attributes, and business context in your telemetry.
 
-ClickHouse Cloud hosts and operates ClickHouse and the ClickStack UI. You run the ingestion collector and manage the database configuration for your workload.
+ClickHouse Cloud hosts and operates ClickHouse and the ClickStack UI. Self-managed does not require hosting the database or UI yourself. You run the ingestion collector and manage the database configuration for your workload.
 
 For most teams, [fully managed ClickHouse Observability](/clickstack/observability/overview) is the recommended starting point: send telemetry to a managed OpenTelemetry endpoint, and ClickHouse handles ingestion, schemas, infrastructure, and scaling. Self-managed offers the same ClickStack investigation experience, with responsibility for database tuning and capacity planning. Choose it when you need that control and have the expertise to operate it.
 
-## Features {#features}
+## How data flows {#architectural-overview}
 
-- Connect your own agents through [MCP](/clickstack/observability/mcp) to search telemetry, follow traces, analyze patterns and changes, and run SQL.
-- Search and correlate logs, traces, metrics, and session replays. Follow requests from browser interactions through backend services and database queries.
-- Run searches and aggregations across high-cardinality telemetry using [full-text search and Lucene-style filters](/clickstack/observability/features/search), such as `level:err`, or SQL. Query JSON fields and custom attributes in logs and trace spans.
-- Explore telemetry with [AI notebooks](/clickstack/observability/notebooks) and create [charts from natural-language questions](/clickstack/observability/text-to-chart).
-- Build [dashboards](/clickstack/observability/features/dashboards/overview), configure [alerts](/clickstack/observability/features/alerts), and share investigation views through [deep links](/clickstack/observability/url-parameters).
-- Identify recurring failures with [event patterns](/clickstack/observability/features/event-patterns), investigate changes with [event deltas](/clickstack/observability/features/event-deltas), and live tail logs and traces as new events arrive.
-- Ingest OpenTelemetry data through a collector you operate, with control over processing, tables, schemas, and retention.
+Applications and infrastructure send telemetry to your collector. The collector processes it and writes it to your ClickHouse Cloud service. The hosted ClickStack UI queries that data for search, visualization, and investigation.
+
+Explore the data in the UI or connect an MCP-compatible agent. Both workflows use the same telemetry. SQL lets you correlate signals, compare historical behavior, and investigate questions beyond predefined views. You remain responsible for instrumenting your applications and collecting telemetry from your environment.
+
+See the [self-managed architecture](/clickstack/self-configured/architecture) for the component diagram and details.
 
 ## What you manage {#what-you-manage}
 
@@ -38,13 +36,15 @@ For most teams, [fully managed ClickHouse Observability](/clickstack/observabili
 
 ClickHouse Cloud manages the underlying infrastructure, database upgrades, and backups. This does not remove your responsibility for database tuning and capacity planning.
 
-## How data flows {#architectural-overview}
+## Features {#features}
 
-Applications and infrastructure send telemetry to your collector. The collector processes it and writes it to your ClickHouse Cloud service. The hosted ClickStack UI queries that data for search, visualization, and investigation.
-
-Explore the data in the UI or connect an MCP-compatible agent. Both workflows use the same telemetry. SQL lets you correlate signals, compare historical behavior, and investigate questions beyond predefined views. You remain responsible for instrumenting your applications and collecting telemetry from your environment.
-
-See the [self-managed architecture](/clickstack/self-configured/architecture) for the component diagram and details.
+- Connect your own agents through [MCP](/clickstack/observability/mcp) to search telemetry, follow traces, analyze patterns and changes, and run SQL.
+- Search and correlate logs, traces, metrics, and session replays. Follow requests from browser interactions through backend services and database queries.
+- Run searches and aggregations across high-cardinality telemetry using [full-text search and Lucene-style filters](/clickstack/observability/features/search), such as `level:err`, or SQL. Query JSON fields and custom attributes in logs and trace spans.
+- Explore telemetry with [AI notebooks](/clickstack/observability/notebooks) and create [charts from natural-language questions](/clickstack/observability/text-to-chart).
+- Build [dashboards](/clickstack/observability/features/dashboards/overview), configure [alerts](/clickstack/observability/features/alerts), and share investigation views through [deep links](/clickstack/observability/url-parameters).
+- Identify recurring failures with [event patterns](/clickstack/observability/features/event-patterns), investigate changes with [event deltas](/clickstack/observability/features/event-deltas), and live tail logs and traces as new events arrive.
+- Ingest OpenTelemetry data through a collector you operate, with control over processing, tables, schemas, and retention.
 
 ## Principles {#principles}
 
