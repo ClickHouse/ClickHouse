@@ -3149,21 +3149,34 @@ def test_catalog_commit_conflict_reaches_caller_at_once(started_cluster):
         started_cluster, node, root_namespace, table_name, "(x Int64)"
     )
 
-    # Every sink reads the branch tip in its constructor, and all `max_insert_threads` sinks are
-    # constructed before the pipeline starts, so all but one of them commit against a stale parent
-    # and are refused with `409`. That makes the conflict a property of the plan rather than a race.
-    num_writers = 4
+    # The failpoint holds the first insert right before its commit, so the second insert commits first
+    # and the first one commits against a stale parent and is refused with `409`.
+    failpoint = "iceberg_writes_pause_before_commit"
+    insert_settings = {
+        "allow_insert_into_iceberg": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+    }
     query_id = uuid.uuid4().hex
-    node.query(
-        f"INSERT INTO {table_ref} SELECT number FROM numbers_mt(4000000)",
-        query_id=query_id,
-        settings={
-            "allow_insert_into_iceberg": 1,
-            "write_full_path_in_iceberg_metadata": 1,
-            "max_insert_threads": num_writers,
-            "max_threads": num_writers,
-        },
-    )
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    executor = ThreadPoolExecutor(max_workers=1)
+    try:
+        paused_insert = executor.submit(
+            node.query,
+            f"INSERT INTO {table_ref} SELECT number FROM numbers(3000000)",
+            query_id=query_id,
+            settings=insert_settings,
+            timeout=120,
+        )
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+        node.query(
+            f"INSERT INTO {table_ref} SELECT number FROM numbers(1000000)",
+            settings=insert_settings,
+        )
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        paused_insert.result(timeout=120)
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        executor.shutdown(wait=True)
 
     node.query("SYSTEM FLUSH LOGS system.text_log")
 
