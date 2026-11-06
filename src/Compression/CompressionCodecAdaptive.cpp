@@ -192,6 +192,8 @@ UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_siz
     };
 
     selector.beginBlock(source_size);
+
+    /// Usually one round. A second one when the winner alone ran and did badly, then the rest run too.
     for (auto codecs = selector.codecsToTry(); !codecs.empty(); codecs = selector.codecsToTry())
     {
         for (const auto & [codec, chain] : pool)
