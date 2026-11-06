@@ -1,0 +1,7 @@
+-- warm up with the MergeTree destination
+1
+1
+-- the destination is a Log table now
+1
+-- the plan was not cached
+3	0

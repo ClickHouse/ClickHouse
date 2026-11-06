@@ -20,6 +20,7 @@
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
@@ -39,6 +40,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
@@ -63,6 +65,12 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 max_bytes_before_external_group_by;
+    extern const SettingsDouble max_bytes_ratio_before_external_group_by;
+}
 
 namespace ErrorCodes
 {
@@ -407,6 +415,18 @@ bool storageRechecksColumnAccessOnRead(const StoragePtr & storage)
 {
     /// A lazily loaded table is reached through `StorageTableProxy`, which forwards `read` to the
     /// concrete engine but not its type, so test the engine behind the proxy.
+    const auto * nested = unwrapStorageProxy(storage).get();
+    return typeid_cast<const StorageMaterializedView *>(nested) != nullptr
+        || typeid_cast<const StorageBuffer *>(nested) != nullptr;
+}
+
+/// True if the storage forwards its `read` to another table that is not a dependency of the plan:
+/// a `Buffer` reads its destination table, a `MaterializedView` its target table. Whether such a
+/// storage consumes a row policy pushed into the read (`SelectQueryInfo::row_level_filter`) is decided
+/// by that other table (`StorageBuffer::supportsPrewhere`, `StorageMaterializedView::supportsPrewhere`),
+/// which can be exchanged without changing the wrapper's identity, metadata or policy.
+bool storageForwardsReadToAnotherTable(const StoragePtr & storage)
+{
     const auto * nested = unwrapStorageProxy(storage).get();
     return typeid_cast<const StorageMaterializedView *>(nested) != nullptr
         || typeid_cast<const StorageBuffer *>(nested) != nullptr;
@@ -1061,6 +1081,18 @@ bool collectPlanDependencies(
             QueryPlanCacheDependency dep;
             if (!fillDependency(dep, table_node->getStorage(), context))
                 return false;
+            /// The plan pushes the row policy into the read only when the planner saw that the storage
+            /// applies it there. For a storage that forwards its read to another table this depends on that
+            /// table, which is not bound by the dependency: after it is replaced by one that ignores the
+            /// pushed filter (e.g. a `Buffer` whose destination is exchanged from `MergeTree` to `Log`), a hit
+            /// would return the rows the policy excludes, while a miss would keep an explicit filter step.
+            if (read_from_table->getRowLevelFilter() && storageForwardsReadToAnotherTable(table_node->getStorage()))
+            {
+                LOG_DEBUG(getLogger("QueryPlanCache"),
+                    "Not caching plan: the row policy of {}.{} is applied by the read of another table, which is not a dependency of the plan",
+                    dep.database, dep.table);
+                return false;
+            }
             /// A zero-column read (`SELECT count() FROM t`, `SELECT 1 FROM t`) outputs a single
             /// helper column the planner injected among the *currently granted* ones purely to let
             /// the storage produce rows; it is not the query's access contract. Recording it would
@@ -1530,6 +1562,46 @@ static void replaceStoredMaxThreads(QueryPlan & plan, size_t max_threads)
         });
 }
 
+/// `max_bytes_ratio_before_external_group_by` is turned into an absolute spill threshold by
+/// `Aggregator::Params::getMaxBytesBeforeExternalGroupBy` from the memory available *when the plan is
+/// built*, and `AggregatingStep::serializeSettings` stores only that derived value. Both settings are part
+/// of the cache key, but the available memory is not, so a hit would replay the threshold computed for the
+/// warm-up: too high when memory got scarcer (the query reaches the memory limit before it spills), too low
+/// when more memory is available (it spills needlessly). Recompute it for the current query, as the planner
+/// does (`Planner.cpp`), for every aggregation of the plan and of its `IN (SELECT ...)` set sources.
+static void recomputeAggregationSpillThresholds(QueryPlan & plan, const Settings & settings)
+{
+    const size_t max_bytes_before_external_group_by = Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
+        settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]);
+
+    auto update_plan = [max_bytes_before_external_group_by](const QueryPlan & current_plan)
+    {
+        if (!current_plan.getRootNode())
+            return;
+        std::vector<QueryPlan::Node *> stack{current_plan.getRootNode()};
+        while (!stack.empty())
+        {
+            auto * node = stack.back();
+            stack.pop_back();
+            if (auto * aggregating = typeid_cast<AggregatingStep *>(node->step.get()))
+                aggregating->setMaxBytesBeforeExternalGroupBy(max_bytes_before_external_group_by);
+            for (auto * child : node->children)
+                stack.push_back(child);
+        }
+    };
+
+    update_plan(plan);
+    forEachSubquerySet(
+        &plan,
+        [&update_plan](FutureSetFromSubquery & set)
+        {
+            if (const auto * source = set.getQueryPlan())
+                update_plan(*source);
+            /// `forEachSubquerySet` descends into the sets nested in the source plan by itself.
+            return true;
+        });
+}
+
 QueryPlan materializeCachedQueryPlan(
     std::string_view serialized_plan,
     const ContextPtr & context,
@@ -1562,6 +1634,7 @@ QueryPlan materializeCachedQueryPlan(
     /// so the stored value always equals the current one (and the outer plan's copy is re-derived
     /// anyway by `InterpreterSelectQueryFromPlan::execute`).
     replaceStoredMaxThreads(plan, getEffectiveMaxThreads(context->getSettingsRef()));
+    recomputeAggregationSpillThresholds(plan, context->getSettingsRef());
 
     /// Replace `ReadFromTable` placeholders with storage-specific reads against the current data
     /// snapshots, requiring every leaf to resolve to a storage that `validateQueryPlanCacheEntry`
