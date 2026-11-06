@@ -3,10 +3,13 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Databases/DatabaseReplicatedSettings.h>
+#include <IO/ReadHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -132,7 +135,7 @@ void DatabaseReplicatedSettings::loadFromConfig(const String & config_elem, cons
         for (const String & key : config_keys)
         {
             /// `logs_to_keep` used to be UInt64, some old configs may contain values greater than
-            /// `UInt32::max`. Clamp them to `UInt32::max`.
+            /// `MAX_LOGS_TO_KEEP`. Clamp them to `MAX_LOGS_TO_KEEP`.
             if (key == "logs_to_keep")
             {
                 Field logs_to_keep = config.getString(config_elem + "." + key);
@@ -153,6 +156,11 @@ void DatabaseReplicatedSettings::loadFromConfig(const String & config_elem, cons
     }
 }
 
+void DatabaseReplicatedSettings::applyChange(const SettingChange & change)
+{
+    impl->applyChange(change);
+}
+
 String DatabaseReplicatedSettings::toString() const
 {
     return impl->toString();
@@ -162,4 +170,12 @@ bool DatabaseReplicatedSettings::hasBuiltin(std::string_view name)
 {
     return DatabaseReplicatedSettingsImpl::hasBuiltin(name);
 }
+
+UInt32 DatabaseReplicatedSettings::parseLogsToKeepFromKeeper(const String & logs_to_keep_str)
+{
+    /// `logs_to_keep` used to be 64-bit, so Keeper may contain values > `MAX_LOGS_TO_KEEP`. Clamp them to `MAX_LOGS_TO_KEEP`.
+    const UInt64 logs_to_keep = parse<UInt64>(logs_to_keep_str);
+    return static_cast<UInt32>(std::min(MAX_LOGS_TO_KEEP, logs_to_keep));
+}
+
 }
