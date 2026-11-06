@@ -2670,6 +2670,11 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
                     column_name);
 
             matched_column_node = explicit_resolve_result.resolved_identifier;
+            resolveExpressionNode(
+                matched_column_node,
+                *table_expression_scope,
+                false /*allow_lambda_expression*/,
+                false /*allow_table_expression*/);
             node_to_projection_name.emplace(matched_column_node, explicit_identifier.getFullName());
         }
 
