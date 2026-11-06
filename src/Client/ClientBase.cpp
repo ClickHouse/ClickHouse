@@ -4633,11 +4633,9 @@ bool ClientBase::processHelpCommand(const String & word_arg)
         return true;
     }
 
+    /// After Ctrl+B the connection belongs to the background job, so connect again like a query does.
     if (!connection)
-    {
-        error_stream << "The help command is not available: not connected to a server." << std::endl;
-        return true;
-    }
+        connect();
 
     TerminalMarkdownRenderer renderer;
     renderer.ansi = stdout_is_a_tty;

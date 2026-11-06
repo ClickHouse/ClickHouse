@@ -322,7 +322,11 @@ bool Client::tryProcessInteractiveClientCommand(std::string_view input)
             || parsed_query->as<ASTTransactionControl>()
             || (set_role && set_role->kind != ASTSetRoleQuery::Kind::SET_DEFAULT_ROLE);
         const auto * table_query = dynamic_cast<const ASTQueryWithTableAndOutput *>(parsed_query.get());
-        if (changes_only_session_state || (table_query && table_query->isTemporary()))
+        const auto * backup_query = parsed_query->as<ASTBackupQuery>();
+        const bool uses_temporary_table = (table_query && table_query->isTemporary())
+            || (backup_query && std::ranges::any_of(backup_query->elements,
+                [](const auto & element) { return element.type == ASTBackupQuery::TEMPORARY_TABLE; }));
+        if (changes_only_session_state || uses_temporary_table)
         {
             error_stream << "A background job cannot run a statement whose effects are limited to its private session" << std::endl;
             return true;

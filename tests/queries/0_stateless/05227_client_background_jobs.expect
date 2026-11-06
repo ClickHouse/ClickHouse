@@ -222,6 +222,10 @@ submit {\bg USE system}
 expect -ex {A background job cannot run a statement whose effects are limited to its private session}
 expect ":) "
 
+submit {\bg RESTORE TEMPORARY TABLE t_05227 FROM Disk('no_such_disk_05227', 'b')}
+expect -ex {A background job cannot run a statement whose effects are limited to its private session}
+expect ":) "
+
 submit {\bg SELECT 1 SETTINGS run_query_in_background = 1}
 expect -ex {The run_query_in_background server setting cannot be combined with a client background job}
 expect ":) "
@@ -310,6 +314,14 @@ expect_before -ex {Progress:} { exit 1 }
 expect ":) "
 expect_before -i $spawn_id
 expect_before -re {detached-row-[0-9]+-05227} { exit 1 }
+
+# The help command right after Ctrl+B must reconnect instead of reporting no connection.
+submit {help zzzzzzzzzzzznotanentity}
+expect {
+    "not connected to a server" { exit 1 }
+    "No documentation found for 'zzzzzzzzzzzznotanentity'." { }
+}
+expect ":) "
 
 # No output received after detachment may leak into output from the new prompt. In particular, the
 # last row is several seconds away when Ctrl+B is pressed and must be retained for `\fg` instead.
