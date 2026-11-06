@@ -1248,6 +1248,7 @@ void PrettyBlockOutputFormat::onCancel() noexcept
         return;
 
     /// After this `writingThread` never writes `out` again, so the owner of `out` can cancel it.
+    /// Waits for any writing method holding `writing_mutex`, so it can take as long as one blocked write to `out`.
     std::lock_guard lock(writing_mutex);
     finish = true;
     mono_chunk_condvar.notify_one();
