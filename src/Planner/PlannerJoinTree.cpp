@@ -99,6 +99,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -129,9 +130,9 @@ namespace Setting
 {
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool optimize_trivial_view_pushdown_to_distributed;
     extern const SettingsUInt64 distributed_group_by_no_merge;
+    extern const SettingsDistributedProductMode distributed_product_mode;
     extern const SettingsBool optimize_skip_unused_shards;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsBool extremes;
@@ -145,10 +146,11 @@ namespace Setting
     extern const SettingsBool make_distributed_plan;
     extern const SettingsDouble offset;
     extern const SettingsBool prefer_column_name_to_alias;
+    extern const SettingsBool prefer_global_in_and_join;
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_columns_to_read;
-    extern const SettingsNonZeroUInt64 max_distributed_connections;
+    extern const SettingsUInt64 max_distributed_connections;
     extern const SettingsUInt64 max_rows_in_set_to_optimize_join;
     extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -195,7 +197,6 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int NOT_IMPLEMENTED;
     extern const int ACCESS_DENIED;
-    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -441,9 +442,6 @@ void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const 
             continue;
 
         const auto & storage_id = table_node.getStorageID();
-        if (isInsertedDataOfTableFunction(table_node.getStorage(), storage_id, query_context))
-            continue;
-
         if (storage_id.hasDatabase())
             query_context->checkAccess(AccessType::SELECT, storage_id);
     }
@@ -680,8 +678,7 @@ bool applyTrivialCountIfPossible(
     /// `select count() from table` query. But if we have current transaction, then we should return number of rows in current snapshot
     /// (that may include parts in Outdated state), so the totalRows for transactional case should return the number of rows visible for
     /// the current transaction.
-    const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
-    std::optional<UInt64> num_rows = storage->totalRowsInSnapshot(storage_snapshot, query_context);
+    std::optional<UInt64> num_rows = storage->totalRows(query_context);
     if (!num_rows)
         return false;
 
@@ -1734,13 +1731,8 @@ bool parallelReplicasEnabledForStorage(const StoragePtr & current_storage, const
 /// that a single leaf (the leftmost) takes the WithMergeableState path with the
 /// whole join query tree; the other leaves must take the plain `storage->read`
 /// path.  Callers should compute this once for the join tree and gate the
-/// per-leaf parallel-replicas activation accordingly.  `query_sets_additional_table_filters` says
-/// whether the query sent to the replicas sets `additional_table_filters` anywhere.
-bool allowParallelReplicasForJoinTree(
-    const QueryTreeNodePtr & join_tree_node,
-    const ContextPtr & context,
-    const Settings & query_settings,
-    bool query_sets_additional_table_filters)
+/// per-leaf parallel-replicas activation accordingly.
+bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, const ContextPtr & context, const Settings & query_settings)
 {
     if (!join_tree_node)
         return false;
@@ -1767,8 +1759,7 @@ bool allowParallelReplicasForJoinTree(
 
         const auto * left_table_function = left_table_expr->as<TableFunctionNode>();
         if (left_table_function)
-            return tableFunctionCanDriveParallelReplicasRead(*left_table_function, query_sets_additional_table_filters)
-                && parallelReplicasEnabledForStorage(left_table_function->getStorage(), context, query_settings);
+            return parallelReplicasEnabledForStorage(left_table_function->getStorage(), context, query_settings);
 
         // check if left one is not subquery
         return left_table_expr->getNodeType() != QueryTreeNodeType::QUERY
@@ -1830,43 +1821,6 @@ void disableParallelReplicasForSubqueries(const QueryTreeNodePtr & node)
     });
 }
 
-}
-
-void checkParallelReplicasImplementationOfSubqueries(const QueryTreeNodePtr & node, const ContextPtr & query_context)
-{
-    /// Query-based and plan-based parallel replicas cannot be mixed in one query: the subtree planned for
-    /// the other one reads without parallel replicas. Any subquery (table expression, `IN` set, CTE,
-    /// correlated subquery) has its own context, so it can set a different `parallel_replicas_plan_based`.
-    /// A (sub)query with parallel replicas disabled is skipped: the setting has no effect there.
-    auto parallel_replicas_enabled = [](const Settings & settings)
-    {
-        return settings[Setting::allow_experimental_parallel_reading_from_replicas] || settings[Setting::automatic_parallel_replicas_mode];
-    };
-
-    const auto & settings = query_context->getSettingsRef();
-    if (!parallel_replicas_enabled(settings))
-        return;
-    if (query_context->getClientInfo().collaborate_with_initiator)
-        return;
-
-    const bool plan_based = settings[Setting::parallel_replicas_plan_based];
-    auto check = [plan_based, &parallel_replicas_enabled](const ContextPtr & context)
-    {
-        const auto & context_settings = context->getSettingsRef();
-        if (parallel_replicas_enabled(context_settings) && context_settings[Setting::parallel_replicas_plan_based] != plan_based)
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "A subquery sets `parallel_replicas_plan_based` = {}, while the query reads with parallel replicas with "
-                "`parallel_replicas_plan_based` = {}. One query uses one implementation of parallel replicas: set it for the whole query",
-                !plan_based, plan_based);
-    };
-
-    traverseQueryTree(node, Everything{}, [&check](const QueryTreeNodePtr & current_node)
-    {
-        if (const auto * query_node = current_node->as<QueryNode>())
-            check(query_node->getContext());
-        else if (const auto * union_node = current_node->as<UnionNode>())
-            check(union_node->getContext());
-    });
 }
 
 void disableParallelReplicasForMultipleTablesQueryIfNeeded(const QueryTreeNodePtr & query_node, const PlannerContextPtr & planner_context)
@@ -2825,25 +2779,22 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     /// It is just a safety check needed until we have a proper sending plan to replicas.
                     /// If we have a non-trivial storage like View it might create its own Planner inside read(), run findTableForParallelReplicas()
                     /// and find some other table that might be used for reading with parallel replicas. It will lead to errors.
-                    /// The chosen table is a `TableNode`, or a `TableFunctionNode` that only references a
-                    /// table, so compare against whichever of the two this table expression is.
-                    const ITableExpressionNode * table_expression_node
-                        = table_node ? static_cast<const ITableExpressionNode *>(table_node) : table_function_node;
+                    /// The chosen table and union children are TableNodes, so a table function matches
+                    /// neither and equality against them is meaningless when table_node is null.
                     const bool no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode
                         = query_context->canUseParallelReplicasOnFollower()
-                        && (!table_expression_node
-                            || table_expression_node != planner_context->getGlobalPlannerContext()->parallel_replicas_table);
+                        && (!table_node || table_node != planner_context->getGlobalPlannerContext()->parallel_replicas_table);
                     if (no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode)
                     {
                         bool disable_parallel_replicas_for_storage = true;
                         ContextPtr updated_context = effective_context;
                         if (const UnionNode * table_union
-                            = table_expression_node ? planner_context->getGlobalPlannerContext()->parallel_replicas_table_union : nullptr)
+                            = table_node ? planner_context->getGlobalPlannerContext()->parallel_replicas_table_union : nullptr)
                         {
                             SelectQueryOptions options;
                             for (const auto & child : table_union->getQueries().getNodes())
                             {
-                                if (table_expression_node == findTableForParallelReplicas(child, options))
+                                if (table_node == findTableForParallelReplicas(child, options))
                                 {
                                     disable_parallel_replicas_for_storage = false;
                                     break;
@@ -2933,18 +2884,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             query_plan = std::move(query_plan_parallel_replicas);
                         }
                     }
-                    /// A table function drives the read only when it is a stable reference to a table: the
-                    /// query shipped to the replicas contains the call, and each replica must resolve it to its
-                    /// own copy of the same table. A table function that builds a storage of its own resolves to
-                    /// something local to this server, so it stays on a single replica even when that storage
-                    /// happens to be a `MergeTree`.
                     else if (
-                        const bool query_sets_additional_table_filters
-                            = queryTreeSetsAdditionalTableFilters(table_expression_query_info.query_tree.get());
                         ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
-                        && (!table_function_node || tableFunctionCanDriveParallelReplicasRead(*table_function_node, query_sets_additional_table_filters))
-                        && allowParallelReplicasForJoinTree(
-                            parent_join_tree, query_context, settings, query_sets_additional_table_filters))
+                        && allowParallelReplicasForJoinTree(parent_join_tree, query_context, settings))
                     {
                         // (1) find read step
 
@@ -2957,34 +2899,13 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 reading_node = reading_steps.front();
                         }
 
-                        /// This filter was planned by `collectFiltersForAnalysis` with its own `PreparedSets`, so a key-column
-                        /// `IN` set built by index analysis for the estimate is not the one the query builds later, and its
-                        /// subquery would run twice; `input()` is a one-shot client stream and cannot be read twice.
-                        const auto * estimate_reading_step
-                            = reading_node ? typeid_cast<const ReadFromMergeTree *>(reading_node->step.get()) : nullptr;
-                        const ActionsDAG * estimate_filter
-                            = estimate_reading_step ? estimate_reading_step->getQueryInfo().filter_actions_dag.get() : nullptr;
-                        /// Also collects the sets in `indexHint` arguments, which live in a DAG of their own.
-                        UsefulSets estimate_filter_sets;
-                        if (estimate_filter)
-                            appendSetsFromActionsDAG(*estimate_filter, estimate_filter_sets);
-                        const bool estimate_needs_unbuilt_set
-                            = std::ranges::any_of(estimate_filter_sets, [](const FutureSetPtr & set) { return !set || !set->get(); });
-
                         // (2) if it's ReadFromMergeTree - run index analysis and check number of rows to read
                         // Note: reading_steps can have several steps in case of reading from view with UNION
                         // In such case, we avoid using parallel_replicas_min_number_of_rows_per_replica for all tables, -
                         // parallel_replicas_min_number_of_rows_per_replica will be replaced by automatic_parallel_replicas_mode
-                        const bool apply_min_rows_per_replica = reading_node && reading_steps.size() == 1
+                        if (reading_node && reading_steps.size() == 1
                             && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0
-                            && !query_context->isAutomaticParallelReplicasProbe();
-                        if (apply_min_rows_per_replica && estimate_needs_unbuilt_set)
-                        {
-                            LOG_DEBUG(
-                                getLogger("Planner"),
-                                "Skipping parallel_replicas_min_number_of_rows_per_replica, the filter has a set that is not built yet");
-                        }
-                        else if (apply_min_rows_per_replica)
+                            && !query_context->isAutomaticParallelReplicasProbe())
                         {
                             const auto * reading_step = typeid_cast<ReadFromMergeTree *>(reading_steps.front()->step.get());
                             const bool allow_query_condition_cache
@@ -3047,11 +2968,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 /// plan. Deciding whether to use parallel replicas and where to place the
                                 /// local/remote boundary is done later, as an analysis of the whole plan
                                 /// (QueryPlanOptimizations::applyParallelReplicas), which inserts the split step.
-                                ///
-                                /// For a read through a table function the fragment names the storage the call
-                                /// resolved to here. The inner table of a `TimeSeries` table is named after the
-                                /// table's UUID, so a replica that created its table on its own, with another UUID,
-                                /// fails to find it rather than reading something else.
                                 QueryPlan query_plan_parallel_replicas;
                                 storage->read(
                                     query_plan_parallel_replicas,
@@ -3698,6 +3614,14 @@ const StorageDistributed * getDistributedStorageFromTableExpression(const QueryT
     }
 
     return nullptr;
+}
+
+bool isGlobalJoin(const JoinNode & join_node, const Settings & settings)
+{
+    const auto distributed_product_mode = settings[Setting::distributed_product_mode];
+    return join_node.getLocality() == JoinLocality::Global
+        || distributed_product_mode == DistributedProductMode::GLOBAL
+        || (distributed_product_mode != DistributedProductMode::LOCAL && settings[Setting::prefer_global_in_and_join]);
 }
 
 void tryRewriteGlobalRightJoinAsLeftJoin(QueryNode & query_node, const ContextPtr & context)

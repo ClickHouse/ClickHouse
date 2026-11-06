@@ -15,7 +15,6 @@
 #include <Disks/loadLocalDiskConfig.h>
 #include <Disks/TemporaryFileOnDisk.h>
 
-#include <atomic>
 #include <filesystem>
 #include <memory>
 #include <system_error>
@@ -62,8 +61,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-std::atomic<UInt64> unsettled_file_reads{0};
 
 bool errnoIndicatesReadOnlyDisk(int err)
 {
@@ -395,11 +392,10 @@ void DiskLocal::prepareRead(
     /// (e.g. FILE_DOESNT_EXIST for broken projections). Mark the size unknown in
     /// that case so the reader opens the file rather than treating a zero size as
     /// an empty file.
-    struct stat file_stat{};
-    const bool is_regular_file = 0 == ::stat(full_path.c_str(), &file_stat) && S_ISREG(file_stat.st_mode);
-    const size_t file_size = is_regular_file ? static_cast<size_t>(file_stat.st_size) : StoredObject::UnknownSize;
+    std::error_code ec;
+    auto file_size = fs::file_size(full_path, ec);
 
-    StoredObject obj(full_path.string(), full_path.string(), file_size);
+    StoredObject obj(full_path.string(), full_path.string(), ec ? StoredObject::UnknownSize : file_size);
 
     /// No gather for local disk — the source buffer is returned directly.
     pipeline.setLocalFileSource(
@@ -425,12 +421,9 @@ void DiskLocal::prepareRead(
         && settings.local_fs_settings.method != LocalFSReadMethod::mmap;
 
     {
-        /// Legacy pipeline: selection is read_hint-based (0 when absent), so falling back to
-        /// file_size is a conservative upper bound when there is no hint. The optional reader
-        /// executor is different: LocalSourceReader selects by file_size and ignores read_hint,
-        /// so this expression is not an upper bound for that path (a small hint can hide a large
-        /// file). This check predates the current change; it only decides whether the userspace
-        /// page cache may coexist with an unaligned page-cache block size.
+        /// Use the same estimated size basis as createReadBufferFromFileBase:
+        /// read_hint first, then file_size. A large file with a small read_hint
+        /// won't trigger O_DIRECT, so page cache remains safe.
         size_t estimated_size = read_hint.value_or(file_size);
         if (use_page_cache && settings.local_fs_settings.direct_io_threshold
             && estimated_size >= settings.local_fs_settings.direct_io_threshold
@@ -439,17 +432,7 @@ void DiskLocal::prepareRead(
     }
 
     if (use_page_cache)
-    {
-        String file_version;
-        if (is_regular_file)
-        {
-            file_version = computeFileCacheVersionToken(file_stat);
-            /// Until the file settles, a file rewritten at the same path in the same tick can get the same token.
-            if (!isFileCacheVersionTokenSettled(file_stat))
-                file_version += fmt::format("#{}", unsettled_file_reads.fetch_add(1, std::memory_order_relaxed));
-        }
-        pipeline.needMemoryCache("local:" + full_path.string(), std::move(file_version), settings.page_cache_settings);
-    }
+        pipeline.needMemoryCache("local:", settings.page_cache_settings);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>

@@ -31,14 +31,13 @@ symbolizeTrace(const void * const * frame_pointers, size_t size, bool need_symbo
         /// versa. Each column defaults to an empty string only when its own lookup fails.
         if (need_symbols)
         {
-            if (const auto * symbol = symbol_index.findSymbolByAddress(addr))
+            if (const auto * symbol = symbol_index.findSymbol(addr))
             {
-                const char * symbol_name = symbol_index.getSymbolNameCString(*symbol);
-                DemangleResult demangled = *symbol_name ? tryDemangle(symbol_name) : DemangleResult{};
+                auto demangled = tryDemangle(symbol->name);
                 if (demangled)
                     symbols.emplace_back(demangled.get(), strlen(demangled.get()));
                 else
-                    symbols.emplace_back(symbol_name);
+                    symbols.emplace_back(symbol->name, strlen(symbol->name));
             }
             else
             {

@@ -18,13 +18,11 @@
 #include <Disks/SingleDiskVolume.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/PostingListBlockCodec.h>
-#include <IO/ReadBufferFromMemory.h>
 
 #include <algorithm>
 #include <array>
 #include <bit>
 #include <limits>
-#include <memory>
 #include <numeric>
 #include <optional>
 #include <utility>
@@ -381,7 +379,6 @@ private:
     struct Reader
     {
         ReadBuffer * in = nullptr;
-        std::unique_ptr<ReadBufferFromMemory> embedded_in;
         TextIndexBlockedPositionsCodec::Directory directory;
         size_t next_rank = 0;
         /// Decoded block of `next_rank`, split by `offsets`.
@@ -412,14 +409,6 @@ void MergeTextIndexesTask::PositionsMerge::start()
         const auto & info = sources[i].info;
         if (info.cardinality == 0)
             continue;
-
-        if (info.header & PostingsSerialization::Flags::EmbeddedPositions)
-        {
-            reader.embedded_in = std::make_unique<ReadBufferFromMemory>(info.embedded_positions.data(), info.position_bytes);
-            reader.directory = TextIndexBlockedPositionsCodec::readDirectory(*reader.embedded_in, 0, info.cardinality, info.position_bytes);
-            reader.in = reader.embedded_in.get();
-            continue;
-        }
 
         auto * stream = task.input_streams[sources[i].source_num].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
         auto * data_buffer = stream->getDataBuffer();
@@ -482,7 +471,10 @@ void MergeTextIndexesTask::PositionsMerge::finish(TokenPostingsInfo & token_info
     }
 
     auto * positions_stream = task.output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPositions);
-    TextIndexSerialization::serializePositions(token_info, positions_stream->plain_hashing, [&](WriteBuffer & out) { encoder->finalize(out); });
+    token_info.header |= PostingsSerialization::Flags::HasPositions;
+    token_info.position_offset = positions_stream->plain_hashing.count();
+    encoder->finalize(positions_stream->plain_hashing);
+    token_info.position_bytes = positions_stream->plain_hashing.count() - token_info.position_offset;
     encoder.reset();
 }
 
@@ -543,7 +535,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
         for (const auto & substream : substreams)
         {
             /// The merge reads the dictionary and the postings of a source part sequentially,
-            /// so their streams take the regular read buffer size and keep the page cache lookahead.
+            /// so their streams take the regular read buffer size.
             auto stream = makeTextIndexInputStream(
                 segments[i].part_storage,
                 segments[i].index_file_name,
@@ -1281,19 +1273,12 @@ size_t estimatePostingListBufferSize(const TokenPostingsInfo & token_info)
 static MergeTreeReaderSettings makeTextIndexReaderSettings(
     const MergeTreeReaderSettings & reader_settings,
     MergeTreeIndexSubstream::Type substream_type,
-    std::optional<size_t> expected_buffer_size,
-    bool use_page_cache_lookahead)
+    std::optional<size_t> expected_buffer_size)
 {
     using enum MergeTreeIndexSubstream::Type;
 
     auto settings = reader_settings;
     settings.is_compressed = MergeTreeIndexSubstream::isCompressed(substream_type);
-
-    /// An out-of-order stream's seeks never read the lookahead blocks a cache miss would otherwise
-    /// request: the abandoned request leaves data in flight, so the connection (distributed cache,
-    /// or S3 HTTP, see `HTTPConnectionPool::EndpointConnectionPool::atConnectionDestroy`) is dropped.
-    if (!use_page_cache_lookahead && !reader_settings.use_page_cache_lookahead_for_text_index)
-        settings.read_settings.page_cache_settings.lookahead_blocks = 1;
 
     if (expected_buffer_size && (substream_type == TextIndexDictionary || substream_type == TextIndexPostings))
     {
@@ -1341,8 +1326,7 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const String & index_file_name,
     const MergeTreeIndexSubstream & substream,
     const MergeTreeReaderSettings & reader_settings,
-    std::optional<size_t> expected_buffer_size,
-    bool use_page_cache_lookahead)
+    std::optional<size_t> expected_buffer_size)
 {
     const auto stream_name = index_file_name + substream.suffix;
     const auto & extension = substream.extension;
@@ -1372,7 +1356,7 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
         *actual_stream_name,
         extension,
         data_file_size,
-        makeTextIndexReaderSettings(reader_settings, substream.type, expected_buffer_size, use_page_cache_lookahead));
+        makeTextIndexReaderSettings(reader_settings, substream.type, expected_buffer_size));
 }
 
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
@@ -1380,8 +1364,7 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const String & index_file_name,
     const MergeTreeIndexSubstream & substream,
     const MergeTreeReaderSettings & reader_settings,
-    std::optional<size_t> expected_buffer_size,
-    bool use_page_cache_lookahead)
+    std::optional<size_t> expected_buffer_size)
 {
     const auto stream_name = index_file_name + substream.suffix;
     const auto & extension = substream.extension;
@@ -1396,7 +1379,7 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
         *actual_stream_name,
         extension,
         data_part_storage->getFileSize(*actual_stream_name + extension),
-        makeTextIndexReaderSettings(reader_settings, substream.type, expected_buffer_size, use_page_cache_lookahead));
+        makeTextIndexReaderSettings(reader_settings, substream.type, expected_buffer_size));
 }
 
 }

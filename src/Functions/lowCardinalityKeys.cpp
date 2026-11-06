@@ -28,9 +28,17 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(T : LowCardinality) -> dictionaryTypeOf(T)";
+        FunctionArgumentDescriptors mandatory_args{
+            {"col", &isLowCardinalityType, nullptr, "LowCardinality"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args);
+
+        const auto * type = typeid_cast<const DataTypeLowCardinality *>(arguments[0].type.get());
+
+        return type->getDictionaryType();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
