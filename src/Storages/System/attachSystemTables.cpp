@@ -2264,7 +2264,8 @@ SELECT * FROM system.dns_cache;
     attachNoDescription<StorageSystemSymbols>(context, system_database, "symbols", R"DOCS_MD(
 .description
 Contains information for introspection of `clickhouse` binary. It requires the introspection privilege to access.
-Only symbols of the main executable are listed; addresses are offsets inside it.
+On ELF platforms, only symbols of the main executable are listed, and addresses are offsets inside it.
+On macOS, symbols of loaded shared libraries are listed too, and all addresses are absolute runtime addresses.
 This table is only useful for C++ experts and ClickHouse engineers.
 
 .examples
