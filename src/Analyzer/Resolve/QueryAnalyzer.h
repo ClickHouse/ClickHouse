@@ -161,8 +161,6 @@ private:
 
     static void validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
-    void validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope) const;
-
     void checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode & join_node, IdentifierResolveScope & scope) const;
 
     static std::pair<bool, UInt64> recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into);
@@ -243,6 +241,22 @@ private:
     QueryTreeNodesWithNames resolveQualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 
     QueryTreeNodesWithNames resolveUnqualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
+
+    /// A matched column before the column transformers replaced it.
+    struct MatchedColumnBeforeTransformers
+    {
+        QueryTreeNodePtr node;
+        /// The projection name of the matched column itself.
+        String name;
+        /// Whether the projection name of the transformed result depends on the name of the matched column.
+        bool projection_name_derived_from_column = true;
+    };
+
+    static void validateMatchedColumnsFromJoinCanBeQualified(
+        const QueryTreeNodePtr & matcher_node,
+        const std::vector<MatchedColumnBeforeTransformers> & matched_columns,
+        const ProjectionNames & matched_projection_names,
+        const IdentifierResolveScope & scope);
 
     ProjectionNames resolveMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 
