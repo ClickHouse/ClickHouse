@@ -1634,23 +1634,36 @@ void AggregatingTransform::consume(Chunk chunk)
         if (shared_kept_keys)
             applySharedKeptKeysCutoff(/*may_freeze=*/true);
         else
-            markPerStreamKeptKeys();
+            applyPerStreamKeptKeysCutoff();
     }
 }
 
-void AggregatingTransform::markPerStreamKeptKeys()
+void AggregatingTransform::applyPerStreamKeptKeysCutoff()
 {
     const auto & aggregator_params = params->params;
 
-    /// Only for the cutoff of the trivial `GROUP BY ... LIMIT` optimization, which only lets a
-    /// table already restricted to the kept keys spill. The stream capped itself at its own
-    /// keys, so the table holds exactly its kept set and no rebuild is needed: a flush leaves
+    /// Only for the cutoff of the trivial `GROUP BY ... LIMIT` optimization, which caps the
+    /// stream at exactly `max_rows_to_group_by` keys: the crossing block admitted up to a block
+    /// of keys beyond the limit, and the rebuild prunes them, destroying their states, so the
+    /// query does not keep aggregating groups the LIMIT is going to drop (and the hash table
+    /// statistics record the exact cap, not a block-rounded overshoot). The rebuilt table is
+    /// restricted to the kept keys, so external aggregation stays available: a flush leaves
     /// those keys in it (see `Aggregator::keepsKeysAcrossSpills`).
-    /// A plain `max_rows_to_group_by` cap needs no marker - its spills are never restricted.
-    if (!aggregator_params.shared_kept_keys_for_overflow_any)
+    /// A plain `max_rows_to_group_by` cap deliberately keeps whatever the crossing block
+    /// brought in, so there is nothing to do for it here.
+    if (!aggregator_params.shared_kept_keys_for_overflow_any || !aggregator_params.tmp_data_scope)
         return;
 
-    variants.restricted_to_kept_keys = true;
+    /// Already applied — the flag stays set for the rest of the aggregation.
+    if (variants.restricted_to_kept_keys || variants.empty())
+        return;
+
+    const auto & aggregator = params->aggregator;
+
+    auto own_chunks = aggregator.convertToChunks(variants, /*final=*/false);
+    auto seed = std::make_shared<const Block>(buildKeptKeysSeedBlock(
+        own_chunks, params->getCustomHeader(/*final_=*/false), aggregator_params.keys_size, aggregator_params.max_rows_to_group_by));
+    rebuildVariantsToKeptKeys(aggregator, variants, std::move(seed), std::move(own_chunks), is_cancelled);
 }
 
 void AggregatingTransform::applySharedKeptKeysCutoff(bool may_freeze)

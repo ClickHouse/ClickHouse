@@ -202,10 +202,11 @@ private:
     void applySharedKeptKeysCutoff(bool may_freeze);
 
     /// On the branches that do not share one kept key set (`skip_merging`, a single stream, the
-    /// sharded aggregation) every stream caps itself, so its table already holds nothing but its
-    /// own kept keys. Mark it restricted so that external aggregation stays available under the
-    /// cutoff (see `Aggregator::spillAllowedUnderKeptKeysCutoff`).
-    void markPerStreamKeptKeys();
+    /// sharded aggregation) every stream caps itself: prune its table to the first
+    /// `max_rows_to_group_by` of its own keys and mark it restricted, so that external
+    /// aggregation stays available under the cutoff
+    /// (see `Aggregator::spillAllowedUnderKeptKeysCutoff`).
+    void applyPerStreamKeptKeysCutoff();
 
     /// To read the data that was flushed into the temporary data file.
     Processors processors;
