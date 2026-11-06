@@ -54,7 +54,7 @@ FROM system.engine_settings WHERE engine_name = 'YTsaurus';
 -- engines, which do not read them, do not.
 SELECT engine_name, countIf(inherited) FROM system.engine_settings
 WHERE engine_name IN ('IcebergS3', 'PaimonS3')
-    AND name IN ('allow_experimental_iceberg_compaction', 'allow_experimental_cleanup_old_data_files_compaction',
+    AND name IN ('allow_experimental_iceberg_compaction', 'enable_cleanup_old_data_files_compaction',
         'iceberg_compaction_delay_bias', 'iceberg_compaction_data_cleanup', 'iceberg_compaction_commit_batch_size',
         'iceberg_compaction_max_rows_in_data_file', 'iceberg_compaction_max_bytes_in_data_file',
         'iceberg_max_number_datafiles_to_compact', 'iceberg_data_file_size_lower_threshold_compaction',
