@@ -133,11 +133,14 @@ private:
     void addBlockToJoinImpl(Block block, JoinBuildContext context);
 
     /// Split the bucket held in memory in two, half of it onto disk. Caller holds `hash_join_mutex`.
-    void repartitionCurrentBucket(size_t prev_keys_num, Block leftover, JoinBuildContext context);
+    /// `forced_only`: only a spill request asks for the split, not the threshold or the size limits. Such a split is
+    /// skipped if no leaf is left or the stop latched, and the request stays pending.
+    void repartitionCurrentBucket(size_t prev_keys_num, Block leftover, JoinBuildContext context, bool forced_only);
     bool canForceRepartition() const;
     bool forcedSpillPending() const;
 
-    /// Check that join satisfies limits on rows/bytes in table_join.
+    /// Whether the in-memory bucket reached the spill threshold, or the size limits in legacy mode. Spill requests of
+    /// the scheduler are checked separately, see `forcedSpillPending`.
     bool hasMemoryOverflow(size_t total_rows, size_t total_bytes) const;
 
     /// Add bucket_count new buckets

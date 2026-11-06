@@ -581,8 +581,6 @@ bool GraceHashJoin::forcedSpillPending() const
 
 bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) const
 {
-    if (forcedSpillPending())
-        return true;
     /// One row can't be split, avoid loop
     if (total_rows < 2)
         return false;
@@ -703,8 +701,11 @@ void GraceHashJoin::splitSpilledBuckets(std::vector<size_t> candidates, bool bui
 {
     if (candidates.empty())
         return;
-    /// All splits take the hash-table lock first, so a spill hint cannot lose its last available leaf to another split.
-    std::lock_guard hash_join_lock(hash_join_mutex);
+    /// No `hash_join_mutex`: the in-memory table is not touched here. The exclusive `rehash_mutex` guards everything that
+    /// is: `buckets`, `bucket_routing`, the file buckets and `stats` in `splitBucket`. `current_bucket` does not change
+    /// during the build, `build_amplification` is atomic and `empty_build_bytes` is constant. A split of the in-memory
+    /// bucket that only answers a spill request checks again for a free leaf under the exclusive lock, so taking the
+    /// last one here cannot make that request fail the query.
     std::unique_lock lock(rehash_mutex);
     if (stop_after_current_bucket)
         return;
@@ -1193,16 +1194,24 @@ bool GraceHashJoin::canForceRepartition() const
 {
     /// A forced split must not fail the query, so skip it once the bucket count is at the limit. Nor
     /// after `join_overflow_mode = 'break'` latched: the halves it would flush are about to be dropped.
+    /// Only a pre-check: a spilled split can take the last leaf before the exclusive lock, so `repartitionCurrentBucket`
+    /// checks again.
     std::shared_lock lock(rehash_mutex);
     return hash_join && current_bucket && !stop_after_current_bucket && hash_join->getTotalRowCount() > 1
         && canSplitBucket(current_bucket->idx);
 }
 
 /// Split only the active leaf. Caller holds `hash_join_mutex`; `leftover` is not in the table yet.
-void GraceHashJoin::repartitionCurrentBucket(size_t prev_keys_num, Block leftover, JoinBuildContext context)
+void GraceHashJoin::repartitionCurrentBucket(size_t prev_keys_num, Block leftover, JoinBuildContext context, bool forced_only)
 {
+    /// A split that only answers a spill request comes after the block was inserted, or without a block.
+    chassert(!forced_only || !leftover.rows());
     const size_t bucket_index = current_bucket->idx;
     std::unique_lock routing_lock(rehash_mutex);
+    /// Another builder's spilled split may have taken the last leaf since `forcedSpillPending`. The request is only a
+    /// hint, so it must not fail the query: keep it for later.
+    if (forced_only && (stop_after_current_bucket || !canSplitBucket(bucket_index)))
+        return;
     const size_t split_bit = bucket_routing->depth(bucket_index);
     auto sibling = splitBucket(bucket_index, false);
     force_spill = false;
@@ -1295,7 +1304,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context)
         /// otherwise the request is dropped and it frees nothing.
         std::lock_guard lock(hash_join_mutex);
         if (forcedSpillPending())
-            repartitionCurrentBucket(hash_join->getTotalRowCount(), {}, context);
+            repartitionCurrentBucket(hash_join->getTotalRowCount(), {}, context, /*forced_only=*/true);
         return;
     }
 
@@ -1338,6 +1347,8 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context)
             = prev_keys_num > 1 && external_join_threshold > 0 && pre_total_bytes * 2 >= external_join_threshold;
 
         bool block_added = false;
+        /// Whether the threshold or the size limits require the split, rather than only a spill request.
+        bool split_required = pre_threshold_overflow;
         if (!pre_threshold_overflow)
         {
             hash_join->addBlockToJoin(current_block, current_block.rows(), context.callerChecksLimits());
@@ -1345,7 +1356,8 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context)
             resident_logical_bytes += current_block.bytes();
             size_t hash_join_total_keys = hash_join->getAndSetRightTableKeys();
             size_t hash_join_total_bytes = hash_join->getTotalByteCount();
-            if (!hasMemoryOverflow(hash_join_total_keys, hash_join_total_bytes))
+            split_required = hasMemoryOverflow(hash_join_total_keys, hash_join_total_bytes);
+            if (!split_required && !forcedSpillPending())
                 return;
         }
 
@@ -1353,7 +1365,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block, JoinBuildContext context)
             current_block = {};
         /// else: we did not add the block, so we must include it when re-scattering after rehash.
 
-        repartitionCurrentBucket(prev_keys_num, std::move(current_block), context);
+        repartitionCurrentBucket(prev_keys_num, std::move(current_block), context, /*forced_only=*/!split_required);
 
         /// One split per block, so a bucket can end the build phase above the threshold - a single huge block,
         /// or one whose rows nearly all belong here. The threshold says when to start spilling, it is not a
@@ -1383,7 +1395,7 @@ void GraceHashJoin::onBuildPhaseFinish()
     {
         std::lock_guard hash_join_lock(hash_join_mutex);
         if (current_bucket && forcedSpillPending())
-            repartitionCurrentBucket(hash_join->getTotalRowCount(), {}, JoinBuildContext::serial());
+            repartitionCurrentBucket(hash_join->getTotalRowCount(), {}, JoinBuildContext::serial(), /*forced_only=*/true);
     }
 
     /// Also consider the sibling written by the last in-memory split, which may receive no more input.
