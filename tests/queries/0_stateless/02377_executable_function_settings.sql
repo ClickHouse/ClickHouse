@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 
 -- EXPLAIN SYNTAX with the analyzer does not call parseArguments
 EXPLAIN SYNTAX SELECT * from executable('', 'JSON', 'data String');

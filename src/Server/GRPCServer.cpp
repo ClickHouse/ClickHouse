@@ -292,9 +292,19 @@ namespace
     String getQueryDescription(const GRPCQueryInfo & query_info)
     {
         String str;
-        /// Not the text: it can contain secrets, and `executeQuery` logs it with them hidden.
         if (!query_info.query().empty())
-            str.append("query: ").append(std::to_string(query_info.query().size())).append(" bytes");
+        {
+            std::string_view query = query_info.query();
+            constexpr size_t max_query_length_to_log = 64;
+            if (query.length() > max_query_length_to_log)
+                query.remove_suffix(query.length() - max_query_length_to_log);
+            if (size_t format_pos = query.find(" FORMAT "); format_pos != String::npos)
+                query.remove_suffix(query.length() - format_pos - strlen(" FORMAT "));
+            str.append("\"").append(query);
+            if (query != query_info.query())
+                str.append("...");
+            str.append("\"");
+        }
         if (!query_info.query_id().empty())
             str.append(str.empty() ? "" : ", ").append("query_id: ").append(query_info.query_id());
         if (!query_info.input_data().empty())
@@ -612,7 +622,7 @@ namespace
     class ReadBufferFromCallback : public ReadBuffer
     {
     public:
-        explicit ReadBufferFromCallback(const std::function<std::pair<const void *, size_t>()> & callback_)
+        explicit ReadBufferFromCallback(const std::function<std::pair<const void *, size_t>(void)> & callback_)
             : ReadBuffer(nullptr, 0), callback(callback_) {}
 
     private:
@@ -627,7 +637,7 @@ namespace
             return true;
         }
 
-        std::function<std::pair<const void *, size_t>()> callback;
+        std::function<std::pair<const void *, size_t>(void)> callback;
     };
 
 
@@ -665,181 +675,6 @@ namespace
     };
 
 
-    /// The responder of a call with the state shared with its fatal error callback.
-    /// The callback captures it by `weak_ptr` and runs on another thread, possibly after the call is destroyed.
-    class CallResponder
-    {
-    public:
-        explicit CallResponder(std::unique_ptr<BaseResponder> responder_) : responder(std::move(responder_)) {}
-
-        Poco::Net::SocketAddress getClientAddress() const
-        {
-            std::lock_guard lock{mutex};
-            return responder->getClientAddress();
-        }
-
-        std::optional<String> getClientHeader(const String & key) const
-        {
-            std::lock_guard lock{mutex};
-            return responder->getClientHeader(key);
-        }
-
-        void setTransportCompression(const TransportCompression & transport_compression)
-        {
-            std::lock_guard lock{mutex};
-            /// Initial metadata cannot change once the call is finished.
-            if (!finished)
-                responder->setTransportCompression(transport_compression);
-        }
-
-        void setLogsQueue(InternalTextLogsQueuePtr logs_queue_)
-        {
-            std::lock_guard lock{mutex};
-            logs_queue = std::move(logs_queue_);
-        }
-
-        /// The logs taken from the queue are sent with the next result.
-        void takeLogsFromQueue()
-        {
-            std::lock_guard lock{mutex};
-            if (logs_queue)
-                addLogsToResult(*logs_queue, unsent_logs);
-        }
-
-        bool hasUnsentLogs() const
-        {
-            std::lock_guard lock{mutex};
-            return unsent_logs.logs_size() != 0;
-        }
-
-        void read(GRPCQueryInfo & query_info, const CompletionCallback & callback)
-        {
-            std::lock_guard lock{mutex};
-            if (!responder || finished)
-            {
-                callback(false);
-                return;
-            }
-            responder->read(query_info, callback);
-        }
-
-        /// Starts sending `result` with the unsent logs. Returns false if the call is finished.
-        /// gRPC allows only one write at a time, so the previous write must be completed, see `waitWritten`.
-        bool startWrite(GRPCResult & result, bool final)
-        {
-            std::lock_guard lock{mutex};
-            if (!responder || finished)
-                return false;
-            startWriteLocked(result, final);
-            return true;
-        }
-
-        void waitWritten() const { sending.wait(false); }
-        bool failedToSend() const { return failed_to_send; }
-
-        bool isFinished() const
-        {
-            std::lock_guard lock{mutex};
-            return !responder || finished;
-        }
-
-        bool fatalErrorReceived() const { return fatal_error; }
-
-        /// Makes a pending read complete. If the call is finished, the read completes on its own.
-        void cancel()
-        {
-            std::lock_guard lock{mutex};
-            if (responder && !finished)
-                responder->cancel();
-        }
-
-        /// No read may be in progress: its completion tag is owned by the responder. A pending write is canceled.
-        void close()
-        {
-            std::lock_guard lock{mutex};
-            if (responder && sending.get())
-            {
-                /// The pending write completes with `ok = false`.
-                responder->cancel();
-                sending.wait(false);
-            }
-            responder.reset();
-        }
-
-        /// Sends the final `FatalError` result with the remaining logs, and makes the call thread cancel the query.
-        void sendFatalError()
-        {
-            std::unique_lock lock{mutex, fatal_error_lock_timeout};
-            fatal_error = true;
-            if (!lock.owns_lock() || !responder || finished)
-                return;
-            try
-            {
-                if (logs_queue)
-                    addLogsToResult(*logs_queue, unsent_logs);
-                GRPCResult result;
-                result.mutable_exception()->set_name("FatalError");
-                sending.wait(false);
-                startWriteLocked(result, /* final= */ true);
-                /// A fatal signal terminates the process when this returns.
-                sending.wait(false);
-            }
-            catch (const std::exception &) // NOLINT(bugprone-empty-catch)
-            {
-            }
-        }
-
-    private:
-        static void addLogsToResult(InternalTextLogsQueue & logs_queue, GRPCResult & result);
-
-        /// `mutex` must be locked. If starting the write throws, nothing is changed.
-        void startWriteLocked(GRPCResult & result, bool final)
-        {
-            result.mutable_logs()->Swap(unsent_logs.mutable_logs());
-            sending.set(true);
-            try
-            {
-                auto callback = [this](bool ok) { onWritten(ok); };
-                if (final)
-                    responder->writeAndFinish(result, {}, callback);
-                else
-                    responder->write(result, callback);
-            }
-            catch (...)
-            {
-                sending.set(false);
-                result.mutable_logs()->Swap(unsent_logs.mutable_logs());
-                throw;
-            }
-            if (final)
-                finished = true;
-        }
-
-        void onWritten(bool ok)
-        {
-            /// Called on queue_thread.
-            if (!ok)
-                failed_to_send = true;
-            sending.set(false);
-        }
-
-        /// The faulting thread can be the call thread, stopped in the signal handler while it holds `mutex`.
-        static constexpr auto fatal_error_lock_timeout = std::chrono::seconds(1);
-
-        /// Guards `responder`, `finished`, `logs_queue` and `unsent_logs`. Held only for short operations, never while waiting
-        /// for the client, except by `sendFatalError`.
-        mutable std::timed_mutex mutex;
-        std::unique_ptr<BaseResponder> responder;
-        bool finished = false;
-        InternalTextLogsQueuePtr logs_queue;
-        GRPCResult unsent_logs;
-
-        BoolState sending{false};
-        std::atomic<bool> failed_to_send = false;
-        std::atomic<bool> fatal_error = false;
-    };
-
-
     /// Handles a connection after a responder is started (i.e. after getting a new call).
     class Call // NOLINT(clang-analyzer-optin.performance.Padding)
     {
@@ -847,7 +682,7 @@ namespace
         Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_);
         ~Call();
 
-        void start(const std::function<void()> & on_finish_call_callback);
+        void start(const std::function<void(void)> & on_finish_call_callback);
 
     private:
         void run();
@@ -863,6 +698,7 @@ namespace
 
         void finishQuery();
         void onException(const Exception & exception);
+        void onFatalError();
         void releaseQueryIDAndSessionID();
         void close();
 
@@ -877,12 +713,13 @@ namespace
         void addTotalsToResult(const Block & totals);
         void addExtremesToResult(const Block & extremes);
         void addProfileInfoToResult(const ProfileInfo & info);
+        void addLogsToResult();
         void sendResult();
         void throwIfFailedToSendResult();
         void sendException(const Exception & exception);
 
         const CallType call_type;
-        const std::shared_ptr<CallResponder> call_responder;
+        std::unique_ptr<BaseResponder> responder;
         IServer & iserver;
         LoggerRawPtr log = nullptr;
 
@@ -908,12 +745,14 @@ namespace
 
         BlockIO io;
         Progress progress;
+        InternalTextLogsQueuePtr logs_queue;
 
         GRPCQueryInfo query_info; /// We reuse the same messages multiple times.
         GRPCResult result;
 
         bool initial_query_info_read = false;
         bool finalize = false;
+        bool responder_finished = false;
         bool cancelled = false;
 
         std::unique_ptr<ReadBuffer> read_buffer;
@@ -937,12 +776,14 @@ namespace
         GRPCQueryInfo next_query_info_while_reading;
         std::atomic<bool> want_to_cancel = false;
         std::atomic<bool> check_query_info_contains_cancel_only = false;
+        BoolState sending_result{false};
+        std::atomic<bool> failed_to_send_result = false;
 
         ThreadFromGlobalPool call_thread;
     };
 
     Call::Call(CallType call_type_, std::unique_ptr<BaseResponder> responder_, IServer & iserver_, LoggerRawPtr log_)
-        : call_type(call_type_), call_responder(std::make_shared<CallResponder>(std::move(responder_))), iserver(iserver_), log(log_)
+        : call_type(call_type_), responder(std::move(responder_)), iserver(iserver_), log(log_)
     {
     }
 
@@ -952,7 +793,7 @@ namespace
             call_thread.join();
     }
 
-    void Call::start(const std::function<void()> & on_finish_call_callback)
+    void Call::start(const std::function<void(void)> & on_finish_call_callback)
     {
         auto runner_function = [this, on_finish_call_callback]
         {
@@ -1012,7 +853,7 @@ namespace
         std::string user = query_info.user_name();
         std::string password = query_info.password();
         std::string quota_key = query_info.quota();
-        Poco::Net::SocketAddress user_address = call_responder->getClientAddress();
+        Poco::Net::SocketAddress user_address = responder->getClientAddress();
 
         /// Authentication. The session is created before the empty-user-name check below, so that
         /// a prohibited anonymous attempt is recorded in `system.session_log` as a login failure.
@@ -1040,7 +881,7 @@ namespace
         ClientInfo client_info = session->getClientInfo();
 
         /// Parse the OpenTelemetry traceparent header.
-        auto traceparent = call_responder->getClientHeader("traceparent");
+        auto traceparent = responder->getClientHeader("traceparent");
         if (traceparent)
         {
             String error;
@@ -1050,7 +891,7 @@ namespace
                     "Failed to parse OpenTelemetry traceparent header '{}': {}",
                     traceparent.value(), error);
             }
-            auto tracestate = call_responder->getClientHeader("tracestate");
+            auto tracestate = responder->getClientHeader("tracestate");
             client_info.client_trace_context.tracestate = tracestate.value_or("");
         }
 
@@ -1069,12 +910,7 @@ namespace
         query_context->applySettingsChanges(settings_changes);
 
         query_context->setCurrentQueryId(query_info.query_id());
-        query_scope = QueryScope::create(query_context, /* fatal_error_callback */
-            [weak_call_responder = std::weak_ptr<CallResponder>(call_responder)]
-            {
-                if (auto shared_call_responder = weak_call_responder.lock())
-                    shared_call_responder->sendFatalError();
-            });
+        query_scope = QueryScope::create(query_context, /* fatal_error_callback */ [this]{ onFatalError(); });
 
         /// Set up tracing context for this query on current thread
         thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("GRPCServer",
@@ -1089,10 +925,9 @@ namespace
         const auto client_logs_level = settings[Setting::send_logs_level];
         if (client_logs_level != LogsLevel::none)
         {
-            auto logs_queue = std::make_shared<InternalTextLogsQueue>();
+            logs_queue = std::make_shared<InternalTextLogsQueue>();
             logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
             logs_queue->setSourceRegexp(settings[Setting::send_logs_source_regexp]);
-            call_responder->setLogsQueue(logs_queue);
             CurrentThread::attachInternalTextLogsQueue(logs_queue, client_logs_level);
         }
 
@@ -1112,7 +947,7 @@ namespace
 
         /// Apply transport compression for this call.
         if (auto transport_compression = TransportCompression::fromQueryInfo(query_info))
-            call_responder->setTransportCompression(*transport_compression);
+            responder->setTransportCompression(*transport_compression);
 
         /// The interactive delay will be used to show progress.
         interactive_delay = settings[Setting::interactive_delay];
@@ -1195,12 +1030,13 @@ namespace
         });
 
         /// Set callbacks to execute function input().
-        query_context->setInputInitializer([this] (ContextPtr context, const ColumnsDescription &, const Block & header)
+        query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
         {
             if (context != query_context)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
             input_function_is_used = true;
-            initializePipeline(header);
+            auto metadata_snapshot = input_storage->getInMemoryMetadataPtr(context, false);
+            initializePipeline(metadata_snapshot->getSampleBlock());
         });
 
         query_context->setInputBlocksReaderCallback([this](ContextPtr context) -> Block
@@ -1251,7 +1087,7 @@ namespace
         executor.start();
 
         Block block;
-        while (!isQueryCancelled() && pipeline_executor->pull(block))
+        while (pipeline_executor->pull(block))
         {
             if (!block.empty())
                 executor.push(block);
@@ -1537,9 +1373,9 @@ namespace
                     after_send_progress.restart();
                 }
 
-                call_responder->takeLogsFromQueue();
+                addLogsToResult();
 
-                if (has_output() || result.has_progress() || call_responder->hasUnsentLogs())
+                if (has_output() || result.has_progress() || result.logs_size())
                     sendResult();
 
                 throwIfFailedToSendResult();
@@ -1561,9 +1397,9 @@ namespace
             {
                 throwIfFailedToSendResult();
                 addProgressToResult();
-                call_responder->takeLogsFromQueue();
+                addLogsToResult();
 
-                if (has_output() || result.has_progress() || call_responder->hasUnsentLogs())
+                if (has_output() || result.has_progress() || result.logs_size())
                     sendResult();
 
                 throwIfFailedToSendResult();
@@ -1583,7 +1419,7 @@ namespace
         io.onFinish();
         addProgressToResult();
         query_scope->logPeakMemoryUsage();
-        call_responder->takeLogsFromQueue();
+        addLogsToResult();
         releaseQueryIDAndSessionID();
         sendResult();
         close();
@@ -1603,12 +1439,12 @@ namespace
 
         LOG_ERROR(log, getExceptionMessageAndPattern(exception, send_exception_with_stacktrace));
 
-        if (!call_responder->isFinished())
+        if (responder && !responder_finished)
         {
             try
             {
                 /// Try to send logs to client, but it could be risky too.
-                call_responder->takeLogsFromQueue();
+                addLogsToResult();
             }
             catch (...)
             {
@@ -1630,14 +1466,29 @@ namespace
         close();
     }
 
+    void Call::onFatalError()
+    {
+        if (responder && !responder_finished)
+        {
+            try
+            {
+                result.mutable_exception()->set_name("FatalError");
+                addLogsToResult();
+                sendResult();
+            }
+            catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+            {
+            }
+        }
+    }
+
     void Call::releaseQueryIDAndSessionID()
     {
         /// releaseQueryIDAndSessionID() should be called before sending the final result to the client
         /// because the client may decide to send another query with the same query ID or session ID
         /// immediately after it receives our final result, and it's prohibited to have
         /// two queries executed at the same time with the same query ID or session ID.
-        /// `io` goes as a whole: its callbacks read the process list elements of their contexts.
-        io = {};
+        io.process_list_entries.clear();
         if (query_context)
             query_context->setProcessListElement(nullptr);
         if (session)
@@ -1652,18 +1503,16 @@ namespace
         if (reading_query_info.get())
         {
             /// If the call has not been finished, nothing would complete that read on its own.
-            call_responder->cancel();
+            if (!responder_finished)
+                responder->cancel();
             reading_query_info.wait(false);
         }
 
-        call_responder->close();
+        responder.reset();
         pipeline_executor.reset();
         pipeline = nullptr;
         output_format_processor.reset();
         read_buffer.reset();
-        /// Not finalized when `sendFatalError` finished the call first.
-        if (write_buffer)
-            write_buffer->cancel();
         write_buffer.reset();
         nested_write_buffer = nullptr;
         compressing_write_buffer = nullptr;
@@ -1679,7 +1528,7 @@ namespace
         auto start_reading = [&]
         {
             reading_query_info.set(true);
-            call_responder->read(next_query_info_while_reading, [this](bool ok)
+            responder->read(next_query_info_while_reading, [this](bool ok)
             {
                 /// Called on queue_thread.
                 if (ok)
@@ -1755,7 +1604,7 @@ namespace
             return true;
         }
 
-        if (want_to_cancel || call_responder->fatalErrorReceived())
+        if (want_to_cancel)
         {
             LOG_INFO(log, "Query cancelled");
             cancelled = true;
@@ -1855,8 +1704,11 @@ namespace
         stats.set_rows_before_aggregation(info.getRowsBeforeAggregation());
     }
 
-    void CallResponder::addLogsToResult(InternalTextLogsQueue & logs_queue, GRPCResult & result)
+    void Call::addLogsToResult()
     {
+        if (!logs_queue)
+            return;
+
         static_assert(::clickhouse::grpc::LOG_NONE        == 0);
         static_assert(::clickhouse::grpc::LOG_FATAL       == static_cast<int>(Poco::Message::PRIO_FATAL));
         static_assert(::clickhouse::grpc::LOG_CRITICAL    == static_cast<int>(Poco::Message::PRIO_CRITICAL));
@@ -1869,7 +1721,7 @@ namespace
         static_assert(::clickhouse::grpc::LOG_TEST        == static_cast<int>(Poco::Message::PRIO_TEST));
 
         MutableColumns columns;
-        while (logs_queue.tryPop(columns))
+        while (logs_queue->tryPop(columns))
         {
             if (columns.empty() || columns[0]->empty())
                 continue;
@@ -1903,7 +1755,7 @@ namespace
     void Call::sendResult()
     {
         /// gRPC doesn't allow to write anything to a finished responder.
-        if (call_responder->isFinished())
+        if (responder_finished)
             return;
 
         /// If output is not streaming then only the final result can be sent.
@@ -1912,8 +1764,7 @@ namespace
             return;
 
         /// Copy output to `result.output`, with optional compressing.
-        /// A canceled buffer holds incomplete output which can be neither finalized nor sent.
-        if (write_buffer && !write_buffer->isCanceled())
+        if (write_buffer)
         {
             size_t output_size = 0;
             if (send_final_message)
@@ -1940,22 +1791,40 @@ namespace
             }
         }
 
-        if (!send_final_message && result.output().empty() && result.totals().empty() && result.extremes().empty() && !call_responder->hasUnsentLogs()
+        if (!send_final_message && result.output().empty() && result.totals().empty() && result.extremes().empty() && !result.logs_size()
             && !result.has_progress() && !result.has_stats() && !result.has_exception() && !result.cancelled())
             return; /// Nothing to send.
 
         /// Wait for previous write to finish.
         /// (gRPC doesn't allow to start sending another result while the previous is still being sending.)
-        Stopwatch client_reading_watch;
-        call_responder->waitWritten();
-        waited_for_client_reading += client_reading_watch.elapsedNanoseconds();
+        if (sending_result.get())
+        {
+            Stopwatch client_reading_watch;
+            sending_result.wait(false);
+            waited_for_client_reading += client_reading_watch.elapsedNanoseconds();
+        }
         throwIfFailedToSendResult();
 
-        Stopwatch client_reading_final_watch;
-        if (!call_responder->startWrite(result, send_final_message))
-            return;
-
+        /// Start sending the result.
         LOG_DEBUG(log, "Sending {} result to the client: {}", (send_final_message ? "final" : "intermediate"), getResultDescription(result));
+
+        sending_result.set(true);
+        auto callback = [this](bool ok)
+        {
+            /// Called on queue_thread.
+            if (!ok)
+                failed_to_send_result = true;
+            sending_result.set(false);
+        };
+
+        Stopwatch client_reading_final_watch;
+        if (send_final_message)
+        {
+            responder_finished = true;
+            responder->writeAndFinish(result, {}, callback);
+        }
+        else
+            responder->write(result, callback);
 
         /// gRPC has already retrieved all data from `result`, so we don't have to keep it.
         result.Clear();
@@ -1963,7 +1832,7 @@ namespace
         if (send_final_message)
         {
             /// Wait until the result is actually sent.
-            call_responder->waitWritten();
+            sending_result.wait(false);
             waited_for_client_reading += client_reading_final_watch.elapsedNanoseconds();
             throwIfFailedToSendResult();
             LOG_TRACE(log, "Final result has been sent to the client");
@@ -1972,7 +1841,7 @@ namespace
 
     void Call::throwIfFailedToSendResult()
     {
-        if (call_responder->failedToSend())
+        if (failed_to_send_result)
             throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to send result to the client");
     }
 

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Core/Field.h>
 #include <Core/Names.h>
@@ -9,15 +8,12 @@
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST_fwd.h>
 
-#include <memory>
-
 namespace DB
 {
 
 class ASTFunction;
 
 class ActionsDAG;
-class IGeneralWindowFunction;
 
 struct WindowFunctionDescription
 {
@@ -102,17 +98,14 @@ struct WindowDescription
     WindowFrame frame;
 
     // The window functions that are calculated for this window.
-    VectorWithMemoryTracking<WindowFunctionDescription> window_functions;
+    std::vector<WindowFunctionDescription> window_functions;
 
     std::string dump() const;
 
     void checkValid() const;
 };
 
-using WindowFunctionDescriptions = VectorWithMemoryTracking<WindowFunctionDescription>;
-
-std::shared_ptr<const IGeneralWindowFunction> asGeneralWindowFunction(const AggregateFunctionPtr & aggregate_function);
-void validateWindowFunctions(const WindowDescription & window);
+using WindowFunctionDescriptions = std::vector<WindowFunctionDescription>;
 
 using WindowDescriptions = std::unordered_map<std::string, WindowDescription>;
 

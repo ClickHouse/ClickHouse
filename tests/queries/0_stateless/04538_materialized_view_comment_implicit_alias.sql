@@ -1,5 +1,7 @@
 -- Tags: no-parallel
 
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS src_04538;
 DROP TABLE IF EXISTS dst_04538;
 DROP TABLE IF EXISTS mv_04538;

@@ -1,6 +1,0 @@
---- A warm unsampled TopK read reuses the granules the first run excluded
-05259_topk_prime	0
-05259_topk_warm	1
---- A sampled TopK read returns the same rows as with the cache off
-5
-1

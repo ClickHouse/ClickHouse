@@ -14,15 +14,6 @@ namespace ErrorCodes
 namespace
 {
 
-size_t getTaskWeight(const ObjectInfoPtr & object_info)
-{
-    if (auto size = object_info->getFileSizeHint())
-        return std::max<size_t>(1, *size);
-    if (auto metadata = object_info->getObjectMetadata(); metadata && metadata->is_size_known && metadata->size_bytes)
-        return metadata->size_bytes;
-    return 1;
-}
-
 String getSchedulingIdentifier(const ObjectInfoPtr & object_info, bool send_over_whole_archive)
 {
     if (send_over_whole_archive && object_info->isArchive())
@@ -36,15 +27,11 @@ String getSchedulingIdentifier(const ObjectInfoPtr & object_info, bool send_over
 StorageObjectStorageStableTaskDistributor::StorageObjectStorageStableTaskDistributor(
     std::shared_ptr<IObjectIterator> iterator_,
     std::vector<std::string> && ids_of_nodes_,
-    bool send_over_whole_archive_,
-    std::chrono::milliseconds wait_for_owner_)
+    bool send_over_whole_archive_)
     : iterator(std::move(iterator_))
     , send_over_whole_archive(send_over_whole_archive_)
-    , wait_for_owner(wait_for_owner_)
     , connection_to_files(ids_of_nodes_.size())
-    , remaining_bytes(ids_of_nodes_.size(), 0)
     , ids_of_nodes(std::move(ids_of_nodes_))
-    , replica_seen(ids_of_nodes.size(), false)
     , iterator_exhausted(false)
 {
 }
@@ -100,39 +87,27 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getPreQueuedFile(size_t
             connection_to_files.size()
         );
 
-    if (!replica_seen[number_of_current_replica])
-    {
-        replica_seen[number_of_current_replica] = true;
-        replica_seen_cv.notify_all();
-    }
-
-    auto next_file = takeQueuedFile(number_of_current_replica);
-    if (next_file)
-        LOG_TRACE(
-            log,
-            "Assigning pre-queued file {} to replica {}",
-            getSchedulingIdentifier(next_file, send_over_whole_archive),
-            number_of_current_replica
-        );
-
-    return next_file;
-}
-
-ObjectInfoPtr StorageObjectStorageStableTaskDistributor::takeQueuedFile(size_t replica)
-{
-    auto & files = connection_to_files[replica];
+    auto & files = connection_to_files[number_of_current_replica];
 
     while (!files.empty())
     {
         auto next_file = files.back();
         files.pop_back();
 
-        auto it = unprocessed_files.find(getSchedulingIdentifier(next_file, send_over_whole_archive));
+        auto file_identifier = getSchedulingIdentifier(next_file, send_over_whole_archive);
+        auto it = unprocessed_files.find(file_identifier);
         if (it == unprocessed_files.end())
             continue;
 
-        remaining_bytes[replica] -= getTaskWeight(it->second);
         unprocessed_files.erase(it);
+
+        LOG_TRACE(
+            log,
+            "Assigning pre-queued file {} to replica {}",
+            file_identifier,
+            number_of_current_replica
+        );
+
         return next_file;
     }
 
@@ -197,8 +172,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
         // Queue file for its assigned replica
         {
             std::lock_guard lock(mutex);
-            if (unprocessed_files.emplace(file_identifier, object_info).second)
-                remaining_bytes[file_replica_idx] += getTaskWeight(object_info);
+            unprocessed_files.emplace(file_identifier, object_info);
             connection_to_files[file_replica_idx].push_back(object_info);
         }
     }
@@ -208,48 +182,23 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
 
 ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(size_t number_of_current_replica)
 {
-    std::unique_lock lock(mutex);
+    std::lock_guard lock(mutex);
 
-    if (!stealing_allowed_since)
-        stealing_allowed_since = std::chrono::steady_clock::now() + wait_for_owner;
-
-    /// The loop exits in one of two ways:
-    /// - returns a file of the replica with the most remaining bytes among the replicas whose files can be taken:
-    ///   the current replica, replicas that have already asked for tasks, or any replica once `wait_for_owner` has passed;
-    /// - returns nothing when no unprocessed files are left.
-    /// Otherwise it waits until a new replica asks for tasks or until `wait_for_owner` passes, and then checks again.
-    while (!unprocessed_files.empty())
+    if (!unprocessed_files.empty())
     {
-        const bool deadline_passed = std::chrono::steady_clock::now() >= *stealing_allowed_since;
+        auto it = unprocessed_files.begin();
+        auto next_file = it->second;
+        unprocessed_files.erase(it);
 
-        std::optional<size_t> owner;
-        for (size_t replica = 0; replica < remaining_bytes.size(); ++replica)
-        {
-            if (!remaining_bytes[replica])
-                continue;
-            if (!deadline_passed && replica != number_of_current_replica && !replica_seen[replica])
-                continue;
-            if (!owner || remaining_bytes[replica] > remaining_bytes[*owner])
-                owner = replica;
-        }
+        auto file_path = getSchedulingIdentifier(next_file, send_over_whole_archive);
+        LOG_TRACE(
+            log,
+            "Iterator exhausted. Assigning unprocessed file {} to replica {}",
+            file_path,
+            number_of_current_replica
+        );
 
-        if (owner)
-        {
-            auto next_file = takeQueuedFile(*owner);
-            if (!next_file)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Replica {} has {} bytes left but no queued files", *owner, remaining_bytes[*owner]);
-
-            LOG_TRACE(
-                log,
-                "Iterator exhausted. Assigning unprocessed file {} of replica {} to replica {}",
-                getSchedulingIdentifier(next_file, send_over_whole_archive),
-                *owner,
-                number_of_current_replica);
-
-            return next_file;
-        }
-
-        replica_seen_cv.wait_until(lock, *stealing_allowed_since);
+        return next_file;
     }
 
     return {};
