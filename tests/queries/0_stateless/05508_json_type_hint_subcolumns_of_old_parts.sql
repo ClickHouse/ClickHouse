@@ -48,6 +48,7 @@ DROP TABLE IF EXISTS t_read_cast_path_added;
 DROP TABLE IF EXISTS t_read_cast_path_changed;
 DROP TABLE IF EXISTS t_read_cast_path_array;
 DROP TABLE IF EXISTS t_read_cast_path_tuple;
+DROP TABLE IF EXISTS t_scalar_sibling;
 DROP TABLE IF EXISTS t_default_dep;
 
 SELECT 'issue 123339';
@@ -486,9 +487,16 @@ INSERT INTO t_read_cast_path_tuple SELECT number, CAST(tuple(concat('{"a" : ', t
 ALTER TABLE t_read_cast_path_tuple MODIFY COLUMN tup Tuple(t JSON(a String)) SETTINGS mutations_sync = 0, alter_sync = 0;
 SELECT sum(length(tup.t.a)), sum(tup.t.a.size) FROM t_read_cast_path_tuple SETTINGS log_comment = '05508_read_cast_path_tuple';
 
+SELECT 'a scalar member next to a JSON member is read and cast as stored';
+CREATE TABLE t_scalar_sibling (id UInt64, tup Tuple(a UInt64, b String, j JSON)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_scalar_sibling;
+INSERT INTO t_scalar_sibling SELECT number, CAST(tuple(number * 7, 'x', concat('{"big" : "', repeat('x', 100000), '"}')), 'Tuple(a UInt64, b String, j JSON)') FROM numbers(3);
+ALTER TABLE t_scalar_sibling MODIFY COLUMN tup Tuple(a String, b UInt64, j JSON) SETTINGS mutations_sync = 0, alter_sync = 0;
+SELECT id, tup.a FROM t_scalar_sibling ORDER BY id SETTINGS log_comment = '05508_read_scalar_sibling';
+
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, read_bytes < 50000 FROM system.query_log
-WHERE current_database = currentDatabase() AND log_comment LIKE '05508_read_cast_path_%' AND type = 'QueryFinish'
+WHERE current_database = currentDatabase() AND log_comment LIKE '05508_read_%' AND type = 'QueryFinish'
 ORDER BY log_comment;
 
 DROP TABLE t_issue;
@@ -534,4 +542,5 @@ DROP TABLE t_read_cast_path_added;
 DROP TABLE t_read_cast_path_changed;
 DROP TABLE t_read_cast_path_array;
 DROP TABLE t_read_cast_path_tuple;
+DROP TABLE t_scalar_sibling;
 DROP TABLE t_default_dep;
