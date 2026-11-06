@@ -154,6 +154,41 @@ def execute_range_query_in_clickhouse_sql(query, start_time, end_time, step):
     )
 
 
+# Host label values for sort_by_label over many series: leading zeros and digit runs past Int64
+# make Prometheus's comparator non-transitive, so the order depends on its exact sort algorithm.
+def natsort_many_hosts(count):
+    hosts = []
+    for i in range(count):
+        if i % 5 == 4:
+            digits = "0" * ((i // 5) % 3 + 1) + str(i // 5)
+        elif i % 13 == 12:
+            digits = "9" * (2 + i // 13)
+        elif i % 7 == 3:
+            digits = "92233720368547758%02d" % i
+        else:
+            digits = "0" * (i % 3) + str((i * 37) % 61)
+        hosts.append("host" + digits)
+    return hosts
+
+
+# Expected Prometheus and ClickHouse results for the series of `name` in the order of `ordered_digits`.
+def natsort_many_expected(name, count, ordered_digits):
+    value_of = {host: i + 1 for i, host in enumerate(natsort_many_hosts(count))}
+    hosts = ["host" + digits for digits in ordered_digits]
+    result = {
+        "resultType": "vector",
+        "result": [
+            {"metric": {"__name__": name, "host": host}, "value": [200, str(value_of[host])]}
+            for host in hosts
+        ],
+    }
+    chresult = [
+        [f"[('__name__','{name}'),('host','{host}')]", "1970-01-01 00:03:20.000", value_of[host]]
+        for host in hosts
+    ]
+    return json.dumps(result), chresult
+
+
 # Sends all test data to the "protobuf_receiver" service and also to ClickHouse via the RemoteWrite protocol.
 def send_test_data():
     send_data([({"__name__": "up", "job": "prometheus"}, {1753176654.832: 1})])
@@ -574,6 +609,14 @@ def send_test_data():
                 {"__name__": "natsort_hosts", "host": "host99"},
                 {200: 1},
             ),
+        ]
+    )
+
+    send_data(
+        [
+            ({"__name__": name, "host": host}, {200: i + 1})
+            for name, count in [("natsort_twenty", 20), ("natsort_sixty", 60)]
+            for i, host in enumerate(natsort_many_hosts(count))
         ]
     )
 
@@ -3599,6 +3642,35 @@ def test_sort_functions():
             ["[('http_code','401')]", "1970-01-01 00:03:20.000", 4],
         ],
     )
+
+    # More than 12 and more than 50 series take the partition and pivot paths of Go's pdqsort.
+    for query, name, count, order in [
+        (
+            "sort_by_label(natsort_twenty, 'host')", "natsort_twenty", 20,
+            "0 00 001 002 0002 03 6 0013 015 037 39 0041 043 0052 054 56 9223372036854775803 9223372036854775810 "
+            "9223372036854775817 99",
+        ),
+        (
+            "sort_by_label_desc(natsort_twenty, 'host')", "natsort_twenty", 20,
+            "9223372036854775803 99 9223372036854775817 9223372036854775810 56 054 0052 043 0041 39 037 015 0013 6 03 "
+            "002 0002 001 0 00",
+        ),
+        (
+            "sort_by_label(natsort_sixty, 'host')", "natsort_sixty", 60,
+            "0 00 001 1 002 0002 03 004 05 0005 6 06 7 007 0008 008 09 009 0010 00011 011 12 0013 0014 015 016 0020 021 "
+            "022 23 0025 027 29 0031 35 037 39 0041 043 45 0047 51 0052 0053 054 055 56 0058 0059 060 9223372036854775803 "
+            "9223372036854775810 9223372036854775817 9223372036854775831 9223372036854775845 9223372036854775852 99 999 "
+            "9999 99999",
+        ),
+        (
+            "sort_by_label_desc(natsort_sixty, 'host')", "natsort_sixty", 60,
+            "9223372036854775852 9223372036854775845 9223372036854775831 9223372036854775817 9223372036854775810 "
+            "9223372036854775803 99999 9999 999 99 060 0059 0058 56 055 054 0053 0052 51 0047 45 043 0041 39 037 35 0031 "
+            "29 027 0025 23 022 021 0020 016 015 0014 0013 12 00011 011 0010 09 009 008 0008 7 007 06 6 0005 05 004 03 002 "
+            "0002 001 1 0 00",
+        ),
+    ]:
+        do_query_test(query, 200, *natsort_many_expected(name, count, order.split()))
 
     # Label manipulation must also keep the order fixed by an inner sort call.
     do_query_test(
