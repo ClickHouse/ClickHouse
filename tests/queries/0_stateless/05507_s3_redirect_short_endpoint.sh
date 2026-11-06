@@ -17,17 +17,27 @@ s.close()
 ")
 
 python3 -c "
+import threading
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 BODY = b'<?xml version=\"1.0\" encoding=\"UTF-8\"?><Error><Code>PermanentRedirect</Code><Message>redirect</Message><Endpoint>def</Endpoint></Error>'
+redirected = 0
+lock = threading.Lock()
 
 class Handler(BaseHTTPRequestHandler):
     def reply(self):
-        if self.path == '/ping':
+        global redirected
+        if self.path in ('/ping', '/redirected'):
+            with lock:
+                body = str(int(redirected > 0)).encode()
             self.send_response(200)
-            self.send_header('Content-Length', '0')
+            self.send_header('Content-Length', str(len(body)))
             self.end_headers()
+            self.wfile.write(body)
             return
+        if self.path.startswith('http://def/'):
+            with lock:
+                redirected += 1
         self.send_response(301)
         self.send_header('Location', 'http://def/bbb/key.csv')
         self.send_header('x-amz-bucket-region', 'us-east-1')
@@ -56,3 +66,7 @@ for _ in {1..100}; do
 done
 
 http_proxy="http://127.0.0.1:${PROXY_PORT}" no_proxy="" ${CLICKHOUSE_LOCAL} --query "SELECT * FROM s3('http://abc/bbb/key.csv', NOSIGN, 'CSV', 'x String')" 2>&1 | grep -o -m1 'S3_ERROR'
+
+# 1 when the client followed the redirect to `def`, which happens only after the endpoint check.
+${CLICKHOUSE_CURL} "http://127.0.0.1:${PROXY_PORT}/redirected"
+echo
