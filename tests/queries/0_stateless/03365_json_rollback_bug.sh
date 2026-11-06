@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: long, no-asan, no-tsan, no-ubsan, no-msan
+# Tags: long, no-asan, no-tsan, no-ubsan, no-msan, no-flaky-check
 # Too slow for sanitizers
+# no-flaky-check: many concurrent copies of the async insert of 2 million rows with `max_block_size=1` exceed the timeout
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
