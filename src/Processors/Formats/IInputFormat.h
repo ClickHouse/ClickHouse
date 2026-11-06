@@ -17,7 +17,6 @@ namespace DB
 
 class BlockMissingValues;
 struct SelectQueryInfo;
-struct RelativePathWithMetadata;
 class ColumnMapper;
 struct RelativePathWithMetadata;
 
