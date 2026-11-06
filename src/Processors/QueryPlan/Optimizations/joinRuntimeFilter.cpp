@@ -723,7 +723,7 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
             {
                 if (read_step)
                     read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr.filter_id, descr.key_column_name, descr.key_column_type);
-                else if (!descr.key_under_nested_casts)
+                else
                     object_storage_read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(
                         descr.filter_id, descr.key_column_name, descr.key_column_type);
             }

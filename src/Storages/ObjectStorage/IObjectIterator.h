@@ -20,6 +20,7 @@ extern const int LOGICAL_ERROR;
 struct FileBucketInfo;
 using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
 struct RuntimeFilterIndexAnalysisDescriptor;
+using RuntimeFilterIndexAnalysisDescriptors = std::vector<RuntimeFilterIndexAnalysisDescriptor>;
 struct IRuntimeFilterLookup;
 using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
 
@@ -106,7 +107,7 @@ struct IObjectIterator
 
     /// The JOIN runtime filters every row of the read passes, set before the first `next`. An iterator
     /// may skip the objects that cannot contain any of their keys once the filters are built.
-    virtual void setJoinRuntimeFilters(const std::vector<RuntimeFilterIndexAnalysisDescriptor> & /*descriptors*/, RuntimeFilterLookupPtr /*lookup*/) {}
+    virtual void setJoinRuntimeFilters(const RuntimeFilterIndexAnalysisDescriptors & /*descriptors*/, RuntimeFilterLookupPtr /*lookup*/) {}
 };
 
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
@@ -133,7 +134,7 @@ public:
         iterator->setEmitProfileEvents(value);
     }
 
-    void setJoinRuntimeFilters(const std::vector<RuntimeFilterIndexAnalysisDescriptor> & descriptors, RuntimeFilterLookupPtr lookup) override
+    void setJoinRuntimeFilters(const RuntimeFilterIndexAnalysisDescriptors & descriptors, RuntimeFilterLookupPtr lookup) override
     {
         iterator->setJoinRuntimeFilters(descriptors, std::move(lookup));
     }
