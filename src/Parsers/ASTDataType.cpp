@@ -12,6 +12,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserDataType.h>
 #include <Parsers/TokenIterator.h>
+#include <Parsers/isKeyValueArgument.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
@@ -272,8 +273,9 @@ std::vector<ASTPtr *> getTableFunctionStructureArguments(ASTFunction & table_fun
     /// `azureBlobStorage` has several positional overloads. The structure, when present, is always
     /// the final argument of the corresponding overload; other trailing strings can be credentials,
     /// a format, or a compression method and must stay unchanged. As in the parser (see
-    /// `TableFunctionObjectStorage::parseArguments` and `AzureStorageParsedArguments::fromAST`), the `SETTINGS` clause
-    /// and the first `extra_credentials(...)` do not take a positional slot.
+    /// `TableFunctionObjectStorage::parseArguments` and `AzureStorageParsedArguments::fromAST`), the `SETTINGS` clause,
+    /// the first `extra_credentials(...)` and the trailing key-value arguments, such as `partition_strategy = 'hive'`,
+    /// do not take a positional slot.
     const auto azure_structure_argument = [&arguments](size_t first_argument) -> std::vector<ASTPtr *>
     {
         std::vector<ASTPtr *> positional_arguments;
@@ -294,6 +296,8 @@ std::vector<ASTPtr *> getTableFunctionStructureArguments(ASTFunction & table_fun
             }
             positional_arguments.push_back(&arguments[index]);
         }
+        while (!positional_arguments.empty() && isKeyValueArgument(**positional_arguments.back()))
+            positional_arguments.pop_back();
 
         switch (positional_arguments.size())
         {
