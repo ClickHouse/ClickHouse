@@ -1009,6 +1009,14 @@ void StorageABR::read(
             "executes the query on a source table, where they cannot be applied. Define them on the source tables instead",
             getStorageID().getNameForLogs());
 
+    /// Neither can the filter of `additional_table_filters` for this table, or for a table that reads it, which the planner
+    /// passes in `additional_filter_ast` and would only apply to the columns read from this table, not to the result of `ABR`.
+    if (query_info.additional_filter_ast)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "`additional_table_filters` for table {}, or for a table that reads from it, are not supported: the `ABR` engine "
+            "executes the query on a source table, where they cannot be applied. Add the condition to the query instead",
+            getStorageID().getNameForLogs());
+
     /// `ABR` runs the whole query on a source table. As the left table of a JOIN, it runs the whole query, which the planner expects.
     /// On the right side of a JOIN, the planner only expects the columns of this table, but `ABR` would still run the whole JOIN
     /// query and return the wrong columns.
@@ -1143,6 +1151,8 @@ whole, across all attempts. The candidate tables are the chosen table and the co
 - All source tables must share an identical column set.
 - `ABR` does not support row policies on the `ABR` table, or on a table that reads from it such as an `Alias`. Define them on
   the source tables instead.
+- `ABR` does not support `additional_table_filters` for the `ABR` table, or for a table that reads from it. Add the condition
+  to the query instead.
 - An `ABR` table can only be the leftmost table of a `JOIN`. To join it on another side, read it through a subquery with a
   condition on its time column: `JOIN (SELECT ... FROM abr_table WHERE ts >= ...)`.
 - An `ABR` table cannot be read from a serialized query plan, which does not carry the filters of the query. With
