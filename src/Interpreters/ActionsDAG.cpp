@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/Utils.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/validateColumnType.h>
@@ -2999,7 +3000,9 @@ ActionsDAG ActionsDAG::makeConvertingActions(
 
         /// Add CAST function to convert into result type if needed.
         /// `equals` ignores the time zone and custom names such as `Bool`, which the result must carry.
-        if (!res_elem.type->equals(*dst_node->result_type) || res_elem.type->getName() != dst_node->result_type->getName())
+        const auto & src_type = *dst_node->result_type;
+        if (!res_elem.type->equals(src_type)
+            || (res_elem.type->getName() != src_type.getName() && haveSameAggregateFunctions(*res_elem.type, src_type)))
         {
             auto string_type = std::make_shared<DataTypeString>();
             auto type_name = res_elem.type->getName();

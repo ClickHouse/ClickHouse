@@ -34,3 +34,7 @@ AggregateFunction state version
 10
 10
 10
+AggregateFunction of another function with the same state
+[3.6]
+[3.6]
+10

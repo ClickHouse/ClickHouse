@@ -19,6 +19,8 @@ DROP TABLE IF EXISTS t_var;
 DROP TABLE IF EXISTS t_var_dst;
 DROP TABLE IF EXISTS t_vaf;
 DROP TABLE IF EXISTS t_aaf;
+DROP TABLE IF EXISTS t_qaf_nested;
+DROP TABLE IF EXISTS t_vaf_nested;
 DROP TABLE IF EXISTS t_mlocal;
 DROP TABLE IF EXISTS t_mdist;
 DROP TABLE IF EXISTS t_merge_dist;
@@ -108,6 +110,20 @@ INSERT INTO t_aaf SELECT [uniqState(number)::AggregateFunction(0, uniq, UInt64)]
 CREATE VIEW v_aaf (a Array(AggregateFunction(1, uniq, UInt64))) AS SELECT a FROM t_aaf;
 SELECT uniqMerge(s) FROM (SELECT arrayJoin(groupArray(arrayJoin(a))) AS s FROM v_aaf);
 
+SELECT 'AggregateFunction of another function with the same state';
+-- States of another function, or nested in a state, are not relabelled: the view fails to finalize them, the inlined view keeps the source type.
+CREATE VIEW v_qaf (s AggregateFunction(quantile, UInt64)) AS SELECT quantilesState(0.9)(number) AS s FROM numbers(5);
+SELECT finalizeAggregation(s) FROM v_qaf; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT finalizeAggregation(s) FROM v_qaf SETTINGS analyzer_inline_views = 1;
+CREATE TABLE t_qaf_nested (s AggregateFunction(any, AggregateFunction(quantiles(0.9), UInt64))) ENGINE = Memory;
+INSERT INTO t_qaf_nested SELECT anyState(q) FROM (SELECT quantilesState(0.9)(number) AS q FROM numbers(5));
+CREATE VIEW v_qaf_nested (s AggregateFunction(any, AggregateFunction(quantile, UInt64))) AS SELECT s FROM t_qaf_nested;
+SELECT finalizeAggregation(finalizeAggregation(s)) FROM v_qaf_nested SETTINGS analyzer_inline_views = 1;
+CREATE TABLE t_vaf_nested (s AggregateFunction(any, AggregateFunction(0, uniq, UInt64))) ENGINE = Memory;
+INSERT INTO t_vaf_nested SELECT anyState(u) FROM (SELECT uniqState(number)::AggregateFunction(0, uniq, UInt64) AS u FROM numbers(10));
+CREATE VIEW v_vaf_nested (s AggregateFunction(any, AggregateFunction(1, uniq, UInt64))) AS SELECT s FROM t_vaf_nested;
+SELECT uniqMerge(u) FROM (SELECT arrayJoin(groupArray(finalizeAggregation(s))) AS u FROM v_vaf_nested SETTINGS analyzer_inline_views = 1);
+
 DROP VIEW v;
 DROP VIEW v_wrap;
 DROP VIEW v_cast;
@@ -118,6 +134,9 @@ DROP VIEW v_order_same;
 DROP VIEW v_var;
 DROP VIEW v_vaf;
 DROP VIEW v_aaf;
+DROP VIEW v_qaf;
+DROP VIEW v_qaf_nested;
+DROP VIEW v_vaf_nested;
 DROP TABLE t_src;
 DROP TABLE t_order;
 DROP TABLE t_local;
@@ -129,6 +148,8 @@ DROP TABLE t_var;
 DROP TABLE t_var_dst;
 DROP TABLE t_vaf;
 DROP TABLE t_aaf;
+DROP TABLE t_qaf_nested;
+DROP TABLE t_vaf_nested;
 DROP TABLE t_merge_dist;
 DROP TABLE t_mdist;
 DROP TABLE t_mlocal;

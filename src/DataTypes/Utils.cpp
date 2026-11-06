@@ -1,5 +1,6 @@
 #include <DataTypes/Utils.h>
 #include <Core/DecimalFunctions.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -8,6 +9,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/TypeTree.h>
 
 namespace DB
 {
@@ -385,6 +387,22 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
         return conversionPreservesOrder(*from_array->getNestedType(), *to_array->getNestedType());
 
     return false;
+}
+
+static std::vector<String> getAggregateFunctionNamesWithoutVersion(const IDataType & type)
+{
+    std::vector<String> names;
+    forEachInTypeTree(type, [&](const IDataType & child)
+    {
+        if (const auto * aggregate_type = typeid_cast<const DataTypeAggregateFunction *>(&child))
+            names.push_back(aggregate_type->getNameWithoutVersion());
+    });
+    return names;
+}
+
+bool haveSameAggregateFunctions(const IDataType & lhs, const IDataType & rhs)
+{
+    return getAggregateFunctionNamesWithoutVersion(lhs) == getAggregateFunctionNamesWithoutVersion(rhs);
 }
 
 }

@@ -57,6 +57,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/TypeTree.h>
+#include <DataTypes/Utils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/validateGroupByKeyType.h>
 
@@ -6883,7 +6884,8 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     /// `equals` ignores the time zone and custom names such as `Bool`, which the view column must carry.
     auto needs_cast = [](const DataTypePtr & view_type, const DataTypePtr & subquery_type)
     {
-        return !view_type->equals(*subquery_type) || view_type->getName() != subquery_type->getName();
+        return !view_type->equals(*subquery_type)
+            || (view_type->getName() != subquery_type->getName() && haveSameAggregateFunctions(*view_type, *subquery_type));
     };
 
     bool needs_type_conversion = false;
