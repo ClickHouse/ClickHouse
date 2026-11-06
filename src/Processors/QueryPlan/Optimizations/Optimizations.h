@@ -98,6 +98,9 @@ struct Optimization
         /// sequential filters. fuseFilterIntoArrayJoin can't reproduce that, so it won't fuse a multi-atom
         /// AND in this mode.
         bool short_circuit_function_evaluation_disabled = false;
+        bool lower_array_join_function = false;
+        bool legacy_array_join_function_nondeterministic_evaluation = false;
+        bool enable_lazy_columns_replication = false;
         bool filter_push_down_below_limit_by = true;
     };
 
@@ -109,6 +112,9 @@ struct Optimization
 
 /// Move ARRAY JOIN up if possible
 size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
+
+/// Plans each `arrayJoin` function in Expression/Filter steps as a real ArrayJoinStep. Runs also without plan optimizations.
+void lowerArrayJoinFunctions(QueryPlan::Node & root, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
 /// Move LimitStep down if possible
 size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
