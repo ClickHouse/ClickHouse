@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/ORC/Compression.h>
 
+#include <base/sanitizer_defs.h>
 #include <Common/Exception.h>
 
 #include <lz4.h>
@@ -348,6 +349,8 @@ private:
 }
 
 
+/// `ZSTD_CONTENTSIZE_ERROR` is defined as `(0ULL - 2)`, which wraps around on purpose.
+NO_SANITIZE_UNSIGNED_OVERFLOW
 size_t maxDecompressedSize(CompressionKind kind, const char * src, size_t src_size)
 {
     /// The ratios are the theoretical maximums of the formats, rounded up, so that valid chunks are never rejected.
