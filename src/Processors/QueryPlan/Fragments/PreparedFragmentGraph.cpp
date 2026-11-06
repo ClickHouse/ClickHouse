@@ -171,7 +171,8 @@ void writeSingleNode(const PreparedFragmentGraph & prepared, WriteBuffer & buf, 
     chassert(prepared.single_node);
     const auto & fragment = prepared.graph.fragments.front();
     PreparedFragmentGraph::getPlan(fragment).explainPlan(
-        buf, prepared.options, 0, max_step_description_length, prepared.options.pretty ? &prepared.pretty_names : nullptr);
+        buf, prepared.options, 0, max_step_description_length,
+        prepared.options.pretty ? &prepared.pretty_names : nullptr);
     if (fragment.fallback_reason)
         buf << "\nNot distributed: " << *fragment.fallback_reason << '\n';
 }
