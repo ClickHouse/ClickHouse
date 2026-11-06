@@ -158,6 +158,15 @@ Possible values:
 - `v2`
 - `v3`
 
+## empty_parts_lifetime {#empty_parts_lifetime}
+<SettingsInfoBlock type="Seconds" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting"}]}]}/>
+
+Minimal age in seconds of an empty part before `remove_empty_parts` removes it. The age is counted from the part's
+`modification_time`, so a merge or a mutation that produces a new empty part starts it again. It does not delay
+other ways to replace the part: a merge that includes it, or a `TRUNCATE` or `DROP` that covers it, makes it outdated
+as for any other part. 0 removes empty parts without waiting.
+
 ## enforce_index_structure_match_on_partition_manipulation {#enforce_index_structure_match_on_partition_manipulation}
 <SettingsInfoBlock type="Bool" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "New setting"}]}]}/>
@@ -346,7 +355,7 @@ new part is guaranteed to be written to disk.
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Controls if the row order should be optimized during inserts to improve the
-compressability of the newly inserted table part.
+compressibility of the newly inserted table part.
 
 Only has an effect for ordinary MergeTree-engine tables. Does nothing for
 specialized MergeTree engine tables (e.g. CollapsingMergeTree).
