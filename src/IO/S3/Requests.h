@@ -120,7 +120,7 @@ inline void setChecksumAlgorithm(R & request, Algorithm algorithm)
 Model::StorageClass getStorageClassForName(const std::string & name);
 
 /// Replace the significant `x-amz-` headers with their `x-goog-` analogue; GCS ignores the
-/// `x-amz-` spelling silently.
+/// `x-amz-` spelling silently. `If-None-Match: *` also gets `x-goog-if-generation-match: 0`.
 Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCollection headers);
 
 void translateHeadersToGCS(Aws::Http::HttpRequest & request);
