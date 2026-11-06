@@ -565,9 +565,14 @@ possible_properties = {
     "s3queue_disable_streaming": true_false_lambda,
     "show_addresses_in_stack_traces": true_false_lambda,
     "show_license_expiration_warnings": true_false_lambda,  # Cloud setting
-    "shutdown_wait_backups_and_restores": true_false_lambda,
+    # Not randomized: with 1 (the default) the server waits for running backups and restores
+    # on shutdown without any time limit, by design, so any long backup would be reported as
+    # a shutdown failure. It is always set to 0 below.
+    "shutdown_wait_backups_and_restores": lambda: 0,
+    # A shutdown can spend `shutdown_wait_unfinished` twice: once cancelling backups and
+    # restores, and once more waiting for the connections that ran them to finish.
     "shutdown_wait_unfinished": threshold_generator(
-        0.2, 0.2, 0, SERVER_STOP_WAIT_SECONDS - 10, allow_unlimited=False
+        0.2, 0.2, 0, (SERVER_STOP_WAIT_SECONDS - 10) // 2, allow_unlimited=False
     ),
     "shutdown_wait_unfinished_queries": true_false_lambda,
     "skip_check_for_incorrect_settings": true_false_lambda,
@@ -735,7 +740,8 @@ object_storages_properties = {
     },
     "azure": {
         "check_objects_after_upload": true_false_lambda,
-        "list_object_keys_size": threshold_generator(0.2, 0.2, 1, 10 * 1024 * 1024),
+        # bits=31 as for S3: the SDK page size is a 32-bit int, so 2**64 - 1 wraps to -1
+        "list_object_keys_size": threshold_generator(0.2, 0.2, 1, 10 * 1024 * 1024, 31),
         # Floor 10, as `s3_max_part_number` above: with `max_single_part_upload_size=0` every write
         # is multipart, and a floor of 1 cannot fit even the disk's startup `checkAccess` probe, so
         # the server rejects the disk with INVALID_CONFIG_PARAMETER and never starts.
@@ -757,7 +763,9 @@ object_storages_properties = {
         "metadata_keep_free_space_bytes": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
-        "min_upload_part_size": threshold_generator(0.2, 0.2, 1, 10 * 1024 * 1024),
+        # Never above the lower bound of max_upload_part_size: validateUploadSettings
+        # rejects min > max, and rejects a zero min
+        "min_upload_part_size": threshold_generator(0.2, 0.2, 1, 10 * 1024 * 1024, 24),
         # `objects_chunk_size_to_delete` is read only by S3Settings, so it is left out here
         "object_metadata_cache_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
@@ -770,7 +778,11 @@ object_storages_properties = {
             0.2, 0.2, 0, 30000, allow_unlimited=False
         ),
         # "skip_access_check": true_false_lambda, may break the startup
-        "strict_upload_part_size": threshold_generator(0.2, 0.2, 0, 100 * 1024 * 1024),
+        # Never above the lower bound of max_upload_part_size: validateUploadSettings
+        # rejects strict > max
+        "strict_upload_part_size": threshold_generator(
+            0.2, 0.2, 0, 16 * 1024 * 1024, 24
+        ),
         "thread_pool_size": threads_lambda,
         "upload_part_size_multiply_factor": threshold_generator(0.2, 0.2, 1, 10, 4),
         "upload_part_size_multiply_parts_count_threshold": threshold_generator(
@@ -1133,6 +1145,7 @@ def add_single_disk(
     disk_type: str,
     created_disks_types: list[tuple[int, str]],
     is_private_binary: bool,
+    readonly_disks: set[int],
 ) -> tuple[int, str, str, str]:
     prev_disk = 0
     if disk_type in ("cache", "encrypted"):
@@ -1273,11 +1286,18 @@ def add_single_disk(
     elif disk_type in ("cache", "encrypted"):
         disk_xml = ET.SubElement(next_disk, "disk")
         disk_xml.text = f"disk{prev_disk}"
-        if disk_type == "cache" or random.randint(1, 2) == 1:
+        if disk_type == "cache":
             path_xml = ET.SubElement(next_disk, "path")
             path_xml.text = f"/var/lib/clickhouse/disk{i}/"
             allowed_path_xml = ET.SubElement(backups_element, "allowed_path")
             allowed_path_xml.text = f"/var/lib/clickhouse/disk{i}/"
+        elif random.randint(1, 2) == 1 and iter_prev_disk not in readonly_disks:
+            # The path of an encrypted disk is relative to the disk it wraps (`DiskEncrypted` uses
+            # `wrapped_disk->getPath() + path`). An absolute path is rejected by object storage disks
+            # with `PATH_ACCESS_DENIED`, and the server refuses to start. A readonly disk cannot
+            # create the directory, so the server would not start either.
+            path_xml = ET.SubElement(next_disk, "path")
+            path_xml.text = f"disk{i}/"
 
         if disk_type == "cache":
             max_size_xml = ET.SubElement(next_disk, "max_size")
@@ -1338,6 +1358,7 @@ class DiskPropertiesGroup(PropertiesGroup):
         allowed_disk_xml = ET.SubElement(backups_element, "allowed_disk")
         allowed_disk_xml.text = "default"
         created_disks_types = []
+        readonly_disks = set()
         created_cache_disks = []
         created_keeper_disks = []
         safe_for_database_disk = []
@@ -1363,8 +1384,11 @@ class DiskPropertiesGroup(PropertiesGroup):
                 random.choice(possible_types),
                 created_disks_types,
                 is_private_binary,
+                readonly_disks,
             )
             created_disks_types.append(next_created_disk_pair)
+            if disk_xml_elem.findtext("readonly") == "1":
+                readonly_disks.add(i)
             if next_created_disk_pair[1] == "cache":
                 created_cache_disks.append(i)
             elif (
@@ -1943,6 +1967,10 @@ def modify_server_settings(
     if root.find("shutdown_wait_unfinished") is None:
         selected_properties["shutdown_wait_unfinished"] = possible_properties[
             "shutdown_wait_unfinished"
+        ]
+    if root.find("shutdown_wait_backups_and_restores") is None:
+        selected_properties["shutdown_wait_backups_and_restores"] = possible_properties[
+            "shutdown_wait_backups_and_restores"
         ]
 
     # Add remote server configurations
