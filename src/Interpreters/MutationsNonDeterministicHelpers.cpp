@@ -127,7 +127,7 @@ public:
             return;
         }
 
-        Block scalar{{std::move(column), type, "_constant"}};
+        Block scalar{{column, type, "_constant"}};
         if (worthConvertingScalarToLiteral(scalar, data.max_literal_size))
             ast = columnConstantToCompactExactLiteralAST(scalar.getByPosition(0).column, 0, type);
     }
