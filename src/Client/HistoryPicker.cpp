@@ -11,6 +11,8 @@
 #include <string_view>
 #include <unordered_set>
 
+#include <sys/ttydefaults.h>
+
 namespace DB
 {
 
@@ -48,7 +50,7 @@ std::string toDisplay(std::string_view text)
         {
             res[i] = ' ';
         }
-        else if (c < 0x20 || c == 0x7F)
+        else if (isControlASCII(res[i]) || res[i] == '\x7f') /// DEL
         {
             res[i] = '?';
         }
@@ -433,13 +435,13 @@ private:
         char c;
         if (!readByte(c))
             return Escape::Eof;
-        if (c == 'O')
+        if (c == 'O') /// SS3, sent by the cursor keys in the application mode of the terminal.
         {
             if (!readByte(c))
                 return Escape::Eof;
             return arrowKey(c);
         }
-        if (c != '[')
+        if (c != '[') /// CSI
             return Escape::Ignored;
 
         std::string params;
@@ -447,9 +449,10 @@ private:
         {
             if (!readByte(c))
                 return Escape::Eof;
-            if (c >= 0x30 && c <= 0x3F)
+            /// ECMA-48: parameter bytes `0`..`?`, then intermediate bytes ` `..`/`, then the final byte.
+            if (c >= '0' && c <= '?')
                 params += c;
-            else if (c < 0x20 || c > 0x2F)
+            else if (c < ' ' || c > '/')
                 break;
         }
         if (c != '~')
@@ -464,7 +467,7 @@ private:
             return Escape::PageUp;
         if (params == "6")
             return Escape::PageDown;
-        if (c == '~' && params == "200")
+        if (params == "200")
             return readPaste() ? Escape::QueryChanged : Escape::Eof;
         return Escape::Ignored;
     }
@@ -492,22 +495,22 @@ private:
             {
                 case '\r':
                     return matches.empty() ? query : history[entries[matches[selected]].index];
-                case 3: /// Ctrl-C
-                case 7: /// Ctrl-G
+                case CTRL('C'):
+                case CTRL('G'):
                     return {};
-                case 4: /// Ctrl-D
+                case CTRL('D'):
                     if (query.empty())
                         return {};
                     query.erase(cursor, nextCodePoint(query, cursor) - cursor);
                     break;
-                case 127:
-                case 8:
+                case CERASE:
+                case CTRL('H'):
                     eraseBeforeCursor(previousCodePoint(query, cursor));
                     break;
-                case 21: /// Ctrl-U
+                case CTRL('U'):
                     eraseBeforeCursor(0);
                     break;
-                case 23: /// Ctrl-W
+                case CTRL('W'):
                 {
                     size_t from = cursor;
                     while (from > 0 && isWhitespaceASCII(query[from - 1]))
@@ -517,27 +520,27 @@ private:
                     eraseBeforeCursor(from);
                     break;
                 }
-                case 1: /// Ctrl-A
+                case CTRL('A'):
                     cursor = 0;
                     break;
-                case 5: /// Ctrl-E
+                case CTRL('E'):
                     cursor = query.size();
                     break;
-                case 2: /// Ctrl-B
+                case CTRL('B'):
                     cursor = previousCodePoint(query, cursor);
                     break;
-                case 6: /// Ctrl-F
+                case CTRL('F'):
                     cursor = nextCodePoint(query, cursor);
                     break;
-                case 16: /// Ctrl-P
-                case 11: /// Ctrl-K
+                case CTRL('P'):
+                case CTRL('K'):
                     moveSelection(1);
                     break;
-                case 14: /// Ctrl-N
-                case '\n': /// Ctrl-J; Enter is '\r' in raw mode.
+                case CTRL('N'):
+                case CTRL('J'): /// Enter is '\r' in raw mode.
                     moveSelection(-1);
                     break;
-                case '\x1b':
+                case CTRL('['): /// ESC
                     switch (readEscape())
                     {
                         case Escape::Abort:
@@ -559,7 +562,7 @@ private:
                     }
                     break;
                 default:
-                    if (static_cast<UInt8>(c) >= 0x20)
+                    if (!isControlASCII(c))
                         query.insert(cursor++, 1, c);
                     break;
             }
