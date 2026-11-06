@@ -110,7 +110,7 @@ extractAllGroupsVertical(s, regexp)
 **Arguments**
 
 - `s` — Input string to extract from. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring)
-- `regexp` — Regular expression to match by. [`const String`](/reference/data-types/string) or [`const FixedString`](/reference/data-types/fixedstring)
+- `regexp` — Regular expression to match by. Must contain between 1 and 127 capturing groups. [`const String`](/reference/data-types/string) or [`const FixedString`](/reference/data-types/fixedstring)
 
 **Returned value**
 
@@ -137,7 +137,7 @@ SELECT extractAllGroupsVertical(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 Introduced in: v26.7.0
 
-Splits text into n-grams using the same tokenization as a Naive Bayes dictionary (the [`NAIVE_BAYES`](/reference/statements/create/dictionary/layouts/naive-bayes) layout): `byte`, `codepoint`, or `token` mode, with optional boundary padding. Use it to build the pre-aggregated `(ngram, class_id, count)` training data such a dictionary consumes, so the training n-grams match exactly what [`naiveBayesClassifier`](/reference/functions/regular-functions/machine-learning-functions#naivebayesclassifier) produces at query time.
+Splits text into n-grams using the same tokenization as a Naive Bayes dictionary (the [`NAIVE_BAYES`](/reference/statements/create/dictionary/layouts/naive-bayes) layout): `byte`, `codepoint`, or `token` mode, with optional boundary padding. Use it to build the pre-aggregated `(ngram, class_id, count)` training data such a dictionary consumes, so the training n-grams match exactly what [`naiveBayesClassifier`](/reference/functions/regular-functions/machine-learning-functions#naiveBayesClassifier) produces at query time.
 
 **Syntax**
 
@@ -417,7 +417,7 @@ If no match is found for the regular expression, the string won't be split.
 Empty substrings may be selected when:
 - a non-empty regular expression match occurs at the beginning or end of the string
 - there are multiple consecutive non-empty regular expression matches
-- the original string string is empty while the regular expression is not empty.
+- the original string is empty while the regular expression is not empty.
 
 <Note>
 Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.

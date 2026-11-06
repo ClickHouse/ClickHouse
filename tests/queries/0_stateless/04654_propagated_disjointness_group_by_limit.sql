@@ -4,11 +4,7 @@
 -- The optimizations below are disabled under parallel replicas.
 SET enable_parallel_replicas = 0;
 
--- Some CI configurations set DISTINCT and GROUP BY limits at the server level; pin them to unlimited
--- so that the independent per-partition DISTINCT below is applied and creates disjoint streams, and
--- only the per-query SETTINGS control the GROUP BY limit.
-SET max_rows_in_distinct = 0;
-SET max_bytes_in_distinct = 0;
+-- Clear the inherited `GROUP BY` row limit so only the per-query settings require merging.
 SET max_rows_to_group_by = 0;
 SET group_by_overflow_mode = 'throw';
 

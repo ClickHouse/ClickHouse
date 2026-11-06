@@ -16,8 +16,8 @@ CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE 
 
 Para ejecutar correctamente estas consultas, cada host debe tener la misma definición de clúster (para simplificar la sincronización de las configuraciones, se pueden usar sustituciones de ZooKeeper). También deben conectarse a los servidores de ZooKeeper.
 
-La versión local de la consulta acabará ejecutándose en cada host del clúster, aunque algunos hosts no estén disponibles en ese momento.
+Por lo general, la versión local de la consulta acabará ejecutándose en cada host del clúster, aunque algunos hosts no estén disponibles en ese momento. Sin embargo, estas consultas se almacenan en una cola, y el tiempo que un elemento permanece en ella está limitado por [varios parámetros de configuración](/es/reference/settings/server-settings/settings/distributed). Por ello, si un host deja de estar disponible durante el tiempo suficiente, es posible que no ejecute la consulta cuando vuelva a estar disponible.
 
 <Warning>
-  Se garantiza el orden de ejecución de las consultas dentro de un mismo host.
+  Se garantiza el orden de ejecución de las consultas dentro de un mismo host siempre que [distributed&#95;ddl.pool&#95;size](/es/reference/settings/server-settings/settings/distributed#distributed_ddl.pool_size) esté establecido en 1.
 </Warning>
