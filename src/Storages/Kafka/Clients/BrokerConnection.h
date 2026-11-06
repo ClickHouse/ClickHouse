@@ -15,6 +15,7 @@
 
 #include <base/types.h>
 
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <string_view>
@@ -26,7 +27,7 @@ namespace Kafka
 struct ConnectionOptions
 {
     String client_id = "ClickHouse";
-    std::optional<SaslPlainConfig> sasl;
+    std::optional<SaslConfig> sasl;
     /// Never null: the connection logs through it unconditionally.
     LoggerPtr log = getLogger("KafkaClient");
 };
@@ -36,7 +37,7 @@ class BrokerConnection
 public:
     BrokerConnection(std::unique_ptr<Net::Transport> transport_, ConnectionOptions options_);
 
-    /// Connect + ApiVersions handshake (+ SASL/PLAIN when configured).
+    /// Connect + ApiVersions handshake (+ SASL when configured).
     void open(const String & host_, UInt16 port_, const Net::Deadline & deadline);
     void close();
     bool isOpen() const { return transport && transport->isOpen() && !poisoned; }
@@ -175,6 +176,14 @@ public:
     const String & getHost() const { return host; }
     UInt16 getPort() const { return port; }
 
+    /// KIP-368: true when the broker-advertised SASL session lifetime is about
+    /// to elapse. The broker kills the connection at the deadline, so pools
+    /// must recycle it beforehand (a fresh connection re-authenticates).
+    bool isAuthSessionExpiring() const
+    {
+        return auth_session_deadline && std::chrono::steady_clock::now() >= *auth_session_deadline;
+    }
+
 private:
     template <typename FillBody>
     std::string_view roundTrip(Int16 api_key, Int16 api_version, bool flexible, FillBody && fill, const Net::Deadline & deadline)
@@ -205,7 +214,7 @@ private:
     void readExact(char * data, size_t size, const Net::Deadline & deadline);
 
     void handshakeApiVersions(const Net::Deadline & deadline);
-    void authenticateSaslPlain(const SaslPlainConfig & sasl, const Net::Deadline & deadline);
+    void authenticateSasl(const SaslConfig & sasl, const Net::Deadline & deadline);
 
     std::unique_ptr<Net::Transport> transport;
     ConnectionOptions options;
@@ -219,6 +228,9 @@ private:
     String recv_buffer;
     /// api_key -> [min, max] advertised by the broker.
     std::unordered_map<Int16, std::pair<Int16, Int16>> broker_versions;
+    /// KIP-368 re-authentication deadline (with a safety margin), when the
+    /// broker advertised a bounded SASL session.
+    std::optional<std::chrono::steady_clock::time_point> auth_session_deadline;
 };
 
 }

@@ -51,38 +51,6 @@ auto withLeaderRetries(Cluster & cluster, const TopicPartition & tp, const Deadl
     }
 }
 
-void appendDecodedRecords(FetchResult & result, std::string_view blob, Int64 min_offset)
-{
-    auto decoded = Protocol::decodeBatches(blob);
-    result.truncated_tail = decoded.truncated;
-    /// NOTE: no reserve() here on purpose — an exact-size reserve of a
-    /// multi-MB vector per fetch keeps hitting the glibc mmap threshold
-    /// (mmap/munmap + page faults every call, measured ~6% slower on small
-    /// records); growth-doubling stays on the warm heap instead.
-    for (auto & batch : decoded.batches)
-    {
-        result.next_offset = std::max(result.next_offset, batch.nextOffset());
-        if (batch.isControl())
-            continue;
-        /// attributes bit 3: LogAppendTime — every record carries max_timestamp.
-        const bool log_append_time = (batch.attributes & 0x08) != 0;
-        for (auto & record : batch.records)
-        {
-            const Int64 offset = batch.base_offset + record.offset_delta;
-            /// Batches can start before the requested offset (compaction).
-            if (offset < min_offset)
-                continue;
-            Record out;
-            out.offset = offset;
-            out.timestamp_ms = log_append_time ? batch.max_timestamp : batch.first_timestamp + record.timestamp_delta;
-            out.key = std::move(record.key);
-            out.value = std::move(record.value);
-            out.headers = std::move(record.headers);
-            result.records.push_back(std::move(out));
-        }
-    }
-}
-
 }
 
 FetchResult fetch(Cluster & cluster, const FetchSpec & spec, const Deadline & deadline)
@@ -100,6 +68,8 @@ FetchResult fetch(Cluster & cluster, const FetchSpec & spec, const Deadline & de
         if (by_id && leader.topic_id.isZero())
             throw Exception(ErrorKind::Protocol, "Broker speaks Fetch v13+ but metadata carried no topic id for '{}'", spec.topic);
 
+        const bool read_committed = cluster.getConfig().isolation_level == IsolationLevel::ReadCommitted;
+
         Protocol::FetchRequest request;
         /// The broker holds the request for up to max_wait_ms; keep a margin
         /// inside the caller deadline so the response still arrives in time.
@@ -107,6 +77,7 @@ FetchResult fetch(Cluster & cluster, const FetchSpec & spec, const Deadline & de
         request.max_wait_ms = static_cast<Int32>(std::max<Int64>(0, max_wait_budget.count() - 50));
         request.min_bytes = spec.min_bytes;
         request.max_bytes = std::max(spec.max_bytes, 1);
+        request.isolation_level = read_committed ? 1 : 0;
         Protocol::FetchPartition partition;
         partition.partition = spec.partition;
         partition.current_leader_epoch = leader.leader_epoch;
@@ -136,9 +107,19 @@ FetchResult fetch(Cluster & cluster, const FetchSpec & spec, const Deadline & de
         FetchResult result;
         result.high_watermark = p->high_watermark;
         result.log_start_offset = p->log_start_offset;
+        result.last_stable_offset = p->last_stable_offset;
         result.next_offset = spec.offset;
         if (p->records && !p->records->empty())
-            appendDecodedRecords(result, *p->records, spec.offset);
+        {
+            std::vector<Protocol::AbortedTransactionRange> aborted;
+            if (read_committed && p->aborted_transactions)
+                for (const auto & txn : *p->aborted_transactions)
+                    aborted.push_back({txn.producer_id, txn.first_offset});
+            auto assembled = Protocol::assembleFetchedRecords(*p->records, spec.offset, read_committed, std::move(aborted));
+            result.records = std::move(assembled.records);
+            result.next_offset = assembled.next_offset;
+            result.truncated_tail = assembled.truncated;
+        }
         return result;
     });
 }
@@ -150,6 +131,8 @@ Int64 listOffset(Cluster & cluster, const TopicPartition & tp, OffsetSpec spec, 
         auto lease = cluster.acquire(leader.node_id, leader.address, deadline);
 
         Protocol::ListOffsetsRequest request;
+        /// Under read_committed, "latest" means the last stable offset.
+        request.isolation_level = cluster.getConfig().isolation_level == IsolationLevel::ReadCommitted ? 1 : 0;
         Protocol::ListOffsetsPartition partition;
         partition.partition_index = tp.partition;
         partition.current_leader_epoch = leader.leader_epoch;
@@ -376,8 +359,13 @@ Client::ProduceResult produce(Cluster & cluster, const Client::ProduceSpec & spe
     batch.first_timestamp = first_timestamp;
     batch.max_timestamp = max_timestamp;
 
+    /// Compression values match the wire encoding (see Types.h), so the public
+    /// enum maps onto the codec bits directly.
+    static_assert(static_cast<int>(Compression::Gzip) == static_cast<int>(Protocol::CompressionType::Gzip));
+    static_assert(static_cast<int>(Compression::Zstd) == static_cast<int>(Protocol::CompressionType::Zstd));
     /// The request only holds a view of the blob; keep it alive for the call.
-    const String blob = Protocol::encodeBatches({batch});
+    const String blob = Protocol::encodeBatches(
+        {batch}, static_cast<Protocol::CompressionType>(spec.compression), spec.compression_level);
 
     Protocol::ProduceRequest request;
     request.acks = spec.acks;

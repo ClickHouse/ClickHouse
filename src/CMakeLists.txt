@@ -194,7 +194,9 @@ if (TARGET ch_contrib::rdkafka)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
 
-# The dependency-free Kafka protocol client; compiled unconditionally (it does not need librdkafka).
+# The Kafka protocol client; compiled unconditionally (it does not need librdkafka).
+# Its record-batch codec links the always-built compression codecs below (snappy is
+# optional and guarded by USE_SNAPPY in the sources).
 add_headers_and_sources(dbms Storages/Kafka/Clients)
 add_headers_and_sources(dbms Storages/Kafka/Clients/Net)
 add_headers_and_sources(dbms Storages/Kafka/Clients/Protocol)
@@ -818,6 +820,8 @@ target_link_libraries(dbms PUBLIC
     ch_contrib::driftsort)
 
 target_link_libraries(dbms PRIVATE ch_contrib::zstd)
+# gzip support of the Kafka protocol client (Storages/Kafka/Clients/Protocol/Compression.cpp).
+target_link_libraries(dbms PRIVATE ch_contrib::zlib)
 
 if (TARGET ch_contrib::simdcomp)
     target_link_libraries (dbms PRIVATE ch_contrib::simdcomp)

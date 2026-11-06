@@ -1,8 +1,13 @@
 #include <Storages/Kafka/Clients/Cluster.h>
 
 #include <Storages/Kafka/Clients/Net/TCPTransport.h>
+#include <Storages/Kafka/Clients/Net/TLSTransport.h>
 #include <Storages/Kafka/Clients/Protocol/BrokerError.h>
 #include <Storages/Kafka/Clients/Protocol/Messages/FindCoordinator.h>
+#include <Storages/Kafka/Clients/SaslAuthentication.h>
+
+#include "config.h"
+
 
 #include <Common/logger_useful.h>
 
@@ -44,9 +49,50 @@ Cluster::Cluster(ClientConfig config_, TransportFactory factory_)
         throw Exception(ErrorKind::Config, "The bootstrap_brokers list must not be empty");
     for (const auto & entry : config.bootstrap_brokers)
         bootstrap.push_back(parseBrokerAddress(entry));
+
+    /// Fail close on inconsistent security settings instead of silently
+    /// downgrading (an ignored credential or TLS block hides a misconfiguration).
+    if (usesSasl(config.security_protocol) && !config.sasl)
+        throw Exception(
+            ErrorKind::Config, "The security protocol '{}' requires SASL credentials", securityProtocolName(config.security_protocol));
+    if (!usesSasl(config.security_protocol) && config.sasl)
+        throw Exception(
+            ErrorKind::Config,
+            "SASL credentials are set, but the security protocol '{}' does not use SASL",
+            securityProtocolName(config.security_protocol));
+    /// Catch mechanisms this build cannot speak (SCRAM without SSL, GSSAPI
+    /// without krb5) and incomplete credentials at construction, not at the
+    /// first connect.
+    if (config.sasl)
+        checkSaslMechanismSupported(*config.sasl);
+    if (!usesTls(config.security_protocol) && config.tls)
+        throw Exception(
+            ErrorKind::Config,
+            "TLS settings are set, but the security protocol '{}' does not use TLS",
+            securityProtocolName(config.security_protocol));
+#if !USE_SSL
+    if (usesTls(config.security_protocol))
+        throw Exception(
+            ErrorKind::NotSupported,
+            "The security protocol '{}' requires a build with SSL support",
+            securityProtocolName(config.security_protocol));
+#endif
+
     if (!factory)
-        factory = [wakeup = std::shared_ptr<const Net::WakeupSource>(wakeup_source)]() -> std::unique_ptr<Net::Transport>
-        { return std::make_unique<Net::TCPTransport>(wakeup); };
+    {
+        auto wakeup = std::shared_ptr<const Net::WakeupSource>(wakeup_source);
+        if (usesTls(config.security_protocol))
+        {
+#if USE_SSL
+            factory = [wakeup, tls = config.tls.value_or(TlsConfig{})]() -> std::unique_ptr<Net::Transport>
+            { return std::make_unique<Net::TLSTransport>(wakeup, tls); };
+#endif
+        }
+        else
+        {
+            factory = [wakeup]() -> std::unique_ptr<Net::Transport> { return std::make_unique<Net::TCPTransport>(wakeup); };
+        }
+    }
 }
 
 Cluster::~Cluster() = default;
@@ -92,8 +138,9 @@ void Cluster::releaseConnection(Int32 node_id, std::unique_ptr<BrokerConnection>
     if (!pooled)
         return; // ephemeral: drop silently
     /// A connection with pipelined responses still in flight must never serve
-    /// another caller — drop it with the socket.
-    if (connection->isOpen() && !connection->isPoisoned() && connection->getOutstanding() == 0)
+    /// another caller — drop it with the socket. The same for connections whose
+    /// SASL session is about to expire (KIP-368): the broker will kill them.
+    if (connection->isOpen() && !connection->isPoisoned() && connection->getOutstanding() == 0 && !connection->isAuthSessionExpiring())
         pool.idle.push_back(std::move(connection));
     else
         --pool.total;
@@ -105,10 +152,16 @@ Cluster::Lease Cluster::acquire(Int32 node_id, const BrokerAddress & address, co
     {
         std::lock_guard lock(pools_mutex);
         auto & pool = pools[node_id];
-        if (!pool.idle.empty())
+        while (!pool.idle.empty())
         {
             auto connection = std::move(pool.idle.back());
             pool.idle.pop_back();
+            /// Drop pooled connections whose SASL session is about to expire (KIP-368).
+            if (connection->isAuthSessionExpiring())
+            {
+                --pool.total;
+                continue;
+            }
             return Lease(*this, node_id, std::move(connection), true);
         }
         if (pool.total < config.max_connections_per_broker)

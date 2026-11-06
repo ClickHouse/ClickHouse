@@ -70,6 +70,17 @@ struct Record
     bool operator==(const Record &) const = default;
 };
 
+/// Compression codec for produced batches. Values match the wire encoding
+/// (record-batch attributes bits 0-2) and Protocol::CompressionType.
+enum class Compression : UInt8
+{
+    None = 0,
+    Gzip = 1,
+    Snappy = 2,
+    Lz4 = 3,
+    Zstd = 4,
+};
+
 /// Target of a ListOffsets query.
 class OffsetSpec
 {

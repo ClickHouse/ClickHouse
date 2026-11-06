@@ -19,7 +19,7 @@ namespace Kafka::Net
 /// RemoteQueryExecutorReadContext). The data path uses raw recv/send with an
 /// explicit EINTR retry: Poco's non-blocking receiveBytes/sendBytes throw on
 /// EINTR, which the query profiler signals would trigger spuriously.
-class TCPTransport final : public Transport
+class TCPTransport : public Transport
 {
 public:
     /// `wakeup` may be null (no interruption support, e.g. tests).
@@ -32,7 +32,7 @@ public:
     void close() override;
     bool isOpen() const override { return socket.impl()->initialized(); }
 
-private:
+protected:
     /// Wait until the socket is ready for `events` (POLLIN/POLLOUT), the
     /// deadline expires (throws Timeout), or a wakeup arrives (throws Wakeup).
     void waitReady(short events, const Deadline & deadline, const char * op);
@@ -40,6 +40,7 @@ private:
     int sockFd() const { return static_cast<int>(socket.impl()->sockfd()); }
 
     std::shared_ptr<const WakeupSource> wakeup_source;
+    /// TLSTransport swaps in a SecureStreamSocket after the TCP connect.
     Poco::Net::StreamSocket socket;
 };
 

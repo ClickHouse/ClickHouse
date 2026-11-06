@@ -76,6 +76,9 @@ struct FetchResult
     /// The response ended in a partial batch (cut at max_bytes) that was
     /// discarded; the next fetch returns it whole.
     bool truncated_tail = false;
+    /// Offsets below this are decided (committed or aborted); under
+    /// read_committed consumption effectively ends here. -1 when unknown.
+    Int64 last_stable_offset = -1;
 };
 
 /// Synchronous Kafka client. Zero background threads: every operation runs on
@@ -124,6 +127,9 @@ public:
         std::vector<Record> records;
         /// -1 = all ISR, 1 = leader only, 0 = fire-and-forget.
         Int16 acks = -1;
+        Compression compression = Compression::None;
+        /// -1 = the codec's default level.
+        int compression_level = -1;
     };
 
     struct ProduceResult
@@ -142,6 +148,7 @@ public:
 
 private:
     friend class PartitionProducer;
+    friend class TopicProducer;
     /// Internal: shared cluster state (metadata cache, pools, wakeup).
     Cluster & getCluster();
 

@@ -41,8 +41,12 @@ public:
         /// Produce requests kept in flight before send() blocks on an ack.
         size_t max_in_flight = 5;
         /// Wire-size threshold for splitting records into batches. Must stay
-        /// under the broker's message.max.bytes (default 1 MiB).
+        /// under the broker's message.max.bytes (default 1 MiB). Applies to the
+        /// uncompressed record data.
         size_t max_batch_bytes = 900UL * 1024;
+        Compression compression = Compression::None;
+        /// -1 = the codec's default level.
+        int compression_level = -1;
     };
 
     /// One acknowledged produce request.

@@ -3,6 +3,7 @@
 #include <Storages/Kafka/Clients/Protocol/BrokerError.h>
 #include <Storages/Kafka/Clients/Protocol/Messages/ApiVersions.h>
 #include <Storages/Kafka/Clients/Protocol/Messages/Sasl.h>
+#include <Storages/Kafka/Clients/SaslAuthentication.h>
 
 #include <Common/config_version.h>
 #include <Common/logger_useful.h>
@@ -36,7 +37,7 @@ void BrokerConnection::open(const String & host_, UInt16 port_, const Net::Deadl
     transport->connect(host_, port_, deadline);
     handshakeApiVersions(deadline);
     if (options.sasl)
-        authenticateSaslPlain(*options.sasl, deadline);
+        authenticateSasl(*options.sasl, deadline);
     LOG_DEBUG(options.log, "Connection {}:{}: opened ({} APIs advertised)", host, port, broker_versions.size());
 }
 
@@ -166,33 +167,55 @@ void BrokerConnection::handshakeApiVersions(const Net::Deadline & deadline)
         broker_versions[range.api_key] = {range.min_version, range.max_version};
 }
 
-void BrokerConnection::authenticateSaslPlain(const SaslPlainConfig & sasl, const Net::Deadline & deadline)
+void BrokerConnection::authenticateSasl(const SaslConfig & sasl, const Net::Deadline & deadline)
 {
+    const auto mechanism = createSaslMechanism(sasl, host);
+
     {
         Protocol::SaslHandshakeRequest handshake;
-        handshake.mechanism = "PLAIN";
+        handshake.mechanism = mechanism->name();
         const auto response = call(handshake, deadline);
         if (response.error_code != BrokerError::NONE)
         {
             String mechanisms;
             for (const auto & m : response.mechanisms)
                 mechanisms += (mechanisms.empty() ? "" : ", ") + m;
-            throw Exception(BrokerCode{response.error_code}, "SASL handshake rejected PLAIN; broker offers: [{}]", mechanisms);
+            throw Exception(
+                BrokerCode{response.error_code},
+                "SASL handshake rejected {}; broker offers: [{}]",
+                mechanism->name(),
+                mechanisms);
         }
     }
+
+    std::optional<Bytes> to_send = mechanism->firstMessage();
+    Int64 session_lifetime_ms = 0;
+    while (to_send)
     {
         Protocol::SaslAuthenticateRequest authenticate;
-        authenticate.auth_bytes = sasl.authorization_id;
-        authenticate.auth_bytes.push_back('\0');
-        authenticate.auth_bytes += sasl.username;
-        authenticate.auth_bytes.push_back('\0');
-        authenticate.auth_bytes += sasl.password;
+        authenticate.auth_bytes = std::move(*to_send);
         const auto response = call(authenticate, deadline);
         if (response.error_code != BrokerError::NONE)
-            throw Exception(BrokerCode{response.error_code}, "SASL/PLAIN authentication failed{}",
+            throw Exception(
+                BrokerCode{response.error_code},
+                "SASL/{} authentication failed{}",
+                mechanism->name(),
                 response.error_message ? ": " + *response.error_message : String{});
-        LOG_DEBUG(options.log, "Connection {}:{}: authenticated as {}", host, port, sasl.username);
+        session_lifetime_ms = response.session_lifetime_ms;
+        to_send = mechanism->nextMessage(response.auth_bytes);
     }
+
+    /// KIP-368: the broker kills the connection when the advertised session
+    /// lifetime elapses without re-authentication. Mark the connection as
+    /// expiring a little earlier; the pool then recycles it (a fresh
+    /// connection re-authenticates) instead of re-authenticating in place.
+    if (session_lifetime_ms > 0)
+    {
+        const auto margin = std::min<Int64>(session_lifetime_ms / 10, 10'000);
+        auth_session_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(session_lifetime_ms - margin);
+    }
+
+    LOG_DEBUG(options.log, "Connection {}:{}: authenticated via SASL/{}", host, port, mechanism->name());
 }
 
 }

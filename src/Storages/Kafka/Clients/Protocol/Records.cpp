@@ -1,8 +1,10 @@
 #include <Storages/Kafka/Clients/Protocol/Records.h>
 
+#include <Storages/Kafka/Clients/Protocol/Compression.h>
 #include <Storages/Kafka/Clients/Protocol/Crc32c.h>
 
 #include <algorithm>
+#include <unordered_set>
 
 namespace Kafka::Protocol
 {
@@ -168,7 +170,7 @@ RecordBatch RecordBatch::make(Int64 base_offset, std::vector<BatchRecord> record
     return batch;
 }
 
-void RecordBatch::encode(Writer & w) const
+void RecordBatch::encode(Writer & w, CompressionType compression, int compression_level) const
 {
     w.writeInt64(base_offset);
     const size_t batch_length_pos = w.size();
@@ -179,16 +181,30 @@ void RecordBatch::encode(Writer & w) const
     w.writeUInt32(0); /// crc placeholder
 
     const size_t crc_body_start = w.size();
-    w.writeInt16(attributes);
+    /// Compression lives in attributes bits 0-2; the stored attributes must
+    /// not carry a stale codec.
+    w.writeInt16(static_cast<Int16>((attributes & ~0x07) | static_cast<Int16>(compression)));
     w.writeInt32(last_offset_delta);
     w.writeInt64(first_timestamp);
     w.writeInt64(max_timestamp);
     w.writeInt64(producer_id);
     w.writeInt16(producer_epoch);
     w.writeInt32(base_sequence);
+    /// The record count stays uncompressed; only the records themselves are
+    /// compressed (DefaultRecordBatch layout).
     w.writeInt32(static_cast<Int32>(records.size()));
-    for (const auto & record : records)
-        encodeRecord(w, record);
+    if (compression == CompressionType::None)
+    {
+        for (const auto & record : records)
+            encodeRecord(w, record);
+    }
+    else
+    {
+        Writer scratch;
+        for (const auto & record : records)
+            encodeRecord(scratch, record);
+        w.writeRaw(compress(compression, scratch.view(), compression_level));
+    }
 
     const size_t batch_end = w.size();
     const size_t batch_length = batch_end - (batch_length_pos + 4);
@@ -229,11 +245,6 @@ RecordBatch RecordBatch::decode(Reader & r)
 
     Reader fields(crc_region);
     batch.attributes = fields.readInt16();
-    if (batch.compressionType() != CompressionType::None)
-        throw Exception(
-            ErrorKind::NotSupported,
-            "Compressed record batch (codec {}) is not supported in v1; produce uncompressed or add a decompressor",
-            compressionTypeName(batch.compressionType()));
     batch.last_offset_delta = fields.readInt32();
     batch.first_timestamp = fields.readInt64();
     batch.max_timestamp = fields.readInt64();
@@ -241,22 +252,39 @@ RecordBatch RecordBatch::decode(Reader & r)
     batch.producer_epoch = fields.readInt16();
     batch.base_sequence = fields.readInt32();
 
+    /// The record count stays uncompressed; the records after it are the
+    /// compressed section (DefaultRecordBatch layout).
     const Int32 count = fields.readInt32();
     if (count < 0)
         throw Exception(ErrorKind::Protocol, "Negative record count: {}", count);
     batch.records.reserve(static_cast<size_t>(count));
-    for (Int32 i = 0; i < count; ++i)
-        batch.records.push_back(decodeRecord(fields));
-    if (!fields.empty())
-        throwProtocol("Trailing bytes after records in batch");
+
+    const auto read_records = [&](Reader & records_reader)
+    {
+        for (Int32 i = 0; i < count; ++i)
+            batch.records.push_back(decodeRecord(records_reader));
+        if (!records_reader.empty())
+            throwProtocol("Trailing bytes after records in batch");
+    };
+
+    if (batch.compressionType() == CompressionType::None)
+    {
+        read_records(fields);
+    }
+    else
+    {
+        const Bytes decompressed = decompress(batch.compressionType(), fields.readRaw(fields.remaining()));
+        Reader records_reader(decompressed);
+        read_records(records_reader);
+    }
     return batch;
 }
 
-String encodeBatches(const std::vector<RecordBatch> & batches)
+String encodeBatches(const std::vector<RecordBatch> & batches, CompressionType compression, int compression_level)
 {
     Writer w;
     for (const auto & batch : batches)
-        batch.encode(w);
+        batch.encode(w, compression, compression_level);
     return w.take();
 }
 
@@ -286,6 +314,80 @@ DecodedBatches decodeBatches(std::string_view blob)
         out.batches.push_back(RecordBatch::decode(r));
     }
     return out;
+}
+
+AssembledRecords assembleFetchedRecords(
+    std::string_view blob, Int64 min_offset, bool read_committed, std::vector<AbortedTransactionRange> aborted_transactions)
+{
+    AssembledRecords result;
+    result.next_offset = min_offset;
+
+    auto decoded = decodeBatches(blob);
+    result.truncated = decoded.truncated;
+
+    std::sort(
+        aborted_transactions.begin(),
+        aborted_transactions.end(),
+        [](const AbortedTransactionRange & a, const AbortedTransactionRange & b) { return a.first_offset < b.first_offset; });
+    size_t next_aborted = 0;
+    std::unordered_set<Int64> aborted_producers;
+
+    /// NOTE: no reserve() here on purpose — an exact-size reserve of a
+    /// multi-MB vector per fetch keeps hitting the glibc mmap threshold
+    /// (mmap/munmap + page faults every call, measured ~6% slower on small
+    /// records); growth-doubling stays on the warm heap instead.
+    for (auto & batch : decoded.batches)
+    {
+        result.next_offset = std::max(result.next_offset, batch.nextOffset());
+
+        /// A producer id becomes "aborted" once the response lists an aborted
+        /// range starting at or before this batch.
+        if (read_committed)
+            while (next_aborted < aborted_transactions.size() && aborted_transactions[next_aborted].first_offset <= batch.base_offset)
+                aborted_producers.insert(aborted_transactions[next_aborted++].producer_id);
+
+        if (batch.isControl())
+        {
+            /// Control records mark transaction ends. Key layout: version
+            /// Int16, type Int16 (0 = ABORT, 1 = COMMIT), big-endian. An ABORT
+            /// marker closes its producer's aborted range. Unknown or short
+            /// control records are ignored, like in the Java consumer.
+            if (read_committed)
+            {
+                for (const auto & record : batch.records)
+                {
+                    if (!record.key || record.key->size() < 4)
+                        continue;
+                    Reader key_reader(*record.key);
+                    key_reader.readInt16(); /// version
+                    if (key_reader.readInt16() == 0)
+                        aborted_producers.erase(batch.producer_id);
+                }
+            }
+            continue;
+        }
+
+        if (read_committed && batch.isTransactional() && aborted_producers.contains(batch.producer_id))
+            continue;
+
+        /// attributes bit 3: LogAppendTime — every record carries max_timestamp.
+        const bool log_append_time = batch.usesLogAppendTime();
+        for (auto & record : batch.records)
+        {
+            const Int64 offset = batch.base_offset + record.offset_delta;
+            /// Batches can start before the requested offset (compaction).
+            if (offset < min_offset)
+                continue;
+            Record out;
+            out.offset = offset;
+            out.timestamp_ms = log_append_time ? batch.max_timestamp : batch.first_timestamp + record.timestamp_delta;
+            out.key = std::move(record.key);
+            out.value = std::move(record.value);
+            out.headers = std::move(record.headers);
+            result.records.push_back(std::move(out));
+        }
+    }
+    return result;
 }
 
 }

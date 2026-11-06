@@ -138,7 +138,10 @@ struct PartitionProducer::Impl
             auto batch = Protocol::RecordBatch::make(0, std::move(batch_records));
             batch.first_timestamp = first_timestamp;
             batch.max_timestamp = max_timestamp;
-            blobs.emplace_back(Protocol::encodeBatches({batch}), count);
+            blobs.emplace_back(
+                Protocol::encodeBatches(
+                    {batch}, static_cast<Protocol::CompressionType>(options.compression), options.compression_level),
+                count);
             batch_records = {};
             timestamps.clear();
             batch_bytes = Protocol::record_batch_header_size;

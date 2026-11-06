@@ -78,6 +78,10 @@ struct RecordBatch
     bool operator==(const RecordBatch &) const = default;
 
     CompressionType compressionType() const { return static_cast<CompressionType>(attributes & 0x07); }
+    /// attributes bit 3: every record carries the broker-assigned max_timestamp.
+    bool usesLogAppendTime() const { return (attributes & 0x08) != 0; }
+    /// attributes bit 4: the batch belongs to a transaction (KIP-98).
+    bool isTransactional() const { return (attributes & 0x10) != 0; }
     /// Control batches carry transaction markers; consumers skip their records
     /// but must still advance past their offsets.
     bool isControl() const { return (attributes & 0x20) != 0; }
@@ -87,9 +91,12 @@ struct RecordBatch
     /// Build a non-idempotent, non-transactional, uncompressed batch.
     static RecordBatch make(Int64 base_offset, std::vector<BatchRecord> records);
 
-    void encode(Writer & w) const;
-    /// Decode one batch. Verifies CRC32C, rejects non-v2 magic, throws
-    /// NotSupported for compressed batches.
+    void encode(Writer & w) const { encode(w, CompressionType::None); }
+    /// Encode with the records section compressed (attributes bits set
+    /// accordingly). level -1 = the codec's default.
+    void encode(Writer & w, CompressionType compression, int compression_level = -1) const;
+    /// Decode one batch. Verifies CRC32C, rejects non-v2 magic, decompresses
+    /// compressed record sections (NotSupported for codecs the build lacks).
     static RecordBatch decode(Reader & r);
 };
 
@@ -111,10 +118,41 @@ size_t recordWireSize(const BatchRecord & record);
 inline constexpr size_t record_batch_header_size = 61;
 
 /// Encode a batch sequence into one blob (the `records` field of Produce/Fetch).
-String encodeBatches(const std::vector<RecordBatch> & batches);
+String encodeBatches(
+    const std::vector<RecordBatch> & batches, CompressionType compression = CompressionType::None, int compression_level = -1);
 
 /// Decode every complete batch from a Fetch `records` blob, tolerating a
 /// truncated trailing batch.
 DecodedBatches decodeBatches(std::string_view blob);
+
+/// One aborted transaction from a Fetch response: the records of
+/// `producer_id` starting at `first_offset` (until that producer's ABORT
+/// control marker) belong to an aborted transaction.
+struct AbortedTransactionRange
+{
+    Int64 producer_id = 0;
+    Int64 first_offset = 0;
+};
+
+struct AssembledRecords
+{
+    /// Absolute offsets/timestamps; control batches, pre-min_offset records
+    /// (compaction artifacts) and — under read_committed — aborted
+    /// transactional records are filtered out.
+    std::vector<Record> records;
+    /// Where the next fetch should continue. Advances past control batches and
+    /// filtered gaps even when `records` is empty.
+    Int64 next_offset = 0;
+    /// The blob ended in a partial batch (cut at max_bytes) that was discarded.
+    bool truncated = false;
+};
+
+/// Decode a Fetch `records` blob into consumable records. Under
+/// read_committed, records of aborted transactions are dropped following the
+/// Java consumer's algorithm (KIP-98): a producer id becomes "aborted" when
+/// the fetch response lists an aborted range starting at or before the batch,
+/// and stops being aborted at its ABORT control marker.
+AssembledRecords assembleFetchedRecords(
+    std::string_view blob, Int64 min_offset, bool read_committed, std::vector<AbortedTransactionRange> aborted_transactions);
 
 }
