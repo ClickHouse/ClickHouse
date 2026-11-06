@@ -119,6 +119,7 @@ a declared column spelled like a JSON path
 0
 1
 1
+1
 a subcolumn read through tupleElement or variantElement
 1
 1

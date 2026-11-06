@@ -660,12 +660,14 @@ CREATE TABLE t_115999_shadowed
     j JSON(typed String),
     `j.k` String,
     `j.t` Tuple(m String),
-    INDEX idx_j JSONAllValues(j) TYPE text(tokenizer = ngrams(3))
+    c Tuple(j JSON(k String)),
+    INDEX idx_j JSONAllValues(j) TYPE text(tokenizer = ngrams(3)),
+    INDEX idx_c JSONAllValues(c.j) TYPE text(tokenizer = ngrams(3))
 )
 ENGINE = MergeTree
 ORDER BY group_id;
 
-INSERT INTO t_115999_shadowed VALUES (1, '{"typed":"hello","other":"hello"}', 'world', tuple('world'));
+INSERT INTO t_115999_shadowed VALUES (1, '{"typed":"hello","other":"hello"}', 'world', tuple('world'), tuple('{"k":"hello"}'));
 
 -- The first three print 0: `j.k` and `j.t.m` read the declared columns, so the default applies.
 SELECT count() FROM t_115999_shadowed AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
@@ -680,6 +682,9 @@ SELECT count() FROM t_115999_shadowed AS t INNER JOIN t_115999_side AS b ON t.gr
 WHERE hasAnyTokens(t.j.other::String, ['ell']) OR b.category = 'nonexistent';
 SELECT count() FROM t_115999_shadowed AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
 WHERE hasAnyTokens(t.j.typed, ['ell']) OR b.category = 'nonexistent';
+-- The indexed JSON value may itself sit inside a physical column.
+SELECT count() FROM t_115999_shadowed AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasAnyTokens(t.c.j.k, ['ell']) OR b.category = 'nonexistent';
 
 DROP TABLE t_115999_shadowed;
 

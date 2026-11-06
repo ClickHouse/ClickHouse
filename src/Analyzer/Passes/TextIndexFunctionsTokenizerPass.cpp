@@ -469,9 +469,9 @@ private:
                 if (!matched)
                     return false;
 
-                /// A declared column of that name is read instead, unless the indexed column owns it.
+                /// A declared column of that name is read instead, unless it contains the indexed value.
                 const auto owner = columnOwning(*metadata, carrier);
-                return !owner || *owner == matched->json_column_name;
+                return !owner || matched->json_column_name == *owner || matched->json_column_name.starts_with(*owner + ".");
             };
 
             const bool describes = std::ranges::any_of(carriers.names, [&](const String & carrier)
