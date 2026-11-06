@@ -5,6 +5,7 @@
 #include <fmt/ranges.h>
 
 #include <algorithm>
+#include <charconv>
 #include <cerrno>
 #include <csignal>
 #include <csetjmp>
@@ -75,7 +76,8 @@ bool readFile(const char * path, std::string & content)
             break;
         content.append(buf, static_cast<size_t>(res));
     }
-    close(fd);
+    if (0 != close(fd))
+        printErrorAndExit("Cannot close {}: {}", path, strerror(errno)); // NOLINT(concurrency-mt-unsafe)
     return true;
 }
 
@@ -264,6 +266,59 @@ struct Mapping
     bool isSameFile(const Mapping & other) const { return device == other.device && inode == other.inode; }
 };
 
+/// Parses a number in the given base at the beginning of `str` and removes it from `str`.
+template <typename T>
+bool parseNumber(std::string_view & str, T & value, int base)
+{
+    auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), value, base);
+    if (ec != std::errc() || ptr == str.data())
+        return false;
+    str.remove_prefix(static_cast<size_t>(ptr - str.data()));
+    return true;
+}
+
+bool skipChar(std::string_view & str, char c)
+{
+    if (str.empty() || str.front() != c)
+        return false;
+    str.remove_prefix(1);
+    return true;
+}
+
+void skipSpaces(std::string_view & str)
+{
+    while (!str.empty() && str.front() == ' ')
+        str.remove_prefix(1);
+}
+
+/// Parses a line of `/proc/self/maps` in the format: begin-end perms offset major:minor inode pathname
+bool parseMapsLine(std::string_view line, Mapping & mapping)
+{
+    uint64_t offset = 0;
+    unsigned major = 0;
+    unsigned minor = 0;
+    uint64_t inode = 0;
+
+    if (!parseNumber(line, mapping.begin, 16) || !skipChar(line, '-') || !parseNumber(line, mapping.end, 16) || !skipChar(line, ' '))
+        return false;
+
+    if (line.size() < 5 || line[4] != ' ')
+        return false;
+    mapping.executable = line[2] == 'x';
+    line.remove_prefix(5);
+
+    if (!parseNumber(line, offset, 16) || !skipChar(line, ' ')
+        || !parseNumber(line, major, 16) || !skipChar(line, ':') || !parseNumber(line, minor, 16) || !skipChar(line, ' ')
+        || !parseNumber(line, inode, 10))
+        return false;
+
+    skipSpaces(line);
+    mapping.device = makedev(major, minor);
+    mapping.inode = static_cast<ino_t>(inode);
+    mapping.path = line;
+    return true;
+}
+
 /// Objects can be loaded outside of the main namespace of the dynamic loader, e.g., auditing libraries (`LD_AUDIT`, `--audit`),
 /// or mapped into memory manually. They are not visible to `dl_iterate_phdr`, so we also check that
 /// every file-backed executable memory mapping belongs to the file of one of the loaded objects.
@@ -282,19 +337,10 @@ void checkExecutableMappings(const std::vector<uintptr_t> & object_addresses)
         std::string_view line = rest.substr(0, end_of_line);
         rest.remove_prefix(std::min(end_of_line + 1, rest.size()));
 
-        /// Format: begin-end perms offset major:minor inode pathname
-        unsigned long begin = 0;
-        unsigned long end = 0;
-        char perms[5] = {};
-        unsigned major = 0;
-        unsigned minor = 0;
-        unsigned long long inode = 0;
-        int path_pos = 0;
-        std::string line_str(line);
-        if (6 != sscanf(line_str.c_str(), "%lx-%lx %4s %*x %x:%x %llu %n", &begin, &end, perms, &major, &minor, &inode, &path_pos)) // NOLINT(cert-err34-c)
+        Mapping mapping;
+        if (!parseMapsLine(line, mapping))
             printErrorAndExit("Cannot parse a line of /proc/self/maps: {}", line);
-
-        mappings.push_back({begin, end, perms[2] == 'x', makedev(major, minor), static_cast<ino_t>(inode), line.substr(static_cast<size_t>(path_pos))});
+        mappings.push_back(mapping);
     }
 
     std::vector<const Mapping *> expected_files;
