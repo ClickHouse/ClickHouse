@@ -7,7 +7,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/resolveMetricNameDrop.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 #include <Common/Exception.h>
 
@@ -158,7 +157,7 @@ SQLQueryPiece applyFunctionAbsent(const PrometheusQueryTree::Function * function
             case StoreMethod::VECTOR_GRID:
             {
                 /// An instant vector stored as a grid is already a presence grid.
-                presence_grid = resolveMetricNameDrop(std::move(arguments[0]), context);
+                presence_grid = std::move(arguments[0]);
                 break;
             }
 

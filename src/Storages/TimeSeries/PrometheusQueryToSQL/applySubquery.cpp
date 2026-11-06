@@ -2,7 +2,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySubquery.h>
 
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/resolveMetricNameDrop.h>
 
 
 namespace DB::ErrorCodes
@@ -33,9 +32,6 @@ namespace
 SQLQueryPiece applySubquery(const PrometheusQueryTree::Subquery * subquery_node, SQLQueryPiece && expression, ConverterContext & context)
 {
     checkExpressionType(expression, context);
-
-    /// The range functions over the subquery evaluate each series separately, so the series must be final here.
-    expression = resolveMetricNameDrop(std::move(expression), context);
 
     expression.node = subquery_node;
     expression.type = ResultType::RANGE_VECTOR;

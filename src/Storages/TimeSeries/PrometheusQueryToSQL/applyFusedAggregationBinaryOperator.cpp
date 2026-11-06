@@ -6,7 +6,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyMathBinaryOperator.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOneArgumentAggregationOperator.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/resolveMetricNameDrop.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForAggregationOperator.h>
 #include <algorithm>
@@ -111,7 +110,6 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
     if (argument.store_method == StoreMethod::EMPTY)
         return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
 
-    ASTPtr group = foldMetricNameDropIntoAggregation(left_aggregation, argument);
     argument = toVectorGrid(std::move(argument), context);
 
     auto res = argument;
@@ -131,7 +129,7 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
         builder.from_table = context.subqueries.back().name;
 
         ASTPtr new_group = transformGroupASTForAggregationOperator(
-            left_aggregation, std::move(group), /*drop_metric_name=*/true, res.metric_name_dropped);
+            left_aggregation, make_intrusive<ASTIdentifier>(ColumnNames::Group), /*drop_metric_name=*/true, res.metric_name_dropped);
 
         builder.select_list.push_back(std::move(new_group));
         builder.select_list.back()->setAlias(ColumnNames::NewGroup);

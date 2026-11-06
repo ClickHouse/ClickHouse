@@ -7,7 +7,6 @@
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/resolveMetricNameDrop.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -120,7 +119,7 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
 
         case StoreMethod::VECTOR_GRID:
         {
-            return resolveMetricNameDrop(std::move(query_piece), context);
+            return std::move(query_piece);
         }
 
         case StoreMethod::CONST_STRING:
