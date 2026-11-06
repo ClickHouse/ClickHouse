@@ -15,6 +15,7 @@ from .prometheus_test_utils import (
 import re
 import requests
 import time
+import uuid
 
 
 cluster = ClickHouseCluster(__file__)
@@ -198,11 +199,13 @@ def get_dropped_exemplars():
 
 def test_remote_write_counts_dropped_exemplars():
     timestamp = 1724118000
+    # A unique metric name keeps repeated runs from seeing each other's samples.
+    metric_name = f"exemplar_data_{uuid.uuid4().hex}"
     write_request = convert_time_series_to_protobuf(
         [
-            ({"__name__": "exemplar_data", "series": "a"}, {timestamp: 1.0}),
-            ({"__name__": "exemplar_data", "series": "a"}, {}),
-            ({"__name__": "exemplar_data", "series": "b"}, {timestamp: 2.0}),
+            ({"__name__": metric_name, "series": "a"}, {timestamp: 1.0}),
+            ({"__name__": metric_name, "series": "a"}, {}),
+            ({"__name__": metric_name, "series": "b"}, {timestamp: 2.0}),
         ]
     )
     exemplar = types_pb2.Exemplar(
@@ -223,7 +226,7 @@ def test_remote_write_counts_dropped_exemplars():
     assert (
         node.query(
             "SELECT count() FROM timeSeriesData(prometheus) WHERE id IN "
-            "(SELECT id FROM timeSeriesTags(prometheus) WHERE metric_name = 'exemplar_data')"
+            f"(SELECT id FROM timeSeriesTags(prometheus) WHERE metric_name = '{metric_name}')"
         )
         == "2\n"
     )
