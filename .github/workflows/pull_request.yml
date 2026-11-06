@@ -201,7 +201,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Style check' --workflow "PR" --ci --timestamp
 
   code_review:
-    runs-on: [self-hosted, pr-arm-tiny]
+    runs-on: [self-hosted, pr-arm-small-review]
     needs:
     - config_workflow
     - dockers_build_amd
