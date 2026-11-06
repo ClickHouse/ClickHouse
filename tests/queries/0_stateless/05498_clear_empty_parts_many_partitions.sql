@@ -5,8 +5,10 @@
 DROP TABLE IF EXISTS t_cep;
 
 -- old_parts_lifetime is pinned so that the empty parts dropped by TRUNCATE stay outdated during the test.
-CREATE TABLE t_cep (p UInt32) ENGINE = MergeTree PARTITION BY p ORDER BY tuple() SETTINGS old_parts_lifetime = 480;
--- Only the TRUNCATE's own cleanup may look at the parts it drops.
+CREATE TABLE t_cep (p UInt32) ENGINE = MergeTree PARTITION BY p ORDER BY tuple()
+    SETTINGS old_parts_lifetime = 480, merge_tree_clear_old_parts_interval_seconds = 100000;
+-- Only the TRUNCATE's own cleanup may look at the parts it drops. SYSTEM STOP CLEANUP cannot stop a cleanup iteration
+-- already in flight; the pinned interval keeps that iteration's parts pass shut.
 SYSTEM STOP CLEANUP t_cep;
 INSERT INTO t_cep SELECT number FROM numbers(500) SETTINGS max_partitions_per_insert_block = 0, async_insert = 0;
 TRUNCATE TABLE t_cep;
