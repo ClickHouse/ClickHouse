@@ -60,3 +60,39 @@ DROP TABLE src;
 DROP TABLE dst1;
 DROP TABLE dst2;
 "
+
+# `merge` with a `Distributed` sibling analyzes its children again. The child that is the source table
+# reads the real table, so it must not get a snapshot without parts. Only the rows inserted before the
+# view are counted: the inserted row may be visible or not.
+$CLICKHOUSE_CLIENT -nm --query "
+DROP TABLE IF EXISTS mv3;
+DROP TABLE IF EXISTS src3;
+DROP TABLE IF EXISTS other3;
+DROP TABLE IF EXISTS dist3;
+DROP TABLE IF EXISTS dst3;
+
+CREATE TABLE src3 (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE other3 (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE dist3 (id UInt64) ENGINE = Distributed(test_shard_localhost, currentDatabase(), other3);
+CREATE TABLE dst3 (id UInt64, c_merge_if UInt64, c_merge_where UInt64, c_merge_src_only UInt64) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO src3 VALUES (100), (101), (102);
+INSERT INTO other3 VALUES (200);
+
+CREATE MATERIALIZED VIEW mv3 TO dst3 AS
+SELECT id,
+    (SELECT countIf(id >= 100) FROM merge(currentDatabase(), '^src3\$|^dist3\$')) AS c_merge_if,
+    (SELECT count() FROM merge(currentDatabase(), '^src3\$|^dist3\$') WHERE id >= 100) AS c_merge_where,
+    (SELECT countIf(id >= 100) FROM merge(currentDatabase(), '^src3\$')) AS c_merge_src_only
+FROM src3;
+
+INSERT INTO src3 VALUES (1);
+
+SELECT 'dst3', * FROM dst3 ORDER BY id;
+
+DROP TABLE mv3;
+DROP TABLE src3;
+DROP TABLE other3;
+DROP TABLE dist3;
+DROP TABLE dst3;
+"
