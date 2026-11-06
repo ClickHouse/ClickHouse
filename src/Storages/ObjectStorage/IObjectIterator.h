@@ -141,7 +141,7 @@ class ObjectIteratorSplitByBuckets : public IObjectIterator, private WithContext
 public:
     ObjectIteratorSplitByBuckets(
         ObjectIterator iterator_,
-        const String & format_,
+        StorageObjectStorageConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
         const ContextPtr & context_,
         const StorageID & storage_id_ = StorageID::createEmpty(),
@@ -153,7 +153,7 @@ public:
 
 private:
     const ObjectIterator iterator;
-    String format;
+    StorageObjectStorageConfigurationPtr configuration;
     ObjectStoragePtr object_storage;
     FormatSettings format_settings;
     StorageID storage_id;

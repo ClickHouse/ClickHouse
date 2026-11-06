@@ -1518,10 +1518,14 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
         {
             auto current_namespace_array = namespaces_object->get(static_cast<int>(i)).extract<Poco::JSON::Array::Ptr>();
             if (current_namespace_array->size() == 0)
-                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Expected namespace array to be non-empty");
+                throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Iceberg REST catalog listed an empty namespace");
 
             const int idx = static_cast<int>(current_namespace_array->size()) - 1;
             const auto current_namespace = current_namespace_array->get(idx).extract<String>();
+            /// An empty name at the root would denote the root itself.
+            if (base_namespace.empty() && current_namespace.empty())
+                throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Iceberg REST catalog listed a top-level namespace with an empty name");
+
             /// Some catalogs have flat (single-level) namespaces and do not support multi-level ones:
             /// BigLake, and Databricks Delta Sharing (share -> namespace/schema -> table). When asked
             /// for sub-namespaces of a non-empty parent (via ?parent=X) they ignore the filter and
