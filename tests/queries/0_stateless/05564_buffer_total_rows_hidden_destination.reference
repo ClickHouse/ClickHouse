@@ -1,0 +1,6 @@
+-- default user
+1007
+-- no privilege on the destination
+7
+-- SHOW TABLES on the destination
+1007
