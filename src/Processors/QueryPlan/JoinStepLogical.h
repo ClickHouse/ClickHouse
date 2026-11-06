@@ -154,7 +154,6 @@ public:
     std::optional<double> getEstimatedCost() const { return estimated_cost; }
     std::optional<double> getEstimatedSelectivity() const { return estimated_selectivity; }
     bool hasImpreciseEstimate() const { return imprecise_estimate; }
-    bool hasAssumedFilterSelectivity() const { return assumed_filter_selectivity; }
     const std::unordered_map<String, ColumnStats> & getResultColumnStats() const { return result_column_stats; }
     std::optional<UInt64> getInputRowsEstimation(JoinTableSide side) const;
 
@@ -164,8 +163,7 @@ public:
         bool imprecise_estimate_ = false,
         std::optional<double> estimated_cost_ = {},
         std::optional<double> estimated_selectivity_ = {},
-        UInt64 cluster_id_ = 0,
-        bool assumed_filter_selectivity_ = false)
+        UInt64 cluster_id_ = 0)
     {
         optimized = true;
         result_rows_estimation = estimated_rows_;
@@ -174,7 +172,6 @@ public:
         estimated_cost = estimated_cost_;
         estimated_selectivity = estimated_selectivity_;
         cluster_id = cluster_id_;
-        assumed_filter_selectivity = assumed_filter_selectivity_;
     }
 
     UInt64 getClusterId() const { return cluster_id; }
@@ -307,8 +304,6 @@ protected:
     /// True when the row count estimation used by join reordering was derived from the primary index
     /// rather than column statistics (because `use_statistics` is enabled but statistics are missing).
     bool imprecise_estimate = false;
-    /// The row count estimation is derived from the share of rows assumed for a filter nothing could estimate.
-    bool assumed_filter_selectivity = false;
     UInt64 right_hash_table_cache_key = 0;
     UInt64 join_output_cache_key = 0;
 

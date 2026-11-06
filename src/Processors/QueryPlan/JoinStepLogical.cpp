@@ -3087,7 +3087,6 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->estimated_selectivity = estimated_selectivity;
     result_step->cluster_id = cluster_id;
     result_step->imprecise_estimate = imprecise_estimate;
-    result_step->assumed_filter_selectivity = assumed_filter_selectivity;
     result_step->result_column_stats = result_column_stats;
     result_step->right_hash_table_cache_key = right_hash_table_cache_key;
     result_step->join_output_cache_key = join_output_cache_key;
