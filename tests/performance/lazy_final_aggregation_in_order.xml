@@ -1,0 +1,27 @@
+<test>
+    <!--
+        Lazy FINAL with optimize_aggregation_in_order: the deduplicating aggregation over the
+        filtered keys must merge its groups in blocks, not one group at a time.
+    -->
+    <settings>
+        <query_plan_optimize_lazy_final>1</query_plan_optimize_lazy_final>
+        <optimize_aggregation_in_order>1</optimize_aggregation_in_order>
+    </settings>
+
+    <create_query>
+        CREATE TABLE lazy_final_in_order (key UInt64, version UInt64, category UInt8, payload String)
+        ENGINE = ReplacingMergeTree(version)
+        ORDER BY key
+        SETTINGS index_granularity = 256
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES lazy_final_in_order</fill_query>
+    <!-- Each INSERT writes exactly one part, so that both compared servers read the same two intersecting parts. -->
+    <fill_query>INSERT INTO lazy_final_in_order SELECT number, 1, number &lt; 20000, repeat('x', 100) FROM numbers_mt(2000000) SETTINGS min_insert_block_size_rows = 10000000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO lazy_final_in_order SELECT number * 10, 2, number * 10 &lt; 20000, repeat('y', 100) FROM numbers_mt(200000) SETTINGS min_insert_block_size_rows = 10000000, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>SELECT throwIf(count() != 2, 'lazy_final_aggregation_in_order: expected 2 active parts') FROM system.parts WHERE database = currentDatabase() AND table = 'lazy_final_in_order' AND active</fill_query>
+
+    <query>SELECT count(), max(cityHash64(payload)) FROM lazy_final_in_order FINAL WHERE category = 1 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS lazy_final_in_order</drop_query>
+</test>
