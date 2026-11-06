@@ -61,3 +61,8 @@ r_off	0
 1	710
 x_on	15
 x_off	0
+--- Q2 the per-file row count cache ---
+1	16
+2	1415
+0
+q2_on	15

@@ -123,9 +123,28 @@ ALTER TABLE fact_x DELETE WHERE k = 705;
 probe x "SELECT count(), sum(v) FROM fact_x AS f INNER JOIN dim AS d ON f.k = d.k"
 report x
 
+# The per-file row count cache is shared by `icebergS3` and `s3()` reads of the same object, so a read that
+# skipped row groups must not record its row count. No `probe` here: its `_off` read would rewrite the entry.
+echo '--- Q2 the per-file row count cache ---'
+Q2_PATH="05457_rf_row_groups/${CLICKHOUSE_TEST_UNIQUE_NAME}/fact_s3"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --use_iceberg_metadata_files_cache=0 --max_insert_threads=1 --query "
+CREATE TABLE fact_s3 (k Int64, v Int64) ENGINE = IcebergS3(s3_conn, filename = '${Q2_PATH}')
+SETTINGS allow_experimental_iceberg_compaction = 0, output_format_parquet_row_group_size = 100;
+INSERT INTO fact_s3 SELECT number, number FROM numbers(1600);
+" < /dev/null
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count(), sum(num_row_groups) FROM s3(s3_conn, filename = '${Q2_PATH}/data/*.parquet', format = 'ParquetMetadata');
+    SELECT count(), sum(v) FROM fact_s3 AS f INNER JOIN dim AS d ON f.k = d.k
+    SETTINGS ${SETTINGS}, max_threads = 1, use_join_runtime_filters_for_iceberg_pruning = 1, optimize_move_to_prewhere = 0,
+        use_cache_for_count_from_files = 1, log_comment = '${CLICKHOUSE_DATABASE}_q2_on';
+    SELECT countIf(number_of_rows IS NOT NULL AND number_of_rows != 1600) FROM system.schema_inference_cache
+    WHERE storage = 'S3' AND format = 'Parquet' AND source LIKE '%${Q2_PATH}/data/%';"
+report q2
+
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS fact SYNC;
     DROP TABLE IF EXISTS fact_r SYNC;
     DROP TABLE IF EXISTS fact_x SYNC;
+    DROP TABLE IF EXISTS fact_s3 SYNC;
     DROP TABLE IF EXISTS dim SYNC;
     DROP TABLE IF EXISTS dim64 SYNC;"
