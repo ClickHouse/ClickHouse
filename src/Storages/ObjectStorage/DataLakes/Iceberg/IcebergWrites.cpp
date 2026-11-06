@@ -1532,12 +1532,12 @@ void IcebergStorageSink::finalizeBuffers()
 
 void IcebergInsertCommitter::addFiles(const std::vector<IcebergPartitionFilesPtr> & new_files)
 {
-    files.insert(files.end(), new_files.begin(), new_files.end());
+    files_to_commit.insert(files_to_commit.end(), new_files.begin(), new_files.end());
 }
 
 void IcebergInsertCommitter::commit()
 {
-    for (const auto & partition_files : files)
+    for (const auto & partition_files : files_to_commit)
         writers_to_commit.emplace_back(&partition_files->partition_key, &partition_files->writer);
 
     if (writers_to_commit.empty())
@@ -1550,7 +1550,7 @@ void IcebergInsertCommitter::commit()
         total_chunks_size += static_cast<Int64>(writer->getResultBytes());
     }
 
-    for (const auto & partition_files : files)
+    for (const auto & partition_files : files_to_commit)
     {
         if (partition_files->schema_id != current_schema_id || partition_files->partition_spec_id != partition_spec_id)
         {
@@ -1570,7 +1570,7 @@ void IcebergInsertCommitter::commit()
         {
             successed_write = true;
             committed = true;
-            for (const auto & partition_files : files)
+            for (const auto & partition_files : files_to_commit)
                 partition_files->committed = true;
             break;
         }
@@ -1598,7 +1598,7 @@ void IcebergStorageSink::cancelBuffers()
 
 void IcebergInsertCommitter::removeDataFilesAndManifests()
 {
-    for (const auto & partition_files : files)
+    for (const auto & partition_files : files_to_commit)
         partition_files->removeDataFiles();
 
     for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)

@@ -224,7 +224,7 @@ public:
     FileNamesGenerator & getFileNamesGenerator() { return filename_generator; }
     const Iceberg::IcebergPathResolver & getPathResolver() const { return persistent_table_components.path_resolver; }
 
-    void addFiles(const std::vector<IcebergPartitionFilesPtr> & files);
+    void addFiles(const std::vector<IcebergPartitionFilesPtr> & new_files);
     void commit();
 
 private:
@@ -253,7 +253,7 @@ private:
     /// The snapshot referencing the written files is committed, so they must never be removed.
     bool committed = false;
 
-    std::vector<IcebergPartitionFilesPtr> files;
+    std::vector<IcebergPartitionFilesPtr> files_to_commit;
     std::vector<std::pair<const ChunkPartitioner::PartitionKey *, const MultipleFileWriter *>> writers_to_commit;
 
     /// The manifests are written once and reused on commit retries.
