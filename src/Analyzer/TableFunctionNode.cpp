@@ -29,16 +29,16 @@ namespace ErrorCodes
 namespace
 {
 
-/// An unqualified parameterized-view name re-resolves against the receiving server's default
-/// database, so it is sent qualified. Only a 2-part result is resolvable as a parameterized view,
-/// so a dotted database name is left alone.
+/// A parameterized-view name that is unqualified, or relative to the current database (`ns.pv` for the view
+/// `db`.`ns.pv`, see `DatabaseCatalog`), re-resolves against the receiving server's default database, so it is
+/// sent qualified with the database of the view. The name is hierarchical, so a dotted database or table name is
+/// resolved there as well.
 bool isSentQualified(const TableFunctionNode & node)
 {
-    if (!node.isParameterizedView() || node.getTableFunctionName().contains('.'))
+    if (!node.isParameterizedView())
         return false;
 
-    const auto & storage_id = node.getStorageID();
-    return storage_id.hasDatabase() && !storage_id.getDatabaseName().contains('.');
+    return node.getStorageID().hasDatabase();
 }
 
 }
@@ -197,8 +197,8 @@ ASTPtr TableFunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     auto table_function_ast = make_intrusive<ASTFunction>();
 
     table_function_ast->name = isSentQualified(*this) ? storage_id.getFullNameNotQuoted() : table_function_name;
-    /// The analyzer reads a two-part parameterized view name as `db.view`.
-    if (isParameterizedView() && Identifier{table_function_ast->name}.getPartsSize() == 2)
+    /// The analyzer reads a parameterized view name of several parts as `db.view` (or a hierarchical `db.ns.view`).
+    if (isParameterizedView() && Identifier{table_function_ast->name}.getPartsSize() >= 2)
         table_function_ast->setIsCompoundName(true);
 
     const auto & arguments = getArguments();

@@ -48,10 +48,12 @@
 #include <Functions/FunctionFactory.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageView.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <TableFunctions/ITableFunction.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/castColumn.h>
 
 #include <Analyzer/ArrayJoinNode.h>
@@ -1408,9 +1410,15 @@ TableExpressionNodePtr buildSubqueryToReadColumnsFromTableExpression(const Table
 
 std::pair<String, String> extractDatabaseAndTableNameForParameterizedView(const String & table_function_name, const ContextPtr & context)
 {
+    return extractDatabaseAndTableNameForParameterizedView(table_function_name, context->getCurrentDatabase(), context);
+}
+
+std::pair<String, String> extractDatabaseAndTableNameForParameterizedView(
+    const String & table_function_name, const String & current_database, const ContextPtr & context)
+{
     Identifier table_identifier{table_function_name};
     if (table_identifier.getPartsSize() == 0)
-        return { context->getCurrentDatabase(), "" };
+        return { current_database, "" };
 
     /// The name is hierarchical (see `DatabaseCatalog`), the same as the name of an ordinary view: `db.ns.v` may be the
     /// view `ns.v` of the database `db`, and inside `USE db.ns` the same view is `v`.
@@ -1422,9 +1430,27 @@ std::pair<String, String> extractDatabaseAndTableNameForParameterizedView(const 
         database_name += table_identifier[i];
     }
     StorageID resolved = DatabaseCatalog::instance().resolveHierarchicalName(
-        StorageID(database_name, table_identifier[table_identifier.getPartsSize() - 1]), context);
+        StorageID(database_name, table_identifier[table_identifier.getPartsSize() - 1]), current_database, context);
 
     return { resolved.database_name, resolved.table_name };
+}
+
+std::optional<String> tryBindQualifiedParameterizedViewName(
+    const String & table_function_name, const String & current_database, const ContextPtr & context)
+{
+    if (!table_function_name.contains('.') || TableFunctionFactory::instance().isTableFunctionName(table_function_name))
+        return {};
+
+    auto [database_name, table_name] = extractDatabaseAndTableNameForParameterizedView(table_function_name, current_database, context);
+    if (database_name.empty() || table_name.empty())
+        return {};
+
+    auto storage = DatabaseCatalog::instance().tryGetTable(StorageID(database_name, table_name), context);
+    const auto * view = storage ? storage->as<StorageView>() : nullptr;
+    if (!view || !view->isParameterizedView())
+        return {};
+
+    return database_name + '.' + table_name;
 }
 
 bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr table_expression)
