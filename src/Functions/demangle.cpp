@@ -46,9 +46,15 @@ public:
         return true;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(String) -> String";
+        FunctionArgumentDescriptors mandatory_args{
+            {"symbol", &isString, nullptr, "String"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args);
+
+        return std::make_shared<DataTypeString>();
     }
 
     bool useDefaultImplementationForConstants() const override

@@ -853,14 +853,12 @@ ColumnPtr ColumnNullable::compress(bool force_compression) const
     ColumnPtr null_map_compressed = null_map->compress(force_compression);
 
     size_t byte_size = nested_column->byteSize() + null_map->byteSize();
-    Columns parts{nested_compressed, null_map_compressed};
 
     return ColumnCompressed::create(size(), byte_size,
         [my_nested_column = std::move(nested_compressed), my_null_map = std::move(null_map_compressed)]
         {
             return ColumnNullable::create(my_nested_column->decompress(), my_null_map->decompress());
-        },
-        std::move(parts));
+        });
 }
 
 

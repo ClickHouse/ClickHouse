@@ -4,8 +4,6 @@
 #include <Common/Scheduler/ResourceRequest.h>
 #include <Common/Scheduler/ResourceSchedulingContext.h>
 
-#include <base/defines.h>
-
 namespace DB
 {
 
@@ -26,11 +24,6 @@ bool ResourceLink::enqueue(ResourceRequest * request) const
     request->scheduling.state = scheduling_state;
     queue->enqueueRequest(request);
     return true;
-}
-
-ResourceSchedulingContext::~ResourceSchedulingContext()
-{
-    chassert(bound_cached_readers.load() == 0);
 }
 
 }

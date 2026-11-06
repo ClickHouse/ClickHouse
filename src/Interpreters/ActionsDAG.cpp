@@ -3,7 +3,6 @@
 #include <Analyzer/TableQualifiers.h>
 
 #include <Analyzer/FunctionNode.h>
-#include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFunction.h>
@@ -29,7 +28,6 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/SetSerialization.h>
-#include <IO/SipHashingWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Core/SortDescription.h>
@@ -121,22 +119,6 @@ std::pair<ColumnsWithTypeAndName, bool> getFunctionArguments(const ActionsDAG::N
         arguments[i] = std::move(argument);
     }
     return { std::move(arguments), all_const };
-}
-
-/// A short value is kept even without a fixed size: a build-independent key has no names, so the value is all that tells
-/// `trimBoth(s, 'x')` from `trimBoth(s, 'y')`. `byteSize` can understate an aggregate state, so one is never kept, even
-/// inside a `Dynamic` value.
-bool isConstantValueInCacheKey(const ActionsDAG::Node & node)
-{
-    if (node.column->valuesHaveFixedSize())
-        return true;
-    WhichDataType which(node.result_type);
-    if (which.isSet() || which.isFunction() || node.column->byteSize() > 1024)
-        return false;
-    bool has_aggregate_state = false;
-    node.column->forEachSubcolumnRecursively(
-        [&](const IColumn & subcolumn) { has_aggregate_state |= typeid_cast<const ColumnAggregateFunction *>(&subcolumn) != nullptr; });
-    return !has_aggregate_state;
 }
 
 void tryFoldFunctionToConstant(
@@ -322,14 +304,6 @@ UInt64 ActionsDAG::Node::getHash() const
 void ActionsDAG::Node::updateHash(
     SipHash & hash_state, bool build_independent, const Block * input_header, bool with_variable_size_constant_values) const
 {
-    updateOwnHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
-    for (const auto & child : children)
-        child->updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
-}
-
-void ActionsDAG::Node::updateOwnHash(
-    SipHash & hash_state, bool build_independent, const Block * input_header, bool with_variable_size_constant_values) const
-{
     hash_state.update(type);
 
     /// A derived node's name is a label this build chose, not part of what the node computes - the type,
@@ -445,7 +419,7 @@ void ActionsDAG::Node::updateOwnHash(
         /// the DAG around them. Skipping only its value keeps the single-replica and parallel-replicas
         /// plan builds matching without dropping any other constant's value (it still serializes
         /// normally for distributed propagation).
-        if (!is_runtime_filter_id && (with_variable_size_constant_values || isConstantValueInCacheKey(*this)))
+        if (!is_runtime_filter_id && (with_variable_size_constant_values || column->valuesHaveFixedSize()))
             column->updateHashWithValue(0, hash_state);
 
         /// A `Const(Set)` needs its identity added rather than its value skipped: `ColumnSet` is a dummy
@@ -471,6 +445,9 @@ void ActionsDAG::Node::updateOwnHash(
             }
         }
     }
+
+    for (const auto & child : children)
+        child->updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
 }
 
 UInt64 ActionsDAG::getOutputIdentity(const std::string & name, const Block * input_header) const
@@ -493,63 +470,6 @@ UInt64 ActionsDAG::getOutputIdentity(const std::string & name, const Block * inp
         hash.update("<no such output>");
         hash.update(normalizeGeneratedTableQualifiers(name));
     }
-    return hash.get64();
-}
-
-UInt64 ActionsDAG::getComputedOutputsHash(const Block & input_header) const
-{
-    std::unordered_map<const Node *, UInt64> node_hashes;
-    std::vector<std::pair<const Node *, size_t>> stack;
-    for (const auto * output : outputs)
-    {
-        if (!node_hashes.contains(output))
-            stack.emplace_back(output, 0);
-
-        while (!stack.empty())
-        {
-            auto & [node, next_child] = stack.back();
-            if (next_child < node->children.size())
-            {
-                const auto * child = node->children[next_child++];
-                if (!node_hashes.contains(child))
-                    stack.emplace_back(child, 0);
-                continue;
-            }
-
-            UInt64 node_hash = 0;
-            if (node->type == ActionType::ALIAS)
-            {
-                chassert(node->children.size() == 1);
-                node_hash = node_hashes.at(node->children.front());
-            }
-            else if (node->type == ActionType::INPUT)
-            {
-                SipHash hash;
-                hash.update(node->type);
-                char window[64];
-                SipHashingWriteBuffer out(hash, sizeof(window), window);
-                writeCacheKeyColumnName(node->result_name, &input_header, out);
-                out.finalize();
-                node_hash = hash.get64();
-            }
-            else
-            {
-                SipHash hash;
-                node->updateOwnHash(hash, /*build_independent=*/true, &input_header, /*with_variable_size_constant_values=*/false);
-                for (const auto * child : node->children)
-                    hash.update(node_hashes.at(child));
-                node_hash = hash.get64();
-            }
-
-            node_hashes[node] = node_hash;
-            stack.pop_back();
-        }
-    }
-
-    SipHash hash;
-    hash.update(outputs.size());
-    for (const auto * output : outputs)
-        hash.update(node_hashes.at(output));
     return hash.get64();
 }
 
@@ -4041,6 +3961,24 @@ bool conjunctDependsOnAllowedInput(const ActionsDAG::Node * conjunct, const std:
     return false;
 }
 
+ColumnsWithTypeAndName prepareFunctionArguments(const ActionsDAG::NodeRawConstPtrs & nodes)
+{
+    ColumnsWithTypeAndName arguments;
+    arguments.reserve(nodes.size());
+
+    for (const auto * child : nodes)
+    {
+        ColumnWithTypeAndName argument;
+        argument.column = child->column;
+        argument.type = child->result_type;
+        argument.name = child->result_name;
+
+        arguments.emplace_back(std::move(argument));
+    }
+
+    return arguments;
+}
+
 }
 
 std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs)
@@ -4649,69 +4587,36 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
 
         NodeRawConstPtrs new_children = std::move(rejected_conjunctions);
 
-        FunctionOverloadResolverPtr func_builder_and
-            = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-
-        const Node * rejected = nullptr;
-        bool rejected_is_surviving_and = false;
         if (new_children.size() == 1)
-            rejected = new_children.front();
-        else
         {
-            rejected = &addFunction(func_builder_and, new_children, {});
-            rejected_is_surviving_and = true;
-        }
+            /// Rejected set has only one predicate.
+            /// Fix the result type and add an alias.
+            auto & child = new_children.front();
 
-        /// A surviving `and` already yields 0 or 1, so only a declared type it does not already
-        /// carry needs restoring; by name, because `Bool` equals `UInt8` but prints `true`.
-        const bool needs_type_restoration = !rejected_is_surviving_and
-            || rejected->result_type->getName() != predicate->result_type->getName();
-        DataTypePtr declared_type;
-        if (!removes_filter && needs_type_restoration)
-        {
-            if (rejected_is_surviving_and && predicate->result_type->isNullable() && !rejected->result_type->isNullable())
-            {
-                /// A carrier is picked by name, because that makes the choice stable for unordered rejected conjuncts.
-                size_t carrier = 0;
-                for (size_t i = 1; i < new_children.size(); ++i)
-                    if (new_children[i]->result_name > new_children[carrier]->result_name)
-                        carrier = i;
+            /// Preserve the original type if the column is needed in the result.
+            if (!removes_filter)
+                child = &addBooleanCondition(*child, predicate->result_type, nullptr);
 
-                NodeRawConstPtrs retyped_children = new_children;
-                retyped_children[carrier] = &addBooleanCondition(*retyped_children[carrier], predicate->result_type, nullptr);
-                rejected = &addFunction(func_builder_and, std::move(retyped_children), {});
-            }
-
-            /// `and` reports `Bool` only for an argument that is exactly `Bool`, not `Nullable(Bool)`,
-            /// but `Bool` equals `UInt8`, so the surviving `and` can declare that name itself.
-            if (rejected_is_surviving_and && rejected->result_type->equals(*predicate->result_type))
-                declared_type = predicate->result_type;
-            else
-            {
-                const auto * converted = &addBooleanCondition(*rejected, predicate->result_type, nullptr);
-                rejected_is_surviving_and &= converted == rejected;
-                rejected = converted;
-            }
-        }
-
-        Node node;
-        if (rejected_is_surviving_and)
-        {
-            /// `getConjunctionNodes` descends only through a node that is itself a function `and`, so an
-            /// alias here would hide the whole remainder from a later split of this filter.
-            node = *rejected;
-            node.result_name = predicate->result_name;
-            if (declared_type)
-                node.result_type = declared_type;
-        }
-        else
-        {
+            Node node;
             node.type = ActionType::ALIAS;
             node.result_name = predicate->result_name;
-            node.result_type = rejected->result_type;
-            node.children = {rejected};
+            node.result_type = predicate->result_type;
+            node.children.swap(new_children);
+            *predicate = std::move(node);
         }
-        *predicate = std::move(node);
+        else
+        {
+            /// Predicate is function AND, which still have more then one argument
+            /// or it has one argument of the wrong type.
+            /// Update children and rebuild it.
+            predicate->children.swap(new_children);
+            auto arguments = prepareFunctionArguments(predicate->children);
+
+            FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+
+            predicate->function_base = func_builder_and->build(arguments);
+            predicate->function = predicate->function_base->prepare(arguments);
+        }
     }
 
     std::unordered_set<const Node *> used_inputs;
@@ -5593,14 +5498,14 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
 
         writeIntBinary(column_flags, out);
 
-        /// A cache key (`registry.for_cache_key`) leaves out a large constant value (`isConstantValueInCacheKey`),
-        /// with the same contract as `updateHash` with `with_variable_size_constant_values = false`:
+        /// A cache key (`registry.for_cache_key`) leaves out a constant's value when it has no fixed
+        /// size, with the same contract as `updateHash` with `with_variable_size_constant_values = false`:
         /// such a value can be arbitrarily large (a folded scalar subquery), and hashing it on every
         /// execution costs more than the rest of planning. It also leaves out the value of the
         /// runtime-filter id carrier, a volatile per-plan-build rendezvous key whose `result_name` is its
         /// stable identity. This output is hash-only and never deserialized; the transmission path
         /// (`for_cache_key == false`) always writes the value.
-        if (has_column && !(registry.for_cache_key && (node.is_runtime_filter_id || !isConstantValueInCacheKey(node))))
+        if (has_column && !(registry.for_cache_key && (node.is_runtime_filter_id || !node.column->valuesHaveFixedSize())))
             serializeConstant(*node.result_type, *node.column, out, registry, input_header);
 
         if (node.type == ActionType::INPUT)
