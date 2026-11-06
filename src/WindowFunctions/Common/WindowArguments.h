@@ -1,10 +1,10 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
 #include <Common/DevectorWithMemoryTracking.h>
-#include <vector>
 
 namespace DB
 {
@@ -47,7 +47,7 @@ private:
     const DevectorWithMemoryTracking<Block> & blocks;
     const Int64 first_row_position;
     const Int64 num_arguments;
-    mutable std::vector<size_t> last_used_block;
+    mutable VectorWithMemoryTracking<size_t> last_used_block;
 };
 
 }
