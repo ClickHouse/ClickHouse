@@ -159,27 +159,47 @@ namespace
 
 /// `equals` ignores a `Decimal` precision and a captured time zone, which a CAST between `equals` types only relabels;
 /// a leaf that differs in anything else keeps the branch's type for the whole column.
+DataTypePtr adoptCommonLeaf(const DataTypePtr & left, const DataTypePtr & right)
+{
+    if (WhichDataType(left).isDateTimeOrDateTime64())
+    {
+        const auto * left_zone = dynamic_cast<const TimezoneMixin *>(left.get());
+        const auto * right_zone = dynamic_cast<const TimezoneMixin *>(right.get());
+        if (left->getName() == right->getName() && left_zone && right_zone
+            && left_zone->getTimeZone().getTimeZone() == right_zone->getTimeZone().getTimeZone())
+            return left;
+        return right->equals(*left) ? right : nullptr;
+    }
+    if (isDecimal(left))
+        return left->getName() == right->getName() ? left : (right->equals(*left) ? right : nullptr);
+    /// The walk stops at `JSON`, whose `equals` compares the typed paths with `equals`; an `equals` pair has
+    /// the same paths, so its children line up by position.
+    if (isObject(left))
+    {
+        if (!left->equals(*right))
+            return nullptr;
+        DataTypes children;
+        children.reserve(left->getNumberOfChildren());
+        bool moved = false;
+        for (size_t i = 0; i < left->getNumberOfChildren(); ++i)
+        {
+            auto child = replaceNestedTypesInPair(left->getChild(i), right->getChild(i), adoptCommonLeaf);
+            if (!child)
+                return nullptr;
+            moved |= child.get() != left->getChild(i).get();
+            children.push_back(std::move(child));
+        }
+        return moved ? left->cloneWithChildren(children) : left;
+    }
+    return left->getName() == right->getName() ? left : nullptr;
+}
+
 DataTypePtr getBranchTargetType(const DataTypePtr & branch_type, const DataTypePtr & common_type)
 {
     if (isVariant(branch_type))
         return branch_type;
 
-    auto target = replaceNestedTypesInPair(branch_type, common_type, [](const DataTypePtr & left, const DataTypePtr & right) -> DataTypePtr
-    {
-        if (WhichDataType(left).isDateTimeOrDateTime64())
-        {
-            const auto * left_zone = dynamic_cast<const TimezoneMixin *>(left.get());
-            const auto * right_zone = dynamic_cast<const TimezoneMixin *>(right.get());
-            if (left->getName() == right->getName() && left_zone && right_zone
-                && left_zone->getTimeZone().getTimeZone() == right_zone->getTimeZone().getTimeZone())
-                return left;
-            return right->equals(*left) ? right : nullptr;
-        }
-        if (isDecimal(left))
-            return left->getName() == right->getName() ? left : (right->equals(*left) ? right : nullptr);
-        return left->getName() == right->getName() ? left : nullptr;
-    });
-
+    auto target = replaceNestedTypesInPair(branch_type, common_type, adoptCommonLeaf);
     return target ? target : branch_type;
 }
 

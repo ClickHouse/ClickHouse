@@ -34,6 +34,12 @@ SELECT t FROM (SELECT materialize(tuple(1::UInt8::Variant(UInt8, String), toDeci
 SELECT 'Geometry in a tuple';
 SELECT t FROM (SELECT materialize(tuple((0., 0.)::Point::Geometry, toDecimal128(1, 7)::Decimal(35, 7))) AS t UNION ALL SELECT materialize(tuple((1., 1.)::Point::Geometry, 2::UInt32))) ORDER BY toString(t) FORMAT TSVWithNamesAndTypes;
 
+SELECT 'JSON typed path';
+SELECT x, JSONAllPathsWithTypes(x) AS paths FROM (SELECT materialize('{"p":1.5}'::JSON(p Decimal(5, 2))) AS x UNION ALL SELECT materialize('{"p":7}'::JSON(p UInt8))) ORDER BY toString(x) FORMAT TSVWithNamesAndTypes;
+
+SELECT 'JSON typed path, time zone';
+SELECT toString(x) FROM (SELECT materialize('{"t":1767225600}'::JSON(t DateTime('UTC'))) AS x UNION ALL SELECT materialize('{"t":1767225600}'::JSON(t DateTime('Asia/Tokyo')))) ORDER BY 1;
+
 SELECT 'same type name, different captured time zone';
 SET session_timezone = 'UTC';
 CREATE TABLE t_utc (ts DateTime) ENGINE = Memory;
