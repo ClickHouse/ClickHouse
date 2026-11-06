@@ -894,9 +894,9 @@ def test_partitioned_write_filtered_grant():
     # The filter is matched against the normalized URI, which omits the default port of the scheme.
     node1.query(f"GRANT WRITE ON URL('^http://nginx/{allowed}/.*$') TO {user}")
     node1.query(f"GRANT WRITE ON S3('^{minio_url}/{allowed}/.*$') TO {user}")
-    # A granted directory with a dot, `versioned.<suffix>/`.
+    # Only files named like `<number>.tsv` in a directory with a dot, `versioned.<suffix>/`.
     versioned = f"versioned.{suffix}"
-    node1.query(f"GRANT WRITE ON S3('^{minio_url}/versioned\\\\.{suffix}/.*$') TO {user}")
+    node1.query(f"GRANT WRITE ON S3('^{minio_url}/versioned\\\\.{suffix}/[0-9]+\\\\.tsv$') TO {user}")
 
     try:
         # Happy path: `url`: a partition inside the granted prefix is written.
@@ -927,15 +927,16 @@ def test_partitioned_write_filtered_grant():
         assert "Not enough privileges" in insert_s3_error(encoded_template, traversal_partition)
         assert s3_keys(f"{protected}/") == []
 
-        # Reject: an existing object is not overwritten but renamed, and the new key can leave the granted directory:
-        # `s3_create_new_file_on_insert` inserts `.1` before the first dot of the key, so `versioned.<suffix>/1.tsv`
-        # becomes `versioned.1.<suffix>/1.tsv`.
+        # Reject: an existing object is not overwritten but renamed by `s3_create_new_file_on_insert`, and the new key
+        # is outside the grant. Depending on the version, `.1` is inserted before the first dot of the key or of the
+        # file name, so `versioned.<suffix>/1.tsv` becomes `versioned.1.<suffix>/1.tsv` or `versioned.<suffix>/1.1.tsv`.
         versioned_template = f"{versioned}/{{_partition_id}}.tsv"
         assert insert_s3_error(versioned_template, safe_partition) == ""
         assert s3_keys(f"{versioned}/") == [f"{versioned}/1.tsv"]
         assert "Not enough privileges" in insert_s3_error(
             versioned_template, safe_partition, settings={"s3_create_new_file_on_insert": 1}
         )
+        assert s3_keys(f"{versioned}/") == [f"{versioned}/1.tsv"]
         assert s3_keys(f"versioned.1.{suffix}/") == []
 
         # A partitioned table with the `S3` engine is not checked against the source grants of the user who
