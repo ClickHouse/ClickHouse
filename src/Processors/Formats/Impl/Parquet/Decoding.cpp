@@ -21,6 +21,7 @@ namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
     extern const int CANNOT_PARSE_NUMBER;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
@@ -2632,6 +2633,8 @@ void GeoConverter::convertColumn(std::span<const char> chars, const UInt64 * off
             case GeoEncoding::WKT:
                 result_object = parseWKTFormat(in_buffer, precise_float_parsing);
                 break;
+            case GeoEncoding::Native:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "A geometry column with a native encoding is not read from bytes");
         }
         appendObjectToGeoColumn(result_object, geo_metadata.type, col);
     }
