@@ -148,7 +148,7 @@ namespace Setting
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_columns_to_read;
-    extern const SettingsUInt64 max_distributed_connections;
+    extern const SettingsNonZeroUInt64 max_distributed_connections;
     extern const SettingsUInt64 max_rows_in_set_to_optimize_join;
     extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -2265,29 +2265,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 {
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());
 
-                    /// The filter is built against this table's schema, but read() hands it to wrapper
-                    /// storages' children (Merge, Buffer), which re-derive it against their own types.
-                    /// Push it down only if every column it consumes is in the PREWHERE contract.
-                    /// A remote storage cannot carry it at all: read() only ships query text to the
-                    /// remote servers and never lowers the filter into it, so pushing would silently
-                    /// drop an access-control filter. Refuse, and let the stage check fail closed.
-                    bool can_push_down_filter = storage->supportsPrewhere() && !storage->isRemote();
-                    if (can_push_down_filter)
-                    {
-                        if (const auto supported_prewhere_columns = storage->supportedPrewhereColumns())
-                        {
-                            const auto & table_columns = storage_snapshot->metadata->getColumns();
-                            const bool include_subcolumns = storage->supportedPrewhereColumnsIncludeSubcolumns();
-                            for (const auto & column_name : row_policy_filter_info->actions.getRequiredColumnsNames())
-                            {
-                                if (!prewhereSupportedColumnsContain(*supported_prewhere_columns, include_subcolumns, table_columns, column_name))
-                                {
-                                    can_push_down_filter = false;
-                                    break;
-                                }
-                            }
-                        }
-                    }
+                    const bool can_push_down_filter = canPushDownRowPolicyFilter(
+                        *storage, storage_snapshot->metadata->getColumns(), row_policy_filter_info->actions.getRequiredColumnsNames());
 
                     /// A logical plan (a serialized query plan or a parallel replicas plan) reads through a
                     /// placeholder `ReadFromTableStep`, which cannot carry `row_level_filter`: the node that
@@ -2978,13 +2957,34 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 reading_node = reading_steps.front();
                         }
 
+                        /// This filter was planned by `collectFiltersForAnalysis` with its own `PreparedSets`, so a key-column
+                        /// `IN` set built by index analysis for the estimate is not the one the query builds later, and its
+                        /// subquery would run twice; `input()` is a one-shot client stream and cannot be read twice.
+                        const auto * estimate_reading_step
+                            = reading_node ? typeid_cast<const ReadFromMergeTree *>(reading_node->step.get()) : nullptr;
+                        const ActionsDAG * estimate_filter
+                            = estimate_reading_step ? estimate_reading_step->getQueryInfo().filter_actions_dag.get() : nullptr;
+                        /// Also collects the sets in `indexHint` arguments, which live in a DAG of their own.
+                        UsefulSets estimate_filter_sets;
+                        if (estimate_filter)
+                            appendSetsFromActionsDAG(*estimate_filter, estimate_filter_sets);
+                        const bool estimate_needs_unbuilt_set
+                            = std::ranges::any_of(estimate_filter_sets, [](const FutureSetPtr & set) { return !set || !set->get(); });
+
                         // (2) if it's ReadFromMergeTree - run index analysis and check number of rows to read
                         // Note: reading_steps can have several steps in case of reading from view with UNION
                         // In such case, we avoid using parallel_replicas_min_number_of_rows_per_replica for all tables, -
                         // parallel_replicas_min_number_of_rows_per_replica will be replaced by automatic_parallel_replicas_mode
-                        if (reading_node && reading_steps.size() == 1
+                        const bool apply_min_rows_per_replica = reading_node && reading_steps.size() == 1
                             && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0
-                            && !query_context->isAutomaticParallelReplicasProbe())
+                            && !query_context->isAutomaticParallelReplicasProbe();
+                        if (apply_min_rows_per_replica && estimate_needs_unbuilt_set)
+                        {
+                            LOG_DEBUG(
+                                getLogger("Planner"),
+                                "Skipping parallel_replicas_min_number_of_rows_per_replica, the filter has a set that is not built yet");
+                        }
+                        else if (apply_min_rows_per_replica)
                         {
                             const auto * reading_step = typeid_cast<ReadFromMergeTree *>(reading_steps.front()->step.get());
                             const bool allow_query_condition_cache
