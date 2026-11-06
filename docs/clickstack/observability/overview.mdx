@@ -9,13 +9,62 @@ keywords: ['clickstack', 'observability', 'logs', 'monitoring', 'platform']
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
-<BetaBadge label="Beta offering" />
-
-**ClickHouse Observability** is a fully managed observability platform for SREs, developers, and their AI agents, built on open-source ClickStack. Search, query, and correlate OpenTelemetry logs, traces, and metrics alongside session replays in one platform.
+**ClickHouse Observability** is an observability platform for SREs, developers, and their AI agents, built on open-source ClickStack. Search, query, and correlate OpenTelemetry logs, traces, and metrics alongside session replays in one platform.
 
 Investigate through the ClickStack UI or connect your own agents through the [ClickStack MCP server](/clickstack/observability/mcp). Use investigation tools to search logs and follow traces, and SQL for deeper analysis. Rich logs and trace spans capture request details, custom attributes, and business context to help explain failures.
 
-A self-managed option is also available for teams that need more control over ingestion and database configuration.
+Choose the **fully managed** offering for a backend operated by ClickHouse, or **self-managed** when your team needs control over ingestion and database configuration. Both run in ClickHouse Cloud and provide the same ClickStack investigation experience.
+
+## How it works {#how-it-works}
+
+In both offerings, you instrument your applications and collect telemetry from your environment. Explore that data in the ClickStack UI or connect an MCP-compatible agent to search logs, follow traces, and run SQL. The difference is who manages ingestion and the database configuration behind that experience.
+
+- **Fully managed:** send telemetry to a managed OpenTelemetry endpoint, or use the managed Datadog-compatible endpoint for existing Datadog agents. ClickHouse operates the ingestion backend and manages schemas, compute, scaling, and performance.
+- **Self-managed:** send telemetry through an ingestion collector you operate into your ClickHouse Cloud service. You configure the ingestion pipeline, schemas, compute, scaling, and performance tuning. ClickHouse Cloud hosts and operates the database and UI.
+
+### Compare the offerings {#compare-the-offerings}
+
+You instrument your applications and collect telemetry in both offerings. The table shows which backend responsibilities ClickHouse manages for you; a dash (—) means you manage that part.
+
+| Managed by ClickHouse | Fully managed | Self-managed |
+| --- | :---: | :---: |
+| Ingestion backend | ✓ | — |
+| Schemas, indexes, and compression | ✓ | — |
+| Compute sizing, scaling, and workload isolation | ✓ | — |
+| Database performance tuning | ✓ | — |
+| Database infrastructure, upgrades, and backups | ✓ | ✓ |
+| Hosting the ClickStack UI and MCP server | ✓ | ✓ |
+
+<Tabs>
+<Tab title="Fully managed">
+
+<BetaBadge label="Beta offering" />
+
+<Tip>
+**Recommended for most teams**
+
+Choose fully managed ClickHouse Observability to focus on investigating your systems while ClickHouse operates the observability backend.
+</Tip>
+
+Send telemetry to your managed endpoint. You do not need to deploy an ingestion gateway or tune ClickHouse tables and compute. You can continue using collectors and agents in your environment to collect, process, and forward telemetry.
+
+Follow the [fully managed getting started guide](/clickstack/observability/getting-started).
+
+</Tab>
+<Tab title="Self-managed">
+
+<Info>
+**For teams that need control over the backend**
+
+Choose self-managed ClickHouse Observability when you need custom ingestion pipelines, schemas, or database configuration and have the expertise to operate and tune them.
+</Info>
+
+You run the ingestion collector and take responsibility for database tuning and capacity planning. ClickHouse Cloud manages the underlying infrastructure, database upgrades, and backups. Self-managed does not require hosting ClickHouse or the ClickStack UI yourself.
+
+Follow the [self-managed getting started guide](/clickstack/self-configured/getting-started/managed), or read the [self-managed overview](/clickstack/self-configured/overview) for more detail.
+
+</Tab>
+</Tabs>
 
 ## Features {#features}
 
@@ -29,22 +78,8 @@ A self-managed option is also available for teams that need more control over in
 - Follow requests from browser interactions through backend services and database queries.
 - Identify recurring failures with [event patterns](/clickstack/observability/features/event-patterns) and investigate changes with [event deltas](/clickstack/observability/features/event-deltas).
 - Live tail logs and traces as new events arrive.
-- Ingest OpenTelemetry data through a managed OTLP endpoint.
+- Ingest OpenTelemetry data through a managed endpoint or your own ingestion collector, depending on your offering.
 - Share searches and investigation views through [deep links](/clickstack/observability/url-parameters).
-
-## How it works {#how-it-works}
-
-Send OpenTelemetry logs, traces, and metrics to the managed OTLP endpoint. ClickHouse Observability handles ingestion, schemas, storage, and scaling. You remain responsible for instrumenting your applications and collecting telemetry from your environment.
-
-Explore the data in the ClickStack UI or connect an MCP-compatible agent. Investigation tools support tasks such as searching logs and following traces. SQL lets you correlate signals, compare historical behavior, and investigate questions beyond predefined views.
-
-### Fully managed or self-managed {#fully-managed-or-self-managed}
-
-These are two ways to use the same product, with the same ClickStack investigation experience.
-
-**Fully managed ClickHouse Observability** is the recommended choice for most teams. Send telemetry to a managed OpenTelemetry endpoint, and ClickHouse handles ingestion, schemas, infrastructure, and scaling. Volume-based pricing ties costs to the data you send, so your team can focus on investigating issues rather than operating the platform. Follow the [getting started guide](/clickstack/observability/getting-started).
-
-**Self-managed ClickHouse Observability** gives you control over database configuration, schemas, ingestion, sizing, and scaling. It suits experienced database or observability teams that want to tune their ClickHouse deployment for specific workloads. You run the ingestion collector and take responsibility for database tuning and capacity planning, while ClickHouse Cloud manages the underlying infrastructure. See the [self-managed overview](/clickstack/self-configured/overview).
 
 ## Principles {#clickstack-principles}
 
@@ -66,4 +101,4 @@ ClickHouse's columnar storage, compression, and parallel query execution support
 
 ### OpenTelemetry-native {#open-telemetry-native}
 
-Send telemetry using standard OpenTelemetry instrumentation, SDKs, and collectors. The managed OTLP endpoint accepts logs, traces, and metrics, so you can use existing instrumentation without adopting a proprietary collection format.
+Send telemetry using standard OpenTelemetry instrumentation, SDKs, and collectors. Use the managed OTLP endpoint or your own ingestion collector to send logs, traces, and metrics with existing instrumentation, without adopting a proprietary collection format.
