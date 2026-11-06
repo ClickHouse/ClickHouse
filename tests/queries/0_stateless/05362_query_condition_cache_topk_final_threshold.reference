@@ -1,0 +1,47 @@
+--- reference
+993601
+993602
+993603
+993604
+993605
+--- first run
+993601
+993602
+993603
+993604
+993605
+--- repeated run reads the last granule only
+993601
+993602
+993603
+993604
+993605
+--- ties: reference
+0	5
+--- ties: first and repeated runs
+0	5
+0	5
+--- strings: reference
+я006336
+я006272
+я006208
+я006144
+я006080
+--- strings: first and repeated runs
+я006336
+я006272
+я006208
+я006144
+я006080
+я006336
+я006272
+я006208
+я006144
+я006080
+--- rows read
+05362-asc-first	6400
+05362-asc-repeat	64
+05362-ties-first	6400
+05362-ties-repeat	6400
+05362-str-first	6400
+05362-str-repeat	320
