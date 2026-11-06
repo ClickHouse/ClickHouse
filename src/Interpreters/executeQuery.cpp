@@ -25,6 +25,7 @@
 #include <Interpreters/normalizeDivision.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/Cache/QueryResultCacheOnDisk.h>
@@ -328,6 +329,8 @@ namespace Setting
     extern const SettingsString sort;
     extern const SettingsString filter;
     extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsMap additional_table_filters;
+    extern const SettingsString additional_result_filter;
     extern const SettingsDouble page;
     extern const SettingsDouble limit;
     extern const SettingsDouble offset;
@@ -3614,9 +3617,12 @@ static bool containsSQLUserDefinedFunctionCall(const IAST & ast)
 /// goes for the scalar functions that check a grant of their own when they are created: `getServerSetting`
 /// and `getMergeTreeSetting` (`SELECT` on `system.server_settings` / `system.merge_tree_settings`),
 /// `getMacro` (`SELECT` on `system.macros`), scalar `file` (`READ ON FILE`), and the introspection functions
-/// `demangle`, `addressToSymbol`, `addressToLine` and `addressToLineWithInlines` (their own grants).
+/// `demangle`, `addressToSymbol`, `addressToLine` and `addressToLineWithInlines` (their own grants), and the
+/// AI functions (`aiGenerate`, `aiEmbed`, `aiSimilarity`, ... and their aliases such as `AIGenerate`), which
+/// check `NAMED_COLLECTION` on the collection holding their credentials (`resolveAIParams`).
 static bool containsStorageReadingScalarFunctionCall(const IAST & ast)
 {
+    const auto & function_factory = FunctionFactory::instance();
     std::vector<const IAST *> stack{&ast};
     while (!stack.empty())
     {
@@ -3632,6 +3638,12 @@ static bool containsStorageReadingScalarFunctionCall(const IAST & ast)
                 || name == "file" || name == "demangle" || name == "addressToSymbol" || name == "addressToLine"
                 || name == "addressToLineWithInlines")
                 return true;
+
+            /// Resolve an alias (`AIGenerate`) to the registered name (`aiGenerate`).
+            const String & canonical_name = function_factory.isAlias(name) ? function_factory.aliasTo(name)
+                                                                           : function_factory.getCanonicalNameIfAny(name);
+            if (canonical_name.size() > 2 && canonical_name.starts_with("ai") && isUpperAlphaASCII(canonical_name[2]))
+                return true;
         }
 
         for (const auto & child : node->children)
@@ -3639,6 +3651,59 @@ static bool containsStorageReadingScalarFunctionCall(const IAST & ast)
     }
 
     return false;
+}
+
+/// Whether settings — of the query or of any `SETTINGS` clause inside it — change what the query reads in
+/// a way the AST-based collector below cannot follow:
+/// - `additional_table_filters` and `additional_result_filter` are strings parsed and analyzed only during
+///   planning, so the tables their subqueries read escape the preflights;
+/// - `implicit_table_at_top_level` adds a source only when the query tree is built;
+/// - a `SETTINGS enable_global_with_statement = DEFAULT` (or `enable_scopes_for_with_statement = DEFAULT`)
+///   reset is applied by the analyzer with the declared default and the settings constraints, so the scope
+///   the collector tracks for nested `WITH` names may differ from the one the analyzer resolves names in.
+static bool settingsHideSourcesFromCollector(const IAST & ast, const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    if (!settings[Setting::additional_table_filters].value.empty()
+        || !settings[Setting::additional_result_filter].value.empty()
+        || !settings[Setting::implicit_table_at_top_level].value.empty())
+        return true;
+
+    std::vector<const IAST *> stack{&ast};
+    while (!stack.empty())
+    {
+        const IAST * node = stack.back();
+        stack.pop_back();
+
+        if (const auto * set_query = node->as<ASTSetQuery>())
+        {
+            if (set_query->changes.tryGet("additional_table_filters")
+                || set_query->changes.tryGet("additional_result_filter")
+                || set_query->changes.tryGet("implicit_table_at_top_level"))
+                return true;
+            for (const auto & reset_name : set_query->default_settings)
+                if (reset_name == "enable_global_with_statement" || reset_name == "enable_scopes_for_with_statement")
+                    return true;
+        }
+
+        for (const auto & child : node->children)
+            stack.push_back(child.get());
+    }
+
+    return false;
+}
+
+/// Whether the stored definition of a table carries an expression that `ATTACH` rebuilds under the querying
+/// user's grants and that may fail there: e.g. a skip index `INDEX i demangle(s) TYPE minmax` requires the
+/// `INTROSPECTION` grant (checked in `FunctionDemangle::create`) when `ATTACH` rebuilds the index in
+/// `IndexDescription::initExpressionInfo`, so a user lacking it would `DETACH` the table and then fail to
+/// `ATTACH` it back. The same scalar functions and SQL UDFs the query-level guards reject are rejected here.
+static bool storedDefinitionMayFailToAttach(const IDatabase & database, const StorageID & table_id, const ContextPtr & context)
+{
+    const auto create_query = database.tryGetCreateTableQuery(table_id.getTableName(), context);
+    if (!create_query)
+        return true;
+    return containsStorageReadingScalarFunctionCall(*create_query) || containsSQLUserDefinedFunctionCall(*create_query);
 }
 
 static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr context)
@@ -3660,6 +3725,9 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
     /// The same goes for the storages that scalar functions read by name: a query rejected on such a storage
     /// would still detach the tables the preflights do see.
     if (containsStorageReadingScalarFunctionCall(*query))
+        return;
+
+    if (settingsHideSourcesFromCollector(*query, context))
         return;
 
     CollectTablesData data(context);
@@ -3984,6 +4052,9 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             continue;
         if (!table->isView() && !table->isDictionary()
             && !access->isGranted(AccessType::TABLE_ENGINE, table->getName()))
+            continue;
+
+        if (storedDefinitionMayFailToAttach(*database, table_id, context))
             continue;
 
         /// The `ATTACH` back also has to fit the database's own `max_tables` limit, which
