@@ -1,5 +1,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
+#include <base/arithmeticOverflow.h>
 #include <base/scope_guard.h>
 #include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
@@ -162,10 +163,17 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
                     /// nontrivial seek or setReadUntilPosition call).
                     /// Use aligned groups of blocks (rather than sliding window) to work better
                     /// with distributed cache.
-                    size_t lookahead_bytes = block_size * std::max<size_t>(1, settings.lookahead_blocks);
+                    /// A huge `page_cache_lookahead_blocks` saturates to the whole file instead of wrapping around.
+                    size_t lookahead_bytes = 0;
+                    if (common::mulOverflow(block_size, std::max<size_t>(1, settings.lookahead_blocks), lookahead_bytes))
+                        lookahead_bytes = std::numeric_limits<size_t>::max();
+                    const size_t lookahead_group_start = cache_range.offset - cache_range.offset % lookahead_bytes;
+                    const size_t lookahead_group_end = lookahead_bytes > file_size.value() - lookahead_group_start
+                        ? file_size.value()
+                        : lookahead_group_start + lookahead_bytes;
                     size_t lookahead_block_end = std::min({
                         file_size.value(),
-                        (cache_range.offset / lookahead_bytes + 1) * lookahead_bytes,
+                        lookahead_group_end,
                         (read_until_position + block_size - 1) / block_size * block_size});
 
                     if (inner_read_until_position < cache_range.offset + cache_range.size ||

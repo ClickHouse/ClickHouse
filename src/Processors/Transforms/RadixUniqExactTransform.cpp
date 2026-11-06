@@ -1296,7 +1296,7 @@ private:
         {
             /// `min_free_disk_space` is checked only here: the later spills append to the file without a check, as to the
             /// other temporary files that are appended to.
-            stream.spill_file = std::make_unique<TemporaryDataBuffer>(spill_scope, stream.arena->allocatedBytes() + min_free_disk_space);
+            stream.spill_file = std::make_unique<TemporaryDataBuffer>(spill_scope, getTemporaryFileReserveSize(stream.arena->allocatedBytes(), min_free_disk_space));
             stream.spilled_frames.resize(num_buckets);
             stream.spilled_keys.resize(num_buckets);
         }
