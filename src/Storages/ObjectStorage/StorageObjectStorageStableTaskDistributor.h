@@ -4,7 +4,8 @@
 #include <Common/Logger.h>
 #include <Interpreters/Cluster.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <unordered_set>
+#include <deque>
+#include <unordered_map>
 #include <vector>
 #include <mutex>
 #include <chrono>
@@ -24,30 +25,50 @@ public:
         bool send_over_whole_archive_,
         std::chrono::milliseconds wait_for_owner_ = std::chrono::milliseconds(0));
 
-    ObjectInfoPtr getNextTask(size_t number_of_current_replica);
+    ObjectInfos getNextTasks(size_t number_of_current_replica, size_t max_tasks);
 
 private:
-    size_t getReplicaForFile(const String & file_path);
-    ObjectInfoPtr getPreQueuedFile(size_t number_of_current_replica);
-    ObjectInfoPtr getMatchingFileFromIterator(size_t number_of_current_replica);
-    ObjectInfoPtr getAnyUnprocessedFile(size_t number_of_current_replica);
-    ObjectInfoPtr takeQueuedFile(size_t replica);
+    struct QueuedTask
+    {
+        String identifier;
+        ObjectInfoPtr object;
+        size_t owner = 0;
+        size_t weight = 0;
+        bool taken = false;
+    };
+    using QueuedTaskPtr = std::shared_ptr<QueuedTask>;
+
+    struct Placement
+    {
+        size_t owner = 0;
+        std::optional<size_t> stealer;
+    };
+
+    Placement getPlacement(const String & identifier) const;
+
+    void takeOwnTasks(size_t replica, size_t max_tasks, ObjectInfos & result);
+    void takeTasksFromIterator(size_t replica, size_t max_tasks, ObjectInfos & result);
+    void stealTasks(size_t replica, size_t max_tasks, ObjectInfos & result);
+
+    void enqueue(ObjectInfoPtr object, String identifier, const Placement & placement);
+    ObjectInfoPtr take(const QueuedTaskPtr & task);
 
     const std::shared_ptr<IObjectIterator> iterator;
     const bool send_over_whole_archive;
-
     const std::chrono::milliseconds wait_for_owner;
-
-    std::vector<std::vector<ObjectInfoPtr>> connection_to_files;
-    std::unordered_map<std::string, ObjectInfoPtr> unprocessed_files;
-    std::vector<size_t> remaining_bytes;
-
-    std::vector<std::string> ids_of_nodes;
-    std::vector<bool> replica_seen;
-    std::optional<std::chrono::steady_clock::time_point> stealing_allowed_since;
+    const std::vector<std::string> ids_of_nodes;
 
     std::mutex mutex;
     std::condition_variable replica_seen_cv;
+    std::condition_variable iterator_cv;
+    bool iterator_in_use = false;
+    std::vector<std::deque<QueuedTaskPtr>> owner_queues;
+    std::vector<std::deque<QueuedTaskPtr>> stealer_queues;
+    std::unordered_map<String, QueuedTaskPtr> unprocessed_files;
+    std::vector<size_t> remaining_bytes;
+    std::vector<size_t> remaining_count;
+    std::vector<bool> replica_seen;
+    std::optional<std::chrono::steady_clock::time_point> stealing_allowed_since;
     bool iterator_exhausted = false;
 
     LoggerPtr log = getLogger("StorageClusterTaskDistributor");

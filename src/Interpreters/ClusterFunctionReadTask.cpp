@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_PROTOCOL;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 namespace Setting
 {
@@ -83,11 +84,100 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
     return object;
 }
 
+namespace
+{
+
+size_t getSerializationProtocolVersion(size_t worker_protocol_version)
+{
+    return std::min(static_cast<UInt64>(worker_protocol_version), static_cast<UInt64>(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION));
+}
+
+size_t readProtocolVersion(ReadBuffer & in)
+{
+    size_t protocol_version = 0;
+    readVarUInt(protocol_version, in);
+    if (protocol_version < DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION || protocol_version > DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION)
+    {
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Supported protocol versions are in range [{}, {}], got: {}",
+            DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION,
+            protocol_version);
+    }
+    return protocol_version;
+}
+
+}
+
 void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker_protocol_version) const
 {
-    auto protocol_version
-        = std::min(static_cast<UInt64>(worker_protocol_version), static_cast<UInt64>(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION));
+    const auto protocol_version = getSerializationProtocolVersion(worker_protocol_version);
     writeVarUInt(protocol_version, out);
+    serializeBody(out, protocol_version);
+}
+
+void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
+{
+    deserializeBody(in, readProtocolVersion(in));
+}
+
+void ClusterFunctionReadTaskBatch::serialize(const ClusterFunctionReadTaskResponses & tasks, WriteBuffer & out, size_t worker_protocol_version)
+{
+    const auto protocol_version = getSerializationProtocolVersion(worker_protocol_version);
+    writeVarUInt(protocol_version, out);
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_TASK_BATCHES)
+    {
+        writeVarUInt(tasks.size(), out);
+        for (const auto & task : tasks)
+            task->serializeBody(out, protocol_version);
+        return;
+    }
+
+    if (tasks.size() > 1)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot send {} read tasks in one response to a worker of protocol version {}",
+            tasks.size(),
+            protocol_version);
+
+    if (tasks.empty())
+        ClusterFunctionReadTaskResponse().serializeBody(out, protocol_version);
+    else
+        tasks.front()->serializeBody(out, protocol_version);
+}
+
+ClusterFunctionReadTaskResponses ClusterFunctionReadTaskBatch::deserialize(ReadBuffer & in)
+{
+    const auto protocol_version = readProtocolVersion(in);
+    ClusterFunctionReadTaskResponses tasks;
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_TASK_BATCHES)
+    {
+        size_t count = 0;
+        readVarUInt(count, in);
+        tasks.reserve(count);
+        for (size_t i = 0; i < count; ++i)
+        {
+            auto task = std::make_shared<ClusterFunctionReadTaskResponse>();
+            task->deserializeBody(in, protocol_version);
+            if (task->isEmpty())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Received an empty read task in a batch of read tasks");
+            tasks.push_back(std::move(task));
+        }
+        return tasks;
+    }
+
+    auto task = std::make_shared<ClusterFunctionReadTaskResponse>();
+    task->deserializeBody(in, protocol_version);
+    if (!task->isEmpty())
+        tasks.push_back(std::move(task));
+    return tasks;
+}
+
+void ClusterFunctionReadTaskResponse::serializeBody(WriteBuffer & out, size_t protocol_version) const
+{
     writeStringBinary(path, out);
 
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA)
@@ -180,20 +270,8 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
     }
 }
 
-void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
+void ClusterFunctionReadTaskResponse::deserializeBody(ReadBuffer & in, size_t protocol_version)
 {
-    size_t protocol_version = 0;
-    readVarUInt(protocol_version, in);
-    if (protocol_version < DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION || protocol_version > DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION)
-    {
-        throw Exception(
-            ErrorCodes::UNKNOWN_PROTOCOL,
-            "Supported protocol versions are in range [{}, {}], got: {}",
-            DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION,
-            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION,
-            protocol_version);
-    }
-
     readStringBinary(path, in);
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA)
     {

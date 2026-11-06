@@ -39,9 +39,22 @@ struct ClusterFunctionReadTaskResponse
     /// Deserialize. Protocol version will be received from `in`
     /// and the result will be deserialized accordingly.
     void deserialize(ReadBuffer & in);
+
+private:
+    void serializeBody(WriteBuffer & out, size_t protocol_version) const;
+    void deserializeBody(ReadBuffer & in, size_t protocol_version);
+
+    friend struct ClusterFunctionReadTaskBatch;
 };
 
 using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
+using ClusterFunctionReadTaskResponses = std::vector<ClusterFunctionReadTaskResponsePtr>;
+
+struct ClusterFunctionReadTaskBatch
+{
+    static void serialize(const ClusterFunctionReadTaskResponses & tasks, WriteBuffer & out, size_t worker_protocol_version);
+    static ClusterFunctionReadTaskResponses deserialize(ReadBuffer & in);
+};
 using ClusterFunctionReadTaskCallback = std::function<ClusterFunctionReadTaskResponsePtr()>;
 
 }

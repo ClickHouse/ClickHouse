@@ -832,7 +832,8 @@ void TCPHandler::runImpl()
             if (!query_state->run_query_in_background)
             {
                 /// This callback is needed for requesting read tasks inside pipeline for distributed processing
-                query_state->query_context->setClusterFunctionReadTaskCallback([this, &query_state]() -> ClusterFunctionReadTaskResponsePtr
+                query_state->query_context->setClusterFunctionReadTaskCallback(
+                    [this, &query_state, received_tasks = std::make_shared<ReceivedClusterFunctionReadTasks>()]() -> ClusterFunctionReadTaskResponsePtr
                 {
                     Stopwatch watch;
                     CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::ReadTaskRequestsSent);
@@ -845,14 +846,24 @@ void TCPHandler::runImpl()
 
                         try
                         {
-                            sendReadTaskRequest();
+                            if (received_tasks->tasks.empty() && !received_tasks->finished)
+                            {
+                                sendReadTaskRequest();
 
-                            ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSent);
+                                ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSent);
 
-                            auto res = receiveClusterFunctionReadTaskResponse(*query_state);
+                                auto tasks = receiveClusterFunctionReadTaskResponse(*query_state);
+                                received_tasks->tasks.insert(received_tasks->tasks.end(), tasks.begin(), tasks.end());
+                                received_tasks->finished = tasks.empty();
 
-                            ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
+                                ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
+                            }
 
+                            if (received_tasks->tasks.empty())
+                                return std::make_shared<ClusterFunctionReadTaskResponse>();
+
+                            auto res = std::move(received_tasks->tasks.front());
+                            received_tasks->tasks.pop_front();
                             return res;
                         }
                         catch (...)
@@ -2633,7 +2644,7 @@ void TCPHandler::sendHello()
 }
 
 
-ClusterFunctionReadTaskResponsePtr TCPHandler::receiveClusterFunctionReadTaskResponse(QueryState & state)
+ClusterFunctionReadTaskResponses TCPHandler::receiveClusterFunctionReadTaskResponse(QueryState & state)
 {
     UInt64 packet_type = 0;
     state.at_packet_boundary = false;
@@ -2648,10 +2659,9 @@ ClusterFunctionReadTaskResponsePtr TCPHandler::receiveClusterFunctionReadTaskRes
 
         case Protocol::Client::ReadTaskResponse:
         {
-            auto task = std::make_shared<ClusterFunctionReadTaskResponse>();
-            task->deserialize(*in);
+            auto tasks = ClusterFunctionReadTaskBatch::deserialize(*in);
             state.at_packet_boundary = true;
-            return task;
+            return tasks;
         }
 
         default:

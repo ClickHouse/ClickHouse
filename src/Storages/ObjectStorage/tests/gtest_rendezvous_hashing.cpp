@@ -63,12 +63,29 @@ namespace
         return std::make_shared<TestIterator>(paths);
     }
 
+    ObjectInfoPtr getNextTask(StorageObjectStorageStableTaskDistributor & distributor, size_t replica_id)
+    {
+        auto tasks = distributor.getNextTasks(replica_id, 1);
+        if (tasks.empty())
+            return nullptr;
+        EXPECT_EQ(tasks.size(), 1);
+        return tasks.front();
+    }
+
+    std::vector<std::string> getPaths(const ObjectInfos & objects)
+    {
+        std::vector<std::string> paths;
+        for (const auto & object : objects)
+            paths.push_back(object->getPath());
+        return paths;
+    }
+
     // Get next N objects for replica replica_id
     bool extractNForReplica(StorageObjectStorageStableTaskDistributor & distributor, std::vector<std::string> & paths, size_t replica_id, size_t n)
     {
         for (size_t i = 0; i < n; ++i)
         {
-            ObjectInfoPtr object = distributor.getNextTask(replica_id);
+            ObjectInfoPtr object = getNextTask(distributor, replica_id);
             if (!object)
                 return false;
             auto path = object->getPath();
@@ -85,7 +102,7 @@ namespace
     {
         for (size_t i = 0; i < n; ++i)
         {
-            ObjectInfoPtr object = distributor.getNextTask(replica_id);
+            ObjectInfoPtr object = getNextTask(distributor, replica_id);
             if (!object)
                 return false;
             read_source_indices.emplace_back(object->relative_path_with_metadata.read_source_index);
@@ -364,7 +381,7 @@ TEST(RendezvousHashing, WaitsForOwnerBeforeTakingItsFiles)
     ASSERT_TRUE(extractNForReplica(distributor, stolen_paths, 0, 4));
     ASSERT_GE(std::chrono::steady_clock::now() - start, wait_for_owner);
     ASSERT_TRUE(checkHead(stolen_paths, {0, 2, 3, 4}));
-    ASSERT_EQ(distributor.getNextTask(0), nullptr);
+    ASSERT_EQ(getNextTask(distributor, 0), nullptr);
 }
 
 TEST(RendezvousHashing, DoesNotWaitForConnectedOwner)
@@ -434,13 +451,84 @@ TEST(RendezvousHashing, DoesNotDeduplicateRepeatedArchiveEntryName)
     StorageObjectStorageStableTaskDistributor distributor(iterator, std::move(replicas), false);
 
     std::set<std::pair<std::string, std::optional<size_t>>> actual;
-    while (auto object = distributor.getNextTask(0))
+    while (auto object = getNextTask(distributor, 0))
         actual.emplace(object->getPath(), object->archive_entry_index);
 
     ASSERT_EQ(
         actual,
         (std::set<std::pair<std::string, std::optional<size_t>>>{
             {"archive.zip::a", std::nullopt}, {"archive.zip::a", 1}, {"#1#archive.zip::a", std::nullopt}}));
+}
+
+TEST(RendezvousHashing, BatchContainsOnlyOwnFilesWhileTheyLast)
+{
+    auto iterator = makeIterator();
+    std::vector<std::string> replicas = {"replica0", "replica1", "replica2", "replica3"};
+    StorageObjectStorageStableTaskDistributor distributor(iterator, std::move(replicas), false);
+
+    auto paths = getPaths(distributor.getNextTasks(1, 10));
+    ASSERT_EQ(paths.size(), 3);
+    ASSERT_TRUE(checkHead(paths, {0, 2, 4}));
+
+    paths = getPaths(distributor.getNextTasks(2, 10));
+    ASSERT_EQ(paths.size(), 4);
+    ASSERT_TRUE(checkHead(paths, {1, 5, 7, 8}));
+}
+
+TEST(RendezvousHashing, BatchStealsAtMostHalfOfFilesOfAnotherReplica)
+{
+    auto iterator = makeIterator();
+    std::vector<std::string> replicas = {"replica2", "replica1"};
+    StorageObjectStorageStableTaskDistributor distributor(iterator, std::move(replicas), false);
+
+    auto paths1 = getPaths(distributor.getNextTasks(1, 1));
+    ASSERT_TRUE(checkHead(paths1, {0}));
+
+    auto paths0 = getPaths(distributor.getNextTasks(0, 100));
+    ASSERT_EQ(paths0.size(), 6);
+    ASSERT_TRUE(checkHead(paths0, {1, 5, 6, 7, 8, 9}));
+
+    auto stolen = getPaths(distributor.getNextTasks(0, 100));
+    ASSERT_EQ(stolen.size(), 1);
+
+    auto rest = getPaths(distributor.getNextTasks(1, 100));
+    ASSERT_EQ(rest.size(), 2);
+
+    std::vector<std::string> all = paths1;
+    all.insert(all.end(), paths0.begin(), paths0.end());
+    all.insert(all.end(), stolen.begin(), stolen.end());
+    all.insert(all.end(), rest.begin(), rest.end());
+    ASSERT_EQ(countPaths(all), expectedCounts({0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, 1));
+
+    ASSERT_TRUE(distributor.getNextTasks(0, 100).empty());
+    ASSERT_TRUE(distributor.getNextTasks(1, 100).empty());
+}
+
+TEST(RendezvousHashing, BatchesHandOutEveryFileOnce)
+{
+    const size_t buckets_per_file = 7;
+    auto iterator = makeIteratorWithBuckets(buckets_per_file);
+    std::vector<std::string> replicas = {"replica0", "replica1", "replica2"};
+    StorageObjectStorageStableTaskDistributor distributor(iterator, std::move(replicas), false);
+
+    std::map<std::string, size_t> identifiers;
+    bool finished = false;
+    while (!finished)
+    {
+        finished = true;
+        for (size_t replica = 0; replica < 3; ++replica)
+        {
+            for (const auto & object : distributor.getNextTasks(replica, replica + 2))
+            {
+                ++identifiers[object->getIdentifier()];
+                finished = false;
+            }
+        }
+    }
+
+    ASSERT_EQ(identifiers.size(), 10 * buckets_per_file);
+    for (const auto & [identifier, count] : identifiers)
+        ASSERT_EQ(count, 1) << identifier;
 }
 
 TEST(RelativePathWithMetadata, FileNameKeepsObjectKeyByDefault)
@@ -527,5 +615,78 @@ TEST(ClusterFunctionReadTaskResponse, ArchiveEntryIndexNeedsProtocolVersion)
         deserialized.deserialize(in);
         ASSERT_EQ(deserialized.getObjectInfo()->getPath(), "archive.zip::a");
         ASSERT_FALSE(deserialized.getObjectInfo()->archive_entry_index.has_value());
+    }
+}
+
+namespace
+{
+    ClusterFunctionReadTaskResponses roundTripBatch(const ClusterFunctionReadTaskResponses & tasks, size_t worker_protocol_version)
+    {
+        String serialized;
+        WriteBufferFromString out(serialized);
+        ClusterFunctionReadTaskBatch::serialize(tasks, out, worker_protocol_version);
+        out.finalize();
+
+        ReadBufferFromString in(serialized);
+        auto result = ClusterFunctionReadTaskBatch::deserialize(in);
+        EXPECT_TRUE(in.eof());
+        return result;
+    }
+}
+
+TEST(ClusterFunctionReadTaskBatch, SerializesListOfTasks)
+{
+    ClusterFunctionReadTaskResponses tasks;
+    for (size_t i = 0; i < 3; ++i)
+    {
+        auto task = std::make_shared<ClusterFunctionReadTaskResponse>(makePath(i));
+        task->read_source_index = i;
+        tasks.push_back(task);
+    }
+
+    auto deserialized = roundTripBatch(tasks, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION);
+    ASSERT_EQ(deserialized.size(), 3);
+    for (size_t i = 0; i < 3; ++i)
+    {
+        auto object_info = deserialized[i]->getObjectInfo();
+        ASSERT_EQ(object_info->getPath(), makePath(i));
+        ASSERT_EQ(object_info->relative_path_with_metadata.read_source_index, std::optional<size_t>(i));
+    }
+
+    ASSERT_TRUE(roundTripBatch({}, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION).empty());
+}
+
+TEST(ClusterFunctionReadTaskBatch, SendsSingleTaskToOlderWorker)
+{
+    constexpr auto old_version = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_TASK_BATCHES - 1;
+
+    auto deserialized = roundTripBatch({std::make_shared<ClusterFunctionReadTaskResponse>(makePath(0))}, old_version);
+    ASSERT_EQ(deserialized.size(), 1);
+    ASSERT_EQ(deserialized.front()->getObjectInfo()->getPath(), makePath(0));
+
+    ASSERT_TRUE(roundTripBatch({}, old_version).empty());
+
+    {
+        String serialized;
+        WriteBufferFromString out(serialized);
+        ClusterFunctionReadTaskBatch::serialize({std::make_shared<ClusterFunctionReadTaskResponse>(makePath(1))}, out, old_version);
+        out.finalize();
+
+        ReadBufferFromString in(serialized);
+        ClusterFunctionReadTaskResponse single;
+        single.deserialize(in);
+        ASSERT_EQ(single.path, makePath(1));
+    }
+
+    {
+        String serialized;
+        WriteBufferFromString out(serialized);
+        ClusterFunctionReadTaskResponse(makePath(2)).serialize(out, old_version);
+        out.finalize();
+
+        ReadBufferFromString in(serialized);
+        auto tasks = ClusterFunctionReadTaskBatch::deserialize(in);
+        ASSERT_EQ(tasks.size(), 1);
+        ASSERT_EQ(tasks.front()->path, makePath(2));
     }
 }

@@ -1279,10 +1279,10 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         throttler->throttle(out->count() - prev_bytes);
 }
 
-void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
+void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponses & tasks)
 {
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
-    response.serialize(*out, worker_cluster_function_protocol_version);
+    ClusterFunctionReadTaskBatch::serialize(tasks, *out, worker_cluster_function_protocol_version);
     out->finishChunk();
     out->next();
 }

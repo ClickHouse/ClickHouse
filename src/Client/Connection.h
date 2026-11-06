@@ -37,6 +37,8 @@ class JWTProvider;
 class Connection;
 struct ConnectionParameters;
 struct ClusterFunctionReadTaskResponse;
+using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
+using ClusterFunctionReadTaskResponses = std::vector<ClusterFunctionReadTaskResponsePtr>;
 
 using ConnectionPtr = std::shared_ptr<Connection>;
 using Connections = std::vector<ConnectionPtr>;
@@ -192,7 +194,7 @@ public:
     /// You could pass size of serialized/compressed block.
     void sendPreparedData(ReadBuffer & input, size_t size, const String & name = "");
 
-    void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response);
+    void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponses & tasks);
     /// Send all scalars.
     void sendScalarsData(Scalars & data) override;
 
