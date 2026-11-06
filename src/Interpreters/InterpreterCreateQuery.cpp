@@ -2646,6 +2646,13 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     /// Settings that send the table's data elsewhere, e.g. the move destination of a queue, need the grants of that place.
     required_access.append_range(StorageFactory::instance().getExportAccess(create));
 
+    /// `ATTACH TABLE ... FROM '<path>'` reads a directory in `user_files` as the table data and then moves it to the
+    /// data path of the new table. Reading it needs `READ` on the FILE source like the `file` function does, and
+    /// taking it away from `user_files` needs `WRITE`, like renaming files after processing does. Without this,
+    /// `CREATE TABLE` on a table of their own would let a user read or consume any data staged in `user_files`.
+    if (create.has_attach_from_path)
+        required_access.emplace_back(AccessType::READ | AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE));
+
     return required_access;
 }
 
