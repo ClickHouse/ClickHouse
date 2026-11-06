@@ -885,6 +885,9 @@ private:
     /// Otherwise some replica may assign merge which intersects part_info.
     bool getFakePartCoveringAllPartsInPartition(const String & partition_id, MergeTreePartInfo & part_info,
                                                 std::optional<EphemeralLockInZooKeeper> & delimiting_block_lock, bool for_replace_range = false);
+    /// The same for an already allocated delimiting block number.
+    static bool getFakePartCoveringAllPartsInPartition(const String & partition_id, MergeTreePartInfo & part_info,
+                                                       Int64 delimiting_block_number, bool for_replace_range = false);
 
     /// Check for a node in ZK. If it is, remember this information, and then immediately answer true.
     mutable std::unordered_set<std::string> existing_nodes_cache;
@@ -906,9 +909,8 @@ private:
     ReplicatedMergeTreeAddress getReplicatedMergeTreeAddress() const;
 
     bool addOpsToDropAllPartsInPartition(
-        zkutil::ZooKeeper & zookeeper, const String & partition_id, bool detach,
+        zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 delimiting_block_number, bool detach,
         Coordination::Requests & ops, std::vector<LogEntryPtr> & entries,
-        std::vector<EphemeralLockInZooKeeper> & delimiting_block_locks,
         std::vector<size_t> & log_entry_ops_idx);
 
     void dropPartitions(const zkutil::ZooKeeperPtr & zookeeper, const Strings & partition_ids, bool detach, ContextPtr query_context);
