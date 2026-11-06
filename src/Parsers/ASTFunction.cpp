@@ -24,7 +24,9 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
+#include <Parsers/CommonParsers.h>
 #include <Parsers/FunctionSecretArgumentsFinderAST.h>
+#include <Poco/String.h>
 
 
 using namespace std::literals;
@@ -540,6 +542,37 @@ static bool functionNameNeedsQuoting(const String & name, const ASTPtr & argumen
             && arguments->children[0]->as<ASTSubquery>());
 }
 
+/// A compound name (`db.view(...)`) is written part by part: one quoted `db.view` token parses back as a one-part name.
+/// A keyword part is quoted: `1 IN partition.pv(1)` does not parse.
+/// A part may contain dots, so a dot splits only between non-empty parts: an empty quoted identifier does not parse.
+static void writeFunctionName(
+    WriteBuffer & ostr, const IAST::FormatSettings & settings, const String & name, bool is_compound_name, const ASTPtr & arguments)
+{
+    if (!is_compound_name)
+    {
+        ostr << (functionNameNeedsQuoting(name, arguments) ? backQuote(name) : backQuoteIfNeed(name));
+        return;
+    }
+
+    const auto & keywords = getKeyWordSet();
+    auto write_part = [&](size_t begin, size_t end)
+    {
+        const String part = name.substr(begin, end - begin);
+        settings.writeIdentifier(ostr, part, /*ambiguous=*/keywords.contains(Poco::toUpper(part)));
+    };
+
+    size_t begin = 0;
+    for (size_t dot = name.find('.'); dot != String::npos; dot = name.find('.', dot + 1))
+    {
+        if (dot == begin || dot + 1 == name.size())
+            continue;
+        write_part(begin, dot);
+        ostr << '.';
+        begin = dot + 1;
+    }
+    write_part(begin, name.size());
+}
+
 void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.expression_list_prepend_whitespace = false;
@@ -562,7 +595,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         std::string nl_or_nothing = settings.one_line ? "" : "\n";
         std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
         if (!name.empty())
-            ostr << (functionNameNeedsQuoting(name, arguments) ? backQuote(name) : backQuoteIfNeed(name));
+            writeFunctionName(ostr, settings, name, isCompoundName(), arguments);
         ostr << "(";
         ostr << nl_or_nothing;
         FormatStateStacked frame_nested = frame;
@@ -1075,7 +1108,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     if (is_plain_not_call)
         ostr << name;
     else if (!name.empty())
-        ostr << (functionNameNeedsQuoting(name, arguments) ? backQuote(name) : backQuoteIfNeed(name));
+        writeFunctionName(ostr, settings, name, isCompoundName(), arguments);
 
     SecretArgumentsResult secret_arguments;
     if (arguments && !settings.show_secrets)
