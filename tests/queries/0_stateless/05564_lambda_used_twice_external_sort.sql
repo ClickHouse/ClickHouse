@@ -85,4 +85,8 @@ WHERE explain LIKE '% Function(%';
 SELECT count() FROM (EXPLAIN header = 1 SELECT arrayMap(x -> x + n * 2, [n]) AS m, arrayMap(x -> x + n * 2, a) AS k
     FROM t_lambda_array_join ARRAY JOIN arrays AS a)
 WHERE explain LIKE '% Function(%';
+-- A view with its own ARRAY JOIN gives its array the same generated name as the outer one.
+CREATE VIEW v_lambda_array_join AS SELECT n FROM t_lambda_array_join ARRAY JOIN [1] AS a;
+SELECT n, arrayMap(x -> x + n * 2, [n]) AS m, arrayMap(x -> x + n * 2, [a]) AS k FROM v_lambda_array_join ARRAY JOIN [1, 2] AS a ORDER BY ALL;
+DROP VIEW v_lambda_array_join;
 DROP TABLE t_lambda_array_join;
