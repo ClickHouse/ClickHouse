@@ -17,6 +17,7 @@
 #if USE_AZURE_BLOB_STORAGE
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <IO/AzureBlobStorage/PocoHTTPClient.h>
 #include <azure/storage/common/storage_credential.hpp>
 #include <azure/identity/client_secret_credential.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
@@ -376,6 +377,18 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
         set_option("azure_endpoint", azure_endpoint);
         if (endpoint.storage_account_url.starts_with("http://"))
             set_option("azure_allow_http", "true");
+    }
+
+    /// The kernel's object_store client does not see the server's Azure settings, so pass the timeouts of the
+    /// storage's own client (`azure_connect_timeout_ms` / `azure_request_timeout_ms`). `0` (no timeout) cannot be
+    /// expressed there and keeps object_store's defaults (30 s / 5 s).
+    if (const auto * transport = dynamic_cast<const DB::PocoAzureHTTPClient *>(connection_params.client_options.Transport.Transport.get()))
+    {
+        const auto & timeouts = transport->getConfiguredTimeouts();
+        if (const auto connect_timeout_ms = timeouts.connection_timeout.totalMilliseconds(); connect_timeout_ms > 0)
+            set_option("azure_connect_timeout", fmt::format("{}ms", connect_timeout_ms));
+        if (const auto request_timeout_ms = timeouts.receive_timeout.totalMilliseconds(); request_timeout_ms > 0)
+            set_option("azure_timeout", fmt::format("{}ms", request_timeout_ms));
     }
 
     return options;

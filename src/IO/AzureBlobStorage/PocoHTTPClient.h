@@ -76,6 +76,9 @@ public:
     ThrottlerPtr getThrottler() const { return request_throttler.get_throttler; }
     ThrottlerPtr putThrottler() const { return request_throttler.put_throttler; }
 
+    /// Timeouts from the client configuration, before any adaptive adjustment.
+    const ConnectionTimeouts & getConfiguredTimeouts() const { return timeouts; }
+
 private:
     enum class AzureMetricType : uint8_t
     {

@@ -111,8 +111,15 @@ TEST(DeltaLakeMetadata, GetSimpleTypeByNameChar)
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Core/Settings.h>
 
 #include <optional>
+
+namespace DB::Setting
+{
+    extern const SettingsUInt64 azure_connect_timeout_ms;
+    extern const SettingsUInt64 azure_request_timeout_ms;
+}
 
 namespace
 {
@@ -297,6 +304,48 @@ TEST(DeltaLakeAzureKernelHelper, KeylessConnectionStringWithOptInIsUnsigned)
     const auto skip_signature = findBuilderOption(options, "azure_skip_signature");
     ASSERT_TRUE(skip_signature.has_value());
     ASSERT_EQ(*skip_signature, "true");
+}
+
+namespace
+{
+DB::AzureBlobStorage::ConnectionParams makeParamsWithClientTimeouts(UInt64 connect_timeout_ms, UInt64 request_timeout_ms)
+{
+    auto settings = getContext().context->getSettingsCopy();
+    settings[DB::Setting::azure_connect_timeout_ms] = connect_timeout_ms;
+    settings[DB::Setting::azure_request_timeout_ms] = request_timeout_ms;
+
+    DB::AzureBlobStorage::ConnectionParams params;
+    params.endpoint.storage_account_url = "https://testaccount.blob.core.windows.net";
+    params.endpoint.container_name = "testcontainer";
+    params.endpoint.account_name = "testaccount";
+    params.auth_method = std::make_shared<Azure::Storage::StorageSharedKeyCredential>("testaccount", "dGVzdGtleQ==");
+    params.client_options = DB::AzureBlobStorage::getClientOptions(
+        getContext().context, settings, DB::AzureBlobStorage::RequestSettings{}, /*for_disk=*/ false);
+    return params;
+}
+}
+
+/// The kernel's object store client must use the timeouts of the storage's own client.
+TEST(DeltaLakeAzureKernelHelper, ForwardsClientTimeouts)
+{
+    const auto options = DeltaLake::getAzureBuilderOptions(makeParamsWithClientTimeouts(1234, 5678));
+
+    const auto connect_timeout = findBuilderOption(options, "azure_connect_timeout");
+    ASSERT_TRUE(connect_timeout.has_value());
+    ASSERT_EQ(*connect_timeout, "1234ms");
+
+    const auto request_timeout = findBuilderOption(options, "azure_timeout");
+    ASSERT_TRUE(request_timeout.has_value());
+    ASSERT_EQ(*request_timeout, "5678ms");
+}
+
+/// `0` means no timeout, which object_store cannot express, so its defaults stay in effect.
+TEST(DeltaLakeAzureKernelHelper, ZeroClientTimeoutsAreNotForwarded)
+{
+    const auto options = DeltaLake::getAzureBuilderOptions(makeParamsWithClientTimeouts(0, 0));
+
+    ASSERT_FALSE(findBuilderOption(options, "azure_connect_timeout").has_value());
+    ASSERT_FALSE(findBuilderOption(options, "azure_timeout").has_value());
 }
 
 #endif
