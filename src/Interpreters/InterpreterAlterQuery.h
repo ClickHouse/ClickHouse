@@ -44,8 +44,10 @@ public:
         RowExistsColumnKind row_exists_column_kind,
         const ContextPtr & context_);
 
-    /// Columns whose `SELECT` covers what a column with this DEFAULT/MATERIALIZED/ALIAS/EPHEMERAL expression would expose.
-    static NameSet getColumnsReadByColumnExpression(const IAST & expression, const ColumnsDescription & columns, bool supports_subcolumns);
+    /// Columns whose `SELECT` covers what a column with this DEFAULT/MATERIALIZED/ALIAS/EPHEMERAL expression would expose;
+    /// `has_unbound_identifier` is set when an identifier names none of `columns`.
+    static NameSet getColumnsReadByColumnExpression(
+        const IAST & expression, const ColumnsDescription & columns, bool supports_subcolumns, bool * has_unbound_identifier = nullptr);
 
     /// Returns unknown when the target storage is not available on the submitting host.
     static RowExistsColumnKind getRowExistsColumnKind(const StoragePtr & storage, const ContextPtr & context_);
