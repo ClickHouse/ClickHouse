@@ -61,6 +61,9 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 
+#include <deque>
+#include <unordered_map>
+
 namespace DB
 {
 namespace Setting
@@ -825,6 +828,55 @@ ASTPtr parseAdditionalResultFilter(const Settings & settings)
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
     return additional_result_filter_ast;
+}
+
+bool makeFilterKeepHeader(ActionsDAG & dag, const Block & header, const ActionsDAG::Node * filter_node, String & filter_column_name)
+{
+    /// Inputs are matched to the header columns by name and position, as `ActionsDAG::updateHeader` does,
+    /// so a header with duplicate names gets one input per column.
+    std::unordered_map<std::string_view, std::deque<const ActionsDAG::Node *>> inputs_by_name;
+    for (const auto * input : dag.getInputs())
+        inputs_by_name[input->result_name].push_back(input);
+
+    ActionsDAG::NodeRawConstPtrs outputs;
+    outputs.reserve(header.columns() + 1);
+    bool filter_node_is_header_column = false;
+    for (const auto & column : header)
+    {
+        auto & inputs = inputs_by_name[column.name];
+        const ActionsDAG::Node * input = nullptr;
+        if (inputs.empty())
+        {
+            input = &dag.addInput(column.name, column.type);
+        }
+        else
+        {
+            input = inputs.front();
+            inputs.pop_front();
+        }
+
+        filter_node_is_header_column |= input == filter_node;
+        outputs.push_back(input);
+    }
+
+    if (!filter_node_is_header_column)
+    {
+        /// `FilterStep` finds the filter column by name, so a computed filter must not share its name
+        /// with a header column, e.g. a column aliased `greater(a, b)` next to the filter `a > b`.
+        if (header.has(filter_node->result_name))
+        {
+            size_t suffix = 0;
+            String unique_name = "__filter_0";
+            while (header.has(unique_name))
+                unique_name = "__filter_" + std::to_string(++suffix);
+            filter_node = &dag.addAlias(*filter_node, std::move(unique_name));
+        }
+        outputs.push_back(filter_node);
+    }
+
+    filter_column_name = filter_node->result_name;
+    dag.getOutputs() = std::move(outputs);
+    return !filter_node_is_header_column;
 }
 
 void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets)

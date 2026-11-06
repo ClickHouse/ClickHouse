@@ -1,7 +1,7 @@
 -- Tags: zookeeper, no-replicated-database
 --       no-replicated-database: `DETACH DATABASE` / `ATTACH DATABASE`.
 
--- A scalar subquery with a JOIN in a TTL expression, in a CHECK constraint, in the arguments of a table function
+-- A scalar subquery with a JOIN in a TTL expression, in the arguments of a table function
 -- and in the arguments of `cluster` in a view is executed when the table is created, and again when the table is
 -- loaded, here by re-attaching the database. The tables are named with their database, because a TTL expression
 -- is not analysed in the current database of the statement.
@@ -25,12 +25,13 @@ TTL d + INTERVAL 1 YEAR WHERE x < (SELECT count() FROM {CLICKHOUSE_DATABASE_1:Id
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_ttl_table_function (d DateTime, x UInt64) ENGINE = MergeTree ORDER BY tuple()
 TTL d + INTERVAL 1 YEAR WHERE x < (SELECT count() FROM numbers(10)); -- { serverError THERE_IS_NO_QUERY }
 
+-- A scalar subquery is not allowed in a CHECK constraint.
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_check
 (
     x UInt64,
     CONSTRAINT c CHECK x < (SELECT count() + 1000 FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_probe AS p, {CLICKHOUSE_DATABASE_1:Identifier}.t_build AS b WHERE p.k = b.k)
 )
-ENGINE = MergeTree ORDER BY tuple();
+ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
 -- The JOIN is only in a scalar subquery nested in the one of the constraint.
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_check_nested
@@ -39,7 +40,7 @@ CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_check_nested
     CONSTRAINT c CHECK x < (SELECT count() + 1000 FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_build
         WHERE k <= (SELECT max(b.k) FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_probe AS p, {CLICKHOUSE_DATABASE_1:Identifier}.t_build AS b WHERE p.k = b.k))
 )
-ENGINE = MergeTree ORDER BY tuple();
+ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
 -- The arguments of a table function are evaluated with the global context.
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_numbers AS numbers(assumeNotNull(
@@ -76,8 +77,6 @@ DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 SELECT 't_ttl_where', count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_ttl_where;
-SELECT 't_check', count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_check;
-SELECT 't_check_nested', count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_check_nested;
 SELECT 't_ttl_replicated', count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_ttl_replicated;
 SELECT 't_numbers', count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_numbers;
 

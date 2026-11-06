@@ -92,7 +92,11 @@ public:
     /// The codecs declared with `CODEC name (...)` in the list are applied to the columns. `columns_list.columns` must not be null.
     static ColumnsDescription getColumnsDescription(const ASTColumns & columns_list, ContextPtr context, LoadingStrictnessLevel mode, bool is_restore_from_backup = false, bool check_defaults_over_virtual_columns = true);
     static ConstraintsDescription
-    getConstraintsDescription(const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context);
+    getConstraintsDescription(
+        const ASTExpressionList * constraints,
+        const ColumnsDescription & columns,
+        ContextPtr local_context,
+        bool validate_expressions = false);
 
     static void prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr context, const String & cluster_name);
 

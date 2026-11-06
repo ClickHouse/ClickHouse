@@ -1,7 +1,7 @@
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Storages/IndicesDescription.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -104,14 +104,42 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
     return *this;
 }
 
+namespace
+{
+
+/// Clone an index declaration with the SQL user-defined functions of its expression inlined. Only the
+/// expression is visited: the `TYPE` of the index is an `ASTFunction` too, and a function named like the
+/// index type (e.g. `minmax`) must not be expanded there.
+ASTPtr cloneWithExpandedUserDefinedFunctions(const ASTPtr & definition_ast, ContextPtr context)
+{
+    ASTPtr result = definition_ast->clone();
+    auto * index_definition = result->as<ASTIndexDeclaration>();
+    if (!index_definition || index_definition->children.empty())
+        return result;
+
+    /// The expression is the first child, see `ASTIndexDeclaration::getExpression`.
+    ASTPtr & expression = index_definition->children.front();
+    auto * old_ptr = expression.get();
+    UserDefinedSQLFunctionVisitor::visit(expression, context);
+    if (expression.get() != old_ptr)
+        index_definition->updatePointerToChild(old_ptr, expression.get());
+
+    return result;
+}
+
+}
+
 IndexDescription IndexDescription::getIndexFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
     bool is_implicitly_created,
     bool escape_filenames,
-    ContextPtr context)
+    ContextPtr context,
+    bool validate_expressions)
 {
-    const auto * index_definition = definition_ast->as<ASTIndexDeclaration>();
+    ASTPtr expanded_definition_ast = cloneWithExpandedUserDefinedFunctions(definition_ast, context);
+
+    const auto * index_definition = expanded_definition_ast->as<ASTIndexDeclaration>();
     if (!index_definition)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create skip index from non ASTIndexDeclaration AST");
 
@@ -134,7 +162,7 @@ IndexDescription IndexDescription::getIndexFromAST(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index GRANULARITY must be a positive integer");
 
     IndexDescription result;
-    result.definition_ast = index_definition->clone();
+    result.definition_ast = expanded_definition_ast;
     result.name = index_definition->name;
     result.type = Poco::toLower(index_type->name);
     result.granularity = index_definition->granularity;
@@ -142,7 +170,7 @@ IndexDescription IndexDescription::getIndexFromAST(
     result.escape_filenames = escape_filenames;
 
     checkExpressionDoesntContainSubqueries(*index_definition->getExpression());
-    result.initExpressionInfo(index_definition->getExpression(), columns, context);
+    result.initExpressionInfo(index_definition->getExpression(), columns, context, validate_expressions);
 
     for (auto & elem : result.sample_block)
     {
@@ -167,15 +195,11 @@ IndexDescription IndexDescription::getIndexFromAST(
     return result;
 }
 
-void IndexDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr context)
+namespace
 {
-    *this = getIndexFromAST(definition_ast, new_columns, is_implicitly_created, escape_filenames, context);
-}
 
-void IndexDescription::initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context)
+ASTPtr replaceAliasesInExpressionList(ASTPtr index_expression, const ColumnsDescription & columns)
 {
-    chassert(index_expression != nullptr);
-
     using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
 
     ASTPtr expr_list = extractKeyExpressionList(index_expression);
@@ -184,15 +208,56 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
 
     ReplaceAliasToExprVisitor::Data data{columns, {}};
     ReplaceAliasToExprVisitor{data}.visit(expr_list);
+    return expr_list;
+}
+
+}
+
+ASTPtr IndexDescription::getExpandedExpressionList(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context)
+{
+    ASTPtr expanded_definition_ast = cloneWithExpandedUserDefinedFunctions(definition_ast, context);
+
+    const auto * index_definition = expanded_definition_ast->as<ASTIndexDeclaration>();
+    if (!index_definition || !index_definition->getExpression())
+        return nullptr;
+
+    return replaceAliasesInExpressionList(index_definition->getExpression(), columns);
+}
+
+void IndexDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr context)
+{
+    /// Rebuilding stored metadata, not fresh user input: the definition was already validated when it
+    /// was accepted, and a definition grandfathered in before a check existed must keep working.
+    *this = getIndexFromAST(definition_ast, new_columns, is_implicitly_created, escape_filenames, context, /* validate_expressions = */ false);
+}
+
+void IndexDescription::initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context, bool validate_expressions)
+{
+    chassert(index_expression != nullptr);
+
+    ASTPtr expr_list = replaceAliasesInExpressionList(index_expression, columns);
+
+    /// The stored `definition_ast` keeps the matcher text, and `recalculateWithNewColumns`
+    /// rebuilds the index from it after a column-layout change, so a wildcard or a column
+    /// matcher would silently resolve to a different column set on `ALTER TABLE ... ADD COLUMN`
+    /// while existing parts keep index files built with the previous schema. Checked after
+    /// alias replacement, so a matcher hidden in an `ALIAS` column is rejected too.
+    /// Only for fresh definitions: an index over an `ALIAS` column whose expression hides a matcher
+    /// or a subquery could be persisted by older servers (they only checked the raw index expression),
+    /// and such a table has to keep loading and keep surviving unrelated `ALTER`s.
+    if (validate_expressions)
+    {
+        checkExpressionDoesntContainMatchers(*expr_list);
+        checkExpressionDoesntContainSubqueries(*expr_list);
+    }
 
     expression_list_ast = expr_list->clone();
 
-    TreeRewriterResultPtr syntax = TreeRewriter(context).analyze(
+    expression = analyzeExpressionToActions(
         expr_list,
-        columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns())
-    );
-
-    expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
+        columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()),
+        context,
+        true);
 
     sample_block = expression->getSampleBlock();
 }
@@ -288,9 +353,11 @@ IndicesDescription::parse(const String & str, const ColumnsDescription & columns
     ParserIndexDeclarationList parser;
     ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
+    /// Parsing the index definitions stored in the table metadata: they were validated when they were
+    /// accepted, so the fresh-definition-only checks must not be applied again here.
     for (const auto & index : list->children)
-        result.emplace_back(
-            IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, escape_index_filenames, context));
+        result.emplace_back(IndexDescription::getIndexFromAST(
+            index, columns, /* is_implicitly_created */ false, escape_index_filenames, context, /* validate_expressions = */ false));
 
     return result;
 }
@@ -303,8 +370,7 @@ ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const Col
         for (const auto & index_expr : index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
 
-    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
-    return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
+    return analyzeExpressionToActions(combined_expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()), context);
 }
 
 VectorWithMemoryTracking<String> IndicesDescription::getAllRegisteredNames() const
@@ -332,7 +398,9 @@ IndexDescription createImplicitMinMaxIndexDescription(
     const String & column_name, const ColumnsDescription & columns, bool escape_index_filenames, ContextPtr context)
 {
     auto index_ast = createImplicitMinMaxIndexAST(column_name);
-    return IndexDescription::getIndexFromAST(index_ast, columns, /* is_implicitly_created */ true, escape_index_filenames, context);
+    /// Built by the server itself over a single plain column, so there is nothing to validate.
+    return IndexDescription::getIndexFromAST(
+        index_ast, columns, /* is_implicitly_created */ true, escape_index_filenames, context, /* validate_expressions = */ false);
 }
 
 }

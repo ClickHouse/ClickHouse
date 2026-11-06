@@ -432,6 +432,8 @@ public:
     /// Whether `requestReadingInOrder` accepts a reverse direction. With `FINAL`, only the engines whose merge
     /// does not depend on the direct order of rows can read in reverse order.
     bool canReadInReverseOrder() const;
+    /// Whether `requestReadingInOrder` accepts `prefix_size`: it must not exceed the sorting key of this table.
+    bool canReadInOrderWithPrefix(size_t prefix_size) const;
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
 

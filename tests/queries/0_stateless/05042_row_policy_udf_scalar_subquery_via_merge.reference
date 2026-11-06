@@ -1,0 +1,15 @@
+scalar subquery hidden in a UDF
+0
+1
+2
+3
+the same scalar subquery spelled out
+0
+1
+2
+3
+a UDF without a subquery
+0
+1
+2
+3

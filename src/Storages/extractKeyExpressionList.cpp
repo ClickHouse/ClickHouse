@@ -1,7 +1,10 @@
 #include <Storages/extractKeyExpressionList.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSubquery.h>
 #include <Interpreters/misc.h>
 #include <Common/checkStackSize.h>
@@ -14,7 +17,8 @@ namespace DB
         extern const int BAD_ARGUMENTS;
     }
 
-    void checkExpressionDoesntContainSubqueries(const IAST & ast)
+    void checkExpressionDoesntContainSubqueries(
+        const IAST & ast, const std::function<bool(const ASTIdentifier &)> & is_allowed_in_rhs_identifier)
     {
         checkStackSize();
 
@@ -31,13 +35,34 @@ namespace DB
             if (args && args->children.size() == 2)
             {
                 const auto & rhs = args->children[1];
-                if (rhs->as<ASTIdentifier>() || rhs->as<ASTTableIdentifier>())
+                const auto * rhs_identifier = rhs->as<ASTIdentifier>();
+                if (rhs->as<ASTTableIdentifier>()
+                    || (rhs_identifier && !(is_allowed_in_rhs_identifier && is_allowed_in_rhs_identifier(*rhs_identifier))))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key expressions cannot contain a table in the 'IN' operator");
             }
         }
 
         for (const auto & child : ast.children)
-            checkExpressionDoesntContainSubqueries(*child);
+            checkExpressionDoesntContainSubqueries(*child, is_allowed_in_rhs_identifier);
+    }
+
+    /// The Analyzer expands wildcards and column matchers into the columns of the table,
+    /// so a stored metadata expression containing them is schema-dependent: rebuilding it
+    /// after a column-layout change (e.g. `ALTER TABLE ... ADD COLUMN`) would silently
+    /// resolve to a different column set. A count-based guard cannot catch a matcher that
+    /// resolves to exactly one column (e.g. `COLUMNS('^a$')` with a single match), so
+    /// reject them syntactically up front.
+    void checkExpressionDoesntContainMatchers(const IAST & ast)
+    {
+        checkStackSize();
+
+        if (ast.as<ASTAsterisk>() || ast.as<ASTQualifiedAsterisk>()
+            || ast.as<ASTColumnsRegexpMatcher>() || ast.as<ASTColumnsListMatcher>()
+            || ast.as<ASTQualifiedColumnsRegexpMatcher>() || ast.as<ASTQualifiedColumnsListMatcher>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key expressions cannot contain wildcards or column matchers");
+
+        for (const auto & child : ast.children)
+            checkExpressionDoesntContainMatchers(*child);
     }
 
     ASTPtr extractKeyExpressionList(const ASTPtr & node)
