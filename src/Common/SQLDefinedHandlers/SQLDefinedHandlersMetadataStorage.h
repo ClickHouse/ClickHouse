@@ -2,12 +2,16 @@
 
 #include <Common/SQLDefinedHandlers/SQLDefinedHandler.h>
 #include <Interpreters/Context_fwd.h>
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
 {
 
 class ASTCreateHandlerQuery;
+
+/// Parses a stored CREATE HANDLER statement (an `ASTCreateHandlerQuery`) with unlimited parser depth and backtracks.
+ASTPtr parseStoredHandlerStatement(const String & statement, const String & handler_location);
 
 /// Persistent storage for SQL-defined HTTP handlers.
 /// Mirrors NamedCollectionsMetadataStorage: handlers are stored either on local disk or in Keeper,
@@ -23,13 +27,6 @@ public:
     /// replicated storage; 0 for local). Pass it to `store` to make the cross-replica
     /// "read set -> check ambiguity -> persist" sequence atomic via optimistic concurrency.
     SQLDefinedHandlers getAll(Int32 & version) const;
-
-    /// Read the stored handler, apply an ALTER HANDLER query onto it, and return the merged handler.
-    /// Does not persist anything.
-    SQLDefinedHandlerPtr buildUpdatedHandler(const ASTCreateHandlerQuery & alter_query) const;
-    /// Same, but applies the ALTER onto an already-read CREATE statement (used on the replicated path to
-    /// merge against a version-consistent snapshot instead of issuing another read).
-    SQLDefinedHandlerPtr buildUpdatedHandler(const String & base_create_statement, const ASTCreateHandlerQuery & alter_query) const;
 
     /// Persist the canonical CREATE HANDLER statement of a handler. When `expected_root_version >= 0`
     /// (replicated optimistic write) the write commits only if the set was not changed since it was read

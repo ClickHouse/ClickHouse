@@ -1,0 +1,109 @@
+--- 1. a query over a table the creator cannot read
+Not enough privileges
+0
+--- 2. with the grant; the handler keeps serving after a revoke
+OK
+1	a
+1	a
+--- 3. column grants
+(ACCESS_DENIED)
+OK
+--- 4. subqueries and joins
+(ACCESS_DENIED)
+(ACCESS_DENIED)
+--- 5. INSERT needs DEFINER = CURRENT_USER, and then runs with the privileges of the creator
+runs a query of type INSERT
+runs a query of type INSERT
+OK
+OK
+1	a
+2	b
+11	a
+ACCESS_DENIED
+3
+--- 6. statements that are not SELECT
+runs a query of type GRANT
+runs a query of type SYSTEM
+runs a query of type EXECUTE AS
+0
+--- 7. PARALLEL WITH
+(ACCESS_DENIED)
+--- 8. query parameters
+with query parameters
+with query parameters
+with query parameters
+with query parameters
+0
+OK
+OK
+OK
+OK
+1	a
+--- 9. ALTER of the query
+OK
+(ACCESS_DENIED)
+SELECT 1
+--- 10. ALTER of another clause
+OK
+(ACCESS_DENIED)
+/DB/h10
+--- 11. a user with full access is not restricted, and the query is stored as is
+OK
+OK
+OK
+CREATE HANDLER h11c_DB URL \'/DB/h11c\' METHODS (GET) TYPE query AS SELECT * FROM t2
+ALL without GRANT OPTION:
+(ACCESS_DENIED)
+OK
+--- 12. the names are qualified with the database of the creator
+OK
+SELECT * FROM DB.t WHERE id = 1
+1	a
+1	a
+OK
+WITH x AS (SELECT id FROM DB.t WHERE id = 1) SELECT * FROM x
+1
+--- 13. SETTINGS clause
+with a SETTINGS clause
+with a SETTINGS clause
+OK
+OK
+--- 14. CREATE HANDLER IF NOT EXISTS of an existing handler
+OK
+OK
+SELECT 1
+(HANDLER_ALREADY_EXISTS)
+--- 16. SQL user-defined functions are expanded
+OK
+OK
+h16	0
+h16b	0
+1
+1
+--- 18. full access does not need the named collection privileges
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+without ACCESS MANAGEMENT:
+with query parameters
+--- 19. joinGet
+OK
+SELECT joinGet(\'DB.j\', \'v\', toUInt32(1))
+mine
+--- 20. a temporary table of the session
+in a session with temporary tables
+0
+in a session with temporary tables
+0
+in a session with temporary tables
+0
+--- 21. full access for SQL SECURITY NONE needs the named collections
+grant NAMED COLLECTION
+0
+OK

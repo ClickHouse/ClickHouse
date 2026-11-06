@@ -1,4 +1,6 @@
 #include <Interpreters/Access/InterpreterDropAccessEntityQuery.h>
+#include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
+#include <Common/quoteString.h>
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/AccessControl.h>
@@ -70,6 +72,9 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
         for (const auto & [_, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{}))
             database->waitDatabaseStarted();
 
+        /// The definers of SQL-defined HTTP handlers are registered when the handlers are loaded, which happens lazily.
+        SQLDefinedHandlersFactory::instance().loadIfNot();
+
         auto & definer_dependencies = DefinerDependencies::instance();
         for (const auto & name : query.names->toStrings())
         {
@@ -84,6 +89,8 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
                     objects.push_back(toString(uuid));
                 /// Otherwise the object is gone and the dependency is stale.
             }
+            for (const auto & handler : definer_dependencies.getHandlersForDefiner(name))
+                objects.push_back("handler " + backQuoteIfNeed(handler));
             if (!objects.empty())
                 throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "User `{}` is used as a definer of {}.", name, toString(objects));
         }
