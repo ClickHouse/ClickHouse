@@ -46,6 +46,7 @@ public:
 
     std::future<MergeTreeData::MutableDataPartPtr> getFuture()
     {
+        future_retrieved = true;
         return promise.get_future();
     }
 
@@ -54,6 +55,7 @@ public:
 private:
 
     bool prepare();
+    void handOffPart(MergeTreeData::MutableDataPartPtr part);
 
     enum class State : uint8_t
     {
@@ -64,6 +66,9 @@ private:
     State state{State::NEED_PREPARE};
 
     std::promise<MergeTreeData::MutableDataPartPtr> promise;
+    /// The part moved into `promise`. Until the owner retrieves the future, `cancel` rolls it back.
+    std::weak_ptr<IMergeTreeDataPart> handed_off_part;
+    bool future_retrieved{false};
 
     std::shared_ptr<MutationContext> ctx;
     ExecutableTaskPtr task;
