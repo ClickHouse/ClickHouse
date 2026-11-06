@@ -79,29 +79,31 @@ void collectReads(const IAST & ast, const ColumnsDescription & columns, NameSet 
         collectReads(*child, columns, names);
 }
 
+/// the columns that the definition names, also inside `ALIAS` columns: constant folding can remove a column
+/// from the analysis, such as `b` in `isNull(b)`, while its type decides the result;
 /// as `ReplaceAliasByExpressionMatcher`, a lambda parameter masks a column of the same name
-void bindAliases(const IAST & ast, const ColumnsDescription & columns, const NameSet & masked, HypotheticalBinding & binding)
+void bindNames(const IAST & ast, const ColumnsDescription & columns, const NameSet & masked, HypotheticalBinding & binding)
 {
     if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
     {
         NameSet inner = masked;
         for (auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
             inner.insert(std::move(name));
-        bindAliases(*function->arguments->children[1], columns, inner, binding);
+        bindNames(*function->arguments->children[1], columns, inner, binding);
         return;
     }
     if (const auto * identifier = ast.as<ASTIdentifier>())
     {
         const auto & name = identifier->name();
         /// an `ALIAS` expression is written at table scope
-        if (!masked.contains(name) && columns.hasAlias(name) && bindColumn(name, columns, binding))
-            bindAliases(*columns.getDefault(name)->expression, columns, {}, binding);
+        if (!masked.contains(name) && bindColumn(name, columns, binding) && columns.hasAlias(name))
+            bindNames(*columns.getDefault(name)->expression, columns, {}, binding);
     }
     /// an `APPLY` lambda is not in `children`
     if (const auto * apply = ast.as<ASTColumnsApplyTransformer>(); apply && apply->lambda)
-        bindAliases(*apply->lambda, columns, masked, binding);
+        bindNames(*apply->lambda, columns, masked, binding);
     for (const auto & child : ast.children)
-        bindAliases(*child, columns, masked, binding);
+        bindNames(*child, columns, masked, binding);
 }
 
 /// the analyzer reads a projection with every column as ordinary, so a matcher expands over all of them
@@ -135,7 +137,7 @@ HypotheticalBinding bindDefinition(const ASTPtr & definition, const Names & requ
     const auto & columns = metadata.getColumns();
     for (const auto & name : required_columns)
         bindColumn(name, columns, binding);
-    bindAliases(*definition, columns, {}, binding);
+    bindNames(*definition, columns, {}, binding);
     bindExpansions(definition, columns, binding);
     if (metadata.hasSettingsChanges())
         binding.settings = metadata.getSettingsChanges()->formatWithSecretsOneLine();

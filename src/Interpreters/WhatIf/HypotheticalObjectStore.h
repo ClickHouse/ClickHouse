@@ -17,7 +17,7 @@ namespace DB
 
 struct StorageInMemoryMetadata;
 
-/// what a hypothetical definition binds to in the table: the columns its analysis read, the ordered expansion
+/// what a hypothetical definition binds to in the table: the columns it names and its analysis read, the ordered expansion
 /// of each matcher, and the table settings; only `CREATE` validates a definition, `EXPLAIN WHATIF` compares this
 struct HypotheticalBinding
 {
