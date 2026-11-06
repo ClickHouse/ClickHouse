@@ -1247,8 +1247,7 @@ void PrettyBlockOutputFormat::onCancel() noexcept
     if (!format_settings.pretty.squash_consecutive_ms || mono_block)
         return;
 
-    /// `writingThread` writes `out` only under `writing_mutex` and while `finish` is not set,
-    /// so the owner of `out` can cancel it after this.
+    /// After this `writingThread` never writes `out` again, so the owner of `out` can cancel it.
     std::lock_guard lock(writing_mutex);
     finish = true;
     mono_chunk_condvar.notify_one();
