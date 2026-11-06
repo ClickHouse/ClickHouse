@@ -133,6 +133,24 @@ NameSet StorageAlias::filterColumnsGrantedThroughChain(
     return granted;
 }
 
+std::vector<std::pair<String, String>> StorageAlias::getTargetChain() const
+{
+    std::vector<std::pair<String, String>> chain;
+    std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> visited;
+    const StorageAlias * alias = this;
+    /// Owns the storage `alias` points into, from the second hop on.
+    StoragePtr alias_holder;
+
+    while (alias && visited.emplace(alias->target_database, alias->target_table).second)
+    {
+        chain.emplace_back(alias->target_database, alias->target_table);
+        alias_holder = alias->tryGetTargetTable();
+        alias = alias_holder ? alias_holder->as<StorageAlias>() : nullptr;
+    }
+
+    return chain;
+}
+
 bool StorageAlias::isTargetTableGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
 {
     return !filterColumnsGrantedThroughChain(query_context, access_type, {column_name}).empty();

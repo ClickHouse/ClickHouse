@@ -64,4 +64,21 @@ check "$a" "alias and target GRANT(j.a)"
 reset; $CLICKHOUSE_CLIENT -q "GRANT SELECT(\`j.a\`) ON $a TO $user; GRANT SELECT(j) ON $t TO $user"
 check "$a" "alias GRANT(j.a), target GRANT(j)"
 
+# The exact subcolumn grant can also be on the target, while the alias grants the whole table or the column.
+reset; $CLICKHOUSE_CLIENT -q "GRANT SELECT ON $a TO $user; GRANT SELECT(\`p.s\`) ON $t TO $user"
+check "$a" "alias GRANT ON a, target GRANT(p.s)"
+
+reset; $CLICKHOUSE_CLIENT -q "GRANT SELECT(p) ON $a TO $user; GRANT SELECT(\`p.s\`) ON $t TO $user"
+check "$a" "alias GRANT(p), target GRANT(p.s)"
+
+reset; $CLICKHOUSE_CLIENT -q "GRANT SELECT(j) ON $a TO $user; GRANT SELECT(\`j.a\`) ON $t TO $user"
+check "$a" "alias GRANT(j), target GRANT(j.a)"
+
+# The alias must still grant the subcolumn, through its column or by its exact name.
+reset; $CLICKHOUSE_CLIENT -q "GRANT SELECT ON $a TO $user; REVOKE SELECT(p) ON $a FROM $user; GRANT SELECT(\`p.s\`) ON $t TO $user"
+check "$a" "alias GRANT ON a REVOKE(p), target GRANT(p.s)"
+
+reset; $CLICKHOUSE_CLIENT -q "GRANT SELECT(secret) ON $a TO $user; GRANT SELECT(\`p.s\`) ON $t TO $user"
+check "$a" "alias GRANT(secret), target GRANT(p.s)"
+
 $CLICKHOUSE_CLIENT -q "DROP USER $user"

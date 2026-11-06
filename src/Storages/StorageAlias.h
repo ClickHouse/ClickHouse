@@ -65,6 +65,10 @@ public:
     /// alias resolves through. Resolves the chain once, whatever the grants look like.
     NameSet filterColumnsGrantedThroughChain(ContextPtr query_context, AccessType access_type, const Names & column_names) const;
 
+    /// Returns the database and table names of every table this alias resolves through, in order, i.e. the whole
+    /// chain when the target is itself an Alias. The chain stops at a cycle or at a target that does not exist.
+    std::vector<std::pair<String, String>> getTargetChain() const;
+
     /// Read from target table
     void read(
         QueryPlan & query_plan,

@@ -448,6 +448,16 @@ void checkAccessRightsForSelect(
         const auto access_rights = access->getAccessRightsWithImplicit();
         const auto * alias = storage ? storage->as<StorageAlias>() : nullptr;
         const auto & columns = table_metadata->getColumns();
+
+        /// Through an `Alias` the exact subcolumn grant can also be on a table of its chain, while the alias grants
+        /// its column or the whole table, so candidates are collected from every table of the chain.
+        std::vector<std::pair<String, String>> tables_to_probe{{table_id.database_name, table_id.table_name}};
+        if (alias)
+        {
+            auto chain = alias->getTargetChain();
+            tables_to_probe.insert(tables_to_probe.end(), chain.begin(), chain.end());
+        }
+
         for (const auto & column : columns)
         {
             /// An `Alias` also requires access to the same column of its target table.
@@ -458,12 +468,22 @@ void checkAccessRightsForSelect(
             /// A grant on the exact name of a subcolumn (e.g. ``GRANT SELECT(`json.a`)``) takes precedence over its
             /// column in the `SELECT` check (see `ColumnsDescription::getColumnNamesForSelectAccessCheck`), so such a
             /// subcolumn is readable even without a grant on its column, and it is enough for a trivial query too.
-            for (const auto & subcolumn : columns.getSubcolumnsWithExplicitGrant(
-                     *access_rights, AccessType::SELECT, table_id.database_name, table_id.table_name, column.name))
+            /// The subcolumn must be readable on the table itself, checked like a query that reads it (a candidate can
+            /// come from a grant on a table of the `Alias` chain).
+            for (const auto & [database, table] : tables_to_probe)
             {
-                if (!alias || alias->isTargetTableGranted(context, AccessType::SELECT, subcolumn)
-                    || alias->isTargetTableGranted(context, AccessType::SELECT, column.name))
-                    return;
+                for (const auto & subcolumn : columns.getSubcolumnsWithExplicitGrant(
+                         *access_rights, AccessType::SELECT, database, table, column.name))
+                {
+                    if (access->isGranted(
+                            AccessType::SELECT,
+                            table_id.database_name,
+                            table_id.table_name,
+                            columns.getColumnNamesForSelectAccessCheck({subcolumn}, context, table_id).front())
+                        && (!alias || alias->isTargetTableGranted(context, AccessType::SELECT, subcolumn)
+                            || alias->isTargetTableGranted(context, AccessType::SELECT, column.name)))
+                        return;
+                }
             }
         }
         throw Exception(
