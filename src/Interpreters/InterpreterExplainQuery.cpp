@@ -1126,7 +1126,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 ExpandParameterizedViewsMatcher::Data expand_views_data(query_context);
                 ExpandParameterizedViewsVisitor(expand_views_data).visit(query);
 
-                ExplainAnalyzedSyntaxVisitor::Data data(query_context, /*run_passes=*/ true, /*passes=*/ -1, /*only_analyze=*/ true);
+                ExplainAnalyzedSyntaxVisitor::Data data(query_context, /*run_passes=*/ true, /*passes=*/ -1, /*only_analyze=*/ false);
                 ExplainAnalyzedSyntaxVisitor(data).visit(query);
             }
 

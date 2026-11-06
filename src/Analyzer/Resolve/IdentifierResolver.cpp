@@ -238,11 +238,12 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
         if (prefix_size != 1)
             continue;
 
-        auto column_node = table_expression_data.tryGetColumnNode(column_name);
-        if (!column_node)
+        const auto & column_node_map = table_expression_data.getColumnNodeMap();
+        auto column_node_it = column_node_map.find(column_name);
+        if (column_node_it == column_node_map.end())
             continue;
 
-        auto column_type = column_node->getColumnType();
+        auto column_type = column_node_it->second->getColumnType();
 
         for (size_t i = 0; i < prefix_size; ++i)
         {
@@ -256,7 +257,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
         if (!column_type)
             continue;
 
-        nested_column_nodes.push_back(column_node);
+        nested_column_nodes.push_back(table_expression_data.tryGetColumnNode(column_name));
         nested_types.push_back(column_type);
         nested_names_array.push_back(suffix.getFullName());
     }
