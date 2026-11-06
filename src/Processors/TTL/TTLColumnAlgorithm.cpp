@@ -1,5 +1,6 @@
 #include <Processors/TTL/TTLColumnAlgorithm.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
 
 namespace DB
@@ -37,8 +38,8 @@ ColumnPtr TTLColumnAlgorithm::createArraysOfDefaults(const IDataType & type, con
 {
     const auto & column_array = assert_cast<const ColumnArray &>(column_with_sizes);
     const auto & nested_type = assert_cast<const DataTypeArray &>(type).getNestedType();
-    auto data = nested_type->createColumnConstWithDefaultValue(column_array.getData().size())->convertToFullColumnIfConst();
-    return ColumnArray::create(std::move(data), column_array.getOffsetsPtr());
+    auto data = nested_type->createColumnConstWithDefaultValue(column_array.getData().size());
+    return ColumnArray::create(data->convertToFullColumnIfConst(), column_array.getOffsetsPtr());
 }
 
 void TTLColumnAlgorithm::execute(Block & block)
@@ -139,7 +140,6 @@ void TTLColumnAlgorithm::finalize(const MutableDataPartPtr & data_part) const
 {
     data_part->ttl_infos.columns_ttl[column_name] = new_ttl_info;
     data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info);
-    /// Without the column a part may lose the array sizes it shares, which the defaults above keep.
     if (is_fully_empty && !shares_nested_offsets)
         data_part->expired_columns.insert(column_name);
 }

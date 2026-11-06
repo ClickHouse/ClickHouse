@@ -63,15 +63,18 @@ SELECT 'dependent', `n.a`, `n.b`, `n.c`, m FROM t_nested_ttl_dependent;
 OPTIMIZE TABLE t_nested_ttl_dependent FINAL SETTINGS optimize_skip_merged_partitions = 0;
 SELECT 'dependent', `n.a`, `n.b`, `n.c`, m FROM t_nested_ttl_dependent;
 
--- The only subcolumn keeps its sizes too.
-CREATE TABLE t_nested_ttl_single (id UInt64, ts DateTime, n Nested(a String), m UInt64 MATERIALIZED length(`n.a`))
+-- The sizes are kept when every subcolumn expires.
+CREATE TABLE t_nested_ttl_single (id UInt64, ts DateTime, n Nested(a String, b String), m UInt64 MATERIALIZED length(`n.a`))
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
-INSERT INTO t_nested_ttl_single VALUES (1, '2020-01-01 00:00:00', ['a', 'b']);
-ALTER TABLE t_nested_ttl_single MODIFY COLUMN `n.a` Array(String) TTL ts + INTERVAL 1 DAY SETTINGS materialize_ttl_after_modify = 0;
+INSERT INTO t_nested_ttl_single VALUES (1, '2020-01-01 00:00:00', ['a', 'b'], ['x', 'y']);
+ALTER TABLE t_nested_ttl_single
+    MODIFY COLUMN `n.a` Array(String) TTL ts + INTERVAL 1 DAY,
+    MODIFY COLUMN `n.b` Array(String) TTL ts + INTERVAL 1 DAY
+SETTINGS materialize_ttl_after_modify = 0;
 OPTIMIZE TABLE t_nested_ttl_single FINAL;
-SELECT 'single', `n.a`, m, length(`n.a`) FROM t_nested_ttl_single;
+SELECT 'single', `n.a`, `n.b`, m, length(`n.a`) FROM t_nested_ttl_single;
 
 -- A subcolumn that no part stores gets the sizes of the other subcolumns, as in a read.
 CREATE TABLE t_nested_ttl_added (id UInt64, n Nested(a String, c String))

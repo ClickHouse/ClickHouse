@@ -6,5 +6,5 @@ enum	1	['ok','ok']	['x','y']
 enum	2	['other']	['z']
 dependent	['','']	['b','b']	['x','y']	2
 dependent	['','']	['b','b']	['x','y']	2
-single	['','']	2	2
+single	['','']	['','']	2	2
 added	['a','b']	['x','y']	['','']	['e','e']
