@@ -93,6 +93,13 @@ public:
         return {};
     }
 
+    [[nodiscard]] std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
+    {
+        if constexpr (requires(const DataTypesWithConstInfo & a) { Impl::canThrowIfKnown(a); })
+            return Impl::canThrowIfKnown(arguments);
+        return {};
+    }
+
     [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnPtr column = arguments[0].column;

@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/Fragments/TextCanvas.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
 #include <Common/Exception.h>
 
@@ -33,8 +34,6 @@ constexpr size_t max_step_text_width = 40;
 constexpr size_t max_label_width = 48;
 /// Columns between a step box and the frame of its fragment.
 constexpr Int64 frame_padding = 2;
-/// Columns between the subtrees of two inputs of a step; the subtrees already include the frame padding.
-constexpr Int64 sibling_gap = 3 + 2 * frame_padding;
 struct StepBox
 {
     /// The whole text of the step: its name and description.
@@ -79,7 +78,13 @@ class TreeBuilder
 {
 public:
     TreeBuilder(const PreparedFragmentGraph & prepared_, size_t max_step_description_length_)
-        : prepared(prepared_), graph(prepared.graph), options(prepared.options), max_step_description_length(max_step_description_length_)
+        : prepared(prepared_)
+        , graph(prepared.graph)
+        , options(prepared.options)
+        , frameless(prepared.single_node)
+        , padding(frameless ? 0 : frame_padding)
+        , sibling_gap(3 + 2 * padding)
+        , max_step_description_length(max_step_description_length_)
     {
         for (size_t i = 0; i < graph.fragments.size(); ++i)
             fragment_index_by_id[graph.fragments[i].id] = i;
@@ -99,12 +104,13 @@ public:
         if (min_left < 0)
             shiftSubtree(root, -min_left);
 
-        /// The title of the root frame is on line 0, its first box on line 2.
-        layoutRows(root_fragment, 2);
+        /// The title of the root frame is on line 0, its first box on line 2. Without a frame the first box is on line 0.
+        layoutRows(root_fragment, frameless ? 0 : 2);
 
         TextCanvas canvas;
-        for (size_t i = 0; i < frames.size(); ++i)
-            drawFrame(canvas, i);
+        if (!frameless)
+            for (size_t i = 0; i < frames.size(); ++i)
+                drawFrame(canvas, i);
         for (const auto & step_box : boxes)
             canvas.box(static_cast<size_t>(step_box.left()), step_box.y, step_box.width, step_box.lines);
         for (size_t i = 0; i < boxes.size(); ++i)
@@ -116,6 +122,12 @@ private:
     const PreparedFragmentGraph & prepared;
     const FragmentGraph & graph;
     const ExplainPlanOptions & options;
+    /// A plan that was not cut is one fragment, drawn as bare boxes: no frame, no title, no padding for the frame.
+    const bool frameless;
+    /// Columns between a step box and the frame of its fragment: `frame_padding`, or 0 without a frame.
+    const Int64 padding;
+    /// Columns between the subtrees of two inputs of a step; the subtrees already include the padding.
+    const Int64 sibling_gap;
     /// A description is cut to this many bytes, as in `QueryPlan::explainPlan`; 0 means no limit.
     const size_t max_step_description_length;
     std::unordered_map<UInt32, size_t> fragment_index_by_id;
@@ -161,6 +173,10 @@ private:
             description = description.substr(0, max_step_description_length);
         if (options.description && !description.empty())
             text += fmt::format(" ({})", description);
+        /// Plain `EXPLAIN` prints the nested plans of a step (`QueryPlan::explainPlan`), the drawing does not: say so in
+        /// the box, otherwise the picture looks complete.
+        if (const size_t nested_plans = step.getChildPlans(/*for_explain=*/ true).size())
+            text += fmt::format(" (+{} nested plan{} not drawn)", nested_plans, nested_plans == 1 ? "" : "s");
         return text;
     }
 
@@ -317,7 +333,7 @@ private:
         for (const auto & step_box : boxes)
             if (step_box.fragment == fragment)
                 left = std::min(left, step_box.left());
-        left -= frame_padding;
+        left -= padding;
 
         /// The edge into the fragment crosses the top border at the centre of the root box: `┌─ title ` must end before.
         const auto & root_box = boxes[frames[fragment].root_box];
@@ -332,6 +348,8 @@ private:
         for (const auto & step_box : boxes)
             if (step_box.fragment == fragment)
                 right = std::max(right, step_box.right());
+        if (frameless)
+            return right;
         /// `┌─ title ┐` needs the title and 5 more columns.
         return std::max(right + frame_padding, frameLeft(fragment) + static_cast<Int64>(TextCanvas::displayWidth(frames[fragment].title)) + 4);
     }
@@ -343,10 +361,10 @@ private:
         auto & step_box = boxes[index];
         const auto width = static_cast<Int64>(step_box.width);
         /// The right bound of a leaf; a step with inputs computes it from the subtrees of its inputs below.
-        Int64 right = left + width + 2 * frame_padding;
+        Int64 right = left + width + 2 * padding;
         if (step_box.children.empty())
         {
-            step_box.center = left + frame_padding + width / 2;
+            step_box.center = left + padding + width / 2;
         }
         else
         {
@@ -358,13 +376,13 @@ private:
             auto & placed = boxes[index];
             placed.center = (boxes[placed.children.front()].center + boxes[placed.children.back()].center) / 2;
             /// A box wider than its inputs must not cross the left bound of its subtree.
-            Int64 overflow = left + frame_padding - placed.left();
+            Int64 overflow = left + padding - placed.left();
             if (overflow > 0)
             {
                 shiftSubtree(index, overflow);
                 right += overflow;
             }
-            right = std::max(right, placed.right() + 1 + frame_padding);
+            right = std::max(right, placed.right() + 1 + padding);
         }
 
         /// The frame of a fragment that an edge enters reaches left of its boxes when its title is long (see `frameLeft`), and
@@ -542,15 +560,17 @@ void explainAsTree(
 {
     const PreparedFragmentGraph prepared(graph, options);
 
-    /// The plan was not cut: print it as `EXPLAIN` without options does.
-    if (prepared.single_node)
-    {
-        writeSingleNode(prepared, buf, max_step_description_length);
-        return;
-    }
-
     validateFragmentGraph(graph);
     TreeBuilder(prepared, max_step_description_length).draw(buf);
+
+    /// A plan that was not cut has no exchanges, and its one level says nothing.
+    if (prepared.single_node)
+    {
+        const auto & fragment = graph.fragments.front();
+        if (fragment.fallback_reason)
+            buf << "\nNot distributed: " << *fragment.fallback_reason << '\n';
+        return;
+    }
 
     buf.write('\n');
     writeExchangesSection(prepared, buf);

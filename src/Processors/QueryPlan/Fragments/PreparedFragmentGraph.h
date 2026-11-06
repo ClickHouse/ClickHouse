@@ -25,8 +25,8 @@ struct PreparedFragmentGraph
     const FragmentGraph & graph;
     const ExplainPlanOptions & options;
 
-    /// The graph has one `SingleNode` fragment: the plan was not cut, and it is printed as `EXPLAIN` without
-    /// `fragments` prints it.
+    /// The graph has one `SingleNode` fragment: the plan was not cut. `fragments = 1` prints it as `EXPLAIN` without
+    /// options does (`writeSingleNode`), `tree = 1` draws it without a frame.
     const bool single_node;
 
     /// By descending id. The cutter numbers the stages in post-order, so a fragment comes before the fragments it reads,
