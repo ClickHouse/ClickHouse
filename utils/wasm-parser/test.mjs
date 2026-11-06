@@ -175,6 +175,8 @@ const dictionary = n => `CREATE DICTIONARY d (a UInt64) PRIMARY KEY a SOURCE(CLI
         /Maximum parse depth/.test(parsed(subqueries(10000)).doc?.error?.message ?? ''));
     check('ch_parse rejects a dictionary argument nested 4000 levels by depth',
         /Maximum parse depth/.test(parsed(dictionary(4000)).doc?.error?.message ?? ''));
+    check('ch_parse rejects an array literal of parenthesized arrays nested 4000 levels by depth',
+        /Maximum parse depth/.test(parsed(`SELECT ${'[('.repeat(4000)}1${')]'.repeat(4000)}`).doc?.error?.message ?? ''));
     check('ch_parse works after the deep queries', parsed('SELECT 1 + 2').ok);
 }
 
