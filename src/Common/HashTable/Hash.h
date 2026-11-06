@@ -245,6 +245,10 @@ inline size_t DefaultHash64(T key)
 }
 
 
+/// NOTE: For 128- and 256-bit integers, this folds the 64-bit words together with XOR, and the 256-bit branch shifts
+/// by 256 instead of 192, so the highest word is lost. Keys whose words cancel out, or that differ only in the highest
+/// word, collide.
+/// TODO: Check if this can be fixed here - or there is existing persisted data?
 template <typename T>
 requires (sizeof(T) > sizeof(UInt64))
 inline size_t DefaultHash64(T key)
@@ -279,15 +283,6 @@ struct DefaultHash
     size_t operator() (T key) const
     {
         return DefaultHash64<T>(key);
-    }
-};
-
-template <DB::is_decimal T>
-struct DefaultHash<T>
-{
-    size_t operator() (T key) const
-    {
-        return DefaultHash64<typename T::NativeType>(key.value);
     }
 };
 
@@ -480,6 +475,27 @@ struct DefaultHash<UInt128> : public UInt128Hash {};
 
 template <>
 struct DefaultHash<UInt256> : public UInt256Hash {};
+
+template <>
+struct DefaultHash<Int128>
+{
+    size_t operator()(Int128 key) const { return UInt128Hash{}(std::bit_cast<UInt128>(key)); }
+};
+
+template <>
+struct DefaultHash<Int256>
+{
+    size_t operator()(Int256 key) const { return UInt256Hash{}(std::bit_cast<UInt256>(key)); }
+};
+
+template <DB::is_decimal T>
+struct DefaultHash<T>
+{
+    size_t operator() (T key) const
+    {
+        return DefaultHash<typename T::NativeType>{}(key.value);
+    }
+};
 
 template <>
 struct DefaultHash<DB::UUID> : public UUIDHash {};

@@ -4,7 +4,7 @@
         <max_insert_threads>1</max_insert_threads>
     </settings>
 
-    <create_query>CREATE TABLE array_distinct_decimal (decimal32_duplicates Array(Decimal32(2)), decimal64_duplicates Array(Decimal64(4)), decimal128_duplicates Array(Decimal128(8)), decimal256_duplicates Array(Decimal256(12)), decimal64_unique Array(Decimal64(4)), decimal64_all_equal Array(Decimal64(4)), decimal64_nullable Array(Nullable(Decimal64(4))), numeric Array(UInt64)) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE array_distinct_decimal (decimal32_duplicates Array(Decimal32(2)), decimal64_duplicates Array(Decimal64(4)), decimal128_duplicates Array(Decimal128(8)), decimal256_duplicates Array(Decimal256(12)), decimal64_unique Array(Decimal64(4)), decimal64_all_equal Array(Decimal64(4)), decimal64_nullable Array(Nullable(Decimal64(4))), numeric Array(UInt64), decimal128_equal_words Array(Decimal128(0)), decimal256_high_word Array(Decimal256(0))) ENGINE = Memory</create_query>
     <fill_query><![CDATA[
         INSERT INTO array_distinct_decimal
         SELECT
@@ -15,7 +15,11 @@
             arrayMap(i -> toDecimal64(i + number % 17, 4), range(128)),
             arrayMap(i -> toDecimal64(number % 17, 4), range(128)),
             arrayMap(i -> if(i % 2 = 0, CAST(NULL, 'Nullable(Decimal64(4))'), toDecimal64(intDiv(i, 4) + number % 17, 4)), range(128)),
-            arrayMap(i -> intDiv(i, 4) + number % 17, range(128))
+            arrayMap(i -> intDiv(i, 4) + number % 17, range(128)),
+            -- Wide keys whose 64-bit words are equal, or that differ only in the highest word:
+            -- catches hashes that fold the words of wide integers instead of mixing them.
+            arrayMap(i -> toDecimal128(toInt128(i + number % 17 + 1) * (bitShiftLeft(toInt128(1), 64) + 1), 0), range(128)),
+            arrayMap(i -> toDecimal256(bitShiftLeft(toInt256(i + number % 17 + 1), 192), 0), range(128))
         FROM numbers(50000)
     ]]></fill_query>
 
@@ -27,6 +31,8 @@
     <query>SELECT sum(length(arrayDistinct(decimal64_all_equal))) FROM array_distinct_decimal FORMAT Null</query>
     <query>SELECT sum(length(arrayDistinct(decimal64_nullable))) FROM array_distinct_decimal FORMAT Null</query>
     <query>SELECT sum(length(arrayDistinct(numeric))) FROM array_distinct_decimal FORMAT Null</query>
+    <query>SELECT sum(length(arrayDistinct(decimal128_equal_words))) FROM array_distinct_decimal FORMAT Null</query>
+    <query>SELECT sum(length(arrayDistinct(decimal256_high_word))) FROM array_distinct_decimal FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS array_distinct_decimal</drop_query>
 </test>
