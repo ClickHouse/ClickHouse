@@ -1,0 +1,9 @@
+-- 1. FixedString vs String keys: all 100000 pairs must match
+100000	14999850000
+-- 2. Baseline without Cascades
+100000	14999850000
+-- 3. Such a key pair does not shuffle the join (shuffle hash joins, hash joins)
+0	1
+-- 4. Control: the same shape with String keys on both sides is shuffled (shuffle hash joins, hash joins)
+1	1
+100000	19999800000

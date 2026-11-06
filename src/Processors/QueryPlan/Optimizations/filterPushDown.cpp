@@ -39,6 +39,7 @@
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <fmt/format.h>
 
@@ -831,6 +832,11 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         {
             /// Equal types are already covered by the equivalent sets above.
             if (lhs.getType()->equals(*rhs.getType()))
+                return;
+
+            /// The replacement must be the value of the replaced key in the matched row. For `FixedString` x and `String` y
+            /// it is not: `CAST(x, 'String')` is `'a'` while the matched y may be `'a\0\0'`.
+            if (!JoinCommon::isExactJoinKeyEquality(lhs.getType(), rhs.getType()))
                 return;
 
             auto supertype = tryGetLeastSupertype(DataTypes{lhs.getType(), rhs.getType()});
