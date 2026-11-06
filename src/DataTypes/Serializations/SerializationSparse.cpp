@@ -125,8 +125,7 @@ size_t deserializeOffsets(
         ++total_rows;
     }
 
-    /// Applies one group (defaults followed by a value, or the defaults at the end of a granule).
-    /// Returns true when the read is complete.
+    /// A group is the defaults before a value, or the defaults at the end of a granule. Returns true when the read is done.
     auto add_group = [&](size_t group_size) ALWAYS_INLINE
     {
         bool end_of_granule = group_size & END_OF_GRANULE_FLAG;
@@ -164,8 +163,7 @@ size_t deserializeOffsets(
 
     while (!istr.eof())
     {
-        /// Decode from a local pointer while a whole VarUInt is in the buffer, so that the buffer position
-        /// is not loaded and stored for every byte.
+        /// Fast path: decode from a local pointer while a whole VarUInt is in the buffer.
         const char * pos = istr.position();
         const char * const buffer_end = istr.buffer().end();
         while (buffer_end - pos >= static_cast<ssize_t>(VAR_UINT_MAX_SIZE))
