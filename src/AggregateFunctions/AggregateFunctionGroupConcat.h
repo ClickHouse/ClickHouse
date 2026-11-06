@@ -8,6 +8,7 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <Core/ServerSettings.h>
 #include <Common/ArenaAllocator.h>
+#include <Common/SipHash.h>
 #include <DataTypes/IDataType.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -58,6 +59,8 @@ public:
         const DataTypePtr & data_type_, const Array & parameters_, UInt64 limit_, const String & delimiter_, bool strip_trailing_zeros_);
 
     String getName() const override;
+
+    void updateHash(SipHash & hash) const override { hash.update(strip_trailing_zeros); }
 
     static const VectorWithMemoryTracking<std::string> & getNameAndAliases()
     {

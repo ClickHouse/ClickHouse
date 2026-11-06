@@ -37,6 +37,9 @@ public:
 
     String getName() const override { return name; }
 
+    /// The aggregate may capture settings that change its result, see `IAggregateFunction::updateHash`.
+    void updateHash(SipHash & hash) const override { aggregate_function->updateHash(hash); }
+
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 

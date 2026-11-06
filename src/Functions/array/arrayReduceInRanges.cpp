@@ -93,6 +93,9 @@ public:
     bool isDeterministicInScopeOfQuery() const override { return aggregate_function->isDeterministic(); }
     bool isSuitableForConstantFolding() const override { return aggregate_function->isDeterministic(); }
 
+    /// The aggregate may capture settings that change its result, see `IAggregateFunction::updateHash`.
+    void updateHash(SipHash & hash) const override { aggregate_function->updateHash(hash); }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
 private:
