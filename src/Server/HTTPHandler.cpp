@@ -853,8 +853,6 @@ void HTTPHandler::processQuery(
         chooseCompressionMethod({}, http_request_compression_method_str),
         zstd_window_log_max,
         snappy_mode);
-    LOG_DEBUG(getLogger("HTTPServerRequest"), "creating in_post id {}", size_t(in_post.get()));
-
 
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
