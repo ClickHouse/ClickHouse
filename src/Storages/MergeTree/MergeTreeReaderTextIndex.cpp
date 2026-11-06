@@ -23,7 +23,6 @@
 #include <Core/Settings.h>
 
 #include <algorithm>
-#include <cstring>
 #include <iterator>
 #include <optional>
 
@@ -1064,7 +1063,7 @@ struct PhraseSearchStats
 
 /// Decodes a chunk of candidates' positions per unique token, then runs the phrase adjacency match.
 /// Ranks ascend within a chunk, so blocks decode in ascending order and reseek only on a block gap.
-/// Blocks are decoded into a lane per token, and matching reads the candidates' positions there in place.
+/// The candidates' positions are copied into a lane per token as stored in the blocks, and matching reads them there.
 /// Each token's last parsed block is kept, as the next chunk or window may need it again.
 class PhraseChunkMatcher
 {
@@ -1083,7 +1082,6 @@ public:
         , lanes(dirs_.size())
         , scratches(dirs_.size())
         , parsed_blocks(dirs_.size(), std::numeric_limits<size_t>::max())
-        , parsed_block_begins(dirs_.size(), 0)
     {
     }
 
@@ -1115,19 +1113,7 @@ private:
         auto & lane = lanes[u];
         token_bounds.clear();
         token_bounds.reserve(2 * ranks.size());
-
-        /// Keep only the last parsed block, which this chunk may reuse.
-        if (parsed_blocks[u] != std::numeric_limits<size_t>::max())
-        {
-            const size_t kept = lane.size() - parsed_block_begins[u];
-            std::memmove(lane.data(), lane.data() + parsed_block_begins[u], kept * sizeof(UInt32));
-            lane.resize(kept);
-            parsed_block_begins[u] = 0;
-        }
-        else
-        {
-            lane.clear();
-        }
+        lane.clear();
 
         size_t previous_read = std::numeric_limits<size_t>::max();
         for (size_t idx = 0; idx < ranks.size();)
@@ -1136,31 +1122,29 @@ private:
             if (block_idx >= dir.numBlocks())
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                     "Corrupt text index positions: rank {} is outside the token's {} blocks", ranks[idx], dir.numBlocks());
-            const bool newly_parsed = block_idx != parsed_blocks[u];
-            if (newly_parsed)
+
+            if (block_idx != parsed_blocks[u])
             {
                 const UInt64 block_bytes = dir.block_offsets[block_idx + 1] - dir.block_offsets[block_idx];
-                const size_t lane_begin = lane.size();
                 if (dir.embedded_size != 0)
                 {
                     ReadBufferFromMemory in(dir.embedded.data() + dir.block_offsets[block_idx], block_bytes);
-                    TextIndexBlockedPositionsCodec::readBlock(in, dir, block_idx, scratches[u], lane, lane_begin);
+                    TextIndexBlockedPositionsCodec::readBlock(in, dir, block_idx, scratches[u]);
                 }
                 else
                 {
                     if (previous_read == std::numeric_limits<size_t>::max() || block_idx != previous_read + 1)
                         stream.seekToMark({dir.block_offsets[block_idx], 0});
-                    TextIndexBlockedPositionsCodec::readBlock(data_buffer, dir, block_idx, scratches[u], lane, lane_begin);
+                    TextIndexBlockedPositionsCodec::readBlock(data_buffer, dir, block_idx, scratches[u]);
                     previous_read = block_idx;
                     stats.bytes_read += block_bytes;
                 }
                 parsed_blocks[u] = block_idx;
-                parsed_block_begins[u] = lane_begin;
                 ++stats.blocks_read;
             }
 
             const auto & doc_offsets = scratches[u].doc_offsets;
-            const size_t lane_begin = parsed_block_begins[u];
+            const auto & values = scratches[u].values;
             size_t group_end = idx;
             size_t needed = 0;
             do
@@ -1170,25 +1154,21 @@ private:
                 ++group_end;
             } while (group_end < ranks.size() && ranks[group_end] / TextIndexBlockedPositionsCodec::BLOCK_DOCS == block_idx);
 
-            /// Keep only the candidates' positions of a sparsely used block, so the lane stays within 4x of what the chunk needs.
-            if (newly_parsed && 4 * needed < doc_offsets.back())
+            /// Copy the whole block for many candidates and only their positions for few, so the lane stays within 4x of what the chunk needs.
+            if (4 * needed < doc_offsets.back())
             {
-                size_t out = lane_begin;
                 for (; idx < group_end; ++idx)
                 {
                     const size_t local_rank = ranks[idx] % TextIndexBlockedPositionsCodec::BLOCK_DOCS;
-                    const size_t begin = lane_begin + doc_offsets[local_rank];
-                    const size_t length = doc_offsets[local_rank + 1] - doc_offsets[local_rank];
-                    std::memmove(lane.data() + out, lane.data() + begin, length * sizeof(UInt32));
-                    token_bounds.push_back(out);
-                    token_bounds.push_back(out + length);
-                    out += length;
+                    token_bounds.push_back(lane.size());
+                    lane.insert(values.begin() + doc_offsets[local_rank], values.begin() + doc_offsets[local_rank + 1]);
+                    token_bounds.push_back(lane.size());
                 }
-                lane.resize(out);
-                parsed_blocks[u] = std::numeric_limits<size_t>::max();
                 continue;
             }
 
+            const size_t lane_begin = lane.size();
+            lane.insert(values.begin(), values.begin() + doc_offsets.back());
             for (; idx < group_end; ++idx)
             {
                 const size_t local_rank = ranks[idx] % TextIndexBlockedPositionsCodec::BLOCK_DOCS;
@@ -1209,7 +1189,6 @@ private:
     std::vector<PaddedPODArray<UInt32>> lanes;
     std::vector<TextIndexBlockedPositionsCodec::DecodeScratch> scratches;
     std::vector<size_t> parsed_blocks;
-    std::vector<size_t> parsed_block_begins;
 };
 
 }
