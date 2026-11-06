@@ -3073,6 +3073,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     if (query_plan.isInitialized() &&
                         till_stage == QueryProcessingStage::FetchColumns)
                     {
+                        addArrayJoinStepsForFunctions(query_plan, filter_info.actions, settings);
+
                         auto filter_step = std::make_unique<FilterStep>(query_plan.getCurrentHeader(),
                             std::move(filter_info.actions),
                             filter_info.column_name,
