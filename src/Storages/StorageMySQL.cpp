@@ -430,10 +430,6 @@ mysqlxx::SSLParams StorageMySQL::getSSLParams(const NamedCollection & named_coll
     ssl_params.ca_pem = named_collection.getOrDefault<String>("ssl_ca_pem", "");
     ssl_params.cert_pem = named_collection.getOrDefault<String>("ssl_cert_pem", "");
     ssl_params.key_pem = named_collection.getOrDefault<String>("ssl_key_pem", "");
-    ssl_params.key_passphrase = named_collection.getOrDefault<String>("ssl_key_passphrase", "");
-    if (!ssl_params.key_passphrase.empty() && ssl_params.key_path.empty() && ssl_params.key_pem.empty())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "`ssl_key_passphrase` requires `ssl_key` or `ssl_key_pem`");
     return ssl_params;
 }
 
@@ -459,7 +455,7 @@ mysqlxx::SSLParams StorageMySQL::extractSSLParamsFromArguments(ASTs & arguments,
             break;
 
         const String key = identifier->name();
-        bool is_sql_key = key == "ssl_key_passphrase";
+        bool is_contents_key = false;
         for (const auto & [path_key, contents_key] : tls_keys)
         {
             if (key == path_key)
@@ -469,11 +465,11 @@ mysqlxx::SSLParams StorageMySQL::extractSSLParamsFromArguments(ASTs & arguments,
                     "Pass the contents of the file in `{}` instead",
                     path_key, contents_key);
             if (key == contents_key)
-                is_sql_key = true;
+                is_contents_key = true;
         }
 
         /// Anything else is left in place, so that it is reported as an unexpected argument.
-        if (!is_sql_key)
+        if (!is_contents_key)
             break;
 
         auto value = evaluateConstantExpressionOrIdentifierAsLiteral(function->arguments->children[1], context_);
@@ -495,10 +491,6 @@ mysqlxx::SSLParams StorageMySQL::extractSSLParamsFromArguments(ASTs & arguments,
     ssl_params.ca_pem = get("ssl_ca_pem");
     ssl_params.cert_pem = get("ssl_cert_pem");
     ssl_params.key_pem = get("ssl_key_pem");
-    ssl_params.key_passphrase = get("ssl_key_passphrase");
-    if (!ssl_params.key_passphrase.empty() && ssl_params.key_pem.empty())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "`ssl_key_passphrase` requires `ssl_key` or `ssl_key_pem`");
     return ssl_params;
 }
 
@@ -509,8 +501,7 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
 
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments
         = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "hostname", "port",
-           "ssl_ca", "ssl_cert", "ssl_key", "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem",
-           "ssl_key_passphrase"};
+           "ssl_ca", "ssl_cert", "ssl_key", "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem"};
     auto mysql_settings_names = storage_settings.getAllRegisteredNames();
     for (const auto & name : mysql_settings_names)
         optional_arguments.insert(name);
@@ -577,7 +568,7 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage MySQL requires 5-7 parameters: "
                             "MySQL('host:port' (or 'addresses_pattern'), database, table (or query), "
                             "'user', 'password'[, replace_query, 'on_duplicate_clause']"
-                            "[, ssl_ca_pem = '...', ssl_cert_pem = '...', ssl_key_pem = '...', ssl_key_passphrase = '...']).");
+                            "[, ssl_ca_pem = '...', ssl_cert_pem = '...', ssl_key_pem = '...']).");
 
         /// The 3rd argument is either a table name, or a query passed to MySQL as is - `(SELECT ...)` or `query('SELECT ...')`.
         auto maybe_query = tryGetExternalDatabaseQuery(
@@ -737,9 +728,8 @@ The credentials of an encrypted connection to MySQL are passed as named collecti
 | `ssl_ca_pem` | Contents of the CA certificate that the MySQL server certificate is verified against. |
 | `ssl_cert_pem` | Contents of the client certificate, for certificate-based authentication. |
 | `ssl_key_pem` | Contents of the private key belonging to `ssl_cert_pem`. |
-| `ssl_key_passphrase` | Passphrase of an encrypted `ssl_key` / `ssl_key_pem`. Optional. |
 
-The values are the contents of the corresponding PEM files (and the key passphrase), which can be copied into a named collection or into a query. They are masked in logs and in `SHOW` queries, the same way passwords are.
+The values are the contents of the corresponding PEM files, which can be copied into a named collection or into a query. They are masked in logs and in `SHOW` queries, the same way passwords are.
 
 The same credentials can also be given as paths to files on the server, in `ssl_ca`, `ssl_cert` and `ssl_key` — but **only in a named collection defined in the server configuration file**, and such a value cannot be overridden in a query. The server opens those files with its own privileges, so accepting a path from SQL would let any user who is able to define a MySQL source probe the local filesystem, and authenticate with a certificate and key they are not allowed to read themselves.
 

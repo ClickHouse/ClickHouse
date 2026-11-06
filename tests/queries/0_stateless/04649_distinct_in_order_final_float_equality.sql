@@ -27,7 +27,7 @@ SELECT count(), arraySort(groupArray(reinterpretAsUInt64(f))) FROM (SELECT DISTI
 SET optimize_distinct_in_order = 1;
 
 SELECT '-- a Float column keeps the sorted variant out of the plan: both distincts are hash ones';
-SELECT arraySort(groupArray(trimLeft(explain))) FROM (EXPLAIN PIPELINE SELECT DISTINCT f, b FROM t_distinct_float ORDER BY f SETTINGS enable_parallel_replicas = 0) WHERE trimLeft(explain) IN ('DistinctSortedStreamTransform', 'DistinctTransform');
+SELECT arraySort(groupArray(trimLeft(explain))) FROM (EXPLAIN PIPELINE SELECT DISTINCT f, b FROM t_distinct_float ORDER BY f) WHERE trimLeft(explain) IN ('DistinctSortedStreamTransform', 'DistinctTransform');
 
 SELECT '-- the in-order plan keeps binary identity too: both zeros and both NaN payloads survive';
 -- Which value of a class is printed first depends on the order the equal values leave the sort, so

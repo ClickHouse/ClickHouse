@@ -11,7 +11,7 @@ ClickHouse can parse a subset of the [Kusto Query Language](https://learn.micros
 instead of SQL. The dialect is in **beta** and off by default:
 
 ```sql
-SET enable_kusto_dialect = 1;
+SET allow_experimental_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 StormEvents

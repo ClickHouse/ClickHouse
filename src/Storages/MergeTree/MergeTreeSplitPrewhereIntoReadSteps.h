@@ -13,6 +13,7 @@
 namespace DB
 {
 
+class ColumnsDescription;
 struct IndexReadTask;
 using IndexReadTasks = std::map<String, IndexReadTask>;
 
@@ -21,6 +22,7 @@ bool tryBuildPrewhereSteps(
     const ExpressionActionsSettings & actions_settings,
     PrewhereExprInfo & prewhere,
     bool force_short_circuit_execution,
+    const ColumnsDescription * columns = nullptr,
     bool read_ahead_columns = false,
     const IndexReadTasks * index_read_tasks = nullptr);
 

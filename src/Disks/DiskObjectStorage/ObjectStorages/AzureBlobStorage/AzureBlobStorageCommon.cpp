@@ -91,7 +91,6 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int AZURE_BLOB_STORAGE_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
@@ -215,21 +214,13 @@ String ContainerClientWrapper::GetBlobPath(const String & blob_name) const
         "Failed to parse Azure connection string or blob URL: {}", e.what());
 }
 
-/// The connection string the clients are created from. A disk can set it together with an `endpoint`, whose host
-/// the clients then do not use. The default-constructed `auth_method` of a SAS or catalog path is empty.
-static const String & getClientConnectionString(const ConnectionParams & params)
-{
-    const auto & connection_string = std::get<ConnectionString>(params.auth_method).toUnderType();
-    return connection_string.empty() ? params.endpoint.storage_account_url : connection_string;
-}
-
 String ConnectionParams::getConnectionURL() const
 {
     if (std::holds_alternative<ConnectionString>(auth_method))
     {
         try
         {
-            auto parsed_connection_string = Azure::Storage::_internal::ParseConnectionString(getClientConnectionString(*this));
+            auto parsed_connection_string = Azure::Storage::_internal::ParseConnectionString(endpoint.storage_account_url);
             return parsed_connection_string.BlobServiceUrl.GetAbsoluteUrl();
         }
         catch (const std::logic_error & e)
@@ -241,55 +232,6 @@ String ConnectionParams::getConnectionURL() const
     return endpoint.storage_account_url;
 }
 
-static bool isServerManagedCredential(const AuthMethod & auth_method)
-{
-    return std::holds_alternative<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(auth_method)
-        || std::holds_alternative<std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>(auth_method);
-}
-
-[[noreturn]] static void throwServerCredentialsRestricted()
-{
-    throw Exception(
-        ErrorCodes::ACCESS_DENIED,
-        "Azure access from user queries is not allowed to use the server's own identity (AKS workload identity "
-        "or the machine's managed identity). Provide explicit credentials: an `account_name` and `account_key`, "
-        "a connection string, or a SAS token"
-#if !CLICKHOUSE_CLOUD
-        ", or enable the setting `s3_allow_server_credentials_in_user_queries`"
-#endif
-        ".");
-}
-
-bool ConnectionParams::usesServerManagedCredentials() const
-{
-    /// A request authorized by SAS does not use `auth_method`.
-    return endpoint.sas_auth.empty() && endpoint.additional_params.empty() && isServerManagedCredential(auth_method);
-}
-
-bool ConnectionParams::checkOrDropServerManagedCredentials() const
-{
-    if (!forbid_implicit_credentials || !usesServerManagedCredentials())
-        return false;
-
-    if (anonymous_fallback_for_server_credentials)
-        return true;
-
-    throwServerCredentialsRestricted();
-}
-
-void ConnectionParams::checkSessionMayUseServerIdentity(bool restrict_server_credentials) const
-{
-    if (restrict_server_credentials && follows_session_restriction && !forbid_implicit_credentials && usesServerManagedCredentials())
-        throwServerCredentialsRestricted();
-}
-
-AuthMethod ConnectionParams::getPermittedAuthMethod() const
-{
-    if (checkOrDropServerManagedCredentials())
-        throwServerCredentialsRestricted();
-    return auth_method;
-}
-
 String ConnectionParams::getConnectionURLWithoutQuery() const
 {
     if (std::holds_alternative<ConnectionString>(auth_method))
@@ -297,7 +239,7 @@ String ConnectionParams::getConnectionURLWithoutQuery() const
         try
         {
             /// `ParseConnectionString` appends the SAS of the connection string to `BlobServiceUrl` as its query.
-            auto url = Azure::Storage::_internal::ParseConnectionString(getClientConnectionString(*this)).BlobServiceUrl;
+            auto url = Azure::Storage::_internal::ParseConnectionString(endpoint.storage_account_url).BlobServiceUrl;
             const auto query = url.GetQueryParameters();
             for (const auto & [key, value] : query)
                 url.RemoveQueryParameter(key);
@@ -316,9 +258,6 @@ std::unique_ptr<ServiceClient> ConnectionParams::createForService() const
 {
     try
     {
-        if (checkOrDropServerManagedCredentials())
-            return std::make_unique<ServiceClient>(endpoint.getServiceEndpoint(), client_options);
-
         return std::visit([this]<typename T>(const T & auth)
         {
             if constexpr (std::is_same_v<T, ConnectionString>)
@@ -337,14 +276,7 @@ std::unique_ptr<ContainerClient> ConnectionParams::createForContainer() const
 {
     try
     {
-        /// A SAS token authorizes the request by itself, so `auth_method` is unused on this path.
-        if (!endpoint.sas_auth.empty() || !endpoint.additional_params.empty())
-        {
-            RawContainerClient raw_client{endpoint.getContainerEndpoint(), client_options};
-            return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
-        }
-
-        if (checkOrDropServerManagedCredentials())
+        if (!endpoint.sas_auth.empty())
         {
             RawContainerClient raw_client{endpoint.getContainerEndpoint(), client_options};
             return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
@@ -461,8 +393,6 @@ std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & par
             ProfileEvents::increment(ProfileEvents::DiskAzureCreateContainer);
 
         auto raw_client = service_client->CreateBlobContainer(params.endpoint.container_name).Value;
-        /// `CreateBlobContainer` returns a client without `ClickhouseOptions`.
-        raw_client.SetClickhouseOptions(params.client_options.ClickhouseOptions);
         return std::make_unique<ContainerClient>(std::move(raw_client), params.endpoint.prefix);
     }
     catch (const Azure::Storage::StorageException & e)
