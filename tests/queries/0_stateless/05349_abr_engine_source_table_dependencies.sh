@@ -5,6 +5,7 @@
 # The source tables of an `ABR` table are registered in both dependency graphs: in the graph of loading
 # dependencies, so they are loaded before it and cannot be dropped or renamed while it exists, and in the
 # graph of referential dependencies, from which `RESTORE` builds the order in which it creates the tables.
+# `abr_expr` has constant expressions as arguments, from which the source tables are registered as well.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -22,10 +23,11 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_abr=1 --query "
     INSERT INTO ${DATABASE}.src_10 SELECT toDateTime('2026-01-01 00:00:00') + INTERVAL number DAY, 10 FROM numbers(20);
 
     CREATE TABLE ${DATABASE}.abr ENGINE = ABR('src', [1, 10], ('ts'));
+    CREATE TABLE ${DATABASE}.abr_expr ENGINE = ABR(concat('s', 'rc'), [toUInt64(1), 5 + 5], ('ts'));
 
     SELECT 'loading dependencies';
-    SELECT arraySort(loading_dependencies_table) FROM system.tables WHERE database = '${DATABASE}' AND name = 'abr';
-    SELECT loading_dependent_table FROM system.tables WHERE database = '${DATABASE}' AND name = 'src_1';
+    SELECT name, arraySort(loading_dependencies_table) FROM system.tables WHERE database = '${DATABASE}' AND name LIKE 'abr%' ORDER BY name;
+    SELECT arraySort(loading_dependent_table) FROM system.tables WHERE database = '${DATABASE}' AND name = 'src_1';
 "
 
 echo "DROP a source table"
@@ -45,6 +47,8 @@ ${CLICKHOUSE_CLIENT} --query "
 
     SELECT max(value) FROM ${DATABASE}.abr WHERE ts >= toDateTime('2026-01-12 00:00:00');
     SELECT max(value) FROM ${DATABASE}.abr WHERE ts >= toDateTime('2026-01-05 00:00:00');
+    SELECT max(value) FROM ${DATABASE}.abr_expr WHERE ts >= toDateTime('2026-01-12 00:00:00');
+    SELECT max(value) FROM ${DATABASE}.abr_expr WHERE ts >= toDateTime('2026-01-05 00:00:00');
 
     DROP DATABASE ${DATABASE};
 "

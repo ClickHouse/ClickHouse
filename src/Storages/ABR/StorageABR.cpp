@@ -566,18 +566,17 @@ std::shared_ptr<StorageABR> StorageABR::creatorFunction(const StorageFactory::Ar
 
     const ContextPtr & context = args.getContext();
 
+    for (auto & engine_arg : engine_args)
+        engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
+
     /// table_prefix -- the base prefix for all source tables
-    String table_prefix = checkAndGetLiteralArgument<String>(
-        evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], context),
-        "table_prefix");
+    String table_prefix = checkAndGetLiteralArgument<String>(engine_args[0], "table_prefix");
 
     if (table_prefix.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "table_prefix must not be empty");
 
     /// sample_intervals -- a list of the sample intervals used for the source tables
-    Array interval_array = checkAndGetLiteralArgument<Array>(
-        evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], context),
-        "sample_intervals");
+    Array interval_array = checkAndGetLiteralArgument<Array>(engine_args[1], "sample_intervals");
 
     if (interval_array.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "sample_intervals array must not be empty");
@@ -607,12 +606,11 @@ std::shared_ptr<StorageABR> StorageABR::creatorFunction(const StorageFactory::Ar
     }
 
     /// retention_expression -- tuple of columns which we use to calculate retention
-    auto retention_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], context);
     Tuple retention_tuple;
-    if (const auto * lit = retention_arg->as<ASTLiteral>(); lit && lit->value.getType() == Field::Types::String)
+    if (const auto * lit = engine_args[2]->as<ASTLiteral>(); lit && lit->value.getType() == Field::Types::String)
         retention_tuple.push_back(lit->value);
     else
-        retention_tuple = checkAndGetLiteralArgument<Tuple>(retention_arg, "retention_expression");
+        retention_tuple = checkAndGetLiteralArgument<Tuple>(engine_args[2], "retention_expression");
 
     if (retention_tuple.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "retention_expression must not be empty");
