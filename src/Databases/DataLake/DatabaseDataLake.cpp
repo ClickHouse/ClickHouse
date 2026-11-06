@@ -1136,15 +1136,17 @@ StoragePtr DatabaseDataLake::maybeCreateTableInExternalCatalog(ContextPtr contex
 
     auto storage_settings = std::make_shared<DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
+    /// Other databases keep table settings in the `.sql` file with the create query. This database has no such file,
+    /// and the catalog does not store ClickHouse settings, so reject any queries that specify them.
     if (create.storage->settings)
     {
-        /// The catalog stores the table, not ClickHouse, so only the settings that go into the create request apply.
         for (const auto & change : create.storage->settings->changes)
+            /// `iceberg_format_version` is an exception because it goes into the create request sent to the catalog.
             if (change.name != "iceberg_format_version")
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Table setting {} is not supported when the catalog of database {} creates table {}. "
-                    "Only `iceberg_format_version` is applied. Specify the location in the table engine arguments to use other settings",
+                    "Only `iceberg_format_version` is applied",
                     change.name, backQuoteIfNeed(getDatabaseName()), name);
         storage_settings->loadFromQuery(*create.storage->settings);
     }
@@ -1173,14 +1175,37 @@ StoragePtr DatabaseDataLake::maybeCreateTableInExternalCatalog(ContextPtr contex
     catalog->createTableAtDefaultLocation(namespace_name, table_name, metadata_object);
     LOG_DEBUG(log, "Created table {} in the catalog of database {}", name, backQuoteIfNeed(getDatabaseName()));
 
-    auto storage = tryGetTableImpl(name, context_, /* lightweight */ false, /* ignore_if_not_iceberg */ false);
-    if (!storage)
-        throw Exception(
-            ErrorCodes::DATALAKE_DATABASE_ERROR,
-            "Table {} was created in the catalog of database {}, but the catalog does not return it",
-            name, backQuoteIfNeed(getDatabaseName()));
+    return loadCreatedTable(*catalog, name, context_);
+}
 
-    return storage;
+StoragePtr DatabaseDataLake::loadCreatedTable(const DataLake::ICatalog & catalog, const String & name, ContextPtr context_) const
+{
+    try
+    {
+        auto storage = tryGetTableImpl(name, context_, /* lightweight */ false, /* ignore_if_not_iceberg */ false);
+        if (!storage)
+            throw Exception(
+                ErrorCodes::DATALAKE_DATABASE_ERROR,
+                "Table {} was created in the catalog of database {}, but the catalog does not return it",
+                name, backQuoteIfNeed(getDatabaseName()));
+        return storage;
+    }
+    catch (Exception & e)
+    {
+        const auto [namespace_name, table_name] = DataLake::parseTableName(name);
+
+        /// A failed CREATE leaves no table behind. The table has no data yet, so the catalog has only the metadata file to purge.
+        try
+        {
+            catalog.dropTable(namespace_name, table_name, /* delete_data */ true);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("Failed to drop table {} from the catalog of database {} after a failed create", name, backQuoteIfNeed(getDatabaseName())));
+            e.addMessage("Table {} may still exist in the catalog of database {}", name, backQuoteIfNeed(getDatabaseName()));
+        }
+        throw;
+    }
 }
 
 bool DatabaseDataLake::empty() const

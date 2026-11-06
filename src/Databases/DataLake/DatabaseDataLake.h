@@ -179,6 +179,9 @@ private:
     /// Throws when the catalog places the table on a different storage than the table engine writes to.
     void checkStorageTypeMatchesEngine(const String & name, DatabaseDataLakeStorageType engine_type, DatabaseDataLakeStorageType catalog_type) const;
 
+    /// Loads the table that the catalog has just created. Drops it from the catalog if the load fails.
+    StoragePtr loadCreatedTable(const DataLake::ICatalog & catalog, const String & name, ContextPtr context_) const;
+
     /// Shared implementation of getTablesIterator / getTablesIteratorWithHint.
     /// keep_unresolved_tables controls what happens when a single table's metadata cannot
     /// be resolved: when true (system.tables path) the table is kept in the listing with a
