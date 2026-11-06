@@ -48,7 +48,7 @@ then regenerate the path-based manifests:
 
 ```bash
 python3 tests/sqllogic/generate_known_failures.py \
-    ./tmp/sqllogic-output/complete-test/complete-test-stages/complete-clickhouse/report.json \
+    ./tmp/sqllogic-output/complete-test-stages/complete-clickhouse/report.json \
     --output-dir tests/sqllogic/exclusions
 ```
 
