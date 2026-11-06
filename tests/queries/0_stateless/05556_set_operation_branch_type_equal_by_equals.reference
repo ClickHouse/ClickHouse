@@ -1,0 +1,21 @@
+UNION ALL, Variant result
+2	Decimal(38, 7)
+3.5	Float64
+EXCEPT ALL, Variant result
+2	Decimal(38, 7)
+time zone
+0
+0
+result type
+x
+Decimal(9, 2)
+1.5
+7
+nested in a tuple with a Variant
+t
+Tuple(Variant(String, UInt8), Decimal(38, 7))
+('a',2)
+(1,1)
+same type name, different captured time zone
+0
+0
