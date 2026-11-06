@@ -100,4 +100,17 @@ g
 g
 f
 g
+skip-in-bounded-tail-returned-through-another-parent
+f
+g
+f
+f
+fails
+skip-into-incomplete-frame-returned-through-a-shorter-alias
+A
+B
+C
+A
+B
+C
 alive

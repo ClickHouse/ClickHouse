@@ -397,6 +397,35 @@ ln -s ../data/C "$TEST_DIR_ABS/parents/root/z"
 cp -a "$TEST_DIR_ABS/parents" "$TEST_DIR_ABS/parents_swapped"
 ln -snf ../data/C "$TEST_DIR_ABS/parents_swapped/root/a"
 ln -snf ../chains/s1 "$TEST_DIR_ABS/parents_swapped/root/z"
+cp -a "$TEST_DIR_ABS/parents" "$TEST_DIR_ABS/parents_lone"
+rm "$TEST_DIR_ABS/parents_lone/root/z"
+
+# A skip into a frame that is itself incomplete: `incomplete/root/a` reaches `B` through 40 links and cannot resolve
+# `B/child`; `root/b` reaches `A` through 40 and skips both entries of `A`, which name `B` through 4 and 2 links;
+# `root/c`, through 37, resolves only the one listed second, and through it `B/child`.
+mkdir -p "$TEST_DIR_ABS/incomplete/root" "$TEST_DIR_ABS/incomplete/h" "$TEST_DIR_ABS/incomplete/data/A" "$TEST_DIR_ABS/incomplete/data/B" "$TEST_DIR_ABS/incomplete/data/C"
+printf "A\n" > "$TEST_DIR_ABS/incomplete/data/A/A.txt"
+printf "B\n" > "$TEST_DIR_ABS/incomplete/data/B/B.txt"
+printf "C\n" > "$TEST_DIR_ABS/incomplete/data/C/C.txt"
+ln -s ../C "$TEST_DIR_ABS/incomplete/data/B/child"
+ln -s ../../h/slot_p "$TEST_DIR_ABS/incomplete/data/A/p"
+ln -s ../../h/slot_q "$TEST_DIR_ABS/incomplete/data/A/q"
+FIRST_LISTED=$(find "$TEST_DIR_ABS/incomplete/data/A" -mindepth 1 -maxdepth 1 -type l | head -n 1 | sed 's#.*/##')
+SECOND_LISTED=$(find "$TEST_DIR_ABS/incomplete/data/A" -mindepth 1 -maxdepth 1 -type l | tail -n 1 | sed 's#.*/##')
+ln -s hop1 "$TEST_DIR_ABS/incomplete/h/slot_$FIRST_LISTED"
+ln -s hop2 "$TEST_DIR_ABS/incomplete/h/hop1"
+ln -s ../data/B "$TEST_DIR_ABS/incomplete/h/hop2"
+ln -s ../data/B "$TEST_DIR_ABS/incomplete/h/slot_$SECOND_LISTED"
+for c in A B; do
+    mkdir -p "$TEST_DIR_ABS/incomplete/chains$c"
+    for i in $(seq 1 $((SYMLINK_LIMIT - 2))); do
+        ln -s "s$((i + 1))" "$TEST_DIR_ABS/incomplete/chains$c/s$i"
+    done
+    ln -s "../data/$c" "$TEST_DIR_ABS/incomplete/chains$c/s$((SYMLINK_LIMIT - 1))"
+done
+ln -s ../chainsB/s1 "$TEST_DIR_ABS/incomplete/root/a"
+ln -s ../chainsA/s1 "$TEST_DIR_ABS/incomplete/root/b"
+ln -s ../chainsA/s4 "$TEST_DIR_ABS/incomplete/root/c"
 
 trap 'rm -rf "$TEST_DIR_ABS"' EXIT
 
@@ -629,6 +658,18 @@ $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/*/
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/z/*/**/*.txt', 'TSV', 'val String') ORDER BY val"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/*/*/x/**/*.txt', 'TSV', 'val String')"
 $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents_swapped/root/*/*/**/*.txt', 'TSV', 'val String') ORDER BY val"
+
+echo "skip-in-bounded-tail-returned-through-another-parent"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/**/child/*.txt', 'TSV', 'val String')"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/**/child/*/*.txt', 'TSV', 'val String')"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents/root/**/*/f.txt', 'TSV', 'val String')"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents_swapped/root/**/child/*.txt', 'TSV', 'val String')"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/parents_lone/root/**/child/*.txt', 'TSV', 'val String')" 2>&1 \
+    | grep -qF "Cannot expand the glob: Too many levels of symbolic links" && echo "fails"
+
+echo "skip-into-incomplete-frame-returned-through-a-shorter-alias"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/incomplete/root/**/*.txt', 'TSV', 'val String') ORDER BY val"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/incomplete/root/c/**/*.txt', 'TSV', 'val String') ORDER BY val"
 
 # Server alive afterwards.
 $CLICKHOUSE_CLIENT --query "SELECT 'alive'"

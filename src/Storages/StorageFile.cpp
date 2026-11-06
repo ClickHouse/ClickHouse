@@ -281,13 +281,16 @@ struct PruningState
         std::string path;
         const VisitedFrame * frame = nullptr;
         size_t walk = 0;
-        /// A key of `visited_frames` for a directory that is walked further, of `matched_paths` for a match, or
-        /// empty when neither can tell.
+        /// A key of `visited_frames` (`listed_tails` if `is_tail`) for a directory that is walked further, of
+        /// `matched_paths` for a match, or empty when neither can tell.
         bool is_walk = false;
         std::string key;
         bool found = false;
+        bool is_tail = false;
     };
     std::vector<SkippedPath> skipped_paths;
+    /// (canonical directory, remaining pattern) of every directory a bounded tail below a `**` has listed.
+    std::unordered_set<std::string> listed_tails;
 };
 
 /// What a path that `notePathLimitSkip` records adds to the result if it resolves to a directory or a file.
@@ -322,16 +325,33 @@ void notePathLimitSkip(
         return;
     std::string walk_key;
     std::error_code walk_ec;
+    bool walk_is_tail = false;
+    bool walk_is_match = false;
     if (!target_ec && walk_suffix)
     {
         /// The literal components before the first glob of `walk_suffix` are part of the walked frame's directory.
-        const size_t literal_end = walk_suffix->substr(0, walk_suffix->find_first_of("*?{")).rfind('/');
+        const size_t first_glob = walk_suffix->find_first_of("*?{");
+        const size_t literal_end = walk_suffix->substr(0, first_glob).rfind('/');
         const fs::path walked = literal_end ? fs::canonical(target / walk_suffix->substr(1, literal_end), walk_ec) : target;
-        if (!walk_ec)
+        if (!walk_ec && first_glob == std::string::npos)
         {
-            walk_key = walked.string() + '\0' + walk_suffix->substr(literal_end);
-            const auto visited = pruning.visited_frames.find(walk_key);
-            if (visited != pruning.visited_frames.end() && (visited->second.walking || !visited->second.unresolved))
+            /// A suffix without globs names one file, under the key `add_matched_path` gives it.
+            (void)fs::canonical(target / walk_suffix->substr(1), walk_ec);
+            if (!walk_ec)
+                walk_key = (walked / walk_suffix->substr(literal_end + 1)).string();
+            walk_is_match = true;
+        }
+        else if (!walk_ec)
+        {
+            const std::string remaining = walk_suffix->substr(literal_end);
+            walk_key = walked.string() + '\0' + remaining;
+            walk_is_tail = !patternHasGlobstarSegment(remaining);
+            bool returned = false;
+            if (walk_is_tail)
+                returned = pruning.listed_tails.contains(walk_key);
+            else if (const auto visited = pruning.visited_frames.find(walk_key); visited != pruning.visited_frames.end())
+                returned = visited->second.walking || !visited->second.unresolved;
+            if (returned)
                 return;
         }
     }
@@ -352,7 +372,8 @@ void notePathLimitSkip(
         PruningState::SkippedPath skipped{ec, path, &innermost, innermost.matches_before_retries.size(), false, {}, false};
         if (yield == SkippedYield::Walk && !walk_key.empty())
         {
-            skipped.is_walk = true;
+            skipped.is_walk = !walk_is_match;
+            skipped.is_tail = walk_is_tail;
             skipped.key = std::move(walk_key);
         }
         else if (yield == SkippedYield::Match)
@@ -378,12 +399,17 @@ bool isMissing(PruningState::SkippedPath & skipped, const PruningState & pruning
     if (skipped.walk != skipped.frame->matches_before_retries.size())
         return false;
     if (!skipped.found && !skipped.key.empty())
-        skipped.found = skipped.is_walk ? pruning.visited_frames.contains(skipped.key) : matched_paths.contains(skipped.key);
+    {
+        if (!skipped.is_walk)
+            skipped.found = matched_paths.contains(skipped.key);
+        else
+            skipped.found = skipped.is_tail ? pruning.listed_tails.contains(skipped.key) : pruning.visited_frames.contains(skipped.key);
+    }
     return !skipped.found;
 }
 
 /// Whether `prefix`, another name for the frame's directory, resolves what its last walk could not: the
-/// first path it left unresolved, or any skip below it that is still missing.
+/// first path it left unresolved, or any skip below it that is still missing or leads into an incomplete frame.
 bool resolvesUnresolved(
     const VisitedFrame & frame, const std::string & prefix, PruningState & pruning, const std::unordered_set<std::string> & matched_paths)
 {
@@ -397,12 +423,22 @@ bool resolvesUnresolved(
             skipUnresolvableOrThrow(ec, path);
         return !ec;
     };
+    auto into_incomplete_frame = [&](const PruningState::SkippedPath & skipped)
+    {
+        if (!skipped.is_walk || skipped.is_tail || skipped.walk != skipped.frame->matches_before_retries.size())
+            return false;
+        const auto target = pruning.visited_frames.find(skipped.key);
+        return target != pruning.visited_frames.end() && !target->second.walking && target->second.unresolved.has_value();
+    };
     if (resolves(prefix + *frame.unresolved))
         return true;
     for (size_t i = frame.skipped_begin; i < frame.skipped_end; ++i)
-        if (isMissing(pruning.skipped_paths[i], pruning, matched_paths)
-            && resolves(prefix + pruning.skipped_paths[i].path.substr(frame.prefix.size())))
+    {
+        auto & skipped = pruning.skipped_paths[i];
+        if ((isMissing(skipped, pruning, matched_paths) || into_incomplete_frame(skipped))
+            && resolves(prefix + skipped.path.substr(frame.prefix.size())))
             return true;
+    }
     return false;
 }
 
@@ -560,8 +596,7 @@ void listFilesWithRegexpMatchingImpl(
     if (prefix_exists_ec)
     {
         skipUnresolvableOrThrow(prefix_exists_ec, prefix_without_globs);
-        notePathLimitSkip(prefix_exists_ec, prefix_without_globs, walks_frame ? &suffix_with_globs : nullptr, pruning,
-                          walks_frame ? SkippedYield::Walk : SkippedYield::Unknown);
+        notePathLimitSkip(prefix_exists_ec, prefix_without_globs, &suffix_with_globs, pruning, SkippedYield::Walk);
     }
     if (!prefix_exists)
         return;
@@ -722,9 +757,8 @@ void listFilesWithRegexpMatchingImpl(
             if (recursive || skip_regex || re2::RE2::FullMatch(file_name, matcher))
             {
                 const std::string rest = looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : "";
-                const std::string * walk_suffix = recursive ? &suffix_with_globs : (patternHasGlobstarSegment(rest) ? &rest : nullptr);
-                notePathLimitSkip(is_dir_ec, full_path, walk_suffix, pruning,
-                                  walk_suffix ? SkippedYield::Walk : (looking_for_directory ? SkippedYield::Unknown : SkippedYield::None),
+                const std::string * walk_suffix = recursive ? &suffix_with_globs : (looking_for_directory ? &rest : nullptr);
+                notePathLimitSkip(is_dir_ec, full_path, walk_suffix, pruning, walk_suffix ? SkippedYield::Walk : SkippedYield::None,
                                   looking_for_directory ? SkippedYield::None : SkippedYield::Match);
             }
             continue;
@@ -762,6 +796,16 @@ void listFilesWithRegexpMatchingImpl(
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
                 descents.push_back({(fs::path(full_path) / "").string(), suffix_with_globs.substr(next_slash_after_glob_pos), false});
         }
+    }
+
+    if (!walks_frame && !ec && !pruning.active_frames.empty())
+    {
+        const VisitedFrame & innermost = *pruning.active_frames.back();
+        const bool frame_directory = prefix_without_globs.starts_with(innermost.prefix)
+            && prefix_without_globs.find_first_not_of('/', innermost.prefix.size()) == std::string::npos;
+        const fs::path * listed = frame_directory ? &innermost.canonical : dir_canonical_hint();
+        if (listed)
+            pruning.listed_tails.insert(listed->string() + '\0' + suffix_with_globs);
     }
 
     std::sort(descents.begin(), descents.end());
