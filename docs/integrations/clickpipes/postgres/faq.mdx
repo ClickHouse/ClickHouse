@@ -71,7 +71,7 @@ To avoid these issues, in order of preference:
 2. Otherwise, set a [custom ordering key](/integrations/clickpipes/postgres/ordering_keys) on columns that are both unique and immutable. A non-unique ordering key merges distinct rows that share the same key.
 3. Turn on **Preserve NULL values from source**.
 
-Both settings only apply when the ClickHouse table is created. To change the ordering key on an existing pipe, [resync](/integrations/clickpipes/postgres/resync) it. **Preserve NULL values from source** can't be changed after the pipe is created, so turning it on requires a new pipe.
+Both settings only apply when the ClickHouse table is created, and a pipe [resync](/integrations/clickpipes/postgres/resync) keeps the existing settings. To change the ordering key of a table in an existing pipe, [resync that table](/integrations/clickpipes/postgres/table_resync): remove it from the pipe, drop or rename its ClickHouse table, then add it back with the new ordering key. **Preserve NULL values from source** can't be changed after the pipe is created, so turning it on requires a new pipe.
 
 It's important to note that if neither a primary key nor a replica identity is defined, ClickPipes won't be able to replicate changes for that table, and you may encounter errors during the replication process. Therefore, it's recommended to review your table schemas and ensure that they meet these requirements before setting up your ClickPipe.
 
