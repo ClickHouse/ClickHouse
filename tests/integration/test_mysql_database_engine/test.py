@@ -1160,6 +1160,18 @@ def test_backup_database(started_cluster):
             == "CREATE DATABASE backup_database\\nENGINE = MySQL(\\'mysql80:3306\\', \\'backup_database\\', \\'root\\', \\'[HIDDEN]\\')\n"
         )
 
+        # A RESTORE in a session whose `mysql_datatypes_support_level` differs from the default keeps the definition
+        # from the backup: the session value is not added to its SETTINGS, which RESTORE would reject.
+        clickhouse_node.query("DROP DATABASE backup_database SYNC")
+        clickhouse_node.query(
+            f"RESTORE DATABASE backup_database FROM {backup_name}",
+            settings={"mysql_datatypes_support_level": "decimal"},
+        )
+        assert (
+            clickhouse_node.query("SHOW CREATE DATABASE backup_database")
+            == "CREATE DATABASE backup_database\\nENGINE = MySQL(\\'mysql80:3306\\', \\'backup_database\\', \\'root\\', \\'[HIDDEN]\\')\n"
+        )
+
         clickhouse_node.query("DROP DATABASE backup_database")
         mysql_node.query("DROP DATABASE backup_database")
 
