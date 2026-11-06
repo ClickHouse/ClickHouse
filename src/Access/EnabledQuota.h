@@ -52,6 +52,10 @@ public:
     void checkExceeded() const;
     void checkExceeded(QuotaType quota_type) const;
 
+    /// Throws if a governing quota is keyed by `client_key` and this context supplied none. Authentication
+    /// is metered before a client key can exist, so only the query path calls this.
+    void checkClientKeySupplied() const;
+
     void reset(QuotaType quota_type) const;
 
     /// Returns the information about quota consumption.
@@ -97,6 +101,9 @@ private:
     const Params params;
     boost::atomic_shared_ptr<const Intervals> intervals; /// atomically changed by QuotaUsageManager
     std::atomic<bool> empty = false; /// Use a separate flag to avoid loading intervals, which is way more expensive than an atomic bool
+    /// The chosen quota is keyed by `client_key` and this context supplied none, so it cannot be metered.
+    /// Refreshed in place by `QuotaCache` together with `intervals`; see `checkClientKeySupplied`.
+    std::atomic<bool> requires_client_key = false;
 };
 
 }
