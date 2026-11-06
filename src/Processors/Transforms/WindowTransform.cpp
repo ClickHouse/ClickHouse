@@ -86,10 +86,6 @@ WindowTransform::WindowTransform(
     , arguments(params.input_header, functions)
     , frame(params)
 {
-    for (const auto & function : functions)
-        if (const auto general = asGeneralWindowFunction(function.aggregate_function))
-            general->checkWindowFrameType(params.window_description);
-
     try
     {
         general_functions.reserve(functions.size());
@@ -149,9 +145,11 @@ void WindowTransform::computeReadyRows()
             startNextPartition();
         }
 
-        peers.advancePeerGroupBounds(blocks, partition.bounds());
-        frame.advance(blocks, peers.current(), partition.bounds());
-        if (!frame.bounds().fully_visible)
+        if (required.peers || required.frame)
+            peers.advancePeerGroupBounds(blocks, partition.bounds());
+        if (required.frame)
+            frame.advance(blocks, peers.current(), partition.bounds());
+        if (!currentRowIsReady())
             break;
 
         recordCurrentRowBounds();
@@ -159,6 +157,13 @@ void WindowTransform::computeReadyRows()
     }
 
     evaluateRowsBatch();
+}
+
+bool WindowTransform::currentRowIsReady() const
+{
+    return (!required.frame || frame.bounds().fully_visible)
+        && (!required.peers || peers.bounds().fully_visible)
+        && (!required.partition || partition.bounds().fully_visible);
 }
 
 void WindowTransform::recordCurrentRowBounds()
@@ -179,7 +184,7 @@ void WindowTransform::recordCurrentRowBounds()
         bounds.peers_end.push_back(peers.bounds().end.row_index_in_partition);
         bounds.peer_group_index.push_back(current.peer_group_index_in_partition);
     }
-    if (required.partition && partition.bounds().fully_visible)
+    if (required.partition)
     {
         bounds.partition_end.push_back(partition.bounds().end.row_index_in_partition);
     }
@@ -312,10 +317,11 @@ void WindowTransform::work()
 void WindowTransform::releaseUnusedBlocks()
 {
     const RowPoint & current = peers.current();
-    const Int64 first_row = std::min({current.row_index_in_partition, frame.firstRowToRead(), first_row_read_by_functions});
-    const Int64 first_row_position = blocks.positionOf(current.location) - (current.row_index_in_partition - first_row);
+    const Int64 first_row_read_by_frame = required.frame ? frame.firstRowToRead() : std::numeric_limits<Int64>::max();
+    const Int64 first_row_to_keep = std::min({current.row_index_in_partition, first_row_read_by_frame, first_row_read_by_functions});
+    const Int64 first_position_to_keep = blocks.positionOf(current.location) - (current.row_index_in_partition - first_row_to_keep);
 
-    while (blocks.begin() != blocks.end() && blocks.front().end_position <= first_row_position)
+    while (blocks.begin() != blocks.end() && blocks.front().end_position <= first_position_to_keep)
     {
         blocks.pop();
         arguments.pop();

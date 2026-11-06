@@ -59,6 +59,7 @@ class WindowTransform final : public IProcessor
 {
     void addInputBlock(Chunk chunk);
     void computeReadyRows();
+    bool currentRowIsReady() const;
     void recordCurrentRowBounds();
     void evaluateRowsBatch();
     void packReadyBlock();
