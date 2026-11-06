@@ -1,0 +1,14 @@
+-- DateTime64(3) timestamps, result scale 3: unit, grid points, step in seconds
+nanosecond	3	0.5
+microsecond	3	0.5
+millisecond	3	0.5
+second	3	1
+minute	3	60
+hour	3	3600
+day	3	86400
+week	3	604800
+year	3	31536000
+-- DateTime64(9) timestamps, result scale 9: unit, grid points, step in seconds
+microsecond	3	0.5
+millisecond	3	0.5
+wide step at scale 3	1
