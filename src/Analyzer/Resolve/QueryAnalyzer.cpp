@@ -989,7 +989,7 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
                 scope.scope_node->formatASTForErrorMessage());
 
         --pos;
-        if (sort_node && containsCorrelatedSubquery(projection_nodes[pos]))
+        if (sort_node)
             sort_node->setProjectionIndex(pos);
         *node_to_replace = projection_nodes[pos]->clone();
         if (auto it = resolved_expressions.find(projection_nodes[pos]); it != resolved_expressions.end())

@@ -172,7 +172,7 @@ private:
     static constexpr size_t children_size = fill_staleness_child_index + 1;
 
     std::string column_name;
-    /// Zero-based index of a correlated projection expression referenced by ORDER BY.
+    /// Zero-based index of a projection expression referenced by ORDER BY.
     std::optional<size_t> projection_index;
     SortDirection sort_direction = SortDirection::ASCENDING;
     std::optional<SortDirection> nulls_sort_direction;
