@@ -1,0 +1,10 @@
+hash	left any a|b	by_a
+hash	left any b|a	by_b
+hash	inner any a|b	by_a
+hash	inner any b|a	by_b
+hash	left semi a|b	by_a
+hash	left semi b|a	by_b
+parallel	left any a|b	by_a
+parallel	left any b|a	by_b
+serial	left any a|b	by_a
+serial	left any b|a	by_b

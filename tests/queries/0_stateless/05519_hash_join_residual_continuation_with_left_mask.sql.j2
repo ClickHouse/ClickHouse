@@ -1,0 +1,37 @@
+-- A join with a residual condition such as `l.x < r.y` stops after `max_joined_block_size_rows` output rows and
+-- continues with the left rows it has not reached. In every continuation, a left row with a NULL key, or one that the
+-- left-only condition `l.flag = 1` rejects, must not match through its clause. Each result must equal the result
+-- without the limit.
+
+SET join_algorithm = 'hash';
+SET joined_block_split_single_row = 0;
+SET query_plan_join_swap_table = 0;
+SET enable_parallel_replicas = 0;
+SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
+SET join_use_nulls = 0;
+SET max_threads = 1;
+
+DROP TABLE IF EXISTS l;
+DROP TABLE IF EXISTS r;
+
+CREATE TABLE l (v UInt64, k Nullable(UInt64), x UInt64, flag UInt8) ENGINE = MergeTree ORDER BY ();
+CREATE TABLE r (w UInt64, k Nullable(UInt64), y UInt64) ENGINE = MergeTree ORDER BY ();
+
+-- Each key has 18 or 19 right rows, more than the limit of 16.
+INSERT INTO l SELECT number, if(number % 7 = 0, NULL, number % 8), number % 50, number % 3 != 0 FROM numbers(2000);
+INSERT INTO r SELECT number, if(number % 11 = 0, NULL, number % 8), number % 40 FROM numbers(160);
+
+{% for on in ['l.k = r.k AND l.flag = 1 AND l.x < r.y', '(l.k = r.k AND l.flag = 1 AND l.x < r.y) OR l.v = r.w'] -%}
+{% for kind in ['ALL INNER', 'ALL LEFT', 'ALL RIGHT', 'ALL FULL'] -%}
+{% for layout in ['serial', 'parallel'] -%}
+SELECT '{{ kind }}', '{{ layout }}',
+    (SELECT (count(), sum(cityHash64(l.v, r.w))) FROM l {{ kind }} JOIN r ON {{ on }}
+        SETTINGS hash_join_layout = '{{ layout }}', max_joined_block_size_rows = 16) AS limited,
+    limited = (SELECT (count(), sum(cityHash64(l.v, r.w))) FROM l {{ kind }} JOIN r ON {{ on }}
+        SETTINGS hash_join_layout = '{{ layout }}', max_joined_block_size_rows = 0) AS unlimited;
+{% endfor -%}
+{% endfor -%}
+{% endfor -%}
+
+DROP TABLE l;
+DROP TABLE r;
