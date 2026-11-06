@@ -423,21 +423,21 @@ String makeQuery(const Chart & chart, const std::vector<Series> & series, bool p
     for (const auto & [label, expression, per_interval] : series)
     {
         inner_list += fmt::format(", {} AS {}", expression, label);
-        outer_list += fmt::format("{}\n  {}({}) AS {}", outer_list.empty() ? "" : ",", per_interval, label, label);
+        outer_list += fmt::format("{}\n    {}({}) AS {}", outer_list.empty() ? "" : ",", per_interval, label, label);
     }
 
-    String filter = chart.filter[0] != '\0' ? fmt::format("\n    AND {}", chart.filter) : "";
+    String filter = chart.filter[0] != '\0' ? fmt::format("\n        AND {}", chart.filter) : "";
     const char * host = per_host ? ", hostname" : "";
 
     return fmt::format(R"EOQ(WITH toDateTimeOrDefault({{from:String}}, '', now() - {{seconds:UInt32}}) AS from,
     toDateTimeOrDefault({{to:String}}, '', now()) AS to
 SELECT
-  toStartOfInterval(event_time, INTERVAL {{rounding:UInt32}} SECOND)::INT AS t{},{}
+    toStartOfInterval(event_time, INTERVAL {{rounding:UInt32}} SECOND)::INT AS t{},{}
 FROM (
-  SELECT event_time{}{}
-  FROM clusterAllReplicas(default, merge('system', '^{}'))
-  WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to{}
-  GROUP BY event_time{}
+    SELECT event_time{}{}
+    FROM clusterAllReplicas(default, merge('system', '^{}'))
+    WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to{}
+    GROUP BY event_time{}
 )
 GROUP BY t{}
 ORDER BY t WITH FILL STEP {{rounding:UInt32}} SETTINGS skip_unavailable_shards = 1)EOQ",
