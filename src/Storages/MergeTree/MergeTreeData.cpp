@@ -7193,6 +7193,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         : local_context->getStoragePolicy((*alter_effective_settings)[MergeTreeSetting::storage_policy]);
     if (new_storage_policy != getStoragePolicy())
     {
+        /// Only a changed policy is checked, so a table that already has it can still be altered otherwise.
+        DiskFromAST::ensureStoragePolicyIsAllowed(new_storage_policy->getName(), local_context);
+
         /// The roots of a `table_disk` table are taken when it is created, so its disks are fixed.
         if ((*settings_from_storage)[MergeTreeSetting::table_disk])
             throw Exception(
@@ -7308,8 +7311,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
             if (setting_name == "storage_policy")
             {
-                if (new_value.safeGet<String>() != (*getSettings())[MergeTreeSetting::storage_policy].value)
-                    DiskFromAST::ensureStoragePolicyIsAllowed(new_value.safeGet<String>(), local_context);
                 checkStoragePolicy(local_context->getStoragePolicy(new_value.safeGet<String>()));
                 found_storage_policy_setting = true;
             }
