@@ -198,20 +198,42 @@ namespace
         if (object_storage->getType() != ObjectStorageType::Web)
             return fmt::format("s3:{}:{}", getObjectStorageHash(*object_storage), object_info.getPath());
 
-        if (!object_info.read_source_index)
-            return "web:" + object_info.getPath();
-
+        /// The path of a `Web` object is relative to the base URLs, and the response can depend on the headers
+        /// (e.g. credentials), so both are part of the key: the same path with the same `ETag` from another origin
+        /// or for another user can have different contents.
         const auto & web_object_storage = assert_cast<const WebObjectStorage &>(*object_storage);
         const auto & url_shards = web_object_storage.getURLShards();
-        if (*object_info.read_source_index >= url_shards.size())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid URL shard index: {}", *object_info.read_source_index);
 
         SipHash hash;
-        for (const auto & url : url_shards[*object_info.read_source_index])
+        auto hash_urls = [&](const WebObjectStorage::URLOptions & urls)
         {
-            hash.update(url.base_url);
+            for (const auto & url : urls)
+            {
+                hash.update(url.base_url);
+                hash.update('\0');
+                hash.update(url.query_fragment);
+                hash.update('\0');
+            }
+            hash.update('\1');
+        };
+
+        if (object_info.read_source_index)
+        {
+            if (*object_info.read_source_index >= url_shards.size())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid URL shard index: {}", *object_info.read_source_index);
+            hash_urls(url_shards[*object_info.read_source_index]);
+        }
+        else
+        {
+            for (const auto & urls : url_shards)
+                hash_urls(urls);
+        }
+
+        for (const auto & header : web_object_storage.getHeaders())
+        {
+            hash.update(header.name);
             hash.update('\0');
-            hash.update(url.query_fragment);
+            hash.update(header.value);
             hash.update('\0');
         }
 
