@@ -657,7 +657,7 @@ SELECT 'a declared column spelled like a JSON path';
 CREATE TABLE t_115999_shadowed
 (
     group_id UInt64,
-    j JSON,
+    j JSON(typed String),
     `j.k` String,
     `j.t` Tuple(m String),
     INDEX idx_j JSONAllValues(j) TYPE text(tokenizer = ngrams(3))
@@ -665,7 +665,7 @@ CREATE TABLE t_115999_shadowed
 ENGINE = MergeTree
 ORDER BY group_id;
 
-INSERT INTO t_115999_shadowed VALUES (1, '{"other":"hello"}', 'world', tuple('world'));
+INSERT INTO t_115999_shadowed VALUES (1, '{"typed":"hello","other":"hello"}', 'world', tuple('world'));
 
 -- The first three print 0: `j.k` and `j.t.m` read the declared columns, so the default applies.
 SELECT count() FROM t_115999_shadowed AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
@@ -674,9 +674,12 @@ SELECT count() FROM t_115999_shadowed AS t INNER JOIN t_115999_side AS b ON t.gr
 WHERE hasAnyTokens(t.`j.k`, ['orl'], 'splitByNonAlpha') OR b.category = 'nonexistent';
 SELECT count() FROM t_115999_shadowed AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
 WHERE hasAnyTokens(t.`j.t`.m, ['orl']) OR b.category = 'nonexistent';
--- A path of the indexed JSON column still forwards, so the refusal is about ownership, not the shape.
+-- Both print 1: a path of the indexed JSON column still forwards, declared typed or not, so the refusal
+-- above is about which column owns the name rather than its shape.
 SELECT count() FROM t_115999_shadowed AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
 WHERE hasAnyTokens(t.j.other::String, ['ell']) OR b.category = 'nonexistent';
+SELECT count() FROM t_115999_shadowed AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasAnyTokens(t.j.typed, ['ell']) OR b.category = 'nonexistent';
 
 DROP TABLE t_115999_shadowed;
 

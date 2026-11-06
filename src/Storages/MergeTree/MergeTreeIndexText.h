@@ -616,9 +616,7 @@ public:
     TextIndexAutomatonBudgetPtr automaton_budget = std::make_shared<TextIndexAutomatonBudget>();
 };
 
-/// The canonical tokenizer description, e.g. `ngrams(3)`, as the text-search functions accept it. Empty
-/// for any index type other than `text`, and when `function_name` rejects that tokenizer - forwarding one
-/// it does not accept would make the function throw where it answers with its default today.
+/// Empty for any index type other than `text`, and when `function_name` rejects that tokenizer.
 String getTextIndexTokenizerDescription(const IndexDescription & index, const String & function_name);
 
 /// The index expression spelled the way queries are analyzed, `std::nullopt` when that is unchanged.

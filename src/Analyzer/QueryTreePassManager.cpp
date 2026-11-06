@@ -298,8 +298,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze, bool 
 
     manager.addPass(std::make_unique<DictGetTupleElementPass>());
     manager.addPass(std::make_unique<ConvertEmptyStringComparisonToFunctionPass>());
-    /// Before FunctionToSubcolumnsPass, which rewrites `mapValues(m)` into a subcolumn that no longer
-    /// matches the index definition.
+    /// Before FunctionToSubcolumnsPass, which rewrites `mapValues(m)` out of reach of the index.
     manager.addPass(std::make_unique<TextIndexFunctionsTokenizerPass>());
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
 

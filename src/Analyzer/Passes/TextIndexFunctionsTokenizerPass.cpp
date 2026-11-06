@@ -15,6 +15,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
@@ -34,19 +35,16 @@ namespace DB
 namespace
 {
 
-/// A recursive CTE projects columns of its own query, so bound the descent.
 constexpr size_t max_substitutions = 64;
 
 struct Resolution
 {
-    /// Every column substituted by what it reads, so the AST column name can be compared with an index.
     QueryTreeNodePtr expression;
     StoragePtr storage;
-    /// A `m[k]` lookup whose key reads another table, so only the Map describes the expression.
+    /// Only the Map then describes the expression.
     bool foreign_map_key = false;
 };
 
-/// A table function reads a table too: `remote()` resolves to a `Distributed` storage.
 StoragePtr getSourceStorage(const IQueryTreeNode & source)
 {
     if (const auto * table_node = source.as<TableNode>())
@@ -58,23 +56,18 @@ StoragePtr getSourceStorage(const IQueryTreeNode & source)
     return nullptr;
 }
 
-/// The table carrying the index definitions, for a `Distributed` the shards' local one. Only a node that
-/// is itself a shard can name that table; on any other initiator the definitions are out of reach without
-/// a round trip, so `storage` is returned and the tokenizer stays unresolved rather than being guessed
-/// from an unrelated table of the same name.
+/// For a `Distributed`, the shards' local table; `storage` unless this node is provably a shard.
 StoragePtr getIndexStorage(const StoragePtr & storage, const ContextPtr & context)
 {
     const auto * distributed = typeid_cast<const StorageDistributed *>(storage.get());
     if (!distributed)
         return storage;
 
-    /// Resolving the name is not enough: an initiator outside the cluster can hold an unrelated table of
-    /// that name. Being a shard is the proof, and it is the test that decides where the data is read.
+    /// An initiator outside the cluster can hold an unrelated table of that name.
     const auto cluster = distributed->getCluster();
     if (!cluster || cluster->getLocalShardCount() == 0)
         return storage;
 
-    /// Empty when the remote side is a table function (`remote('host', view(...))`).
     const auto remote_database = distributed->getRemoteDatabaseName();
     const auto remote_table = distributed->getRemoteTableName();
     if (remote_database.empty() || remote_table.empty())
@@ -91,7 +84,17 @@ StoragePtr getIndexStorage(const StoragePtr & storage, const ContextPtr & contex
     return local_table;
 }
 
-/// The index-expression name of a resolved expression, spelled the way `IndexDescription::column_names` is.
+/// For a subcolumn, the column it belongs to.
+std::optional<String> columnOwning(const StorageInMemoryMetadata & metadata, const String & name)
+{
+    auto options = GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns();
+    if (const auto column = metadata.getColumns().tryGetColumn(options, name))
+        return column->getNameInStorage();
+
+    return {};
+}
+
+/// Spelled the way `IndexDescription::column_names` is.
 String indexExpressionName(const IQueryTreeNode & resolved)
 {
     ConvertToASTOptions ast_options;
@@ -115,8 +118,7 @@ QueryTreeNodePtr projectionAt(const IQueryTreeNode & source, size_t position, co
 Resolution resolveToTableColumns(
     const QueryTreeNodePtr & expression, const ContextPtr & context, size_t & substitutions, bool tolerate_foreign_map_key);
 
-/// A row comes from exactly one branch, so every branch must expose the same indexed expression of the
-/// same table; otherwise the tokenizer would depend on which branch produced the row.
+/// A row comes from one branch, so every branch must expose the same indexed expression of one table.
 QueryTreeNodePtr findAgreedUnionProjection(const UnionNode & union_node, size_t position, const ContextPtr & context, size_t & substitutions)
 {
     String agreed_name;
@@ -165,7 +167,6 @@ QueryTreeNodePtr projectionAt(const IQueryTreeNode & source, size_t position, co
     return nullptr;
 }
 
-/// Not only a passed-through column: `SELECT lower(s) AS x` exposes the indexed `lower(s)` as `x`.
 QueryTreeNodePtr findProjection(const IQueryTreeNode & source, const String & name, const ContextPtr & context, size_t & substitutions)
 {
     std::optional<size_t> position;
@@ -178,25 +179,20 @@ QueryTreeNodePtr findProjection(const IQueryTreeNode & source, const String & na
     return position ? projectionAt(source, *position, context, substitutions) : QueryTreeNodePtr{};
 }
 
-/// Null unless the expression reads one table occurrence, because otherwise no index describes it.
+/// Null unless the expression reads one table occurrence, which is all an index describes.
 Resolution resolveToTableColumns(
     const QueryTreeNodePtr & expression, const ContextPtr & context, size_t & substitutions, bool tolerate_foreign_map_key)
 {
     StoragePtr storage;
-    /// Not the storage: a self-join shares it, and `concat(a.first_name, b.last_name)` serializes like an
-    /// index on `concat(first_name, last_name)` while pairing values from two rows.
+    /// Not the storage: a self-join shares it while pairing values from two rows.
     const IQueryTreeNode * occurrence = nullptr;
 
     bool foreign_map_key = false;
-    /// The lambdas the walk entered, whose parameters are therefore bound inside the haystack.
     std::vector<const IQueryTreeNode *> local_binders;
-    /// Columns read through a union. Each is agreed arm by arm on its own, which says nothing about how
-    /// two of them relate inside one arm, so a second one is refused rather than resolved to arm order.
+    /// Agreed arm by arm, which says nothing about how two of them relate inside one arm.
     size_t union_substitutions = 0;
 
-    /// Returns `{substituted, failed}`. `substituted` is null when nothing below `current` changed, so
-    /// an expression over plain table columns is resolved without copying anything; a substitution is
-    /// only ever written into a copy.
+    /// `{substituted, failed}`, where null means unchanged; a substitution only goes into a copy.
     auto substitute = [&](const QueryTreeNodePtr & current, auto & self) -> std::pair<QueryTreeNodePtr, bool>
     {
         const auto * column_node = current->as<ColumnNode>();
@@ -205,8 +201,7 @@ Resolution resolveToTableColumns(
             if (const auto * lambda = current->as<LambdaNode>())
                 local_binders.push_back(&lambda->getArguments());
 
-            /// `m[k]` reads a value `mapValues(m)` indexes whatever the key is, so a key reading another
-            /// table leaves the Map resolvable. Its own name then describes nothing, hence the flag.
+            /// `mapValues(m)` indexes the value whatever the key is, so a foreign key still resolves.
             if (const auto * element = current->as<FunctionNode>();
                 element && element->getFunctionName() == "arrayElement" && element->getArguments().getNodes().size() == 2)
             {
@@ -266,8 +261,7 @@ Resolution resolveToTableColumns(
         if (!source)
             return {nullptr, true};
 
-        /// A parameter of a lambda inside the haystack is how an index expression names it too. One
-        /// captured from an enclosing lambda is not: there the index expression's identifier is a column.
+        /// An index names its own lambda's parameter the same way; a capture names something else.
         if (source->as<LambdaArgumentsNode>())
             return {nullptr, std::ranges::find(local_binders, static_cast<const IQueryTreeNode *>(source.get())) == local_binders.end()};
 
@@ -285,8 +279,7 @@ Resolution resolveToTableColumns(
                 return {nullptr, true};
             }
 
-            /// An ALIAS column stands for an expression, and that is what the index is defined on.
-            if (!column_node->hasExpression())
+                    if (!column_node->hasExpression())
                 return {nullptr, false};
 
             what_it_reads = column_node->getExpression();
@@ -316,8 +309,7 @@ Resolution resolveToTableColumns(
     return {substituted ? substituted : expression, storage, foreign_map_key};
 }
 
-/// The operand of a conversion that cannot change a value, by the rule the scan matches an index column
-/// under; null when `node` is not such a conversion.
+/// The operand of a conversion that cannot change a value, by the rule the scan matches under.
 const IQueryTreeNode * losslessConversionArgument(const IQueryTreeNode & node)
 {
     const auto * function_node = node.as<FunctionNode>();
@@ -337,12 +329,10 @@ const IQueryTreeNode * losslessConversionArgument(const IQueryTreeNode & node)
     return arguments.front().get();
 }
 
-/// The names one indexed expression can be read through, as `MergeTreeIndexConditionText` accepts them.
 struct Carriers
 {
-    /// Names an index can be defined on.
     Names names;
-    /// Tried as a JSON path only: reading one casts it, and that conversion is not lossless.
+    /// Tried as a JSON path only: the cast that reads one is not lossless.
     String json_subcolumn;
 };
 
@@ -350,7 +340,7 @@ Carriers carrierNames(const IQueryTreeNode & resolved, const String & resolved_n
 {
     Carriers carriers{.names = {resolved_name}, .json_subcolumn = {}};
 
-    /// Peeled to the bottom, not one layer: the scan matches an index column under any number of them.
+    /// To the bottom: the scan matches under any number of them.
     const IQueryTreeNode * node = &resolved;
     while (const auto * under = losslessConversionArgument(*node))
     {
@@ -364,7 +354,6 @@ Carriers carrierNames(const IQueryTreeNode & resolved, const String & resolved_n
             carriers.names.push_back("mapValues(" + parsed->first + ")");
     }
 
-    /// Recognized under the conversions too, not only bare.
     const auto * function_node = node->as<FunctionNode>();
     if (!function_node)
         return carriers;
@@ -377,7 +366,7 @@ Carriers carrierNames(const IQueryTreeNode & resolved, const String & resolved_n
 
     if (function_name == "arrayElement")
         carriers.names.push_back("mapValues(" + indexExpressionName(*arguments.front()) + ")");
-    /// Peeling stopped here, so the `CAST` is lossy: only a JSON path is read that way.
+    /// Peeling stopped, so the `CAST` is lossy: only a JSON path is read that way.
     else if (function_name == "CAST" || function_name == "_CAST")
         carriers.json_subcolumn = indexExpressionName(*arguments.front());
 
@@ -401,7 +390,7 @@ public:
         if (!doesTextSearchFunctionAcceptTokenizer(function_name))
             return;
 
-        /// Two arguments means no explicit tokenizer, which is the only case the index decides.
+        /// No explicit tokenizer is the only case the index decides.
         auto & arguments = function_node->getArguments().getNodes();
         if (arguments.size() != 2)
             return;
@@ -415,8 +404,7 @@ public:
     }
 
 private:
-    /// Constructing a tokenizer can load a dictionary, so ask each index at most once per function name.
-    /// The function is part of the key because whether a tokenizer may be forwarded depends on it.
+    /// Constructing a tokenizer can load a dictionary; forwardability depends on the function.
     std::map<std::tuple<const IStorage *, String, String>, String> tokenizer_cache;
 
     String findTextIndexTokenizer(const QueryTreeNodePtr & expression, const String & function_name)
@@ -426,10 +414,7 @@ private:
         if (!resolution.expression)
             return {};
 
-        /// A key reading another table leaves the expression name describing nothing, so the Map alone
-        /// carries the index - reached through whatever conversions wrap the lookup. Only that key is
-        /// exempt: the Map it reads must still resolve on its own, or `mm[side.k]['x']` would match an
-        /// index on `mapValues(mm[k])` that covers a different inner map.
+        /// Only the outer key is exempt: the Map it reads must still resolve on its own.
         String map_only_name;
         if (resolution.foreign_map_key)
         {
@@ -475,18 +460,18 @@ private:
                 continue;
 
             const auto normalized_name = getNormalizedIndexColumnName(index);
-            /// The same argument types the index condition matches with, so a subcolumn inside a declared
-            /// typed path is rejected here too instead of being given a tokenizer the index cannot answer.
+            /// What the index condition matches with, so a subcolumn inside a typed path is refused.
             const auto json_argument_types = collectJSONIndexArgumentTypes(*index.expression);
 
             auto matches_json = [&](const String & carrier)
             {
-                /// The flattened spelling of a JSON path can equally name a declared column, or a subcolumn
-                /// of one, and then that is what the predicate reads rather than the indexed JSON column.
-                if (is_shadowing_column(carrier))
+                auto matched = tryMatchJSONSubcolumnToIndex(carrier, index.column_names, "JSONAllValues", json_argument_types);
+                if (!matched)
                     return false;
 
-                return tryMatchJSONSubcolumnToIndex(carrier, index.column_names, "JSONAllValues", json_argument_types).has_value();
+                /// A declared column of that name is read instead, unless the indexed column owns it.
+                const auto owner = columnOwning(*metadata, carrier);
+                return !owner || *owner == matched->json_column_name;
             };
 
             const bool describes = std::ranges::any_of(carriers.names, [&](const String & carrier)
@@ -499,8 +484,7 @@ private:
             if (!describes)
                 continue;
 
-            /// Several text indexes on one expression are ambiguous; take the first defined whose
-            /// tokenizer the function accepts, which is also the one the row scan would use.
+            /// Ambiguous when several match; the first is also the one the row scan would use.
             it->second = getTextIndexTokenizerDescription(index, function_name);
             if (!it->second.empty())
                 break;

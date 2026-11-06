@@ -5,21 +5,14 @@
 namespace DB
 {
 
-/** Takes the tokenizer from the text index definition and forwards it to the supported functions on that
-  * index' expression, to make it explicit.
-  *
-  * Without forwarding, a text-search function uses the default `splitByNonAlpha` tokenizer and answers a
-  * different question than the index does, so the result depends on whether the index was read. See issue
-  * #115999.
+/** Forwards the tokenizer of a text index into the supported functions on that index' expression, so a
+  * predicate the plan cannot reach still answers what the index does (issue #115999).
   *
   * Runs in the analyzer because only the query tree states which table a column comes from.
   *
-  * Only the tokenizer is forwarded. An index `preprocessor` or `postprocessor` still reaches a predicate
-  * solely through `optimizeDirectReadFromTextIndex`, which rewrites haystack and needles in the plan and
-  * cannot reach a stranded predicate, so those indexes keep diverging there. Out of reach for the same
-  * reason: a haystack behind a `StorageView` that `analyzer_inline_views` left opaque, a `Distributed`
-  * haystack on an initiator that is not itself a shard, and a haystack this pass declines, where the plan
-  * may still tokenize the rows of a scan it reaches with the index. See `02346_text_index_bug115999`.
+  * Only the tokenizer. An index `preprocessor` or `postprocessor`, an opaque `StorageView`, a
+  * `Distributed` initiator that is not a shard, and whatever this pass declines still diverge between
+  * scan and stranded evaluation. See `02346_text_index_bug115999`.
   */
 class TextIndexFunctionsTokenizerPass final : public IQueryTreePass
 {
