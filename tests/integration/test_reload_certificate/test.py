@@ -177,3 +177,39 @@ def test_chain_reload():
         )
         == "2\n"
     )
+
+
+def curl_ok(cert_name):
+    return (
+        node.exec_in_container(
+            [
+                "curl",
+                "--silent",
+                "--cacert",
+                f"/etc/clickhouse-server/config.d/{cert_name}.crt",
+                "https://localhost:8443/",
+            ]
+        )
+        == "Ok.\n"
+    )
+
+
+def test_mismatched_pair_is_rejected():
+    """Replacing only the key of a cert/key pair must keep serving the previous pair until the cert is replaced too."""
+    config_dir = "/etc/clickhouse-server/config.d"
+    node.exec_in_container(
+        ["bash", "-c", f"cp {config_dir}/first.crt {config_dir}/cur.crt && cp {config_dir}/first.key {config_dir}/cur.key"]
+    )
+    change_config_to_key("cur")
+    assert curl_ok("first")
+
+    # Only the key is rotated: the pair is inconsistent.
+    node.exec_in_container(["bash", "-c", f"cp {config_dir}/second.key {config_dir}/cur.key"])
+    node.query("SYSTEM RELOAD CONFIG")
+    assert node.contains_in_log("Private key does not match the certificate")
+    assert curl_ok("first")
+
+    # The cert follows: the new pair is accepted.
+    node.exec_in_container(["bash", "-c", f"cp {config_dir}/second.crt {config_dir}/cur.crt"])
+    node.query("SYSTEM RELOAD CONFIG")
+    assert curl_ok("second")
