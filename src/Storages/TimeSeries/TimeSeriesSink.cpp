@@ -368,8 +368,16 @@ namespace
 
             /// Collapse each run of equal timestamps into one sample by the rule of the `timeSeries*` functions,
             /// so the kept sample does not depend on the order of the samples.
+            const auto * float32_values = typeid_cast<const ColumnFloat32 *>(&ts_values);
             auto new_sample_wins = [&](size_t kept_index, size_t new_index)
             {
+                /// Float32 values are compared as Float32, because widening them would quiet a signaling NaN.
+                if (float32_values)
+                {
+                    Float32 kept = float32_values->getData()[kept_index];
+                    Float32 winner = timeseriesMaxValueForDuplicateTimestamp(kept, float32_values->getData()[new_index]);
+                    return bit_cast<UInt32>(winner) != bit_cast<UInt32>(kept);
+                }
                 Float64 kept_value = ts_values.getFloat64(kept_index);
                 Float64 winner = timeseriesMaxValueForDuplicateTimestamp(kept_value, ts_values.getFloat64(new_index));
                 return bit_cast<UInt64>(winner) != bit_cast<UInt64>(kept_value);

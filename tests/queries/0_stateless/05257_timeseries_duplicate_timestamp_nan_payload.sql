@@ -34,3 +34,26 @@ SELECT 1 / value FROM prometheusQuery(ts_minus_zero_first, 'm', 100);
 SELECT 1 / value FROM prometheusQuery(ts_plus_zero_first, 'm', 100);
 DROP TABLE ts_minus_zero_first;
 DROP TABLE ts_plus_zero_first;
+
+-- Float32 NaNs are compared as Float32: of a signaling and a quiet NaN the quiet one is stored, whatever the order.
+-- `optimize_on_insert = 0` keeps the inserted bits, so the choice made on insert is visible.
+SELECT 'Float32 NaNs: the stored bits do not depend on the order';
+DROP TABLE IF EXISTS ts_f32_signaling_first;
+DROP TABLE IF EXISTS ts_f32_quiet_first;
+DROP TABLE IF EXISTS ts_f32_separate;
+CREATE TABLE ts_f32_signaling_first (samples Array(Tuple(DateTime64(3), Float32))) ENGINE = TimeSeries;
+CREATE TABLE ts_f32_quiet_first (samples Array(Tuple(DateTime64(3), Float32))) ENGINE = TimeSeries;
+CREATE TABLE ts_f32_separate (samples Array(Tuple(DateTime64(3), Float32))) ENGINE = TimeSeries;
+SET optimize_on_insert = 0;
+INSERT INTO ts_f32_signaling_first (metric_name, tags, samples) SELECT 'm', map(),
+    [(toDateTime64(95, 3), reinterpretAsFloat32(materialize(toUInt32(0x7f800001)))), (toDateTime64(95, 3), reinterpretAsFloat32(materialize(toUInt32(0x7fc00001))))];
+INSERT INTO ts_f32_quiet_first (metric_name, tags, samples) SELECT 'm', map(),
+    [(toDateTime64(95, 3), reinterpretAsFloat32(materialize(toUInt32(0x7fc00001)))), (toDateTime64(95, 3), reinterpretAsFloat32(materialize(toUInt32(0x7f800001))))];
+INSERT INTO ts_f32_separate (metric_name, tags, samples) SELECT 'm', map(), [(toDateTime64(95, 3), reinterpretAsFloat32(materialize(toUInt32(0x7f800001))))];
+INSERT INTO ts_f32_separate (metric_name, tags, samples) SELECT 'm', map(), [(toDateTime64(95, 3), reinterpretAsFloat32(materialize(toUInt32(0x7fc00001))))];
+SELECT hex(reinterpretAsUInt32(s.2)) FROM (SELECT arrayJoin(samples) AS s FROM timeSeriesSamples(ts_f32_signaling_first));
+SELECT hex(reinterpretAsUInt32(s.2)) FROM (SELECT arrayJoin(samples) AS s FROM timeSeriesSamples(ts_f32_quiet_first));
+SELECT hex(reinterpretAsUInt32(s.2)) FROM (SELECT arrayJoin(samples) AS s FROM timeSeriesSamples(ts_f32_separate) FINAL);
+DROP TABLE ts_f32_signaling_first;
+DROP TABLE ts_f32_quiet_first;
+DROP TABLE ts_f32_separate;
