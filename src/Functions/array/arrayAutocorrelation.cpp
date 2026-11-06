@@ -42,11 +42,6 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
-    {
-        return "(Array(Integer | NativeFloat | Decimal | IsNothing), [NativeInteger]) -> Array(Float64)";
-    }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty() || arguments.size() > 2)

@@ -2,7 +2,9 @@
 -- the plan that produces it as a plan of its own: a view with `SQL SECURITY DEFINER`, which is read as a sealed plan,
 -- and a `Merge` table over it. The results are compared with the optimization disabled.
 
+SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
+SET query_plan_lazy_materialization_for_join = 1;
 SET query_plan_max_limit_for_lazy_materialization = 100;
 -- Pinned so that the joins keep the order they are written in.
 SET enable_join_runtime_filters = 0;

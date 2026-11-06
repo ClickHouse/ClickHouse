@@ -217,7 +217,7 @@ bool ReadBufferFromRemoteFSGather::readImpl()
     /// The reader adopts the filled bytes as its `internal_buffer` and the swap hands that back;
     /// lend the whole own buffer every time.
     if (!use_external_buffer)
-        setPaddedInternalBuffer(memory, 0, memory.size());
+        internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
 
     SwapHelper swap(*this, *current_buf);
 

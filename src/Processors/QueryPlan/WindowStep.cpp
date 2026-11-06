@@ -1,4 +1,3 @@
-#include <Common/VectorWithMemoryTracking.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Core/Block.h>
@@ -43,7 +42,7 @@ static ITransformingStep::Traits getTraits(bool preserves_sorting)
 }
 
 static Block addWindowFunctionResultColumns(const Block & block,
-    VectorWithMemoryTracking<WindowFunctionDescription> window_functions)
+    std::vector<WindowFunctionDescription> window_functions)
 {
     auto result = block;
 
@@ -63,7 +62,7 @@ static Block addWindowFunctionResultColumns(const Block & block,
 WindowStep::WindowStep(
     const SharedHeader & input_header_,
     const WindowDescription & window_description_,
-    const VectorWithMemoryTracking<WindowFunctionDescription> & window_functions_,
+    const std::vector<WindowFunctionDescription> & window_functions_,
     bool streams_fan_out_,
     const SortingStep::Settings & sort_settings_)
     : ITransformingStep(input_header_, std::make_shared<const Block>(addWindowFunctionResultColumns(*input_header_, window_functions_)), getTraits(!streams_fan_out_))
@@ -250,7 +249,7 @@ static WindowFrame deserializeWindowFrame(ReadBuffer & in)
 }
 
 static void serializeWindowFunctions(
-    const VectorWithMemoryTracking<WindowFunctionDescription> & window_functions, const IQueryPlanStep::Serialization & ctx)
+    const std::vector<WindowFunctionDescription> & window_functions, const IQueryPlanStep::Serialization & ctx)
 {
     WriteBuffer & out = ctx.out;
     writeVarUInt(window_functions.size(), out);
@@ -286,13 +285,13 @@ static void serializeWindowFunctions(
     }
 }
 
-static VectorWithMemoryTracking<WindowFunctionDescription>
+static std::vector<WindowFunctionDescription>
 deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
 {
     UInt64 num_functions = 0;
     readVarUInt(num_functions, in);
 
-    VectorWithMemoryTracking<WindowFunctionDescription> window_functions(num_functions);
+    std::vector<WindowFunctionDescription> window_functions(num_functions);
     for (auto & func : window_functions)
     {
         readStringBinary(func.column_name, in);

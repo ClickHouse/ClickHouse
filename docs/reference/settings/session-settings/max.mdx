@@ -90,9 +90,7 @@ Maximum number of Paimon snapshots to consume per incremental read. 0 means no l
 
 Maximum query estimate execution time in seconds. Checked on every data block
 when [`timeout_before_checking_execution_speed`](/reference/settings/session-settings/other#timeout_before_checking_execution_speed)
-expires. It operates based on extrapolation relative to the current query execution
-speed. If you set `timeout_before_checking_execution_speed` to 0, then this setting
-will not be checked.
+expires.
 
 ## max_expanded_ast_elements {#max_expanded_ast_elements}
 
@@ -158,8 +156,6 @@ Possible values:
 **Additional Info**
 
 This options will produce different results depending on the settings used.
-
-With `parallel_replicas_mode` `sampling_key`, or a custom key mode on a cluster with more than one shard, each replica returns its own part of the result of the shard. The replicas of a shard are used together only when the initiator aggregates or fully sorts these parts itself (for example an aggregation without `GROUP BY` keys). Otherwise, for example for `GROUP BY` with `distributed_aggregation_memory_efficient` or for `ORDER BY`, the shard is read from one replica.
 
 ### Parallel processing using `SAMPLE` key
 

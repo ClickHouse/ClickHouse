@@ -5,14 +5,8 @@
 #include <Interpreters/ClusterFunctionReadTask.h>
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
-#include <Processors/Formats/IInputFormat.h>
 
 using namespace DB;
-
-namespace DB::ErrorCodes
-{
-    extern const int UNKNOWN_PROTOCOL;
-}
 
 namespace
 {
@@ -29,7 +23,6 @@ namespace
             for (const auto & path : paths)
                 objects.push_back(std::make_shared<ObjectInfo>(path));
         }
-        explicit TestIterator(const ObjectInfos & objects_) : objects(objects_.begin(), objects_.end()) {}
         ~TestIterator() override = default;
         ObjectInfoPtr next(size_t) override
         {
@@ -91,50 +84,6 @@ namespace
             read_source_indices.emplace_back(object->relative_path_with_metadata.read_source_index);
         }
         return true;
-    }
-
-    class TestFileBucketInfo : public FileBucketInfo
-    {
-    public:
-        explicit TestFileBucketInfo(size_t bucket_) : bucket(bucket_) {}
-        void serialize(WriteBuffer &, size_t) const override {}
-        void deserialize(ReadBuffer &, size_t) override {}
-        String getIdentifier() const override { return "_bucket_" + std::to_string(bucket); }
-        String getFormatName() const override { return "Test"; }
-        std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> &) const override { return nullptr; }
-    private:
-        size_t bucket;
-    };
-
-    std::shared_ptr<IObjectIterator> makeIteratorWithBuckets(size_t buckets_per_file)
-    {
-        ObjectInfos objects;
-        for (size_t i = 0; i < 10; ++i)
-        {
-            for (size_t bucket = 0; bucket < buckets_per_file; ++bucket)
-            {
-                auto object = std::make_shared<ObjectInfo>(makePath(i));
-                object->file_bucket_info = std::make_shared<TestFileBucketInfo>(bucket);
-                objects.push_back(object);
-            }
-        }
-        return std::make_shared<TestIterator>(objects);
-    }
-
-    std::map<std::string, size_t> countPaths(const std::vector<std::string> & paths)
-    {
-        std::map<std::string, size_t> result;
-        for (const auto & path : paths)
-            ++result[path];
-        return result;
-    }
-
-    std::map<std::string, size_t> expectedCounts(const std::vector<size_t> & file_nums, size_t count)
-    {
-        std::map<std::string, size_t> result;
-        for (size_t file_num : file_nums)
-            result[makePath(file_num)] = count;
-        return result;
     }
 
     // Head of the list must contains all paths for files with numbers from file_nums
@@ -239,22 +188,6 @@ TEST(RendezvousHashing, MultipleNodes)
         std::vector<std::string> paths;
         ASSERT_TRUE(extractNForReplica(distributor, paths, 3, 2));
         ASSERT_TRUE(checkHead(paths, {3, 9}));
-    }
-}
-
-TEST(RendezvousHashing, BucketsOfFileGoToSameReplica)
-{
-    const size_t buckets_per_file = 3;
-    auto iterator = makeIteratorWithBuckets(buckets_per_file);
-    std::vector<std::string> replicas = {"replica0", "replica1", "replica2", "replica3"};
-    StorageObjectStorageStableTaskDistributor distributor(iterator, std::move(replicas), false);
-
-    const std::vector<std::vector<size_t>> files_of_replicas = {{6}, {0, 2, 4}, {1, 5, 7, 8}, {3, 9}};
-    for (size_t replica = 0; replica < files_of_replicas.size(); ++replica)
-    {
-        std::vector<std::string> paths;
-        ASSERT_TRUE(extractNForReplica(distributor, paths, replica, files_of_replicas[replica].size() * buckets_per_file));
-        ASSERT_EQ(countPaths(paths), expectedCounts(files_of_replicas[replica], buckets_per_file));
     }
 }
 
@@ -413,36 +346,6 @@ TEST(RendezvousHashing, TakesFilesOfReplicaWithMostRemainingBytes)
     ASSERT_TRUE(checkHead(stolen_paths, {5, 7, 8}));
 }
 
-TEST(RendezvousHashing, DoesNotDeduplicateRepeatedArchiveEntryName)
-{
-    auto make_object = [](const std::string & path, std::optional<size_t> archive_entry_index)
-    {
-        auto object = std::make_shared<ObjectInfo>(path);
-        object->archive_entry_index = archive_entry_index;
-        return object;
-    };
-
-    /// Neither `archive.zip::a` nor `#1#archive.zip::a` is assigned to replica 0, so objects with the
-    /// same identifier would be queued together and only one of them would be handed out.
-    ObjectInfos objects{
-        make_object("archive.zip::a", std::nullopt),
-        make_object("archive.zip::a", 1),
-        make_object("#1#archive.zip::a", std::nullopt)};
-
-    auto iterator = std::make_shared<TestIterator>(objects);
-    std::vector<std::string> replicas = {"replica0", "replica1", "replica2", "replica3"};
-    StorageObjectStorageStableTaskDistributor distributor(iterator, std::move(replicas), false);
-
-    std::set<std::pair<std::string, std::optional<size_t>>> actual;
-    while (auto object = distributor.getNextTask(0))
-        actual.emplace(object->getPath(), object->archive_entry_index);
-
-    ASSERT_EQ(
-        actual,
-        (std::set<std::pair<std::string, std::optional<size_t>>>{
-            {"archive.zip::a", std::nullopt}, {"archive.zip::a", 1}, {"#1#archive.zip::a", std::nullopt}}));
-}
-
 TEST(RelativePathWithMetadata, FileNameKeepsObjectKeyByDefault)
 {
     RelativePathWithMetadata object_path("dir/part?.parquet#fragment");
@@ -477,55 +380,4 @@ TEST(ClusterFunctionReadTaskResponse, PreservesReadSourceIndex)
     auto object_info = deserialized.getObjectInfo();
     ASSERT_TRUE(object_info->relative_path_with_metadata.read_source_index.has_value());
     ASSERT_EQ(*object_info->relative_path_with_metadata.read_source_index, 42);
-}
-
-TEST(ClusterFunctionReadTaskResponse, ArchiveEntryIndexNeedsProtocolVersion)
-{
-    ClusterFunctionReadTaskResponse response;
-    response.path = "archive.zip::a";
-    response.archive_entry_index = 7;
-
-    {
-        String serialized;
-        WriteBufferFromString out(serialized);
-        response.serialize(out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION);
-        out.finalize();
-
-        ReadBufferFromString in(serialized);
-        ClusterFunctionReadTaskResponse deserialized;
-        deserialized.deserialize(in);
-
-        auto object_info = deserialized.getObjectInfo();
-        ASSERT_EQ(object_info->archive_entry_index, std::optional<size_t>(7));
-    }
-
-    {
-        String serialized;
-        WriteBufferFromString out(serialized);
-        std::optional<int> error_code;
-        try
-        {
-            response.serialize(out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS);
-        }
-        catch (const Exception & e)
-        {
-            error_code = e.code();
-        }
-        out.finalize();
-        ASSERT_EQ(error_code, std::optional<int>(ErrorCodes::UNKNOWN_PROTOCOL));
-    }
-
-    response.archive_entry_index.reset();
-    {
-        String serialized;
-        WriteBufferFromString out(serialized);
-        response.serialize(out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS);
-        out.finalize();
-
-        ReadBufferFromString in(serialized);
-        ClusterFunctionReadTaskResponse deserialized;
-        deserialized.deserialize(in);
-        ASSERT_EQ(deserialized.getObjectInfo()->getPath(), "archive.zip::a");
-        ASSERT_FALSE(deserialized.getObjectInfo()->archive_entry_index.has_value());
-    }
 }

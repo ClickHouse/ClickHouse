@@ -1,11 +1,8 @@
 #include <Interpreters/ProcessList.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/ProfileEventsExt.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
@@ -22,7 +19,6 @@
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
-#include <Common/typeid_cast.h>
 #include <chrono>
 #include <memory>
 #include <mutex>
@@ -32,7 +28,6 @@ namespace CurrentMetrics
 {
     extern const Metric Query;
     extern const Metric QueryNonInternal;
-    extern const Metric WaitingQuery;
 }
 
 namespace ProfileEvents
@@ -41,8 +36,6 @@ namespace ProfileEvents
     extern const Event UserThrottlerSleepMicroseconds;
     extern const Event AllUsersThrottlerBytes;
     extern const Event AllUsersThrottlerSleepMicroseconds;
-    extern const Event SelectedRows;
-    extern const Event SelectedBytes;
 }
 
 namespace DB
@@ -560,7 +553,6 @@ QueryStatus::QueryStatus(
     , query_kind(query_kind_)
     , num_queries_increment(CurrentMetrics::Query)
     , is_internal(is_internal_)
-    , is_ddl_or_on_cluster_internal(context_->isDDLOrOnClusterInternal())
 {
     if (!is_internal)
         num_non_internal_queries_increment.emplace(CurrentMetrics::QueryNonInternal);
@@ -716,15 +708,10 @@ void QueryStatus::removePipelineExecutor(IExecutor * e)
 
 bool QueryStatus::checkTimeLimit()
 {
-    return checkTimeLimit(overflow_mode);
-}
-
-bool QueryStatus::checkTimeLimit(OverflowMode mode)
-{
     auto elapsed_ns = watch.elapsed();
     throwProperExceptionIfNeeded(limits.max_execution_time.totalMicroseconds(), elapsed_ns);
 
-    return limits.checkTimeLimit(elapsed_ns, mode);
+    return limits.checkTimeLimit(elapsed_ns, overflow_mode);
 }
 
 void QueryStatus::throwQueryWasCancelled() const
@@ -955,7 +942,7 @@ CancellationCode ProcessList::sendCancelToPostgreSQLQuery(Int32 process_id, UInt
 }
 
 
-void ProcessList::killAllQueries(bool except_ddl_backups_and_restores)
+void ProcessList::killAllQueries()
 {
     std::vector<QueryStatusPtr> cancelled_processes;
 
@@ -971,11 +958,6 @@ void ProcessList::killAllQueries(bool except_ddl_backups_and_restores)
         cancelled_processes.reserve(processes.size());
         for (auto & process : processes)
         {
-            if (except_ddl_backups_and_restores
-                && (process->query_kind == IAST::QueryKind::Backup || process->query_kind == IAST::QueryKind::Restore)
-                && process->is_ddl_or_on_cluster_internal)
-                continue;
-
             cancelled_processes.push_back(process);
             process->is_cancelling = true;
         }
@@ -1003,76 +985,6 @@ bool QueryStatus::updateProgressOut(const Progress & value)
     progress_out.incrementPiecewiseAtomically(value);
 
     return !is_killed.load(std::memory_order_relaxed);
-}
-
-
-void QueryStatus::addRemoteProfileEvents(const Block & block, bool from_insert)
-{
-    const auto & types = typeid_cast<const ColumnInt8 &>(*block.getByName("type").column).getData();
-    const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
-    const auto & values = typeid_cast<const ColumnInt64 &>(*block.getByName("value").column).getData();
-
-    std::lock_guard lock(remote_profile_events_mutex);
-    for (size_t row = 0; row < block.rows(); ++row)
-    {
-        /// The packet of a remote server carries the increments of its own query and, verbatim, those
-        /// it has received from the servers it has in turn sent parts of the query to, so the sum of
-        /// all increments is what the whole subtree of the query has produced.
-        if (types[row] != ProfileEvents::Type::INCREMENT || values[row] <= 0)
-            continue;
-
-        auto event = ProfileEvents::tryGetByName(names.getDataAt(row));
-        if (!event)
-            continue;
-
-        /// For a distributed `SELECT`, these two are already incremented locally from the progress the
-        /// remote servers report (see `ReadProgressCallback`), so taking them from here as well would count
-        /// them twice. A distributed `INSERT` ignores the progress of the remote servers (see `RemoteInserter`),
-        /// so what they read for it (e.g. a materialized view joining a table) is taken from here. A server in
-        /// the middle does not forward these two for its own remote `SELECT`s, which it counts itself
-        /// (see `RemoteQueryExecutor::processProfileEventsPacket`), so they are not counted twice either.
-        /// The rows and bytes inserted by the remote side of a distributed `INSERT` are already deduplicated
-        /// against what this server has sent by `RemoteInserter`.
-        if (!from_insert && (*event == ProfileEvents::SelectedRows || *event == ProfileEvents::SelectedBytes))
-            continue;
-
-        if (!remote_profile_events)
-            remote_profile_events = std::make_unique<ProfileEvents::Counters>(VariableContext::Process, /* parent = */ nullptr);
-        remote_profile_events->incrementNoTrace(*event, values[row]);
-    }
-}
-
-
-std::optional<ProfileEvents::Counters::Snapshot> QueryStatus::getRemoteProfileEvents() const
-{
-    std::lock_guard lock(remote_profile_events_mutex);
-    if (!remote_profile_events)
-        return {};
-    return remote_profile_events->getPartiallyAtomicSnapshot();
-}
-
-
-void QueryStatus::addExcludedProfileEvents(const ProfileEvents::Counters::Snapshot & snapshot)
-{
-    std::lock_guard lock(excluded_profile_events_mutex);
-    for (auto event = ProfileEvents::Event(0); event < ProfileEvents::end(); ++event)
-    {
-        if (const auto value = snapshot[event])
-        {
-            if (!excluded_profile_events)
-                excluded_profile_events = std::make_unique<ProfileEvents::Counters>(VariableContext::Process, /* parent = */ nullptr);
-            excluded_profile_events->incrementNoTrace(event, value);
-        }
-    }
-}
-
-
-std::optional<ProfileEvents::Counters::Snapshot> QueryStatus::getExcludedProfileEvents() const
-{
-    std::lock_guard lock(excluded_profile_events_mutex);
-    if (!excluded_profile_events)
-        return {};
-    return excluded_profile_events->getPartiallyAtomicSnapshot();
 }
 
 
@@ -1256,85 +1168,6 @@ ProcessList::QueryAmount ProcessList::getQueryKindAmount(const IAST::QueryKind &
     if (found == query_kind_amounts.end())
         return 0;
     return found->second;
-}
-
-void ProcessList::increaseWaitingQueryAmount()
-{
-    const UInt64 limit = max_waiting_queries_amount.load();
-    UInt64 value = waiting_queries_amount.load();
-    while (true)
-    {
-        if (limit && value >= limit)
-            throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                            "Too many simultaneous waiting queries. Maximum: {}, waiting: {}",
-                            limit, value);
-        if (waiting_queries_amount.compare_exchange_weak(value, value + 1))
-            break;
-    }
-
-    /// WARNING: do not throw below this point, or the matching `decreaseWaitingQueryAmount` is never called.
-
-    CurrentMetrics::add(CurrentMetrics::WaitingQuery);
-}
-
-void ProcessList::decreaseWaitingQueryAmount()
-{
-    UInt64 value = waiting_queries_amount.load();
-    while (true)
-    {
-        if (value == 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong waiting query amount: decrease to negative");
-        if (waiting_queries_amount.compare_exchange_weak(value, value - 1))
-            break;
-    }
-
-    CurrentMetrics::sub(CurrentMetrics::WaitingQuery);
-}
-
-void ProcessList::incrementWaiters(const QueryStatusPtr & status)
-{
-    std::lock_guard lock(status->waiting_mutex);
-    if (status->waiting_threads == 0)
-        increaseWaitingQueryAmount();
-    ++status->waiting_threads;
-}
-
-void ProcessList::decrementWaiters(const QueryStatusPtr & status)
-{
-    std::lock_guard lock(status->waiting_mutex);
-    if (status->waiting_threads == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong waiting thread amount: decrease to negative");
-
-    if (--status->waiting_threads == 0)
-        decreaseWaitingQueryAmount();
-}
-
-/// Process list and the query to account for, or nullptr when the waiter is not a counted query:
-/// server or `clickhouse-local` startup, an AsyncLoader worker, or an internal query. A query's
-/// process list element does not change, so one wait's increment and decrement always agree.
-static ProcessList * getProcessListForWaitingQuery(QueryStatusPtr & status)
-{
-    auto query_context = CurrentThread::tryGetQueryContext();
-    if (!query_context)
-        return nullptr;
-    status = query_context->getProcessListElementSafe();
-    if (!status || status->isInternal())
-        return nullptr;
-    return &query_context->getGlobalContext()->getProcessList();
-}
-
-void onLoadJobWaitersIncrement(const LoadJobPtr &)
-{
-    QueryStatusPtr status;
-    if (auto * process_list = getProcessListForWaitingQuery(status))
-        process_list->incrementWaiters(status);
-}
-
-void onLoadJobWaitersDecrement(const LoadJobPtr &)
-{
-    QueryStatusPtr status;
-    if (auto * process_list = getProcessListForWaitingQuery(status))
-        process_list->decrementWaiters(status);
 }
 
 }

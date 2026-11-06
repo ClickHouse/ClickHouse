@@ -232,13 +232,6 @@ void IDisk::startup(bool skip_access_check)
                 "Skip access check for disk {} (read-only disk).",
                 getName());
         }
-        else if (isBroken())
-        {
-            /// `startupImpl` already logged why. The disk checker, if enabled, clears the flag once the disk recovers.
-            LOG_WARNING(getLogger("IDisk"),
-                "Skip access check for disk {} (disk is broken).",
-                getName());
-        }
         else
             checkAccess();
     }

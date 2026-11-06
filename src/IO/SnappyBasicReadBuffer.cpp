@@ -67,7 +67,7 @@ off_t SnappyBasicReadBuffer::seek(off_t off, int whence)
     else
         throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Only SEEK_SET and SEEK_CUR seek modes allowed.");
 
-    setWorkingBufferFromInternal();
+    working_buffer = internal_buffer;
     if (new_pos < 0 || new_pos > off_t(working_buffer.size()))
         throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND,
                         "Cannot seek through buffer because seek position ({}) is out of bounds [0, {}]",

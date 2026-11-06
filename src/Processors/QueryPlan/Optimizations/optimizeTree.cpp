@@ -79,7 +79,6 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.use_skip_indexes_for_top_k,
         optimization_settings.use_top_k_dynamic_filtering,
         optimization_settings.use_top_k_dynamic_filtering_for_variable_length_types,
-        optimization_settings.use_top_k_dynamic_filtering_for_single_string_sort_column,
         optimization_settings.max_limit_for_top_k_optimization,
         optimization_settings.use_skip_indexes_on_data_read,
         optimization_settings.read_in_order,
@@ -1015,9 +1014,6 @@ void optimizeTreeSecondPass(
     if (!optimization_settings.make_distributed_plan)
         optimizeParallelFullSortingMergeJoin(root, optimization_settings.max_threads);
 
-    /// After every pass that converts a full sorting or gives it partitions.
-    traverseQueryPlan(stack, root, [&](auto & frame_node) { disableSpreadingSmallReadUnderFullSorting(frame_node); });
-
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
 
     /// Run after every optimization that can rewrite aggregation, sorting, projections,
@@ -1034,9 +1030,6 @@ void optimizeTreeSecondPass(
         traverseQueryPlan(
             stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
     }
-
-    /// Last: it reads the final consumers of every remote read.
-    allowReadingShardsFromSeveralReplicas(root);
 }
 
 void addStepsToBuildSets(

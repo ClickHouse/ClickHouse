@@ -13,12 +13,9 @@
 #include <functional>
 
 #include <Common/logger_useful.h>
-#include <Common/FailPoint.h>
-#include <Common/HTTPConnectionInfo.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/re2.h>
-#include <base/sleep.h>
 #include <IO/Expect404ResponseScope.h>
 #include <IO/GCPOAuth.h>
 #include <IO/HTTPCommon.h>
@@ -94,11 +91,6 @@ namespace DB::ErrorCodes
     extern const int DNS_ERROR;
     extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
-}
-
-namespace DB::FailPoints
-{
-    extern const char s3_slow_response[];
 }
 
 namespace HistogramMetrics
@@ -250,7 +242,6 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , http_max_field_value_size(client_configuration.http_max_field_value_size)
     , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
     , for_disk_s3(client_configuration.for_disk_s3)
-    , publish_connection_info(client_configuration.publish_connection_info)
     , request_throttler(client_configuration.request_throttler)
     , extra_headers(client_configuration.extra_headers)
 {
@@ -492,7 +483,6 @@ void PocoHTTPClient::makeRequestInternalImpl(
     Aws::Utils::RateLimits::RateLimiterInterface *) const
 {
     LoggerPtr log = getLogger("AWSClient");
-    constexpr UInt64 simulated_network_latency_ms = 50;
 
     auto uri = request.GetUri().GetURIString();
     auto method = getMethod(request);
@@ -564,11 +554,6 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
     try
     {
-        /// Count the attempt before anything can fail: resolving the proxy and setting up the
-        /// connection can both fail on their own, and the SDK retries such an attempt inside the
-        /// logged entry.
-        beginHTTPConnectionInfoTransportAttempt(publish_connection_info);
-
         ProxyConfiguration proxy_configuration;
         if (per_request_configuration)
             proxy_configuration = per_request_configuration();
@@ -585,11 +570,6 @@ void PocoHTTPClient::makeRequestInternalImpl(
             /// Reset times, as this may be a next session after a redirect
             connect_time = first_byte_time = 0;
             latency_recorded = false;
-
-            /// A redirect is a request of its own.
-            if (attempt > 0)
-                beginHTTPConnectionInfoTransportAttempt(publish_connection_info);
-
             auto session = makeHTTPSession(
                 group,
                 target_uri,
@@ -700,9 +680,6 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 request_body->finalize();
 
                 setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
-
-                /// Test-only slow-S3 simulation: delay each request after sending and before receiving its response.
-                fiu_do_on(FailPoints::s3_slow_response, { sleepForMilliseconds(simulated_network_latency_ms); });
 
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Receiving response...");
@@ -951,9 +928,6 @@ std::string PocoHTTPClientGCPOAuth::getBearerToken() const
 
 PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken() const
 {
-    /// The token request can go out inside the scope of a logged request, but is not that request.
-    HTTPConnectionInfoHelperRequests helper_requests;
-
     if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
         return requestBearerTokenFromADC();
 

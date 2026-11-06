@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-msan
+# Tags: no-replicated-database
 
 set -e
 

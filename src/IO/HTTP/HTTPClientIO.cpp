@@ -364,7 +364,7 @@ bool HTTPResponseReadBuffer::nextImpl()
     if (internal_buffer.empty())
     {
         memory.resize(own_buffer_size ? own_buffer_size : scratch_buffer_size);
-        setPaddedInternalBuffer(memory, 0, memory.size());
+        internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
     }
 
     /// A single read returns only the data available on the socket at the moment; reading to
@@ -385,7 +385,7 @@ bool HTTPResponseReadBuffer::nextImpl()
     if (!bytes)
         return false;
 
-    setWorkingBufferFromInternal();
+    working_buffer = internal_buffer;
     working_buffer.resize(bytes);
     return true;
 }

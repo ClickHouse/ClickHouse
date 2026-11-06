@@ -1,5 +1,4 @@
 #include <Analyzer/TableFunctionNode.h>
-#include <Analyzer/Identifier.h>
 
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
@@ -10,8 +9,6 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/StorageView.h>
-
-#include <TableFunctions/ITableFunction.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
@@ -56,9 +53,6 @@ void TableFunctionNode::resolve(TableFunctionPtr table_function_value, StoragePt
     table_function = std::move(table_function_value);
     storage = std::move(storage_value);
     storage_id = storage->getStorageID();
-    /// A parameterized view is resolved as a table function node but has no `ITableFunction` object
-    /// (see `QueryAnalyzer::resolveTableFunction`), and it cannot be the coordinated read itself.
-    parallel_replicas_read_id = table_function ? table_function->getParallelReplicasReadID() : std::nullopt;
     unresolved_arguments_indexes = std::move(unresolved_arguments_indexes_);
 
     const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
@@ -183,7 +177,6 @@ QueryTreeNodePtr TableFunctionNode::cloneImpl() const
 
     result->storage = storage;
     result->storage_id = storage_id;
-    result->parallel_replicas_read_id = parallel_replicas_read_id;
     result->storage_snapshot = storage_snapshot;
     result->table_expression_modifiers = table_expression_modifiers;
     result->settings_changes = settings_changes;
@@ -197,9 +190,6 @@ ASTPtr TableFunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     auto table_function_ast = make_intrusive<ASTFunction>();
 
     table_function_ast->name = isSentQualified(*this) ? storage_id.getFullNameNotQuoted() : table_function_name;
-    /// The analyzer reads a two-part parameterized view name as `db.view`.
-    if (isParameterizedView() && Identifier{table_function_ast->name}.getPartsSize() == 2)
-        table_function_ast->setIsCompoundName(true);
 
     const auto & arguments = getArguments();
     table_function_ast->children.push_back(arguments.toAST(options));
