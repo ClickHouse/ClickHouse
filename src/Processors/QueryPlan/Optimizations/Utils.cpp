@@ -10,9 +10,14 @@
 #include <Functions/IFunction.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
+#include <algorithm>
+#include <optional>
+#include <unordered_set>
 #include <utility>
+#include <vector>
 
 namespace DB::ErrorCodes
 {
@@ -150,11 +155,141 @@ bool isSensitiveToEvaluationCount(const ActionsDAG & dag)
     return false;
 }
 
+namespace
+{
+
+/// Names of the outputs of `dag` computed from an input that `is_marked_input` accepts.
+template <typename IsMarkedInput>
+NameSet outputsReadingMarkedInputs(const ActionsDAG & dag, IsMarkedInput && is_marked_input)
+{
+    std::unordered_map<const ActionsDAG::Node *, bool> marked;
+    std::vector<std::pair<const ActionsDAG::Node *, bool>> stack;
+    for (const auto * output : dag.getOutputs())
+        stack.emplace_back(output, false);
+
+    while (!stack.empty())
+    {
+        auto [node, expanded] = stack.back();
+        stack.pop_back();
+
+        if (marked.contains(node))
+            continue;
+
+        if (node->type == ActionsDAG::ActionType::INPUT)
+        {
+            marked.emplace(node, is_marked_input(*node));
+            continue;
+        }
+
+        if (!expanded)
+        {
+            stack.emplace_back(node, true);
+            for (const auto * child : node->children)
+                if (!marked.contains(child))
+                    stack.emplace_back(child, false);
+            continue;
+        }
+
+        marked.emplace(node, std::ranges::any_of(node->children, [&](const auto * child) { return marked.at(child); }));
+    }
+
+    NameSet result;
+    for (const auto * output : dag.getOutputs())
+        if (marked.at(output))
+            result.insert(output->result_name);
+    return result;
+}
+
+}
+
+ConstantColumns collectConstantColumns(const QueryPlan::Node & root)
+{
+    ConstantColumns result;
+    static const NameSet no_columns;
+    auto constant_columns_of = [&](const QueryPlan::Node * node) -> const NameSet &
+    {
+        auto it = result.find(node);
+        return it == result.end() ? no_columns : it->second;
+    };
+
+    std::unordered_set<const QueryPlan::Node *> visited;
+    std::vector<std::pair<const QueryPlan::Node *, bool>> stack{{&root, false}};
+    while (!stack.empty())
+    {
+        auto [node, expanded] = stack.back();
+        stack.pop_back();
+
+        if (!expanded)
+        {
+            if (!visited.insert(node).second)
+                continue;
+            stack.emplace_back(node, true);
+            for (const auto * child : node->children)
+                stack.emplace_back(child, false);
+            continue;
+        }
+
+        NameSet constants;
+        const auto * step = node->step.get();
+        if (step && step->hasOutputHeader())
+            for (const auto & column : *step->getOutputHeader())
+                if (column.column && isColumnConst(*column.column))
+                    constants.insert(column.name);
+
+        const ActionsDAG * dag = nullptr;
+        if (const auto * filter = typeid_cast<const FilterStep *>(step))
+            dag = &filter->getExpression();
+        else if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
+            dag = &expression->getExpression();
+
+        const auto * join = typeid_cast<const JoinStepLogical *>(step);
+        if (dag && node->children.size() == 1)
+        {
+            const auto & below = constant_columns_of(node->children.front());
+            constants.merge(outputsReadingMarkedInputs(*dag, [&](const auto & input) { return below.contains(input.result_name); }));
+
+            /// A name the DAG neither produces nor consumes is forwarded by `ActionsDAG::updateHeader`.
+            NameSet known_columns;
+            for (const auto * output : dag->getOutputs())
+                known_columns.insert(output->result_name);
+            for (const auto * input : dag->getInputs())
+                known_columns.insert(input->result_name);
+            for (const auto & name : below)
+                if (!known_columns.contains(name))
+                    constants.insert(name);
+        }
+        else if (join && node->children.size() == 2)
+        {
+            const auto & left = constant_columns_of(node->children[0]);
+            const auto & right = constant_columns_of(node->children[1]);
+            constants.merge(outputsReadingMarkedInputs(
+                join->getActionsDAG(),
+                [&](const auto & input)
+                {
+                    JoinActionRef ref(&input, join->getExpressionActions());
+                    return (ref.fromLeft() && left.contains(input.result_name)) || (ref.fromRight() && right.contains(input.result_name));
+                }));
+        }
+        else
+        {
+            for (const auto * child : node->children)
+            {
+                const auto & below = constant_columns_of(child);
+                constants.insert(below.begin(), below.end());
+            }
+        }
+
+        result[node] = std::move(constants);
+    }
+    return result;
+}
+
 FilterResult filterResultForNotMatchedRows(
     const ActionsDAG & filter_dag,
     const String & filter_column_name,
     const Block & input_stream_header,
-    bool allow_unknown_function_arguments
+    bool allow_unknown_function_arguments,
+    const QueryPlan::Node * side_node
 )
 {
     /// `ActionsDAG::evaluatePartialResult` (called below) routes every function node through
@@ -214,6 +349,60 @@ FilterResult filterResultForNotMatchedRows(
     const auto * filter_node = filter_dag.tryFindInOutputs(filter_column_name);
     if (!filter_node)
         return FilterResult::UNKNOWN;
+
+    /// Not-matched rows reach the filter as full columns, but a constant of this side may stay constant after the rewrite.
+    ActionsDAG::NodeRawConstPtrs readers;
+    auto full_input = filter_input;
+    std::optional<NameSet> side_constants;
+    for (const auto * input : ActionsDAG::getInputsReadByRepresentation(*filter_node, &readers))
+    {
+        const auto * column = input_stream_header.findByName(input->result_name);
+        if (!column)
+            continue;
+        if (column->column && isColumnConst(*column->column))
+            return FilterResult::UNKNOWN;
+        if (side_node)
+        {
+            if (!side_constants)
+            {
+                auto constant_columns = collectConstantColumns(*side_node);
+                auto it = constant_columns.find(side_node);
+                side_constants = it == constant_columns.end() ? NameSet{} : std::move(it->second);
+            }
+            if (side_constants->contains(input->result_name))
+                return FilterResult::UNKNOWN;
+        }
+        if (auto it = full_input.find(input); it != full_input.end())
+            it->second.column = it->second.column->convertToFullColumnIfConst();
+    }
+
+    /// The readers see the full column; above them only values matter, so their one-row results are constants.
+    if (!readers.empty())
+    {
+        ColumnsWithTypeAndName reader_results;
+        try
+        {
+            reader_results = ActionsDAG::evaluatePartialResult(
+                full_input,
+                readers,
+                /*input_rows_count=*/1,
+                { .skip_materialize = true, .allow_unknown_function_arguments = allow_unknown_function_arguments });
+        }
+        catch (const Exception &)
+        {
+            return FilterResult::UNKNOWN;
+        }
+
+        for (size_t i = 0; i < readers.size(); ++i)
+        {
+            auto & result = reader_results[i];
+            if (!result.column || result.column->size() != 1 || WhichDataType(result.type).isFunction())
+                result.column = nullptr;
+            else if (!isColumnConst(*result.column))
+                result.column = ColumnConst::create(result.column, 1);
+            filter_input[readers[i]] = std::move(result);
+        }
+    }
 
     ActionsDAG::NodeRawConstPtrs targets = {filter_node};
     auto conjunction_atoms = ActionsDAG::extractConjunctionAtoms(filter_node);

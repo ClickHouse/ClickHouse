@@ -124,7 +124,7 @@ std::optional<Int64> constantValueInSeconds(const IDataType & type, const Field 
                 return std::nullopt;
             Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(decimal.getScale());
             /// Floor division.
-            return ticks >= 0 ? ticks / multiplier : -((-ticks + multiplier - 1) / multiplier);
+            return ticks / multiplier - (ticks % multiplier < 0 ? 1 : 0);
         }
         default:
             return std::nullopt;
