@@ -3798,6 +3798,7 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
             lambda_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
     lambdas_in_resolve_process.insert(lambda_with_hash);
+    SCOPE_EXIT({ lambdas_in_resolve_process.erase(lambda_with_hash); });
 
     size_t arguments_size = lambda_arguments.size();
     if (lambda_arguments_nodes_size != arguments_size)
@@ -3837,8 +3838,6 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
 
     /// Lambda body expression is resolved as standard query expression node.
     auto result_projection_names = resolveExpressionNode(lambda_to_resolve.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-
-    lambdas_in_resolve_process.erase(lambda_with_hash);
 
     return result_projection_names;
 }
@@ -5457,7 +5456,11 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
 
             alias_column_to_resolve->setExpression(buildQueryTree(column_default->expression, scope.context));
 
-            IdentifierResolveScope & alias_column_resolve_scope = createIdentifierResolveScope(alias_column_to_resolve, &scope /*parent_scope*/);
+            auto [scope_it, scope_inserted] = node_to_scope_map.try_emplace(alias_column_to_resolve, alias_column_to_resolve, &scope /*parent_scope*/);
+            /// The scope exists only if an earlier resolution of this column threw, and holds the state of that attempt.
+            if (!scope_inserted)
+                scope_it->second = IdentifierResolveScope(alias_column_to_resolve, &scope /*parent_scope*/);
+            IdentifierResolveScope & alias_column_resolve_scope = scope_it->second;
             alias_column_resolve_scope.table_expression_data_for_alias_resolution = &data;
             alias_column_resolve_scope.context = scope.context;
 

@@ -32,4 +32,10 @@ SELECT t_probe FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_probe;
 SELECT a FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_probe;
 SELECT `n.a` FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_probe;
 
+-- The cycles go through a branch of `if` that is not taken: `b` and `d` are resolved again after the error in that branch.
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_dead (x Int32, a Int32 ALIAS if(0, b, 1), b Int32 ALIAS arraySum(arrayMap(z -> z + a, [2])), c Int32 ALIAS if(0, d, 1), d Int32 ALIAS q + ((x + c) AS q)) ENGINE = Memory;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_dead (x) VALUES (7);
+SELECT a, b FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_dead;
+SELECT c, d FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_dead;
+
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
