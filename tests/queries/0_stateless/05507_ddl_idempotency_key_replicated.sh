@@ -173,6 +173,16 @@ tables_named "$R1" mv
 q "SELECT count() FROM system.dictionaries WHERE database = '$R1' AND name = 'kd'"
 tables_named "$R1" nm
 
+echo "-- ALTER of a view, a materialized view with TO and a Buffer table"
+plain "CREATE TABLE $R1.buf (x UInt8) ENGINE = Buffer($R1, dst, 1, 10, 100, 10000, 1000000, 10000000, 100000000)" > /dev/null
+for t in v mv buf; do
+    keyed "k26$t" "ALTER TABLE $R1.$t MODIFY COMMENT 'altered'"
+    size=$(log_size)
+    keyed "k26$t" "ALTER TABLE $R1.$t MODIFY COMMENT 'altered'"
+    echo "the retry made $(( $(log_size) - size )) log entries"
+    comment_of "$R1" "$t"
+done
+
 echo "-- a key used by another statement or user"
 keyed k1 "EXCHANGE TABLES $R1.c AND $R1.d"
 q "CREATE USER $OTHER_USER IDENTIFIED WITH no_password"

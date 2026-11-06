@@ -56,6 +56,19 @@ the retry made 0 log entries
 1
 1
 1
+-- ALTER of a view, a materialized view with TO and a Buffer table
+OK
+OK
+the retry made 0 log entries
+altered
+OK
+OK
+the retry made 0 log entries
+altered
+OK
+OK
+the retry made 0 log entries
+altered
 -- a key used by another statement or user
 IDEMPOTENCY_KEY_MISMATCH
 ACCESS_DENIED
