@@ -36,6 +36,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/DataLake/DatabaseDataLake.h>
@@ -282,7 +283,9 @@ public:
 
     void check(ContextPtr context) override
     {
-        if (ready_object_storage && ready_object_storage->getType() == ObjectStorageType::S3)
+        if (ready_object_storage
+            && (ready_object_storage->getType() == ObjectStorageType::S3
+                || ready_object_storage->getType() == ObjectStorageType::Azure))
             this->checkFormat();
         else
             BaseStorageConfiguration::check(context);
@@ -522,9 +525,9 @@ public:
     }
 
     std::optional<DataLakeReadEstimate>
-    estimateRead(StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, ContextPtr context) const override
+    estimateRead(StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, const Names & column_names, ContextPtr context) const override
     {
-        return getMetadata()->estimateRead(storage_metadata_snapshot, filter, context);
+        return getMetadata()->estimateRead(storage_metadata_snapshot, filter, column_names, context);
     }
 
     /// Data lakes never overwrite an existing data file in place: a new snapshot references new
@@ -561,7 +564,11 @@ private:
         if (object_storage->getType() == ObjectStorageType::Local)
         {
             auto user_files_path = local_context->getUserFilesPath();
-            const auto & table_path = this->getPathForRead().path;
+            /// A relative path is resolved the same way the local object storage resolves the keys of data files:
+            /// relative to `user_files_path` in the server and to the current directory in `clickhouse-local`.
+            String table_path = this->getPathForRead().path;
+            if (std::filesystem::path(table_path).is_relative())
+                table_path = resolvePathRelativelyToBase(table_path, object_storage->getCommonKeyPrefix());
             if (!fileOrSymlinkPathStartsWith(table_path, user_files_path) || !pathStartsWith(table_path, user_files_path))
                 throw Exception(
                     ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", table_path, user_files_path);

@@ -34,6 +34,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool enable_adaptive_aggregator;
     extern const SettingsBool enable_materialized_cte;
     extern const SettingsBool promql_push_down_label_matchers;
 }
@@ -184,6 +185,21 @@ VirtualColumnsDescription StoragePrometheusQuery::createVirtuals()
     return desc;
 }
 
+void StoragePrometheusQuery::applySettingsForPrometheusQuery(Context & context)
+{
+    if (!context.getSettingsRef()[Setting::enable_materialized_cte].changed)
+        context.setSetting("enable_materialized_cte", true);
+
+    /// The grid aggregation groups by time series, with a few rows per series and a state holding every sample
+    /// of its windows. The adaptive aggregator freezes such tables after a few series and stages the remaining
+    /// rows for the merge, which costs more than aggregating them in place.
+    if (!context.getSettingsRef()[Setting::enable_adaptive_aggregator].changed)
+        context.setSetting("enable_adaptive_aggregator", false);
+
+    context.setSetting("empty_result_for_aggregation_by_empty_set", false);
+}
+
+
 void StoragePrometheusQuery::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -197,21 +213,19 @@ void StoragePrometheusQuery::readImpl(
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.evaluation_settings.time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
 
-    LOG_INFO(log, "Building SQL to evaluate promql: {}", *config.promql_query);
+    LOG_DEBUG(log, "Building SQL to evaluate promql: {}", *config.promql_query);
     auto evaluation_settings = config.evaluation_settings;
     evaluation_settings.push_down_label_matchers = context->getSettingsRef()[Setting::promql_push_down_label_matchers];
     PrometheusQueryToSQL::Converter converter{config.promql_query, evaluation_settings};
     ASTPtr select_query = converter.getSQL();
 
-    LOG_INFO(log, "Will execute query:\n{}", select_query->formatForLogging());
+    LOG_DEBUG(log, "Will execute query:\n{}", select_query->formatForLogging());
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
     /// Isolate the settings required by generated PromQL from the outer query: `AS MATERIALIZED`
     /// (SQLSubqueryType::MATERIALIZED_TABLE) has effect only with `enable_materialized_cte` enabled.
     auto query_context = Context::createCopy(context);
-    if (!context->getSettingsRef()[Setting::enable_materialized_cte].changed)
-        query_context->setSetting("enable_materialized_cte", true);
-    query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
+    applySettingsForPrometheusQuery(*query_context);
 
     InterpreterSelectQueryAnalyzer interpreter(select_query, query_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);
