@@ -12,6 +12,7 @@
 #include <IO/BitHelpers.h>
 
 #include <cstring>
+#include <limits>
 
 
 namespace DB
@@ -163,9 +164,9 @@ UInt32 getCompressedHeaderSize(UInt8 data_bytes_size)
     return items_count_size + data_bytes_size;
 }
 
-UInt32 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
+UInt64 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
 {
-    const UInt32 items_count = uncompressed_size / data_bytes_size;
+    const UInt64 items_count = uncompressed_size / data_bytes_size;
 
     /// Not static: data_bytes_size is an argument, so a static keeps the first caller's width.
     const auto DATA_BIT_LENGTH = getBitLengthOfLength(data_bytes_size);
@@ -174,7 +175,7 @@ UInt32 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
 
     // worst case (for 32-bit value):
     // 11 + 5 bits of leading zeroes bit-size + 5 bits of data bit-size + non-zero data bits.
-    const UInt32 max_item_size_bits = 2 + LEADING_ZEROES_BIT_LENGTH + DATA_BIT_LENGTH + data_bytes_size * 8;
+    const UInt64 max_item_size_bits = 2 + LEADING_ZEROES_BIT_LENGTH + DATA_BIT_LENGTH + data_bytes_size * 8;
 
     // + 8 is to round up to next byte.
     return (items_count * max_item_size_bits + 8) / 8;
@@ -356,19 +357,26 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
     return static_cast<UInt32>(dest - original_dest);
 }
 
-UInt8 getDataBytesSize(const IDataType * column_type)
+/// Returns nullopt if the codec is not applicable to the type and `throw_if_not_applicable` is false.
+std::optional<UInt8> getDataBytesSize(const IDataType & column_type, bool throw_if_not_applicable)
 {
-    if (!column_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+    if (!column_type.isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+    {
+        if (!throw_if_not_applicable)
+            return {};
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Gorilla is not applicable for {} because the data type is not of fixed size",
-            column_type->getName());
+            column_type.getName());
+    }
 
-    size_t max_size = column_type->getSizeOfValueInMemory();
+    size_t max_size = column_type.getSizeOfValueInMemory();
     if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
         return static_cast<UInt8>(max_size);
+    if (!throw_if_not_applicable)
+        return {};
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
         "Codec Gorilla is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
-        column_type->getName());
+        column_type.getName());
 }
 
 }
@@ -397,12 +405,18 @@ void CompressionCodecGorilla::updateHash(SipHash & hash) const
 
 UInt32 CompressionCodecGorilla::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
-    const auto result = 2 // common header
+    const UInt64 result = 2 // common header
             + data_bytes_size // max bytes skipped if source is not properly aligned.
             + getCompressedHeaderSize(data_bytes_size) // data-specific header
             + getCompressedDataSize(data_bytes_size, uncompressed_size);
 
-    return result;
+    /// The block header stores the compressed block size as UInt32.
+    if (result > std::numeric_limits<UInt32>::max() - getHeaderSize())
+        throw Exception(ErrorCodes::CANNOT_COMPRESS,
+            "Cannot compress with Gorilla codec, block of {} bytes is too large: worst-case compressed size {} does not fit into 32 bits",
+            uncompressed_size, result);
+
+    return static_cast<UInt32>(result);
 }
 
 UInt32 CompressionCodecGorilla::doCompressData(const char * source, UInt32 source_size, char * dest) const
@@ -500,11 +514,12 @@ void registerCodecGorilla(CompressionCodecFactory & factory)
         }
         else if (column_type)
         {
-            data_bytes_size = getDataBytesSize(column_type);
+            data_bytes_size = *getDataBytesSize(*column_type, /*throw_if_not_applicable=*/ true);
         }
 
         return std::make_shared<CompressionCodecGorilla>(data_bytes_size);
     };
-    factory.registerCompressionCodecWithType("Gorilla", method_code, codec_builder);
+    factory.registerCompressionCodecWithType("Gorilla", method_code, codec_builder,
+        {.is_applicable_to_type = [](const IDataType & type) { return getDataBytesSize(type, /*throw_if_not_applicable=*/ false).has_value(); }});
 }
 }
