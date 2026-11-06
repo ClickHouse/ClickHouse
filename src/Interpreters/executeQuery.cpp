@@ -57,7 +57,7 @@
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
-#include <Parsers/ASTHypotheticalObjectQuery.h>
+#include <Parsers/WhatIf/ASTHypotheticalObjectQuery.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
