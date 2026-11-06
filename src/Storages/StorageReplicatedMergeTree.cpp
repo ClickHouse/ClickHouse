@@ -10916,8 +10916,8 @@ void StorageReplicatedMergeTree::dropAllPartsInPartitions(
         ops.reserve(partition_ids.size() * 2);
         log_entry_ops_idx.reserve(partition_ids.size());
 
-        /// Delimiting block numbers prevent merges that intersect the drop ranges. They are allocated in one request for all partitions,
-        /// so this query is ordered the same way in every partition relative to other multi-partition holders, e.g. lightweight updates.
+        /// Delimiting block numbers prevent merges that intersect the drop ranges. Allocating them for all partitions in one request
+        /// orders this query the same way in every partition relative to other multi-partition holders, e.g. lightweight updates.
         EphemeralLocksInPartitions delimiting_block_locks(
             fs::path(zookeeper_path) / "block_numbers", "block-", fs::path(zookeeper_path) / "temp", /*znode_data=*/ std::nullopt,
             zookeeper, std::set<String>(partition_ids.begin(), partition_ids.end()), fs::path(replica_path) / "host");
