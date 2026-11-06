@@ -22,6 +22,7 @@
                 "products/cloud/features/infrastructure/deployment-options",
                 "products/cloud/guides/cloud-compatibility",
                 "products/cloud/features/public-preview-features",
+                "products/cloud/features/self-service-previews",
                 "products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
                 "products/cloud/guides/infrastructure/deployment-options/clickhouse-government"
               ]
@@ -38,7 +39,8 @@
                 "products/cloud/features/autoscaling/make-before-break",
                 "products/cloud/features/autoscaling/idling",
                 "products/cloud/features/autoscaling/scaling-recommendations",
-                "products/cloud/features/autoscaling/scheduled-scaling"
+                "products/cloud/features/autoscaling/scheduled-scaling",
+                "products/cloud/features/scaling/preparing-for-traffic-spikes"
               ]
             },
             {
@@ -127,6 +129,7 @@
               "pages": [
                 "products/cloud/guides/security/cloud-access-management/manage-my-account",
                 "products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+                "products/cloud/guides/security/cloud-access-management/approved-domains",
                 "products/cloud/reference/security/console-roles",
                 "products/cloud/guides/security/cloud-access-management/manage-custom-roles"
               ]
