@@ -1702,6 +1702,10 @@ Int64 copyAvroLong(ReadBuffer & in, String & raw)
         auto c = static_cast<UInt8>(*in.position());
         ++in.position();
         raw.push_back(static_cast<char>(c));
+        /// The 10th byte (shift == 63) may only carry bit 0; any higher payload bit would overflow 64
+        /// bits and be silently dropped by the shift, so reject it instead.
+        if (shift == 63 && (c & 0x7E) != 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Avro varint overflows 64 bits");
         encoded |= static_cast<UInt64>(c & 0x7F) << shift;
         if ((c & 0x80) == 0)
             break;
@@ -1930,6 +1934,10 @@ This comparison is case-sensitive and unused fields are skipped.
 Data types of ClickHouse table columns can differ from the corresponding fields of the Avro data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/reference/functions/regular-functions/type-conversion-functions#CAST) the data to the corresponding column type.
 
 While importing data, when a field is not found in the schema and setting [`input_format_avro_allow_missing_fields`](/reference/settings/formats/input-format#input_format_avro_allow_missing_fields) is enabled, the default value will be used instead of throwing an error.
+
+### Parallel parsing {#parallel-parsing}
+
+When [`input_format_parallel_parsing`](/reference/settings/formats/input-format#input_format_parallel_parsing) is enabled, an Avro object container file is split on its block (sync marker) boundaries and the blocks are parsed on several threads. Because whole blocks are buffered and decoded concurrently, peak memory grows with the number of parsing threads; set `input_format_parallel_parsing = 0` to parse sequentially and keep memory low. This does not apply to [`AvroConfluent`](/reference/formats/Avro/AvroConfluent), which is not an object container file.
 
 ### Writing Avro data {#writing-avro-data}
 
