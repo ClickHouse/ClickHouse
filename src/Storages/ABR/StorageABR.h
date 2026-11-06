@@ -176,6 +176,10 @@ private:
     /// Index in `source_table_ids` of the table with the given sample interval. Throws if there is none.
     size_t getTableIndexFromSuffix(UInt64 suffix) const;
 
+    /// Index in `source_table_ids` of the finest table a query may be executed on: the one of abr_first_table_suffix,
+    /// or the finest table if it is not set.
+    size_t getFirstCandidateTableIndex(const ContextPtr & local_context) const;
+
     /// Index in `source_table_ids` of the coarsest table a query may be executed on: the one of abr_last_table_suffix,
     /// or the coarsest table if it is not set. Bounds both the choice of the table and the retries.
     size_t getLastCandidateTableIndex(const ContextPtr & local_context) const;
