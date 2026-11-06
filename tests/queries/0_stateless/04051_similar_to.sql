@@ -271,6 +271,14 @@ SELECT ('a_b' SIMILAR TO 'a\\_b' ESCAPE '\\') = ('a_b' SIMILAR TO 'a\\_b'); -- R
 SELECT '-- A bare backslash is a literal when a custom escape character is used';
 SELECT 'a\\b' SIMILAR TO 'a\\b' ESCAPE '#';        -- Returns: 1
 
+SELECT '-- ESCAPE preserves negated bracket expressions';
+SELECT s, s SIMILAR TO '[^a]' ESCAPE '#', s SIMILAR TO '[^a]' FROM (SELECT arrayJoin(['^', 'a', 'b']) AS s) ORDER BY s;
+SELECT 'b' SIMILAR TO '[^-z]' ESCAPE '#', '-' SIMILAR TO '[^-z]' ESCAPE '#', '^' NOT SIMILAR TO '[^a]' ESCAPE '#';
+SELECT similarTo('^', materialize('[^a]'), '#');
+SELECT 'a' SIMILAR TO '[^-0-9]' ESCAPE '#';
+SELECT '^' SIMILAR TO SOME(['[^a]', 'b']) ESCAPE '#';
+SELECT '^' SIMILAR TO ALL(['[^a]', '[^b]']) ESCAPE '#';
+
 SELECT '-- ESCAPE is inert inside a bracket expression (POSIX/PostgreSQL)';
 SELECT '#'   SIMILAR TO '[#a]' ESCAPE '#';         -- Returns: 1 (# is a literal member of the class)
 SELECT 'a'   SIMILAR TO '[#a]' ESCAPE '#';         -- Returns: 1
