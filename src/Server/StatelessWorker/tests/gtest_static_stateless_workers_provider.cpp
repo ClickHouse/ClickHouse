@@ -22,6 +22,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
+
 namespace
 {
 
@@ -502,6 +507,25 @@ TEST(Context, KeepsResolvedProviderAfterClientIsDisabled)
     auto fresh_ctx = Context::createCopy(getContext().context);
     fresh_ctx->setQueryContext(fresh_ctx);
     EXPECT_THROW(fresh_ctx->getStatelessWorkersProvider(), Exception);
+}
+
+/// A server that configures no stateless workers refuses a distributed plan as a disabled client.
+TEST(Context, RefusesProviderWhenClientIsNotConfigured)
+{
+    applyStatelessWorkerConfig("");
+    getContext().context->reloadStatelessWorkersConfig(getContext().context->getConfigRef());
+
+    auto query_ctx = Context::createCopy(getContext().context);
+    query_ctx->setQueryContext(query_ctx);
+    try
+    {
+        query_ctx->getStatelessWorkersProvider();
+        FAIL() << "expected the provider lookup to be refused";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::SUPPORT_IS_DISABLED);
+    }
 }
 
 }

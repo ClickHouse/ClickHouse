@@ -23,8 +23,10 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Access/EnabledQuota.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Storages/IStorage.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -97,6 +99,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                                 || (union_node != nullptr && union_node->isCorrelated());
     if (is_correlated_subquery)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot evaluate correlated scalar subquery");
+
+    /// The subquery is executed now, so decide here whether its replaced tables read with parallel replicas.
+    restoreReplacedTableStoragesIfNeeded(node);
 
     auto & context = scope.context;
 
@@ -279,6 +284,19 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             BlockIO io;
             auto & query_plan = interpreter->getQueryPlan();
             bool skip_execution_for_exists = false;
+
+            /// A scalar subquery is executed during the analysis of the query, before the quotas of the query are checked,
+            /// so an exhausted quota over profile events is checked here, before the subquery consumes any resources.
+            /// The query plan has been built above, so `ignoreQuota` is known (e.g. for exempt tables in `system`).
+            /// The query is then charged with what the subquery consumes even if it is exempt itself (see
+            /// `QueryStatus::executed_non_exempt_scalar_subquery`).
+            if (!interpreter->ignoreQuota())
+            {
+                if (auto quota = subquery_context->getQuota())
+                    quota->checkExceededProfileEvents(subquery_context->getNormalizedQueryHash());
+                if (auto process_list_elem = subquery_context->getProcessListElement())
+                    process_list_elem->markNonExemptScalarSubqueryExecuted();
+            }
 
             if (execute_for_exists)
             {
