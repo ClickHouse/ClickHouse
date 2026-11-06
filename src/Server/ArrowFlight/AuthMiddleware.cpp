@@ -40,6 +40,11 @@ void AuthMiddleware::closeSession(bool enable_close)
     session->closeSession(session_id);
 }
 
+void AuthMiddleware::requestCloseSession()
+{
+    session_close = true;
+}
+
 void AuthMiddleware::SendingHeaders(arrow::flight::AddCallHeaders * outgoing_headers)
 {
     if (!token.empty())

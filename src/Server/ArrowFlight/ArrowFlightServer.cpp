@@ -1483,7 +1483,13 @@ arrow::Status ArrowFlightServer::DoAction(
                     ? arrow::flight::CloseSessionStatus::kClosed
                     : arrow::flight::CloseSessionStatus::kNotClosable};
 
-            auth.closeSession(enable_close);
+            /// Tear down in `CallCompleted`, matching `x-clickhouse-session-close`. Closing here
+            /// would leave the ordinary session-release path free to refresh a newly recreated
+            /// named session before this RPC finishes.
+            if (enable_close)
+            {
+                auth.requestCloseSession();
+            }
 
             ARROW_ASSIGN_OR_RAISE(auto serialized, result.SerializeToString())
             ARROW_ASSIGN_OR_RAISE(auto packed_result, arrow::Result<arrow::flight::Result>{arrow::flight::Result{arrow::Buffer::FromString(std::move(serialized))}})
