@@ -1975,7 +1975,8 @@ class JobConfigs:
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_RELEASE],
             )
-            for total_batches in (6,)
+            # amd runs the same tests about 15% slower than arm, so it needs more batches to fit the timeout.
+            for total_batches in (8,)
             for batch in range(1, total_batches + 1)
         ],
         *[
