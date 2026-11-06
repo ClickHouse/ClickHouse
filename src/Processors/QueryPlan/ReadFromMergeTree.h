@@ -452,14 +452,15 @@ public:
     /// Add one more column (or subcolumn) to the read list, recomputing the output header. Used by the brute-force
     /// vector-search rewrite to additionally read the quantized-codes subcolumn of a vector column.
     void addReadColumn(const String & column);
+    void addReadColumns(const Names & columns);
 
-    /// Whether the step could stop reading `column` (a storage column, or a subcolumn of one, that it reads) in favour of
-    /// subcolumns of it with the same values. `function_forms`: some of them stand for a function of the column rather
-    /// than for `getSubcolumn`.
-    bool canReadSubcolumnsOfColumn(const String & column, bool function_forms) const;
-    /// Reads `subcolumns` instead of `column`. Requires `canReadSubcolumnsOfColumn` and that storage resolves each of them
-    /// as a deeper subcolumn of the same storage column.
-    void readSubcolumnsInsteadOfColumn(const String & column, const Names & subcolumns);
+    /// For each column (a storage column, or a subcolumn of one, that the step reads), whether the step could stop reading
+    /// it, together with the others, in favour of subcolumns of it with the same values. The flag of a column: some of
+    /// them stand for a function of the column rather than for `getSubcolumn`.
+    std::vector<bool> canReadSubcolumnsOfColumns(const std::vector<std::pair<String, bool>> & columns) const;
+    /// Reads `subcolumns` instead of `columns`. Requires `canReadSubcolumnsOfColumns` and that storage resolves each
+    /// subcolumn as a deeper subcolumn of the same storage column as one of `columns`.
+    void readSubcolumnsInsteadOfColumns(const Names & columns, const Names & subcolumns);
 
     /// Returns true if the optimization is applicable (and applies it then).
     bool requestOutputEachPartitionThroughSeparatePortForAggregation();

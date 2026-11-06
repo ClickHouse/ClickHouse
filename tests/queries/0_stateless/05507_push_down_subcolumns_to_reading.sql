@@ -21,6 +21,7 @@ DROP TABLE IF EXISTS tl;
 DROP TABLE IF EXISTS tf;
 DROP TABLE IF EXISTS tmb;
 DROP TABLE IF EXISTS tq;
+DROP TABLE IF EXISTS tw;
 DROP VIEW IF EXISTS v;
 
 CREATE TABLE t (id UInt64, data JSON, tup Tuple(a UInt64, b String), n Nullable(String), s String, arr Array(UInt32), m Map(String, UInt64),
@@ -419,6 +420,13 @@ SELECT groupArray(r) FROM (SELECT tup4.a, m4.a FROM (SELECT tup4, m4 FROM t2) OR
 
 SELECT groupArray(r) FROM (SELECT tup4.a, m4.a FROM t2 ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r;
 
+SELECT 'P42 the columns of one read are pushed down together';
+CREATE TABLE tw (c0 String, c1 String, c2 String, c3 String, c4 String, c5 String, c6 String, c7 String, c8 String, c9 String, c10 String, c11 String, c12 String, c13 String, c14 String, c15 String, c16 String, c17 String, c18 String, c19 String, c20 String, c21 String, c22 String, c23 String, c24 String, c25 String, c26 String, c27 String, c28 String, c29 String, c30 String, c31 String, c32 String, c33 String, c34 String, c35 String, c36 String, c37 String, c38 String, c39 String) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO tw SELECT repeat('x', number + 0), repeat('x', number + 1), repeat('x', number + 2), repeat('x', number + 3), repeat('x', number + 4), repeat('x', number + 5), repeat('x', number + 6), repeat('x', number + 7), repeat('x', number + 8), repeat('x', number + 9), repeat('x', number + 10), repeat('x', number + 11), repeat('x', number + 12), repeat('x', number + 13), repeat('x', number + 14), repeat('x', number + 15), repeat('x', number + 16), repeat('x', number + 17), repeat('x', number + 18), repeat('x', number + 19), repeat('x', number + 20), repeat('x', number + 21), repeat('x', number + 22), repeat('x', number + 23), repeat('x', number + 24), repeat('x', number + 25), repeat('x', number + 26), repeat('x', number + 27), repeat('x', number + 28), repeat('x', number + 29), repeat('x', number + 30), repeat('x', number + 31), repeat('x', number + 32), repeat('x', number + 33), repeat('x', number + 34), repeat('x', number + 35), repeat('x', number + 36), repeat('x', number + 37), repeat('x', number + 38), repeat('x', number + 39) FROM numbers(1, 3);
+SELECT max(countSubstrings(explain, '.size')) FROM (EXPLAIN SELECT * APPLY length APPLY sum FROM (SELECT * FROM tw) SETTINGS query_plan_max_optimizations_to_apply = 10) WHERE explain LIKE '% Output:%';
+SELECT * APPLY length APPLY sum FROM (SELECT * FROM tw) SETTINGS query_plan_max_optimizations_to_apply = 10;
+SELECT * APPLY length APPLY sum FROM (SELECT * FROM tw) SETTINGS query_plan_push_down_volume_reducing_functions = 0;
+
 DROP VIEW v;
 DROP TABLE t;
 DROP TABLE t2;
@@ -433,3 +441,4 @@ DROP TABLE tl;
 DROP TABLE tf;
 DROP TABLE tmb;
 DROP TABLE tq;
+DROP TABLE tw;
