@@ -20,3 +20,4 @@ merge_join_sub_tree	1
 05508 q9_dpsize	0
 05508 q9_greedy	0
 05508 unselective_filter_fact	2000
+statistics_loaded_once	1

@@ -169,12 +169,27 @@ FROM
 )
 WHERE explain ILIKE '%Algorithm: FullSortingMergeJoin%';
 
+-- Reordering `sorted_a JOIN sorted_b` on its own reuses the estimates of the graph above it, so the statistics of its tables are
+-- loaded as often as when each join is optimized on its own.
+SELECT count() FROM (EXPLAIN SELECT count() FROM sorted_a JOIN sorted_b ON sorted_a.k = sorted_b.k JOIN nation_log ON sorted_b.k = nation_log.n_nationkey)
+FORMAT Null SETTINGS log_comment = '05508_stats sub_tree';
+SELECT count() FROM (EXPLAIN SELECT count() FROM sorted_a JOIN sorted_b ON sorted_a.k = sorted_b.k JOIN nation_log ON sorted_b.k = nation_log.n_nationkey)
+FORMAT Null SETTINGS log_comment = '05508_stats one_join_at_a_time', query_plan_optimize_join_order_limit = 1;
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT log_comment, ProfileEvents['JoinBuildTableRowCount'] AS build
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05508 %'
 ORDER BY log_comment;
+
+SELECT 'statistics_loaded_once', count() = 2 AND min(loaded) > 0 AND min(loaded) = max(loaded)
+FROM
+(
+    SELECT ProfileEvents['LoadedStatistics'] AS loaded
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05508_stats %'
+);
 
 DROP TABLE orders;
 DROP TABLE customer;
