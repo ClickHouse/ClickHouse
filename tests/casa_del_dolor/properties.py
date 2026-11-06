@@ -725,8 +725,10 @@ object_storages_properties = {
             0.2, 0.2, 1000, 10000, allow_unlimited=False
         ),
         "s3_slow_all_threads_after_network_error": true_false_lambda,
+        # Never above the lower bound of s3_max_upload_part_size: validateUploadSettings
+        # rejects strict > max
         "s3_strict_upload_part_size": threshold_generator(
-            0.2, 0.2, 0, 100 * 1024 * 1024
+            0.2, 0.2, 0, 16 * 1024 * 1024, 24
         ),
         "s3_upload_part_size_multiply_factor": threshold_generator(0.2, 0.2, 1, 10, 4),
         "s3_upload_part_size_multiply_parts_count_threshold": threshold_generator(
