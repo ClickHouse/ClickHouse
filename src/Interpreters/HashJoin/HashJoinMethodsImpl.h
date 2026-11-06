@@ -552,7 +552,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
     {
         /// Several clauses have no required right keys (see the `HashJoin` constructor), and the probe never
         /// scatters a block, so only these copies can run.
-        if constexpr (need_filter == join_features.need_filter)
+        if constexpr (need_filter == join_features.need_filter && !join_features.one_clause_only)
         {
             if (selector.isContinuousRange())
             {
