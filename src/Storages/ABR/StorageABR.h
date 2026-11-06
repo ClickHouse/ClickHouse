@@ -99,6 +99,9 @@ public:
     /// `ABR` is read-only, so `TRUNCATE ALL TABLES` skips it, and truncates its source tables instead.
     bool supportsTruncate() const override { return false; }
 
+    /// The query is executed on a source table, which is from the `MergeTree` family, which supports them.
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
+
     ColumnSizeByName getColumnSizes() const override;
     bool supportsPrewhere() const override;
     bool canMoveConditionsToPrewhere() const override;
