@@ -101,7 +101,7 @@ private:
     /// For the standalone evaluation of query result previews (see `QueryResultPreview.h`):
     /// a copy of the constructor argument to build the fresh one-shot transform, the diverted
     /// input chunk, and the computed preview waiting for the output port.
-    std::vector<WindowFunctionDescription> window_functions_for_preview;
+    VectorWithMemoryTracking<WindowFunctionDescription> window_functions_for_preview;
     Chunk query_result_preview_input;
     Chunk pending_query_result_preview;
 
