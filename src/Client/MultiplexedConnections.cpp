@@ -243,12 +243,19 @@ void MultiplexedConnections::sendQuery(
 }
 
 
-void MultiplexedConnections::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
+void MultiplexedConnections::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponses & tasks)
 {
     std::lock_guard lock(cancel_mutex);
     if (cancelled)
         return;
-    current_connection->sendClusterFunctionReadTaskResponse(response);
+    current_connection->sendClusterFunctionReadTaskResponse(tasks);
+}
+
+UInt64 MultiplexedConnections::getWorkerClusterFunctionProtocolVersion() const
+{
+    if (!current_connection)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No current connection to get the cluster function protocol version of");
+    return current_connection->getWorkerClusterFunctionProtocolVersion();
 }
 
 

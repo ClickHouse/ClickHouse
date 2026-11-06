@@ -66,6 +66,8 @@ namespace Setting
     extern const SettingsMilliseconds parallel_replicas_connect_timeout_ms;
     extern const SettingsUInt64 max_network_bandwidth;
     extern const SettingsUInt64 max_network_bytes;
+    extern const SettingsUInt64 cluster_function_tasks_per_request;
+    extern const SettingsMaxThreads max_threads;
 }
 
 namespace ErrorCodes
@@ -1076,8 +1078,18 @@ void RemoteQueryExecutor::processReadTaskRequest()
 
     ProfileEvents::increment(ProfileEvents::ReadTaskRequestsReceived);
 
-    auto response = (*extension->task_iterator)(extension->replica_info->number_of_current_replica);
-    connections->sendClusterFunctionReadTaskResponse(*response);
+    size_t max_tasks = 1;
+    if (connections->getWorkerClusterFunctionProtocolVersion() >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_TASK_BATCHES)
+    {
+        const auto & settings = context->getSettingsRef();
+        max_tasks = settings[Setting::cluster_function_tasks_per_request];
+        if (max_tasks == 0)
+            max_tasks = settings[Setting::max_threads];
+        max_tasks = std::max<size_t>(max_tasks, 1);
+    }
+
+    auto tasks = (*extension->task_iterator)(extension->replica_info->number_of_current_replica, max_tasks);
+    connections->sendClusterFunctionReadTaskResponse(tasks);
 }
 
 void RemoteQueryExecutor::processMergeTreeReadTaskRequest(ParallelReadRequest request)

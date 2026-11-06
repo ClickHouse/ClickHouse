@@ -33,12 +33,13 @@ using ProfileInfoCallback = std::function<void(const ProfileInfo & info)>;
 
 struct ClusterFunctionReadTaskResponse;
 using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
+using ClusterFunctionReadTaskResponses = std::vector<ClusterFunctionReadTaskResponsePtr>;
 
 class RemoteQueryExecutorReadContext;
 
 class ParallelReplicasReadingCoordinator;
 
-using TaskIterator = std::function<ClusterFunctionReadTaskResponsePtr(size_t)>;
+using TaskIterator = std::function<ClusterFunctionReadTaskResponses(size_t replica_num, size_t max_tasks)>;
 
 /// This class allows one to launch queries on remote replicas of one shard and get results
 class RemoteQueryExecutor

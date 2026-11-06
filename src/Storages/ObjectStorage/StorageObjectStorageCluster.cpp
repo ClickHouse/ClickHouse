@@ -598,17 +598,17 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         /* wait_for_owner */ std::chrono::milliseconds(local_context->getSettingsRef()[Setting::cluster_function_wait_for_replica_ms].totalMilliseconds()));
 
     auto callback = std::make_shared<TaskIterator>(
-        [task_distributor, local_context](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
+        [task_distributor, local_context](size_t number_of_current_replica, size_t max_tasks) mutable -> ClusterFunctionReadTaskResponses
         {
             fiu_do_on(FailPoints::storage_cluster_read_sleep,
             {
                 sleepForSeconds(10);
             });
 
-            auto task = task_distributor->getNextTask(number_of_current_replica);
-            if (task)
-                return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), local_context);
-            return std::make_shared<ClusterFunctionReadTaskResponse>();
+            ClusterFunctionReadTaskResponses tasks;
+            for (auto & object : task_distributor->getNextTasks(number_of_current_replica, max_tasks))
+                tasks.push_back(std::make_shared<ClusterFunctionReadTaskResponse>(std::move(object), local_context));
+            return tasks;
         });
 
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };

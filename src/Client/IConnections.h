@@ -6,6 +6,8 @@
 namespace DB
 {
 struct ClusterFunctionReadTaskResponse;
+using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
+using ClusterFunctionReadTaskResponses = std::vector<ClusterFunctionReadTaskResponsePtr>;
 
 /// Base class for working with multiple replicas (connections)
 /// from one shard within a single thread
@@ -33,7 +35,8 @@ public:
     /// query-plan packet serialized at it.
     virtual bool supportsQueryPlanSerializationVersion(UInt64 version) const = 0;
 
-    virtual void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) = 0;
+    virtual void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponses &) = 0;
+    virtual UInt64 getWorkerClusterFunctionProtocolVersion() const = 0;
     virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;
     virtual void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) = 0;
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <deque>
 #include <memory>
 #include <optional>
 #include <Poco/Net/TCPServerConnection.h>
@@ -56,6 +57,7 @@ class NativeWriter;
 class NativeReader;
 struct ClusterFunctionReadTaskResponse;
 using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
+using ClusterFunctionReadTaskResponses = std::vector<ClusterFunctionReadTaskResponsePtr>;
 
 /// TCPHandlerPocoChunkedWriter is used in TCPHandler
 /// and it uses `sync` api for explicit protocol delivery.
@@ -316,7 +318,13 @@ private:
     /// `force` skips the interactive-delay rate limit, for callers that must know right now.
     void receivePacketsExpectCancel(QueryState & state, bool force = false) TSA_REQUIRES(callback_mutex);
 
-    ClusterFunctionReadTaskResponsePtr receiveClusterFunctionReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
+    ClusterFunctionReadTaskResponses receiveClusterFunctionReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
+
+    struct ReceivedClusterFunctionReadTasks
+    {
+        std::deque<ClusterFunctionReadTaskResponsePtr> tasks;
+        bool finished = false;
+    };
 
     std::optional<ParallelReadResponse> receivePartitionMergeTreeReadTaskResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
 

@@ -97,9 +97,14 @@ public:
 
     bool supportsQueryPlanSerializationVersion(UInt64 version) const override;
 
-    void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) override
+    void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponses &) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "sendReadTaskResponse in not supported with HedgedConnections");
+    }
+
+    UInt64 getWorkerClusterFunctionProtocolVersion() const override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "getWorkerClusterFunctionProtocolVersion in not supported with HedgedConnections");
     }
 
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse &) override
