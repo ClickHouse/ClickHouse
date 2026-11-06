@@ -1205,6 +1205,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                     in_partition.erase(partition_and_block_num.second);
                     if (in_partition.empty())
                         mutations_by_partition.erase(partition_and_block_num.first);
+                    updateMaxRemovedMutationBlockNumber(partition_and_block_num.first, partition_and_block_num.second, state_lock);
                 }
 
                 if (hasSupportedMetadataMutation(entry.commands))
@@ -1336,6 +1337,7 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
             in_partition.erase(partition_and_block_num.second);
             if (in_partition.empty())
                 mutations_by_partition.erase(partition_and_block_num.first);
+            updateMaxRemovedMutationBlockNumber(partition_and_block_num.first, partition_and_block_num.second, state_lock);
         }
 
         if (entry->isAlterMutation())
@@ -2552,6 +2554,20 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
     }
 
     return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
+}
+
+void ReplicatedMergeTreeQueue::updateMaxRemovedMutationBlockNumber(
+    const String & partition_id, Int64 block_number, std::lock_guard<SharedMutex> & /*state_lock*/)
+{
+    auto & max_removed = max_removed_mutation_block_number_by_partition[partition_id];
+    max_removed = std::max(max_removed, block_number);
+}
+
+Int64 ReplicatedMergeTreeQueue::getMaxRemovedMutationBlockNumber(const String & partition_id) const
+{
+    std::shared_lock lock(state_mutex);
+    auto it = max_removed_mutation_block_number_by_partition.find(partition_id);
+    return it == max_removed_mutation_block_number_by_partition.end() ? 0 : it->second;
 }
 
 MutationCounters ReplicatedMergeTreeQueue::getMutationCounters() const

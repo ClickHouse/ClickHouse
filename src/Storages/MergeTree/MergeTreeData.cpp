@@ -8873,13 +8873,15 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
     /// It does not hold either for a part that is active again after a rollback of the transaction that removed it
     /// (see `restoreAndActivatePart`). So when the storage tracks the removed versions, any part is accepted only if
     /// no mutation with a higher version than its data version was removed. For a part that stayed active this is
-    /// always the case, because a mutation is marked as done only when it is not newer than every active part.
-    /// When the storage does not track them, a part that is not active is declined.
-    /// The removed version is read after the snapshot, so a mutation removed before the snapshot is accounted.
+    /// the case in `StorageMergeTree` after an automatic cleanup, because a mutation is marked as done only when
+    /// it is not newer than every active part. `KILL MUTATION` removes the commands while an active part may still
+    /// need them, and `ReplicatedMergeTree` can mark a mutation as done while a local part is still being replaced,
+    /// so the check is done for active parts too. When the storage does not track them, a part that is not active
+    /// is declined. The removed version is read after the snapshot, so a mutation removed before the snapshot is accounted.
     const auto txn = query_context->getCurrentTransaction();
-    const std::optional<Int64> max_removed_mutation_version = getMaxRemovedMutationVersion();
     for (const auto & part : parts)
     {
+        const std::optional<Int64> max_removed_mutation_version = getMaxRemovedMutationVersion(part->info.getPartitionId());
         bool is_active = part->getState() == DataPartState::Active;
         bool still_visible = txn
             ? part->version->isVisible(txn->getSnapshot(), txn->tid)

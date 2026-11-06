@@ -589,7 +589,8 @@ private:
     PartMutationBackoffPolicy mutation_backoff_policy;
 
     MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const override;
-    std::optional<Int64> getMaxRemovedMutationVersion() const override { return max_removed_mutation_version.load(); }
+    /// Mutation versions are global for the table, so `partition_id` is not used.
+    std::optional<Int64> getMaxRemovedMutationVersion(const String & /*partition_id*/) const override { return max_removed_mutation_version.load(); }
 };
 
 }
