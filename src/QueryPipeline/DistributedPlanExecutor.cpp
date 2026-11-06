@@ -1562,6 +1562,7 @@ protected:
         }
 
         /// Tracks a task whose start is still to be sent: `waitForStage` counts it and `cancel` cancels it, nothing polls it.
+        /// Never runs after `cancel`: `start` and `cleanup` both hold the source's `executor_mutex`.
         void registerTask(const String & stage_name, RunningTaskInfo task_info)
         {
             auto task_name = task_info.task_id;
@@ -2080,6 +2081,8 @@ protected:
 
         const String unique_temp_file_path = toString(unique_query_id);
 
+        /// TODO move to the function
+        /// With `task_senders` the tasks of the stage are sent from the pool, without waiting for each reply.
         if (task_senders)
         {
             /// Shared by the jobs that send the tasks, so the plan is not copied per task.
