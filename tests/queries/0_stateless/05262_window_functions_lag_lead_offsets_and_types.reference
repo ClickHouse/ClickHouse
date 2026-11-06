@@ -1,5 +1,8 @@
 -- The offset must be a non-negative integer: not NULL, Nullable, fractional or a string
--- lag and lead do not accept an explicit frame; lagInFrame and leadInFrame do
+-- lag and lead read the whole partition whatever the frame; lagInFrame and leadInFrame read the frame
+0	0	1	0	0
+1	0	2	0	0
+2	1	0	0	0
 0	0	1
 1	0	2
 2	1	0
