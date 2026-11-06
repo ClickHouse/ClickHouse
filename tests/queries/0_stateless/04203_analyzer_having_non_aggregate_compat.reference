@@ -37,3 +37,14 @@ b	30
 A.11 deeply nested AND chain
 a	10
 b	30
+A.12 indexHint conjunct moves to WHERE
+a	30
+b	30
+A.13 arrayJoin conjunct stays in HAVING
+a	30
+a	30
+a	30
+a	30
+A.14 unnest conjunct stays in HAVING
+a	30
+a	30
