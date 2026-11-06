@@ -54,3 +54,13 @@ WHERE arrayExists(x -> x = s, ['a', 'b']) ORDER BY k LIMIT 5
 SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, max_bytes_before_external_sort = 0;
 
 DROP TABLE t_lambda_virtual_row;
+
+-- A lambda applied to an ARRAY JOINed column is built above the join.
+DROP TABLE IF EXISTS t_lambda_array_join;
+CREATE TABLE t_lambda_array_join (n UInt64, arrays Array(Array(UInt64))) ENGINE = Memory;
+SELECT count() FROM (EXPLAIN header = 1 SELECT n, arrayMap(x -> x + n, a) FROM t_lambda_array_join ARRAY JOIN arrays AS a)
+WHERE explain LIKE '% Function(%';
+SELECT count() FROM (EXPLAIN header = 1 SELECT arrayMap(x -> x + n * 2, [n]) AS m, arrayMap(x -> x + n * 2, a) AS k
+    FROM t_lambda_array_join ARRAY JOIN arrays AS a)
+WHERE explain LIKE '% Function(%';
+DROP TABLE t_lambda_array_join;
