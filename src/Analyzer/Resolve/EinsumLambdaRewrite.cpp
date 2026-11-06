@@ -5,6 +5,7 @@
 #include <Analyzer/ListNode.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Common/checkStackSize.h>
 
 #include <span>
 #include <unordered_map>
@@ -33,6 +34,8 @@ struct TensorElement
 
 void collectIdentifierNames(const IQueryTreeNode & node, std::unordered_set<String> & names)
 {
+    checkStackSize();
+
     /// An alias is a name in the scope of the lambda function as well, a generated name must not clash with it.
     if (node.hasAlias())
         names.insert(node.getAlias());
@@ -81,6 +84,8 @@ QueryTreeNodePtr makeFunction(const String & name, QueryTreeNodes arguments)
   */
 QueryTreeNodePtr applySubscripts(QueryTreeNodePtr array, std::span<const QueryTreeNodePtr> subscripts, size_t depth = 0)
 {
+    checkStackSize();
+
     for (size_t i = 0; i < subscripts.size(); ++i)
     {
         if (subscripts[i])
@@ -110,6 +115,8 @@ QueryTreeNodePtr applySubscripts(QueryTreeNodePtr array, std::span<const QueryTr
 
 void flattenProduct(const QueryTreeNodePtr & node, QueryTreeNodes & factors)
 {
+    checkStackSize();
+
     const auto * function = node->as<FunctionNode>();
     if (function && function->getFunctionName() == "multiply" && function->getArguments().getNodes().size() == 2)
     {
@@ -267,6 +274,8 @@ private:
 
     bool dependsOnIndices(const IQueryTreeNode & node) const
     {
+        checkStackSize();
+
         if (const auto * identifier = node.as<IdentifierNode>())
             return std::find(indices.begin(), indices.end(), identifier->getIdentifier()[0]) != indices.end();
 
@@ -279,13 +288,18 @@ private:
     /// Replaces the elements of tensors with the identifiers of their values.
     void replaceTensorElements(QueryTreeNodePtr & node)
     {
+        checkStackSize();
+
         if (asArrayElement(*node))
         {
             /// The whole chain of subscripts: array[s1][s2]...[sn].
             QueryTreeNodes subscripts;
+            QueryTreeNodes intermediate_elements;
             QueryTreeNodePtr array = node;
             while (const auto * element = asArrayElement(*array))
             {
+                if (array != node)
+                    intermediate_elements.push_back(array);
                 subscripts.push_back(element->getArguments().getNodes()[1]);
                 array = element->getArguments().getNodes()[0];
             }
@@ -294,6 +308,15 @@ private:
             bool has_indices = std::any_of(subscripts.begin(), subscripts.end(), [&](const QueryTreeNodePtr & subscript) { return dependsOnIndices(*subscript); });
             if (has_indices)
             {
+                /// The array and the subscripts that are not indices are moved out of the lambda function to the arguments
+                /// of einsum, so an alias inside them, like in `(a[1] AS v)[i] + v[1]`, would lose its definition in the lambda.
+                for (const auto & intermediate_element : intermediate_elements)
+                    if (intermediate_element->hasAlias())
+                        throwAliasInsideTensorElement(intermediate_element->getAlias(), *node);
+                checkNoAliases(*array, *node);
+                for (const auto & subscript : subscripts)
+                    checkNoAliases(*subscript, *node);
+
                 /// The alias of the element, like in `(a[i] AS v) + v`, is the alias of its value now.
                 String alias = node->getAlias();
                 node = replaceTensorElement(array, subscripts);
@@ -318,6 +341,25 @@ private:
         for (auto & child : node->getChildren())
             if (child)
                 replaceTensorElements(child);
+    }
+
+    [[noreturn]] static void throwAliasInsideTensorElement(const String & alias, const IQueryTreeNode & element)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The alias '{}' inside the element {} of a tensor in einsum is not supported, "
+            "because the array and its subscripts are computed outside of the lambda function. Use the expression instead of the alias",
+            alias, element.formatASTForErrorMessage());
+    }
+
+    static void checkNoAliases(const IQueryTreeNode & node, const IQueryTreeNode & element)
+    {
+        checkStackSize();
+
+        if (node.hasAlias())
+            throwAliasInsideTensorElement(node.getAlias(), element);
+        for (const auto & child : node.getChildren())
+            if (child)
+                checkNoAliases(*child, element);
     }
 
     QueryTreeNodePtr replaceTensorElement(const QueryTreeNodePtr & array, const QueryTreeNodes & subscripts)
@@ -359,6 +401,8 @@ private:
 
     void collectAliases(const IQueryTreeNode & node)
     {
+        checkStackSize();
+
         if (node.hasAlias())
             aliases.emplace(node.getAlias(), &node);
         for (const auto & child : node.getChildren())
@@ -370,6 +414,8 @@ private:
     /// `visited_aliases` protects from the cycles of aliases.
     void collectIndices(const IQueryTreeNode & node, std::vector<bool> & used, std::unordered_set<String> & visited_aliases) const
     {
+        checkStackSize();
+
         if (auto element = getValueNumber(node))
         {
             for (size_t index : elements[*element].indices)
@@ -402,6 +448,8 @@ private:
 
     void findSummationIndicesImpl(const QueryTreeNodePtr & node)
     {
+        checkStackSize();
+
         QueryTreeNodes factors;
         flattenProduct(node, factors);
         if (factors.size() > 1)
