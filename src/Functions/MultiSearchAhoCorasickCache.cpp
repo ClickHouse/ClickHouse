@@ -2,7 +2,6 @@
 
 #if USE_AHO_CORASICK
 
-#include <algorithm>
 #include <array>
 #include <mutex>
 #include <vector>
@@ -57,8 +56,8 @@ bool appendFoldedForMultiSearch(MultiSearchCaseMode case_mode, const char * data
     }
 
     /// A marker that cannot occur in valid folded UTF-8, so it never matches a (valid) needle and
-    /// never merges with neighbouring bytes into a spurious match across a malformed sequence.
-    static constexpr UInt8 INVALID_SEQUENCE_MARKER = 0xFF;
+    /// never merges with neighbouring bytes into a spurious match across an invalid byte.
+    static constexpr UInt8 INVALID_BYTE_MARKER = 0xFF;
 
     bool valid = true;
     while (pos != end)
@@ -67,8 +66,8 @@ bool appendFoldedForMultiSearch(MultiSearchCaseMode case_mode, const char * data
         if (!code_point)
         {
             valid = false;
-            output.push_back(INVALID_SEQUENCE_MARKER);
-            pos += std::min<size_t>(UTF8::seqLength(*pos), end - pos);
+            output.push_back(INVALID_BYTE_MARKER);
+            ++pos;
             continue;
         }
 

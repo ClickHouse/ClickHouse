@@ -23,9 +23,8 @@ enum class MultiSearchCaseMode : uint8_t
 
 /// Appends the case-folded form of [data, data + size) to `output`, returning false if the input
 /// contained invalid UTF-8 (only meaningful for InsensitiveUtf8). Folds one code point at a time via
-/// `utf8CaseFold` to match `UTF8CaseInsensitiveStringSearcher`; a malformed sequence is
-/// consumed as one nominal-length unit (`UTF8::seqLength`, clamped to the remaining bytes) and
-/// replaced by a single sentinel byte, mirroring the legacy searcher's `UTF8::seqLength` advance.
+/// `utf8CaseFold` to match `UTF8CaseInsensitiveStringSearcher`. Each byte that does not start a valid
+/// sequence is replaced by a single sentinel byte, so a match never covers it and can start at the next byte.
 bool appendFoldedForMultiSearch(MultiSearchCaseMode case_mode, const char * data, size_t size, PaddedPODArray<UInt8> & output);
 
 /// One compiled Aho-Corasick automaton together with its memory footprint.
