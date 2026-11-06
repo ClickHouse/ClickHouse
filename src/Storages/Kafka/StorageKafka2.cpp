@@ -705,11 +705,7 @@ cppkafka::Configuration StorageKafka2::getConsumerConfiguration(size_t consumer_
         num_consumers > 1,
         consumer_number,
         client_id,
-        getMaxBlockSize(),
-        // Statistics are enabled by default. This is safe even when no materialized view is attached:
-        // pollIdleConsumerEvents() serves the librdkafka reply queue of consumers that are not being
-        // streamed from, so statistics events cannot accumulate (see the note in KafkaConfigLoader).
-        "3000"};
+        getMaxBlockSize()};
     auto kafka_config = KafkaConfigLoader::getConsumerConfiguration(*this, params, std::move(exception_sink));
     // Making more frequent updates, now 1 min
     kafka_config.set("topic.metadata.refresh.interval.ms", "60000");

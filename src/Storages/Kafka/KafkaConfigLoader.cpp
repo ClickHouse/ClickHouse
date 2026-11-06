@@ -600,13 +600,12 @@ cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorag
     conf.set("client.software.version", VERSION_DESCRIBE);
     conf.set("auto.offset.reset", "earliest"); // If no offset stored for this group, read all messages from the start
 
-    /// NOTE: statistics should be consumed, otherwise it creates too much entries in the queue,
-    /// that leads to memory leak and slow shutdown. Pre-seed the storage's default instead of checking
-    /// has_property() afterwards: rd_kafka_conf_get() (which has_property() uses) reports every known
-    /// property with its built-in default, so has_property("statistics.interval.ms") is always true and
-    /// cannot distinguish "not configured" from "explicitly disabled". Pre-seeding lets an explicitly
-    /// configured value (including an explicit "0") from updateConfigurationFromConfig() below win.
-    conf.set("statistics.interval.ms", params.default_statistics_interval_ms);
+    /// Pre-seed the default instead of checking has_property(): it reports every known property
+    /// with its built-in default and cannot tell "not configured" from "explicitly disabled",
+    /// so pre-seeding is what lets an explicit value (including "0") below win. Idle consumers
+    /// must keep serving the events: StorageKafka closes them after kafka_consumers_pool_ttl_ms,
+    /// StorageKafka2 drains them in pollIdleConsumerEvents().
+    conf.set("statistics.interval.ms", "3000");
 
     // that allows to prevent fast draining of the librdkafka queue
     // during building of single insert block. Improves performance
