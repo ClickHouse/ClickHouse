@@ -1,0 +1,95 @@
+#!/usr/bin/expect -f
+
+# Ctrl-R opens an interactive history search: words match in any order and case,
+# Esc leaves the line unchanged, and pasted text is used as the search query.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+exec bash -c "rm -f $history_file"
+
+log_user 0
+set timeout 60
+match_max 100000
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+send -- "SELECT 'alpha_marker_one'\r"
+expect "alpha_marker_one"
+expect "1 row in set"
+expect ":) "
+
+send -- "SELECT 'beta_marker_two'\r"
+expect "beta_marker_two"
+expect "1 row in set"
+expect ":) "
+
+# Search with the words in a different order and case, then pick and run the match.
+send -- "\022"
+expect -re {[0-9]+/[0-9]+}
+send -- "MARKER alpha"
+expect -re {1/[0-9]+}
+# Both searched words are highlighted in the match.
+expect -ex "'\033\[38;5;151malpha\033\[38;5;254m_\033\[38;5;151mmarker\033\[38;5;254m_one'"
+send -- "\r"
+expect "SELECT 'alpha_marker_one'"
+send -- "\r"
+expect "alpha_marker_one"
+expect "1 row in set"
+expect ":) "
+
+# Esc closes the search and keeps the (empty) line.
+send -- "\022"
+expect -re {[0-9]+/[0-9]+}
+send -- "beta"
+expect -re {1/[0-9]+}
+send -- "\033"
+expect ":) "
+send -- "SELECT 'after_abort'\r"
+expect "after_abort"
+expect "1 row in set"
+expect ":) "
+
+# Pasted text becomes the search query.
+send -- "\022"
+expect -re {[0-9]+/[0-9]+}
+send -- "\033\[200~two\033\[201~"
+expect -re {1/[0-9]+}
+send -- "\r"
+expect "SELECT 'beta_marker_two'"
+send -- "\r"
+expect "beta_marker_two"
+expect "1 row in set"
+expect ":) "
+
+# The newest match is selected first; Up moves to the older one.
+send -- "\022"
+expect -re {[0-9]+/[0-9]+}
+send -- "marker_"
+expect -re {2/[0-9]+}
+send -- "\033\[A"
+send -- "\r"
+expect "SELECT 'alpha_marker_one'"
+send -- "\r"
+expect "alpha_marker_one"
+expect "1 row in set"
+expect ":) "
+
+send -- "\4"
+expect eof
+
+exec bash -c "rm -f $history_file"
