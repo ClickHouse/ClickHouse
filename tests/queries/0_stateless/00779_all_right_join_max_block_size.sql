@@ -1,4 +1,4 @@
-SET min_joined_block_size_bytes = 0;
+SET min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
 SET max_block_size = 6;
 SET query_plan_join_swap_table=false;
 SET join_algorithm='hash';

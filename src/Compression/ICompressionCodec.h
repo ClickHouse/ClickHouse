@@ -101,6 +101,10 @@ public:
 
     virtual bool isLossyCompression() const { return false; }
 
+    /// If the codec needs the column data type to compress (e.g. `PCO`). An instance created without a type
+    /// can still decompress.
+    virtual bool requiresColumnTypeToCompress() const { return false; }
+
     /// If it does nothing.
     virtual bool isNone() const { return false; }
 
@@ -110,6 +114,9 @@ public:
 protected:
     /// This is used for fuzz testing
     friend int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
+
+    /// Delegates every operation to the codec it selected.
+    friend class CompressionCodecFirstApplicable;
 
     /// Upper bound on the compressed data size without the header. While compressing, a codec may temporarily write more bytes
     /// into `dest` than its final result, so the bound covers those writes too and may exceed the actual compressed size.

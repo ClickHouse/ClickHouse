@@ -6,8 +6,6 @@
 -- to the external table), the set elements must be converted back to Nullable
 -- before being written to the external table.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS tab0;
 
 CREATE TABLE tab0 (x UInt32, y UInt32) ENGINE = MergeTree ORDER BY x;
