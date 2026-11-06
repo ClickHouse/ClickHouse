@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
 
-# --dump-schema keeps MergeTree parts and FileLog offsets as they were, and its dumps replay: the typing settings
+# --dump-schema keeps MergeTree parts, their transaction files and FileLog offsets as they were, and its dumps replay: the typing settings
 # of stored expressions, a computed sorting-key type, a constraint subquery and an `eval` construction setting.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -40,6 +40,8 @@ mt_dir=$(dirname "$(find "$src/store" -name format_version.txt | head -1)")
 rm "$(find "$mt_dir/all_1_1_0" -name '*.bin' | head -1)"
 rm "$mt_dir/format_version.txt"
 rm -rf "$mt_dir/detached"
+# A leftover temporary transaction metadata file, which loading removes.
+: > "$mt_dir/all_2_2_0/txn_version.txt.tmp"
 # A rotated log file, whose offset file loading renames, and a removed one, whose offset file loading removes.
 mv "$work/logs/app.log" "$work/logs/app.log.1"
 printf 'c\n' > "$work/logs/other.log"

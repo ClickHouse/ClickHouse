@@ -75,6 +75,11 @@ bool VersionMetadataOnDisk::hasValidMetadata()
     }
 }
 
+bool VersionMetadataOnDisk::loadsPassively() const
+{
+    return merge_tree_data_part->storage.loadsPassively();
+}
+
 VersionInfo VersionMetadataOnDisk::loadMetadata()
 {
     LOG_TRACE(log, "Object {}, loading metadata", getObjectName());

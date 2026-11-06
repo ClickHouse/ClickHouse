@@ -29,6 +29,8 @@ public:
     /// - If metadata file exists: reads and returns it
     VersionInfo loadMetadata() override;
 
+    bool loadsPassively() const override;
+
     /// Marks the data part as non-transactionally removed and persists the removal TID to disk,
     /// including handling the deferred-persistence optimization for non-transactional parts.
     void setAndStoreNonTransactionalRemovalTID(LockKind kind, const TransactionInfoContext & transaction_context) override;
