@@ -54,7 +54,7 @@
 98	98	2
 99	99	1
 -- Section 4: PREWHERE with basic serialization
--- Optimization still rewrites to subcolumn
+-- No rewrite to subcolumn
 1
 -- Correctness: PREWHERE with basic serialization
 96	96	960

@@ -3,10 +3,13 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
+#include <Common/ProfileEvents.h>
 #include <Interpreters/Context.h>
 #include <Access/AccessControl.h>
 #include <Access/QuotaUsage.h>
@@ -89,6 +92,11 @@ ColumnsDescription StorageSystemQuotaUsage::getColumnsDescriptionImpl(bool add_c
         description.add({String("max_") + column_name, std::make_shared<DataTypeNullable>(data_type), type_info.max_allowed_usage_description});
     }
 
+    description.add({"profile_events", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()),
+        "The current consumption of each profile event the quota defines a limit over."});
+    description.add({"max_profile_events", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()),
+        "Maximum allowed consumption of each profile event the quota defines a limit over. A value of 0 means the event is only tracked, without a limit."});
+
     return description;
 }
 
@@ -142,6 +150,9 @@ void StorageSystemQuotaUsage::fillDataImpl(
         column_max_null_map[quota_type_i] = &assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
     }
 
+    auto & column_profile_events = assert_cast<ColumnMap &>(*res_columns[column_index++]);
+    auto & column_max_profile_events = assert_cast<ColumnMap &>(*res_columns[column_index++]);
+
     /// A user may be governed by several quotas at once, so `is_current` is set for every
     /// quota enforced for the current user/context, not just one.
     std::vector<UUID> current_quota_ids;
@@ -176,6 +187,8 @@ void StorageSystemQuotaUsage::fillDataImpl(
                 column_max[quota_type_i]->insertDefault();
                 column_max_null_map[quota_type_i]->push_back(true);
             }
+            column_profile_events.insertDefault();
+            column_max_profile_events.insertDefault();
             return;
         }
 
@@ -196,6 +209,19 @@ void StorageSystemQuotaUsage::fillDataImpl(
             addValue(*column_max[quota_type_i], *column_max_null_map[quota_type_i], interval->max[quota_type_i], type_info);
             addValue(*column_usage[quota_type_i], *column_usage_null_map[quota_type_i], interval->used[quota_type_i], type_info);
         }
+
+        Map used_profile_events_map;
+        Map max_profile_events_map;
+        used_profile_events_map.reserve(interval->profile_events.size());
+        max_profile_events_map.reserve(interval->profile_events.size());
+        for (const auto & event_usage : interval->profile_events)
+        {
+            String event_name{ProfileEvents::getName(event_usage.event)};
+            used_profile_events_map.push_back(Tuple{event_name, event_usage.used});
+            max_profile_events_map.push_back(Tuple{event_name, event_usage.max});
+        }
+        column_profile_events.insert(used_profile_events_map);
+        column_max_profile_events.insert(max_profile_events_map);
     };
 
     auto add_rows = [&](const String & quota_name, const UUID & quota_id, const String & quota_key, const std::vector<QuotaUsage::Interval> & intervals)
