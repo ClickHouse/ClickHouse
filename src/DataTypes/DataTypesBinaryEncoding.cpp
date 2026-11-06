@@ -240,7 +240,7 @@ DataTypePtr decodeEnum(ReadBuffer & buf)
     for (size_t i = 0; i != size; ++i)
     {
         String name;
-        readStringBinary(name, buf);
+        readStringBinaryGrowing(name, buf);
         T value;
         readBinaryLittleEndian(value, buf);
         values.emplace_back(name, value);
@@ -287,7 +287,7 @@ void encodeAggregateFunction(const String & function_name, const Array & paramet
 std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadBuffer & buf, size_t & complexity, size_t max_complexity)
 {
     String function_name;
-    readStringBinary(function_name, buf);
+    readStringBinaryGrowing(function_name, buf);
     size_t num_parameters = 0;
     readVarUInt(num_parameters, buf);
     if (num_parameters > MAX_ARRAY_SIZE)
@@ -614,7 +614,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
         case BinaryTypeIndex::DateTimeWithTimezone:
         {
             String time_zone;
-            readStringBinary(time_zone, buf);
+            readStringBinaryGrowing(time_zone, buf);
             return std::make_shared<DataTypeDateTime>(time_zone);
         }
         case BinaryTypeIndex::DateTime64UTC:
@@ -628,7 +628,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             UInt8 scale = 0;
             readBinary(scale, buf);
             String time_zone;
-            readStringBinary(time_zone, buf);
+            readStringBinaryGrowing(time_zone, buf);
             return std::make_shared<DataTypeDateTime64>(scale, time_zone);
         }
         case BinaryTypeIndex::Time:
@@ -673,7 +673,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             for (size_t i = 0; i != size; ++i)
             {
                 names.emplace_back();
-                readStringBinary(names.back(), buf);
+                readStringBinaryGrowing(names.back(), buf);
                 elements.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
             }
 
@@ -802,7 +802,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             for (size_t i = 0; i != size; ++i)
             {
                 names.emplace_back();
-                readStringBinary(names.back(), buf);
+                readStringBinaryGrowing(names.back(), buf);
                 elements.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
             }
 
@@ -811,7 +811,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
         case BinaryTypeIndex::Custom:
         {
             String type_name;
-            readStringBinary(type_name, buf);
+            readStringBinaryGrowing(type_name, buf);
             return DataTypeFactory::instance().get(type_name);
         }
         case BinaryTypeIndex::JSON:
@@ -840,7 +840,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             for (size_t i = 0; i != typed_paths_size; ++i)
             {
                 String path;
-                readStringBinary(path, buf);
+                readStringBinaryGrowing(path, buf);
                 if (serialization_version >= TYPE_JSON_SERIALIZATION_VERSION_WITH_TYPED_PATH_FLAGS)
                 {
                     UInt8 flags = 0;
@@ -862,7 +862,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             for (size_t i = 0; i != paths_to_skip_size; ++i)
             {
                 String path;
-                readStringBinary(path, buf);
+                readStringBinaryGrowing(path, buf);
                 paths_to_skip.insert(path);
             }
 
@@ -876,7 +876,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             for (size_t i = 0; i != path_regexps_to_skip_size; ++i)
             {
                 String regexp;
-                readStringBinary(regexp, buf);
+                readStringBinaryGrowing(regexp, buf);
                 path_regexps_to_skip.push_back(regexp);
             }
             return std::make_shared<DataTypeObject>(

@@ -68,6 +68,14 @@ static void writeAndConvert(RemoteInserter & remote, const DistributedAsyncInser
     }
 }
 
+std::pair<String, String> getRemoteAuthenticationIdentity(const ClientInfo & client_info)
+{
+    String initial_host;
+    if (client_info.initial_address)
+        initial_host = client_info.initial_address->host().toString();
+    return {client_info.initial_user, initial_host};
+}
+
 void writeRemoteConvert(
     const DistributedAsyncInsertHeader & distributed_header,
     RemoteInserter & remote,
