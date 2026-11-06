@@ -96,6 +96,8 @@
 #include <unistd.h>
 #include <filesystem>
 #include <shared_mutex>
+#include <mutex>
+#include <condition_variable>
 #include <algorithm>
 #include <unordered_set>
 
@@ -4147,6 +4149,77 @@ std::shared_ptr<ISource> StorageFile::createLazyRowsSource(
 }
 
 
+namespace
+{
+
+/// Serializes the writers of one file on a `user_files_policy` disk that is not a plain local disk,
+/// from opening the file until its write buffer is finalized. Such a disk cannot create or append to a
+/// file atomically: a writer decides between appending and rewriting from a separate existence probe,
+/// and `DiskEncrypted` initializes the encryptor of an appending writer at the plaintext size it saw
+/// when opening the file. Two overlapping appends would therefore encrypt both payloads at the same
+/// offset while the backing `O_APPEND` writes place them one after another, corrupting the file.
+/// Different `StorageFile` objects (e.g. two `INSERT INTO FUNCTION file` queries) do not share a lock,
+/// so the registry is keyed by the disk name and the disk-relative path.
+class UserFilesDiskWriteLocks
+{
+public:
+    class Holder
+    {
+    public:
+        Holder(UserFilesDiskWriteLocks & locks_, String key_) : locks(locks_), key(std::move(key_)) {}
+        ~Holder() { locks.release(key); }
+        Holder(const Holder &) = delete;
+        Holder & operator=(const Holder &) = delete;
+
+    private:
+        UserFilesDiskWriteLocks & locks;
+        const String key;
+    };
+
+    static UserFilesDiskWriteLocks & instance()
+    {
+        static UserFilesDiskWriteLocks locks;
+        return locks;
+    }
+
+    /// Returns nullptr when the lock is not acquired within `timeout`; a negative timeout does not wait.
+    std::unique_ptr<Holder> tryAcquire(const String & disk_name, const String & relative_path, std::chrono::milliseconds timeout)
+    {
+        String key = disk_name;
+        key += '\0';
+        key += relative_path;
+
+        std::unique_lock lock(mutex);
+        auto is_free = [&] { return !locked_files.contains(key); };
+        if (timeout.count() < 0)
+        {
+            if (!is_free())
+                return nullptr;
+        }
+        else if (!released.wait_for(lock, timeout, is_free))
+            return nullptr;
+
+        locked_files.insert(key);
+        return std::make_unique<Holder>(*this, std::move(key));
+    }
+
+private:
+    void release(const String & key)
+    {
+        {
+            std::lock_guard lock(mutex);
+            locked_files.erase(key);
+        }
+        released.notify_all();
+    }
+
+    std::mutex mutex;
+    std::condition_variable released;
+    std::unordered_set<String> locked_files;
+};
+
+}
+
 class StorageFileSink final : public SinkToStorage, WithContext
 {
 public:
@@ -4245,6 +4318,16 @@ public:
             const bool truncate = (flags & O_TRUNC) != 0;
             UInt64 existing_size = 0;
             WriteMode mode = WriteMode::Rewrite;
+            if (!isPlainLocalDisk(*user_files_disk))
+            {
+                /// Held until the write buffer is finalized or the sink is destroyed, see `UserFilesDiskWriteLocks`.
+                disk_write_lock = UserFilesDiskWriteLocks::instance().tryAcquire(
+                    user_files_disk->getName(), user_files_disk_relative_path, getLockTimeoutMs(getContext()));
+                if (!disk_write_lock)
+                    throw Exception(
+                        ErrorCodes::TIMEOUT_EXCEEDED,
+                        "Lock timeout exceeded while waiting for another query writing to file {}", path);
+            }
             if (!truncate && isPlainLocalDisk(*user_files_disk))
             {
                 /// A plain local disk opens `WriteMode::Append` with `O_APPEND | O_CREAT`, so the file
@@ -4359,6 +4442,7 @@ private:
             writer->flush();
             writer->finalize();
             write_buf->finalize();
+            disk_write_lock.reset();
             if (on_finalized)
                 on_finalized();
         }
@@ -4386,6 +4470,9 @@ private:
 
     StorageMetadataPtr metadata_snapshot;
     String table_name_for_log;
+
+    /// Declared before the buffers, so that it is released only after they are destroyed.
+    std::unique_ptr<UserFilesDiskWriteLocks::Holder> disk_write_lock;
 
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;

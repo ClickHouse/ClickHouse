@@ -1,6 +1,7 @@
 # pylint: disable=unused-argument
 # pylint: disable=redefined-outer-name
 
+import threading
 import time
 import uuid
 
@@ -1170,6 +1171,38 @@ def test_encrypted_disk_path_prefix_is_not_an_alias():
         "./encrypted/user_files/alias_check.csv",
         "./encrypted/user_files/encrypted/alias_check.csv",
     ], listing
+
+
+def test_encrypted_disk_concurrent_appends():
+    """Overlapping appends to an existing file on an `encrypted` disk must not corrupt it. Each
+    appending writer initializes its encryptor at the plaintext size it sees on opening the file, so
+    the writers of one file are serialized until the file is finalized."""
+    node_encrypted.query(
+        "INSERT INTO FUNCTION file('concurrent_appends.csv', 'CSV', 'x UInt64') "
+        "SELECT 1000000 SETTINGS engine_file_truncate_on_insert = 1"
+    )
+
+    # Every insert writes slowly, so that the writers overlap without the serialization.
+    def insert(i):
+        node_encrypted.query(
+            "INSERT INTO FUNCTION file('concurrent_appends.csv', 'CSV', 'x UInt64') "
+            f"SELECT {i * 100} + number FROM numbers(10) WHERE sleepEachRow(0.05) = 0 "
+            "SETTINGS max_block_size = 1"
+        )
+
+    threads = [threading.Thread(target=insert, args=(i,)) for i in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    expected_sum = 1000000 + sum(i * 100 + n for i in range(4) for n in range(10))
+    assert (
+        node_encrypted.query(
+            "SELECT count(), sum(x) FROM file('concurrent_appends.csv', 'CSV', 'x UInt64')"
+        ).strip()
+        == f"41\t{expected_sum}"
+    )
 
 def test_local_literal_partition_id_filename():
     """A literal file name that merely contains the `{_partition_id}` substring, read without
