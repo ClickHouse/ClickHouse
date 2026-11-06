@@ -36,7 +36,7 @@ except ImportError:
     _VARIANT_TYPES = ()
 
 from .laketables import SparkTable, LakeFormat, LakeCatalogs
-from integration.helpers.client import Client
+from tests.integration.helpers.client import Client
 
 # Row-hash placeholder for SQL NULL, so rows with a NULL in a compared column are
 # still compared instead of silently dropped (Spark CONCAT/COLLECT_LIST and ClickHouse
