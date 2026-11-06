@@ -1430,11 +1430,14 @@ static void splitAndModifyMutationCommands(
                     for_interpreter.push_back(std::move(interpreter_command));
                 };
 
-                const bool exact_column = source_columns.has(name_in_part) || serialization_infos.isMissingColumn(name_in_part)
-                    || drop_keeps_dotted_columns(command);
-                if (exact_column)
+                /// A stored column or a missing-column marker is cleared in place. A name that
+                /// exists only in metadata stays exact, so it is not expanded onto `name.*`, and
+                /// `CLEAR` does not run: there is no stream, and running it rebuilds every index
+                /// over that name and writes the columns those indices read.
+                const bool stored_or_marker = source_columns.has(name_in_part) || serialization_infos.isMissingColumn(name_in_part);
+                if (stored_or_marker)
                     push_source(name_in_part);
-                else if (share_nested)
+                else if (share_nested && !drop_keeps_dotted_columns(command))
                 {
                     if (source_columns.hasNested(name_in_part))
                     {
