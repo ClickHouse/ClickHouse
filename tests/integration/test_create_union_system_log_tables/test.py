@@ -276,9 +276,13 @@ def test_stable_with_non_default_create_settings(start_cluster):
 
     node5.query("SELECT 'test_non_default_create_settings_marker'")
     node5.query("SYSTEM FLUSH LOGS query_log")
+    node1.query("SYSTEM FLUSH LOGS query_log")
 
-    # The declared structure of the system log tables must not be reshaped by them.
-    assert "Nullable" not in node5.query("DESCRIBE TABLE system.query_log")
+    # The explicit nullable marker is part of the schema, but the server-wide defaults
+    # must not reshape system log tables. Compare against a node with normal settings.
+    assert node5.query("DESCRIBE TABLE system.query_log") == node1.query(
+        "DESCRIBE TABLE system.query_log"
+    )
     assert node5.query("DESCRIBE TABLE system.all_query_log") == node5.query(
         "DESCRIBE TABLE system.query_log"
     )

@@ -34,6 +34,7 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/StorageIDMaybeEmpty.h>
 #include <Interpreters/Context.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/CountingTransform.h>
@@ -1540,7 +1541,8 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         const auto select_context = metadata->getSQLSecurityOverriddenContext(init_context);
         const auto insert_context = metadata->getSQLSecurityOverriddenContext(init_context);
 
-        if (init_context->hasQueryContext())
+        if (init_context->hasQueryContext()
+            && init_context->getGlobalContext()->getConfigRef().getBool("query_log.enable_query_access_info_attribution", false))
         {
             const auto query_access_info = init_context->getQueryContext()->getQueryAccessInfoPtr();
             select_context->setQueryAccessInfo(query_access_info);

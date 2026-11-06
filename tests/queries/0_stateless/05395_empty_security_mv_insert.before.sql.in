@@ -1,0 +1,38 @@
+
+-- Omitted SQL SECURITY leaves the MV security type empty; inserts through the MV must still hide access metadata.
+SET log_queries = 1;
+SET log_queries_probability = 1;
+SET log_queries_min_type = 'QUERY_START';
+
+DROP USER IF EXISTS user_05401_empty_security_caller;
+DROP TABLE IF EXISTS mv_05401_source_trigger;
+DROP TABLE IF EXISTS mv_05401_root;
+DROP TABLE IF EXISTS t_05401_source_sink;
+DROP TABLE IF EXISTS t_05401_root_sink;
+DROP TABLE IF EXISTS t_05401_source;
+DROP TABLE IF EXISTS t_05401_root_source;
+DROP TABLE IF EXISTS t_05401_run_marker;
+
+CREATE TABLE t_05401_source (id UInt64) ENGINE = Null;
+CREATE TABLE t_05401_source_sink (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE MATERIALIZED VIEW mv_05401_source_trigger TO t_05401_source_sink AS
+SELECT id FROM t_05401_source;
+
+CREATE TABLE t_05401_root_source (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t_05401_root_sink (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE MATERIALIZED VIEW mv_05401_root TO t_05401_root_sink AS
+SELECT id FROM t_05401_root_source;
+
+-- Confirm these definitions remain empty-security under the default server setting.
+SELECT count() = 2,
+    countIf(positionCaseInsensitive(create_table_query, 'SQL SECURITY') = 0) = 2
+FROM system.tables
+WHERE database = currentDatabase()
+    AND name IN ('mv_05401_source_trigger', 'mv_05401_root');
+
+CREATE USER user_05401_empty_security_caller;
+-- The caller can insert through each MV, but cannot insert into either sink.
+GRANT INSERT ON t_05401_source TO user_05401_empty_security_caller;
+GRANT SELECT ON t_05401_source TO user_05401_empty_security_caller;
+GRANT INSERT ON mv_05401_root TO user_05401_empty_security_caller;
+GRANT INSERT ON t_05401_root_source TO user_05401_empty_security_caller;

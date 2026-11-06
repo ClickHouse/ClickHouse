@@ -26,6 +26,7 @@
 
 #include <Common/CurrentThread.h>
 #include <IO/WriteBufferFromString.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #include <ranges>
 
@@ -343,10 +344,13 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
     {
         auto query_context = context->getQueryContext();
         auto view_query_context = view_context->getQueryContext();
-        if (storage_snapshot->metadata->sql_security_type == SQLSecurityType::DEFINER
-            || storage_snapshot->metadata->sql_security_type == SQLSecurityType::NONE)
+        const bool enable_query_access_info_attribution = context->getGlobalContext()->getConfigRef().getBool(
+            "query_log.enable_query_access_info_attribution", false);
+        if (enable_query_access_info_attribution
+            && (storage_snapshot->metadata->sql_security_type == SQLSecurityType::DEFINER
+                || storage_snapshot->metadata->sql_security_type == SQLSecurityType::NONE))
             query_context->markQueryAccessInfoHiddenFromUserQueryLog();
-        if (view_query_context != query_context)
+        if (enable_query_access_info_attribution && view_query_context != query_context)
             view_query_context->setQueryAccessInfo(query_context->getQueryAccessInfoPtr());
     }
 
@@ -967,10 +971,13 @@ ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const Storage
     {
         auto query_context = context->getQueryContext();
         auto view_query_context = view_context->getQueryContext();
-        if (storage_snapshot->metadata->sql_security_type == SQLSecurityType::DEFINER
-            || storage_snapshot->metadata->sql_security_type == SQLSecurityType::NONE)
+        const bool enable_query_access_info_attribution = context->getGlobalContext()->getConfigRef().getBool(
+            "query_log.enable_query_access_info_attribution", false);
+        if (enable_query_access_info_attribution
+            && (storage_snapshot->metadata->sql_security_type == SQLSecurityType::DEFINER
+                || storage_snapshot->metadata->sql_security_type == SQLSecurityType::NONE))
             query_context->markQueryAccessInfoHiddenFromUserQueryLog();
-        if (view_query_context != query_context)
+        if (enable_query_access_info_attribution && view_query_context != query_context)
             view_query_context->setQueryAccessInfo(query_context->getQueryAccessInfoPtr());
     }
 

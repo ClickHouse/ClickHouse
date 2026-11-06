@@ -53,6 +53,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
 #include <Core/UUID.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #include <Backups/BackupEntriesCollector.h>
 
@@ -526,11 +527,14 @@ void StorageMaterializedView::readImpl(
     {
         auto query_context = local_context->getQueryContext();
         auto view_query_context = context->getQueryContext();
+        const bool enable_query_access_info_attribution = local_context->getGlobalContext()->getConfigRef().getBool(
+            "query_log.enable_query_access_info_attribution", false);
         if (!view_metadata->sql_security_type
-            || view_metadata->sql_security_type == SQLSecurityType::DEFINER
-            || view_metadata->sql_security_type == SQLSecurityType::NONE)
+            || (enable_query_access_info_attribution
+                && (view_metadata->sql_security_type == SQLSecurityType::DEFINER
+                    || view_metadata->sql_security_type == SQLSecurityType::NONE)))
             query_context->markQueryAccessInfoHiddenFromUserQueryLog();
-        if (view_query_context != query_context)
+        if (enable_query_access_info_attribution && view_query_context != query_context)
             view_query_context->setQueryAccessInfo(query_context->getQueryAccessInfoPtr());
     }
 

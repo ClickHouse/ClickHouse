@@ -11,6 +11,7 @@ import uuid
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "9000"))
 CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "default")
+VICTIM_USER = os.environ["QAI_VICTIM_USER"]
 
 CLIENT_NAME = "user_query_log forged initial user"
 REVISION = 54484
@@ -240,7 +241,7 @@ def check_visible(authenticated_user, initial_user, query_id, should_be_visible)
     operator = "=" if should_be_visible else ">"
     predicate = "count() {} 0".format(operator)
     query = (
-        "INSERT INTO t_05398_assertions "
+        "INSERT INTO t_05397_assertions "
         "SELECT toUInt8(throwIf({}, 'user_query_log identity assertion failed')) "
         "FROM system.user_query_log WHERE query_id = '{}'"
     ).format(predicate, query_id)
@@ -265,17 +266,17 @@ def main():
     }
 
     run_query(
-        "user_05398_victim",
-        "INSERT INTO t_05398_assertions SELECT 1",
+        VICTIM_USER,
+        "INSERT INTO t_05397_assertions SELECT 1",
         INITIAL_QUERY,
-        "user_05398_victim",
+        VICTIM_USER,
         victim_query_id,
         settings=logged_settings,
         query_id=victim_query_id,
     )
     run_query(
         "default",
-        "INSERT INTO t_05398_assertions SELECT 1",
+        "INSERT INTO t_05397_assertions SELECT 1",
         INITIAL_QUERY,
         "default",
         default_query_id,
@@ -291,11 +292,11 @@ def main():
         settings={"interactive_delay": 0, "send_profile_events": 0},
     )
 
-    check_visible("user_05398_victim", "user_05398_victim", victim_query_id, True)
+    check_visible(VICTIM_USER, VICTIM_USER, victim_query_id, True)
     print("victim can read own query")
     check_visible("default", "default", default_query_id, True)
     print("default can read own query")
-    check_visible("default", "user_05398_victim", victim_query_id, False)
+    check_visible("default", VICTIM_USER, victim_query_id, False)
     print("forged initial_user cannot read victim query")
 
 

@@ -1,0 +1,44 @@
+-- The same reader sees three protected MV read modes: explicit DEFINER/NONE and
+-- the legacy empty-security form. Shared assertions below keep their privacy
+-- behavior aligned while preserving the legacy target-partition oracle.
+SET log_queries = 1;
+SET log_queries_probability = 1;
+SET log_queries_min_type = 'QUERY_START';
+SET use_query_cache = 0;
+
+CREATE TABLE t_05400_definer_source (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t_05400_none_source (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t_05402_legacy_source (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t_05402_legacy_target (id UInt64) ENGINE = MergeTree ORDER BY id;
+
+CREATE MATERIALIZED VIEW mv_05400_definer
+ENGINE = MergeTree ORDER BY id
+DEFINER = CURRENT_USER SQL SECURITY DEFINER
+AS SELECT id FROM t_05400_definer_source;
+CREATE MATERIALIZED VIEW mv_05400_none
+ENGINE = MergeTree ORDER BY id
+DEFINER = CURRENT_USER SQL SECURITY NONE
+AS SELECT id FROM t_05400_none_source;
+CREATE MATERIALIZED VIEW mv_05402_legacy_read TO t_05402_legacy_target
+AS SELECT id FROM t_05402_legacy_source;
+
+INSERT INTO t_05400_definer_source VALUES (1);
+INSERT INTO t_05400_none_source VALUES (1);
+INSERT INTO t_05402_legacy_source VALUES (1);
+
+SELECT count() = 3,
+    countIf(name = 'mv_05402_legacy_read'
+        AND positionCaseInsensitive(create_table_query, 'SQL SECURITY') = 0
+        AND positionCaseInsensitive(create_table_query, 'DEFINER') = 0) = 1
+FROM system.tables
+WHERE database = currentDatabase()
+    AND name IN ('mv_05400_definer', 'mv_05400_none', 'mv_05402_legacy_read');
+
+CREATE USER user_05400_mv_reader;
+GRANT SELECT ON mv_05400_definer TO user_05400_mv_reader;
+GRANT SELECT ON mv_05400_none TO user_05400_mv_reader;
+GRANT SELECT ON t_05402_legacy_source TO user_05400_mv_reader;
+GRANT SELECT ON mv_05402_legacy_read TO user_05400_mv_reader;
+CREATE TABLE t_05400_run_marker (started_at DateTime64(6, 'UTC')) ENGINE = Memory;
+INSERT INTO t_05400_run_marker SELECT now64(6, 'UTC');
+GRANT SELECT ON t_05400_run_marker TO user_05400_mv_reader;

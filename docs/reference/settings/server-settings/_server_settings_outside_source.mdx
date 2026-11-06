@@ -1336,6 +1336,8 @@ Queries are logged in the [system.query_log](/reference/system-tables/query_log)
 
 The `enable_user_query_log` parameter (enabled by default) creates [`system.user_query_log`](/reference/system-tables/user_query_log), which shows every user their own records of the configured query log table without requiring access to the table itself. This only works when the query log is stored locally: if `engine` delegates to another server (for example, `Distributed`), disable `enable_user_query_log`, since `system.user_query_log` cannot enforce the per-user access check across a ClickHouse-protocol server boundary and refuses to read from such a backend.
 
+The `enable_query_access_info_attribution` parameter is a server-admin option, disabled by default and not changeable by a query. It gates new access-info sharing for ordinary view reads, materialized-view read contexts, and root materialized-view dependency collection. For ordinary `DEFINER`/`NONE` views and explicitly secured `DEFINER`/`NONE` materialized-view reads, it also gates the corresponding restricted-row marks. Marks for materialized views without an explicit `SQL SECURITY` clause and on materialized-view dependency-insert paths remain active when the option is off. Turning the option off leaves previously written marks in place. A fresh otherwise-eligible ordinary-view row may then appear in `system.user_query_log` without the newly attributed dependency details. The user log continues to require an authenticated matching identity, an initial query, and a marker explicitly equal to `0`; these filters are unchanged by the option.
+
 If the table does not exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
 **Example**
@@ -1351,6 +1353,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
     <enable_user_query_log>true</enable_user_query_log>
+    <enable_query_access_info_attribution>false</enable_query_access_info_attribution>
 </query_log>
 ```
 

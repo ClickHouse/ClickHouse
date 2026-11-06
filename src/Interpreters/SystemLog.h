@@ -61,8 +61,6 @@ inline constexpr char SYSTEM_LOG_DOCUMENTATION_QUERY_LOG[] = R"DOCS_MD(
 .description
 Stores metadata and statistics about executed queries, such as start time, duration, error messages, resource usage, and other execution details. It does not store the results of queries.
 
-The nullable `query_access_info_is_hidden` column marks rows that crossed a view or materialized view with `SQL SECURITY DEFINER` or `SQL SECURITY NONE`, or a materialized view created without an explicit `SQL SECURITY` clause (`1`); `0` means no such boundary was recorded, and `NULL` means the provenance is unknown. Operators can inspect every row and its access details in `system.query_log`; `system.user_query_log` exposes only initial-query rows with an explicit `0`.
-
 You can change settings of queries logging in the [query_log](/reference/settings/server-settings/settings/query#query_log) section of the server configuration.
 
 You can disable queries logging by setting [log_queries = 0](/reference/settings/session-settings/log-queries#log_queries). We do not recommend to turn off logging because information in this table is important for solving issues.
@@ -98,6 +96,10 @@ ORDER BY event_time_microseconds;
 
 If correlated child queries can run on other nodes, query `system.query_log` on every node, for example with [`clusterAllReplicas`](/reference/functions/table-functions/cluster).
 </Tip>
+
+The server option `query_log.enable_query_access_info_attribution` is disabled by default and cannot be changed by a query. See the [query log server settings](/reference/settings/server-settings/settings/query#query_log) for its view and materialized-view attribution scope. `system.user_query_log` continues to require an authenticated matching identity, an initial query, and a marker explicitly equal to `0`.
+
+These user-log filters do not apply to operator reads of `system.query_log`; rows available there remain governed by normal logging, sampling, retention, and access controls. If a per-user row policy exposes `system.query_log`, preserve its existing user-identity predicate and add `is_initial_query = 1 AND query_access_info_is_hidden = 0`, or use `system.user_query_log`.
 
 Each query creates one or two rows in the `query_log` table, depending on the status (see the `type` column) of the query:
 
