@@ -27,8 +27,9 @@ class StorageTableFunctionProxy final : public StorageProxy
 {
 public:
     StorageTableFunctionProxy(const StorageID & table_id_, GetNestedStorageFunc get_nested_,
-            ColumnsDescription cached_columns, bool add_conversion_ = true, bool has_unreplicated_table_data_on_disk_ = false)
-    : StorageProxy(table_id_), get_nested(std::move(get_nested_)), add_conversion(add_conversion_)
+            ColumnsDescription cached_columns, bool add_conversion_ = true, bool can_delete_data_on_drop_ = false,
+            bool has_unreplicated_table_data_on_disk_ = false)
+    : StorageProxy(table_id_), get_nested(std::move(get_nested_)), add_conversion(add_conversion_), can_delete_data_on_drop(can_delete_data_on_drop_)
     , has_unreplicated_table_data_on_disk(has_unreplicated_table_data_on_disk_)
     {
         StorageInMemoryMetadata cached_metadata;
@@ -184,6 +185,8 @@ public:
             nested->drop();
     }
 
+    void prepareForDrop(ContextPtr query_context) override;
+
     /// File-like table functions rebuild the nested storage from the current external schema and
     /// ignore the columns cached at DDL time, while `read()` below hands PREWHERE to the nested
     /// storage and only converts types afterwards. `StorageProxy`'s forward is by name, so it
@@ -306,6 +309,7 @@ private:
     mutable GetNestedStorageFunc get_nested;
     mutable StoragePtr nested;
     const bool add_conversion;
+    const bool can_delete_data_on_drop;
     const bool has_unreplicated_table_data_on_disk;
 };
 

@@ -1148,7 +1148,7 @@ static bool writeMetadataFiles(
 
         auto new_snapshot = metadata_generator.generateNextMetadata(
             plan.generator,
-            generated_metadata_info.path,
+            Iceberg::IcebergPathFromMetadata{},
             history_record.parent_id,
             live.data_files - parent.data_files,
             live.records - parent.records,

@@ -29,6 +29,7 @@ Poco::JSON::Object::Ptr makeMinimalV2Metadata()
     metadata->set(Iceberg::f_format_version, 2);
     metadata->set(Iceberg::f_current_schema_id, 0);
     metadata->set(Iceberg::f_last_sequence_number, 0);
+    metadata->set(Iceberg::f_last_updated_ms, 0);
     metadata->set(Iceberg::f_current_snapshot_id, -1);
 
     metadata->set(Iceberg::f_refs, Poco::JSON::Object::Ptr(new Poco::JSON::Object));
