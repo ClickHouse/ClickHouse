@@ -954,11 +954,11 @@ ColumnPtr ColumnString::createWithOffsets(
     size_t res_size = 0;
 
     /// The writes below go through raw pointers, so every position is checked before it is used.
-    auto check_position = [&](size_t position)
+    auto check_position = [&](size_t position, size_t next_row)
     {
-        if (position < row || position >= total_rows) [[unlikely]]
+        if (position < next_row || position >= total_rows) [[unlikely]]
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Offset of a non-default value {} is out of range [{}, {})", position, row, total_rows);
+                "Offset of a non-default value {} is out of range [{}, {})", position, next_row, total_rows);
     };
 
     if (default_size == 0)
@@ -970,7 +970,7 @@ ColumnPtr ColumnString::createWithOffsets(
         for (size_t i = 0; i < num_values; ++i)
         {
             const size_t position = positions[i];
-            check_position(position);
+            check_position(position, row);
             std::fill(res_offsets + row, res_offsets + position, res_size);
             res_size = offsets[i + shift] - values_begin;
             res_offsets[position] = res_size;
@@ -993,7 +993,7 @@ ColumnPtr ColumnString::createWithOffsets(
         for (size_t i = 0; i < num_values; ++i)
         {
             const size_t position = positions[i];
-            check_position(position);
+            check_position(position, row);
             insert_defaults(position);
             const size_t value_size = sizeAt(i + shift);
             memcpySmallAllowReadWriteOverflow15(res_chars + res_size, &chars[offsetAt(i + shift)], value_size);
