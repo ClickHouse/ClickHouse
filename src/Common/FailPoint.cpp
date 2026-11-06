@@ -35,6 +35,7 @@ static struct InitFiu
     ONCE(replicated_merge_tree_commit_zk_fail_after_op) \
     ONCE(replicated_queue_fail_next_entry) \
     ONCE(nats_fail_resubscribe_within_query) \
+    ONCE(reverse_index_build_index_throw) \
     REGULAR(replicated_queue_unfail_entries) \
     REGULAR(executing_graph_add_node_fail) \
     REGULAR(executing_graph_build_fail) \
@@ -114,6 +115,13 @@ static struct InitFiu
     ONCE(object_storage_queue_sleep_in_generate) \
     ONCE(object_storage_queue_fail_tags_fetch) \
     ONCE(distributed_cache_fail_continue_request) \
+    ONCE(distributed_cache_temp_drop_publication_response) \
+    ONCE(distributed_cache_temp_fail_owner_handoff) \
+    ONCE(distributed_cache_temp_fail_publication_confirmation) \
+    ONCE(distributed_cache_temp_fail_release) \
+    PAUSEABLE(distributed_cache_temp_pause_before_read) \
+    PAUSEABLE(distributed_cache_temp_pause_before_renewal_batch) \
+    REGULAR(distributed_cache_temp_renewal_due_soon) \
     ONCE(distributed_cache_fail_continue_read_request) \
     ONCE(distributed_cache_fail_choose_server) \
     ONCE(distributed_cache_fail_simple_request) \
@@ -122,6 +130,7 @@ static struct InitFiu
     ONCE(distributed_cache_server_fail_metrics_request) \
     ONCE(distributed_cache_server_fail_show_request) \
     ONCE(distributed_cache_server_fail_show_streaming) \
+    ONCE(distributed_cache_server_reply_slow_down) \
     REGULAR(distributed_cache_fail_request_in_the_middle_of_request_always) \
     REGULAR(distributed_cache_assume_gap_buffered_on_seek) \
     REGULAR(distributed_cache_simulate_undrained_leftovers) \
@@ -131,6 +140,8 @@ static struct InitFiu
     PAUSEABLE(file_segment_pause_before_write) \
     PAUSEABLE(remote_fs_gather_pause_in_read) \
     PAUSEABLE(plain_object_storage_pause_on_file_copy) \
+    PAUSEABLE(named_collections_replicated_update_pause) \
+    PAUSEABLE(named_collections_restore_pause_after_write) \
     REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(cache_filesystem_failure_non_errno) \
@@ -276,6 +287,7 @@ static struct InitFiu
     REGULAR(database_replicated_delay_recovery) \
     REGULAR(database_replicated_delay_entry_execution) \
     PAUSEABLE(database_replicated_stop_entry_execution) \
+    PAUSEABLE_ONCE(database_replicated_pause_before_initial_query_execution) \
     PAUSEABLE_ONCE(database_replicated_pause_after_reading_log_pointer) \
     PAUSEABLE_ONCE(database_replicated_pause_after_snapshot_identity_check) \
     PAUSEABLE(database_replicated_pause_after_database_name_fetch) \
@@ -338,6 +350,7 @@ static struct InitFiu
     REGULAR(sleep_in_logs_flush) \
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
+    ONCE(database_replicated_restore_table_created_by_other_replica) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
     PAUSEABLE(mt_mutate_task_pause_before_rename_part) \
     PAUSEABLE_ONCE(merge_task_pause_after_reserving_tmp_dir) \
@@ -494,6 +507,7 @@ static struct InitFiu
     ONCE(postgresql_output_format_cancel_mid_loop) \
     PAUSEABLE_ONCE(external_distinct_suppression_run_prepared_pause) \
     ONCE(hash_join_throw_after_data_release) \
+    ONCE(spilling_hash_join_throw_after_maps_release) \
     ONCE(stored_columns_index_throw_on_add) \
     REGULAR(smt_force_takeover_predicate_true) \
     REGULAR(smt_takeover_fake_hardware_error_after_set) \
@@ -503,7 +517,8 @@ static struct InitFiu
     REGULAR(aggregate_function_state_transfer_throw) \
     REGULAR(aggregate_function_state_transfer_throw_after_child) \
     REGULAR(marks_loader_hold_task_until_canceled) \
-    REGULAR(whatif_projection_scan_cut_short)
+    REGULAR(whatif_projection_scan_cut_short) \
+    REGULAR(http_connection_socket_inode_unavailable)
 
 namespace FailPoints
 {
