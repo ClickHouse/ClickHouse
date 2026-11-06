@@ -70,6 +70,38 @@ TEST(URIForAccessCheck, S3KeyIsEncoded)
         "http://minio1:9001/root/data/a%20b%3F.tsv");
 }
 
+/// `url_scheme_mappers` can map `s3://root/data/...` to `http://minio1:9001/root/prefix/data/...`: the key then has a prefix
+/// that the URI as the user typed it does not have, and the check uses the typed form.
+namespace
+{
+
+String mappedURIForAccessCheck(const String & mapped_uri, const String & granted_uri, const String & write_path)
+{
+    DB::StorageS3Configuration configuration;
+    configuration.url = DB::S3::URI(mapped_uri);
+    configuration.url.uri_str = granted_uri;
+    return configuration.getURIForAccessCheck(write_path);
+}
+
+}
+
+TEST(URIForAccessCheck, S3SchemeMapperWithKeyPrefix)
+{
+    EXPECT_EQ(
+        mappedURIForAccessCheck(
+            "http://minio1:9001/root/prefix/data/{_partition_id}.tsv", "s3://root/data/{_partition_id}.tsv", "prefix/data/a.tsv"),
+        "s3://root/data/a.tsv");
+}
+
+/// A write path outside the prefix of the key cannot be placed in the typed URI, so only an unfiltered grant allows it.
+TEST(URIForAccessCheck, S3SchemeMapperOutsideKeyPrefixIsEmpty)
+{
+    EXPECT_EQ(
+        mappedURIForAccessCheck(
+            "http://minio1:9001/root/prefix/data/{_partition_id}.tsv", "s3://root/data/{_partition_id}.tsv", "other/data/a.tsv"),
+        "");
+}
+
 /// A `%` in the key is a literal character: `%61` must not be checked as `a`, which is a different object.
 TEST(URIForAccessCheck, S3LiteralPercentEscape)
 {

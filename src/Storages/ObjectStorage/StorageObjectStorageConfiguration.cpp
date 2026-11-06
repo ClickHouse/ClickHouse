@@ -17,6 +17,8 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/URI.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -409,15 +411,34 @@ String StorageObjectStorageConfiguration::getURIForAccessCheck(const String & wr
         /// So we need to replace the SCHEMA_HASH_WILDCARD in the granted_uri_path with the schema_hash.
         if (!schema_hash.empty())
             boost::replace_all(granted_uri_path, SCHEMA_HASH_WILDCARD, schema_hash);
-        if (!granted_uri_path.ends_with(granted_path))
+
+        /// The URI path and the storage path end the same way, but each can have its own prefix. The URI path has
+        /// the bucket of a path-style S3 URI, e.g. `/bucket/` in `http://host/bucket/data/x.tsv`. The storage path
+        /// has the prefix that a server-level `url_scheme_mappers` entry adds when its `to` contains a path:
+        ///
+        ///     <url_scheme_mappers>
+        ///         <minio><to>http://host/root/{bucket}</to></minio>
+        ///     </url_scheme_mappers>
+        ///
+        /// maps `minio://data/x.tsv` to the key `data/x.tsv` in the bucket `root`, while the URI as the user typed it,
+        /// which grants are matched against, has only the path `/x.tsv`. The two are aligned on their longest common
+        /// suffix, and the result keeps the form the user typed.
+        size_t common_suffix_size = 0;
+        while (common_suffix_size < granted_uri_path.size() && common_suffix_size < granted_path.size()
+               && granted_uri_path[granted_uri_path.size() - 1 - common_suffix_size]
+                   == granted_path[granted_path.size() - 1 - common_suffix_size])
+            ++common_suffix_size;
+
+        const String uri_path_prefix = granted_uri_path.substr(0, granted_uri_path.size() - common_suffix_size);
+        const String storage_path_prefix = granted_path.substr(0, granted_path.size() - common_suffix_size);
+        /// The write path comes from the storage path, so it keeps its prefix, unless it was renamed into it.
+        if (!write_path.starts_with(storage_path_prefix))
             return {};
 
-        /// The part of the URI path before the storage path, e.g. `/bucket/` for a path-style S3 URI.
-        const String uri_path_prefix = granted_uri_path.substr(0, granted_uri_path.size() - granted_path.size());
-
         /// `setPath` decodes its argument, but the write path is already decoded, so a `%` in it is a literal character.
+        /// URI prefix plus the rest of write_path, encoded, put into the URI path.
         String encoded_write_uri_path;
-        Poco::URI::encode(uri_path_prefix + write_path, "", encoded_write_uri_path);
+        Poco::URI::encode(uri_path_prefix + write_path.substr(storage_path_prefix.size()), "", encoded_write_uri_path);
         uri.setPath(encoded_write_uri_path);
         return uri.toString();
     }

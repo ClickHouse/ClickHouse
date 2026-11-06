@@ -175,13 +175,14 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     validateNamespace(configuration->getNamespace(), configuration);
     validateKey(file_path);
 
-    /// A partition id can make the key fully qualified, e.g. if a partition id like `other-bucket/x.tsv`
-    /// is used for the template `{_partition_id}.tsv`, and the object storage would then write to that
-    /// bucket instead of the one whose URI is checked below.
-    if (!configuration->supportsFullyQualifiedPaths() && trySplitFullyQualifiedObjectPath(file_path))
+    /// A partition id can make the key fully qualified, e.g. `s3://other-bucket/x.tsv` for the template `{_partition_id}.tsv`,
+    /// and the S3 object storage would then write to that bucket instead of the one whose URI is checked below.
+    /// Other object storages write such a key as a literal name.
+    if (object_storage->getType() == ObjectStorageType::S3 && !configuration->supportsFullyQualifiedPaths()
+        && trySplitFullyQualifiedObjectPath(file_path))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "The key {} of a partition refers to another bucket or container, which is not allowed",
+            "The key {} of a partition refers to another bucket, which is not allowed",
             file_path);
 
     /// The partition id comes from the data, so its destination is checked before anything is written to it.
