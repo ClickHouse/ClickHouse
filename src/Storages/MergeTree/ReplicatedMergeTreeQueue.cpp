@@ -1298,6 +1298,8 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
 
         bool some_mutations_are_probably_done = false;
         {
+            /// A published mutation must get its parts_to_do, so a query memory limit must not stop this block halfway.
+            LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
             std::lock_guard state_lock(state_mutex);
 
             for (const ReplicatedMergeTreeMutationEntryPtr & entry : new_mutations)

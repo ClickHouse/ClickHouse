@@ -9,6 +9,7 @@
 #include <base/interpolate.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/FailPoint.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Macros.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
@@ -9206,6 +9207,8 @@ void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t 
 
 void StorageReplicatedMergeTree::dropMutationInitialBytes(const String & mutation_id)
 {
+    /// Called while a mutation is finalized, so a memory limit must not stop it halfway.
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
     std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
     mutation_initial_bytes.erase(mutation_id);
     mutations_without_older_inserts.erase(mutation_id);
