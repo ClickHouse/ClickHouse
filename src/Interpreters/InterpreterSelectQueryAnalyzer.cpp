@@ -414,8 +414,12 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     auto query_tree = buildQueryTree(query, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
+    /// Only this analysis swaps the view source in, so only it may analyze the view source table without data.
     addQueryTreePasses(
-        query_tree_pass_manager, select_query_options.only_analyze, select_query_options.positional_arguments_already_resolved);
+        query_tree_pass_manager,
+        select_query_options.only_analyze,
+        select_query_options.positional_arguments_already_resolved,
+        storage && storage == context->getViewSource() ? storage : nullptr);
 
     /// We should not apply any query tree level optimizations on shards
     /// because it can lead to a changed header.

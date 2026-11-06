@@ -1,0 +1,4 @@
+{"commitInfo":{"timestamp":1587968626537,"operation":"DELETE","operationParameters":{"predicate":"[\"((`id` % CAST(2 AS BIGINT)) = CAST(0 AS BIGINT))\"]"},"readVersion":3,"isBlindAppend":false}}
+{"remove":{"path":"part-00001-bb70d2ba-c196-4df2-9c85-f34969ad3aa9-c000.snappy.parquet","deletionTimestamp":1587968626536,"dataChange":true}}
+{"remove":{"path":"part-00000-f17fcbf5-e0dc-40ba-adae-ce66d1fcaef6-c000.snappy.parquet","deletionTimestamp":1587968626536,"dataChange":true}}
+{"add":{"path":"part-00000-2befed33-c358-4768-a43c-3eda0d2a499d-c000.snappy.parquet","partitionValues":{},"size":262,"modificationTime":1587968626000,"dataChange":true}}
