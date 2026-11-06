@@ -159,7 +159,6 @@ if [[ "$bloom_filter_invalid_index_error" != *'Code: 36.'* || "$bloom_filter_inv
     echo 'Expected invalid bloom filter index to fail with BAD_ARGUMENTS'
     exit 1
 fi
-echo BAD_ARGUMENTS
 
 # NGRAM BF with IPv6
 $CLICKHOUSE_CLIENT --query="
