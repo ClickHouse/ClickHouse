@@ -1,0 +1,24 @@
+all_1_1_0	lz4	['LZ4']
+all_1_1_0	lz4.size	['T64, LZ4']
+all_1_1_0	none	['NONE']
+all_1_1_0	none.size	['NONE']
+all_1_1_0	tup%2Ea	['LZ4']
+all_1_1_0	tup%2Ea.size	['T64, LZ4']
+all_1_1_0	zstd	['ZSTD(1)']
+all_1_1_0	zstd.size	['T64, ZSTD(1)']
+all_2_2_0	lz4	['LZ4']
+all_2_2_0	lz4.size	['LZ4']
+all_2_2_0	none	['NONE']
+all_2_2_0	none.size	['NONE']
+all_2_2_0	tup%2Ea	['LZ4']
+all_2_2_0	tup%2Ea.size	['LZ4']
+all_2_2_0	zstd	['ZSTD(1)']
+all_2_2_0	zstd.size	['ZSTD(1)']
+9900000	9900000	9900000	9900000	9900000
+lz4.size	['T64, LZ4']
+none.size	['NONE']
+tup%2Ea.size	['T64, LZ4']
+zstd.size	['T64, ZSTD(1)']
+9900000	9900000	9900000	9900000	9900000
+Compact
+4950000	4950000	1000

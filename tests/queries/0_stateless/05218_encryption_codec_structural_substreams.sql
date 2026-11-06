@@ -15,7 +15,7 @@ CREATE TABLE t_enc_substreams
 )
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, default_compression_codec = 'LZ4, AES_128_GCM_SIV', enable_adaptive_codec_selection = 1,
-         serialization_info_version = 'with_types', string_serialization_version = 'with_size_stream',
+         serialization_info_version = 'with_types', string_serialization_version = 'with_size_stream', string_size_stream_codec = 'T64',
          propagate_types_serialization_versions_to_nested_types = 1;
 
 INSERT INTO t_enc_substreams SELECT 'secret', number, 'x', [number, number], 'secret' FROM numbers(1000);
