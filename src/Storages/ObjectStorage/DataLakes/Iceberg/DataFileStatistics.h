@@ -20,6 +20,10 @@ namespace DB
 
 #if USE_AVRO
 
+/// The order of Iceberg lower/upper bounds: `accurateLess`, except that -0.0 sorts before +0.0
+/// (spec: "Bounds for Float and Double"), where `accurateLess` treats the two zeros as equal.
+bool icebergBoundLess(const Field & lhs, const Field & rhs);
+
 class DataFileStatistics
 {
 public:

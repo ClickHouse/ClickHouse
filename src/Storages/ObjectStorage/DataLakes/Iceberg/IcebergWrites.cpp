@@ -50,7 +50,6 @@
 #include <Poco/JSON/Array.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
-#include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/isValidUTF8.h>
@@ -150,7 +149,7 @@ bool canDumpIcebergStats(const Field & field, DataTypePtr type)
         case TypeIndex::Float32:
         case TypeIndex::Float64:
             /// The Iceberg spec requires NaN to be excluded from lower/upper bounds.
-            return !std::isnan(field.safeGet<Float64>());
+            return !isNaN(field.safeGet<Float64>());
         default:
             return false;
     }
@@ -522,9 +521,9 @@ void ManifestPartitionSummary::add(const Row & partition_value)
             field.bounds_unavailable = true;
         else
         {
-            if (!field.lower_bound || accurateLess(value, *field.lower_bound))
+            if (!field.lower_bound || icebergBoundLess(value, *field.lower_bound))
                 field.lower_bound = value;
-            if (!field.upper_bound || accurateLess(*field.upper_bound, value))
+            if (!field.upper_bound || icebergBoundLess(*field.upper_bound, value))
                 field.upper_bound = value;
         }
     }
@@ -724,7 +723,8 @@ void generateManifestFile(
             set_fields(null_counts, Iceberg::f_null_value_counts, [](size_t, size_t value) { return static_cast<Int64>(value); });
 
             auto nan_counts = effective_statistics->getNanCounts();
-            set_fields(nan_counts, Iceberg::f_nan_value_counts, [](size_t, size_t value) { return static_cast<Int64>(value); });
+            if (!nan_counts.empty())
+                set_fields(nan_counts, Iceberg::f_nan_value_counts, [](size_t, size_t value) { return static_cast<Int64>(value); });
 
             std::unordered_map<size_t, size_t> field_id_to_column_index;
             auto field_ids = effective_statistics->getFieldIds();

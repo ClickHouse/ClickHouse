@@ -95,8 +95,8 @@ static Range getExtremeRangeFromColumn(const ColumnPtr & column)
 namespace
 {
 
-/// Counts NaN among a Float32/Float64 column's non-null values; `null_map` is null_map[i] is
-/// skipped (a NULL row's nested value is not a real float, so it must not also be tallied as NaN).
+/// Counts NaN among a Float32/Float64 column's non-null values. Rows set in `null_map` are skipped:
+/// a NULL row's nested value is not a real float, so it must not also be tallied as NaN.
 Int64 countNaNs(const IColumn & column, ConstNullMapPtr null_map)
 {
     auto count = [&](const auto & data) -> Int64
@@ -237,9 +237,9 @@ bool isNaNRange(const Range & range)
     return isFloatNaN(range.left) && isFloatNaN(range.right);
 }
 
-/// `accurateLess` treats -0.0 and +0.0 as equal, but the Iceberg spec orders -0.0 first, so a tie
-/// between the two zeros is broken by the sign instead of by argument order.
-bool boundLess(const Field & lhs, const Field & rhs)
+}
+
+bool icebergBoundLess(const Field & lhs, const Field & rhs)
 {
     if (lhs.getType() == Field::Types::Float64 && rhs.getType() == Field::Types::Float64)
     {
@@ -249,8 +249,6 @@ bool boundLess(const Field & lhs, const Field & rhs)
             return signBit(l) && !signBit(r);
     }
     return Range::less(lhs, rhs);
-}
-
 }
 
 Range DataFileStatistics::uniteRanges(const Range & left, const Range & right)
@@ -269,9 +267,9 @@ Range DataFileStatistics::uniteRanges(const Range & left, const Range & right)
         return left;
 
     return Range(
-        boundLess(left.left, right.left) ? left.left : right.left,
+        icebergBoundLess(left.left, right.left) ? left.left : right.left,
         true,
-        boundLess(right.right, left.right) ? left.right : right.right,
+        icebergBoundLess(right.right, left.right) ? left.right : right.right,
         true);
 }
 

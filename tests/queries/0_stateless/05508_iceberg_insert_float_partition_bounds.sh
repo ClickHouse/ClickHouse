@@ -68,11 +68,20 @@ run_case D Float64 reinterpretAsFloat64 '(1.5), (3.5)'
 # hex() proves the sign bit, since toString() may not render it.
 run_case E Float32 reinterpretAsFloat32 '(0.0), (-0.0), (5.5), (nan)'
 run_case F Float64 reinterpretAsFloat64 '(0.0), (-0.0), (5.5), (nan)'
-for suffix in E F; do
+
+# Case G/H: only the two zeros, so both bounds come from a -0.0/+0.0 tie: lower must be -0.0 and
+# upper +0.0. The partitions are folded in hash order, not insertion order, but with a
+# first-seen-wins tie-break one of the two bounds is wrong whichever zero comes first.
+run_case G Float32 reinterpretAsFloat32 '(0.0), (-0.0)'
+run_case H Float64 reinterpretAsFloat64 '(0.0), (-0.0)'
+
+for suffix in E F G H; do
     manifest_list=$(find "${ROOT}/${suffix}/metadata" -maxdepth 1 -name 'snap-*.avro' -type f \
         -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-)
     ${CLICKHOUSE_CLIENT} --query "
-        SELECT '${suffix}_lower_bound_hex=' || hex(tupleElement(partitions[1], 'lower_bound'))
+        SELECT
+            '${suffix}_lower_bound_hex=' || hex(tupleElement(partitions[1], 'lower_bound')),
+            '${suffix}_upper_bound_hex=' || hex(tupleElement(partitions[1], 'upper_bound'))
         FROM file('${manifest_list}', Avro)
     "
 done
