@@ -511,6 +511,14 @@ void mountTmpfs(const std::string & path, unsigned long flags, const char * opti
         throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot mount a tmpfs at {}", path);
 }
 
+/// A new instance of `devpts`, not shared with anything outside, for the pseudoterminals that the web terminal and
+/// the SSH server open through `/dev/ptmx`. The pseudoterminals of the host stay invisible.
+void mountDevpts(const std::string & path)
+{
+    if (0 != ::mount("devpts", path.c_str(), "devpts", MS_NOSUID | MS_NOEXEC, "newinstance,ptmxmode=0666,mode=0620"))
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot mount a devpts at {}", path);
+}
+
 /// Enters a new mount namespace (and a new user namespace, if `with_user_namespace`) in which no mount propagates
 /// to the original one.
 void enterNamespaces(bool with_user_namespace, uid_t uid, gid_t gid)
@@ -558,6 +566,9 @@ std::string probeNamespaces(bool with_user_namespace, uid_t uid, gid_t gid)
         {
             enterNamespaces(with_user_namespace, uid, gid);
             mountTmpfs(staging_directory, MS_NOSUID | MS_NODEV, "mode=0755");
+            const std::string pts = std::string(staging_directory) + "/pts";
+            createDirectories(pts);
+            mountDevpts(pts);
         }
         catch (const Exception & e)
         {
@@ -624,6 +635,42 @@ std::vector<std::string> getMappedFiles()
             files.emplace_back(path);
     }
     return files;
+}
+
+/// The symbolic links next to the mapped libraries that point to them, such as `libc.so.6 -> libc-2.31.so`.
+/// `/proc/self/maps` names the files with the links resolved, while the dynamic loader of a new process, such as
+/// the ODBC bridge, looks the libraries up by these names.
+std::vector<SymbolicLink> getLibraryAliases(const std::vector<std::string> & files)
+{
+    std::vector<SymbolicLink> aliases;
+    std::vector<std::string> directories;
+    for (const auto & file : files)
+    {
+        const std::string directory = fs::path(file).parent_path().string();
+        if (std::find(directories.begin(), directories.end(), directory) != directories.end())
+            continue;
+        directories.push_back(directory);
+
+        std::error_code error;
+        fs::directory_iterator it(directory, error);
+        if (error)
+            continue;
+        for (const auto & entry : it)
+        {
+            if (!entry.is_symlink(error) || error)
+                continue;
+            const fs::path target = fs::canonical(entry.path(), error);
+            if (error || std::find(files.begin(), files.end(), target.string()) == files.end())
+                continue;
+            std::string link_target(PATH_MAX, '\0');
+            const ssize_t length = ::readlink(entry.path().c_str(), link_target.data(), link_target.size());
+            if (length < 0)
+                throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot read the symbolic link {}", entry.path().string());
+            link_target.resize(length);
+            aliases.push_back({entry.path().string(), std::move(link_target)});
+        }
+    }
+    return aliases;
 }
 
 /// The dynamic loader named in the executable, if it is not linked statically. `/proc/self/maps` names the file
@@ -754,11 +801,14 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
     /// Everything that needs the original filesystem is done before entering the namespaces.
     std::vector<SymbolicLink> links;
     std::vector<FilesystemIsolationPath> all_paths = paths;
-    for (const auto & file : getMappedFiles())
+    const std::vector<std::string> mapped_files = getMappedFiles();
+    for (const auto & file : mapped_files)
         all_paths.push_back({file, FilesystemIsolationPath::Access::ReadOnly, "mapped into the process"});
     if (const auto interpreter = getInterpreter())
         all_paths.push_back({*interpreter, FilesystemIsolationPath::Access::ReadOnly, "the dynamic loader of the executable"});
     const std::vector<Mount> mounts = planMounts(all_paths, links);
+    for (auto & alias : getLibraryAliases(mapped_files))
+        links.push_back(std::move(alias));
 
     std::error_code error;
     const std::string working_directory = fs::current_path(error).string();
@@ -804,8 +854,11 @@ FilesystemIsolationStatus isolateFilesystem(FilesystemIsolationMode mode, const 
         bindMount(path, MS_NOSUID | MS_NOEXEC);
         status.visible_paths.push_back(path);
     }
+    createDirectories("/dev/pts");
+    mountDevpts("/dev/pts");
+    status.visible_paths.push_back("/dev/pts (a private devpts)");
     for (const auto & [link, target] : std::initializer_list<std::pair<const char *, const char *>>{
-             {"/dev/fd", "/proc/self/fd"}, {"/dev/stdin", "/proc/self/fd/0"}, {"/dev/stdout", "/proc/self/fd/1"}, {"/dev/stderr", "/proc/self/fd/2"}})
+             {"/dev/ptmx", "pts/ptmx"}, {"/dev/fd", "/proc/self/fd"}, {"/dev/stdin", "/proc/self/fd/0"}, {"/dev/stdout", "/proc/self/fd/1"}, {"/dev/stderr", "/proc/self/fd/2"}})
     {
         if (0 != ::symlink(target, link))
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot create the symbolic link {}", link);
