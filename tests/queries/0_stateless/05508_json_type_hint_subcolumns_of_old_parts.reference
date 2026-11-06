@@ -237,6 +237,12 @@ a source read again after a pending mutation gets the patches written before it
 a subcolumn passed between pending mutations gets the patches written between them
 1	2	2	42
 2	5	3	abc
+a subcolumn passed between pending mutations gets the patches of an older type written between them
+1	2	2	['1','2']
+2	2	3	['7','8','9']
+2	2	3
+1	2	2	['1','2']
+2	2	3	['7','8','9']
 05508_read_cast_path_added	1
 05508_read_cast_path_array	1
 05508_read_cast_path_changed	1

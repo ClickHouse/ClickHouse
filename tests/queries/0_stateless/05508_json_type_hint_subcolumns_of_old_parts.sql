@@ -1,3 +1,6 @@
+-- Tags: long
+-- long: many statements; over the time limit of the flaky check, which runs its copies in parallel.
+
 -- Subcolumns of a JSON column read from a part that still stores an older type of the column (a type hint changed by
 -- a lazy `MODIFY COLUMN`, or a `MODIFY COLUMN` mutation that has not rewritten the part yet) must be the subcolumns of
 -- the converted column: the same values as after the part is rewritten.
@@ -57,6 +60,8 @@ DROP TABLE IF EXISTS t_mutation_source_compact;
 DROP TABLE IF EXISTS t_mutation_source_patch_wide;
 DROP TABLE IF EXISTS t_mutation_source_patch_compact;
 DROP TABLE IF EXISTS t_chained_mutations;
+DROP TABLE IF EXISTS t_chained_mutations_old_patch_wide;
+DROP TABLE IF EXISTS t_chained_mutations_old_patch_compact;
 
 SELECT 'issue 123339';
 CREATE TABLE t_issue (id UInt32, j JSON) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = '1G';
@@ -562,6 +567,27 @@ UPDATE t_chained_mutations SET j = '{"a" : "abc"}' WHERE id = 2;
 ALTER TABLE t_chained_mutations UPDATE y = j.a.size WHERE 1 SETTINGS mutations_sync = 0, alter_sync = 0, alter_update_mode = 'heavy';
 SELECT id, x, y, j.a FROM t_chained_mutations ORDER BY id SETTINGS apply_mutations_on_fly = 1;
 
+SELECT 'a subcolumn passed between pending mutations gets the patches of an older type written between them';
+CREATE TABLE t_chained_mutations_old_patch_wide (id UInt64, j JSON(a Array(UInt32)), x UInt64, y UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO t_chained_mutations_old_patch_wide VALUES (1, '{"a" : [1, 2]}', 0, 0), (2, '{"a" : [3, 4]}', 0, 0);
+SYSTEM STOP MERGES t_chained_mutations_old_patch_wide;
+ALTER TABLE t_chained_mutations_old_patch_wide UPDATE x = j.a.size0 WHERE 1 SETTINGS mutations_sync = 0, alter_sync = 0, alter_update_mode = 'heavy';
+UPDATE t_chained_mutations_old_patch_wide SET j = '{"a" : [7, 8, 9]}' WHERE id = 2;
+ALTER TABLE t_chained_mutations_old_patch_wide UPDATE y = j.a.size0 WHERE 1 SETTINGS mutations_sync = 0, alter_sync = 0, alter_update_mode = 'heavy';
+ALTER TABLE t_chained_mutations_old_patch_wide MODIFY COLUMN j JSON(a Array(String)) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT id, x, y, j.a FROM t_chained_mutations_old_patch_wide ORDER BY id SETTINGS apply_mutations_on_fly = 1;
+SELECT id, x, y FROM t_chained_mutations_old_patch_wide WHERE y = 3 SETTINGS apply_mutations_on_fly = 1;
+CREATE TABLE t_chained_mutations_old_patch_compact (id UInt64, j JSON(a Array(UInt32)), x UInt64, y UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = '1G', enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO t_chained_mutations_old_patch_compact VALUES (1, '{"a" : [1, 2]}', 0, 0), (2, '{"a" : [3, 4]}', 0, 0);
+SYSTEM STOP MERGES t_chained_mutations_old_patch_compact;
+ALTER TABLE t_chained_mutations_old_patch_compact UPDATE x = j.a.size0 WHERE 1 SETTINGS mutations_sync = 0, alter_sync = 0, alter_update_mode = 'heavy';
+UPDATE t_chained_mutations_old_patch_compact SET j = '{"a" : [7, 8, 9]}' WHERE id = 2;
+ALTER TABLE t_chained_mutations_old_patch_compact UPDATE y = j.a.size0 WHERE 1 SETTINGS mutations_sync = 0, alter_sync = 0, alter_update_mode = 'heavy';
+ALTER TABLE t_chained_mutations_old_patch_compact MODIFY COLUMN j JSON(a Array(String)) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT id, x, y, j.a FROM t_chained_mutations_old_patch_compact ORDER BY id SETTINGS apply_mutations_on_fly = 1;
+
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, read_bytes < 50000 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment LIKE '05508_read_%' AND type = 'QueryFinish'
@@ -619,3 +645,5 @@ DROP TABLE t_mutation_source_compact;
 DROP TABLE t_mutation_source_patch_wide;
 DROP TABLE t_mutation_source_patch_compact;
 DROP TABLE t_chained_mutations;
+DROP TABLE t_chained_mutations_old_patch_wide;
+DROP TABLE t_chained_mutations_old_patch_compact;

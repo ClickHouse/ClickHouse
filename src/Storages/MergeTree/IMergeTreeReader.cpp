@@ -222,13 +222,19 @@ const String * IMergeTreeReader::tryGetCastPathOfSubcolumn(size_t pos, const Nam
 
 std::optional<String> IMergeTreeReader::getSourceOfRequiredSubcolumn(const NameAndTypePair & required_column) const
 {
-    /// A patch part provides a subcolumn as stored, or not at all when the patched part extracts it (see `addPatchPartsColumns`).
-    if (!required_column.isSubcolumn() || data_part_info_for_read->getPartInfo().isPatch())
+    if (!required_column.isSubcolumn())
         return std::nullopt;
 
     auto type_in_part = tryGetColumnTypeInPart(*data_part_info_for_read, getStorageAndSubcolumnNameInPart(required_column).first);
-    return DB::getSourceOfSubcolumnInPart(
-        storage_snapshot, required_column, type_in_part, data_part_info_for_read->isProjectionPart() ? nullptr : alter_conversions);
+    if (!data_part_info_for_read->getPartInfo().isPatch())
+        return DB::getSourceOfSubcolumnInPart(
+            storage_snapshot, required_column, type_in_part, data_part_info_for_read->isProjectionPart() ? nullptr : alter_conversions);
+
+    /// A patch part extracts a subcolumn only from a source it reads (see `addPatchPartsColumns`), else provides it as stored.
+    auto source = DB::getSourceOfSubcolumnInPart(storage_snapshot, required_column, type_in_part, nullptr);
+    if (source && std::ranges::none_of(original_requested_columns, [&](const auto & column) { return column.name == *source; }))
+        return std::nullopt;
+    return source;
 }
 
 void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const

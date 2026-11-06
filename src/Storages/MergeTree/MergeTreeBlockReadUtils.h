@@ -39,7 +39,6 @@ PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column);
 
 void addPatchPartsColumns(
     MergeTreeReadTaskColumns & result,
-    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const GetColumnsOptions & options,
     const PatchPartsForReader & patch_parts,

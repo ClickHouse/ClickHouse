@@ -777,7 +777,6 @@ PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column)
 
 void addPatchPartsColumns(
     MergeTreeReadTaskColumns & result,
-    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const GetColumnsOptions & options,
     const PatchPartsForReader & patch_parts,
@@ -789,28 +788,6 @@ void addPatchPartsColumns(
 
     NameSet required_key_columns;
     result.patch_columns.resize(patch_parts.size());
-
-    const NameSet all_columns_to_read_set(all_columns_to_read.begin(), all_columns_to_read.end());
-    const auto part_alter_conversions
-        = data_part_info_for_reader.isProjectionPart() ? nullptr : data_part_info_for_reader.getAlterConversions();
-
-    /// The part extracts these subcolumns from their sources after the patches are applied to the sources.
-    NameSet extracted_from_patched_columns;
-    for (const auto & column_name : all_columns_to_read)
-    {
-        auto column = storage_snapshot->getColumn(options, column_name);
-        if (!column.isSubcolumn())
-            continue;
-
-        auto column_name_in_part = column.getNameInStorage();
-        if (part_alter_conversions && part_alter_conversions->isColumnRenamed(column_name_in_part))
-            column_name_in_part = part_alter_conversions->getColumnOldName(column_name_in_part);
-
-        auto type_in_part = tryGetColumnTypeInPart(data_part_info_for_reader, column_name_in_part);
-        auto source = getSourceOfSubcolumnInPart(storage_snapshot, column, type_in_part, part_alter_conversions);
-        if (source && all_columns_to_read_set.contains(*source))
-            extracted_from_patched_columns.insert(column_name);
-    }
 
     for (size_t i = 0; i < patch_parts.size(); ++i)
     {
@@ -830,10 +807,15 @@ void addPatchPartsColumns(
             if (!patch_part_columns.hasPhysical(column_name_in_patch))
                 continue;
 
-            /// Also patched directly when the patch's type has the same subcolumn, as a later step may read it.
-            if (extracted_from_patched_columns.contains(column_name)
-                && getSourceOfSubcolumnForType(column_in_storage, patch_part_columns.getPhysical(column_name_in_patch).type))
-                continue;
+            /// A patch of another type extracts the subcolumn from its source after conversions, so it reads the source too.
+            /// Applied before conversions it cannot, and the part extracts the subcolumn from the patched source instead.
+            const auto & type_in_patch = patch_part_columns.getPhysical(column_name_in_patch).type;
+            if (auto source = getSourceOfSubcolumnInPart(storage_snapshot, column_in_storage, type_in_patch, nullptr))
+            {
+                if (!patch_parts[i].perform_alter_conversions)
+                    continue;
+                patch_columns_to_read_set.insert(*source);
+            }
 
             /// Add requested column name, not the column name in patch, for correct query analysis and applying patches.
             /// This column name will be translated to the column name in patch in MergeTree reader.
