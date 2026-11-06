@@ -11484,6 +11484,20 @@ bool isExplicitlyZonedDateTimeArray(const String & type_name)
     return false;
 }
 
+/// `toDateTime(<literal>, '<tz>')` or `toDateTime64(<literal>, <scale>, '<tz>')`.
+bool isExplicitlyZonedDateTimeOfLiteral(const ASTFunction & function)
+{
+    const auto & arguments = function.arguments->children;
+    if (arguments.size() != (function.name == "toDateTime64" ? 3 : 2))
+        return false;
+
+    if (!std::ranges::all_of(arguments, [](const ASTPtr & argument) { return argument->as<ASTLiteral>() != nullptr; }))
+        return false;
+
+    const auto & timezone = arguments.back()->as<const ASTLiteral &>().value;
+    return timezone.getType() == Field::Types::String && !timezone.safeGet<String>().empty();
+}
+
 }
 
 std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
@@ -11542,6 +11556,9 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
                         return type_name && type_name->value.getType() == Field::Types::String
                             && isExplicitlyZonedDateTimeArray(type_name->value.safeGet<String>());
                     }
+
+                    if (rhs_function->name == "toDateTime" || rhs_function->name == "toDateTime64")
+                        return isExplicitlyZonedDateTimeOfLiteral(*rhs_function);
 
                     if (rhs_function->name != "tuple" && rhs_function->name != "array")
                         return false;

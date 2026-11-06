@@ -316,3 +316,29 @@ ORDER BY mutation_id;
 
 DROP TABLE t_mut_prune_13 SYNC;
 DROP TABLE t_mut_prune_13b SYNC;
+
+-- Test 14: a list mixing a string and a number has each string converted on its own and
+-- still prunes, to the partitions of both elements. 1705320000 is the instant of key 9.
+DROP TABLE IF EXISTS t_mut_prune_14;
+CREATE TABLE t_mut_prune_14 (key UInt64, time DateTime)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mut_prune_14', '1')
+PARTITION BY toYYYYMM(time) ORDER BY key;
+
+INSERT INTO t_mut_prune_14 SELECT number * 10 + 1, toDateTime(concat('2024-', lpad(toString(number * 5 + 1), 2, '0'), '-15 12:00:00')) FROM numbers(3);
+INSERT INTO t_mut_prune_14 SELECT number * 10 + 9, toDateTime(concat('2024-', lpad(toString(number * 5 + 1), 2, '0'), '-15 12:00:00'), 'UTC') FROM numbers(3);
+
+SELECT 'test 14: rows the identical SELECT matches';
+SELECT key FROM t_mut_prune_14 WHERE time IN ('2024-06-15 12:00:00', 1705320000) ORDER BY key;
+
+ALTER TABLE t_mut_prune_14 DELETE WHERE time IN ('2024-06-15 12:00:00', 1705320000);
+
+SELECT 'test 14: survivors';
+SELECT key FROM t_mut_prune_14 ORDER BY key;
+
+SELECT 'test 14: affected partitions';
+SELECT arraySort(block_numbers.partition_id) as partitions
+FROM system.mutations
+WHERE database = currentDatabase() AND table = 't_mut_prune_14' AND NOT is_killed
+ORDER BY mutation_id;
+
+DROP TABLE t_mut_prune_14 SYNC;

@@ -1,4 +1,6 @@
 #include <Interpreters/MutationsDateTimeLiteralVisitor.h>
+#include <Analyzer/SetUtils.h>
+#include <Columns/ColumnConst.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/misc.h>
@@ -13,6 +15,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <fmt/ranges.h>
 
@@ -154,6 +157,14 @@ ASTPtr castCollectionWithTimezone(Array elements, const DataTypePtr & datetime_t
         make_intrusive<ASTLiteral>(array_type->getName()));
 }
 
+/// An `IN` set parses a string member more strictly than `CAST` and `toDateTime` do, so a string the set
+/// rejects fails the mutation with the error the identical `SELECT` gets.
+void checkConvertibleAsSetMember(const Field & value, const DataTypePtr & type)
+{
+    const auto string_type = std::make_shared<DataTypeString>();
+    getSetElementsForConstantValue(type, string_type->createColumnConst(1, value), string_type, {});
+}
+
 /// A mixed collection has no common element type, so only an all-string one can be cast as a whole.
 template <typename Collection>
 ASTPtr rewriteCollectionWithTimezone(
@@ -162,9 +173,15 @@ ASTPtr rewriteCollectionWithTimezone(
     const DataTypePtr & datetime_type,
     const String & timezone)
 {
+    const auto zoned_type = withExplicitTimezone(datetime_type, timezone);
     size_t strings = 0;
     for (const auto & element : elements)
-        strings += element.getType() == Field::Types::String;
+    {
+        if (element.getType() != Field::Types::String)
+            continue;
+        checkConvertibleAsSetMember(element, zoned_type);
+        ++strings;
+    }
 
     if (strings == 0)
         return nullptr;
@@ -219,6 +236,8 @@ bool tryWrapInLiterals(
         {
             if (const auto * lit = child->as<ASTLiteral>(); lit && lit->value.getType() == Field::Types::String)
             {
+                if (!bound_by_lambda)
+                    checkConvertibleAsSetMember(lit->value, withExplicitTimezone(dt, timezone));
                 child = wrapWithTimezone(child, dt, timezone);
                 wrapped = true;
             }
@@ -233,26 +252,18 @@ bool tryWrapInLiterals(
     {
         /// A plain literal list is folded by the parser into one literal: `IN ('a')` is a String,
         /// `IN ('a','b')` a Tuple, `IN ['a']` an Array.
+        ASTPtr rewritten;
         if (lit->value.getType() == Field::Types::String)
-        {
-            right = castCollectionWithTimezone(Array{lit->value}, dt, timezone);
-            wrapped = true;
-        }
+            rewritten = rewriteCollectionWithTimezone(Array{lit->value}, "array", dt, timezone);
         else if (lit->value.getType() == Field::Types::Tuple)
-        {
-            if (auto rewritten = rewriteCollectionWithTimezone(lit->value.safeGet<Tuple>(), "tuple", dt, timezone))
-            {
-                right = std::move(rewritten);
-                wrapped = true;
-            }
-        }
+            rewritten = rewriteCollectionWithTimezone(lit->value.safeGet<Tuple>(), "tuple", dt, timezone);
         else if (lit->value.getType() == Field::Types::Array)
+            rewritten = rewriteCollectionWithTimezone(lit->value.safeGet<Array>(), "array", dt, timezone);
+
+        if (rewritten)
         {
-            if (auto rewritten = rewriteCollectionWithTimezone(lit->value.safeGet<Array>(), "array", dt, timezone))
-            {
-                right = std::move(rewritten);
-                wrapped = true;
-            }
+            right = std::move(rewritten);
+            wrapped = true;
         }
     }
 

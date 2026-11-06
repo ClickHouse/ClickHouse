@@ -5,10 +5,12 @@
 -- time so the background mutation thread evaluates them consistently.
 --
 -- Covered predicate shapes: a plain comparison in either operand order, UPDATE SET,
--- a literal list on the right of IN / NOT IN / nullIn (whether written with
--- parentheses or as an array), a table-qualified column name, DateTime64,
--- Nullable and LowCardinality columns, and lightweight DELETE. Columns that
--- declare their own timezone are deliberately left alone.
+-- a literal list on the right of IN / NOT IN / GLOBAL IN / nullIn / notNullIn
+-- (whether written with parentheses or as an array, with or without NULL), a
+-- table- or database-qualified column name, DateTime64, Nullable and
+-- LowCardinality columns, and lightweight DELETE. Columns that declare their own
+-- timezone are deliberately left alone, and a string an IN set rejects is not
+-- converted, so the mutation is rejected as the identical SELECT is.
 
 SET session_timezone = 'America/Denver'; -- UTC-7 (far from typical UTC server default)
 SET mutations_sync = 2;
@@ -188,6 +190,13 @@ SELECT 'qualified in selected', arraySort(groupArray(id)) FROM mut_tz_qual_in WH
 ALTER TABLE mut_tz_qual_in DELETE WHERE mut_tz_qual_in.time IN ('2000-01-01 01:00:00');
 SELECT 'qualified in survivors', arraySort(groupArray(id)) FROM mut_tz_qual_in;
 
+DROP TABLE IF EXISTS mut_tz_db_qual SYNC;
+CREATE TABLE mut_tz_db_qual (id UInt32, time DateTime) ENGINE = MergeTree ORDER BY id;
+INSERT INTO mut_tz_db_qual VALUES (1, toDateTime('2000-01-01 01:00:00')), (9, toDateTime('2000-01-01 01:00:00', 'UTC'));
+SELECT 'db qualified selected', arraySort(groupArray(id)) FROM mut_tz_db_qual WHERE {CLICKHOUSE_DATABASE:Identifier}.mut_tz_db_qual.time = '2000-01-01 01:00:00';
+ALTER TABLE mut_tz_db_qual DELETE WHERE {CLICKHOUSE_DATABASE:Identifier}.mut_tz_db_qual.time = '2000-01-01 01:00:00';
+SELECT 'db qualified survivors', arraySort(groupArray(id)) FROM mut_tz_db_qual;
+
 -- DateTime64 takes the scale-aware conversion.
 DROP TABLE IF EXISTS mut_tz_in_dt64 SYNC;
 CREATE TABLE mut_tz_in_dt64 (id UInt32, time DateTime64(3)) ENGINE = MergeTree ORDER BY id;
@@ -255,6 +264,46 @@ INSERT INTO mut_tz_in_mixed VALUES (1, toDateTime('2000-01-01 01:00:00')), (9, t
 SELECT 'in mixed selected', arraySort(groupArray(id)) FROM mut_tz_in_mixed WHERE time IN ('2000-01-01 01:00:00', 946688400);
 ALTER TABLE mut_tz_in_mixed DELETE WHERE time IN ('2000-01-01 01:00:00', 946688400);
 SELECT 'in mixed survivors', arraySort(groupArray(id)) FROM mut_tz_in_mixed;
+
+-- A NULL beside the string makes the list mixed as well, in the parenthesized and the
+-- array spelling alike. The two ALTERs reach disjoint pairs of rows, and NULL matches nothing.
+DROP TABLE IF EXISTS mut_tz_in_null SYNC;
+CREATE TABLE mut_tz_in_null (id UInt32, time Nullable(DateTime)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO mut_tz_in_null VALUES (1, toDateTime('2000-01-01 01:00:00')), (9, toDateTime('2000-01-01 01:00:00', 'UTC')),
+                                  (2, toDateTime('2000-01-01 02:00:00')), (8, toDateTime('2000-01-01 02:00:00', 'UTC')), (5, NULL);
+SELECT 'in null tuple selected', arraySort(groupArray(id)) FROM mut_tz_in_null WHERE time IN ('2000-01-01 01:00:00', NULL);
+SELECT 'in null array selected', arraySort(groupArray(id)) FROM mut_tz_in_null WHERE time IN ['2000-01-01 02:00:00', NULL];
+ALTER TABLE mut_tz_in_null DELETE WHERE time IN ('2000-01-01 01:00:00', NULL);
+ALTER TABLE mut_tz_in_null DELETE WHERE time IN ['2000-01-01 02:00:00', NULL];
+SELECT 'in null survivors', arraySort(groupArray(id)) FROM mut_tz_in_null;
+
+-- The other IN operators. Each ALTER reaches its own pair of rows: the id filter keeps
+-- the negated ones from reaching the other pairs.
+DROP TABLE IF EXISTS mut_tz_in_ops SYNC;
+CREATE TABLE mut_tz_in_ops (id UInt32, time DateTime) ENGINE = MergeTree ORDER BY id;
+INSERT INTO mut_tz_in_ops VALUES (1, toDateTime('2000-01-01 01:00:00')), (9, toDateTime('2000-01-01 01:00:00', 'UTC')),
+                                 (2, toDateTime('2000-01-01 02:00:00')), (8, toDateTime('2000-01-01 02:00:00', 'UTC')),
+                                 (3, toDateTime('2000-01-01 03:00:00')), (7, toDateTime('2000-01-01 03:00:00', 'UTC'));
+SELECT 'global in selected', arraySort(groupArray(id)) FROM mut_tz_in_ops WHERE time GLOBAL IN ('2000-01-01 01:00:00');
+SELECT 'global not in selected', arraySort(groupArray(id)) FROM mut_tz_in_ops WHERE id IN (2, 8) AND time GLOBAL NOT IN ('2000-01-01 02:00:00');
+SELECT 'not null in selected', arraySort(groupArray(id)) FROM mut_tz_in_ops WHERE id IN (3, 7) AND notNullIn(time, '2000-01-01 03:00:00');
+ALTER TABLE mut_tz_in_ops DELETE WHERE time GLOBAL IN ('2000-01-01 01:00:00');
+ALTER TABLE mut_tz_in_ops DELETE WHERE id IN (2, 8) AND time GLOBAL NOT IN ('2000-01-01 02:00:00');
+ALTER TABLE mut_tz_in_ops DELETE WHERE id IN (3, 7) AND notNullIn(time, '2000-01-01 03:00:00');
+SELECT 'in operators survivors', arraySort(groupArray(id)) FROM mut_tz_in_ops;
+
+-- A string the IN set rejects is not converted, so the ALTER fails as the SELECT does
+-- rather than taking the more lenient reading of a conversion function.
+DROP TABLE IF EXISTS mut_tz_in_strict SYNC;
+CREATE TABLE mut_tz_in_strict (id UInt32, time DateTime) ENGINE = MergeTree ORDER BY id;
+INSERT INTO mut_tz_in_strict VALUES (1, toDateTime('2000-01-01 01:00:00')), (9, toDateTime('2000-01-01 01:00:00', 'UTC'));
+SELECT id FROM mut_tz_in_strict WHERE time IN ('2000-01-01T01:00:00Z'); -- { serverError TYPE_MISMATCH }
+ALTER TABLE mut_tz_in_strict DELETE WHERE time IN ('2000-01-01T01:00:00Z'); -- { serverError TYPE_MISMATCH }
+SELECT id FROM mut_tz_in_strict WHERE time IN ('2000-01-01 01:00', 946688400); -- { serverError CANNOT_PARSE_DATETIME }
+ALTER TABLE mut_tz_in_strict DELETE WHERE time IN ('2000-01-01 01:00', 946688400); -- { serverError CANNOT_PARSE_DATETIME }
+SELECT id FROM mut_tz_in_strict WHERE time IN tuple('2000-01-01T01:00:00Z'); -- { serverError TYPE_MISMATCH }
+ALTER TABLE mut_tz_in_strict DELETE WHERE time IN tuple('2000-01-01T01:00:00Z'); -- { serverError TYPE_MISMATCH }
+SELECT 'strict survivors', arraySort(groupArray(id)) FROM mut_tz_in_strict;
 
 -- ---------------------------------------------------------------------------
 -- A lambda parameter shadowing a DateTime column
@@ -382,6 +431,7 @@ DROP TABLE mut_tz_null_in SYNC;
 DROP TABLE mut_tz_in_update SYNC;
 DROP TABLE mut_tz_qual SYNC;
 DROP TABLE mut_tz_qual_in SYNC;
+DROP TABLE mut_tz_db_qual SYNC;
 DROP TABLE mut_tz_in_dt64 SYNC;
 DROP TABLE mut_tz_in_lightweight SYNC;
 DROP TABLE mut_tz_in_empty SYNC;
@@ -389,6 +439,9 @@ DROP TABLE mut_tz_in_explicit SYNC;
 DROP TABLE mut_tz_sub SYNC;
 DROP TABLE mut_tz_sub_qual SYNC;
 DROP TABLE mut_tz_in_mixed SYNC;
+DROP TABLE mut_tz_in_null SYNC;
+DROP TABLE mut_tz_in_ops SYNC;
+DROP TABLE mut_tz_in_strict SYNC;
 DROP TABLE mut_tz_lambda_in SYNC;
 DROP TABLE mut_tz_lambda_tuple SYNC;
 DROP TABLE mut_tz_lambda_dt SYNC;
