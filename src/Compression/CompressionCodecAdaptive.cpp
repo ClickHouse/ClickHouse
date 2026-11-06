@@ -108,9 +108,9 @@ public:
         return allocated(second_scratch, internal_reserve);
     }
 
-    void setBest(char * block, UInt32 size)
+    void setBest(char * dest, UInt32 size)
     {
-        best_destination = block;
+        best_destination = dest;
         best_size = size;
     }
     char * getBestDestination() const { return best_destination; }
