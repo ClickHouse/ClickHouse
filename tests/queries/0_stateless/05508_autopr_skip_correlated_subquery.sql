@@ -36,18 +36,13 @@ WHERE o_orderkey = l_orderkey AND o_total = 5
   AND l_discount < (SELECT 0.2 * avg(l_discount) FROM t_skip_correlated_l WHERE l_orderkey = o_orderkey)
 FORMAT Null SETTINGS log_comment = 'skip_correlated_kept_in_from';
 
--- A cluster with only the initiator in it.
-SELECT l_orderkey % 7 AS g, sum(l_price) FROM t_skip_correlated_l GROUP BY g
-FORMAT Null SETTINGS log_comment = 'skip_correlated_one_node_cluster', cluster_for_parallel_replicas = 'test_shard_localhost';
-
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
 SELECT log_comment,
        ProfileEvents['AutomaticParallelReplicasProbePlansBuilt'] AS built,
-       ProfileEvents['AutoParallelReplicasSkippedDueToQuery'] AS skipped_query,
-       ProfileEvents['AutoParallelReplicasSkippedDueToSettings'] AS skipped_settings
+       ProfileEvents['AutoParallelReplicasSkippedDueToQuery'] AS skipped
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - toIntervalMinute(15)
   AND current_database = currentDatabase() AND type = 'QueryFinish'

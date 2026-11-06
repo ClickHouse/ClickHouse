@@ -4,7 +4,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -231,8 +230,7 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
         eligibility_context->setSetting("automatic_parallel_replicas_mode", Field{0});
         eligibility_context->setSetting("enable_parallel_replicas", Field{1});
 
-        /// The cluster's own check too: with a single node in the cluster the planner would build the single-node plan.
-        if (!ClusterProxy::canUseParallelReplicasOnInitiator(eligibility_context))
+        if (!eligibility_context->canUseParallelReplicasOnInitiator())
         {
             LOG_TRACE(logger, "Parallel replicas cannot be used for this query. Skipping building query plan with parallel replicas.");
             return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::Settings};
