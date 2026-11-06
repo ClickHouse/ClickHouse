@@ -3042,7 +3042,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_asan_ubsan, azure, sequential, 2/2)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_asan_ubsan_db_disk_1_8:
-    runs-on: [self-hosted, amd-medium]
+    runs-on: [self-hosted, amd-large]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCAxLzgp') }}
     name: "Integration tests (amd_asan_ubsan, db disk, 1/8)"
@@ -3076,7 +3076,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 1/8)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_asan_ubsan_db_disk_2_8:
-    runs-on: [self-hosted, amd-medium]
+    runs-on: [self-hosted, amd-large]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCAyLzgp') }}
     name: "Integration tests (amd_asan_ubsan, db disk, 2/8)"
@@ -3110,7 +3110,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 2/8)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_asan_ubsan_db_disk_3_8:
-    runs-on: [self-hosted, amd-medium]
+    runs-on: [self-hosted, amd-large]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCAzLzgp') }}
     name: "Integration tests (amd_asan_ubsan, db disk, 3/8)"
@@ -3144,7 +3144,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 3/8)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_asan_ubsan_db_disk_4_8:
-    runs-on: [self-hosted, amd-medium]
+    runs-on: [self-hosted, amd-large]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCA0Lzgp') }}
     name: "Integration tests (amd_asan_ubsan, db disk, 4/8)"
@@ -3178,7 +3178,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 4/8)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_asan_ubsan_db_disk_5_8:
-    runs-on: [self-hosted, amd-medium]
+    runs-on: [self-hosted, amd-large]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCA1Lzgp') }}
     name: "Integration tests (amd_asan_ubsan, db disk, 5/8)"
@@ -3212,7 +3212,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 5/8)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_asan_ubsan_db_disk_6_8:
-    runs-on: [self-hosted, amd-medium]
+    runs-on: [self-hosted, amd-large]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCA2Lzgp') }}
     name: "Integration tests (amd_asan_ubsan, db disk, 6/8)"
@@ -3246,7 +3246,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 6/8)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_asan_ubsan_db_disk_7_8:
-    runs-on: [self-hosted, amd-medium]
+    runs-on: [self-hosted, amd-large]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCA3Lzgp') }}
     name: "Integration tests (amd_asan_ubsan, db disk, 7/8)"
@@ -3280,7 +3280,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Integration tests (amd_asan_ubsan, db disk, 7/8)' --workflow "MasterCI" --ci --timestamp
 
   integration_tests_amd_asan_ubsan_db_disk_8_8:
-    runs-on: [self-hosted, amd-medium]
+    runs-on: [self-hosted, amd-large]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'SW50ZWdyYXRpb24gdGVzdHMgKGFtZF9hc2FuX3Vic2FuLCBkYiBkaXNrLCA4Lzgp') }}
     name: "Integration tests (amd_asan_ubsan, db disk, 8/8)"

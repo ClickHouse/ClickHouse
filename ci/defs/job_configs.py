@@ -1482,7 +1482,9 @@ class JobConfigs:
         *[
             Job.ParamSet(
                 parameter=f"amd_asan_ubsan, db disk, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_MEDIUM,
+                # `amd-medium` (m7i.4xlarge, 64 GiB) ran out of memory and the host
+                # died on these shards, so run them on `amd-large`.
+                runs_on=RunnerLabels.AMD_LARGE,
                 requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
             )
             for total_batches in (ASAN_IT_NUM_BATCHES,)
