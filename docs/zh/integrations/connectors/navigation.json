@@ -75,6 +75,7 @@
             "zh/integrations/connectors/data-visualization/tableau/tableau-analysis-tips"
           ]
         },
+        "zh/integrations/connectors/data-visualization/thoughtspot-and-clickhouse",
         {
           "expanded": false,
           "group": "社区集成",

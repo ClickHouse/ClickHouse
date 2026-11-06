@@ -1,0 +1,41 @@
+VALUES, with defaults, materialized and alias columns
+1	a	10	2	2
+2	b	20	3	4
+1	a	10	2
+2	b	20	3
+Only the inserted data is visible
+3	12
+5
+Without the list of columns
+6	f	0
+INSERT SELECT with many blocks
+10000	100	10099	51005000
+10006
+Parallel insert
+10000	10049995000
+10000
+LIMIT does not stop the insert
+2000000
+2000001
+2000
+Without FROM, the RETURNING query reads the inserted data
+2	15
+Hello
+Hello
+INSERT INTO FUNCTION
+1000	499500	999
+The RETURNING query does not read the table
+Hello
+0
+2
+The table can be read only once
+Materialized views
+[5000000,5000001]
+500000000
+500000100
+async_insert is ignored
+6000000	x
+1
+Formatting
+INSERT INTO t (x) RETURNING (SELECT x + 1 FROM t WHERE x > 0) SETTINGS max_threads = 1 FORMAT Values
+INSERT INTO t RETURNING (SELECT count() FROM t) SELECT number FROM numbers(10)

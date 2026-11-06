@@ -1,0 +1,7 @@
+SELECT * FROM url('https://example.com/data.csv?access_token=[HIDDEN]&format=csv', 'CSV')
+SELECT * FROM url('https://user:[HIDDEN]@example.com/data.csv?sig=[HIDDEN]&sv=2022-11-02', 'CSV')
+SELECT * FROM url('https://bucket.s3.amazonaws.com/file.csv?X-Amz-Algorithm=[HIDDEN]&X-Amz-Credential=[HIDDEN]&X-Amz-Signature=[HIDDEN]', 'CSV')
+SELECT * FROM urlCluster('test_cluster', 'https://example.com/data.csv?api_key=[HIDDEN]', 'CSV')
+SELECT * FROM url(url_creds, url = 'https://example.com/data.csv?token=[HIDDEN]')
+CREATE TABLE test_url (`key` UInt64) ENGINE = URL('https://example.com/data.csv?password=[HIDDEN]', 'CSV')
+SELECT * FROM azureBlobStorage('DefaultEndpointsProtocol=https;AccountName=it\'s\\name;AccountKey=[HIDDEN];EndpointSuffix=core.windows.net', 'container', 'blob.csv')

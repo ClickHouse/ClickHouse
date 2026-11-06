@@ -3,7 +3,6 @@
 -- name has to denote a single type at that point in the plan: `join_use_nulls` republishes the JOIN's own
 -- input names at the widened output type, and the pushed predicate binds its inputs by name.
 
-SET enable_analyzer = 1;
 SET join_use_nulls = 1;
 
 DROP TABLE IF EXISTS t_pushdown_u8;

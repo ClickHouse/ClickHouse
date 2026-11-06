@@ -78,6 +78,20 @@
                     <table>default.prometheus</table>
                 </handler>
             </my_rule_13>
+            <my_rule_19>
+                <url>/federate</url>
+                <handler>
+                    <type>query</type>
+                    <table>default.prometheus</table>
+                </handler>
+            </my_rule_19>
+            <!-- No table is set, so /federate reads the table name from the 'table' query parameter. -->
+            <my_rule_20>
+                <url>/dynamic_table/federate</url>
+                <handler>
+                    <type>query</type>
+                </handler>
+            </my_rule_20>
             <!-- A table which never gets any metrics metadata: /api/v1/metadata must return an empty result for it. -->
             <my_rule_14>
                 <url>/empty/api/v1/metadata</url>
@@ -140,12 +154,12 @@
             <!-- A prefix-routed handler with no table, as recommended for the Prometheus HTTP API: the
                  endpoints that need no table must work here, and a path this server doesn't serve must
                  report that rather than complain about the missing table. -->
-            <my_rule_19>
+            <my_rule_21>
                 <url_prefix>/no_table</url_prefix>
                 <handler>
                     <type>query</type>
                 </handler>
-            </my_rule_19>
+            </my_rule_21>
 
             <!-- Table without min_time/max_time columns: /api/v1/series must ignore the time range for it. -->
             <my_rule_12>

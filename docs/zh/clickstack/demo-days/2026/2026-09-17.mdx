@@ -1,0 +1,35 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-09-17
+title: '演示日 - 2026-09-17'
+sidebarTitle: '2026-09-17'
+description: '2026-09-17 ClickStack 演示日'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## 按绝对错误率为服务地图节点着色 {#colouring-service-map-nodes-by-absolute-error-rate}
+
+*由 [@MikeShi42](https://github.com/MikeShi42) 演示*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/d8QHorCCgqY" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+我们收到反馈：服务地图上很难看出哪些服务真正发生了错误。所有节点都是深浅不一的红色，连错误数为零的服务也不例外。颜色还取决于当前图中的相对数值，因此错误率最高的服务总是显示为最深的红色——哪怕其错误率只有 0.3%。
+
+现在，错误率采用四个固定档位：
+
+* **0%：**冷灰色
+* **高于 0%、低于 1%：**浅红色
+* **1% 至低于 5%：**中等红色
+* **5% 及以上：**深红色
+
+没有流量的服务显示为空心圆。有流量但没有错误的服务显示为灰色。看到红色，就表示有错误发生。
+
+使用灰色是有原因的。在 32px 的节点上，淡粉色和稍深一些的粉色几乎看不出区别。冷灰色则更容易辨认，三档红色也都沿用了现有调色板。
+
+图例现在按档位显示，顶部为 `≥5%`。这一阈值也用于工具提示中现有的警报颜色，因此两者保持一致。延迟和吞吐量仍使用相对刻度，因为合适的阈值取决于工作负载。
+
+这样做也有取舍：6% 和 60% 现在显示为相同的颜色。工具提示仍会显示精确百分比。按比例绘制的环形图可以呈现更多细节，但需要更大幅度的改动。目前也没有可将结果细分为成功、`4xx`、`5xx` 和限流的数据；数据源只提供 OpenTelemetry 的 `Ok`、`Error` 和 `Unset` 状态。
+
+目前阈值是固定的。后续可以考虑支持按数据源覆盖阈值：采用 `99.9%` SLO 的服务与批处理作业，对可接受错误率的要求并不相同。
+
+**相关 PR：** [#3125](https://github.com/hyperdxio/hyperdx/pull/3125) 按绝对错误率阈值为服务地图节点着色

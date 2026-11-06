@@ -3,6 +3,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBuffer.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <Server/HTTP/exceptionCodeToHTTPStatus.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/HTTPHandler.h>
 #include <Server/IServer.h>
@@ -63,6 +64,21 @@ namespace ErrorCodes
     extern const int ZSTD_DECODER_FAILED;
 }
 
+namespace
+{
+
+/// Writes an error of the Prometheus HTTP API in its JSON format.
+void writePrometheusError(WriteBuffer & out, std::string_view error_type, std::string_view message)
+{
+    writeString(R"({"status":"error","errorType":")", out);
+    writeString(error_type, out);
+    writeString(R"(","error":)", out);
+    writeJSONString(message, out, FormatSettings{});
+    writeChar('}', out);
+}
+
+}
+
 /// Base implementation of a prometheus protocol.
 class PrometheusRequestHandler::Impl
 {
@@ -73,6 +89,7 @@ public:
     virtual bool isSettingLikeParameter(const String & /* name */) { return false; }
     virtual void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
     virtual void onException() {}
+    virtual bool sendsJSONErrors() const { return false; }
 
 protected:
     PrometheusRequestHandler & parent() { return parent_ref; }
@@ -95,7 +112,7 @@ public:
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
-        LOG_INFO(log(), "Handling metrics request from {}", request.get("User-Agent"));
+        LOG_DEBUG(log(), "Handling metrics request from {}", request.get("User-Agent"));
         chassert(config().type == PrometheusRequestHandlerConfig::Type::Metrics);
     }
 
@@ -301,7 +318,7 @@ public:
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
-        LOG_INFO(log(), "Handling remote write request from {}", request.get("User-Agent", ""));
+        LOG_DEBUG(log(), "Handling remote write request from {}", request.get("User-Agent", ""));
         chassert(config().type == PrometheusRequestHandlerConfig::Type::Write
             || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
     }
@@ -368,7 +385,7 @@ public:
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
-        LOG_INFO(log(), "Handling remote read request from {}", request.get("User-Agent", ""));
+        LOG_DEBUG(log(), "Handling remote read request from {}", request.get("User-Agent", ""));
         chassert(config().type == PrometheusRequestHandlerConfig::Type::Read
             || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
     }
@@ -448,7 +465,7 @@ public:
 };
 
 /// Handles the read-only query, metadata and status endpoints of the Prometheus HTTP API
-/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata, /api/v1/status/buildinfo).
+/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata, /api/v1/federate, /api/v1/status/buildinfo).
 class PrometheusRequestHandler::QueryImpl : public ImplWithContext
 {
 public:
@@ -456,9 +473,11 @@ public:
 
     bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const override { return true; }
 
+    bool sendsJSONErrors() const override { return true; }
+
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
-        LOG_INFO(log(), "Handling Prometheus HTTP API query request from {}", request.get("User-Agent", ""));
+        LOG_DEBUG(log(), "Handling Prometheus HTTP API query request from {}", request.get("User-Agent", ""));
         chassert(config().type == PrometheusRequestHandlerConfig::Type::Query
             || config().type == PrometheusRequestHandlerConfig::Type::APIv1);
     }
@@ -500,6 +519,11 @@ public:
 
         response.setContentType("application/json");
 
+        /// Set while the TimeSeries table is being looked up (see getProtocol below). A failed lookup goes to the
+        /// outer handler, which keeps its HTTP status (e.g. 404 for an unknown table), rather than to the catch
+        /// below, which reports everything as a bad request.
+        bool looking_up_table = false;
+
         try
         {
             /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
@@ -533,7 +557,12 @@ public:
             auto getProtocol = [&]() -> PrometheusHTTPProtocolAPI &
             {
                 if (!protocol_holder)
-                    protocol_holder.emplace(DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context), context);
+                {
+                    looking_up_table = true;
+                    auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+                    looking_up_table = false;
+                    protocol_holder.emplace(table, context);
+                }
                 return *protocol_holder;
             };
 
@@ -591,6 +620,13 @@ public:
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
+            }
+            else if (uri_path.ends_with("/federate"))
+            {
+                auto & protocol = getProtocol();
+
+                response.setContentType("text/plain; version=0.0.4; charset=utf-8; escaping=underscores");
+                protocol.federate(getOutputStream(response), params->getAll("match[]"), query_finish_callback);
             }
             else if (uri_path.ends_with("/parse_query"))
             {
@@ -656,6 +692,9 @@ public:
             if (response.sent())
                 throw;
 
+            if (looking_up_table)
+                throw;
+
             /// Drop any partial success body still sitting in the output buffer
             /// before writing the error response.
             getOutputStream(response).rejectBufferedDataSave();
@@ -664,14 +703,13 @@ public:
             /// not with the query: report it as an internal error so that clients don't attribute it
             /// to the PromQL expression.
             bool server_side_error = (e.code() == ErrorCodes::INCOMPATIBLE_SCHEMA);
+            /// The error body is JSON, also for endpoints whose success body is not.
+            response.setContentType("application/json");
             response.setStatusAndReason(
                 server_side_error ? Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR : Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
             String error_str;
             WriteBufferFromString error_buf(error_str);
-            writeString(server_side_error ? R"({"status":"error","errorType":"internal","error":)"
-                                          : R"({"status":"error","errorType":"bad_data","error":)", error_buf);
-            writeJSONString(e.message(), error_buf, FormatSettings{});
-            writeString("}", error_buf);
+            writePrometheusError(error_buf, server_side_error ? "internal" : "bad_data", e.message());
             error_buf.finalize();
             writeString(error_str, getOutputStream(response));
 
@@ -693,11 +731,7 @@ private:
             maskSensitiveQueryParametersInURI(request.getURI()), request.getMethod());
 
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-
-        auto & out = getOutputStream(response);
-        writeString(R"({"status":"error","errorType":"not_found","error":)", out);
-        writeJSONString(error_message, out, FormatSettings{});
-        writeChar('}', out);
+        writePrometheusError(getOutputStream(response), "not_found", error_message);
     }
 
     /// Handles the format_query endpoint: parses the PromQL expression given in the 'query' parameter
@@ -822,6 +856,8 @@ public:
             current_impl->onException();
     }
 
+    bool sendsJSONErrors() const override { return current_impl && current_impl->sendsJSONErrors(); }
+
 private:
     /// Selects the implementation for a request based on the trailing segment of its path,
     /// so the same endpoint works both bare ("/api/v1/write") and behind a configured prefix
@@ -836,7 +872,7 @@ private:
         if (path.ends_with("/read"))
             return read_impl;
 
-        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values, metadata, status/buildinfo)
+        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values, metadata, federate, status/buildinfo)
         /// are served by the Query implementation, which itself returns 404 for unknown paths.
         return query_impl;
     }
@@ -926,7 +962,26 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         tryLogCurrentException(log);
 
         ExecutionStatus status = ExecutionStatus::fromCurrentException("", send_stacktrace);
-        getOutputStream(response).cancelWithException(request, status.code, status.message, nullptr);
+        String message = status.message;
+
+        /// Prometheus clients can parse an error of the query API only in its JSON format.
+        if (impl->sendsJSONErrors() && !response.sent())
+        {
+            response.setContentType("application/json");
+            auto http_status = exceptionCodeToHTTPStatus(status.code);
+            std::string_view error_type = "bad_data";
+            if (http_status == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+                error_type = "not_found";
+            else if (http_status == Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE)
+                error_type = "unavailable";
+            else if (http_status >= Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR)
+                error_type = "internal";
+            WriteBufferFromOwnString json;
+            writePrometheusError(json, error_type, status.message);
+            message = json.str();
+        }
+
+        getOutputStream(response).cancelWithException(request, status.code, message, nullptr);
 
         tryCallOnException();
     }
