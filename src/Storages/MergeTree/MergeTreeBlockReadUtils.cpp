@@ -30,6 +30,8 @@
 #include <Interpreters/ExpressionActions.h>
 
 #include <algorithm>
+#include <array>
+#include <memory>
 #include <unordered_set>
 
 
@@ -428,11 +430,36 @@ std::optional<String> tryGetCastPathOfSubcolumn(const NameAndTypePair & subcolum
     return Nested::concatenateName(subcolumn.getNameInStorage(), *path);
 }
 
+/// `IDataType::equals`, which is linear in the typed paths of a `JSON` type. Parts with the same columns share their types
+/// and a query shares the table's, so a thread keeps its last results, keyed by the owners of the types as `std::owner_less`.
+bool equalsTypeInPart(const DataTypePtr & type_in_storage, const DataTypePtr & type_in_part)
+{
+    struct Comparison
+    {
+        std::weak_ptr<const IDataType> type_in_storage;
+        std::weak_ptr<const IDataType> type_in_part;
+        bool equals = false;
+    };
+    thread_local std::array<Comparison, 8> comparisons;
+    thread_local size_t next_comparison = 0;
+
+    auto is_owned_by = [](const DataTypePtr & type, const std::weak_ptr<const IDataType> & owner)
+    { return !type.owner_before(owner) && !owner.owner_before(type); };
+
+    for (const auto & comparison : comparisons)
+        if (is_owned_by(type_in_storage, comparison.type_in_storage) && is_owned_by(type_in_part, comparison.type_in_part))
+            return comparison.equals;
+
+    bool equals = type_in_storage->equals(*type_in_part);
+    comparisons[next_comparison++ % comparisons.size()] = {type_in_storage, type_in_part, equals};
+    return equals;
+}
+
 /// Whether the subcolumn of the column converted from @column_type_in_part can differ from the converted one read from the part.
 bool isSubcolumnChangedByConversion(const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part)
 {
     const auto & type_in_storage = subcolumn.getTypeInStorage();
-    if (!subcolumn.isSubcolumn() || type_in_storage->equals(*column_type_in_part))
+    if (!subcolumn.isSubcolumn() || equalsTypeInPart(type_in_storage, column_type_in_part))
         return false;
 
     auto has_object = [](const IDataType & type) { return anyInTypeTree(type, [](const IDataType & nested) { return isObject(nested); }); };
