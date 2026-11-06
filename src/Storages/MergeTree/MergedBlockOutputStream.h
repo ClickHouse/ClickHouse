@@ -29,7 +29,8 @@ public:
         const WriteSettings & write_settings,
         WrittenOffsetSubstreams * written_offset_substreams,
         bool try_adaptive_codec,
-        StreamBaseManifestPtr stream_base_manifest);
+        StreamBaseManifestPtr stream_base_manifest,
+        bool build_skip_indexes_in_separate_thread = false);
 
     Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 
