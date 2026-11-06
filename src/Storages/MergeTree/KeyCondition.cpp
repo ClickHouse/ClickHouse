@@ -1079,7 +1079,6 @@ static const ActionsDAG::Node * tryRewriteIsTrueCondition(
     if (const_value.getType() != Field::Types::UInt64 || const_value.safeGet<UInt64>() != expected_const)
         return nullptr;
 
-    /// `<=>` compares a `Dynamic` constant by its type first: a `Dynamic` 1 of another type is distinct from every `X`.
     if (name == "isNotDistinctFrom"
         && !nullSafeEqualityComparesFieldOnly(predicate->result_type, {const_node->column, const_node->result_type, ""}))
         return nullptr;
