@@ -126,7 +126,9 @@ ALWAYS_INLINE inline UInt64 slotHash(UInt128 x)
 ALWAYS_INLINE inline UInt64 slotHash(UInt256 x)
 {
     return slotHash(static_cast<UInt64>(
-        x.items[0] ^ (x.items[1] * 0xC2B2AE3D27D4EB4FULL) ^ (x.items[2] * 0x165667B19E3779F9ULL) ^ (x.items[3] * 0x27D4EB2F165667C5ULL)));
+        x.items[0] ^ common::mulIgnoreOverflow(UInt64{x.items[1]}, 0xC2B2AE3D27D4EB4FULL)
+        ^ common::mulIgnoreOverflow(UInt64{x.items[2]}, 0x165667B19E3779F9ULL)
+        ^ common::mulIgnoreOverflow(UInt64{x.items[3]}, 0x27D4EB2F165667C5ULL)));
 }
 
 /// A bijection that makes the 128-bit values that are not hashes (`UUID`, `UInt128`, `Int128`, `Decimal128`) uniformly
