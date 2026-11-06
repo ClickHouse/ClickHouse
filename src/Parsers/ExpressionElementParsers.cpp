@@ -1948,6 +1948,8 @@ bool parseAllCollectionsStart(IParser::Pos & pos, Collections & collections, Exp
         return false;
 
     ++pos;
+    /// Nested collections do not go through `IParserBase::parse`, so their depth is counted here.
+    pos.increaseDepth();
     return true;
 }
 
@@ -2049,7 +2051,10 @@ bool ParserAllCollectionsOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expecte
             return false;
 
         if (node)
+        {
             collections.pop_back();
+            pos.decreaseDepth();
+        }
     }
 
     return true;
