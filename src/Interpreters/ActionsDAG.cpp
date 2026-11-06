@@ -3349,6 +3349,12 @@ void ActionsDAG::unite(ActionsDAG && second)
     outputs.append_range(second.outputs);
 }
 
+static bool isLambda(const ActionsDAG::Node & node)
+{
+    return (node.type == ActionsDAG::ActionType::FUNCTION || node.type == ActionsDAG::ActionType::ALIAS)
+        && WhichDataType(node.result_type).isFunction();
+}
+
 ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping, bool avoid_duplicate_inputs) const
 {
     /// Split DAG into two parts.
@@ -3409,18 +3415,13 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
     };
 
     /// A lambda is not a value: the second part rebuilds it from its captured columns, like a `COLUMN`.
-    auto is_lambda = [](const Node & node)
-    {
-        return (node.type == ActionType::FUNCTION || node.type == ActionType::ALIAS) && WhichDataType(node.result_type).isFunction();
-    };
-
     auto get_or_add_to_second = [&](this auto && self, const Node * node) -> Node *
     {
         auto & node_data = data[node];
         if (node_data.to_second)
             return node_data.to_second;
 
-        if (node->type != ActionType::COLUMN && !is_lambda(*node))
+        if (node->type != ActionType::COLUMN && !isLambda(*node))
             return add_input_to_second(node);
 
         auto & copy = second_nodes.emplace_back(*node);
@@ -3521,7 +3522,7 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
                     /// If this node is needed in result, add it as input.
                     if (cur_data.used_in_result)
                     {
-                        if (is_lambda(*cur.node))
+                        if (isLambda(*cur.node))
                             get_or_add_to_second(cur.node);
                         else
                             add_input_to_second(cur.node);
@@ -3747,8 +3748,11 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & ar
             }
         }
     }
+    /// A lambda is not moved by itself: it goes with the calls that apply it.
+    std::erase_if(split_nodes, [](const Node * node) { return isLambda(*node); });
 
-    auto res = split(split_nodes);
+    /// A lambda rebuilt above the join exports its captured columns, which must not take the name of an input.
+    auto res = split(split_nodes, /*create_split_nodes_mapping=*/ false, /*avoid_duplicate_inputs=*/ true);
     return res;
 }
 
