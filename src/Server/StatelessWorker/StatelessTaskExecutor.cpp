@@ -166,7 +166,8 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
 
     {
         std::lock_guard lock(tasks_mutex);
-        if (cancelled_before_start.contains(unique_task_id))
+        /// A start comes once, so its id is dropped here.
+        if (cancelled_before_start.erase(unique_task_id))
         {
             LOG_DEBUG(getLogger("StatelessTaskExecutor"), "Ignoring the start of task {}: it was cancelled before the start arrived", unique_task_id);
             return Result::Ok;
