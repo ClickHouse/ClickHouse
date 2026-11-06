@@ -134,7 +134,7 @@ public:
         if (!plan.getRootNode())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "A nested plan to draw has no root node");
         frames.resize(1);
-        frames[0].root_box = addPlanBoxes(*plan.getRootNode(), 0, getPrettyNames(plan));
+        frames[0].root_box = addPlanBoxes(*plan.getRootNode(), 0, prepared.getPrettyNames(plan));
         drawFrom(0, buf);
     }
 
@@ -206,18 +206,6 @@ private:
                 "Cannot draw the fragment graph: it must have exactly one fragment that no exchange reads, found [{}]",
                 fmt::join(roots, ", "));
         return fragmentIndex(roots.front());
-    }
-
-    /// The names of the columns and runtime filters in a nested plan. Without `pretty`, empty maps.
-    const PrettyNames & getPrettyNames(const QueryPlan & plan) const
-    {
-        static const PrettyNames no_names;
-        if (!options.pretty)
-            return no_names;
-        auto it = prepared.pretty_names.names.find(&plan);
-        if (it == prepared.pretty_names.names.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "A nested plan to draw has no pretty names");
-        return it->second;
     }
 
     /// The name of the step and its description. The nested plans of the step are registered in `nested_plans`, to be
@@ -327,7 +315,7 @@ private:
 
             if (!fragment.plan || !fragment.plan->getRootNode())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Fragment {} has no plan to draw", fragment.id);
-            frames[i].root_box = addPlanBoxes(*fragment.plan->getRootNode(), i, prepared.getPrettyNames(fragment));
+            frames[i].root_box = addPlanBoxes(*fragment.plan->getRootNode(), i, prepared.getPrettyNames(*fragment.plan));
         }
     }
 

@@ -111,14 +111,14 @@ const QueryPlan & PreparedFragmentGraph::getPlan(const QueryFragment & fragment)
     return *fragment.plan;
 }
 
-const PrettyNames & PreparedFragmentGraph::getPrettyNames(const QueryFragment & fragment) const
+const PrettyNames & PreparedFragmentGraph::getPrettyNames(const QueryPlan & plan) const
 {
     static const PrettyNames no_names;
     if (!options.pretty)
         return no_names;
-    auto it = pretty_names.names.find(&getPlan(fragment));
+    auto it = pretty_names.names.find(&plan);
     if (it == pretty_names.names.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The plan of fragment {} has no pretty names", fragment.id);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The plan to explain has no pretty names");
     return it->second;
 }
 
@@ -170,7 +170,8 @@ void writeSingleNode(const PreparedFragmentGraph & prepared, WriteBuffer & buf, 
 {
     chassert(prepared.single_node);
     const auto & fragment = prepared.graph.fragments.front();
-    PreparedFragmentGraph::getPlan(fragment).explainPlan(buf, prepared.options, 0, max_step_description_length);
+    PreparedFragmentGraph::getPlan(fragment).explainPlan(
+        buf, prepared.options, 0, max_step_description_length, prepared.options.pretty ? &prepared.pretty_names : nullptr);
     if (fragment.fallback_reason)
         buf << "\nNot distributed: " << *fragment.fallback_reason << '\n';
 }

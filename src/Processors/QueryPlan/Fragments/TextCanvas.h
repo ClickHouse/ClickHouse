@@ -21,8 +21,8 @@ class WriteBuffer;
 /// - A character of display width 2 (e.g. CJK) takes two cells: the first holds the character, the second is an empty
 ///   continuation that `writeTo` skips, so every following column stays in place.
 /// - The grid grows as text is put into it: writing beyond the current size adds lines and pads them with spaces.
-/// - A later write overwrites a cell, so the order of the calls matters: `TreeBuilder::draw` draws the frames, then the
-///   boxes, then the edges, whose joints (`┴`, `▲`, `┼`) replace single characters of the borders.
+/// - A later write overwrites a cell, so the order of the calls matters: `TreeBuilder::drawFrom` draws the frames, then
+///   the boxes, then the edges, whose joints (`┴`, `▲`, `┼`) replace single characters of the borders.
 ///
 /// The canvas knows nothing about plans, fragments or exchanges: `TreeBuilder` in `FragmentGraphTree.cpp` decides every
 /// coordinate. Example:

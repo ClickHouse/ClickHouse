@@ -39,9 +39,9 @@ struct PreparedFragmentGraph
     /// `QueryPlan::explainPlan` gives its plan.
     PrettyNamesPerPlan pretty_names;
 
-    /// The names of the columns and runtime filters in the plan of `fragment`, for `IQueryPlanStep::FormatSettings`.
-    /// Without `pretty`, empty maps.
-    const PrettyNames & getPrettyNames(const QueryFragment & fragment) const;
+    /// The names of the columns and runtime filters in `plan`, the plan of a fragment or a nested plan of a step, for
+    /// `IQueryPlanStep::FormatSettings`. Without `pretty`, empty maps.
+    const PrettyNames & getPrettyNames(const QueryPlan & plan) const;
 
     /// `hash(keys)`, `broadcast`, `gather`, `gather sorted by ...`, `any` or `set values`. With `pretty`, the keys and the
     /// sort columns are named as in the fragments.
