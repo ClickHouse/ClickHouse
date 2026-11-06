@@ -101,7 +101,7 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
             {
                 return row_group.need_to_process
                     && std::none_of(row_group.columns.begin(), row_group.columns.end(),
-                        [](const ColumnChunk & column) { return static_cast<bool>(column.offset_index_prefetch); })
+                        [](const ColumnChunk & column) { return column.offset_index_prefetch || !column.offset_index.page_locations.empty(); })
                     && std::any_of(row_group.columns.begin(), row_group.columns.end(),
                         [](const ColumnChunk & column) { return !column.served_from_cache; });
             });
@@ -1310,14 +1310,15 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
                 }
                 break;
             case ReadStage::ColumnIndexAndOffsetIndex:
-                reader.decodeOffsetIndex(column, row_group);
+                if (column.offset_index_prefetch)
+                    reader.decodeOffsetIndex(column, column_info, row_group);
                 column.offset_index_prefetch.reset(&diff);
                 if (column.use_column_index)
                     reader.applyColumnIndex(column, column_info, row_group);
                 column.column_index_prefetch.reset(&diff);
                 break;
             case ReadStage::OffsetIndex:
-                reader.decodeOffsetIndex(column, row_group);
+                reader.decodeOffsetIndex(column, column_info, row_group);
                 column.offset_index_prefetch.reset(&diff);
                 break;
             case ReadStage::ColumnData:
