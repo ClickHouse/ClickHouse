@@ -5,7 +5,7 @@ SET use_query_condition_cache = 0, enable_parallel_replicas = 0, automatic_paral
 
 DROP TABLE IF EXISTS t_projection_index;
 CREATE TABLE t_projection_index (key UInt64, tok UInt64, aux UInt64, payload String) ENGINE = MergeTree ORDER BY key
-SETTINGS index_granularity = 100, index_granularity_bytes = 0;
+SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 SYSTEM STOP MERGES t_projection_index;
 
 -- 1000 rows without the projection, then 100000 rows with it.
@@ -21,7 +21,7 @@ DROP TABLE t_projection_index;
 -- projection was applied to it again and again.
 DROP TABLE IF EXISTS t_partial_projection;
 CREATE TABLE t_partial_projection (key UInt64, v UInt64) ENGINE = MergeTree ORDER BY key
-SETTINGS index_granularity = 100, index_granularity_bytes = 0;
+SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 SYSTEM STOP MERGES t_partial_projection;
 
 INSERT INTO t_partial_projection SELECT number, number % 1000 FROM numbers(10000);
