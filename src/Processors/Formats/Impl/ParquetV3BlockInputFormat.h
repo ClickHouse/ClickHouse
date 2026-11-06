@@ -35,7 +35,12 @@ using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
 struct ParquetBucketSplitter : public IBucketSplitter
 {
     ParquetBucketSplitter() = default;
-    VectorWithMemoryTracking<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) override;
+    VectorWithMemoryTracking<FileBucketInfoPtr> splitToBuckets(
+        size_t bucket_size,
+        ReadBuffer & buf,
+        const RelativePathWithMetadata & object,
+        const FormatSettings & format_settings_,
+        const ContextPtr & context) override;
     VectorWithMemoryTracking<FileBucketInfoPtr> splitByByteRanges(size_t bucket_size, size_t file_size, const VectorWithMemoryTracking<UInt64> & split_offsets) override;
 };
 
