@@ -18,12 +18,9 @@ namespace ErrorCodes
 
 #if USE_AVRO
 
-namespace
-{
-
 /// `getExtremes` compares with IEEE754 `<`, where -0.0 == +0.0, so which zero it returns depends on
 /// the scan order. The Iceberg spec orders -0.0 before +0.0: pick the zero by the signs present.
-void fixFloatSignedZeroExtremes(Field & min_val, Field & max_val, const IColumn & column)
+static void fixFloatSignedZeroExtremes(Field & min_val, Field & max_val, const IColumn & column)
 {
     bool min_is_zero = min_val.getType() == Field::Types::Float64 && min_val.safeGet<Float64>() == 0.0;
     bool max_is_zero = max_val.getType() == Field::Types::Float64 && max_val.safeGet<Float64>() == 0.0;
@@ -61,7 +58,7 @@ void fixFloatSignedZeroExtremes(Field & min_val, Field & max_val, const IColumn 
         scan(col_f64->getData());
 }
 
-Range getExtremeRangeFromColumn(const ColumnPtr & column)
+static Range getExtremeRangeFromColumn(const ColumnPtr & column)
 {
     Field min_val;
     Field max_val;
@@ -71,7 +68,7 @@ Range getExtremeRangeFromColumn(const ColumnPtr & column)
 }
 
 /// Rows set in `null_map` are skipped: the nested value of a NULL row is not a real value.
-Int64 countNaNs(const IColumn & column, ConstNullMapPtr null_map)
+static Int64 countNaNs(const IColumn & column, ConstNullMapPtr null_map)
 {
     auto count = [&](const auto & data) -> Int64
     {
@@ -90,17 +87,15 @@ Int64 countNaNs(const IColumn & column, ConstNullMapPtr null_map)
 }
 
 /// `Field` stores Float32 values as `Float64`, so this also covers Float32.
-bool isFloatNaN(const Field & value)
+static bool isFloatNaN(const Field & value)
 {
     return value.getType() == Field::Types::Float64 && isNaN(value.safeGet<Float64>());
 }
 
 /// `getExtremes` of an all-NaN chunk returns NaN on both sides, never on just one.
-bool isNaNRange(const Range & range)
+static bool isNaNRange(const Range & range)
 {
     return isFloatNaN(range.left) && isFloatNaN(range.right);
-}
-
 }
 
 DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_)
