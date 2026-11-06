@@ -1407,12 +1407,18 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
 void StorageURLSource::addNumRowsToCache(const String & uri, size_t num_rows)
 {
+    if (!canUseNumRowsFromSchemaCache(format_settings, getContext()))
+        return;
+
     auto cache_key = getKeyForSchemaCache(schemaCacheSource(uri, http_method), format, format_settings, getContext());
     StorageURL::getSchemaCache(getContext()).addNumRows(cache_key, num_rows);
 }
 
 std::optional<size_t> StorageURLSource::tryGetNumRowsFromCache(const String & uri, std::optional<time_t> last_mod_time)
 {
+    if (!canUseNumRowsFromSchemaCache(format_settings, getContext()))
+        return std::nullopt;
+
     auto cache_key = getKeyForSchemaCache(schemaCacheSource(uri, http_method), format, format_settings, getContext());
     auto get_last_mod_time = [&]() -> std::optional<time_t>
     {
@@ -3075,7 +3081,7 @@ AzureURLParts parseAzureURL(const String & url)
 void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(
-        args, "", format_name, context, /*with_structure=*/false, is_replayed_definition);
+        args, "", format_name, context, /*with_structure=*/false, is_replayed_definition, /*replace_not_overridable=*/true);
 
     /// Materialize the resolved URL into engine args so that DETACH/ATTACH and server restart
     /// reproduce the originally-resolved URL even if `url_base` is later changed or unset.
@@ -3350,7 +3356,7 @@ private:
             return;
 
         TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(
-            args, /*structure_=*/"", resolved_format, context, /*with_structure=*/false, is_replayed_definition);
+            args, /*structure_=*/"", resolved_format, context, /*with_structure=*/false, is_replayed_definition, /*replace_not_overridable=*/true);
     }
 
     StoragePtr nested;

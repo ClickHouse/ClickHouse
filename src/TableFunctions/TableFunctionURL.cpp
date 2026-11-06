@@ -172,6 +172,7 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
 
         filename = configuration.url;
         structure = configuration.structure;
+        is_structure_not_overridable = structure == "auto" && !named_collection->isOverridable("structure", /* default_value= */ true);
         compression_method = configuration.compression_method;
 
         format = configuration.format;
@@ -412,7 +413,7 @@ StoragePtr TableFunctionURL::getStorage(
         && !is_insert_query
         && !use_web_wildcard;
 
-    if (can_use_parallel_replicas)
+    if (can_use_parallel_replicas && !context->isSQLSecurityOverriddenBody())
     {
         return std::make_shared<StorageURLCluster>(
             context,
@@ -421,7 +422,7 @@ StoragePtr TableFunctionURL::getStorage(
             format_,
             compression_method_,
             StorageID(getDatabaseName(), table_name),
-            getActualTableStructure(context, true),
+            is_structure_not_overridable ? ColumnsDescription{} : columns,
             ConstraintsDescription{},
             configuration);
     }
