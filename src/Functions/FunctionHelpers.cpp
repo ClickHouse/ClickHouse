@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/castColumn.h>
 
 
 namespace DB
@@ -560,4 +561,14 @@ void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t
                 current_size);
     }
 }
+
+ColumnWithTypeAndName castNullableEnumToResultType(const ColumnWithTypeAndName & argument, const DataTypePtr & result_type)
+{
+    const auto target_type = makeNullableSafe(removeLowCardinality(result_type));
+    if (!argument.type->isNullable() || !isEnum(removeNullable(argument.type)) || !target_type->isNullable())
+        return argument;
+
+    return {castColumn(argument, target_type), target_type, argument.name};
+}
+
 }

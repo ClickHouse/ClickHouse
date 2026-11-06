@@ -188,12 +188,11 @@ public:
             }
             else
             {
-                tmp_args[0] = filtered_args[i];
+                tmp_args[0] = castNullableEnumToResultType(filtered_args[i], result_type);
                 auto & cond = multi_if_args.emplace_back(ColumnWithTypeAndName{nullptr, std::make_shared<DataTypeUInt8>(), ""});
                 cond.column = is_not_null->build(tmp_args)->execute(tmp_args, cond.type, input_rows_count, /* dry_run = */ false);
 
-                tmp_args[0] = filtered_args[i];
-                auto & val = multi_if_args.emplace_back(ColumnWithTypeAndName{nullptr, removeNullable(filtered_args[i].type), ""});
+                auto & val = multi_if_args.emplace_back(ColumnWithTypeAndName{nullptr, removeNullable(tmp_args[0].type), ""});
                 val.column = assume_not_null->build(tmp_args)->execute(tmp_args, val.type, input_rows_count, /* dry_run = */ false);
             }
         }

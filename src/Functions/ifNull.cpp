@@ -129,12 +129,12 @@ public:
 
         /// ifNull(col1, col2) == if(isNotNull(col1), assumeNotNull(col1), col2)
 
-        ColumnsWithTypeAndName columns{arguments[0]};
+        ColumnsWithTypeAndName columns{castNullableEnumToResultType(arguments[0], result_type)};
 
         auto is_not_null_type = std::make_shared<DataTypeUInt8>();
         auto is_not_null_res = is_not_null->build(columns)->execute(columns, is_not_null_type, input_rows_count, /* dry_run = */ false);
 
-        auto assume_not_null_type = removeNullable(arguments[0].type);
+        auto assume_not_null_type = removeNullable(columns[0].type);
         auto assume_not_null_res = assume_not_null->build(columns)->execute(columns, assume_not_null_type, input_rows_count, /* dry_run = */ false);
 
         ColumnsWithTypeAndName if_columns
