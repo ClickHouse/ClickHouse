@@ -103,6 +103,24 @@ namespace ErrorCodes
 namespace
 {
 
+/// The columns that the commands of the `ALTER` add (`ADD COLUMN`) or rename to (`RENAME COLUMN`): the expressions of
+/// the other commands may refer to them.
+std::vector<String> getColumnsDeclaredByCommands(const ASTAlterQuery & alter)
+{
+    std::vector<String> column_names;
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto * command = child->as<ASTAlterCommand>();
+        if (!command)
+            continue;
+        if ((command->type == ASTAlterCommand::ADD_COLUMN || command->type == ASTAlterCommand::MODIFY_COLUMN) && command->col_decl)
+            column_names.push_back(command->col_decl->as<ASTColumnDeclaration &>().name);
+        else if (command->type == ASTAlterCommand::RENAME_COLUMN && command->rename_to)
+            column_names.push_back(getIdentifierName(command->rename_to));
+    }
+    return column_names;
+}
+
 void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
 {
     for (const auto & child : alter.command_list->children)
@@ -648,6 +666,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         }
         /// The expressions of the commands refer to the columns of the altered table: `x IN a.b` may be a subcolumn.
         binding_visitor.addExpressionSourceTable(table);
+        binding_visitor.addExpressionSourceColumns(getColumnsDeclaredByCommands(alter));
         for (const auto & child : alter.command_list->children)
         {
             const auto * command = child->as<ASTAlterCommand>();
@@ -806,6 +825,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     /// The same source scope as the binding above: a compound right argument of `IN` that may be a subcolumn of the
     /// altered table (`x IN a.b`) is left as written, not bound to a table now.
     visitor.addExpressionSourceTable(table);
+    visitor.addExpressionSourceColumns(getColumnsDeclaredByCommands(alter));
     ASTPtr command_list_ptr = alter.command_list->ptr();
     visitor.visit(command_list_ptr);
 

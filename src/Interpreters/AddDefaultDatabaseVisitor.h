@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
+#include <base/scope_guard.h>
 #include <Core/QualifiedTableName.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTLiteral.h>
@@ -20,6 +21,7 @@
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Functions/FunctionFactory.h>
+#include <Analyzer/Utils.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
@@ -87,6 +89,17 @@ public:
         ExpressionScope scope;
         addColumnNames(scope, table);
         expression_scopes.push_back(std::move(scope));
+    }
+
+    /// More columns of the table given to `addExpressionSourceTable`: the columns that an `ALTER` adds or renames to,
+    /// which the expressions of its later commands may refer to.
+    void addExpressionSourceColumns(const std::vector<String> & column_names)
+    {
+        if (expression_scopes.empty())
+            expression_scopes.emplace_back();
+        auto & scope = expression_scopes.back();
+        for (const auto & column_name : column_names)
+            addColumnName(scope, column_name);
     }
 
     void visitDDL(ASTPtr & ast) const
@@ -159,9 +172,9 @@ public:
     {
         /// The expressions of the columns refer to the columns of the table, which are not known here.
         expression_scopes.push_back(ExpressionScope{.names = {}, .qualifiers = {}, .unknown = true});
+        SCOPE_EXIT({ expression_scopes.pop_back(); });
         for (auto & child : columns.children)
             visit(child);
-        expression_scopes.pop_back();
     }
 
     void visit(ASTRefreshStrategy & refresh) const
@@ -205,6 +218,9 @@ private:
     mutable std::unordered_set<String> with_expression_aliases;
     /// The aliases of the expressions of the current select query.
     mutable std::unordered_set<String> expression_aliases;
+    /// The arguments of the enclosing lambda functions, with repetitions: inside `a -> x IN a.b` the name `a.b` is the
+    /// field `b` of the argument `a`, and not a table.
+    mutable std::unordered_multiset<String> lambda_arguments;
 
     /// The names that may begin an identifier resolved as an expression in a select query: the columns of its sources
     /// (`a` of a column `a.b`, or of a tuple `a`), and the names and aliases of its sources that qualify the columns.
@@ -279,6 +295,17 @@ private:
             return;
         }
 
+        /// The same scope of the column declarations as in `visit(ASTColumns &)`: `DEFAULT 1 IN a.b` may be the field `b`
+        /// of a column `a` of the table.
+        if (ast.as<ASTColumns>())
+        {
+            expression_scopes.push_back(ExpressionScope{.names = {}, .qualifiers = {}, .unknown = true});
+            SCOPE_EXIT({ expression_scopes.pop_back(); });
+            for (auto & child : ast.children)
+                visitTableExpressionsImpl(*child);
+            return;
+        }
+
         if (auto * table_expression = ast.as<ASTTableExpression>())
         {
             if (table_expression->database_and_table_name)
@@ -292,6 +319,12 @@ private:
             }
             else if (table_expression->table_function)
                 visitTableFunction(*table_expression->table_function);
+        }
+
+        if (auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
+        {
+            visitLambda(*function, [&](ASTPtr & node) { visitTableExpressionsImpl(*node); });
+            return;
         }
 
         if (auto * function = ast.as<ASTFunction>(); function && function->arguments)
@@ -551,11 +584,14 @@ private:
         }
         const auto metadata = table->getInMemoryMetadataPtr(context, false);
         for (const auto & column : metadata->getColumns())
-        {
-            scope.names.insert(column.name);
-            if (auto dot = column.name.find('.'); dot != std::string::npos)
-                scope.names.insert(column.name.substr(0, dot));
-        }
+            addColumnName(scope, column.name);
+    }
+
+    static void addColumnName(ExpressionScope & scope, const String & column_name)
+    {
+        scope.names.insert(column_name);
+        if (auto dot = column_name.find('.'); dot != std::string::npos)
+            scope.names.insert(column_name.substr(0, dot));
     }
 
     /// Whether a compound identifier in the right argument of `IN` (`x IN a.b`), or in the first argument of `joinGet` or
@@ -640,7 +676,34 @@ private:
 
     bool isExpressionAlias(const String & name) const
     {
-        return expression_aliases.contains(name) || with_expression_aliases.contains(name);
+        return expression_aliases.contains(name) || with_expression_aliases.contains(name) || lambda_arguments.contains(name);
+    }
+
+    /// Visit a lambda function with `visit_child`, its arguments visible in its body (see `lambda_arguments`).
+    template <typename Visit>
+    void visitLambda(ASTFunction & lambda, Visit && visit_child) const
+    {
+        std::vector<String> names;
+        if (lambda.arguments && !lambda.arguments->children.empty())
+        {
+            if (const auto * arguments_tuple = lambda.arguments->children[0]->as<ASTFunction>(); arguments_tuple && arguments_tuple->arguments)
+            {
+                for (const auto & argument : arguments_tuple->arguments->children)
+                    if (const auto * identifier = argument->as<ASTIdentifier>())
+                        names.push_back(identifier->name());
+            }
+        }
+
+        for (const auto & name : names)
+            lambda_arguments.insert(name);
+        SCOPE_EXIT(
+        {
+            for (const auto & name : names)
+                lambda_arguments.erase(lambda_arguments.find(name));
+        });
+
+        for (auto & child : lambda.children)
+            visit_child(child);
     }
 
     bool isWithAlias(const String & name) const
@@ -786,11 +849,26 @@ private:
     /// substituted here, in the same way as it is done for table names.
     void visitTableFunction(IAST & table_function) const
     {
-        if (database_name.empty() || only_bind_qualified_names)
+        if (database_name.empty())
             return;
 
         auto * function = table_function.as<ASTFunction>();
         if (!function || !function->arguments)
+            return;
+
+        /// A qualified name of a parameterized view (`ns.pv(x = 1)`) is bound to the view it denotes now, like a table
+        /// reference (see `visitCompound`): `db.ns.pv` for the view `db`.`ns.pv`.
+        if (bind_qualified_names)
+        {
+            if (auto bound_name = tryBindQualifiedParameterizedViewName(function->name, database_name, context))
+            {
+                function->name = std::move(*bound_name);
+                function->setIsCompoundName(true);
+                return;
+            }
+        }
+
+        if (only_bind_qualified_names)
             return;
 
         auto & arguments = function->arguments->children;
@@ -1061,6 +1139,12 @@ private:
 
     void visit(ASTFunction & function, ASTPtr &) const
     {
+        if (function.name == "lambda")
+        {
+            visitLambda(function, [&](ASTPtr & node) { visit(node); });
+            return;
+        }
+
         bool is_operator_in = functionIsInOrGlobalInOperator(function.name);
         bool is_dict_get = functionIsDictGet(function.name);
         bool is_join_get = functionIsJoinGet(function.name);
