@@ -20,9 +20,10 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE} VALUES (1), (2), (3)"
 
+# The staleness window reuses only a cached metadata version, so the cache must be on (it is randomized in CI).
 run_select()
 {
-    ${CLICKHOUSE_CLIENT} --iceberg_metadata_staleness_ms="$1" --log_comment="${CLICKHOUSE_TEST_UNIQUE_NAME}_$2" \
+    ${CLICKHOUSE_CLIENT} --iceberg_metadata_staleness_ms="$1" --use_iceberg_metadata_files_cache=1 --log_comment="${CLICKHOUSE_TEST_UNIQUE_NAME}_$2" \
         --query "SELECT '$2', count(), sum(c0) FROM ${TABLE}"
 }
 
