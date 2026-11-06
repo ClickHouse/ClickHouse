@@ -194,6 +194,12 @@ if (TARGET ch_contrib::rdkafka)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
 
+# The dependency-free Kafka protocol client; compiled unconditionally (it does not need librdkafka).
+add_headers_and_sources(dbms Storages/Kafka/Clients)
+add_headers_and_sources(dbms Storages/Kafka/Clients/Net)
+add_headers_and_sources(dbms Storages/Kafka/Clients/Protocol)
+add_headers_and_sources(dbms Storages/Kafka/Clients/Protocol/Messages)
+
 if (TARGET ch_contrib::nats_io)
     add_headers_and_sources(dbms Storages/NATS)
 endif()
@@ -914,8 +920,12 @@ if (TARGET ch_contrib::brotli)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::brotli)
 endif()
 
+# `crc32c` is always built (see contrib/CMakeLists.txt); the snappy framing format and
+# the Kafka protocol client (Storages/Kafka/Clients) depend on it.
+target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::crc32c)
+
 if (TARGET ch_contrib::snappy)
-    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::snappy ch_contrib::crc32c)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::snappy)
 endif()
 
 if (TARGET ch_contrib::amqp_cpp)
