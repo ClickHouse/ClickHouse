@@ -4093,6 +4093,9 @@ BlockIO InterpreterCreateQuery::execute()
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
 
+            if (!is_create_database)
+                checkDictionaryEngineAccess(create);
+
             /// this branch returns before setEngine, and the worker builds AS src with no user, so
             /// check the inherited definition here, on a copy of the query
             if (!create.as_table.empty())
@@ -4132,6 +4135,7 @@ BlockIO InterpreterCreateQuery::execute()
 
                 /// the worker inherits the move destination of the source too, and runs with no user
                 checkExportAccess(inherited);
+                checkDictionaryEngineAccess(inherited);
             }
 
             /// This branch ships the query text as written, and `OLDEST_VERSION` also ships no settings,
@@ -4275,24 +4279,37 @@ void InterpreterCreateQuery::checkExportAccess(const ASTCreateQuery & create) co
     getContext()->checkAccess(StorageFactory::instance().getExportAccess(create));
 }
 
-void InterpreterCreateQuery::checkDictionaryEngineAccess(const ASTCreateQuery & create) const
+void InterpreterCreateQuery::checkDictionaryEngineAccess(ASTCreateQuery & create) const
 {
     /// Internal queries (initiated by the server itself) always have access to everything.
     if (internal)
         return;
 
-    if (!create.storage || !create.storage->engine || create.storage->engine->name != "Dictionary")
-        return;
+    auto check = [&](ASTStorage & storage)
+    {
+        if (!storage.engine || storage.engine->name != "Dictionary")
+            return;
 
-    /// A wrong number of arguments is reported when the storage is created.
-    const auto & arguments = create.storage->engine->arguments;
-    if (!arguments || arguments->children.size() != 1)
-        return;
+        /// A wrong number of arguments is reported when the storage is created.
+        auto & arguments = storage.engine->arguments;
+        if (!arguments || arguments->children.size() != 1)
+            return;
 
-    auto argument = evaluateConstantExpressionOrIdentifierAsLiteral(arguments->children[0], getContext());
-    auto dictionary_name = checkAndGetLiteralArgument<String>(argument, "dictionary_name");
-    const auto & external_loader = getContext()->getExternalDictionariesLoader();
-    StorageDictionary::checkDictionaryAccess(external_loader.resolveDictionary(dictionary_name, getContext()).id, getContext());
+        /// Keep the name that is checked in the query, so that a replica executing it does not evaluate the argument
+        /// to another dictionary.
+        arguments->children[0] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments->children[0], getContext());
+        auto dictionary_name = checkAndGetLiteralArgument<String>(arguments->children[0], "dictionary_name");
+        const auto & external_loader = getContext()->getExternalDictionariesLoader();
+        StorageDictionary::checkDictionaryAccess(external_loader.resolveDictionary(dictionary_name, getContext()).id, getContext());
+    };
+
+    if (create.storage)
+        check(*create.storage);
+    if (create.targets)
+    {
+        for (ASTStorage * inner_engine : create.targets->getInnerEngines())
+            check(*inner_engine);
+    }
 }
 
 void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const
