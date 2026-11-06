@@ -11,30 +11,23 @@ using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;
 struct LazyMaterializingRows;
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
-class DeleteBitmap;
-using ConstDeleteBitmapPtr = std::shared_ptr<const DeleteBitmap>;
-
 /// A reader used in the initial stage of reading to apply index-based filtering. Currently, both skip indexes and
 /// projection indexes are used to identify which granules are relevant to the query, and only those are passed to
 /// subsequent readers. In addition, the projection index constructs a row-level filter to further reduce I/O within
-/// selected granules. A UNIQUE KEY part's delete bitmap drops its dead rows here, before PREWHERE sees them.
+/// selected granules.
 class MergeTreeReaderIndex : public IMergeTreeReader
 {
 public:
     using MatchingMarks = std::vector<bool>;
 
-    MergeTreeReaderIndex(
-        const IMergeTreeReader * main_reader_,
-        MergeTreeIndexReadResultPtr index_read_result_,
-        const PaddedPODArray<UInt64> * lazy_materializing_rows_,
-        ConstDeleteBitmapPtr delete_bitmap_);
+    MergeTreeReaderIndex(const IMergeTreeReader * main_reader_, MergeTreeIndexReadResultPtr index_read_result_, const PaddedPODArray<UInt64> * lazy_materializing_rows_);
 
     size_t readRows(
         size_t from_mark,
         size_t current_range_last_mark,
         bool continue_reading,
         size_t max_rows_to_read,
-        MutableColumns & res_columns, Columns & shared_columns) override;
+        MutableColumns & res_columns) override;
 
     bool canReadIncompleteGranules() const override { return main_reader->canReadIncompleteGranules(); }
 
@@ -47,18 +40,13 @@ public:
     size_t getResultColumnCount() const override { return 1; }
 
     bool producesFilterOnly() const override { return true; }
-    bool mustApplyFilter() const override { return lazy_materializing_rows != nullptr || delete_bitmap != nullptr; }
+    bool mustApplyFilter() const override { return lazy_materializing_rows != nullptr; }
 
 private:
-    void appendDeleteBitmapFilter(MutableColumnPtr & filter_column, size_t filter_rows_before, size_t starting_row, size_t num_rows) const;
-
     /// Used to filter data during merge tree reading.
     MergeTreeIndexReadResultPtr index_read_result;
 
     const PaddedPODArray<UInt64> * lazy_materializing_rows = nullptr;
-
-    /// Non-empty, or null
-    ConstDeleteBitmapPtr delete_bitmap;
 
     const IMergeTreeReader * main_reader;
 

@@ -182,10 +182,9 @@ MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResu
     auto & remaining_marks = part_remaining_marks.at(part_index).value;
 
     auto storage_snapshot = task.getMainReader().getStorageSnapshot();
-    const auto all_updated_columns = task.getInfo().alter_conversions->getColumnsInvalidatingIndexes();
-    const auto & value_updated_columns = task.getInfo().alter_conversions->getValueUpdatedColumns();
+    const auto & all_updated_columns = task.getInfo().alter_conversions->getAllUpdatedColumns();
     auto index_read_result = index_reader_pool->getOrBuildIndexReadResult(
-        part_index, task.getInfo().data_part_info, skip_input, projection_parts_ranges, storage_snapshot->metadata, all_updated_columns, value_updated_columns);
+        part_index, task.getInfo().data_part_info, skip_input, projection_parts_ranges, storage_snapshot->metadata, all_updated_columns);
 
     /// Atomically subtract the number of marks this task will read from the total remaining marks. If the
     /// remaining marks after subtraction reach zero, this is the last task for the part, and we can trigger
@@ -478,11 +477,6 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
 
     auto res = task_algorithm.readFromTask(current_task);
 
-    /// Loaded after the PREWHERE of the block ran, so a block filtered without the rows equal to the threshold is never recorded.
-    const auto & rows_equal_to_threshold_dropped = reader_settings.top_k_filter_rows_equal_to_threshold_dropped;
-    const bool record_in_query_condition_cache = reader_settings.use_query_condition_cache
-        && (!rows_equal_to_threshold_dropped || !rows_equal_to_threshold_dropped->load(std::memory_order_relaxed));
-
     if (res.row_count)
     {
         /// Reorder the columns according to result_header
@@ -502,7 +496,7 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
 
         /// QueryConditionCache is keyed by the storage UUID, which is only available from a
         /// concrete part; borrowed parts (stateless worker) skip it.
-        if (record_in_query_condition_cache && data_part_info->getDataPart())
+        if (reader_settings.use_query_condition_cache && data_part_info->getDataPart())
         {
             /// The attached marks let the downstream FilterTransform record WHERE-filtered marks
             /// into the QueryConditionCache. Skip attaching them when on-fly mutations run ahead of
@@ -550,7 +544,7 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
     /// security filter is also prepended before PREWHERE (getPrewhereActions), yet this write keys only
     /// on the query PREWHERE hash, so a mark hidden by a row policy would be wrongly attributed to the
     /// PREWHERE predicate and read by a later query without that policy.
-    if (record_in_query_condition_cache && prewhere_info
+    if (reader_settings.use_query_condition_cache && prewhere_info
         && !current_task.readersChainCanSkipMarksBeforePrewhere(prewhere_filters_by_top_k_threshold)
         && !current_task.appliesMutationsBeforePrewhere()
         && !row_level_filter)

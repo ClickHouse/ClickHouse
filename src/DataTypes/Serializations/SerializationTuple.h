@@ -13,7 +13,10 @@ public:
     using ElementSerializations = std::vector<ElementSerializationPtr>;
 
 private:
-    SerializationTuple(ElementSerializations elems_, bool has_explicit_names_);
+    SerializationTuple(ElementSerializations elems_, bool has_explicit_names_)
+        : elems(std::move(elems_)), has_explicit_names(has_explicit_names_)
+    {
+    }
 
 public:
     static UInt128 getHash(const ElementSerializations & elems_, bool has_explicit_names_);
@@ -90,8 +93,6 @@ public:
 private:
     ElementSerializations elems;
     bool has_explicit_names;
-    /// Cached result of `supportsPooling` of all elements, see `SerializationArray`.
-    bool elems_support_pooling;
 
     size_t getPositionByName(const String & name) const;
 

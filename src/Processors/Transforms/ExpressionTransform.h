@@ -1,6 +1,5 @@
 #pragma once
 #include <Processors/ISimpleTransform.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
 #include <Core/Block_fwd.h>
 #include <Interpreters/SetSpillable.h>
@@ -54,7 +53,7 @@ private:
 
     /// Mapping from required input slot to input-header position, precomputed once (the input header is fixed).
     /// Lets transform() run the expression positionally without rebuilding a Block name index per chunk.
-    VectorWithMemoryTracking<ssize_t> input_positions;
+    std::vector<ssize_t> input_positions;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 };

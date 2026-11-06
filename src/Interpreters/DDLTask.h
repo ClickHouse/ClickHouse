@@ -126,8 +126,6 @@ struct DDLTaskBase
     /// Set when the initial query runs as the submitting user, see `QueryFlags::run_as_submitting_user`.
     ContextPtr submitting_user_context;
 
-    QueryExecutionStartedCallback query_execution_started_callback;
-
     Coordination::Requests ops;
     ExecutionStatus execution_status;
     bool was_executed = false;
@@ -199,12 +197,6 @@ struct DatabaseReplicatedTask : public DDLTaskBase
     ContextMutablePtr makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper) override;
     Coordination::RequestPtr getOpToUpdateLogPointer() override;
     void createSyncedNodeIfNeed(const ZooKeeperPtr & zookeeper) override;
-
-    /// The node that `SYSTEM STOP REPLICATED DDL QUERIES` creates in the replica path of every `Replicated` database
-    /// to fence the initial DDL entries of this server that are already queued. It is located in the replica path,
-    /// because it belongs to this server, and the server already has write access to it, while it may have no access
-    /// to other paths in Keeper.
-    static String getStopReplicatedDDLQueriesFlagPath(const DatabaseReplicated & database);
 
     DatabaseReplicated * database;
 };

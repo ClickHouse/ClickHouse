@@ -2,27 +2,23 @@
 ```sql
 CREATE TABLE IF NOT EXISTS ${DATABASE}.hyperdx_sessions
 (
-  `Timestamp` DateTime64(9) CODEC(Delta, ZSTD(3)),
+  `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
   `TimestampTime` DateTime DEFAULT toDateTime(Timestamp),
-  `TraceId` String CODEC(ZSTD(3)),
-  `SpanId` String CODEC(ZSTD(3)),
+  `TraceId` String CODEC(ZSTD(1)),
+  `SpanId` String CODEC(ZSTD(1)),
   `TraceFlags` UInt8,
-  `SeverityText` LowCardinality(String) CODEC(ZSTD(3)),
+  `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
   `SeverityNumber` UInt8,
-  `ServiceName` LowCardinality(String) CODEC(ZSTD(3)),
-  `Body` String CODEC(ZSTD(3)),
-  `ResourceSchemaUrl` LowCardinality(String) CODEC(ZSTD(3)),
-  `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(3)),
-  `ScopeSchemaUrl` LowCardinality(String) CODEC(ZSTD(3)),
-  `ScopeName` String CODEC(ZSTD(3)),
-  `ScopeVersion` LowCardinality(String) CODEC(ZSTD(3)),
-  `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(3)),
-  `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(3)),
-  `__hdx_materialized_session.id` String MATERIALIZED LogAttributes['session.id'] CODEC(ZSTD(3)),
-  `__hdx_materialized_rum.sessionId` String MATERIALIZED ResourceAttributes['rum.sessionId'] CODEC(ZSTD(3)),
+  `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
+  `Body` String CODEC(ZSTD(1)),
+  `ResourceSchemaUrl` LowCardinality(String) CODEC(ZSTD(1)),
+  `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+  `ScopeSchemaUrl` LowCardinality(String) CODEC(ZSTD(1)),
+  `ScopeName` String CODEC(ZSTD(1)),
+  `ScopeVersion` LowCardinality(String) CODEC(ZSTD(1)),
+  `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+  `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
   INDEX idx_trace_id TraceId TYPE bloom_filter(0.001) GRANULARITY 1,
-  INDEX idx_session_id __hdx_materialized_session.id TYPE text(tokenizer = 'array'),
-  INDEX idx_rum_session_id __hdx_materialized_rum.sessionId TYPE text(tokenizer = 'array'),
   INDEX idx_res_attr_key mapKeys(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
   INDEX idx_res_attr_value mapValues(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
   INDEX idx_scope_attr_key mapKeys(ScopeAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
@@ -35,6 +31,6 @@ ENGINE = MergeTree
 PARTITION BY toDate(TimestampTime)
 PRIMARY KEY (ServiceName, TimestampTime)
 ORDER BY (ServiceName, TimestampTime, Timestamp)
-TTL TimestampTime + ${SESSIONS_TTL}
+TTL TimestampTime + ${TABLES_TTL}
 SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
 ```

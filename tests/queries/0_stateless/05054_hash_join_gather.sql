@@ -1,4 +1,4 @@
--- Tags: long, no-msan
+-- Tags: long
 -- The flaky check runs one copy of the changed test per core. This test is heavy enough that the
 -- self-contention alone puts it over the 180 second cap.
 
@@ -183,10 +183,13 @@ SELECT 'arm3 row ref lists control', count(), sum(cityHash64(*)) FROM dg_list_pr
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 0, joined_block_split_single_row = 0;
 
+-- Every arm below that asks for the limit and offset builder also pins `enable_analyzer = 1`: only
+-- the `TableJoin` the analyzer builds carries `joined_block_split_single_row`, so with the old
+-- analyzer the arm silently gets the plain path that arms 3 and 14 already cover.
 SELECT 'arm5 limit and offset', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1,
-    max_joined_block_size_rows = 7;
+    max_joined_block_size_rows = 7, enable_analyzer = 1;
 
 -- Arms 5b and 5c pin which builder ran. The limit and offset builder records the ref words its walk
 -- selects, so it reaches the kernels like every other builder: 2 columns x 1000 rows, `a` through
@@ -200,7 +203,7 @@ INSERT INTO dg_list_mixed SELECT number % 200, number * 1000003, toString(number
 SELECT 'arm5b mixed limit and offset', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_mixed USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1,
-    max_joined_block_size_rows = 7, enable_hash_join_row_store = 0;
+    max_joined_block_size_rows = 7, enable_hash_join_row_store = 0, enable_analyzer = 1;
 
 SELECT 'arm5c mixed by blocks', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_mixed USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
@@ -501,7 +504,7 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
 SELECT 'arm14c extended limit and offset', count(), sum(cityHash64(*)) FROM dg_list_probe JOIN dg_list_ext USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 1,
-    max_joined_block_size_rows = 7, enable_hash_join_row_store = 0;
+    max_joined_block_size_rows = 7, enable_hash_join_row_store = 0, enable_analyzer = 1;
 
 -- Arm asof: an `ASOF` match is a single inline ref word like any other, so it resolves the same emit
 -- table and runs the same kernels. Its three emitted right columns are the two payloads and the
@@ -620,8 +623,6 @@ SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls
 -- the planner derive the output header by running the join over an empty block, and the emit has to
 -- reach that point and do nothing. Both halves pin `query_plan_join_swap_table`,
 -- because swapping an `ANY LEFT` join makes it a `RIGHT ANY` one, which claims its rows differently.
--- The second half also pins the serial layout. A parallel build splits `system.numbers` over several
--- probe streams, and `LIMIT` then keeps whichever block comes back first.
 SELECT 'arm21 any left join', count(), sum(cityHash64(*)) FROM dg_probe ANY LEFT JOIN dg_build USING (k)
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
     max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
@@ -635,7 +636,7 @@ SELECT 'arm21 any left join over unbounded source', count(), sum(cityHash64(*)) 
         USING number LIMIT 10
 )
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, join_use_nulls = 0,
-    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0, hash_join_layout = 'serial';
+    join_output_by_rowlist_perkey_rows_threshold = 1000000, joined_block_split_single_row = 0;
 
 -- Arm 22: `RightAny` is a strictness of its own - the old `ANY`, selected by
 -- `any_join_distinct_right_table_keys` - and it picks a key's first row rather than claiming rows
