@@ -2378,6 +2378,9 @@ Poco::JSON::Object::Ptr PartitionSpecResolver::getSchema(Int32 schema_id) const
     for (UInt32 i = 0; i < schemas->size(); ++i)
         if (schemas->getObject(i)->getValue<Int32>(f_schema_id) == schema_id)
             return schemas->getObject(i);
+    /// A schema that only manifest headers still carry, after it was removed from the metadata with its expired snapshots.
+    if (schema_processor->hasClickHouseTableSchemaById(schema_id))
+        return schema_processor->getIcebergTableSchemaById(schema_id);
     throw Exception(
         ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
         "Iceberg metadata does not contain a schema entry matching schema-id {}",
