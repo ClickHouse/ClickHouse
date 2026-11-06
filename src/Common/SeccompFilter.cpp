@@ -115,8 +115,9 @@ namespace DB
 /// `pidfd_getfd`), eBPF (`bpf`), the kernel keyring (`add_key`, `keyctl`), `userfaultfd` and
 /// `vmsplice` (both standard exploitation primitives), file handles (`open_by_handle_at`),
 /// `fanotify`, swap and quota control, setting the system clock and the host name, System V and
-/// POSIX IPC, and the extended-attribute calls. Making a device node with `mknodat` is refused too,
-/// while its other uses - a FIFO for an executable user defined function among them - are not.
+/// POSIX IPC, and the extended-attribute calls (these with `ENOSYS` rather than the configured
+/// action - see `refused_with_enosys`). Making a device node with `mknodat` is refused too, while
+/// its other uses - a FIFO for an executable user defined function among them - are not.
 ///
 /// Two of the allowed calls are worth calling out, because they are the largest remaining surface
 /// and both are here only because ClickHouse genuinely uses them: `perf_event_open` (for
@@ -264,6 +265,30 @@ constexpr int rseq_syscall_number = 293;
 /// `clone3` the same way in their own policies, for the same reason.
 constexpr int clone3_syscall_number = 435;
 
+/// Added in Linux 6.13, which is newer than the kernel headers in the build sysroot. The numbers
+/// are the same on every architecture.
+constexpr int setxattrat_syscall_number = 463;
+constexpr int getxattrat_syscall_number = 464;
+constexpr int listxattrat_syscall_number = 465;
+constexpr int removexattrat_syscall_number = 466;
+
+/// The calls that are refused with `ENOSYS` rather than with the configured action, whatever the
+/// mode: the answer a kernel without them would give, which is the one their callers know how to
+/// fall back from - where `SIGSYS` would take the server down and `EPERM` is an error nobody
+/// expects. `clone3` is one, for the reason above. The extended-attribute calls are the others:
+/// nothing in ClickHouse uses them, but the NSS modules of the host are loaded into the process by
+/// every name lookup, and `nss-resolve` of `systemd` tags its socket to `systemd-resolved` with an
+/// attribute after probing whether the kernel lets it, treating `ENOSYS` as "it does not" and
+/// carrying on without the tag.
+constexpr int refused_with_enosys[] = {
+    clone3_syscall_number,
+    __NR_setxattr, __NR_lsetxattr, __NR_fsetxattr,
+    __NR_getxattr, __NR_lgetxattr, __NR_fgetxattr,
+    __NR_listxattr, __NR_llistxattr, __NR_flistxattr,
+    __NR_removexattr, __NR_lremovexattr, __NR_fremovexattr,
+    setxattrat_syscall_number, getxattrat_syscall_number, listxattrat_syscall_number, removexattrat_syscall_number,
+};
+
 constexpr int allowed_syscalls[] =
 {
 #define SECCOMP_SYSCALL_BY_NAME(name) __NR_ ## name,
@@ -354,7 +379,7 @@ constexpr UInt32 jump_to_deny = 0xFFFFFFFEU;
 constexpr UInt32 jump_to_argument_checks = 0xFFFFFFFDU;
 constexpr UInt32 jump_to_ioctl_check = 0xFFFFFFFCU;
 constexpr UInt32 jump_to_clone_check = 0xFFFFFFFBU;
-constexpr UInt32 jump_to_clone3 = 0xFFFFFFFAU;
+constexpr UInt32 jump_to_enosys = 0xFFFFFFFAU;
 constexpr UInt32 jump_to_mknodat_check = 0xFFFFFFF9U;
 constexpr UInt32 jump_to_mknod_check = 0xFFFFFFF8U;
 
@@ -436,7 +461,7 @@ struct Blocks
     size_t argument_checks;
     size_t ioctl_check;
     size_t clone_check;
-    size_t clone3;
+    size_t enosys;
     size_t mknodat_check;
     /// Only on x86-64, which has the legacy `mknod`; nothing jumps here elsewhere.
     size_t mknod_check;
@@ -464,8 +489,8 @@ void link(Program & program, const Blocks & blocks)
             target = blocks.ioctl_check;
         else if (instruction.k == jump_to_clone_check)
             target = blocks.clone_check;
-        else if (instruction.k == jump_to_clone3)
-            target = blocks.clone3;
+        else if (instruction.k == jump_to_enosys)
+            target = blocks.enosys;
         else if (instruction.k == jump_to_mknodat_check)
             target = blocks.mknodat_check;
         else if (instruction.k == jump_to_mknod_check)
@@ -486,7 +511,7 @@ void link(Program & program, const Blocks & blocks)
     }
 }
 
-Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt32 clone3_action)
+Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt32 enosys_action)
 {
     if (ranges.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The seccomp policy allows no system calls at all");
@@ -513,14 +538,27 @@ Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt3
     program.push_back(statement(BPF_JMP | BPF_JA, jump_to_ioctl_check));
     program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, __NR_clone, 0, 1));
     program.push_back(statement(BPF_JMP | BPF_JA, jump_to_clone_check));
-    program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, static_cast<UInt32>(clone3_syscall_number), 0, 1));
-    program.push_back(statement(BPF_JMP | BPF_JA, jump_to_clone3));
     program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, __NR_mknodat, 0, 1));
     program.push_back(statement(BPF_JMP | BPF_JA, jump_to_mknodat_check));
 #if defined(__x86_64__)
     program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, __NR_mknod, 0, 1));
     program.push_back(statement(BPF_JMP | BPF_JA, jump_to_mknod_check));
 #endif
+
+    /// Last, after the calls that are usually allowed: only refused calls get this far.
+    std::vector<int> enosys_numbers(std::begin(refused_with_enosys), std::end(refused_with_enosys));
+    std::sort(enosys_numbers.begin(), enosys_numbers.end());
+    for (const Range & range : toRanges(enosys_numbers))
+    {
+        if (range.first == range.last)
+            program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, static_cast<UInt32>(range.first), 0, 1));
+        else
+        {
+            program.push_back(jump(BPF_JMP | BPF_JGT | BPF_K, static_cast<UInt32>(range.last), 2, 0));
+            program.push_back(jump(BPF_JMP | BPF_JGE | BPF_K, static_cast<UInt32>(range.first), 0, 1));
+        }
+        program.push_back(statement(BPF_JMP | BPF_JA, jump_to_enosys));
+    }
     program.push_back(statement(BPF_JMP | BPF_JA, jump_to_deny));
 
     /// The blocks that look at an argument come before the terminal ones because they jump to them.
@@ -561,8 +599,8 @@ Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt3
     const size_t mknod_check_index = 0;
 #endif
 
-    const size_t clone3_index = program.size();
-    program.push_back(statement(BPF_RET | BPF_K, clone3_action));
+    const size_t enosys_index = program.size();
+    program.push_back(statement(BPF_RET | BPF_K, enosys_action));
 
     const size_t allow_index = program.size();
     program.push_back(statement(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
@@ -574,7 +612,7 @@ Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt3
         {.argument_checks = argument_checks_index,
          .ioctl_check = ioctl_check_index,
          .clone_check = clone_check_index,
-         .clone3 = clone3_index,
+         .enosys = enosys_index,
          .mknodat_check = mknodat_check_index,
          .mknod_check = mknod_check_index,
          .allow = allow_index,
@@ -630,8 +668,10 @@ UInt32 evaluate(const Program & program, const struct seccomp_data & data)
 }
 
 void verifyProgram(
-    const Program & program, const std::unordered_set<int> & allowed, UInt32 default_action, UInt32 clone3_action)
+    const Program & program, const std::unordered_set<int> & allowed, UInt32 default_action, UInt32 enosys_action)
 {
+    const std::unordered_set<int> enosys(std::begin(refused_with_enosys), std::end(refused_with_enosys));
+
     auto check = [&](const struct seccomp_data & data, UInt32 expected)
     {
         const UInt32 result = evaluate(program, data);
@@ -657,8 +697,8 @@ void verifyProgram(
     for (int nr = -4096; nr < 8192; ++nr)
     {
         UInt32 expected = allowed.contains(nr) ? SECCOMP_RET_ALLOW : default_action;
-        if (nr == clone3_syscall_number)
-            expected = clone3_action;
+        if (enosys.contains(nr))
+            expected = enosys_action;
         check({.nr = nr, .arch = expected_audit_arch, .instruction_pointer = 0, .args = {}}, expected);
     }
 
@@ -725,7 +765,7 @@ void verifyProgram(
              .arch = expected_audit_arch,
              .instruction_pointer = 0,
              .args = {argument, argument, argument, argument, argument, argument}},
-            clone3_action);
+            enosys_action);
 
     /// `mknodat` makes a FIFO, a regular file (whose type may be given as zero) or a socket, but
     /// not a device node - also with junk in the bits of the argument the kernel does not look at.
@@ -907,12 +947,11 @@ SeccompFilterStatus installSeccompFilter(SeccompMode mode)
 #endif
 
     const UInt32 default_action = getDefaultAction(mode);
-    /// `clone3` is refused with `ENOSYS` rather than with the configured action, so that a libc
-    /// falls back to `clone` instead of failing to make a thread. Nothing is refused in the `log`
-    /// mode, so there the call gets the same treatment as the rest of the policy.
-    const UInt32 clone3_action = mode == SeccompMode::Log ? default_action : (SECCOMP_RET_ERRNO | UInt32{ENOSYS});
-    Program program = buildProgram(toRanges(numbers), default_action, clone3_action);
-    verifyProgram(program, allowed, default_action, clone3_action);
+    /// Nothing is refused in the `log` mode, so there the calls refused with `ENOSYS` elsewhere
+    /// get the same treatment as the rest of the policy.
+    const UInt32 enosys_action = mode == SeccompMode::Log ? default_action : (SECCOMP_RET_ERRNO | UInt32{ENOSYS});
+    Program program = buildProgram(toRanges(numbers), default_action, enosys_action);
+    verifyProgram(program, allowed, default_action, enosys_action);
 
     if (program.size() > size_t{BPF_MAXINSNS})
         throw Exception(

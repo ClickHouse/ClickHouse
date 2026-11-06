@@ -61,6 +61,36 @@ TEST(BackupSettingsDefault, BackupCopySettingsToQueryForwardsNoReset)
         << "the generated backup_uuid was discarded";
 }
 
+/// A named `fsync_backup_files` is sent even at its default, so that a host not knowing it rejects the query; a reset names it too.
+TEST(BackupSettingsDefault, BackupCopySettingsToQuerySendsAResetFsyncBackupFiles)
+{
+    const std::pair<const char *, bool> cases[] = {
+        {"fsync_backup_files = DEFAULT", true},
+        {"fsync_backup_files = 0, fsync_backup_files = DEFAULT", true},
+        {"deduplicate_files = 1", false},
+    };
+
+    for (const auto & [clause, expect_sent] : cases)
+    {
+        const String query = String("BACKUP TABLE t TO Disk('d', 'b') SETTINGS ") + clause;
+        ASTPtr holder;
+        ASTBackupQuery * backup_query = parseBackupQuery(holder, query);
+        ASSERT_NE(nullptr, backup_query) << "query: " << query;
+
+        BackupSettings settings = BackupSettings::fromBackupQuery(*backup_query);
+        EXPECT_TRUE(settings.fsync_backup_files) << "query: " << query;
+        settings.copySettingsToQuery(*backup_query);
+
+        const String text = backup_query->formatWithSecretsOneLine();
+        const Field * sent
+            = backup_query->settings ? backup_query->settings->as<const ASTSetQuery &>().changes.tryGet("fsync_backup_files") : nullptr;
+        EXPECT_EQ(expect_sent, sent != nullptr) << "query: " << query << ", per-host text: " << text;
+        if (sent)
+            EXPECT_TRUE(SettingFieldBool{*sent}.value) << "per-host text: " << text;
+        EXPECT_EQ(String::npos, text.find("DEFAULT")) << "per-host text: " << text;
+    }
+}
+
 /// The overrides a reset cancels are dropped, also under an alias (`insert_distributed_sync`); an unrelated override is the control.
 TEST(BackupSettingsDefault, BackupCopySettingsToQueryDropsTheOverridesOfAReset)
 {

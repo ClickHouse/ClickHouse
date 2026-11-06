@@ -19,13 +19,15 @@ Este guia aborda como os backups funcionam no ClickHouse Cloud, quais opções v
 
 ## Lista de status de backups {#backup-status-list}
 
-Os backups são executados de acordo com o agendamento configurado para seu serviço, seja o agendamento diário padrão ou um [agendamento personalizado](/pt-BR/products/cloud/guides/backups/configurable-backups) escolhido por você. Todos os backups disponíveis podem ser visualizados na aba **Backups** do serviço. Nela, você pode ver o status, a duração e o tamanho do backup. Você também pode restaurar um backup específico pela coluna **Actions**.
+Os backups são executados de acordo com o agendamento configurado para seu serviço, seja o agendamento diário padrão ou um [agendamento personalizado](/pt-BR/products/cloud/guides/backups/configurable-backups) escolhido por você. Todos os pontos de restauração disponíveis podem ser visualizados na aba **Backups** do serviço. Nela, você pode ver o status, a duração e o tamanho do backup. Você também pode restaurar um backup específico pela coluna **Actions**.
 
 <Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="Lista de status de backups no ClickHouse Cloud" border />
 
 ## Entendendo o custo dos backups {#understanding-backup-cost}
 
 A menos que seja configurado um agendamento diferente, é feito backup dos serviços a cada 24 horas, e cada backup é retido por 24 horas. A capacidade de configurar agendamentos de backup varia conforme o serviço e o plano. Escolher um agendamento que exija a retenção de mais dados ou resulte em backups mais frequentes pode gerar cobranças adicionais de armazenamento para os backups.
+
+Os pontos de restauração exibidos no console não definem o limite do que é faturado. Um ponto de restauração pode depender de um backup completo e de um ou mais backups incrementais da sua cadeia. O uso de armazenamento de backups pode incluir essas dependências retidas, mesmo quando elas não aparecem como pontos de restauração separados.
 
 Para entender o custo dos backups, você pode ver o custo por serviço na tela de uso (como mostrado abaixo). Depois de executar os backups por alguns dias com um agendamento personalizado, você poderá ter uma ideia do custo e extrapolar para chegar ao custo mensal dos backups.
 

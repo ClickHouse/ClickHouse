@@ -14,7 +14,6 @@ INSERT INTO t1 VALUES (1, 1, 1), (2, 2, 2), (3, 3, 5);
 CREATE TABLE t2 (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t2 VALUES (2, 2, 2), (3, 3, 3), (3, 3, 9);
 
-SET enable_analyzer = 1;
 SET join_use_nulls = 1;
 
 -- { echoOn }

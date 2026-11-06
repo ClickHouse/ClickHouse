@@ -225,6 +225,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.type_json_skip_null_typed_paths = settings[Setting::type_json_skip_null_typed_paths];
     format_settings.json.max_dynamic_subcolumns_in_json_type_parsing = settings[Setting::max_dynamic_subcolumns_in_json_type_parsing].valueOrNullopt();
     format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object = settings[Setting::type_json_allow_duplicated_key_with_literal_and_nested_object];
+    format_settings.json.type_json_skip_duplicate_key_detection = settings[Setting::type_json_skip_duplicate_key_detection];
     format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp = settings[Setting::type_json_use_partial_match_to_skip_paths_by_regexp];
     format_settings.json.pretty_print = settings[Setting::output_format_json_pretty_print];
     format_settings.json.infer_array_of_dynamic_from_array_of_different_values = settings[Setting::input_format_json_infer_array_of_dynamic_from_array_of_different_types];
@@ -265,6 +266,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.max_dictionary_size = settings[Setting::output_format_parquet_max_dictionary_size];
     format_settings.parquet.output_enum_as_byte_array = settings[Setting::output_format_parquet_enum_as_byte_array];
     format_settings.parquet.write_checksums = settings[Setting::output_format_parquet_write_checksums];
+    format_settings.parquet.use_alp_encoding = settings[Setting::output_format_parquet_use_alp_encoding];
     format_settings.parquet.max_block_size = settings[Setting::input_format_parquet_max_block_size];
     format_settings.parquet.prefer_block_bytes = settings[Setting::input_format_parquet_prefer_block_bytes];
     format_settings.parquet.output_compression_method = settings[Setting::output_format_parquet_compression_method];
@@ -283,7 +285,10 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.verify_checksums = settings[Setting::input_format_parquet_verify_checksums];
     format_settings.parquet.local_time_as_utc = settings[Setting::input_format_parquet_local_time_as_utc];
     format_settings.parquet.allow_geoparquet_parser = settings[Setting::input_format_parquet_allow_geoparquet_parser];
+    format_settings.parquet.detect_variant_by_structure = settings[Setting::input_format_parquet_detect_variant_by_structure];
     format_settings.parquet.write_geometadata = settings[Setting::output_format_parquet_geometadata];
+    format_settings.parquet.write_geometry_logical_type = settings[Setting::output_format_parquet_geometry_logical_type];
+    format_settings.parquet.write_file_logical_type = settings[Setting::output_format_parquet_write_file_logical_type];
     if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
     {
         /// Use 90% of the hard limit as the budget for computing caps. This ensures the pipeline's
@@ -373,6 +378,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.arrow.output_unsupported_types = getArrowUnsupportedTypesMode(settings);
     format_settings.arrow.output_record_batch_rows = settings[Setting::output_format_arrow_record_batch_size];
     format_settings.arrow.output_record_batch_bytes = settings[Setting::output_format_arrow_record_batch_size_bytes];
+    format_settings.arrow.output_max_record_batch_bytes = settings[Setting::output_format_arrow_max_record_batch_size_bytes];
     format_settings.orc.allow_missing_columns = settings[Setting::input_format_orc_allow_missing_columns];
     format_settings.orc.row_batch_size = settings[Setting::input_format_orc_row_batch_size];
     format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_orc_skip_columns_with_unsupported_types_in_schema_inference];
@@ -386,6 +392,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.orc.filter_push_down = settings[Setting::input_format_orc_filter_push_down];
     format_settings.orc.reader_time_zone_name = settings[Setting::input_format_orc_reader_time_zone_name];
     format_settings.orc.writer_time_zone_name = settings[Setting::output_format_orc_writer_time_zone_name];
+    format_settings.vortex.filter_push_down = settings[Setting::input_format_vortex_filter_push_down];
+    format_settings.vortex.preserve_order = settings[Setting::input_format_vortex_preserve_order];
     format_settings.defaults_for_omitted_fields = settings[Setting::input_format_defaults_for_omitted_fields];
     format_settings.capn_proto.enum_comparing_mode = settings[Setting::format_capn_proto_enum_comparising_mode];
     format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference];
@@ -676,6 +684,8 @@ InputFormatPtr FormatFactory::getInputImpl(
     else
     {
         format = creators.input_creator(buf, format_sample, row_input_format_params, format_settings);
+        if (format_filter_info && format_filter_info->column_mapper)
+            format->setColumnMapper(format_filter_info->column_mapper);
     }
 
     if (owned_buf)
@@ -1371,8 +1381,15 @@ bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, cons
     auto format_name = boost::to_lower_copy(name);
     if (format_name == "parquet" && context->getSettingsRef()[Setting::input_format_parquet_preserve_order])
         return false;
+    if (format_name == "vortex" && context->getSettingsRef()[Setting::input_format_vortex_preserve_order])
+        return false;
 
     return true;
+}
+
+bool FormatFactory::checkParallelizeOutputAfterReadingForAnyFormat(const ContextPtr & context) const
+{
+    return checkParallelizeOutputAfterReading("Parquet", context) && checkParallelizeOutputAfterReading("Vortex", context);
 }
 
 void FormatFactory::checkFormatName(const String & name) const

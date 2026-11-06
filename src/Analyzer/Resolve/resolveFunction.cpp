@@ -1,6 +1,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <DataTypes/DataTypeString.h>
+#include <Analyzer/Resolve/FunctionCompositionRewrite.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
 #include <Analyzer/ColumnNode.h>
@@ -22,6 +23,7 @@
 
 #include <Storages/getEffectiveRowPolicyFilter.h>
 
+#include <Common/StringUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/HiddenSecret.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
@@ -110,6 +112,93 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
             "Function with name {} cannot use {} NULLS",
             backQuote(node.getFunctionName()),
             node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
+}
+
+/// The arity of a registered function name, or nothing when no function with this name is
+/// registered. Used by the rewrites that turn a function name into a lambda (the bare function
+/// name in a higher-order function and the operands of the function composition operator).
+struct RegisteredFunctionArity
+{
+    size_t fixed_arity = 0;
+    bool is_variadic = false;
+};
+
+/** Determine the arity of a registered function without resolving it.
+  *
+  * Built-in, executable, and WebAssembly UDFs are all `IFunction` implementations exposed as
+  * regular `FunctionOverloadResolverPtr`s, just stored in different factories — so they share
+  * the resolver-arity path. SQL UDFs are not `IFunction`s; their body is an arbitrary SQL
+  * expression inlined at analysis time by `UserDefinedSQLFunctionVisitor`, not evaluated by a
+  * runtime resolver, so their arity is read from the stored `CREATE FUNCTION` AST.
+  *
+  * These checks don't create tree nodes, so they don't affect node ID numbering. This probe
+  * must stay strictly non-throwing — it runs before column/alias resolution, so a throw would
+  * break the documented "column/alias names take priority" contract and would also be
+  * disruptive for queries run with `terminate_on_any_exception` enabled.
+  */
+std::optional<RegisteredFunctionArity> tryGetRegisteredFunctionArity(const String & function_name, const ContextPtr & context)
+{
+    auto resolver = FunctionFactory::instance().tryGet(function_name, context);
+    if (!resolver && UserDefinedExecutableFunctionFactory::has(function_name, context)) /// NOLINT(readability-static-accessed-through-instance)
+    {
+        /// `has` first: `tryGet` instantiates `UserDefinedFunction` with empty parameters,
+        /// whose constructor throws `BAD_ARGUMENTS` when the UDF declares command parameters.
+        /// Such UDFs cannot be turned into a lambda anyway (we have no parameters to supply),
+        /// so swallow `BAD_ARGUMENTS` and let identifier resolution proceed.
+        try
+        {
+            resolver = UserDefinedExecutableFunctionFactory::tryGet(function_name, context);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::BAD_ARGUMENTS)
+                throw;
+        }
+    }
+    if (!resolver)
+    {
+        /// Use `tryGet` (returns nullptr if missing) instead of `has` + `get`:
+        /// a `has` + `get` sequence has a TOCTOU race with concurrent
+        /// `DROP FUNCTION`, where `get` would throw `RESOURCE_NOT_FOUND`
+        /// and preempt the documented "column/alias names take priority"
+        /// behavior.
+        resolver = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(function_name, context);
+    }
+
+    if (resolver)
+        return RegisteredFunctionArity{resolver->getNumberOfArguments(), resolver->isVariadic()};
+
+    if (ASTPtr stored_udf_ast = UserDefinedSQLFunctionFactory::instance().tryGet(function_name))
+    {
+        /// A `CREATE FUNCTION ... LANGUAGE WASM` definition is kept in the same storage and
+        /// outlives the engine that runs it: after a restart with
+        /// `allow_experimental_webassembly_udf` turned off, or on a build without a WebAssembly
+        /// engine at all, the definition is still stored while the registry probed above is
+        /// empty. Take the arity from the stored definition anyway, so that resolving the
+        /// rewritten call reports that WebAssembly support is unavailable instead of failing as
+        /// an unknown identifier. A WebAssembly UDF declares its arguments in the statement.
+        if (const auto * wasm_function_query = stored_udf_ast->as<ASTCreateWasmFunctionQuery>())
+            return RegisteredFunctionArity{wasm_function_query->getNumberOfArguments(), false};
+
+        if (const auto * create_function_query = stored_udf_ast->as<ASTCreateSQLFunctionQuery>())
+        {
+            if (create_function_query->function_core)
+            {
+                if (const auto * lambda_expr = create_function_query->function_core->as<ASTFunction>())
+                {
+                    if (lambda_expr->name == "lambda" && lambda_expr->arguments
+                        && lambda_expr->arguments->children.size() >= 2)
+                    {
+                        const auto * tuple_ast = lambda_expr->arguments->children[0]->as<ASTFunction>();
+                        if (tuple_ast && tuple_ast->arguments)
+                            return RegisteredFunctionArity{tuple_ast->arguments->children.size(), false};
+                    }
+                }
+            }
+        }
+    }
+
+    return {};
 }
 
 /** Finds a decisive constant in the direct prefix of an AND/OR expression before its
@@ -291,7 +380,16 @@ bool hasFunctionNotSuitableForEarlyShortCircuit(const QueryTreeNodePtr & node, b
                 arguments.reserve(argument_nodes.size());
 
                 for (const auto & argument : argument_nodes)
+                {
+                    /// IN-family functions keep their set subquery as a QueryNode/UnionNode
+                    /// argument. Such nodes have no expression result type, and the speculative
+                    /// early-fold check must fall back instead of trying to inspect one.
+                    if (argument->getNodeType() == QueryTreeNodeType::QUERY
+                        || argument->getNodeType() == QueryTreeNodeType::UNION)
+                        return true;
+
                     arguments.push_back({argument->getResultType(), argument->as<ConstantNode>() != nullptr});
+                }
 
                 if (!function_base->isSuitableForShortCircuitArgumentsExecution(arguments)
                     && !isComparisonOfEarlyShortCircuitScalar(*function))
@@ -1298,6 +1396,31 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node_ptr->getFunctionName();
 
+    /// The parser cannot distinguish the single element array constructor `ARRAY[x]` from subscripting
+    /// a column named `ARRAY`, and parses it as a subscript. If there is no such column, it is the constructor.
+    /// Only the bracket syntax is rewritten, not an explicit `arrayElement(array, x)` call.
+    if (function_name == "arrayElement"
+        && function_node_ptr->isOperator()
+        && !function_node_ptr->isWindowFunction()
+        && function_node_ptr->getParameters().getNodes().empty()
+        && function_node_ptr->getArguments().getNodes().size() == 2)
+    {
+        const auto & arguments = function_node_ptr->getArguments().getNodes();
+        const auto * array_identifier = arguments[0]->as<IdentifierNode>();
+        if (array_identifier
+            && array_identifier->getIdentifier().isShort()
+            && equalsCaseInsensitive(array_identifier->getIdentifier().getFullName(), "array")
+            && !tryResolveIdentifier({array_identifier->getIdentifier(), IdentifierLookupContext::EXPRESSION}, scope).resolved_identifier)
+        {
+            auto array_function_node = std::make_shared<FunctionNode>("array");
+            array_function_node->getArguments().getNodes().push_back(arguments[1]);
+            array_function_node->setAlias(node->getAlias());
+            array_function_node->setOriginalAST(node->getOriginalAST());
+            node = std::move(array_function_node);
+            return resolveFunction(node, scope, allow_niladic_functions);
+        }
+    }
+
     /// Resolve function parameters
 
     auto parameters_projection_names = resolveExpressionNodeList(
@@ -1326,6 +1449,23 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         parameters.push_back(constant_node->getValue());
     }
+
+    /** The `f | g` operator parses into `__compose(f, g)`, which is not a function but a rewrite
+      * to a lambda (see FunctionCompositionRewrite.h), applied by the parent function when its
+      * argument is a composition. A composition being resolved by itself denotes a function,
+      * not a value, so explain the operator instead of resolving further. Only a node the parser
+      * marked as operator syntax is a composition, so no name is reserved: an ordinary call to a
+      * function named `__compose` (or `compose`) resolves as usual. The check runs before the
+      * function name is looked up in the scope, so that a lambda bound in the query under the
+      * name `__compose` (`WITH (x, y) -> x + y AS __compose`) applies to an ordinary call only
+      * and cannot change the meaning of the operator syntax.
+      */
+    if (isFunctionComposition(*function_node_ptr))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The function composition `f | g` can be used only where a function is expected: "
+            "as an argument of a higher-order function such as arrayMap. "
+            "For bitwise OR, use the function bitOr. In scope {}",
+            scope.scope_node->formatASTForErrorMessage());
 
     //// If function node is not window function try to lookup function node name as lambda identifier.
     QueryTreeNodePtr lambda_expression_untyped;
@@ -1390,6 +1530,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             type_inference_analyzer.subquery_counter = subquery_counter;
 
             bool type_inference_succeeded = false;
+            bool post_resolution_is_safe = false;
             ProjectionNames type_inference_projection_names;
             try
             {
@@ -1401,6 +1542,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     false /*ignore_alias*/,
                     allow_niladic_functions);
                 type_inference_succeeded = !type_inference_analyzer.early_short_circuit_type_inference_failed;
+
+                /// Post-resolution safety is also speculative: an unfamiliar non-expression
+                /// argument must decline the optimization, never make the original query fail.
+                if (type_inference_succeeded)
+                    post_resolution_is_safe = !hasFunctionNode(node_for_type_inference, "arrayJoin")
+                        && !hasUnsafeEarlyShortCircuitScalarUsage(node_for_type_inference)
+                        && !hasFunctionNotSuitableForEarlyShortCircuit(node_for_type_inference);
             }
             catch (...)
             {
@@ -1409,10 +1557,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// cannot provide it, so fall back to the regular path which evaluates the scalar.
                 type_inference_succeeded = false;
             }
-
-            const bool post_resolution_is_safe = !hasFunctionNode(node_for_type_inference, "arrayJoin")
-                && !hasUnsafeEarlyShortCircuitScalarUsage(node_for_type_inference)
-                && !hasFunctionNotSuitableForEarlyShortCircuit(node_for_type_inference);
             if (type_inference_succeeded && (is_strict_safe_logical_tree || post_resolution_is_safe))
             {
                 auto result_type = node_for_type_inference->getResultType();
@@ -2024,7 +2168,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto function_exists = std::make_shared<FunctionExists>();
             function_node_ptr->resolveAsFunction(
                 std::make_shared<FunctionToFunctionBaseAdaptor>(
-                    function_exists, DataTypes{}, function_exists->getReturnTypeImpl({})
+                    function_exists, DataTypes{}, function_exists->getReturnTypeImpl(DataTypes{})
                 )
             );
 
@@ -2104,103 +2248,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     {
                         const auto & identifier_name = identifier.getFullName();
 
-                        /// These checks don't create tree nodes, so they don't affect node ID
-                        /// numbering. We must not throw from this rewrite-candidate check — it
-                        /// runs before column/alias resolution, so a throw would break the
-                        /// documented "column/alias names take priority" contract and would also
-                        /// be disruptive for queries run with `terminate_on_any_exception` enabled.
-                        ///
-                        /// Built-in, executable, and WebAssembly UDFs are all `IFunction`
-                        /// implementations exposed as regular `FunctionOverloadResolverPtr`s,
-                        /// just stored in different factories — so they share the resolver-arity
-                        /// path below. SQL UDFs are not `IFunction`s; their body is an arbitrary
-                        /// SQL expression inlined at analysis time, so arity is read from the
-                        /// stored `CREATE FUNCTION` AST.
-                        auto inner_resolver = FunctionFactory::instance().tryGet(identifier_name, scope.context);
-                        if (!inner_resolver && UserDefinedExecutableFunctionFactory::has(identifier_name, scope.context))
+                        if (auto inner_arity = tryGetRegisteredFunctionArity(identifier_name, scope.context))
                         {
-                            /// `has` first: `tryGet` instantiates `UserDefinedFunction` with empty
-                            /// parameters, whose constructor throws `BAD_ARGUMENTS` when the UDF
-                            /// declares command parameters. Such UDFs are not eligible for the
-                            /// lambda rewrite anyway (we have no parameters to supply), so swallow
-                            /// `BAD_ARGUMENTS` and let identifier resolution proceed.
-                            try
-                            {
-                                inner_resolver = UserDefinedExecutableFunctionFactory::tryGet(identifier_name, scope.context);
-                            }
-                            catch (const Exception & e)
-                            {
-                                if (e.code() != ErrorCodes::BAD_ARGUMENTS)
-                                    throw;
-                            }
-                        }
-                        if (!inner_resolver)
-                        {
-                            /// Use `tryGet` (returns nullptr if missing) instead of `has` + `get`:
-                            /// a `has` + `get` sequence has a TOCTOU race with concurrent
-                            /// `DROP FUNCTION`, where `get` would throw `RESOURCE_NOT_FOUND`
-                            /// and preempt the documented "column/alias names take priority"
-                            /// behavior. This rewrite probe must stay strictly non-throwing.
-                            inner_resolver = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(identifier_name, scope.context);
-                        }
-
-                        ASTPtr sql_udf_ast;
-                        ASTPtr wasm_udf_ast;
-                        if (!inner_resolver)
-                        {
-                            auto stored_udf_ast = UserDefinedSQLFunctionFactory::instance().tryGet(identifier_name);
-                            if (stored_udf_ast && stored_udf_ast->as<ASTCreateSQLFunctionQuery>())
-                                sql_udf_ast = std::move(stored_udf_ast);
-                            /// A `CREATE FUNCTION ... LANGUAGE WASM` definition is kept in the same storage and
-                            /// outlives the engine that runs it: after a restart with
-                            /// `allow_experimental_webassembly_udf` turned off, or on a build without a
-                            /// WebAssembly engine at all, the definition is still stored while the registry
-                            /// probed above is empty. Rewrite the reference from the stored definition anyway,
-                            /// so that resolving the rewritten call reports that WebAssembly support is
-                            /// unavailable instead of failing as an unknown identifier.
-                            else if (stored_udf_ast && stored_udf_ast->as<ASTCreateWasmFunctionQuery>())
-                                wasm_udf_ast = std::move(stored_udf_ast);
-                        }
-
-                        if (inner_resolver || sql_udf_ast || wasm_udf_ast)
-                        {
-                            /// Determine arity from the inner function itself. This handles
-                            /// cases like `arrayMap(plus, arr1, arr2)` where `plus` has a
-                            /// fixed arity of 2, regardless of how many array args are passed.
-                            size_t inner_arity = inner_resolver ? inner_resolver->getNumberOfArguments() : 0;
-
-                            /// SQL UDFs are not registered in `FunctionFactory` because they are not
-                            /// `IFunction` implementations: their body is an arbitrary SQL expression
-                            /// inlined at analysis time by `UserDefinedSQLFunctionVisitor`, not evaluated
-                            /// by a runtime resolver. So when the inner function is a SQL UDF we extract
-                            /// arity directly from the stored `CREATE FUNCTION` AST.
-                            if (!inner_resolver && sql_udf_ast)
-                            {
-                                if (const auto * lambda = sql_udf_ast->as<ASTCreateSQLFunctionQuery>())
-                                {
-                                    if (lambda->function_core)
-                                    {
-                                        if (const auto * lambda_expr = lambda->function_core->as<ASTFunction>())
-                                        {
-                                            if (lambda_expr->name == "lambda" && lambda_expr->arguments
-                                                && lambda_expr->arguments->children.size() >= 2)
-                                            {
-                                                const auto * tuple_ast = lambda_expr->arguments->children[0]->as<ASTFunction>();
-                                                if (tuple_ast && tuple_ast->arguments)
-                                                    inner_arity = tuple_ast->arguments->children.size();
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            /// A WebAssembly UDF declares its arguments in the `CREATE FUNCTION` statement,
-                            /// so the stored definition carries the arity even when nothing can run it.
-                            if (const auto * wasm_udf = wasm_udf_ast ? wasm_udf_ast->as<ASTCreateWasmFunctionQuery>() : nullptr)
-                                inner_arity = wasm_udf->getNumberOfArguments();
-
                             /// Determine the lambda arity:
-                            /// - Inner function with fixed arity: use it directly.
+                            /// - Inner function with fixed arity: use it directly. This handles
+                            ///   cases like `arrayMap(plus, arr1, arr2)` where `plus` has a
+                            ///   fixed arity of 2, regardless of how many array args are passed.
                             /// - Variadic inner function (e.g. `concat`): fall back to the
                             ///   number of array arguments, which is correct for the common
                             ///   higher-order functions (`arrayMap`, `arrayFilter`, `arrayFold`).
@@ -2214,9 +2267,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                             ///   the rewrite makes no sense — a zero-arg function can't be
                             ///   applied to lambda arguments — leave the call unchanged.
                             size_t lambda_arity = 0;
-                            if (inner_arity > 0)
-                                lambda_arity = inner_arity;
-                            else if (inner_resolver && inner_resolver->isVariadic())
+                            if (inner_arity->fixed_arity > 0)
+                                lambda_arity = inner_arity->fixed_arity;
+                            else if (inner_arity->is_variadic)
                                 lambda_arity = argument_nodes_size - 1;
 
                             if (lambda_arity > 0)
@@ -2258,6 +2311,131 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /** The function composition operator `f | g` and the argument placeholders `_`, `_1`, `_2`, ...
+      * (see FunctionCompositionRewrite.h). Both are pure rewrites to ordinary lambdas performed
+      * before the arguments are resolved, so downstream only the standard lambda machinery is
+      * involved and no runtime support is needed.
+      */
+    {
+        auto & argument_nodes = function_node_ptr->getArguments().getNodes();
+
+        IsHigherOrderFunction is_higher_order_function = [&](const String & name)
+        {
+            auto resolver = FunctionFactory::instance().tryGet(name, scope.context);
+            return resolver && resolver->isHigherOrderFunction();
+        };
+
+        /// Resolves an identifier operand of a composition: a lambda bound to the name in an
+        /// enclosing scope (WITH (x -> x + 1) AS f SELECT arrayMap(f | f, ...)) or the name of
+        /// a registered function, for which (x1, ..., xn) -> name(x1, ..., xn) is synthesized.
+        auto resolve_identifier_operand = [&](const IdentifierNode & operand, std::optional<size_t> required_arity) -> QueryTreeNodePtr
+        {
+            const auto & operand_identifier = operand.getIdentifier();
+            if (!operand_identifier.isShort())
+                return nullptr;
+
+            auto function_lookup = tryResolveIdentifier({operand_identifier, IdentifierLookupContext::FUNCTION}, scope, {});
+            if (function_lookup.resolved_identifier && function_lookup.resolved_identifier->getNodeType() == QueryTreeNodeType::LAMBDA)
+                return function_lookup.resolved_identifier->clone();
+
+            /// Mirroring the bare-function-name rewrite above, a column or an alias with the same
+            /// name keeps priority over a registered function (and over the placeholder syntax):
+            /// `WITH 10 AS negate SELECT arrayMap(negate | toString, [7])` is an error rather
+            /// than a composition of the function `negate`.
+            auto expression_lookup = tryResolveIdentifier({operand_identifier, IdentifierLookupContext::EXPRESSION}, scope, {});
+            if (expression_lookup.isResolved())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Each operand of the function composition operator `|` must be a function, but the identifier {} "
+                    "resolves to an expression. In scope {}",
+                    backQuote(operand_identifier.getFullName()),
+                    scope.scope_node->formatASTForErrorMessage());
+
+            auto operand_arity = tryGetRegisteredFunctionArity(operand_identifier.getFullName(), scope.context);
+            if (!operand_arity)
+                return nullptr;
+
+            size_t lambda_arity = operand_arity->fixed_arity;
+            if (lambda_arity == 0 && operand_arity->is_variadic)
+            {
+                if (!required_arity)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot compose the variadic function {}: its number of arguments is not known. "
+                        "Use argument placeholders: {}(_1, ..., _N). In scope {}",
+                        backQuote(operand_identifier.getFullName()),
+                        operand_identifier.getFullName(),
+                        scope.scope_node->formatASTForErrorMessage());
+                lambda_arity = *required_arity;
+            }
+
+            /// A fixed-arity zero-argument function: composing it makes no sense.
+            if (lambda_arity == 0)
+                return nullptr;
+
+            Names lambda_argument_names;
+            lambda_argument_names.reserve(lambda_arity);
+
+            auto function_call = std::make_shared<FunctionNode>(operand_identifier.getFullName());
+            auto & function_call_arguments = function_call->getArguments().getNodes();
+            function_call_arguments.reserve(lambda_arity);
+
+            for (size_t i = 0; i < lambda_arity; ++i)
+            {
+                String argument_name = "__function_ref_arg_" + std::to_string(i);
+                lambda_argument_names.push_back(argument_name);
+                function_call_arguments.push_back(std::make_shared<IdentifierNode>(Identifier{argument_name}));
+            }
+
+            auto lambda_arguments_node = std::make_shared<LambdaArgumentsNode>(std::move(lambda_argument_names));
+            return std::make_shared<LambdaNode>(std::move(lambda_arguments_node), std::move(function_call), false /*is_operator*/);
+        };
+
+        /// A composition in any argument position is fused into a single lambda. The composition
+        /// has no other possible meaning, so this needs no gating; where a lambda is not allowed
+        /// the standard diagnostics apply.
+        for (auto & argument_node : argument_nodes)
+        {
+            if (isFunctionComposition(*argument_node))
+                argument_node = fuseCompositionToLambda(argument_node->as<FunctionNode &>(), resolve_identifier_operand, is_higher_order_function);
+        }
+
+        /// Free placeholders in the lambda position of a higher-order function lift the
+        /// expression to a lambda: arrayMap(plus(_1, 1), x) is resolved as
+        /// arrayMap(_1 -> plus(_1, 1), x). This applies to any expression, including a bare
+        /// placeholder: arrayMap(_1, x) is the identity lambda. An argument that is already a
+        /// lambda is left alone: a free placeholder in its body is an ordinary identifier, and
+        /// lifting it would produce a lambda returning a lambda.
+        ///
+        /// Mirroring the bare-function-name rewrite above, the lift applies only when the parent
+        /// is a higher-order function, and only when none of the placeholder names resolves to
+        /// anything in scope, so columns and aliases keep priority (a higher-order function like
+        /// arrayPartialSort can legitimately take a non-lambda first argument). Every query the
+        /// lift activates on is an error without it, so no previously valid query changes meaning.
+        if (argument_nodes.size() >= 2 && argument_nodes[0]->getNodeType() != QueryTreeNodeType::LAMBDA)
+        {
+            if (is_higher_order_function(function_name))
+            {
+                auto placeholder_names = collectFreePlaceholderNames(argument_nodes[0], is_higher_order_function);
+
+                /// A name bound in the query keeps priority, whether it is bound as an
+                /// expression (a column or an alias) or as a function (a lambda bound with
+                /// `WITH (x -> x + 10) AS _1`), which lives in a separate lookup.
+                bool any_placeholder_resolves = false;
+                for (const auto & placeholder_name : placeholder_names)
+                {
+                    if (isFunctionAliasInScope(placeholder_name, scope)
+                        || tryResolveIdentifier({Identifier{placeholder_name}, IdentifierLookupContext::EXPRESSION}, scope, {}).isResolved())
+                    {
+                        any_placeholder_resolves = true;
+                        break;
+                    }
+                }
+
+                if (!placeholder_names.empty() && !any_placeholder_resolves)
+                    argument_nodes[0] = liftPlaceholdersToLambda(argument_nodes[0], is_higher_order_function);
             }
         }
     }
@@ -2840,30 +3018,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             argument_is_deterministic = constant_node->isDeterministic();
             argument_is_constant = true;
         }
-        else if (const auto * get_scalar_function_node = function_argument->as<FunctionNode>();
-                get_scalar_function_node && get_scalar_function_node->getFunctionName() == "__getScalar")
+        else if (auto scalar_column = tryGetScalarConstantColumn(function_argument, scope.context))
         {
             /// Allow constant folding through getScalar
-            const auto * get_scalar_const_arg = get_scalar_function_node->getArguments().getNodes().at(0)->as<ConstantNode>();
-            if (get_scalar_const_arg && scope.context->hasQueryContext())
-            {
-                auto query_context = scope.context->getQueryContext();
-                auto scalar_string = fieldToString(get_scalar_const_arg->getValue());
-                if (query_context->hasScalar(scalar_string))
-                {
-                    auto scalar = query_context->getScalar(scalar_string);
-                    const auto & scalar_column = scalar.getByPosition(0).column;
-                    const auto & get_scalar_result_type = get_scalar_function_node->getResultType();
-                    /// The column comes from the scalars map while the type comes from the resolved node, and the
-                    /// two disagree when the overload resolver wrapped the node's result type (a Nullable name).
-                    if (scalar_column->size() == 1 && columnMatchesType(*scalar_column, *get_scalar_result_type))
-                    {
-                        argument_column.column = ColumnConst::create(scalar_column, 1);
-                        argument_column.type = get_scalar_result_type;
-                        argument_is_constant = true;
-                    }
-                }
-            }
+            argument_column.column = std::move(scalar_column);
+            argument_column.type = function_argument->getResultType();
+            argument_is_constant = true;
         }
 
         all_arguments_constants &= argument_is_constant;

@@ -33,6 +33,14 @@ namespace DB::S3RequestSetting
 namespace DB::S3
 {
 
+Model::StorageClass getStorageClassForName(const std::string & name)
+{
+    /// An unknown name is sent as is, so it must not break the header line.
+    if (name.find_first_of("\r\n") != std::string::npos)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting storage_class has invalid value: it contains CR or LF");
+    return Model::StorageClassMapper::GetStorageClassForName(name);
+}
+
 RequestChecksum::Algorithm RequestChecksum::getUploadChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket)
 {
     /// An explicit setting always wins.
@@ -79,6 +87,7 @@ namespace
 constexpr std::pair<std::string_view, std::string_view> GCS_TRANSLATED_HEADERS[] = {
     {"x-amz-copy-source", "x-goog-copy-source"},
     {"x-amz-metadata-directive", "x-goog-metadata-directive"},
+    {"x-amz-acl", "x-goog-acl"},
     /// Only the name is translated: S3 and GCS share no class name but STANDARD, so an S3 class
     /// reaches GCS as 400 InvalidStorageClass.
     {"x-amz-storage-class", "x-goog-storage-class"},
@@ -147,6 +156,9 @@ Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCol
 
     for (const auto & dropped_header : GCS_DROPPED_HEADERS)
         headers.erase(std::string(dropped_header));
+
+    if (const auto it = headers.find("if-none-match"); it != headers.end() && it->second == "*")
+        headers.emplace("x-goog-if-generation-match", "0");
 
     /// replace all x-amz-meta- headers
     VectorWithMemoryTracking<std::pair<std::string, std::string>> new_meta_headers;

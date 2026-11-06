@@ -11,8 +11,8 @@ namespace DB
 class DefaultSystemLogFlushPolicy : public ISystemLogFlushPolicy
 {
 public:
-    explicit DefaultSystemLogFlushPolicy(const Poco::Util::AbstractConfiguration & config)
-        : skip_alias_columns(config.getBool("default_system_log_flush_policy.skip_alias_columns", false)) {}
+    explicit DefaultSystemLogFlushPolicy(bool skip_alias_columns_)
+        : skip_alias_columns(skip_alias_columns_) {}
 
     bool isManualFlush(uint64_t /*to_flush_end*/) override { return false; }
     void prepareManualFlush(uint64_t /*target_index*/) override {}

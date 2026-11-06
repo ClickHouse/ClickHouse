@@ -12,16 +12,18 @@ integration:
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-ClickPipes는 Avro 및 Protobuf로 인코딩된 레코드 값과 [구조화된 Kafka 키](/ko/integrations/clickpipes/kafka/reference#structured-message-keys)를 디코딩할 수 있도록 스키마 레지스트리 통합을 지원합니다.
+ClickPipes는 Avro 및 Protobuf로 인코딩된 레코드 값을 디코딩할 수 있도록 스키마 레지스트리 통합을 지원합니다. Kafka ClickPipes는 [구조화된 Kafka 키](/ko/integrations/clickpipes/kafka/reference#structured-message-keys)도 지원합니다.
 
 Protobuf 레코드 값의 경우 스키마 레지스트리를 구성하지 않고 [스키마를 직접 업로드](/ko/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic)할 수도 있습니다.
 
-## Kafka ClickPipes에서 지원하는 스키마 레지스트리 {#supported-schema-registries}
+## 스트리밍 ClickPipes에서 지원하는 스키마 레지스트리 {#supported-schema-registries}
 
 Kafka ClickPipes는 두 가지 유형의 스키마 레지스트리를 지원합니다.
 
 * [Confluent 호환 레지스트리](#confluent-compatible-registries): Confluent 스키마 레지스트리와 API 호환되는 모든 레지스트리로, Confluent 스키마 레지스트리 및 Redpanda 스키마 레지스트리 등이 포함됩니다. Avro와 Protobuf를 지원합니다.
 * [AWS Glue 스키마 레지스트리](#aws-glue-schema-registry): 일반적으로 Amazon MSK에서 AWS Glue SerDe를 사용해 직렬화한 Avro 데이터용입니다.
+
+Kinesis ClickPipes는 Avro 및 Protobuf 데이터에 대해 AWS Glue 스키마 레지스트리를 지원합니다.
 
 ClickPipes는 아직 Azure 스키마 레지스트리를 지원하지 않습니다. 지원이 필요하면 [팀에 문의하십시오](https://clickhouse.com/company/contact?loc=clickpipes).
 
@@ -61,17 +63,17 @@ ClickPipes는 구성된 스키마 레지스트리에서 스키마를 동적으�
 
 ## AWS Glue 스키마 레지스트리 {#aws-glue-schema-registry}
 
-프로듀서가 AWS Glue SerDe를 사용해 Avro를 직렬화하는 경우(예: Amazon MSK 토픽에서 `AWSKafkaAvroSerializer` 사용), ClickPipes는 AWS Glue 스키마 레지스트리에서 해당 스키마를 직접 확인할 수 있습니다. Glue는 Confluent-compatible registries와 wire 형식 및 API가 다르므로 별도로 구성합니다.
+producer가 AWS Glue SerDe를 사용해 Avro를 직렬화하는 경우(예: Amazon MSK 토픽에서 `AWSKafkaAvroSerializer` 사용), ClickPipes는 AWS Glue 스키마 레지스트리에서 해당 스키마를 직접 확인할 수 있습니다. Glue는 Confluent 호환 레지스트리와 wire 형식 및 API가 다르므로 별도로 구성합니다.
 
-AWS Glue 스키마 레지스트리 구성은 현재 ClickHouse Cloud 콘솔에서만 사용할 수 있습니다. ClickPipes API 또는 Terraform 프로바이더를 통한 구성은 지원되지 않습니다.
+AWS Glue 스키마 레지스트리는 ClickHouse Cloud 콘솔, ClickPipes API, Terraform 프로바이더를 통해 구성할 수 있습니다.
 
 <Note>
-  **Avro만 지원합니다.** AWS Glue 레지스트리는 Avro 형식만 지원합니다. Glue SerDe는 JSON과 Protobuf도 프레이밍할 수 있지만, ClickPipes에서는 지원하지 않으며 파이프를 생성할 때 거부됩니다.
+  **Kafka:** AWS Glue 레지스트리는 Avro 형식만 지원합니다. **Kinesis:** AWS Glue 레지스트리는 `AvroConfluent`와 `Protobuf`를 지원합니다. Glue SerDe를 통한 JSON은 지원되지 않습니다.
 </Note>
 
 ### 구성 {#glue-configuration}
 
-ClickPipe 생성 마법사의 Kafka 연결 단계에서 **스키마 레지스트리**를 활성화하고 **레지스트리 유형**을 **AWS Glue**로 설정하십시오:
+ClickPipe 생성 마법사의 Kafka 또는 Kinesis 연결 단계에서 **스키마 레지스트리**를 활성화하고 **레지스트리 유형**을 **AWS Glue**로 설정하십시오:
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png" alt="AWS Glue가 선택된 스키마 레지스트리 패널" size="lg" border />
 
@@ -82,7 +84,7 @@ ClickPipe 생성 마법사의 Kafka 연결 단계에서 **스키마 레지스트
 | 레지스트리 이름   | 예     | Glue 레지스트리의 이름입니다. 다른 레지스트리로 해석되는 스키마는 거부되므로, ClickPipes가 스키마 버전을 해석할 때 오타가 확인됩니다. | `my-glue-registry`                                         |
 | IAM 역할 ARN | 조건부   | 레지스트리 액세스 전용 역할입니다. 브로커가 IAM 인증을 사용하는 경우에는 선택 사항이며, 그렇지 않으면 필수입니다.                 | `arn:aws:iam::123456789012:role/ClickHouseAccessRole-glue` |
 
-구성할 레지스트리 URL은 없습니다. Glue SerDe에서 생성되는 모든 레코드에는 해당 스키마 버전의 ID가 포함됩니다. ClickPipes는 `glue:GetSchemaVersion`을 사용해 이를 해석하고, 고유한 스키마 버전마다 API를 한 번 호출해 캐시합니다. 스키마 진화는 자동으로 처리됩니다. 스트림 중간에 레코드가 새 스키마 버전으로 전환되면 처음 발견될 때 해석됩니다.
+구성할 레지스트리 URL은 없습니다. Glue SerDe에서 생성되는 모든 레코드에는 해당 스키마 버전의 ID가 포함됩니다. ClickPipes는 `glue:GetSchemaVersion`을 사용해 이를 해석하고, 고유한 스키마 버전마다 API를 한 번 호출해 캐시합니다. 스키마 진화는 자동으로 처리됩니다. 스트림 중간에 레코드가 새 스키마 버전으로 전환되면 처음 발견될 때 해석됩니다. Kinesis의 경우 [OpenAPI](/ko/integrations/clickpipes/programmatic-access/openapi) 또는 [Terraform](/ko/integrations/clickpipes/programmatic-access/terraform)을 통해 동일한 필드를 구성하십시오.
 
 ### IAM 설정 {#glue-iam-setup}
 
@@ -186,8 +188,8 @@ Kafka ClickPipe가 이미 IAM을 통해 MSK에 인증하는 경우, ClickPipes�
 
 ### 제한 사항 {#glue-limitations}
 
-* Avro만 지원됩니다. Glue SerDe를 통한 JSON Schema 및 Protobuf 형식은 지원되지 않습니다.
-* Kafka 소스만 지원됩니다. Kinesis ClickPipes에서는 Glue 레지스트리를 사용할 수 없습니다.
+* Kafka는 Avro만 지원합니다. Glue SerDe를 통한 JSON Schema 및 Protobuf 형식은 지원되지 않습니다.
+* Kinesis는 AWS Glue 스키마 레지스트리를 통해 `AvroConfluent` 및 `Protobuf`를 지원합니다. 업로드한 Protobuf 스키마는 스키마 레지스트리와 함께 사용할 수 없습니다.
 
 ## 스키마 매핑 {#schema-mapping}
 
