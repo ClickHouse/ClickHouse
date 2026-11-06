@@ -329,6 +329,38 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
             databases_to_shutdown.push_back(database.second);
     }
 
+    /// Runs the shutdown work whose order does not matter: stopping background writers and shutting databases down.
+    /// Each database waits for its tables in the shared shutdown pool, so as many threads as that pool keep it busy.
+    auto & tables_pool = getDatabaseCatalogShutdownTablesThreadPool();
+    tables_pool.initializeWithDefaultSettingsIfNotInitialized();
+    ThreadPool shutdown_pool(
+        CurrentMetrics::DatabaseCatalogThreads,
+        CurrentMetrics::DatabaseCatalogThreadsActive,
+        CurrentMetrics::DatabaseCatalogThreadsScheduled,
+        tables_pool.get().getMaxThreads(),
+        /*max_free_threads=*/ 0,
+        /*queue_size=*/ 0,
+        /*shutdown_on_exception=*/ false);
+
+    /// Runs inline if the pool cannot start a thread, so the work is still done.
+    auto run_concurrently = [&](const std::function<void()> & task)
+    {
+        if (!shutdown_pool.trySchedule(task))
+            task();
+    };
+
+    auto wait_for_concurrent_work = [&]
+    {
+        try
+        {
+            shutdown_pool.wait();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to wait for the shutdown work");
+        }
+    };
+
     /** Hand the buffered rows over before any database goes away.
       *
       * A `Buffer` table flushes into its destination when it is prepared for shutdown below, one table
@@ -366,29 +398,36 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
             return tables;
         };
 
-        auto prepare_for_shutdown = [&](const std::vector<StoragePtr> & tables, bool only_background_writes)
+        auto prepare_for_shutdown = [this](const StoragePtr & table, bool only_background_writes)
+        {
+            try
+            {
+                if (!only_background_writes || table->hasBackgroundWrites())
+                    table->flushAndPrepareForShutdown();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("Failed to prepare to shut down table {}", table->getStorageID().getNameForLogs()));
+            }
+        };
+
+        /// Background writers do not depend on each other, so they stop concurrently, and all of them before returning.
+        auto stop_background_writes = [&](const std::vector<StoragePtr> & tables)
         {
             for (const auto & table : tables)
-            {
-                if (!table)
-                    continue;
-
-                try
-                {
-                    if (!only_background_writes || table->hasBackgroundWrites())
-                        table->flushAndPrepareForShutdown();
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(log, fmt::format("Failed to prepare to shut down table {}", table->getStorageID().getNameForLogs()));
-                }
-            }
+                if (table)
+                    run_concurrently([&prepare_for_shutdown, table]
+                    {
+                        auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::shutdown");
+                        prepare_for_shutdown(table, /*only_background_writes=*/ true);
+                    });
+            wait_for_concurrent_work();
         };
 
         auto user_tables = list_user_tables();
 
         /// Tables that write into others in the background stop first, so nothing writes into the tables drained below.
-        prepare_for_shutdown(user_tables, /*only_background_writes=*/ true);
+        stop_background_writes(user_tables);
 
         for (size_t pass = 0; pass <= user_tables.size(); ++pass)
         {
@@ -434,8 +473,10 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
         /// Prepare every user table before any of them shuts down. List again to include the tables that finished
         /// loading meanwhile, and stop their background writes first.
         user_tables = list_user_tables();
-        prepare_for_shutdown(user_tables, /*only_background_writes=*/ true);
-        prepare_for_shutdown(user_tables, /*only_background_writes=*/ false);
+        stop_background_writes(user_tables);
+        for (const auto & table : user_tables)
+            if (table)
+                prepare_for_shutdown(table, /*only_background_writes=*/ false);
     }
 
     /// A database shutdown() can throw (e.g. a table flushAndShutdown hitting a ZooKeeper timeout).
@@ -445,22 +486,9 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
     /// user databases -> system logs -> system / temporary databases. The throwing shutdown() still
     /// releases that database's table references (see DatabaseWithOwnTablesBase::shutdown), so the
     /// UUID mappings below are emptied as usual.
-    /// Databases shut down concurrently and each waits for its tables in the shared shutdown pool,
-    /// so as many databases as that pool has threads keep it busy.
-    auto & tables_pool = getDatabaseCatalogShutdownTablesThreadPool();
-    tables_pool.initializeWithDefaultSettingsIfNotInitialized();
-    ThreadPool databases_pool(
-        CurrentMetrics::DatabaseCatalogThreads,
-        CurrentMetrics::DatabaseCatalogThreadsActive,
-        CurrentMetrics::DatabaseCatalogThreadsScheduled,
-        tables_pool.get().getMaxThreads(),
-        /*max_free_threads=*/ 0,
-        /*queue_size=*/ 0,
-        /*shutdown_on_exception=*/ false);
-
     for (const auto & database : databases_to_shutdown)
     {
-        auto shutdown_database = [this, database]
+        run_concurrently([this, database]
         {
             auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::shutdown");
             try
@@ -472,21 +500,9 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
             {
                 tryLogCurrentException(log, fmt::format("Failed to shut down database {}", backQuoteIfNeed(database->getDatabaseName())));
             }
-        };
-
-        /// Run inline if the pool cannot start a thread, so every database is still shut down.
-        if (!databases_pool.trySchedule(shutdown_database))
-            shutdown_database();
+        });
     }
-
-    try
-    {
-        databases_pool.wait();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Failed to shut down databases");
-    }
+    wait_for_concurrent_work();
 
     LOG_TRACE(log, "Shutting down system logs");
     shutdown_system_logs();
