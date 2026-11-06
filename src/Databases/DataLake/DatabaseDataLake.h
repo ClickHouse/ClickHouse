@@ -189,6 +189,8 @@ private:
 
     /// Can return nullptr in case of *expected* issues with response from catalog. Sometimes
     /// catalogs can produce completely unexpected responses. In such cases this function may throw.
+    ASTPtr makeViewCreateQuery(const String & name, const DataLake::ViewMetadata & metadata, ContextPtr context) const;
+
     StoragePtr tryGetTableImpl(
         const String & name, ContextPtr context, bool lightweight, bool ignore_if_not_iceberg, bool use_stateful_tables = true) const;
 

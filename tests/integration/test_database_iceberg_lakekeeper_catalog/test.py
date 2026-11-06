@@ -519,3 +519,141 @@ def test_namespace_writes(started_cluster, depth):
         assert identifier not in catalog.list_tables(namespace)
     finally:
         node.query(f"DROP DATABASE {db}")
+
+
+def create_catalog_view(started_cluster, namespace, name, representations, sql_schema):
+    base_url = f"{get_lakekeeper_local_url(started_cluster)}/catalog"
+    response = requests.get(
+        f"{base_url}/v1/config", params={"warehouse": WAREHOUSE_NAME}, timeout=30
+    )
+    response.raise_for_status()
+    config = response.json()
+    prefix = {**config["defaults"], **config["overrides"]}["prefix"]
+    endpoint = f"{base_url}/v1/{prefix}/namespaces/{namespace}/views"
+    response = requests.post(
+        endpoint,
+        json={
+            "name": name,
+            "schema": sql_schema,
+            "view-version": {
+                "version-id": 1,
+                "schema-id": sql_schema["schema-id"],
+                "timestamp-ms": int(time.time() * 1000),
+                "summary": {"engine-name": "spark"},
+                "representations": [
+                    {"type": "sql", "dialect": dialect, "sql": sql}
+                    for dialect, sql in representations
+                ],
+                "default-namespace": [namespace],
+            },
+            "properties": {"comment": "External catalog view"},
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+    return f"{endpoint}/{name}", response.json()
+
+
+def test_catalog_views(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    namespace = f"views_{uuid.uuid4().hex[:8]}"
+    db = f"catalog_{namespace}"
+    catalog.create_namespace((namespace,))
+    schema = {
+        "type": "struct",
+        "schema-id": 0,
+        "fields": [{"id": 1, "name": "id", "required": False, "type": "long"}],
+    }
+    views = []
+    try:
+        for name, representations in [
+            ("foreign_only", [("spark", "SELECT some_spark_only_syntax")]),
+            ("v", [("trino", "SELECT missing_trino_function()"),
+                   ("clickhouse", "SELECT toInt64(number) AS id FROM numbers(3)")]),
+            ("nested", [("clickhouse", "WITH cte AS (SELECT v.id FROM v) SELECT id FROM cte")]),
+        ]:
+            endpoint, _ = create_catalog_view(started_cluster, namespace, name, representations, schema)
+            views.append(endpoint)
+        create_clickhouse_iceberg_database(started_cluster, node, db)
+
+        expected_names = f"{namespace}.nested\n{namespace}.v\n"
+        assert node.query(f"SHOW TABLES FROM {db}") == expected_names
+        assert node.query(f"SHOW TABLES FROM {db} LIKE '%nested'") == f"{namespace}.nested\n"
+        assert node.query(f"EXISTS TABLE {db}.`{namespace}.v`") == "1\n"
+        assert node.query(f"EXISTS TABLE {db}.`{namespace}.foreign_only`") == "0\n"
+        assert "id\tNullable(Int64)" in node.query(f"DESCRIBE TABLE {db}.`{namespace}.v`")
+        create = node.query(f"SHOW CREATE TABLE {db}.`{namespace}.v`")
+        assert f"CREATE VIEW {db}.`{namespace}.v`" in create
+        assert "SQL SECURITY INVOKER" in create
+        assert "numbers(3)" in create
+        assert "missing_trino_function" not in create
+        assert node.query(f"SELECT id FROM {db}.`{namespace}.nested` ORDER BY id") == "0\n1\n2\n"
+        assert node.query(
+            f"SELECT name, engine FROM system.tables WHERE database = '{db}' ORDER BY name "
+            "SETTINGS show_data_lake_catalogs_in_system_tables = true"
+        ) == f"{namespace}.nested\tView\n{namespace}.v\tView\n"
+
+        for query in [f"DROP VIEW {db}.`{namespace}.v`",
+                      f"ALTER TABLE {db}.`{namespace}.v` MODIFY QUERY SELECT toInt64(1) AS id"]:
+            assert "NOT_IMPLEMENTED" in node.query_and_get_error(query)
+        assert node.query(f"SELECT count() FROM {db}.`{namespace}.v`") == "3\n"
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db}")
+        for endpoint in reversed(views):
+            response = requests.delete(endpoint, timeout=30)
+            response.raise_for_status()
+        catalog.drop_namespace((namespace,))
+
+
+def test_catalog_view_current_version(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    namespace = f"view_version_{uuid.uuid4().hex[:8]}"
+    db = f"catalog_{namespace}"
+    catalog.create_namespace((namespace,))
+    schema = {
+        "type": "struct",
+        "schema-id": 3,
+        "fields": [{"id": 1, "name": "id", "required": False, "type": "long"}],
+    }
+    endpoint = None
+    try:
+        endpoint, loaded = create_catalog_view(
+            started_cluster, namespace, "v", [("clickhouse", "SELECT toInt64(1) AS id")], schema
+        )
+        create_clickhouse_iceberg_database(started_cluster, node, db)
+        assert node.query(f"SELECT id FROM {db}.`{namespace}.v`") == "1\n"
+
+        def replace_version(version_id, dialect, sql):
+            response = requests.post(
+                endpoint,
+                json={
+                    "requirements": [{"type": "assert-view-uuid", "uuid": loaded["metadata"]["view-uuid"]}],
+                    "updates": [
+                        {"action": "set-properties", "updates": {"replace.drop-dialect.allowed": "true"}},
+                        {"action": "add-view-version", "view-version": {
+                            "version-id": version_id, "schema-id": 3,
+                            "timestamp-ms": int(time.time() * 1000),
+                            "summary": {"engine-name": "spark"},
+                            "default-namespace": [namespace],
+                            "representations": [{"type": "sql", "dialect": dialect, "sql": sql}],
+                        }},
+                        {"action": "set-current-view-version", "view-version-id": version_id},
+                    ],
+                },
+                timeout=30,
+            )
+            response.raise_for_status()
+
+        replace_version(2, "clickhouse", "SELECT toInt64(2) AS id")
+        assert node.query(f"SELECT id FROM {db}.`{namespace}.v`") == "2\n"
+        replace_version(3, "spark", "SELECT 3 AS id")
+        assert node.query(f"EXISTS TABLE {db}.`{namespace}.v`") == "0\n"
+        assert node.query(f"SHOW TABLES FROM {db}") == ""
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db}")
+        if endpoint:
+            response = requests.delete(endpoint, timeout=30)
+            response.raise_for_status()
+        catalog.drop_namespace((namespace,))

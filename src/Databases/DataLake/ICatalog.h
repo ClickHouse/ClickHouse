@@ -162,6 +162,15 @@ private:
 };
 
 
+struct ViewMetadata
+{
+    DB::NamesAndTypesList schema;
+    std::string sql;
+    std::string default_catalog;
+    std::vector<std::string> default_namespace;
+    std::string comment;
+};
+
 /// A table as returned by a catalog's bulk listing, without a per-table metadata fetch.
 struct CatalogTable
 {
@@ -171,6 +180,7 @@ struct CatalogTable
     /// Whether ClickHouse can read this table (Iceberg for Glue/REST/Hive, Delta for Unity).
     /// Mixed catalogs set it from the bulk listing so SHOW TABLES can hide unreadable tables.
     bool is_readable = true;
+    bool is_view = false;
 };
 
 using CatalogTables = std::vector<CatalogTable>;
@@ -260,6 +270,10 @@ public:
         const std::string & namespace_name,
         const std::string & table_name,
         TableMetadata & result) const = 0;
+
+    /// Only views with a current `clickhouse` SQL representation are exposed.
+    virtual std::optional<ViewMetadata> tryGetViewMetadata(
+        const std::string & /*namespace_name*/, const std::string & /*view_name*/) const { return std::nullopt; }
 
     /// Get storage type, where Iceberg tables' data is stored.
     /// E.g. one of S3, Azure, Local, HDFS.

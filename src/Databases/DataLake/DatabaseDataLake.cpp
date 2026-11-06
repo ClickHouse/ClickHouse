@@ -41,12 +41,14 @@
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageNull.h>
+#include <Storages/StorageView.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/StorageID.h>
 #include <Core/ServerSettings.h>
 #include <Common/logger_useful.h>
@@ -59,6 +61,11 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Common/checkStackSize.h>
 #include <Common/FailPoint.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/ProfileEvents.h>
@@ -111,6 +118,9 @@ namespace DatabaseDataLakeSetting
 
 namespace Setting
 {
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsBool allow_database_iceberg;
     extern const SettingsBool allow_database_unity_catalog;
     extern const SettingsBool allow_database_glue_catalog;
@@ -148,6 +158,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int ACCESS_DENIED;
 }
@@ -1056,7 +1067,8 @@ bool DatabaseDataLake::empty() const
 bool DatabaseDataLake::isTableExist(const String & name, ContextPtr /* context_ */) const
 {
     const auto [namespace_name, table_name] = DataLake::parseTableName(name);
-    return getCatalog()->existsTable(namespace_name, table_name);
+    auto catalog = getCatalog();
+    return catalog->existsTable(namespace_name, table_name) || catalog->tryGetViewMetadata(namespace_name, table_name).has_value();
 }
 
 StoragePtr DatabaseDataLake::tryGetTable(const String & name, ContextPtr context_)  const
@@ -1117,7 +1129,13 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
     {
         evictStatefulTable(name);
-        return nullptr;
+        auto view_metadata = catalog->tryGetViewMetadata(namespace_name, table_name);
+        if (!view_metadata)
+            return nullptr;
+        auto create = makeViewCreateQuery(name, *view_metadata, context_);
+        return std::make_shared<StorageView>(
+            StorageID(getDatabaseName(), name), create->as<ASTCreateQuery &>(),
+            ColumnsDescription(view_metadata->schema), view_metadata->comment);
     }
     if (ignore_if_not_iceberg && !table_metadata.isDefaultReadableTable())
         return nullptr;
@@ -1327,6 +1345,8 @@ void DatabaseDataLake::dropTable( /// NOLINT
     evictStatefulTable(name);
 
     auto table = tryGetTableImpl(name, context_, /*lightweight*/ false, /*ignore_if_not_iceberg*/ false, /*use_stateful_tables*/ false);
+    if (table && table->isView())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Dropping external catalog views is not supported");
     if (table)
         table->drop();
     else
@@ -1708,9 +1728,99 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     }
 }
 
+ASTPtr DatabaseDataLake::makeViewCreateQuery(
+    const String & name, const DataLake::ViewMetadata & metadata, ContextPtr context_) const
+{
+    if (!metadata.default_catalog.empty() && metadata.default_catalog != getDatabaseName())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Iceberg view {}.{} references default catalog '{}'; only the connected catalog '{}' is supported",
+            getDatabaseName(), name, metadata.default_catalog, getDatabaseName());
+
+    const auto & settings = context_->getSettingsRef();
+    ParserSelectWithUnionQuery parser;
+    auto select = parseQuery(parser, metadata.sql, settings[Setting::max_query_size],
+        settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    if (select->as<ASTSelectWithUnionQuery &>().hasQueryParameters())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Parameterized external catalog views are not supported");
+
+    /// Use the native visitor's CTE scoping before mapping catalog namespaces to `DataLakeCatalog` table names.
+    AddDefaultDatabaseVisitor visitor(context_->getGlobalContext(), getDatabaseName());
+    visitor.visitTableExpressions(*select);
+
+    String default_namespace;
+    for (const auto & part : metadata.default_namespace)
+    {
+        if (!default_namespace.empty())
+            default_namespace += '.';
+        default_namespace += part;
+    }
+    auto qualify = [&](const auto & self, ASTPtr & node) -> void
+    {
+        checkStackSize();
+        if (const auto * identifier = node->as<ASTTableIdentifier>(); identifier && identifier->compound())
+        {
+            const auto & parts = identifier->name_parts;
+            String table;
+            if (parts.front() == getDatabaseName())
+            {
+                for (size_t i = 1; i < parts.size(); ++i)
+                {
+                    if (!table.empty())
+                        table += '.';
+                    table += parts[i];
+                }
+                if (parts.size() == 2 && table.find('.') == String::npos && !default_namespace.empty())
+                    table = default_namespace + '.' + table;
+            }
+            else
+            {
+                if (parts.size() != 2)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cross-catalog reference '{}' in Iceberg view is not supported", identifier->name());
+                table = identifier->name();
+            }
+            auto qualified = make_intrusive<ASTTableIdentifier>(getDatabaseName(), table);
+            qualified->setAlias(identifier->alias.empty() ? identifier->shortName() : identifier->alias);
+            node = qualified;
+            return;
+        }
+        for (auto & child : node->children)
+        {
+            ASTPtr old_child = child;
+            self(self, child);
+            if (child != old_child)
+                node->updatePointerToChild(old_child.get(), child);
+        }
+    };
+    qualify(qualify, select);
+
+    auto create = make_intrusive<ASTCreateQuery>();
+    create->is_ordinary_view = true;
+    create->setDatabase(getDatabaseName());
+    create->setTable(name);
+    create->set(create->select, select);
+    auto security = make_intrusive<ASTSQLSecurity>();
+    security->type = SQLSecurityType::INVOKER;
+    create->set(create->sql_security, security);
+    if (!metadata.comment.empty())
+        create->set(create->comment, make_intrusive<ASTLiteral>(metadata.comment));
+
+    auto columns = make_intrusive<ASTColumns>();
+    auto declarations = make_intrusive<ASTExpressionList>();
+    columns->set(columns->columns, declarations);
+    create->set(create->columns_list, columns);
+    for (const auto & column : metadata.schema)
+    {
+        auto declaration = make_intrusive<ASTColumnDeclaration>();
+        declaration->name = column.name;
+        declaration->setType(makeASTDataType(column.type->getName()));
+        declarations->children.push_back(declaration);
+    }
+    return create;
+}
+
 ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     const String & name,
-    ContextPtr /* context_ */,
+    ContextPtr context_,
     bool throw_on_error) const
 {
     const auto settings_version = database_settings.get();
@@ -1725,6 +1835,8 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
 
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
     {
+        if (auto view_metadata = catalog->tryGetViewMetadata(namespace_name, table_name))
+            return makeViewCreateQuery(name, *view_metadata, context_);
         if (throw_on_error)
             throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Table `{}` doesn't exist", name);
         return {};

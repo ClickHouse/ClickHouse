@@ -15,6 +15,7 @@
 
 #if USE_AVRO
 #include <Databases/DataLake/RestCatalog.h>
+#include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 #include <Databases/DataLake/StorageCredentials.h>
@@ -325,6 +326,19 @@ RestCatalog::Config RestCatalog::loadConfig(const CatalogState & catalog_state, 
     const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
     Config result;
+    if (object->has("endpoints") && !object->isNull("endpoints"))
+    {
+        auto endpoints = object->getArray("endpoints");
+        bool list_views = false;
+        bool load_view = false;
+        for (size_t i = 0; i < endpoints->size(); ++i)
+        {
+            const auto endpoint = endpoints->getElement<String>(static_cast<unsigned int>(i));
+            list_views |= endpoint == "GET /v1/{prefix}/namespaces/{namespace}/views";
+            load_view |= endpoint == "GET /v1/{prefix}/namespaces/{namespace}/views/{view}";
+        }
+        result.supports_views = list_views && load_view;
+    }
 
     auto defaults_object = object->get("defaults").extract<Poco::JSON::Object::Ptr>();
     parseCatalogConfigurationSettings(defaults_object, result);
@@ -1256,6 +1270,18 @@ bool RestCatalog::empty() const
         const auto tables = listTablesInNamespace(namespace_name, /* limit */1);
         if (!tables.empty())
             found_table = true;
+        if (!found_table && state.get()->config.supports_views)
+        {
+            for (const auto & name : listTablesInNamespace(namespace_name, 0, true))
+            {
+                auto [view_namespace, view_name] = parseTableName(name);
+                if (tryGetViewMetadata(view_namespace, view_name))
+                {
+                    found_table = true;
+                    break;
+                }
+            }
+        }
         return found_table;
     };
 
@@ -1268,7 +1294,7 @@ bool RestCatalog::empty() const
 CatalogTables RestCatalog::getTables() const
 {
     auto & pool = getContext()->getIcebergCatalogThreadpool();
-    DB::Names tables;
+    CatalogTables tables;
     std::mutex mutex;
 
     {
@@ -1280,7 +1306,7 @@ CatalogTables RestCatalog::getTables() const
             runner.enqueueAndKeepTrack(
             [=, &tables, &mutex, this]
             {
-                auto tables_in_namespace = listTablesInNamespace(current_namespace);
+                auto tables_in_namespace = listObjectsInNamespace(current_namespace);
                 std::lock_guard lock(mutex);
                 std::move(tables_in_namespace.begin(), tables_in_namespace.end(), std::back_inserter(tables));
             });
@@ -1296,12 +1322,7 @@ CatalogTables RestCatalog::getTables() const
         runner.waitForAllToFinishAndRethrowFirstError();
     }
 
-    /// A REST catalog is Iceberg-only, so every listed table is readable.
-    CatalogTables result;
-    result.reserve(tables.size());
-    for (auto & name : tables)
-        result.push_back(CatalogTable{.name = std::move(name)});
-    return result;
+    return tables;
 }
 
 RestCatalog::Namespaces RestCatalog::getNamespaces() const
@@ -1319,12 +1340,25 @@ RestCatalog::Namespaces RestCatalog::getNamespaces() const
 
 CatalogTables RestCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
 {
-    /// A REST catalog is Iceberg-only, so every listed table is readable.
+    return listObjectsInNamespace(namespace_name);
+}
+
+CatalogTables RestCatalog::listObjectsInNamespace(const std::string & namespace_name) const
+{
     CatalogTables result;
     auto names = listTablesInNamespace(namespace_name);
     result.reserve(names.size());
     for (auto & name : names)
         result.push_back(CatalogTable{.name = std::move(name)});
+    if (state.get()->config.supports_views)
+    {
+        for (auto & name : listTablesInNamespace(namespace_name, 0, true))
+        {
+            auto [view_namespace, view_name] = parseTableName(name);
+            if (tryGetViewMetadata(view_namespace, view_name))
+                result.push_back(CatalogTable{.name = std::move(name), .is_view = true});
+        }
+    }
     return result;
 }
 
@@ -1564,12 +1598,12 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
     }
 }
 
-DB::Names RestCatalog::listTablesInNamespace(const std::string & base_namespace, size_t limit) const
+DB::Names RestCatalog::listTablesInNamespace(const std::string & base_namespace, size_t limit, bool views) const
 {
     const auto state_snapshot = state.get();
 
     auto encoded_namespace = encodeNamespaceForURI(base_namespace);
-    const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encoded_namespace / "tables";
+    const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encoded_namespace / (views ? "views" : "tables");
 
     DB::Names tables;
     String page_token;
@@ -1687,6 +1721,103 @@ DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & bas
         e.addMessage("while parsing JSON: " + json_str);
         throw;
     }
+}
+
+std::optional<ViewMetadata> RestCatalog::tryGetViewMetadata(
+    const std::string & namespace_name, const std::string & view_name) const
+{
+    const auto snapshot = state.get();
+    if (!snapshot->config.supports_views)
+        return std::nullopt;
+
+    Poco::JSON::Object::Ptr metadata;
+    try
+    {
+        const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT)
+            / encodeNamespaceForURI(namespace_name) / "views" / view_name;
+        auto buf = createReadBuffer(*snapshot, snapshot->config.prefix / endpoint, {}, {}, std::nullopt);
+        String json;
+        readJSONObjectPossiblyInvalid(json, *buf);
+        metadata = Poco::JSON::Parser().parse(json).extract<Poco::JSON::Object::Ptr>()->getObject("metadata");
+    }
+    catch (const DB::HTTPException & ex)
+    {
+        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+            return std::nullopt;
+        throw;
+    }
+
+    if (!metadata || metadata->getValue<Int32>("format-version") != 1)
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Unsupported Iceberg view metadata for {}.{}", namespace_name, view_name);
+
+    auto versions = metadata->getArray("versions");
+    if (!versions)
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Missing Iceberg view versions for {}.{}", namespace_name, view_name);
+    const auto current_version = metadata->getValue<Int32>("current-version-id");
+    Poco::JSON::Object::Ptr version;
+    for (size_t i = 0; i < versions->size(); ++i)
+    {
+        auto candidate = versions->getObject(static_cast<unsigned int>(i));
+        if (candidate->getValue<Int32>("version-id") == current_version)
+        {
+            if (version)
+                throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Duplicate current Iceberg view version");
+            version = candidate;
+        }
+    }
+    if (!version)
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Current Iceberg view version {} is missing", current_version);
+
+    auto representations = version->getArray("representations");
+    if (!representations)
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Missing Iceberg view representations");
+    std::optional<String> sql;
+    for (size_t i = 0; i < representations->size(); ++i)
+    {
+        auto representation = representations->getObject(static_cast<unsigned int>(i));
+        if (representation->getValue<String>("type") == "sql" && representation->getValue<String>("dialect") == "clickhouse")
+        {
+            if (sql)
+                throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Duplicate clickhouse representation in Iceberg view");
+            sql = representation->getValue<String>("sql");
+        }
+    }
+    if (!sql)
+        return std::nullopt;
+
+    ViewMetadata result;
+    result.sql = std::move(*sql);
+    if (version->has("default-catalog") && !version->isNull("default-catalog"))
+        result.default_catalog = version->getValue<String>("default-catalog");
+    auto default_namespace = version->getArray("default-namespace");
+    if (!default_namespace)
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Missing Iceberg view default namespace");
+    for (size_t i = 0; i < default_namespace->size(); ++i)
+        result.default_namespace.push_back(default_namespace->getElement<String>(static_cast<unsigned int>(i)));
+    if (auto properties = metadata->getObject("properties"); properties && properties->has("comment"))
+        result.comment = properties->getValue<String>("comment");
+
+    const auto schema_id = version->getValue<Int32>("schema-id");
+    auto schemas = metadata->getArray("schemas");
+    if (!schemas)
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Missing Iceberg view schemas");
+    DB::Iceberg::IcebergSchemaProcessor schema_processor(getContext()->getSettingsRef()[DB::Setting::allow_geo_types_in_iceberg]);
+    bool found_schema = false;
+    for (size_t i = 0; i < schemas->size(); ++i)
+    {
+        auto schema = schemas->getObject(static_cast<unsigned int>(i));
+        if (schema->getValue<Int32>("schema-id") == schema_id)
+        {
+            if (found_schema)
+                throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Duplicate Iceberg view schema {}", schema_id);
+            schema_processor.addIcebergTableSchema(schema);
+            result.schema = *schema_processor.getClickHouseTableSchemaById(schema_id);
+            found_schema = true;
+        }
+    }
+    if (!found_schema)
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Iceberg view schema {} is missing", schema_id);
+    return result;
 }
 
 bool RestCatalog::existsTable(const std::string & namespace_name, const std::string & table_name) const

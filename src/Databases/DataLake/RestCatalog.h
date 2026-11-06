@@ -58,6 +58,9 @@ public:
         const std::string & table_name,
         TableMetadata & result) const override;
 
+    std::optional<ViewMetadata> tryGetViewMetadata(
+        const std::string & namespace_name, const std::string & view_name) const override;
+
     std::optional<StorageType> getStorageType() const override;
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
@@ -110,6 +113,7 @@ public:
         /// Base location is location of data in storage
         /// (in filesystem or object storage).
         std::string default_base_location;
+        bool supports_views = false;
 
         std::string toString() const;
     };
@@ -210,7 +214,8 @@ protected:
 
     /// Non-recursive list of tables directly in `base_namespace` (not in sub-namespaces).
     /// `limit` is a soft cap on the number of returned names; 0 means no limit.
-    DB::Names listTablesInNamespace(const std::string & base_namespace, size_t limit = 0) const;
+    DB::Names listTablesInNamespace(const std::string & base_namespace, size_t limit = 0, bool views = false) const;
+    CatalogTables listObjectsInNamespace(const std::string & namespace_name) const;
 
     CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
 
