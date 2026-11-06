@@ -12,7 +12,7 @@ using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
 FunctionOverloadResolverPtr createExactNumericEqualityFunction(const ContextPtr & context)
 {
     ComparisonParams params(context);
-    params.exact_decimal_float_equality = true;
+    params.exact_decimal_numeric_equality = true;
     return std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(std::move(params)));
 }
 

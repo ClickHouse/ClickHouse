@@ -194,54 +194,64 @@ static const ColumnType * getNumericColumn(const IColumn & column, bool & is_con
     return nullptr;
 }
 
-template <typename DecimalType, typename FloatType>
-ColumnPtr executeExactDecimalFloatEqualityImpl(
+template <typename DecimalType, typename NumericType>
+ColumnPtr executeExactDecimalNumericEqualityImpl(
     const ColumnWithTypeAndName & decimal_argument,
-    const ColumnWithTypeAndName & float_argument,
+    const ColumnWithTypeAndName & numeric_argument,
     size_t input_rows_count)
 {
     bool decimal_is_const = false;
-    bool float_is_const = false;
+    bool numeric_is_const = false;
     const auto * decimal_column = getNumericColumn<ColumnDecimal<DecimalType>>(*decimal_argument.column, decimal_is_const);
-    const auto * float_column = getNumericColumn<ColumnVector<FloatType>>(*float_argument.column, float_is_const);
-    if (!decimal_column || !float_column)
+    const auto * numeric_column = getNumericColumn<ColumnVector<NumericType>>(*numeric_argument.column, numeric_is_const);
+    if (!decimal_column || !numeric_column)
         return nullptr;
 
     const UInt32 scale = getDecimalScale(*decimal_argument.type);
     const Int256 scale_multiplier = DecimalUtils::scaleMultiplier<Int256>(scale);
     const auto & decimal_data = decimal_column->getData();
-    const auto & float_data = float_column->getData();
+    const auto & numeric_data = numeric_column->getData();
 
     auto result = ColumnUInt8::create(input_rows_count);
     auto & result_data = result->getData();
     for (size_t row = 0; row < input_rows_count; ++row)
     {
         const auto decimal_value = decimal_data[decimal_is_const ? 0 : row];
-        const auto float_value = float_data[float_is_const ? 0 : row];
-        const Float64 float64_value = static_cast<Float64>(float_value);
+        const auto numeric_value = numeric_data[numeric_is_const ? 0 : row];
 
         Int256 integer_value;
-        if (std::isfinite(float64_value)
-            && std::trunc(float64_value) == float64_value
-            && accurate::convertNumeric(float_value, integer_value))
+        if constexpr (is_integer<NumericType>)
         {
             const Int256 decimal_raw_value = decimal_value.value;
-            result_data[row] = decimal_raw_value % scale_multiplier == 0
+            result_data[row] = accurate::convertNumeric(numeric_value, integer_value)
+                && decimal_raw_value % scale_multiplier == 0
                 && decimal_raw_value / scale_multiplier == integer_value;
         }
         else
         {
-            /// Preserve the established comparison for fractional floats: both operands are
-            /// converted to `Float64`. Only integral floats need the exact path above because
-            /// rounding them can create false membership matches near precision boundaries.
-            result_data[row] = DecimalUtils::convertTo<Float64>(decimal_value, scale) == float64_value;
+            const Float64 float64_value = static_cast<Float64>(numeric_value);
+            if (std::isfinite(float64_value)
+                && std::trunc(float64_value) == float64_value
+                && accurate::convertNumeric(numeric_value, integer_value))
+            {
+                const Int256 decimal_raw_value = decimal_value.value;
+                result_data[row] = decimal_raw_value % scale_multiplier == 0
+                    && decimal_raw_value / scale_multiplier == integer_value;
+            }
+            else
+            {
+                /// Preserve the established comparison for fractional floats: both operands are
+                /// converted to `Float64`. Only integral floats need the exact path above because
+                /// rounding them can create false membership matches near precision boundaries.
+                result_data[row] = DecimalUtils::convertTo<Float64>(decimal_value, scale) == float64_value;
+            }
         }
     }
 
     return result;
 }
 
-inline ColumnPtr executeExactDecimalFloatEquality(
+inline ColumnPtr executeExactDecimalNumericEquality(
     const ColumnWithTypeAndName & left_argument,
     const ColumnWithTypeAndName & right_argument,
     size_t input_rows_count)
@@ -253,17 +263,17 @@ inline ColumnPtr executeExactDecimalFloatEquality(
         using LeftType = typename Types::LeftType;
         using RightType = typename Types::RightType;
         if constexpr (is_decimal<LeftType>)
-            result = executeExactDecimalFloatEqualityImpl<LeftType, RightType>(left_argument, right_argument, input_rows_count);
+            result = executeExactDecimalNumericEqualityImpl<LeftType, RightType>(left_argument, right_argument, input_rows_count);
         else
-            result = executeExactDecimalFloatEqualityImpl<RightType, LeftType>(right_argument, left_argument, input_rows_count);
+            result = executeExactDecimalNumericEqualityImpl<RightType, LeftType>(right_argument, left_argument, input_rows_count);
         return result != nullptr;
     };
 
-    if (!callOnAtLeastOneDecimalType<false, true, false, false>(
+    if (!callOnAtLeastOneDecimalType<true, true, false, false>(
             left_argument.type->getTypeId(), right_argument.type->getTypeId(), call))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Wrong call for exact Decimal/Float equality with {} and {}",
+            "Wrong call for exact Decimal/numeric equality with {} and {}",
             left_argument.type->getName(),
             right_argument.type->getName());
 
@@ -1043,9 +1053,9 @@ struct ComparisonParams
     bool check_decimal_overflow = false;
     bool validate_enum_literals_in_operators = false;
     bool use_variant_default_implementation = true;
-    /// Used by row-dependent numeric `IN` rewrites. Integral floating-point values are compared
-    /// exactly with `Decimal` values instead of rounding the `Decimal` through `Float64`.
-    bool exact_decimal_float_equality = false;
+    /// Used by row-dependent numeric `IN` rewrites. Integer values and integral floating-point
+    /// values are compared exactly with `Decimal` values without overflow or `Float64` rounding.
+    bool exact_decimal_numeric_equality = false;
     FormatSettings format_settings;
     /// The hash of the session settings `format_settings` was derived from (see `getFormatSettingsHash`).
     UInt64 format_settings_hash = 0;
@@ -2301,12 +2311,12 @@ public:
                     getName(),
                     left_type->getName(),
                     right_type->getName());
-            /// Row-dependent heterogeneous numeric `IN` lists need exact equality for integral
-            /// floats. A homogeneous array cannot represent these values without rounding.
+            /// Row-dependent heterogeneous numeric `IN` lists need exact equality without
+            /// narrowing integers into the Decimal's native width or rounding through `Float64`.
             if constexpr (std::is_same_v<Name, NameEquals>)
             {
-                if (params.exact_decimal_float_equality && (left_is_float || right_is_float))
-                    return executeExactDecimalFloatEquality(
+                if (params.exact_decimal_numeric_equality && (left_is_num || right_is_num))
+                    return executeExactDecimalNumericEquality(
                         col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
             }
 
