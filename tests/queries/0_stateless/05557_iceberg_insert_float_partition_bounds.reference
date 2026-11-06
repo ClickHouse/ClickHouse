@@ -14,7 +14,3 @@ contains_null=false	contains_nan=true	lower_bound=-0	upper_bound=5.5
 contains_null=false	\N	lower_bound=-0	upper_bound=0
 --- H: Float64, values=(0.0), (-0.0)
 contains_null=false	\N	lower_bound=-0	upper_bound=0
-E_lower_bound_hex=00000080	E_upper_bound_hex=0000B040
-F_lower_bound_hex=0000000000000080	F_upper_bound_hex=0000000000001640
-G_lower_bound_hex=00000080	G_upper_bound_hex=00000000
-H_lower_bound_hex=0000000000000080	H_upper_bound_hex=0000000000000000

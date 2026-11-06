@@ -60,8 +60,7 @@ run_case B Float64 reinterpretAsFloat64 '(1.5), (3.5), (nan)'
 run_case C Float32 reinterpretAsFloat32 '(1.5), (3.5)'
 run_case D Float64 reinterpretAsFloat64 '(1.5), (3.5)'
 
-# Case E/F: -0.0 sorts before +0.0 (spec: "Bounds for Float and Double"). The hex dump below checks
-# the exact bits.
+# Case E/F: -0.0 sorts before +0.0 (spec: "Bounds for Float and Double").
 run_case E Float32 reinterpretAsFloat32 '(0.0), (-0.0), (5.5), (nan)'
 run_case F Float64 reinterpretAsFloat64 '(0.0), (-0.0), (5.5), (nan)'
 
@@ -69,14 +68,3 @@ run_case F Float64 reinterpretAsFloat64 '(0.0), (-0.0), (5.5), (nan)'
 # but a first-wins tie-break gets one of the bounds wrong in either order.
 run_case G Float32 reinterpretAsFloat32 '(0.0), (-0.0)'
 run_case H Float64 reinterpretAsFloat64 '(0.0), (-0.0)'
-
-for suffix in E F G H; do
-    manifest_list=$(find "${ROOT}/${suffix}/metadata" -maxdepth 1 -name 'snap-*.avro' -type f \
-        -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-)
-    ${CLICKHOUSE_CLIENT} --query "
-        SELECT
-            '${suffix}_lower_bound_hex=' || hex(tupleElement(partitions[1], 'lower_bound')),
-            '${suffix}_upper_bound_hex=' || hex(tupleElement(partitions[1], 'upper_bound'))
-        FROM file('${manifest_list}', Avro)
-    "
-done

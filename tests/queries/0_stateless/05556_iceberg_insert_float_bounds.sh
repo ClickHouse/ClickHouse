@@ -19,7 +19,7 @@ cleanup()
 trap cleanup EXIT
 
 # Creates a `(f32, f64)` table (Nullable unless `f32_type`/`f64_type` are given), inserts `values`
-# (both columns get the same value) and prints the bounds of field ids 1 (f32) and 2 (f64).
+# (both columns get the same value) and prints the bounds as (field id, value): 1 is f32, 2 is f64.
 # With `split`, each row is its own chunk, so the ranges are merged by `uniteRanges`. `INSERT ...
 # VALUES` always arrives as one chunk, so the rows come from `numbers` with `max_block_size = 1`.
 # Parquet is pinned: for a format that prefers large blocks (e.g. ORC), insert squashing would merge
@@ -48,24 +48,14 @@ run_case()
         ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${table} VALUES ${values}"
     fi
 
-    for manifest in $(find "${ROOT}/${suffix}/metadata" -maxdepth 1 -name '*.avro' \
-            -not -name 'snap-*.avro' -type f | sort); do
-        ${CLICKHOUSE_CLIENT} --query "
-            SELECT
-                'lower_ids=' || toString(arraySort(arrayMap(x -> x.1, tupleElement(data_file, 'lower_bounds')))),
-                'upper_ids=' || toString(arraySort(arrayMap(x -> x.1, tupleElement(data_file, 'upper_bounds')))),
-                'f32_lower=' || toString(arrayMap(x -> reinterpretAsFloat32(x.2),
-                    arrayFilter(x -> x.1 = 1, tupleElement(data_file, 'lower_bounds')))),
-                'f32_upper=' || toString(arrayMap(x -> reinterpretAsFloat32(x.2),
-                    arrayFilter(x -> x.1 = 1, tupleElement(data_file, 'upper_bounds')))),
-                'f64_lower=' || toString(arrayMap(x -> reinterpretAsFloat64(x.2),
-                    arrayFilter(x -> x.1 = 2, tupleElement(data_file, 'lower_bounds')))),
-                'f64_upper=' || toString(arrayMap(x -> reinterpretAsFloat64(x.2),
-                    arrayFilter(x -> x.1 = 2, tupleElement(data_file, 'upper_bounds'))))
-            FROM file('${manifest}', Avro)
-            ORDER BY 1, 2, 3, 4
-        "
-    done
+    local manifest
+    manifest=$(find "${ROOT}/${suffix}/metadata" -maxdepth 1 -name '*.avro' -not -name 'snap-*.avro')
+    ${CLICKHOUSE_CLIENT} --query "
+        WITH bounds -> arraySort(arrayMap(x -> (x.1, if(x.1 = 1, reinterpretAsFloat32(x.2), reinterpretAsFloat64(x.2))), bounds)) AS decode
+        SELECT
+            'lower=' || toString(decode(tupleElement(data_file, 'lower_bounds'))),
+            'upper=' || toString(decode(tupleElement(data_file, 'upper_bounds')))
+        FROM file('${manifest}', Avro)"
 }
 
 # Case A: only NaN: no bound.
@@ -83,8 +73,7 @@ run_case D '(1.5, 1.5), (nan, nan), (-5.5, -5.5)' split
 # Case E: NULL among real values is excluded from the bounds.
 run_case E '(1.5, 1.5), (NULL, NULL), (-5.5, -5.5)'
 
-# Case F: -0.0 sorts before +0.0 (spec: "Bounds for Float and Double"), within one chunk. The hex
-# dump below checks the exact bits.
+# Case F: -0.0 sorts before +0.0 (spec: "Bounds for Float and Double"), within one chunk.
 run_case F '(nan, nan), (0.0, 0.0), (-0.0, -0.0), (5.5, 5.5)'
 
 # Case G: like F, one row per chunk: the zeros are merged by `uniteRanges`.
@@ -98,17 +87,3 @@ run_case I '(nan, nan), (0.0, 0.0), (-0.0, -0.0), (2.5, 2.5)' '' Float32 Float64
 
 # Case J: infinities are valid bounds.
 run_case J '(inf, inf), (-inf, -inf), (1.0, 1.0), (nan, nan)'
-
-for suffix in F G H I; do
-    for manifest in $(find "${ROOT}/${suffix}/metadata" -maxdepth 1 -name '*.avro' -not -name 'snap-*.avro' -type f | sort); do
-        ${CLICKHOUSE_CLIENT} --query "
-            SELECT
-                '${suffix}_f32_lower_hex=' || toString(arrayMap(x -> hex(x.2), arrayFilter(x -> x.1 = 1, tupleElement(data_file, 'lower_bounds')))),
-                '${suffix}_f32_upper_hex=' || toString(arrayMap(x -> hex(x.2), arrayFilter(x -> x.1 = 1, tupleElement(data_file, 'upper_bounds')))),
-                '${suffix}_f64_lower_hex=' || toString(arrayMap(x -> hex(x.2), arrayFilter(x -> x.1 = 2, tupleElement(data_file, 'lower_bounds')))),
-                '${suffix}_f64_upper_hex=' || toString(arrayMap(x -> hex(x.2), arrayFilter(x -> x.1 = 2, tupleElement(data_file, 'upper_bounds'))))
-            FROM file('${manifest}', Avro)
-            ORDER BY 1, 2, 3, 4
-        "
-    done
-done

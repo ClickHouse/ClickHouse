@@ -18,6 +18,24 @@ namespace ErrorCodes
 
 #if USE_AVRO
 
+DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_)
+{
+    field_ids.resize(schema_->size());
+    for (UInt32 i = 0; i < schema_->size(); ++i)
+    {
+        auto field = schema_->getObject(i);
+        size_t field_id = field->getValue<size_t>(Iceberg::f_id);
+        field_ids[i] =  field_id;
+    }
+}
+
+DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_, std::vector<Int64> written_field_ids)
+    : DataFileStatistics(schema_)
+{
+    if (!written_field_ids.empty())
+        field_ids = std::move(written_field_ids);
+}
+
 /// `getExtremes` compares with IEEE754 `<`, where -0.0 == +0.0, so which zero it returns depends on
 /// the scan order. The Iceberg spec orders -0.0 before +0.0: pick the zero by the signs present.
 static void fixFloatSignedZeroExtremes(Field & min_val, Field & max_val, const IColumn & column)
@@ -84,36 +102,6 @@ static Int64 countNaNs(const IColumn & column, ConstNullMapPtr null_map)
     if (const auto * col_f64 = checkAndGetColumn<ColumnFloat64>(&column))
         return count(col_f64->getData());
     return 0;
-}
-
-/// `Field` stores Float32 values as `Float64`, so this also covers Float32.
-static bool isFloatNaN(const Field & value)
-{
-    return value.getType() == Field::Types::Float64 && isNaN(value.safeGet<Float64>());
-}
-
-/// `getExtremes` of an all-NaN chunk returns NaN on both sides, never on just one.
-static bool isNaNRange(const Range & range)
-{
-    return isFloatNaN(range.left) && isFloatNaN(range.right);
-}
-
-DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_)
-{
-    field_ids.resize(schema_->size());
-    for (UInt32 i = 0; i < schema_->size(); ++i)
-    {
-        auto field = schema_->getObject(i);
-        size_t field_id = field->getValue<size_t>(Iceberg::f_id);
-        field_ids[i] =  field_id;
-    }
-}
-
-DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_, std::vector<Int64> written_field_ids)
-    : DataFileStatistics(schema_)
-{
-    if (!written_field_ids.empty())
-        field_ids = std::move(written_field_ids);
 }
 
 void DataFileStatistics::update(const Chunk & chunk)
@@ -208,6 +196,7 @@ void DataFileStatistics::merge(const DataFileStatistics & other)
 
     chassert(null_counts.size() == other.null_counts.size());
     chassert(nan_counts.size() == other.nan_counts.size());
+    chassert(null_counts.size() == nan_counts.size());
     chassert(is_float_column == other.is_float_column);
     for (size_t i = 0; i < null_counts.size(); ++i)
     {
@@ -215,6 +204,18 @@ void DataFileStatistics::merge(const DataFileStatistics & other)
         nan_counts[i] += other.nan_counts[i];
         ranges[i] = uniteRanges(ranges[i], other.ranges[i]);
     }
+}
+
+/// `Field` stores Float32 values as `Float64`, so this also covers Float32.
+static bool isFloatNaN(const Field & value)
+{
+    return value.getType() == Field::Types::Float64 && isNaN(value.safeGet<Float64>());
+}
+
+/// `getExtremes` of an all-NaN chunk returns NaN on both sides, never on just one.
+static bool isNaNRange(const Range & range)
+{
+    return isFloatNaN(range.left) && isFloatNaN(range.right);
 }
 
 bool icebergBoundLess(const Field & lhs, const Field & rhs)
