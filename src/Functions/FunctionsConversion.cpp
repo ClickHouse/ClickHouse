@@ -1020,7 +1020,7 @@ bool isGeometryToMultiGeometryUnderArrays(const IDataType & from, const IDataTyp
     return from_array && to_array && isGeometryToMultiGeometryUnderArrays(*from_array->getNestedType(), *to_array->getNestedType());
 }
 
-/// `equals` ignores custom names at every level, e.g. `Array(UInt8)` equals `Array(Bool)`.
+/// `equals` may ignore custom names, e.g. `Array(UInt8)` equals `Array(Bool)`.
 bool haveSameCustomNames(const IDataType & from, const IDataType & to)
 {
     const auto * from_name = from.getCustomName();
