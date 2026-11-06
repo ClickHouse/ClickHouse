@@ -1295,8 +1295,9 @@ def parse_args() -> argparse.Namespace:
         dest="no_random_disruptor",
         action="store_true",
         default=False,
-        help="Disable the random disruptor (query/client/mutation kills, merge pauses) "
-        "during stress test",
+        help="Disable the random disruptor during stress test: query/client/mutation kills, "
+        "pauses of background operations and listeners, cache drops, Keeper reconnects, "
+        "replica restarts, dictionary reloads and view refreshes",
     )
     return parser.parse_args()
 
