@@ -18,8 +18,8 @@ cleanup()
 }
 trap cleanup EXIT
 
-# Creates a `(f32, i Nullable(Int32), f64)` table (floats Nullable unless `f32_type`/`f64_type` are
-# given), inserts `values` into f32/f64 (`i` stays NULL) and prints `null_value_counts` and
+# Creates a `(f32, i Nullable(Int32), f64)` table (floats `Nullable` unless `f32_type`/`f64_type` are
+# given), inserts `values` into f32/f64 (`i` stays `NULL`) and prints `null_value_counts` and
 # `nan_value_counts`. `i` (field id 2, between the floats) must never get a NaN count.
 # With `split`, each row is its own chunk (see `iceberg_insert_float_bounds` for why `numbers` and Parquet are used).
 run_case()
@@ -70,13 +70,13 @@ run_case C '(1.5, 1.5), (nan, nan), (-5.5, -5.5)'
 # Case D: like C, one row per chunk: the counts are summed across chunks.
 run_case D '(1.5, 1.5), (nan, nan), (-5.5, -5.5)' split
 
-# Case E: a NULL row is not counted as NaN.
+# Case E: a `NULL` row is not counted as NaN.
 run_case E '(1.5, 1.5), (NULL, NULL), (-5.5, -5.5)'
 
-# Case F: NULL and NaN together are counted separately.
+# Case F: `NULL` and NaN together are counted separately.
 run_case F '(1.5, 1.5), (NULL, NULL), (nan, nan), (-5.5, -5.5)'
 
-# Case G: like C with non-Nullable columns.
+# Case G: like C with non-`Nullable` columns.
 run_case G '(1.5, 1.5), (nan, nan), (-5.5, -5.5)' '' Float32 Float64
 
 # Case H: infinities are not NaN.

@@ -52,11 +52,11 @@ run_case()
     "
 }
 
-# Case A/B: a NaN partition sets contains_nan but is excluded from the bounds.
+# Case A/B: a NaN partition sets `contains_nan` but is excluded from the bounds.
 run_case A Float32 reinterpretAsFloat32 '(1.5), (3.5), (nan)'
 run_case B Float64 reinterpretAsFloat64 '(1.5), (3.5), (nan)'
 
-# Case C/D: no NaN partition: contains_nan stays NULL, the bounds are the plain min/max.
+# Case C/D: no NaN partition: `contains_nan` stays `NULL`, the bounds are the plain min/max.
 run_case C Float32 reinterpretAsFloat32 '(1.5), (3.5)'
 run_case D Float64 reinterpretAsFloat64 '(1.5), (3.5)'
 
@@ -64,7 +64,7 @@ run_case D Float64 reinterpretAsFloat64 '(1.5), (3.5)'
 run_case E Float32 reinterpretAsFloat32 '(0.0), (-0.0), (5.5), (nan)'
 run_case F Float64 reinterpretAsFloat64 '(0.0), (-0.0), (5.5), (nan)'
 
-# Case G/H: only the two zeros: lower must be -0.0, upper +0.0. Partitions are folded in hash order,
-# but a first-wins tie-break gets one of the bounds wrong in either order.
+# Case G/H: only the two zeros. `ManifestPartitionSummary::add` sees the partitions in hash order;
+# if equal zeros kept the first one, both bounds would be the same zero, wrong in either order.
 run_case G Float32 reinterpretAsFloat32 '(0.0), (-0.0)'
 run_case H Float64 reinterpretAsFloat64 '(0.0), (-0.0)'

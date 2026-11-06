@@ -2,11 +2,11 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Common/NaNUtils.h>
 #include <Core/Block.h>
-#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -37,11 +37,12 @@ DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_, std::vect
 }
 
 /// `getExtremes` compares with IEEE754 `<`, where -0.0 == +0.0, so which zero it returns depends on
-/// the scan order. The Iceberg spec orders -0.0 before +0.0: pick the zero by the signs present.
+/// the scan order. The Iceberg spec orders -0.0 before +0.0: a zero min becomes -0.0 if the column
+/// has -0.0, a zero max becomes +0.0 if it has +0.0.
 static void fixFloatSignedZeroExtremes(Field & min_val, Field & max_val, const IColumn & column)
 {
-    bool min_is_zero = min_val.getType() == Field::Types::Float64 && min_val.safeGet<Float64>() == 0.0;
-    bool max_is_zero = max_val.getType() == Field::Types::Float64 && max_val.safeGet<Float64>() == 0.0;
+    bool min_is_zero = isFloatZeroField(min_val);
+    bool max_is_zero = isFloatZeroField(max_val);
     if (!min_is_zero && !max_is_zero)
         return;
 
@@ -85,8 +86,9 @@ static Range getExtremeRangeFromColumn(const ColumnPtr & column)
     return Range(min_val, true, max_val, true);
 }
 
-/// Rows set in `null_map` are skipped: the nested value of a NULL row is not a real value.
-static Int64 countNaNs(const IColumn & column, ConstNullMapPtr null_map)
+/// Skips rows set in `null_map`: their nested value is a placeholder.
+/// `std::nullopt` if `column` is not `Float32`/`Float64`.
+static std::optional<Int64> countNaNs(const IColumn & column, ConstNullMapPtr null_map)
 {
     auto count = [&](const auto & data) -> Int64
     {
@@ -101,7 +103,7 @@ static Int64 countNaNs(const IColumn & column, ConstNullMapPtr null_map)
         return count(col_f32->getData());
     if (const auto * col_f64 = checkAndGetColumn<ColumnFloat64>(&column))
         return count(col_f64->getData());
-    return 0;
+    return std::nullopt;
 }
 
 void DataFileStatistics::update(const Chunk & chunk)
@@ -113,7 +115,7 @@ void DataFileStatistics::update(const Chunk & chunk)
     {
         null_counts.resize(num_columns, 0);
         nan_counts.resize(num_columns, 0);
-        is_float_column.resize(num_columns, false);
+        can_count_nan.resize(num_columns, true);
         for (size_t i = 0; i < num_columns; ++i)
         {
             ranges.push_back(getExtremeRangeFromColumn(chunk.getColumns()[i]));
@@ -127,15 +129,13 @@ void DataFileStatistics::update(const Chunk & chunk)
         const auto & col = chunk.getColumns()[i];
         const auto * nullable_col = checkAndGetColumn<ColumnNullable>(col.get());
         ConstNullMapPtr null_map = nullable_col ? &nullable_col->getNullMapData() : nullptr;
-        if (nullable_col)
-        {
-            for (UInt8 v : *null_map)
-                null_counts[i] += v;
-        }
+        if (null_map)
+            null_counts[i] += countBytesInFilter(*null_map);
         const IColumn & nested_col = nullable_col ? nullable_col->getNestedColumn() : *col;
-        /// Not `isFloat`: it includes BFloat16, which `countNaNs` does not handle.
-        is_float_column[i] = WhichDataType(nested_col.getDataType()).isNativeFloat();
-        nan_counts[i] += countNaNs(nested_col, null_map);
+        if (auto nans = countNaNs(nested_col, null_map))
+            nan_counts[i] += *nans;
+        else
+            can_count_nan[i] = false;
         ranges[i] = uniteRanges(ranges[i], getExtremeRangeFromColumn(col));
     }
 }
@@ -189,44 +189,33 @@ void DataFileStatistics::merge(const DataFileStatistics & other)
     {
         null_counts = other.null_counts;
         nan_counts = other.nan_counts;
-        is_float_column = other.is_float_column;
+        can_count_nan = other.can_count_nan;
         ranges = other.ranges;
         return;
     }
 
     chassert(null_counts.size() == other.null_counts.size());
     chassert(nan_counts.size() == other.nan_counts.size());
-    chassert(null_counts.size() == nan_counts.size());
-    chassert(is_float_column == other.is_float_column);
+    chassert(can_count_nan.size() == other.can_count_nan.size());
     for (size_t i = 0; i < null_counts.size(); ++i)
     {
         null_counts[i] += other.null_counts[i];
         nan_counts[i] += other.nan_counts[i];
+        can_count_nan[i] = can_count_nan[i] && other.can_count_nan[i];
         ranges[i] = uniteRanges(ranges[i], other.ranges[i]);
     }
 }
 
-/// `Field` stores Float32 values as `Float64`, so this also covers Float32.
-static bool isFloatNaN(const Field & value)
-{
-    return value.getType() == Field::Types::Float64 && isNaN(value.safeGet<Float64>());
-}
-
-/// `getExtremes` of an all-NaN chunk returns NaN on both sides, never on just one.
+/// `getExtremes` skips NaN unless the chunk is all NaN, and then returns NaN on both sides.
 static bool isNaNRange(const Range & range)
 {
-    return isFloatNaN(range.left) && isFloatNaN(range.right);
+    return range.left.isNaN() && range.right.isNaN();
 }
 
 bool icebergBoundLess(const Field & lhs, const Field & rhs)
 {
-    if (lhs.getType() == Field::Types::Float64 && rhs.getType() == Field::Types::Float64)
-    {
-        Float64 l = lhs.safeGet<Float64>();
-        Float64 r = rhs.safeGet<Float64>();
-        if (l == 0 && r == 0)
-            return signBit(l) && !signBit(r);
-    }
+    if (isFloatZeroField(lhs) && isFloatZeroField(rhs))
+        return signBit(lhs.safeGet<Float64>()) && !signBit(rhs.safeGet<Float64>());
     return Range::less(lhs, rhs);
 }
 
@@ -276,7 +265,7 @@ std::vector<std::pair<size_t, size_t>> DataFileStatistics::getNanCounts() const
     std::vector<std::pair<size_t, size_t>> result;
     for (size_t i = 0; i < nan_counts.size(); ++i)
     {
-        if (is_float_column[i])
+        if (can_count_nan[i])
             result.push_back({field_ids[i], nan_counts[i]});
     }
     return result;

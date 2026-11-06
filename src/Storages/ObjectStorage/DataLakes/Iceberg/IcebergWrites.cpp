@@ -325,8 +325,8 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
         case TypeIndex::Float64:
             return dumpValue(field.safeGet<Float64>());
         case TypeIndex::Float32:
-            /// `Field` stores Float32 as `Float64`: narrow it, or 8 bytes would be written instead of 4.
-            return dumpValue(static_cast<Float32>(field.safeGet<Float32>()));
+            /// `Field` stores `Float32` as `Float64`: narrow it, or 8 bytes would be written instead of 4.
+            return dumpValue(static_cast<Float32>(field.safeGet<Float64>()));
         default:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not dump such stats");

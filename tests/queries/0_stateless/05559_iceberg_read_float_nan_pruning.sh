@@ -25,8 +25,8 @@ trap cleanup EXIT
 # Reads go through the `icebergLocal` table function: an `IcebergLocal` table keeps the format
 # settings of its CREATE, so Parquet pushdown could not be turned off per query. Parquet row-group
 # pruning drops NaN rows on its own (https://github.com/ClickHouse/ClickHouse/issues/118110), so it is
-# off to see what Iceberg pruning does, and so is the query condition cache, which would reuse a
-# wrong answer.
+# turned off to see what Iceberg pruning alone does; the query condition cache is off too, as it would
+# reuse a wrong answer.
 READ_SETTINGS="input_format_parquet_filter_push_down = 0, input_format_parquet_bloom_filter_push_down = 0,
     input_format_parquet_page_filter_push_down = 0, use_query_condition_cache = 0"
 
@@ -84,7 +84,7 @@ done
 # carry `nan_value_counts` over, or the NaN file loses its count and is pruned again.
 new_table D Float64 "(1.5), (nan)" "then (2.5), (3.5), then OPTIMIZE TABLE ... MANIFEST"
 insert D "(2.5), (3.5)"
-# The cloud build does not run this compaction, so only the statistics are checked there.
+# The cloud build has no manifest compaction, so there case D only checks the counts written by INSERT.
 if [[ $(${CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'") != 1 ]]; then
     ${CLIENT} --allow_experimental_iceberg_compaction=1 --query "
         OPTIMIZE TABLE ${PREFIX}_D MANIFEST SETTINGS iceberg_manifest_min_count_to_compact = 1"
@@ -97,8 +97,8 @@ for manifest in $(latest_manifests D); do
 done | sort
 check D "f != 1.5"
 
-# Case E: Float32 -> Float64 evolution: the file written before the ALTER has 4-byte Float32 bounds and
-# a NaN, the one after has 8-byte Float64 bounds; both are decoded and pruned correctly.
+# Case E: `Float32` -> `Float64` evolution: the file written before the ALTER has 4-byte `Float32`
+# bounds and a NaN, the one after has 8-byte `Float64` bounds; both are decoded and pruned correctly.
 new_table E Float32 "(1.5), (nan)" "then MODIFY COLUMN f Float64, then (10.5), (20.5)"
 ${CLIENT} --query "ALTER TABLE ${PREFIX}_E MODIFY COLUMN f Float64"
 insert E "(10.5), (20.5)"

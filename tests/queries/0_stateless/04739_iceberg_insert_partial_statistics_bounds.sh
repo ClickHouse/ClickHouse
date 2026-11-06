@@ -67,7 +67,7 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query \
     "INSERT INTO ${PREFIX}_c SELECT number::Int32, 'val-' || toString(number) FROM numbers(5)"
 report "${ROOT}/c"
 
-# Case D: wrapper composition with a non-NULL value. Float64 is dumpable, but an all-NaN column has no
+# Case D: wrapper composition with a non-NULL value. `Float64` is dumpable, but an all-NaN column has no
 # valid bound, so the filter must gate on the bounds predicate and skip only `f`.
 echo '--- D: key Int32 + f Nullable(Float64) all NaN'
 ${CLICKHOUSE_CLIENT} --query "

@@ -18,12 +18,11 @@ cleanup()
 }
 trap cleanup EXIT
 
-# Creates a `(f32, f64)` table (Nullable unless `f32_type`/`f64_type` are given), inserts `values`
-# (both columns get the same value) and prints the bounds as (field id, value): 1 is f32, 2 is f64.
-# With `split`, each row is its own chunk, so the ranges are merged by `uniteRanges`. `INSERT ...
-# VALUES` always arrives as one chunk, so the rows come from `numbers` with `max_block_size = 1`.
-# Parquet is pinned: for a format that prefers large blocks (e.g. ORC), insert squashing would merge
-# the blocks back.
+# Creates a `(f32, f64)` table, `Nullable` unless `f32_type`/`f64_type` are given, inserts the
+# `(f32, f64)` pairs of `values` and prints the bounds as (field id, value): 1 is f32, 2 is f64.
+# `split` puts each row in its own chunk, so the bounds are merged by `uniteRanges`
+# (`INSERT ... VALUES` is always one chunk). Parquet is pinned: with a format that prefers large
+# blocks, such as ORC, insert squashing would merge the chunks back.
 run_case()
 {
     local suffix="$1" values="$2" split="${3:-}"
@@ -70,7 +69,7 @@ run_case C '(1.5, 1.5), (nan, nan), (-5.5, -5.5)'
 # Case D: like C, one row per chunk: the all-NaN chunk must not win a bound in `uniteRanges`.
 run_case D '(1.5, 1.5), (nan, nan), (-5.5, -5.5)' split
 
-# Case E: NULL among real values is excluded from the bounds.
+# Case E: `NULL` among real values is excluded from the bounds.
 run_case E '(1.5, 1.5), (NULL, NULL), (-5.5, -5.5)'
 
 # Case F: -0.0 sorts before +0.0 (spec: "Bounds for Float and Double"), within one chunk.
@@ -79,10 +78,11 @@ run_case F '(nan, nan), (0.0, 0.0), (-0.0, -0.0), (5.5, 5.5)'
 # Case G: like F, one row per chunk: the zeros are merged by `uniteRanges`.
 run_case G '(nan, nan), (0.0, 0.0), (-0.0, -0.0)' split
 
-# Case H: like G with the zeros swapped: a tie-break by order fails on the other bound.
+# Case H: G with the zeros swapped. Together G and H catch any tie-break by row order: it gets one of
+# the bounds wrong in one of them.
 run_case H '(nan, nan), (-0.0, -0.0), (0.0, 0.0)' split
 
-# Case I: like F with non-Nullable columns.
+# Case I: like F with non-`Nullable` columns.
 run_case I '(nan, nan), (0.0, 0.0), (-0.0, -0.0), (2.5, 2.5)' '' Float32 Float64
 
 # Case J: infinities are valid bounds.
