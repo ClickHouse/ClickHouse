@@ -9,11 +9,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 TABLE="t_${CLICKHOUSE_DATABASE}_${RANDOM}"
-TABLE_PATH="05557_iceberg_bucket_split/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+TABLE_PATH="${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/"
+trap 'rm -rf "${TABLE_PATH:?}"' EXIT
 
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${TABLE} (id Int64, s String)
-    ENGINE = IcebergS3(s3_conn, filename = '${TABLE_PATH}')
+    ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet')
     SETTINGS output_format_parquet_row_group_size = 10000"
 
 for i in 0 1; do
