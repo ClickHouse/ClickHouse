@@ -787,6 +787,11 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
     {
         Coordination::Stat stat;
         std::string registry_str;
+        /// Set when this attempt queues a create of `/registry` for `tryMulti`.
+        /// A response lost after that submit still owns the metadata. `isRetry()`
+        /// is the wrong signal: `DETACH` and shutdown leave this table registered,
+        /// and a retry that never reached the create must not claim that entry.
+        bool sent_create = false;
 
         Coordination::Requests requests;
         Coordination::Responses responses;
@@ -805,6 +810,15 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
             {
                 std::vector<std::string_view> registered;
                 splitInto<','>(registered, registry_str);
+
+                /// Own create applied, response lost. See `sent_create` above.
+                if (sent_create && registered.size() == 1 && (Info::deserialize(registered[0]) == self))
+                {
+                    LOG_TRACE(log, "Table {} is already registered after retry", self.table_id);
+                    created_new_metadata = true;
+                    code = Coordination::Error::ZOK;
+                    return;
+                }
 
                 created_new_metadata = false;
 
@@ -836,6 +850,8 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
 
                 if (!zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE))
                     zkutil::addCheckNotExistsRequest(requests, *getZooKeeper(), drop_lock_path);
+
+                sent_create = true;
             }
 
             code = zk_client->tryMulti(requests, responses);

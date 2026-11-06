@@ -41,10 +41,10 @@ def test_registered_after_retry_is_not_a_fresh_create(started_cluster):
     calls `removeRecursive()` on the whole keeper path, taking processed-file
     state with it.
 
-    So a table that was *already* in the registry before this call -- the state a
-    hard-killed server leaves behind, because shutdown never ran to unregister it
-    -- must report `created_new_metadata=false` even if a keeper retry happens
-    while it reads the registry.
+    `DETACH` and a normal shutdown call `shutdown(is_drop=false)`.  The factory
+    unregisters a table only on drop, so the registry entry is still there
+    afterwards.  A retry that never submitted a create of `/registry` must report
+    `created_new_metadata=false` for that entry.
     """
     node = started_cluster.instances["instance"]
 
@@ -75,16 +75,14 @@ def test_registered_after_retry_is_not_a_fresh_create(started_cluster):
     registry_str = zk.get(registry_path)[0]
     assert registry_str, "table should be registered after creation"
 
-    # DETACH unregisters the table but keeps the metadata (is_drop=false).
+    # DETACH calls shutdown(is_drop=false). unregisterNonActive runs only for a
+    # drop, so this entry stays. A normal server shutdown leaves the same state.
     node.query(f"DETACH TABLE {table_name}")
+    assert zk.get(registry_path)[0] == registry_str
 
-    # Put the entry back so the table looks like it is still registered from a
-    # previous incarnation.
-    zk.set(registry_path, registry_str)
-
-    # Fail the first keeper attempt inside registerNonActive, so the read that
-    # finds this table already in the registry happens on a retry; then fail
-    # startup, so the cleanup path has to decide whether to drop the metadata.
+    # The ONCE failpoint throws before the registry read, so this attempt never
+    # submits a create. A probability fault cannot pin the retry to that read.
+    # Then fail startup, so the cleanup path has to decide whether to drop.
     node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_register_once")
     node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_startup")
     try:
@@ -96,14 +94,20 @@ def test_registered_after_retry_is_not_a_fresh_create(started_cluster):
         node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_register_once")
 
     # This table did not create the metadata, so the failed startup must not have
-    # dropped it.  Before the fix the retry was read as a fresh create and the
-    # whole path -- processed files included -- was removed here.
+    # dropped it.  A retry that never sent the create used to be read as a fresh
+    # create, and the whole path -- processed files included -- was removed here.
     try:
-        zk.get(keeper_path)
+        assert zk.get(registry_path)[0] == registry_str
     except NoNodeError:
         pytest.fail("keeper metadata was dropped by a table that did not create it")
 
-    # And the processed state is really still there: re-attaching must not
-    # reprocess the file that was already consumed above.
+    # startup() runs after the table is in the catalog, so the failed ATTACH left
+    # it attached.  Detach before attaching again, and the already consumed file
+    # must not be processed a second time.
+    assert (
+        node.query(f"SELECT count() FROM system.tables WHERE name = '{table_name}'")
+        == "1\n"
+    )
+    node.query(f"DETACH TABLE {table_name}")
     node.query(f"ATTACH TABLE {table_name}")
     assert 0 == int(node.query(f"SELECT count() FROM {table_name}"))
