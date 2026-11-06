@@ -14,7 +14,7 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 ## max_distributed_connections {#max_distributed_connections}
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="1024" />
+<SettingsInfoBlock type="UInt64" default_value="1024" />
 
 The maximum number of simultaneous connections with remote servers for distributed processing of a single query to a single Distributed table. We recommend setting a value no less than the number of servers in the cluster.
 

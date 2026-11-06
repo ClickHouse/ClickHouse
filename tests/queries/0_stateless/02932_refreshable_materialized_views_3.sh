@@ -22,7 +22,7 @@ CLICKHOUSE_CLIENT="`echo "$CLICKHOUSE_CLIENT --session_timezone Etc/UTC"`"
 # column: it retries until no row reports 'Scheduling'.
 query_no_scheduling() {
     local out
-    while clickhouse_test_time_left
+    while :
     do
         out=$($CLICKHOUSE_CLIENT -q "$1")
         if ! grep -qE $'(^|\t)Scheduling(\t|$)' <<< "$out"; then
@@ -74,7 +74,6 @@ $CLICKHOUSE_CLIENT -q "
     create materialized view miss refresh every 1 year depends on plain (x Int64) engine Memory as select x from plain;"
 while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'miss' -- $LINENO" | xargs`" != 'MissingDependencies' ]
 do
-    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 query_no_scheduling "select '<1: missing>', status, last_success_time is null, next_refresh_time is null from refreshes where view = 'miss'"
@@ -83,7 +82,6 @@ $CLICKHOUSE_CLIENT -q "
     alter table miss modify refresh every 1 year depends on nonexistent;"
 while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'miss' -- $LINENO" | xargs`" != 'MissingDependencies' ]
 do
-    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 query_no_scheduling "select '<2: still missing>', status from refreshes where view = 'miss'"
@@ -95,7 +93,6 @@ $CLICKHOUSE_CLIENT -q "
     system wait view nonexistent;"
 while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'miss' -- $LINENO" | xargs`" != 'Scheduled' ]
 do
-    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 $CLICKHOUSE_CLIENT -q "
@@ -105,7 +102,6 @@ $CLICKHOUSE_CLIENT -q "
 $CLICKHOUSE_CLIENT -q "drop table nonexistent;"
 while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'miss' -- $LINENO" | xargs`" != 'MissingDependencies' ]
 do
-    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 query_no_scheduling "select '<4: dep dropped>', status, next_refresh_time is null from refreshes where view = 'miss'"
@@ -125,7 +121,6 @@ $CLICKHOUSE_CLIENT -q "
     create materialized view after_dep refresh depends on every_dep (x Int64) engine Memory as select x*2 as x from every_dep;"
 while [ "`$CLICKHOUSE_CLIENT -q "select last_success_time is null from refreshes where view = 'after_dep' -- $LINENO" | xargs`" != '0' ]
 do
-    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 $CLICKHOUSE_CLIENT -q "select '<5: after-on-every>', * from after_dep;"
@@ -137,7 +132,6 @@ $CLICKHOUSE_CLIENT -q "
     system test view every_dep set fake time '2070-01-01 00:00:00';"
 while [ "`$CLICKHOUSE_CLIENT -q "select min(x) from after_dep -- $LINENO" | xargs`" != '400' ]
 do
-    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 $CLICKHOUSE_CLIENT -q "
@@ -157,7 +151,6 @@ $CLICKHOUSE_CLIENT -q "
 # REFRESH EVERY uses timeslot from schedule, when = timeslot < now → refresh immediately.
 while [ "`$CLICKHOUSE_CLIENT -q "select last_success_time is null from refreshes where view = 'every_on_after' -- $LINENO" | xargs`" != '0' ]
 do
-    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 $CLICKHOUSE_CLIENT -q "
@@ -201,7 +194,7 @@ wave_wait_failed() {
 }
 wave_deadline=$((${CLICKHOUSE_TEST_TIMEOUT:-600} - 20))
 n='(no poll returned)'
-while clickhouse_test_time_left
+while :
 do
     left=$((wave_deadline - SECONDS))
     if ((left <= 0))

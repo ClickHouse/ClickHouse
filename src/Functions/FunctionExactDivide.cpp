@@ -3,8 +3,6 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnVector.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
 #include <Functions/castTypeToEither.h>
@@ -13,7 +11,6 @@
 
 #include <algorithm>
 #include <limits>
-#include <optional>
 
 namespace DB
 {
@@ -31,13 +28,13 @@ using IntegerTypes = TypeList<
     DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256>;
 
 template <typename A, typename B>
-std::optional<typename NumberTraits::ResultOfIntegerDivision<A, B>::Type> tryDivideIntegers(A a, B b)
+auto divideIntegers(A a, B b)
 {
     using Result = typename NumberTraits::ResultOfIntegerDivision<A, B>::Type;
     using Unsigned = typename NumberTraits::Construct<false, false, std::max({sizeof(A), sizeof(B), sizeof(UInt64)})>::Type;
 
     if (b == 0)
-        return std::nullopt;
+        throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
     const bool negative_a = is_signed_v<A> && a < 0;
     const bool negative_b = is_signed_v<B> && b < 0;
@@ -55,7 +52,7 @@ std::optional<typename NumberTraits::ResultOfIntegerDivision<A, B>::Type> tryDiv
         if (negative_a != negative_b)
         {
             if (quotient > maximum + 1)
-                return std::nullopt;
+                throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Integer division result is out of range");
             if (quotient == maximum + 1)
                 return std::numeric_limits<Result>::min();
             return static_cast<Result>(-static_cast<Result>(quotient));
@@ -63,33 +60,8 @@ std::optional<typename NumberTraits::ResultOfIntegerDivision<A, B>::Type> tryDiv
     }
 
     if (quotient > maximum)
-        return std::nullopt;
-    return static_cast<Result>(quotient);
-}
-
-template <typename A, typename B>
-auto divideIntegers(A a, B b)
-{
-    if (b == 0)
-        throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
-
-    auto result = tryDivideIntegers(a, b);
-    if (!result)
         throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Integer division result is out of range");
-    return *result;
-}
-
-template <typename F>
-bool dispatchIntegerTypes(const DataTypes & arguments, F && function)
-{
-    return castTypeToEither(IntegerTypes{}, arguments[0].get(), [&](const auto & left)
-    {
-        return castTypeToEither(IntegerTypes{}, arguments[1].get(), [&](const auto & right)
-        {
-            function.template operator()<typename std::decay_t<decltype(left)>::FieldType, typename std::decay_t<decltype(right)>::FieldType>();
-            return true;
-        });
-    });
+    return static_cast<Result>(quotient);
 }
 
 template <typename A, typename B>
@@ -101,12 +73,6 @@ ColumnPtr executeDivision(const ColumnsWithTypeAndName & arguments, size_t rows)
     const auto & left = assert_cast<const ColumnVector<A> &>(left_const ? left_const->getDataColumn() : *arguments[0].column).getData();
     const auto & right = assert_cast<const ColumnVector<B> &>(right_const ? right_const->getDataColumn() : *arguments[1].column).getData();
     auto result = ColumnVector<Result>::create(rows);
-    if (rows == 0)
-        return result;
-
-    if (left_const && right_const)
-        return DataTypeNumber<Result>().createColumnConst(rows, divideIntegers(left[0], right[0]));
-
     auto & data = result->getData();
     for (size_t i = 0; i < rows; ++i)
         data[i] = divideIntegers(left[left_const ? 0 : i], right[right_const ? 0 : i]);
@@ -133,9 +99,7 @@ public:
     }
     bool useDefaultImplementationForConstants() const override
     {
-        /// The default wrapper executes a constant function once even for an empty block. Exact
-        /// division handles constants directly so a masked-out division is not evaluated.
-        return false;
+        return true;
     }
     /// Skip unused dictionary entries and rows masked by either input's null map before dividing.
     bool canBeExecutedOnDefaultArguments() const override
@@ -150,7 +114,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         DataTypePtr result;
-        const bool matched = dispatchIntegerTypes(arguments, [&]<typename A, typename B>()
+        const bool matched = dispatch(arguments, [&]<typename A, typename B>()
         {
             using Result = typename NumberTraits::ResultOfIntegerDivision<A, B>::Type;
             result = std::make_shared<DataTypeNumber<Result>>();
@@ -163,7 +127,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t rows) const override
     {
         ColumnPtr result;
-        const bool matched = dispatchIntegerTypes({arguments[0].type, arguments[1].type}, [&]<typename A, typename B>()
+        const bool matched = dispatch({arguments[0].type, arguments[1].type}, [&]<typename A, typename B>()
         {
             result = executeDivision<A, B>(arguments, rows);
         });
@@ -171,29 +135,22 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Exact integer division requires two integer arguments");
         return result;
     }
+
+private:
+    template <typename F>
+    static bool dispatch(const DataTypes & arguments, F && function)
+    {
+        return castTypeToEither(IntegerTypes{}, arguments[0].get(), [&](const auto & left)
+        {
+            return castTypeToEither(IntegerTypes{}, arguments[1].get(), [&](const auto & right)
+            {
+                function.template operator()<typename std::decay_t<decltype(left)>::FieldType, typename std::decay_t<decltype(right)>::FieldType>();
+                return true;
+            });
+        });
+    }
 };
 
-}
-
-bool constantExactIntegerDivisionCanThrow(const ColumnsWithTypeAndName & arguments)
-{
-    if (arguments.size() != 2)
-        return false;
-
-    const auto * left = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
-    const auto * right = checkAndGetColumn<ColumnConst>(arguments[1].column.get());
-    if (!left || !right || left->isNullAt(0) || right->isNullAt(0))
-        return false;
-
-    DataTypes types{
-        removeNullable(recursiveRemoveLowCardinality(arguments[0].type)),
-        removeNullable(recursiveRemoveLowCardinality(arguments[1].type))};
-    bool can_throw = false;
-    const bool matched = dispatchIntegerTypes(types, [&]<typename A, typename B>()
-    {
-        can_throw = !tryDivideIntegers(left->getValue<A>(), right->getValue<B>()).has_value();
-    });
-    return matched && can_throw;
 }
 
 FunctionPtr createFunctionExactDivide()

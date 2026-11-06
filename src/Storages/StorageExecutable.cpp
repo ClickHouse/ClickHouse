@@ -198,11 +198,9 @@ void StorageExecutable::readImpl(
     QueryPlanResourceHolder resources;
     inputs.reserve(input_queries.size());
 
-    /// The analyzer substitutes the inserted block of a materialized view for its source table only when given it.
     for (auto & input_query : input_queries)
     {
-        QueryPipelineBuilder builder = InterpreterSelectQueryAnalyzer(
-            input_query, context, {}, context->isViewInnerQuery() ? nullptr : context->getViewSource()).buildQueryPipeline();
+        QueryPipelineBuilder builder = InterpreterSelectQueryAnalyzer(input_query, context, {}).buildQueryPipeline();
         inputs.emplace_back(QueryPipelineBuilder::getPipe(std::move(builder), resources));
     }
 
