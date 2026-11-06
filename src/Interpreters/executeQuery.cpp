@@ -3468,7 +3468,7 @@ static BlockIO executeQueryImpl(
 
                         /// Records `QueryCacheOnDiskHits` (for a hit on disk), `QueryCacheAgeSeconds`, and what reading the entry amounts
                         /// to (`QueryCacheReadRows`, `QueryCacheReadBytes`, `QueryCacheOnDiskReadBytes`).
-                        reader->hasCacheEntryForKey();
+                        (void)reader->hasCacheEntryForKey();
                         QueryResultCacheReader::recordProbeResult(true);
 
                         result_details.query_cache_entry_created_at = reader->entryCreatedAt();

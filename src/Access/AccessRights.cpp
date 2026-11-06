@@ -542,7 +542,7 @@ public:
     }
 
     /// Unlike `isGranted`, ignores the access rights of the children of `name`.
-    AccessFlags getFlags(std::string_view name) const { return tryGetLeaf(name, static_cast<Level>(level + 1)).flags; }
+    [[nodiscard]] AccessFlags getFlags(std::string_view name) const { return tryGetLeaf(name, static_cast<Level>(level + 1)).flags; }
 
     friend bool operator ==(const Node & left, const Node & right)
     {

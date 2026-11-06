@@ -264,7 +264,7 @@ public:
         return reinterpret_cast<const char *>(loadLE(rawBytes() + sizeof(uint64_t), PACKED_POINTER_BYTES));
     }
 
-    ALWAYS_INLINE size_t size() const
+    [[nodiscard]] ALWAYS_INLINE size_t size() const
         requires(HASH_BYTES == 0)
     {
         return isLarge() ? getLargeSize() : getSmallSize();
