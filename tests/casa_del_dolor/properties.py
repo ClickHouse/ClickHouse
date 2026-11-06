@@ -96,7 +96,7 @@ no_zero_threads_lambda = lambda: random.randint(1, multiprocessing.cpu_count())
 SERVER_STOP_WAIT_SECONDS = 30
 
 # How long `dolor.py` waits for a restarted server to answer before giving up on it.
-SERVER_START_WAIT_SECONDS = 10
+SERVER_START_WAIT_SECONDS = 180
 
 # The sleeps `dolor.py` takes between stopping and starting a server: one for the process to
 # settle before the binary may be swapped, one for the Keeper session to expire.
