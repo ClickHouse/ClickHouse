@@ -642,7 +642,7 @@ SELECT boundingBoxSpherical([[(4.346693, 50.858306), (4.367945, 50.852455), (4.3
 SELECT boundingBoxSpherical(CAST([(179., 50.), (-179., 50.)], 'LineString'))
         )",
             R"(
-[(179,50),(181,50),(181,50.004297195777966),(179,50.004297195777966),(179,50)]
+[(179,50),(181,50),(181,50.00429719577797),(179,50.00429719577797),(179,50)]
         )"}};
     FunctionDocumentation::IntroducedIn introduced_in_spherical = {26, 11};
     FunctionDocumentation::Category category_spherical = FunctionDocumentation::Category::GeoPolygon;

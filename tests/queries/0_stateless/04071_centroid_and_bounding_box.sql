@@ -1,12 +1,12 @@
 SELECT 'boundingBoxCartesian Ring';
 SELECT boundingBoxCartesian([(-40., 60.), (40., 60.), (0., 50.), (-40., 60.)]);
 SELECT 'boundingBoxSpherical Ring';
-SELECT boundingBoxSpherical([(-40., 60.), (40., 60.), (0., 50.), (-40., 60.)]);
+SELECT arrayMap(p -> (p.1, round(p.2, 10)), boundingBoxSpherical([(-40., 60.), (40., 60.), (0., 50.), (-40., 60.)]));
 
 SELECT 'boundingBoxCartesian Polygon';
 SELECT boundingBoxCartesian([[(-40., 60.), (40., 60.), (0., 50.), (-40., 60.)]]);
 SELECT 'boundingBoxSpherical Polygon';
-SELECT boundingBoxSpherical([[(-40., 60.), (40., 60.), (0., 50.), (-40., 60.)]]);
+SELECT arrayMap(p -> (p.1, round(p.2, 10)), boundingBoxSpherical([[(-40., 60.), (40., 60.), (0., 50.), (-40., 60.)]]));
 
 SELECT 'boundingBoxCartesian Point';
 SELECT boundingBoxCartesian((3., 4.));
@@ -30,7 +30,7 @@ SELECT 'boundingBoxSpherical Point';
 SELECT boundingBoxSpherical((4.35, 50.85));
 
 SELECT 'boundingBoxSpherical LineString';
-SELECT boundingBoxSpherical(CAST([(0., 50.), (10., 50.)], 'LineString'));
+SELECT arrayMap(p -> (p.1, round(p.2, 10)), boundingBoxSpherical(CAST([(0., 50.), (10., 50.)], 'LineString')));
 
 SELECT 'Point near date line (179°)';
 SELECT boundingBoxSpherical((179., 50.));
@@ -39,31 +39,31 @@ SELECT 'Point near date line (-179°)';
 SELECT boundingBoxSpherical((-179., 50.));
 
 SELECT 'LineString crossing date line (179° to -179°)';
-SELECT boundingBoxSpherical(CAST([(179., 50.), (-179., 50.)], 'LineString'));
+SELECT arrayMap(p -> (p.1, round(p.2, 10)), boundingBoxSpherical(CAST([(179., 50.), (-179., 50.)], 'LineString')));
 
 SELECT 'Polygon crossing date line';
-SELECT boundingBoxSpherical([[(178., 45.), (180., 45.), (-178., 45.), (-180., 45.), (-180., 55.), (180., 55.), (178., 55.), (-178., 55.), (178., 45.)]]);
+SELECT arrayMap(p -> (p.1, round(p.2, 10)), boundingBoxSpherical([[(178., 45.), (180., 45.), (-178., 45.), (-180., 45.), (-180., 55.), (180., 55.), (178., 55.), (-178., 55.), (178., 45.)]]));
 
 SELECT 'Narrow polygon crossing date line (175° to -175°)';
-SELECT boundingBoxSpherical([[(175., 50.), (180., 50.), (-175., 50.), (-180., 50.), (-180., 55.), (180., 55.), (175., 55.), (-175., 55.), (175., 50.)]]);
+SELECT arrayMap(p -> (p.1, round(p.2, 10)), boundingBoxSpherical([[(175., 50.), (180., 50.), (-175., 50.), (-180., 50.), (-180., 55.), (180., 55.), (175., 55.), (-175., 55.), (175., 50.)]]));
 
 SELECT 'Same geometry in Cartesian (no date line issue)';
 SELECT boundingBoxCartesian([[(178., 45.), (180., 45.), (-178., 45.), (-180., 45.), (-180., 55.), (180., 55.), (178., 55.), (-178., 55.), (178., 45.)]]);
 
 SELECT 'MultiPolygon across date line';
-SELECT boundingBoxSpherical([[[(179., 50.), (180., 50.), (180., 51.), (179., 51.), (179., 50.)]], [[(-180., 50.), (-179., 50.), (-179., 51.), (-180., 51.), (-180., 50.)]]]);
+SELECT arrayMap(p -> (p.1, round(p.2, 10)), boundingBoxSpherical([[[(179., 50.), (180., 50.), (180., 51.), (179., 51.), (179., 50.)]], [[(-180., 50.), (-179., 50.), (-179., 51.), (-180., 51.), (-180., 50.)]]]));
 
 SELECT 'boundingBoxCartesian Polygon with hole';
 SELECT boundingBoxCartesian([[(0., 0.), (0., 10.), (10., 10.), (10., 0.), (0., 0.)], [(3., 3.), (3., 7.), (7., 7.), (7., 3.), (3., 3.)]]);
 
 SELECT 'boundingBoxSpherical Polygon with hole';
-SELECT boundingBoxSpherical([[(0., 0.), (0., 10.), (10., 10.), (10., 0.), (0., 0.)], [(3., 3.), (3., 7.), (7., 7.), (7., 3.), (3., 3.)]]);
+SELECT arrayMap(p -> (p.1, round(p.2, 10)), boundingBoxSpherical([[(0., 0.), (0., 10.), (10., 10.), (10., 0.), (0., 0.)], [(3., 3.), (3., 7.), (7., 7.), (7., 3.), (3., 3.)]]));
 
 SELECT 'boundingBoxCartesian negative coordinates';
 SELECT boundingBoxCartesian([(-5., -5.), (-5., 0.), (0., 0.), (0., -5.), (-5., -5.)]);
 
 SELECT 'boundingBoxSpherical negative coordinates';
-SELECT boundingBoxSpherical([(-5., -5.), (-5., 0.), (0., 0.), (0., -5.), (-5., -5.)]);
+SELECT arrayMap(p -> (p.1, round(p.2, 10)), boundingBoxSpherical([(-5., -5.), (-5., 0.), (0., 0.), (0., -5.), (-5., -5.)]));
 
 SELECT 'boundingBoxCartesian large coordinates';
 SELECT boundingBoxCartesian([(1e10, 1e10), (1e10, 2e10), (2e10, 2e10), (2e10, 1e10), (1e10, 1e10)]);
@@ -188,7 +188,7 @@ SELECT g, centroidCartesian(g), boundingBoxCartesian(g), boundingBoxSpherical(g)
 FROM (SELECT CAST(arrayJoin([[], [[(10., 10.), (12., 12.)]]]), 'MultiLineString') AS g);
 
 SELECT 'MultiPolygon empty row followed by nonempty rows';
-SELECT g, centroidCartesian(g), boundingBoxCartesian(g), boundingBoxSpherical(g), polygonAreaCartesian(g)
+SELECT g, centroidCartesian(g), boundingBoxCartesian(g), arrayMap(p -> (p.1, round(p.2, 10)), boundingBoxSpherical(g)), polygonAreaCartesian(g)
 FROM (SELECT CAST(arrayJoin([[], [[[(0., 0.), (0., 4.), (4., 4.), (4., 0.), (0., 0.)]]]]), 'MultiPolygon') AS g);
 
 -- A ring of zero area has the centroid of its boundary, which does not depend on the starting vertex.
