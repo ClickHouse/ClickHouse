@@ -45,7 +45,7 @@ private:
     AsyncCallback async_callback = {};
 };
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
 
 /// Class for nonblocking establishing connection to the replica.
 /// It runs establishing connection process in coroutine and sets special
@@ -119,7 +119,7 @@ private:
 
     /// In read callback we add socket file descriptor and timer descriptor with receive timeout
     /// in epoll, so we can return epoll file descriptor outside for polling.
-    Epoll epoll{EpollNesting::Leaf};
+    Epoll epoll;
     int socket_fd = -1;
     std::string socket_description;
 

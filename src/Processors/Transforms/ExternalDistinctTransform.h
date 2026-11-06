@@ -2,9 +2,7 @@
 
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/IProcessor.h>
-#include <Processors/SpillableAdapter.h>
 #include <Processors/Transforms/DistinctSetFilter.h>
-#include <Processors/Transforms/DistinctSetMemoryTracker.h>
 #include <Processors/Transforms/DistinctSpillLayout.h>
 #include <Processors/Transforms/SortingTransform.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -29,9 +27,6 @@ class DistinctSortedTransform;
 /// The set is released after its last keys are extracted. Further input becomes sorted, locally deduplicated
 /// runs, and output waits until all input is consumed. `DistinctSpillLayout` owns the column conversions.
 ///
-/// Before merging, a conservative reader and output-workspace estimate determines how much of the
-/// tail can stay in memory. Whole chunks are spilled in arrival order until the remaining suffix fits
-/// the estimate or no tail remains.
 /// `DistinctSortedTransform` merges the runs and the unique in-memory tail, removing duplicate keys
 /// and keys emitted before spilling. Runs are ordered by key and then by the already-emitted flag
 /// descending, placing suppression rows first in each equal-key range. Ordinary runs follow in arrival
@@ -40,13 +35,9 @@ class DistinctSortedTransform;
 /// When input order must be preserved, `DistinctSpillLayout` attaches arrival numbers to spilled rows.
 /// After merging and deduplication, `MergeSortingTransform` restores that order and can itself spill.
 /// Otherwise, rows follow the spill comparison order, which is fingerprint order for generic keys.
-/// Scheduler requests synchronously write unconnected runs and release their memory before returning;
-/// their readers are attached at the next pipeline update.
 class ExternalDistinctTransform final : public IProcessor
 {
 public:
-    /// A non-null `shared_set_bytes_` reports memory snapshots to `DistinctLimitsCheckingTransform`, which
-    /// enforces the limits across all streams. In that mode, `set_size_limits_` must be unlimited.
     ExternalDistinctTransform(
         SharedHeader header_,
         const SizeLimits & set_size_limits_,
@@ -56,9 +47,7 @@ public:
         TemporaryDataOnDiskScopePtr tmp_data_,
         size_t min_free_disk_space_,
         size_t max_block_size_rows_,
-        size_t preferred_block_bytes_,
-        bool preserve_input_order_,
-        DistinctSetMemoryTracker::SharedCounter shared_set_bytes_ = nullptr);
+        bool preserve_input_order_);
 
     ~ExternalDistinctTransform() override;
 
@@ -68,26 +57,13 @@ public:
     void work() override;
     PipelineUpdate updatePipeline() override;
 
-    std::span<ISpillable * const> getSpillables() override { return {&spillable_ptr, 1}; }
-    ProcessorMemoryStats getMemoryStats() const;
-    size_t spill(size_t at_least_bytes);
-    const TemporaryDataOnDiskScope * getSpillScope() const { return tmp_data.get(); }
-
 private:
-    SpillableAdapter<ExternalDistinctTransform> spillable{*this};
-    ISpillable * const spillable_ptr = &spillable;
-
     struct Hashing
     {
         Hashing(const Block & header, const Names & columns, const SizeLimits & limits)
             : set(header, columns, limits)
         {
         }
-
-        /// Memory charged to the global `max_bytes_in_distinct` check. A set without keys counts as empty,
-        /// like in a serial `DISTINCT` that checks limits only after inserting keys: otherwise the
-        /// preallocated hash table of a transform that spills before hashing would exceed tiny limits.
-        size_t getRetainedSetBytes() const { return set.getTotalRowCount() ? set.getTotalByteCount() : 0; }
 
         DistinctSetFilter set;
         /// EOF is observed in `prepare`, but releasing the set belongs to `work`.
@@ -116,7 +92,6 @@ private:
     {
         std::unique_ptr<MergeSorter> merger;
         Chunk chunk;
-        size_t max_block_bytes = 0;
     };
 
     struct PreparedRun
@@ -142,19 +117,10 @@ private:
         OutputPort & readiness;
     };
 
-    struct SortingUnit
-    {
-        Chunks chunks;
-        size_t rows = 0;
-        size_t allocated_bytes = 0;
-    };
-
     struct CollectingInput
     {
-        SortingUnit pending;
-        Chunks sorted_chunks;
-        size_t sorted_bytes = 0;
-        size_t sorted_rows = 0;
+        Chunks chunks;
+        size_t bytes = 0;
     };
 
     struct ConnectingInputRun
@@ -170,22 +136,7 @@ private:
 
     struct PreparingTail
     {
-        CollectingInput collecting;
-    };
-
-    struct ConnectingTailRun
-    {
-        PreparedRun run;
-        CollectingInput remaining;
-    };
-
-    struct WritingTailRun
-    {
-        RunWriteProgress progress;
-        OutputPort & output;
-        CollectingInput remaining;
-        InputPort & completion;
-        OutputPort & readiness;
+        Chunks chunks;
     };
 
     struct ConnectingTail
@@ -214,20 +165,15 @@ private:
         ConnectingInputRun,
         WritingInputRun,
         PreparingTail,
-        ConnectingTailRun,
-        WritingTailRun,
         ConnectingTail,
         Merging,
         Finishing>;
 
     Status prepareInput();
-    CollectingInput * getCollectingInput();
-    const CollectingInput * getCollectingInput() const;
     Status prepareCollectingInput(CollectingInput & collecting);
     Status prepareRunWrite(RunWriteProgress & progress, OutputPort & output);
     Status prepareSuppressionWrite(WritingSuppressionRun & writing);
     Status prepareInputWrite(WritingInputRun & writing);
-    Status prepareTailWrite(WritingTailRun & writing);
     Status prepareMergedOutput(Merging & merging);
     Status prepareFinish();
     Status finish();
@@ -236,30 +182,18 @@ private:
     void startSpilling(Hashing & hashing);
     void extractSuppressionRun(ExtractingSuppression & extracting);
     void collectInput(CollectingInput & collecting);
-    void flushSortingUnit(CollectingInput & collecting);
-    bool canAppendToSortingUnit(const SortingUnit & unit, size_t rows, size_t bytes) const;
-    bool canStartCoalescing(size_t rows, size_t bytes) const;
-    bool fitsSortingBudget(size_t rows, size_t column_bytes, size_t additional_input_bytes = 0) const;
-    size_t maxRowsInSortingUnit() const;
     void readRun(RunWriteProgress & progress);
     void prepareTail(PreparingTail & tail);
-    size_t estimateRunWriteMemory(size_t rows, size_t allocated_bytes) const;
-    size_t selectTailSpillPrefix(const CollectingInput & collecting) const;
     void consumeMerged(Merging & merging);
 
     PreparedRun prepareRun(
         SharedHeader header, Chunks chunks, size_t bytes, const SortDescription & description, MergeSorter::Mode mode);
     PreparedMerge prepareMerge();
     void connectMerge(PreparedMerge & prepared, Processors & processors);
-    void connectRunSource(PreparedRun & prepared, Processors & processors);
     OutputPort & connectRun(PreparedRun & prepared, Processors & processors);
-    /// Drain an unconnected run on the calling thread, transferring its finalized file to the reader.
-    void spillRun(PreparedRun run);
     /// Returns the minimum run size, also used by the sort that restores input order.
     size_t minBytesInRun() const;
 
-    /// Outlives the state that owns the set and its suppression-key extractor.
-    DistinctSetMemoryTracker set_memory;
     State state;
     const UInt64 limit_hint;
     const SizeLimits set_size_limits;
@@ -267,28 +201,20 @@ private:
     TemporaryDataOnDiskScopePtr tmp_data;
     const size_t min_free_disk_space;
     const size_t max_block_size_rows;
-    const size_t preferred_block_bytes;
     const bool preserve_input_order;
     /// Created at the first spill from the representation selected by the initialized set.
     std::optional<DistinctSpillLayout> spill_layout;
 
     /// Tracks connected merge inputs until tail attachment or early termination closes registration.
     std::optional<MergeRegistration> merge_registration;
-    /// Scheduler-driven spilling releases memory before returning; completed readers are connected later.
-    std::vector<PreparedRun> spilled_runs;
     size_t temporary_files_num = 0;
-    /// Run output sizes estimate the memory needed to read all files concurrently during merging.
-    size_t estimated_file_read_memory = 0;
-    /// Largest average row width observed before or after deduplication, including the emitted flag.
-    size_t max_average_row_bytes = 0;
 
     /// Counts accepted input rows and provides the next arrival number.
     UInt64 consumed_rows = 0;
     /// Counts rows admitted to the result, before the pending output is pushed to its port.
     size_t result_rows = 0;
 
-    /// Unprocessed input, including a partially hashed chunk's suffix, remains here until suppression
-    /// extraction finishes.
+    /// Input rejected before hash-table growth remains here until suppression extraction finishes.
     Chunk input_chunk;
     /// Both hashing and merging produce results here, independently of spill-writing progress.
     Chunk output_chunk;

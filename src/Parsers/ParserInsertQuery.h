@@ -35,8 +35,6 @@ public:
         : end(end_)
         , allow_settings_after_format_in_insert(allow_settings_after_format_in_insert_)
     {}
-
-    std::map<String, Documentation> getDocumentation() const override;
 };
 
 /** Insert accepts an identifier and an asterisk with variants.

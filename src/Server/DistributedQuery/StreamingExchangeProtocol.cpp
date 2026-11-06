@@ -87,7 +87,7 @@ namespace
     }
 }
 
-size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBuffer & out, const CompressionCodecPtr & codec)
+size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBuffer & out)
 {
     Stopwatch watch;
     const size_t packet_offset = out.count();
@@ -110,8 +110,13 @@ size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBu
 
     if (chunk.getNumColumns() > 0)
     {
-        /// Every compressed frame names its codec, so the receiver decodes whatever codec the sender chose.
-        CompressedWriteBuffer compressed_buf(out, codec);
+        /// The exchange stream uses the server default codec: `network_compression_method` is a
+        /// per-query setting and the sender has no query settings at hand. This is safe: each
+        /// compressed frame is self-describing (the receiver auto-detects the codec via
+        /// `CompressedReadBuffer`), and the exchange is a transient, same-version channel -
+        /// the handshake rejects peers on a different protocol version, so a stream is never read
+        /// back by a node expecting a different codec.
+        CompressedWriteBuffer compressed_buf(out);
         try
         {
             NativeWriter writer(compressed_buf, DBMS_TCP_PROTOCOL_VERSION, header);

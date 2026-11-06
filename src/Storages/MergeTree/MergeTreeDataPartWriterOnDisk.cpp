@@ -8,7 +8,6 @@
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
-#include <Storages/SubcolumnCodecs.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Common/CurrentThread.h>
@@ -25,6 +24,7 @@
 #include <IO/HashingWriteBuffer.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/PackedFilesWriter.h>
+#include <Poco/String.h>
 #include <base/find_symbols.h>
 
 namespace ProfileEvents
@@ -168,15 +168,12 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
     if (skip_indices.empty())
         return;
 
-    CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(settings.marks_compression_codec);
+    ParserCodec codec_parser;
+    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
 
     PackedFilesWriter * packed_writer_for_streams
         = skip_indices_packed_writer ? skip_indices_packed_writer.get() : skip_indices_packed_writer_borrowed;
-
-    /// Compact columns all live in one `data.bin`, so `MergeTreeDataPartWriterCompact::addStreams`
-    /// registers no column base and the index side has nothing to be checked against here.
-    const bool is_compact_part = index_granularity_info.mark_type.part_type == MergeTreeDataPartType::Compact;
-    const StreamBaseManifestPtr manifest = is_compact_part ? nullptr : settings.stream_base_manifest;
 
     for (const auto & skip_index : skip_indices)
     {
@@ -208,25 +205,11 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 
             SizeAdaptivePacking packing;
             if (packs_this_index)
-            {
-                /// Size decides at write time which of the two names this substream takes, so the
-                /// stream claims each one in the branch that creates it: the archive key at the
-                /// packed commit, the on-disk name at the spill.
                 packing = {
                     packed_writer_for_streams,
                     logical_stream_name + index_substream.extension,
                     logical_stream_name + marks_file_extension,
-                    packed_spill_threshold,
-                    manifest,
-                    logical_stream_name,
-                    on_disk_stream_name,
-                    skip_index->index.name};
-            }
-            else if (manifest)
-            {
-                manifest->registerStreamBase(
-                    on_disk_stream_name, {StreamBaseManifest::Kind::SkipIndex, skip_index->index.name});
-            }
+                    packed_spill_threshold};
 
             auto stream = std::make_unique<MergeTreeIndexWriterStream>(
                 on_disk_stream_name,
@@ -241,10 +224,6 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                 settings.marks_compress_block_size,
                 settings.query_write_settings,
                 packing);
-
-            /// An encrypting part codec is applied to every block, so the index data is not written in plain text.
-            if (!skip_index->isCompressible() && !default_codec->isEncryption())
-                stream->compressor.storeIncompressibleBlocksUncompressed();
 
             index_streams[index_substream.type] = stream.get();
             skip_indices_streams_holders.push_back(std::move(stream));
@@ -726,7 +705,10 @@ void MergeTreeDataPartWriterOnDisk::initStreamsIfNeeded()
     }
 
     for (const auto & column : columns_list)
-        addStreams(column);
+    {
+        auto compression = getCodecDescriptionOrDefault(column.name, default_codec);
+        addStreams(column, compression);
+    }
 
     streams_initialized = true;
 }
@@ -767,31 +749,17 @@ void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
 }
 
 CompressionCodecPtr MergeTreeDataPartWriterOnDisk::getSubstreamCodec(
-    const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path) const
+    const ASTPtr & effective_codec_desc, const ISerialization::SubstreamPath & substream_path, bool column_uses_default_codec) const
 {
-    const auto & column_name = name_and_type.getNameInStorage();
-    const ColumnDescription * column_desc = metadata_snapshot->columns.tryGet(column_name);
-    if (!column_desc)
-        column_desc = metadata_snapshot->virtuals.tryGetDescription(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
-    if (!column_desc)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
-
-    ASTPtr declared_codec_desc = getSubstreamCodecDescription(substream_path, *column_desc);
-    /// No declaration, or an explicit lone `CODEC(Default)`.
-    const bool use_default_codec = CompressionCodecFactory::isDefaultCodec(declared_codec_desc);
-    /// `default_codec` comes from `MergeTreeData::getCompressionCodecForPart` and already accounts for
-    /// the `default_compression_codec` setting and `TTL ... RECOMPRESS`, so it is not re-read from the settings here.
-    const ASTPtr & effective_codec_desc = declared_codec_desc ? declared_codec_desc : default_codec->getFullCodecDescription();
-
     const auto & substream_type = substream_path.back().data.type;
-    /// The declared codec is meant for the values. Structural substreams keep only its generic codecs (`only_generic`).
+    /// The column's codec is meant for its values. Structural substreams keep only its generic codecs (`only_generic`).
     /// The type is omitted so the codecs about to be dropped are not validated against it.
     const bool is_data_substream = ISerialization::isSpecialCompressionAllowed(substream_path);
     auto codec = CompressionCodecFactory::instance().get(
         effective_codec_desc, is_data_substream ? substream_type.get() : nullptr, default_codec, /*only_generic=*/!is_data_substream);
 
     /// Adaptive could pick an unencrypted codec for some blocks and drop the encryption. Thus skip adaptivity for an encrypting codec.
-    if (settings.apply_adaptive_codec && use_default_codec && !codec->isEncryption())
+    if (settings.apply_adaptive_codec && column_uses_default_codec && !codec->isEncryption())
         return std::make_shared<CompressionCodecAdaptive>(substream_type, codec);
 
     return codec;
