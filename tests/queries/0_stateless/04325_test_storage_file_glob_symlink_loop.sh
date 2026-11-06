@@ -293,6 +293,24 @@ ln -s ../chains/s1 "$TEST_DIR_ABS/budget/root/a"
 ln -s ../chains/s1 "$TEST_DIR_ABS/budget/root/b"
 ln -s ../data/A "$TEST_DIR_ABS/budget/root/z"
 
+# A retry that itself stays incomplete: `budget2/root/a` resolves through 40 links, `root/b` through
+# 39 and `root/z` through one. The walk through `root/a` cannot resolve `child`; the retry through
+# `root/b` reaches `B` but not `B/child`, which needs 41 links. `root/z` must walk the frame once more
+# to reach `C`.
+mkdir -p "$TEST_DIR_ABS/budget2/root" "$TEST_DIR_ABS/budget2/chains" "$TEST_DIR_ABS/budget2/data/A" "$TEST_DIR_ABS/budget2/data/B" "$TEST_DIR_ABS/budget2/data/C"
+printf "A\n" > "$TEST_DIR_ABS/budget2/data/A/A.txt"
+printf "B\n" > "$TEST_DIR_ABS/budget2/data/B/B.txt"
+printf "C\n" > "$TEST_DIR_ABS/budget2/data/C/C.txt"
+ln -s ../B "$TEST_DIR_ABS/budget2/data/A/child"
+ln -s ../C "$TEST_DIR_ABS/budget2/data/B/child"
+for i in $(seq 1 38); do
+    ln -s "s$((i + 1))" "$TEST_DIR_ABS/budget2/chains/s$i"
+done
+ln -s ../data/A "$TEST_DIR_ABS/budget2/chains/s39"
+ln -s ../chains/s1 "$TEST_DIR_ABS/budget2/root/a"
+ln -s ../chains/s2 "$TEST_DIR_ABS/budget2/root/b"
+ln -s ../data/A "$TEST_DIR_ABS/budget2/root/z"
+
 trap 'rm -rf "$TEST_DIR_ABS"' EXIT
 
 # Ancestor-loop symlink: `loop/dir1/dir2/loop_to_root` points back at `loop/dir1`,
@@ -497,6 +515,10 @@ $CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget/root/**/
 $CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/budget/root/**/missing.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
     | grep -qF "readonly mode because of globs" && echo "unexpectedly refused"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/budget/data/B/missing.txt', 'TSV', 'val String')"
+
+echo "further-alias-after-incomplete-retry"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget2/root/**/*.txt', 'TSV', 'val String') ORDER BY val"
+$CLICKHOUSE_CLIENT --query "SELECT val FROM file('$TEST_DIR_NAME/budget2/root/z/**/*.txt', 'TSV', 'val String') ORDER BY val"
 
 # Server alive afterwards.
 $CLICKHOUSE_CLIENT --query "SELECT 'alive'"

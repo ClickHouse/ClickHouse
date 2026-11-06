@@ -243,10 +243,12 @@ struct VisitedFrame
     /// On the walk's stack: arriving here again is a cycle.
     bool walking = false;
     /// The first path below `prefix` that the last walk skipped on an `ELOOP` or `ENAMETOOLONG` caused
-    /// by the symlinks or length of `prefix` itself. A name that resolves it walks the frame again, once.
+    /// by the symlinks or length of `prefix` itself. A name that resolves it walks the frame again, and
+    /// that walk may leave a deeper path unresolved for a further name. Retries stay finite because a
+    /// frame is never entered while it is `walking`, so no frame appears twice on the walk's stack.
     std::optional<std::string> unresolved;
-    bool retried = false;
-    size_t matches_before_retry = 0;
+    /// `matches` at the start of each retry, in order.
+    std::vector<size_t> matches_before_retries;
 };
 
 /// State the traversal pruning carries across one expanded pattern.
@@ -263,9 +265,10 @@ struct PruningState
     /// with, so the answer is deferred until the walk is over and every count is final. Deciding
     /// at the collision instead would read a count that is not yet final whenever the collision
     /// comes from inside the claiming frame's own subtree, which is what an ancestor loop is: the
-    /// loop can re-enter the root before the root has matched anything. A collision before the frame's
-    /// retry counts only earlier matches: the pruned name has more symlinks than the retry's name.
-    std::vector<std::pair<const VisitedFrame *, bool>> pending_collisions;
+    /// loop can re-enter the root before the root has matched anything. A collision before one of
+    /// the frame's retries counts only the matches from before that retry: the pruned name has more
+    /// symlinks than the retry's name. The second field is how many retries the frame had at the time.
+    std::vector<std::pair<const VisitedFrame *, size_t>> pending_collisions;
 };
 
 /// Records an `ELOOP` or `ENAMETOOLONG` on `path` in the frames being walked, unless no name for them
@@ -512,7 +515,7 @@ void listFilesWithRegexpMatchingImpl(
         const auto [claimed, is_new] = pruning.visited_frames.try_emplace(frame_key);
         VisitedFrame & frame = claimed->second;
         if (!is_new
-            && (frame.walking || frame.retried || frame.lexical_dir == lexical_dir
+            && (frame.walking || frame.lexical_dir == lexical_dir
                 || !resolvesUnresolved(frame, prefix_without_globs)))
         {
             /// Pruning happens before any match is emitted, so a pruned frame can never reach
@@ -523,15 +526,15 @@ void listFilesWithRegexpMatchingImpl(
             /// name. Whether the pruned frame would have matched anything is decided after the
             /// walk, because the claiming frame may still be finding matches right now.
             if (frame.lexical_dir != lexical_dir)
-                pruning.pending_collisions.emplace_back(&frame, !frame.retried);
+                pruning.pending_collisions.emplace_back(&frame, frame.matches_before_retries.size());
             /// What the frame could not resolve is also unresolved under the frames reaching it now.
             if (!frame.walking && frame.unresolved)
                 notePathLimitSkip(std::make_error_code(std::errc::too_many_symbolic_link_levels),
                                      prefix_without_globs + *frame.unresolved, nullptr, pruning);
             return; /// This directory has already been walked with this remaining pattern.
         }
-        frame.retried = !is_new;
-        frame.matches_before_retry = frame.matches;
+        if (!is_new)
+            frame.matches_before_retries.push_back(frame.matches);
         frame.lexical_dir = lexical_dir;
         frame.prefix = prefix_without_globs;
         frame.canonical = prefix_canonical;
@@ -700,9 +703,12 @@ std::vector<std::string> listFilesWithRegexpMatching(
         /// name for a file: a pruned frame would have emitted exactly what its claiming frame did,
         /// so it collapsed something only if that frame matched something. Deciding here rather
         /// than at the collision keeps the answer independent of the order the walk took.
-        for (const auto & [claimed, before_retry] : pruning.pending_collisions)
+        for (const auto & [claimed, retries_at_collision] : pruning.pending_collisions)
         {
-            if ((before_retry && claimed->retried ? claimed->matches_before_retry : claimed->matches) > 0)
+            const size_t matches = retries_at_collision < claimed->matches_before_retries.size()
+                ? claimed->matches_before_retries[retries_at_collision]
+                : claimed->matches;
+            if (matches > 0)
             {
                 collapsed_a_match = true;
                 break;
