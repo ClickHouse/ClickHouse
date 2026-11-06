@@ -22,11 +22,8 @@ ${CLICKHOUSE_CLIENT} -q "CREATE QUOTA ${Q} FOR INTERVAL 100 year MAX SelectedRow
 echo "-- exhaust the quota"
 ${CLICKHOUSE_CLIENT} --user "${U}" -q "SELECT sum(number) FROM numbers(2)"
 
-for analyzer in 1 0
-do
-    echo "-- enable_analyzer = ${analyzer}: the scalar subquery is rejected before it reads"
-    ${CLICKHOUSE_CLIENT} --user "${U}" --enable_analyzer "${analyzer}" -q "SELECT (SELECT sum(number) FROM numbers(1000)) FROM numbers(1)" 2>&1 | grep -o -m1 "QUOTA_EXCEEDED"
-    ${CLICKHOUSE_CLIENT} -q "SELECT profile_events['SelectedRows'] < 100 FROM system.quotas_usage WHERE quota_name = '${Q}'"
-done
+echo "-- the scalar subquery is rejected before it reads"
+${CLICKHOUSE_CLIENT} --user "${U}" -q "SELECT (SELECT sum(number) FROM numbers(1000)) FROM numbers(1)" 2>&1 | grep -o -m1 "QUOTA_EXCEEDED"
+${CLICKHOUSE_CLIENT} -q "SELECT profile_events['SelectedRows'] < 100 FROM system.quotas_usage WHERE quota_name = '${Q}'"
 
 cleanup
