@@ -1,16 +1,11 @@
 <clickhouse>
     <grpc_port>9100</grpc_port>
     <grpc replace="replace">
-        <!-- Enable if you want very detailed logs -->
-        <verbose_logs>false</verbose_logs>
     </grpc>
 
     <opentelemetry_span_log>
-        <engine>
-            engine MergeTree
-            partition by toYYYYMM(finish_date)
-            order by (finish_date, finish_time_us)
-        </engine>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <order_by>event_date, finish_time_us</order_by>
         <database>system</database>
         <table>opentelemetry_span_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>

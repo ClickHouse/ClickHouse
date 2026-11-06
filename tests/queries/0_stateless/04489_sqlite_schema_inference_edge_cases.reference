@@ -1,0 +1,23 @@
+Generated columns: schema
+a	Int64
+b	Nullable(Int64)
+c	Nullable(Int64)
+Generated columns: data
+1	2	2
+2	3	4
+nullable=0
+id	Int64
+name	String
+nullable=1
+id	Nullable(Int64)
+name	Nullable(String)
+nullable=default (match metadata)
+id	Int64
+name	Nullable(String)
+Float reads: REAL values
+1.5
+2.5
+Float reads: INTEGER value as Float64
+42
+Float reads: BLOB value rejected
+Cannot read a floating-point value

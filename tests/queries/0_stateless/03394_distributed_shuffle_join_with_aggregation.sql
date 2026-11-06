@@ -26,7 +26,6 @@ SET join_runtime_filter_min_probe_rows = 0;
 
 SET
     optimize_move_to_prewhere = 1,
-    query_plan_optimize_prewhere = 1,
     make_distributed_plan = 1,
     enable_parallel_replicas = 0,
     enable_join_runtime_filters=1,
@@ -64,7 +63,8 @@ FROM
    (SELECT path, sum(hits) as hits FROM test WHERE lang = 'en' GROUP BY path) AS en,
    (SELECT path, sum(hits) as hits FROM test WHERE lang = 'de' GROUP BY path) AS de
 WHERE (en.path = de.path)
-ORDER BY ALL;
+ORDER BY ALL
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 
 SELECT '----------';
@@ -75,4 +75,5 @@ FROM
    (SELECT * FROM test WHERE lang = 'de') AS de
 WHERE (en.path = de.path)
 GROUP BY en.path
-ORDER BY ALL;
+ORDER BY ALL
+SETTINGS distributed_plan_fallback_to_local_execution = 0;

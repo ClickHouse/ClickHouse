@@ -38,12 +38,6 @@
         WHERE toDate(seen) = toDate('2026-03-02')
         SETTINGS optimize_time_filter_with_preimage = 1
     </query>
-    <query tag="toDate baseline">
-        SELECT count()
-        FROM date_preimage_perf
-        WHERE toDate(seen) = toDate('2026-03-02')
-        SETTINGS optimize_time_filter_with_preimage = 0
-    </query>
     <query tag="timestamp range">
         SELECT count()
         FROM date_preimage_perf
@@ -57,24 +51,12 @@
         WHERE toStartOfMonth(seen) = toDate('2026-03-01')
         SETTINGS optimize_time_filter_with_preimage = 1
     </query>
-    <query tag="DateTime month baseline">
-        SELECT count()
-        FROM date_preimage_perf
-        WHERE toStartOfMonth(seen) = toDate('2026-03-01')
-        SETTINGS optimize_time_filter_with_preimage = 0
-    </query>
 
     <query tag="Date month optimized">
         SELECT count()
         FROM date_preimage_perf
         WHERE toStartOfMonth(d) = toDate('2026-03-01')
         SETTINGS optimize_time_filter_with_preimage = 1
-    </query>
-    <query tag="Date month baseline">
-        SELECT count()
-        FROM date_preimage_perf
-        WHERE toStartOfMonth(d) = toDate('2026-03-01')
-        SETTINGS optimize_time_filter_with_preimage = 0
     </query>
 
     <drop_query>DROP TABLE date_preimage_perf</drop_query>

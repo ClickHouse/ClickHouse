@@ -44,7 +44,8 @@ public:
         /// An item has been renamed or moved. This event delivers the old name.
 
         DW_ITEM_MOVED_TO = 16
-        /// An item has been renamed or moved. This event delivers the new name.
+        /// An item has been renamed within the directory. This event delivers the new name.
+        /// An item moved in from elsewhere is reported as DW_ITEM_ADDED.
     };
 
     enum DirectoryEventMask
@@ -58,12 +59,14 @@ public:
 
     struct DirectoryEvent
     {
-        DirectoryEvent(const std::string & f, DirectoryEventType ev) : path(f), event(ev) { }
+        DirectoryEvent(const std::string & f, DirectoryEventType ev, uint64_t cookie_ = 0) : path(f), event(ev), cookie(cookie_) { }
 
         /// The directory or file that has been changed.
         const std::string path;
         /// The kind of event.
         DirectoryEventType event;
+        /// The same value on the DW_ITEM_MOVED_FROM and DW_ITEM_MOVED_TO of one rename, 0 otherwise.
+        uint64_t cookie;
     };
 
 

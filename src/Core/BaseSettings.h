@@ -29,6 +29,25 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
+/** A settings sequence on the wire is a list of name/value pairs, and both the number of pairs and
+  * the size of each name and value come from the peer. There are a few thousand declared settings
+  * and a handful of custom ones per query, so bound the number of pairs: otherwise a peer can keep
+  * the server allocating one pair at a time without a limit, and in interserver mode the settings of
+  * a query are read before its secret hash is checked.
+  */
+static constexpr size_t MAX_SETTINGS_IN_A_SEQUENCE = 65536;
+
+/** The name of a setting or of a query parameter is an identifier, so a name declared longer than
+  * this is rejected before any of it is read. The bound is the same as for the strings of the `Hello`
+  * packet.
+  *
+  * The value of a setting or of a parameter keeps the generic string bound: it is query-sized data
+  * (a parameter is substituted into the query), and the query text itself has to be read at that
+  * bound before the interserver hash that covers it can be checked, so a tighter bound here would
+  * only break large parameters without lowering what a peer can make the server allocate.
+  */
+static constexpr size_t MAX_SETTING_NAME_SIZE = 64 * 1024;
+
 /// Utility functions and types used by the BaseSettings template class.
 /// These are implementation details that handle serialization, error reporting,
 /// and metadata management for settings.
@@ -36,15 +55,24 @@ struct BaseSettingsHelpers
 {
     /// Error handling
     [[noreturn]] static void throwSettingNotFound(std::string_view name);
+    [[noreturn]] static void throwTooManySettings(std::string_view what);
     [[noreturn]] static void throwValuelessSettingIsNotBool(std::string_view name, std::string_view type);
     [[noreturn]] static void throwValuelessSettingIsNotBool(std::string_view name);
     [[noreturn]] static void throwValuelessSettingHasValue(std::string_view name);
     static void warningSettingNotFound(std::string_view name);
     static void flushWarnings();
 
+    /// The value as it is echoed in the "while setting '<name>' to value <value>" context of a rejected value.
+    /// A URI-typed setting may carry basic-auth credentials, so a password of the form `scheme://user:password@`
+    /// is masked the same way it is masked in queries.
+    static String formatValueForErrorMessage(const Field & value);
+    static String formatValueForErrorMessage(String str);
+
     /// Serialization helpers
     static void writeString(std::string_view str, WriteBuffer & out);
     static String readString(ReadBuffer & in);
+    /// The name of a setting or a query parameter, bounded by `MAX_SETTING_NAME_SIZE`.
+    static String readName(ReadBuffer & in);
 
     /// Setting metadata flags
     enum Flags : UInt64
@@ -144,7 +172,7 @@ struct SettingsOwner;
   *     DECLARE(Float, f, 3.11, "Description of f", IMPORTANT) \
   *     DECLARE(String, s, "default", "Description of s", 0) \
   *     DECLARE_WITH_ALIAS(String, experimental, "default", "Description", 0, stable)
-  *     DECLARE_WITH_ALIAS(String, renamed_twice, "default", "Description", 0, old_name, older_name)
+  *     DECLARE_WITH_ALIAS(String, renamed_twice, "default", "Description", 0, SETTING_ALIASES(old_name, older_name))
   *
   * DECLARE_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS, MY_SETTINGS_SUPPORTED_TYPES)
   * IMPLEMENT_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS, MySettings, MySetting)
@@ -423,10 +451,28 @@ void BaseSettings<TTraits>::set(std::string_view name, const Field & value)
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
-        accessor.setValue(*this, index, value);
-    else
+    /// An unknown name is resolved outside the block that adds the context: its message already names
+    /// the setting (and suggests a correction), so nothing has to be added to it.
+    const size_t index = accessor.find(name);
+    if (index == static_cast<size_t>(-1))
+    {
         getCustomSetting(name) = value;
+        return;
+    }
+
+    /// A value of the wrong type or out of range is reported by the setting field itself, which does not
+    /// know its own name: `SETTINGS max_threads = 'abc'` used to say only "Cannot parse input: expected
+    /// 'eof' before: 'abc'", and `SETTINGS max_block_size = 0` only "A setting's value has to be greater
+    /// than 0". Name the setting and the value, the way `stringToValueUtil` already does.
+    try
+    {
+        accessor.setValue(*this, index, value);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while setting '{}' to value {}", name, BaseSettingsHelpers::formatValueForErrorMessage(value));
+        throw;
+    }
 }
 
 template <typename TTraits>
@@ -490,17 +536,17 @@ SettingsChanges BaseSettings<TTraits>::changes() const
 template <typename TTraits>
 void BaseSettings<TTraits>::checkShorthandChange(const SettingChange & change) const
 {
-    /// `SET name` without a value means `SET name = true`, which only makes sense for a Bool
-    /// setting. This is where the settings schema is known, so this is where it is checked.
+    /// `SET name` without a value means `SET name = true`, which only makes sense for a Bool*
+    /// settings. This is where the settings schema is known, so this is where it is checked.
     if (!change.shorthand)
         return;
 
-    if (std::string_view type = getTypeName(change.name); type != "Bool")
+    if (std::string_view type = getTypeName(change.name); !type.starts_with("Bool"))
         BaseSettingsHelpers::throwValuelessSettingIsNotBool(change.name, type);
 
-    /// The type alone is not enough. The parser writes Bool `true` for the valueless form, but a
+    /// The type alone is not enough. The parser writes `Bool` `true` for the valueless form, but a
     /// `SettingChange` can also arrive from the AST JSON dialect, which is free to pair the flag
-    /// with any other value - and for a `Bool` setting the check above lets that through. Such a
+    /// with any other value - and for a `Bool*` setting the check above lets that through. Such a
     /// change would execute with the carried value while `ASTSetQuery::formatImpl` renders the bare
     /// name, so `system.query_log` and every other formatter would under-report what ran. This is
     /// the first point after deserialization where an exception is logged with the AST masked
@@ -653,12 +699,27 @@ Field BaseSettings<TTraits>::castValueUtil(std::string_view name, const Field & 
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
+    const size_t index = accessor.find(name);
+    if (index == static_cast<size_t>(-1))
+    {
+        if constexpr (Traits::allow_custom_settings)
+            return value;
+        else
+            BaseSettingsHelpers::throwSettingNotFound(name);
+    }
+
+    /// This is where a value given in a `SETTINGS` clause or by `SET` is checked, so it is where the
+    /// message for a value of the wrong type or out of range is produced. The setting field itself does
+    /// not know its own name, so name it here, the way `stringToValueUtil` already does.
+    try
+    {
         return accessor.castValueUtil(index, value);
-    if constexpr (Traits::allow_custom_settings)
-        return value;
-    else
-        BaseSettingsHelpers::throwSettingNotFound(name);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while setting '{}' to value {}", name, BaseSettingsHelpers::formatValueForErrorMessage(value));
+        throw;
+    }
 }
 
 template <typename TTraits>
@@ -690,7 +751,8 @@ Field BaseSettings<TTraits>::stringToValueUtil(std::string_view name, const Stri
     }
     catch (Exception & e)
     {
-        e.addMessage("while parsing value '{}' for setting '{}'", str, name);
+        /// Settings profiles and constraints from `users.xml` arrive here as strings; a URI value may carry a password.
+        e.addMessage("while setting '{}' to value '{}'", name, BaseSettingsHelpers::formatValueForErrorMessage(str));
         throw;
     }
 }
@@ -756,9 +818,12 @@ void BaseSettings<TTraits>::readBinary(ReadBuffer & in)
     size_t num_settings = 0;
     readVarUInt(num_settings, in);
 
+    if (num_settings > MAX_SETTINGS_IN_A_SEQUENCE)
+        BaseSettingsHelpers::throwTooManySettings("settings");
+
     for (size_t i = 0; i < num_settings; ++i)
     {
-        String read_name = BaseSettingsHelpers::readString(in);
+        String read_name = BaseSettingsHelpers::readName(in);
         std::string_view name = TTraits::resolveName(read_name);
         size_t index = accessor.find(name);
 
@@ -776,11 +841,15 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
 {
     resetToDefault();
     const auto & accessor = Traits::Accessor::instance();
+    size_t num_settings = 0;
     while (true)
     {
-        String read_name = BaseSettingsHelpers::readString(in);
+        String read_name = BaseSettingsHelpers::readName(in);
         if (read_name.empty() /* empty string is a marker of the end of settings */)
             break;
+
+        if (++num_settings > MAX_SETTINGS_IN_A_SEQUENCE)
+            BaseSettingsHelpers::throwTooManySettings("settings");
 
         std::string_view name = TTraits::resolveName(read_name);
         size_t index = accessor.find(name);
@@ -1219,7 +1288,7 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
 /* derived-to-base cast on a real `this` before adding it, so we never need a forged-pointer */
 /* probe to compute the Impl->Data base distance. */
 #define SETTING_EXTERN_ENTRY_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    SettingIndex<Owner_, SettingField##TYPE> NAME{  \
+    extern const SettingIndex<Owner_, SettingField##TYPE> NAME{  \
         offsetof(Traits_::Data, TYPE##_) \
         + Traits_::settings_layout_.local_index[static_cast<size_t>(Traits_::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
         }; /* NOLINT(misc-use-internal-linkage) */
@@ -1525,11 +1594,22 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
 #define SETTING_SKIP_TRAIT(...)
 
 
-/// Generates one or two alias mapping entries.
+/// Generates one or two alias mapping entries. The arguments after ALIAS are the change history of the setting.
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_WITH_ALIAS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ALIAS, ...) \
+    SETTING_ALIAS_ENTRIES_(NAME, ALIAS)
+
+/// `ALIAS` is expanded before this is called, so `SETTING_ALIASES(a, b)` arrives as two arguments.
+/// NOLINTNEXTLINE
+#define SETTING_ALIAS_ENTRIES_(NAME, ...) SETTING_ALIAS_ENTRIES_IMPL_(NAME, __VA_ARGS__)
+/// NOLINTNEXTLINE
+#define SETTING_ALIAS_ENTRIES_IMPL_(NAME, ALIAS, ...) \
     { #ALIAS, #NAME }, \
     __VA_OPT__({ #__VA_ARGS__, #NAME },)
+
+/// The ALIAS argument of `DECLARE_WITH_ALIAS` for a setting with two aliases.
+/// NOLINTNEXTLINE
+#define SETTING_ALIASES(...) __VA_ARGS__
 
 /// Implement the full settings infrastructure for a settings class.
 /// Generates: Impl struct, Data constructor, Accessor singleton, and

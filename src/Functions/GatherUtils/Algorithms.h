@@ -556,6 +556,9 @@ bool sliceHasImplSubstr(const FirstSliceType & first, const SecondSliceType & se
     if (second.size == 0)
         return true;
 
+    if (first.size < second.size)
+        return false;
+
     const bool has_first_null_map = first_null_map != nullptr;
     const bool has_second_null_map = second_null_map != nullptr;
 

@@ -21,6 +21,18 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+ObjectMetadata ObjectMetadata::fromTableRecords(std::optional<UInt64> size, String immutable_content_id)
+{
+    ObjectMetadata metadata;
+    metadata.size_bytes = size.value_or(0);
+    metadata.is_size_known = size.has_value();
+    metadata.is_fetched = false;
+    metadata.is_from_table_records = true;
+    metadata.is_last_modified_known = false;
+    metadata.immutable_content_id = std::move(immutable_content_id);
+    return metadata;
+}
+
 bool IObjectStorage::existsOrHasAnyChild(const std::string & path) const
 {
     RelativePathsWithMetadata files;
@@ -81,7 +93,10 @@ void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     std::optional<ObjectAttributes> object_to_attributes)
 {
     if (&object_storage_to == this)
+    {
         copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
+        return;
+    }
 
     auto in = readObject(object_from, read_settings);
     auto out = object_storage_to.writeObject(object_to, WriteMode::Rewrite, /* attributes= */ {}, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);

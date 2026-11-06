@@ -1,0 +1,10 @@
+the mutation is pending	1
+the values a read sees	[100,200]
+a renamed value	1
+a renamed value, without pruning	1
+a range of renamed values	2
+a value of the dropped column	0
+min and max	100	200
+min and max, without statistics	100	200
+after the mutation materialized	1
+after the mutation materialized, min and max	100	200

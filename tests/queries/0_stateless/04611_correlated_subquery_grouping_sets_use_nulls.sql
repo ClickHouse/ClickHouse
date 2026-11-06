@@ -8,7 +8,6 @@
 -- `WITH CUBE` shapes are covered by 04053_correlated_subquery_group_by_use_nulls,
 -- this test pins the `GROUPING SETS` shape found by the fuzzer.
 
-SET enable_analyzer = 1;
 SET group_by_use_nulls = 1;
 
 -- The row of the `()` set carries `number = NULL`: the correlated subquery
