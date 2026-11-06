@@ -1,0 +1,102 @@
+data-reader-primitives	11	0	0
+data-reader-array-primitives	10	0	0
+data-reader-array-complex-objects	10	0	0
+data-reader-map	10	0	0
+data-reader-nested-struct	10	0	0
+data-reader-nullable-field-invalid-schema-key	1	0	0
+data-reader-escaped-chars	3	0	0
+data-reader-date-types-America	1	0	0
+data-reader-date-types-Asia	1	0	0
+data-reader-date-types-Etc	1	0	0
+data-reader-date-types-Iceland	1	0	0
+data-reader-date-types-Jst	1	0	0
+data-reader-date-types-Pst	1	0	0
+data-reader-date-types-utc	1	0	0
+data-reader-timestamp_ntz	9	0	0
+data-reader-timestamp_ntz-id-mode	9	0	0
+data-reader-timestamp_ntz-name-mode	9	0	0
+kernel-timestamp-int96	5	0	0
+kernel-timestamp-pst	5	0	0
+kernel-timestamp-timestamp_micros	5	0	0
+kernel-timestamp-timestamp_millis	5	0	0
+parquet-all-types	200	0	0
+parquet-all-types-legacy-format	200	0	0
+Schemas
+data-reader-primitives
+as_int	Nullable(Int32)
+as_long	Nullable(Int64)
+as_byte	Nullable(Int8)
+as_short	Nullable(Int16)
+as_boolean	Nullable(Bool)
+as_float	Nullable(Float32)
+as_double	Nullable(Float64)
+as_string	Nullable(String)
+as_binary	Nullable(String)
+as_big_decimal	Nullable(Decimal(1, 0))
+data-reader-map
+i	Nullable(Int32)
+a	Map(Int32, Nullable(Int32))
+b	Map(Int64, Nullable(Int8))
+c	Map(Int16, Nullable(Bool))
+d	Map(Float32, Nullable(Float64))
+e	Map(String, Nullable(Decimal(1, 0)))
+f	Map(Int32, Array(Tuple(\n    val Nullable(Int32))))
+data-reader-nested-struct
+a	Tuple(\n    aa Nullable(String),\n    ab Nullable(String),\n    ac Tuple(\n        aca Nullable(Int32),\n        acb Nullable(Int64)))
+b	Nullable(Int32)
+data-reader-timestamp_ntz
+id	Nullable(Int32)
+tsNtz	Nullable(DateTime64(6))
+tsNtzPartition	Nullable(DateTime64(6))
+data-reader-timestamp_ntz-id-mode
+id	Nullable(Int32)
+tsNtz	Nullable(DateTime64(6))
+tsNtzPartition	Nullable(DateTime64(6))
+kernel-timestamp-int96
+id	Nullable(Int32)
+part	Nullable(DateTime64(6))
+time	Nullable(DateTime64(6))
+parquet-all-types
+ByteType	Nullable(Int8)
+ShortType	Nullable(Int16)
+IntegerType	Nullable(Int32)
+LongType	Nullable(Int64)
+FloatType	Nullable(Float32)
+DoubleType	Nullable(Float64)
+decimal	Nullable(Decimal(10, 2))
+BooleanType	Nullable(Bool)
+StringType	Nullable(String)
+BinaryType	Nullable(String)
+DateType	Nullable(Date32)
+TimestampType	Nullable(DateTime64(6))
+TimestampNTZType	Nullable(DateTime64(6))
+nested_struct	Tuple(\n    aa Nullable(String),\n    ac Tuple(\n        aca Nullable(Int32)))
+array_of_prims	Array(Nullable(Int32))
+array_of_arrays	Array(Array(Nullable(Int32)))
+array_of_structs	Array(Tuple(\n    ab Nullable(Int64)))
+map_of_prims	Map(Int32, Nullable(Int64))
+map_of_rows	Map(Int32, Tuple(\n    ab Nullable(Int64)))
+map_of_arrays	Map(Int64, Array(Nullable(Int32)))
+Values
+2020-01-01 06:09:10.000000	2020-01-01
+0	2021-11-18 02:30:00.123456	2021-11-18 02:30:00.123456
+1	2013-07-05 17:01:00.123456	2021-11-18 02:30:00.123456
+2	\N	2021-11-18 02:30:00.123456
+3	2021-11-18 02:30:00.123456	2013-07-05 17:01:00.123456
+4	2013-07-05 17:01:00.123456	2013-07-05 17:01:00.123456
+5	\N	2013-07-05 17:01:00.123456
+6	2021-11-18 02:30:00.123456	\N
+7	2013-07-05 17:01:00.123456	\N
+8	\N	\N
+0	2020-01-01 08:09:10.001000	2020-02-01 08:09:10.000000
+1	2021-10-01 08:09:20.000000	1999-01-01 09:00:00.000000
+2	2021-10-01 08:09:20.000000	2000-01-01 09:00:00.000000
+3	1969-01-01 00:00:00.000000	1969-01-01 00:00:00.000000
+4	\N	\N
+foo1	bar+%21
+foo2	bar+%22
+foo3	bar+%23
+0	{0:0}	{0:0}	{0:true}	{0:0}	{'0':0}	{0:[(0),(0),(0)]}
+1	{1:1}	{1:1}	{1:false}	{1:1}	{'1':1}	{1:[(1),(1),(1)]}
+('0','0',(0,0))	0
+('1','1',(1,1))	1

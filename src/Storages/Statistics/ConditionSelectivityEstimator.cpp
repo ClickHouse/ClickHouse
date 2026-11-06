@@ -3,6 +3,7 @@
 #include <stack>
 #include <cmath>
 
+#include <Columns/ColumnConst.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -332,6 +333,13 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
 
             out.finalized = true;
             return false;
+        }
+
+        /// NULL stays undecided: `ALWAYS_FALSE` would become `ALWAYS_TRUE` under `NOT`.
+        if (auto folded = ActionsDAG::tryFoldPredicateThroughMaterialize(func.getDAGNode()); folded && !folded->isNullAt(0))
+        {
+            out.function = folded->getBool(0) ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+            return true;
         }
 
         if (num_args == 1)
