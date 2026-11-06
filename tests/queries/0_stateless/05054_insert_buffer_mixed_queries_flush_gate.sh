@@ -14,8 +14,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # B's second block exceeds the buffer thresholds and is written to the destination directly - with
 # `parts_to_throw_insert = 1` that nested `INSERT` used to run the check, count the part holding B's
 # own rows, and reject B in the middle of the query. The interleaving is timing-dependent: when it is
-# not reached, the test degenerates to orderings that pass both before and after the fix, so it can
-# not fail spuriously.
+# not reached (B's first row is not observed in the buffer in time), query A runs only after B, see below.
 
 ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS t_05054_dst;
@@ -47,17 +46,33 @@ query_b_pid=$!
 # process, which costs seconds rather than milliseconds under a sanitizer, so a fixed iteration
 # count would let the test run far longer there than the interleaving it waits for is worth.
 poll_deadline=$((SECONDS + 15))
+buffered_b=0
 while [ "$SECONDS" -lt "$poll_deadline" ]
 do
-    [ "$(${CLICKHOUSE_CLIENT} -q 'SELECT count() FROM t_05054_buf')" = "1" ] && break
+    if [ "$(${CLICKHOUSE_CLIENT} -q 'SELECT count() FROM t_05054_buf')" = "1" ]
+    then
+        buffered_b=1
+        break
+    fi
     sleep 0.2
 done
 
-# Query A: two rows are buffered, and appending them first flushes B's block to the destination.
-${CLICKHOUSE_CLIENT} -q "INSERT INTO t_05054_buf SELECT number + 20 FROM numbers(2) SETTINGS async_insert = 0"
+if [ "$buffered_b" = "1" ]
+then
+    # Query A: two rows are buffered, and appending them first flushes B's block to the destination.
+    ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_05054_buf SELECT number + 20 FROM numbers(2) SETTINGS async_insert = 0"
 
-# B has to succeed: the flush of its first block already made its pre-write decision for it.
-wait $query_b_pid
+    # B has to succeed: the flush of its first block already made its pre-write decision for it.
+    wait $query_b_pid
+else
+    # The interleaving was not reached: B's first row was never observed in the buffer before the deadline,
+    # so A could have buffered its rows first and made B's first block flush them, which is not the scenario
+    # of the test. Let B finish alone instead, and run A only afterwards, with the limit lifted: the flush of
+    # B's row then happens on behalf of A alone. The result is the same as in the interleaving.
+    wait $query_b_pid
+    ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_05054_dst MODIFY SETTING parts_to_throw_insert = 1000"
+    ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_05054_buf SELECT number + 20 FROM numbers(2) SETTINGS async_insert = 0"
+fi
 
 # All four of B's rows reach the destination; A's two rows are still buffered.
 ${CLICKHOUSE_CLIENT} -q "
