@@ -42,3 +42,24 @@ SELECT v FROM t_force_proj_filter WHERE k = cityHash64(50000)
 SETTINGS force_optimize_projection = 1, optimize_use_projection_filtering = 0; -- { serverError PROJECTION_NOT_USED }
 
 DROP TABLE t_force_proj_filter;
+
+-- A full projection that replaces the parent read must not leave a discarded index-only
+-- projection satisfying force_optimize_projection_name.
+DROP TABLE IF EXISTS t_force_proj_filter_both;
+
+CREATE TABLE t_force_proj_filter_both (id UInt64, k UInt64, v String)
+ENGINE = MergeTree ORDER BY id
+SETTINGS allow_part_offset_column_in_projections = 1, index_granularity = 8192;
+
+INSERT INTO t_force_proj_filter_both SELECT number, cityHash64(number), toString(number) FROM numbers(100000);
+
+ALTER TABLE t_force_proj_filter_both ADD PROJECTION p_off (SELECT _part_offset ORDER BY k);
+ALTER TABLE t_force_proj_filter_both ADD PROJECTION p_full (SELECT k, v ORDER BY k);
+ALTER TABLE t_force_proj_filter_both MATERIALIZE PROJECTION p_off SETTINGS mutations_sync = 2;
+ALTER TABLE t_force_proj_filter_both MATERIALIZE PROJECTION p_full SETTINGS mutations_sync = 2;
+
+SELECT v FROM t_force_proj_filter_both WHERE k = cityHash64(50000) SETTINGS force_optimize_projection_name = 'p_full';
+
+SELECT v FROM t_force_proj_filter_both WHERE k = cityHash64(50000) SETTINGS force_optimize_projection_name = 'p_off'; -- { serverError INCORRECT_DATA }
+
+DROP TABLE t_force_proj_filter_both;

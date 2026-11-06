@@ -1,6 +1,5 @@
 #include <Parsers/ParserCopyQuery.h>
 
-#include <Common/quoteString.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTCopyQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -26,16 +25,27 @@
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserWithElement.h>
 
+#include <Common/quoteString.h>
+
 #include <algorithm>
 #include <memory>
 #include <optional>
 
+#include <fmt/format.h>
+
 namespace DB
 {
 
-namespace ErrorCodes
+namespace
 {
-extern const int BAD_ARGUMENTS;
+
+/// `psql` and libpq clients terminate the statement with `;`, which `parseQuery` accepts after the
+/// parsed query, so it ends the command here as well.
+bool isEndOfStatement(IParser::Pos & pos)
+{
+    return pos->isEnd() || pos->type == TokenType::Semicolon;
+}
+
 }
 
 bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -73,12 +83,17 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!close_bracket.ignore(pos, expected))
                 return false;
 
-            /// Preserve each column as one quoted SQL identifier.
+            /// Store each column already rendered as valid SQL, like `table_name` below. `full_name` alone
+            /// would drop the original quoting, and the handler splices these strings verbatim into
+            /// `INSERT INTO ... (...)` / `SELECT ... FROM ...`, so a quoted column such as `"a.b"` or
+            /// `"select"` (pqxx's `stream_to` always quotes the column list) must stay a single identifier.
             for (const auto & column_ast : columns->children)
                 copy_element->column_names.push_back(backQuoteIfNeed(column_ast->as<ASTIdentifier>()->full_name));
         }
         saved_pos = pos;
-        /// Quote each part of a compound table name separately.
+        /// Store the table name already rendered as valid SQL: a compound `database.table` must keep its
+        /// parts separately quoted (`` `database`.`table` ``) rather than becoming one quoted identifier
+        /// (`` `database.table` ``), which would resolve to a single table whose name contains a dot.
         {
             const auto & id = table_name->as<ASTIdentifier &>();
             String rendered;
@@ -104,9 +119,8 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
         }
 
-        if (pos->isEnd())
-            return true;
-
+        /// `STDOUT` or `STDIN` is still to come, so neither the end of the query nor the terminating `;`
+        /// is accepted here: `parseOptions` requires the endpoint.
         return parseOptions(pos, copy_element, expected);
     }
 
@@ -116,6 +130,18 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         return false;
     }
+
+    /// PostgreSQL has no alias in this form, and the alias of a subquery would be dropped below, so
+    /// `COPY (SELECT 1) AS junk TO STDOUT` would silently run as `COPY (SELECT 1) TO STDOUT`.
+    if (!name_or_expr->tryGetAlias().empty())
+        return false;
+
+    /// `COPY (query) TO STDOUT` - remember the inner query so that it can be executed as-is. Unwrap the
+    /// subquery node so that the stored text is a runnable top-level query rather than `(SELECT ...)`.
+    if (const auto * subquery_ast = name_or_expr->as<ASTSubquery>())
+        copy_element->subquery = subquery_ast->children.at(0)->formatWithSecretsOneLine();
+    else
+        copy_element->subquery = name_or_expr->formatWithSecretsOneLine();
 
     saved_pos = pos;
     if (s_to.ignore(pos, expected))
@@ -127,251 +153,486 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     }
 
-    if (pos->isEnd())
-        return true;
-
     return parseOptions(pos, copy_element, expected);
 }
 
 namespace
 {
 
-String toLowerCase(std::string_view name)
+/// Set the output format from a `COPY` option value. PostgreSQL keywords are case-insensitive, so match
+/// against a normalized (lower-cased) spelling. `binary` is parsed but not supported: PostgreSQL binary
+/// `COPY` has its own wire format and is rejected in the handler (see `PostgreSQLHandler::processCopyQuery`);
+/// parsing it here yields a clear error there instead of the query silently falling through to the regular
+/// query path. Likewise, a format we do not recognize (`JSONEachRow`, ...) is not thrown for here - it is
+/// recorded in `unsupported_option` so the handler rejects it with a clean `ErrorResponse`. Throwing in the
+/// parser would make `PostgreSQLHandler::processCopyQuery` fall through to the regular-query path, whose
+/// error tears the connection down instead of returning a clean `0A000` plus `ReadyForQuery`.
+void setCopyFormat(boost::intrusive_ptr<ASTCopyQuery> node, const String & raw_format)
 {
-    String result(name);
-    std::transform(result.begin(), result.end(), result.begin(), [](char c) { return static_cast<char>(std::tolower(c)); });
-    return result;
-}
-
-void setFormat(const String & format_name, boost::intrusive_ptr<ASTCopyQuery> node)
-{
-    /// `text` is what PostgreSQL calls its default format, and it is tab separated; `tsv` is accepted
-    /// under its ClickHouse name.
-    if (format_name == "text" || format_name == "tsv")
-        node->format = ASTCopyQuery::Formats::TSV;
-    else if (format_name == "csv")
+    String format_name = raw_format;
+    std::transform(format_name.begin(), format_name.end(), format_name.begin(), [](unsigned char c){ return std::tolower(c); });
+    if (format_name == "csv")
         node->format = ASTCopyQuery::Formats::CSV;
+    else if (format_name == "tsv" || format_name == "text")
+        node->format = ASTCopyQuery::Formats::TSV;
     else if (format_name == "binary")
         node->format = ASTCopyQuery::Formats::Binary;
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format from postgresql copy command {}", format_name);
+        node->unsupported_option = fmt::format("the \"{}\" format", raw_format);
 }
 
-/// A bare word, a quoted identifier or a number - whatever it is, the caller decides what to make of it.
-bool parseWord(IParser::Pos & pos, String & word)
+/// A bare identifier that names an output format in the legacy `COPY ... CSV` / `WITH BINARY` grammar.
+bool isCopyFormatKeyword(const String & lowercased_word)
 {
-    if (pos->type != TokenType::BareWord && pos->type != TokenType::Number && pos->type != TokenType::QuotedIdentifier)
-        return false;
-
-    word = String(pos->begin, pos->end);
-    if (pos->type == TokenType::QuotedIdentifier)
-        word = word.substr(1, word.size() - 2);
-
-    ++pos;
-    return true;
+    return lowercased_word == "csv" || lowercased_word == "tsv" || lowercased_word == "text" || lowercased_word == "binary";
 }
 
-/// The value of an option, with PostgreSQL's optional noise word `AS` in front of it.
-bool parseOptionValue(IParser::Pos & pos, Expected & expected, String & value)
+String toLowerCopy(const String & word)
 {
-    ParserKeyword s_as(Keyword::AS);
-    s_as.ignore(pos, expected);
-
-    ASTPtr literal;
-    if (ParserStringLiteral().parse(pos, literal, expected))
-    {
-        value = literal->as<ASTLiteral &>().value.safeGet<String>();
-        return true;
-    }
-
-    return parseWord(pos, value);
+    String result = word;
+    std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c){ return std::tolower(c); });
+    return result;
 }
 
-/// The options whose value decides how the data is written. They are accepted when the client asks
-/// for what ClickHouse writes anyway - `psycopg2` spells the defaults out on every `copy_to` and
-/// `copy_from` - and refused otherwise: writing a different shape than the client asked for is
-/// exactly what this option list used to do silently.
-struct DataShapeOptions
+/// The bytes of a string-literal token with the surrounding quotes removed and no further unescaping.
+/// PostgreSQL clients render option values (such as a `DELIMITER`) in their own language before sending them
+/// - psycopg2, for instance, passes the actual tab byte for its default text delimiter - so the bytes
+/// between the quotes are exactly the value the client means. This deliberately does not apply ClickHouse's
+/// backslash unescaping, which would misread e.g. the text null marker `\N`.
+String stringLiteralInnerBytes(const String & raw_token)
 {
-    std::optional<String> delimiter;
-    std::optional<String> null_value;
-    std::optional<String> quote;
-};
-
-void checkDataShapeOptions(const DataShapeOptions & options, const ASTCopyQuery & node)
-{
-    const bool is_csv = node.format == ASTCopyQuery::Formats::CSV;
-    const bool is_binary = node.format == ASTCopyQuery::Formats::Binary;
-
-    /// The binary format has neither a field separator nor a textual representation of NULL, so
-    /// there is no value of these options it could honour. PostgreSQL refuses them there as well.
-    if (is_binary)
-    {
-        if (options.delimiter)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Option DELIMITER of the postgresql copy command is not supported with the binary format");
-        if (options.null_value)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Option NULL of the postgresql copy command is not supported with the binary format");
-    }
-
-    if (options.delimiter && *options.delimiter != (is_csv ? "," : "\t"))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Option DELIMITER of the postgresql copy command is only supported with the default delimiter of the {} format",
-            toString(node.format));
-
-    /// The representation of NULL in both the TSV and the CSV format of ClickHouse.
-    if (options.null_value && *options.null_value != "\\N")
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Option NULL of the postgresql copy command is only supported with the value '\\N'");
-
-    if (options.quote)
-    {
-        if (!is_csv)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option QUOTE of the postgresql copy command applies to the csv format only");
-        if (*options.quote != "\"")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option QUOTE of the postgresql copy command is only supported with the value '\"'");
-    }
+    if (raw_token.size() >= 2 && (raw_token.front() == '\'' || raw_token.front() == '"'))
+        return raw_token.substr(1, raw_token.size() - 2);
+    return raw_token;
 }
 
-void checkHeaderOption(const ASTCopyQuery & node)
+/// Append a Unicode code point (from `\uXXXX` / `\UXXXXXXXX`) to the value as UTF-8.
+void appendCodePointUTF8(UInt32 code_point, String & value)
 {
-    /// There is no header in the binary format, and PostgreSQL refuses the option there as well.
-    if (node.header && node.format == ASTCopyQuery::Formats::Binary)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Option HEADER of the postgresql copy command is not supported with the binary format");
-}
-
-bool parseOption(IParser::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTCopyQuery> node, DataShapeOptions & data_shape_options)
-{
-    const String option_as_written(pos->begin, pos->end);
-
-    String option;
-    if (!parseWord(pos, option))
-        return false;
-    option = toLowerCase(option);
-
-    if (option == "format")
+    if (code_point <= 0x7F)
+        value += static_cast<char>(code_point);
+    else if (code_point <= 0x7FF)
     {
-        String format_name;
-        if (!parseOptionValue(pos, expected, format_name))
-            return false;
-        setFormat(toLowerCase(format_name), node);
+        value += static_cast<char>(0xC0 | (code_point >> 6));
+        value += static_cast<char>(0x80 | (code_point & 0x3F));
     }
-    else if (option == "csv" || option == "binary" || option == "text")
+    else if (code_point <= 0xFFFF)
     {
-        /// The legacy spelling of the format: WITH [BINARY] [CSV].
-        setFormat(option, node);
-    }
-    else if (option == "header")
-    {
-        /// `true`/`false`/`on`/`off`/`1`/`0`, or nothing at all, which PostgreSQL reads as `true`.
-        String value;
-        auto value_pos = pos;
-        if (!parseOptionValue(pos, expected, value))
-        {
-            node->header = true;
-            return true;
-        }
-
-        const String lower_value = toLowerCase(value);
-        if (lower_value == "true" || lower_value == "on" || lower_value == "1")
-            node->header = true;
-        else if (lower_value == "false" || lower_value == "off" || lower_value == "0")
-            node->header = false;
-        else
-        {
-            pos = value_pos;
-            node->header = true;
-        }
-    }
-    else if (option == "delimiter" || option == "null" || option == "quote")
-    {
-        String value;
-        if (!parseOptionValue(pos, expected, value))
-            return false;
-
-        if (option == "delimiter")
-            data_shape_options.delimiter = value;
-        else if (option == "null")
-            data_shape_options.null_value = value;
-        else
-            data_shape_options.quote = value;
+        value += static_cast<char>(0xE0 | (code_point >> 12));
+        value += static_cast<char>(0x80 | ((code_point >> 6) & 0x3F));
+        value += static_cast<char>(0x80 | (code_point & 0x3F));
     }
     else
     {
-        /// ENCODING, ESCAPE, FORCE_QUOTE and the rest change the data as well, and there is no
-        /// version of them this protocol can serve.
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Option {} of the postgresql copy command is not supported", option_as_written);
+        value += static_cast<char>(0xF0 | (code_point >> 18));
+        value += static_cast<char>(0x80 | ((code_point >> 12) & 0x3F));
+        value += static_cast<char>(0x80 | ((code_point >> 6) & 0x3F));
+        value += static_cast<char>(0x80 | (code_point & 0x3F));
     }
+}
 
-    return true;
+/// The value of a PostgreSQL escape-string literal (an `E'...'` right after the `E` prefix): the quotes are
+/// stripped and the escape sequences PostgreSQL defines for this syntax are decoded - `\b`, `\f`, `\n`,
+/// `\r`, `\t`, octal `\o[oo]`, hex `\xh[h]`, Unicode `\uXXXX` / `\UXXXXXXXX` (appended as UTF-8) - while any
+/// other escaped character stands for itself (which covers `\\` and `\'`), and a doubled quote stands for a
+/// single quote. This is how clients spell control-character option values, e.g. `DELIMITER E'\t'` and
+/// `NULL E'\\N'`. A malformed escape (such as `\x` with no hex digit) is not worth throwing for here (see
+/// the comment in `parseOptions` on why the parser must not throw): the sequence is taken literally, and
+/// the resulting value either matches a supported option value or is rejected by the handler.
+String escapeStringLiteralInnerBytes(const String & raw_token)
+{
+    const String raw = stringLiteralInnerBytes(raw_token);
+    String value;
+    value.reserve(raw.size());
+
+    const auto is_octal = [](char c) { return c >= '0' && c <= '7'; };
+    const auto is_hex = [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'); };
+    const auto hex_value = [](char c) -> UInt32
+    {
+        if (c >= '0' && c <= '9')
+            return c - '0';
+        return (c >= 'a' ? c - 'a' : c - 'A') + 10;
+    };
+
+    size_t i = 0;
+    while (i < raw.size())
+    {
+        const char c = raw[i];
+        if (c == '\'')
+        {
+            /// A doubled quote; the lexer guarantees the quote is not the last byte of the inner bytes.
+            value += '\'';
+            i += 2;
+        }
+        else if (c != '\\')
+        {
+            value += c;
+            ++i;
+        }
+        else if (i + 1 >= raw.size())
+        {
+            /// A lone trailing backslash (the lexer does not produce one, but stay safe).
+            value += '\\';
+            ++i;
+        }
+        else
+        {
+            const char escaped = raw[i + 1];
+            i += 2;
+            switch (escaped)
+            {
+                case 'b': value += '\b'; break;
+                case 'f': value += '\f'; break;
+                case 'n': value += '\n'; break;
+                case 'r': value += '\r'; break;
+                case 't': value += '\t'; break;
+                case 'x':
+                {
+                    if (i < raw.size() && is_hex(raw[i]))
+                    {
+                        UInt32 code = hex_value(raw[i]);
+                        ++i;
+                        if (i < raw.size() && is_hex(raw[i]))
+                        {
+                            code = (code << 4) | hex_value(raw[i]);
+                            ++i;
+                        }
+                        value += static_cast<char>(code);
+                    }
+                    else
+                        value += 'x'; /// Malformed: no hex digit follows.
+                    break;
+                }
+                case 'u':
+                case 'U':
+                {
+                    const size_t digits = escaped == 'u' ? 4 : 8;
+                    if (i + digits <= raw.size() && std::all_of(raw.begin() + i, raw.begin() + i + digits, is_hex))
+                    {
+                        UInt32 code_point = 0;
+                        for (size_t d = 0; d < digits; ++d, ++i)
+                            code_point = (code_point << 4) | hex_value(raw[i]);
+                        appendCodePointUTF8(code_point, value);
+                    }
+                    else
+                        value += escaped; /// Malformed: not enough hex digits.
+                    break;
+                }
+                default:
+                {
+                    if (is_octal(escaped))
+                    {
+                        UInt32 code = escaped - '0';
+                        for (size_t d = 0; d < 2 && i < raw.size() && is_octal(raw[i]); ++d, ++i)
+                            code = (code << 3) | (raw[i] - '0');
+                        value += static_cast<char>(code);
+                    }
+                    else
+                        value += escaped; /// Covers `\\` and `\'`; any other character stands for itself.
+                    break;
+                }
+            }
+        }
+    }
+    return value;
 }
 
 }
 
 bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery> node, Expected & expected)
 {
-    ParserIdentifier s_output_identifier;
-    ASTPtr output_name;
-    if (!s_output_identifier.parse(pos, output_name, expected))
-        return false;
-
-    ParserKeyword s_with(Keyword::WITH);
-    ParserToken open_bracket(TokenType::OpeningRoundBracket);
-    ParserToken close_bracket(TokenType::ClosingRoundBracket);
-    ParserToken comma(TokenType::Comma);
-
-    auto assert_end = [&]
+    /// The copy endpoint token right after `TO`/`FROM`. It is normally an identifier (`STDOUT`/`STDIN`, or
+    /// an unsupported `PROGRAM`), but a file-path endpoint is a string literal (`COPY t TO '/path'`).
+    String target;
+    if (pos->type == TokenType::StringLiteral)
     {
-        /// Transferring the data in the default format because the rest of the command was not
-        /// understood would hand the client rows it cannot parse, or store rows parsed the wrong way,
-        /// so say that it was not understood instead.
-        if (!pos->isEnd())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Unknown part of the postgresql copy command: {}", String(pos->begin, pos->end));
-    };
-
-    if (!s_with.ignore(pos, expected))
-    {
-        assert_end();
-        return true;
-    }
-
-    DataShapeOptions data_shape_options;
-
-    /// The form every modern client sends: WITH (FORMAT csv, HEADER true, ...).
-    if (open_bracket.ignore(pos, expected))
-    {
-        bool is_first_option = true;
-        while (!close_bracket.ignore(pos, expected))
-        {
-            if (!is_first_option && !comma.ignore(pos, expected))
-                return false;
-            is_first_option = false;
-
-            if (!parseOption(pos, expected, node, data_shape_options))
-                return false;
-        }
+        /// A file-path endpoint - unsupported; consume the literal, `target` stays empty so the mismatch
+        /// check below rejects it.
+        ++pos;
     }
     else
     {
-        /// The legacy spelling, which `psql` and the client libraries still use:
-        /// WITH [BINARY] [CSV [HEADER]] [DELIMITER [AS] 'c'] [NULL [AS] 's'] [QUOTE [AS] 'c'].
-        /// `WITH FORMAT csv` is not PostgreSQL syntax at all, but this protocol has accepted it from
-        /// the beginning, so it is parsed here too.
-        while (!pos->isEnd())
-        {
-            if (!parseOption(pos, expected, node, data_shape_options))
-                return false;
-        }
+        ParserIdentifier s_output_identifier;
+        ASTPtr output_name;
+        if (!s_output_identifier.parse(pos, output_name, expected))
+            return false;
+        target = toLowerCopy(output_name->as<ASTIdentifier &>().full_name);
     }
 
-    checkDataShapeOptions(data_shape_options, *node);
-    checkHeaderOption(*node);
-    assert_end();
+    /// The only copy endpoints we implement are the client stream: `COPY ... TO STDOUT` and
+    /// `COPY ... FROM STDIN`. Any other destination or source - a file path, `PROGRAM '...'`, or a
+    /// mismatched `TO STDIN` / `FROM STDOUT` - is rejected: serving it as the client stream would make the
+    /// handler drive the wrong side of the protocol (for a `FROM PROGRAM` it would send a `CopyInResponse`
+    /// and then wait for `CopyData` frames a client performing a server-side copy never sends, hanging the
+    /// connection). Record the reason in `unsupported_option` so the handler answers with a clean
+    /// `ErrorResponse`; the remaining tokens are consumed so the command still parses as a `COPY` (an
+    /// unconsumed tail would make `parseQuery` fail and the handler fall through to the regular-query path,
+    /// tearing the connection down). Like the option handling below, the parser must not throw here.
+    const bool is_copy_to = node->type == ASTCopyQuery::QueryType::COPY_TO;
+    if (is_copy_to && target != "stdout")
+    {
+        while (!pos->isEnd())
+            ++pos;
+        node->unsupported_option = "a destination other than STDOUT";
+        return true;
+    }
+    if (!is_copy_to && target != "stdin")
+    {
+        while (!pos->isEnd())
+            ++pos;
+        node->unsupported_option = "a source other than STDIN";
+        return true;
+    }
 
+    /// No options at all: PostgreSQL defaults to the text format, which we map to TSV. This is also the
+    /// shape that libpq/pqxx use to read a result set (`COPY (query) TO STDOUT`).
+    if (isEndOfStatement(pos))
+        return true;
+
+    /// The `COPY` option we act on directly is the output format: an explicit `FORMAT <name>` (PostgreSQL's
+    /// `WITH (FORMAT csv)` and our own `WITH FORMAT csv`) or, in the legacy grammar, a bare keyword (`CSV`,
+    /// `TEXT`, `BINARY`), possibly surrounded by `WITH`, parentheses and commas. `binary` in any spelling is
+    /// carried through so the handler rejects it with a clean message.
+    ///
+    /// The data-formatting options are handled as follows so that a client's request is never silently
+    /// disregarded (which would emit output that does not match what it asked for). A `DELIMITER` and a
+    /// `QUOTE` that match our defaults for the chosen format (a tab for text/TSV, a comma for CSV, and a
+    /// double quote for CSV) are no-ops and accepted - this is exactly what real clients append, e.g. psycopg2's
+    /// `copy_to`/`copy_from` always send `DELIMITER AS '\t' NULL AS '\N'`, and PostgreSQL's
+    /// escape-string spellings of the same values (`DELIMITER E'\t' NULL E'\\N'`) are decoded and
+    /// accepted the same way. The `NULL` marker follows
+    /// PostgreSQL's per-format defaults: `\N` for the text format (which is also ClickHouse's TSV default,
+    /// so nothing needs wiring) and an empty unquoted field for CSV, which is carried in `csv_null_marker`
+    /// and applied by the handler through `format_csv_null_representation`; an explicit `NULL '\N'` for CSV
+    /// selects the `\N` marker the same way. `HEADER` (optionally followed by `true`/`on`/`1` or
+    /// `false`/`off`/`0`) is carried in `header`, and the handler reads and writes the column names line
+    /// through the `*WithNames` formats. A non-default `DELIMITER`, any other `NULL` marker, a non-default
+    /// `QUOTE`, or any option we do not interpret (`ESCAPE`, `ENCODING`, ...) is recorded in
+    /// `unsupported_option`; the handler then rejects the command with an `ErrorResponse`.
+    ///
+    /// The parser must not throw for these options: an exception here makes
+    /// `PostgreSQLHandler::processCopyQuery` fall through to the regular-query path, whose error tears the
+    /// connection down mid-COPY (a driver such as psycopg2 then reports a lost connection instead of a clean
+    /// error), which is why the rejection is deferred to the handler.
+    enum class PendingOption : uint8_t { None, Delimiter, Null, Quote, Header };
+    PendingOption pending = PendingOption::None;
+    std::optional<String> delimiter_value;
+    std::optional<String> null_value;
+    std::optional<String> quote_value;
+    bool header_requested = false;
+    bool stray_literal = false;
+    String unknown_option;
+    /// Whether the string literal about to be consumed carries PostgreSQL's escape-string syntax
+    /// (`E'...'`, e.g. `DELIMITER E'\t'`). The `E` and the literal arrive as two tokens.
+    bool pending_value_is_escape_string = false;
+    /// Nesting depth of parentheses: inside the parenthesized option list (`WITH (HEADER true, ...)`)
+    /// every option is a name followed by its own optional value, while the legacy unparenthesized
+    /// grammar has a bare `HEADER` that takes no value and may be followed directly by another option
+    /// (`CSV HEADER DELIMITER ';'`).
+    size_t paren_depth = 0;
+    /// Punctuation or a keyword in a position where the option grammar does not allow it, e.g. an unmatched
+    /// parenthesis, a boolean with no `HEADER` before it or an `AS` with no option before it. The command is
+    /// rejected rather than run with whatever options were understood.
+    bool malformed = false;
+    /// `WITH` may only introduce the option list.
+    bool is_first_token = true;
+
+    while (!isEndOfStatement(pos))
+    {
+        if (pos->type == TokenType::BareWord)
+        {
+            String word(pos->begin, pos->end);
+            String lower = toLowerCopy(word);
+            /// The `E` prefix of an escape-string literal: recognized only when it directly abuts the
+            /// literal, as PostgreSQL requires (`E '...'` with a space is a syntax error there).
+            bool is_escape_string_prefix = false;
+            if (lower == "e")
+            {
+                auto next = pos;
+                ++next;
+                is_escape_string_prefix = next->type == TokenType::StringLiteral && pos->end == next->begin;
+            }
+
+            /// `DELIMITER`, `NULL` and `QUOTE` accept only string-literal values. In particular, do not let a
+            /// bare word that is expected as their value be reinterpreted as the legacy format keyword:
+            /// `DELIMITER csv` is malformed, not `DELIMITER` followed by `CSV`.
+            if ((pending == PendingOption::Delimiter || pending == PendingOption::Null || pending == PendingOption::Quote)
+                && !is_escape_string_prefix && lower != "as")
+            {
+                stray_literal = true;
+                pending = PendingOption::None;
+            }
+            /// Likewise, inside the parenthesized option list a bare word right after `HEADER` is its
+            /// value, and the only valid values are booleans: `WITH (HEADER csv)` is malformed, not
+            /// `HEADER` followed by `FORMAT csv`.
+            else if (pending == PendingOption::Header && paren_depth > 0
+                && lower != "true" && lower != "on" && lower != "false" && lower != "off")
+            {
+                stray_literal = true;
+                pending = PendingOption::None;
+            }
+            else if (lower == "format")
+            {
+                ++pos;
+                if (pos->isEnd() || pos->type != TokenType::BareWord)
+                {
+                    /// A `FORMAT` with no name is malformed; record it (rather than throwing, which would
+                    /// tear the connection down) so the handler rejects it with a clean `ErrorResponse`.
+                    node->unsupported_option = "a FORMAT without a name";
+                    break;
+                }
+                setCopyFormat(node, String(pos->begin, pos->end));
+                pending = PendingOption::None;
+            }
+            else if (isCopyFormatKeyword(lower))
+            {
+                setCopyFormat(node, lower);
+                pending = PendingOption::None;
+            }
+            else if (is_escape_string_prefix)
+            {
+                /// Keep whatever option is pending: the literal this prefix belongs to is the next token,
+                /// so `DELIMITER E'\t'` binds the same way `DELIMITER '\t'` does.
+                pending_value_is_escape_string = true;
+            }
+            else if (lower == "with")
+            {
+                if (!is_first_token)
+                    malformed = true;
+            }
+            else if (lower == "as")
+            {
+                /// A filler keyword: keep the pending option so `DELIMITER AS '...'` still binds.
+                if (pending != PendingOption::Delimiter && pending != PendingOption::Null && pending != PendingOption::Quote)
+                    malformed = true;
+            }
+            else if (lower == "delimiter")
+                pending = PendingOption::Delimiter;
+            else if (lower == "null")
+                pending = PendingOption::Null;
+            else if (lower == "quote")
+                pending = PendingOption::Quote;
+            else if (lower == "header")
+            {
+                header_requested = true;
+                pending = PendingOption::Header;
+            }
+            else if (lower == "true" || lower == "on" || lower == "false" || lower == "off")
+            {
+                /// The only boolean option is `HEADER`.
+                if (pending == PendingOption::Header)
+                    header_requested = lower == "true" || lower == "on";
+                else
+                    malformed = true;
+                pending = PendingOption::None;
+            }
+            else
+            {
+                if (unknown_option.empty())
+                    unknown_option = word;
+                pending = PendingOption::None;
+            }
+            ++pos;
+        }
+        else if (pos->type == TokenType::StringLiteral)
+        {
+            const String raw_token(pos->begin, pos->end);
+            const String value = pending_value_is_escape_string
+                ? escapeStringLiteralInnerBytes(raw_token)
+                : stringLiteralInnerBytes(raw_token);
+            if (pending == PendingOption::Delimiter)
+                delimiter_value = value;
+            else if (pending == PendingOption::Null)
+                null_value = value;
+            else if (pending == PendingOption::Quote)
+                quote_value = value;
+            else
+                stray_literal = true;
+            pending = PendingOption::None;
+            pending_value_is_escape_string = false;
+            ++pos;
+        }
+        else if (pos->type == TokenType::Number)
+        {
+            /// The only numeric option value is the `1` / `0` spelling of a boolean `HEADER`.
+            const std::string_view number(pos->begin, pos->end);
+            if (pending == PendingOption::Header && (number == "1" || number == "0"))
+                header_requested = number == "1";
+            else
+                stray_literal = true;
+            pending = PendingOption::None;
+            ++pos;
+        }
+        else
+        {
+            /// Parentheses and commas carry no option value. The parentheses have to balance.
+            if (pos->type == TokenType::OpeningRoundBracket)
+                ++paren_depth;
+            else if (pos->type == TokenType::ClosingRoundBracket && paren_depth > 0)
+                --paren_depth;
+            else if (pos->type != TokenType::Comma)
+                malformed = true;
+            ++pos;
+        }
+        is_first_token = false;
+    }
+
+    if (paren_depth != 0)
+        malformed = true;
+
+    /// `setCopyFormat` (or the `FORMAT` handling above) may already have recorded an unsupported format; keep
+    /// that reason rather than overwriting it with a data-formatting-option reason - either is enough to
+    /// reject the command, and the format is the more relevant one to report.
+    if (!node->unsupported_option.empty())
+    {
+    }
+    else if (!unknown_option.empty())
+        node->unsupported_option = fmt::format("the \"{}\" option", unknown_option);
+    else if (malformed)
+        node->unsupported_option = "malformed option syntax";
+    else if (pending == PendingOption::Delimiter || pending == PendingOption::Null || pending == PendingOption::Quote
+        || pending_value_is_escape_string || stray_literal)
+        node->unsupported_option = "an option with a missing or unexpected value";
+    else
+    {
+        const bool is_csv = node->format == ASTCopyQuery::Formats::CSV;
+        const String default_delimiter = is_csv ? "," : "\t";
+        /// The `NULL` marker. Its value is taken as the raw bytes between the quotes without ClickHouse
+        /// unescaping (that would turn a lone `'\N'` into an empty string), and the `\N` marker therefore
+        /// has two accepted spellings: a plain `'\N'` (raw `\N`; the handler reports
+        /// `standard_conforming_strings = on`, so a backslash in a plain literal is an ordinary byte) and
+        /// the escape-string `E'\\N'`, which is decoded to raw `\N` before this comparison. A plain
+        /// `'\\N'` is a different, three-byte marker under `standard_conforming_strings = on` and is
+        /// rejected below like any other non-default marker rather than silently served as `\N`.
+        ///
+        /// For the text format PostgreSQL's default marker is `\N`, which is also ClickHouse's TSV default,
+        /// so both an absent `NULL` option and an explicit `NULL '\N'` (what libpq/psycopg2 append) are
+        /// no-ops. For CSV PostgreSQL's default is an empty unquoted field; `csv_null_marker` already
+        /// defaults to that, and an explicit `NULL ''` restates it, while an explicit `NULL '\N'` selects
+        /// the `\N` marker instead - the handler applies the marker to the CSV reader/writer through
+        /// `format_csv_null_representation`. Any other marker is rejected rather than silently ignored.
+        const String backslash_n = "\\N";
+        if (delimiter_value && *delimiter_value != default_delimiter)
+            node->unsupported_option = "a non-default DELIMITER";
+        else if (quote_value && !is_csv)
+            node->unsupported_option = "QUOTE for a format other than CSV";
+        else if (quote_value && *quote_value != "\"")
+            node->unsupported_option = "a non-default QUOTE";
+        else if (null_value && *null_value == backslash_n)
+        {
+            if (is_csv)
+                node->csv_null_marker = backslash_n;
+        }
+        else if (null_value && null_value->empty())
+        {
+            if (!is_csv)
+                node->unsupported_option = "a non-default NULL marker";
+        }
+        else if (null_value)
+            node->unsupported_option = "a non-default NULL marker";
+    }
+
+    node->header = header_requested;
     return true;
 }
 

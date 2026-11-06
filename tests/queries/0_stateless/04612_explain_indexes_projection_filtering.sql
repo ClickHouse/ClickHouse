@@ -24,11 +24,13 @@ INSERT INTO t_explain_proj_filter SELECT number, cityHash64(number), toString(nu
 ALTER TABLE t_explain_proj_filter ADD PROJECTION p_off (SELECT _part_offset ORDER BY k);
 ALTER TABLE t_explain_proj_filter MATERIALIZE PROJECTION p_off SETTINGS mutations_sync = 2;
 
--- Projection entry is present and pruning reduces the read to a single granule.
+-- Projection filtering is visible in EXPLAIN indexes. Granule counts are taken from the
+-- parent read after this stage (not from projection marks), so do not assert a reduced
+-- Granules: 1/N line: one projection mark can still light up many parent granules.
 SELECT
     countIf(line = 'Projection') AS projection_entry,
     countIf(line = 'Name: p_off') AS named,
-    countIf(match(line, '^Granules: 1/\\d+$')) AS single_granule_read
+    countIf(line LIKE 'Description: Projection has been analyzed and will be applied during reading') AS applied
 FROM
 (
     SELECT trimLeft(explain) AS line

@@ -15,10 +15,8 @@ ORDER BY tuple()
 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', auto_statistics_types = 'basic';
 
 SET use_statistics_for_part_pruning = 1;
-SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 
 -- =============================================================================
 -- Case 1: Float64 with NaN values
@@ -33,14 +31,12 @@ FROM numbers(7);
 
 -- For column = NaN: KeyCondition folds to ALWAYS_FALSE, result is 0, no partition/statistics pruning
 SELECT '-- Case 1: Float64 = NaN comparison (should return 0, validates Statistics NaN handling)';
-WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_nan WHERE val_float = nan) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
-SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_nan WHERE val_float = nan) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT explain FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_nan WHERE val_float = nan SETTINGS enable_parallel_replicas = 0);
 SELECT count() FROM test_stats_nan WHERE val_float = nan;
 
 -- For column <> NaN: KeyCondition folds to ALWAYS_TRUE, all 7 values match
 SELECT '-- Case 1: Float64 <> NaN comparison (should return 7, validates Statistics NaN handling)';
-WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_nan WHERE val_float <> nan) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
-SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_nan WHERE val_float <> nan) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT explain FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_nan WHERE val_float <> nan SETTINGS enable_parallel_replicas = 0);
 SELECT count() FROM test_stats_nan WHERE val_float <> nan;
 
 -- =============================================================================
@@ -48,8 +44,7 @@ SELECT count() FROM test_stats_nan WHERE val_float <> nan;
 -- KeyCondition folds to ALWAYS_FALSE, result is 0, no partition/statistics pruning
 -- =============================================================================
 SELECT '-- Case 2: Float64 = -NaN comparison (should return 0)';
-WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_nan WHERE val_float = -nan) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
-SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_nan WHERE val_float = -nan) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT explain FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_nan WHERE val_float = -nan SETTINGS enable_parallel_replicas = 0);
 SELECT count() FROM test_stats_nan WHERE val_float = -nan;
 
 -- =============================================================================
@@ -57,8 +52,7 @@ SELECT count() FROM test_stats_nan WHERE val_float = -nan;
 -- KeyCondition folds to ALWAYS_TRUE, result is 7
 -- =============================================================================
 SELECT '-- Case 3: Float64 <> -NaN comparison (should return 7)';
-WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_nan WHERE val_float <> -nan) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
-SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_nan WHERE val_float <> -nan) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT explain FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_nan WHERE val_float <> -nan SETTINGS enable_parallel_replicas = 0);
 SELECT count() FROM test_stats_nan WHERE val_float <> -nan;
 
 DROP TABLE test_stats_nan;

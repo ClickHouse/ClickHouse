@@ -1,0 +1,10 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_non_metadata_alters>0</allow_non_metadata_alters>
+            <constraints>
+                <allow_non_metadata_alters><const/></allow_non_metadata_alters>
+            </constraints>
+        </default>
+    </profiles>
+</clickhouse>

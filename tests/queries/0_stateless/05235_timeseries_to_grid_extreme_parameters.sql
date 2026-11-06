@@ -10,28 +10,28 @@ CREATE TABLE ts_extreme (timestamp DateTime64(0, 'UTC'), timestamp_ms DateTime64
 INSERT INTO ts_extreme VALUES ('2020-01-01 00:00:00', '2020-01-01 00:00:00', 1.0), ('2020-01-01 00:00:01', '2020-01-01 00:00:01', 2.0);
 
 SELECT '-- parameters which do not fit the grid';
-SELECT timeSeriesResampleToGridWithStaleness(-9223372036854775808, 256, 2147483646, 2147483648)(timestamp, value) FROM ts_extreme; -- { serverError BAD_ARGUMENTS }
-SELECT timeSeriesResampleToGridWithStaleness(0, 9223372036854775807, 1, 1)(timestamp, value) FROM ts_extreme; -- { serverError BAD_ARGUMENTS }
-SELECT timeSeriesResampleToGridWithStaleness(0, 10, 9223372036854775807, 1)(timestamp, value) FROM ts_extreme; -- { serverError BAD_ARGUMENTS }
-SELECT timeSeriesResampleToGridWithStaleness(0, 10, 1, 9223372036854775807)(timestamp, value) FROM ts_extreme; -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesLastToGrid(-9223372036854775808, 256, 2147483646, 2147483648)(timestamp, value) FROM ts_extreme; -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesLastToGrid(0, 9223372036854775807, 1, 1)(timestamp, value) FROM ts_extreme; -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesLastToGrid(0, 10, 9223372036854775807, 1)(timestamp, value) FROM ts_extreme; -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesLastToGrid(0, 10, 1, 9223372036854775807)(timestamp, value) FROM ts_extreme; -- { serverError BAD_ARGUMENTS }
 -- UInt64 values above the maximum of Int64 must not wrap to negative timestamps.
-SELECT timeSeriesResampleToGridWithStaleness(9223372036854775808, 150, 15, 50)(timestamp, value) FROM ts_extreme; -- { serverError BAD_ARGUMENTS }
-SELECT timeSeriesResampleToGridWithStaleness(18446744073709551615, 150, 15, 50)(timestamp, value) FROM ts_extreme; -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesLastToGrid(9223372036854775808, 150, 15, 50)(timestamp, value) FROM ts_extreme; -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesLastToGrid(18446744073709551615, 150, 15, 50)(timestamp, value) FROM ts_extreme; -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- end before start';
 SELECT timeSeriesChangesToGrid(9223372036854775, 1, 256, 2147483648)(timestamp, value) FROM ts_extreme; -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- too many grid points: the limit is 16777215';
-SELECT timeSeriesResampleToGridWithStaleness(-9223372036854775, 256, 2147483, 2147483)(timestamp, value) FROM ts_extreme; -- { serverError BAD_ARGUMENTS }
-SELECT timeSeriesResampleToGridWithStaleness(-9223372036854775, 9223372036854775, 1, 1)(timestamp, value) FROM ts_extreme; -- { serverError BAD_ARGUMENTS }
-SELECT timeSeriesResampleToGridWithStaleness(0, 16777215, 1, 1)(timestamp, value) FROM ts_extreme; -- { serverError BAD_ARGUMENTS }
-SELECT length(timeSeriesResampleToGridWithStaleness(0, 16777214, 1, 1)(timestamp, value)) FROM ts_extreme;
+SELECT timeSeriesLastToGrid(-9223372036854775, 256, 2147483, 2147483)(timestamp, value) FROM ts_extreme; -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesLastToGrid(-9223372036854775, 9223372036854775, 1, 1)(timestamp, value) FROM ts_extreme; -- { serverError BAD_ARGUMENTS }
+SELECT timeSeriesLastToGrid(0, 16777215, 1, 1)(timestamp, value) FROM ts_extreme; -- { serverError BAD_ARGUMENTS }
+SELECT length(timeSeriesLastToGrid(0, 16777214, 1, 1)(timestamp, value)) FROM ts_extreme;
 SELECT length(timeSeriesChangesToGrid(0, 16777213, 1, 1)(toDateTime(timestamp), value)) FROM ts_extreme;
 
 SELECT '-- a grid of three points spanning the whole range: no overflow while calculating the grid points';
 WITH -9223372036854775 AS grid_start, 9223372036854775 AS grid_end, 9223372036854775 AS grid_step
 SELECT
-    length(timeSeriesResampleToGridWithStaleness(grid_start, grid_end, grid_step, 0)(timestamp, value)),
+    length(timeSeriesLastToGrid(grid_start, grid_end, grid_step, 0)(timestamp, value)),
     length(timeSeriesInstantRateToGrid(grid_start, grid_end, grid_step, 0)(timestamp, value)),
     length(timeSeriesChangesToGrid(grid_start, grid_end, grid_step, 0)(timestamp, value)),
     length(timeSeriesRateToGrid(grid_start, grid_end, grid_step, 0)(timestamp, value)),
@@ -39,20 +39,20 @@ SELECT
 FROM ts_extreme;
 
 SELECT '-- the samples fall into the last bucket of that grid: no overflow while calculating the bucket index';
-SELECT arrayFirstIndex(x -> x IS NOT NULL, timeSeriesResampleToGridWithStaleness(-9223372036854775, 9223372036854775, 9223372036854775, 9223372036854775)(timestamp, value))
+SELECT arrayFirstIndex(x -> x IS NOT NULL, timeSeriesLastToGrid(-9223372036854775, 9223372036854775, 9223372036854775, 9223372036854775)(timestamp, value))
 FROM ts_extreme;
 
 SELECT '-- the same grid on a DateTime64(3) column: the timestamps are not converted to the scale of the grid';
 WITH -9223372036854775 AS grid_start, 9223372036854775 AS grid_end, 9223372036854775 AS grid_step
 SELECT
-    length(timeSeriesResampleToGridWithStaleness(grid_start, grid_end, grid_step, grid_step)(timestamp_ms, value)),
-    arrayFirstIndex(x -> x IS NOT NULL, timeSeriesResampleToGridWithStaleness(grid_start, grid_end, grid_step, grid_step)(timestamp_ms, value))
+    length(timeSeriesLastToGrid(grid_start, grid_end, grid_step, grid_step)(timestamp_ms, value)),
+    arrayFirstIndex(x -> x IS NOT NULL, timeSeriesLastToGrid(grid_start, grid_end, grid_step, grid_step)(timestamp_ms, value))
 FROM ts_extreme;
 
 SELECT '-- the exact limits of Int64 as the bounds of the grid: only String parameters keep the milliseconds exactly';
 SELECT
-    length(timeSeriesResampleToGridWithStaleness('-9223372036854775.808', '9223372036854775.807', 9223372036854775, 9223372036854775)(timestamp, value)),
-    arrayFirstIndex(x -> x IS NOT NULL, timeSeriesResampleToGridWithStaleness('-9223372036854775.808', '9223372036854775.807', 9223372036854775, 9223372036854775)(timestamp, value))
+    length(timeSeriesLastToGrid('-9223372036854775.808', '9223372036854775.807', 9223372036854775, 9223372036854775)(timestamp, value)),
+    arrayFirstIndex(x -> x IS NOT NULL, timeSeriesLastToGrid('-9223372036854775.808', '9223372036854775.807', 9223372036854775, 9223372036854775)(timestamp, value))
 FROM ts_extreme;
 
 SELECT '-- a window near the maximum: no overflow while comparing the samples with the windows';
@@ -66,7 +66,7 @@ SELECT
     length(timeSeriesDeltaToGrid(grid_start, grid_end, grid_step, grid_window)(timestamp, value)),
     length(timeSeriesInstantRateToGrid(grid_start, grid_end, grid_step, grid_window)(timestamp, value)),
     length(timeSeriesInstantDeltaToGrid(grid_start, grid_end, grid_step, grid_window)(timestamp, value)),
-    length(timeSeriesResampleToGridWithStaleness(grid_start, grid_end, grid_step, grid_window)(timestamp, value))
+    length(timeSeriesLastToGrid(grid_start, grid_end, grid_step, grid_window)(timestamp, value))
 FROM ts_extreme;
 
 -- The start of a window before 1970 minus a window near the maximum is below the minimum of Int64.
@@ -75,7 +75,7 @@ WITH toDateTime64('1900-01-01 00:00:00', 0, 'UTC') AS grid_start, toDateTime64('
 SELECT length(timeSeriesRateToGrid(grid_start, grid_end, 1, grid_window)(timestamps, values)), length(timeSeriesDeltaToGrid(grid_start, grid_end, 1, grid_window)(timestamps, values));
 
 -- The sample at 1 is in the window of every grid point after it: `timestamp + window` is above the maximum of Int64.
-SELECT timeSeriesResampleToGridWithStaleness(0, 10, 1, 9223372036854775)([toDateTime64(1, 0, 'UTC')], [5.0]);
+SELECT timeSeriesLastToGrid(0, 10, 1, 9223372036854775)([toDateTime64(1, 0, 'UTC')], [5.0]);
 
 SELECT '-- Decimal parameters are converted to the scale of the grid, which is the greatest scale among the parameters';
 SELECT length(timeSeriesChangesToGrid(toDecimal32(1000.5, 3), toDecimal32(1010.5, 3), toDecimal64(2.5, 3), toDecimal64(3.5, 9))(timestamp, value)) FROM ts_extreme;

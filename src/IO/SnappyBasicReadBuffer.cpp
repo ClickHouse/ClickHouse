@@ -39,7 +39,15 @@ bool SnappyBasicReadBuffer::nextImpl()
         bool success = snappy::Uncompress(compress_buffer.data(), compress_buffer.size(), &uncompress_buffer);
         if (!success)
         {
-            throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "snappy uncompress failed: ");
+            /// The library answers with a bare bool, so the only truthful detail is what was attempted:
+            /// the size of the block, and the uncompressed length the block's own header declares.
+            size_t declared_length = 0;
+            if (!snappy::GetUncompressedLength(compress_buffer.data(), compress_buffer.size(), &declared_length))
+                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
+                    "Cannot determine snappy uncompressed length of a {} byte block", compress_buffer.size());
+            throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
+                "Snappy decompression failed: a {} byte block declares {} uncompressed bytes",
+                compress_buffer.size(), declared_length);
         }
         BufferBase::set(const_cast<char *>(uncompress_buffer.data()), uncompress_buffer.size(), 0);
         return true;

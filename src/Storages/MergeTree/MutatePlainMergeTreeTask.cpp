@@ -5,6 +5,7 @@
 #include <Interpreters/TransactionManager.h>
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
@@ -21,6 +22,11 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char mt_mutate_task_pause_before_rename_part[];
 }
 
 
@@ -122,7 +128,18 @@ bool MutatePlainMergeTreeTask::executeStep()
                 if (data_part_storage.hasActiveTransaction())
                     data_part_storage.commitTransaction();
 
+                FailPointInjection::pauseFailPoint(FailPoints::mt_mutate_task_pause_before_rename_part);
+
                 MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
+
+                /// `waitForMutation` considers the mutation done as soon as the mutated part is visible,
+                /// and it re-checks on any wakeup (a timeout or an unrelated notification), not only on
+                /// `updateMutationEntriesErrors`. Hold `mutation_wait_mutex` (which the waiter holds while
+                /// checking) from the commit until the part log entry is queued, otherwise a synchronous
+                /// mutation (`mutations_sync`) may return to the client between the two, and a subsequent
+                /// `SYSTEM FLUSH LOGS` misses the `MutatePart` row.
+                std::unique_lock mutation_wait_lock(storage.mutation_wait_mutex);
+
                 /// Hold data_parts_lock across both renameTempPartAndReplace and commit to prevent
                 /// a race with REPLACE PARTITION. Without this, there is a window where the mutation
                 /// result is PreActive (not yet committed): REPLACE PARTITION's
@@ -141,6 +158,9 @@ bool MutatePlainMergeTreeTask::executeStep()
                 /// synchronous mutation (mutations_sync) may return to the client before the
                 /// MutatePart row is queued, so a subsequent SYSTEM FLUSH LOGS misses it.
                 write_part_log({});
+
+                /// `updateMutationEntriesErrors` locks `mutation_wait_mutex` itself to notify the waiters.
+                mutation_wait_lock.unlock();
 
                 storage.updateMutationEntriesErrors(future_part, true, "", "");
 
