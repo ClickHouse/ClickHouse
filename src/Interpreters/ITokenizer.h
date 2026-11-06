@@ -57,6 +57,9 @@ public:
     /// Mutable state across calls: callers must clone per thread rather than share.
     virtual bool isStateful() const { return false; }
 
+    /// Tokens are made of whole UTF-8 code points, so a needle that is not valid UTF-8 does not tokenize like the data containing it.
+    virtual bool requiresValidUTF8() const { return false; }
+
     virtual ~ITokenizer() = default;
     virtual std::unique_ptr<ITokenizer> clone() const = 0;
 
@@ -194,6 +197,7 @@ struct NgramsTokenizer final : public ITokenizerHelper<NgramsTokenizer>
     size_t getN() const { return n; }
 
     bool supportsStringLike() const override { return true; }
+    bool requiresValidUTF8() const override { return true; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
@@ -541,6 +545,7 @@ struct SparseGramsTokenizer final : public ITokenizerHelper<SparseGramsTokenizer
 
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
     bool supportsStringLike() const override { return true; }
+    bool requiresValidUTF8() const override { return true; }
     bool isStateful() const override { return true; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
@@ -641,6 +646,7 @@ struct AsciiCJKTokenizer final : public ITokenizerHelper<AsciiCJKTokenizer>
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
     bool supportsStringLike() const override { return true; }
+    bool requiresValidUTF8() const override { return true; }
 };
 
 #if USE_JIEBA

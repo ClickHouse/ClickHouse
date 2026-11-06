@@ -1010,7 +1010,8 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringLikeToTokens
 
     /// The tokenizer would tokenize such a pattern differently than the scan does and could prune a
     /// granule holding matching rows. No tokens means "cannot prune", as for a pattern like `LIKE '%a%'`.
-    if (likePatternHasUnknownBackslashEscape(pattern))
+    if (likePatternHasUnknownBackslashEscape(pattern)
+        || (tokenizer->requiresValidUTF8() && !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(pattern.data()), pattern.size())))
         return tokens;
 
     tokenizer->stringLikeToTokens(pattern.data(), pattern.size(), tokens);
