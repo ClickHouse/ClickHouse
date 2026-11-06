@@ -4,9 +4,7 @@ UTC, Asia/Kolkata, America/New_York
 overflow behavior does not apply
 36	5
 36	5
-DateTime without a time zone
+session time zone
 1
-constant Date
-42	0	72
-42	0	72
+1
 540	0
