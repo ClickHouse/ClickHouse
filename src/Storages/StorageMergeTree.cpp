@@ -250,6 +250,11 @@ StorageMergeTree::StorageMergeTree(
     , cleanup_thread(*this)
     , support_transaction(supportTransaction(getDisks(), log.load()))
 {
+    if (mode <= LoadingStrictnessLevel::CREATE && metadata_.hasUniqueKey() && !support_transaction)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "UNIQUE KEY is not supported for table {}: a disk of its storage policy does not support transactions",
+            getStorageID().getNameForLogs());
+
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
 
     loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
@@ -518,6 +523,11 @@ SinkToStoragePtr
 StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     assertNotReadonly();
+
+    if (metadata_snapshot->hasUniqueKey() && !support_transaction)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "UNIQUE KEY is not supported for table {}: a disk of its storage policy does not support transactions",
+            getStorageID().getNameForLogs());
 
     const auto & settings = local_context->getSettingsRef();
     return std::make_shared<MergeTreeSink>(*this, metadata_snapshot, settings[Setting::max_partitions_per_insert_block], local_context);
@@ -3623,22 +3633,22 @@ void StorageMergeTree::removeRolledBackEmptyPartsAndRethrow(MutableDataPartsVect
         if (!not_removed_parts.empty())
         {
             /// Put the warning into the error returned to the client as well, because only a manual detach fixes it.
-            String warning = fmt::format("Cannot remove the rolled back empty parts {}. They stay on disk and will be loaded as covering"
+            auto warning = PreformattedMessage::create("Cannot remove the rolled back empty parts {}. They stay on disk and will be loaded as covering"
                 " parts after a restart, which can make the table fail to load. Detach them manually.",
                 fmt::join(not_removed_parts, ", "));
-            LOG_ERROR(log, "{}", warning);
+            LOG_ERROR(log, warning);
             try
             {
                 throw;
             }
             catch (Exception & e)
             {
-                e.addMessage(warning);
+                e.addMessage(warning.text);
                 throw;
             }
             catch (...)
             {
-                throw Exception(getCurrentExceptionCode(), "{}. {}", getCurrentExceptionMessage(false), warning);
+                throw Exception(getCurrentExceptionCode(), "{}. {}", getCurrentExceptionMessage(false), warning.text);
             }
         }
     }
@@ -4706,7 +4716,7 @@ MutationCommands StorageMergeTree::MutationsSnapshot::getOnFlyMutationCommandsFo
 NameSet StorageMergeTree::MutationsSnapshot::getColumnsChangedOnFly() const
 {
     NameSet res = getColumnsUpdatedInPatches();
-    if (!hasDataMutations() && !hasAlterMutations())
+    if (!hasDataMutations() && !hasAlterMutations() && !hasMetadataMutations())
         return res;
 
     for (const auto & [version, commands] : mutations_by_version)
