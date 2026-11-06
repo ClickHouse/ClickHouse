@@ -311,6 +311,9 @@ public:
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override { auto target = tryGetTargetTable(); return target ? target->getColumnSizes(columns, calculate_subcolumn_sizes) : ColumnSizeByName{}; }
     std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & query_context) const override
     {
+        if (!isDeclaredTargetGranted(query_context, AccessType::SHOW_TABLES, {}))
+            return std::nullopt;
+
         auto target = tryGetTargetTable();
         if (!target)
             return std::nullopt;

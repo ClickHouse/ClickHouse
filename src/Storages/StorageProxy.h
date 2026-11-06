@@ -72,7 +72,6 @@ public:
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override { return getNested()->getColumnSizes(columns, calculate_subcolumn_sizes); }
-    std::optional<ColumnSizeByName> tryGetColumnSizes(const ContextPtr & query_context) const override { return getNested()->tryGetColumnSizes(query_context); }
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & base_metadata, ContextPtr query_context) const override
     {

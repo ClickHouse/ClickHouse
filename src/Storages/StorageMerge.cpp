@@ -409,10 +409,18 @@ template <typename F>
 StoragePtr StorageMerge::traverseVisibleTablesUntil(const ContextPtr & query_context, F && predicate) const
 {
     auto access = query_context->getAccess();
+    std::optional<String> last_database;
+    bool granted_show_on_all_tables = false;
     return traverseTablesUntilImpl(query_context, this, database_name_or_regexp, [&](const StoragePtr & table)
     {
         auto id = table->getStorageID();
-        return access->isGranted(AccessType::SHOW_TABLES, id.database_name, id.table_name) && predicate(table);
+        if (id.database_name != last_database)
+        {
+            last_database = id.database_name;
+            granted_show_on_all_tables = access->isGranted(AccessType::SHOW_TABLES, id.database_name);
+        }
+        return (granted_show_on_all_tables || access->isGranted(AccessType::SHOW_TABLES, id.database_name, id.table_name))
+            && predicate(table);
     });
 }
 
@@ -3121,14 +3129,17 @@ bool StorageMerge::supportsTrivialCountOptimization(const StorageSnapshotPtr &, 
     {
         /// Like a direct `SELECT count()`, counting a child needs `SELECT` on at least one of its columns.
         auto id = table->getStorageID();
-        const auto metadata = table->getInMemoryMetadataPtr(ctx, false);
-        bool has_select_access = false;
-        for (const auto & column : metadata->getColumns())
+        bool has_select_access = access->isGranted(AccessType::SELECT, id.database_name);
+        if (!has_select_access)
         {
-            if (access->isGranted(AccessType::SELECT, id.database_name, id.table_name, column.name))
+            const auto metadata = table->getInMemoryMetadataPtr(ctx, false);
+            for (const auto & column : metadata->getColumns())
             {
-                has_select_access = true;
-                break;
+                if (access->isGranted(AccessType::SELECT, id.database_name, id.table_name, column.name))
+                {
+                    has_select_access = true;
+                    break;
+                }
             }
         }
 
