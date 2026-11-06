@@ -553,7 +553,7 @@ FROM <left_table>
 
 Expressions from the `ON` clause and columns from the `USING` clause are called "JOIN keys". Unless otherwise stated, a `JOIN` produces a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from rows with matching JOIN keys, which might produce results with many more rows than the source tables.
 
-This page describes the syntax and semantics of the `JOIN` clause. The settings that affect JOINs are listed in [JOIN Settings](/concepts/features/operations/select/join-settings). JOIN types and strictness are explained with diagrams in [Using JOINs in ClickHouse](/concepts/features/operations/select/joining-tables). Query planning and the execution of each algorithm are described in [How ClickHouse executes JOINs](/concepts/features/operations/select/join-execution) and [JOIN algorithms](/concepts/features/operations/select/join-algorithms). Memory limits and spilling to disk are described in [JOIN memory management and spilling](/concepts/features/operations/select/join-memory-management). Best practices are collected in [Minimize and optimize JOINs](/concepts/best-practices/minimize-optimize-joins).
+This page describes the syntax and semantics of the `JOIN` clause. To learn about the execution of JOINs in ClickHouse, JOIN types, settings, memory considerations, and optimizations, refer to [Related content](#related-content).
 
 ## Supported types of JOIN {#supported-types-of-join}
 
