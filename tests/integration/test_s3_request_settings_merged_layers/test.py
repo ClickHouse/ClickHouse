@@ -31,6 +31,8 @@ TEMPLATE = f"""<clickhouse>
     </storage_configuration>
     <allowed_disks_for_table_engines>merged_s3</allowed_disks_for_table_engines>
     <s3>S3_SETTINGS</s3>
+    <!-- Only SYSTEM RELOAD CONFIG reloads the config in these tests. -->
+    <config_reload_interval_ms>3600000</config_reload_interval_ms>
 </clickhouse>"""
 
 MIB = 1024 * 1024
@@ -59,6 +61,12 @@ def configure(disk="", s3="", restart=True, other_disks=""):
 
 def endpoint(name, path, settings):
     return f"<{name}><endpoint>{MINIO}/{path}/</endpoint>{settings}</{name}>"
+
+
+def reload_config():
+    query_id = str(uuid.uuid4())
+    node.query("SYSTEM RELOAD CONFIG", query_id=query_id)
+    return query_id
 
 
 def write_and_merge_on_disk(table):
@@ -129,8 +137,7 @@ def test_disk_reload_with_contradicting_endpoint_section_keeps_disk_settings(
         restart=False,
         other_disks="<other_disk><path>/var/lib/clickhouse/other_disk/</path></other_disk>",
     )
-    node.query("SYSTEM RELOAD CONFIG")
-    assert node.count_in_log(not_applied).strip() == "1"
+    node.wait_for_log_line(f"{reload_config()}.*{not_applied}")
     assert node.contains_in_log(
         "max_upload_part_size (32.00 MiB) can't be less than setting min_upload_part_size (64.00 MiB)"
     )
@@ -156,8 +163,7 @@ def test_disk_reload_with_contradicting_endpoint_section_keeps_disk_settings(
 
     # A contradiction brought by the endpoint section alone is not applied either.
     configure(disk=disk, s3=contradicting, restart=False)
-    node.query("SYSTEM RELOAD CONFIG")
-    assert node.count_in_log(not_applied).strip() == "2"
+    node.wait_for_log_line(f"{reload_config()}.*{not_applied}")
     write_and_merge_on_disk("t_s3")
 
 
