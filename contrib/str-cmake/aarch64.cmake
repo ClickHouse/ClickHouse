@@ -13,7 +13,8 @@ add_library (str_sve OBJECT
 
 foreach (target str_neon str_sve)
     set_target_properties (${target} PROPERTIES
-        INTERPROCEDURAL_OPTIMIZATION FALSE POSITION_INDEPENDENT_CODE TRUE)
+        INTERPROCEDURAL_OPTIMIZATION FALSE POSITION_INDEPENDENT_CODE TRUE
+        LINK_LIBRARIES "")
     # Preserve compiler unwind data and frame chains. No x86 rewriting pass
     # applies to these objects. Disable loop idioms that call libc recursively.
     target_compile_options (${target} PRIVATE
@@ -25,7 +26,10 @@ target_compile_options (str_neon PRIVATE -march=armv8-a)
 target_compile_options (str_sve PRIVATE -march=armv8-a+sve -msve-vector-bits=scalable)
 
 add_library (str_prefixed STATIC $<TARGET_OBJECTS:str_neon> $<TARGET_OBJECTS:str_sve>)
-set_target_properties (str_prefixed PROPERTIES OUTPUT_NAME str-prefixed)
+# The provider itself must not inherit `global-group`, which consumes the
+# completed archive. Otherwise its archive-generation dependency is cyclic.
+set_target_properties (str_prefixed PROPERTIES
+    OUTPUT_NAME str-prefixed LINK_LIBRARIES "" INTERFACE_LINK_LIBRARIES "")
 set (str_rename_options)
 foreach (primitive memcpy memmove memset memcmp strlen strcpy strcat strcmp strspn strcspn memchr)
     list (APPEND str_rename_options "--redefine-sym=str_${primitive}=${primitive}")

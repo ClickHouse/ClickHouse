@@ -18,7 +18,10 @@ find_package (Python3 REQUIRED COMPONENTS Interpreter)
 set (str_objects)
 foreach (unit sse2 sse42 avx2 evex evex512 dispatch)
     add_library (str_${unit} OBJECT "${STR_SOURCE_DIR}/${unit}.c")
-    set_target_properties (str_${unit} PROPERTIES INTERPROCEDURAL_OPTIMIZATION FALSE)
+    # `global-group` links the completed archive into consumers; these objects
+    # must not depend on that same archive while producing it.
+    set_target_properties (str_${unit} PROPERTIES
+        INTERPROCEDURAL_OPTIMIZATION FALSE LINK_LIBRARIES "")
     # The post-pass consumes machine code, so disable LTO and stale source-level debug data.
     # Retain every frame pointer: the post-pass removes unwind information.
     target_compile_options (str_${unit} PRIVATE
