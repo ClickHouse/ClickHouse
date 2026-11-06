@@ -140,6 +140,14 @@ function configure
     fi
 }
 
+# Prints `--tmp` if `clickhouse local` of the binary $1 has the option (see local_command in ci/jobs/performance_tests.py).
+function local_tmp_option
+{
+    if grep -qE '^[[:space:]]*--tmp[[:space:]]' < <("$1" local --help 2>/dev/null); then
+        echo --tmp
+    fi
+}
+
 # addressToLine resolves a frame to "file:line" only where DWARF covers
 # ClickHouse code. PR builds use -g0 (DISABLE_ALL_DEBUG_SYMBOLS): the symbol
 # table remains (addressToSymbol works) but there is no line info, so the patched
@@ -151,13 +159,15 @@ function configure
 # resolves comparably on both and is left untouched.
 function match_reference_debug_info
 {
-    local left right left_lines right_lines
+    local left right left_lines right_lines left_tmp right_tmp
     left=$(readlink -f left/clickhouse-server)
     right=$(readlink -f right/clickhouse-server)
+    left_tmp=$(local_tmp_option "$left")
+    right_tmp=$(local_tmp_option "$right")
     # Running clickhouse also decompresses the self-extracting binary in place.
     local probe="select countIf(addressToLine(arrayJoin(trace)) like '%:%') from system.stack_trace"
-    left_lines=$("$left" local --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
-    right_lines=$("$right" local --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
+    left_lines=$("$left" local ${left_tmp:+"$left_tmp"} --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
+    right_lines=$("$right" local ${right_tmp:+"$right_tmp"} --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
     if [ "$(( ${right_lines:-0} * 4 ))" -lt "${left_lines:-0}" ]; then
         strip --strip-debug "$left"
     fi
@@ -561,6 +571,8 @@ function run_tests
                 --max-queries "$max_queries"
                 --profile-seconds "$profile_seconds"
                 --stop-merges
+                # The Iceberg configuration (`iceberg_local`, `iceberg_s3`), see perf.py --table-engine.
+                ${CHPC_TABLE_ENGINE:+--table-engine "$CHPC_TABLE_ENGINE"}
 
                 "$test"
             )
@@ -671,6 +683,7 @@ do
     sed -n "s/^skipped\t/$test_name\t/p" < "$test_file" >> "analyze/skipped-tests.tsv"
     sed -n "s/^display-name\t/$test_name\t/p" < "$test_file" >> "analyze/query-display-names.tsv"
     sed -n "s/^partial\t/$test_name\t/p" < "$test_file" >> "analyze/partial-queries.tsv"
+    sed -n "s/^result-mismatch\t/$test_name\t/p" < "$test_file" >> "analyze/result-mismatches.tsv"
 done
 
 # for each query run, prepare array of metrics from query log
@@ -1000,10 +1013,16 @@ then
     perf_py="$script_dir/../../../../tests/performance/scripts/perf.py"
 fi
 
-# Also cap the confirmation wall-clock time. Tests not rerun keep their
-# original verdict (fail-open in the strict direction: no demotion).
+# Also cap the confirmation wall-clock time: 20 minutes, or less when the
+# caller passes CHPC_CONFIRM_DEADLINE_SEC (the SECONDS of this script by which
+# the reruns must end). Tests not rerun keep their original verdict
+# (fail-open in the strict direction: no demotion).
 local confirm_deadline=$(( SECONDS + 1200 ))
-local confirm_test confirm_test_file confirm_indexes
+if [ -n "${CHPC_CONFIRM_DEADLINE_SEC:-}" ] && [ "$CHPC_CONFIRM_DEADLINE_SEC" -lt "$confirm_deadline" ]
+then
+    confirm_deadline=$CHPC_CONFIRM_DEADLINE_SEC
+fi
+local confirm_test confirm_test_file confirm_indexes confirm_time_left
 # Every start of a binary puts its thread stacks at the same place, and a change
 # can come from where the hot frames land in their pages alone, so rerun at three
 # stack placements and confirm a change only if it reproduces at two (step 4).
@@ -1013,6 +1032,16 @@ local tls_surplus=("" $(( 512 + 21 * 64 )) $(( 512 + 43 * 64 )))
 local placement placements_done=0
 for placement in 0 1 2
 do
+    if [ "$SECONDS" -ge "$confirm_deadline" ]
+    then
+        if [ "$placements_done" -eq 0 ]
+        then
+            echo "confirm_changes: WARNING: no time left, skipping confirmation"
+            return 0
+        fi
+        echo "confirm_changes: WARNING: time budget exhausted before stack placement $placement, using the placements measured so far"
+        break
+    fi
     echo "confirm_changes: rerunning at stack placement $placement (static TLS surplus ${tls_surplus[placement]:-default})"
     # The caller runs us with errexit disabled (fail-open), which also masks
     # failures inside restart: its return value only reflects the last check.
@@ -1038,7 +1067,8 @@ do
 
     for confirm_test in $(cut -f1 ${confirm_dir}/flagged-queries.tsv | sort | uniq)
     do
-        if [ "$SECONDS" -ge "$confirm_deadline" ]
+        confirm_time_left=$(( confirm_deadline - SECONDS ))
+        if [ "$confirm_time_left" -le 0 ]
         then
             echo "confirm_changes: WARNING: time budget exhausted at stack placement $placement, the remaining tests are not rerun"
             break 2
@@ -1059,14 +1089,17 @@ do
         # The output goes through a temp file renamed only on success: a partial
         # raw file from a failed rerun could otherwise demote the queries that
         # did rerun, contradicting "the whole test keeps its original verdict".
+        # timeout: a rerun must not run past the deadline (a cut rerun fails like any other).
+        # --foreground keeps perf.py in our process group, so a caller's group kill still reaches it.
         # shellcheck disable=SC2086
-        if "$perf_py" "$confirm_test_file" \
+        if timeout --foreground -k 10 "$confirm_time_left" "$perf_py" "$confirm_test_file" \
             --host localhost localhost \
             --port "$LEFT_SERVER_PORT" "$RIGHT_SERVER_PORT" \
             --binary left/clickhouse right/clickhouse \
             --http-port "$LEFT_SERVER_HTTP_PORT" "$RIGHT_SERVER_HTTP_PORT" \
             ${CHPC_RUNS:+--runs "$CHPC_RUNS"} ${PR_TO_TEST:+--pr-number "$PR_TO_TEST"} \
             --max-queries 0 --profile-seconds 0 --stop-merges \
+            ${CHPC_TABLE_ENGINE:+--table-engine "$CHPC_TABLE_ENGINE"} \
             --queries-to-run $confirm_indexes \
             > "${confirm_dir}/$confirm_test-raw-$placement.tsv.tmp" \
             2> "${confirm_dir}/$confirm_test-err-$placement.log"
