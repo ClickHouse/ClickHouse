@@ -3751,7 +3751,6 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & ar
     /// A lambda is not moved by itself: it goes with the calls that apply it.
     std::erase_if(split_nodes, [](const Node * node) { return isLambda(*node); });
 
-    /// A lambda rebuilt above the join exports its captured columns, which must not take the name of an input.
     auto res = split(split_nodes, /*create_split_nodes_mapping=*/ false, /*avoid_duplicate_inputs=*/ true);
     return res;
 }
