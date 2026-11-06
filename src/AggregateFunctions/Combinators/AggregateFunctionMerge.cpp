@@ -42,7 +42,7 @@ AggregateFunctionMerge::AggregateFunctionMerge(const AggregateFunctionPtr & nest
             data_type->getFunctionName(),
             nested_func->getName());
 
-    if (canMergeStatesOf(*nested_func, *argument_func))
+    if (nested_func->canMergeStateFromDifferentVariant(*argument_func))
     {
         merge_state_from_different_variant = true;
         return;
@@ -60,13 +60,6 @@ AggregateFunctionMerge::AggregateFunctionMerge(const AggregateFunctionPtr & nest
         toString(argument_func->getStateVariant()),
         nested_func->getStateType()->getName(),
         argument_func->getStateType()->getName());
-}
-
-bool AggregateFunctionMerge::canMergeStatesOf(const IAggregateFunction & nested, const IAggregateFunction & argument_func)
-{
-    if (nested.haveSameStateRepresentation(argument_func))
-        return true;
-    return argument_func.getName() == nested.getName() && nested.canMergeStateFromDifferentVariant(argument_func);
 }
 
 void AggregateFunctionMerge::add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const
@@ -92,12 +85,6 @@ public:
     String getName() const override { return "Merge"; }
 
     bool transformsArgumentTypes() const override { return true; }
-
-    bool acceptsNestedFunction(const IAggregateFunction & nested_function, const DataTypes & arguments) const override
-    {
-        const auto * argument = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
-        return argument && AggregateFunctionMerge::canMergeStatesOf(nested_function, *argument->getFunction());
-    }
 
     DataTypes transformArguments(const DataTypes & arguments) const override
     {

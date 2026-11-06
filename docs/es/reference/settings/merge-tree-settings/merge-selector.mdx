@@ -14,7 +14,9 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas opciones de configuración están disponibles en [system.merge&#95;tree&#95;settings](/es/reference/system-tables/merge_tree_settings) y se generan automáticamente a partir del código fuente de ClickHouse.
 
-## merge_selector_algorithm {#merge_selector_algorithm}
+<div id="merge_selector_algorithm">
+  ## merge_selector_algorithm
+</div>
 
 <ExperimentalBadge />
 
@@ -22,7 +24,9 @@ Estas opciones de configuración están disponibles en [system.merge&#95;tree&#9
 
 El algoritmo para seleccionar partes para la asignación de merges
 
-## merge_selector_base {#merge_selector_base}
+<div id="merge_selector_base">
+  ## merge_selector_base
+</div>
 
 <SettingsInfoBlock type="Float" default_value="5" />
 
@@ -31,14 +35,18 @@ merges asignados (configuración de nivel experto; no la cambie si no entiende
 lo que hace). Funciona con los selectores de merge
 Simple y StochasticSimple
 
-## merge_selector_blurry_base_scale_factor {#merge_selector_blurry_base_scale_factor}
+<div id="merge_selector_blurry_base_scale_factor">
+  ## merge_selector_blurry_base_scale_factor
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Controla cuándo se activa esta lógica en relación con el número de partes de la
 partición. Cuanto mayor sea el factor, más tardía será la reacción.
 
-## merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once {#merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once}
+<div id="merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once">
+  ## merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -48,7 +56,9 @@ Habilita una heurística para el selector de merges simple que reducirá el lím
 Al hacerlo, aumentará el número de merges concurrentes, lo que puede ayudar con los errores
 TOO&#95;MANY&#95;PARTS, pero al mismo tiempo aumentará la amplificación de escritura.
 
-## merge_selector_enable_heuristic_to_remove_small_parts_at_right {#merge_selector_enable_heuristic_to_remove_small_parts_at_right}
+<div id="merge_selector_enable_heuristic_to_remove_small_parts_at_right">
+  ## merge_selector_enable_heuristic_to_remove_small_parts_at_right
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -56,7 +66,9 @@ Habilita una heurística para seleccionar partes para el merge que elimina las p
 derecho del rango si su tamaño es menor que la proporción especificada (0.01) de sum&#95;size.
 Funciona con los selectores de merge Simple y StochasticSimple
 
-## merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent {#merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent}
+<div id="merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent">
+  ## merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent
+</div>
 
 <ExperimentalBadge />
 
@@ -67,17 +79,9 @@ Funciona con los selectores de merge Simple y StochasticSimple
 Controla el valor del exponente usado en las fórmulas que construyen la curva de reducción. Reducir el exponente
 reducirá el tamaño de los merge, lo que aumentará la amplificación de escritura. A la inversa, también ocurre lo contrario.
 
-## merge_selector_min_age_to_disable_right_tail_heuristic {#merge_selector_min_age_to_disable_right_tail_heuristic}
-
-<SettingsInfoBlock type="UInt64" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
-
-Si es mayor que cero y `merge_selector_enable_heuristic_to_remove_small_parts_at_right` está habilitada,
-desactiva esa heurística en los rangos en los que todas las partes tienen una antigüedad de al menos este número de segundos. `0` desactiva esta comprobación.
-Funciona con los selectores de merge Simple y StochasticSimple.
-
-## merge_selector_window_size {#merge_selector_window_size}
+<div id="merge_selector_window_size">
+  ## merge_selector_window_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 

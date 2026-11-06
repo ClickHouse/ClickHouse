@@ -3,9 +3,7 @@
 #include <Client/ClientBase.h>
 #include <Common/VersionNumber.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/Config/getConfigPath.h>
 #include <Client/ClientApplicationBase.h>
-#include <Common/DNSResolver.h>
 #include <Common/EventNotifier.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
@@ -95,19 +93,7 @@ String KeeperClient::executeFourLetterCommand(const String & command)
 {
     /// We need to create a new socket every time because ZooKeeper forcefully shuts down the connection after a four-letter-word command.
     Poco::Net::StreamSocket socket;
-    const auto [host, port] = DNSResolver::splitHostAndPort(zk_args.hosts[0]);
-    try
-    {
-        socket.connect(DNSResolver::instance().resolveAddress(host, port), zk_args.connection_timeout_ms * 1000);
-    }
-    catch (...)
-    {
-        /// Remove this possibly stale entry from the DNS cache. There is no `DNSCacheUpdater` in a
-        /// client program, so nothing else would ever refresh it, and every later command of the
-        /// session would keep trying an address the host has moved away from.
-        DNSResolver::instance().removeHostFromCache(host);
-        throw;
-    }
+    socket.connect(Poco::Net::SocketAddress{zk_args.hosts[0]}, zk_args.connection_timeout_ms * 1000);
 
     socket.setReceiveTimeout(zk_args.operation_timeout_ms * 1000);
     socket.setSendTimeout(zk_args.operation_timeout_ms * 1000);
@@ -360,7 +346,7 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
             .binding("use-xid-64"));
 
     options.addOption(
-        Poco::Util::Option("config-file", "c", "if set, will try to get a connection string from clickhouse config. by default, `config.xml`, `config.yaml` or `config.yml` in the current directory")
+        Poco::Util::Option("config-file", "c", "if set, will try to get a connection string from clickhouse config. default `config.xml`")
             .argument("<file>")
             .binding("config-file"));
 
@@ -664,12 +650,7 @@ void KeeperClient::connectToKeeper()
     }
 #endif
 
-    /// A configuration file can be written in XML or in YAML, so the default one is looked up with
-    /// every supported extension, not only with `.xml`.
-    const String config_path
-        = config().has("config-file") ? config().getString("config-file") : getConfigPathForAnySupportedFormat("config.xml");
-
-    ConfigProcessor config_processor(config_path);
+    ConfigProcessor config_processor(config().getString("config-file", "config.xml"));
 
     /// This will handle a situation when clickhouse is running on the embedded config, but config.d folder is also present.
     ConfigProcessor::registerEmbeddedConfig("config.xml", "<clickhouse/>");
@@ -682,7 +663,7 @@ void KeeperClient::connectToKeeper()
 
     if (!config().has("host") && !config().has("port") && !keys.empty())
     {
-        LOG_INFO(getLogger("KeeperClient"), "Found keeper node in {}, will use it for connection", config_path);
+        LOG_INFO(getLogger("KeeperClient"), "Found keeper node in the config.xml, will use it for connection");
 
         for (const auto & key : keys)
         {
