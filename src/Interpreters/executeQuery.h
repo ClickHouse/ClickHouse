@@ -181,7 +181,8 @@ void logQueryException(
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
     bool internal,
     bool log_as_internal,
-    bool log_error);
+    bool log_error,
+    bool charge_quota_profile_events = true);
 
 void logExceptionBeforeStart(
     const String & query_for_logging,
@@ -196,7 +197,8 @@ void logExceptionBeforeStart(
     /// The AST to use for the `formatted_query` column. Defaults to `ast`. When a rewrite rule
     /// changed the query, pass the original (pre-rewrite) AST so `formatted_query` matches the
     /// original `query` column and does not expose secrets from the result template.
-    const ASTPtr & ast_for_formatted_query = {});
+    const ASTPtr & ast_for_formatted_query = {},
+    bool charge_quota = true);
 
 /// Returns the global AST fuzzer instance with a lock held.
 std::pair<std::shared_ptr<QueryFuzzer>, std::unique_lock<std::mutex>> getGlobalASTFuzzer();
