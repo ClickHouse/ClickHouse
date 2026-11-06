@@ -76,6 +76,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
+#include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -83,6 +84,8 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSinkPatch.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsLock.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+
+#include <Access/ContextAccess.h>
 
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseReplicated.h>
@@ -325,6 +328,7 @@ namespace ErrorCodes
     extern const int FAULT_INJECTED;
     extern const int CANNOT_FORGET_PARTITION;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int ACCESS_DENIED;
 }
 
 namespace ActionLocks
@@ -8759,6 +8763,66 @@ static void assertSourceHasNoPatchesForPartition(
         command, source_path, patch_parts.size(), partition_id, partition_id, partition_id, command);
 }
 
+/// FETCH names its source by a ZooKeeper path, so it is authorized as every table of this server that uses the path.
+/// A source on another server has no table here to check, so it requires `SELECT` on all tables.
+static void checkAccessToFetchSource(const String & zookeeper_name, const String & zookeeper_path, const ContextPtr & context)
+{
+    if (context->getAccess()->isGranted(AccessType::SELECT))
+        return;
+
+    const String path = zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(zookeeper_path, /*check_starts_with_slash=*/ false);
+    bool has_local_table = false;
+    for (const auto & [_, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+    {
+        if (database->isExternal())
+            continue;
+        for (auto it = database->getTablesIterator(context, {}, /*skip_not_loaded=*/ false); it->isValid(); it->next())
+        {
+            /// The loaded storage if there is one, otherwise the lazy stand-in.
+            const StoragePtr table = resolveStorageProxy(it->table());
+            const auto * lazy_stand_in = dynamic_cast<const StorageProxy *>(table.get());
+            String table_zookeeper_name;
+            String table_zookeeper_path;
+            if (lazy_stand_in && lazy_stand_in->isLazyStandIn())
+            {
+                /// Resolved from the stored `CREATE TABLE` without loading the table.
+                ASTPtr create_ast = database->tryGetCreateTableQuery(it->name(), context);
+                if (!create_ast)
+                    continue; /// Dropped meanwhile.
+                create_ast = create_ast->clone();
+                auto & create_query = create_ast->as<ASTCreateQuery &>();
+                create_query.attach = true;
+                auto znode_info = extractZnodeInfoFromReplicatedTableDef(
+                    create_query, table->getStorageID(), LoadingStrictnessLevel::ATTACH, context);
+                if (!znode_info)
+                    continue;
+                table_zookeeper_name = znode_info->zookeeper_name;
+                table_zookeeper_path = znode_info->path;
+            }
+            else if (auto replicated = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Skip))
+            {
+                table_zookeeper_name = replicated->getZooKeeperName();
+                table_zookeeper_path = replicated->getZooKeeperPath();
+            }
+            else
+                continue;
+
+            if (table_zookeeper_name != zookeeper_name
+                || zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(table_zookeeper_path, /*check_starts_with_slash=*/ false) != path)
+                continue;
+            context->checkAccess(AccessType::SELECT, table->getStorageID());
+            has_local_table = true;
+        }
+    }
+
+    if (!has_local_table)
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "{}: Not enough privileges. No table on this server uses ZooKeeper path {}, so fetching from it requires the grant SELECT ON *.*",
+            context->getUserName(),
+            zookeeper_name == zkutil::DEFAULT_ZOOKEEPER_NAME ? path : zookeeper_name + ":" + path);
+}
+
 void StorageReplicatedMergeTree::fetchPartition(
     const ASTPtr & partition,
     const StorageMetadataPtr & metadata_snapshot,
@@ -8778,6 +8842,8 @@ void StorageReplicatedMergeTree::fetchPartition(
     String from = zkutil::extractZooKeeperPath(expand_from, /* check_starts_with_slash */ true);
     if (from.empty())
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "ZooKeeper path should not be empty");
+
+    checkAccessToFetchSource(from_zookeeper_name, from, query_context);
 
     if ((*settings)[MergeTreeSetting::disable_fetch_partition_for_zero_copy_replication]
         && (*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])

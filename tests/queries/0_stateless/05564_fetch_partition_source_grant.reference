@@ -1,0 +1,27 @@
+-- the source is not readable
+ACCESS_DENIED: SELECT ON db.src
+ACCESS_DENIED: SELECT ON db.src
+ACCESS_DENIED: SELECT ON db.src
+-- a materialized view passes the command to its target, which checks the source
+ACCESS_DENIED: SELECT ON db.src
+-- no table on this server uses the path
+ACCESS_DENIED: no table on this server uses the path, SELECT ON *.* is required
+0
+-- a grant on some columns is not a grant to read the table
+ACCESS_DENIED: SELECT ON db.src, SELECT(id) ON db.src
+-- the destination needs INSERT
+ACCESS_DENIED: INSERT ON db.dst
+-- every table of this server that uses the path must be readable
+ACCESS_DENIED: SELECT ON db.src_r2
+-- allowed once all of them are readable
+OK
+OK
+OK
+OK
+1	a
+2	b
+-- a lazily loaded source is checked without loading it
+TableProxy
+ACCESS_DENIED: SELECT ON db1.lsrc
+0
+TableProxy
