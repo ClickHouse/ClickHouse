@@ -51,8 +51,8 @@ def read_string(sock):
 
 def old_revision(sock):
     revision, _ = read_varuint(sock)
-    assert revision >= 54496
-    revision = 54495
+    assert revision >= 54497
+    revision = 54496
     data = bytearray()
     while revision >= 128:
         data.append((revision & 127) | 128)
@@ -62,7 +62,7 @@ def old_revision(sock):
 
 
 def old_hello(sock):
-    # Revision 54496 adds no fields. Lower both `Hello` revisions to exercise the compatibility gates.
+    # Revision 54497 adds no fields. Lower both `Hello` revisions to exercise the compatibility gates.
     packet, data = read_varuint(sock)
     assert packet == 0
     data += read_string(sock)
