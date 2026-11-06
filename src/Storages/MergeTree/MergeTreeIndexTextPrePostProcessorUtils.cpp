@@ -44,12 +44,9 @@ void replaceExpressionToIdentifier(ASTPtr & ast, const String & expression_name,
 namespace
 {
 
-/// A transform is analysed under the global context, so whatever reads a table or a dictionary
-/// during analysis does it with full access, and constant folding can put the result (or an
-/// exception text carrying it) in front of the user before `validateTransformActionsDAG` runs.
-/// Such access depends on the arguments, not on the function name, so checking the names as the
-/// declaring user does not cover it. A transform must be a pure function of the indexed value,
-/// so reject these constructs before any analysis.
+/// A transform is analysed under the global context, so reading a table or a dictionary during
+/// analysis happens with full access, and folding can surface the result before validation runs.
+/// Such access depends on the arguments, not the function name, so authorizing names cannot cover it.
 void rejectDataDependentConstructs(const ASTPtr & ast, const ContextPtr & context)
 {
     if (ast->as<ASTSubquery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>() || ast->as<ASTTableIdentifier>())
@@ -65,8 +62,7 @@ void rejectDataDependentConstructs(const ASTPtr & ast, const ContextPtr & contex
                     "A text index transform expression must not use a table or a set as the right side of `{}`", function->name);
         }
 
-        /// Only the name is resolved here, which for `dictGet`, `joinGet` and the like does not touch
-        /// the dictionary or the table; their analysis would.
+        /// Only the name, which for `dictGet` and the like does not touch the dictionary; analysis would.
         if (auto resolver = FunctionFactory::instance().tryGet(function->name, context); resolver && !resolver->isDeterministic())
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "A text index transform expression must not contain non-deterministic functions. Got `{}`", function->name);

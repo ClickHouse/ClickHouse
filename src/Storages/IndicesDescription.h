@@ -87,13 +87,12 @@ struct IndexDescription
     bool isSimpleSingleColumnIndex() const;
 };
 
-/// Checks that all functions referenced by the text index preprocessor and postprocessor expressions
-/// are allowed to run within the permissions of the given context. Call only where a user declares an
-/// index, on the node they submitted it to; elsewhere these resolve under the global context.
+/// Checks that the functions referenced by the text index preprocessor and postprocessor expressions
+/// may run with the permissions of `context`. Call only where a user declares an index, on the node
+/// they submitted it to; elsewhere these resolve under the global context.
 void checkTextIndexPreAndPostProcessorPermissions(const IndexDescription & index, const ContextPtr & context);
 
-/// Refuses a transform whose authorization the other hosts of an `ON CLUSTER` query cannot preserve,
-/// which is whenever they do not run it as the initiating user.
+/// Refuses a transform when the other hosts of an `ON CLUSTER` query do not run it as the initiator.
 void rejectTextIndexTransformWithoutInitiatorUser(const ASTIndexDeclaration & declaration);
 
 /// Whether the declaration is a text index with a `preprocessor` or a `postprocessor` argument.

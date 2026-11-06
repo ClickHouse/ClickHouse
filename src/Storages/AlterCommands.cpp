@@ -1954,9 +1954,8 @@ void AlterCommands::apply(
         }
     }
 
-    /// Only the indices this statement declares, and only now: the rebuild above resolves them against
-    /// the schema every command produced, which is what gets stored, and a later command can change
-    /// what an alias in a transform expands to. Existing indices stay unauthorised on purpose.
+    /// Only the declared ones, and only now: the rebuild above resolves them against the schema every
+    /// command produced, which is what gets stored. Existing indices stay unauthorised on purpose.
     const NameSet declared_indices = getAddedIndexNames(metadata.secondary_indices);
 
     for (const auto & index : metadata_copy.secondary_indices)

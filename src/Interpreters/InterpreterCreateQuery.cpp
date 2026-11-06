@@ -4066,8 +4066,7 @@ BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
     params.access_to_check = getRequiredAccess();
     params.additional_access_check = [captured_query_ptr = query_ptr](const String &, bool throw_if_unresolved)
     {
-        /// `throw_if_unresolved` means the hosts do not run the query as this user, so whatever they
-        /// resolve a transform against is not authorized by anyone.
+        /// `throw_if_unresolved` means the hosts do not run the query as this user.
         if (!throw_if_unresolved)
             return;
 
@@ -4146,13 +4145,11 @@ BlockIO InterpreterCreateQuery::execute()
                 /// the worker inherits the move destination of the source too, and runs with no user
                 checkExportAccess(inherited);
 
-                /// A worker copies the source's indices into a `MergeTree` destination, with no user, and so
-                /// declares their transforms anew. Authorize them here as the local path does.
+                /// A worker copies the source's indices with no user, so declare their transforms here.
                 if (inherited.storage && inherited.storage->engine && endsWith(inherited.storage->engine->name, "MergeTree"))
                 {
-                    /// With an explicit engine `setEngine` does not look at the source, so authorize describing
-                    /// it before resolving it, as `getTablePropertiesAndNormalizeCreateQuery` does: an error from
-                    /// the inspection below would otherwise disclose the source to a user who cannot see it.
+                    /// Before resolving it: an error below would otherwise disclose a source the user
+                    /// cannot see.
                     getContext()->checkAccess(AccessType::SHOW_COLUMNS, create.as_database, create.as_table);
                     StoragePtr as_storage = resolveStorageProxyLoading(
                         DatabaseCatalog::instance().getTable({create.as_database, create.as_table}, getContext()));

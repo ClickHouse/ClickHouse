@@ -106,12 +106,10 @@ namespace ErrorCodes
 namespace
 {
 
-/// A `Replicated`-database host applies the statement without the submitting user, so the declared text
-/// index transforms are authorized here, against the schema the whole statement produces.
-/// `ON CLUSTER` does not reach this: it is refused unless its hosts run as the initiating user.
+/// A `Replicated`-database host applies the statement without the submitting user. `ON CLUSTER` does
+/// not reach this: it is refused unless its hosts run as the initiating user.
 void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)
 {
-    /// A host without the table cannot expand aliases.
     StorageMetadataHandle metadata;
     if (table)
         metadata = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
@@ -128,16 +126,13 @@ void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & 
                 adds_transform = true;
     }
 
-    /// Authorize against the schema the whole statement produces, not the one before it: a command of
-    /// the same statement can change what an alias in a transform expands to, in either direction.
-    /// Only for the transforms: other indices have nothing to authorize, and their statements must
-    /// not be subjected to an analysis that the executor does not do.
+    /// Against the schema the whole statement produces: a command of the same statement can change what
+    /// an alias in a transform expands to. Transforms only, so other statements get no extra analysis.
     if (!adds_transform || !metadata)
         return;
 
     AlterCommands commands;
-    /// The number of runs of consecutive metadata commands: each run is a segment that
-    /// `runCommandSegments` commits on its own, see `parseAlterCommandSegments`.
+    /// Runs of consecutive metadata commands; `runCommandSegments` commits each run on its own.
     size_t metadata_segments = 0;
     bool previous_is_metadata = false;
     for (const auto & child : alter.command_list->children)
@@ -156,14 +151,12 @@ void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & 
         previous_is_metadata = command.has_value();
     }
 
-    /// This applies every metadata command at once, while the executor commits each segment separately,
-    /// so with several segments it would reject statements the executor accepts. `AlterCommands::apply`
-    /// authorizes each segment as the user there, and a `Replicated` database refuses such a statement.
+    /// Applying every command at once would reject statements the executor, which commits segment by
+    /// segment, accepts. `AlterCommands::apply` authorizes each segment as the user anyway.
     if (metadata_segments > 1)
         return;
 
-    /// The same sequence as `runCommandSegments`: `apply` relies on the checks before it, e.g. that
-    /// a renamed column exists.
+    /// The same sequence as `runCommandSegments`: `apply` relies on the checks before it.
     commands.validate(table, context);
 
     bool share_nested = true;
@@ -692,8 +685,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             /// The hosts run the entry without the user, so the row policy is checked here before the entry is enqueued.
             checkNoRowPolicyForExport(captured_alter, default_database, context);
 
-            /// `throw_if_unresolved` means the hosts do not run the query as this user, so whatever they
-            /// resolve a transform against is not authorized by anyone.
+            /// `throw_if_unresolved` means the hosts do not run the query as this user.
             if (throw_if_unresolved)
                 for (const auto & child : captured_alter.command_list->children)
                 {
