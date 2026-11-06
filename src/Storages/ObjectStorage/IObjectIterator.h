@@ -51,6 +51,8 @@ struct ObjectInfo
     /// The exact size of the object as the table metadata records it, if it records a positive one.
     virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
 
+    virtual std::vector<UInt64> getSplitOffsetsHint() const { return {}; }
+
     /// The number of rows of the object as the table metadata records it, before applying deletes, if known.
     /// It is only an estimate used to report the progress of a query, not to compute any result.
     virtual std::optional<size_t> getNumRowsHint() const
@@ -139,7 +141,7 @@ class ObjectIteratorSplitByBuckets : public IObjectIterator, private WithContext
 public:
     ObjectIteratorSplitByBuckets(
         ObjectIterator iterator_,
-        const String & format_,
+        StorageObjectStorageConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
         const ContextPtr & context_,
         const StorageID & storage_id_ = StorageID::createEmpty(),
@@ -151,7 +153,7 @@ public:
 
 private:
     const ObjectIterator iterator;
-    String format;
+    StorageObjectStorageConfigurationPtr configuration;
     ObjectStoragePtr object_storage;
     FormatSettings format_settings;
     StorageID storage_id;
