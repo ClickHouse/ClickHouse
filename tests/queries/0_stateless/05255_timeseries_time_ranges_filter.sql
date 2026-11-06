@@ -22,15 +22,15 @@ INSERT INTO ts (metric_name, tags, samples) VALUES ('m', map('host', 'h2'), [(to
 -- A time series written directly into the inner tables, with the time range [3000, 3000] far from its samples.
 -- The table name is qualified because an asynchronous insert through a table function resolves an unqualified name in the default database.
 INSERT INTO FUNCTION timeSeriesTags({CLICKHOUSE_DATABASE:Identifier}.ts) (id, metric_name, tags) VALUES (1, 'm', map('__name__', 'm', 'host', 'h1'));
-INSERT INTO FUNCTION timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) (id, timestamp, value) VALUES
-    (1, toDateTime64(500, 3), 0.), (1, toDateTime64(1000, 3), 1.), (1, toDateTime64(1060, 3), 2.), (1, toDateTime64(1500, 3), 4.);
+INSERT INTO FUNCTION timeSeriesSamples({CLICKHOUSE_DATABASE:Identifier}.ts) (id, samples, bucket, min_time, max_time) VALUES
+    (1, [(toDateTime64(500, 3), 0.), (toDateTime64(1000, 3), 1.), (toDateTime64(1060, 3), 2.), (toDateTime64(1500, 3), 4.)], toDateTime64(0, 3), toDateTime64(500, 3), toDateTime64(1500, 3));
 INSERT INTO FUNCTION timeSeriesTimeRanges({CLICKHOUSE_DATABASE:Identifier}.ts) (id, min_time, max_time) VALUES (1, toDateTime64(3000, 3), toDateTime64(3000, 3));
 
 SELECT min_time, max_time FROM timeSeriesTimeRanges(ts) ORDER BY min_time;
 
 -- h1 is hidden from all the selectors: without the filter the results would be 5, 4 and 4.
-SELECT count() FROM timeSeriesSelector(ts, 'm', 0, 2500);
-SELECT count() FROM timeSeriesSelector(ts, 'm{host="h1"}', 0, 2500);
-SELECT count() FROM timeSeriesSelector(ts, 'm{host="h1"}', 0, 1500);
+SELECT sum(length(samples)) FROM timeSeriesSelector(ts, 'm', 0, 2500, 'samples');
+SELECT sum(length(samples)) FROM timeSeriesSelector(ts, 'm{host="h1"}', 0, 2500, 'samples');
+SELECT sum(length(samples)) FROM timeSeriesSelector(ts, 'm{host="h1"}', 0, 1500, 'samples');
 
 DROP TABLE ts;
