@@ -121,6 +121,10 @@ public:
     ///                                            first element is the time column
     static std::shared_ptr<StorageABR> creatorFunction(const StorageFactory::Arguments & args);
 
+    /// The source tables are found in the database of the `ABR` table when it is loaded, so it cannot be moved to another database.
+    void checkTableCanBeRenamed(const StorageID & new_name) const override;
+    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
+
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr,
         QueryProcessingStage::Enum to_stage,

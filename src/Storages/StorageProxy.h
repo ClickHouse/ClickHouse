@@ -123,6 +123,8 @@ public:
         getNested()->truncate(query, metadata_snapshot, context, lock);
     }
 
+    void checkTableCanBeRenamed(const StorageID & new_name) const override { getNested()->checkTableCanBeRenamed(new_name); }
+
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override
     {
         getNested()->rename(new_path_to_table_data, new_table_id);
