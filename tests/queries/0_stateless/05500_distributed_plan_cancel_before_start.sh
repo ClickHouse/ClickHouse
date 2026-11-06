@@ -66,6 +66,9 @@ wait_for "SELECT ignored = 2 FROM ($TASK_LINES)"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT --query "SELECT 'every queued task remembered', remembered = queued, 'late starts ignored', ignored FROM ($TASK_LINES)"
-# No task of the query ran on the worker.
-$CLICKHOUSE_CLIENT --query "SELECT 'tasks executed', count() FROM system.query_log WHERE event_date >= yesterday()
-    AND initial_query_id = '$QUERY_ID' AND query_id != '$QUERY_ID'"
+RECENT="event_date >= yesterday() AND event_time >= now() - INTERVAL 300 SECOND"
+$CLICKHOUSE_CLIENT --query "SELECT 'initial query logged', count() > 0 FROM system.query_log
+    WHERE $RECENT AND current_database = currentDatabase() AND query_id = '$QUERY_ID'"
+# No task of the query ran on the worker. Tasks run in the worker's default database, so they are found through the initial query.
+$CLICKHOUSE_CLIENT --query "SELECT 'tasks executed', count() FROM system.query_log WHERE $RECENT AND query_id != '$QUERY_ID'
+    AND initial_query_id IN (SELECT query_id FROM system.query_log WHERE $RECENT AND current_database = currentDatabase() AND query_id = '$QUERY_ID')"
