@@ -136,6 +136,10 @@ you must create a separate Resource-Share for each endpoint.
 The Resource-Share remains in your AWS account after a Reverse Private Endpoint is deleted 
 and must be manually removed if no longer needed.
 </Note>
+<Tip>
+A Resource-Share is linked to a Reverse Private Endpoint when ClickPipes accepts it, and can't be used by any other endpoint after that. 
+We recommend creating the Reverse Private Endpoint right after creating the Resource-Share, and keeping the Resource-Share details private until then.
+</Tip>
 
 You can put the Resource-Configuration into the Resource-Share through [AWS console](https://docs.aws.amazon.com/ram/latest/userguide/working-with-sharing-create.html) or by running the following command with ClickPipes account ID `072088201116` (arn:aws:iam::072088201116:root):
 
