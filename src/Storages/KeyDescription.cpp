@@ -40,6 +40,7 @@ namespace Setting
     extern const SettingsBool allow_lossy_numeric_supertype;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsBool array_count_legacy_uint32_result;
+    extern const SettingsBool to_start_of_interval_preserves_argument_type;
     extern const SettingsUInt64 function_date_trunc_return_type_behavior;
     extern const SettingsGeoToH3ArgumentOrder geotoh3_argument_order;
 }
@@ -66,6 +67,8 @@ ContextPtr createKeyExpressionContext(const ContextPtr & context)
     ///   - function_date_trunc_return_type_behavior: dateTrunc over Date32/DateTime64 returns the
     ///     extended type instead of the canonical Date/DateTime;
     ///   - array_count_legacy_uint32_result: arrayCount returns UInt32 instead of UInt64;
+    ///   - to_start_of_interval_preserves_argument_type: toStartOfInterval returns the type of its argument
+    ///     instead of a type chosen by the interval unit;
     ///   - least_greatest_legacy_null_behavior: least/greatest with a NULL argument returns
     ///     Nullable(T) (the NULL is ignored) instead of the legacy short-circuited type;
     ///   - h3togeo_lon_lat_result_order: h3ToGeo returns Tuple(longitude, latitude) instead of the
@@ -118,6 +121,7 @@ ContextPtr createKeyExpressionContext(const ContextPtr & context)
     const bool lossy_numeric_supertype = baseline[Setting::allow_lossy_numeric_supertype];
     const bool variant_as_common_type = baseline[Setting::use_variant_as_common_type];
     const bool array_count_legacy = baseline[Setting::array_count_legacy_uint32_result];
+    const bool interval_preserves_type = baseline[Setting::to_start_of_interval_preserves_argument_type];
     const UInt64 date_trunc = baseline[Setting::function_date_trunc_return_type_behavior];
     const GeoToH3ArgumentOrder geotoh3_order = baseline[Setting::geotoh3_argument_order];
 
@@ -131,6 +135,7 @@ ContextPtr createKeyExpressionContext(const ContextPtr & context)
         && static_cast<bool>(settings[Setting::allow_lossy_numeric_supertype]) == lossy_numeric_supertype
         && static_cast<bool>(settings[Setting::use_variant_as_common_type]) == variant_as_common_type
         && static_cast<bool>(settings[Setting::array_count_legacy_uint32_result]) == array_count_legacy
+        && static_cast<bool>(settings[Setting::to_start_of_interval_preserves_argument_type]) == interval_preserves_type
         && static_cast<UInt64>(settings[Setting::function_date_trunc_return_type_behavior]) == date_trunc
         && settings[Setting::geotoh3_argument_order].value == geotoh3_order)
         return context;
@@ -145,6 +150,7 @@ ContextPtr createKeyExpressionContext(const ContextPtr & context)
     key_context->setSetting("allow_lossy_numeric_supertype", Field(lossy_numeric_supertype));
     key_context->setSetting("use_variant_as_common_type", Field(variant_as_common_type));
     key_context->setSetting("array_count_legacy_uint32_result", Field(array_count_legacy));
+    key_context->setSetting("to_start_of_interval_preserves_argument_type", Field(interval_preserves_type));
     key_context->setSetting("function_date_trunc_return_type_behavior", Field(date_trunc));
     key_context->setSetting("geotoh3_argument_order", SettingFieldGeoToH3ArgumentOrder(geotoh3_order).toString());
     return key_context;

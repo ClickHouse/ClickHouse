@@ -2,7 +2,8 @@
 -- that change the RESULT TYPE of a key expression (enable_extended_results_for_datetime_functions,
 -- cast_keep_nullable, geo_distance_returns_float64_on_float64_arguments,
 -- function_json_value_return_type_allow_nullable, function_date_trunc_return_type_behavior,
--- allow_lossy_numeric_supertype, use_variant_as_common_type, array_count_legacy_uint32_result). Previously,
+-- allow_lossy_numeric_supertype, use_variant_as_common_type, array_count_legacy_uint32_result,
+-- to_start_of_interval_preserves_argument_type). Previously,
 -- running a mutation (or any metadata-changing ALTER) with such a setting at a non-default value
 -- recomputed the key/index type to a different type, diverging from the column the storage actually
 -- produces and aborting with e.g. 'Bad cast from ColumnVector<UInt32> to ColumnDecimal<DateTime64>'.
@@ -284,6 +285,22 @@ INSERT INTO tac VALUES ([1, 0, 1]);
 SELECT count() FROM tac;
 
 DROP TABLE tac;
+
+-- to_start_of_interval_preserves_argument_type (default 1): toStartOfInterval over DateTime64(3) returns
+-- DateTime64(3) by default, DateTime when off. ATTACH restores the baseline key type, so a primary index
+-- written with the session type fails to load: 'CANNOT_READ_ALL_DATA: Bytes read: 0. Bytes expected: 8'.
+DROP TABLE IF EXISTS tsi;
+CREATE TABLE tsi (ts DateTime64(3), v UInt32) ENGINE = MergeTree() ORDER BY toStartOfInterval(ts, INTERVAL 1 HOUR)
+    SETTINGS index_granularity = 1;
+SYSTEM STOP MERGES tsi;
+INSERT INTO tsi VALUES ('2020-01-01 01:05:00', 1);
+ALTER TABLE tsi MODIFY COMMENT 'touch' SETTINGS to_start_of_interval_preserves_argument_type = 0;
+INSERT INTO tsi VALUES ('2020-01-01 02:05:00', 2);
+DETACH TABLE tsi;
+ATTACH TABLE tsi;
+SELECT v FROM tsi WHERE ts < toDateTime64('2020-01-01 03:00:00', 3) ORDER BY v SETTINGS force_primary_key = 1;
+
+DROP TABLE tsi;
 
 
 -- allow_lossy_numeric_supertype (default 0) and use_variant_as_common_type are the two knobs that decide
