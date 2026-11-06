@@ -63,7 +63,6 @@ public:
         MergeTreeReaderSettings reader_settings_,
         DynamicPredicateBuilder dynamic_predicate_builder_,
         bool prune_primary_key_,
-        bool prune_global_row_index_,
         MergeTreeIndices dynamic_skip_indexes_,
         DynamicSkipIndexFilter dynamic_skip_index_filter_,
         ContextPtr context_,
@@ -84,6 +83,9 @@ public:
     /// while reading (see `TopKThresholdTracker`): the threshold column is the primary key column at
     /// `primary_key_column_position`.
     void setTopKPrimaryKeyPruning(size_t primary_key_column_position, TopKThresholdTrackerPtr tracker);
+
+    /// Lets the dynamic predicate prune by the global row index `_part_starting_offset + _part_offset`.
+    void setGlobalRowIndexPruning() { prune_global_row_index = true; }
 
     void cancel() noexcept { is_cancelled = true; }
 

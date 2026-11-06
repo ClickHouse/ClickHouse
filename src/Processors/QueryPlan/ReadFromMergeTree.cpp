@@ -6020,7 +6020,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                 reader_settings,
                 dynamic_predicate_builder,
                 runtime_prune_primary_key,
-                runtime_prune_global_row_index,
                 runtime_skip_indexes,
                 dynamic_skip_index_filter,
                 context,
@@ -6042,7 +6041,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             reader_settings,
             dynamic_predicate_builder,
             runtime_prune_primary_key,
-            runtime_prune_global_row_index,
             runtime_skip_indexes,
             dynamic_skip_index_filter,
             context,
@@ -6062,12 +6060,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             reader_settings,
             MergeTreeSkipIndexReader::DynamicPredicateBuilder{},
             /*prune_primary_key=*/false,
-            /*prune_global_row_index=*/false,
             MergeTreeIndices{},
             MergeTreeSkipIndexReader::DynamicSkipIndexFilter{},
             context,
             getLogger("MergeTreeSkipIndexReader"));
     }
+
+    if (skip_index_reader && runtime_prune_global_row_index)
+        skip_index_reader->setGlobalRowIndexPruning();
 
     if (skip_index_reader && top_k_primary_key_column_position)
         skip_index_reader->setTopKPrimaryKeyPruning(*top_k_primary_key_column_position, top_k_filter_info->threshold_tracker);

@@ -54,6 +54,29 @@ SELECT a.id FROM t_rf_lossy_cast AS a, (SELECT toInt128(300) AS x) AS b
 WHERE a._part_starting_offset + a._part_offset = b.x ORDER BY a.id
 SETTINGS log_comment = '05495_global_row_index_unsigned_to_signed';
 
+-- A date or time widened into a type with a range that contains it keeps every value: `Date` to `Date32` and
+-- `DateTime` to `DateTime64`. `Date` to `DateTime` does not (the range of `DateTime` ends earlier), so it does not prune.
+DROP TABLE IF EXISTS t_rf_lossy_cast_date;
+DROP TABLE IF EXISTS t_rf_lossy_cast_date_time;
+CREATE TABLE t_rf_lossy_cast_date (d Date)
+ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 16, index_granularity_bytes = '10Mi';
+CREATE TABLE t_rf_lossy_cast_date_time (t DateTime('UTC'))
+ENGINE = MergeTree ORDER BY t SETTINGS index_granularity = 16, index_granularity_bytes = '10Mi';
+INSERT INTO t_rf_lossy_cast_date SELECT toDate(number) FROM numbers(512);
+INSERT INTO t_rf_lossy_cast_date_time SELECT toDateTime(number * 60, 'UTC') FROM numbers(512);
+
+SELECT a.d FROM t_rf_lossy_cast_date AS a, (SELECT toDate32('1970-04-01') AS x) AS b
+WHERE a.d = b.x ORDER BY a.d
+SETTINGS log_comment = '05495_date_to_date32';
+
+SELECT a.t FROM t_rf_lossy_cast_date_time AS a, (SELECT toDateTime64('1970-01-01 01:30:00', 3, 'UTC') AS x) AS b
+WHERE a.t = b.x ORDER BY a.t
+SETTINGS log_comment = '05495_date_time_to_date_time64';
+
+SELECT a.d FROM t_rf_lossy_cast_date AS a, (SELECT toDateTime('1970-04-01 00:00:00', 'UTC') AS x) AS b
+WHERE a.d = b.x ORDER BY a.d
+SETTINGS session_timezone = 'UTC', log_comment = '05495_date_to_date_time';
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT
@@ -64,8 +87,11 @@ FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
     AND log_comment IN ('05495_global_row_index_narrowing', '05495_global_row_index_narrowing_range',
         '05495_primary_key_narrowing', '05495_primary_key_narrowing_range', '05495_global_row_index_widening',
-        '05495_primary_key_widening', '05495_primary_key_unsigned_to_signed', '05495_global_row_index_unsigned_to_signed')
+        '05495_primary_key_widening', '05495_primary_key_unsigned_to_signed', '05495_global_row_index_unsigned_to_signed',
+        '05495_date_to_date32', '05495_date_time_to_date_time64', '05495_date_to_date_time')
 GROUP BY log_comment
 ORDER BY log_comment;
 
 DROP TABLE t_rf_lossy_cast;
+DROP TABLE t_rf_lossy_cast_date;
+DROP TABLE t_rf_lossy_cast_date_time;

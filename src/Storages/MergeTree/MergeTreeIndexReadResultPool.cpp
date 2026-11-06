@@ -55,7 +55,6 @@ MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
     MergeTreeReaderSettings reader_settings_,
     DynamicPredicateBuilder dynamic_predicate_builder_,
     bool prune_primary_key_,
-    bool prune_global_row_index_,
     MergeTreeIndices dynamic_skip_indexes_,
     DynamicSkipIndexFilter dynamic_skip_index_filter_,
     ContextPtr context_,
@@ -69,7 +68,6 @@ MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
     , reader_settings(std::move(reader_settings_))
     , dynamic_predicate_builder(std::move(dynamic_predicate_builder_))
     , prune_primary_key(prune_primary_key_)
-    , prune_global_row_index(prune_global_row_index_)
     , dynamic_skip_indexes(std::move(dynamic_skip_indexes_))
     , dynamic_skip_index_filter(std::move(dynamic_skip_index_filter_))
     , context(std::move(context_))

@@ -8,6 +8,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/SortDescription.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
@@ -856,8 +857,9 @@ bool allOutputsDependsOnlyOnAllowedNodes(
 }
 
 
-/// Whether a cast keeps every value. Besides `canBeSafelyCast`, accepts an unsigned integer widened into a larger
-/// signed one: `canBeSafelyCast` rejects it, but it is the common type of an unsigned and a signed join key.
+/// Whether a cast keeps every value. Besides `canBeSafelyCast`, accepts the promotions it rejects that are the common
+/// type of two join keys: an unsigned integer widened into a larger signed one, and a date or time widened into a
+/// type with a range that contains it.
 static bool isValuePreservingCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
 {
     if (canBeSafelyCast(from_type, to_type))
@@ -866,7 +868,14 @@ static bool isValuePreservingCast(const DataTypePtr & from_type, const DataTypeP
         return false;
     const auto from = removeNullable(removeLowCardinality(from_type));
     const auto to = removeNullable(removeLowCardinality(to_type));
-    return isUInt(from) && isInt(to) && to->getSizeOfValueInMemory() > from->getSizeOfValueInMemory();
+    if (isUInt(from) && isInt(to))
+        return to->getSizeOfValueInMemory() > from->getSizeOfValueInMemory();
+    if (isDate(from) && isDate32(to))
+        return true;
+    /// `DateTime64` covers the range of `Date` and `DateTime` at any scale, and the range of `Date32` up to scale 8.
+    if (const auto * to_date_time64 = typeid_cast<const DataTypeDateTime64 *>(to.get()))
+        return isDate(from) || isDateTime(from) || (isDate32(from) && to_date_time64->getScale() <= 8);
+    return false;
 }
 
 std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG::Node * predicate)
