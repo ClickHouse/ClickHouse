@@ -57,8 +57,8 @@
             "clickstack/observability/url-parameters",
             {
               "group": "Demo days",
+              "root": "clickstack/observability/demo-days/index",
               "pages": [
-                "clickstack/observability/demo-days/index",
                 {
                   "group": "2026",
                   "pages": [
