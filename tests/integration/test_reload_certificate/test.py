@@ -232,7 +232,7 @@ def use_pair_in_place(name):
 @pytest.mark.parametrize(
     "broken_file, break_command, expected_log",
     [
-        ("crt", ": >", "No certificates found"),
+        ("crt", ": >", "PEM_read_bio_X509 failed"),
         ("key", ": >", "Failed to load key"),
         ("crt", "head -c 100 {dir}/second.crt >", "PEM_read_bio_X509 failed"),
         ("key", "head -c 100 {dir}/second.key >", "Failed to load key"),
