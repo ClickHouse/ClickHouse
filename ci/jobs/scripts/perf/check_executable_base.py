@@ -1,5 +1,5 @@
 """Exit with an error unless the running ClickHouse servers with the given data paths have their
-executable loaded at the same address. Usage: check_executable_base.py <data path> <data path>..."""
+executable loaded at the same address modulo 1 GiB. Usage: check_executable_base.py <data path> <data path>..."""
 
 import os
 import re
@@ -20,5 +20,5 @@ def executable_base(data_path):
 
 bases = [executable_base(path) for path in sys.argv[1:]]
 print(f"Executable base of the servers: {' '.join(bases)}")
-if len(set(bases)) != 1:
-    sys.exit("The servers have their executable at different addresses: both must be started with ASLR disabled")
+if len({int(base, 16) % (1 << 30) for base in bases}) != 1:
+    sys.exit("The servers have their executable at different addresses modulo 1 GiB: both must be started with ASLR disabled")
