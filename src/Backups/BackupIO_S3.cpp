@@ -395,7 +395,8 @@ BackupReaderS3::BackupReaderS3(
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false, ""}
 {
-    s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
+    /// Validated by updateFromSettings below, after the endpoint and query settings.
+    s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef(), /* validate_settings */ false);
 
     if (auto endpoint_settings = context_->getStorageS3Settings().getSettings(
             s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup))
@@ -534,7 +535,8 @@ BackupWriterS3::BackupWriterS3(
     , s3_capabilities(getCapabilitiesFromConfig(context_->getConfigRef(), "s3"))
     , disk_client_factory(S3BackupClientCreator(context_))
 {
-    s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
+    /// Validated by updateFromSettings below, after the endpoint and query settings.
+    s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef(), /* validate_settings */ false);
 
     if (auto endpoint_settings = context_->getStorageS3Settings().getSettings(
             s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup))

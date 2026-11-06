@@ -32,7 +32,8 @@ struct S3Settings
     void loadFromConfig(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        const DB::Settings & settings);
+        const DB::Settings & settings,
+        bool validate_settings = true);
 
     /// Read all settings with from specified prefix in config. Expect settings name to start with "s3_".
     /// Override 4 settings: readonly, min_bytes_for_seek, list_object_keys_size, objects_chunk_size_to_delete from
