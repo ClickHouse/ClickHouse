@@ -1186,9 +1186,6 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 modified_context->setSetting("enable_parallel_replicas", Field(0));
             if (queryHasSubquerySets(query_info))
                 modified_context->setSetting("make_distributed_plan", Field(0));
-            /// The row policy of a child is analyzed without options and reads the view source of this context in its subqueries.
-            if (!query_info.planner_context || !query_info.planner_context->isViewSourceInSubqueries())
-                modified_context->clearViewSource();
 
             size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);
             size_t current_streams = std::min(current_need_streams, remaining_streams);
@@ -2084,10 +2081,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         /// A child that is the source table itself reads the table, as it does at `FetchColumns`.
         auto view_source = modified_context->isViewInnerQuery() ? nullptr : modified_context->getViewSource();
         if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
-        {
-            modified_context->clearViewSource();
             view_source = nullptr;
-        }
         InterpreterSelectQueryAnalyzer interpreter(ast,
             modified_context,
             child_select_query_options,
