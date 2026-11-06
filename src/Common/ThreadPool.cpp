@@ -472,6 +472,16 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
 
         auto pred = [this] { return !queue_size || scheduled_jobs < queue_size || finished; };
 
+        ++waiting_schedulers;
+        /// A freed slot wakes only one scheduler, so pass the wakeup on while slots remain free.
+        /// A scheduler that fails without taking the slot also releases a thread that stayed for it.
+        SCOPE_EXIT(
+            --waiting_schedulers;
+            if (queue_size && scheduled_jobs < queue_size)
+                slot_freed.notify_one();
+            wakeUpExcessIdleThreadsNoLock();
+        );
+
         /// Wait for available threads or timeout
         if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set. Even if the value is zero.
         {
@@ -480,26 +490,11 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             /// nanoseconds (x 1'000) on top of `steady_clock::now()`, which overflows Int64 for such a
             /// count. Clamping keeps the wait well-defined: a negative timeout has already expired, so it
             /// gives up at once, and a count above the cap keeps meaning "wait until a thread frees up".
-            ++waiting_schedulers;
-            bool got_slot = slot_freed.wait_for(lock, DB::saturatedMicroseconds(*wait_microseconds), pred);
-            --waiting_schedulers;
-            if (!got_slot)
+            if (!slot_freed.wait_for(lock, DB::saturatedMicroseconds(*wait_microseconds), pred))
                 return on_error(fmt::format("no free thread (timeout={})", *wait_microseconds));
         }
         else
-        {
-            ++waiting_schedulers;
             slot_freed.wait(lock, pred);
-            --waiting_schedulers;
-        }
-
-        /// A freed slot wakes only one scheduler, so pass the wakeup on while slots remain free.
-        /// A scheduler that fails without taking the slot also releases a thread that stayed for it.
-        SCOPE_EXIT(
-            if (queue_size && scheduled_jobs < queue_size)
-                slot_freed.notify_one();
-            wakeUpExcessIdleThreadsNoLock();
-        );
 
         if (finished)
             return on_error("finished");
