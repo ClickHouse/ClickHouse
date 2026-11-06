@@ -677,8 +677,14 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
     # Safety net: detect Python-level crashes in the fuzzer log even if the
     # exit code was somehow swallowed (e.g. future command changes drop pipefail)
     if fuzzer_log.exists():
-        tail = fuzzer_log.read_text(encoding="utf-8", errors="replace")[-2000:]
+        # Wide enough for an exception that carries the tails of the server's logs, e.g. the
+        # one `wait_until_port_is_ready` raises for a server that exited on startup.
+        tail = fuzzer_log.read_text(encoding="utf-8", errors="replace")[-20000:]
         if "Traceback (most recent call last):" in tail:
+            # A server that aborted (e.g. on a sanitizer report during startup) makes `dolor.py`
+            # raise too: name the server's failure rather than the exception it caused.
+            if (failure := _parse_logs(server_log, stderr_log, buzz_out)) is not None:
+                _complete_with_artifacts(failure, sw, workspace_path, paths)
             tb_start = tail.rfind("Traceback (most recent call last):")
             tb_snippet = tail[tb_start:].strip()
             Result.create_from(

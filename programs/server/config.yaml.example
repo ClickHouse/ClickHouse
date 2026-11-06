@@ -174,9 +174,6 @@ grpc:
     max_send_message_size: -1
     max_receive_message_size: -1
 
-    # Enable if you want very detailed logs
-    verbose_logs: false
-
 # Used with https_port and tcp_port_secure. Full ssl options list: https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71
 openSSL:
     server:
