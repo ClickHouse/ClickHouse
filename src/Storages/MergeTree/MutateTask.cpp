@@ -4571,8 +4571,10 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             (*ctx->data->getSettings())[MergeTreeSetting::packed_skip_index_max_bytes] > 0
             && !ctx->indices_to_recalc.empty();
 
+        /// An unsupported archive cannot be updated, so it would keep granules of the old data.
         bool archive_dirty = !ctx->dropped_skip_index_archive_file_names.empty()
-            || (source_has_archive && writer_can_open_archive);
+            || (source_has_archive && writer_can_open_archive)
+            || source_disk_storage->hasUnsupportedSkipIndicesPackedArchive();
         if (!archive_dirty)
             for (const auto & idx : ctx->indices_to_recalc)
                 if (source_part->isSkipIndexInPackedArchive(*idx)) { archive_dirty = true; break; }
