@@ -398,10 +398,10 @@ private:
         }
 
         /// The CPU time of a query that failed: it adds to the cost of the load but not to the other statistics.
-        void addFailedQueryCPU(double cpu_seconds_inc)
+        void addFailedQueryCPU(double cpu_seconds_inc, double weight)
         {
-            cpu_seconds += cpu_seconds_inc;
-            cpu_queries += 1;
+            cpu_seconds += weight * cpu_seconds_inc;
+            cpu_queries += weight;
         }
 
         void sample(double duration)
@@ -1212,8 +1212,9 @@ private:
         catch (...)
         {
             /// A query that fails during execution may have used a lot of CPU on the server.
+            watch.stop();
             if (cpu_microseconds)
-                addFailedQueryCPU(task, connection_index, static_cast<double>(*cpu_microseconds) / 1e6);
+                addFailedQueryCPU(task, connection_index, static_cast<double>(*cpu_microseconds) / 1e6, cur_interval, watch.getStart(), watch.getEnd());
             throw;
         }
 
@@ -1272,18 +1273,37 @@ private:
         t_test.add(info_index, duration);
     }
 
-    void addFailedQueryCPU(const Task & task, size_t connection_index, double cpu_seconds)
+    void addFailedQueryCPU(
+        const Task & task, size_t connection_index, double cpu_seconds,
+        std::shared_ptr<IntervalStats> cur_interval, UInt64 start_ns, UInt64 end_ns)
     {
         size_t info_index = round_robin ? 0 : connection_index;
         {
             std::lock_guard lock(interval_mutex);
-            if (interval && !cumulative)
-                interval->stats[info_index]->addFailedQueryCPU(cpu_seconds);
+            if (precise && cur_interval)
+            {
+                /// Distribute over the intervals intersecting the execution span, as for successful queries.
+                const UInt64 duration_ns = end_ns - start_ns;
+                for (; cur_interval; cur_interval = cur_interval->next)
+                {
+                    if (cur_interval->end_ns <= start_ns)
+                        continue;
+                    if (cur_interval->start_ns >= end_ns)
+                        break;
+                    const double overlap_ns = static_cast<double>(std::min(cur_interval->end_ns, end_ns) - std::max(cur_interval->start_ns, start_ns));
+                    if (overlap_ns > 0 && duration_ns > 0)
+                        cur_interval->stats[info_index]->addFailedQueryCPU(cpu_seconds, overlap_ns / static_cast<double>(duration_ns));
+                }
+            }
+            else if (interval && !cumulative)
+            {
+                interval->stats[info_index]->addFailedQueryCPU(cpu_seconds, 1.0);
+            }
         }
         std::lock_guard lock(mutex);
-        total_stats[info_index]->addFailedQueryCPU(cpu_seconds);
+        total_stats[info_index]->addFailedQueryCPU(cpu_seconds, 1.0);
         if (per_query)
-            per_query_stats[task.query_index]->addFailedQueryCPU(cpu_seconds);
+            per_query_stats[task.query_index]->addFailedQueryCPU(cpu_seconds, 1.0);
     }
 
     void report(const MultiStats & infos, double seconds, size_t used_threads = 0, const ArrivalStats * arrival_stats = nullptr)
