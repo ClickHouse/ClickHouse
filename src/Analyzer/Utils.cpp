@@ -1649,10 +1649,14 @@ bool isNodeLocalUserDefinedFunction(const String & function_name)
 /// of the server that evaluates the expression. The initiator and a remote node may have different
 /// default time zones, so a function that takes or returns such a value (`dt >= '2024-01-01 00:00:00'`)
 /// may give a different result on the remote node.
+/// `Dynamic` and `JSON` hide the types of their values until runtime, so a value of such a type may be a
+/// zone-less `DateTime` (`concat(dynamic_value, '')`), and they are treated as depending on the time zone too.
 bool dependsOnImplicitTimeZone(const IDataType & type)
 {
     return anyInTypeTree(type, [](const IDataType & nested)
     {
+        if (isDynamic(nested) || isObject(nested))
+            return true;
         const auto * time_zone_mixin = dynamic_cast<const TimezoneMixin *>(&nested);
         return time_zone_mixin && !time_zone_mixin->hasExplicitTimeZone();
     });
