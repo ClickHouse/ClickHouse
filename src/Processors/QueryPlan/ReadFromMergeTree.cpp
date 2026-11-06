@@ -34,7 +34,6 @@
 #include <Interpreters/extractStringValueFilters.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/PredicateStatisticsLog.h>
-#include <Interpreters/ProcessList.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -49,7 +48,6 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
 #include <Processors/QueryPlan/MergeTreeFinalMerge.h>
-#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -6095,64 +6093,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         }
 
         projection_index_reader = std::make_shared<MergeTreeProjectionIndexReader>(std::move(readers));
-
-        /// A read over a throwing `max_rows_to_read` fails as soon as it announces its rows, before the projection index
-        /// drops any granule during the read. Drop them now instead, as `IndexReadRangesRefiner` does, unless a filter
-        /// needs a set that only `CreatingSetsStep` builds, when the query runs (see `FutureSetFromSubquery`).
-        auto needs_unbuilt_set = [](const ProjectionIndexReadInfo & read_info)
-        {
-            return QueryPlanOptimizations::dagContainsNonReadySet(read_info.prewhere_info->prewhere_actions);
-        };
-        if (result.exceeded_row_limits && !is_parallel_reading_from_replicas
-            && !std::ranges::any_of(projection_index_read_desc.read_infos, needs_unbuilt_set))
-        {
-            auto drop_marks = [](RangesInDataPart & part, const MergeTreeIndexReadResult & index_read_result)
-            {
-                MarkRanges ranges;
-                for (const auto & range : part.ranges)
-                {
-                    for (size_t mark = range.begin; mark < range.end; ++mark)
-                    {
-                        if (index_read_result.canSkipMark(mark, *part.data_part->index_granularity))
-                            continue;
-
-                        if (!ranges.empty() && ranges.back().end == mark)
-                            ranges.back().end = mark + 1;
-                        else
-                            ranges.emplace_back(mark, mark + 1);
-                    }
-                }
-                part.ranges = std::move(ranges);
-            };
-
-            auto query_status = context->getProcessListElement();
-            for (auto & part : result.parts_with_ranges)
-            {
-                auto it = projection_index_read_desc.read_ranges.find(part.part_index_in_query);
-                if (it == projection_index_read_desc.read_ranges.end())
-                    continue;
-
-                if (query_status)
-                    query_status->checkTimeLimit();
-
-                MergeTreeIndexReadResult index_read_result;
-                index_read_result.projection_index_read_result = projection_index_reader->read(it->second);
-                drop_marks(part, index_read_result);
-
-                /// `optimizeJoinByShards` copied the ranges into the layers, which are read instead.
-                for (auto & layer : result.split_parts.layers)
-                    for (auto & layer_part : layer)
-                        if (layer_part.part_index_in_query == part.part_index_in_query)
-                            drop_marks(layer_part, index_read_result);
-            }
-
-            auto has_no_ranges = [](const auto & part) { return part.ranges.empty(); };
-            std::erase_if(result.parts_with_ranges, has_no_ranges);
-            for (auto & layer : result.split_parts.layers)
-                std::erase_if(layer, has_no_ranges);
-            projection_index_read_desc.read_ranges.clear();
-            projection_index_reader = nullptr;
-        }
     }
 
     if (skip_index_reader || projection_index_reader)
