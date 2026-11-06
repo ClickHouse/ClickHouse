@@ -59,18 +59,14 @@ function keyed()
     run "$query" enable_ddl_idempotency_key=1 "idempotency_key=$key" distributed_ddl_output_mode=none "$@"
 }
 
-# refused <query> [<name>=<value> ...]: prints "refused" if the key refused the statement, else what keyed() prints
+# refused <query> [<name>=<value> ...]: prints "refused" for the error a client matches on to run the statement without
+# the key, else what keyed() prints
 function refused()
 {
-    local query=$1 out
-    shift
-    if out=$(q "$query" enable_ddl_idempotency_key=1 idempotency_key=k20 distributed_ddl_output_mode=none "$@" 2>&1); then
-        echo OK
-    elif echo "$out" | grep -qE 'idempotency_key is (not supported for|supported only for statements)'; then
-        echo refused
-    else
-        echo "$out" | grep -oE '\([A-Z][A-Z0-9_]+\)' | tail -1 | tr -d '()'
-    fi
+    local out
+    out=$(keyed k20 "$@")
+    [ "$out" = IDEMPOTENCY_KEY_NOT_SUPPORTED ] && out=refused
+    echo "$out"
 }
 
 function log_size()

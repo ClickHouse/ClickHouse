@@ -92,8 +92,9 @@ bool isDDLIdempotencyKeyAlterEngineSupported(const String & engine_name);
 void checkDDLIdempotencyKeyDigest(const DDLIdempotencyKey & key, const DDLIdempotencyKeyNode & node);
 
 /// Executes a client query with a non-empty `idempotency_key`: a DDL statement on a `Replicated` database that has
-/// already committed with the key is answered from it instead of running again. Throws for statements it cannot honour,
-/// including any statement `nested` in another query (`PARALLEL WITH`, `EXECUTE AS`).
+/// already committed with the key is answered from it instead of running again. Throws IDEMPOTENCY_KEY_NOT_SUPPORTED, before
+/// anything is executed, for statements it cannot honour, including any statement `nested` in another query (`PARALLEL WITH`,
+/// `EXECUTE AS`).
 BlockIO executeWithDDLIdempotencyKey(IInterpreter & interpreter, const ASTPtr & ast, const ContextMutablePtr & context, bool nested);
 
 /// Called by interpreters on the branch that executes a statement locally instead of through the log of a `Replicated`

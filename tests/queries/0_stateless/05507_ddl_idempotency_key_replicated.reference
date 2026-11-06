@@ -114,8 +114,8 @@ OK
 1
 0
 -- a key in the settings of a statement nested in another query is refused
-NOT_IMPLEMENTED
-NOT_IMPLEMENTED
+IDEMPOTENCY_KEY_NOT_SUPPORTED
+IDEMPOTENCY_KEY_NOT_SUPPORTED
 0
 0
 -- the key travels neither with the settings of the log entry nor with its text

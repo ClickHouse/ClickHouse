@@ -39,8 +39,8 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int IDEMPOTENCY_KEY_MISMATCH;
+    extern const int IDEMPOTENCY_KEY_NOT_SUPPORTED;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -153,7 +153,7 @@ void throwIfDDLIdempotencyKeyIsSet(const ContextPtr & context)
 {
     if (context->getDDLIdempotencyKey())
         throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
+            ErrorCodes::IDEMPOTENCY_KEY_NOT_SUPPORTED,
             "idempotency_key is supported only for statements that a Replicated database executes through its log");
 }
 
@@ -168,7 +168,7 @@ struct Target
 
 [[noreturn]] void throwNotSupported(const String & what)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "idempotency_key is not supported for {}", what);
+    throw Exception(ErrorCodes::IDEMPOTENCY_KEY_NOT_SUPPORTED, "idempotency_key is not supported for {}", what);
 }
 
 /// Engines that create no state in Keeper or outside of the table's own directory while the storage is built,

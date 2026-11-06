@@ -118,6 +118,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
     extern const int NOT_IMPLEMENTED;
+    extern const int IDEMPOTENCY_KEY_NOT_SUPPORTED;
     extern const int INCORRECT_QUERY;
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int NO_ACTIVE_REPLICAS;
@@ -1705,7 +1706,7 @@ void DatabaseReplicated::checkTablesForDDLIdempotencyKey(const ASTPtr & query, C
         if ((materialized_view && materialized_view->hasInnerTable()) || table->getName() == "TimeSeries"
             || table->getName() == "SharedSet" || table->getName() == "SharedJoin")
             throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
+                ErrorCodes::IDEMPOTENCY_KEY_NOT_SUPPORTED,
                 "idempotency_key is not supported for tables that own hidden tables, like {}",
                 backQuoteIfNeed(table_name));
 
@@ -1714,7 +1715,7 @@ void DatabaseReplicated::checkTablesForDDLIdempotencyKey(const ASTPtr & query, C
             String engine_name = unwrapStorageProxy(table)->getName();
             if (!isDDLIdempotencyKeyAlterEngineSupported(engine_name))
                 throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED, "idempotency_key is not supported for ALTER of a table with engine {}", engine_name);
+                    ErrorCodes::IDEMPOTENCY_KEY_NOT_SUPPORTED, "idempotency_key is not supported for ALTER of a table with engine {}", engine_name);
         }
     }
 }

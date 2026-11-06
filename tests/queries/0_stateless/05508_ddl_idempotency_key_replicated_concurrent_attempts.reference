@@ -32,7 +32,7 @@ IDEMPOTENCY_KEY_MISMATCH
 -- the table is replaced by one with hidden tables while the attempt is held before it is enqueued
 OK
 OK
-NOT_IMPLEMENTED
+IDEMPOTENCY_KEY_NOT_SUPPORTED
 MaterializedView
 OK
 -- the first attempt asked for synchronous completion and waits for a query that still reads the dropped table
