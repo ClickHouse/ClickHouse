@@ -455,7 +455,8 @@ NAMED_COLLECTION_CONFIG = """<clickhouse>
 def test_check_table_access_before_table_load(started_cluster):
     # A table whose load fails at startup: its `URL` engine refers to a named collection that is
     # removed from the config before the restart. A user without `CHECK` on it must get `ACCESS_DENIED`
-    # and not the load error, which carries the `ATTACH` DDL of the table.
+    # and not the load error, which carries the `ATTACH` DDL of the table. The same holds when the
+    # table is only reachable through an `Alias` table or an `Overlay` database the user may check.
     config_path = "/etc/clickhouse-server/config.d/named_collection_check_table.xml"
     node1.replace_config(config_path, NAMED_COLLECTION_CONFIG)
     assert_eq_with_retry(
@@ -467,10 +468,25 @@ def test_check_table_access_before_table_load(started_cluster):
     node1.query("CREATE TABLE db_load.t_broken (s String) ENGINE = URL(nc_check_table)")
     node1.query("CREATE TABLE db_load.t_ok (s String) ENGINE = MergeTree ORDER BY s")
     node1.query("INSERT INTO db_load.t_ok VALUES ('x')")
+    node1.query("CREATE TABLE db_load.a_broken ENGINE = Alias(db_load, t_broken)")
+    node1.query("CREATE TABLE db_load.a_ok ENGINE = Alias(db_load, t_ok)")
+    node1.query("CREATE DATABASE overlay_db ENGINE = Overlay(db_load)")
+
     node1.query("CREATE USER u_no_check")
     node1.query("CREATE USER u_check_t_ok")
     node1.query("GRANT SHOW DATABASES ON *.* TO u_check_t_ok")
     node1.query("GRANT CHECK ON db_load.t_ok TO u_check_t_ok")
+    node1.query("GRANT CHECK ON db_load.a_ok TO u_check_t_ok")
+    # May check the alias, but not its target.
+    node1.query("CREATE USER u_check_alias")
+    node1.query("GRANT SHOW DATABASES ON *.* TO u_check_alias")
+    node1.query("GRANT CHECK ON db_load.a_broken TO u_check_alias")
+    # May check everything in the overlay, but sees only `t_ok` in its source.
+    node1.query("CREATE USER u_check_overlay")
+    node1.query("GRANT SHOW DATABASES ON *.* TO u_check_overlay")
+    node1.query("GRANT CHECK ON overlay_db.* TO u_check_overlay")
+    node1.query("GRANT CHECK ON db_load.t_ok TO u_check_overlay")
+
     node1.exec_in_container(["rm", config_path])
     node1.restart_clickhouse()
 
@@ -480,18 +496,35 @@ def test_check_table_access_before_table_load(started_cluster):
     assert "ACCESS_DENIED" in node1.query_and_get_error(
         "CHECK TABLE db_load.t_broken", user="u_no_check"
     )
-    assert (
-        node1.query(
+    assert "ACCESS_DENIED" in node1.query_and_get_error(
+        "CHECK TABLE db_load.a_broken", user="u_check_alias"
+    )
+
+    def check_all_tables(user):
+        result = node1.query(
             "CHECK ALL TABLES",
-            user="u_check_t_ok",
+            user=user,
             settings={"check_query_single_value_result": 0},
         )
-        == "db_load\tt_ok\tall_1_1_0\t1\t\n"
-    )
+        return sorted(result.splitlines())
+
+    assert check_all_tables("u_check_t_ok") == [
+        "db_load\ta_ok\tall_1_1_0\t1\t",
+        "db_load\tt_ok\tall_1_1_0\t1\t",
+    ]
+    # The alias is skipped without resolving its target, which would wait for the failed load.
+    assert check_all_tables("u_check_alias") == []
+    # The overlay lists `t_broken` for nobody who cannot see it in the source, so the source must not
+    # wait for it either.
+    assert check_all_tables("u_check_overlay") == [
+        "db_load\tt_ok\tall_1_1_0\t1\t",
+        "overlay_db\tt_ok\tall_1_1_0\t1\t",
+    ]
 
     # The table cannot be dropped while its load has failed: bring the collection back first.
     node1.replace_config(config_path, NAMED_COLLECTION_CONFIG)
     node1.restart_clickhouse()
     node1.exec_in_container(["rm", config_path])
+    node1.query("DROP DATABASE overlay_db")
     node1.query("DROP DATABASE db_load SYNC")
-    node1.query("DROP USER u_no_check, u_check_t_ok")
+    node1.query("DROP USER u_no_check, u_check_t_ok, u_check_alias, u_check_overlay")

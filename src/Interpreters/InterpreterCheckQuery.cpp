@@ -36,6 +36,7 @@
 #include <QueryPipeline/Pipe.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/MergeTree/checkDataPart.h>
 
 
@@ -258,6 +259,18 @@ private:
         {
             /// Try to get next table from current database
             StoragePtr table = current_table_it->table();
+
+            /// `StorageAlias::isMergeTree` resolves the target chain, waiting for each hop to load, so every hop
+            /// needs the `CHECK` privilege before the probe, as `CHECK TABLE` on the alias requires it anyway.
+            const auto * alias = table ? table->as<StorageAlias>() : nullptr;
+            if (alias && !alias->isTargetTableGranted(context, AccessType::CHECK, {}))
+            {
+                LOG_TRACE(log, "Skip checking table '{}.{}' because the user may not check its target",
+                    current_table_it->databaseName(), current_table_it->name());
+                current_table_it->next();
+                continue;
+            }
+
             if (table && table->isMergeTree())
                 return table;
 
