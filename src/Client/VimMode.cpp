@@ -406,7 +406,9 @@ static int extendChunk(const std::u32string & text, int & end, bool bigword)
     return cls;
 }
 
-/* For every position, whether it belongs to a quoted string literal or identifier. */
+/* For every position, whether it belongs to a quoted string literal or identifier. A quote inside
+ * a comment, e.g. the apostrophe in `-- it's`, does not start a literal: the brackets after it stay
+ * visible. The brackets inside comments are not quoted, like vim, which does not know about comments. */
 static std::vector<bool> quotedPositions(const std::u32string & text)
 {
     size_t length = text.length();
@@ -415,6 +417,7 @@ static std::vector<bool> quotedPositions(const std::u32string & text)
     for (size_t i = 0; i < length; ++i)
     {
         char32_t c = text[i];
+        char32_t next = i + 1 < length ? text[i + 1] : 0;
         if (quote)
         {
             quoted[i] = true;
@@ -427,6 +430,19 @@ static std::vector<bool> quotedPositions(const std::u32string & text)
         {
             quoted[i] = true;
             quote = c;
+        }
+        else if ((c == '-' && next == '-') || (c == '#' && (next == ' ' || next == '!')))
+        {
+            /* A line comment, up to the end of the line. */
+            while (i + 1 < length && text[i + 1] != '\n')
+                ++i;
+        }
+        else if (c == '/' && next == '*')
+        {
+            /* A block comment, up to its end. */
+            for (i += 2; i < length && !(text[i] == '*' && i + 1 < length && text[i + 1] == '/'); ++i)
+                ;
+            ++i;
         }
     }
     return quoted;
@@ -821,7 +837,12 @@ void ReplxxLineReader::vimWordObject(int & pos, std::u32string & text, bool bigw
             /* The whitespace continues across line breaks, up to the following word or empty line. */
             while (end + 1 < length && chunkClass(text, end + 1, bigword) == 0)
                 end++;
-            extendChunk(text, end, bigword);
+            /* Like vim, the operation is canceled when no word follows the whitespace. */
+            if (extendChunk(text, end, bigword) == -1)
+            {
+                resetVim(&pos, &text);
+                return;
+            }
         }
         else
         {
@@ -847,7 +868,11 @@ void ReplxxLineReader::vimWordObject(int & pos, std::u32string & text, bool bigw
                  * the whitespace continues across line breaks. */
                 while (end + 1 < length && chunkClass(text, end + 1, bigword) == 0)
                     end++;
-                extendChunk(text, end, bigword);
+                if (extendChunk(text, end, bigword) == -1)
+                {
+                    resetVim(&pos, &text);
+                    return;
+                }
             }
             else if (end + 1 < length && charClass(text, end + 1, bigword) == 0)
                 extendChunk(text, end, bigword);
@@ -921,12 +946,38 @@ void ReplxxLineReader::vimBracketObject(int & pos, std::u32string & text, char32
 
     int start = around ? open : open + 1;
     int count = around ? close - open + 1 : close - open - 1;
+    bool linewise = false;
     /* Like vim, `v` after the operator makes the inclusive text object exclusive, e.g. `dvi(`. */
     if (inclusivity_flip)
         count--;
+    else if (!around)
+    {
+        /* Like vim, the inner object of a multiline block starts on the next line when the opening
+         * bracket ends its line, and ends at the end of the previous line when only blanks precede
+         * the closing bracket on its line, so `ci(` keeps the brackets on their own lines. When both
+         * hold, the object is linewise: `di(` deletes the lines between the brackets, and `ci(`
+         * replaces them with one empty line. */
+        bool after_line_break = start < close && text[start] == '\n';
+        if (after_line_break)
+            start++;
+        int close_line = close;
+        for (; close_line > 0 && text[close_line - 1] != '\n'; close_line--)
+            ;
+        bool close_in_indent = close_line > open
+            && std::all_of(text.begin() + close_line, text.begin() + close, [](char32_t c) { return c == ' ' || c == '\t'; });
+        if (!close_in_indent)
+            count = close - start;
+        else if (after_line_break && start < close_line)
+        {
+            linewise = true;
+            count = close_line - start - (op == OPERATOR_C);
+        }
+        else
+            count = close_line - 1 - start;
+    }
     if (count > 0)
         text.erase(start, count);
-    pos = start;
+    pos = linewise && op != OPERATOR_C ? firstNonBlank(text, start) : start;
     if (op == OPERATOR_C)
     {
         rx.set_editing_mode(MODE_INSERT);
@@ -1561,7 +1612,9 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
                     ;
                 if (op)
                 {
-                    text.erase(pos, oldpos - pos + inclusivity_flip);
+                    /* `v` makes `0` inclusive, but an empty line has no character to include. */
+                    bool on_character = oldpos < static_cast<int>(text.length()) && text[oldpos] != '\n';
+                    text.erase(pos, oldpos - pos + (inclusivity_flip && on_character));
                 }
                 if (op == OPERATOR_C)
                 {

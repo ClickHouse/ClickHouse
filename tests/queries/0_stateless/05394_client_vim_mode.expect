@@ -954,5 +954,73 @@ submit
 expect "41434"
 expect ":) "
 
+# A counted `aw` without enough words before the end of the input cancels the operation.
+send -- "SELECT 42000 + 123\r"
+escape
+send -- "k\$c2aw9"
+escape
+submit
+expect "42123"
+expect ":) "
+
+send -- "SELECT 42100 + 123\r"
+escape
+send -- "k\$d2aw"
+submit
+expect "42223"
+expect ":) "
+
+# `aw` on whitespace without a following word cancels the operation.
+send -- "SELECT 42200 + 123  "
+escape
+send -- "caw9"
+escape
+submit
+expect "42323"
+expect ":) "
+
+# The inner object of a multiline block keeps the brackets on their own lines.
+send -- "SELECT plus(\r42300,\r234\r) + 7"
+escape
+send -- "ggci(9100, 1 -- note"
+escape
+submit
+expect "9108"
+expect ":) "
+
+send -- "SELECT (42400\r+ 234\r) + 7"
+escape
+send -- "ggci(42500"
+escape
+submit
+expect "42507"
+expect ":) "
+
+send -- "SELECT plus(\r  42600,\r  234\r  ) + 7"
+escape
+send -- "ggci(42600, 9"
+escape
+submit
+expect "42616"
+expect ":) "
+
+# `cv0` on an empty line keeps its line break.
+send -- "SELECT 42700\r\r+ 234"
+escape
+send -- "ggjcv0-- note"
+escape
+submit
+expect "42934"
+expect ":) "
+
+# An apostrophe in a comment does not hide the brackets after it.
+send -- "SELECT (42800 -- it's a comment\r+ 234) + 7"
+escape
+send -- "ggci(42900"
+escape
+submit
+expect "42907"
+expect ":) "
+
 send -- "\4"
 expect eof
