@@ -285,7 +285,11 @@ single stripe in compact parts
 )", 0) \
     DECLARE(UInt64, compact_parts_merge_max_bytes_to_prefetch_part, 16 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal size of compact part to read it
-in a whole to memory during merge.
+in a whole to memory during merge. A merge also reads a bigger part in a whole
+if the part is not bigger than the worst-case memory of a read buffer for each
+column (the configured buffer size, twice with prefetch). For a part with small
+stripes this can take more memory than reading each column separately, but it
+sends one request instead of one per column per stripe. 0 disables it.
 )", 0) \
     DECLARE(UInt64, merge_max_bytes_to_prewarm_cache, 1ULL * 1024 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal size of part (compact or packed)
@@ -2304,6 +2308,13 @@ Allow usage of '_part_offset' column in projections select query.
 Remove empty parts after they were pruned by TTL, mutation, or collapsing
 merge algorithm.
 )", 0) \
+    DECLARE(Seconds, empty_parts_lifetime, 0, R"(
+Minimal age in seconds of an empty part before `remove_empty_parts` removes it. The age is counted from the part's
+`modification_time`, so a merge or a mutation that produces a new empty part starts it again. It does not delay
+other ways to replace the part: a merge that includes it, or a `TRUNCATE` or `DROP` that covers it, makes it outdated
+as for any other part. 0 removes empty parts without waiting.
+)", 0, \
+        {"26.11", 0, 0, "New setting"}) \
     DECLARE(Bool, remove_unused_patch_parts, true, R"(
 Remove in background patch parts which are applied for all active parts.
 )", 0, \
