@@ -869,7 +869,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         if (!new_uri)
             return result;
 
-        if (initial_endpoint.substr(11) == "amazonaws.com") // Check if user didn't mention any region
+        if (initial_endpoint.size() > 11 && initial_endpoint.substr(11) == "amazonaws.com") // Check if user didn't mention any region
             new_uri->addRegionToURI(request.getRegionOverride());
 
         const auto & current_uri_override = request.getURIOverride();

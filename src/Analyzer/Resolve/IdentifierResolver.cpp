@@ -285,7 +285,8 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
 /// Resolve identifier functions implementation
 
 /// Try resolve table identifier from database catalog
-std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const Identifier & table_identifier, const ContextPtr & context)
+std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
+    const Identifier & table_identifier, const ContextPtr & context, const StoragePtr & replaced_storage)
 {
     size_t parts_size = table_identifier.getPartsSize();
     if (parts_size < 1 || parts_size > 2)
@@ -375,22 +376,36 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     if (!storage_lock)
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     storage->updateExternalDynamicMetadataIfExists(context);
-    auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
-    auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
+    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
 
     /// The view source holds the block pushed to a materialized view with the types it was
     /// converted to; the catalog table may have been altered since. Take the types from it, but
     /// keep the catalog storage so engine checks (FINAL, SAMPLE, `_shard_num`) see the real table.
     /// `replaceStorageInQueryTree` swaps the view source in for execution after the passes.
     /// The inner query of an ordinary view reads the table itself.
-    /// The snapshot above can be shared by every read of the table in the query, so only a copy gets the view source's types.
+    ///
+    /// If this analysis swaps the view source in (`replaced_storage`), the real table is needed only
+    /// for its metadata, so skip taking a snapshot of its data. For `MergeTree` tables that snapshot
+    /// covers all active parts, and taking it for every block and every view is expensive on tables
+    /// with many parts. A nested analysis can have the view source in the context but not swap it in
+    /// itself. Such a node may read the real table, so it keeps the data: a missed swap then costs
+    /// a full snapshot, not an empty read.
+    ///
+    /// A snapshot from `getStorageSnapshot` can be shared by every read of the table in the query,
+    /// so only a copy gets the view source's types.
+    StorageSnapshotPtr storage_snapshot;
     if (auto view_source = context->getViewSource();
         view_source && !context->isViewInnerQuery()
         && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted())
     {
+        storage_snapshot = replaced_storage && replaced_storage == view_source
+            ? storage->getStorageSnapshotWithoutData(metadata_snapshot, context)
+            : storage->getStorageSnapshot(metadata_snapshot, context);
         auto view_source_metadata = view_source->getInMemoryMetadataPtr(context, false);
         storage_snapshot = storage_snapshot->clone(view_source_metadata, storage_snapshot->data);
     }
+    else
+        storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
 
     /// Pass the user-requested storage_id explicitly instead of letting the
     /// TableNode ctor read storage->getStorageID(), which can be mutated by
@@ -453,9 +468,10 @@ void IdentifierResolver::checkAccessToTableMetadata(
     context->checkAccess(AccessType::SELECT, storage_id);
 }
 
-IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)
+IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
+    const Identifier & table_identifier, const ContextPtr & context, const StoragePtr & replaced_storage)
 {
-    if (auto result = tryResolveTableIdentifier(table_identifier, context))
+    if (auto result = tryResolveTableIdentifier(table_identifier, context, replaced_storage))
     {
         /// Temporary tables of the current session are always accessible.
         if (result->getTemporaryTableName().empty())

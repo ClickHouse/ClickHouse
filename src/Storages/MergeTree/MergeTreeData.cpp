@@ -12370,7 +12370,20 @@ void MergeTreeData::optimizeDryRun(
         /*parent_part=*/ nullptr,
         dry_run_suffix);
 
-    auto new_part = executeHere(merge_task);
+    /// Not `executeHere`: a dry run reads and writes in the thread group of its query, so the query is cancelled
+    /// before the task, whose `cancel` waits for the uploads of its writers.
+    try
+    {
+        while (merge_task->execute()) {}
+    }
+    catch (...)
+    {
+        if (auto query_status = task_context->getProcessListElementSafe())
+            query_status->cancelQuery(CancelReason::CANCELLED_BY_ERROR);
+        merge_task->cancel();
+        throw;
+    }
+    auto new_part = merge_task->getFuture().get();
 
     /// This commits a transcation on disk, but doesn't commit the data part.
     if (new_part->getDataPartStorage().hasActiveTransaction())
