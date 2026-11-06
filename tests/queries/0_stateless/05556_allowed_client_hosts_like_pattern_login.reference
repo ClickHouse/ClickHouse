@@ -1,4 +1,4 @@
-exact loopback subnet: allowed
+exact client address: allowed
 1
 other subnet: denied
 AUTHENTICATION_FAILED

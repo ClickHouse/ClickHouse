@@ -5,9 +5,8 @@
 # src/Parsers/Access/ParserCreateUserQuery.cpp, and AllowedClientHosts in
 # src/Access/Common/AllowedClientHosts.h. A `HOST LIKE` pattern is stored verbatim and is
 # only interpreted when a client logs in: it becomes an IP subnet, a host name or a host
-# name regular expression, and the client address is then checked against it. An exact IP
-# subnet falls back to the address check, which treats every 127.x.y.z address as the
-# loopback address and accepts any address of the local host.
+# name regular expression, and the client address is then checked against it. A subnet whose
+# mask is all ones falls back to the exact address check.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -27,19 +26,26 @@ function cleanup()
 trap cleanup EXIT
 cleanup
 
+# The address the server sees this client at, as an IPv6 subnet with an all-ones mask. The
+# textual form of an IPv6 value is always an IPv6 literal, so the pattern is a valid subnet
+# for an IPv4-mapped address too. Deriving the rule from the observed address keeps it an
+# exact-address rule for whatever machine the client runs on, local or remote.
+client_subnet=$(${CLICKHOUSE_CLIENT} --query "SELECT concat(toString(address), '/128') FROM system.processes WHERE query_id = queryID()")
+
 ${CLICKHOUSE_CLIENT} --multiquery --query "
-    CREATE USER $user_ip     HOST LIKE '127.0.0.1/32';
-    CREATE USER $user_subnet HOST LIKE '10.253.%.%';
+    CREATE USER $user_ip     HOST LIKE '$client_subnet';
+    CREATE USER $user_subnet HOST LIKE '192.0.2.%';
     CREATE USER $user_regexp HOST LIKE 'nosuch%.invalid';
     CREATE USER $user_name   HOST LIKE 'nosuchhost.invalid';
 "
 
-# An all-ones mask makes the pattern an exact address, and the loopback address matches
-# every address of the host the client connects from, so this login is allowed.
-echo 'exact loopback subnet: allowed'
+# An all-ones mask makes the pattern an exact address, and that address is the one the server
+# just reported for this client, so this login is allowed.
+echo 'exact client address: allowed'
 ${CLICKHOUSE_CLIENT} --user "$user_ip" --query "SELECT 1"
 
-# A subnet that does not contain the loopback address.
+# A wildcard IPv4 subnet in the TEST-NET-1 range of RFC 5737. That range is reserved for
+# documentation and is never assigned to a host, so it cannot contain the client address.
 echo 'other subnet: denied'
 ${CLICKHOUSE_CLIENT} --user "$user_subnet" --query "SELECT 1" 2>&1 | grep -o -m1 'AUTHENTICATION_FAILED'
 
