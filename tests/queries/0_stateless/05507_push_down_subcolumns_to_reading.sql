@@ -296,6 +296,18 @@ SELECT arrayStringConcat(arraySort(arrayFilter(x -> x != '', groupArray(arrayStr
 SELECT groupArray(r) FROM (SELECT s.tup.a, s.n.null FROM (SELECT * FROM t) AS s LEFT JOIN t2 ON s.id = t2.id WHERE s.n.null ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r;
 SELECT groupArray(r) FROM (SELECT s.tup.a, s.n.null FROM (SELECT * FROM t) AS s LEFT JOIN t2 ON s.id = t2.id WHERE s.n.null ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r SETTINGS query_plan_push_down_volume_reducing_functions = 0;
 
+SELECT 'N34 PREWHERE that reads the subcolumn';
+SELECT arrayStringConcat(arraySort(arrayFilter(x -> x != '', groupArray(arrayStringConcat(arraySort(arrayFilter(x -> x != 'id', splitByString(', ', replaceRegexpOne(explain, '^.*Output: ', '')))), ', ')))), ' | ') FROM (EXPLAIN SELECT tup.a FROM (SELECT * FROM (SELECT * FROM t PREWHERE tup.a < 3))) WHERE explain LIKE '% Output:%';
+SELECT groupArray(r) FROM (SELECT tup.a FROM (SELECT * FROM (SELECT * FROM t PREWHERE tup.a < 3)) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r;
+SELECT groupArray(r) FROM (SELECT tup.a FROM (SELECT * FROM (SELECT * FROM t PREWHERE tup.a < 3)) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r SETTINGS query_plan_push_down_volume_reducing_functions = 0;
+
+SELECT 'N35 row policy that reads the subcolumn';
+CREATE ROW POLICY p ON t2 USING tup.a < 300 TO ALL;
+SELECT arrayStringConcat(arraySort(arrayFilter(x -> x != '', groupArray(arrayStringConcat(arraySort(arrayFilter(x -> x != 'id', splitByString(', ', replaceRegexpOne(explain, '^.*Output: ', '')))), ', ')))), ' | ') FROM (EXPLAIN SELECT tup.a FROM (SELECT * FROM t2)) WHERE explain LIKE '% Output:%';
+SELECT groupArray(r) FROM (SELECT tup.a FROM (SELECT * FROM t2) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r;
+SELECT groupArray(r) FROM (SELECT tup.a FROM (SELECT * FROM t2) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r SETTINGS query_plan_push_down_volume_reducing_functions = 0;
+DROP ROW POLICY p ON t2;
+
 SELECT 'N6 ORDER BY the column';
 SELECT arrayStringConcat(arraySort(arrayFilter(x -> x != '', groupArray(arrayStringConcat(arraySort(arrayFilter(x -> x != 'id', splitByString(', ', replaceRegexpOne(explain, '^.*Output: ', '')))), ', ')))), ' | ') FROM (EXPLAIN SELECT tup.a FROM (SELECT * FROM t ORDER BY tup)) WHERE explain LIKE '% Output:%';
 SELECT groupArray(r) FROM (SELECT tup.a FROM (SELECT * FROM t ORDER BY tup) ORDER BY ALL) AS r_subquery ARRAY JOIN [tuple(*)] AS r;

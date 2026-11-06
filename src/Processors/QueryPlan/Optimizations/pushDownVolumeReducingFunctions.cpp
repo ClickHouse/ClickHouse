@@ -1359,12 +1359,19 @@ size_t tryPushDownSubcolumnsToReading(QueryPlan::Node * top_node, QueryPlan::Nod
         if (!blocksHaveEqualStructure(transformStepHeader(top_step, new_top_input_header, *top_path_step.new_actions), top_output_header))
             continue;
 
-        /// All the bail-outs are behind us, the plan may be modified now.
-        const Block old_read_header = *read_step->getOutputHeader();
         Names subcolumns;
         for (const auto & carried_column : carried)
             if (std::ranges::find(subcolumns, column + "." + carried_column.subcolumn) == subcolumns.end())
                 subcolumns.push_back(column + "." + carried_column.subcolumn);
+
+        /// A subcolumn the read already reads only for PREWHERE or the row policy is not returned by it.
+        const auto & read_columns = read_step->getAllColumnNames();
+        if (std::ranges::any_of(subcolumns, [&](const String & subcolumn)
+                { return std::ranges::contains(read_columns, subcolumn) && !read_step->getOutputHeader()->has(subcolumn); }))
+            continue;
+
+        /// All the bail-outs are behind us, the plan may be modified now.
+        const Block old_read_header = *read_step->getOutputHeader();
         read_step->readSubcolumnsInsteadOfColumn(column, subcolumns);
 
         ActionsDAG read_subcolumns_actions;

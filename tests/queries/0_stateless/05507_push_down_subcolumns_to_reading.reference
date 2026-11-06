@@ -171,6 +171,14 @@ N33 WHERE on the subcolumn, pushed down below a join
 n, tup.a
 [(0,1),(3,1),(6,1),(9,1)]
 [(0,1),(3,1),(6,1),(9,1)]
+N34 PREWHERE that reads the subcolumn
+tup
+[(0),(1),(2)]
+[(0),(1),(2)]
+N35 row policy that reads the subcolumn
+tup
+[(0),(100),(200)]
+[(0),(100),(200)]
 N6 ORDER BY the column
 tup
 [(0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11)]
