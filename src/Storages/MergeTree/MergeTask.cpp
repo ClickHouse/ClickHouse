@@ -18,6 +18,7 @@
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
@@ -50,10 +51,12 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MutateTask.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <fmt/ranges.h>
 #include <Common/DimensionalMetrics.h>
@@ -155,6 +158,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool use_const_adaptive_granularity;
     extern const MergeTreeSettingsUInt64 max_merge_delayed_streams_for_parallel_write;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
+    extern const MergeTreeSettingsBool ttl_only_drop_columns;
+    extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool vertical_merge_optimize_lightweight_delete;
     extern const MergeTreeSettingsBool vertical_merge_optimize_ttl_delete;
     extern const MergeTreeSettingsUInt64Auto merge_max_dynamic_subcolumns_in_wide_part;
@@ -380,6 +385,23 @@ static String getColumnNameInStorage(const String & column_name, const NameSet &
     return String(Nested::getColumnFromSubcolumn(column_name, storage_columns));
 }
 
+/// Whether any of `required_columns` is one of `columns` or its subcolumn (e.g. `props.a` of a `JSON` column `props`).
+static bool dependsOnAnyColumn(const Names & required_columns, const NameSet & columns)
+{
+    return std::ranges::any_of(
+        required_columns, [&](const String & name) { return Nested::tryGetColumnNameInStorage(name, columns).has_value(); });
+}
+
+/// The skip indexes that `exclude_materialize_skip_indexes_on_merge` excludes from being built by a merge.
+static std::unordered_set<String> getSkipIndexesExcludedFromMerge(const MergeTreeSettings & settings, const ContextPtr & context)
+{
+    auto exclude_indexes_string = settings[MergeTreeSetting::exclude_materialize_skip_indexes_on_merge].toString();
+    if (exclude_indexes_string.empty())
+        return {};
+
+    return parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, context->getSettingsRef());
+}
+
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
 void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColumns(const std::unordered_set<String> & exclude_index_names) const
 {
@@ -587,6 +609,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     if (isTTLMergeType(global_ctx->future_part->merge_type) && global_ctx->ttl_merges_blocker->isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with TTL");
 
+    global_ctx->columns_fully_expired_by_ttl = getColumnsFullyExpiredByTTL(*global_ctx);
+
+    if ((global_ctx->clear_expired_columns_task = createTaskToClearExpiredColumns()))
+    {
+        LOG_DEBUG(ctx->log, "Merge of part {} into {} only drops columns fully expired by TTL, will hardlink the other columns",
+            global_ctx->future_part->parts.front()->name, global_ctx->future_part->name);
+        return false;
+    }
+
     LOG_DEBUG(ctx->log, "Merging {} parts: from {} to {} into {} with storage {}",
         global_ctx->future_part->parts.size(),
         global_ctx->future_part->parts.front()->name,
@@ -679,13 +710,17 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     for (const auto & part : global_ctx->future_part->parts)
     {
-        if (columns_without_ttl_info.empty())
+        /// The columns fully expired by TTL are dropped from the new part without being read, so
+        /// their TTL is gone, like after `TTLColumnAlgorithm` has dropped them.
+        if (global_ctx->columns_fully_expired_by_ttl.empty() && columns_without_ttl_info.empty())
         {
             global_ctx->new_data_part->ttl_infos.update(part->ttl_infos);
         }
         else
         {
             auto part_ttl_infos = part->ttl_infos;
+            for (const auto & column : global_ctx->columns_fully_expired_by_ttl)
+                part_ttl_infos.removeColumnTTL(column);
             for (const auto & column : columns_without_ttl_info)
                 part_ttl_infos.columns_ttl.erase(column);
             global_ctx->new_data_part->ttl_infos.update(part_ttl_infos);
@@ -706,8 +741,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             { return !part->isEmpty() && part->ttl_infos.table_ttl.min == 0; }))
         global_ctx->new_data_part->ttl_infos.table_ttl = {};
 
-    const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
-    if (global_ctx->metadata_snapshot->hasAnyTTL() && local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
+    if (isAnyTTLDue(*global_ctx, global_ctx->new_data_part->ttl_infos))
         ctx->need_remove_expired_values = true;
 
     const bool has_due_ttl = ctx->need_remove_expired_values;
@@ -914,6 +948,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 && !columns_desc.getDefault(storage_column.name))
                 global_ctx->new_data_part->expired_columns.emplace(storage_column.name);
         }
+
+        /// Unlike a column that is absent from the source parts, a column that has expired by TTL is
+        /// expired even if it has a default expression, as `TTLColumnAlgorithm` does it.
+        global_ctx->new_data_part->expired_columns.insert(
+            global_ctx->columns_fully_expired_by_ttl.begin(), global_ctx->columns_fully_expired_by_ttl.end());
     }
 
     /// Determine whether projections and minmax indexes need to be updated during merge,
@@ -959,11 +998,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// Get list of skip indexes to exclude from merge
     std::unordered_set<String> exclude_index_names;
     if ((*merge_tree_settings)[MergeTreeSetting::materialize_skip_indexes_on_merge])
-    {
-        auto exclude_indexes_string = (*merge_tree_settings)[MergeTreeSetting::exclude_materialize_skip_indexes_on_merge].toString();
-        if (!exclude_indexes_string.empty())
-            exclude_index_names = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, global_ctx->context->getSettingsRef());
-    }
+        exclude_index_names = getSkipIndexesExcludedFromMerge(*merge_tree_settings, global_ctx->context);
 
     const bool has_block_columns = enabledBlockNumberColumn(global_ctx) && enabledBlockOffsetColumn(global_ctx);
     global_ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(global_ctx->metadata_snapshot->getPartitionKey(), global_ctx->data_settings, has_block_columns ? MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET : MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
@@ -1024,6 +1059,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     if ((*merge_tree_settings)[MergeTreeSetting::materialize_statistics_on_merge])
     {
         global_ctx->gathered_data.statistics = ColumnsStatistics(global_ctx->metadata_snapshot->getColumns());
+
+        /// An expired column is not written to the new part, so it has no statistics there either. Otherwise
+        /// the statistics of the source parts would be merged into statistics of values that are gone.
+        for (const auto & column : global_ctx->new_data_part->expired_columns)
+            global_ctx->gathered_data.statistics.erase(column);
     }
 
     if (global_ctx->merge_may_reduce_rows)
@@ -1259,6 +1299,20 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->merging_skip_indexes.clear();
         global_ctx->skip_indexes_by_column.clear();
         global_ctx->text_indexes_to_merge.clear();
+    }
+
+    /// A column fully expired by TTL is not read, so a text index that depends on it can be neither built
+    /// from its values nor taken from the source parts, which describe the values before they expired.
+    /// The new part is left without such an index.
+    if (!global_ctx->columns_fully_expired_by_ttl.empty())
+    {
+        auto depends_on_expired_column = [&](const IndexDescription & index)
+        {
+            return dependsOnAnyColumn(index.expression->getRequiredColumns(), global_ctx->columns_fully_expired_by_ttl);
+        };
+
+        auto & text_indexes = global_ctx->text_indexes_to_merge;
+        text_indexes.erase(std::remove_if(text_indexes.begin(), text_indexes.end(), depends_on_expired_column), text_indexes.end());
     }
 
     bool use_adaptive_granularity = global_ctx->new_data_part->index_granularity_info.mark_type.adaptive;
@@ -1520,6 +1574,152 @@ bool MergeTask::canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx)
     return std::ranges::none_of(metadata.getRowsWhereTTLs(), reads_missing_column);
 }
 
+NameSet MergeTask::getColumnsFullyExpiredByTTL(const GlobalRuntimeContext & global_ctx)
+{
+    NameSet result;
+
+    /// A patch part may change the values of the column or of its TTL expression.
+    if (global_ctx.ttl_merges_blocker->isCancelled() || !global_ctx.future_part->patch_parts.empty())
+        return result;
+
+    /// Only a wide part can omit a column (see `removeEmptyColumnsFromPart`). A compact part keeps the
+    /// column, so the merge clears it by `TTLColumnAlgorithm`, which keeps the TTL info of the column.
+    if (global_ctx.future_part->part_format.part_type != MergeTreeDataPartType::Wide)
+        return result;
+
+    /// The renames that are pending for each source part, computed only when needed.
+    std::vector<std::optional<NameSet>> pending_rename_targets(global_ctx.future_part->parts.size());
+    auto is_pending_rename_target = [&](size_t part_index, const String & column)
+    {
+        auto & targets = pending_rename_targets[part_index];
+        if (!targets)
+        {
+            const auto & part = global_ctx.future_part->parts[part_index];
+            MergeTreeData::IMutationsSnapshot::Params params
+            {
+                .metadata_version = global_ctx.metadata_snapshot->getMetadataVersion(),
+                .min_part_metadata_version = part->getMetadataVersion(),
+                .min_part_data_versions = nullptr,
+                .max_mutation_versions = nullptr,
+                .need_data_mutations = false,
+                .need_alter_mutations = false,
+                .need_patch_parts = false,
+            };
+
+            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, global_ctx.data->getMutationsSnapshot(params), global_ctx.context
+#if CLICKHOUSE_CLOUD
+                , nullptr
+#endif
+                );
+
+            targets.emplace();
+            for (const auto & rename : alter_conversions->getRenameMap())
+                targets->insert(rename.rename_to);
+        }
+
+        return targets->contains(column);
+    };
+
+    for (const auto & [column, _] : global_ctx.metadata_snapshot->getColumnTTLs())
+    {
+        bool has_expired_values = false;
+        bool is_fully_expired = true;
+
+        for (size_t i = 0; i < global_ctx.future_part->parts.size(); ++i)
+        {
+            const auto & part = global_ctx.future_part->parts[i];
+            if (part->rows_count == 0)
+                continue;
+
+            /// A part without the TTL info of the column that does not store the column has no values of it,
+            /// only defaults: the part predates `ADD COLUMN`, or the column has already been dropped from it
+            /// as fully expired, together with its TTL info (see `checkAllTTLCalculated`). Unless the part
+            /// stores the column under its old name, to be renamed on read.
+            if (!part->ttl_infos.columns_ttl.contains(column) && !part->getColumns().contains(column))
+            {
+                if (is_pending_rename_target(i, column))
+                {
+                    is_fully_expired = false;
+                    break;
+                }
+
+                continue;
+            }
+
+            if (!part->ttl_infos.isColumnTTLFullyExpired(column, global_ctx.time_of_merge))
+            {
+                is_fully_expired = false;
+                break;
+            }
+
+            has_expired_values = true;
+        }
+
+        /// A column that has no values in any source part is left to the merge, which handles it regardless of TTL.
+        if (has_expired_values && is_fully_expired)
+            result.insert(column);
+    }
+
+    if (result.empty())
+        return result;
+
+    /// What is computed from an expired column has to be recomputed from the default the column takes:
+    /// a `MATERIALIZED` column and the TTL infos of the other TTLs that read it. Only `TTLTransform` does
+    /// that, by reading the column. Dropping the column without reading it would keep the values computed
+    /// before the expiry.
+    const auto & metadata_snapshot = global_ctx.metadata_snapshot;
+    const auto & storage_columns = metadata_snapshot->getColumns();
+    MaterializedColumnDependencies materialized_dependencies(storage_columns, global_ctx.context);
+    std::erase_if(result, [&](const String & column)
+    {
+        const NameSet changed_columns{column};
+
+        auto ttl_reads_column = [&](const TTLDescription & ttl)
+        {
+            return dependsOnAnyColumn(ttl.expression_columns.getNames(), changed_columns)
+                || dependsOnAnyColumn(ttl.where_expression_columns.getNames(), changed_columns);
+        };
+
+        auto any_ttl_reads_column = [&](const TTLDescriptions & ttls) { return std::ranges::any_of(ttls, ttl_reads_column); };
+
+        if ((metadata_snapshot->hasRowsTTL() && ttl_reads_column(metadata_snapshot->getRowsTTL()))
+            || any_ttl_reads_column(metadata_snapshot->getRowsWhereTTLs()) || any_ttl_reads_column(metadata_snapshot->getGroupByTTLs())
+            || any_ttl_reads_column(metadata_snapshot->getMoveTTLs()) || any_ttl_reads_column(metadata_snapshot->getRecompressionTTLs()))
+            return true;
+
+        for (const auto & [other_column, ttl] : metadata_snapshot->getColumnTTLs())
+            if (other_column != column && ttl_reads_column(ttl))
+                return true;
+
+        return std::ranges::any_of(storage_columns, [&](const auto & storage_column)
+        {
+            return !materialized_dependencies.findColumnsToRecalculate(storage_column.name, changed_columns).empty();
+        });
+    });
+
+    return result;
+}
+
+bool MergeTask::isAnyTTLDue(const GlobalRuntimeContext & global_ctx, const MergeTreeDataPartTTLInfos & ttl_infos)
+{
+    if (!global_ctx.metadata_snapshot->hasAnyTTL())
+        return false;
+
+    /// With `ttl_only_drop_columns`, a column TTL does not make the merge rewrite the part to clear its values:
+    /// the column is dropped from the part once all of its values have expired (see `getColumnsFullyExpiredByTTL`).
+    /// A merge that rewrites the part anyway (e.g. because of a row TTL) still clears the expired values.
+    /// A column whose every value has expired, but which the merge does not drop (`ttl_infos` no longer has
+    /// the TTLs of the dropped columns), is cleared by rewriting the part, as without the setting.
+    if ((*global_ctx.data_settings)[MergeTreeSetting::ttl_only_drop_columns])
+    {
+        const time_t row_ttl = ttl_infos.getMinimalNonFinishedRowTTL();
+        const time_t column_ttl = ttl_infos.getMinimalMaxNonFinishedColumnTTL();
+        return (row_ttl && row_ttl <= global_ctx.time_of_merge) || (column_ttl && column_ttl <= global_ctx.time_of_merge);
+    }
+
+    return ttl_infos.part_min_ttl && ttl_infos.part_min_ttl <= global_ctx.time_of_merge;
+}
+
 bool MergeTask::isVerticalTTLDelete(
     const GlobalRuntimeContext & global_ctx,
     const ExecuteAndFinalizeHorizontalPartRuntimeContext & ctx)
@@ -1607,11 +1807,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
 
     for (const auto & projection : projections)
     {
-        const auto & required_columns = projection.getRequiredColumns();
-        bool some_source_column_expired = std::any_of(
-            required_columns.begin(),
-            required_columns.end(),
-            [&](const String & name) { return global_ctx->new_data_part->expired_columns.contains(name); });
+        bool some_source_column_expired = dependsOnAnyColumn(projection.getRequiredColumns(), global_ctx->new_data_part->expired_columns);
 
         /// The IGNORE mode is checked here purely for backward compatibility.
         /// However, if the projection contains `_parent_part_offset`, it must still be rebuilt,
@@ -2922,6 +3118,15 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForAllColumns() const
 bool MergeTask::execute()
 try
 {
+    if (global_ctx->clear_expired_columns_task)
+    {
+        if (global_ctx->clear_expired_columns_task->execute())
+            return true;
+
+        global_ctx->promise.set_value(global_ctx->clear_expired_columns_task->getFuture().get());
+        return false;
+    }
+
     chassert(stages_iterator != stages.end());
     const auto & current_stage = *stages_iterator;
 
@@ -2961,6 +3166,9 @@ catch (...)
 
 void MergeTask::cancel() noexcept
 {
+    if (global_ctx->clear_expired_columns_task)
+        global_ctx->clear_expired_columns_task->cancel();
+
     if (stages_iterator != stages.end())
         (*stages_iterator)->cancel();
 
@@ -3801,6 +4009,133 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     global_ctx->merging_executor = std::make_unique<PullingPipelineExecutor>(global_ctx->merged_pipeline);
 }
 
+
+/// A merge of a single part that only has to drop the columns fully expired by TTL is equivalent to
+/// `CLEAR COLUMN` of these columns in the part, which `MutateTask` executes by hardlinking the files of the
+/// other columns instead of rewriting them. Returns nullptr if the merge has anything else to do.
+MutateTaskPtr MergeTask::ExecuteAndFinalizeHorizontalPart::createTaskToClearExpiredColumns() const
+{
+    const auto & future_part = global_ctx->future_part;
+    const auto & metadata_snapshot = global_ctx->metadata_snapshot;
+
+    if (global_ctx->columns_fully_expired_by_ttl.empty() || future_part->parts.size() != 1 || global_ctx->parent_part
+        || global_ctx->deduplicate || global_ctx->cleanup || !future_part->patch_parts.empty())
+        return nullptr;
+
+    const auto & part = future_part->parts.front();
+
+    /// Keeping the rows as they are is what the merge would do for an ordinary `MergeTree`, and for a part
+    /// that has already been merged, so it is already collapsed, replaced, summed etc. The exception is
+    /// `GraphiteMergeTree`, which rolls up rows depending on their age.
+    const auto mode = global_ctx->merging_params.mode;
+    if (mode != MergeTreeData::MergingParams::Ordinary && (mode == MergeTreeData::MergingParams::Graphite || part->info.level == 0))
+        return nullptr;
+
+    /// Nothing else must be applied to the rows: deleting rows by TTL, the lightweight delete mask or
+    /// the TTL values that have not been calculated yet.
+    if (metadata_snapshot->hasRowsTTL() || metadata_snapshot->hasAnyRowsWhereTTL() || metadata_snapshot->hasAnyGroupByTTL()
+        || part->hasLightweightDelete() || !part->checkAllTTLCalculated(metadata_snapshot))
+        return nullptr;
+
+    auto ttl_infos = part->ttl_infos;
+    for (const auto & column : global_ctx->columns_fully_expired_by_ttl)
+        ttl_infos.removeColumnTTL(column);
+
+    if (isAnyTTLDue(*global_ctx, ttl_infos))
+        return nullptr;
+
+    /// The merge would recompress the part with another codec: by a `RECOMPRESS` TTL, or by a codec
+    /// chosen for the size of the part.
+    const auto codec = global_ctx->data->getCompressionCodecForPart(
+        metadata_snapshot, global_ctx->merge_list_element_ptr->total_size_bytes_compressed, ttl_infos, global_ctx->time_of_merge);
+    if (!part->default_codec || part->default_codec_is_approximate
+        || codec.codec->getFullCodecDescription()->formatWithSecretsOneLine() != part->default_codec->getFullCodecDescription()->formatWithSecretsOneLine())
+        return nullptr;
+
+    /// Hardlinks are possible only within the same part format. With zero-copy replication, the blobs
+    /// shared with the source part would need to be locked, which a merge does not do.
+    if (!isWidePart(part) || !isFullPartStorage(part->getDataPartStorage())
+        || part->getType() != future_part->part_format.part_type
+        || part->getDataPartStorage().getType() != future_part->part_format.storage_type
+        || (*global_ctx->data_settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
+        return nullptr;
+
+    /// The merge would read the part through pending alter conversions (e.g. `RENAME COLUMN`).
+    MergeTreeData::IMutationsSnapshot::Params params
+    {
+        .metadata_version = metadata_snapshot->getMetadataVersion(),
+        .min_part_metadata_version = part->getMetadataVersion(),
+        .min_part_data_versions = nullptr,
+        .max_mutation_versions = nullptr,
+        .need_data_mutations = false,
+        .need_alter_mutations = false,
+        .need_patch_parts = false,
+    };
+
+    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, global_ctx->data->getMutationsSnapshot(params), global_ctx->context
+#if CLICKHOUSE_CLOUD
+        , nullptr
+#endif
+        );
+
+    if (alter_conversions->hasMutations() || !alter_conversions->getRenameMap().empty())
+        return nullptr;
+
+    const auto & expired = global_ctx->columns_fully_expired_by_ttl;
+    auto depends_on_expired_column = [&](const Names & required_columns) { return dependsOnAnyColumn(required_columns, expired); };
+
+    /// A skip index that the merge would not build (see `materialize_skip_indexes_on_merge`) is cleared.
+    const bool merge_builds_indexes = (*global_ctx->data_settings)[MergeTreeSetting::materialize_skip_indexes_on_merge];
+    const auto indexes_excluded_from_merge = getSkipIndexesExcludedFromMerge(*global_ctx->data_settings, global_ctx->context);
+
+    /// `CLEAR COLUMN` rebuilds the projections and the skip indexes that depend on the column from its default
+    /// value without reading it, as the merge builds them. A skip index that also reads a column that is not
+    /// dropped, or reads only a subcolumn of the column (which `CLEAR COLUMN` does not rebuild), is left to the
+    /// regular merge. Without dependencies, the column is dropped from the part like by `DROP COLUMN`, which
+    /// only removes its files, while the table keeps the column.
+    bool rebuild_dependencies = std::ranges::any_of(
+        metadata_snapshot->getProjections(), [&](const auto & projection) { return depends_on_expired_column(projection.getRequiredColumns()); });
+
+    Names indexes_to_clear;
+    for (const auto & index : metadata_snapshot->getSecondaryIndices())
+    {
+        const auto & required_columns = index.expression->getRequiredColumns();
+        if (!depends_on_expired_column(required_columns))
+            continue;
+
+        if (!merge_builds_indexes || indexes_excluded_from_merge.contains(index.name))
+            indexes_to_clear.push_back(index.name);
+        else if (std::ranges::all_of(required_columns, [&](const String & name) { return expired.contains(name); }))
+            rebuild_dependencies = true;
+        else
+            return nullptr;
+    }
+
+    auto commands = std::make_shared<MutationCommands>();
+    for (const auto & column : expired)
+    {
+        if (part->getColumns().contains(column))
+            commands->push_back(MutationCommand{.type = MutationCommand::DROP_COLUMN, .column_name = column, .clear = rebuild_dependencies});
+    }
+
+    /// A part must keep at least one column, which the regular merge takes care of.
+    if (commands->empty() || commands->size() == part->getColumns().size())
+        return nullptr;
+
+    for (const auto & index_name : indexes_to_clear)
+        commands->push_back(MutationCommand{.type = MutationCommand::DROP_INDEX, .column_name = index_name, .clear = true});
+
+    return global_ctx->mutator->mutatePartToTemporaryPart(
+        future_part,
+        metadata_snapshot,
+        commands,
+        global_ctx->merge_entry,
+        global_ctx->time_of_merge,
+        Context::createCopy(global_ctx->context),
+        global_ctx->txn,
+        global_ctx->space_reservation,
+        *global_ctx->holder);
+}
 
 MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm() const
 {

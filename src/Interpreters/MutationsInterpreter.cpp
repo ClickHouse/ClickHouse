@@ -1649,6 +1649,8 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// Rebuild indices that depend on the cleared column from its
             /// post-CLEAR DEFAULT value. Dropping them would make index
             /// availability depend on whether the value had physical files.
+            /// The readonly stage below provides that value instead of the
+            /// one read from the source part.
             for (const auto & index : metadata_snapshot->getSecondaryIndices())
             {
                 const auto & index_cols = index.expression->getRequiredColumns();
@@ -1662,6 +1664,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                     case AlterColumnSecondaryIndexMode::REBUILD:
                         for (const auto & col : index_cols)
                             dependencies.emplace(col, ColumnDependency::SKIP_INDEX);
+                        cleared_columns_with_dependencies.insert(command.column_name);
                         materialized_indices.insert(index.name);
                         break;
                     case AlterColumnSecondaryIndexMode::DROP:
