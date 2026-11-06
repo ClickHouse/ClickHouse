@@ -2349,7 +2349,7 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementSubcolumn(const String & 
     {
         if (const auto * map_type = typeid_cast<const DataTypeMap *>(map_column->type.get()))
         {
-            if (const auto * enum_type = typeid_cast<const IDataTypeEnum *>(map_type->getKeyType().get()))
+            if (const auto * enum_type = dynamic_cast<const IDataTypeEnum *>(map_type->getKeyType().get()))
             {
                 const auto value = enum_type->castToValue(Field(serialized_key));
                 return hasIndexForColumn(fmt::format("arrayElement({}, {})", map_column_name, applyVisitor(FieldVisitorToString(), value)));
