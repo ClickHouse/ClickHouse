@@ -423,11 +423,11 @@ void hideLambdaArgumentsShadowingAliasExpression(
 }
 
 QueryAnalyzer::QueryAnalyzer(
-    bool only_analyze_, bool positional_arguments_already_resolved_, bool view_source_substituted_, bool view_source_in_subqueries_)
+    bool only_analyze_, bool positional_arguments_already_resolved_, StoragePtr replaced_storage_, bool view_source_in_subqueries_)
     : identifier_resolver(node_to_projection_name)
     , only_analyze(only_analyze_)
     , positional_arguments_already_resolved(positional_arguments_already_resolved_)
-    , view_source_substituted(view_source_substituted_)
+    , replaced_storage(std::move(replaced_storage_))
     , view_source_in_subqueries(view_source_in_subqueries_)
 {}
 
@@ -1941,8 +1941,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     /// Try to resolve table identifier from database catalog
     if (!resolve_result.resolved_identifier && identifier_resolve_context.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
     {
-        resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
-            identifier_lookup.identifier, scope.context, view_source_substituted);
+        resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope.context, replaced_storage);
     }
 
     /// Try to resolve identifier as a niladic function (SQL standard functions that allow omitting parentheses)
@@ -6978,7 +6977,7 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
         /// Resolve the row policy filter expression against result_node's columns.
         auto filter_node = buildQueryTree(row_policy_filter->expression->clone(), scope.context);
         QueryAnalyzer filter_analyzer(
-            this->only_analyze, /*positional_arguments_already_resolved_=*/ false, view_source_substituted, view_source_in_subqueries);
+            this->only_analyze, /*positional_arguments_already_resolved_=*/ false, replaced_storage, view_source_in_subqueries);
         filter_analyzer.resolve(filter_node, result_node, scope.context);
 
         /// Build wrapper: SELECT <cols> FROM (result_node) WHERE <resolved_filter>

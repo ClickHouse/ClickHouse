@@ -3,6 +3,7 @@
 #include <Analyzer/IQueryTreePass.h>
 
 #include <Interpreters/Context_fwd.h>
+#include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
@@ -57,7 +58,7 @@ void addQueryTreePasses(
     QueryTreePassManager & manager,
     bool only_analyze = false,
     bool positional_arguments_already_resolved = false,
-    bool view_source_substituted = false,
+    StoragePtr replaced_storage = nullptr,
     bool view_source_in_subqueries = false);
 
 }

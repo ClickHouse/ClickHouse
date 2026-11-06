@@ -735,15 +735,15 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
     auto filter_query_tree = buildQueryTree(filter_expression, query_context);
 
     /// The filter reads the source table only in its subqueries, which read the view source iff `view_source_in_subqueries`.
-    QueryAnalysisPass query_analysis_pass(
-        table_expression, /*only_analyze_=*/ false, /*view_source_substituted_=*/ view_source_in_subqueries, view_source_in_subqueries);
+    auto view_source = getViewSourceIfRead(query_context, view_source_in_subqueries);
+    QueryAnalysisPass query_analysis_pass(table_expression, /*only_analyze_=*/ false, view_source, view_source_in_subqueries);
     query_analysis_pass.run(filter_query_tree, query_context);
 
     if (check_access_rights)
         checkAccessRightsForFilter(filter_query_tree, table_expression, query_context);
 
     /// The inner query of an ordinary view reads the table itself, not the inserted block.
-    if (auto view_source = getViewSourceIfRead(query_context, view_source_in_subqueries))
+    if (view_source)
         replaceStorageInQueryTree(filter_query_tree, query_context, view_source);
 
     return filter_query_tree;

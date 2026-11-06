@@ -177,8 +177,7 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
 SelectQueryOptions buildSelectQueryOptions(const SelectQueryOptions & select_query_options, const ContextPtr & context, const StoragePtr & storage)
 {
     auto result = select_query_options;
-    result.view_source_substituted = storage && storage == context->getViewSource();
-    result.view_source_in_subqueries = result.view_source_substituted || select_query_options.view_source_in_subqueries;
+    result.view_source_in_subqueries = (storage && storage == context->getViewSource()) || select_query_options.view_source_in_subqueries;
     return result;
 }
 
@@ -427,11 +426,12 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     auto query_tree = buildQueryTree(query, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
+    /// Only this analysis swaps the view source in, so only it may analyze the view source table without data.
     addQueryTreePasses(
         query_tree_pass_manager,
         select_query_options.only_analyze,
         select_query_options.positional_arguments_already_resolved,
-        select_query_options.view_source_substituted,
+        storage && storage == context->getViewSource() ? storage : nullptr,
         select_query_options.view_source_in_subqueries);
 
     /// We should not apply any query tree level optimizations on shards
