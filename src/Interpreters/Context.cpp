@@ -8510,8 +8510,11 @@ DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator) const
     auto disk = disk_selector->tryGet(name);
     if (!disk)
     {
+        /// A disk that fails before it is registered never becomes active: drop what it recorded.
+        Ext4CorruptionKernelBugWarningBatch ext4_warnings;
         disk = creator(getDisksMap(lock));
         const_cast<DiskSelector *>(disk_selector.get())->addToDiskMap(name, disk);
+        ext4_warnings.commit();
     }
 
     return disk;
