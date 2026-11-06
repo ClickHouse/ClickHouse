@@ -1,0 +1,9 @@
+--- Partitioned insert
+ILLEGAL_CODEC_PARAMETER
+p_0_part.json.zst
+0	1
+--- Non-partitioned insert
+ILLEGAL_CODEC_PARAMETER
+data.json.zst
+p_0_part.json.zst
+1

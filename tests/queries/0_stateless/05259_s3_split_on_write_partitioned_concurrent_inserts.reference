@@ -1,0 +1,11 @@
+--- Inserts one after another
+--- Inserts at the same time
+--- Every row of every insert is there
+400	400
+--- No key holds the rows of two inserts or of two partitions
+1	1
+--- A truncating insert split by size rewrites every partition, the numbered keys included
+60	60	5000000	5000059
+--- The next insert steps aside from the rewritten keys
+5	60	60
+6	100	100

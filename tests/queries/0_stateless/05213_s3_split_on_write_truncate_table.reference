@@ -1,0 +1,13 @@
+--- A split insert
+1000	0	999
+data.1.tsv
+data.2.tsv
+data.3.tsv
+data.tsv
+--- The table is truncated: all the objects are gone
+0
+--- The next split insert starts the numbering over
+500	1000	1499
+data.1.tsv
+data.2.tsv
+data.tsv
