@@ -225,14 +225,8 @@ private:
 
     void threadFunc(size_t idx);
 
-    /// Serves librdkafka events (statistics, errors) of a consumer that nobody streams from
-    /// right now; otherwise they accumulate in the reply queue. Called on cycles that did not
-    /// stream.
+    /// Serves librdkafka events of a consumer that is not streamed from, so they don't pile up in its queue.
     void pollIdleConsumerEvents(size_t idx);
-
-    /// Same for all consumers; called from the activation task while the table is inactive
-    /// (e.g. a Keeper outage), when nobody else polls them.
-    void drainIdleConsumerEvents();
 
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;

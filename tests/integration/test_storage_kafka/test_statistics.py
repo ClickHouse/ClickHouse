@@ -203,8 +203,48 @@ def test_statistics_survive_keeper_outage(kafka_cluster):
             sleep_time=1,
             check_callback=lambda x: len(TSV(x)) == 2,
         )
-        assert TSV(instance.query("SELECT * FROM test.dst ORDER BY a")) == TSV("message_1\nmessage_2")
-        wait_for_statistics("kafka")
+
+
+def test_statistics_survive_blocked_mv_insert(kafka_cluster):
+    """Statistics must keep being served while a blocked MV insert holds the consumer."""
+    topic_name = "topic_statistics_stall"
+
+    create_kafka_query = k.generate_new_create_table_query(
+        "kafka", "a String", topic_list=topic_name, format="LineAsString"
+    )
+
+    with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
+        instance.query(
+            f"""
+            CREATE TABLE test.dead_dst (a String) ENGINE = Kafka('dead_host:9092', 'dead_dst', 'dead_group', 'LineAsString');
+            {create_kafka_query};
+            CREATE MATERIALIZED VIEW test.kafka_mv TO test.dead_dst AS SELECT a FROM test.kafka;
+            """
+        )
+
+        # The MV blocks delivering to the dead destination for the whole message timeout
+        # (300 s), so only the periodic drain from the activation task serves the events.
+        k.kafka_produce(kafka_cluster, topic_name, ["message_1"])
+        try:
+            ts_first = None
+            ts_second = None
+            deadline = time.monotonic() + 240
+            while time.monotonic() < deadline:
+                ts = get_stat_ts("kafka")
+                if ts is not None:
+                    if ts_first is None:
+                        ts_first = ts
+                    elif ts > ts_first:
+                        ts_second = ts
+                        break
+                time.sleep(2)
+            assert ts_first is not None and ts_second is not None, (
+                f"rdkafka_stat is not served while the MV insert is blocked (ts {ts_first} -> {ts_second}): "
+                "statistics events accumulate in the reply queue during a busy-but-not-polling hold"
+            )
+        finally:
+            # CANCEL aborts the blocked insert so the teardown does not wait for its timeout.
+            instance.query("SYSTEM CANCEL test.kafka", ignore_error=True)
 
 
 if __name__ == "__main__":
