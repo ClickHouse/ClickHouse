@@ -208,7 +208,7 @@ DataPacketPrefix readDataPacketPrefix(const char * body, size_t body_size, const
     return prefix;
 }
 
-DataPacket readDataPacketBody(ReadBuffer & body, const Block & header, const String & stream_name)
+DataPacket readDataPacketBody(ReadBuffer & body, const Block & header, const String & stream_name, NativeReaderTypeCache * type_cache)
 {
     UInt64 flags = 0;
     readVarUInt(flags, body);
@@ -243,7 +243,8 @@ DataPacket readDataPacketBody(ReadBuffer & body, const Block & header, const Str
     {
         Stopwatch watch;
         CompressedReadBuffer compressed_buf(body);
-        NativeReader reader(compressed_buf, header, DBMS_TCP_PROTOCOL_VERSION);
+        NativeReader reader(compressed_buf, header, DBMS_TCP_PROTOCOL_VERSION, /*format_settings_=*/ std::nullopt,
+            /*block_missing_values_=*/ nullptr, type_cache);
         Block block = reader.read();
         ProfileEvents::increment(ProfileEvents::StreamingExchangeDeserializeMicroseconds, watch.elapsedMicroseconds());
         packet.chunk = Chunk(block.getColumns(), num_rows);

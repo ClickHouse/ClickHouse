@@ -10,6 +10,7 @@
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <base/range.h>
+#include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
 
 #include <Formats/NativeReader.h>
@@ -22,6 +23,11 @@
 
 #include <Common/logger_useful.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event NativeReaderTypeCacheHits;
+}
 
 namespace DB
 {
@@ -50,12 +56,14 @@ NativeReader::NativeReader(
     const Block & header_,
     UInt64 server_revision_,
     std::optional<FormatSettings> format_settings_,
-    BlockMissingValues * block_missing_values_)
+    BlockMissingValues * block_missing_values_,
+    NativeReaderTypeCache * type_cache_)
     : istr(istr_)
     , header(header_)
     , server_revision(server_revision_)
     , format_settings(std::move(format_settings_))
     , block_missing_values(block_missing_values_)
+    , type_cache(type_cache_)
 {
 }
 
@@ -137,11 +145,27 @@ Block NativeReader::getHeader() const
     return header;
 }
 
+DataTypePtr NativeReader::getTypeByName(const String & type_name)
+{
+    if (type_cache)
+    {
+        if (auto it = type_cache->find(type_name); it != type_cache->end())
+        {
+            ProfileEvents::increment(ProfileEvents::NativeReaderTypeCacheHits);
+            return it->second;
+        }
+    }
+
+    auto type = DataTypeFactory::instance().get(type_name);
+    setVersionToAggregateFunctions(type, true, server_revision);
+    if (type_cache)
+        type_cache->emplace(type_name, type);
+    return type;
+}
+
 Block NativeReader::read()
 {
     Block res;
-
-    const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
     if (use_index && index_block_it == index_block_end)
         return res;
@@ -207,14 +231,13 @@ Block NativeReader::read()
         {
             column.type = decodeDataType(istr, format_settings->binary.max_binary_type_complexity);
             type_name = column.type->getName();
+            setVersionToAggregateFunctions(column.type, true, server_revision);
         }
         else
         {
             readStringBinaryGrowing(type_name, istr);
-            column.type = data_type_factory.get(type_name);
+            column.type = getTypeByName(type_name);
         }
-
-        setVersionToAggregateFunctions(column.type, true, server_revision);
 
         SerializationPtr serialization;
         MutableColumnPtr read_column;

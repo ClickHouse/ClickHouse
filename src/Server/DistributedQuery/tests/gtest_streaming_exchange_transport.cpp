@@ -17,6 +17,8 @@
 #include <gtest/gtest.h>
 #include <fmt/format.h>
 
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentMetrics.h>
@@ -27,7 +29,10 @@
 #include <Compression/CompressionFactory.h>
 #include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Common/tests/gtest_global_register.h>
 #include <Core/Block.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
@@ -71,6 +76,7 @@ namespace ProfileEvents
     extern const Event StreamingExchangeSendQueueFullMicroseconds;
     extern const Event StreamingExchangeEarlyCloses;
     extern const Event RuntimeFilterReceivesAbandoned;
+    extern const Event NativeReaderTypeCacheHits;
 }
 
 namespace CurrentMetrics
@@ -351,6 +357,96 @@ TEST(StreamingExchangeTransport, EveryPacketShapeCrossesTheSocket)
         EXPECT_EQ(sumOfValues(sink->chunks), expected_sum);
         EXPECT_EQ(rowless_with_info, 1u);
         EXPECT_EQ(data_chunks_with_info, 1u);
+    }
+}
+
+/// A receiver parses each column type once and takes it from its own map for the later packets. The
+/// stream has two `UInt64` columns, which share one parsed type, and a column of `uniq` states, whose
+/// type is the costly one to make. Both source modes must give the same values as without the map.
+TEST(StreamingExchangeTransport, ReceiverParsesEachColumnTypeOnce)
+{
+    MainThreadStatus::getInstance();
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t packets = 4;
+    constexpr size_t rows_per_chunk = 100;
+
+    const DataTypePtr number_type = std::make_shared<DataTypeUInt64>();
+    const DataTypePtr state_type = DataTypeFactory::instance().get("AggregateFunction(uniq, UInt64)");
+    const auto & state_function = assert_cast<const DataTypeAggregateFunction &>(*state_type).getFunction();
+    auto header = std::make_shared<const Block>(Block{
+        ColumnWithTypeAndName(number_type->createColumn(), number_type, "a"),
+        ColumnWithTypeAndName(number_type->createColumn(), number_type, "b"),
+        ColumnWithTypeAndName(state_type->createColumn(), state_type, "s")});
+
+    /// Each row of `s` holds the state of `uniq` over the one value of `a` in that row.
+    auto make_chunk = [&](size_t first_value)
+    {
+        auto numbers = makeChunk(first_value, rows_per_chunk).detachColumns().front();
+        auto states = state_type->createColumn();
+        auto & state_column = assert_cast<ColumnAggregateFunction &>(*states);
+        const IColumn * arguments[] = {numbers.get()};
+        for (size_t row = 0; row < rows_per_chunk; ++row)
+        {
+            state_column.insertDefault();
+            state_function->add(state_column.getData().back(), arguments, row, &state_column.createOrGetArena());
+        }
+        return Chunk(Columns{numbers, numbers, std::move(states)}, rows_per_chunk);
+    };
+
+    for (bool source_hands_packets : {false, true})
+    {
+        SCOPED_TRACE(fmt::format("source_hands_packets={}", source_hands_packets));
+
+        Chunks chunks;
+        for (size_t index = 0; index < packets; ++index)
+            chunks.push_back(make_chunk(index * rows_per_chunk));
+
+        LoopbackExchange exchange;
+        std::vector<Chunks> chunks_per_stream;
+        chunks_per_stream.push_back(std::move(chunks));
+        auto sending = makeSendingPipeline(header, std::move(chunks_per_stream), exchange);
+        auto sink = std::make_shared<CollectingSink>(header);
+        auto receiving = makeReceivingPipeline(header, exchange.server.port(), source_hands_packets, sink);
+
+        const UInt64 hits_before = eventCount(ProfileEvents::NativeReaderTypeCacheHits);
+
+        std::optional<int> sending_code;
+        std::thread sender([&] { sending_code = run(sending, 1); });
+        const auto receiving_code = run(receiving, 1);
+        sender.join();
+
+        EXPECT_EQ(sending_code, std::nullopt);
+        EXPECT_EQ(receiving_code, std::nullopt);
+
+        /// The first packet parses `UInt64` for `a` and takes it from the map for `b`, and parses the
+        /// state type. Each later packet takes all three columns from the map.
+        EXPECT_EQ(eventCount(ProfileEvents::NativeReaderTypeCacheHits) - hits_before, 1 + (packets - 1) * 3);
+
+        size_t rows = 0;
+        UInt64 sum_a = 0;
+        UInt64 sum_b = 0;
+        UInt64 sum_uniq = 0;
+        for (const auto & chunk : sink->chunks)
+        {
+            if (chunk.getNumRows() == 0)
+                continue;
+            rows += chunk.getNumRows();
+            const auto & columns = chunk.getColumns();
+            for (UInt64 value : assert_cast<const ColumnUInt64 &>(*columns[0]).getData())
+                sum_a += value;
+            for (UInt64 value : assert_cast<const ColumnUInt64 &>(*columns[1]).getData())
+                sum_b += value;
+            auto values = ColumnAggregateFunction::convertToValues(IColumn::mutate(columns[2]));
+            for (UInt64 value : assert_cast<const ColumnUInt64 &>(*values).getData())
+                sum_uniq += value;
+        }
+        const size_t total_rows = packets * rows_per_chunk;
+        EXPECT_EQ(rows, total_rows);
+        EXPECT_EQ(sum_a, UInt64(total_rows) * (total_rows - 1) / 2);
+        EXPECT_EQ(sum_b, sum_a);
+        /// Each state saw one value.
+        EXPECT_EQ(sum_uniq, total_rows);
     }
 }
 

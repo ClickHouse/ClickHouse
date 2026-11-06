@@ -2,6 +2,7 @@
 
 #include <Formats/FormatSettings.h>
 #include <Formats/IndexForNativeFormat.h>
+#include <Formats/NativeReaderTypeCache.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Core/Block.h>
 #include <Core/BlockMissingValues.h>
@@ -44,7 +45,8 @@ public:
         const Block & header_,
         UInt64 server_revision_,
         std::optional<FormatSettings> format_settings_ = std::nullopt,
-        BlockMissingValues * block_missing_values_ = nullptr);
+        BlockMissingValues * block_missing_values_ = nullptr,
+        NativeReaderTypeCache * type_cache_ = nullptr);
 
     /// For cases when we have an index. It allows to skip columns. Only columns specified in the index will be read.
     NativeReader(ReadBuffer & istr_, UInt64 server_revision_,
@@ -67,11 +69,15 @@ public:
         ValueSizeMap * avg_value_size_hints_);
 
 private:
+    /// The type for a type name read from the stream, from `type_cache` when it has the name.
+    DataTypePtr getTypeByName(const String & type_name);
+
     ReadBuffer & istr;
     Block header;
     UInt64 server_revision;
     std::optional<FormatSettings> format_settings = std::nullopt;
     BlockMissingValues * block_missing_values = nullptr;
+    NativeReaderTypeCache * type_cache = nullptr;
     ISerialization::KindSet allowed_kinds = default_allowed_kinds;
 
     bool use_index = false;

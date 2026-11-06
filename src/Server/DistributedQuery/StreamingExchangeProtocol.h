@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Core/Block_fwd.h>
+#include <Formats/NativeReaderTypeCache.h>
 #include <Processors/Chunk.h>
 
 namespace Poco::Net
@@ -125,8 +126,10 @@ namespace StreamingExchangeProtocol
     /// Parses a Data packet body written by `writeDataPacket`: the flags, the counts, the aggregation
     /// chunk number and the compressed Native block with the columns of `header`. A final packet must
     /// be the empty end-of-stream marker, checked as in `readDataPacketPrefix`. `stream_name` is for
-    /// messages.
-    DataPacket readDataPacketBody(ReadBuffer & body, const Block & header, const String & stream_name);
+    /// messages. A receiver passes its own `type_cache` with every packet, so that the column types are
+    /// parsed only once (see `NativeReaderTypeCache`).
+    DataPacket readDataPacketBody(
+        ReadBuffer & body, const Block & header, const String & stream_name, NativeReaderTypeCache * type_cache = nullptr);
 
     /// The peer address for messages; a socket whose peer is gone may not know it anymore.
     String describePeer(const Poco::Net::StreamSocket & socket);
