@@ -34,6 +34,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_STRING_SIZE;
     extern const int TOO_MANY_COLUMNS;
     extern const int ZLIB_DEFLATE_FAILED;
 }
@@ -383,6 +384,8 @@ std::string_view utf8Prefix(std::string_view str, size_t length)
 }
 
 constexpr size_t MAX_SHEET_NAME_LENGTH = 31;
+/// The maximum number of characters in a cell of Excel.
+constexpr size_t MAX_CELL_TEXT_LENGTH = 32767;
 
 void validateSheetName(const String & name)
 {
@@ -669,7 +672,7 @@ private:
             for (size_t i = 0; i < header.columns(); ++i)
             {
                 startCell(i, STYLE_HEADER, "inlineStr");
-                writeInlineString(header.getByPosition(i).name);
+                writeInlineString(i, header.getByPosition(i).name);
             }
             writeCString("</row>", buf);
         }
@@ -713,8 +716,26 @@ private:
         writeChar('>', buf);
     }
 
-    void writeInlineString(std::string_view str)
+    void writeInlineString(size_t column, std::string_view str)
     {
+        /// Excel counts the length in UTF-16 code units: the characters outside of the Basic Multilingual Plane count twice.
+        /// Count the code points by their leading bytes (invalid bytes become one replacement character each).
+        if (str.size() > MAX_CELL_TEXT_LENGTH)
+        {
+            size_t length = 0;
+            for (char c : str)
+            {
+                auto byte = static_cast<UInt8>(c);
+                length += ((byte & 0xC0) != 0x80) + (byte >= 0xF0);
+            }
+            if (length > MAX_CELL_TEXT_LENGTH)
+                throw Exception(
+                    ErrorCodes::TOO_LARGE_STRING_SIZE,
+                    "A value of the column '{}' in row {} of the sheet is too long for the XLSX format: {} characters, "
+                    "while Excel supports at most {} characters in a cell",
+                    getPort(PortKind::Main).getHeader().getByPosition(column).name, rows_in_sheet, length, MAX_CELL_TEXT_LENGTH);
+        }
+
         auto & buf = *sheet_buffer;
         /// Leading and trailing whitespace is not preserved without `xml:space`.
         if (!str.empty() && (isWhitespaceASCII(str.front()) || isWhitespaceASCII(str.back())))
@@ -736,7 +757,7 @@ private:
     void writeStringCell(size_t column, std::string_view str)
     {
         startCell(column, STYLE_DEFAULT, "inlineStr");
-        writeInlineString(str);
+        writeInlineString(column, str);
     }
 
     /// Writes a date and time that Excel cannot represent as a number as a string.

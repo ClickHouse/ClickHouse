@@ -39,6 +39,8 @@ enum class NumberFormatKind : uint8_t
     Date,
     DateTime,
     Time,
+    /// An elapsed duration like `[h]:mm:ss`: unlike a time of day, it can be longer than a day.
+    Duration,
 };
 
 struct Cell

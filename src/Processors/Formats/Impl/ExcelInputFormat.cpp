@@ -290,12 +290,13 @@ Excel stores dates and times as numbers of days since 1900-01-01 (or since 1904-
 | Numbers with a date format              | `Date32`                      |
 | Numbers with a date and time format     | `DateTime64(3)`               |
 | Numbers with a time format              | `String`, like `12:30:00`     |
+| Numbers with an elapsed time format     | `String`, like `60:00:00`     |
 | Boolean values                          | `Bool`                        |
 | Strings, and columns with mixed values  | `String`                      |
 
 The inferred types are `Nullable` (see the [`schema_inference_make_columns_nullable`](/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable) setting). The number of rows used for schema inference is controlled by the `input_format_max_rows_to_read_for_schema_inference` setting.
 
-When the table structure is specified explicitly, numbers are converted to the requested types: a number can be read into a numeric, `Decimal`, `Date`, `Date32`, `DateTime` or `DateTime64` column (a number is interpreted as an Excel date for the latter, in the time zone of the column), and strings are parsed with the text representation of the type. Any cell can be read into a `String` column: numbers are written in the shortest exact representation, dates as `YYYY-MM-DD` or `YYYY-MM-DD hh:mm:ss`, and boolean values as `true` and `false`.
+When the table structure is specified explicitly, numbers are converted to the requested types: a number can be read into a numeric, `Decimal`, `Date`, `Date32`, `DateTime` or `DateTime64` column (a number is interpreted as an Excel date for the latter, in the time zone of the column), and strings are parsed with the text representation of the type. Any cell can be read into a `String` column: numbers are written in the shortest exact representation, dates as `YYYY-MM-DD` or `YYYY-MM-DD hh:mm:ss`, elapsed times (formats like `[h]:mm:ss`) as the total number of hours, minutes and seconds, and boolean values as `true` and `false`.
 
 ## Format settings {#format-settings}
 )DOCS_MD";
@@ -342,7 +343,7 @@ ClickHouse writes the result into a single sheet with the column names in the fi
 | `NULL` | Empty cell |
 | Other types | String, in the text representation of the type |
 
-Excel stores numbers as 64-bit floating-point values, so it rounds integers with more than 15 significant digits for display. ClickHouse writes the exact value to the file, and reads it back exactly. `NaN` and infinite values, dates before 1900, and dates after 9999 are written as strings. Invalid UTF-8 sequences in strings are replaced with the replacement character `U+FFFD`, because Excel files cannot contain them.
+Excel stores numbers as 64-bit floating-point values, so it rounds integers with more than 15 significant digits for display. ClickHouse writes the exact value to the file, and reads it back exactly. `NaN` and infinite values, dates before 1900, and dates after 9999 are written as strings. Invalid UTF-8 sequences in strings are replaced with the replacement character `U+FFFD`, because Excel files cannot contain them. A string longer than 32767 characters (the limit of an Excel cell) cannot be written.
 )DOCS_MD"});
 
     registerExcelInputFormat(factory, ExcelFileFormat::XLS);

@@ -148,12 +148,36 @@ void formatNumber(double value, String & out)
     buf.finalize();
 }
 
+/// Formats a duration in days as the total number of hours, minutes and seconds, like `[h]:mm:ss` displays it: 2.5 is `60:00:00`.
+void formatDuration(double days, String & out)
+{
+    if (days < 0)
+    {
+        out += '-';
+        days = -days;
+    }
+    /// Excel stores times with the precision of milliseconds.
+    UInt64 total_milliseconds = static_cast<UInt64>(std::llround(days * MILLISECONDS_IN_DAY));
+    UInt64 hours = total_milliseconds / 3600000;
+    UInt32 minutes = static_cast<UInt32>(total_milliseconds / 60000 % 60);
+    UInt32 seconds = static_cast<UInt32>(total_milliseconds / 1000 % 60);
+    UInt32 fraction = static_cast<UInt32>(total_milliseconds % 1000);
+    out += fmt::format("{:02}:", hours);
+    writeTwoDigits(minutes, out);
+    out += ':';
+    writeTwoDigits(seconds, out);
+    if (fraction)
+        out += fmt::format(".{:03}", fraction);
+}
+
 bool isBuiltinDateFormat(UInt32 id, NumberFormatKind & kind)
 {
     if ((id >= 14 && id <= 17) || (id >= 27 && id <= 31) || id == 36 || (id >= 50 && id <= 54) || id == 57 || id == 58)
         kind = NumberFormatKind::Date;
-    else if ((id >= 18 && id <= 21) || (id >= 32 && id <= 35) || (id >= 45 && id <= 47) || id == 55 || id == 56)
+    else if ((id >= 18 && id <= 21) || (id >= 32 && id <= 35) || id == 45 || id == 47 || id == 55 || id == 56)
         kind = NumberFormatKind::Time;
+    else if (id == 46) /// `[h]:mm:ss`
+        kind = NumberFormatKind::Duration;
     else if (id == 22)
         kind = NumberFormatKind::DateTime;
     else
@@ -430,6 +454,7 @@ NumberFormatKind classifyNumberFormat(UInt32 builtin_id, std::string_view format
     bool has_date = false;
     bool has_time = false;
     bool has_month_or_minute = false;
+    bool has_elapsed_time = false;
 
     for (size_t pos = 0; pos < format_code.size(); ++pos)
     {
@@ -455,7 +480,10 @@ NumberFormatKind classifyNumberFormat(UInt32 builtin_id, std::string_view format
             /// Elapsed time like `[h]:mm:ss`; other brackets are colors, conditions and locales.
             std::string_view content = format_code.substr(pos + 1, end - pos - 1);
             if (!content.empty() && content.find_first_not_of("hHmMsS") == std::string_view::npos)
+            {
                 has_time = true;
+                has_elapsed_time = true;
+            }
             pos = end;
         }
         else if (c == 'y' || c == 'Y' || c == 'd' || c == 'D')
@@ -473,6 +501,8 @@ NumberFormatKind classifyNumberFormat(UInt32 builtin_id, std::string_view format
     if (has_month_or_minute && !has_time)
         has_date = true;
 
+    if (has_elapsed_time && !has_date)
+        return NumberFormatKind::Duration;
     if (has_date && has_time)
         return NumberFormatKind::DateTime;
     if (has_date)
@@ -640,6 +670,11 @@ void cellToString(const Cell & cell, bool date1904, String & out)
             out += cell.number != 0 ? "true" : "false";
             return;
         case CellType::Number:
+            if (cell.format == NumberFormatKind::Duration && std::isfinite(cell.number))
+            {
+                formatDuration(cell.number, out);
+                return;
+            }
             if (cell.format != NumberFormatKind::Number)
             {
                 if (auto value = serialToLocalDateTime(cell.number, date1904))
@@ -659,39 +694,71 @@ void decodeOOXMLEscapes(String & str)
     if (pos == String::npos)
         return;
 
+    /// Returns the UTF-16 code unit of an escape sequence `_xHHHH_` at the position, if there is one.
+    auto escape_at = [&](size_t at) -> std::optional<UInt32>
+    {
+        if (at + 7 > str.size() || str[at] != '_' || str[at + 1] != 'x' || str[at + 6] != '_')
+            return {};
+        UInt32 code_unit = 0;
+        for (size_t i = 2; i < 6; ++i)
+        {
+            if (!isHexDigit(str[at + i]))
+                return {};
+            code_unit = code_unit * 16 + unhex(str[at + i]);
+        }
+        return code_unit;
+    };
+
     String result;
     result.reserve(str.size());
     size_t copied = 0;
     while (pos != String::npos)
     {
-        if (pos + 7 <= str.size() && str[pos + 6] == '_' && isHexDigit(str[pos + 2]) && isHexDigit(str[pos + 3]) && isHexDigit(str[pos + 4])
-            && isHexDigit(str[pos + 5]))
+        auto code_unit = escape_at(pos);
+        if (!code_unit)
         {
-            result.append(str, copied, pos - copied);
-            UInt32 code_point = 0;
-            for (size_t i = 2; i < 6; ++i)
-                code_point = code_point * 16 + unhex(str[pos + i]);
-            /// Encode as UTF-8. Surrogates cannot appear in XML text, so the code point is always below 0x10000 here.
-            if (code_point < 0x80)
-                result += static_cast<char>(code_point);
-            else if (code_point < 0x800)
+            pos = str.find("_x", pos + 1);
+            continue;
+        }
+
+        result.append(str, copied, pos - copied);
+        size_t end = pos + 7;
+        UInt32 code_point = *code_unit;
+        if (code_point >= 0xD800 && code_point < 0xE000)
+        {
+            /// Characters outside of the Basic Multilingual Plane are escaped as a pair of UTF-16 surrogates, like `_xD83D__xDE00_`.
+            auto low = code_point < 0xDC00 ? escape_at(end) : std::nullopt;
+            if (low && *low >= 0xDC00 && *low < 0xE000)
             {
-                result += static_cast<char>(0xC0 | (code_point >> 6));
-                result += static_cast<char>(0x80 | (code_point & 0x3F));
+                code_point = 0x10000 + ((code_point - 0xD800) << 10) + (*low - 0xDC00);
+                end += 7;
             }
             else
-            {
-                result += static_cast<char>(0xE0 | (code_point >> 12));
-                result += static_cast<char>(0x80 | ((code_point >> 6) & 0x3F));
-                result += static_cast<char>(0x80 | (code_point & 0x3F));
-            }
-            copied = pos + 7;
-            pos = str.find("_x", copied);
+                code_point = 0xFFFD; /// An unpaired surrogate cannot be represented in UTF-8.
+        }
+
+        if (code_point < 0x80)
+            result += static_cast<char>(code_point);
+        else if (code_point < 0x800)
+        {
+            result += static_cast<char>(0xC0 | (code_point >> 6));
+            result += static_cast<char>(0x80 | (code_point & 0x3F));
+        }
+        else if (code_point < 0x10000)
+        {
+            result += static_cast<char>(0xE0 | (code_point >> 12));
+            result += static_cast<char>(0x80 | ((code_point >> 6) & 0x3F));
+            result += static_cast<char>(0x80 | (code_point & 0x3F));
         }
         else
         {
-            pos = str.find("_x", pos + 1);
+            result += static_cast<char>(0xF0 | (code_point >> 18));
+            result += static_cast<char>(0x80 | ((code_point >> 12) & 0x3F));
+            result += static_cast<char>(0x80 | ((code_point >> 6) & 0x3F));
+            result += static_cast<char>(0x80 | (code_point & 0x3F));
         }
+        copied = end;
+        pos = str.find("_x", copied);
     }
     result.append(str, copied, String::npos);
     str = std::move(result);
@@ -783,7 +850,8 @@ void ColumnTypeInferrer::add(const Cell & cell)
                     has_date_time = true;
                     return;
                 case NumberFormatKind::Time:
-                    /// There is no data type for a time of day by default, so it is read as text like `12:30:00`.
+                case NumberFormatKind::Duration:
+                    /// There are no data types for a time of day and a duration by default, so they are read as text like `12:30:00` or `60:00:00`.
                     has_string = true;
                     return;
                 case NumberFormatKind::Number:
