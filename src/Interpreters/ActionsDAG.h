@@ -135,6 +135,9 @@ public:
             bool build_independent = false,
             const Block * input_header = nullptr,
             bool with_variable_size_constant_values = true) const;
+        /// What `updateHash` mixes in for this node itself, without its children.
+        void updateOwnHash(
+            SipHash & hash_state, bool build_independent, const Block * input_header, bool with_variable_size_constant_values) const;
     };
 
     /// NOTE: std::list is an implementation detail.
