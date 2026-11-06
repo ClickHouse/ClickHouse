@@ -91,12 +91,21 @@ std::string_view tailOfWidth(std::string_view s, size_t limit)
     return s.substr(drop);
 }
 
-void popCodePoint(std::string & s)
+/// The start of the code point before `pos`.
+size_t previousCodePoint(std::string_view s, size_t pos)
 {
-    while (!s.empty() && UTF8::isContinuationOctet(static_cast<UInt8>(s.back())))
-        s.pop_back();
-    if (!s.empty())
-        s.pop_back();
+    if (pos == 0)
+        return 0;
+    --pos;
+    while (pos > 0 && UTF8::isContinuationOctet(static_cast<UInt8>(s[pos])))
+        --pos;
+    return pos;
+}
+
+/// The start of the code point after the one at `pos`.
+size_t nextCodePoint(std::string_view s, size_t pos)
+{
+    return pos < s.size() ? std::min<size_t>(pos + UTF8::seqLength(static_cast<UInt8>(s[pos])), s.size()) : pos;
 }
 
 class Picker
@@ -104,6 +113,7 @@ class Picker
 public:
     Picker(int in_fd_, int out_fd_, const std::string & initial_query, const std::vector<std::string> & history_)
         : in_fd(in_fd_), out_fd(out_fd_), in(in_fd_, /* buf_size */ 1), out(out_fd_), history(history_), query(initial_query)
+        , cursor(query.size())
     {
         auto [terminal_cols, terminal_rows] = getTerminalSize(in_fd, out_fd);
         setGeometry(terminal_cols, terminal_rows);
@@ -146,6 +156,7 @@ private:
     WriteBufferFromFileDescriptor out;
     const std::vector<std::string> & history;
     std::string query; /// As typed, it is the result when nothing matches.
+    size_t cursor; /// Byte offset in `query`.
 
     size_t rows = 0;
     size_t cols = 0;
@@ -220,7 +231,10 @@ private:
         /// Leave the last column empty to avoid the terminal's pending-wrap state.
         size_t content_width = cols > 3 ? cols - 3 : 1;
 
-        std::string_view visible_query = tailOfWidth(display_query, content_width);
+        /// The part of the query around the cursor, which stays visible.
+        std::string_view before_cursor = tailOfWidth(std::string_view(display_query).substr(0, cursor), content_width);
+        size_t query_start = before_cursor.data() - display_query.data();
+        std::string_view visible_query = truncateToWidth(std::string_view(display_query).substr(query_start), content_width);
 
         /// Bottom-up like skim and fzf: the best match is the lowest row, right above the count and the prompt.
         std::string frame = moveToTop();
@@ -234,14 +248,14 @@ private:
                 continue;
             }
             const Entry & entry = entries[matches[pos]];
-            std::string_view text = truncateToWidth(entry.display, content_width);
+            auto [text, elided] = visibleRow(entry.display, content_width);
             if (pos == selected)
             {
                 frame += COLOR_CURRENT;
                 frame += COLOR_CURSOR;
                 frame += ">";
                 frame += COLOR_CURRENT_FOREGROUND;
-                frame += " ";
+                frame += elided ? " .." : " ";
                 appendHighlighted(frame, text, COLOR_CURRENT_MATCH, COLOR_CURRENT_FOREGROUND);
                 /// Erasing with the current background extends it to the whole row.
                 frame += "\x1b[K";
@@ -249,7 +263,7 @@ private:
             }
             else
             {
-                frame += "  ";
+                frame += elided ? "  .." : "  ";
                 appendHighlighted(frame, text, COLOR_MATCHED, COLOR_MATCHED_END);
             }
             frame += "\r\n";
@@ -263,8 +277,36 @@ private:
         frame += "> ";
         frame += COLOR_RESET;
         frame += visible_query;
-        frame += "\x1b[" + std::to_string(2 + displayWidth(visible_query) + 1) + "G";
+        frame += "\x1b[" + std::to_string(2 + displayWidth(before_cursor) + 1) + "G";
         write(frame);
+    }
+
+    /// The part of an entry to show in `width` columns. Like skim, when the matches do not fit, it is shifted
+    /// after a `..` marker (the second result is true then): to the end of the entry if the matches are still
+    /// visible, otherwise just enough to show them.
+    std::pair<std::string_view, bool> visibleRow(std::string_view display, size_t width) const
+    {
+        const UInt8 * begin = toBytes(display);
+        const UInt8 * end = begin + display.size();
+        size_t matches_begin = display.size();
+        size_t matches_end = 0;
+        for (const auto & searcher : searchers)
+        {
+            const UInt8 * found = searcher.search(begin, end);
+            if (found == end)
+                continue;
+            matches_begin = std::min<size_t>(matches_begin, found - begin);
+            matches_end = std::max<size_t>(matches_end, searcher.matchEnd(found, end) - begin);
+        }
+
+        if (width <= 2 || displayWidth(display.substr(0, matches_end)) <= width)
+            return {truncateToWidth(display, width), false};
+
+        std::string_view tail = tailOfWidth(display, width - 2);
+        size_t start = display.size() - tail.size();
+        if (start > matches_begin)
+            start = matches_end - tailOfWidth(display.substr(0, matches_end), width - 2).size();
+        return {truncateToWidth(display.substr(start), width - 2), true};
     }
 
     /// From the prompt (the last line of the area) to the start of the area.
@@ -339,7 +381,8 @@ private:
             if (buf.ends_with(PASTE_END))
             {
                 buf.resize(buf.size() - PASTE_END.size());
-                query += buf;
+                query.insert(cursor, buf);
+                cursor += buf.size();
                 return true;
             }
         }
@@ -353,10 +396,35 @@ private:
         Down,
         PageUp,
         PageDown,
+        Left,
+        Right,
+        Home,
+        End,
+        Delete,
         QueryChanged,
         Ignored,
         Eof,
     };
+
+    static Escape arrowKey(char c)
+    {
+        switch (c)
+        {
+            case 'A': return Escape::Up;
+            case 'B': return Escape::Down;
+            case 'C': return Escape::Right;
+            case 'D': return Escape::Left;
+            case 'H': return Escape::Home;
+            case 'F': return Escape::End;
+            default: return Escape::Ignored;
+        }
+    }
+
+    void eraseBeforeCursor(size_t from)
+    {
+        query.erase(from, cursor - from);
+        cursor = from;
+    }
 
     Escape readEscape()
     {
@@ -369,7 +437,7 @@ private:
         {
             if (!readByte(c))
                 return Escape::Eof;
-            return c == 'A' ? Escape::Up : (c == 'B' ? Escape::Down : Escape::Ignored);
+            return arrowKey(c);
         }
         if (c != '[')
             return Escape::Ignored;
@@ -384,13 +452,17 @@ private:
             else if (c < 0x20 || c > 0x2F)
                 break;
         }
-        if (c == 'A' && params.empty())
-            return Escape::Up;
-        if (c == 'B' && params.empty())
-            return Escape::Down;
-        if (c == '~' && params == "5")
+        if (c != '~')
+            return params.empty() ? arrowKey(c) : Escape::Ignored;
+        if (params == "1" || params == "7")
+            return Escape::Home;
+        if (params == "4" || params == "8")
+            return Escape::End;
+        if (params == "3")
+            return Escape::Delete;
+        if (params == "5")
             return Escape::PageUp;
-        if (c == '~' && params == "6")
+        if (params == "6")
             return Escape::PageDown;
         if (c == '~' && params == "200")
             return readPaste() ? Escape::QueryChanged : Escape::Eof;
@@ -426,19 +498,36 @@ private:
                 case 4: /// Ctrl-D
                     if (query.empty())
                         return {};
+                    query.erase(cursor, nextCodePoint(query, cursor) - cursor);
                     break;
                 case 127:
                 case 8:
-                    popCodePoint(query);
+                    eraseBeforeCursor(previousCodePoint(query, cursor));
                     break;
                 case 21: /// Ctrl-U
-                    query.clear();
+                    eraseBeforeCursor(0);
                     break;
                 case 23: /// Ctrl-W
-                    while (!query.empty() && isWhitespaceASCII(query.back()))
-                        query.pop_back();
-                    while (!query.empty() && !isWhitespaceASCII(query.back()))
-                        query.pop_back();
+                {
+                    size_t from = cursor;
+                    while (from > 0 && isWhitespaceASCII(query[from - 1]))
+                        --from;
+                    while (from > 0 && !isWhitespaceASCII(query[from - 1]))
+                        --from;
+                    eraseBeforeCursor(from);
+                    break;
+                }
+                case 1: /// Ctrl-A
+                    cursor = 0;
+                    break;
+                case 5: /// Ctrl-E
+                    cursor = query.size();
+                    break;
+                case 2: /// Ctrl-B
+                    cursor = previousCodePoint(query, cursor);
+                    break;
+                case 6: /// Ctrl-F
+                    cursor = nextCodePoint(query, cursor);
                     break;
                 case 16: /// Ctrl-P
                 case 11: /// Ctrl-K
@@ -459,6 +548,11 @@ private:
                         case Escape::Down: moveSelection(-1); break;
                         case Escape::PageUp: moveSelection(page); break;
                         case Escape::PageDown: moveSelection(-page); break;
+                        case Escape::Left: cursor = previousCodePoint(query, cursor); break;
+                        case Escape::Right: cursor = nextCodePoint(query, cursor); break;
+                        case Escape::Home: cursor = 0; break;
+                        case Escape::End: cursor = query.size(); break;
+                        case Escape::Delete: query.erase(cursor, nextCodePoint(query, cursor) - cursor); break;
                         case Escape::QueryChanged:
                         case Escape::Ignored:
                             break;
@@ -466,7 +560,7 @@ private:
                     break;
                 default:
                     if (static_cast<UInt8>(c) >= 0x20)
-                        query += c;
+                        query.insert(cursor++, 1, c);
                     break;
             }
 

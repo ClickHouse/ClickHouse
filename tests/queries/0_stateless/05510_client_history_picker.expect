@@ -2,7 +2,8 @@
 
 # Ctrl-R opens an interactive history search: words match in any order and case (also non-ASCII),
 # Esc leaves the line unchanged, pasted text is used as the search query, control characters
-# from the history are not sent to the terminal, and an unmatched query is kept as typed.
+# from the history are not sent to the terminal, an unmatched query is kept as typed, the query
+# can be edited in the middle, and a match beyond the screen width is scrolled into view.
 
 set basedir [file dirname $argv0]
 set basename [file tail $argv0]
@@ -15,7 +16,7 @@ exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
 set history_file $CLICKHOUSE_TMP/$basename.history
 
 # Entries with a terminal control sequence and with non-ASCII letters.
-exec bash -c "printf '### 2026-01-01 00:00:00.000\\nSELECT \\x27\\033]0;zzctl\\007\\x27\\n### 2026-01-01 00:00:01.000\\nSELECT \\x27ПРИВЕТ_unicode\\x27\\n' > $history_file"
+exec bash -c "printf '### 2026-01-01 00:00:00.000\\nSELECT \\x27\\033]0;zzctl\\007\\x27\\n### 2026-01-01 00:00:01.000\\nSELECT \\x27ПРИВЕТ_unicode\\x27\\n### 2026-01-01 00:00:02.000\\nSELECT \\x27zzba\\x27\\n### 2026-01-01 00:00:03.000\\nSELECT \\x27zzab\\x27\\n### 2026-01-01 00:00:04.000\\nSELECT \\x27[string repeat y 100] long_target_one\\x27\\n' > $history_file"
 
 log_user 0
 set timeout 60
@@ -27,7 +28,7 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+spawn bash -c "stty rows 24 columns 80 ; source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
 expect ":) "
 
 send -- "SELECT 'alpha_marker_one'\r"
@@ -105,6 +106,30 @@ send -- "\022"
 expect -re {[0-9]+/[0-9]+}
 send -- "привет"
 expect -re {1/[0-9]+}
+send -- "\033"
+expect ":) "
+
+# Left moves the cursor: `zzb`, Left, `a` searches for `zzab`.
+send -- "\022"
+expect -re {[0-9]+/[0-9]+}
+send -- "zzb"
+expect -re {1/[0-9]+}
+send -- "\033\[D"
+send -- "a"
+expect -re {1/[0-9]+}
+send -- "\r"
+expect "SELECT 'zzab'"
+send -- "\r"
+expect "1 row in set"
+expect ":) "
+
+# A match beyond the screen width is shown with the end of the entry after a `..` marker.
+send -- "\022"
+expect -re {[0-9]+/[0-9]+}
+send -- "long_target"
+expect -re {1/[0-9]+}
+expect -re { \.\.y+ }
+expect "_one'"
 send -- "\033"
 expect ":) "
 
