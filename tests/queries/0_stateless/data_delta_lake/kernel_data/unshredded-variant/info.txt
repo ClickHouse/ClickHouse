@@ -1,0 +1,71 @@
+This file contains the code used to generate this golden table "spark-variant-checkpoint"
+
+Using delta-spark 4.0, run the following scala script:
+
+val tableName = "<REPLACE WITH THE TABLE NAME OR PATH>"
+val query = """
+  with jsonStrings as (
+    select
+      id,
+      format_string('{"key": %s}', id) as jsonString
+    from
+      range(0, 100)
+  )
+  select
+    id,
+    parse_json(jsonString) as v,
+    array(
+      parse_json(jsonString),
+      null,
+      parse_json(jsonString),
+      null,
+      parse_json(jsonString)
+    ) as array_of_variants,
+    named_struct('v', parse_json(jsonString)) as struct_of_variants,
+    map(
+      cast(id as string),
+      parse_json(jsonString),
+      'nullKey',
+      null
+    ) as map_of_variants,
+    array(
+      named_struct('v', parse_json(jsonString)),
+      named_struct('v', null),
+      null,
+      named_struct(
+        'v',
+        parse_json(jsonString)
+      ),
+      null,
+      named_struct(
+        'v',
+        parse_json(jsonString)
+      )
+    ) as array_of_struct_of_variants,
+    named_struct(
+      'v',
+      array(
+        null,
+        parse_json(jsonString)
+      )
+    ) as struct_of_array_of_variants
+  from
+    jsonStrings
+"""
+
+val writeToTableSql = s"""
+  create or replace table $tableName
+  USING DELTA TBLPROPERTIES (delta.checkpointInterval = 2)
+"""
+
+spark.sql(s"${writeToTableSql}\n${query}")
+// Write two additional rows to create a checkpoint.
+(0 until 2).foreach { v =>
+  spark
+    .sql(query)
+    .where(s"id = $v")
+    .write
+    .format("delta")
+    .mode("append")
+    .insertInto(tableName)
+}
