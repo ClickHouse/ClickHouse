@@ -17,7 +17,6 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Core/Block_fwd.h>
-#include <Interpreters/HashJoin/BuildSlots.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -40,6 +39,7 @@ class ExpressionActions;
 using Sizes = std::vector<size_t>;
 
 class MatchedRowsStats;
+class HashJoinTable;
 
 namespace JoinStuff
 {
@@ -142,8 +142,9 @@ struct BuildResult
   * With the parallel layout, several threads can build the hash table at once. A bucket is a part of the key space
   * that is always filled under the same lock. It is a sub-table of a `TwoLevelHashTable`, or a set of cache lines
   * of the flat `PartitionedFixedHashTable`. The parallel layout has `NUM_HASH_TABLE_BUCKETS` buckets, and the
-  * serial layout has one. A slot is a group of buckets with one lock and one arena (see `BuildSlots`). The serial
+  * serial layout has one. A slot is a group of buckets of one table with one lock (see `BuildSlots`). The serial
   * layout has one slot, and the parallel layout one per build stream, rounded up to a power of two and capped at the bucket count.
+  * Each build stream allocates the keys and row lists it inserts in its own arena.
   *
   * 2. Process "left" table and join corresponding rows from "right" table by lookups in the map.
   * This is done in joinBlock methods.
@@ -529,6 +530,29 @@ public:
             UNREACHABLE();
         }
 
+        /// The map of type `which`, a `std::shared_ptr` that is null until `create`.
+        template <Type which, typename Self>
+        auto & mapOf(this Self & self)
+        {
+#define M(NAME) \
+    if constexpr (which == Type::NAME) \
+        return self.NAME;
+            APPLY_FOR_JOIN_VARIANTS(M)
+#undef M
+        }
+
+        static size_t cellSize(Type which)
+        {
+            switch (which)
+            {
+#define M(NAME) \
+    case Type::NAME: return sizeof(typename decltype(NAME)::element_type::cell_type);
+                APPLY_FOR_JOIN_VARIANTS(M)
+#undef M
+            }
+            UNREACHABLE();
+        }
+
         size_t getTotalByteCountImpl(Type which) const
         {
             switch (which)
@@ -600,24 +624,22 @@ public:
 
     struct RightTableData
     {
-        explicit RightTableData(const HashJoinBuildLayout & layout)
-            : build_streams(layout.num_build_streams)
-            , slots(layout.num_slots)
-        {
-        }
+        explicit RightTableData(const HashJoinBuildLayout & layout);
 
         /// Frees a large table on a thread pool, see the definition.
         ~RightTableData();
 
         void spliceBuildStreamLists();
 
+        /// The key type of the maps of every table.
         Type type = Type::hashed;
 
+        /// One table per ON disjunct:
         /// tab1 join tab2 on t1.x = t2.x or t1.y = t2.y
         /// =>
         /// tab1 join tab2 on t1.x = t2.x
         /// join tab2 on [not_joined(t1.x = t2.x)] and t1.y = t2.y
-        std::vector<MapsVariant> maps;
+        std::vector<std::unique_ptr<HashJoinTable>> tables;
         Block sample_block; /// Block as it would appear in the BlockList
         /// Track index of "right" table columns in columns list or row store.
         ColumnAccessIndexes column_access_indexes;
@@ -628,15 +650,23 @@ public:
         /// Resolves RowRef::block_no to the stored block.
         StoredColumnsIndexPtr stored_columns_index = std::make_shared<StoredColumnsIndex>();
 
-        BuildSlots slots;
+        /// The strings of string keys and the nodes of the lists of row refs, one arena per build stream: `Arena` is
+        /// unsynchronized, and calls of one stream never overlap. Neither kind of allocation needs contiguity or
+        /// rollback, so a key and the rows of its list can be in different arenas. Behind pointers, so that
+        /// `releaseArenas` can move them out and free them alone.
+        std::vector<std::unique_ptr<Arena>> arenas;
+
+        Arena & arena(size_t stream) { return *arenas[stream]; }
+        size_t arenaBytes() const;
+        /// Moves out the arenas that hold memory. They are freed when the caller drops the result.
+        std::vector<std::unique_ptr<Arena>> releaseArenas();
 
         std::atomic<size_t> allocated_size = 0;
         std::atomic<size_t> nullmaps_allocated_size = 0;
         /// Number of rows of right table to join
         std::atomic<size_t> rows_to_join = 0;
-        /// Running totals: summing the buckets would read what other build threads are mutating.
-        /// `bucket_bytes` accumulates deltas, so a post-build step that swaps maps must recompute it.
-        std::atomic<size_t> keys_to_join = 0;
+        /// A running total: summing the buckets would read what other build threads are mutating.
+        /// It accumulates deltas, so a post-build step that swaps maps must recompute it.
         std::atomic<size_t> bucket_bytes = 0;
 
         /// `allocated_size + nullmaps_allocated_size + bucket_bytes` in one atomic: summing the three while build threads
@@ -680,12 +710,8 @@ public:
 
         KeyRange key_range;
 
-        size_t avgPerKeyRows() const
-        {
-            if (keys_to_join == 0)
-                return 0;
-            return rows_to_join / keys_to_join;
-        }
+        size_t keys() const;
+        size_t avgPerKeyRows() const;
     };
 
     /// For INNER/LEFT ALL JOINs, if the right side has no duplicates inside the join key columns,
@@ -716,7 +742,6 @@ public:
 
     const Block & savedBlockSample() const { return data->sample_block; }
 
-    bool isUsed(size_t off) const;
     bool isUsed(UInt32 block_no, size_t row_idx) const;
 
     void debugKeys() const;
@@ -728,8 +753,6 @@ public:
 
     void materializeColumnsFromLeftBlock(Block & block) const;
     Block materializeColumnsFromRightBlock(Block block) const;
-
-    const std::vector<Sizes> & getKeySizes() const { return key_sizes; }
 
     bool enableLazyColumnsReplication() const { return enable_lazy_columns_replication; }
     bool enableSoftwarePrefetch() const { return enable_prefetch; }
@@ -779,8 +802,6 @@ private:
 
     std::unique_ptr<MatchedRowsStats> matched_rows_stats;
     RightTableDataPtr data;
-
-    std::vector<Sizes> key_sizes;
 
     /// Block with columns from the right-side table.
     Block right_sample_block;
@@ -847,8 +868,6 @@ private:
 
     void recomputeBucketBytes();
 
-    void dataMapInit(MapsVariant & map);
-
     void initRightBlockStructure(Block & saved_block_sample);
 
     class ContinuationResult;
@@ -895,8 +914,8 @@ private:
     bool rightTableCanBeReranged() const;
     void tryRerangeRightTableData();
 
-    template <JoinKind KIND, typename Map, JoinStrictness STRICTNESS>
-    void tryRerangeRightTableDataImpl(Map & map);
+    template <JoinKind KIND, typename Maps, JoinStrictness STRICTNESS>
+    void tryRerangeRightTableDataImpl();
 
     bool canConvertToFixedHashMap() const;
 
@@ -904,9 +923,6 @@ private:
     /// installed by BuildRuntimeFilterStep, when the build side is a FixedHashMap.
     void publishSharedRuntimeFilters();
     void tryConvertToFixedHashMap();
-
-    template <bool is_signed, typename Key, typename MapsTemplate>
-    void tryConvertToFixedHashMapImpl(MapsTemplate & maps);
 
     void freezeMapsForProbing();
 
