@@ -78,7 +78,7 @@ public:
         return frame;
     }
 
-    void evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    Int64 evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
         for (Int64 i = 0; i < bounds.rows; ++i)
         {
@@ -92,6 +92,8 @@ public:
             else
                 result.insertDefault();
         }
+
+        return is_lead ? bounds.row.back() + 1 : bounds.frame_start.back();
     }
 
 private:

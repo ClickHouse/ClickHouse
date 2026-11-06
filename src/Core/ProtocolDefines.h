@@ -56,7 +56,8 @@ static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ARCHIVE_ENTR
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_TABLE_READS = 13;
 /// The number of rows of a data lake object recorded in the table metadata, to report `total_rows_approx` from the workers.
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_NUM_ROWS = 14;
-static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_NUM_ROWS;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKET_BYTE_RANGE = 15;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKET_BYTE_RANGE;
 
 static constexpr auto DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION = 1;
 
@@ -372,11 +373,15 @@ static constexpr auto DBMS_MIN_REVISION_WITH_MERGE_COMBINATOR_STATE_VERSION = 54
 /// while it sends the data of the INSERT, and before `EndOfStream`.
 static constexpr auto DBMS_MIN_REVISION_WITH_INSERT_RETURNING = 54495;
 
+/// The server sends the final `ProfileEvents` report of a secondary `INSERT` (to the initiator of a distributed
+/// `INSERT`) after it has received all the data. Older initiators do not expect it.
+static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_SECONDARY_INSERT = 54496;
+
 /// Send the number of rows of a block that has no columns. Such a block is not empty: its rows carry
 /// no values, which is what a shard produces for a query whose intermediate result needs nothing from
 /// it, e.g. `SELECT count() OVER () FROM distributed_table WHERE x > 0`. The count cannot be derived
 /// from the columns, and an older receiver rejects a column-less block that declares rows.
-static constexpr auto DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT = 54496;
+static constexpr auto DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT = 54497;
 
 
 /// Version of ClickHouse TCP protocol.
@@ -386,5 +391,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT = 54496
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54496;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54497;
 }
