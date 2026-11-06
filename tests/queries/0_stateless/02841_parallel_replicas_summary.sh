@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
-# Tag no-parallel: the failpoint is server-wide
+# Tags: no-parallel, no-fasttest
+# Tag no-parallel, no-fasttest: the failpoint is server-wide
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
