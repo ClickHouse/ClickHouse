@@ -20,10 +20,14 @@ struct="i Int64, s String, arr Array(UInt64), n Nullable(UInt32)"
 # row loss, duplication and any wrong column association across every column -- not just aggregate totals.
 check() {
     local file="$1" structure="$2" extra="${3:-}"
-    local seq par
-    seq=$(${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('$file', 'Avro', '$structure') SETTINGS ${extra}input_format_parallel_parsing=0 FORMAT TSV" | sort | md5sum)
-    par=$(${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('$file', 'Avro', '$structure') SETTINGS ${extra}input_format_parallel_parsing=1, max_threads=8, min_chunk_bytes_for_parallel_parsing=4096 FORMAT TSV" | sort | md5sum)
-    [ "$seq" = "$par" ] && echo "OK" || echo "MISMATCH seq=[$seq] par=[$par]"
+    local seq par seq_rc par_rc
+    seq=$(${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('$file', 'Avro', '$structure') SETTINGS ${extra}input_format_parallel_parsing=0 FORMAT TSV"); seq_rc=$?
+    par=$(${CLICKHOUSE_LOCAL} -q "SELECT * FROM file('$file', 'Avro', '$structure') SETTINGS ${extra}input_format_parallel_parsing=1, max_threads=8, min_chunk_bytes_for_parallel_parsing=4096 FORMAT TSV"); par_rc=$?
+    # Both reads must succeed and return rows, otherwise two empty outputs would hash equal and falsely pass.
+    if [ "$seq_rc" -ne 0 ] || [ "$par_rc" -ne 0 ] || [ -z "$seq" ]; then
+        echo "QUERY FAILED (seq_rc=$seq_rc par_rc=$par_rc)"; return
+    fi
+    [ "$(printf '%s' "$seq" | sort | md5sum)" = "$(printf '%s' "$par" | sort | md5sum)" ] && echo "OK" || echo "MISMATCH"
 }
 
 # 1) round-trip equality, mixed types, many blocks

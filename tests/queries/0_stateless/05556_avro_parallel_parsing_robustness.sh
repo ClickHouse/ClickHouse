@@ -73,21 +73,29 @@ PY
 
 # Parallel vs sequential must agree as a multiset for the two well-formed files.
 check() {
-    local file="$1" seq par
-    seq=$(${CLICKHOUSE_LOCAL} -q "SELECT s FROM file('$file', 'Avro', 's String') SETTINGS input_format_parallel_parsing=0 FORMAT TSV" | sort | md5sum)
-    par=$(${CLICKHOUSE_LOCAL} -q "SELECT s FROM file('$file', 'Avro', 's String') SETTINGS input_format_parallel_parsing=1, max_threads=8, min_chunk_bytes_for_parallel_parsing=64 FORMAT TSV" | sort | md5sum)
-    [ "$seq" = "$par" ] && echo "OK" || echo "MISMATCH seq=[$seq] par=[$par]"
+    local file="$1" seq par seq_rc par_rc
+    seq=$(${CLICKHOUSE_LOCAL} -q "SELECT s FROM file('$file', 'Avro', 's String') SETTINGS input_format_parallel_parsing=0 FORMAT TSV"); seq_rc=$?
+    par=$(${CLICKHOUSE_LOCAL} -q "SELECT s FROM file('$file', 'Avro', 's String') SETTINGS input_format_parallel_parsing=1, max_threads=8, min_chunk_bytes_for_parallel_parsing=64 FORMAT TSV"); par_rc=$?
+    # Both reads must succeed and return rows, otherwise two empty outputs would hash equal and falsely pass.
+    if [ "$seq_rc" -ne 0 ] || [ "$par_rc" -ne 0 ] || [ -z "$seq" ]; then
+        echo "QUERY FAILED (seq_rc=$seq_rc par_rc=$par_rc)"; return
+    fi
+    [ "$(printf '%s' "$seq" | sort | md5sum)" = "$(printf '%s' "$par" | sort | md5sum)" ] && echo "OK" || echo "MISMATCH"
+}
+
+# A malformed file must be rejected with a specific exception -- not a different error, and never a signal
+# (a segfault/abort has exit status >= 128). Asserting the exact message makes the overflow case fail unless
+# the overflow guard, not the subsequent truncation, is what rejects it.
+expect_error() {
+    local file="$1" expected="$2" out rc
+    out=$(${CLICKHOUSE_LOCAL} -q "SELECT s FROM file('$file', 'Avro', 's String') SETTINGS input_format_parallel_parsing=1, max_threads=8, min_chunk_bytes_for_parallel_parsing=64 FORMAT Null" 2>&1); rc=$?
+    if [ "$rc" -ge 128 ]; then echo "KILLED BY SIGNAL ($rc)"; return; fi
+    if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -qF "$expected"; then echo "OK"; else echo "NOT REJECTED (rc=$rc)"; fi
 }
 
 echo -n "marker-in-payload: "; check "${D}_marker.avro"
 echo -n "negative-count-metadata: "; check "${D}_negcount.avro"
-
-# The oversized/truncated block must be rejected cleanly (an exception, never a crash) under parallel parsing.
-${CLICKHOUSE_LOCAL} -q "SELECT s FROM file('${D}_oversized.avro', 'Avro', 's String') SETTINGS input_format_parallel_parsing=1, max_threads=8, min_chunk_bytes_for_parallel_parsing=64 FORMAT Null" > /dev/null 2>&1
-echo "oversized-length rejected: $([ $? -ne 0 ] && echo OK || echo "NOT REJECTED")"
-
-# An overflowing 64-bit varint must also be rejected, not silently truncated.
-${CLICKHOUSE_LOCAL} -q "SELECT s FROM file('${D}_overflow.avro', 'Avro', 's String') SETTINGS input_format_parallel_parsing=1, max_threads=8, min_chunk_bytes_for_parallel_parsing=64 FORMAT Null" > /dev/null 2>&1
-echo "overflow-varint rejected: $([ $? -ne 0 ] && echo OK || echo "NOT REJECTED")"
+echo -n "oversized-length rejected: "; expect_error "${D}_oversized.avro" "Cannot read all data"
+echo -n "overflow-varint rejected: "; expect_error "${D}_overflow.avro" "Avro varint overflows 64 bits"
 
 rm -f "${D}"_*.avro
