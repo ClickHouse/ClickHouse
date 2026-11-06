@@ -138,11 +138,14 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
         /// When type_json_skip_null_typed_paths is enabled, treat NULL in typed paths
         /// as absence of the path, matching the behavior of dynamic paths.
         if (settings.json.type_json_skip_null_typed_paths
-            && path_info.type == ColumnObject::SortedPathsIterator::PathType::TYPED
-            && path_info.column->isNullAt(path_info.row))
-            continue;
+            && path_info.getType() == ColumnObject::SortedPathsIterator::PathType::TYPED)
+        {
+            auto [typed_column, typed_row] = path_info.getColumnAndRow();
+            if (typed_column.isNullAt(typed_row))
+                continue;
+        }
 
-        PathElements path_elements(path_info.path);
+        PathElements path_elements(path_info.getPath());
         /// Change prefix to common prefix between current prefix and current path.
         /// If prefix changed (it can only decrease), close all finished objects.
         /// For example:
@@ -240,19 +243,20 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
         }
 
         /// Serialize value of current path.
-        if (path_info.type == ColumnObject::SortedPathsIterator::PathType::TYPED)
+        auto [value_column, value_row] = path_info.getColumnAndRow();
+        if (path_info.getType() == ColumnObject::SortedPathsIterator::PathType::TYPED)
         {
             if (pretty)
-                typed_paths_serializations.at(String(path_info.path))->serializeTextJSONPretty(*path_info.column, path_info.row, ostr, settings, indent + current_prefix.size() + 1);
+                typed_paths_serializations.at(String(path_info.getPath()))->serializeTextJSONPretty(value_column, value_row, ostr, settings, indent + current_prefix.size() + 1);
             else
-                typed_paths_serializations.at(String(path_info.path))->serializeTextJSON(*path_info.column, path_info.row, ostr, settings);
+                typed_paths_serializations.at(String(path_info.getPath()))->serializeTextJSON(value_column, value_row, ostr, settings);
         }
         else
         {
             if (pretty)
-                dynamic_serialization->serializeTextJSONPretty(*path_info.column, path_info.row, ostr, settings, indent + current_prefix.size() + 1);
+                dynamic_serialization->serializeTextJSONPretty(value_column, value_row, ostr, settings, indent + current_prefix.size() + 1);
             else
-                dynamic_serialization->serializeTextJSON(*path_info.column, path_info.row, ostr, settings);
+                dynamic_serialization->serializeTextJSON(value_column, value_row, ostr, settings);
         }
     }
 

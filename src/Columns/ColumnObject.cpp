@@ -995,8 +995,12 @@ void ColumnObject::serializePathAndValueIntoSharedData(ColumnString * shared_dat
 
 void ColumnObject::deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column)
 {
-    auto value_data = shared_data_values->getDataAt(n);
-    ReadBufferFromMemory buf(value_data);
+    deserializeValueFromSharedData(shared_data_values->getDataAt(n), column);
+}
+
+void ColumnObject::deserializeValueFromSharedData(std::string_view value, IColumn & column)
+{
+    ReadBufferFromMemory buf(value);
     getDynamicSerialization()->deserializeBinary(column, buf, getFormatSettings());
 }
 
@@ -2401,12 +2405,15 @@ int ColumnObject::SortedPathsIterator::compare(const SortedPathsIterator & rhs, 
     /// already serialized in Dynamic binary form, so compare them directly via
     /// ColumnDynamic::compareSerializedValues (same order as the materializing path). Any other
     /// combination keeps the materializing path unchanged.
-    if (current_path_type == PathType::SHARED_DATA && rhs.current_path_type == PathType::SHARED_DATA)
-        return ColumnDynamic::compareSerializedValues(getCurrentSharedDataValue(), rhs.getCurrentSharedDataValue(), nan_direction_hint);
+    auto path_info = getCurrentPathInfo();
+    auto rhs_path_info = rhs.getCurrentPathInfo();
+    if (path_info.getType() == PathType::SHARED_DATA && rhs_path_info.getType() == PathType::SHARED_DATA)
+        return ColumnDynamic::compareSerializedValues(
+            path_info.getSharedDataValue(), rhs_path_info.getSharedDataValue(), nan_direction_hint);
 
-    auto [column, n] = getCurrentPathColumnAndRow();
-    auto [rhs_column, rhs_n] = rhs.getCurrentPathColumnAndRow();
-    return column->compareAt(n, rhs_n, *rhs_column, nan_direction_hint);
+    auto [column, n] = path_info.getColumnAndRow();
+    auto [rhs_column, rhs_n] = rhs_path_info.getColumnAndRow();
+    return column.compareAt(n, rhs_n, rhs_column, nan_direction_hint);
 }
 
 bool ColumnObject::SortedPathsIterator::end()
@@ -2468,36 +2475,52 @@ std::string_view ColumnObject::SortedPathsIterator::getCurrentPath() const
     }
 }
 
-std::pair<ColumnPtr, size_t> ColumnObject::SortedPathsIterator::getCurrentPathColumnAndRow() const
+ColumnObject::SortedPathsIterator::PathInfo::PathInfo(PathType type_, std::string_view path_, ColumnPtr column_, size_t row_)
+    : type(type_), path(path_), column(std::move(column_)), row(row_)
 {
-    switch (current_path_type)
-    {
-        case PathType::DYNAMIC:
-            return {column_object.dynamic_paths.find(*dynamic_paths_it)->second, row};
-        case PathType::TYPED:
-            return {column_object.typed_paths.find(*typed_paths_it)->second, row};
-        case PathType::SHARED_DATA:
-        {
-            auto tmp_column = ColumnDynamic::create();
-            tmp_column->reserve(1);
-            ColumnObject::deserializeValueFromSharedData(shared_data_values, shared_data_it, *tmp_column);
-            return {std::move(tmp_column), 0};
-        }
-    }
-};
+    chassert(type != PathType::SHARED_DATA);
+}
 
-std::string_view ColumnObject::SortedPathsIterator::getCurrentSharedDataValue() const
+ColumnObject::SortedPathsIterator::PathInfo::PathInfo(std::string_view path_, std::string_view shared_data_value_)
+    : type(PathType::SHARED_DATA), path(path_), shared_data_value(shared_data_value_)
 {
-    return shared_data_values->getDataAt(shared_data_it);
+}
+
+std::string_view ColumnObject::SortedPathsIterator::PathInfo::getSharedDataValue() const
+{
+    if (type != PathType::SHARED_DATA)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get shared data value of the path '{}' that is not stored in shared data", path);
+
+    return shared_data_value;
+}
+
+std::pair<const IColumn &, size_t> ColumnObject::SortedPathsIterator::PathInfo::getColumnAndRow()
+{
+    /// The value of a path in shared data is stored serialized, deserialize it
+    /// into a temporary Dynamic column on the first request.
+    if (!column)
+    {
+        chassert(type == PathType::SHARED_DATA);
+        auto tmp_column = ColumnDynamic::create();
+        tmp_column->reserve(1);
+        ColumnObject::deserializeValueFromSharedData(shared_data_value, *tmp_column);
+        column = std::move(tmp_column);
+    }
+
+    return {*column, row};
 }
 
 ColumnObject::SortedPathsIterator::PathInfo ColumnObject::SortedPathsIterator::getCurrentPathInfo() const
 {
-    PathInfo path_info;
-    path_info.type = current_path_type;
-    path_info.path = getCurrentPath();
-    std::tie(path_info.column, path_info.row) = getCurrentPathColumnAndRow();
-    return path_info;
+    switch (current_path_type)
+    {
+        case PathType::DYNAMIC:
+            return PathInfo(PathType::DYNAMIC, *dynamic_paths_it, column_object.dynamic_paths.find(*dynamic_paths_it)->second, row);
+        case PathType::TYPED:
+            return PathInfo(PathType::TYPED, *typed_paths_it, column_object.typed_paths.find(*typed_paths_it)->second, row);
+        case PathType::SHARED_DATA:
+            return PathInfo(shared_data_paths->getDataAt(shared_data_it), shared_data_values->getDataAt(shared_data_it));
+    }
 }
 
 void ColumnObject::SortedPathsIterator::serializeCurrentValueBinary(

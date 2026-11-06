@@ -1255,27 +1255,35 @@ void SerializationObject::serializeBinary(const IColumn & col, size_t row_num, W
     /// Serialize number of paths and then pairs (path, value).
     writeVarUInt(typed_paths.size() + non_null_dynamic_pats + (end - offset), ostr);
 
-    for (const auto & [path, column] : typed_paths)
+    /// Write paths in sorted order, so equal objects are serialized equally regardless of
+    /// the order of paths in the hash maps of the column (it can differ, for example, after filter).
+    using PathType = ColumnObject::SortedPathsIterator::PathType;
+    for (auto it = ColumnObject::SortedPathsIterator(column_object, row_num); !it.end(); it.next())
     {
-        writeStringBinary(path, ostr);
-        typed_paths_serializations.at(path)->serializeBinary(*column, row_num, ostr, settings);
-    }
-
-    for (const auto & [path, column] : dynamic_paths)
-    {
-        if (!column->isNullAt(row_num))
+        auto path_info = it.getCurrentPathInfo();
+        writeStringBinary(path_info.getPath(), ostr);
+        switch (path_info.getType())
         {
-            writeStringBinary(path, ostr);
-            dynamic_serialization->serializeBinary(*column, row_num, ostr, settings);
+            case PathType::SHARED_DATA:
+            {
+                /// The value is already serialized in the Dynamic binary format, write it as is.
+                auto value = path_info.getSharedDataValue();
+                ostr.write(value.data(), value.size());
+                break;
+            }
+            case PathType::TYPED:
+            {
+                auto [column, row] = path_info.getColumnAndRow();
+                typed_paths_serializations.at(String(path_info.getPath()))->serializeBinary(column, row, ostr, settings);
+                break;
+            }
+            case PathType::DYNAMIC:
+            {
+                auto [column, row] = path_info.getColumnAndRow();
+                dynamic_serialization->serializeBinary(column, row, ostr, settings);
+                break;
+            }
         }
-    }
-
-    const auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
-    for (size_t i = offset; i != end; ++i)
-    {
-        writeStringBinary(shared_data_paths->getDataAt(i), ostr);
-        auto value = shared_data_values->getDataAt(i);
-        ostr.write(value.data(), value.size());
     }
 }
 
@@ -1322,29 +1330,30 @@ void SerializationObject::serializeForHashCalculation(const IColumn & column, si
     for (auto it = ColumnObject::SortedPathsIterator(column_object, row_num); !it.end(); it.next())
     {
         auto path_info = it.getCurrentPathInfo();
-        writeStringBinary(path_info.path, ostr);
-        if (path_info.type == ColumnObject::SortedPathsIterator::PathType::TYPED)
+        writeStringBinary(path_info.getPath(), ostr);
+        auto [value_column, value_row] = path_info.getColumnAndRow();
+        if (path_info.getType() == ColumnObject::SortedPathsIterator::PathType::TYPED)
         {
-            String path = String(path_info.path);
+            String path = String(path_info.getPath());
             /// We want to write values of typed paths the same as dynamic paths,
             /// so hash doesn't depend on the typed paths, only on the actual values.
             if (isDynamic(typed_paths_types.at(path)))
             {
-                typed_paths_serializations.at(path)->serializeForHashCalculation(*path_info.column, path_info.row, ostr);
+                typed_paths_serializations.at(path)->serializeForHashCalculation(value_column, value_row, ostr);
             }
             else
             {
                 SerializationDynamic::serializeVariantForHashCalculation(
-                    *path_info.column,
+                    value_column,
                     typed_paths_serializations.at(path),
                     typed_paths_types.at(path),
-                    path_info.row,
+                    value_row,
                     ostr);
             }
         }
         else
         {
-            dynamic_serialization->serializeForHashCalculation(*path_info.column, path_info.row, ostr);
+            dynamic_serialization->serializeForHashCalculation(value_column, value_row, ostr);
         }
     }
 }
