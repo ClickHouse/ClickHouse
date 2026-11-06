@@ -31,6 +31,10 @@ SELECT arraySort(groupArray(id)) FROM ngram WHERE multiSearchAny(s, ['nomatch', 
 SELECT arraySort(groupArray(id)) FROM ngram WHERE multiSearchAny(s, ['nomatch', '\xA9bc']) SETTINGS use_skip_indexes = 0;
 SELECT arraySort(groupArray(id)) FROM ngram WHERE match(s, '\xA9bc');
 SELECT arraySort(groupArray(id)) FROM ngram WHERE match(s, '\xA9bc') SETTINGS use_skip_indexes = 0;
+SELECT arraySort(groupArray(id)) FROM ngram WHERE match(s, 'nomatch|\xA9bc');
+SELECT arraySort(groupArray(id)) FROM ngram WHERE match(s, 'nomatch|\xA9bc') SETTINGS use_skip_indexes = 0;
+SELECT arraySort(groupArray(id)) FROM ngram WHERE NOT (s NOT LIKE '%\xA9bc%');
+SELECT arraySort(groupArray(id)) FROM ngram WHERE NOT (s NOT LIKE '%\xA9bc%') SETTINGS use_skip_indexes = 0;
 
 SELECT extract(explain, 'Granules: [0-9]+/[0-9]+') AS explain FROM (
     EXPLAIN indexes = 1 SELECT count() FROM ngram WHERE s LIKE '%\xA9bc%'

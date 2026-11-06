@@ -626,9 +626,12 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
     /// The tokenizer would tokenize such a pattern differently than the scan does and could prune a
     /// granule holding matching rows.
-    if (isLikePatternFunction(function_name) && const_value.getType() == Field::Types::String
-        && (likePatternHasUnknownBackslashEscape(const_value.safeGet<String>()) || !canTokenizeNeedle(*tokenizer, const_value.safeGet<String>())))
-        return false;
+    if (isLikePatternFunction(function_name) && const_value.getType() == Field::Types::String)
+    {
+        const auto & pattern = const_value.safeGet<String>();
+        if (likePatternHasUnknownBackslashEscape(pattern) || !canTokenizeNeedle(*tokenizer, pattern))
+            return false;
+    }
 
     const auto column_name = key_node.getColumnName();
     auto key_index = getKeyIndex(column_name);
@@ -927,7 +930,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             return false;
 
         auto can_tokenize = [&](const String & needle) { return canTokenizeNeedle(*tokenizer, needle); };
-        if (result.alternatives.empty() ? !can_tokenize(result.required_substring) : !std::ranges::all_of(result.alternatives, can_tokenize))
+        if (result.alternatives.empty() ? !can_tokenize(result.required_substring)
+                                        : !std::ranges::all_of(result.alternatives, can_tokenize))
             return false;
 
         /// out.set_bloom_filters means alternatives exist
