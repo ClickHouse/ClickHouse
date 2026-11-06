@@ -594,18 +594,6 @@ SortAnalysisResult analyzeSort(
             if (before_sort_actions_dag_output_node_names.contains(out.name))
                 continue;
 
-            /** The `Set` placeholder of an `IN` and the `Function` column of a lambda are not values: no
-              * `INTERPOLATE` expression can name them (their names are internal), and they cannot be
-              * materialized. Keeping one as an output carries it past the filter that consumes it into every
-              * step above, including ones that build rows out of the whole header: the `FINAL` merge of a
-              * `WITH FILL INTERPOLATE` query then failed with `CORRUPTED_DATA` ("Cannot get value from Set"),
-              * and the virtual row of an in-order read with `NOT_IMPLEMENTED` ("Cannot insert element into
-              * Set", #111831).
-              */
-            const WhichDataType which_type(out.type);
-            if (which_type.isSet() || which_type.isFunction())
-                continue;
-
             before_interpolate_actions_dag.getOutputs().push_back(&before_interpolate_actions_dag.addInput(out));
         }
 

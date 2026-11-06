@@ -205,9 +205,16 @@ void ActionsChainStep::initialize()
     {
         std::unordered_set<std::string_view> available_output_columns_names;
 
+        /// A lambda capture and an `IN` set are not values: a later step builds its own from their inputs.
+        auto is_value = [](const DataTypePtr & type)
+        {
+            const WhichDataType which(type);
+            return !which.isSet() && !which.isFunction();
+        };
+
         for (const auto * output_node : actions->dag.getOutputs())
         {
-            if (!available_output_columns_names.insert(output_node->result_name).second)
+            if (!is_value(output_node->result_type) || !available_output_columns_names.insert(output_node->result_name).second)
                 continue;
 
             available_output_columns.emplace_back(output_node->column, output_node->result_type, output_node->result_name);
@@ -215,7 +222,7 @@ void ActionsChainStep::initialize()
 
         for (const auto & node : actions->dag.getNodes())
         {
-            if (!available_output_columns_names.insert(node.result_name).second)
+            if (!is_value(node.result_type) || !available_output_columns_names.insert(node.result_name).second)
                 continue;
 
             available_output_columns.emplace_back(node.column, node.result_type, node.result_name);
