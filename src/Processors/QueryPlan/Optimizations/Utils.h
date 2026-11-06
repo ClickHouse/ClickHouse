@@ -1,10 +1,12 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
 #include <type_traits>
+#include <unordered_map>
 
 namespace DB
 {
@@ -85,11 +87,18 @@ enum class FilterResult
 /// by it still collapses. Shared with findGatherOverRead, which has to predict that rewrite.
 [[nodiscard]] bool canHoistGatherThroughStep(const IQueryPlanStep & step);
 
+/// Columns of each node's output that are a constant there, or below it where a filter pushed down from above can read them.
+using ConstantColumns = std::unordered_map<const QueryPlan::Node *, NameSet>;
+
+[[nodiscard]] ConstantColumns collectConstantColumns(const QueryPlan::Node & root);
+
 [[nodiscard]] FilterResult filterResultForNotMatchedRows(
     const ActionsDAG & filter_dag,
     const String & filter_column_name,
     const Block & input_stream_header,
-    bool allow_unknown_function_arguments = false);
+    bool allow_unknown_function_arguments = false,
+    /// The plan node of the side, to also refuse a constant below it.
+    const QueryPlan::Node * side_node = nullptr);
 
 [[nodiscard]] FilterResult filterResultForMatchedRows(
     ActionsDAG pre_actions_dag,
