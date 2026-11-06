@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <Common/VectorWithMemoryTracking.h>
 #include <optional>
 
 #include <Columns/ColumnsNumber.h>
@@ -66,7 +67,7 @@ struct IEJoinResidualCondition
 
     ExpressionActionsPtr actions;
     /// One entry per required column of `actions`, in `getRequiredColumnsWithTypes` order.
-    std::vector<Source> inputs;
+    VectorWithMemoryTracking<Source> inputs;
 };
 
 /*
@@ -270,7 +271,7 @@ private:
     /// Header of the residual's input columns (in its required-columns order) and the
     /// precomputed input positions for `ExpressionActions::executeOnColumns`.
     Block residual_input_header;
-    std::vector<ssize_t> residual_input_positions;
+    VectorWithMemoryTracking<ssize_t> residual_input_positions;
     /// The inputs are each sorted by the first condition's key (ascending, NULLS LAST):
     /// selects the merge-based L1 build; with the flag off the operator orders the union
     /// itself with an index sort.

@@ -1,0 +1,15 @@
+-- the query has one group
+1	95020
+-- the projection part has more groups than the limit
+With p (aggregate projection, hypothetical):
+empirical_status: unsupported
+empirical_reason: The projection part of part all_1_1_0 has more than max_rows_to_group_by = 10 groups
+With p (aggregate projection, hypothetical):
+empirical_status: unsupported
+empirical_reason: The projection part of part all_1_1_0 has more than max_rows_to_group_by = 10 groups
+-- the projection part has as many groups as the limit
+marks: 100
+With p (aggregate projection, hypothetical):
+marks: 1
+verdict: chosen
+empirical_status: ok
