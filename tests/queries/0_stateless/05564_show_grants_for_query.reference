@@ -57,5 +57,6 @@ GRANT SELECT ON default.d TO u8
 REVOKE SELECT(v2) ON default.d FROM u8
 --- 15: dictGet
 GRANT dictGet ON default.d TO u6
---- 16: traceView
+--- 16: traceView, with a check that only its internal queries make
 GRANT SELECT ON system.opentelemetry_span_log TO u9
+GRANT SELECT(a) ON default.t2 TO u9

@@ -69,6 +69,7 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_alias_table_engine=1 -n -q "
     GRANT SELECT ON d TO $u8;
     REVOKE SELECT(v2) ON d FROM $u8;
     GRANT SELECT ON system.opentelemetry_span_log TO $u9;
+    GRANT SELECT(a) ON t2 TO $u9;
     GRANT SHOW USERS ON *.* TO $caller;
     GRANT SELECT ON d TO $caller;
 "
@@ -145,7 +146,7 @@ client -q "SHOW GRANTS FOR $u8 FINAL"
 echo "--- 15: dictGet"
 client -q "SHOW GRANTS FOR $u6 FOR QUERY SELECT dictGet('${CLICKHOUSE_DATABASE}.d', 'v1', toUInt64(1))"
 
-echo "--- 16: traceView"
+echo "--- 16: traceView, with a check that only its internal queries make"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS opentelemetry_span_log"
 trace_id=$(${CLICKHOUSE_CLIENT} -q "SELECT toString(generateUUIDv4())")
 ${CLICKHOUSE_CLIENT} -q "
@@ -156,6 +157,7 @@ ${CLICKHOUSE_CLIENT} -q "
         ('h', '$trace_id', 2, 1, 'child', 'INTERNAL', 2000, 3000, today(), map())
 "
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS opentelemetry_span_log"
-client -q "SHOW GRANTS FOR $u9 FOR QUERY SELECT span FROM traceView('$trace_id')"
+span_log_filter="{'system.opentelemetry_span_log': 'span_id IN (SELECT toUInt64(a) FROM ${CLICKHOUSE_DATABASE}.t2) OR span_id > 0'}"
+client --additional_table_filters="$span_log_filter" -q "SHOW GRANTS FOR $u9 FOR QUERY SELECT span FROM traceView('$trace_id')"
 
 cleanup
