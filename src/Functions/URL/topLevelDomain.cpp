@@ -63,7 +63,7 @@ REGISTER_FUNCTION(TopLevelDomain)
 {
     /// topLevelDomain documentation
     FunctionDocumentation::Description description_topLevelDomain = R"(
-Extracts the the top-level domain from a URL.
+Extracts the top-level domain from a URL.
 
 <Note>
 The URL can be specified with or without a protocol.
@@ -102,7 +102,7 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
 
     /// topLevelDomainRFC documentation
     FunctionDocumentation::Description description_topLevelDomainRFC = R"(
-Extracts the the top-level domain from a URL.
+Extracts the top-level domain from a URL.
 Similar to [`topLevelDomain`](#topLevelDomain), but conforms to [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
     )";
     FunctionDocumentation::Syntax syntax_topLevelDomainRFC = "topLevelDomainRFC(url)";
