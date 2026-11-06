@@ -1337,10 +1337,7 @@ bool TableJoin::preferParallelHashLayout(
         case HashJoinLayout::PARALLEL:
             return true;
         case HashJoinLayout::AUTO:
-            /// Without an estimate only the largest threshold keeps the serial layout. So `0` always gives the parallel
-            /// layout and the largest value always gives the serial one.
-            return rhs_size_estimation ? *rhs_size_estimation >= parallel_hash_join_threshold
-                                       : parallel_hash_join_threshold != std::numeric_limits<UInt64>::max();
+            return !rhs_size_estimation || *rhs_size_estimation >= parallel_hash_join_threshold;
     }
     UNREACHABLE();
 }
