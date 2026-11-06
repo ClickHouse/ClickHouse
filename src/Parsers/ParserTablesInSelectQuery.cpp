@@ -1172,15 +1172,15 @@ The session settings that affect the semantics, planning, execution, and memory 
 
 ## Related content {#related-content}
 
-- [Using JOINs in ClickHouse](/concepts/features/operations/select/joining-tables)
-- [How ClickHouse executes JOINs](/concepts/features/operations/select/join-execution)
-- [JOIN algorithms](/concepts/features/operations/select/join-algorithms)
-- [JOIN memory management and spilling](/concepts/features/operations/select/join-memory-management)
-- [JOIN Settings](/concepts/features/operations/select/join-settings)
-- [Minimize and optimize JOINs](/concepts/best-practices/minimize-optimize-joins)
-- [`IN` operator](/reference/statements/in)
-- [Dictionaries](/concepts/features/dictionaries)
-- [`Join` table engine](/reference/engines/table-engines/special/join)
+- [Using JOINs in ClickHouse](/concepts/features/operations/select/joining-tables) — JOIN types and strictness, with diagrams
+- [How ClickHouse executes JOINs](/concepts/features/operations/select/join-execution) — query planning
+- [JOIN algorithms](/concepts/features/operations/select/join-algorithms) — how each algorithm runs, and which JOIN types it supports
+- [JOIN memory management and spilling](/concepts/features/operations/select/join-memory-management) — memory limits and spilling to disk
+- [JOIN Settings](/concepts/features/operations/select/join-settings) — the session settings that affect JOINs
+- [Minimize and optimize JOINs](/concepts/best-practices/minimize-optimize-joins) — best practices, with benchmarked examples
+- [`IN` operator](/reference/statements/in) — often cheaper than a JOIN for an existence check
+- [Dictionaries](/concepts/features/dictionaries) — an alternative to joining a small dimension table
+- [`Join` table engine](/reference/engines/table-engines/special/join) — keeps a prepared right-hand side in memory
 - Blog: [ClickHouse: A Blazingly Fast DBMS with Full SQL Join Support - Part 1](https://clickhouse.com/blog/clickhouse-fully-supports-joins)
 - Blog: [ClickHouse: A Blazingly Fast DBMS with Full SQL Join Support - Under the Hood - Part 2](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2)
 - Blog: [ClickHouse: A Blazingly Fast DBMS with Full SQL Join Support - Under the Hood - Part 3](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3)
