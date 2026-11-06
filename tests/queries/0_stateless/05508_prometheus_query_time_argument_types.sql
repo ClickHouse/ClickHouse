@@ -25,7 +25,7 @@ SELECT timestamp, value FROM prometheusQuery('ts_time_arguments', '7', toLowCard
 SELECT timestamp, value FROM prometheusQuery('ts_time_arguments', '7', toFixedString('1000', 4));
 -- `Variant` and `Dynamic` hold the value of their active alternative.
 SELECT timestamp, value FROM prometheusQuery('ts_time_arguments', '7', CAST(toUInt64(1000) AS Variant(UInt64, String)));
-SELECT timestamp, value FROM prometheusQuery('ts_time_arguments', '7', CAST('2024-01-01 00:00:00' AS Variant(UInt64, String)));
+SELECT timestamp, value FROM prometheusQuery('ts_time_arguments', '7', CAST('2024-01-01T00:00:00Z' AS Variant(UInt64, String)));
 SELECT timestamp, value FROM prometheusQuery('ts_time_arguments', '7', CAST(1000 AS Dynamic));
 -- A comparison is a `UInt8`, not a `Bool`.
 SELECT timestamp, value FROM prometheusQuery('ts_time_arguments', '7', 1 = 1);
