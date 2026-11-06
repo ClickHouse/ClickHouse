@@ -241,7 +241,7 @@ std::optional<SubstitutionConversion> classifySubstitutionConversion(const DataT
     /// non-zero value to `true`). The custom name is load-bearing: reconstruction into `Bool`
     /// requires a `Bool` member.
     if ((isBool(correlated_base) || isSimpleAggregateFunctionOfBool(*correlated_base))
-        && !(isBool(member_base) || isSimpleAggregateFunctionOfBool(*member_base)))
+        && member_base->getName() != correlated_base->getName())
         return std::nullopt;
 
     /// `IDataType::equals` compares the storage type and ignores semantically significant

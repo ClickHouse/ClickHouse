@@ -50,7 +50,7 @@ public:
 
 DataTypePtr createSimpleAggregateFunctionType(const AggregateFunctionPtr & function, const DataTypes & argument_types, const Array & parameters);
 
-/// `SimpleAggregateFunction(f, Bool)` keeps the `Bool` storage and its values under its own name.
+/// True for `SimpleAggregateFunction(f, Bool)` whose `f` returns `Bool`; such a type keeps `Bool` values under its own name.
 bool isSimpleAggregateFunctionOfBool(const IDataType & type);
 
 }
