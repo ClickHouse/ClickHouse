@@ -1,7 +1,6 @@
 #include <memory>
 
 #include <Common/CurrentThread.h>
-#include <Common/QueryCancellationBlockerInThread.h>
 #include <Common/logger_useful.h>
 #include <Common/MemoryPressureMonitor.h>
 #include <Common/ThreadStatus.h>
@@ -145,7 +144,7 @@ MemoryPressureMonitor & CurrentThread::getMemoryPressureMonitor()
 
 void CurrentThread::checkIfNotCancelled()
 {
-    if (unlikely(!current_thread) || QueryCancellationBlockerInThread::isBlocked())
+    if (unlikely(!current_thread))
         return;
 
     current_thread->throwIfQueryCanceled();
@@ -158,7 +157,7 @@ bool CurrentThread::isQueryCancellationException(const std::exception_ptr & exce
         || code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
         return true;
 
-    if (QueryCancellationBlockerInThread::isBlocked())
+    if (ThreadStatus::QueryCancellationBlocker::isActive())
         return false;
 
     if (auto group = getGroup())

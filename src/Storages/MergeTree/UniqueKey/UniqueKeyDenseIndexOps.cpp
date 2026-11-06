@@ -20,7 +20,6 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/CurrentThread.h>
-#include <Common/QueryCancellationBlockerInThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -279,7 +278,6 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
         /// Reading the original columns is cancellable. Once replacement starts,
         /// finish the SST and its checksums together so a cancelled attach can be retried.
         CurrentThread::checkIfNotCancelled();
-        QueryCancellationBlockerInThread cancellation_blocker;
         ThreadStatus::QueryCancellationBlocker thread_cancellation_blocker;
         storage.removeFileIfExists(SSTIndexWriter::FILE_NAME);
         SSTIndexWriter::write(

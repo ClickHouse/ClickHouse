@@ -148,8 +148,9 @@ protected:
 
     mutable std::mutex cancel_mutex;
     CancelReason cancel_reason { CancelReason::UNDEFINED };
+    /// One immutable cause; each consumer gets a private copy retaining its exception origin.
     std::exception_ptr cancellation_exception TSA_GUARDED_BY(cancel_mutex);
-    mutable std::vector<std::exception_ptr> cancellation_exception_instances TSA_GUARDED_BY(cancel_mutex);
+    UInt64 cancellation_exception_origin TSA_GUARDED_BY(cancel_mutex) = 0;
 
     /// All data to the client already had been sent.
     /// Including EndOfStream or Exception.

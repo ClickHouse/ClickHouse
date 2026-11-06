@@ -646,9 +646,22 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
         is_killed = true;
         cancel_reason = reason;
         /// Only ever read (copied) after this, so it must not alias an object a caller still decorates.
-        cancellation_exception = exception ? copyMutableException(exception) : nullptr;
         if (exception && reason != CancelReason::TIMEOUT)
-            cancellation_exception_instances.push_back(exception);
+        {
+            cancellation_exception = copyMutableException(exception);
+            try
+            {
+                std::rethrow_exception(cancellation_exception);
+            }
+            catch (const Poco::Exception & e)
+            {
+                cancellation_exception_origin = e.origin();
+            }
+            catch (...)
+            {
+                /// `copyMutableException` shares non-Poco exceptions, so pointer equality suffices.
+            }
+        }
     }
 
     std::vector<ExecutorHolderPtr> executors_snapshot;
@@ -683,19 +696,19 @@ void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time
         std::lock_guard<std::mutex> lock(cancel_mutex);
         if (is_killed)
         {
-            String additional_error_part;
-            if (elapsed_ns)
-                additional_error_part = fmt::format("elapsed {:.3f} ms, ", static_cast<double>(elapsed_ns) / 1000000ULL);
-
-            if (cancel_reason == CancelReason::TIMEOUT)
+            if (cancel_reason == CancelReason::TIMEOUT && !cancellation_exception)
             {
-                auto exception = std::make_exception_ptr(Exception(
+                String additional_error_part;
+                if (elapsed_ns)
+                    additional_error_part = fmt::format("elapsed {:.3f} ms, ", static_cast<double>(elapsed_ns) / 1000000ULL);
+
+                Exception exception(
                     ErrorCodes::TIMEOUT_EXCEEDED,
                     "Timeout exceeded: {}maximum: {:.3f} ms",
                     additional_error_part,
-                    static_cast<double>(max_execution_time_us) / 1000));
-                cancellation_exception_instances.push_back(exception);
-                std::rethrow_exception(exception);
+                    static_cast<double>(max_execution_time_us) / 1000);
+                cancellation_exception_origin = exception.origin();
+                cancellation_exception = std::make_exception_ptr(std::move(exception));
             }
             throwQueryWasCancelled();
         }
@@ -749,9 +762,7 @@ void QueryStatus::throwQueryWasCancelled() const
     /// A private copy per caller: `catch (Exception &)` handlers up the stack decorate what they catch.
     if (cancellation_exception)
     {
-        auto exception = copyMutableException(cancellation_exception);
-        cancellation_exception_instances.push_back(exception);
-        std::rethrow_exception(exception);
+        std::rethrow_exception(copyMutableException(cancellation_exception));
     }
     else
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
@@ -767,14 +778,24 @@ void QueryStatus::throwIfKilled()
 bool QueryStatus::isStoredCancellationException(const std::exception_ptr & exception) const
 {
     std::lock_guard lock(cancel_mutex);
-    if (!is_killed)
+    if (!is_killed || !cancellation_exception || !exception)
         return false;
 
-    for (const auto & cancellation_exception_instance : cancellation_exception_instances)
-        if (cancellation_exception_instance == exception)
-            return true;
+    if (cancellation_exception == exception)
+        return true;
 
-    return false;
+    try
+    {
+        std::rethrow_exception(exception);
+    }
+    catch (const Poco::Exception & e)
+    {
+        return cancellation_exception_origin != 0 && e.origin() == cancellation_exception_origin;
+    }
+    catch (...)
+    {
+        return false;
+    }
 }
 
 CancelReason QueryStatus::getCancelReason() const

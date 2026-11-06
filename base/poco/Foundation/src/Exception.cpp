@@ -13,11 +13,17 @@
 
 
 #include "Poco/Exception.h"
+#include <atomic>
 #include <typeinfo>
 
 
 namespace Poco {
 
+std::uint64_t Exception::nextOrigin()
+{
+    static std::atomic<std::uint64_t> next{1};
+    return next.fetch_add(1, std::memory_order_relaxed);
+}
 
 Exception::Exception(int code): _pNested(0), _code(code)
 {
@@ -51,7 +57,8 @@ Exception::Exception(const std::string& msg, const Exception& nested, int code):
 Exception::Exception(const Exception& exc):
 	std::exception(exc),
 	_msg(exc._msg),
-	_code(exc._code)
+	_code(exc._code),
+    _origin(exc._origin)
 {
 	_pNested = exc._pNested ? exc._pNested->clone() : 0;
 }
@@ -59,7 +66,8 @@ Exception::Exception(const Exception& exc):
 Exception::Exception(Exception&& exc):
     std::exception(std::move(exc)),
     _msg(std::move(exc._msg)),
-    _code(exc._code)
+    _code(exc._code),
+    _origin(exc._origin)
 {
     _pNested = exc._pNested ? exc._pNested->clone() : 0;
 }
@@ -80,6 +88,7 @@ Exception& Exception::operator = (const Exception& exc)
 		_msg     = exc._msg;
 		_pNested = newPNested;
 		_code    = exc._code;
+        _origin  = exc._origin;
 	    std::exception::operator=(std::move(exc));
 	}
 	return *this;
@@ -94,6 +103,7 @@ Exception& Exception::operator = (Exception&& exc)
         _msg     = std::move(exc._msg);
         _pNested = newPNested;
         _code    = exc._code;
+        _origin  = exc._origin;
         std::exception::operator=(std::move(exc));
 
     }

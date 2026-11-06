@@ -4,7 +4,6 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
-#include <Common/QueryCancellationBlockerInThread.h>
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
@@ -82,7 +81,7 @@ TEST(QueryCancellationException, StandardCodesWithoutQuery)
         {
             auto exception = std::make_exception_ptr(Exception(code, "Cancellation"));
             EXPECT_TRUE(CurrentThread::isQueryCancellationException(exception));
-            QueryCancellationBlockerInThread blocker;
+            ThreadStatus::QueryCancellationBlocker blocker;
             EXPECT_TRUE(CurrentThread::isQueryCancellationException(exception));
         }
     }).get();
@@ -95,7 +94,7 @@ TEST(QueryCancellationException, OperationTimeoutWithoutQuery)
         ASSERT_FALSE(CurrentThread::isInitialized());
         auto timeout = std::make_exception_ptr(Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Operation timed out"));
         EXPECT_FALSE(CurrentThread::isQueryCancellationException(timeout));
-        QueryCancellationBlockerInThread blocker;
+        ThreadStatus::QueryCancellationBlocker blocker;
         EXPECT_FALSE(CurrentThread::isQueryCancellationException(timeout));
     }).get();
 }
@@ -163,7 +162,7 @@ TEST(QueryCancellationException, IdentityBlockerAndThreadGroup)
             EXPECT_TRUE(CurrentThread::isQueryCancellationException(same_exception));
             EXPECT_FALSE(CurrentThread::isQueryCancellationException(other_exception));
             {
-                QueryCancellationBlockerInThread blocker;
+                ThreadStatus::QueryCancellationBlocker blocker;
                 EXPECT_EQ(thrownCancellation(), nullptr);
                 EXPECT_FALSE(CurrentThread::isQueryCancellationException(exception));
                 auto standard = std::make_exception_ptr(Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Cancellation"));
@@ -218,6 +217,76 @@ TEST(QueryCancellationException, TimeoutOverridesStoredException)
         EXPECT_EQ(getExceptionErrorCode(timeout), ErrorCodes::TIMEOUT_EXCEEDED);
         EXPECT_TRUE(CurrentThread::isQueryCancellationException(timeout));
         EXPECT_FALSE(CurrentThread::isQueryCancellationException(exception));
+    }).get();
+}
+
+TEST(QueryCancellationException, CopiesPreserveCancellationOrigin)
+{
+    std::async(std::launch::async, []
+    {
+        ThreadStatus thread_status;
+        for (auto reason : {CancelReason::TIMEOUT, CancelReason::CANCELLED_BY_USER})
+        {
+            Query query;
+            auto group = std::make_shared<ThreadGroup>(query.context, 0);
+            ThreadGroupSwitcher switcher(group, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+            query.status->cancelQuery(reason, customException());
+            auto original = thrownCancellation();
+            ASSERT_NE(original, nullptr);
+
+            try
+            {
+                std::rethrow_exception(original);
+            }
+            catch (const Exception & e)
+            {
+                auto check = [&](const std::exception_ptr & copy)
+                {
+                    EXPECT_NE(copy, original);
+                    EXPECT_TRUE(CurrentThread::isQueryCancellationException(copy));
+                };
+
+                check(copyMutableException(original));
+                check(std::make_exception_ptr(e));
+                Exception assigned;
+                assigned = e;
+                check(std::make_exception_ptr(std::move(assigned)));
+                std::unique_ptr<Poco::Exception> cloned(e.clone());
+                try
+                {
+                    cloned->rethrow();
+                }
+                catch (...)
+                {
+                    check(std::current_exception());
+                }
+                auto unrelated = std::make_exception_ptr(Exception::createRuntime(e.code(), e.message()));
+                EXPECT_FALSE(CurrentThread::isQueryCancellationException(unrelated));
+            }
+        }
+    }).get();
+}
+
+TEST(QueryCancellationException, BlockerFollowsFiberAndRestoresNestedState)
+{
+    std::async(std::launch::async, []
+    {
+        EXPECT_FALSE(ThreadStatus::QueryCancellationBlocker::isActive());
+        {
+            ThreadStatus::QueryCancellationBlocker outer;
+            {
+                ThreadStatus::QueryCancellationBlocker inner;
+                EXPECT_TRUE(ThreadStatus::QueryCancellationBlocker::isActive());
+            }
+            EXPECT_TRUE(ThreadStatus::QueryCancellationBlocker::isActive());
+
+            auto other_fiber = FiberLocalStorage::create();
+            FiberLocalStorage::swap(*other_fiber);
+            EXPECT_FALSE(ThreadStatus::QueryCancellationBlocker::isActive());
+            FiberLocalStorage::swap(*other_fiber);
+            EXPECT_TRUE(ThreadStatus::QueryCancellationBlocker::isActive());
+        }
+        EXPECT_FALSE(ThreadStatus::QueryCancellationBlocker::isActive());
     }).get();
 }
 

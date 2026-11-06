@@ -11,7 +11,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
-#include <Common/QueryCancellationBlockerInThread.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
@@ -4187,7 +4186,7 @@ try
 {
     /// A foreground `DROP TABLE` must finish loading the parts needed for zero-copy cleanup,
     /// even after its query is cancelled.
-    std::optional<QueryCancellationBlockerInThread> cancellation_blocker;
+    std::optional<ThreadStatus::QueryCancellationBlocker> cancellation_blocker;
     if (!is_async)
         cancellation_blocker.emplace();
 
@@ -4316,11 +4315,6 @@ try
         runner.enqueueAndKeepTrack([this, my_part = part, &num_loaded_parts, &failed_parts_mutex, &failed_parts,
                                     &retryable_exception, &has_retryable_exception, replicated, is_async]()
         {
-            /// The pool inherits the query's thread group, but not its thread-local blocker.
-            std::optional<QueryCancellationBlockerInThread> worker_cancellation_blocker;
-            if (!is_async)
-                worker_cancellation_blocker.emplace();
-
             FailPointInjection::pauseFailPoint(FailPoints::mt_pause_before_loading_queued_outdated_part);
 
             /// This load was queued while the table was still writable. The pool runs a bounded
@@ -12930,15 +12924,13 @@ MergeTreeData::Transaction::~Transaction()
 
 void MergeTreeData::Transaction::rollback(DataPartsLock * acquired_lock)
 {
-    QueryCancellationBlockerInThread cancellation_blocker;
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
 
     if (!isEmpty())
     {
         /// The rollback of a cancelled merge or mutation must not be interrupted by its own cancellation:
         /// otherwise reading the version metadata in `setAndStoreCreationCSN` may throw, and the rolled back part
         /// stays without `RolledBackCSN`, which prevents merges of the neighbouring parts until the part is removed.
-        ThreadStatus::QueryCancellationBlocker thread_cancellation_blocker;
-
         for (const auto & part : precommitted_parts)
             part->version->setAndStoreCreationCSN(Tx::RolledBackCSN);
 
