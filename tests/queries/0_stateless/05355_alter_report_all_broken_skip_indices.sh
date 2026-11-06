@@ -82,6 +82,51 @@ echo 'Clear reports all dependent indices'
 check_policy_error 'MODIFY COLUMN x UInt32'
 echo 'Modify reports all dependent indices'
 
+check_index_validation_error()
+{
+    local query="$1"
+    local expected_code="$2"
+    local expected_code_name="$3"
+    local first_index="$4"
+    local second_index="$5"
+    local error
+
+    if error=$($CLICKHOUSE_CLIENT --query "$query" 2>&1); then
+        echo "Expected query to fail: $query"
+        exit 1
+    fi
+
+    [[ "$error" == *"$expected_code"* ]]
+    [[ "$error" == *"$expected_code_name"* ]]
+    [[ "$error" == *"$first_index"* ]]
+    [[ "$error" == *"$second_index"* ]]
+}
+
+$CLICKHOUSE_CLIENT --multiquery --query "
+    CREATE TABLE alter_invalid_text_indices
+    (
+        value String,
+        INDEX idx_token value TYPE tokenbf_v1(256, 2, 0),
+        INDEX idx_ngram value TYPE ngrambf_v1(3, 256, 2, 0)
+    ) ENGINE = MergeTree ORDER BY tuple();
+"
+check_index_validation_error 'ALTER TABLE alter_invalid_text_indices MODIFY COLUMN value UInt64' 'Code: 36.' 'BAD_ARGUMENTS' 'idx_token' 'idx_ngram'
+echo 'Both invalid text indices reported'
+$CLICKHOUSE_CLIENT --query 'DROP TABLE alter_invalid_text_indices'
+
+$CLICKHOUSE_CLIENT --multiquery --query "
+    CREATE TABLE alter_invalid_json_indices
+    (
+        j JSON(a UInt64),
+        INDEX idx_a1 j.a TYPE minmax,
+        INDEX idx_a2 j.a TYPE minmax
+    ) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS allow_minmax_index_for_json = 1, add_minmax_index_for_numeric_columns = 0;
+"
+check_index_validation_error 'ALTER TABLE alter_invalid_json_indices MODIFY COLUMN j JSON(a UInt32) SETTINGS enable_json_lazy_type_hints = 1' 'Code: 524.' 'ALTER_OF_COLUMN_IS_FORBIDDEN' 'idx_a1' 'idx_a2'
+echo 'Both lazy JSON indices reported'
+$CLICKHOUSE_CLIENT --query 'DROP TABLE alter_invalid_json_indices'
+
 # Rejected changes leave both the data and all index definitions intact.
 $CLICKHOUSE_CLIENT --multiquery --query "
     SELECT x, y FROM alter_broken_indices;

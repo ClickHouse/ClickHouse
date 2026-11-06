@@ -1607,6 +1607,8 @@ void MergeTreeData::checkProperties(
     {
         std::unordered_set<String> indices_names;
         std::unordered_set<String> columns_with_text_indexes;
+        Strings index_errors;
+        int first_index_error_code = 0;
 
         for (const auto & index : new_metadata.secondary_indices)
         {
@@ -1664,8 +1666,10 @@ void MergeTreeData::checkProperties(
             }
             catch (Exception & e)
             {
-                e.addMessage("When validating secondary index {}", backQuote(index.name));
-                throw;
+                if (index_errors.empty())
+                    first_index_error_code = e.code();
+                index_errors.push_back(fmt::format("{}: {}", backQuoteIfNeed(index.name), e.message()));
+                continue;
             }
 
             if (indices_names.contains(index.name))
@@ -1688,6 +1692,9 @@ void MergeTreeData::checkProperties(
                 columns_with_text_indexes.insert(column);
             }
         }
+
+        if (!index_errors.empty())
+            throw Exception(first_index_error_code, "Cannot validate secondary indices: {}", fmt::join(index_errors, "; "));
     }
 
     /// If adaptive index granularity is disabled, certain vector search queries with PREWHERE run into LOGICAL_ERRORs.
@@ -7016,6 +7023,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
             /// Skip index (explicit or implicit): a full mutation can rebuild it, so suggest disabling the setting.
             const auto & new_indices = new_metadata.getSecondaryIndices();
+            Strings lazy_conversion_index_errors;
             for (const auto & old_index : old_metadata.getSecondaryIndices())
             {
                 if (!expression_uses_changed_subcolumn(old_index.expression))
@@ -7028,15 +7036,18 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 if (new_index_it == new_indices.end())
                     continue;
 
+                lazy_conversion_index_errors.push_back(backQuoteIfNeed(old_index.name));
+            }
+
+            if (!lazy_conversion_index_errors.empty())
                 throw Exception(
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "ALTER of column {} changes the on-disk type of a subcolumn stored by the skip index '{}'; "
-                    "a metadata-only ALTER cannot rebuild the index. Disable {} to run this change as a full mutation, "
-                    "or drop the index first",
+                    "ALTER of column {} changes the on-disk type of a subcolumn stored by skip indices {}; "
+                    "a metadata-only ALTER cannot rebuild them. Disable {} to run this change as a full mutation, "
+                    "or drop the indices first",
                     backQuoteIfNeed(command.column_name),
-                    old_index.name,
+                    fmt::join(lazy_conversion_index_errors, ", "),
                     lazy_settings_description);
-            }
 
             /// A subcolumn can feed a projection's sort key (positionally persisted) or a filtered
             /// projection's WHERE (which fixes the stored row set); both go stale on a lazy change.
