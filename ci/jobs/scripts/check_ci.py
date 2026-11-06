@@ -13,12 +13,11 @@ sys.path.append(".")
 from ci.praktika.cidb import CIDB
 from ci.praktika.gh import GH
 from ci.praktika.git import Git
-from ci.praktika.info import Info
 from ci.praktika.interactive import UserPrompt
 from ci.praktika.issue import Issue, IssueLabels, TestCaseIssueCatalog
 from ci.praktika.result import Result
-from ci.praktika.utils import Shell, Utils
-from ci.settings.settings import CI_DB_READ_USER, TEST_FAILURE_PATTERNS
+from ci.praktika.utils import Shell
+from ci.settings.settings import CI_DB_READ_URL, CI_DB_READ_USER, TEST_FAILURE_PATTERNS
 
 
 class CheckStatuses:
@@ -42,10 +41,10 @@ head_sha = None
 class JobTypes:
     STATELESS = "Stateless"
     INTEGRATION = "Integration"
-    AST_FUZZER = "AST fuzzer"
+    AST_FUZZER = "AST Fuzzer"
     BUILD = "Build"
     FORMATTER = "Formatter"
-    LACASA_FUZZER = "La Casa Del Dolor"
+    BUZZ_FUZZER = "Buzz"
     DOCKER = "Docker"
     COMPATIBILITY = "Compatibility"
     INSTALL = "Install"
@@ -101,11 +100,11 @@ class CreateIssue:
         print(f"- Body:\n{body}")
         print("-" * 100)
         body = (
-            "_Important: This issue was automatically generated and will be closed as trash. "
-            "Do not create trash. Please take a look at this issue, provide the analysis, and remove this line._\n\n"
+            "_Important: This issue was automatically generated and is used by CI for matching failures. "
+            "DO NOT modify the body content. DO NOT remove labels._\n\n"
         ) + body
 
-        if not UserPrompt.confirm("Proceed with issue creation (highly not recommended)?"):
+        if not UserPrompt.confirm("Proceed with issue creation?"):
             return ""
 
         return Issue.create_from(
@@ -156,7 +155,7 @@ class CreateIssue:
 Test name: {test_name}
 Failure reason: {failure_reason}
 {ci_report_line}
-Failing test history: [cidb]({CIDB(url=CIDB.get_read_url(Info()), user=CI_DB_READ_USER, passwd="").get_link_to_test_case_statistics(result.name, job_name, [failure_reason], test_output=result.info, pr_base_branches=['master'])})
+Failing test history: [cidb]({CIDB(url=CI_DB_READ_URL, user=CI_DB_READ_USER, passwd="").get_link_to_test_case_statistics(result.name, job_name, [failure_reason], test_output=result.info, pr_base_branches=['master'])})
 
 Test output:
 ```
@@ -245,7 +244,7 @@ Test output:
             print("Cannot handle OOM errors - skip")
             return False
         if (
-            any(key in job_result.name for key in ("Buzz", "AST", "La Casa", "Unit tests"))
+            any(key in job_result.name for key in ("Buzz", "AST", "Unit tests"))
             and job_result.results
         ):
             return True
@@ -287,7 +286,7 @@ Test output:
                 issue_url = cls.create_gh_issue_on_fuzzer_or_stress_finding(
                     result, job_name, **kw
                 )
-        elif any(key in job_name for key in ("Buzz", "AST", "La Casa", "Stress", "Unit tests")):
+        elif any(key in job_name for key in ("Buzz", "AST", "Stress", "Unit tests")):
             if "Unit tests" in job_name and result.name == job_name:
                 result.name = cls.extract_unit_test_title(result)
             issue_url = cls.create_gh_issue_on_fuzzer_or_stress_finding(
@@ -394,26 +393,11 @@ class CommitStatusCheck:
 
     @staticmethod
     def get_ci_praktika_result(pr_number, commit_sha):
-        # Reports live under the normalized workflow name, both as a path prefix
-        # and in the result file name:
-        #   PRs/<pr>/<sha>/<workflow>/result_<workflow>.json
-        #   REFs/master/<sha>/<workflow>/result_<workflow>.json
         if pr_number != 0:
-            workflow = Utils.normalize_string("PR")
-            ref_prefix = f"PRs/{pr_number}"
+            report_url = f"https://s3.amazonaws.com/clickhouse-test-reports/PRs/{pr_number}/{commit_sha}/result_pr.json"
         else:
-            workflow = Utils.normalize_string("MasterCI")
-            ref_prefix = "REFs/master"
-        report_url = (
-            f"https://s3.amazonaws.com/clickhouse-test-reports/"
-            f"{ref_prefix}/{commit_sha}/{workflow}/result_{workflow}.json"
-        )
-        # -f so a missing report fails here instead of downloading the S3 error
-        # body and blowing up later in Result.from_file with an opaque parse error.
-        if not Shell.check(
-            f"curl -f {report_url} -o /tmp/result_pr.json > /dev/null 2>&1"
-        ):
-            raise RuntimeError(f"Failed to fetch CI report from {report_url}")
+            report_url = f"https://s3.amazonaws.com/clickhouse-test-reports/REFs/master/{commit_sha}/result_masterci.json"
+        _ = Shell.check(f"curl {report_url} -o /tmp/result_pr.json > /dev/null 2>&1")
         return Result.from_file("/tmp/result_pr.json")
 
     @staticmethod
@@ -568,10 +552,9 @@ class CommitStatusCheck:
     @staticmethod
     def get_sync_pr_result(sync_pr_number, sync_sha):
         """Fetch the CI result for a sync PR via the S3 proxy."""
-        workflow = Utils.normalize_string("PR")
         report_url = (
             f"{S3_PROXY_BASE_URL}/{S3_PRIVATE_REPORT_BUCKET}"
-            f"/PRs/{sync_pr_number}/{sync_sha}/{workflow}/result_{workflow}.json"
+            f"/PRs/{sync_pr_number}/{sync_sha}/result_pr.json"
         )
         if not Shell.check(
             f"curl -f {report_url} -o /tmp/result_sync_pr.json > /dev/null 2>&1"
@@ -581,6 +564,7 @@ class CommitStatusCheck:
         return Result.from_file("/tmp/result_sync_pr.json")
 
 
+issues_created = 0
 ci_start_time = None
 create_infrastructure_issue = False
 
@@ -909,114 +893,112 @@ def main():
     global ci_start_time
     ci_start_time = workflow_result.start_time
 
-    known_failures, unknown_failures, not_finished_jobs, _ = process_workflow_failures(
-        workflow_result,
-        PUBLIC_REPO,
-        pr_number,
-        head_sha,
-        allow_infra_issues=create_infrastructure_issue,
+    known_failures, unknown_failures, not_finished_jobs, new_issues_count = (
+        process_workflow_failures(
+            workflow_result,
+            PUBLIC_REPO,
+            pr_number,
+            head_sha,
+            allow_infra_issues=create_infrastructure_issue,
+        )
     )
+    pre_existing_issues_count = len(known_failures) - new_issues_count
+    global issues_created
+    issues_created += new_issues_count
 
     print_failure_summary(known_failures, unknown_failures, not_finished_jobs)
 
     if is_master_commit:
         sys.exit(0)
 
-    # Process the sync PR result regardless of the "CH Inc sync" commit status as stress test failures are ignored by it.
+    # Process sync PR failures if sync CI failed with test failures
     sync_known_failures = []
     sync_unknown_failures = []
-    sync_not_finished = []
-    sync_checked = False
-    sync_status_text = (
-        f"{sync_status.state} - {sync_status.description}" if sync_status else "unknown"
-    )
-    print(
-        f"\n=== Processing Sync PR ({CheckStatuses.CH_INC_SYNC}: {sync_status_text}) ==="
-    )
+    if (
+        sync_status
+        and sync_status.state == Result.GHStatus.FAILURE
+        and sync_status.description == "tests failed"
+    ):
+        print("\n=== Processing Sync PR (CH Inc sync) failures ===")
 
-    # Check proxy connectivity before proceeding
-    process_sync = False
-    while True:
-        if Shell.check(
-            f"curl -sf --connect-timeout 5 {S3_PROXY_BASE_URL} -o /dev/null 2>&1"
-        ):
-            process_sync = True
-            break
-        print(
-            f"WARNING: S3 proxy at {S3_PROXY_BASE_URL} is not reachable. "
-            "Connect to VPN/Tailscale to access sync PR results."
-        )
-        answer = UserPrompt.select_from_menu(
-            [
-                ("Skip sync PR processing", "skip"),
-                ("Retry (after connecting to VPN)", "retry"),
-            ],
-            question="S3 proxy is not available",
-        )
-        if answer[1] == "skip":
-            print("Skipping sync PR processing")
-            break
-
-    if process_sync:
-        sync_pr_info = CommitStatusCheck.get_sync_pr_info(pr_number)
-        if sync_pr_info:
-            sync_pr_num, sync_sha = sync_pr_info
-            print(f"Sync PR: {SYNC_REPO}#{sync_pr_num} (sha: {sync_sha[:12]})")
-            sync_workflow_result = CommitStatusCheck.get_sync_pr_result(
-                sync_pr_num, sync_sha
+        # Check proxy connectivity before proceeding
+        process_sync = False
+        while True:
+            if Shell.check(
+                f"curl -sf --connect-timeout 5 {S3_PROXY_BASE_URL} -o /dev/null 2>&1"
+            ):
+                process_sync = True
+                break
+            print(
+                f"WARNING: S3 proxy at {S3_PROXY_BASE_URL} is not reachable. "
+                "Connect to VPN/Tailscale to access sync PR results."
             )
-            if sync_workflow_result:
-                sync_workflow_result = (
-                    sync_workflow_result.to_failed_results_with_flat_leaves()
+            answer = UserPrompt.select_from_menu(
+                [
+                    ("Skip sync PR processing", "skip"),
+                    ("Retry (after connecting to VPN)", "retry"),
+                ],
+                question="S3 proxy is not available",
+            )
+            if answer[1] == "skip":
+                print("Skipping sync PR processing")
+                break
+
+        if process_sync:
+            sync_pr_info = CommitStatusCheck.get_sync_pr_info(pr_number)
+            if sync_pr_info:
+                sync_pr_num, sync_sha = sync_pr_info
+                print(
+                    f"Sync PR: {SYNC_REPO}#{sync_pr_num} (sha: {sync_sha[:12]})"
                 )
-                (
-                    sync_known_failures,
-                    sync_unknown_failures,
-                    sync_not_finished,
-                    _,
-                ) = process_workflow_failures(
-                    sync_workflow_result,
-                    SYNC_REPO,
-                    sync_pr_num,
-                    sync_sha,
-                    allow_infra_issues=create_infrastructure_issue,
+                sync_workflow_result = CommitStatusCheck.get_sync_pr_result(
+                    sync_pr_num, sync_sha
                 )
-                sync_checked = True
-                print_failure_summary(
-                    sync_known_failures,
-                    sync_unknown_failures,
-                    sync_not_finished,
-                    label="Sync",
-                )
+                if sync_workflow_result:
+                    sync_workflow_result = (
+                        sync_workflow_result.to_failed_results_with_flat_leaves()
+                    )
+                    (
+                        sync_known_failures,
+                        sync_unknown_failures,
+                        sync_not_finished,
+                        _,
+                    ) = process_workflow_failures(
+                        sync_workflow_result,
+                        SYNC_REPO,
+                        sync_pr_num,
+                        sync_sha,
+                        allow_infra_issues=create_infrastructure_issue,
+                    )
+                    print_failure_summary(
+                        sync_known_failures,
+                        sync_unknown_failures,
+                        sync_not_finished,
+                        label="Sync",
+                    )
+                else:
+                    print("WARNING: Could not fetch sync PR result - skipping")
             else:
-                print("WARNING: Could not fetch sync PR result - skipping")
-        else:
-            print("WARNING: Could not find sync PR - skipping")
+                print("WARNING: Could not find sync PR - skipping")
 
-    public_failed = known_failures or unknown_failures
-    sync_failed = sync_known_failures or sync_unknown_failures
-    if public_failed or sync_failed or not_finished_jobs or sync_not_finished:
-        summary = "CI status:\n"
+    question = "CI status:\n"
+    if unknown_failures or issues_created > 0 or pre_existing_issues_count > 0:
         if not_finished_jobs:
-            summary += f" - {len(not_finished_jobs)} not finished job{'s' if len(not_finished_jobs) != 1 else ''}\n"
+            question += f" - {len(not_finished_jobs)} not finished job{'s' if len(not_finished_jobs) != 1 else ''}\n"
         if unknown_failures:
-            summary += f" - {len(unknown_failures)} unknown failure{'s' if len(unknown_failures) != 1 else ''}\n"
+            question += f" - {len(unknown_failures)} unknown failure{'s' if len(unknown_failures) != 1 else ''}\n"
         if known_failures:
-            summary += f" - {len(known_failures)} known failure{'s' if len(known_failures) != 1 else ''}\n"
-        summary += " - all other public checks passed\n"
-        summary += f" - Sync status: {sync_status_text}\n"
-        if sync_not_finished:
-            summary += f" - Sync not finished: {len(sync_not_finished)} job{'s' if len(sync_not_finished) != 1 else ''}\n"
-        if sync_failed:
-            summary += f" - Sync failures: {len(sync_known_failures)} known, {len(sync_unknown_failures)} unknown\n"
-    elif sync_checked:
-        summary = "All checks passed! Congratulations!\n"
+            question += f" - {len(known_failures)} known failure{'s' if len(known_failures) != 1 else ''}\n"
+        question += " - all other checks passed\n"
+        question += f" - Sync status: {sync_status.state}, description: {sync_status.description}\n"
+        if sync_known_failures or sync_unknown_failures:
+            question += f" - Sync failures: {len(sync_known_failures)} known, {len(sync_unknown_failures)} unknown\n"
     else:
-        summary = "All public checks passed, sync PR was not checked\n"
-    print(f"\n{summary}")
+        question = "All checks passed! Congratulations!\n"
 
-    if public_failed:
-        if not UserPrompt.confirm("Do you want to update PR CI comment?"):
+    if unknown_failures or known_failures:
+        question += "\nDo you want to update PR CI comment?"
+        if not UserPrompt.confirm(question):
             sys.exit(0)
 
         try:

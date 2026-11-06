@@ -31,10 +31,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
-    {
-        return "(Any) -> String";
-    }
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeString>(); }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeString>(); }
 
@@ -87,13 +84,13 @@ REGISTER_FUNCTION(WKB)
         .arguments{{"geometry", "The input geometry type to convert into WKB."}},
         .examples{
             {"first call",
-             "CREATE TABLE IF NOT EXISTS geom1 (a Point) ENGINE = Memory();\n"
-             "INSERT INTO geom1 VALUES((0, 0));\n"
+             "CREATE TABLE IF NOT EXISTS geom1 (a Point) ENGINE = Memory();"
+             "INSERT INTO geom1 VALUES((0, 0));"
              "SELECT hex(wkb(a)) FROM geom1;",
              R"(
-┌─hex(wkb(a))────────────────────────────────┐
-│ 010100000000000000000000000000000000000000 │
-└────────────────────────────────────────────┘
+    ┌─hex(wkb(a))─-----------------------------------------┐
+    │ 010100000000000000000000000000000000003440           │
+    └──────────────────────────────────────────────────────┘
                 )"},
         },
         .introduced_in = {25, 7},

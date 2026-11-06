@@ -134,7 +134,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
 
         if (bytes_read)
         {
-            setWorkingBufferFromInternal();
+            working_buffer = internal_buffer;
             working_buffer.resize(bytes_read);
             file_offset += bytes_read;
             if (read_settings.remote_throttler)
@@ -272,7 +272,7 @@ bool ReadBufferFromHDFS::nextImpl()
 
         if (result)
         {
-            setWorkingBuffer(impl->buffer(), impl->offset()); /// use the buffer returned by `impl`
+            BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset()); /// use the buffer returned by `impl`
             total_bytes_read.fetch_add(working_buffer.size(), std::memory_order_relaxed);
         }
 
@@ -348,11 +348,6 @@ size_t ReadBufferFromHDFS::readBigAt(char * buffer, size_t size, size_t offset, 
 bool ReadBufferFromHDFS::supportsReadAt()
 {
     return impl->enable_pread;
-}
-
-void ReadBufferFromHDFS::setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling)
-{
-    impl->read_settings.io_scheduling = io_scheduling;
 }
 
 }

@@ -39,8 +39,6 @@ public:
             FileMetadataPtr file_metadata_);
 
         FileMetadataPtr file_metadata;
-
-        std::shared_ptr<ObjectInfo> clone() const override { return std::make_shared<ObjectStorageQueueObjectInfo>(*this); }
     };
 
     class FileIterator : public IObjectIterator, private WithContext
@@ -237,8 +235,7 @@ public:
         UInt64 commit_id,
         time_t commit_time,
         time_t transaction_start_time_,
-        const std::string & exception_message = {},
-        const UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths = {});
+        const std::string & exception_message = {});
 
 private:
     Chunk generateImpl();
