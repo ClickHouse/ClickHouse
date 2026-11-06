@@ -6,7 +6,7 @@
 namespace DB
 {
 /** Parses queries like
-  * SHOW GRANTS [FOR user_name]
+  * SHOW GRANTS [FOR user_name] [WITH IMPLICIT] [FINAL] [FOR QUERY select_query]
   */
 class ParserShowGrantsQuery : public IParserBase
 {
