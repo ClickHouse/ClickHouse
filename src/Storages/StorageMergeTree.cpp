@@ -1193,6 +1193,7 @@ void CurrentlyMergingPartsTagger::finalize()
         storage.currently_mutating_part_future_versions.erase(part);
     }
 
+    ++storage.finished_background_operations;
     storage.currently_processing_in_background_condition.notify_all();
 }
 
@@ -2250,6 +2251,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                         on_wait_for_running_merges();
 
                     constexpr auto check_period = std::chrono::milliseconds(1000);
+                    const UInt64 finished_before = finished_background_operations;
+                    const auto merge_finished = [&] { return finished_background_operations != finished_before; };
                     bool notified = false;
                     Stopwatch watch;
                     while (!notified)
@@ -2258,8 +2261,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                         const auto elapsed = std::chrono::milliseconds(static_cast<Int64>(watch.elapsedMilliseconds()));
                         if (elapsed >= timeout)
                             break;
-                        notified = std::cv_status::no_timeout
-                            == currently_processing_in_background_condition.wait_for(lock, std::min(timeout - elapsed, check_period));
+                        notified = currently_processing_in_background_condition.wait_for(
+                            lock, std::min(timeout - elapsed, check_period), merge_finished);
                     }
 
                     if (!notified)
