@@ -397,6 +397,13 @@ private:
             result_bytes += weight * static_cast<double>(result_bytes_inc);
         }
 
+        /// The CPU time of a query that failed: it adds to the cost of the load but not to the other statistics.
+        void addFailedQueryCPU(double cpu_seconds_inc)
+        {
+            cpu_seconds += cpu_seconds_inc;
+            cpu_queries += 1;
+        }
+
         void sample(double duration)
         {
             ++finished_queries;
@@ -1194,13 +1201,21 @@ private:
         std::optional<UInt64> cpu_microseconds;
         executor.setProfileEventsCallback([&cpu_microseconds](const Block & block) { cpu_microseconds = cpu_microseconds.value_or(0) + getCPUMicroseconds(block); });
 
-        executor.sendQuery(ClientInfo::QueryKind::INITIAL_QUERY);
-
         ProfileInfo info;
-        for (Block block = executor.readBlock(); !block.empty(); block = executor.readBlock())
-            info.update(block);
-
-        executor.finish();
+        try
+        {
+            executor.sendQuery(ClientInfo::QueryKind::INITIAL_QUERY);
+            for (Block block = executor.readBlock(); !block.empty(); block = executor.readBlock())
+                info.update(block);
+            executor.finish();
+        }
+        catch (...)
+        {
+            /// A query that fails during execution may have used a lot of CPU on the server.
+            if (cpu_microseconds)
+                addFailedQueryCPU(task, connection_index, static_cast<double>(*cpu_microseconds) / 1e6);
+            throw;
+        }
 
         watch.stop();
         double duration = (display_client_side_time || progress.elapsed_ns == 0)
@@ -1255,6 +1270,20 @@ private:
         if (per_query)
             per_query_stats[task.query_index]->add(duration, progress.read_rows, progress.read_bytes, info.rows, info.bytes, cpu_seconds);
         t_test.add(info_index, duration);
+    }
+
+    void addFailedQueryCPU(const Task & task, size_t connection_index, double cpu_seconds)
+    {
+        size_t info_index = round_robin ? 0 : connection_index;
+        {
+            std::lock_guard lock(interval_mutex);
+            if (interval && !cumulative)
+                interval->stats[info_index]->addFailedQueryCPU(cpu_seconds);
+        }
+        std::lock_guard lock(mutex);
+        total_stats[info_index]->addFailedQueryCPU(cpu_seconds);
+        if (per_query)
+            per_query_stats[task.query_index]->addFailedQueryCPU(cpu_seconds);
     }
 
     void report(const MultiStats & infos, double seconds, size_t used_threads = 0, const ArrivalStats * arrival_stats = nullptr)
