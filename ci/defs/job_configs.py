@@ -355,8 +355,8 @@ class JobConfigs:
     )
     code_review = Job.Config(
         name=JobNames.CODE_REVIEW,
-        runs_on=RunnerLabels.ARM_TINY,
-        command="python3 ./ci/jobs/copilot_review_job.py --codex",
+        runs_on=RunnerLabels.ARM_SMALL_REVIEW,
+        command="python3 ./ci/jobs/codex_review_job.py",
         allow_failure=True,
         enable_gh_auth=True,
     )

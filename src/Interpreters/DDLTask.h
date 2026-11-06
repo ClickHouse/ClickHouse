@@ -200,6 +200,12 @@ struct DatabaseReplicatedTask : public DDLTaskBase
     Coordination::RequestPtr getOpToUpdateLogPointer() override;
     void createSyncedNodeIfNeed(const ZooKeeperPtr & zookeeper) override;
 
+    /// The node that `SYSTEM STOP REPLICATED DDL QUERIES` creates in the replica path of every `Replicated` database
+    /// to fence the initial DDL entries of this server that are already queued. It is located in the replica path,
+    /// because it belongs to this server, and the server already has write access to it, while it may have no access
+    /// to other paths in Keeper.
+    static String getStopReplicatedDDLQueriesFlagPath(const DatabaseReplicated & database);
+
     DatabaseReplicated * database;
 };
 
