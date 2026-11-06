@@ -467,6 +467,8 @@ StorageMaterializedView::StorageMaterializedView(
 
         InterpreterCreateQuery create_interpreter(manual_create_query, create_context);
         create_interpreter.setInternal(true);
+        /// The inner table comes from the backup too, so it must not get a definition other than the backup's.
+        create_interpreter.setIsRestoreFromBackup(is_restore_from_backup);
         create_interpreter.execute();
 
         if (fixed_uuid)

@@ -38,6 +38,7 @@ class RunnerLabels:
     MACOS_ARM_SMALL = ["self-hosted", "macos-m2"]
     AMD_TINY = ["self-hosted", "amd-tiny"]
     ARM_TINY = ["self-hosted", "arm-tiny"]
+    ARM_SMALL_REVIEW = ["self-hosted", "arm-small-review"]
     RELEASE_RUNNER = ["self-hosted", "release-runner"]
 
 
