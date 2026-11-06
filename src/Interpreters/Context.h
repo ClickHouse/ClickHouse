@@ -2000,6 +2000,9 @@ public:
     /// Provides storage disks
     DiskPtr getDisk(const String & name) const;
     using DiskCreator = std::function<DiskPtr(const DisksMap & disks_map)>;
+    /// Returns the names of the given disks that a disk not created yet would overlap with, see
+    /// `DiskSelector::findPlainRewritableDisksOverlappingNewDisk`.
+    using OverlappingDisksFinder = std::function<std::vector<String>(const std::vector<std::pair<String, DiskPtr>> & disks)>;
 
     /// Provides a disk defined inline with `disk(...)` in a table or database definition, creating
     /// it if it does not exist yet. The returned registration keeps the disk registered: the disk
@@ -2010,10 +2013,10 @@ public:
     /// `settings_hash` identifies the definition, see `IDisk::markDiskAsCustom`.
     /// `wrapped_disk_name` is the disk a wrapper disk refers to by name (`disk = '<name>'`), or empty. If it is a
     /// custom disk not in `nested`, its registration is added to `nested`.
-    /// `may_create_plain_rewritable_metadata` tells whether the disk created by `creator` may have `plain_rewritable` metadata.
+    /// `find_overlapping_disks` finds the released disks, not shut down yet, that the disk created by `creator` would overlap with.
     std::pair<DiskPtr, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
         const String & name, UInt128 settings_hash, DiskCreator creator, CustomDiskRegistrations & nested,
-        const String & wrapped_disk_name, bool may_create_plain_rewritable_metadata) const;
+        const String & wrapped_disk_name, OverlappingDisksFinder find_overlapping_disks) const;
     /// See `CustomDiskRegistry::rememberDefinitionLoadedFromExistingMetadata`.
     void rememberCustomDiskLoadedFromExistingMetadata(UInt128 settings_hash) const;
     bool isCustomDiskLoadedFromExistingMetadata(UInt128 settings_hash) const;

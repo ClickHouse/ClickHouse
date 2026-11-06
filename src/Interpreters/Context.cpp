@@ -8538,14 +8538,14 @@ DiskPtr Context::getDisk(const String & name) const
 
 std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(
     const String & name, UInt128 settings_hash, DiskCreator creator, CustomDiskRegistrations & nested, const String & wrapped_disk_name,
-    bool may_create_plain_rewritable_metadata) const
+    OverlappingDisksFinder find_overlapping_disks) const
 {
     bool need_wrapped_disk_registration = !wrapped_disk_name.empty() && !std::ranges::any_of(nested,
         [&](const auto & nested_registration) { return nested_registration->getDiskName() == wrapped_disk_name; });
 
-    /// The released disks with other names that are writable `plain_rewritable` disks and are not shut down yet,
-    /// see below. Each of them is waited for once, without any lock held.
-    std::vector<String> retiring_plain_rewritable_disk_names;
+    /// The released disks with other names, not shut down yet, that the new disk would overlap with, see below.
+    /// Each of them is waited for once, without any lock held.
+    std::vector<String> overlapping_retiring_disk_names;
     std::set<String> waited_for_retiring_disk_names;
 
     while (true)
@@ -8555,15 +8555,12 @@ std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(
         /// metadata and data, so it is created only after the old one is shut down.
         shared->custom_disk_registry.waitForShutdown(name, settings_hash);
 
-        if (!retiring_plain_rewritable_disk_names.empty())
+        for (const auto & retiring_disk_name : overlapping_retiring_disk_names)
         {
-            for (const auto & retiring_disk_name : retiring_plain_rewritable_disk_names)
-            {
-                shared->custom_disk_registry.waitForShutdown(retiring_disk_name, /* settings_hash = */ 0);
-                waited_for_retiring_disk_names.insert(retiring_disk_name);
-            }
-            retiring_plain_rewritable_disk_names.clear();
+            shared->custom_disk_registry.waitForShutdown(retiring_disk_name, /* settings_hash = */ 0);
+            waited_for_retiring_disk_names.insert(retiring_disk_name);
         }
+        overlapping_retiring_disk_names.clear();
 
         /// Declared before the lock, so that the references to the retiring disks are dropped after it is unlocked:
         /// one of them may be the last one.
@@ -8574,12 +8571,15 @@ std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(
         /// A wrapper disk (`cache`, `encrypted`) may refer to the disk it wraps by name instead of a nested
         /// `disk(...)`. If that is a custom disk, keep it registered for as long as the wrapper is, like a
         /// nested one. The registration is taken under `storage_policies_mutex`, so the wrapped disk cannot be
-        /// unregistered between the lookup of its registration and its use by the wrapper.
+        /// unregistered between the lookup of its registration and its use by the wrapper. If there is no
+        /// registration, it is looked up again after a retry: the custom disk may have been created meanwhile.
         if (need_wrapped_disk_registration)
         {
             if (auto wrapped_registration = shared->custom_disk_registry.tryGet(wrapped_disk_name))
+            {
                 nested.push_back(std::move(wrapped_registration));
-            need_wrapped_disk_registration = false;
+                need_wrapped_disk_registration = false;
+            }
         }
 
         auto disk_selector = getDiskSelector(lock);
@@ -8601,35 +8601,32 @@ std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(
                 /// to that storage until it is shut down (e.g. its delayed metadata snapshot, or the flush in its
                 /// `shutdown`), and would overwrite the metadata of the new disk. The new disk cannot be discarded
                 /// after it is created either: it loads its metadata in the constructor, which may already write to
-                /// the storage. Its storage is not known before it is created, so a new disk that may have
-                /// `plain_rewritable` metadata is created only after every released writable `plain_rewritable` disk
-                /// is shut down, as for a disk with the same name above. `releaseCustomDisk` makes a disk retiring
-                /// under `storage_policies_mutex`, so no disk becomes retiring between this check and `addToDiskMap`.
+                /// the storage. So the overlap is checked before the disk is created, and the new disk is created only
+                /// after the overlapping released disks are shut down, as for a disk with the same name above.
+                /// `releaseCustomDisk` makes a disk retiring under `storage_policies_mutex`, so no disk becomes retiring
+                /// between this check and `addToDiskMap`.
                 retiring_disks = shared->custom_disk_registry.getRetiringDisks();
-                if (may_create_plain_rewritable_metadata)
+                if (find_overlapping_disks)
                 {
-                    for (const auto & [retiring_disk_name, retiring_disk] : retiring_disks)
+                    for (auto & retiring_disk_name : find_overlapping_disks(retiring_disks))
                     {
-                        if (!retiring_disk->isPlain() || retiring_disk->isReadOnly() || retiring_disk->isWriteOnce())
-                            continue;
-
                         if (waited_for_retiring_disk_names.contains(retiring_disk_name))
                             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Cannot create the disk '{}' yet: the plain-rewritable disk '{}' is not used by any table or "
-                                "database anymore, but it is still referenced and not shut down, and may work with the same "
-                                "object storage prefix",
+                                "Cannot create the disk '{}' yet: the plain-rewritable disk '{}' works with the same object "
+                                "storage prefix, it is not used by any table or database anymore, but it is still referenced "
+                                "and not shut down",
                                 name, retiring_disk_name);
 
-                        retiring_plain_rewritable_disk_names.push_back(retiring_disk_name);
+                        overlapping_retiring_disk_names.push_back(std::move(retiring_disk_name));
                     }
 
-                    if (!retiring_plain_rewritable_disk_names.empty())
+                    if (!overlapping_retiring_disk_names.empty())
                         continue;
                 }
 
                 disk = creator(getDisksMap(lock));
 
-                /// In case the new disk has `plain_rewritable` metadata although its definition did not suggest it.
+                /// In case the new disk has `plain_rewritable` metadata although `find_overlapping_disks` did not expect it.
                 for (const auto & [retiring_disk_name, retiring_disk] : retiring_disks)
                 {
                     if (DiskSelector::arePlainRewritableDisksOverlapping(disk, retiring_disk))
@@ -8850,11 +8847,20 @@ StoragePolicySelectorPtr Context::getStoragePolicySelector(std::lock_guard<std::
 void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
     {
+        /// Declared before the lock, so that the references to the retiring disks are dropped after it is unlocked:
+        /// one of them may be the last one.
+        std::vector<std::pair<String, DiskPtr>> retiring_disks;
+
         std::lock_guard lock(shared->storage_policies_mutex);
         Strings disks_to_reinit;
         if (shared->merge_tree_disk_selector)
+        {
+            /// A new disk from the configuration must not overlap a released custom disk that is not shut down yet,
+            /// see `getOrCreateCustomDisk`. `releaseCustomDisk` makes a disk retiring under `storage_policies_mutex`.
+            retiring_disks = shared->custom_disk_registry.getRetiringDisks();
             shared->merge_tree_disk_selector
-                = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", shared_from_this());
+                = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", shared_from_this(), retiring_disks);
+        }
 
         if (shared->merge_tree_storage_policy_selector)
         {

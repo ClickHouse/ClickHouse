@@ -1,6 +1,7 @@
 #include <Disks/DiskFromAST.h>
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
@@ -120,12 +121,14 @@ static std::pair<std::string, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
     /// A wrapper disk (`cache`, `encrypted`) may refer to the disk it wraps by name, see `Context::getOrCreateCustomDisk`.
     const auto wrapped_disk_name = config->getString("disk", "");
 
-    /// The same rule as in `registerDiskObjectStorage`. The disk storage is known only after the disk is created, so
-    /// `Context::getOrCreateCustomDisk` uses this to check for released disks working with the same storage beforehand.
-    const auto metadata_type = config->getString("metadata_type", "");
-    const auto disk_type = config->getString("type", "");
-    const bool may_create_plain_rewritable_metadata = metadata_type == "plain_rewritable"
-        || (metadata_type.empty() && disk_type.contains("plain") && disk_type.contains("rewritable"));
+    /// The same checks as in `registerDiskObjectStorage` for the object storage of the disk created below.
+    const bool run_local_paths_check = !existing_definition;
+    const auto remote_host_filter_check = existing_definition ? RemoteHostFilterCheck::Warn : RemoteHostFilterCheck::Enforce;
+    auto find_overlapping_disks = [&](const std::vector<std::pair<String, DiskPtr>> & disks)
+    {
+        return DiskSelector::findPlainRewritableDisksOverlappingNewDisk(
+            disk_name, *config, /* config_prefix */"", context, run_local_paths_check, remote_host_filter_check, disks);
+    };
 
     /// The registrations in `nested_registrations` that are not taken over are destroyed when this function
     /// returns, without any lock held.
@@ -135,7 +138,7 @@ static std::pair<std::string, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
         /// Mark that disk can be used without storage policy.
         result->markDiskAsCustom(disk_settings_hash);
         return result;
-    }, nested_registrations, wrapped_disk_name, may_create_plain_rewritable_metadata);
+    }, nested_registrations, wrapped_disk_name, find_overlapping_disks);
 
     if (attach && registration)
         context->rememberCustomDiskLoadedFromExistingMetadata(disk_settings_hash);
