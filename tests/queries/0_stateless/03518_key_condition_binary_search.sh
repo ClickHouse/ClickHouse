@@ -8,7 +8,9 @@ readonly query_prefix=$CLICKHOUSE_DATABASE
 
 # The query runs on the replicas, so keep the local plan: the ProfileEvents this test asserts on
 # are only collected for the part of the query the coordinator runs itself.
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --parallel_replicas_local_plan 1 --use_statistics_for_part_pruning=0"
+# A positive `parallel_replicas_min_number_of_rows_per_replica` makes the planner estimate the rows to read first,
+# and that estimate runs the index analysis once more, which changes the counters below.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --parallel_replicas_local_plan 1 --use_statistics_for_part_pruning=0 --parallel_replicas_min_number_of_rows_per_replica 0"
 
 $CLICKHOUSE_CLIENT -n -q "
 DROP TABLE IF EXISTS t;
