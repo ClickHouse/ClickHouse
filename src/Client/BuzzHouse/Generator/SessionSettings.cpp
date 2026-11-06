@@ -396,6 +396,15 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"enable_producing_buckets_out_of_order_in_aggregation", trueOrFalseSetting},
        {"enable_software_prefetch_in_join", trueOrFalseSetting},
        {"group_by_top_k_optimization_shared_boundary", trueOrFalseSetting},
+       {"hash_join_layout",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &)
+            {
+                static const DB::Strings choices = {"'auto'", "'serial'", "'parallel'"};
+                return rg.pickRandomly(choices);
+            },
+            {"'auto'", "'serial'", "'parallel'"},
+            false)},
        {"join_algorithm",
         CHSetting(
             [](RandomGenerator & rg, FuzzConfig &)
@@ -515,6 +524,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"query_plan_execute_functions_after_sorting", trueOrFalseSetting},
        {"query_plan_filter_push_down", trueOrFalseSetting},
        {"query_plan_filter_push_down_below_limit_by", trueOrFalseSetting},
+       {"query_plan_join_order_use_interesting_orders", trueOrFalseSetting},
        {"query_plan_join_shard_by_pk_ranges", trueOrFalseSetting},
        {"query_plan_join_swap_table",
         CHSetting(
@@ -2323,6 +2333,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"remote_filesystem_read_method",
               CHSetting([](RandomGenerator & rg, FuzzConfig &) { return rg.nextBool() ? "'read'" : "'threadpool'"; }, {}, false)},
              {"wait_for_async_insert", trueOrFalseSettingNoOracle}}); /// breaks table dump oracle
+        nonzero_block_sizes.emplace_back("max_distributed_connections");
         max_block_sizes.insert(
             max_block_sizes.end(),
             {/*"max_analyze_depth",
@@ -2330,7 +2341,6 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              "max_ast_elements",*/
              "max_autoincrement_series",
              /// "max_backup_bandwidth",
-             "max_distributed_connections",
              /// "max_distributed_depth",
              "max_download_threads",
              /// "max_expanded_ast_elements",

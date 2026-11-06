@@ -1,0 +1,13 @@
+-- INNER filled join without the virtual row: the in-order read is declined
+['ReadType: Default']
+-- INNER filled join with the virtual row: reads in order
+['ReadType: InOrder']
+-- LEFT filled join does not need the virtual row: reads in order
+['ReadType: InOrder']
+-- The results are correct with and without the virtual row
+0	v0
+1	v37
+2	v74
+0	v0
+1	v37
+2	v74
