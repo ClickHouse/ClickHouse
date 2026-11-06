@@ -43,7 +43,9 @@ ${CLICKHOUSE_CLIENT} --query "REVOKE ALL ON *.* FROM $user1";
 ${CLICKHOUSE_CLIENT} --query "GRANT READ ON URL('http://localhost:812.*') TO $user1";
 ${CLICKHOUSE_CLIENT} --query "GRANT CREATE TEMPORARY TABLE ON *.* TO $user1;";
 ${CLICKHOUSE_CLIENT} --user $user1 --query "SELECT * FROM url('http://localhost:8123/', LineAsString) FORMAT Null;";
-${CLICKHOUSE_CLIENT} --query "REVOKE READ ON URL('foo.*') FROM $user1";
+${CLICKHOUSE_CLIENT} --query "REVOKE READ ON URL('foo.*') FROM $user1; -- { serverError BAD_ARGUMENTS }";
+${CLICKHOUSE_CLIENT} --user $user1 --query "SELECT * FROM url('http://localhost:8123/', LineAsString) FORMAT Null;";
+${CLICKHOUSE_CLIENT} --query "REVOKE READ ON URL('http://localhost:812.*') FROM $user1";
 (( $(${CLICKHOUSE_CLIENT} --user $user1 --query "SELECT * FROM url('http://localhost:8123/', LineAsString) FORMAT Null;" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 
 echo '--invalid regexp--'

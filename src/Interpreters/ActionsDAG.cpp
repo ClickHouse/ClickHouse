@@ -3,6 +3,7 @@
 #include <Analyzer/TableQualifiers.h>
 
 #include <Analyzer/FunctionNode.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFunction.h>
@@ -28,6 +29,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/SetSerialization.h>
+#include <IO/SipHashingWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Core/SortDescription.h>
@@ -119,6 +121,22 @@ std::pair<ColumnsWithTypeAndName, bool> getFunctionArguments(const ActionsDAG::N
         arguments[i] = std::move(argument);
     }
     return { std::move(arguments), all_const };
+}
+
+/// A short value is kept even without a fixed size: a build-independent key has no names, so the value is all that tells
+/// `trimBoth(s, 'x')` from `trimBoth(s, 'y')`. `byteSize` can understate an aggregate state, so one is never kept, even
+/// inside a `Dynamic` value.
+bool isConstantValueInCacheKey(const ActionsDAG::Node & node)
+{
+    if (node.column->valuesHaveFixedSize())
+        return true;
+    WhichDataType which(node.result_type);
+    if (which.isSet() || which.isFunction() || node.column->byteSize() > 1024)
+        return false;
+    bool has_aggregate_state = false;
+    node.column->forEachSubcolumnRecursively(
+        [&](const IColumn & subcolumn) { has_aggregate_state |= typeid_cast<const ColumnAggregateFunction *>(&subcolumn) != nullptr; });
+    return !has_aggregate_state;
 }
 
 void tryFoldFunctionToConstant(
@@ -301,7 +319,50 @@ UInt64 ActionsDAG::Node::getHash() const
     return hash_state.get64();
 }
 
+namespace
+{
+
+UInt128 getSubtreeHash(
+    const ActionsDAG::Node * root,
+    std::unordered_map<const ActionsDAG::Node *, UInt128> & hashes,
+    bool build_independent, const Block * input_header, bool with_variable_size_constant_values)
+{
+    std::vector<std::pair<const ActionsDAG::Node *, size_t>> stack;
+    if (!hashes.contains(root))
+        stack.emplace_back(root, 0);
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+        const auto * node = frame.first;
+        if (frame.second < node->children.size())
+        {
+            const auto * child = node->children[frame.second];
+            ++frame.second;
+            if (!hashes.contains(child))
+                stack.emplace_back(child, 0); /// invalidates `frame`, which is not used again in this iteration
+            continue;
+        }
+        SipHash hash_state;
+        node->updateOwnHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
+        hash_state.update(node->children.size());
+        for (const auto * child : node->children)
+            hash_state.update(hashes.at(child));
+        hashes.emplace(node, hash_state.get128());
+        stack.pop_back();
+    }
+    return hashes.at(root);
+}
+
+}
+
 void ActionsDAG::Node::updateHash(
+    SipHash & hash_state, bool build_independent, const Block * input_header, bool with_variable_size_constant_values) const
+{
+    std::unordered_map<const Node *, UInt128> hashes;
+    hash_state.update(getSubtreeHash(this, hashes, build_independent, input_header, with_variable_size_constant_values));
+}
+
+void ActionsDAG::Node::updateOwnHash(
     SipHash & hash_state, bool build_independent, const Block * input_header, bool with_variable_size_constant_values) const
 {
     hash_state.update(type);
@@ -419,7 +480,7 @@ void ActionsDAG::Node::updateHash(
         /// the DAG around them. Skipping only its value keeps the single-replica and parallel-replicas
         /// plan builds matching without dropping any other constant's value (it still serializes
         /// normally for distributed propagation).
-        if (!is_runtime_filter_id && (with_variable_size_constant_values || column->valuesHaveFixedSize()))
+        if (!is_runtime_filter_id && (with_variable_size_constant_values || isConstantValueInCacheKey(*this)))
             column->updateHashWithValue(0, hash_state);
 
         /// A `Const(Set)` needs its identity added rather than its value skipped: `ColumnSet` is a dummy
@@ -445,9 +506,6 @@ void ActionsDAG::Node::updateHash(
             }
         }
     }
-
-    for (const auto & child : children)
-        child->updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
 }
 
 UInt64 ActionsDAG::getOutputIdentity(const std::string & name, const Block * input_header) const
@@ -473,6 +531,63 @@ UInt64 ActionsDAG::getOutputIdentity(const std::string & name, const Block * inp
     return hash.get64();
 }
 
+UInt64 ActionsDAG::getComputedOutputsHash(const Block & input_header) const
+{
+    std::unordered_map<const Node *, UInt64> node_hashes;
+    std::vector<std::pair<const Node *, size_t>> stack;
+    for (const auto * output : outputs)
+    {
+        if (!node_hashes.contains(output))
+            stack.emplace_back(output, 0);
+
+        while (!stack.empty())
+        {
+            auto & [node, next_child] = stack.back();
+            if (next_child < node->children.size())
+            {
+                const auto * child = node->children[next_child++];
+                if (!node_hashes.contains(child))
+                    stack.emplace_back(child, 0);
+                continue;
+            }
+
+            UInt64 node_hash = 0;
+            if (node->type == ActionType::ALIAS)
+            {
+                chassert(node->children.size() == 1);
+                node_hash = node_hashes.at(node->children.front());
+            }
+            else if (node->type == ActionType::INPUT)
+            {
+                SipHash hash;
+                hash.update(node->type);
+                char window[64];
+                SipHashingWriteBuffer out(hash, sizeof(window), window);
+                writeCacheKeyColumnName(node->result_name, &input_header, out);
+                out.finalize();
+                node_hash = hash.get64();
+            }
+            else
+            {
+                SipHash hash;
+                node->updateOwnHash(hash, /*build_independent=*/true, &input_header, /*with_variable_size_constant_values=*/false);
+                for (const auto * child : node->children)
+                    hash.update(node_hashes.at(child));
+                node_hash = hash.get64();
+            }
+
+            node_hashes[node] = node_hash;
+            stack.pop_back();
+        }
+    }
+
+    SipHash hash;
+    hash.update(outputs.size());
+    for (const auto * output : outputs)
+        hash.update(node_hashes.at(output));
+    return hash.get64();
+}
+
 UInt64 ActionsDAG::getHash() const
 {
     SipHash hash;
@@ -483,30 +598,10 @@ UInt64 ActionsDAG::getHash() const
 void ActionsDAG::updateHash(
     SipHash & hash_state, bool build_independent, const Block * input_header, bool with_variable_size_constant_values) const
 {
-    struct Frame
-    {
-        const ActionsDAG::Node * const node;
-        size_t next_child = 0;
-    };
-
-    std::stack<Frame> stack;
-    for (const auto & node : outputs)
-        stack.push({.node = node});
-
-    while (!stack.empty())
-    {
-        auto & frame = stack.top();
-        if (frame.next_child == frame.node->children.size())
-        {
-            frame.node->updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
-            stack.pop();
-        }
-        else
-        {
-            stack.push({.node = frame.node->children[frame.next_child]});
-            ++frame.next_child;
-        }
-    }
+    std::unordered_map<const Node *, UInt128> hashes;
+    hash_state.update(outputs.size());
+    for (const auto * output : outputs)
+        hash_state.update(getSubtreeHash(output, hashes, build_independent, input_header, with_variable_size_constant_values));
 }
 
 ActionsDAG::ActionsDAG(const NamesAndTypesList & inputs_)
@@ -2689,6 +2784,56 @@ bool ActionsDAG::hasUnsafeHiddenLambdaBody(const Node & node, const std::functio
     return false;
 }
 
+std::unordered_set<const ActionsDAG::Node *> ActionsDAG::getInputsReadByRepresentation(const Node & root, NodeRawConstPtrs * outermost_readers)
+{
+    return getInputsReadByRepresentation(NodeRawConstPtrs{&root}, outermost_readers);
+}
+
+std::unordered_set<const ActionsDAG::Node *> ActionsDAG::getInputsReadByRepresentation(const NodeRawConstPtrs & roots, NodeRawConstPtrs * outermost_readers)
+{
+    /// A lambda body reads the call's arguments too: the ones it does not capture arrive as formal parameters.
+    static constexpr auto is_representation_read = [](const IFunctionBase & function) { return !function.isDeterministic(); };
+    auto call_reads_representation = [](const Node * node)
+    {
+        if (hasUnsafeHiddenLambdaBody(*node, is_representation_read))
+            return true;
+        for (const auto * argument : node->children)
+            if (hasUnsafeHiddenLambdaBody(*argument, is_representation_read))
+                return true;
+        return false;
+    };
+
+    std::unordered_set<const Node *> result;
+    std::vector<std::pair<const Node *, bool>> to_visit;
+    for (const auto * root : roots)
+        to_visit.emplace_back(root, false);
+    std::unordered_set<const Node *> visited_reading_value;
+    std::unordered_set<const Node *> visited_reading_representation;
+    std::unordered_set<const Node *> readers_seen;
+    while (!to_visit.empty())
+    {
+        auto [node, reads_representation] = to_visit.back();
+        to_visit.pop_back();
+
+        if (!reads_representation && (!node->isDeterministic() || call_reads_representation(node)))
+        {
+            reads_representation = true;
+            if (outermost_readers && readers_seen.insert(node).second)
+                outermost_readers->push_back(node);
+        }
+        auto & visited = reads_representation ? visited_reading_representation : visited_reading_value;
+        if (!visited.insert(node).second)
+            continue;
+
+        if (reads_representation && node->type == ActionType::INPUT)
+            result.insert(node);
+
+        for (const auto * child : node->children)
+            to_visit.emplace_back(child, reads_representation);
+    }
+    return result;
+}
+
 bool ActionsDAG::hasInputNameShadowedByComputedNode() const
 {
     std::unordered_set<std::string_view> input_names;
@@ -4191,38 +4336,11 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
 
     if (!cross_type_allowed_nodes.empty())
     {
-        /// A lambda body reads the call's arguments too: the ones it does not capture arrive as formal parameters.
-        static constexpr auto is_representation_read = [](const IFunctionBase & function) { return !function.isDeterministic(); };
-        auto call_reads_representation = [](const Node * node)
-        {
-            if (hasUnsafeHiddenLambdaBody(*node, is_representation_read))
-                return true;
-            for (const auto * argument : node->children)
-                if (hasUnsafeHiddenLambdaBody(*argument, is_representation_read))
-                    return true;
-            return false;
-        };
         auto reads_replaced_input_representation = [&](const Node * conjunct)
         {
-            std::vector<std::pair<const Node *, bool>> to_visit{{conjunct, false}};
-            std::unordered_set<const Node *> visited_reading_value;
-            std::unordered_set<const Node *> visited_reading_representation;
-            while (!to_visit.empty())
-            {
-                auto [node, reads_representation] = to_visit.back();
-                to_visit.pop_back();
-
-                reads_representation |= !node->isDeterministic() || call_reads_representation(node);
-                auto & visited = reads_representation ? visited_reading_representation : visited_reading_value;
-                if (!visited.insert(node).second)
-                    continue;
-
-                if (reads_representation && node->type == ActionType::INPUT && cross_type_allowed_nodes.contains(node))
+            for (const auto * input : getInputsReadByRepresentation(*conjunct))
+                if (cross_type_allowed_nodes.contains(input))
                     return true;
-
-                for (const auto * child : node->children)
-                    to_visit.emplace_back(child, reads_representation);
-            }
             return false;
         };
 
@@ -5490,14 +5608,14 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
 
         writeIntBinary(column_flags, out);
 
-        /// A cache key (`registry.for_cache_key`) leaves out a constant's value when it has no fixed
-        /// size, with the same contract as `updateHash` with `with_variable_size_constant_values = false`:
+        /// A cache key (`registry.for_cache_key`) leaves out a large constant value (`isConstantValueInCacheKey`),
+        /// with the same contract as `updateHash` with `with_variable_size_constant_values = false`:
         /// such a value can be arbitrarily large (a folded scalar subquery), and hashing it on every
         /// execution costs more than the rest of planning. It also leaves out the value of the
         /// runtime-filter id carrier, a volatile per-plan-build rendezvous key whose `result_name` is its
         /// stable identity. This output is hash-only and never deserialized; the transmission path
         /// (`for_cache_key == false`) always writes the value.
-        if (has_column && !(registry.for_cache_key && (node.is_runtime_filter_id || !node.column->valuesHaveFixedSize())))
+        if (has_column && !(registry.for_cache_key && (node.is_runtime_filter_id || !isConstantValueInCacheKey(node))))
             serializeConstant(*node.result_type, *node.column, out, registry, input_header);
 
         if (node.type == ActionType::INPUT)
