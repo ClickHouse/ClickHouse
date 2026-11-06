@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <memory>
 
 namespace DB
@@ -146,7 +147,14 @@ void CompressionCodecGDeflate::updateHash(SipHash & hash) const
 UInt32 CompressionCodecGDeflate::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
     const size_t num_chunks = numChunks(uncompressed_size);
-    return static_cast<UInt32>(Header::maxCompressedBytes(num_chunks) + num_chunks * Chunk::maxCompressedBytes());
+    const size_t result = Header::maxCompressedBytes(num_chunks) + num_chunks * Chunk::maxCompressedBytes();
+    if (result > std::numeric_limits<UInt32>::max() - getHeaderSize())
+        throw Exception(
+            ErrorCodes::CANNOT_COMPRESS,
+            "Cannot compress with GDeflate codec, block of {} bytes is too large: worst-case compressed size {} does not fit into 32 bits",
+            uncompressed_size,
+            result);
+    return static_cast<UInt32>(result);
 }
 
 UInt32 CompressionCodecGDeflate::doCompressData(const char * source, UInt32 source_size, char * dest) const
