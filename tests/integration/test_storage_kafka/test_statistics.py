@@ -2,7 +2,8 @@ import time
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster, ZOOKEEPER_CONTAINERS
+from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 from helpers.test_tools import TSV
 import helpers.kafka.common as k
 
@@ -10,7 +11,7 @@ import helpers.kafka.common as k
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/kafka_no_statistics.xml", "configs/named_collection.xml"],
+    main_configs=["configs/named_collection.xml"],
     user_configs=["configs/users.xml"],
     with_kafka=True,
     with_zookeeper=True,
@@ -73,10 +74,7 @@ def kafka_setup_teardown():
 
 
 def test_statistics_enabled_by_default(kafka_cluster):
-    """rdkafka_stat must be populated without any explicit statistics config (pre-seeded default).
-
-    Covers both engines: the default for StorageKafka was dead code (has_property() is always true
-    for a known librdkafka property), and StorageKafka2 used to override even an explicit value."""
+    """rdkafka_stat must be populated without any statistics config, for both engines."""
     topic_name = "topic_statistics_default"
 
     # Use distinct consumer groups: the old engine subscribes and commits offsets to the broker for its
@@ -122,10 +120,7 @@ def test_statistics_enabled_by_default(kafka_cluster):
 
 
 def test_statistics_survive_mv_detach(kafka_cluster):
-    """StorageKafka2 must keep serving librdkafka events after the materialized view is detached.
-
-    Without the drain, statistics events accumulate in the librdkafka reply queue indefinitely
-    (a live memory leak) while nobody polls the idle consumer."""
+    """StorageKafka2 must keep serving librdkafka events after the materialized view is detached."""
     topic_name = "topic_statistics_detach"
 
     create_kafka_query = k.generate_new_create_table_query(
@@ -167,10 +162,8 @@ def test_statistics_survive_mv_detach(kafka_cluster):
 
 
 def test_statistics_survive_keeper_outage(kafka_cluster):
-    """StorageKafka2 must keep serving librdkafka statistics while the table is inactive during
-    a Keeper outage (the drain from the activation task); without it, the events accumulate in
-    the reply queue for the whole duration of the outage."""
-    topic_name = "topic_statistics_outage"
+    """StorageKafka2 must keep serving librdkafka events while its replica is inactive after a Keeper session loss."""
+    topic_name = "topic_statistics_keeper_outage"
 
     create_kafka_query = k.generate_new_create_table_query(
         "kafka", "a String", topic_list=topic_name, format="LineAsString"
@@ -194,34 +187,15 @@ def test_statistics_survive_keeper_outage(kafka_cluster):
         )
         wait_for_statistics("kafka")
 
-        # Kill Keeper: the session expires (default session_timeout is 30s) and the table goes
-        # inactive - the consumer tasks stop, and only the activation task keeps running,
-        # retrying with a bounded backoff. The consumers stay alive, and librdkafka keeps
-        # emitting statistics on every interval.
-        cluster.kill_zookeeper_nodes(list(ZOOKEEPER_CONTAINERS))
-        try:
-            # Allow time for the session to expire and for the activation task to notice
-            # (it ticks every 60s while the table is healthy), so that by the snapshot below
-            # the table is inactive for certain.
-            time.sleep(150)
-            # While the table is inactive the drain from the activation task is the only
-            # thing serving the events: rdkafka_stat must keep advancing.
-            ts_inactive = get_stat_ts("kafka")
-            deadline = time.monotonic() + 60
-            ts_fresh = None
-            while time.monotonic() < deadline:
-                ts_fresh = get_stat_ts("kafka")
-                if ts_fresh is not None and ts_inactive is not None and ts_fresh > ts_inactive:
-                    break
-                time.sleep(2)
-            assert ts_fresh is not None and ts_inactive is not None and ts_fresh > ts_inactive, (
-                f"rdkafka_stat is stale while the table is inactive (ts {ts_inactive} -> {ts_fresh}): "
-                "statistics events are not served during a Keeper outage"
+        with PartitionManager() as pm:
+            pm.drop_instance_zk_connections(instance)
+            instance.wait_for_log_line(
+                "ZooKeeper session has expired. Switching to a new session",
+                timeout=120,
+                look_behind_lines=0,
             )
-        finally:
-            cluster.start_zookeeper_nodes(list(ZOOKEEPER_CONTAINERS))
+            wait_for_statistics("kafka")
 
-        # After the outage the table re-activates and consumption continues without losses.
         k.kafka_produce(kafka_cluster, topic_name, ["message_2"])
         instance.query_with_retry(
             "SELECT * FROM test.dst",

@@ -523,13 +523,6 @@ void updateConfigurationFromConfig(
             }
         });
 
-    /// NOTE: the statistics.interval.ms default is pre-seeded in getConsumerConfiguration()/
-    /// getProducerConfiguration() before this function applies the user configuration.
-    /// Statistics events are enqueued into the librdkafka reply queue and are only consumed when the handle
-    /// is polled; each storage is responsible for making sure this happens (StorageKafka bounds the
-    /// accumulation by closing idle consumer handles after kafka_consumers_pool_ttl_ms, StorageKafka2 drains
-    /// its idle consumers from the per-consumer background task).
-
     // Configure interceptor to change thread name
     //
     // TODO: add interceptors support into the cppkafka.
@@ -600,11 +593,8 @@ cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorag
     conf.set("client.software.version", VERSION_DESCRIBE);
     conf.set("auto.offset.reset", "earliest"); // If no offset stored for this group, read all messages from the start
 
-    /// Pre-seed the default instead of checking has_property(): it reports every known property
-    /// with its built-in default and cannot tell "not configured" from "explicitly disabled",
-    /// so pre-seeding is what lets an explicit value (including "0") below win. Idle consumers
-    /// must keep serving the events: StorageKafka closes them after kafka_consumers_pool_ttl_ms,
-    /// StorageKafka2 drains them in pollIdleConsumerEvents().
+    /// Set before the user config, so an explicit value wins. Unpolled statistics of idle consumers
+    /// are bounded by kafka_consumers_pool_ttl_ms in StorageKafka and by pollIdleConsumerEvents() in StorageKafka2.
     conf.set("statistics.interval.ms", "3000");
 
     // that allows to prevent fast draining of the librdkafka queue
@@ -644,11 +634,6 @@ cppkafka::Configuration KafkaConfigLoader::getProducerConfiguration(TKafkaStorag
     conf.set("client.id", params.client_id);
     conf.set("client.software.name", VERSION_NAME);
     conf.set("client.software.version", VERSION_DESCRIBE);
-    /// Producers keep the "0" default: a producer lives as long as the INSERT (which is not
-    /// bounded), produce() polls only on RD_KAFKA_RESP_ERR__QUEUE_FULL, and librdkafka enqueues
-    /// statistics events even without a callback - an enabled default would grow the reply queue
-    /// for the whole insert. Consumer statistics don't depend on producer ones.
-    conf.set("statistics.interval.ms", "0");
 
     updateConfigurationFromConfig(loadProducerConfig, conf, storage, params);
 

@@ -1,4 +1,0 @@
-<clickhouse>
-    <!-- Deliberately contains no <kafka> section: these tests exercise the pre-seeded default
-         statistics.interval.ms without any user configuration. -->
-</clickhouse>
