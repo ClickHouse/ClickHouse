@@ -36,11 +36,12 @@ String serializeStep(
     UInt64 step_version,
     std::optional<Names> selected_columns = {},
     std::optional<size_t> columns_to_read = {},
-    std::optional<AdditionalFilter> additional_filter = {})
+    std::optional<AdditionalFilter> additional_filter = {},
+    UInt64 filter_steps = 0)
 {
     ReadFromTableStep step(
         makeHeader(), "db.t", TableExpressionModifiers{}, /*use_parallel_replicas_=*/ false, placement, std::move(selected_columns),
-        columns_to_read, std::move(additional_filter));
+        columns_to_read, std::move(additional_filter), filter_steps);
     WriteBufferFromOwnString out;
     SerializedSetsRegistry registry;
     IQueryPlanStep::Serialization ctx{out, registry, /*for_cache_key=*/ false, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, step_version};
@@ -53,9 +54,11 @@ QueryPlanStepPtr roundTrip(
     UInt64 step_version,
     std::optional<Names> selected_columns = {},
     std::optional<size_t> columns_to_read = {},
-    std::optional<AdditionalFilter> additional_filter = {})
+    std::optional<AdditionalFilter> additional_filter = {},
+    UInt64 filter_steps = 0)
 {
-    const String bytes = serializeStep(placement, step_version, std::move(selected_columns), columns_to_read, std::move(additional_filter));
+    const String bytes
+        = serializeStep(placement, step_version, std::move(selected_columns), columns_to_read, std::move(additional_filter), filter_steps);
     ReadBufferFromString in(bytes);
     DeserializedSetsRegistry registry;
     QueryPlanSerializationSettings settings;
@@ -109,17 +112,19 @@ TEST(ReadFromTableStepRowPolicyPlacement, SelectedColumnsRoundTripAtStepVersionO
 }
 
 /// The receiver checks its `max_columns_to_read` on this count and finds the filter step of the sender's
-/// `additional_table_filters` entry by its column and position, so both arrive exactly, and an absent filter stays absent.
+/// `additional_table_filters` entry by its column and position, or the last step of the read, so they arrive exactly, and an
+/// absent filter stays absent.
 TEST(ReadFromTableStepRowPolicyPlacement, ColumnsToReadAndAdditionalFilterRoundTripAtStepVersionOne)
 {
     const AdditionalFilter filter{"y < 5", "less(y, 5_UInt8)", 3};
     for (const auto & additional_filter : {std::optional(filter), std::optional(AdditionalFilter{}), std::optional<AdditionalFilter>{}})
     {
-        auto step = roundTrip(Placement::FilterStep, 1, Names{"x"}, 2, additional_filter);
+        auto step = roundTrip(Placement::FilterStep, 1, Names{"x"}, 2, additional_filter, 4);
         const auto & read = static_cast<const ReadFromTableStep &>(*step);
         EXPECT_EQ(read.getRowPolicyPlacement(), Placement::FilterStep);
         EXPECT_EQ(read.getSelectedColumns(), Names{"x"});
         EXPECT_EQ(read.getColumnsToRead(), 2);
+        EXPECT_EQ(read.getFilterSteps(), 4);
         ASSERT_EQ(read.getAdditionalFilter().has_value(), additional_filter.has_value());
         if (additional_filter)
         {
@@ -129,11 +134,12 @@ TEST(ReadFromTableStepRowPolicyPlacement, ColumnsToReadAndAdditionalFilterRoundT
         }
     }
 
-    EXPECT_EQ(serializeStep(Placement::NotInPlan, 0, Names{"x"}, 2, filter), serializeStep(Placement::Unknown, 0));
-    auto old_step = roundTrip(Placement::NotInPlan, 0, Names{"x"}, 2, filter);
+    EXPECT_EQ(serializeStep(Placement::NotInPlan, 0, Names{"x"}, 2, filter, 4), serializeStep(Placement::Unknown, 0));
+    auto old_step = roundTrip(Placement::NotInPlan, 0, Names{"x"}, 2, filter, 4);
     const auto & old_read = static_cast<const ReadFromTableStep &>(*old_step);
     EXPECT_EQ(old_read.getColumnsToRead(), std::nullopt);
     EXPECT_FALSE(old_read.getAdditionalFilter().has_value());
+    EXPECT_EQ(old_read.getFilterSteps(), 0);
 }
 
 TEST(ReadFromTableStepRowPolicyPlacement, StepVersionOneOnlyTowardsAPeerThatKnowsIt)

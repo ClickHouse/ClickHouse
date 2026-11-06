@@ -2384,6 +2384,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 }
 
                 /// The filter step of `additional_table_filters` is the last of `where_filters`.
+                const size_t read_filter_steps = where_filters.size();
                 std::optional<String> additional_filter_column;
                 if (auto additional_filters_info = buildAdditionalFiltersIfNeeded(table_expression_query_info, prewhere_info, planner_context))
                 {
@@ -2863,14 +2864,13 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
                         /// A policy built for this read is a filter step of the plan unless it was pushed into the read.
                         const bool row_policy_in_plan = table_expression_data.getRowLevelFilterActions() && !row_level_filter;
+                        const size_t alias_steps = table_expression_data.getAliasColumnExpressions().empty() ? 0 : 1;
+                        const bool filter_steps_in_plan = till_stage == QueryProcessingStage::FetchColumns;
                         std::optional<ReadFromTableStep::AdditionalFilter> additional_filter_in_plan;
                         if (table_expression_query_info.additional_filter_ast && additional_filter && additional_filter_column
-                            && till_stage == QueryProcessingStage::FetchColumns)
-                        {
-                            const size_t alias_steps = table_expression_data.getAliasColumnExpressions().empty() ? 0 : 1;
+                            && filter_steps_in_plan)
                             additional_filter_in_plan = ReadFromTableStep::AdditionalFilter{
                                 *additional_filter, *additional_filter_column, alias_steps + where_filters.size()};
-                        }
                         auto reading_from_table = std::make_unique<ReadFromTableStep>(
                             sample_block,
                             table_name,
@@ -2880,7 +2880,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                                : ReadFromTableStep::RowPolicyPlacement::NotInPlan,
                             table_expression_data.getAuthorizedColumnsNames(),
                             table_expression_data.getColumnsToReadCount(),
-                            std::move(additional_filter_in_plan));
+                            std::move(additional_filter_in_plan),
+                            filter_steps_in_plan ? alias_steps + read_filter_steps : 0);
 
                         query_plan.addStep(std::move(reading_from_table));
                     }

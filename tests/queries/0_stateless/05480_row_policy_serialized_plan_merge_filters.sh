@@ -128,7 +128,8 @@ GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO ${USER_RECEIVER};
 "
 receiver_entry()
 {
-    local table=$1 entry=$2 prewhere=$3 sender_entry=$4 label=${5:-}
+    local table=$1 entry=$2 prewhere=$3 sender_entry=$4 label=${5:-} sender_setting=""
+    [ -n "${sender_entry}" ] && sender_setting=", additional_table_filters = {'${CLICKHOUSE_DATABASE}.${table}': '${sender_entry}'}"
     ${CLICKHOUSE_CLIENT} -m -q "
     DROP SETTINGS PROFILE IF EXISTS p_${USER_RECEIVER};
     CREATE SETTINGS PROFILE p_${USER_RECEIVER} SETTINGS
@@ -138,18 +139,22 @@ receiver_entry()
         echo -n "receiver entry ${entry} on ${table}${label} sqp=${sqp} "
         ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', ${CLICKHOUSE_DATABASE}, ${table}, '${USER_RECEIVER}', '')
             PREWHERE ${prewhere} SETTINGS ${SETTINGS}, serialize_query_plan = ${sqp}, optimize_move_to_prewhere = 0,
-            query_plan_enable_optimizations = 0, additional_table_filters = {'${CLICKHOUSE_DATABASE}.${table}': '${sender_entry}'}" 2>&1 \
+            query_plan_enable_optimizations = 0${sender_setting}" 2>&1 \
             | grep -oE '^[0-9]+$|FUNCTION_THROW_IF_VALUE_IS_NON_ZERO' | head -1
     done
 }
 for table in rp_mf_merge rp_mf_leaf; do
     receiver_entry "${table}" "y < 100000 AND arrayJoin([1, 1])" "rowNumberInAllBlocks() < 5" "arrayJoin([1, 1])"
     receiver_entry "${table}" "throwIf(y >= 5) = 0" "x < 5" "x < 10"
+    receiver_entry "${table}" "y < 100000 AND arrayJoin([1, 1])" "rowNumberInAllBlocks() < 5" "" " alone"
+    receiver_entry "${table}" "throwIf(y >= 5) = 0" "x < 5" "" " alone"
 done
 # Also over a policy of the `Merge` table, which the plan applies as a step under the entry.
 ${CLICKHOUSE_CLIENT} -q "CREATE ROW POLICY rp_mf_mx ON rp_mf_merge FOR SELECT USING x < 100000 TO ALL"
 receiver_entry rp_mf_merge "y < 100000 AND arrayJoin([1, 1])" "rowNumberInAllBlocks() < 5" "arrayJoin([1, 1])" " with a policy"
 receiver_entry rp_mf_merge "throwIf(y >= 5) = 0" "x < 5" "x < 10" " with a policy"
+receiver_entry rp_mf_merge "y < 100000 AND arrayJoin([1, 1])" "rowNumberInAllBlocks() < 5" "" " alone with a policy"
+receiver_entry rp_mf_merge "throwIf(y >= 5) = 0" "x < 5" "" " alone with a policy"
 ${CLICKHOUSE_CLIENT} -q "DROP ROW POLICY rp_mf_mx ON rp_mf_merge"
 ${CLICKHOUSE_CLIENT} -m -q "
 DROP SETTINGS PROFILE p_${USER_RECEIVER};

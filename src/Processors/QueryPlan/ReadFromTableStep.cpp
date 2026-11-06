@@ -21,7 +21,8 @@ ReadFromTableStep::ReadFromTableStep(
     RowPolicyPlacement row_policy_placement_,
     std::optional<Names> selected_columns_,
     std::optional<size_t> columns_to_read_,
-    std::optional<AdditionalFilter> additional_filter_)
+    std::optional<AdditionalFilter> additional_filter_,
+    UInt64 filter_steps_)
     : ISourceStep(std::move(header))
     , table_name(std::move(table_name_))
     , table_expression_modifiers(std::move(table_expression_modifiers_))
@@ -30,6 +31,7 @@ ReadFromTableStep::ReadFromTableStep(
     , selected_columns(std::move(selected_columns_))
     , columns_to_read(columns_to_read_)
     , additional_filter(std::move(additional_filter_))
+    , filter_steps(filter_steps_)
 {
 }
 
@@ -82,6 +84,9 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
         writeStringBinary(additional_filter->filter_column, ctx.out);
         writeVarUInt(additional_filter->steps_above, ctx.out);
     }
+
+    if (ctx.step_version >= 1)
+        writeVarUInt(filter_steps, ctx.out);
 }
 
 QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
@@ -113,6 +118,7 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
     std::optional<Names> selected_columns;
     std::optional<size_t> columns_to_read;
     std::optional<AdditionalFilter> additional_filter;
+    UInt64 filter_steps = 0;
     if (ctx.step_version >= 1)
     {
         row_policy_placement = (flags & 16) ? RowPolicyPlacement::FilterStep : RowPolicyPlacement::NotInPlan;
@@ -134,19 +140,20 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
             readStringBinary(filter.filter_column, ctx.in);
             readVarUInt(filter.steps_above, ctx.in);
         }
+        readVarUInt(filter_steps, ctx.in);
     }
 
     TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
     return std::make_unique<ReadFromTableStep>(
         ctx.output_header, table_name, table_expression_modifiers, use_parallel_replicas, row_policy_placement,
-        std::move(selected_columns), columns_to_read, std::move(additional_filter));
+        std::move(selected_columns), columns_to_read, std::move(additional_filter), filter_steps);
 }
 
 QueryPlanStepPtr ReadFromTableStep::clone() const
 {
     return std::make_unique<ReadFromTableStep>(
         getOutputHeader(), table_name, table_expression_modifiers, use_parallel_replicas, row_policy_placement, selected_columns,
-        columns_to_read, additional_filter);
+        columns_to_read, additional_filter, filter_steps);
 }
 
 void registerReadFromTableStep(QueryPlanStepRegistry & registry);

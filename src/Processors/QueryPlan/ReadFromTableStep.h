@@ -36,7 +36,8 @@ public:
         RowPolicyPlacement row_policy_placement_ = RowPolicyPlacement::Unknown,
         std::optional<Names> selected_columns_ = {},
         std::optional<size_t> columns_to_read_ = {},
-        std::optional<AdditionalFilter> additional_filter_ = {});
+        std::optional<AdditionalFilter> additional_filter_ = {},
+        UInt64 filter_steps_ = 0);
 
     String getName() const override { return "ReadFromTable"; }
 
@@ -57,6 +58,9 @@ public:
     /// The number of columns the sender checked against `max_columns_to_read`, without those only the filters need.
     std::optional<size_t> getColumnsToRead() const { return columns_to_read; }
     const std::optional<AdditionalFilter> & getAdditionalFilter() const { return additional_filter; }
+    /// The number of steps right above this read that belong to it (ALIAS columns, PREWHERE, the policy, the custom key
+    /// filter), after which the sender applies an `additional_table_filters` entry.
+    UInt64 getFilterSteps() const { return filter_steps; }
 
     QueryPlanStepPtr clone() const override;
 private:
@@ -67,6 +71,7 @@ private:
     std::optional<Names> selected_columns;
     std::optional<size_t> columns_to_read;
     std::optional<AdditionalFilter> additional_filter;
+    UInt64 filter_steps = 0;
 };
 
 }

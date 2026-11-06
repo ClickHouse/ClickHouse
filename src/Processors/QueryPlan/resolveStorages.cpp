@@ -128,26 +128,30 @@ static ASTPtr wrapWithUnion(ASTPtr select)
 
 using ParentNodes = std::unordered_map<const QueryPlan::Node *, QueryPlan::Node *>;
 
+/// The node `steps` steps above `node`, if it and the nodes between are expression or filter steps with one child each.
+static QueryPlan::Node * findStepAbove(const QueryPlan::Node & node, UInt64 steps, const ParentNodes & parents)
+{
+    const QueryPlan::Node * current = &node;
+    QueryPlan::Node * found = nullptr;
+    for (UInt64 i = 0; i < steps; ++i)
+    {
+        auto it = parents.find(current);
+        if (it == parents.end() || it->second->children.size() != 1
+            || (!typeid_cast<const ExpressionStep *>(it->second->step.get()) && !typeid_cast<const FilterStep *>(it->second->step.get())))
+            return nullptr;
+        current = found = it->second;
+    }
+    return found;
+}
+
 /// A step that computes the columns of the filter step `filter` applies on the sender, but keeps every row, if that
 /// step is where `filter` says.
 static std::unique_ptr<ExpressionStep> makeStepWithoutAdditionalFilter(
     const QueryPlan::Node & node, const ReadFromTableStep::AdditionalFilter & filter, const ParentNodes & parents)
 {
-    const QueryPlan::Node * current = &node;
-    for (UInt64 i = 0; i < filter.steps_above; ++i)
-    {
-        if (current != &node && !typeid_cast<const ExpressionStep *>(current->step.get())
-            && !typeid_cast<const FilterStep *>(current->step.get()))
-            return {};
-        auto it = parents.find(current);
-        if (it == parents.end() || it->second->children.size() != 1)
-            return {};
-        current = it->second;
-    }
-
-    const auto * filter_step = typeid_cast<const FilterStep *>(current->step.get());
-    if (current == &node || !filter_step || !filter_step->removesFilterColumn()
-        || filter_step->getFilterColumnName() != filter.filter_column)
+    const auto * filter_node = findStepAbove(node, filter.steps_above, parents);
+    const auto * filter_step = filter_node ? typeid_cast<const FilterStep *>(filter_node->step.get()) : nullptr;
+    if (!filter_step || !filter_step->removesFilterColumn() || filter_step->getFilterColumnName() != filter.filter_column)
         return {};
 
     auto actions = filter_step->getExpression().clone();
@@ -405,7 +409,8 @@ static QueryPlanResourceHolder replaceReadingFromTable(
         {
             /// The planner builds the filter of the entry of this node, evaluated here, and of the entry of the sender, unless
             /// the two entries are the same, and it replaces the filter step that applied the entry of the sender there. If
-            /// that step is not found, it stays and stands for an entry of this node that is the same.
+            /// that step is not found, it stays and stands for an entry of this node that is the same. Without that step,
+            /// the filter runs after the steps of the read.
             std::optional<String> sender_additional_filter;
             bool additional_filter_in_plan = false;
             if (const auto & additional_filter = reading_from_table->getAdditionalFilter())
@@ -413,9 +418,9 @@ static QueryPlanResourceHolder replaceReadingFromTable(
                 sender_additional_filter = additional_filter->text;
                 step_without_additional_filter = makeStepWithoutAdditionalFilter(node, *additional_filter, parents);
                 additional_filter_in_plan = !step_without_additional_filter;
-                if (step_without_additional_filter)
-                    additional_filter_actions = std::make_shared<FilterDAGInfo>();
             }
+            if (step_without_additional_filter || reading_from_table->getFilterSteps())
+                additional_filter_actions = std::make_shared<FilterDAGInfo>();
 
             /// `column_names` also has the columns of the filters above the read, so the grants and the limit are checked
             /// on the columns the query selects. A plain table is not checked, as with `storage->read()` below.
@@ -469,50 +474,58 @@ static QueryPlanResourceHolder replaceReadingFromTable(
         reading_plan = std::move(interpreter).extractQueryPlan();
         reading_plan.addInterpreterContext(std::move(interpreter_context));
 
-        /// The filter runs in place of the sender's step, and the columns it needs that this step does not get are carried
-        /// there from the read. If that fails, it runs on the read, and the sender's step keeps every row, or stays as it is
-        /// over the sender's policy step, which must run first.
-        if (step_without_additional_filter && !additional_filter_actions->column_name.empty())
+        /// The filter runs in place of the sender's step, or else after the last step of the read, and the columns it needs
+        /// that do not get there are carried from the read. If that fails, it runs on the read, and the sender's step keeps
+        /// every row, or stays as it is over the sender's policy step, which must run first.
+        if (additional_filter_actions && !additional_filter_actions->column_name.empty())
         {
             auto & filter = *additional_filter_actions;
-            QueryPlan::Node * filter_node = &node;
-            for (UInt64 i = 0; i < reading_from_table->getAdditionalFilter()->steps_above; ++i)
-                filter_node = parents.at(filter_node);
-            const auto & filter_step = typeid_cast<const FilterStep &>(*filter_node->step);
+            const bool in_place = step_without_additional_filter != nullptr;
+            QueryPlan::Node * filter_node = findStepAbove(
+                node, in_place ? reading_from_table->getAdditionalFilter()->steps_above : reading_from_table->getFilterSteps(), parents);
+            const auto parent = filter_node ? parents.find(filter_node) : parents.end();
 
             NameSet carried;
             Block carried_header = *header;
-            for (const auto * input : filter.actions.getInputs())
-            {
-                if (filter_step.getInputHeaders().front()->has(input->result_name))
-                    continue;
-                carried.insert(input->result_name);
-                const auto * column = reading_plan.getCurrentHeader()->findByName(input->result_name);
-                if (column && !carried_header.has(column->name))
-                    carried_header.insert({column->type->createColumn(), column->type, column->name});
-            }
-
             std::vector<std::pair<QueryPlan::Node *, QueryPlanStepPtr>> carrying_steps;
-            SharedHeader filter_input_header = filter_step.getInputHeaders().front();
-            if (!carried.empty())
-            {
-                auto converting = ActionsDAG::makeConvertingActions(
-                    reading_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
-                    carried_header.getColumnsWithTypeAndName(),
-                    ActionsDAG::MatchColumnsMode::Name,
-                    context);
-                filter_input_header = std::make_shared<const Block>(converting.updateHeader(*reading_plan.getCurrentHeader()));
-                for (auto * current = parents.at(&node); current != filter_node; current = parents.at(current))
-                {
-                    carrying_steps.emplace_back(current, makeStepCarryingColumns(*current->step, filter_input_header, carried));
-                    filter_input_header = carrying_steps.back().second->getOutputHeader();
-                }
-            }
-
             UsefulSets filter_sets;
             UsefulSets kept_sets;
-            appendSetsFromActionsDAG(filter_step.getExpression(), filter_sets);
-            QueryPlanStepPtr replacement = makeFilterStepInPlaceOf(filter_input_header, *filter_step.getOutputHeader(), filter);
+            QueryPlanStepPtr replacement;
+            if (filter_node && (in_place || parent != parents.end()))
+            {
+                SharedHeader filter_input_header
+                    = in_place ? filter_node->step->getInputHeaders().front() : filter_node->step->getOutputHeader();
+                for (const auto * input : filter.actions.getInputs())
+                {
+                    if (filter_input_header->has(input->result_name))
+                        continue;
+                    carried.insert(input->result_name);
+                    const auto * column = reading_plan.getCurrentHeader()->findByName(input->result_name);
+                    if (column && !carried_header.has(column->name))
+                        carried_header.insert({column->type->createColumn(), column->type, column->name});
+                }
+
+                if (!carried.empty())
+                {
+                    auto converting = ActionsDAG::makeConvertingActions(
+                        reading_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
+                        carried_header.getColumnsWithTypeAndName(),
+                        ActionsDAG::MatchColumnsMode::Name,
+                        context);
+                    filter_input_header = std::make_shared<const Block>(converting.updateHeader(*reading_plan.getCurrentHeader()));
+                    const QueryPlan::Node * end = in_place ? filter_node : parent->second;
+                    for (auto * current = parents.at(&node); current != end; current = parents.at(current))
+                    {
+                        carrying_steps.emplace_back(current, makeStepCarryingColumns(*current->step, filter_input_header, carried));
+                        filter_input_header = carrying_steps.back().second->getOutputHeader();
+                    }
+                }
+
+                if (in_place)
+                    appendSetsFromActionsDAG(typeid_cast<const FilterStep &>(*filter_node->step).getExpression(), filter_sets);
+                replacement = makeFilterStepInPlaceOf(filter_input_header, *filter_node->step->getOutputHeader(), filter);
+            }
+
             if (replacement)
             {
                 for (auto & [current, step] : carrying_steps)
@@ -524,18 +537,24 @@ static QueryPlanResourceHolder replaceReadingFromTable(
             {
                 reading_plan.addStep(std::make_unique<FilterStep>(
                     reading_plan.getCurrentHeader(), std::move(filter.actions), filter.column_name, filter.do_remove_column));
-                if (placement != ReadFromTableStep::RowPolicyPlacement::FilterStep)
+                if (in_place && placement != ReadFromTableStep::RowPolicyPlacement::FilterStep)
                 {
                     appendSetsFromActionsDAG(step_without_additional_filter->getExpression(), kept_sets);
                     replacement = std::move(step_without_additional_filter);
                 }
             }
-            if (replacement)
+
+            if (replacement && in_place)
             {
                 for (const auto & set : filter_sets)
                     if (!kept_sets.contains(set))
                         removed_filter_sets.insert(set.get());
                 filter_node->step = std::move(replacement);
+            }
+            else if (replacement)
+            {
+                auto & inserted = nodes.emplace_back(QueryPlan::Node{.step = std::move(replacement), .children = {filter_node}});
+                std::ranges::replace(parent->second->children, filter_node, &inserted);
             }
         }
     }
