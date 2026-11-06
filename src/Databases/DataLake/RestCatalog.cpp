@@ -188,6 +188,18 @@ String encodeNamespaceForURI(const String & namespace_name)
     return encoded;
 }
 
+Poco::JSON::Array::Ptr namespaceToJSON(const String & namespace_name)
+{
+    std::vector<String> levels;
+    /// TODO: a level that contains a dot cannot be expressed. The levels are joined with a dot
+    /// in `parseNamespaces`, so this split mirrors that join and `encodeNamespaceForURI`.
+    splitInto<'.'>(levels, namespace_name);
+    Poco::JSON::Array::Ptr result = new Poco::JSON::Array;
+    for (const auto & level : levels)
+        result->add(level);
+    return result;
+}
+
 /// A 404 status alone does not separate a namespace that is gone from an endpoint the catalog does
 /// not serve: both answer the same status. Only the Iceberg REST error `type` names the cause, so a
 /// body that is absent, unparseable or typed as anything else is not a vanished namespace.
@@ -1506,10 +1518,14 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
         {
             auto current_namespace_array = namespaces_object->get(static_cast<int>(i)).extract<Poco::JSON::Array::Ptr>();
             if (current_namespace_array->size() == 0)
-                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Expected namespace array to be non-empty");
+                throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Iceberg REST catalog listed an empty namespace");
 
             const int idx = static_cast<int>(current_namespace_array->size()) - 1;
             const auto current_namespace = current_namespace_array->get(idx).extract<String>();
+            /// An empty name at the root would denote the root itself.
+            if (base_namespace.empty() && current_namespace.empty())
+                throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Iceberg REST catalog listed a top-level namespace with an empty name");
+
             /// Some catalogs have flat (single-level) namespaces and do not support multi-level ones:
             /// BigLake, and Databricks Delta Sharing (share -> namespace/schema -> table). When asked
             /// for sub-namespaces of a non-empty parent (via ?parent=X) they ignore the filter and
@@ -1888,16 +1904,7 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name) cons
     /// The request body takes the namespace as a list of levels, unlike the URL form above.
     /// No `location` property is sent. The catalog applies its warehouse default instead.
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
-    {
-        std::vector<String> levels;
-        /// TODO: a level that contains a dot cannot be expressed. The levels are joined with a dot
-        /// in `parseNamespaces`, so this split mirrors that join and `encodeNamespaceForURI`.
-        splitInto<'.'>(levels, namespace_name);
-        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        for (const auto & level : levels)
-            namespaces->add(level);
-        request_body->set("namespace", namespaces);
-    }
+    request_body->set("namespace", namespaceToJSON(namespace_name));
 
     try
     {
@@ -2036,9 +2043,7 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     {
         Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
         identifier->set("name", table_name);
-        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        namespaces->add(namespace_name);
-        identifier->set("namespace", namespaces);
+        identifier->set("namespace", namespaceToJSON(namespace_name));
 
         request_body->set("identifier", identifier);
     }
@@ -2123,9 +2128,7 @@ Poco::JSON::Object::Ptr RestCatalog::removeSnapshots(
     {
         Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
         identifier->set("name", table_name);
-        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        namespaces->add(namespace_name);
-        identifier->set("namespace", namespaces);
+        identifier->set("namespace", namespaceToJSON(namespace_name));
 
         request_body->set("identifier", identifier);
     }
@@ -2242,9 +2245,7 @@ bool RestCatalog::updateSchema(
     {
         Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
         identifier->set("name", table_name);
-        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        namespaces->add(namespace_name);
-        identifier->set("namespace", namespaces);
+        identifier->set("namespace", namespaceToJSON(namespace_name));
 
         request_body->set("identifier", identifier);
     }
