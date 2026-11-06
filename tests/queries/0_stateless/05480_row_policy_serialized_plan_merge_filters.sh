@@ -117,6 +117,46 @@ DROP ROW POLICY rp_mf_all ON rp_mf_leaf;
 DROP TABLE rp_mf_dist_leaf;
 "
 
+# The executing node, reached through `remote` as a user with its own READONLY entry, gets that entry, which reads `y`:
+# a column the step of the initiator's entry does not get.
+USER_RECEIVER="rp_mf_receiver_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} -m -q "
+CREATE ROW POLICY rp_mf_x ON rp_mf_leaf FOR SELECT USING x < 100000 TO ALL;
+DROP USER IF EXISTS ${USER_RECEIVER};
+CREATE USER ${USER_RECEIVER} IDENTIFIED WITH plaintext_password BY '';
+GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO ${USER_RECEIVER};
+"
+receiver_entry()
+{
+    local table=$1 entry=$2 prewhere=$3 sender_entry=$4 label=${5:-}
+    ${CLICKHOUSE_CLIENT} -m -q "
+    DROP SETTINGS PROFILE IF EXISTS p_${USER_RECEIVER};
+    CREATE SETTINGS PROFILE p_${USER_RECEIVER} SETTINGS
+        additional_table_filters = '{\'${CLICKHOUSE_DATABASE}.${table}\': \'${entry}\'}' READONLY TO ${USER_RECEIVER};
+    "
+    for sqp in 1 0; do
+        echo -n "receiver entry ${entry} on ${table}${label} sqp=${sqp} "
+        ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', ${CLICKHOUSE_DATABASE}, ${table}, '${USER_RECEIVER}', '')
+            PREWHERE ${prewhere} SETTINGS ${SETTINGS}, serialize_query_plan = ${sqp}, optimize_move_to_prewhere = 0,
+            query_plan_enable_optimizations = 0, additional_table_filters = {'${CLICKHOUSE_DATABASE}.${table}': '${sender_entry}'}" 2>&1 \
+            | grep -oE '^[0-9]+$|FUNCTION_THROW_IF_VALUE_IS_NON_ZERO' | head -1
+    done
+}
+for table in rp_mf_merge rp_mf_leaf; do
+    receiver_entry "${table}" "y < 100000 AND arrayJoin([1, 1])" "rowNumberInAllBlocks() < 5" "arrayJoin([1, 1])"
+    receiver_entry "${table}" "throwIf(y >= 5) = 0" "x < 5" "x < 10"
+done
+# Also over a policy of the `Merge` table, which the plan applies as a step under the entry.
+${CLICKHOUSE_CLIENT} -q "CREATE ROW POLICY rp_mf_mx ON rp_mf_merge FOR SELECT USING x < 100000 TO ALL"
+receiver_entry rp_mf_merge "y < 100000 AND arrayJoin([1, 1])" "rowNumberInAllBlocks() < 5" "arrayJoin([1, 1])" " with a policy"
+receiver_entry rp_mf_merge "throwIf(y >= 5) = 0" "x < 5" "x < 10" " with a policy"
+${CLICKHOUSE_CLIENT} -q "DROP ROW POLICY rp_mf_mx ON rp_mf_merge"
+${CLICKHOUSE_CLIENT} -m -q "
+DROP SETTINGS PROFILE p_${USER_RECEIVER};
+DROP USER ${USER_RECEIVER};
+DROP ROW POLICY rp_mf_x ON rp_mf_leaf;
+"
+
 ${CLICKHOUSE_CLIENT} -q "CREATE ROW POLICY rp_mf_nd ON rp_mf_merge FOR SELECT USING rand64() % 2 = 0 TO ALL"
 for sqp in 1 0; do
     echo -n "policy on merge sqp=${sqp} "

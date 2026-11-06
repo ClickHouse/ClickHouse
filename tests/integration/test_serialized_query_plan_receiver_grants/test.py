@@ -145,6 +145,14 @@ def test_receiver_resolves_additional_table_filters_with_its_own_settings(
     )
     assert select("SELECT count() FROM dist", serialize_query_plan, **filters) == "1\n"
 
+    # Also over a policy of the `Merge` table, which the plan applies as a step under the entry.
+    for node in (initiator, receiver):
+        node.query("CREATE ROW POLICY p ON default.m USING y < 100 TO u")
+    filters["additional_table_filters"] = (
+        "{'default.m': 'x < getSetting(\\'max_threads\\')'}"
+    )
+    assert select("SELECT count() FROM dist", serialize_query_plan, **filters) == "1\n"
+
 
 @pytest.fixture
 def lookup_table():

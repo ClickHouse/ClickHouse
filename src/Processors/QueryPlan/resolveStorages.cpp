@@ -172,10 +172,11 @@ static std::unique_ptr<ExpressionStep> makeStepWithoutAdditionalFilter(
     return step;
 }
 
-/// A step that applies `filter` in place of `filter_step`, if the columns `filter` reads are there, with the same types.
-static std::unique_ptr<FilterStep> makeFilterStepInPlaceOf(const FilterStep & filter_step, const FilterDAGInfo & filter)
+/// A step that applies `filter` in place of a filter step with these headers, if the columns `filter` reads are there,
+/// with the same types.
+static std::unique_ptr<FilterStep>
+makeFilterStepInPlaceOf(const SharedHeader & input_header, const Block & output_header, const FilterDAGInfo & filter)
 {
-    const auto & input_header = filter_step.getInputHeaders().front();
     auto actions = filter.actions.clone();
     std::unordered_map<std::string_view, const ActionsDAG::Node *> inputs;
     for (const auto * input : actions.getInputs())
@@ -190,7 +191,7 @@ static std::unique_ptr<FilterStep> makeFilterStepInPlaceOf(const FilterStep & fi
     for (const auto & column : *input_header)
         if (!inputs.contains(column.name))
             inputs.emplace(column.name, &actions.addInput(column.name, column.type));
-    for (const auto & column : *filter_step.getOutputHeader())
+    for (const auto & column : output_header)
     {
         auto it = inputs.find(column.name);
         if (it == inputs.end())
@@ -200,9 +201,35 @@ static std::unique_ptr<FilterStep> makeFilterStepInPlaceOf(const FilterStep & fi
     actions.getOutputs() = std::move(outputs);
 
     auto step = std::make_unique<FilterStep>(input_header, std::move(actions), filter.column_name, filter.do_remove_column);
-    if (!blocksHaveEqualStructure(*step->getOutputHeader(), *filter_step.getOutputHeader()))
+    if (!blocksHaveEqualStructure(*step->getOutputHeader(), output_header))
         return {};
     return step;
+}
+
+/// The expression or filter step `step` over `input_header`, passing on its columns `carried` as well.
+static QueryPlanStepPtr makeStepCarryingColumns(const IQueryPlanStep & step, const SharedHeader & input_header, const NameSet & carried)
+{
+    auto carry = [&](ActionsDAG actions)
+    {
+        auto & outputs = actions.getOutputs();
+        for (const auto * input : actions.getInputs())
+            if (carried.contains(input->result_name)
+                && std::ranges::none_of(outputs, [&](const auto * output) { return output->result_name == input->result_name; }))
+                outputs.push_back(input);
+        return actions;
+    };
+
+    QueryPlanStepPtr result;
+    if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
+        result = std::make_unique<ExpressionStep>(input_header, carry(expression->getExpression().clone()));
+    else
+    {
+        const auto & filter = typeid_cast<const FilterStep &>(step);
+        result = std::make_unique<FilterStep>(
+            input_header, carry(filter.getExpression().clone()), filter.getFilterColumnName(), filter.removesFilterColumn());
+    }
+    result->setStepDescription(step);
+    return result;
 }
 
 static QueryPlanResourceHolder replaceReadingFromTable(
@@ -365,6 +392,8 @@ static QueryPlanResourceHolder replaceReadingFromTable(
     QueryPlan reading_plan;
     std::unique_ptr<ExpressionStep> step_without_additional_filter;
     std::shared_ptr<FilterDAGInfo> additional_filter_actions;
+    /// The columns the read gives to the steps above it.
+    SharedHeader read_header = header;
     if (replan_through_interpreter)
     {
         SelectQueryOptions options(QueryProcessingStage::FetchColumns);
@@ -375,16 +404,14 @@ static QueryPlanResourceHolder replaceReadingFromTable(
         if (needs_row_policy || placement != ReadFromTableStep::RowPolicyPlacement::Unknown)
         {
             /// The planner builds the filter of the entry of this node, evaluated here, and of the entry of the sender, unless
-            /// the two entries are the same. It replaces the filter step that applied the entry of the sender there. Not over
-            /// the sender's row policy step, which must run first: then that step stays and stands for an entry of this
-            /// node that is the same, as the sender's policy step stands for the policy of this node.
+            /// the two entries are the same, and it replaces the filter step that applied the entry of the sender there. If
+            /// that step is not found, it stays and stands for an entry of this node that is the same.
             std::optional<String> sender_additional_filter;
             bool additional_filter_in_plan = false;
             if (const auto & additional_filter = reading_from_table->getAdditionalFilter())
             {
                 sender_additional_filter = additional_filter->text;
-                if (placement != ReadFromTableStep::RowPolicyPlacement::FilterStep)
-                    step_without_additional_filter = makeStepWithoutAdditionalFilter(node, *additional_filter, parents);
+                step_without_additional_filter = makeStepWithoutAdditionalFilter(node, *additional_filter, parents);
                 additional_filter_in_plan = !step_without_additional_filter;
                 if (step_without_additional_filter)
                     additional_filter_actions = std::make_shared<FilterDAGInfo>();
@@ -442,30 +469,74 @@ static QueryPlanResourceHolder replaceReadingFromTable(
         reading_plan = std::move(interpreter).extractQueryPlan();
         reading_plan.addInterpreterContext(std::move(interpreter_context));
 
-        /// The filter runs in place of the sender's step or, if it needs columns that step does not get, on the read, with
-        /// that step keeping every row.
+        /// The filter runs in place of the sender's step, and the columns it needs that this step does not get are carried
+        /// there from the read. If that fails, it runs on the read, and the sender's step keeps every row, or stays as it is
+        /// over the sender's policy step, which must run first.
         if (step_without_additional_filter && !additional_filter_actions->column_name.empty())
         {
+            auto & filter = *additional_filter_actions;
             QueryPlan::Node * filter_node = &node;
             for (UInt64 i = 0; i < reading_from_table->getAdditionalFilter()->steps_above; ++i)
                 filter_node = parents.at(filter_node);
             const auto & filter_step = typeid_cast<const FilterStep &>(*filter_node->step);
+
+            NameSet carried;
+            Block carried_header = *header;
+            for (const auto * input : filter.actions.getInputs())
+            {
+                if (filter_step.getInputHeaders().front()->has(input->result_name))
+                    continue;
+                carried.insert(input->result_name);
+                const auto * column = reading_plan.getCurrentHeader()->findByName(input->result_name);
+                if (column && !carried_header.has(column->name))
+                    carried_header.insert({column->type->createColumn(), column->type, column->name});
+            }
+
+            std::vector<std::pair<QueryPlan::Node *, QueryPlanStepPtr>> carrying_steps;
+            SharedHeader filter_input_header = filter_step.getInputHeaders().front();
+            if (!carried.empty())
+            {
+                auto converting = ActionsDAG::makeConvertingActions(
+                    reading_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
+                    carried_header.getColumnsWithTypeAndName(),
+                    ActionsDAG::MatchColumnsMode::Name,
+                    context);
+                filter_input_header = std::make_shared<const Block>(converting.updateHeader(*reading_plan.getCurrentHeader()));
+                for (auto * current = parents.at(&node); current != filter_node; current = parents.at(current))
+                {
+                    carrying_steps.emplace_back(current, makeStepCarryingColumns(*current->step, filter_input_header, carried));
+                    filter_input_header = carrying_steps.back().second->getOutputHeader();
+                }
+            }
+
             UsefulSets filter_sets;
             UsefulSets kept_sets;
             appendSetsFromActionsDAG(filter_step.getExpression(), filter_sets);
-            QueryPlanStepPtr replacement = makeFilterStepInPlaceOf(filter_step, *additional_filter_actions);
-            if (!replacement)
+            QueryPlanStepPtr replacement = makeFilterStepInPlaceOf(filter_input_header, *filter_step.getOutputHeader(), filter);
+            if (replacement)
             {
-                auto & filter = *additional_filter_actions;
+                for (auto & [current, step] : carrying_steps)
+                    current->step = std::move(step);
+                if (!carried.empty())
+                    read_header = std::make_shared<const Block>(std::move(carried_header));
+            }
+            else
+            {
                 reading_plan.addStep(std::make_unique<FilterStep>(
                     reading_plan.getCurrentHeader(), std::move(filter.actions), filter.column_name, filter.do_remove_column));
-                appendSetsFromActionsDAG(step_without_additional_filter->getExpression(), kept_sets);
-                replacement = std::move(step_without_additional_filter);
+                if (placement != ReadFromTableStep::RowPolicyPlacement::FilterStep)
+                {
+                    appendSetsFromActionsDAG(step_without_additional_filter->getExpression(), kept_sets);
+                    replacement = std::move(step_without_additional_filter);
+                }
             }
-            for (const auto & set : filter_sets)
-                if (!kept_sets.contains(set))
-                    removed_filter_sets.insert(set.get());
-            filter_node->step = std::move(replacement);
+            if (replacement)
+            {
+                for (const auto & set : filter_sets)
+                    if (!kept_sets.contains(set))
+                        removed_filter_sets.insert(set.get());
+                filter_node->step = std::move(replacement);
+            }
         }
     }
     else
@@ -514,7 +585,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(
 
     auto converting_actions = ActionsDAG::makeConvertingActions(
         reading_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
-        header->getColumnsWithTypeAndName(),
+        read_header->getColumnsWithTypeAndName(),
         ActionsDAG::MatchColumnsMode::Name,
         context);
 
