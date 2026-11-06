@@ -1801,7 +1801,8 @@ void InterpreterInsertQuery::setInsertContextValues(ContextMutablePtr context_, 
         found_insert_columns = column_names;
     }
     std::optional<Names> names;
-    if (!found_insert_columns.empty()) {
+    if (!found_insert_columns.empty())
+    {
         names = found_insert_columns;
     }
     context_->setInsertionTable(insert_query.table_id, names, std::make_shared<ColumnsDescription>(metadata_snapshot->columns));
