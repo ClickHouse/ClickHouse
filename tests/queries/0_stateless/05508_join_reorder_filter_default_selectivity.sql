@@ -6,8 +6,10 @@
 
 -- Random estimates, the hash table statistics and the query condition cache would each give the filtered tables another estimate.
 -- A join runtime filter would shrink the build side before `JoinBuildTableRowCount` counts it.
+-- A join sharded by primary key ranges collects no hash table statistics.
 SET collect_hash_table_stats_during_joins = 0;
 SET enable_join_runtime_filters = 0;
+SET query_plan_join_shard_by_pk_ranges = 0;
 SET enable_parallel_replicas = 0;
 SET query_plan_join_swap_table = 'auto';
 
