@@ -321,6 +321,9 @@ public:
     /// constant, and a kept predicate is an ordinary output that removing unused columns can drop.
     void foldFilterPredicateThroughMaterialize(std::string & filter_column_name, bool & remove_filter_column, const Block & input_header);
 
+    /// The constant that `foldFilterPredicateThroughMaterialize` would fold the predicate `node` to, or nullptr.
+    static ColumnConstPtr tryFoldPredicateThroughMaterialize(const Node * node);
+
     /// Collapse structurally equivalent subtrees (aliased duplicates, equal constants, functions with identical arguments)
     /// outputs preserve their names via aliases when needed, dead nodes are pruned
     void deduplicateSubtrees();
