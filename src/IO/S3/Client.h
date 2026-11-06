@@ -317,6 +317,8 @@ private:
         bool warn_if_unproven) const;
 
     std::optional<S3::URI> getURIForBucket(const std::string & bucket) const;
+    void checkURIForBucket(
+        const std::string & bucket, const S3::URI & uri, const Aws::Endpoint::EndpointParameters & endpoint_params) const;
 
     bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;
     void insertRegionOverride(const std::string & bucket, const std::string & region) const;

@@ -165,7 +165,7 @@ public:
         region_override = std::move(region);
     }
 
-    void overrideURI(S3::URI uri) const
+    void overrideURI(S3::URI uri)
     {
         uri_override = std::move(uri);
     }
@@ -206,7 +206,7 @@ public:
 
 protected:
     mutable std::string region_override;
-    mutable std::optional<S3::URI> uri_override;
+    std::optional<S3::URI> uri_override;
     mutable ApiMode api_mode{ApiMode::AWS};
     bool is_s3express_bucket = false;
     RequestChecksum::Algorithm upload_checksum_algorithm = RequestChecksum::Algorithm::MD5;
