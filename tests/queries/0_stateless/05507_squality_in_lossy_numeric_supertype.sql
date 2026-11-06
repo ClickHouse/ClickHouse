@@ -156,3 +156,18 @@ FROM values('d Decimal(18, 0), x Float64, y Int64',
     (0, 'nan', 65), (1, 'inf', 65), (2, '-inf', 65), (3, '1e100', 65))
 ORDER BY d
 SETTINGS allow_lossy_numeric_supertype = 1;
+
+SELECT d IN (materialize(x)), d NOT IN (materialize(x))
+FROM values('d Decimal(18, 0), x Float64', ('9007199254740993', 9007199254740992.))
+SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 0;
+
+SELECT d IN (materialize(x)), d NOT IN (materialize(x))
+FROM values('d Decimal(18, 0), x Float64', ('9007199254740993', 9007199254740992.))
+SETTINGS allow_lossy_numeric_supertype = 1, transform_null_in = 1;
+
+SELECT d IN (x, y), d NOT IN (x, y)
+FROM values('d Decimal(76, 0), x Float64, y Int64',
+    (1, 1e60, 65),
+    ('999999999999999949387135297074018866963645011013410073083904', 1e60, 65))
+ORDER BY d
+SETTINGS allow_lossy_numeric_supertype = 1;

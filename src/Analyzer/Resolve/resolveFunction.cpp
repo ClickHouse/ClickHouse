@@ -1313,10 +1313,10 @@ static QueryTreeNodePtr buildScalarInComparison(
 
 /// Builds exact equality for a heterogeneous numeric pair. Native float/integer comparisons are
 /// already exact. For a `Decimal` and an integer or integral float, check that the `Decimal` is integral
-/// and compare both integer values as `Int256`. Floats are formatted with zero fractional digits and
-/// round-tripped to prove that they are integral. This avoids narrower signed intermediates and the
-/// overflow-prone scale multiplication in mixed Decimal/integer comparisons. Non-integral floats keep
-/// the regular ClickHouse float/`Decimal` comparison semantics.
+/// and compare both integer values as `Int256`. Floats are decoded from their `Float64` representation
+/// and round-tripped to prove that they are integral. This avoids formatter range limits, narrower signed
+/// intermediates, and the overflow-prone scale multiplication in mixed Decimal/integer comparisons.
+/// Non-integral floats keep the regular ClickHouse float/`Decimal` comparison semantics.
 static QueryTreeNodePtr buildNumericEquality(
     const QueryTreeNodePtr & left_argument,
     const QueryTreeNodePtr & right_argument)
@@ -1374,13 +1374,73 @@ static QueryTreeNodePtr buildNumericEquality(
         auto safe_float = std::make_shared<FunctionNode>("if");
         safe_float->getArguments().getNodes()
             = {can_convert, float64_argument, std::make_shared<ConstantNode>(Field{0.0})};
-        auto formatted_integer = std::make_shared<FunctionNode>("toDecimalString");
-        formatted_integer->getArguments().getNodes()
-            = {std::move(safe_float), std::make_shared<ConstantNode>(Field{0u})};
-        auto int256_type_name = std::make_shared<ConstantNode>("Int256", std::make_shared<DataTypeString>());
-        auto accurate_cast = std::make_shared<FunctionNode>("accurateCastOrNull");
-        accurate_cast->getArguments().getNodes() = {std::move(formatted_integer), std::move(int256_type_name)};
-        converted_integer = std::move(accurate_cast);
+        auto float_bits = std::make_shared<FunctionNode>("reinterpretAsUInt64");
+        float_bits->getArguments().getNodes().push_back(std::move(safe_float));
+
+        auto shifted_exponent = std::make_shared<FunctionNode>("bitShiftRight");
+        shifted_exponent->getArguments().getNodes()
+            = {float_bits, std::make_shared<ConstantNode>(Field{UInt64{52}})};
+        auto exponent = std::make_shared<FunctionNode>("bitAnd");
+        exponent->getArguments().getNodes()
+            = {std::move(shifted_exponent), std::make_shared<ConstantNode>(Field{UInt64{2047}})};
+
+        auto fraction = std::make_shared<FunctionNode>("bitAnd");
+        fraction->getArguments().getNodes()
+            = {float_bits, std::make_shared<ConstantNode>(Field{UInt64{4503599627370495}})};
+        auto significand = std::make_shared<FunctionNode>("bitOr");
+        significand->getArguments().getNodes()
+            = {std::move(fraction), std::make_shared<ConstantNode>(Field{UInt64{4503599627370496}})};
+        auto significand_as_int256 = std::make_shared<FunctionNode>("toInt256");
+        significand_as_int256->getArguments().getNodes().push_back(std::move(significand));
+
+        auto exponent_as_int64 = std::make_shared<FunctionNode>("toInt64");
+        exponent_as_int64->getArguments().getNodes().push_back(exponent);
+        auto shift = std::make_shared<FunctionNode>("minus");
+        shift->getArguments().getNodes()
+            = {std::move(exponent_as_int64), std::make_shared<ConstantNode>(Field{Int64{1075}})};
+        auto shift_is_nonnegative = std::make_shared<FunctionNode>("greaterOrEquals");
+        shift_is_nonnegative->getArguments().getNodes()
+            = {shift, std::make_shared<ConstantNode>(Field{Int64{0}})};
+
+        auto left_shift_amount = std::make_shared<FunctionNode>("if");
+        left_shift_amount->getArguments().getNodes()
+            = {shift_is_nonnegative, shift, std::make_shared<ConstantNode>(Field{Int64{0}})};
+        auto magnitude_left = std::make_shared<FunctionNode>("bitShiftLeft");
+        magnitude_left->getArguments().getNodes() = {significand_as_int256, std::move(left_shift_amount)};
+
+        auto negate_shift = std::make_shared<FunctionNode>("negate");
+        negate_shift->getArguments().getNodes().push_back(shift);
+        auto right_shift_amount = std::make_shared<FunctionNode>("if");
+        right_shift_amount->getArguments().getNodes()
+            = {shift_is_nonnegative, std::make_shared<ConstantNode>(Field{Int64{0}}), std::move(negate_shift)};
+        auto magnitude_right = std::make_shared<FunctionNode>("bitShiftRight");
+        magnitude_right->getArguments().getNodes() = {significand_as_int256, std::move(right_shift_amount)};
+
+        auto magnitude = std::make_shared<FunctionNode>("if");
+        magnitude->getArguments().getNodes()
+            = {std::move(shift_is_nonnegative), std::move(magnitude_left), std::move(magnitude_right)};
+
+        auto sign_bit = std::make_shared<FunctionNode>("bitAnd");
+        sign_bit->getArguments().getNodes()
+            = {float_bits, std::make_shared<ConstantNode>(Field{UInt64{9223372036854775808ULL}})};
+        auto is_negative = std::make_shared<FunctionNode>("notEquals");
+        is_negative->getArguments().getNodes()
+            = {std::move(sign_bit), std::make_shared<ConstantNode>(Field{UInt64{0}})};
+        auto negative_magnitude = std::make_shared<FunctionNode>("negate");
+        negative_magnitude->getArguments().getNodes().push_back(magnitude);
+        auto signed_magnitude = std::make_shared<FunctionNode>("if");
+        signed_magnitude->getArguments().getNodes()
+            = {std::move(is_negative), std::move(negative_magnitude), std::move(magnitude)};
+
+        auto exponent_is_zero = std::make_shared<FunctionNode>("equals");
+        exponent_is_zero->getArguments().getNodes()
+            = {exponent, std::make_shared<ConstantNode>(Field{UInt64{0}})};
+        auto zero_int256 = std::make_shared<FunctionNode>("toInt256");
+        zero_int256->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(Field{Int64{0}}));
+        auto decoded_integer = std::make_shared<FunctionNode>("if");
+        decoded_integer->getArguments().getNodes()
+            = {std::move(exponent_is_zero), std::move(zero_int256), std::move(signed_magnitude)};
+        converted_integer = std::move(decoded_integer);
     }
 
     auto decimal_as_integer = std::make_shared<FunctionNode>("toInt256");
@@ -3163,7 +3223,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         }
                     }
 
-                    node = buildScalarInComparison(fn_args[0], right_argument, is_not_in, compare_nulls);
+                    const auto & right_type = non_const_set_candidate->getResultType();
+                    const bool is_number_comparison = isNumber(removeNullable(removeLowCardinality(left_type)))
+                        && isNumber(removeNullable(removeLowCardinality(right_type)));
+                    if (is_number_comparison)
+                        node = buildNumericScalarInComparison(fn_args[0], right_argument, is_not_in, compare_nulls);
+                    else
+                        node = buildScalarInComparison(fn_args[0], right_argument, is_not_in, compare_nulls);
                     resolveFunction(node, scope);
                     return ProjectionNames{proj};
                 }
