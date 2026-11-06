@@ -389,20 +389,27 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
     return false;
 }
 
-static std::vector<String> getAggregateFunctionNamesWithoutVersion(const IDataType & type)
+/// The names a relabelling cast must not change, one per node of the type tree.
+static std::vector<String> getNamesKeptByRelabelling(const IDataType & type)
 {
     std::vector<String> names;
     forEachInTypeTree(type, [&](const IDataType & child)
     {
         if (const auto * aggregate_type = typeid_cast<const DataTypeAggregateFunction *>(&child))
             names.push_back(aggregate_type->getNameWithoutVersion());
+        else if (WhichDataType(child).isUInt8())
+            names.push_back(child.getName() == "Bool" ? "Bool" : "");
+        else
+            names.emplace_back();
     });
     return names;
 }
 
-bool haveSameAggregateFunctions(const IDataType & lhs, const IDataType & rhs)
+bool needsConvertingCast(const IDataType & from, const IDataType & to)
 {
-    return getAggregateFunctionNamesWithoutVersion(lhs) == getAggregateFunctionNamesWithoutVersion(rhs);
+    if (!from.equals(to))
+        return true;
+    return from.getName() != to.getName() && getNamesKeptByRelabelling(from) == getNamesKeptByRelabelling(to);
 }
 
 }

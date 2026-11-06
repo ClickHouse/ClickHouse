@@ -492,7 +492,7 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
         {
             const auto & column_default = table_columns.getDefault(column.name).value_or(ColumnDefault{});
             const auto & [root_type, src_default_kind] = column_info[column.name];
-            if ((root_type && (!root_type->equals(*column.type) || root_type->getName() != column.type->getName())) ||
+            if ((root_type && needsConvertingCast(*column.type, *root_type)) ||
                 !columnDefaultKindHasSameType(src_default_kind, column_default.kind))
             {
                 supported_columns.erase(column.name);
@@ -571,11 +571,11 @@ bool StorageMerge::supportedPrewhereColumnsIncludeSubcolumns() const
     return include_subcolumns;
 }
 
-/// `equals` ignores the time zone and custom names such as `Bool`, which a child cannot apply before the conversion.
+/// A child computes in its own type, so it cannot run before a cast that relabels an equal type.
 static bool childCanProcessBeforeConversion(const IDataType & child_type, const IDataType & declared_type)
 {
     if (child_type.equals(declared_type))
-        return child_type.getName() == declared_type.getName();
+        return !needsConvertingCast(child_type, declared_type);
     return conversionPreservesOrder(child_type, declared_type);
 }
 
