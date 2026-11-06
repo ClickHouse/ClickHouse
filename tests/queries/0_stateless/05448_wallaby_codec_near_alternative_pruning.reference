@@ -1,0 +1,6 @@
+# Roundtrip is lossless
+102400	0
+102400	0
+# The near scale is not pruned: smaller than the XOR encoding
+1
+1
