@@ -225,8 +225,7 @@ private:
 
     void redraw()
     {
-        if (selected < offset)
-            offset = selected;
+        offset = std::min(selected, offset);
         if (list_rows && selected >= offset + list_rows)
             offset = selected - list_rows + 1;
 
@@ -376,7 +375,7 @@ private:
     bool readPaste()
     {
         std::string buf;
-        char c;
+        char c = 0;
         while (readByte(c))
         {
             buf += c;
@@ -432,7 +431,7 @@ private:
     {
         if (!in.poll(25'000))
             return Escape::Abort;
-        char c;
+        char c = 0;
         if (!readByte(c))
             return Escape::Eof;
         if (c == 'O') /// SS3, sent by the cursor keys in the application mode of the terminal.
@@ -486,7 +485,7 @@ private:
             }
 
             ssize_t page = static_cast<ssize_t>(std::max<size_t>(list_rows, 1));
-            char c;
+            char c = 0;
             if (!readByte(c))
                 return {};
 
