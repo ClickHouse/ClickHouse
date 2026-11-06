@@ -22,3 +22,10 @@
 #define libdeflate_gdeflate_decompress_ex gdeflate_libdeflate_gdeflate_decompress_ex
 #define libdeflate_malloc gdeflate_libdeflate_malloc
 #define libdeflate_set_memory_allocator gdeflate_libdeflate_set_memory_allocator
+
+/// mingw-w64 declares `_rotr64` and the other rotation functions in <stdlib.h>, while the fork's
+/// `common/compiler_gcc.h` defines them as macros when they are not macros already. Declare them first, so that
+/// a later <stdlib.h> does not see its declarations rewritten by those macros.
+#if defined(_WIN32)
+#include <stdlib.h>
+#endif
