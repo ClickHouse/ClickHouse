@@ -8,8 +8,6 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/Context.h>
 
-#include <cctype>
-
 
 namespace ProfileEvents
 {
@@ -152,19 +150,39 @@ bool hasDotSegment(std::string_view path)
     return false;
 }
 
-/// `%2A`, `%3F`, `%7B`, `%7D` in any case.
-bool hasEscapedWildcard(std::string_view raw_path)
+/// Glob characters are expanded after the check, so the filter sees them as written. `toString` encodes a `%` of the
+/// path as `%25`, so before the query these escapes can only come from a glob character.
+String unescapeGlobCharacters(const String & subject)
 {
-    for (size_t i = 0; i + 2 < raw_path.size(); ++i)
+    const size_t query = std::min(subject.find('?'), subject.size());
+    String result;
+    result.reserve(subject.size());
+    for (size_t i = 0; i < subject.size(); ++i)
     {
-        if (raw_path[i] != '%')
-            continue;
-        const char high = raw_path[i + 1];
-        const char low = static_cast<char>(std::toupper(static_cast<unsigned char>(raw_path[i + 2])));
-        if ((high == '2' && low == 'A') || (high == '3' && low == 'F') || (high == '7' && (low == 'B' || low == 'D')))
-            return true;
+        if (subject[i] == '%' && i + 2 < query)
+        {
+            const std::string_view escape(subject.data() + i + 1, 2);
+            char c = 0;
+            if (escape == "2A")
+                c = '*';
+            else if (escape == "3F")
+                c = '?';
+            else if (escape == "7B")
+                c = '{';
+            else if (escape == "7D")
+                c = '}';
+            else if (escape == "7C")
+                c = '|';
+            if (c)
+            {
+                result += c;
+                i += 2;
+                continue;
+            }
+        }
+        result += subject[i];
     }
-    return false;
+    return result;
 }
 
 /// What a source grant filter is matched against for `uri`, or an empty string when no filter can be trusted
@@ -175,28 +193,31 @@ String getSourceAccessSubject(AccessTypeObjects::Source source, const String & u
     if (source == AccessTypeObjects::Source::AZURE || source == AccessTypeObjects::Source::FILE)
         return hasDotSegment(uri) ? String{} : uri;
 
+    /// A fragment is never part of the accessed location.
+    if (uri.contains('#'))
+        return {};
+
     try
     {
         const Poco::URI decoded(uri);
         const String & path = decoded.getPath();
         if (hasDotSegment(path) || path.contains("//"))
             return {};
-        const String raw_path = Poco::URI(uri, /* enable_url_encoding */ false).getPath();
         if (source == AccessTypeObjects::Source::S3)
         {
             /// `S3::URI` decodes the path once, as the subject does, but folds a query into the key, where `?`
-            /// matches any character, and an escaped `*`, `?` or `{` becomes a wildcard of the key.
-            if (uri.contains('?') || hasEscapedWildcard(raw_path))
+            /// matches any character.
+            if (uri.contains('?'))
                 return {};
         }
-        else if (raw_path.contains('%'))
+        else if (Poco::URI(uri, /* enable_url_encoding */ false).getPath().contains('%'))
             return {};
     }
     catch (const Poco::Exception &)
     {
         return {};
     }
-    return ITableFunction::normalizeURIForAccessCheck(uri);
+    return unescapeGlobCharacters(ITableFunction::normalizeURIForAccessCheck(uri));
 }
 
 }

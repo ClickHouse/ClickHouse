@@ -3,8 +3,8 @@
 # Tag no-fasttest: requires S3 and Azure
 
 # A source grant filter must only authorize the location the storage accesses: a location the
-# normalization used for the check would change (dot segments, empty segments, escapes) needs the
-# grant on the whole source.
+# normalization used for the check would change (dot segments, empty segments, escapes, a fragment)
+# needs the grant on the whole source, and glob characters are matched as written.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -37,6 +37,9 @@ GRANT WRITE ON AZURE('$db/backups/.*') TO $user;
 GRANT WRITE ON AZURE('$db:.*') TO $user;
 GRANT READ ON FILE('$ufp/$db/allowed/.*') TO $user;
 GRANT READ ON URL('$s3/test/.*') TO $user;
+GRANT READ ON S3('$s3/esc/a%2A.tsv') TO $user;
+GRANT READ ON URL('$s3/esc/%7Ba%2Cb%7D.tsv') TO $user;
+GRANT WRITE ON AZURE('$db/arc/ok.tar') TO $user;
 "
 
 # Prints whether the query was refused for the named grant; any other outcome is "not denied".
@@ -74,7 +77,15 @@ echo "url dot segment: $(check 'READ ON URL' "SELECT * FROM url('$s3/other/../te
 echo "url escape: $(check 'READ ON URL' "SELECT * FROM url('$s3/%74est/a.tsv', 'TSV')")"
 echo "azure archive escaped dot segments: $(check 'WRITE ON AZURE' "BACKUP TABLE $db.t TO $(azure "$db/backups/a%2F..%2F..%2Fz.tar")")"
 echo "url glob alternative: $(check 'READ ON URL' "SELECT * FROM url('$s3/test/{a,..}/a.tsv', 'TSV')")"
-echo "s3 escaped wildcard: $(check 'READ ON S3' "SELECT * FROM s3('$s3/test/a.ts%3F', 'TSV')")"
+echo "s3 escaped wildcard inside the filter: $(check 'READ ON S3' "SELECT * FROM s3('$s3/test/a.ts%3F', 'TSV')")"
+echo "s3 glob against an escaped filter: $(check 'READ ON S3' "SELECT * FROM s3('$s3/esc/a*.tsv', 'TSV')")"
+echo "url glob against an escaped filter: $(check 'READ ON URL' "SELECT * FROM url('$s3/esc/{a,b}.tsv', 'TSV')")"
+echo "s3 fragment: $(check 'READ ON S3' "SELECT * FROM s3('$s3/test/a.tsv#x', 'TSV')")"
+echo "url fragment: $(check 'READ ON URL' "SELECT * FROM url('$s3/test/a.tsv#x', 'TSV')")"
+echo "s3 glob: $(check 'READ ON S3' "SELECT * FROM s3('$s3/test/$db/*.tsv', 'TSV')")"
+echo "url glob alternatives: $(check 'READ ON URL' "SELECT * FROM url('$s3/test/$db/{a,b}.tsv', 'TSV')")"
+echo "file: $(check 'READ ON FILE' "SELECT * FROM icebergLocal('$ufp/$db/allowed/t')")"
+echo "azure archive: $(check 'WRITE ON AZURE' "BACKUP TABLE $db.t TO $(azure "$db/arc/ok.tar")")"
 
 ${CLICKHOUSE_CLIENT} -q "GRANT READ ON S3 TO $user"
 echo "s3 dot segment with the whole-source grant: $(check 'READ ON S3' "SELECT * FROM s3('$s3/other/../test/a.tsv', 'TSV')")"

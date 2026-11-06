@@ -15,5 +15,13 @@ url dot segment: denied READ ON URL
 url escape: denied READ ON URL
 azure archive escaped dot segments: denied WRITE ON AZURE
 url glob alternative: denied READ ON URL
-s3 escaped wildcard: denied READ ON S3
+s3 escaped wildcard inside the filter: not denied
+s3 glob against an escaped filter: denied READ ON S3
+url glob against an escaped filter: denied READ ON URL
+s3 fragment: denied READ ON S3
+url fragment: denied READ ON URL
+s3 glob: not denied
+url glob alternatives: not denied
+file: not denied
+azure archive: not denied
 s3 dot segment with the whole-source grant: not denied
