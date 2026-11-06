@@ -23,3 +23,30 @@ EXPLAIN SYNTAX SELECT * FROM v_typed_parameters_invoker(b = false, f = 0.1, d = 
 DESCRIBE TABLE v_typed_parameters_invoker(b = true, f = toFloat32(-0.25), d = '2024-01-01 00:00:00.5', n = 7, s = 'x', a = []);
 
 DROP VIEW v_typed_parameters_invoker;
+
+-- A `Dynamic` or `Variant` argument is serialized as the value it holds, the same as that value passed directly, and
+-- the same through every entrypoint: `SELECT`, `EXPLAIN SYNTAX` and `DESCRIBE`.
+DROP VIEW IF EXISTS v_string_parameter;
+DROP VIEW IF EXISTS v_uint_parameter;
+CREATE VIEW v_string_parameter SQL SECURITY INVOKER AS SELECT {s:String} AS s;
+CREATE VIEW v_uint_parameter SQL SECURITY INVOKER AS SELECT {x:UInt64} AS x;
+
+SELECT * FROM v_string_parameter(s = CAST(toDateTime('2024-01-01 00:00:00', 'UTC') AS Dynamic));
+SELECT * FROM v_string_parameter(s = toDateTime('2024-01-01 00:00:00', 'UTC'));
+SELECT * FROM v_string_parameter(s = CAST(toFloat32(0.1) AS Dynamic));
+SELECT * FROM v_string_parameter(s = toFloat32(0.1));
+SELECT * FROM v_string_parameter(s = CAST(CAST('b', 'Enum8(\'a\' = 1, \'b\' = 2)') AS Dynamic));
+SELECT * FROM v_string_parameter(s = CAST(toUInt8(7) AS Variant(UInt8, String)));
+EXPLAIN SYNTAX SELECT * FROM v_string_parameter(s = CAST(toDateTime('2024-01-01 00:00:00', 'UTC') AS Dynamic));
+EXPLAIN SYNTAX SELECT * FROM v_string_parameter(s = CAST(toFloat32(0.1) AS Dynamic));
+DESCRIBE TABLE v_string_parameter(s = CAST(toFloat32(0.1) AS Dynamic));
+
+SELECT * FROM v_uint_parameter(x = CAST(toUInt32(42) AS Dynamic));
+DESCRIBE TABLE v_uint_parameter(x = CAST(toUInt32(42) AS Dynamic));
+-- A `DateTime` is serialized as a date-time, which is not a `UInt64`, whether it is passed directly or in a `Dynamic`.
+SELECT * FROM v_uint_parameter(x = toDateTime('2024-01-01 00:00:00', 'UTC')); -- { serverError BAD_QUERY_PARAMETER }
+SELECT * FROM v_uint_parameter(x = CAST(toDateTime('2024-01-01 00:00:00', 'UTC') AS Dynamic)); -- { serverError BAD_QUERY_PARAMETER }
+DESCRIBE TABLE v_uint_parameter(x = CAST(toDateTime('2024-01-01 00:00:00', 'UTC') AS Dynamic)); -- { serverError BAD_QUERY_PARAMETER }
+
+DROP VIEW v_string_parameter;
+DROP VIEW v_uint_parameter;

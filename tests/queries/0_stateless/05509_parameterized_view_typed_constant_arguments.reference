@@ -9,3 +9,14 @@ d	DateTime64(3, \'UTC\')
 n	Nullable(Int32)					
 s	String					
 a	Array(UInt8)					
+2024-01-01 00:00:00
+2024-01-01 00:00:00
+0.1
+0.1
+b
+7
+SELECT *\nFROM\n(\n    SELECT \'2024-01-01 00:00:00\' AS s\n    FROM system.one\n) AS v_string_parameter
+SELECT *\nFROM\n(\n    SELECT \'0.1\' AS s\n    FROM system.one\n) AS v_string_parameter
+s	String					
+42
+x	UInt64					
