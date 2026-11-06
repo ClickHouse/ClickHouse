@@ -1025,6 +1025,8 @@ static bool predicateIsBooleanResult(const ActionsDAG::Node * predicate, bool al
         || extra_boolean_result_functions.contains(unwrapped_name);
 }
 
+static bool nullSafeEqualityComparesFieldOnly(const DataTypePtr & operand_type, const ColumnWithTypeAndName & constant);
+
 /// Rewrite a positive boolean wrapper around a predicate `X` to bare `X` for key analysis, so a
 /// wrapped predicate like `(k = 42) IS TRUE` or `(k = 42) != false` becomes a prunable key atom on
 /// `k`. Two truth-equivalent wrapper forms the analyzer produces are handled:
@@ -1075,6 +1077,11 @@ static const ActionsDAG::Node * tryRewriteIsTrueCondition(
     /// they are not rewritten here.
     const Field const_value = (*const_node->column)[0];
     if (const_value.getType() != Field::Types::UInt64 || const_value.safeGet<UInt64>() != expected_const)
+        return nullptr;
+
+    /// `<=>` compares a `Dynamic` constant by its type first: a `Dynamic` 1 of another type is distinct from every `X`.
+    if (name == "isNotDistinctFrom"
+        && !nullSafeEqualityComparesFieldOnly(predicate->result_type, {const_node->column, const_node->result_type, ""}))
         return nullptr;
 
     if (!predicateIsBooleanResult(predicate, context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite]))
@@ -2584,9 +2591,9 @@ static bool typeHasValueCarriers(const IDataType & type)
     return anyInTypeTree(type, [](const IDataType & node) { return isDynamic(node) || isVariant(node) || isObject(node); });
 }
 
-/// Whether `key <=> constant` matches exactly the key values equal to the constant's `Field`: a value with a type of
-/// its own is compared by that type first (`ColumnDynamic::compareAt`), and its `Field` holds only the value.
-static bool nullSafeEqualityComparesFieldOnly(const DataTypePtr & key_type, const ColumnWithTypeAndName & constant)
+/// Whether `operand <=> constant` matches exactly the operand values equal to the constant's `Field`: a value with a
+/// type of its own is compared by that type first (`ColumnDynamic::compareAt`), and its `Field` holds only the value.
+static bool nullSafeEqualityComparesFieldOnly(const DataTypePtr & operand_type, const ColumnWithTypeAndName & constant)
 {
     DataTypePtr value_type = constant.type;
     if (isDynamic(value_type))
@@ -2594,8 +2601,8 @@ static bool nullSafeEqualityComparesFieldOnly(const DataTypePtr & key_type, cons
         const auto & column = assert_cast<const ColumnConst &>(*constant.column).getDataColumn();
         value_type = assert_cast<const ColumnDynamic &>(column).getTypeAt(0);
         chassert(value_type);
-        /// The key side loses `LowCardinality` before the cast into `Dynamic`, which stores a `Nullable` value as its nested type.
-        if (value_type->getName() != removeLowCardinalityAndNullable(key_type)->getName())
+        /// The operand loses `LowCardinality` before the cast into `Dynamic`, which stores a `Nullable` value as its nested type.
+        if (value_type->getName() != removeLowCardinalityAndNullable(operand_type)->getName())
             return false;
     }
     return !typeHasValueCarriers(*value_type);

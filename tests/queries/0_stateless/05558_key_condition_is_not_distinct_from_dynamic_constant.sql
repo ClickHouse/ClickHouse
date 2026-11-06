@@ -16,6 +16,13 @@ SELECT groupArray(s) FROM (SELECT s FROM t_nsd WHERE NOT (k <=> toUInt16(1)::Dyn
 SELECT count() FROM t_nsd WHERE k <=> toUInt8(1)::Dynamic;
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_nsd WHERE k <=> toUInt8(1)::Dynamic) WHERE explain ILIKE '%Condition: (k in [1, 1])%' SETTINGS enable_parallel_replicas = 0;
 
+-- `X IS TRUE` written as `X <=> 1`: a `Dynamic` 1 of another type than `X` is distinct from every `X`.
+SELECT count() FROM t_nsd WHERE (k = 1) <=> toUInt16(1)::Dynamic;
+SELECT count() FROM t_nsd WHERE toUInt16(1)::Dynamic <=> (k = 1);
+SELECT count() FROM t_nsd WHERE (k = 1) <=> toUInt16(1)::Dynamic(max_types = 0);
+SELECT count() FROM t_nsd WHERE (k = 1) <=> toUInt8(1)::Dynamic;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_nsd WHERE (k = 1) <=> toUInt8(1)::Dynamic) WHERE explain ILIKE '%Condition: (k in [1, 1])%' SETTINGS enable_parallel_replicas = 0;
+
 DROP TABLE t_nsd;
 
 DROP TABLE IF EXISTS t_nsd_nullable;
@@ -23,6 +30,7 @@ CREATE TABLE t_nsd_nullable (k Nullable(UInt8), s String) ENGINE = MergeTree ORD
 INSERT INTO t_nsd_nullable SELECT if(number = 5, NULL, number % 3), toString(number) FROM numbers(6);
 SELECT count() FROM t_nsd_nullable WHERE k <=> '1'::Dynamic;
 SELECT groupArray(s) FROM (SELECT s FROM t_nsd_nullable WHERE NOT (k <=> '1'::Dynamic) ORDER BY s);
+SELECT count() FROM t_nsd_nullable WHERE (k = 1) <=> toUInt16(1)::Dynamic;
 DROP TABLE t_nsd_nullable;
 
 DROP TABLE IF EXISTS t_nsd_lc;
@@ -30,6 +38,8 @@ CREATE TABLE t_nsd_lc (k LowCardinality(String), s String) ENGINE = MergeTree OR
 INSERT INTO t_nsd_lc SELECT toString(number % 3), toString(number) FROM numbers(6);
 SELECT count() FROM t_nsd_lc WHERE k <=> toLowCardinality('1')::Dynamic;
 SELECT count() FROM t_nsd_lc WHERE k <=> '1'::Dynamic;
+SELECT count() FROM t_nsd_lc WHERE (k = '1') <=> toUInt16(1)::Dynamic;
+SELECT count() FROM t_nsd_lc WHERE (k = '1') <=> toUInt8(1)::Dynamic;
 DROP TABLE t_nsd_lc;
 
 DROP TABLE IF EXISTS t_nsd_partition;
