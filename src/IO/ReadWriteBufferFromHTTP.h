@@ -30,6 +30,8 @@
 namespace DB
 {
 
+class HTTPHeaderFilter;
+
 /// Identifies an exception produced by stopping one HTTP request after its owner was cancelled.
 /// This marker belongs to the request, not to every reader sharing its Cancellation.
 class ReadInterruptedException final : public Exception
@@ -382,6 +384,8 @@ public:
 };
 
 /// Fills `credentials` from the userinfo component of `uri` (e.g. `http://user:pass@host`).
-void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri);
+/// The credentials are sent in the `Authorization` header, so this throws if `header_filter` forbids that header
+/// and the userinfo has a username: the check is here, where every request that sends a userinfo gets its credentials.
+void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri, const HTTPHeaderFilter & header_filter);
 
 }

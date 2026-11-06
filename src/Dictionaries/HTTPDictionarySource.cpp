@@ -384,6 +384,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
         {
             context->getRemoteHostFilter().checkURL(Poco::URI(uri));
             context->getHTTPHeaderFilter().checkHeaders(header_entries);
+            context->getHTTPHeaderFilter().checkBasicCredentials(credentials);
         }
 
         auto configuration = HTTPDictionarySource::Configuration

@@ -118,8 +118,9 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
         Poco::URI uri(url, enable_url_encoding);
         /// `credentials` is a member so that it outlives the buffer created below, which stores a
         /// reference to it. With delayed initialization the HTTP request — and thus the read of these
-        /// credentials — happens in `nextImpl`, long after `initialize` returns.
-        setCredentialsFromURL(credentials, uri);
+        /// credentials — happens in `nextImpl`, long after `initialize` returns. Outside of the `try` below: an option
+        /// whose credentials <http_forbid_headers> forbids must fail the read, not fall through to the next one.
+        setCredentialsFromURL(credentials, uri, context->getHTTPHeaderFilter());
         try
         {
             /// External buffer reads require `delay_initialization = true`, which defers the HTTP
