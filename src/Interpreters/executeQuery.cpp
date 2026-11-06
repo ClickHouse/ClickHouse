@@ -2867,15 +2867,18 @@ static BlockIO executeQueryImpl(
 
         /// Checked before the interpreter runs, so a rewrite into e.g. DDL has no side effects.
         /// The read-only statements that produce rows (`SELECT`, `SHOW ...`, `EXISTS`, `DESCRIBE`,
-        /// `EXPLAIN`) are allowed.
-        auto rewritten_kind = out_ast->getQueryKind();
-        if (flags.rewritten_query_must_return_rows && !applied_rewrite_rules.empty()
-            && rewritten_kind != IAST::QueryKind::Select && rewritten_kind != IAST::QueryKind::Show
-            && rewritten_kind != IAST::QueryKind::Exists && rewritten_kind != IAST::QueryKind::Describe
-            && rewritten_kind != IAST::QueryKind::Explain)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The query was rewritten by a query rule into a statement that does not return rows, "
-                "which is not allowed here");
+        /// `EXPLAIN`) are allowed. `out_ast` can be null here (e.g. for an empty query), so it is
+        /// only dereferenced when a rule was applied.
+        if (flags.rewritten_query_must_return_rows && !applied_rewrite_rules.empty())
+        {
+            const auto rewritten_kind = out_ast->getQueryKind();
+            if (rewritten_kind != IAST::QueryKind::Select && rewritten_kind != IAST::QueryKind::Show
+                && rewritten_kind != IAST::QueryKind::Exists && rewritten_kind != IAST::QueryKind::Describe
+                && rewritten_kind != IAST::QueryKind::Explain)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The query was rewritten by a query rule into a statement that does not return rows, "
+                    "which is not allowed here");
+        }
     }
     catch (...)
     {
