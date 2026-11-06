@@ -1,11 +1,11 @@
-#include <Compression/CompressionCodecAdaptive.h>
+#include <Compression/Adaptive/CompressionCodecAdaptive.h>
 
 #include <algorithm>
 #include <array>
 #include <cstring>
 #include <span>
 #include <string_view>
-#include <Compression/CodecSelectorSampled.h>
+#include <Compression/Adaptive/CodecSelectorSampled.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionCodecNone.h>
 #include <Compression/CompressionFactory.h>

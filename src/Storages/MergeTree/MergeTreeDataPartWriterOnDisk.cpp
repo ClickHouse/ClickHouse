@@ -20,7 +20,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
-#include <Compression/CompressionCodecAdaptive.h>
+#include <Compression/Adaptive/CompressionCodecAdaptive.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/NullWriteBuffer.h>

@@ -167,6 +167,7 @@ list (REMOVE_ITEM clickhouse_common_io_sources Common/ExceptionExt.cpp)
 
 
 add_headers_and_sources(clickhouse_compression Compression)
+add_headers_and_sources(clickhouse_compression Compression/Adaptive)
 add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhouse_compression_sources})
 
 if (TARGET ch_contrib::sz3)

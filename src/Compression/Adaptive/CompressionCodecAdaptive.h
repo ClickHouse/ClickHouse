@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Compression/ICodecSelector.h>
+#include <Compression/Adaptive/ICodecSelector.h>
 #include <Compression/ICompressionCodec.h>
 #include <DataTypes/IDataType_fwd.h>
 

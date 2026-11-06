@@ -1,6 +1,6 @@
 #include <algorithm>
 #include <limits>
-#include <Compression/CodecSelectorSampled.h>
+#include <Compression/Adaptive/CodecSelectorSampled.h>
 #include <base/defines.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/ProfileEvents.h>

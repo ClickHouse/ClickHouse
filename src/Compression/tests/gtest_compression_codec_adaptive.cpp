@@ -2,7 +2,7 @@
 #include <cstring>
 #include <thread>
 #include <vector>
-#include <Compression/CompressionCodecAdaptive.h>
+#include <Compression/Adaptive/CompressionCodecAdaptive.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>

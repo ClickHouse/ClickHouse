@@ -1,7 +1,7 @@
 #pragma once
 
 #include <optional>
-#include <Compression/ICodecSelector.h>
+#include <Compression/Adaptive/ICodecSelector.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::AdaptiveCodec
