@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/mergedPlanDAG.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -45,7 +48,7 @@ inline bool isComputedAbove(Placement placement)
 struct LazyFrontier
 {
     /// Values with no entry are `Placement::None`.
-    std::unordered_map<const ActionsDAG::Node *, Placement> placement;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, Placement> placement;
 
     Placement at(const ActionsDAG::Node * node) const;
 
@@ -65,8 +68,8 @@ struct LazyFrontier
 /// `LIMIT`, where the join pads it itself.
 LazyFrontier chooseLazyFrontier(
     const MergedPlanDAG & merged,
-    const std::vector<size_t> & eager_output_positions,
-    const std::vector<bool> & lazy_sources,
-    const std::unordered_set<const MergedPlanDAG::PaddedSide *> & masked_padded_sides = {});
+    const VectorWithMemoryTracking<size_t> & eager_output_positions,
+    const VectorWithMemoryTracking<bool> & lazy_sources,
+    const UnorderedSetWithMemoryTracking<const MergedPlanDAG::PaddedSide *> & masked_padded_sides = {});
 
 }

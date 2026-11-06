@@ -16,6 +16,7 @@
 
 #include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
 #include <pcg_random.hpp>
+#include <Common/VectorWithMemoryTracking.h>
 
 /*
  * This file contains helper functions for debugging and testing join optimization.
@@ -36,7 +37,7 @@ String dumpRelationStatsForLogs(const RelationStats & stats)
     {
         const auto & [name, column_stats] = column;
         /// No min/max: they can be values of rows hidden by a row policy, and this line reaches clients with `send_logs_level`.
-        std::vector<String> fields;
+        VectorWithMemoryTracking<String> fields;
         if (column_stats.null_fraction)
             fields.push_back(fmt::format("null {}", *column_stats.null_fraction));
         if (column_stats.avg_bytes != 0)

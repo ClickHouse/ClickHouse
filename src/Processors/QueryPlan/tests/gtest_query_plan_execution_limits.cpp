@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
@@ -159,7 +160,7 @@ TEST(QueryPlanExecutionLimits, UnitePlansMergesLimitsFromChildren)
         with->setMaxThreads(4);
         with->setConcurrencyControl(true);
 
-        std::vector<QueryPlanPtr> plans;
+        VectorWithMemoryTracking<QueryPlanPtr> plans;
         if (asking_child_first)
         {
             plans.emplace_back(std::move(with));
@@ -188,7 +189,7 @@ TEST(QueryPlanExecutionLimits, UnitePlansKeepsDefaultsWhenNoChildAsks)
     auto right = std::make_unique<QueryPlan>(makeSourcePlan());
 
     SharedHeaders input_headers{makeHeader(), makeHeader()};
-    std::vector<QueryPlanPtr> plans;
+    VectorWithMemoryTracking<QueryPlanPtr> plans;
     plans.emplace_back(std::move(left));
     plans.emplace_back(std::move(right));
 

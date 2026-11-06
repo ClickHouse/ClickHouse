@@ -3,6 +3,7 @@
 #include <functional>
 #include <unordered_map>
 #include <Core/Block_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
@@ -21,7 +22,7 @@ using IndexAnalysisPartsRanges = std::unordered_map<std::string, MarkRanges>;
 /// <replica index, <replica address, parts ranges>>
 using DistributedIndexAnalysisPartsRanges = std::vector<std::pair<std::string, IndexAnalysisPartsRanges>>;
 
-using LocalIndexAnalysisCallback = std::function<IndexAnalysisPartsRanges(const std::vector<std::string_view> & parts)>;
+using LocalIndexAnalysisCallback = std::function<IndexAnalysisPartsRanges(const VectorWithMemoryTracking<std::string_view> & parts)>;
 
 /// Header of an index analysis result: one row (`part_name`, `ranges`) per part.
 SharedHeader indexAnalysisSampleBlock();

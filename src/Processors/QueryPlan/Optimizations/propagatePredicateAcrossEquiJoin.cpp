@@ -1,4 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Functions/FunctionsComparison.h>
 #include <Interpreters/ActionsDAG.h>
@@ -22,12 +25,12 @@ void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::No
 namespace
 {
 
-using SubstitutionMap = std::unordered_map<std::string, ColumnWithTypeAndName>;
+using SubstitutionMap = UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName>;
 
 /// Equi-key pairs, left first. Differing types are skipped: the JOIN casts them itself
-std::vector<std::pair<JoinActionRef, JoinActionRef>> getEquiJoinKeyPairs(const JoinOperator & join_operator)
+VectorWithMemoryTracking<std::pair<JoinActionRef, JoinActionRef>> getEquiJoinKeyPairs(const JoinOperator & join_operator)
 {
-    std::vector<std::pair<JoinActionRef, JoinActionRef>> pairs;
+    VectorWithMemoryTracking<std::pair<JoinActionRef, JoinActionRef>> pairs;
     for (const auto & predicate : join_operator.expression)
     {
         auto [predicate_op, lhs, rhs] = predicate.asBinaryPredicate();
@@ -115,9 +118,9 @@ bool atomCanUseTargetPrimaryKey(
 }
 
 /// result_names of atoms the target filter already has, for dedup
-std::unordered_set<std::string> collectTargetAtoms(const QueryPlan::Node * target_root)
+UnorderedSetWithMemoryTracking<std::string> collectTargetAtoms(const QueryPlan::Node * target_root)
 {
-    std::unordered_set<std::string> result;
+    UnorderedSetWithMemoryTracking<std::string> result;
     const auto * target_filter = findFilterBelow(target_root);
     if (!target_filter)
         return result;

@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionTopKFilter.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -100,8 +101,8 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     const AggregatingStep & aggregating_step,
     size_t limit,
     size_t num_key_columns,
-    const std::vector<int> & directions,
-    const std::vector<int> & nulls_directions,
+    const std::vector<int> & directions, // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `Aggregator::Params::TopKParams` holds std::vector
+    const std::vector<int> & nulls_directions, // STYLE_CHECK_ALLOW_STD_CONTAINERS -- `Aggregator::Params::TopKParams` holds std::vector
     const Optimization::ExtraSettings & settings,
     QueryPlan::Nodes & nodes)
 {
@@ -129,7 +130,7 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     /// part of the query condition cache key.
     bool has_non_deterministic_filter = false;
     /// The expressions between the read and the aggregation, for the query condition cache salt below.
-    std::vector<const ActionsDAG *> path_expressions;
+    VectorWithMemoryTracking<const ActionsDAG *> path_expressions;
 
     while (!read_step)
     {
@@ -431,8 +432,8 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
             return 0;
     }
 
-    std::vector<int> directions;
-    std::vector<int> nulls_directions;
+    std::vector<int> directions; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- moved into `Aggregator::Params::TopKParams`, which holds std::vector
+    std::vector<int> nulls_directions; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- moved into `Aggregator::Params::TopKParams`, which holds std::vector
     size_t num_key_columns = 0;
 
     if (sorting_step)

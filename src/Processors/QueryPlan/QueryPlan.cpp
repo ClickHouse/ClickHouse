@@ -1,4 +1,8 @@
 #include <algorithm>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <memory>
 #include <stack>
 #include <unordered_map>
@@ -42,6 +46,7 @@
 #include <Planner/Utils.h>
 
 #include <fmt/ranges.h>
+#include <Common/StackWithMemoryTracking.h>
 
 namespace ProfileEvents
 {
@@ -61,7 +66,7 @@ namespace ErrorCodes
 const QueryPlan::Node * findNonSerializableStep(
     const QueryPlan::Node * root, const std::function<bool(const IQueryPlanStep &)> & ignore)
 {
-    std::vector<const QueryPlan::Node *> stack;
+    VectorWithMemoryTracking<const QueryPlan::Node *> stack;
     if (root)
         stack.push_back(root);
     while (!stack.empty())
@@ -140,7 +145,7 @@ const SharedHeader & QueryPlan::getCurrentHeader() const
     return root->step->getOutputHeader();
 }
 
-void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<QueryPlan>> plans)
+void QueryPlan::unitePlans(QueryPlanStepPtr step, VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans)
 {
     if (isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite plans because current QueryPlan is already initialized");
@@ -262,7 +267,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 
     QueryPipelineBuilderPtr last_pipeline;
 
-    std::stack<Frame> stack;
+    StackWithMemoryTracking<Frame> stack;
     stack.push(Frame{.node = root});
 
     while (!stack.empty())
@@ -378,7 +383,7 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) 
         std::unique_ptr<JSONBuilder::JSONArray> children_array = {};
     };
 
-    std::stack<Frame> stack;
+    StackWithMemoryTracking<Frame> stack;
     stack.push(Frame{.node = root});
 
     std::unique_ptr<JSONBuilder::JSONMap> tree;
@@ -595,7 +600,7 @@ namespace ExplainPlan
 };
 
 static void buildTreeOffset(
-    const std::deque<ExplainPlan::Frame> & frames,
+    const DequeWithMemoryTracking<ExplainPlan::Frame> & frames,
     const ExplainPlan::Frame & current,
     IQueryPlanStep::FormatSettings & settings_format,
     const std::string & parent_tree_prefix = "",
@@ -638,7 +643,7 @@ static void buildTreeOffset(
     settings_format.detail_prefix += has_children ? "│  " : "   ";
 }
 
-static void buildIndentOffset(const std::deque<ExplainPlan::Frame> & frames, IQueryPlanStep::FormatSettings & settings_format, size_t indent_offset)
+static void buildIndentOffset(const DequeWithMemoryTracking<ExplainPlan::Frame> & frames, IQueryPlanStep::FormatSettings & settings_format, size_t indent_offset)
 {
     settings_format.offset = (frames.size() - 1 + indent_offset) * settings_format.base_indent;
     settings_format.header_prefix = std::string(settings_format.offset, settings_format.indent_char);
@@ -699,7 +704,7 @@ void QueryPlan::explainPlan(
         return node;
     };
 
-    std::deque<ExplainPlan::Frame> stack;
+    DequeWithMemoryTracking<ExplainPlan::Frame> stack;
 
     if (settings.pretty && parent_tree_prefix.empty())
     {
@@ -808,7 +813,7 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
         size_t next_child = 0;
     };
 
-    std::stack<Frame> stack;
+    StackWithMemoryTracking<Frame> stack;
     stack.push(Frame{.node = root});
 
     while (!stack.empty())
@@ -1189,7 +1194,7 @@ void QueryPlan::explainEstimate(MutableColumns & columns) const
     };
 
     using CountersPtr = std::shared_ptr<EstimateCounters>;
-    std::unordered_map<std::string, CountersPtr> counters;
+    UnorderedMapWithMemoryTracking<std::string, CountersPtr> counters;
     using processNodeFuncType = std::function<void(const Node * node)>;
     processNodeFuncType process_node = [&counters, &process_node] (const Node * node)
     {
@@ -1258,8 +1263,8 @@ void QueryPlan::explainEstimate(MutableColumns & columns) const
 
 QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes)
 {
-    std::unordered_set<Node *> used;
-    std::stack<Node *> stack;
+    UnorderedSetWithMemoryTracking<Node *> used;
+    StackWithMemoryTracking<Node *> stack;
 
     stack.push(root);
     used.insert(root);
@@ -1306,8 +1311,8 @@ std::pair<QueryPlan::Nodes, QueryPlanResourceHolder> QueryPlan::detachNodesAndRe
 
 QueryPlan QueryPlan::extractSubplan(Node * subplan_root)
 {
-    std::unordered_set<Node *> used;
-    std::stack<Node *> stack;
+    UnorderedSetWithMemoryTracking<Node *> used;
+    StackWithMemoryTracking<Node *> stack;
 
     stack.push(subplan_root);
     used.insert(subplan_root);
@@ -1406,13 +1411,13 @@ void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_ro
     {
         Node * node;
         Node * clone;
-        std::vector<Node *> children = {};
+        VectorWithMemoryTracking<Node *> children = {};
     };
 
-    std::unordered_map<const Node *, Node *> original_to_clone;
-    std::vector<CommonSubplanReferenceStep *> cloned_references;
+    UnorderedMapWithMemoryTracking<const Node *, Node *> original_to_clone;
+    VectorWithMemoryTracking<CommonSubplanReferenceStep *> cloned_references;
 
-    std::vector<Frame> nodes_to_process{ Frame{ .node = subplan_root, .clone = node_to_replace } };
+    VectorWithMemoryTracking<Frame> nodes_to_process{ Frame{ .node = subplan_root, .clone = node_to_replace } };
 
     while (!nodes_to_process.empty())
     {

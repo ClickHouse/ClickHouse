@@ -11,6 +11,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 
 #include <fmt/ranges.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 using namespace DB;
 
@@ -18,9 +19,9 @@ namespace
 {
 
 /// The sorted positions in `[0, count)` that are not in the sorted `positions`.
-std::vector<size_t> complementPositions(size_t count, const std::vector<size_t> & positions)
+VectorWithMemoryTracking<size_t> complementPositions(size_t count, const VectorWithMemoryTracking<size_t> & positions)
 {
-    std::vector<size_t> complement;
+    VectorWithMemoryTracking<size_t> complement;
     for (size_t position = 0; position < count; ++position)
         if (!std::ranges::binary_search(positions, position))
             complement.push_back(position);
@@ -76,7 +77,7 @@ std::unique_ptr<FilterStep> makeFilterStep(bool remove_filter_column)
 }
 
 /// A child that kept `positions` of `header`, and appended `appended` after them.
-IQueryPlanStep::PrunedInput prunedChild(const Block & header, const std::vector<size_t> & positions, const ColumnsWithTypeAndName & appended = {})
+IQueryPlanStep::PrunedInput prunedChild(const Block & header, const VectorWithMemoryTracking<size_t> & positions, const ColumnsWithTypeAndName & appended = {})
 {
     Block pruned_header;
     for (size_t position : positions)
@@ -87,7 +88,7 @@ IQueryPlanStep::PrunedInput prunedChild(const Block & header, const std::vector<
 }
 
 /// The columns at `positions` of `header`, by name.
-String namesAt(const Block & header, const std::vector<size_t> & positions)
+String namesAt(const Block & header, const VectorWithMemoryTracking<size_t> & positions)
 {
     Names names;
     for (size_t position : positions)
@@ -115,7 +116,7 @@ std::vector<UInt64> runOnOneRow(const ActionsDAG & dag, const Block & header, co
 /// need, prunes it with a child that drops exactly that, and checks that the step outputs exactly the
 /// required columns and reads exactly what it did not give up.
 template <typename Step>
-void checkPruning(const std::function<std::unique_ptr<Step>()> & make_step, const std::vector<size_t> & required_output_positions)
+void checkPruning(const std::function<std::unique_ptr<Step>()> & make_step, const VectorWithMemoryTracking<size_t> & required_output_positions)
 {
     const auto step = make_step();
     const auto before = step->getOutputHeader()->dumpStructure();
@@ -183,7 +184,7 @@ TEST(FilterStepRequiredColumns, KeepsTheFilterInputAndDropsTheRest)
     /// Output header is (x, c). Without x, b is not needed, but a is, because the filter reads it.
     const auto unneeded = step->getUnneededColumns({0});
     ASSERT_EQ(unneeded.size(), 1u);
-    EXPECT_EQ(unneeded.front(), std::vector<size_t>({1}));
+    EXPECT_EQ(unneeded.front(), VectorWithMemoryTracking<size_t>({1}));
 
     step->removeUnusedColumns({0}, {prunedChild(input_header, {0, 2})});
     EXPECT_EQ(step->getOutputHeader()->dumpNames(), "c");
@@ -198,7 +199,7 @@ TEST(ExpressionStepRequiredColumns, ReportsThePositionEachInputReads)
     /// other outputs a and c are not needed.
     const auto unneeded = step->getUnneededColumns({0, 2});
     ASSERT_EQ(unneeded.size(), 1u);
-    EXPECT_EQ(unneeded.front(), std::vector<size_t>({0, 2}));
+    EXPECT_EQ(unneeded.front(), VectorWithMemoryTracking<size_t>({0, 2}));
 }
 
 TEST(ExpressionStepRequiredColumns, DuplicateNamesKeepTheirOwnPosition)
@@ -210,7 +211,7 @@ TEST(ExpressionStepRequiredColumns, DuplicateNamesKeepTheirOwnPosition)
     /// expression the wrong column.
     const auto unneeded = step->getUnneededColumns({0});
     ASSERT_EQ(unneeded.size(), 1u);
-    EXPECT_EQ(unneeded.front(), std::vector<size_t>({0}));
+    EXPECT_EQ(unneeded.front(), VectorWithMemoryTracking<size_t>({0}));
 }
 
 /// Asked for every output, the step needs every input, and pruning it with a child that did not change
@@ -238,7 +239,7 @@ TEST(ExpressionStepRequiredColumns, ConsumesWhatTheChildKeepsBeyondTheAsk)
 
     /// Without y and c, the step needs only a; the child keeps a, b and c, and appends z.
     const auto unneeded = step->getUnneededColumns({1, 2});
-    EXPECT_EQ(unneeded.front(), std::vector<size_t>({1, 2}));
+    EXPECT_EQ(unneeded.front(), VectorWithMemoryTracking<size_t>({1, 2}));
 
     const auto applied = step->removeUnusedColumns({1, 2}, {prunedChild(input_header, {0, 1, 2}, {column("z")})});
     EXPECT_TRUE(applied.step_changed);
@@ -253,7 +254,7 @@ TEST(FilterStepRequiredColumns, ConsumesWhatTheChildKeepsBeyondTheAsk)
 
     /// Output header is (x, c). Without c, the step needs a and b; the child keeps c as well.
     const auto unneeded = step->getUnneededColumns({1});
-    EXPECT_EQ(unneeded.front(), std::vector<size_t>({2}));
+    EXPECT_EQ(unneeded.front(), VectorWithMemoryTracking<size_t>({2}));
 
     step->removeUnusedColumns({1}, {prunedChild(input_header, {0, 1, 2})});
     EXPECT_EQ(step->getInputHeaders().front()->dumpNames(), "a, b, c");
@@ -310,9 +311,9 @@ TEST(FilterStepRequiredColumns, MapsOutputsToTheInputsTheyAre)
     dag.getOutputs() = {&dag.addAlias(a, "f"), &dag.addAlias(a, "x"), &b};
 
     const auto mapped = FilterStep::mapOutputsToInputs(dag, "f", /*remove_filter_column=*/true, input_header);
-    EXPECT_EQ(mapped, (std::vector<std::optional<size_t>>{std::nullopt, 1, 2}));
+    EXPECT_EQ(mapped, (VectorWithMemoryTracking<std::optional<size_t>>{std::nullopt, 1, 2}));
 
     /// With the filter column kept, it is the first column of the output header, computed as well.
     const auto mapped_with_filter = FilterStep::mapOutputsToInputs(dag, "f", /*remove_filter_column=*/false, input_header);
-    EXPECT_EQ(mapped_with_filter, (std::vector<std::optional<size_t>>{std::nullopt, std::nullopt, 1, 2}));
+    EXPECT_EQ(mapped_with_filter, (VectorWithMemoryTracking<std::optional<size_t>>{std::nullopt, std::nullopt, 1, 2}));
 }

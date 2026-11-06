@@ -18,6 +18,9 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::ErrorCodes
 {
@@ -162,8 +165,8 @@ namespace
 template <typename IsMarkedInput>
 NameSet outputsReadingMarkedInputs(const ActionsDAG & dag, IsMarkedInput && is_marked_input)
 {
-    std::unordered_map<const ActionsDAG::Node *, bool> marked;
-    std::vector<std::pair<const ActionsDAG::Node *, bool>> stack;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, bool> marked;
+    VectorWithMemoryTracking<std::pair<const ActionsDAG::Node *, bool>> stack;
     for (const auto * output : dag.getOutputs())
         stack.emplace_back(output, false);
 
@@ -212,8 +215,8 @@ ConstantColumns collectConstantColumns(const QueryPlan::Node & root)
         return it == result.end() ? no_columns : it->second;
     };
 
-    std::unordered_set<const QueryPlan::Node *> visited;
-    std::vector<std::pair<const QueryPlan::Node *, bool>> stack{{&root, false}};
+    UnorderedSetWithMemoryTracking<const QueryPlan::Node *> visited;
+    VectorWithMemoryTracking<std::pair<const QueryPlan::Node *, bool>> stack{{&root, false}};
     while (!stack.empty())
     {
         auto [node, expanded] = stack.back();
