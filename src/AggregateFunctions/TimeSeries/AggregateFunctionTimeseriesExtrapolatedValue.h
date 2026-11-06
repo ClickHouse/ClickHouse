@@ -182,7 +182,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
         void removeBefore(GridScaleTimestampType cut_off)
         {
             /// Subtracting big resets that left can lose the small ones still in the window, so the exact mode sums the window again.
-            /// It is needed only when a reset left, which is rare, and never for delta, which has no resets.
+            /// It is needed only when a reset left or the sum overflowed (inf minus a reset stays inf), and never for delta.
             if constexpr (check_resets)
             {
                 if (exact_rate)
@@ -190,7 +190,8 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
                     const Float64 resets_before = sliding_sum.getCurrentSum().resets;
                     const Float64 resets_error_before = sliding_sum.getCurrentSum().resets_error;
                     if (sliding_sum.removeBefore(cut_off)
-                        && (sliding_sum.getCurrentSum().resets != resets_before
+                        && (!std::isfinite(resets_before)
+                            || sliding_sum.getCurrentSum().resets != resets_before
                             || sliding_sum.getCurrentSum().resets_error != resets_error_before))
                         sliding_sum.recomputeCurrentSum();
                     return;
