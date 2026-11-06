@@ -768,6 +768,8 @@ if (NOT OS_ANDROID AND OS_LINUX AND NOT ARCH_S390X AND NOT SANITIZE AND NOT ENAB
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--image-base=0x15554000")
     elseif (ARCH_AARCH64)
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--image-base=0xaaaaaaaa0000")
+        # Range extension thunks in the adrp/add/br form of the PIE build, not the ldr/br/.xword form of -no-pie.
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--pic-veneer")
     endif ()
 endif ()
 
