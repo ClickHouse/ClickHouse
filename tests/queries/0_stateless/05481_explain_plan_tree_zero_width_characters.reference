@@ -1,4 +1,6 @@
 -- the table name and the hash key keep their zero-width code points
+Output: क्ष MOD 10, count()
+
      ┌─ F2 · main ────────────────────┐
      │                                │
      │  ┌───────────────────────────┐ │

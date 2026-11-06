@@ -1,4 +1,6 @@
 -- aggregation
+Output: bid MOD 10, sum(bid)
+
        ┌──────────────────────┐
        │ Aggregating          │
        ├──────────────────────┤
@@ -15,6 +17,8 @@
 │ Output: bid                         │
 └─────────────────────────────────────┘
 -- join
+Output: count()
+
                              ┌─────────────────────┐
                              │ Aggregating         │
                              ├─────────────────────┤
@@ -47,6 +51,8 @@
 │ Output: bid                         │   │ Output: sid                           │
 └─────────────────────────────────────┘   └───────────────────────────────────────┘
 -- union all
+Output: sid
+
                                     ┌───────┐
                                     │ Union │
                                     └───▲───┘
@@ -60,6 +66,8 @@
 │ Output: sid                         │   │ Output: sid                           │
 └─────────────────────────────────────┘   └───────────────────────────────────────┘
 -- without actions
+Output: bid MOD 10, sum(bid)
+
             ┌─────────────┐
             │ Aggregating │
             └──────▲──────┘
@@ -68,6 +76,8 @@
 │ ReadFromMergeTree (db_XXXXXXXX.big) │
 └─────────────────────────────────────┘
 -- without descriptions
+Output: bid MOD 10, sum(bid)
+
  ┌──────────────────────┐
  │ Aggregating          │
  ├──────────────────────┤
@@ -84,6 +94,8 @@
 │ Output: bid             │
 └─────────────────────────┘
 -- nested plans
+Output: x
+
 ┌────────────────────────┐
 │ ReadFromMerge ← N1, N2 │
 ├────────────────────────┤
@@ -108,6 +120,8 @@ N2 · nested plan of ReadFromMerge
 │ Output: materialize(x)                  │
 └─────────────────────────────────────────┘
 -- fallback to local execution
+Output: bid MOD 10, sum(bid)
+
    ┌──────────────────────────────┐
    │ TotalsHaving                 │
    ├──────────────────────────────┤

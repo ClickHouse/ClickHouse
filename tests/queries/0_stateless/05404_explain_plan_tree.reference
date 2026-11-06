@@ -1,4 +1,6 @@
 -- shuffle join with aggregation
+Output: sid, count()
+
                                       ┌─ F4 · main ────────────────────┐
                                       │                                │
                                       │  ┌───────────────────────────┐ │
@@ -84,6 +86,8 @@ Exchanges:
   exchange_3: gather, streaming, F3 -> F4, buckets 3 -> 1
 Levels: [F0, F1] -> [F2] -> [F3] -> [F4]
 -- broadcast join
+Output: count()
+
                              ┌─ F3 · main ────────────────────┐
                              │                                │
                              │  ┌───────────────────────────┐ │
@@ -157,6 +161,8 @@ Exchanges:
   exchange_2: gather, streaming, F2 -> F3, buckets 3 -> 1
 Levels: [F0, F1] -> [F2] -> [F3]
 -- aggregation
+Output: bid MOD 10, sum(bid)
+
     ┌─ F2 · main ────────────────────┐
     │                                │
     │  ┌───────────────────────────┐ │
@@ -216,6 +222,8 @@ Exchanges:
   exchange_1: gather, streaming, F1 -> F2, buckets 3 -> 1
 Levels: [F0] -> [F1] -> [F2]
 -- order by
+Output: bid
+
     ┌─ F1 · main ────────────────────┐
     │                                │
     │  ┌───────────────────────────┐ │
@@ -253,6 +261,8 @@ Exchanges:
   exchange_0: gather sorted by bid DESC, streaming, F0 -> F1, buckets 3 -> 1
 Levels: [F0] -> [F1]
 -- persisted exchanges
+Output: bid MOD 10, sum(bid)
+
     ┌─ F2 · main ────────────────────┐
     │                                │
     │  ┌───────────────────────────┐ │
@@ -377,6 +387,8 @@ Exchanges:
   exchange_1: gather, streaming, F1 -> F2, buckets 3 -> 1
 Levels: [F0] -> [F1] -> [F2]
 -- without descriptions
+Output: bid MOD 10, sum(bid)
+
       ┌─ F2 · main ───────┐
       │                   │
       │  ┌────────────┐   │
@@ -436,6 +448,8 @@ Exchanges:
   exchange_1: gather, streaming, F1 -> F2, buckets 3 -> 1
 Levels: [F0] -> [F1] -> [F2]
 -- wide characters
+Output: 键 MOD 10, sum(键)
+
   ┌─ F2 · main ────────────────────┐
   │                                │
   │  ┌───────────────────────────┐ │
@@ -496,6 +510,8 @@ Exchanges:
   exchange_1: gather, streaming, F1 -> F2, buckets 3 -> 1
 Levels: [F0] -> [F1] -> [F2]
 -- long text without spaces
+Output: 键 MOD 10, sum(键)
+
       ┌─ F2 · main ────────────────────┐
       │                                │
       │  ┌───────────────────────────┐ │

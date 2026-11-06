@@ -657,6 +657,21 @@ void explainAsTree(
     const PreparedFragmentGraph prepared(graph, options);
 
     validateFragmentGraph(graph);
+
+    /// The result columns of the query, as plain `EXPLAIN` prints them before the plan: no box shows them, because
+    /// `Expression` steps are not drawn. The fragment that produces the result (`main`) is the first in `print_order`.
+    if (options.pretty)
+    {
+        const QueryFragment & result_fragment
+            = prepared.single_node ? graph.fragments.front() : *prepared.print_order.front();
+        const QueryPlan & result_plan = PreparedFragmentGraph::getPlan(result_fragment);
+        if (!result_plan.getRootNode())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Fragment {} has no plan to draw", result_fragment.id);
+        QueryPlanFormat::formatOutputColumns(
+            prepared.getPrettyNames(result_plan).pretty_names, buf, *result_plan.getRootNode()->step, /*prefix=*/ "");
+        buf.write('\n');
+    }
+
     NestedPlans nested_plans;
     TreeBuilder(prepared, max_step_description_length, nested_plans, prepared.single_node).drawGraph(buf);
 

@@ -1,4 +1,6 @@
 -- aggregation over nested plans
+Output: s, count()
+
   ┌─────────────────────┐
   │ Aggregating         │
   ├─────────────────────┤
@@ -35,6 +37,8 @@ N2 · nested plan of ReadFromMerge
 │ Prewhere filter column:  materialize(x) > 5 │
 └─────────────────────────────────────────────┘
 -- nested plans of a nested plan
+Output: x
+
 ┌────────────────────────┐
 │ ReadFromMerge ← N1, N2 │
 ├────────────────────────┤
