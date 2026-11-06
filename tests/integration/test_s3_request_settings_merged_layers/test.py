@@ -26,6 +26,7 @@ TEMPLATE = f"""<clickhouse>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 DISK_SETTINGS
             </merged_s3>
+            OTHER_DISKS
         </disks>
     </storage_configuration>
     <allowed_disks_for_table_engines>merged_s3</allowed_disks_for_table_engines>
@@ -44,10 +45,12 @@ def started_cluster():
         cluster.shutdown()
 
 
-def configure(disk="", s3="", restart=True):
+def configure(disk="", s3="", restart=True, other_disks=""):
     node.replace_config(
         CONFIG_PATH,
-        TEMPLATE.replace("DISK_SETTINGS", disk).replace("S3_SETTINGS", s3),
+        TEMPLATE.replace("DISK_SETTINGS", disk)
+        .replace("S3_SETTINGS", s3)
+        .replace("OTHER_DISKS", other_disks),
     )
     # Start each case from its own configuration.
     if restart:
@@ -108,21 +111,32 @@ def test_disk_section_makes_endpoint_section_valid(started_cluster):
     write_and_merge_on_disk("t_s2")
 
 
-def test_disk_reload_with_contradicting_endpoint_section_is_refused(started_cluster):
+def test_disk_reload_with_contradicting_endpoint_section_keeps_disk_settings(
+    started_cluster,
+):
     disk = f"<s3_max_upload_part_size>{32 * MIB}</s3_max_upload_part_size>"
+    contradicting = endpoint(
+        "d", "merged_disk", f"<min_upload_part_size>{64 * MIB}</min_upload_part_size>"
+    )
+    not_applied = "The new S3 settings of disk merged_s3 were not applied"
     # Each section is valid alone, the merged settings are not.
+    configure(disk=disk, s3=contradicting)
+
+    # The rest of the same reload is applied.
     configure(
         disk=disk,
-        s3=endpoint(
-            "d",
-            "merged_disk",
-            f"<min_upload_part_size>{64 * MIB}</min_upload_part_size>",
-        ),
+        s3=contradicting,
+        restart=False,
+        other_disks="<other_disk><path>/var/lib/clickhouse/other_disk/</path></other_disk>",
     )
-    error = node.query_and_get_error("SYSTEM RELOAD CONFIG")
-    assert (
+    node.query("SYSTEM RELOAD CONFIG")
+    assert node.count_in_log(not_applied).strip() == "1"
+    assert node.contains_in_log(
         "max_upload_part_size (32.00 MiB) can't be less than setting min_upload_part_size (64.00 MiB)"
-        in error
+    )
+    assert (
+        node.query("SELECT name FROM system.disks WHERE name = 'other_disk'").strip()
+        == "other_disk"
     )
     # The disk keeps the settings it was created with.
     write_and_merge_on_disk("t_s3")
@@ -140,21 +154,11 @@ def test_disk_reload_with_contradicting_endpoint_section_is_refused(started_clus
     node.query("SYSTEM RELOAD CONFIG")
     write_and_merge_on_disk("t_s3")
 
-    # A contradiction brought by the endpoint section alone is refused by the same reload.
-    configure(
-        disk=disk,
-        s3=endpoint(
-            "d",
-            "merged_disk",
-            f"<min_upload_part_size>{64 * MIB}</min_upload_part_size>",
-        ),
-        restart=False,
-    )
-    error = node.query_and_get_error("SYSTEM RELOAD CONFIG")
-    assert (
-        "max_upload_part_size (32.00 MiB) can't be less than setting min_upload_part_size (64.00 MiB)"
-        in error
-    )
+    # A contradiction brought by the endpoint section alone is not applied either.
+    configure(disk=disk, s3=contradicting, restart=False)
+    node.query("SYSTEM RELOAD CONFIG")
+    assert node.count_in_log(not_applied).strip() == "2"
+    write_and_merge_on_disk("t_s3")
 
 
 def test_data_lake_on_disk_takes_query_settings_on_top(started_cluster):

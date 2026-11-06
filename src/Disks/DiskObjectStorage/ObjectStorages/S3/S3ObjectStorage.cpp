@@ -835,7 +835,18 @@ void S3ObjectStorage::applyNewSettings(
     }
 
     if (options.validate_merged_settings && context->getSettingsRef()[Setting::s3_validate_request_settings])
-        modified_settings->request_settings.validateUploadSettings();
+    {
+        try
+        {
+            modified_settings->request_settings.validateUploadSettings();
+        }
+        catch (const Exception & e)
+        {
+            /// Not rethrown: the rest of the config reload must still be applied.
+            LOG_ERROR(log, "The new S3 settings of disk {} were not applied, it keeps its current settings: {}", disk_name, e.message());
+            return;
+        }
+    }
 
     modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
