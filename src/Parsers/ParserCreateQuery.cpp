@@ -2987,7 +2987,7 @@ The optional `level` argument sets the compression level from 0 to 12; the defau
 The payload of each compression block is a standalone [`.pco`](https://github.com/pcodec/pcodec) stream, compatible with the reference pcodec implementation.
 
 <Note>
-This codec is in beta and requires `SET enable_pco_codec = 1` to use. Because it needs the column type, it can only be specified per column; it cannot be used in the untyped compression settings (`marks_compression_codec`, `primary_key_compression_codec`, `default_compression_codec`) or in `TTL ... RECOMPRESS`.
+This codec is in beta and requires `SET enable_pco_codec = 1` to use. Because it needs the column type, it can only be specified per column; it cannot be used in the untyped compression settings (`marks_compression_codec`, `primary_key_compression_codec`, `default_compression_codec`) or in `TTL ... RECOMPRESS`, except as an alternative of [`FirstApplicable`](#firstapplicable), e.g. `FirstApplicable(PCO, ZSTD(3))`.
 </Note>
 
 ### FPC {#fpc}
@@ -3096,6 +3096,46 @@ CREATE TABLE mytable
 )
 ENGINE = MergeTree ORDER BY x;
 ```
+
+## Selecting a Codec by Data Type {#firstapplicable}
+
+`FirstApplicable(codec1, codec2, ...)` — Uses the first codec in the list that is applicable to the data type. A specialized codec is applicable only to some data types, e.g. `PCO` to numbers and `ALP` to floating-point numbers, while a general purpose codec such as `ZSTD` is applicable to any data type, so it is a natural last alternative:
+
+```sql
+SET enable_pco_codec = 1;
+
+CREATE TABLE first_applicable
+(
+    id UInt64 CODEC(FirstApplicable(PCO, ZSTD(3))),
+    name String CODEC(FirstApplicable(PCO, ZSTD(3))),
+    point Tuple(x Float64, label String) CODEC(FirstApplicable(PCO, ZSTD(3)))
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+Here `id` is compressed with `PCO` and `name` with `ZSTD(3)`. The codec is selected for every stream of a column separately, so the `x` element of `point` is compressed with `PCO` and the `label` element with `ZSTD(3)`.
+
+`FirstApplicable` only selects a codec: it has no header of its own in the compressed data, which is written by the selected codec alone. It is an element of a codec pipeline, so it can be combined with other codecs, as in `CODEC(Delta, FirstApplicable(PCO, ZSTD))`. An alternative can be a pipeline of several codecs, written as `Multiple(codec1, codec2, ...)`, which is applicable if every codec in it is:
+
+```sql
+CODEC(FirstApplicable(PCO, Multiple(T64, ZSTD(3)), ZSTD(3)))
+```
+
+The alternative `Default` is the default codec, and an alternative can also be another `FirstApplicable`.
+
+`FirstApplicable` is accepted wherever a codec is, including the settings where the data type is not known: `default_compression_codec`, `marks_compression_codec`, `primary_key_compression_codec` and `TTL ... RECOMPRESS CODEC(...)`. For the default codec of a `MergeTree` table, the codec is selected for the data type of every column that uses the default codec:
+
+```sql
+CREATE TABLE first_applicable_default
+(
+    id UInt64,
+    name String
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS default_compression_codec = 'FirstApplicable(PCO, ZSTD(3))';
+```
+
+When the data type is not known, as for marks, the first alternative that is applicable to any data type is used, so the list must contain one. If no alternative is applicable to the data type of a column, the query fails.
 
 ## Adaptive Codec Selection {#adaptive-codec-selection}
 
