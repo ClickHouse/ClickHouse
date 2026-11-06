@@ -51,6 +51,7 @@
 #include <Storages/MergeTree/MergeTreeIndexTableLookup.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
@@ -115,11 +116,17 @@ void checkExperimentalLookupIndexIsEnabled(ContextPtr context)
     }
 }
 
-/// Whether the two names name one setting: a `MergeTree` setting can have two names.
+/// Whether the two names name one setting: a `MergeTree` or a `DataLakeStorageSettings` setting can have several names.
 bool isSameSetting(const String & left, const String & right)
 {
     auto resolve = [](const String & name)
-    { return MergeTreeSettings::hasBuiltin(name) ? MergeTreeSettings::resolveName(name) : std::string_view(name); };
+    {
+        if (MergeTreeSettings::hasBuiltin(name))
+            return MergeTreeSettings::resolveName(name);
+        if (DataLakeStorageSettings::hasBuiltin(name))
+            return DataLakeStorageSettings::resolveName(name);
+        return std::string_view(name);
+    };
     return resolve(left) == resolve(right);
 }
 

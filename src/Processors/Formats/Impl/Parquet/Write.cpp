@@ -2098,11 +2098,9 @@ void writeFileFooter(FileWriteState & file,
                 Poco::JSON::Array::Ptr geom_types = new Poco::JSON::Array;
                 geom_types->add(type->getCustomName()->getName());
                 geom_meta->set("geometry_types", geom_types);
-                /// With the `GEOMETRY` logical type, the column has the default CRS of the logical
-                /// type (`OGC:CRS84`). Omit `crs` here, which means the same default in GeoParquet,
-                /// so that both kinds of metadata describe the same CRS.
-                if (!options.write_geometry_logical_type)
-                    geom_meta->set("crs", "EPSG:4326");
+                /// No `crs`: in GeoParquet that means `OGC:CRS84`, longitude then latitude, which is how the
+                /// coordinates are stored, and it is also the default CRS of the `GEOMETRY` logical type.
+                /// (`crs` must be a PROJJSON object if present, and readers like DuckDB reject a string.)
 
                 if (type->getCustomName()->getName() == WKBPolygonTransform::name ||
                     type->getCustomName()->getName() == WKBMultiPolygonTransform::name)

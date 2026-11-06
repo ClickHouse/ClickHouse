@@ -53,6 +53,9 @@ bool isS3WrongSigningRegionBadRequest(int status_code, const Poco::Net::HTTPMess
 /// Printing that as a number is confusing, and casting it to an unsigned type turns it into 18446744073709551615.
 String httpResponseCodeToString(Aws::Http::HttpResponseCode response_code);
 
+/// Percent-encodes a request path exactly as `PocoHTTPClient` writes it into the request line.
+String encodeRequestPath(const String & path);
+
 /// Bounds only the response wait of a credential-acquisition round trip; the connect timeout stays
 /// as the caller set it. An already tighter wait is kept, a non-positive one is unbounded downstream
 /// and so takes the cap.
@@ -101,6 +104,12 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     UInt64 http_max_fields = 1000000;
     UInt64 http_max_field_name_size = 128 * 1024;
     UInt64 http_max_field_value_size = 128 * 1024;
+
+    /// Whether the requests sent by this client are the ones `system.blob_storage_log` logs, so they
+    /// may publish their connection to it. Set only for the client of the object storage itself, not
+    /// for the clients of its credentials providers, whose requests can share a scope with a logged
+    /// one; see `HTTPConnectionInfoHelperRequests`.
+    bool publish_connection_info = false;
 
     std::function<void(const ProxyConfiguration &)> error_report;
 
@@ -261,6 +270,7 @@ protected:
     const UInt64 http_max_field_value_size = 128 * 1024;
     bool enable_s3_requests_logging = false;
     bool for_disk_s3 = false;
+    bool publish_connection_info = false;
 
     HTTPRequestThrottler request_throttler;
 

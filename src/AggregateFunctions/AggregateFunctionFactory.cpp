@@ -136,7 +136,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     return with_original_arguments;
 }
 
-std::optional<AggregateFunctionWithProperties>
+const AggregateFunctionWithProperties *
 AggregateFunctionFactory::getAssociatedFunctionByNullsAction(const String & name, NullsAction action) const
 {
     if (action == NullsAction::RESPECT_NULLS)
@@ -145,7 +145,7 @@ AggregateFunctionFactory::getAssociatedFunctionByNullsAction(const String & name
         if (it == respect_nulls.end())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} does not support RESPECT NULLS", name);
         if (auto associated_it = aggregate_functions.find(it->second); associated_it != aggregate_functions.end())
-            return {associated_it->second};
+            return &associated_it->second;
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to find the function {} (equivalent to '{} RESPECT NULLS')", it->second, name);
     }
 
@@ -154,14 +154,14 @@ AggregateFunctionFactory::getAssociatedFunctionByNullsAction(const String & name
         if (auto it = ignore_nulls.find(name); it != ignore_nulls.end())
         {
             if (auto associated_it = aggregate_functions.find(it->second); associated_it != aggregate_functions.end())
-                return {associated_it->second};
+                return &associated_it->second;
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Unable to find the function {} (equivalent to '{} IGNORE NULLS')", it->second, name);
         }
         /// We don't throw for IGNORE NULLS of other functions because that's the default in CH
     }
 
-    return {};
+    return nullptr;
 }
 
 String AggregateFunctionFactory::getAssociatedNameByNullsAction(const String & name, NullsAction action) const
@@ -237,20 +237,18 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     String name = getAliasToOrName(name_param);
     String case_insensitive_name;
     bool is_case_insensitive = false;
-    Value found;
+    const Value * found = nullptr;
 
     /// Find by exact match.
     if (auto it = aggregate_functions.find(name); it != aggregate_functions.end())
-    {
-        found = it->second;
-    }
+        found = &it->second;
 
-    if (!found.creator)
+    if (!found)
     {
         case_insensitive_name = Poco::toLower(name);
         if (auto jt = case_insensitive_aggregate_functions.find(case_insensitive_name); jt != case_insensitive_aggregate_functions.end())
         {
-            found = jt->second;
+            found = &jt->second;
             is_case_insensitive = true;
         }
     }
@@ -259,13 +257,12 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     if (CurrentThread::isInitialized())
         query_context = CurrentThread::get().tryGetQueryContext();
 
-    if (found.creator)
+    if (found)
     {
-        auto opt = getAssociatedFunctionByNullsAction(is_case_insensitive ? case_insensitive_name : name, action);
-        if (opt)
-            found = *opt;
+        if (const auto * associated = getAssociatedFunctionByNullsAction(is_case_insensitive ? case_insensitive_name : name, action))
+            found = associated;
 
-        out_properties = found.properties;
+        out_properties = found->properties;
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(
                 Context::QueryLogFactories::AggregateFunction, is_case_insensitive ? case_insensitive_name : name);
@@ -277,10 +274,10 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         const Settings * settings = query_context ? &query_context->getSettingsRef() : nullptr;
 
         AggregateFunctionPtr function;
-        if (state_variant == AggregateFunctionStateVariant::Window && found.window_creator)
-            function = found.window_creator(name, argument_types, parameters, settings);
+        if (state_variant == AggregateFunctionStateVariant::Window && found->window_creator)
+            function = found->window_creator(name, argument_types, parameters, settings);
         else
-            function = found.creator(name, argument_types, parameters, settings);
+            function = found->creator(name, argument_types, parameters, settings);
 
         /// Invariant: For any aggregation function IAggregateFunction::getParameters() should return exactly
         /// the parameters used to create the aggregation function. Aggregation functions are not allowed to change
@@ -333,6 +330,10 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
         Array nested_parameters = combinator->transformParameters(parameters);
 
+        /// A state leaves the window function as a value that can be stored, sent, cast or merged with ordinary
+        /// states, and its type name does not tell the window layout apart. So it always uses the ordinary layout.
+        const auto nested_state_variant = combinator->returnsNestedState() ? AggregateFunctionStateVariant::Aggregation : state_variant;
+
         AggregateFunctionPtr combined_function;
         if (combinator->transformsMultipleNestedFunctions())
         {
@@ -343,7 +344,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             VectorWithMemoryTracking<AggregateFunctionPtr> nested_functions;
             nested_functions.reserve(nested_arguments_list.size());
             for (const auto & nested_arguments : nested_arguments_list)
-                nested_functions.push_back(get(nested_name, action, nested_arguments, nested_parameters, out_properties, state_variant));
+                nested_functions.push_back(get(nested_name, action, nested_arguments, nested_parameters, out_properties, nested_state_variant));
 
             /// A `-State` round-trip reconstructs every element from this one shared name, so it must be
             /// the action-adjusted base aggregate name, not one element's instantiation (which can collapse
@@ -356,7 +357,12 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         {
             DataTypes nested_types = combinator->transformArguments(argument_types);
 
-            AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant);
+            AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, nested_state_variant);
+            /// The window layout only makes a window function faster, so use the ordinary layout where the
+            /// combined function cannot work with the window one.
+            if (nested_state_variant != AggregateFunctionStateVariant::Aggregation
+                && !combinator->acceptsNestedFunction(*nested_function, argument_types))
+                nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, AggregateFunctionStateVariant::Aggregation);
             combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
         }
 
@@ -386,32 +392,29 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
     while (true)
     {
         name = getAliasToOrName(name);
-        Value found;
+        const Value * found = nullptr;
         String lower_case_name;
         bool is_case_insensitive = false;
 
         /// Find by exact match.
         if (auto it = aggregate_functions.find(name); it != aggregate_functions.end())
-        {
-            found = it->second;
-        }
+            found = &it->second;
 
-        if (!found.creator)
+        if (!found)
         {
             lower_case_name = Poco::toLower(name);
             if (auto jt = case_insensitive_aggregate_functions.find(lower_case_name); jt != case_insensitive_aggregate_functions.end())
             {
                 is_case_insensitive = true;
-                found = jt->second;
+                found = &jt->second;
             }
         }
 
-        if (found.creator)
+        if (found)
         {
-            auto opt = getAssociatedFunctionByNullsAction(is_case_insensitive ? lower_case_name : name, action);
-            if (opt)
-                return opt->properties;
-            return found.properties;
+            if (const auto * associated = getAssociatedFunctionByNullsAction(is_case_insensitive ? lower_case_name : name, action))
+                return associated->properties;
+            return found->properties;
         }
 
         /// Combinators of aggregate functions.
