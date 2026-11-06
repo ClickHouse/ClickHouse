@@ -157,28 +157,46 @@ namespace
             constexpr size_t block_size = 32 / sizeof(T);
             while (row < end)
             {
-                const size_t block_end = std::min(row + block_size, end);
-                if (row != begin && block_end - row == block_size)
-                {
-                    bool all_same = true;
-                    for (size_t i = 0; i < block_size; ++i)
-                        all_same &= data[row + i] == data[row + i - 1];
-                    if (all_same)
-                    {
-                        row = block_end;
-                        continue;
-                    }
-                }
-
                 size_t found_regular = 0;
-                for (; row < block_end; ++row)
+                if (end - row >= block_size)
                 {
-                    const T position = data[row];
-                    if (!seen_data[position]) [[unlikely]]
+                    if (row != begin)
                     {
-                        seen_data[position] = 1;
-                        positions[num_positions++] = position;
-                        found_regular += position >= num_special_positions;
+                        bool all_same = true;
+                        for (size_t i = 0; i < block_size; ++i)
+                            all_same &= data[row + i] == data[row + i - 1];
+                        if (all_same)
+                        {
+                            row += block_size;
+                            continue;
+                        }
+                    }
+
+                    /// A constant trip count lets the block be unrolled.
+#pragma clang loop unroll(full)
+                    for (size_t i = 0; i < block_size; ++i)
+                    {
+                        const T position = data[row + i];
+                        if (!seen_data[position]) [[unlikely]]
+                        {
+                            seen_data[position] = 1;
+                            positions[num_positions++] = position;
+                            found_regular += position >= num_special_positions;
+                        }
+                    }
+                    row += block_size;
+                }
+                else
+                {
+                    for (; row < end; ++row)
+                    {
+                        const T position = data[row];
+                        if (!seen_data[position])
+                        {
+                            seen_data[position] = 1;
+                            positions[num_positions++] = position;
+                            found_regular += position >= num_special_positions;
+                        }
                     }
                 }
                 if (found_regular >= regular_left)

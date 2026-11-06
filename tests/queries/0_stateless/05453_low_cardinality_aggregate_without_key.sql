@@ -121,15 +121,16 @@ SELECT 'radix % 3', (SELECT uniqExact(s) FROM t_mem WHERE id % 3 = 0) = (SELECT 
     (SELECT uniqExact(fs) FROM t_mem WHERE id % 3 = 0) = (SELECT uniqExact(fs) FROM t_plain WHERE id % 3 = 0)
     SETTINGS optimize_uniq_exact_radix_partitioning = 1;
 
--- Sorted runs, s of 64 rows, n of 50 rows with NULL and the default: `id < 10000` uses about half of the dictionaries.
+-- Sorted runs in one block, s of 64 rows, n of 50 rows with NULL and the default: `id < 9990` uses about half of the dictionaries,
+-- and its last 6 rows start a run of s.
 CREATE TABLE t_runs (id UInt64, s LowCardinality(String), n LowCardinality(Nullable(String)), sp String, np Nullable(String)) ENGINE = Memory;
 INSERT INTO t_runs SELECT number, sp, np, sp, np FROM (SELECT number, concat('r', toString(intDiv(number, 64) % 300)) AS sp,
     multiIf(intDiv(number, 50) % 7 = 3, NULL, intDiv(number, 50) % 11 = 5, '', concat('r', toString(intDiv(number, 50) % 300))) AS np
-    FROM numbers(30000)) SETTINGS max_insert_threads = 1;
-SELECT 'runs', 10000,
-    toString((SELECT uniqExact(s), min(s), max(s), groupUniqArray(10)(s), uniqExact(n), min(n), max(n), groupUniqArray(10)(n) FROM t_runs WHERE id < 10000))
-    = toString((SELECT uniqExact(sp), min(sp), max(sp), groupUniqArray(10)(sp), uniqExact(np), min(np), max(np), groupUniqArray(10)(np) FROM t_runs WHERE id < 10000)),
-    (SELECT uniqExact(s) FROM t_runs WHERE id < 10000) = (SELECT uniqExact(sp) FROM t_runs WHERE id < 10000)
+    FROM numbers(30000)) SETTINGS max_insert_threads = 1, max_block_size = 30000;
+SELECT 'runs', 9990,
+    toString((SELECT uniqExact(s), min(s), max(s), groupUniqArray(10)(s), uniqExact(n), min(n), max(n), groupUniqArray(10)(n) FROM t_runs WHERE id < 9990))
+    = toString((SELECT uniqExact(sp), min(sp), max(sp), groupUniqArray(10)(sp), uniqExact(np), min(np), max(np), groupUniqArray(10)(np) FROM t_runs WHERE id < 9990)),
+    (SELECT uniqExact(s) FROM t_runs WHERE id < 9990) = (SELECT uniqExact(sp) FROM t_runs WHERE id < 9990)
     SETTINGS enable_parallel_replicas = 0, optimize_uniq_exact_radix_partitioning = 1;
 SELECT 'runs', 30000,
     toString((SELECT uniqExact(s), min(s), max(s), groupUniqArray(10)(s), uniqExact(n), min(n), max(n), groupUniqArray(10)(n) FROM t_runs WHERE id < 30000))

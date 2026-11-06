@@ -19,7 +19,7 @@ NULL first, default last	1	101
 only NULL and default	1	1
 only default	1	1
 radix % 3	1	1
-runs	10000	1	1
+runs	9990	1	1
 runs	30000	1	1
 if	1
 state	1
