@@ -4,6 +4,8 @@ ACCESS_DENIED
 ACCESS_DENIED
 === READ ON URL: select through viewIfPermitted ===
 from-url
+=== READ ON URL: select through viewIfPermitted with parallel replicas ===
+from-url
 === WRITE ON URL: insert through viewIfPermitted ===
 === rows in the sink ===
 allowed	1

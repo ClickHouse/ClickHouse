@@ -40,6 +40,10 @@ echo "=== READ ON URL: insert through viewIfPermitted ==="
 as_user "INSERT INTO FUNCTION $(fallback "$insert_url") SELECT 'denied'"
 echo "=== READ ON URL: select through viewIfPermitted ==="
 $CLICKHOUSE_CLIENT --user "$user_name" -q "SELECT marker FROM $(fallback "$select_url")" 2>&1
+echo "=== READ ON URL: select through viewIfPermitted with parallel replicas ==="
+$CLICKHOUSE_CLIENT --user "$user_name" -q "SELECT marker FROM $(fallback "$select_url")
+    SETTINGS enable_parallel_replicas = 1, cluster_for_parallel_replicas = 'test_shard_localhost', max_parallel_replicas = 2,
+    parallel_replicas_for_cluster_engines = 1" 2>&1
 echo "=== WRITE ON URL: insert through viewIfPermitted ==="
 $CLICKHOUSE_CLIENT -q "GRANT WRITE ON URL TO $user_name"
 $CLICKHOUSE_CLIENT --user "$user_name" -q "INSERT INTO FUNCTION $(fallback "$insert_url") SELECT 'allowed'" 2>&1
