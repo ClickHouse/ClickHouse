@@ -56,6 +56,7 @@ public:
 
 private:
     void readName(String & out);
+    void skipLineFeedAfterCarriageReturn();
     void readAttributeValue(char quote, String & out);
     void readText();
     void readCDATA();

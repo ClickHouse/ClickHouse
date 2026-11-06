@@ -247,9 +247,78 @@ private:
 };
 
 
+/// Decodes one UTF-8 sequence starting with a byte >= 0x80. Returns its length, or 0 if the sequence is invalid
+/// (it is written as one replacement character U+FFFD then).
+size_t decodeUTF8Sequence(const UInt8 * pos, const UInt8 * end, UInt32 & code_point)
+{
+    UInt8 c = *pos;
+    size_t length = 0;
+    if (c >= 0xC2 && c <= 0xDF)
+    {
+        length = 2;
+        code_point = c & 0x1F;
+    }
+    else if (c >= 0xE0 && c <= 0xEF)
+    {
+        length = 3;
+        code_point = c & 0x0F;
+    }
+    else if (c >= 0xF0 && c <= 0xF4)
+    {
+        length = 4;
+        code_point = c & 0x07;
+    }
+
+    if (!length || pos + length > end)
+        return 0;
+    for (size_t i = 1; i < length; ++i)
+    {
+        if ((pos[i] & 0xC0) != 0x80)
+            return 0;
+        code_point = (code_point << 6) | (pos[i] & 0x3F);
+    }
+    if ((length == 3 && (code_point < 0x800 || (code_point >= 0xD800 && code_point < 0xE000)))
+        || (length == 4 && (code_point < 0x10000 || code_point > 0x10FFFF)))
+        return 0;
+    return length;
+}
+
+/// The length of the text written by `writeXMLText` as Excel counts it: in UTF-16 code units, so that the characters outside of the
+/// Basic Multilingual Plane count twice. Every invalid byte becomes one replacement character, and every `_xHHHH_` escape is one character.
+size_t excelTextLength(std::string_view str)
+{
+    const auto * pos = reinterpret_cast<const UInt8 *>(str.data());
+    const auto * end = pos + str.size();
+    size_t length = 0;
+    while (pos < end)
+    {
+        if (*pos < 0x80)
+        {
+            ++length;
+            ++pos;
+            continue;
+        }
+        UInt32 code_point = 0;
+        size_t sequence_length = decodeUTF8Sequence(pos, end, code_point);
+        if (!sequence_length)
+        {
+            ++length;
+            ++pos;
+        }
+        else
+        {
+            length += code_point >= 0x10000 ? 2 : 1;
+            pos += sequence_length;
+        }
+    }
+    return length;
+}
+
 /// Writes text for an XML element or attribute: escapes the special characters of XML, and the characters that cannot be represented
 /// in XML, with the `_xHHHH_` escape sequences of Office Open XML. Invalid UTF-8 sequences are replaced with U+FFFD.
-void writeXMLText(std::string_view str, WriteBuffer & out, bool escape_quote = false)
+/// In an attribute, the quote and the whitespace characters other than space are written as character references,
+/// because XML parsers replace literal TAB, LF and CR in attribute values with spaces.
+void writeXMLText(std::string_view str, WriteBuffer & out, bool attribute = false)
 {
     auto write_escape = [&](UInt32 code)
     {
@@ -265,37 +334,9 @@ void writeXMLText(std::string_view str, WriteBuffer & out, bool escape_quote = f
         UInt8 c = *pos;
         if (c >= 0x80)
         {
-            /// Validate a multi-byte UTF-8 sequence.
-            size_t length = 0;
             UInt32 code_point = 0;
-            if (c >= 0xC2 && c <= 0xDF)
-            {
-                length = 2;
-                code_point = c & 0x1F;
-            }
-            else if (c >= 0xE0 && c <= 0xEF)
-            {
-                length = 3;
-                code_point = c & 0x0F;
-            }
-            else if (c >= 0xF0 && c <= 0xF4)
-            {
-                length = 4;
-                code_point = c & 0x07;
-            }
-
-            bool valid = length && pos + length <= end;
-            for (size_t i = 1; valid && i < length; ++i)
-            {
-                if ((pos[i] & 0xC0) != 0x80)
-                    valid = false;
-                code_point = (code_point << 6) | (pos[i] & 0x3F);
-            }
-            if (valid)
-                valid = !(length == 3 && (code_point < 0x800 || (code_point >= 0xD800 && code_point < 0xE000)))
-                    && !(length == 4 && (code_point < 0x10000 || code_point > 0x10FFFF));
-
-            if (!valid)
+            size_t length = decodeUTF8Sequence(pos, end, code_point);
+            if (!length)
             {
                 writeCString("\xEF\xBF\xBD", out);
                 ++pos;
@@ -319,7 +360,7 @@ void writeXMLText(std::string_view str, WriteBuffer & out, bool escape_quote = f
             case '<': writeCString("&lt;", out); break;
             case '>': writeCString("&gt;", out); break;
             case '"':
-                if (escape_quote)
+                if (attribute)
                     writeCString("&quot;", out);
                 else
                     out.write('"');
@@ -327,8 +368,16 @@ void writeXMLText(std::string_view str, WriteBuffer & out, bool escape_quote = f
             /// XML parsers normalize CR characters to LF, unless they are written as character references.
             case '\r': writeCString("&#13;", out); break;
             case '\t':
+                if (attribute)
+                    writeCString("&#9;", out);
+                else
+                    out.write('\t');
+                break;
             case '\n':
-                out.write(static_cast<char>(c));
+                if (attribute)
+                    writeCString("&#10;", out);
+                else
+                    out.write('\n');
                 break;
             case '_':
             {
@@ -718,16 +767,10 @@ private:
 
     void writeInlineString(size_t column, std::string_view str)
     {
-        /// Excel counts the length in UTF-16 code units: the characters outside of the Basic Multilingual Plane count twice.
-        /// Count the code points by their leading bytes (invalid bytes become one replacement character each).
+        /// The length in UTF-16 code units is never larger than the size in bytes.
         if (str.size() > MAX_CELL_TEXT_LENGTH)
         {
-            size_t length = 0;
-            for (char c : str)
-            {
-                auto byte = static_cast<UInt8>(c);
-                length += ((byte & 0xC0) != 0x80) + (byte >= 0xF0);
-            }
+            size_t length = excelTextLength(str);
             if (length > MAX_CELL_TEXT_LENGTH)
                 throw Exception(
                     ErrorCodes::TOO_LARGE_STRING_SIZE,

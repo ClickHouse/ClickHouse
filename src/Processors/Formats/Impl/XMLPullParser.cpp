@@ -161,8 +161,17 @@ void XMLPullParser::decodeEntity(String & out)
         throwUnexpected(fmt::format("unknown entity '&{};'", entity));
 }
 
+void XMLPullParser::skipLineFeedAfterCarriageReturn()
+{
+    /// A CR is already consumed. The following LF may be in the next buffer, `eof` reads it.
+    if (!in.eof() && *in.position() == '\n')
+        ++in.position();
+}
+
 void XMLPullParser::readAttributeValue(char quote, String & out)
 {
+    /// Attribute values are normalized as in https://www.w3.org/TR/xml/#AVNormalize: line endings are normalized to LF first,
+    /// and then every literal TAB, LF and CR becomes a space. The characters written as character references are preserved.
     out.clear();
     while (true)
     {
@@ -170,34 +179,52 @@ void XMLPullParser::readAttributeValue(char quote, String & out)
             throwUnexpected("unexpected end of data in an attribute value");
         const char * begin = in.position();
         const char * end = in.buffer().end();
-        const char * pos = quote == '"' ? find_first_symbols<'"', '&'>(begin, end) : find_first_symbols<'\'', '&'>(begin, end);
+        const char * pos = quote == '"' ? find_first_symbols<'"', '&', '\t', '\n', '\r'>(begin, end)
+                                        : find_first_symbols<'\'', '&', '\t', '\n', '\r'>(begin, end);
         out.append(begin, pos);
         in.position() = const_cast<char *>(pos);
         if (pos == end)
             continue;
+        char c = *pos;
         ++in.position();
-        if (*pos == quote)
+        if (c == quote)
             return;
-        decodeEntity(out);
+        if (c == '&')
+        {
+            decodeEntity(out);
+            continue;
+        }
+        out += ' ';
+        if (c == '\r')
+            skipLineFeedAfterCarriageReturn();
     }
 }
 
 void XMLPullParser::readText()
 {
+    /// Line endings are normalized as in https://www.w3.org/TR/xml/#sec-line-ends: CRLF and a lone CR become LF.
+    /// A CR written as a character reference is preserved.
     text_data.clear();
     while (!in.eof())
     {
         const char * begin = in.position();
         const char * end = in.buffer().end();
-        const char * pos = find_first_symbols<'<', '&'>(begin, end);
+        const char * pos = find_first_symbols<'<', '&', '\r'>(begin, end);
         text_data.append(begin, pos);
         in.position() = const_cast<char *>(pos);
         if (pos == end)
             continue;
-        if (*pos == '<')
+        char c = *pos;
+        if (c == '<')
             return;
         ++in.position();
-        decodeEntity(text_data);
+        if (c == '\r')
+        {
+            text_data += '\n';
+            skipLineFeedAfterCarriageReturn();
+        }
+        else
+            decodeEntity(text_data);
     }
 }
 
@@ -223,6 +250,12 @@ void XMLPullParser::readCDATA()
     while (true)
     {
         char c = getChar();
+        if (c == '\r')
+        {
+            /// Line endings are normalized in CDATA sections as well.
+            c = '\n';
+            skipLineFeedAfterCarriageReturn();
+        }
         text_data += c;
         if (text_data.ends_with("]]>"))
         {
