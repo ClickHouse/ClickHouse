@@ -17,6 +17,7 @@ from ci.jobs import performance_tests as perf
 from ci.jobs.performance_coverage_resume import (
     RESUME_PROTOCOL,
     download_archive,
+    partition_recovery,
     pin_binary,
     restore_archive,
     source_identity,
@@ -217,6 +218,7 @@ def main():
     parser.add_argument("--test", default="")
     parser.add_argument("--warm-runs", type=int, default=1)
     parser.add_argument("--resume-from", default="")
+    parser.add_argument("--recovery-shard", default="")
     parser.add_argument("--binary-url", default="")
     parser.add_argument("--binary-sha256", default="")
     parser.add_argument("--max-hours", choices=("6", "12"), default="6")
@@ -231,6 +233,10 @@ def main():
         args.resume_from = (
             info.get_workflow_input_value("performance_resume_from") or args.resume_from
         )
+        args.recovery_shard = (
+            info.get_workflow_input_value("performance_recovery_shard")
+            or args.recovery_shard
+        )
         args.max_hours = (
             info.get_workflow_input_value("performance_max_hours") or args.max_hours
         )
@@ -242,7 +248,11 @@ def main():
             or args.binary_sha256
         )
     validate_options(
-        args.resume_from, args.max_hours, args.binary_url, args.binary_sha256
+        args.resume_from,
+        args.max_hours,
+        args.binary_url,
+        args.binary_sha256,
+        args.recovery_shard,
     )
     sw = Utils.Stopwatch()
     check_start_time = Utils.timestamp_to_str(sw.start_time)
@@ -258,11 +268,19 @@ def main():
         Path("tests/performance") / name
         for name in test_discovery.list_test_files("tests/performance")
     ]
-    paths = (
-        [path for path in paths if args.test in path.name]
-        if args.test
-        else paths[batch - 1 :: total]
-    )
+    recovery_partition = None
+    if args.recovery_shard:
+        if args.test:
+            parser.error("Split recovery cannot change the original test universe")
+        paths, recovery_partition = partition_recovery(
+            paths, args.recovery_shard, batch, total, info.job_name
+        )
+    else:
+        paths = (
+            [path for path in paths if args.test in path.name]
+            if args.test
+            else paths[batch - 1 :: total]
+        )
     if not paths:
         parser.error("no matching tests")
     manifest = {
@@ -277,6 +295,8 @@ def main():
         "max_hours": int(args.max_hours),
         "tests": {path.name: {"status": "not_run"} for path in paths},
     }
+    if recovery_partition:
+        manifest["recovery_partition"] = recovery_partition
 
     def save_manifest():
         (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
@@ -370,7 +390,10 @@ def main():
                 raise ValueError("Resume source inputs differ from this collection")
             resume_archive = output.parent / "performance_coverage_resume.tar.gz"
             manifest["resume_url"] = download_archive(
-                info, args.resume_from, resume_archive
+                info,
+                args.resume_from,
+                resume_archive,
+                recovery_partition["source_check_name"] if recovery_partition else None,
             )
             restored = restore_archive(
                 resume_archive,

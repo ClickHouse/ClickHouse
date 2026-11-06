@@ -263,6 +263,26 @@ gh workflow run nightly_coverage.yml --ref <branch> \
     -f performance_binary_sha256=<unpacked-binary-sha256>
 ```
 
+If a whole shard still exceeds that budget, set `performance_recovery_shard`
+to its original shard number and leave `performance_shards=all`. This manual
+mode partitions that original assignment across eight recovery jobs, using the
+first eight job slots. Their manifests identify the original shard and each
+partition explicitly. Together they include every original test exactly once;
+scheduled collection continues to use the original sixteen assignments.
+The source archive must record a matching binary checksum. Each job validates
+the original full assignment and restores only complete tests in its partition;
+an interrupted XML restarts from setup. Each complete partition publishes its
+own CIDB snapshot, so consumers must verify all eight manifests before treating
+the original shard as complete.
+
+```bash
+gh workflow run nightly_coverage.yml --ref <branch> \
+    -f suite=performance -f performance_shards=all \
+    -f performance_recovery_shard=2 -f performance_resume_from=<full-sha> \
+    -f performance_max_hours=12 -f performance_binary_url=<original-artifact-url> \
+    -f performance_binary_sha256=<unpacked-binary-sha256>
+```
+
 The collector reuses `perf.py` for parameter expansion, query groups, settings,
 setup and teardown. It runs every expanded SQL query in each non-`long` test,
 without random query sampling or the adaptive timing loop:

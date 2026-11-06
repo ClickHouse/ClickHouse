@@ -14,6 +14,7 @@ from pathlib import Path
 # Bump when the collector changes fixture preparation, server settings, or the
 # execution policy. Time limits may increase without invalidating completed tests.
 RESUME_PROTOCOL = 1
+RECOVERY_PARTITIONS = 8
 INPUT_PATHS = (
     "tests/performance",
     "tests/benchmarks",
@@ -27,7 +28,9 @@ INPUT_PATHS = (
 )
 
 
-def validate_options(resume_from, max_hours, binary_url="", binary_sha256=""):
+def validate_options(
+    resume_from, max_hours, binary_url="", binary_sha256="", recovery_shard=""
+):
     if resume_from and not re.fullmatch("[0-9a-f]{40}", resume_from):
         raise ValueError(
             "performance_resume_from must be an empty string or a full commit SHA"
@@ -36,6 +39,15 @@ def validate_options(resume_from, max_hours, binary_url="", binary_sha256=""):
         raise ValueError("performance_max_hours must be 6 or 12")
     if resume_from and not (binary_url and binary_sha256):
         raise ValueError("Performance recovery requires a pinned binary URL and SHA256")
+    if recovery_shard and (
+        not recovery_shard.isascii()
+        or not recovery_shard.isdecimal()
+        or not 1 <= int(recovery_shard) <= 16
+        or not resume_from
+    ):
+        raise ValueError(
+            "Split recovery requires a resume revision and a shard from 1 to 16"
+        )
     if binary_url or binary_sha256:
         url = urllib.parse.urlsplit(binary_url)
         if (
@@ -57,6 +69,28 @@ def validate_options(resume_from, max_hours, binary_url="", binary_sha256=""):
             raise ValueError(
                 "performance_binary_sha256 must be the unpacked binary SHA256"
             )
+
+
+def partition_recovery(paths, source_shard, batch, total, check_name):
+    """Partition one original assignment; scheduled sharding stays unchanged."""
+    if total != 16 or not 1 <= batch <= RECOVERY_PARTITIONS:
+        raise ValueError("Split recovery must use the first eight of sixteen job slots")
+    if not 1 <= int(source_shard) <= total:
+        raise ValueError("Invalid original coverage shard")
+    suffix = f", {batch}/{total})"
+    if not check_name.endswith(suffix):
+        raise ValueError("Recovery job name does not match its partition")
+    original = paths[int(source_shard) - 1 :: total]
+    selected = original[batch - 1 :: RECOVERY_PARTITIONS]
+    if not selected:
+        raise ValueError("Empty coverage recovery partition")
+    return selected, {
+        "source_shard": int(source_shard),
+        "source_check_name": check_name[: -len(suffix)] + f", {source_shard}/{total})",
+        "source_tests": [path.name for path in original],
+        "index": batch,
+        "count": RECOVERY_PARTITIONS,
+    }
 
 
 def pin_binary(binary, url, expected_sha256):
@@ -107,11 +141,13 @@ def source_identity(revision):
     return digest.hexdigest()
 
 
-def download_archive(info, revision, destination):
+def download_archive(info, revision, destination, source_check_name=None):
     # An immutable revision in the same branch and job namespace; never consume
-    # a mutable 'latest' snapshot or a different shard's artifacts.
+    # a mutable 'latest' snapshot. Split recovery names its original shard.
     branch = urllib.parse.quote(info.git_branch, safe="/")
-    job = re.sub(r"[^a-z0-9]+", "_", info.job_name.lower()).strip("_")
+    job = re.sub(
+        r"[^a-z0-9]+", "_", (source_check_name or info.job_name).lower()
+    ).strip("_")
     url = (
         "https://s3.amazonaws.com/clickhouse-test-reports/REFs/"
         f"{branch}/{revision}/nightlycoverage/{job}/performance_coverage.tar.gz"
@@ -145,13 +181,31 @@ def restore_archive(archive, output, manifest, revision, expected_source):
             return (staging / name).read_bytes()
 
         previous = json.loads(read("manifest.json"))
-        for key in ("binary_sha", "warm_runs", "check_name", "dataset_layout"):
+        partition = manifest.get("recovery_partition")
+        expected_check = (
+            partition["source_check_name"] if partition else manifest["check_name"]
+        )
+        expected_tests = (
+            partition["source_tests"] if partition else list(manifest["tests"])
+        )
+        if previous["check_name"] != expected_check:
+            raise ValueError("Incompatible resume check_name")
+        for key in ("binary_sha", "warm_runs", "dataset_layout"):
             if previous[key] != manifest[key]:
                 raise ValueError(f"Incompatible resume {key}")
         if previous["version"] != 1 or previous["sha"] != revision:
             raise ValueError("Unexpected resume manifest revision/version")
-        if list(previous["tests"]) != list(manifest["tests"]):
+        if list(previous["tests"]) != expected_tests:
             raise ValueError("Resume would change the shard assignment")
+        if partition:
+            if (
+                partition["count"] != RECOVERY_PARTITIONS
+                or not 1 <= partition["index"] <= RECOVERY_PARTITIONS
+                or list(manifest["tests"])
+                != expected_tests[partition["index"] - 1 :: RECOVERY_PARTITIONS]
+                or not previous.get("binary_sha256")
+            ):
+                raise ValueError("Invalid or unpinned recovery partition")
         if previous.get("resume_protocol", 1) != RESUME_PROTOCOL:
             raise ValueError("Incompatible coverage resume protocol")
         if previous.get("source_identity", expected_source) != expected_source:
@@ -164,7 +218,7 @@ def restore_archive(archive, output, manifest, revision, expected_source):
 
         restored = {}
         for filename, state in previous["tests"].items():
-            if state["status"] != "collected":
+            if filename not in manifest["tests"] or state["status"] != "collected":
                 continue
             test = Path(filename).stem
             data = json.loads(read(f"{test}.json"))

@@ -19,6 +19,10 @@ on:
         description: Reuse completed whole tests from this workflow commit SHA on the same branch
         required: false
         default: ''
+      performance_recovery_shard:
+        description: Split one original performance shard (1-16) into eight recovery jobs; requires resume and performance_shards=all
+        required: false
+        default: ''
       performance_max_hours:
         description: Performance collection job budget including export reserve
         type: choice
