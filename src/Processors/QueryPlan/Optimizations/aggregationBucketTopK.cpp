@@ -186,10 +186,12 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         /// split across the per-thread tables), the bucket is merged as usual and the selection
         /// still trims its conversion.
         ///
-        /// `AggregatingStep::serialize` does not write the bucket top-K fields, so a serialized or
-        /// distributed plan would show the selection without executing it. The threshold merge above
-        /// stays: the side that runs the aggregation derives it again from its own plan.
-        if (settings.make_distributed_plan || settings.serialize_query_plan)
+        /// The distributed planner ships fragments of the optimized plan, and `AggregatingStep::serialize`
+        /// does not write the bucket top-K fields, so a worker would run without the selection that the
+        /// initiator's plan shows. `serialize_query_plan` is fine: a shard or a replica receives the plan
+        /// before the optimization and optimizes it itself in `executeQuery`, which derives the selection,
+        /// like the threshold merge above.
+        if (settings.make_distributed_plan)
             return 0;
 
         aggregating->enableBucketTopK(n, ascending, i);
