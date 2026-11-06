@@ -669,6 +669,17 @@ bool DatabaseOverlayReadOnly::isSourceTableVisible(const String & source, const 
     return context_->getAccess()->isGranted(AccessType::SHOW_TABLES, source, table_name);
 }
 
+IDatabase::FilterByNameFunction DatabaseOverlayReadOnly::sourceFilter(
+    const String & source, const FilterByNameFunction & filter_by_table_name, const ContextPtr & context_)
+{
+    /// A source waits for the tables that pass its filter to load and reports a load failure to the caller,
+    /// so a table the caller cannot see is excluded before the source lists it, not after.
+    return [source, filter_by_table_name, context_](const String & table_name)
+    {
+        return isSourceTableVisible(source, table_name, context_) && (!filter_by_table_name || filter_by_table_name(table_name));
+    };
+}
+
 String DatabaseOverlayReadOnly::findSourceDatabase(const String & table_name, ContextPtr context_) const
 {
     for (const auto & source : source_databases)
@@ -715,8 +726,10 @@ DatabaseTablesIteratorPtr DatabaseOverlayReadOnly::getTablesIteratorWithHint(
         auto database = tryGetOverlaySource(source);
         if (!database)
             continue;
-        for (auto it = database->getTablesIteratorWithHint(context_, filter_by_table_name, skip_not_loaded, tables_filter); it->isValid(); it->next())
+        auto source_filter = sourceFilter(source, filter_by_table_name, context_);
+        for (auto it = database->getTablesIteratorWithHint(context_, source_filter, skip_not_loaded, tables_filter); it->isValid(); it->next())
         {
+            /// Re-checked in case the source ignored the filter.
             const String & name = it->name();
             if (isSourceTableVisible(source, name, context_) && seen.insert(name).second)
                 tables.emplace(name, std::make_shared<StorageAlias>(StorageID(getDatabaseName(), name), getContext(), source, name));
@@ -742,8 +755,10 @@ std::vector<LightWeightTableDetails> DatabaseOverlayReadOnly::getLightweightTabl
         auto database = tryGetOverlaySource(source);
         if (!database)
             continue;
-        for (auto & table : database->getLightweightTablesIteratorWithHint(context_, filter_by_table_name, skip_not_loaded, tables_filter))
+        auto source_filter = sourceFilter(source, filter_by_table_name, context_);
+        for (auto & table : database->getLightweightTablesIteratorWithHint(context_, source_filter, skip_not_loaded, tables_filter))
         {
+            /// Re-checked in case the source ignored the filter.
             if (isSourceTableVisible(source, table.name, context_) && seen.insert(table.name).second)
                 result.push_back(std::move(table));
         }
