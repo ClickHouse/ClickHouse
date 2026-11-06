@@ -1,0 +1,9 @@
+limit after	0
+limit until	0
+remote	4
+remote subquery	4
+any inner	1
+default before	100	1
+default before	200	1
+default after	100	2
+default after	200	2
