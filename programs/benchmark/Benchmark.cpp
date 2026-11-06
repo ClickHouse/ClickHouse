@@ -1325,9 +1325,15 @@ private:
         {
             const auto & info = infos[i];
 
-            /// Avoid zeros, nans or exceptions
+            /// Avoid zeros, nans or exceptions. In the open-loop mode a server whose queries all failed
+            /// still shows its errors and the CPU usage of the failed queries.
             if (0 == info->finished_queries)
-                return;
+            {
+                if (arrival_rates.empty())
+                    return;
+                if (!info->errors && info->cpu_queries == 0)
+                    continue;
+            }
 
             std::string connection_description = connections[i]->getDescription();
             if (round_robin)
@@ -1365,6 +1371,16 @@ private:
             log << ".\n";
         }
         log << "\n";
+
+        /// The percentiles and the t-test need latency samples from every server.
+        for (const auto & info : infos)
+        {
+            if (0 == info->finished_queries)
+            {
+                log.next();
+                return;
+            }
+        }
 
         auto print_percentile = [&](double percent) TSA_REQUIRES(mutex)
         {
