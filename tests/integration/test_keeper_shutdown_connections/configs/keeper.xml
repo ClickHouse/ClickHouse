@@ -14,6 +14,7 @@
 
     <keeper_server>
         <tcp_port>9181</tcp_port>
+        <tcp_port_secure>9281</tcp_port_secure>
         <http_control>
             <port>9182</port>
         </http_control>

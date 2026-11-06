@@ -1,4 +1,3 @@
--- Tags: no-old-analyzer
 -- The `EXPLAIN SYNTAX` below renders differently under the old analyzer, which expands `*` and pushes
 -- the predicate into the subquery, so this test runs only with the (default) analyzer. The numeric
 -- assertions are analyzer-independent (the construction settings are applied by wrapping in `executeQuery`).

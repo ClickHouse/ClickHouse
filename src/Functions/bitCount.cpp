@@ -16,6 +16,11 @@ struct BitCountImpl
 {
     using ResultType = std::conditional_t<(sizeof(A) * 8 >= 256), UInt16, UInt8>;
     static constexpr bool allow_string_or_fixed_string = true;
+    static constexpr auto signature =
+        "(UInt256 | Int256) -> UInt16"
+        " OR (NativeNumber | UInt128 | Int128) -> UInt8"
+        " OR (FixedString) -> UInt16"
+        " OR (String) -> UInt64";
 
     static ResultType apply(A a)
     {

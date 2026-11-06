@@ -1,8 +1,13 @@
 #include <Processors/QueryPlan/numbersLikeUtils.h>
 
 #include <algorithm>
+#include <limits>
+
+#include <base/arithmeticOverflow.h>
 
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Processors/Sources/NullSource.h>
@@ -63,11 +68,13 @@ namespace
 
 bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSelectQuery::LimitInfo & lim_info)
 {
-    /// Reject negative, fractional, and zero limits for pushdown
+    /// Reject negative, fractional, and zero limits for pushdown, and limits whose
+    /// `limit_length + limit_offset` does not fit in `UInt64`, leaving no representable bound.
     if (lim_info.is_limit_length_negative
         || lim_info.fractional_limit > 0
         || lim_info.fractional_offset > 0
-        || lim_info.limit_length == 0)
+        || lim_info.limit_length == 0
+        || lim_info.limit_length > std::numeric_limits<UInt64>::max() - lim_info.limit_offset)
         return false;
 
     chassert(query_info.query);
@@ -87,9 +94,30 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
     /// already an array-join operation, regardless of what its expressions contain).
     /// Both forms must reject pushdown.
     /// The function may sit in any clause, e.g. only in WHERE through a WITH alias, and still multiply the rows.
-    if (astContainsArrayJoinFunction(query_info.query))
+    ///
+    /// The whole query is walked on purpose, and the walk is deliberately not narrowed to the
+    /// definitions an alias substitution can still reach. Under the old analyzer a top-level
+    /// `WITH arrayJoin(...) AS unused` survives into this AST even when nothing references it,
+    /// so such a query is classified as row-expanding although it expands nothing. That costs no
+    /// behaviour: the verdict is consumed only through `getLimitFromQueryInfo`, whose only readers
+    /// are the `limit` hint of `ReadFromSystemNumbersStep` and `ReadFromSystemPrimesStep`, and the
+    /// outer `LIMIT` still reaches those sources through the plan. Refusing the hint therefore
+    /// cannot make a bounded query read more rows, while a missed `arrayJoin` would be a
+    /// correctness bug - so the asymmetry is resolved in favour of the conservative answer.
+    /// `05183_unreferenced_with_array_join_limit_pushdown` pins the user-visible half of this.
+    /// `expressionContainsArrayJoin` resolves the function name to its canonical one, so the
+    /// case-insensitive `unnest` alias is caught even when `normalize_function_names` is disabled,
+    /// and it also descends into the bodies of SQL UDFs.
+    if (expressionContainsArrayJoin(query_info.query))
         return false;
     if (query.arrayJoinExpressionList().first)
+        return false;
+
+    /// With a `JOIN` the outer `LIMIT` counts joined rows, not rows of this source: an `INNER` join
+    /// (or any join that filters) can drop the first rows of the source, so stopping it after
+    /// `limit + offset` rows loses the rows that would have matched later. The source may sit on
+    /// either side of the join, and a comma join is represented as a join as well.
+    if (query.hasJoin())
         return false;
 
     /// Just ignore some minor cases, such as:
@@ -118,18 +146,28 @@ std::optional<size_t> getLimitFromQueryInfo(const SelectQueryInfo & query_info, 
     if (!shouldPushdownLimit(query_info, lim_info))
         return {};
 
-    return lim_info.limit_length + lim_info.limit_offset;
+    /// The OFFSET is applied on top of the rows this source generates, so it has to generate
+    /// `length + offset` of them. When that sum does not fit into `UInt64` the source is simply
+    /// unbounded: without this check the addition wraps around and, for
+    /// `LIMIT 18446744073709551615 OFFSET 1`, asks the source for zero rows.
+    UInt64 limit_with_offset = 0;
+    if (common::addOverflow(lim_info.limit_length, lim_info.limit_offset, limit_with_offset))
+        return {};
+
+    return limit_with_offset;
 }
 
-void checkLimits(const Settings & settings, size_t rows)
+void checkLimits(const Context & context, size_t rows)
 {
+    const auto & settings = context.getSettingsRef();
     if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
     {
         const auto limits = SizeLimits(settings[Setting::max_rows_to_read], 0, settings[Setting::read_overflow_mode]);
         limits.check(rows, 0, "rows (controlled by 'max_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
     }
 
-    if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf])
+    if (context.getClientInfo().distributed_depth > 0
+        && settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf])
     {
         const auto leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], 0, settings[Setting::read_overflow_mode_leaf]);
         leaf_limits.check(rows, 0, "rows (controlled by 'max_rows_to_read_leaf' setting)", ErrorCodes::TOO_MANY_ROWS);

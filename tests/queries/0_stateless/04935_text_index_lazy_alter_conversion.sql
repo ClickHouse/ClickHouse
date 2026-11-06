@@ -8,7 +8,7 @@
 -- `evaluateMissingDefaults` mislabeled as Nullable(String) and threw
 -- `Unexpected return type from materialize`.
 
-SET allow_experimental_json_lazy_type_hints = 1;
+SET enable_json_lazy_type_hints = 1;
 SET allow_experimental_full_text_index = 1;
 
 DROP TABLE IF EXISTS t_text_lazy_alter;

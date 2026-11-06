@@ -85,7 +85,7 @@ SELECT
     timeSeriesSumToGrid(140, 140, 1, 50)(ts, vals)[1] = 1e16 + 4 AS sum_compensated,
     timeSeriesAvgToGrid(140, 140, 1, 50)(ts, vals)[1] = (1e16 + 4) / 5 AS avg_compensated;
 
--- The result has the value type of the input, like the other grid functions.
+-- The sum and the average are Float64 and the count is UInt64 regardless of the value type.
 SELECT toTypeName(timeSeriesSumToGrid(0, 0, 0, 0)(0::UInt32, 1::Float32));
 SELECT toTypeName(timeSeriesAvgToGrid(0, 0, 0, 0)(0::UInt32, 1::Float32));
 SELECT toTypeName(timeSeriesCountToGrid(0, 0, 0, 0)(0::UInt32, 1::Float32));

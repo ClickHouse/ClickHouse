@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は[system.settings](/ja/reference/system-tables/settings)で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)から自動生成されています。
 
-<div id="azure_allow_parallel_part_upload">
-  ## azure_allow_parallel_part_upload
-</div>
+## azure_allow_parallel_part_upload {#azure_allow_parallel_part_upload}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 Azure のマルチパートアップロードで複数のスレッドを使用します。
 
-<div id="azure_check_objects_after_upload">
-  ## azure_check_objects_after_upload
-</div>
+## azure_check_objects_after_upload {#azure_check_objects_after_upload}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -33,9 +29,7 @@ Azure のマルチパートアップロードで複数のスレッドを使用�
 
 アップロードが正常に完了したことを確認するため、Azure Blob Storage 内のアップロード済みオブジェクトをそれぞれ確認します
 
-<div id="azure_connect_timeout_ms">
-  ## azure_connect_timeout_ms
-</div>
+## azure_connect_timeout_ms {#azure_connect_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -43,17 +37,13 @@ Azure のマルチパートアップロードで複数のスレッドを使用�
 
 Azure ディスクからホストへの接続タイムアウト。
 
-<div id="azure_create_new_file_on_insert">
-  ## azure_create_new_file_on_insert
-</div>
+## azure_create_new_file_on_insert {#azure_create_new_file_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Azure エンジンテーブル で、インサートのたびに新しいファイルを作成する機能を有効または無効にします
 
-<div id="azure_ignore_file_doesnt_exist">
-  ## azure_ignore_file_doesnt_exist
-</div>
+## azure_ignore_file_doesnt_exist {#azure_ignore_file_doesnt_exist}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -66,17 +56,13 @@ Azure エンジンテーブル で、インサートのたびに新しいファ�
 * 1 — `SELECT` は空の結果を返します。
 * 0 — `SELECT` は例外をスローします。
 
-<div id="azure_list_object_keys_size">
-  ## azure_list_object_keys_size
-</div>
+## azure_list_object_keys_size {#azure_list_object_keys_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 ListObject リクエストで 1 回に返されるファイルの最大数
 
-<div id="azure_min_upload_part_size">
-  ## azure_min_upload_part_size
-</div>
+## azure_min_upload_part_size {#azure_min_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="16777216" />
 
@@ -84,9 +70,7 @@ ListObject リクエストで 1 回に返されるファイルの最大数
 
 Azure blob storage へのマルチパートアップロード時にアップロードするパートの最小サイズ。
 
-<div id="azure_request_timeout_ms">
-  ## azure_request_timeout_ms
-</div>
+## azure_request_timeout_ms {#azure_request_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="30000" />
 
@@ -94,9 +78,7 @@ Azure blob storage へのマルチパートアップロード時にアップロ�
 
 azure との間でデータを送受信する際のアイドル状態のタイムアウトです。単一の TCP `read` または `write` 呼び出しがこの時間だけブロックされると失敗します。
 
-<div id="azure_skip_empty_files">
-  ## azure_skip_empty_files
-</div>
+## azure_skip_empty_files {#azure_skip_empty_files}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -109,9 +91,7 @@ S3エンジンで空ファイルのスキップを有効または無効にしま
 * 0 — 空ファイルが要求されたフォーマットと互換性がない場合、`SELECT` は例外をスローします。
 * 1 — 空ファイルの場合、`SELECT` は空の結果を返します。
 
-<div id="azure_strict_upload_part_size">
-  ## azure_strict_upload_part_size
-</div>
+## azure_strict_upload_part_size {#azure_strict_upload_part_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -119,9 +99,7 @@ S3エンジンで空ファイルのスキップを有効または無効にしま
 
 Azure Blob Storage へのマルチパートアップロード時にアップロードする各パートの厳密なサイズ。
 
-<div id="azure_throw_on_zero_files_match">
-  ## azure_throw_on_zero_files_match
-</div>
+## azure_throw_on_zero_files_match {#azure_throw_on_zero_files_match}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -134,17 +112,13 @@ glob の展開ルールに従って一致するファイルが 0 件の場合、
 * 1 — `SELECT` は例外をスローします。
 * 0 — `SELECT` は空の結果を返します。
 
-<div id="azure_truncate_on_insert">
-  ## azure_truncate_on_insert
-</div>
+## azure_truncate_on_insert {#azure_truncate_on_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Azure エンジンテーブルで、insert の前に truncate を実行するかどうかを設定します。
 
-<div id="azure_use_adaptive_timeouts">
-  ## azure_use_adaptive_timeouts
-</div>
+## azure_use_adaptive_timeouts {#azure_use_adaptive_timeouts}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -152,5 +126,13 @@ Azure エンジンテーブルで、insert の前に truncate を実行するか
 
 `true` に設定すると、すべての Azure リクエストで、最初の 2 回の試行は送信タイムアウトと受信タイムアウトを短めにして実行されます。
 `false` に設定すると、すべての試行が同一のタイムアウトで実行されます。
+
+## azure_validate_etag_on_read {#azure_validate_etag_on_read}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新しい設定。S3 における `s3_validate_etag_on_read` と同様に、すべての `GET` を `If-Match` で一覧取得時の `ETag` に固定し、レスポンスの `ETag` を検証することで、読み取り中に Azure のブロブがインプレースで同時に上書きされたことを検出します。`compatibility` に 26.10 より前のバージョンを指定すると、以前の動作 (検証なし) に戻ります。"}]}]} />
+
+`azureBlobStorage` / `azureBlobStorageCluster` テーブル関数または `AzureBlobStorage` テーブルエンジンを使用して Azure Blob Storage からブロブを読み取る際、すべての `GET` リクエストを、一覧取得時に確認されたブロブの世代に固定します。具体的には、その `ETag` を `If-Match` に指定して送信し、レスポンスの `ETag` をチェックします。1 つのファイルを読み取る際には、範囲指定の `GET` リクエストが多数発行されます。その途中でブロブがインプレースで上書きされると (たとえば外部の書き込み元が固定キーを書き換えた場合)、この設定がなければ、読み取り結果がブロブの異なる 2 つの世代から継ぎ合わされ、チェックサムの破損やパースエラーとして現れることがあります。また、一覧取得時に記録されたサイズは読み取り範囲の終端としても使用されるため、その値が正しいのは記録時点の世代に対してのみです。不一致が検出された場合、不整合なデータを返すのではなく、`AZURE_OBJECT_CHANGED_DURING_READ` エラーで読み取りが失敗します。上書き中のブロブを意図的に読み取り、かつ読み取り結果の不整合を許容できるワークロードの場合にのみ、この設定を無効にしてください。
 
 {/*AUTOGENERATED_END*/}

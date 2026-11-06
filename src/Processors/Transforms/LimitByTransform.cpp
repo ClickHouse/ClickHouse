@@ -1,4 +1,5 @@
 #include <Processors/Transforms/LimitByTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
@@ -47,7 +48,7 @@ UInt64 computeGroupLimitEnd(UInt64 length, UInt64 offset)
 struct GroupingKeys
 {
     Names names;
-    std::vector<size_t> positions;
+    VectorWithMemoryTracking<size_t> positions;
 };
 
 /// Collect grouping keys whose header-sample column is not `ColumnConst`.
@@ -110,10 +111,16 @@ ChunkRowRange shrinkRunToLimitWindow(
 }
 
 
-LimitByTransform::LimitByTransform(SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const Names & column_names)
+LimitByTransform::LimitByTransform(
+    SharedHeader header,
+    UInt64 group_length_,
+    UInt64 group_offset_,
+    const Names & column_names,
+    bool always_read_till_end_)
     : ISimpleTransform(header, header, true)
     , group_offset(group_offset_)
     , group_limit_end(computeGroupLimitEnd(group_length_, group_offset_))
+    , always_read_till_end(always_read_till_end_)
 {
     auto grouping_keys = filterNonConstKeys(header, column_names);
     grouping_key_positions = std::move(grouping_keys.positions);
@@ -127,13 +134,9 @@ LimitByTransform::LimitByTransform(SharedHeader header, UInt64 group_length_, UI
     hash_method_context = AggregatedDataVariants::createCache(type, ctx_settings);
 }
 
-void LimitByTransform::processRun(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx)
+void LimitByTransform::processRunInsideWindow(
+    UInt64 run_start_row, UInt64 run_row_count, size_t group_idx, UInt64 group_rows_seen_before_run)
 {
-    chassert(group_idx < group_counts.size());
-    const UInt64 group_rows_seen_before_run = group_counts[group_idx];
-    if (group_rows_seen_before_run >= group_limit_end)
-        return;
-
     const auto slice = shrinkRunToLimitWindow(run_start_row, run_row_count, group_rows_seen_before_run, group_offset, group_limit_end);
 
     if (slice.length > 0)
@@ -176,8 +179,14 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
             FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_mid_loop_pause);
 
         auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, *data.aggregates_pool);
+        /// A key is given its group index only after `push_back` succeeds. If it throws, the key stays in the hash table
+        /// with a null mapped value, and since `ISimpleTransform::work` may pass later chunks to this transform, the key
+        /// gets its group the next time it is seen.
+        if (key_emplace_result.isInserted())
+            key_emplace_result.setMapped(nullptr);
+
         size_t row_group_idx = 0;
-        if (key_emplace_result.isInserted()) /// New grouping key
+        if (!key_emplace_result.getMapped()) /// New grouping key
         {
             /// Assign a stable index into `group_counts` to the grouping key we just inserted.
             row_group_idx = group_counts.size();
@@ -232,6 +241,8 @@ void LimitByTransform::transform(Chunk & chunk)
         if (group_counts.empty())
             group_counts.push_back(0);
         processRun(0, row_count, 0);
+        if (!always_read_till_end && group_counts[0] >= group_limit_end)
+            stopReading();
     }
     else
     {
@@ -282,10 +293,15 @@ void LimitByTransform::transform(Chunk & chunk)
 
 
 LimitBySortedStreamTransform::LimitBySortedStreamTransform(
-    SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const SortDescription & sorted_columns_descr)
+    SharedHeader header,
+    UInt64 group_length_,
+    UInt64 group_offset_,
+    const SortDescription & sorted_columns_descr,
+    bool always_read_till_end_)
     : ISimpleTransform(header, header, true)
     , group_offset(group_offset_)
     , group_limit_end(computeGroupLimitEnd(group_length_, group_offset_))
+    , always_read_till_end(always_read_till_end_)
 {
     Names key_names;
     key_names.reserve(sorted_columns_descr.size());
@@ -368,6 +384,7 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
     /// Segment the sorted chunk into maximal runs of rows that share one grouping key. Each run is
     /// one group.
     UInt64 current_run_start_row = 0;
+    SortedKeyRuns key_runs(normalized_grouping_key_columns.size());
 
     FailPointInjection::pauseFailPoint(FailPoints::limit_by_sorted_stream_transform_pause);
 
@@ -384,7 +401,7 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
         if (run_count == 5)
             FailPointInjection::pauseFailPoint(FailPoints::limit_by_sorted_stream_transform_mid_loop_pause);
 
-        const UInt64 run_end = getEqualRangeEndAssumeSorted(normalized_grouping_key_columns, current_run_start_row, row_count, 1);
+        const UInt64 run_end = getEqualRangeEndAssumeSorted(key_runs, normalized_grouping_key_columns, current_run_start_row, row_count, 1);
         processRun(current_run_start_row, run_end - current_run_start_row);
 
         /// A group boundary inside the chunk resets the per-group counter before the next run.
@@ -393,6 +410,11 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
         current_run_start_row = run_end;
         ++run_count;
     }
+
+    /// `filterNonConstKeys` removed all grouping keys, so every row in this stream
+    /// belongs to one logical group and no later input can produce another output row.
+    if (!always_read_till_end && grouping_key_positions.empty() && current_group_rows_seen >= group_limit_end)
+        stopReading();
 
     /// Save the last grouping key so the next chunk can detect whether its first
     /// row continues the same group or starts a new one. With no non-constant grouping
