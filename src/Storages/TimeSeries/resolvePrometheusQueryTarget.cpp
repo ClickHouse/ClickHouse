@@ -603,12 +603,14 @@ void checkPrometheusQueryDistributedWrite(
         }
         catch (...) /// NOLINT(bugprone-empty-catch)
         {
+            /// Ok: every shard stays marked as receiving rows.
         }
     }
     const auto & remote_id = target.remote_time_series_storage_id;
+    const auto metadata = storage.getInMemoryMetadataPtr(context, false);
     const auto columns_to_send = settings[Setting::insert_allow_materialized_columns]
-        ? storage.getInMemoryMetadataPtr(context, false)->getSampleBlock().getNames()
-        : storage.getInMemoryMetadataPtr(context, false)->getSampleBlockNonMaterialized().getNames();
+        ? metadata->getSampleBlock().getNames()
+        : metadata->getSampleBlockNonMaterialized().getNames();
     const auto & all_addresses = cluster->getShardsAddresses();
     for (size_t shard_index = 0; shard_index != all_addresses.size(); ++shard_index)
     {
