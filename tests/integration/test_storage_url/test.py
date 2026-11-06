@@ -5,7 +5,7 @@ import os
 import json
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
+from helpers.test_tools import TSV, assert_eq_with_retry
 from helpers.mock_servers import start_mock_servers
 
 cluster = ClickHouseCluster(__file__)
@@ -965,6 +965,28 @@ def test_stored_url_wildcard_table_with_forbidden_authorization():
         node1.query(f"DROP TABLE IF EXISTS {table_name}")
 
 
+def test_web_index_disk_userinfo_with_forbidden_authorization():
+    # Creating a table on a `web_index` disk probes `format_version.txt` with a HEAD request, before any listing.
+    table_name = "web_index_userinfo"
+    query = (
+        f"CREATE TABLE {table_name} (x UInt64) ENGINE = MergeTree ORDER BY x "
+        "SETTINGS disk = disk(type = web, endpoint = 'http://user:pass@resolver:8087/data/web_index_userinfo/', "
+        "metadata_type = web_index)"
+    )
+    try:
+        reset_index_page_server_stats()
+        node1.query(query)
+        assert authorization_requests() > 0
+        node1.query(f"DROP TABLE {table_name} SYNC")
+
+        reset_index_page_server_stats()
+        with forbidden_authorization():
+            assert_authorization_forbidden(node1.query_and_get_error(query))
+        assert authorization_requests() == 0
+    finally:
+        node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
+
 def test_url_redirect_userinfo_is_not_sent_with_forbidden_authorization():
     # The redirect has a userinfo in its `Location`, which does not become the credentials of the request.
     reset_index_page_server_stats(8088)
@@ -1007,6 +1029,32 @@ def test_http_dictionary_credentials_with_forbidden_authorization():
         node1.query(f"DROP DICTIONARY IF EXISTS {forbidden}")
 
 
+def test_loaded_http_dictionary_credentials_with_forbidden_authorization():
+    # A loaded dictionary keeps its source across its updates, so the credentials are checked per request.
+    name = "http_credentials_loaded"
+    node1.query(
+        f"CREATE DICTIONARY {name} (id UInt64, name String) PRIMARY KEY id "
+        "SOURCE(HTTP(url 'http://resolver:8087/data/dictionary/data.tsv' format 'TabSeparated' "
+        "credentials(user 'user' password 'dict_secret_pw'))) "
+        "LIFETIME(MIN 1 MAX 1) LAYOUT(FLAT())"
+    )
+    try:
+        reset_index_page_server_stats()
+        assert node1.query(f"SELECT dictGet('{name}', 'name', toUInt64(1))") == "one\n"
+        assert authorization_requests() > 0
+
+        with forbidden_authorization():
+            assert_eq_with_retry(
+                node1,
+                f"SELECT last_exception LIKE '%Authorization%is forbidden%' FROM system.dictionaries WHERE name = '{name}'",
+                "1",
+                retry_count=60,
+                sleep_time=0.5,
+            )
+    finally:
+        node1.query(f"DROP DICTIONARY IF EXISTS {name}")
+
+
 @pytest.mark.parametrize(
     "registry_url",
     [
@@ -1041,7 +1089,5 @@ def test_avro_schema_registry_output_userinfo_with_forbidden_authorization():
         "SETTINGS format_avro_schema_registry_url = 'http://user:pass@resolver:8087/', "
         "output_format_avro_confluent_subject = 'subject'"
     )
-    reset_index_page_server_stats()
     with forbidden_authorization():
         assert_authorization_forbidden(node1.http_query_and_get_error(query))
-    assert authorization_requests() == 0
