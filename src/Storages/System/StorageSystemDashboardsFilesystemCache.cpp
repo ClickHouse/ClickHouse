@@ -21,6 +21,8 @@ struct Series
     const char * expression;
     /// Aggregates the values of `expression` within one chart interval.
     const char * per_interval = "avg";
+    /// If set, the series is `expression / divisor`, both summed over the interval, so a ratio stays weighted.
+    const char * divisor = nullptr;
 };
 
 struct Chart
@@ -54,8 +56,8 @@ const std::vector<Chart> & getCharts()
         {
             "Average read size (bytes)",
             {
-                {"FromCache", "sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) / nullIf(sum(ProfileEvent_CachedReadBufferReadFromCacheHits), 0)"},
-                {"FromSource", "sum(ProfileEvent_CachedReadBufferReadFromSourceBytes) / nullIf(sum(ProfileEvent_CachedReadBufferReadFromCacheMisses), 0)"},
+                {.label = "FromCache", .expression = "sum(ProfileEvent_CachedReadBufferReadFromCacheBytes)", .divisor = "sum(ProfileEvent_CachedReadBufferReadFromCacheHits)"},
+                {.label = "FromSource", .expression = "sum(ProfileEvent_CachedReadBufferReadFromSourceBytes)", .divisor = "sum(ProfileEvent_CachedReadBufferReadFromCacheMisses)"},
             },
         },
         {
@@ -124,7 +126,7 @@ const std::vector<Chart> & getCharts()
         {
             "Average cached file segment size (bytes)",
             {
-                {"AverageSize", "sum(CurrentMetric_FilesystemCacheSize) / nullIf(sum(CurrentMetric_FilesystemCacheElements), 0)"},
+                {.label = "AverageSize", .expression = "sum(CurrentMetric_FilesystemCacheSize)", .divisor = "sum(CurrentMetric_FilesystemCacheElements)"},
             },
         },
         {
@@ -331,13 +333,14 @@ const std::vector<Chart> & getCharts()
             "metric = 'OSIOWaitTimeNormalized'",
         },
         {
-            /// The metric exists per block device; the busiest device is the one that saturates.
+            /// The metric exists per block device, under its own name with the device in `key`, or under the legacy
+            /// name with the device appended. The busiest device is the one that saturates.
             "Busiest block device active time (seconds/second)",
             {
                 {"ActiveTime", "max(value)"},
             },
             "asynchronous_metric_log",
-            "startsWith(metric, 'BlockActiveTime_')",
+            "(metric = 'BlockActiveTime' OR startsWith(metric, 'BlockActiveTime_'))",
         },
         {
             "Busiest block device queue time per operation (seconds)",
@@ -345,7 +348,7 @@ const std::vector<Chart> & getCharts()
                 {"QueueTimePerOp", "max(value)"},
             },
             "asynchronous_metric_log",
-            "startsWith(metric, 'BlockQueueTimePerOp_')",
+            "(metric = 'BlockQueueTimePerOp' OR startsWith(metric, 'BlockQueueTimePerOp_'))",
         },
         {
             "Local IO throttling sleep (seconds/second)",
@@ -420,10 +423,20 @@ String makeQuery(const Chart & chart, const std::vector<Series> & series, bool p
 {
     String inner_list;
     String outer_list;
-    for (const auto & [label, expression, per_interval] : series)
+    for (const auto & [label, expression, per_interval, divisor] : series)
     {
-        inner_list += fmt::format(", {} AS {}", expression, label);
-        outer_list += fmt::format("{}\n    {}({}) AS {}", outer_list.empty() ? "" : ",", per_interval, label, label);
+        String value;
+        if (divisor)
+        {
+            inner_list += fmt::format(", {} AS {}_dividend, {} AS {}_divisor", expression, label, divisor, label);
+            value = fmt::format("sum({}_dividend) / nullIf(sum({}_divisor), 0)", label, label);
+        }
+        else
+        {
+            inner_list += fmt::format(", {} AS {}", expression, label);
+            value = fmt::format("{}({})", per_interval, label);
+        }
+        outer_list += fmt::format("{}\n    {} AS {}", outer_list.empty() ? "" : ",", value, label);
     }
 
     String filter = chart.filter[0] != '\0' ? fmt::format("\n        AND {}", chart.filter) : "";
