@@ -16,6 +16,15 @@ namespace DB
 {
 
 struct QueryPlanOptimizationSettings;
+class AggregatingStep;
+class DistinctStep;
+class ExpressionStep;
+class FilterStep;
+class JoinStepLogical;
+class LimitStep;
+class OffsetStep;
+class ReadFromMergeTree;
+class SortingStep;
 
 /// The plan shape the serializer expects, apply before QueryPlan::optimize. Joins stay logical and filters do not fold into PREWHERE reads.
 void applySubstraitSerializationSettings(QueryPlanOptimizationSettings & settings);
@@ -58,6 +67,16 @@ private:
     };
 
     std::expected<NodeState, String> convertStep(const QueryPlan::Node & node, std::vector<NodeState *> children);
+    std::expected<NodeState, String> convertReadFromMergeTree(const ReadFromMergeTree & read);
+    std::expected<NodeState, String>
+    convertFilterOrExpression(const FilterStep * filter, const ExpressionStep * expression, NodeState & child);
+    std::expected<NodeState, String> convertAggregation(const AggregatingStep & aggregating, NodeState & child);
+    std::expected<NodeState, String> convertSorting(const SortingStep & sorting, NodeState & child);
+    std::expected<NodeState, String> convertLimit(const LimitStep & limit, NodeState & child);
+    std::expected<NodeState, String> convertOffset(const OffsetStep & offset, NodeState & child);
+    std::expected<NodeState, String> convertUnion(const std::vector<NodeState *> & children);
+    std::expected<NodeState, String> convertDistinct(const DistinctStep & distinct, NodeState & child);
+    std::expected<NodeState, String> convertJoin(const JoinStepLogical & join, NodeState & left, NodeState & right);
 
     std::unordered_map<const QueryPlan::Node *, NodeState> states;
     SubstraitPlanExtensions extensions;
