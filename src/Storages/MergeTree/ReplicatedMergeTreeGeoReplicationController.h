@@ -44,7 +44,8 @@ class StorageReplicatedMergeTree;
  * - /{table_zk_path}/regions/{$REGION}
  * - /{table_zk_path}/regions/{$REGION}/leader_election: leader election node for the region REGION
  * - /{table_zk_path}/regions/{$REGION}/leader_lease: ephemeral node, current leader of the region
- * - /{table_zk_path}/replicas/{replica_name}/{$REGION}: ephemeral node, zk information about the region of current replica
+ * - /{table_zk_path}/replicas/{replica_name}/region: ephemeral node with the region of the replica, created together with
+ *   `is_active` (see `addPublishRegionRequests`)
 **/
 class ReplicatedMergeTreeGeoReplicationController
 {
@@ -61,13 +62,19 @@ public:
 
     const String & getRegion() const { return region; }
 
-    /// Publishes this replica's region membership and enters leader election. Returns whether the region node is
-    /// published: the caller must not start the replication queue until it is, otherwise peers classify this
-    /// replica as out-of-region and a recovering replica falls back to a cross-region fetch.
-    /// `active_node_identifier_` is the content this server writes to `/replicas/<name>/is_active`: an existing
-    /// `region` node is replaced only when `is_active` is absent or owned by this server, so a startup that does
-    /// not own the replica name never touches the region metadata of a live replica.
-    bool start(const String & active_node_identifier_);
+    /// Adds to `ops` the requests that publish this replica's region membership: replace the `region` node with an
+    /// ephemeral node of `zookeeper`'s session. Does nothing if the feature is not configured. The requests are part
+    /// of the `multi` that creates `/replicas/<name>/is_active` in `activateReplica`, so the `region` node is
+    /// published atomically with the claim of the replica name: a startup that does not own the replica name fails
+    /// on creating `is_active` and never touches the region metadata of a live replica, and the `region` node of an
+    /// active replica always belongs to the session that holds its `is_active`. Publishing it together with
+    /// `is_active` also guarantees that peers never see this replica as active without its region.
+    /// Returns the path of the `region` node, or an empty string if nothing was added.
+    String addPublishRegionRequests(Coordination::Requests & ops, zkutil::ZooKeeper & zookeeper) const;
+
+    /// Enters leader election. Must be called after the replica is activated (see `addPublishRegionRequests`).
+    /// A failed attempt is retried on the schedule pool; until this replica wins an election, it acts as a follower.
+    void start();
 
     void stop();
 
@@ -87,11 +94,6 @@ private:
     zkutil::ZooKeeperPtr current_zookeeper TSA_GUARDED_BY(state_mutex);
     zkutil::LeaderElectionPtr leader_election TSA_GUARDED_BY(state_mutex);
     zkutil::EphemeralNodeHolderPtr leader_lease_holder TSA_GUARDED_BY(state_mutex);
-    /// The session that created this replica's `region` node, or null if this controller has not published it.
-    /// Not an `EphemeralNodeHolder`: its destructor removes the path unconditionally, which would delete a node
-    /// that another server holding this replica name has put in place of ours (see `removeRegionNodeIfOwned`).
-    zkutil::ZooKeeperPtr region_node_zookeeper TSA_GUARDED_BY(state_mutex);
-    String active_node_identifier TSA_GUARDED_BY(state_mutex);
     std::atomic_bool shutdown = false;
     /// Published from the controller / leader-election thread and read from the queue worker threads (`isLeader`).
     /// Exposing an atomic role flag - instead of letting worker threads read the `current_zookeeper` and
@@ -99,13 +101,10 @@ private:
     /// objects during a leader handoff or restart.
     std::atomic_bool is_leader = false;
 
-    /// Returns whether the region node has been published and leader election has been entered.
-    bool threadFunction();
+    void threadFunction();
 
     void resetPreviousTerm();
-    /// These three run with `state_mutex` held.
-    void createEphemeralRegionNode() TSA_REQUIRES(state_mutex);
-    void removeRegionNodeIfOwned() TSA_REQUIRES(state_mutex);
+    /// These run with `state_mutex` held.
     void enterLeaderElection() TSA_REQUIRES(state_mutex);
     void onLeader() TSA_REQUIRES(state_mutex);
 };

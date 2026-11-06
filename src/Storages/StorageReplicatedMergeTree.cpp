@@ -6304,9 +6304,9 @@ void StorageReplicatedMergeTree::partialShutdown()
     partial_shutdown_called = true;
     partial_shutdown_event.set();
     queue.notifySubscribersOnPartialShutdown();
-    /// Stop the geo replication controller while `is_active` still exists: it removes the `region` node only while
-    /// this session owns `is_active` (see `ReplicatedMergeTreeGeoReplicationController::removeRegionNodeIfOwned`).
     geo_replication_controller.stop();
+    /// Remove the `region` node while this session still holds `is_active`: only then it is guaranteed to be ours.
+    replica_region_node = nullptr;
     replica_is_active_node = nullptr;
 
     LOG_TRACE(log, "Waiting for threads to finish");

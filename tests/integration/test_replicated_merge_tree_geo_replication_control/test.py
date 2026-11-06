@@ -327,7 +327,7 @@ def test_region_published_on_restart(start_cluster):
             node.query("DROP TABLE IF EXISTS us_table SYNC")
 
 
-def test_region_published_before_is_active(start_cluster):
+def test_region_published_with_is_active(start_cluster):
     try:
         for i, node in enumerate(
             [apac1, apac2, us3]
@@ -347,10 +347,11 @@ def test_region_published_before_is_active(start_cluster):
             assert time.time() - now < timeout, "apac2 is still readonly after restart"
             time.sleep(0.5)
 
-        # The region node must be created before `is_active`: peers pick fetch sources among active replicas
-        # and classify them by the `region` node, so an `is_active` without `region` would make peers
-        # misclassify this replica as out-of-region for the whole startup window. ZooKeeper czxid gives the
-        # global creation order.
+        # The region node must be created together with `is_active`, in one `multi`: peers pick fetch sources
+        # among active replicas and classify them by the `region` node, so an `is_active` without `region` would
+        # make peers misclassify this replica as out-of-region, and a `region` published before `is_active` could
+        # be replaced by another startup that does not own the replica name. ZooKeeper czxid gives the global
+        # creation order; the requests of one `multi` share it.
         czxids = {}
         for name in ["region", "is_active"]:
             czxids[name] = int(
@@ -359,8 +360,8 @@ def test_region_published_before_is_active(start_cluster):
                 )
             )
         assert (
-            czxids["region"] < czxids["is_active"]
-        ), "The region node must be published before is_active, got czxids {}".format(
+            czxids["region"] == czxids["is_active"]
+        ), "The region node must be published together with is_active, got czxids {}".format(
             czxids
         )
 

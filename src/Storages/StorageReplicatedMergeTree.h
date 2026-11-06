@@ -459,6 +459,13 @@ private:
       */
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
 
+    /** /replicas/me/region, created in the same `multi` as `is_active` when geo replication control is configured
+      * (see `ReplicatedMergeTreeGeoReplicationController::addPublishRegionRequests`). It is released before
+      * `replica_is_active_node`: while this session holds `is_active`, no other server can replace the `region` node,
+      * so removing the path unconditionally removes only our own node.
+      */
+    zkutil::EphemeralNodeHolderPtr replica_region_node;
+
     /** Is this replica "leading". The leader replica selects the parts to merge.
       * It can be false only when old ClickHouse versions are working on the same cluster, because now we allow multiple leaders.
       */

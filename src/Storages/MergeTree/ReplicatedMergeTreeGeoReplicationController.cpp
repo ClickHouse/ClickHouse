@@ -155,7 +155,6 @@ namespace MergeTreeSetting
 namespace ErrorCodes
 {
     extern const int NO_ZOOKEEPER;
-    extern const int REPLICA_IS_ALREADY_ACTIVE;
 }
 
 ReplicatedMergeTreeGeoReplicationController::ReplicatedMergeTreeGeoReplicationController(StorageReplicatedMergeTree & storage_)
@@ -202,7 +201,6 @@ void ReplicatedMergeTreeGeoReplicationController::resetPreviousTerm()
         election_to_stop->shutdown();
 
     std::lock_guard lock(state_mutex);
-    removeRegionNodeIfOwned();
     leader_lease_holder.reset();
     leader_election.reset();
     /// A callback that had already passed the `shutdown` check could have republished the lease while we were
@@ -249,50 +247,48 @@ void ReplicatedMergeTreeGeoReplicationController::stop()
     if (task)
         task->deactivate();
     /// The controller task is deactivated above and `resetPreviousTerm` stops the leader election, so after this
-    /// no thread touches the holders. Release them explicitly, otherwise this replica keeps publishing its region
-    /// membership and holding the leader lease while its replication queues are stopped, preventing another
-    /// replica in the region from becoming leader.
+    /// no thread touches the holders. Release them explicitly, otherwise this replica keeps holding the leader lease
+    /// while its replication queues are stopped, preventing another replica in the region from becoming leader.
     resetPreviousTerm();
 }
 
-bool ReplicatedMergeTreeGeoReplicationController::start(const String & active_node_identifier_)
+void ReplicatedMergeTreeGeoReplicationController::start()
 {
     if (!task)
-        return true;
+        return;
 
-    {
-        std::lock_guard lock(state_mutex);
-        active_node_identifier = active_node_identifier_;
-    }
-
-    /// A failed synchronous start schedules a delayed retry. Cancel and join that retry before starting a new
-    /// synchronous pass: otherwise it can execute after the new pass has published the region node, reset the
-    /// active term, and temporarily remove this replica's region membership and leader lease.
+    /// A failed start schedules a delayed retry. Cancel and join that retry before starting a new pass: otherwise
+    /// it can execute after the new pass has entered leader election and reset the active term.
     task->deactivate();
 
-    /// Clear `shutdown` before running: otherwise the controller pass can observe a stale `shutdown == true`,
-    /// returning early without ever creating the region node or entering leader election.
+    /// Clear `shutdown` before running: otherwise the controller pass can observe a stale `shutdown == true` and
+    /// return early without ever entering leader election.
     shutdown = false;
-    task->activate();
-
-    /// Run the first controller pass synchronously, before the caller activates the replication queue. Peers
-    /// classify same-region fetch sources from `/replicas/<name>/region`; if that node were published only
-    /// asynchronously after the queue starts, a replica recovering from a backlog could be misclassified as
-    /// out-of-region, exhaust `geo_replication_control_leader_wait_timeout`, and fall back to a cross-region
-    /// fetch purely because region publication lagged behind queue startup. Running the pass here publishes the
-    /// region node before the queue workers begin. Subsequent passes (leader re-election, retry after a transient
-    /// ZooKeeper error) run on the schedule pool via `task`.
-    ///
-    /// The result is returned to the caller: if this first pass failed (a transient ZooKeeper error, for example),
-    /// the region node is not published yet, and starting the queue now would let a recovering replica fetch
-    /// cross-region until the retry succeeds. The caller keeps the table readonly and retries the whole startup.
-    return threadFunction();
+    task->activateAndSchedule();
 }
 
-bool ReplicatedMergeTreeGeoReplicationController::threadFunction()
+String ReplicatedMergeTreeGeoReplicationController::addPublishRegionRequests(Coordination::Requests & ops, zkutil::ZooKeeper & zookeeper) const
 {
-    /// This runs on the background schedule pool and touches ZooKeeper (region node, leader election), so it must
-    /// set a component for the mandatory ZooKeeper component tracking.
+    if (region.empty())
+        return {};
+
+    auto region_path = fs::path(storage.getZooKeeperPath()) / "replicas" / storage.getReplicaName() / "region";
+
+    /// An existing `region` node is left over from an expired session of a previous owner of the replica name (the
+    /// node of a live owner cannot be touched: the `multi` that contains these requests fails on creating
+    /// `is_active` while the live owner holds it). If the node changes or disappears before the `multi` runs, the
+    /// versioned remove fails the whole `multi`, and the restarting thread retries the startup.
+    Coordination::Stat region_stat;
+    if (zookeeper.exists(region_path, &region_stat))
+        ops.emplace_back(zkutil::makeRemoveRequest(region_path, region_stat.version));
+    ops.emplace_back(zkutil::makeCreateRequest(region_path, region, zkutil::CreateMode::Ephemeral));
+    return region_path;
+}
+
+void ReplicatedMergeTreeGeoReplicationController::threadFunction()
+{
+    /// This runs on the background schedule pool and touches ZooKeeper (leader election), so it must set a
+    /// component for the mandatory ZooKeeper component tracking.
     auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeGeoReplicationController::threadFunction");
     try
     {
@@ -300,7 +296,7 @@ bool ReplicatedMergeTreeGeoReplicationController::threadFunction()
 
         std::lock_guard lock(state_mutex);
         if (shutdown)
-            return false;
+            return;
 
         current_zookeeper = storage.getZooKeeper();
 
@@ -311,15 +307,12 @@ bool ReplicatedMergeTreeGeoReplicationController::threadFunction()
                 storage.getReplicaName(),
                 region);
 
-        createEphemeralRegionNode();
         enterLeaderElection();
-        return true;
     }
     catch (...)
     {
         tryLogCurrentException(log_name.c_str());
         task->scheduleAfter(DBMS_GEO_REPLICATION_CONTROL_INIT_PERIOD_MS);
-        return false;
     }
 }
 
@@ -336,105 +329,6 @@ bool ReplicatedMergeTreeGeoReplicationController::isLeader() const
     /// this replica has actually won an election, so a replica whose controller has not entered a term yet is
     /// treated as a follower rather than assuming leadership.
     return is_leader;
-}
-
-void ReplicatedMergeTreeGeoReplicationController::createEphemeralRegionNode()
-{
-    auto replica_path = fs::path(storage.getZooKeeperPath()) / "replicas" / storage.getReplicaName();
-    auto region_path = replica_path / "region";
-    auto is_active_path = replica_path / "is_active";
-
-    /// An existing `region` node may be left over from an expired session that the new ZooKeeper has not removed
-    /// yet, but it may also belong to another live server that holds this replica name. Replace it only if this
-    /// startup owns the replica name: `is_active` is either absent (`activateReplica` will create it right after)
-    /// or created by this server. The ownership check and the replacement go into one `multi`, so `is_active`
-    /// cannot be taken by another server in between.
-    Coordination::Requests ops;
-    String is_active_content;
-    Coordination::Stat is_active_stat;
-    if (current_zookeeper->tryGet(is_active_path, is_active_content, &is_active_stat))
-    {
-        if (is_active_content != active_node_identifier)
-            throw Exception(
-                ErrorCodes::REPLICA_IS_ALREADY_ACTIVE,
-                "Replica {} appears to be already active, will not replace its region node",
-                replica_path.string());
-
-        if (is_active_stat.ephemeralOwner == current_zookeeper->getClientID())
-        {
-            /// Our own live node: it cannot be replaced while this session lives.
-            ops.emplace_back(zkutil::makeCheckRequest(is_active_path, is_active_stat.version));
-        }
-        else
-        {
-            /// Our own node from an expired session: `activateReplica` removes it anyway.
-            ops.emplace_back(zkutil::makeRemoveRequest(is_active_path, is_active_stat.version));
-        }
-    }
-    else
-    {
-        zkutil::addCheckNotExistsRequest(ops, *current_zookeeper, is_active_path);
-    }
-
-    if (current_zookeeper->exists(region_path))
-        ops.emplace_back(zkutil::makeRemoveRequest(region_path, -1));
-    ops.emplace_back(zkutil::makeCreateRequest(region_path, region, zkutil::CreateMode::Ephemeral));
-    current_zookeeper->multi(ops);
-
-    region_node_zookeeper = current_zookeeper;
-}
-
-void ReplicatedMergeTreeGeoReplicationController::removeRegionNodeIfOwned()
-{
-    if (!region_node_zookeeper)
-        return;
-
-    auto zookeeper = std::exchange(region_node_zookeeper, nullptr);
-
-    auto replica_path = fs::path(storage.getZooKeeperPath()) / "replicas" / storage.getReplicaName();
-    auto region_path = replica_path / "region";
-    auto is_active_path = replica_path / "is_active";
-
-    /// This is called from the destructor and the shutdown path, so it must not throw. An expired session has
-    /// already removed the ephemeral node.
-    try
-    {
-        if (zookeeper->expired())
-            return;
-
-        /// Another startup that does not see `is_active` replaces the `region` node with its own (see
-        /// `createEphemeralRegionNode`), and the new node can have the same data version as ours, so neither the
-        /// `ephemeralOwner` read below nor the versioned remove can tell the two nodes apart if the replacement
-        /// happens between them. Remove the node only while this session owns `is_active`: nobody else can replace
-        /// `region` while it does, because a replacement requires `is_active` to be absent or owned by the
-        /// replacing server. Without `is_active` the node is left in place: it describes a replica that is not
-        /// active, and the next startup that owns the replica name replaces it. The `is_active` check and the
-        /// removal go into one `multi`.
-        Coordination::Stat region_stat;
-        if (!zookeeper->exists(region_path, &region_stat) || region_stat.ephemeralOwner != zookeeper->getClientID())
-            return;
-
-        String is_active_content;
-        Coordination::Stat is_active_stat;
-        if (!zookeeper->tryGet(is_active_path, is_active_content, &is_active_stat)
-            || is_active_content != active_node_identifier
-            || is_active_stat.ephemeralOwner != zookeeper->getClientID())
-            return;
-
-        Coordination::Requests ops;
-        ops.emplace_back(zkutil::makeCheckRequest(is_active_path, is_active_stat.version));
-        ops.emplace_back(zkutil::makeRemoveRequest(region_path, region_stat.version));
-
-        Coordination::Responses responses;
-        auto code = zookeeper->tryMulti(ops, responses);
-        if (code != Coordination::Error::ZOK)
-            LOG_DEBUG(getLogger(log_name), "Did not remove the region node {}: it changed concurrently ({})",
-                region_path.string(), code);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log_name.c_str());
-    }
 }
 
 }

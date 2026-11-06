@@ -196,22 +196,13 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
     {
         removeFailedQuorumParts();
 
-        /// Publish this replica's region membership (and enter leader election) before `activateReplica`
-        /// advertises `/replicas/<name>/is_active`. Peers classify same-region fetch sources from
-        /// `/replicas/<name>/region`: if `is_active` appeared first, peers could already select this replica as
-        /// an active source during the startup window and misclassify it as out-of-region because the `region`
-        /// node does not exist yet. The region node must also be published before this replica's own queue
-        /// starts (below), otherwise a recovering replica could fetch cross-region purely because region
-        /// publication lagged behind queue startup. If publishing it failed, keep the table readonly and retry
-        /// the whole startup instead of proceeding without region information.
-        if (!storage.geo_replication_controller.start(active_node_identifier))
-        {
-            storage.geo_replication_controller.stop();
-            LOG_WARNING(log, "Failed to publish the region for geo replication control. Will try again.");
-            return false;
-        }
-
+        /// Publishes this replica's region membership atomically with `is_active` (see
+        /// `ReplicatedMergeTreeGeoReplicationController::addPublishRegionRequests`), so peers never see this replica
+        /// as active without its region, and the region is published before this replica's own queue starts.
         activateReplica();
+
+        /// Enter the regional leader election only after this startup owns the replica name.
+        storage.geo_replication_controller.start();
 
         const auto & zookeeper = storage.getZooKeeper();
         const auto storage_settings = storage.getSettings();
@@ -268,10 +259,12 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
     }
     catch (...)
     {
-        /// `geo_replication_controller.start` publishes the replica region and may acquire the regional leader
-        /// lease before the remaining startup steps finish. A readonly replica must not keep that state alive:
-        /// it would prevent an active peer in the same region from becoming leader and fetching remote parts.
+        /// `geo_replication_controller.start` may acquire the regional leader lease before the remaining startup
+        /// steps finish. A readonly replica must not keep that state alive: it would prevent an active peer in the
+        /// same region from becoming leader and fetching remote parts. The `region` node is removed before
+        /// `is_active`, while it is still guaranteed to be ours.
         storage.geo_replication_controller.stop();
+        storage.replica_region_node = nullptr;
         storage.replica_is_active_node = nullptr;
 
         try
@@ -374,6 +367,8 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(is_active_path, active_node_identifier, zkutil::CreateMode::Ephemeral));
     ops.emplace_back(zkutil::makeSetRequest(fs::path(storage.replica_path) / "host", address.toString(), -1));
+    /// Must go after the creation of `is_active`: if another server owns the replica name, the `multi` fails there.
+    String region_path = storage.geo_replication_controller.addPublishRegionRequests(ops, *zookeeper);
 
     try
     {
@@ -401,6 +396,8 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     /// `current_zookeeper` lives for the lifetime of `replica_is_active_node`,
     ///  since before changing `current_zookeeper`, `replica_is_active_node` object is destroyed in `partialShutdown` method.
     storage.replica_is_active_node = zkutil::EphemeralNodeHolder::existing(is_active_path, *storage.current_zookeeper);
+    if (!region_path.empty())
+        storage.replica_region_node = zkutil::EphemeralNodeHolder::existing(region_path, *storage.current_zookeeper);
 }
 
 
