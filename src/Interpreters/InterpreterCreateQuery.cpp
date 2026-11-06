@@ -4106,28 +4106,6 @@ BlockIO InterpreterCreateQuery::execute()
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
 
-            /// The normalized path does this in `getTablePropertiesAndNormalizeCreateQuery`. Indices
-            /// inherited from `AS src` are not in this query, they are checked below. The columns of
-            /// this query are built as the worker builds them, so that an `ALIAS` column used in a
-            /// transform is expanded here too. The transforms are bound in the shipped query: a worker
-            /// would otherwise expand a SQL UDF by its own definition, with no user.
-            if (create.columns_list && create.columns_list->indices && !create.columns_list->indices->children.empty())
-            {
-                ColumnsDescription columns;
-                if (create.columns_list->columns)
-                    columns = getColumnsDescription(
-                        *create.columns_list,
-                        getContext(),
-                        getLoadingStrictnessLevel(create.attach, /*force_attach=*/ false, /*force_restore=*/ false, /*secondary=*/ false),
-                        is_restore_from_backup);
-
-                for (const auto & index : create.columns_list->indices->children)
-                {
-                    if (auto * declaration = index->as<ASTIndexDeclaration>())
-                        bindTextIndexPreAndPostProcessors(*declaration, columns, getContext());
-                }
-            }
-
             /// this branch returns before setEngine, and the worker builds AS src with no user, so
             /// check the inherited definition here, on a copy of the query
             if (!create.as_table.empty())

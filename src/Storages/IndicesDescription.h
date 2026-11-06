@@ -91,24 +91,12 @@ struct IndexDescription
 /// are allowed to run within the permissions of the given context. Call only where a user declares an
 /// index, on the node they submitted it to; elsewhere these resolve under the global context.
 void checkTextIndexPreAndPostProcessorPermissions(const IndexDescription & index, const ContextPtr & context);
-void checkTextIndexPreAndPostProcessorPermissions(
-    const ASTIndexDeclaration & declaration, const ColumnsDescription & columns, const ContextPtr & context);
 
-/// Replaces, in place, the `ALIAS` columns in the `preprocessor` and `postprocessor` arguments of a text index
-/// by their expressions.
-void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDescription & columns);
-
-/// Replaces, in place, the `ALIAS` columns and the SQL UDFs in the `preprocessor` and `postprocessor` arguments of
-/// a text index by their definitions, then checks the result as `checkTextIndexPreAndPostProcessorPermissions`.
-/// For a query that is shipped to other hosts, which would otherwise expand these names by their own definitions.
-void bindTextIndexPreAndPostProcessors(
-    ASTIndexDeclaration & declaration, const ColumnsDescription & columns, const ContextPtr & context);
-
-/// Whether the declaration is a text index with a `preprocessor` or a `postprocessor` argument.
 /// Refuses a transform whose authorization the other hosts of an `ON CLUSTER` query cannot preserve,
 /// which is whenever they do not run it as the initiating user.
 void rejectTextIndexTransformWithoutInitiatorUser(const ASTIndexDeclaration & declaration);
 
+/// Whether the declaration is a text index with a `preprocessor` or a `postprocessor` argument.
 bool hasTextIndexPreOrPostProcessor(const ASTIndexDeclaration & declaration);
 
 /// All secondary indices in storage
