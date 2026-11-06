@@ -8,3 +8,4 @@ no range extension	0
 range extension within mode	Granules: 4/2
 partition pruning	1
 no prewhere for column computed from version subcolumn	0
+no prewhere for non-deterministic default	0

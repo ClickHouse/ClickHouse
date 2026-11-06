@@ -461,6 +461,7 @@ namespace ErrorCodes
     extern const int BACKUP_VERSION_NOT_SUPPORTED;
     extern const int BAD_TYPE_OF_FIELD;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_UPDATE_COLUMN;
     extern const int INVALID_PARTITION_VALUE;
     extern const int METADATA_MISMATCH;
     extern const int PART_IS_TEMPORARILY_LOCKED;
@@ -2712,6 +2713,59 @@ NameSet getMergingParamsStorageColumns(const MergeTreeData::MergingParams & merg
     return names;
 }
 
+/// Whether the expression can give different results for the versions of a row: it calls a non-deterministic function
+/// (e.g. `now` or `rand`, or a function unknown to the factory, such as a user-defined one), has a subquery, or uses a
+/// column for which `is_identical` does not hold. A subcolumn (e.g. `payload.x`) is checked by its storage column.
+bool canDifferAcrossVersions(
+    const IAST & ast,
+    const ColumnsDescription & columns,
+    const std::function<bool(const String &)> & is_identical,
+    const ContextPtr & context,
+    std::vector<String> & lambda_parameters)
+{
+    if (ast.as<ASTSubquery>())
+        return true;
+
+    if (const auto * identifier = ast.as<ASTIdentifier>())
+    {
+        const auto & name_parts = identifier->name_parts;
+        if (!name_parts.empty() && std::ranges::find(lambda_parameters, name_parts.front()) != lambda_parameters.end())
+            return false;
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, identifier->name());
+        return !is_identical(column ? column->getNameInStorage() : identifier->name());
+    }
+
+    if (const auto * function = ast.as<ASTFunction>())
+    {
+        if (function->name == "lambda" && function->arguments && function->arguments->children.size() == 2)
+        {
+            const auto & arguments = function->arguments->children;
+            const size_t enclosing_parameters = lambda_parameters.size();
+            if (const auto * parameters = arguments[0]->as<ASTFunction>(); parameters && parameters->arguments)
+                for (const auto & parameter : parameters->arguments->children)
+                    if (const auto * parameter_identifier = parameter->as<ASTIdentifier>())
+                        lambda_parameters.push_back(parameter_identifier->name());
+            const bool result = canDifferAcrossVersions(*arguments[1], columns, is_identical, context, lambda_parameters);
+            lambda_parameters.resize(enclosing_parameters);
+            return result;
+        }
+
+        auto resolver = FunctionFactory::instance().tryGet(function->name, context);
+        if (!resolver || !resolver->isDeterministic())
+            return true;
+    }
+
+    return std::ranges::any_of(ast.children, [&](const ASTPtr & child)
+        { return canDifferAcrossVersions(*child, columns, is_identical, context, lambda_parameters); });
+}
+
+bool canDifferAcrossVersions(
+    const IAST & ast, const ColumnsDescription & columns, const std::function<bool(const String &)> & is_identical, const ContextPtr & context)
+{
+    std::vector<String> lambda_parameters;
+    return canDifferAcrossVersions(ast, columns, is_identical, context, lambda_parameters);
+}
+
 }
 
 NameSet MergeTreeData::getSortingKeyColumnsSafeBeforeFinal(const KeyDescription & sorting_key)
@@ -2724,6 +2778,16 @@ NameSet MergeTreeData::getSortingKeyColumnsSafeBeforeFinal(const KeyDescription 
 }
 
 NameSet MergeTreeData::getColumnsSafeBeforeFinal(const StorageInMemoryMetadata & metadata, const ContextPtr & query_context) const
+{
+    /// A masking policy is applied before `PREWHERE` and the `FINAL` merge and can depend on other columns,
+    /// e.g. `UPDATE b = 0 WHERE v = 2`, so the values of a declared column seen by the query can differ between versions.
+    if (merging_params.mode != MergingParams::Graphite && hasEnabledMaskingPolicies(query_context))
+        return getSortingKeyColumnsSafeBeforeFinal(metadata.getSortingKey());
+
+    return getColumnsIdenticalAcrossVersions(metadata);
+}
+
+NameSet MergeTreeData::getColumnsIdenticalAcrossVersions(const StorageInMemoryMetadata & metadata) const
 {
     const auto & sorting_key = metadata.getSortingKey();
 
@@ -2745,11 +2809,6 @@ NameSet MergeTreeData::getColumnsSafeBeforeFinal(const StorageInMemoryMetadata &
     const String & identical_columns = (*settings)[MergeTreeSetting::columns_identical_across_versions];
     const String & varying_columns = (*settings)[MergeTreeSetting::columns_varying_across_versions];
     if (identical_columns.empty() && varying_columns.empty())
-        return names;
-
-    /// A masking policy is applied before `PREWHERE` and the `FINAL` merge and can depend on other columns,
-    /// e.g. `UPDATE b = 0 WHERE v = 2`, so the values of a declared column seen by the query can differ between versions.
-    if (hasEnabledMaskingPolicies(query_context))
         return names;
 
     const auto & columns = metadata.getColumns();
@@ -2777,11 +2836,13 @@ NameSet MergeTreeData::getColumnsSafeBeforeFinal(const StorageInMemoryMetadata &
         auto varying = parseIdentifiersOrStringLiteralsToSet(varying_columns, query_settings);
 
         /// A column computed from a varying column varies as well. So does a column computed from the version, sign or
-        /// `is_deleted` column, or from a float column (equal values like -0.0 and 0.0 can give different results).
+        /// `is_deleted` column, or from a float column (equal values like -0.0 and 0.0 can give different results),
+        /// or by a non-deterministic function, e.g. `DEFAULT now()` gives each version the time of its insert.
         varying.insert(merging_params_columns.begin(), merging_params_columns.end());
         for (const auto & column : columns.getAllPhysical())
             if (typeContainsFloat(*column.type))
                 varying.insert(column.name);
+        auto is_identical = [&](const String & name) { return !varying.contains(name); };
         const auto defaults = columns.getDefaults();
         for (bool changed = true; changed;)
         {
@@ -2790,15 +2851,7 @@ NameSet MergeTreeData::getColumnsSafeBeforeFinal(const StorageInMemoryMetadata &
             {
                 if (!column_default.expression || varying.contains(name))
                     continue;
-                IdentifierNameSet used_names;
-                column_default.expression->collectIdentifierNames(used_names);
-                /// A subcolumn (e.g. `payload.x`) varies with its column.
-                auto is_varying = [&](const String & used_name)
-                {
-                    auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, used_name);
-                    return varying.contains(column ? column->getNameInStorage() : used_name);
-                };
-                if (std::ranges::any_of(used_names, is_varying))
+                if (canDifferAcrossVersions(*column_default.expression, columns, is_identical, getContext()))
                 {
                     varying.insert(name);
                     changed = true;
@@ -2835,7 +2888,14 @@ void MergeTreeData::checkColumnsIdenticalAcrossVersions(const MergeTreeSettings 
 
     const auto & columns = metadata.getColumns();
     const NameSet merging_params_columns = getMergingParamsStorageColumns(merging_params, columns);
-    for (const auto & name : parseIdentifiersOrStringLiterals(identical_columns.empty() ? varying_columns : identical_columns, getContext()->getSettingsRef()))
+    const auto listed_columns = parseIdentifiersOrStringLiterals(identical_columns.empty() ? varying_columns : identical_columns, getContext()->getSettingsRef());
+
+    /// A default expression of a listed column must give the same value for all versions of a row.
+    NameSet identical = getSortingKeyColumnsSafeBeforeFinal(metadata.getSortingKey());
+    identical.insert(listed_columns.begin(), listed_columns.end());
+    auto is_identical = [&](const String & name) { return identical.contains(name); };
+
+    for (const auto & name : listed_columns)
     {
         auto column = columns.tryGetPhysical(name);
         if (!column)
@@ -2858,6 +2918,57 @@ void MergeTreeData::checkColumnsIdenticalAcrossVersions(const MergeTreeSettings 
                 "Column {} listed in the setting `columns_identical_across_versions` has type {} with floating-point values: "
                 "values that compare equal (-0.0 and 0.0, NaN with different payloads) can be told apart by a condition",
                 backQuoteIfNeed(name), column->type->getName());
+
+        if (auto column_default = columns.getDefault(name);
+            column_default && column_default->expression
+            && canDifferAcrossVersions(*column_default->expression, columns, is_identical, getContext()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Column {} listed in the setting `columns_identical_across_versions` has the expression {} that can give "
+                "different values for the versions of a row: it uses a column that is neither listed nor in the sorting key, "
+                "a non-deterministic function or a subquery",
+                backQuoteIfNeed(name), column_default->expression->formatForErrorMessage());
+    }
+}
+
+void MergeTreeData::checkUpdatesKeepColumnsIdenticalAcrossVersions(
+    const MutationCommands & commands, const StorageInMemoryMetadata & metadata) const
+{
+    const NameSet identical = getColumnsIdenticalAcrossVersions(metadata);
+    /// The sorting key columns cannot be updated at all, which is checked elsewhere.
+    const NameSet sorting_key_columns = getSortingKeyColumnsSafeBeforeFinal(metadata.getSortingKey());
+    if (identical == sorting_key_columns)
+        return;
+
+    const auto & columns = metadata.getColumns();
+    auto is_identical = [&](const String & name) { return identical.contains(name); };
+
+    /// An update of a declared column keeps it equal in all versions of a row if it updates either all versions or none,
+    /// and sets the same value in all of them.
+    for (const auto & command : commands)
+    {
+        if (command.type != MutationCommand::UPDATE)
+            continue;
+
+        const auto alter = command.ast();
+        bool is_safe = !alter->predicate || !canDifferAcrossVersions(*alter->predicate, columns, is_identical, getContext());
+        if (alter->partition && metadata.hasPartitionKey())
+            is_safe = is_safe && std::ranges::all_of(metadata.getPartitionKey().expression->getRequiredColumns(), is_identical);
+
+        for (const auto & [name, expression] : getColumnToUpdateExpression(*alter))
+        {
+            auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+            const String storage_name = column ? column->getNameInStorage() : name;
+            if (!identical.contains(storage_name) || sorting_key_columns.contains(storage_name))
+                continue;
+
+            if (!is_safe || canDifferAcrossVersions(*expression, columns, is_identical, getContext()))
+                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                    "Cannot update column {} declared identical in all versions of a row (see the settings "
+                    "`columns_identical_across_versions` and `columns_varying_across_versions`): the update can make the versions "
+                    "of a row differ in it. The condition, the partition and the new value must be deterministic and depend only "
+                    "on the declared columns and the sorting key",
+                    backQuoteIfNeed(name));
+        }
     }
 }
 
@@ -7612,6 +7723,9 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
 
     if (auto uk_metadata = getInMemoryMetadataPtr(getContext(), false); uk_metadata->hasUniqueKey())
         checkUniqueKeyMutationCommands(commands);
+
+    const auto identical_columns_metadata = getInMemoryMetadataPtr(getContext(), false);
+    checkUpdatesKeepColumnsIdenticalAcrossVersions(commands, *identical_columns_metadata);
 
     const auto index_mode = (*getSettings())[MergeTreeSetting::alter_column_secondary_index_mode];
     auto secondary_indices_metadata = getInMemoryMetadataPtr(getContext(), false);
@@ -15092,6 +15206,7 @@ MergeTreeData::LightweightUpdateResult MergeTreeData::updateLightweightImpl(cons
     NamesAndTypesList system_columns;
     MutationCommands commands_to_run;
     const auto metadata_snapshot = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/ false);
+    checkUpdatesKeepColumnsIdenticalAcrossVersions(commands, *metadata_snapshot);
     const MergeTreePatchPartsVersion patch_parts_version = (*getSettings())[MergeTreeSetting::patch_parts_version];
 
     switch (patch_parts_version)

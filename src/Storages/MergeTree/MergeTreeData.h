@@ -2539,6 +2539,12 @@ private:
     /// Checks the settings `columns_identical_across_versions` and `columns_varying_across_versions`.
     void checkColumnsIdenticalAcrossVersions(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata) const;
 
+    /// `getColumnsSafeBeforeFinal` regardless of masking policies.
+    NameSet getColumnsIdenticalAcrossVersions(const StorageInMemoryMetadata & metadata) const;
+
+    /// Rejects an `UPDATE` that can make the versions of a row differ in a column declared identical in all of them.
+    void checkUpdatesKeepColumnsIdenticalAcrossVersions(const MutationCommands & commands, const StorageInMemoryMetadata & metadata) const;
+
     bool isReadonlySetting(const std::string & setting_name) const;
 
     /// Is the disk should be searched for orphaned parts (ones that belong to a table based on file names, but located

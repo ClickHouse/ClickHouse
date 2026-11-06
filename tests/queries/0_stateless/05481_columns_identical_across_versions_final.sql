@@ -89,3 +89,12 @@ SETTINGS columns_varying_across_versions = 'score';
 INSERT INTO t_version_subcolumn (id, score, meta) VALUES (1, 100, tuple(10));
 SELECT 'no prewhere for column computed from version subcolumn', countIf(explain LIKE '%Prewhere filter column%') FROM (EXPLAIN actions = 1 SELECT id FROM t_version_subcolumn FINAL WHERE derived = 10);
 DROP TABLE t_version_subcolumn;
+
+-- A column computed by a non-deterministic function gets a different value in each version of a row.
+DROP TABLE IF EXISTS t_nondeterministic_default;
+CREATE TABLE t_nondeterministic_default (id UInt64, score UInt64, inserted DateTime DEFAULT now())
+ENGINE = ReplacingMergeTree ORDER BY id
+SETTINGS columns_varying_across_versions = 'score';
+INSERT INTO t_nondeterministic_default (id, score) VALUES (1, 100);
+SELECT 'no prewhere for non-deterministic default', countIf(explain LIKE '%Prewhere filter column%') FROM (EXPLAIN actions = 1 SELECT id FROM t_nondeterministic_default FINAL WHERE inserted = '2000-01-01 00:00:00');
+DROP TABLE t_nondeterministic_default;
