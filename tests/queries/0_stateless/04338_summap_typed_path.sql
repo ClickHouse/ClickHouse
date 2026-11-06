@@ -231,6 +231,30 @@ SELECT sumMap([toBFloat16(nan), toBFloat16(nan)], [1, 2]);
 SELECT 'BFloat16 NaN key multi-row merge';
 SELECT sumMap(k, v) FROM values('k Array(BFloat16), v Array(Int64)', ([toBFloat16(nan)], [10]), ([toBFloat16(nan)], [20]));
 
+-- Float keys are canonicalized: -0.0 becomes +0.0 and every NaN becomes the default quiet NaN,
+-- in results and in serialized states. So the result does not depend on input or merge order.
+SELECT 'Float64 -0 key canonicalized';
+SELECT sumMap([-0.], [1]);
+SELECT sumMap([-0., 0.], [1, 2]);
+SELECT 1 / arrayJoin(sumMap([-0.], [1]).1);
+
+SELECT 'Float32 -0 key canonicalized';
+SELECT sumMap([toFloat32(-0.)], [1]);
+SELECT sumMap([toFloat32(-0.), toFloat32(0.)], [1, 2]);
+
+SELECT 'BFloat16 -0 key canonicalized';
+SELECT sumMap([toBFloat16(-0.)], [1]);
+SELECT sumMap([toBFloat16(-0.), toBFloat16(0.)], [1, 2]);
+
+SELECT 'minMap and maxMap -0 key canonicalized';
+SELECT minMap([-0.], [1]), maxMap([-0.], [1]);
+
+SELECT 'State of -0 key is canonical';
+SELECT hex(sumMapState([-0.], [1]));
+
+SELECT 'NaN key payload canonicalized';
+SELECT hex(reinterpretAsString(arrayJoin(sumMap([reinterpretAsFloat64(reinterpretAsString(0x7FF0000000000001::UInt64))], [1]).1)));
+
 -- ===================== Nullable values =====================
 
 SELECT 'Nullable values - NULL as no-op';
