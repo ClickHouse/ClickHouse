@@ -30,15 +30,15 @@ Open **Team Settings → Data → Sources** to configure a source. Select **Conf
 
 <Image img="/images/clickstack/source-settings-optional-fields.png" alt="Logs source settings with Configure Optional Fields highlighted" size="md"/>
 
-Each of these sources require at least one table specified on creation and a set of columns which allow the UI to query the data.
+Each source needs a table and column mappings that allow the UI to query its data. OTel metric sources use separate tables for each metric type; select the tables containing the metrics you collect.
 
 If using the [default OpenTelemetry (OTel) schema](/guides/use-cases/observability/build-your-own/integrating-opentelemetry#out-of-the-box-schema) distributed with ClickStack, these columns can be automatically inferred for each of the sources. If [modifying the schema](#clickhouse) or using a custom schema, users are required to specify and update these mappings.
 
 <Note>
-The default schema for ClickHouse distributed with ClickStack is the schema created by the [ClickHouse exporter for the OTel collector](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). These column names correlate with the OTel official specification documented [here](https://opentelemetry.io/docs/specs/otel/logs/data-model/).
+The ClickStack collector creates its default tables through bundled schema migrations. These schemas build on the [ClickHouse exporter for the OTel collector](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) and the [OpenTelemetry data model](https://opentelemetry.io/docs/specs/otel/logs/data-model/).
 </Note>
 
-The following settings are available for each source:
+The following tables list source settings. Inferred values depend on the columns and tables present in your database. Optional mappings enable the corresponding features, such as trace correlation; they are not required to save a source.
 
 #### Logs {#logs}
 
@@ -46,31 +46,33 @@ The following settings are available for each source:
 |-------------------------------|-------------------------------------------------------------------------------------------------------------------------|----------|-----------------------------|-----------------------------------------------------|
 | `Name`                        | Source name.                                                                                                            | Yes      | No                          | –                                                   |
 | `Section`                     | Optional label for grouping sources in the source selector. Sources that share a section appear together, and search matches the section name in addition to the source name. | No       | No                          | –                                                   |
-| `Server Connection`           | Server connection name.                                                                                                | Yes      | No                          | `Default`                                             |
-| `Database`                    | ClickHouse database name.                                                                                              | Yes      | Yes                         | `default`                                             |
-| `Table`                       | Target table name. Set to `otel_logs` if default schema is used.                                                                                                     | Yes      | No                         |                                            |
-| `Query Settings`              | Query-level [session settings](/reference/settings/session-settings), each given as a setting name and a value, which are added to every query issued against this source. | No       | No                          | –                                                   |
+| `Server Connection`           | Server connection name.                                                                                                | Yes      | No                          | Select the connection for your Cloud service |
+| `Database`                    | ClickHouse database name.                                                                                              | Yes      | No | `default` (form default) |
+| `Table`                       | Target table name. Set to `otel_logs` if default schema is used.                                                                                                     | Yes      | No | – |
+| `Query Settings`              | Up to ten query-level [session settings](/reference/settings/session-settings), each given as a setting name and a value, which are added to every query issued against this source. | No       | No                          | –                                                   |
 | `Enabled`                     | A disabled source is retained, but hidden from the source selectors and never chosen automatically. | No       | No                          | Enabled                                             |
-| `Timestamp Column`            | Datetime column or expression that's part of your primary key.                                                        | Yes       | Yes                         | `TimestampTime`                                       |
-| `Default Select`              | Columns shown in default search results.                                                                               | Yes       | Yes                         | `Timestamp`, `ServiceName`, `SeverityText`, `Body`         |
-| `Service Name Expression`     | Expression or column for the service name.                                                                             | Yes       | Yes                         | `ServiceName`                                         |
+| `Timestamp Column`            | Datetime column or expression that's part of your primary key.                                                        | Yes       | Yes                         | `Timestamp` (or `TimestampTime` in older schemas)                                       |
+| `Default Select`              | Columns shown in default search results.                                                                               | Yes       | Yes                         | `Timestamp, ServiceName as service, SeverityText as level, Body` |
+| `Service Name Expression`     | Expression or column for the service name.                                                                             | No | Yes                         | `ServiceName`                                         |
 | `Service Version Expression`  | Expression or column identifying the running release of a service, used to draw [release markers](/clickstack/observability/features/dashboards/release-markers) on dashboard charts. Defaults to the OpenTelemetry `service.version` resource attribute when left blank. | No        | No                          | `ResourceAttributes['service.version']`               |
-| `Log Level Expression`        | Expression or column for the log level.                                                                                | Yes       | Yes                         | `SeverityText`                                        |
-| `Body Expression`             | Expression or column for the log message.                                                                              | Yes       | Yes                         | `Body`                                                |
-| `Log Attributes Expression`   | Expression or column for custom log attributes.                                                                        | Yes       | Yes                         | `LogAttributes`                                       |
-| `Resource Attributes Expression` | Expression or column for resource-level attributes.                                                                  | Yes       | Yes                         | `ResourceAttributes`                                  |
+| `Log Level Expression`        | Expression or column for the log level.                                                                                | No | Yes                         | `SeverityText`                                        |
+| `Severity Number Expression` | Expression for numeric OpenTelemetry severity (1–24). Leave blank if unavailable. | No | If an integer column exists | `SeverityNumber` |
+| `Body Expression`             | Expression or column for the log message.                                                                              | No | Yes                         | `Body`                                                |
+| `Event Name Expression` | Expression for the OpenTelemetry log event name. Leave blank if unavailable. | No | If a string column exists | `EventName` |
+| `Log Attributes Expression`   | Expression or column for custom log attributes.                                                                        | No | Yes                         | `LogAttributes`                                       |
+| `Resource Attributes Expression` | Expression or column for resource-level attributes.                                                                  | No | Yes                         | `ResourceAttributes`                                  |
 | `Displayed Timestamp Column`  | Optional, higher-precision timestamp column used in UI display. Defaults to Timestamp Column when not provided.        | No       | Yes                         | `Timestamp`                                           |
 | `Correlated Metric Source`    | Linked metric source (e.g. ClickStack UI metrics).                                                                           | No       | No                          | –                                                   |
 | `Correlated Trace Source`     | Linked trace source (e.g. ClickStack UI traces).                                                                             | No       | No                          | –                                                   |
-| `Trace Id Expression`         | Expression or column used to extract trace ID.                                                                         | Yes       | Yes                         | `TraceId`                                             |
-| `Span Id Expression`          | Expression or column used to extract span ID.                                                                          | Yes       | Yes                         | `SpanId`                                              |
-| `Implicit Column Expression`  | Column used for full-text search if no field is specified (Lucene-style). Typically the log body.                      | Yes       | Yes                         | `Body`                                                |
+| `Trace Id Expression`         | Expression or column used to extract trace ID.                                                                         | No | Yes                         | `TraceId`                                             |
+| `Span Id Expression`          | Expression or column used to extract span ID.                                                                          | No | Yes                         | `SpanId`                                              |
+| `Implicit Column Expression`  | Column used for full-text search if no field is specified (Lucene-style). Typically the log body.                      | No | Yes                         | `Body`                                                |
 | `Known Columns List`          | For sources over a [`Distributed`](/reference/engines/table-engines/special/distributed) or [`Merge`](/reference/engines/table-engines/special/merge) table whose target tables have non-matching column sets. A comma-separated list of the columns available across all target tables, used instead of `SELECT *` when fetching full row data (for example, in the row side panel). Leave blank to select all columns. Column names only - no expressions or aliases. | No        | No                          |  –                                                  |
 | `Use Text Index`              | Whether Lucene-based searches emit `hasAllTokens` when searching the implicit column.                | No        | No                          | `Auto (detect from schema)`                          |
 | `Highlighted Attributes`      | Expressions or columns displayed when opening log details. Expressions returning URLs will be shown as links.          | No        | No                          |  –                                                  |
 | `Highlighted Trace Attributes` | Expressions or columns extracted from each log in a trace, displayed above the trace waterfall. Expressions returning URLs will be shown as links. | No  | No   |  –                                                  |
 | `Materialized Views`          | Pre-aggregated [materialized views](/clickstack/self-configured/managing/materialized-views) registered against this source, used automatically to accelerate eligible queries. See [Materialized views](#materialized-views-settings). | No        | No                          |  –                                                  |
-| `Metadata Materialized Views` | Materialized views used to accelerate field discovery and value autocomplete. See [Metadata materialized views](#metadata-materialized-views-settings). | No        | Yes                         | `<table>_kv_rollup_15m`          |
+| `Metadata Materialized Views` | Materialized views used to accelerate field discovery and value autocomplete. See [Metadata materialized views](#metadata-materialized-views-settings). | No        | If the rollup table exists | `<table>_kv_rollup_15m`          |
 | `Default Order By`            | `ORDER BY` expression which overrides the default ordering of search results. Leave empty to use the auto-detected default. This can be customized per search later. | No        | No                          |  –                                                  |
 
 #### Traces {#traces}
@@ -79,10 +81,10 @@ The following settings are available for each source:
 |----------------------------------|-------------------------------------------------------------------------------------------------------------------------|----------|-----------------------------|------------------------|
 | `Name`                           | Source name.                                                                                                            | Yes      | No                          | –                      |
 | `Section`                        | Optional label for grouping sources in the source selector. Sources that share a section appear together, and search matches the section name in addition to the source name. | No       | No                          | –                      |
-| `Server Connection`              | Server connection name.                                                                                                | Yes      | No                          | `Default`              |
-| `Database`                       | ClickHouse database name.                                                                                              | Yes      | Yes                         | `default`                |
-| `Table`                          | Target table name. Set to `otel_traces` if using the default schema.                                                                                                    | Yes      | Yes                         |      -       |
-| `Query Settings`              | Query-level [session settings](/reference/settings/session-settings), each given as a setting name and a value, which are added to every query issued against this source. | No       | No                          | –                                                   |
+| `Server Connection`              | Server connection name.                                                                                                | Yes      | No                          | Select the connection for your Cloud service |
+| `Database`                       | ClickHouse database name.                                                                                              | Yes      | No | `default` (form default) |
+| `Table`                          | Target table name. Set to `otel_traces` if using the default schema.                                                                                                    | Yes      | No | – |
+| `Query Settings`              | Up to ten query-level [session settings](/reference/settings/session-settings), each given as a setting name and a value, which are added to every query issued against this source. | No       | No                          | –                                                   |
 | `Enabled`                     | A disabled source is retained, but hidden from the source selectors and never chosen automatically. | No       | No                          | Enabled                                             |
 | `Timestamp Column`              | Datetime column or expression that's part of your primary key.                                                        | Yes      | Yes                         | `Timestamp`              |
 | `Default Select`                | Columns shown in default search results.                                                                               | Yes      | Yes                         | `Timestamp, ServiceName as service, StatusCode as level, round(Duration / 1e6) as duration, SpanName` |
@@ -96,23 +98,23 @@ The following settings are available for each source:
 | `Correlated Log Source`         | Optional. Linked log source (e.g. ClickStack UI logs).                                                                       | No       | No                          | –                      |
 | `Correlated Session Source`     | Optional. Linked session source.                                                                                       | No       | No                          | –                      |
 | `Correlated Metric Source`      | Optional. Linked metric source (e.g. ClickStack UI metrics).                                                                  | No       | No                          | –                      |
-| `Status Code Expression`        | Expression for the span status code.                                                                                   | Yes      | Yes                         | `StatusCode`             |
-| `Status Message Expression`     | Expression for the span status message.                                                                                | Yes      | Yes                         | `StatusMessage`          |
-| `Service Name Expression`       | Expression or column for the service name.                                                                             | Yes      | Yes                         | `ServiceName`            |
+| `Status Code Expression`        | Expression for the span status code.                                                                                   | No | Yes                         | `StatusCode`             |
+| `Status Message Expression`     | Expression for the span status message.                                                                                | No | Yes                         | `StatusMessage`          |
+| `Service Name Expression`       | Expression or column for the service name.                                                                             | No | Yes                         | `ServiceName`            |
 | `Service Version Expression`    | Expression or column identifying the running release of a service, used to draw [release markers](/clickstack/observability/features/dashboards/release-markers) on dashboard charts. Defaults to the OpenTelemetry `service.version` resource attribute when left blank. | No       | No                          | `ResourceAttributes['service.version']` |
-| `Resource Attributes Expression`| Expression or column for resource-level attributes.                                                                    | Yes      | Yes                         | `ResourceAttributes`     |
-| `Event Attributes Expression`   | Expression or column for event attributes.                                                                             | Yes      | Yes                         | `SpanAttributes`         |
+| `Resource Attributes Expression`| Expression or column for resource-level attributes.                                                                    | No | Yes                         | `ResourceAttributes`     |
+| `Event Attributes Expression`   | Expression or column for event attributes.                                                                             | No | Yes                         | `SpanAttributes`         |
 | `Sample Rate Expression`        | Column or expression holding the upstream sampling weight (`1/N`). When set, aggregations (`count`, `avg`, `sum`, `quantile`) are corrected for sampling. Percentiles then use `quantileTDigestWeighted`, which is an approximation, so exact values may differ slightly. Leave empty if spans aren't sampled. | No       | No                          |  –                       |
-| `Span Events Expression`        | Expression to extract span events. Typically a `Nested` type column. This allows rendering of exception stack traces with supported language SDKs.                                                   | Yes      | Yes                         | `Events`                 |
-| `Span Links Expression`         | Expression to extract span links, used to capture links from a span to spans in other traces. Expected to be of type `Nested(TraceId String, SpanId String, TraceState String, Attributes Map(LowCardinality(String), String))`. | No       | Yes                         | `Links`                  |
-| `Implicit Column Expression`   | Column used for full-text search if no field is specified (Lucene-style). Typically the log body.  | Yes  | Yes  | `SpanName`|
+| `Span Events Expression`        | Expression to extract span events. Typically a `Nested` type column. This allows rendering of exception stack traces with supported language SDKs.                                                   | No | If the nested column exists | `Events`                 |
+| `Span Links Expression`         | Expression to extract span links, used to capture links from a span to spans in other traces. Expected to be of type `Nested(TraceId String, SpanId String, TraceState String, Attributes Map(LowCardinality(String), String))`. | No       | If the nested column exists | `Links`                  |
+| `Implicit Column Expression`   | Column used for full-text search if no field is specified (Lucene-style). Typically the span name.  | No | Yes  | `SpanName`|
 | `Known Columns List`            | For sources over a [`Distributed`](/reference/engines/table-engines/special/distributed) or [`Merge`](/reference/engines/table-engines/special/merge) table whose target tables have non-matching column sets. A comma-separated list of the columns available across all target tables, used instead of `SELECT *` when fetching full row data (for example, in the row side panel). Leave blank to select all columns. Column names only - no expressions or aliases. | No        | No                          |  –                                                  |
 | `Use Text Index`                | Whether Lucene-based searches emit `hasAllTokens` when searching the implicit column.                | No       | No                          | `Auto (detect from schema)` |
 | `Displayed Timestamp Column`    | Optional, higher-precision timestamp column used in UI display. Defaults to Timestamp Column when not provided.          | No       | Yes                         | `Timestamp`                                           |
 | `Highlighted Attributes`        | Expressions or columns displayed when opening span details. Expressions returning URLs will be shown as links.         | No       | No                          |  –                       |
 | `Highlighted Trace Attributes` | Expressions or columns extracted from each span in a trace, displayed above the trace waterfall. Expressions returning URLs will be shown as links. | No  | No   |  –                       |
 | `Materialized Views`            | Pre-aggregated [materialized views](/clickstack/self-configured/managing/materialized-views) registered against this source, used automatically to accelerate eligible queries. See [Materialized views](#materialized-views-settings). | No        | No                          |  –                                                  |
-| `Metadata Materialized Views`   | Materialized views used to accelerate field discovery and value autocomplete. See [Metadata materialized views](#metadata-materialized-views-settings). | No        | Yes                         | `<table>_kv_rollup_15m`          |
+| `Metadata Materialized Views`   | Materialized views used to accelerate field discovery and value autocomplete. See [Metadata materialized views](#metadata-materialized-views-settings). | No        | If the rollup table exists | `<table>_kv_rollup_15m`          |
 | `Default Order By`              | `ORDER BY` expression which overrides the default ordering of search results. Leave empty to use the auto-detected default. This can be customized per search later. | No        | No                          |  –                                                  |
 
 #### Metrics {#metrics}
@@ -121,14 +123,16 @@ The following settings are available for each source:
 |------------------------|-----------------------------------------------------------------------------------------------|----------|-----------------------------|-----------------------------|
 | `Name`                 | Source name.                                                                                  | Yes      | No                          | –                           |
 | `Section`              | Optional label for grouping sources in the source selector. Sources that share a section appear together, and search matches the section name in addition to the source name. | No       | No                          | –                           |
-| `Server Connection`    | Server connection name.                                                                        | Yes      | No                          | `Default`                   |
-| `Database`             | ClickHouse database name.                                                                      | Yes      | Yes                         | `default`                   |
+| `Server Connection`    | Server connection name.                                                                        | Yes      | No                          | Select the connection for your Cloud service |
+| `Database`             | ClickHouse database name.                                                                      | Yes      | No | `default` (form default) |
 | `Query Settings`       | Up to ten query-level [session settings](/reference/settings/session-settings), each given as a setting name and a value, which are added to every query issued against this source. | No       | No                          | –                           |
 | `Enabled`              | Toggle at the top of the source form. A disabled source is retained, but hidden from the source selectors and never chosen automatically. Only shown when editing an existing source. | No       | No                          | Enabled                     |
 | `Gauge Table`          | Table storing gauge-type metrics.                                                              | No       | Yes                         | `otel_metrics_gauge`        |
 | `Histogram Table`      | Table storing histogram-type metrics.                                                          | No       | Yes                         | `otel_metrics_histogram`    |
 | `Sum Table`            | Table storing sum-type (counter) metrics.                                                      | No       | Yes                         | `otel_metrics_sum`          |
-| `Exponential Histogram Table` | Table storing exponential histogram-type metrics.                                       | No | Yes                     | `otel_metrics_exponential_histogram` |
+| `Exponential Histogram Table` | Table storing exponential histogram-type metrics. Not yet fully supported.                                       | No | Yes                     | `otel_metrics_exponential_histogram` |
+| `Summary Table` | Table storing summary metrics. Not yet fully supported. | No | Yes | `otel_metrics_summary` |
+| `Minimum auto granularity` | Lower bound for automatically selected chart granularity. Set to the metric scrape or reporting interval. Does not override an explicitly selected chart granularity. | No | No | No minimum |
 | `Correlated Log Source`| Optional. Linked log source (e.g. ClickStack UI logs).                                               | No       | No                          | –                           |
 
 #### Sessions {#settings}
@@ -137,9 +141,9 @@ The following settings are available for each source:
 |-------------------------------|-----------------------------------------------------------------------------------------------------|----------|-----------------------------|------------------------|
 | `Name`                        | Source name.                                                                                        | Yes      | No                          | –                      |
 | `Section`                     | Optional label for grouping sources in the source selector. Sources that share a section appear together, and search matches the section name in addition to the source name. | No       | No                          | –                      |
-| `Server Connection`           | Server connection name.                                                                             | Yes      | No                          | `Default`              |
-| `Database`                    | ClickHouse database name.                                                                           | Yes      | Yes                         | `default`              |
-| `Table`                       | Target table for session data. Target table name. Set to `hyperdx_sessions` if using the default schema.                                                                          | Yes      | Yes                         | -      |
+| `Server Connection`           | Server connection name.                                                                             | Yes      | No                          | Select the connection for your Cloud service |
+| `Database`                    | ClickHouse database name.                                                                           | Yes      | No | `default` (form default) |
+| `Table`                       | Target table for session data. Set to `hyperdx_sessions` if using the default schema.                                                                          | Yes      | No | – |
 | `Query Settings`              | Up to ten query-level [session settings](/reference/settings/session-settings), each given as a setting name and a value, which are added to every query issued against this source. | No       | No                          | –                      |
 | `Enabled`                     | Toggle at the top of the source form. A disabled source is retained, but hidden from the source selectors and never chosen automatically. Only shown when editing an existing source. | No       | No                          | Enabled                |
 | `Correlated Trace Source`     | Linked trace source for session correlation.                                                        | Yes      | No                          | –                      |
@@ -162,7 +166,7 @@ Each registered view is configured with the following settings:
 | `Dimension Columns`           | Comma-separated list of the columns which aren't pre-aggregated by the view, and can therefore be used for filtering and grouping. |
 | `Pre-aggregated Columns`      | The columns which are pre-aggregated by the view. Each entry maps an aggregate function (`avg`, `count`, `max`, `min`, `quantile`, `sum` or `histogram`) and a source table column to the corresponding column in the view. The source column isn't required for `count`. |
 
-Most of these settings are inferred from the view's schema when the target table is selected.
+When you select the target table, the UI attempts to infer these settings from the view schema. Review the inferred values and complete any missing fields.
 
 #### Metadata materialized views {#metadata-materialized-views-settings}
 
@@ -212,7 +216,7 @@ To enable full cross-source correlation, you must configure correlated sources f
 - `Metrics`: Can be correlated with logs.
 - `Sessions`: Can be correlated with traces.
 
-Setting these correlations enables several features. For example, the UI can render relevant logs alongside a trace or surface metric anomalies linked to a session.
+Setting these correlations enables several features. For example, the UI can render relevant logs alongside a trace and navigate between related sources. Correlation also depends on the appropriate ID and attribute mappings; selecting a source alone does not create those relationships.
 
 For example, below is the Logs source configured with correlated sources:
 
@@ -224,16 +228,16 @@ See ["ClickStack OpenTelemetry Collector"](/clickstack/self-configured/ingesting
 
 - `CLICKHOUSE_ENDPOINT`
   - **Default:** *None (required)* for the standalone collector image.
-  - **Description:** The HTTPS URL of the ClickHouse instance to export telemetry data to.
+  - **Description:** The ClickHouse connection URL used by the exporter.
   - **Guidance:**
-    - Must be a full HTTPS endpoint including port (e.g., `https://clickhouse.example.com:8443`)
+    - Use a secure ClickHouse Cloud endpoint, such as `https://<host>:8443` or `tcp://<host>:9440?secure=true`
     - Required for the collector to send data to ClickHouse
 
 - `CLICKHOUSE_USER`
-  - **Default:** `default`
+  - **Default:** `default` in the migration tool; set explicitly for the standalone collector.
   - **Description:** Username used to authenticate with the ClickHouse instance.
   - **Guidance:**
-    - Ensure the user has `INSERT` and `CREATE TABLE` permissions
+    - The user needs permission to insert telemetry and, when schema creation or migrations are enabled, to create or alter the required database objects
     - Recommended to create a dedicated user for ingestion
 
 - `CLICKHOUSE_PASSWORD`
@@ -244,7 +248,7 @@ See ["ClickStack OpenTelemetry Collector"](/clickstack/self-configured/ingesting
     - Store securely via secrets in production deployments
 
 - `HYPERDX_LOG_LEVEL`
-  - **Default:** `info`
+  - **Default:** Deployment-specific; set explicitly, for example `info`.
   - **Description:** Log verbosity level for the collector.
   - **Guidance:**
     - Accepts values like `debug`, `info`, `warn`, `error`
@@ -252,12 +256,12 @@ See ["ClickStack OpenTelemetry Collector"](/clickstack/self-configured/ingesting
 
 - `OTLP_AUTH_TOKEN`
   - **Default:** *None*. Used only for standalone image.
-  - **Description:** Sets the token required for OTLP ingestion. Send its value in the `Authorization` header without a `Bearer` prefix.
+  - **Description:** Sets the token required for standalone OTLP ingestion. The current collector accepts its value in the `Authorization` header either directly or with a `Bearer` prefix. Older collector versions may require the bare token. Ignored when OIDC authentication is configured.
   - **Guidance:**
-    - Recommended if using the standalone collector image in production.
+    - Configure authentication before exposing the collector. Without a token or OIDC configuration, the standalone OTLP receiver accepts unauthenticated requests.
 
 - `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE`
-  - **Default:** `default`
+  - **Default:** `default` in the migration tool; set explicitly for the standalone collector.
   - **Description:** ClickHouse database the collector writes telemetry data to.
   - **Guidance:**
     - Set if using a custom database name
@@ -269,6 +273,6 @@ To tune ClickHouse effectively, you should understand key storage concepts such 
 
 You can use [schema customization](/guides/use-cases/observability/build-your-own/schema-design) - you may modify column types, extract new fields (e.g. from logs), apply codecs and dictionaries, and accelerate queries using projections.
 
-Additionally, materialized views can be used to [transform or filter data during ingestion](/guides/use-cases/observability/build-your-own/schema-design#materialized-columns), provided that data is written to the source table of the view and the application reads from the target table. Materialized views can also be used to [accelerate queries natively](/clickstack/self-configured/managing/materialized-views) in the service.
+Additionally, materialized views can be used to [transform or filter data during ingestion](/guides/use-cases/observability/build-your-own/schema-design#materialized-views), provided that data is written to the source table of the view and the application reads from the target table. Materialized views can also be used to [accelerate queries natively](/clickstack/self-configured/managing/materialized-views) in the service.
 
 For more details, refer to ClickHouse documentation on schema design, indexing strategies, and data management best practices - most of which apply directly to Self-managed deployments.
