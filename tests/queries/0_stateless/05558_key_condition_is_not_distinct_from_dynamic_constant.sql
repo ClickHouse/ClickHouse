@@ -1,3 +1,5 @@
+-- Random settings limits: optimize_use_projections=(1, None); optimize_use_implicit_projections=(1, None)
+
 -- `<=>` compares a `Dynamic` constant together with its type, so it matches no key value of another type.
 
 DROP TABLE IF EXISTS t_nsd;
