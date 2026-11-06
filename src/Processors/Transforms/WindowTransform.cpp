@@ -1,4 +1,5 @@
 #include <Processors/Transforms/WindowTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -13,7 +14,7 @@ namespace DB
 namespace
 {
 
-Columns materializeColumns(Columns columns, const std::vector<bool> & should_materialize)
+Columns materializeColumns(Columns columns, const VectorWithMemoryTracking<bool> & should_materialize)
 {
     for (auto && [column, materialize] : std::views::zip(columns, should_materialize))
         if (materialize)
@@ -57,7 +58,7 @@ GeneralWindowFunctionSlot createSlot(GeneralWindowFunctionPtr general, size_t fu
     return slot;
 }
 
-void destroyStates(std::vector<GeneralWindowFunctionSlot> & general_functions, std::vector<WindowFunctionWorkspace> & workspaces)
+void destroyStates(VectorWithMemoryTracking<GeneralWindowFunctionSlot> & general_functions, VectorWithMemoryTracking<WindowFunctionWorkspace> & workspaces)
 {
     for (auto & slot : general_functions)
         if (slot.state)
@@ -71,7 +72,7 @@ void destroyStates(std::vector<GeneralWindowFunctionSlot> & general_functions, s
 
 WindowTransform::WindowTransform(
     SharedHeader input_header_, SharedHeader output_header_,
-    const WindowDescription & window_description_, const std::vector<WindowFunctionDescription> & functions)
+    const WindowDescription & window_description_, const VectorWithMemoryTracking<WindowFunctionDescription> & functions)
     : IProcessor({input_header_}, {output_header_})
     , params(WindowTransformParams::create(*input_header_, window_description_, functions))
     , indexes(params)

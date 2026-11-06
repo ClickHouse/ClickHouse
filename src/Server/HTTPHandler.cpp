@@ -939,8 +939,6 @@ void HTTPHandler::processQuery(
         chooseCompressionMethod({}, http_request_compression_method_str),
         zstd_window_log_max,
         snappy_mode);
-    LOG_DEBUG(getLogger("HTTPServerRequest"), "creating in_post id {}", size_t(in_post.get()));
-
 
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
@@ -1047,9 +1045,9 @@ void HTTPHandler::processQuery(
         /// right identifier parts instead of being split on every `.`.
         String qualified_table;
         if (!path_info.database.empty())
-            qualified_table = backQuoteIfNeed(path_info.database) + "." + backQuoteIfNeed(path_info.table);
+            qualified_table = backQuote(path_info.database) + "." + backQuote(path_info.table);
         else
-            qualified_table = backQuoteIfNeed(path_info.table);
+            qualified_table = backQuote(path_info.table);
 
         /// Validate up-front that the table from the URL path actually exists, so a typo like
         /// `/sashboards` produces a single clean response that combines the closest table-name

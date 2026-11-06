@@ -20,6 +20,8 @@ SET join_runtime_filter_min_probe_rows = 0; -- probe sides here are a few thousa
 SET enable_join_runtime_filters_index_analysis = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_join_swap_table = 'false';
+-- Randomized statistics may make the tables look large enough for a sort-merge join, which has no runtime filter.
+SET query_plan_optimize_join_order_randomize = 0;
 -- Under parallel replicas the pruning is split among the replicas, so the per-query counters this
 -- test asserts would depend on the coordinator's assignment; pin PR off (the ParallelReplicas CI job
 -- otherwise forces it on). `05153_join_runtime_filters_index_analysis_modes` covers parallel replicas.
