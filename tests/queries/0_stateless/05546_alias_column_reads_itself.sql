@@ -25,4 +25,11 @@ ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_ok (x UInt8, arr Array(UInt8),
 INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_ok (x, arr) VALUES (3, [1, 2]);
 SELECT a, b, c0 FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_ok;
 
+-- `t_probe.x` and `n` first probe the columns `t_probe` and `n.a`, whose types do not match.
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_probe (x UInt8, a UInt8 ALIAS t_probe.x, t_probe UInt8 ALIAS a, `n.a` UInt64 ALIAS length(n), `n.b` Array(UInt8)) ENGINE = Memory;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_probe (x, `n.b`) VALUES (7, [1, 2]);
+SELECT t_probe FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_probe;
+SELECT a FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_probe;
+SELECT `n.a` FROM {CLICKHOUSE_DATABASE_1:Identifier}.t_probe;
+
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
