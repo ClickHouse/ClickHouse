@@ -25,6 +25,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
@@ -1053,7 +1054,12 @@ ASTPtr tryParseEvalQuery(const ASTFunction & eval, const ContextPtr & context)
     try
     {
         ParserSelectWithUnionQuery parser;
-        return parseQuery(parser, literal->value.safeGet<String>(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        ASTPtr query
+            = parseQuery(parser, literal->value.safeGet<String>(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        /// `eval` turns settings such as `filter` into query text the same way, so their reads are found too.
+        wrapPerArmConstructionSettings(query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        wrapNestedConstructionSettings(query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        return query;
     }
     catch (const Exception &)
     {
@@ -2479,8 +2485,9 @@ std::vector<TableInfo> resolveTables(
         }
         else if (row.engine != "View" && row.engine != "MaterializedView")
         {
-            /// CREATE analyzes the column expressions, and a `predictXGBoost` there needs its dictionary.
-            if (!row.create_query.contains("predictXGBoost") || database_info.at(row.database).is_external)
+            /// CREATE analyzes the column expressions and runs constraint subqueries, which need what they read.
+            const bool reads_at_create = row.create_query.contains("predictXGBoost") || row.create_query.contains("CONSTRAINT");
+            if (!reads_at_create || database_info.at(row.database).is_external)
                 continue;
             ParserCreateQuery create_parser;
             ASTPtr create_ast = parseQuery(
@@ -3218,6 +3225,8 @@ struct ReplayGateNeeds
     bool archive_path = false; /// a table engine or table function argument that names a file inside an archive (`a.tar :: f.csv`)
     bool nested_column = false; /// a column of type `Nested`, which CREATE flattens unless `flatten_nested = 0`
     bool column_declaration = false; /// a column, which CREATE makes `Nullable` when `data_type_default_nullable = 1`
+    bool numeric_supertype = false; /// a function whose arguments may need `allow_lossy_numeric_supertype` for a common type
+    bool named_tuple_element = false; /// `tupleElement(..., 'name')` next to a `tuple()` call
 
     /// Carriers of the shared gates, `parse_failed` keeps all of them.
     bool funnel_functions = false;
@@ -3991,6 +4000,15 @@ std::vector<String> codecStringGateNeeds(const String & codec, const std::vector
     return needed;
 }
 
+bool isCastFunctionName(const String & name)
+{
+    static const std::set<String, std::less<>> names
+        = {"cast", "_cast", "accuratecast", "accuratecastornull", "accuratecastordefault"};
+    String lower = name;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return std::tolower(c); });
+    return names.contains(lower);
+}
+
 /// `verifySortingKey` rejects only a `SimpleAggregateFunction` key type, so only a key that may produce one needs
 /// `allow_suspicious_primary_key`. The old `MergeTree(date, key, ...)` form keeps its key in the engine arguments.
 bool sortingKeyMayUseSimpleAggregateFunction(const ASTStorage & storage, const ASTCreateQuery & create)
@@ -4026,6 +4044,13 @@ bool sortingKeyMayUseSimpleAggregateFunction(const ASTStorage & storage, const A
                 || columns.contains(identifier->shortName())))
             found = true;
         found |= names_wrapper(node);
+        /// A cast whose target type is computed, not a string literal, may produce the wrapper too.
+        if (const auto * function = node.as<ASTFunction>(); function && function->arguments
+            && function->arguments->children.size() >= 2 && isCastFunctionName(function->name))
+        {
+            const auto * target = function->arguments->children[1]->as<ASTLiteral>();
+            found |= !target || target->value.getType() != Field::Types::String;
+        }
     };
     for (const IAST * key : {storage.order_by, storage.primary_key, storage.engine->arguments.get()})
         if (key)
@@ -4180,6 +4205,7 @@ ReplayGateNeeds collectReplayGateNeeds(
                     .kafka_keeper_offsets = true, .nullable_tuple_type = true, .unique_key = true,
                     .data_lake_catalog_database = true, .ytsaurus_table = true, .paimon_table = true,
                     .delta_lake_table = true, .archive_path = true, .nested_column = true, .column_declaration = true,
+                    .numeric_supertype = true, .named_tuple_element = true,
                     .codec_gates = {}, .data_lake_catalog_gates = {}};
         }
 
@@ -4453,6 +4479,21 @@ ReplayGateNeeds collectReplayGateNeeds(
         needs.hyperscan_functions |= hasToken(names, "multimatch", true) || hasToken(names, "multifuzzymatch", true);
         needs.time_series_aggregate_functions |= hasTimeSeriesFunction(names);
         needs.xgboost |= hasToken(names, "predictxgboost");
+        bool calls_tuple = false;
+        bool reads_tuple_element_by_name = false;
+        forEachNode(*create_ast, [&](const IAST & node)
+        {
+            const auto * function = node.as<ASTFunction>();
+            if (!function)
+                return;
+            for (const auto * name : {"if", "multiIf", "coalesce", "ifNull", "array", "map"})
+                needs.numeric_supertype |= equalsCaseInsensitive(function->name, name);
+            calls_tuple |= equalsCaseInsensitive(function->name, "tuple");
+            if (equalsCaseInsensitive(function->name, "tupleElement") && function->arguments && function->arguments->children.size() >= 2)
+                if (const auto * literal = function->arguments->children[1]->as<ASTLiteral>())
+                    reads_tuple_element_by_name |= literal->value.getType() == Field::Types::String;
+        });
+        needs.named_tuple_element |= calls_tuple && reads_tuple_element_by_name;
         needs.ipcrypt_functions |= hasToken(names, "ipcrypt", true);
         needs.client_http_header_function |= hasToken(names, "getclienthttpheader");
         /// `flameGraph` also as the function of an `AggregateFunction` type, named by `arrayReduce`, and with combinators.
@@ -4726,6 +4767,9 @@ String replaySettingsPrelude(
         {"flatten_nested", "0"},
         /// Value 0 keeps a column's stored type, instead of making it `Nullable`.
         {"data_type_default_nullable", "0"},
+        /// Stored expressions created with these settings fail to analyze without them.
+        {"allow_lossy_numeric_supertype", "1"},
+        {"enable_named_columns_in_function_tuple", "1"},
     };
     /// Emit only dump-specific gates known by the source server and required by these statements.
     const ReplayGateNeeds needs = collectReplayGateNeeds(create_queries, context, analyzes_on_source, named_collections);
@@ -4757,6 +4801,10 @@ String replaySettingsPrelude(
             return needs.nested_column;
         if (name == "data_type_default_nullable")
             return needs.column_declaration;
+        if (name == "allow_lossy_numeric_supertype")
+            return needs.numeric_supertype;
+        if (name == "enable_named_columns_in_function_tuple")
+            return needs.named_tuple_element;
         return false;
     };
 
@@ -5431,6 +5479,23 @@ bool tableAnalyzesPassively(const ProbeCatalog & catalog, const std::pair<String
         const auto * function = create->as_table_function->as<ASTFunction>();
         return function && tableFunctionAnalyzesPassively(*function, catalog, depth + 1);
     }
+    /// The analyzer expands and folds an ALIAS column, which loads a dictionary or runs a subquery.
+    if (create->columns_list && create->columns_list->columns)
+        for (const auto & child : create->columns_list->columns->children)
+        {
+            const auto * column = child->as<ASTColumnDeclaration>();
+            if (!column || column->default_specifier != ColumnDefaultSpecifier::Alias || !column->getDefaultExpression())
+                continue;
+            bool may_do_io = false;
+            forEachNode(*column->getDefaultExpression(), [&](const IAST & node)
+            {
+                const auto * function = node.as<ASTFunction>();
+                may_do_io |= node.as<ASTSubquery>() != nullptr
+                    || (function && (startsWithCaseInsensitive(function->name, "dict") || equalsCaseInsensitive(function->name, "joinGet")));
+            });
+            if (may_do_io)
+                return false;
+        }
     if (engine.ends_with("MergeTree") || passive.contains(engine))
         return true;
     if (engine == "MaterializedView")
