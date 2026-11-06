@@ -77,9 +77,10 @@ OPTIMIZE TABLE t_nested_ttl_single FINAL;
 SELECT 'single', `n.a`, `n.b`, m, length(`n.a`) FROM t_nested_ttl_single;
 
 -- A subcolumn that no part stores gets the sizes of the other subcolumns, as in a read.
+-- A vertical merge does not use the TTL transform for these columns, so it is disabled here.
 CREATE TABLE t_nested_ttl_added (id UInt64, n Nested(a String, c String))
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, enable_vertical_merge_algorithm = 0;
 
 INSERT INTO t_nested_ttl_added VALUES (1, ['a', 'b'], ['x', 'y']);
 ALTER TABLE t_nested_ttl_added ADD COLUMN `n.d` Array(String);
