@@ -1,11 +1,14 @@
 #pragma once
 
 #include <Core/QueryProcessingStage.h>
+#include <memory>
 #include <optional>
 #include <utility>
 
 namespace DB
 {
+
+struct FilterDAGInfo;
 
 /**
  * to_stage
@@ -59,12 +62,14 @@ struct SelectQueryOptions
     /// A read of a serialized query plan planned again (`resolveStorages.cpp`): the caller checks the grants and
     /// `max_columns_to_read`, and the planner skips the row policy if `row_policy_in_plan`. `additional_filter` is the
     /// entry of the sender. If `additional_filter_in_plan`, its filter step stays in the plan and the planner skips an
-    /// entry of its own that is the same. If not, the caller removed that step and the planner applies that entry instead.
+    /// entry of its own that is the same. If not, the planner applies that entry too, and if `additional_filter_actions`
+    /// is set, it stores the filter there instead, for the caller to apply in place of that step.
     struct ShippedRead
     {
         bool row_policy_in_plan = false;
         std::optional<String> additional_filter;
         bool additional_filter_in_plan = false;
+        std::shared_ptr<FilterDAGInfo> additional_filter_actions;
     };
     std::optional<ShippedRead> shipped_read;
 

@@ -172,6 +172,39 @@ static std::unique_ptr<ExpressionStep> makeStepWithoutAdditionalFilter(
     return step;
 }
 
+/// A step that applies `filter` in place of `filter_step`, if the columns `filter` reads are there, with the same types.
+static std::unique_ptr<FilterStep> makeFilterStepInPlaceOf(const FilterStep & filter_step, const FilterDAGInfo & filter)
+{
+    const auto & input_header = filter_step.getInputHeaders().front();
+    auto actions = filter.actions.clone();
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> inputs;
+    for (const auto * input : actions.getInputs())
+    {
+        const auto * column = input_header->findByName(input->result_name);
+        if (!column || !column->type->equals(*input->result_type))
+            return {};
+        inputs.emplace(input->result_name, input);
+    }
+
+    ActionsDAG::NodeRawConstPtrs outputs{&actions.findInOutputs(filter.column_name)};
+    for (const auto & column : *input_header)
+        if (!inputs.contains(column.name))
+            inputs.emplace(column.name, &actions.addInput(column.name, column.type));
+    for (const auto & column : *filter_step.getOutputHeader())
+    {
+        auto it = inputs.find(column.name);
+        if (it == inputs.end())
+            return {};
+        outputs.push_back(it->second);
+    }
+    actions.getOutputs() = std::move(outputs);
+
+    auto step = std::make_unique<FilterStep>(input_header, std::move(actions), filter.column_name, filter.do_remove_column);
+    if (!blocksHaveEqualStructure(*step->getOutputHeader(), *filter_step.getOutputHeader()))
+        return {};
+    return step;
+}
+
 static QueryPlanResourceHolder replaceReadingFromTable(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
@@ -331,6 +364,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(
 
     QueryPlan reading_plan;
     std::unique_ptr<ExpressionStep> step_without_additional_filter;
+    std::shared_ptr<FilterDAGInfo> additional_filter_actions;
     if (replan_through_interpreter)
     {
         SelectQueryOptions options(QueryProcessingStage::FetchColumns);
@@ -340,8 +374,8 @@ static QueryPlanResourceHolder replaceReadingFromTable(
         const auto placement = reading_from_table ? reading_from_table->getRowPolicyPlacement() : ReadFromTableStep::RowPolicyPlacement::Unknown;
         if (needs_row_policy || placement != ReadFromTableStep::RowPolicyPlacement::Unknown)
         {
-            /// The planner applies the entry of this node, evaluated here. So the filter step that applied the entry of the
-            /// sender there is removed, and the planner applies that entry too, unless the two entries are the same. Not over
+            /// The planner builds the filter of the entry of this node, evaluated here, and of the entry of the sender, unless
+            /// the two entries are the same. It replaces the filter step that applied the entry of the sender there. Not over
             /// the sender's row policy step, which must run first: then that step stays and stands for an entry of this
             /// node that is the same, as the sender's policy step stands for the policy of this node.
             std::optional<String> sender_additional_filter;
@@ -352,6 +386,8 @@ static QueryPlanResourceHolder replaceReadingFromTable(
                 if (placement != ReadFromTableStep::RowPolicyPlacement::FilterStep)
                     step_without_additional_filter = makeStepWithoutAdditionalFilter(node, *additional_filter, parents);
                 additional_filter_in_plan = !step_without_additional_filter;
+                if (step_without_additional_filter)
+                    additional_filter_actions = std::make_shared<FilterDAGInfo>();
             }
 
             /// `column_names` also has the columns of the filters above the read, so the grants and the limit are checked
@@ -387,7 +423,8 @@ static QueryPlanResourceHolder replaceReadingFromTable(
             options.shipped_read = SelectQueryOptions::ShippedRead{
                 .row_policy_in_plan = placement == ReadFromTableStep::RowPolicyPlacement::FilterStep,
                 .additional_filter = std::move(sender_additional_filter),
-                .additional_filter_in_plan = additional_filter_in_plan};
+                .additional_filter_in_plan = additional_filter_in_plan,
+                .additional_filter_actions = additional_filter_actions};
         }
 
         auto interpreter_context = context;
@@ -405,19 +442,30 @@ static QueryPlanResourceHolder replaceReadingFromTable(
         reading_plan = std::move(interpreter).extractQueryPlan();
         reading_plan.addInterpreterContext(std::move(interpreter_context));
 
-        if (step_without_additional_filter)
+        /// The filter runs in place of the sender's step or, if it needs columns that step does not get, on the read, with
+        /// that step keeping every row.
+        if (step_without_additional_filter && !additional_filter_actions->column_name.empty())
         {
             QueryPlan::Node * filter_node = &node;
             for (UInt64 i = 0; i < reading_from_table->getAdditionalFilter()->steps_above; ++i)
                 filter_node = parents.at(filter_node);
+            const auto & filter_step = typeid_cast<const FilterStep &>(*filter_node->step);
             UsefulSets filter_sets;
             UsefulSets kept_sets;
-            appendSetsFromActionsDAG(typeid_cast<const FilterStep &>(*filter_node->step).getExpression(), filter_sets);
-            appendSetsFromActionsDAG(step_without_additional_filter->getExpression(), kept_sets);
+            appendSetsFromActionsDAG(filter_step.getExpression(), filter_sets);
+            QueryPlanStepPtr replacement = makeFilterStepInPlaceOf(filter_step, *additional_filter_actions);
+            if (!replacement)
+            {
+                auto & filter = *additional_filter_actions;
+                reading_plan.addStep(std::make_unique<FilterStep>(
+                    reading_plan.getCurrentHeader(), std::move(filter.actions), filter.column_name, filter.do_remove_column));
+                appendSetsFromActionsDAG(step_without_additional_filter->getExpression(), kept_sets);
+                replacement = std::move(step_without_additional_filter);
+            }
             for (const auto & set : filter_sets)
                 if (!kept_sets.contains(set))
                     removed_filter_sets.insert(set.get());
-            filter_node->step = std::move(step_without_additional_filter);
+            filter_node->step = std::move(replacement);
         }
     }
     else

@@ -2390,7 +2390,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     appendSetsFromActionsDAG(additional_filters_info->actions, useful_sets);
                     if (additional_filters_info->do_remove_column)
                         additional_filter_column = additional_filters_info->column_name;
-                    where_filters.emplace_back(std::move(*additional_filters_info), makeDescription("additional filter"));
+                    const auto & shipped_read = select_query_options.shipped_read;
+                    if (shipped_read && shipped_read->additional_filter_actions)
+                        *shipped_read->additional_filter_actions = std::move(*additional_filters_info);
+                    else
+                        where_filters.emplace_back(std::move(*additional_filters_info), makeDescription("additional filter"));
                 }
 
                 /// For trivial views over Distributed tables, inline the view body and use the

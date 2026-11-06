@@ -73,6 +73,22 @@ for table in rp_mf_merge rp_mf_leaf; do
     done
 done
 
+# The entry runs after the PREWHERE of the query, which does not commute with it here.
+for table in rp_mf_merge rp_mf_leaf; do
+    dist=$([ "$table" = rp_mf_merge ] && echo rp_mf_dist || echo rp_mf_dist_leaf)
+    for sqp in 1 0; do
+        echo -n "arrayJoin atf after PREWHERE on ${table} sqp=${sqp} "
+        ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${dist} PREWHERE rowNumberInAllBlocks() < 5
+            SETTINGS ${SETTINGS}, serialize_query_plan = ${sqp}, optimize_move_to_prewhere = 0,
+            additional_table_filters = {'${CLICKHOUSE_DATABASE}.${table}': 'arrayJoin([1, 1])'}"
+        echo -n "throwIf atf after PREWHERE on ${table} sqp=${sqp} "
+        ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${dist} PREWHERE x < 5
+            SETTINGS ${SETTINGS}, serialize_query_plan = ${sqp}, query_plan_enable_optimizations = 0,
+            additional_table_filters = {'${CLICKHOUSE_DATABASE}.${table}': 'throwIf(x >= 5) = 0'}" 2>&1 \
+            | grep -oE '^[0-9]+$|FUNCTION_THROW_IF_VALUE_IS_NON_ZERO' | head -1
+    done
+done
+
 # The set of an `IN` subquery in the entry is built once. Prints the count and whether each secondary
 # query built one set.
 for sqp in 1 0; do
