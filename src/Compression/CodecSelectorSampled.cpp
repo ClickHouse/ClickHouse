@@ -71,7 +71,7 @@ std::span<const CompressionCodecPtr> CodecSelectorSampled::codecsToTry()
     }
 
     /// The winner alone ran, but it writes more per source byte than the runner-up did when priced. Thus, try the rest.
-    if (static_cast<UInt64>(rank().best_size) * winner_source_size > static_cast<UInt64>(winner_runner_up_size) * source_size)
+    if (static_cast<UInt64>(sizes[*winner]) * winner_source_size > static_cast<UInt64>(winner_runner_up_size) * source_size)
     {
         ProfileEvents::increment(ProfileEvents::AdaptiveCodecBlocksRepriced);
         to_try.clear();
