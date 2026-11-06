@@ -13,6 +13,7 @@
 #include <Common/Throttler.h>
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/ProfileEvents.h>
+#include <Common/HTTPConnectionInfo.h>
 #include <IO/SeekableReadBuffer.h>
 #include <base/sleep.h>
 
@@ -101,7 +102,7 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     {
         tmp_buffer.resize(tmp_buffer_size);
         data_ptr = tmp_buffer.data();
-        data_capacity = tmp_buffer_size;
+        data_capacity = tmp_buffer.size();
     }
 }
 
@@ -192,7 +193,7 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
     for (size_t i = 0; i < max_single_read_retries; ++i)
     {
         /// A previous attempt may have reopened the download, so what is left of it is measured per attempt.
-        size_t to_read_bytes = std::min(static_cast<size_t>(total_size - offset), data_capacity);
+        size_t to_read_bytes = std::min<size_t>(total_size - offset, data_capacity);
         /// The response may run past the right bound - e.g. the whole object in answer to a ranged
         /// request at offset 0 - and nothing past the bound may reach the caller.
         if (read_until_position)
@@ -284,7 +285,10 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
         return false;
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureBytes, bytes_read);
-    BufferBase::set(data_ptr, bytes_read, 0);
+    if (use_external_buffer)
+        BufferBase::set(data_ptr, bytes_read, 0);
+    else
+        BufferBase::setPaddedStorage(tmp_buffer, 0, bytes_read, 0);
 
     offset += bytes_read;
 
@@ -372,6 +376,7 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
     {
         /// Measures time-to-first-byte: just the `Download` API call, not data transfer.
         /// Each download attempt is logged individually as a separate `Read` event.
+        HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
         Stopwatch blob_log_watch;
         try
         {
@@ -557,6 +562,7 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
     for (size_t i = 0; i < max_single_download_retries && n > 0; ++i)
     {
         size_t bytes_copied = 0;
+        HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
         Stopwatch blob_log_watch;
 
         try
@@ -574,15 +580,8 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             checkReturnedRange(download_response.Value, range_begin, path);
             checkReturnedGeneration(download_response.Value.Details);
 
-            if (blob_storage_log)
-            {
-                blob_storage_log->addEvent(
-                    BlobStorageLogElement::EventType::Read,
-                    /* bucket */ container_for_logging, /* remote_path */ path, /* local_path */ {},
-                    n,
-                    blob_log_watch.elapsedMicroseconds(),
-                    /* error_code */ 0, /* error_message */ {});
-            }
+            /// Time-to-first-byte: just the `Download` API call, not data transfer.
+            const UInt64 time_to_first_byte_microseconds = blob_log_watch.elapsedMicroseconds();
 
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
 
@@ -594,6 +593,20 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
 
             if (read_settings.remote_throttler)
                 read_settings.remote_throttler->throttle(bytes_copied);
+
+            /// Logged only after the body has been transferred, so that one request produces exactly one
+            /// `Read` row: either this one, or the error row below if the body transfer or the throttler
+            /// throws. Otherwise the success row would take the connection info and the error row of the
+            /// same request would have none.
+            if (blob_storage_log)
+            {
+                blob_storage_log->addEvent(
+                    BlobStorageLogElement::EventType::Read,
+                    /* bucket */ container_for_logging, /* remote_path */ path, /* local_path */ {},
+                    n,
+                    time_to_first_byte_microseconds,
+                    /* error_code */ 0, /* error_message */ {});
+            }
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
@@ -667,7 +680,7 @@ void ReadBufferFromAzureBlobStorage::setMetadataFromResponse(const Azure::Storag
 {
     ObjectMetadata new_metadata;
     new_metadata.size_bytes = blob_size;
-    new_metadata.etag = details.ETag.ToString();
+    new_metadata.etag = AzureBlobStorage::getETag(details.ETag, path);
     new_metadata.last_modified = static_cast<std::chrono::system_clock::time_point>(details.LastModified).time_since_epoch().count();
     if (!details.Metadata.empty())
     {
