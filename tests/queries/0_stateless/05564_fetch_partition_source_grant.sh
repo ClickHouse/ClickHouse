@@ -14,6 +14,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 zk="/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX"
 user="${CLICKHOUSE_DATABASE}_u_05564"
 user_noins="${CLICKHOUSE_DATABASE}_noins_05564"
+user_glob="${CLICKHOUSE_DATABASE}_glob_05564"
 
 $CLICKHOUSE_CLIENT -q "
 DROP TABLE IF EXISTS src SYNC;
@@ -21,7 +22,7 @@ DROP TABLE IF EXISTS src_r2 SYNC;
 DROP TABLE IF EXISTS dst SYNC;
 DROP TABLE IF EXISTS mv SYNC;
 DROP TABLE IF EXISTS mv_src;
-DROP USER IF EXISTS $user, $user_noins;
+DROP USER IF EXISTS $user, $user_noins, $user_glob;
 
 CREATE TABLE src (id UInt32, secret String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/src', 'r1') PARTITION BY id ORDER BY id;
 INSERT INTO src VALUES (1, 'a'), (2, 'b');
@@ -36,6 +37,10 @@ GRANT SELECT, INSERT, ALTER FETCH PARTITION ON $CLICKHOUSE_DATABASE.mv TO $user;
 CREATE USER $user_noins IDENTIFIED WITH plaintext_password BY 'password';
 GRANT SELECT ON $CLICKHOUSE_DATABASE.src TO $user_noins;
 GRANT ALTER FETCH PARTITION ON $CLICKHOUSE_DATABASE.dst TO $user_noins;
+
+CREATE USER $user_glob IDENTIFIED WITH plaintext_password BY 'password';
+GRANT SELECT ON *.* TO $user_glob;
+GRANT INSERT, ALTER FETCH PARTITION ON $CLICKHOUSE_DATABASE.dst TO $user_glob;
 "
 
 part=$($CLICKHOUSE_CLIENT -q "SELECT name FROM system.parts WHERE database = currentDatabase() AND table = 'src' AND partition_id = '2' AND active")
@@ -105,6 +110,9 @@ $CLICKHOUSE_CLIENT --user "$user" --password "password" -q "SELECT * FROM dst OR
 echo "-- the same path on an auxiliary ZooKeeper is another source"
 check_access "$user" "ALTER TABLE dst FETCH PARTITION 1 FROM 'zookeeper2:$zk/src'"
 
+echo "-- SELECT ON *.* allows a source no table of this server uses"
+$CLICKHOUSE_CLIENT --user "$user_glob" --password "password" -q "ALTER TABLE dst FETCH PARTITION 1 FROM '$zk/elsewhere'" 2>&1 | grep -o -m1 "KEEPER_EXCEPTION\|ACCESS_DENIED"
+
 echo "-- a lazily loaded source is checked without loading it"
 $CLICKHOUSE_CLIENT -q "
 DROP DATABASE IF EXISTS $CLICKHOUSE_DATABASE_1;
@@ -128,5 +136,5 @@ DROP TABLE src_r2 SYNC;
 DROP TABLE dst SYNC;
 DROP TABLE mv SYNC;
 DROP TABLE mv_src;
-DROP USER $user, $user_noins;
+DROP USER $user, $user_noins, $user_glob;
 "

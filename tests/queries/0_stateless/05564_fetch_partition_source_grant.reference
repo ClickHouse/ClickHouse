@@ -23,6 +23,8 @@ OK
 2	b
 -- the same path on an auxiliary ZooKeeper is another source
 ACCESS_DENIED: SELECT on the tables that use the path, or SELECT ON *.*
+-- SELECT ON *.* allows a source no table of this server uses
+KEEPER_EXCEPTION
 -- a lazily loaded source is checked without loading it
 TableProxy
 ACCESS_DENIED: SELECT ON db1.lsrc
