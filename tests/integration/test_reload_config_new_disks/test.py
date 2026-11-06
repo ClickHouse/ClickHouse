@@ -28,6 +28,8 @@ DISKS_CONFIG = """
                 <disk>blob_{suffix}</disk>
                 <path>cache_{suffix}/</path>
                 <max_size>1Mi</max_size>
+                <max_file_segment_size>102400</max_file_segment_size>
+                <boundary_alignment>4096</boundary_alignment>
                 <skip_access_check>true</skip_access_check>
             </cache_{suffix}>
         </disks>
