@@ -44,6 +44,8 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_EXPRESSION;
 }
@@ -180,6 +182,9 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
     /// Resolved cluster key names, populated below for the plain `GROUP BY` branch.
     /// `WITH CLUSTER` is not supported in `GROUPING SETS` / `ROLLUP` / `CUBE`.
     std::vector<std::string> cluster_key_names_resolved;
+    /// Result names of the ordinary (exact-match) keys of a `WITH CLUSTER` query, used to reject
+    /// a cluster key expression that also appears as an ordinary key.
+    std::unordered_set<std::string> ordinary_key_names_with_cluster;
 
     PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set);
 
@@ -313,6 +318,21 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
                 if (is_cluster_key_position && !expression_dag_nodes.empty())
                     cluster_key_names_resolved.push_back(expression_dag_nodes.back()->result_name);
 
+                if (cluster_idx_orig >= 0 && !is_cluster_key_position)
+                {
+                    for (const auto * expression_dag_node : expression_dag_nodes)
+                    {
+                        /// `ClusterMergingTransform` compares and sorts the ordinary keys with
+                        /// `IColumn::compareAt`, which is not an equality test for non-comparable
+                        /// types (for example, it treats all aggregate function states as equal).
+                        if (!expression_dag_node->result_type->isComparable())
+                            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "GROUP BY ... WITH CLUSTER does not support the non-comparable type {} of the key {}",
+                                expression_dag_node->result_type->getName(), expression_dag_node->result_name);
+                        ordinary_key_names_with_cluster.insert(expression_dag_node->result_name);
+                    }
+                }
+
                 ++orig_pos;
             }
         }
@@ -367,6 +387,14 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Failed to resolve GROUP BY ... WITH CLUSTER key names: expected {}, got {}",
                 cluster_dims, cluster_key_names_resolved.size());
+
+        /// Identical key expressions share one column after aggregation, so a key that is both
+        /// an exact-match key and a cluster key cannot keep both roles.
+        for (const auto & cluster_key_name : cluster_key_names_resolved)
+            if (ordinary_key_names_with_cluster.contains(cluster_key_name))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The expression {} cannot be both an ordinary GROUP BY key and a part of the WITH CLUSTER key",
+                    cluster_key_name);
 
         ClusterKeyInfo info;
         info.distance = query_node.getGroupByClusterDistance();

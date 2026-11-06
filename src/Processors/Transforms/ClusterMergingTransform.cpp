@@ -1244,6 +1244,10 @@ Chunk ClusterMergingTransform::generateString()
         /// `counter[j]` is reset via the per-i `dirty` list so the clear is O(touched).
         std::vector<size_t> counter(total_rows, 0);
         std::vector<size_t> dirty;
+        /// A posting list of a frequent q-gram can be as long as the total number of q-grams, and
+        /// one row may traverse it many times, so cancellation is polled inside the traversal too.
+        constexpr size_t CANCELLATION_CHECK_PERIOD = 65536;
+        size_t probes_since_cancellation_check = 0;
 
         for (size_t i = 0; i < total_rows; ++i)
         {
@@ -1267,6 +1271,12 @@ Chunk ClusterMergingTransform::generateString()
                     continue;
                 for (size_t j : it->second)
                 {
+                    if (++probes_since_cancellation_check == CANCELLATION_CHECK_PERIOD)
+                    {
+                        probes_since_cancellation_check = 0;
+                        if (isCancelled())
+                            return {};
+                    }
                     if (j <= i)
                         continue;
                     if (counter[j] == 0)
