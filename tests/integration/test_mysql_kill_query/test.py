@@ -1,4 +1,5 @@
 import pytest
+import os
 import uuid
 import threading
 import logging
@@ -9,6 +10,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
 
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
@@ -144,6 +146,114 @@ def test_kill_infinite_query(setup_infinite_query):
         assert len(processes) == 0 or "infinite_counter" not in str(processes)
 
     assert node1.contains_in_log("QUERY_WAS_CANCELLED")
+
+
+def test_replace_query_waiting_on_mysql(setup_infinite_query):
+    mysql_conn, cluster = setup_infinite_query
+    query_id = str(uuid.uuid4())
+    errors = []
+
+    def remote_sleeps():
+        with mysql_conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT ID FROM information_schema.PROCESSLIST WHERE INFO = 'DO SLEEP(31536000)'"
+            )
+            return [row[0] for row in cursor.fetchall()]
+
+    def execute_query():
+        _, error = node1.query_and_get_answer_with_error(
+            f"""SELECT * FROM mysql(
+            '{cluster.mysql8_ip}:{cluster.mysql8_port}',
+            'test_db',
+            'infinite_counter',
+            'root',
+            '{mysql_pass}')""",
+            query_id=query_id,
+        )
+        errors.append(error)
+
+    query_thread = threading.Thread(target=execute_query, daemon=True)
+    query_thread.start()
+
+    try:
+        for _ in range(100):
+            if remote_sleeps():
+                break
+            time.sleep(0.1)
+        assert len(remote_sleeps()) == 1
+
+        # The replacement only flags the old query, which then cancels its pipeline on its own thread.
+        assert (
+            node1.query(
+                "SELECT 'replaced'",
+                query_id=query_id,
+                settings={"replace_running_query": 1},
+            )
+            == "replaced\n"
+        )
+        query_thread.join(timeout=60)
+        assert not query_thread.is_alive()
+        assert "DB::Exception: Query was cancelled" in errors[0]
+        assert remote_sleeps() == []
+    finally:
+        with mysql_conn.cursor() as cursor:
+            for remote_id in remote_sleeps():
+                cursor.execute(f"KILL QUERY {remote_id}")
+
+
+def test_kill_query_during_slow_ping(started_cluster):
+    mysql_conn, cluster = started_cluster
+    with mysql_conn.cursor() as cursor:
+        cursor.execute("CREATE TABLE IF NOT EXISTS test_db.slow_ping (id INT)")
+    mysql_conn.commit()
+
+    # Connections through the proxy are established at once, but their COM_PING is held.
+    node1.copy_file_to_container(
+        os.path.join(SCRIPT_DIR, "slow_ping_proxy.py"), "/tmp/slow_ping_proxy.py"
+    )
+    node1.exec_in_container(
+        [
+            "python3",
+            "/tmp/slow_ping_proxy.py",
+            "13306",
+            cluster.mysql8_ip,
+            str(cluster.mysql8_port),
+            "/tmp/slow_ping_proxy.pid",
+        ],
+        detach=True,
+    )
+    query_id = str(uuid.uuid4())
+    errors = []
+
+    def execute_query():
+        _, error = node1.query_and_get_answer_with_error(
+            f"SELECT * FROM mysql('127.0.0.1:13306', 'test_db', 'slow_ping', 'root', '{mysql_pass}')",
+            query_id=query_id,
+        )
+        errors.append(error)
+
+    query_thread = threading.Thread(target=execute_query, daemon=True)
+    try:
+        node1.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "for _ in $(seq 100); do [ -s /tmp/slow_ping_proxy.pid ] && exit 0; sleep 0.1; done; exit 1",
+            ]
+        )
+        query_thread.start()
+        node1.wait_for_log_line(f"{query_id}.*sending PING")
+
+        node1.query(f"KILL QUERY WHERE query_id = '{query_id}' ASYNC")
+        query_thread.join(timeout=30)
+        assert not query_thread.is_alive()
+        assert "DB::Exception: Query was cancelled" in errors[0]
+    finally:
+        node1.exec_in_container(
+            ["bash", "-c", "kill $(cat /tmp/slow_ping_proxy.pid)"], nothrow=True
+        )
+        if query_thread.is_alive():
+            query_thread.join(timeout=60)
 
 
 def test_kill_query_during_generation(setup_big_data_table):
