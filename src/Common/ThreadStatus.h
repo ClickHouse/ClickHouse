@@ -90,6 +90,9 @@ public:
 
     void initializeQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
+    /// The group this one is nested in, if any (see `parent`).
+    ThreadGroupPtr getParent() const { return parent; }
+
     /// The first thread created this thread group
     const UInt64 master_thread_id;
 
@@ -301,6 +304,13 @@ public:
     ThreadStatus();
     explicit ThreadStatus(NoOSThreadTag);
     ~ThreadStatus();
+
+#if defined(OS_DARWIN)
+    /// The ThreadStatus of another OS thread, or nullptr. The lock keeps it alive; its fields are
+    /// only safe to read while that thread is stopped (StackTrace::SuspendedThread), since this is
+    /// how `system.stack_trace` reads them without signalling the thread.
+    static std::pair<std::unique_lock<std::mutex>, ThreadStatus *> findByThreadId(UInt64 thread_id);
+#endif
 
     ThreadGroupPtr getThreadGroup() const;
 

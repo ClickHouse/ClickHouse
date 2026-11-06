@@ -130,7 +130,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
-#include <Interpreters/HypotheticalObjectStore.h>
+#include <Interpreters/WhatIf/HypotheticalObjectStore.h>
 #include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/SessionQueryIdsHistory.h>
 #include <Interpreters/Session.h>
@@ -3576,6 +3576,13 @@ static bool findIdentifier(const ASTFunction * function)
     return false;
 }
 
+/// Substituting the parameters and analyzing the body report parts of the definition in their errors.
+static void checkAccessToParameterizedView(const Context & context, const String & database_name, const String & table_name, const StorageID & view_id)
+{
+    if (!context.getAccess()->getAccessRightsWithImplicit()->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
+        context.checkAccess(AccessType::SELECT, view_id);
+}
+
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint)
 {
     ASTFunction * function = assert_cast<ASTFunction *>(table_expression.get());
@@ -3598,10 +3605,12 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         table_name = function->name;
         table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
     }
-    if (table)
+    /// A registered table function takes precedence over a view of the same name, as in `QueryAnalyzer::resolveTableFunction`.
+    if (table && !TableFunctionFactory::instance().isTableFunctionName(function->name))
     {
         if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
         {
+            checkAccessToParameterizedView(*this, database_name, table_name, table->getStorageID());
             auto view_metadata = table->getInMemoryMetadataPtr(getQueryContext(), false);
             auto query = view_metadata->getSelectQuery().inner_query->clone();
             NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression, getQueryContext());
@@ -3894,6 +3903,8 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     auto * storage_view = original_view->as<StorageView>();
     if (!storage_view || !storage_view->isParameterizedView())
         return nullptr;
+
+    checkAccessToParameterizedView(*this, database_name, table_name, original_view->getStorageID());
 
     auto original_view_metadata = original_view->getInMemoryMetadataPtr(getQueryContext(), false);
     auto query = original_view_metadata->getSelectQuery().inner_query->clone();
@@ -6771,13 +6782,13 @@ ThrottlerPtr Context::getMergesThrottler() const
 ThrottlerPtr Context::getServerWideDistributedCacheReadThrottler() const
 {
     SharedLockGuard lock(shared->mutex);
-    return shared->distributed_cache_read_throttler;
+    return shared->distributed_cache_read_throttler == shared->remote_read_throttler ? nullptr : shared->distributed_cache_read_throttler;
 }
 
 ThrottlerPtr Context::getServerWideDistributedCacheWriteThrottler() const
 {
     SharedLockGuard lock(shared->mutex);
-    return shared->distributed_cache_write_throttler;
+    return shared->distributed_cache_write_throttler == shared->remote_write_throttler ? nullptr : shared->distributed_cache_write_throttler;
 }
 
 ThrottlerPtr Context::getDistributedCacheReadThrottler() const
