@@ -2108,8 +2108,8 @@ ProcessorPtr IcebergMetadata::createInsertCommitSink(
     std::shared_ptr<DataLake::ICatalog> catalog)
 {
     checkTableRootIsQueriedPath("INSERT");
-    auto committer = std::make_shared<IcebergStorageSink>(
-        object_storage, configuration, /*format_settings*/ std::nullopt, sample_block, context, catalog, persistent_components, table_id);
+    auto committer = std::make_unique<IcebergInsertCommitter>(
+        object_storage, configuration, sample_block, context, catalog, persistent_components, table_id);
     return std::make_shared<IcebergCommit>(sample_block, std::move(committer));
 }
 
