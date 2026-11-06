@@ -319,7 +319,7 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
                 if (const auto it = srvr_responses_map.find("Zxid"); it != srvr_responses_map.end())
                 {
                     std::string_view zxid = it->second;
-                    if (!zxid.starts_with("0x"))
+                    if (zxid.size() <= 2 || !zxid.starts_with("0x"))
                         throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
                             "Cannot parse Zxid '{}' from the srvr response of {}:{}: expected a hexadecimal number with the 0x prefix",
                             zxid, host, port);

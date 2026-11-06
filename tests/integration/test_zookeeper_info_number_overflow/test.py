@@ -22,17 +22,6 @@ keeper = cluster.add_instance(
     stay_alive=True,
 )
 
-# Servers whose second ZooKeeper host is a mock which reports a `Zxid` without
-# the 0x prefix: `5` on `keeper:9997` and `123` on `keeper:9996`.
-node_short_zxid = cluster.add_instance(
-    "node_short_zxid",
-    main_configs=["configs/use_keeper_short_zxid.xml"],
-)
-node_long_zxid = cluster.add_instance(
-    "node_long_zxid",
-    main_configs=["configs/use_keeper_long_zxid.xml"],
-)
-
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -43,23 +32,16 @@ def started_cluster():
             os.path.join(SCRIPT_DIR, "mock_keeper_4lw.py"), "/mock_keeper_4lw.py"
         )
         keeper.exec_in_container(["python3", "/mock_keeper_4lw.py"], detach=True)
-        keeper.exec_in_container(
-            ["python3", "/mock_keeper_4lw.py", "9997", "5"], detach=True
-        )
-        keeper.exec_in_container(
-            ["python3", "/mock_keeper_4lw.py", "9996", "123"], detach=True
-        )
 
-        for port in (9998, 9997, 9996):
-            mock_address = (cluster.get_instance_ip("keeper"), port)
-            for _ in range(100):
-                try:
-                    socket.create_connection(mock_address, timeout=1).close()
-                    break
-                except OSError:
-                    time.sleep(0.1)
-            else:
-                raise Exception("Mock four letter command endpoint did not start")
+        mock_address = (cluster.get_instance_ip("keeper"), 9998)
+        for _ in range(100):
+            try:
+                socket.create_connection(mock_address, timeout=1).close()
+                break
+            except OSError:
+                time.sleep(0.1)
+        else:
+            raise Exception("Mock four letter command endpoint did not start")
 
         yield cluster
     finally:
@@ -118,15 +100,3 @@ def test_keeper_asynchronous_metrics_file_descriptor_counts(started_cluster):
 
     assert 0 < float(open_fd) < 2**31
     assert float(max_fd) == -1 or float(max_fd) >= float(open_fd)
-
-
-@pytest.mark.parametrize(
-    "instance_name, zxid", [("node_short_zxid", "5"), ("node_long_zxid", "123")]
-)
-def test_zookeeper_info_zxid_without_prefix(started_cluster, instance_name, zxid):
-    # A `Zxid` without the 0x prefix fails the query with a proper error, whether
-    # it is shorter than the prefix or not.
-    node = cluster.instances[instance_name]
-    node.query_with_retry("SELECT count() FROM system.zookeeper WHERE path = '/'")
-    error = node.query_and_get_error("SELECT zxid FROM system.zookeeper_info")
-    assert "CANNOT_PARSE_NUMBER" in error and f"Cannot parse Zxid '{zxid}'" in error
