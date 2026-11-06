@@ -25,8 +25,4 @@ bool isNonSecretExtraCredentialsKey(std::string_view key);
 /// Records the nested `headers(..)` and `extra_credentials(..)` maps, which carry secret auth material at any position.
 void maskHeadersAndExtraCredentials(FunctionSecretArgumentsFinder & finder);
 
-/// Masks credential material embedded in an S3 URL itself: the userinfo part and the values of
-/// presigned-URL query parameters. Returns true if anything was masked.
-bool maskS3URICredentials(String & url);
-
 }

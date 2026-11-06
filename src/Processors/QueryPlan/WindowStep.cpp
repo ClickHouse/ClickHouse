@@ -1,3 +1,4 @@
+#include <Common/VectorWithMemoryTracking.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Core/Block.h>
@@ -42,7 +43,7 @@ static ITransformingStep::Traits getTraits(bool preserves_sorting)
 }
 
 static Block addWindowFunctionResultColumns(const Block & block,
-    std::vector<WindowFunctionDescription> window_functions)
+    VectorWithMemoryTracking<WindowFunctionDescription> window_functions)
 {
     auto result = block;
 
@@ -62,12 +63,14 @@ static Block addWindowFunctionResultColumns(const Block & block,
 WindowStep::WindowStep(
     const SharedHeader & input_header_,
     const WindowDescription & window_description_,
-    const std::vector<WindowFunctionDescription> & window_functions_,
-    bool streams_fan_out_)
+    const VectorWithMemoryTracking<WindowFunctionDescription> & window_functions_,
+    bool streams_fan_out_,
+    const SortingStep::Settings & sort_settings_)
     : ITransformingStep(input_header_, std::make_shared<const Block>(addWindowFunctionResultColumns(*input_header_, window_functions_)), getTraits(!streams_fan_out_))
     , window_description(window_description_)
     , window_functions(window_functions_)
     , streams_fan_out(streams_fan_out_)
+    , sort_settings(sort_settings_)
 {
     // We don't remove any columns, only add, so probably we don't have to update
     // the output DataStream::distinct_columns.
@@ -85,6 +88,13 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     // have resized it.
     if (window_description.full_sort_description.empty())
         pipeline.resize(1);
+
+    /// The sorting step before the window sorts only the main stream, but `WindowTransform` also processes the totals,
+    /// which an `arrayJoin` can expand into several unsorted rows.
+    if (!window_description.full_sort_description.empty())
+        SortingStep::fullSortStreams(
+            pipeline, sort_settings, window_description.full_sort_description, /*limit_=*/0,
+            /*skip_partial_sort=*/false, /*threshold_tracker=*/nullptr, /*sort_totals=*/true);
 
     pipeline.addSimpleTransform(
         [&](const SharedHeader & /*header*/)
@@ -240,7 +250,7 @@ static WindowFrame deserializeWindowFrame(ReadBuffer & in)
 }
 
 static void serializeWindowFunctions(
-    const std::vector<WindowFunctionDescription> & window_functions, const IQueryPlanStep::Serialization & ctx)
+    const VectorWithMemoryTracking<WindowFunctionDescription> & window_functions, const IQueryPlanStep::Serialization & ctx)
 {
     WriteBuffer & out = ctx.out;
     writeVarUInt(window_functions.size(), out);
@@ -276,13 +286,13 @@ static void serializeWindowFunctions(
     }
 }
 
-static std::vector<WindowFunctionDescription>
+static VectorWithMemoryTracking<WindowFunctionDescription>
 deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
 {
     UInt64 num_functions = 0;
     readVarUInt(num_functions, in);
 
-    std::vector<WindowFunctionDescription> window_functions(num_functions);
+    VectorWithMemoryTracking<WindowFunctionDescription> window_functions(num_functions);
     for (auto & func : window_functions)
     {
         readStringBinary(func.column_name, in);
@@ -329,6 +339,11 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
     }
 
     return window_functions;
+}
+
+void WindowStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+{
+    sort_settings.updatePlanSettings(settings);
 }
 
 void WindowStep::serialize(Serialization & ctx) const
@@ -402,7 +417,8 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
         ctx.input_headers.front(),
         window_description,
         window_description.window_functions,
-        streams_fan_out);
+        streams_fan_out,
+        SortingStep::Settings(ctx.settings));
 }
 
 void registerWindowStep(QueryPlanStepRegistry & registry);
