@@ -19,9 +19,15 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include <Poco/AutoPtr.h>
+#include <Poco/Util/Application.h>
+#include <Poco/Util/LayeredConfiguration.h>
+#include <base/argsToConfig.h>
 
 #include <fcntl.h>
 #include <grp.h>
@@ -241,6 +247,30 @@ bool isValidIdentifier(const std::string & s)
     return true;
 }
 
+/// Returns true if the string can be used as the name of an XML element, the way a user is declared in `users.d`:
+/// an ASCII letter or underscore, followed by letters, digits, underscores, hyphens, and dots (e.g. `service-account`).
+/// Used to validate CLICKHOUSE_USER before embedding it in XML.
+bool isValidXMLName(const std::string & s)
+{
+    if (s.empty())
+        return false;
+    if (!std::isalpha(static_cast<unsigned char>(s[0])) && s[0] != '_')
+        return false;
+    for (unsigned char c : s)
+        if (!std::isalnum(c) && c != '_' && c != '-' && c != '.')
+            return false;
+    return true;
+}
+
+/// The value of a configuration key overridden by the server arguments after `--` (e.g. `--tcp_port=19001`
+/// or `--tcp_port 19001`), parsed the same way the server parses them. Empty if the arguments do not set it.
+std::string getOverriddenConfigValue(const std::vector<std::string> & server_args, const std::string & key)
+{
+    Poco::AutoPtr<Poco::Util::LayeredConfiguration> config = new Poco::Util::LayeredConfiguration;
+    argsToConfig(Poco::Util::Application::ArgVec(server_args.begin(), server_args.end()), *config, 0);
+    return config->getString(key, "");
+}
+
 /// Extract a single value from a ClickHouse config key via `clickhouse extract-from-config`.
 /// Returns an empty string if the key is absent (--try flag suppresses errors).
 std::string extractConfigValue(const std::string & config_file, const std::string & key, bool use_users = false)
@@ -454,11 +484,11 @@ bool manageClickHouseUser(
             return false;
         }
 
-        if (!isValidIdentifier(clickhouse_user))
+        if (!isValidXMLName(clickhouse_user))
         {
             std::cerr << "docker-init: error: CLICKHOUSE_USER '" << clickhouse_user
-                      << "' contains characters not allowed in an XML element name; "
-                         "use only alphanumeric characters and underscores\n";
+                      << "' is not allowed as an XML element name; "
+                         "use letters, digits, underscores, hyphens, and dots, starting with a letter or an underscore\n";
             return false;
         }
 
@@ -686,7 +716,11 @@ bool initClickHouseDB(
     if (!has_init_files && clickhouse_db.empty())
         return true;
 
-    std::string native_port = extractConfigValue(config_file, "tcp_port");
+    /// The temporary server gets the same arguments as the final one (e.g. `--path`), so the port of its clients
+    /// is the one the arguments set, if any, the same as the server takes it.
+    std::string native_port = getOverriddenConfigValue(extra_server_args, "tcp_port");
+    if (native_port.empty())
+        native_port = extractConfigValue(config_file, "tcp_port");
     if (native_port.empty())
         native_port = "9000";
 
@@ -696,13 +730,19 @@ bool initClickHouseDB(
     /// The "--" separator is required: positional arguments after "--" override config.xml
     /// properties (e.g. --listen_host=127.0.0.1), while options before "--" are parsed by
     /// Poco and must be registered. Without "--", Poco rejects "--listen_host" as unknown.
+    /// `extra_server_args` already starts with "--" when it has properties to override.
     std::vector<std::string> server_args = {
         g_clickhouse_binary, "su", run_as, "clickhouse-server",
         "--config-file=" + config_file,
-        "--", "--listen_host=127.0.0.1",
     };
     for (const auto & arg : extra_server_args)
         server_args.push_back(arg);
+    if (std::find(extra_server_args.begin(), extra_server_args.end(), "--") == extra_server_args.end())
+        server_args.emplace_back("--");
+    /// After the user's arguments, because the last value of a property wins: the server must not accept remote
+    /// connections until the initialization (e.g. setting the password) is done, even with `-- --listen_host=0.0.0.0`.
+    server_args.emplace_back("--listen_host=127.0.0.1");
+    server_args.emplace_back("--interserver_listen_host=127.0.0.1");
 
     if (g_shutdown_requested)
         return true;
@@ -1122,13 +1162,30 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
                       << password_file << "': " << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
             return 1;
         }
-        std::getline(pf, clickhouse_password);
+        /// The whole file without the trailing newlines, like `$(cat file)` in entrypoint.sh: reading only the first line
+        /// would make an empty password of a secret that starts with an empty line.
+        std::ostringstream content;
+        content << pf.rdbuf();
+        clickhouse_password = content.str();
+        while (!clickhouse_password.empty() && clickhouse_password.back() == '\n')
+            clickhouse_password.pop_back();
         if (pf.bad())
         {
             std::cerr << "docker-init: error: cannot read CLICKHOUSE_PASSWORD_FILE '"
                       << password_file << "': " << strerror(errno) << "\n"; // NOLINT(concurrency-mt-unsafe)
             return 1;
         }
+    }
+
+    /// `clickhouse-client` rejects a password with ASCII control characters (e.g. a line break inside a password file),
+    /// so neither the initialization nor the users could log in with it. Fail instead of creating such a user.
+    if (std::any_of(clickhouse_password.begin(), clickhouse_password.end(),
+            [](unsigned char c) { return c < 0x20 || c == 0x7F; }))
+    {
+        std::cerr << "docker-init: error: the password from "
+                  << (password_file.empty() ? "CLICKHOUSE_PASSWORD" : "CLICKHOUSE_PASSWORD_FILE '" + password_file + "'")
+                  << " contains ASCII control characters, such as a line break other than at the end of the file\n";
+        return 1;
     }
 
     std::string access_management = getEnv("CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT", "0");
