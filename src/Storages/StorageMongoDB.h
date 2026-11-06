@@ -60,6 +60,10 @@ private:
 
 struct MongoDBConfiguration
 {
+    /// Declared first: the driver requires the instance to exist before any other driver object is created,
+    /// and a URI parsed on another thread while the instance installs its log handler races in `mongoc_log`.
+    MongoDBInstanceHolder & instance_holder = MongoDBInstanceHolder::instance();
+
     std::unique_ptr<mongocxx::uri> uri;
     String collection;
     std::unordered_set<String> oid_fields = {"_id"};
@@ -110,8 +114,6 @@ public:
         size_t num_streams) override;
 
 private:
-    MongoDBInstanceHolder & instance_holder = MongoDBInstanceHolder::instance();
-
     std::optional<bsoncxx::document::value> visitWhereConstant(
         const ContextPtr & context,
         const ConstantNode * const_node,

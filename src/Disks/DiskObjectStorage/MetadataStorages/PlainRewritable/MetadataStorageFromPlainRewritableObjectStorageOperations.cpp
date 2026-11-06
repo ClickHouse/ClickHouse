@@ -43,7 +43,6 @@ namespace FailPoints
     extern const char plain_object_storage_copy_fail_on_file_move[];
     extern const char plain_object_storage_copy_temp_source_file_fail_on_file_move[];
     extern const char plain_object_storage_copy_temp_target_file_fail_on_file_move[];
-    extern const char plain_object_storage_fail_after_copy_on_file_move[];
 }
 
 MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation::MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation(
@@ -129,17 +128,13 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo()
 {
-    auto log = getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation");
-    LOG_TRACE(log, "Reversing directory creation for path '{}'", path);
+    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Reversing directory creation for path '{}'", path);
 
-    if (!write_attempted)
-        return;
-
-    undoWithRetries(log, fmt::format("remove the metadata of the directory '{}'", path), [&]
+    if (write_attempted)
     {
         auto metadata_object_key = layout->constructDirectoryObjectKey(directory_remote_path);
         object_storage->removeObjectIfExists(StoredObject(metadata_object_key, path));
-    });
+    }
 }
 
 MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFromPlainObjectStorageMoveDirectoryOperation(
@@ -202,6 +197,12 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::rewriteSingleD
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Rewriting '{}' to '{}'", from, to);
 
     writeString(to.string(), buffer);
+
+    fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_move,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", from, to);
+    });
+
     buffer.finalize();
 
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Updated '{}' to '{}'", from, to);
@@ -237,14 +238,7 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute()
 
         auto write_buf = createWriteBuf(remote_info.value(), /*expected_content*/validate_content ? std::make_optional(sub_path_from) : std::nullopt);
 
-        /// Forward pass only: the reversal rewrites markers through the same helper, and a fault that never stops
-        /// firing cannot be retried to an end.
-        fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_move,
-        {
-            throw Exception(
-                ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", sub_path_from, sub_path_to);
-        });
-
+        changed_paths.insert(sub_path_from);
         rewriteSingleDirectory(sub_path_from, sub_path_to, *write_buf);
     }
 
@@ -253,24 +247,18 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute()
 
 void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo()
 {
-    auto log = getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation");
-    LOG_TRACE(log, "Reversing directory move from '{}' to '{}'", path_from, path_to);
+    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Reversing directory move from '{}' to '{}'", path_from, path_to);
 
-    /// Every marker of the subtree is rewritten, not only the ones `execute` reported as written: each old logical
-    /// path is known here, so rewriting one that `execute` never reached costs a write and changes nothing.
     for (const auto & [subdir, remote_info] : from_tree_info)
     {
         auto sub_path_to = path_to / subdir / "";
         auto sub_path_from = path_from / subdir / "";
 
-        if (!remote_info.has_value())
+        if (!changed_paths.contains(sub_path_from))
             continue;
 
-        undoWithRetries(log, fmt::format("restore the metadata of the directory '{}'", sub_path_from), [&]
-        {
-            auto write_buf = createWriteBuf(remote_info.value(), /*expected_content*/std::nullopt);
-            rewriteSingleDirectory(sub_path_to, sub_path_from, *write_buf);
-        });
+        auto write_buf = createWriteBuf(remote_info.value(), /*expected_content*/std::nullopt);
+        rewriteSingleDirectory(sub_path_to, sub_path_from, *write_buf);
     }
 }
 
@@ -317,23 +305,19 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo()
     if (!remove_attempted)
         return;
 
-    auto log = getLogger("MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation");
-    LOG_TRACE(log, "Reversing directory removal for '{}'", path);
+    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation"), "Reversing directory removal for '{}'", path);
 
-    undoWithRetries(log, fmt::format("restore the metadata of the directory '{}'", path), [&]
-    {
-        auto metadata_object_key = layout->constructDirectoryObjectKey(info.remote_path);
-        auto metadata_object = StoredObject(metadata_object_key, path);
+    auto metadata_object_key = layout->constructDirectoryObjectKey(info.remote_path);
+    auto metadata_object = StoredObject(metadata_object_key, path);
 
-        auto buf = object_storage->writeObject(
-            metadata_object,
-            WriteMode::Rewrite,
-            /*object_attributes*/ std::nullopt,
-            /*buf_size*/ 128,
-            /*settings*/ DB::getWriteSettings());
-        writeString(path.string(), *buf);
-        buf->finalize();
-    });
+    auto buf = object_storage->writeObject(
+        metadata_object,
+        WriteMode::Rewrite,
+        /*object_attributes*/ std::nullopt,
+        /*buf_size*/ 128,
+        /*settings*/ DB::getWriteSettings());
+    writeString(path.string(), *buf);
+    buf->finalize();
 }
 
 MetadataStorageFromPlainObjectStorageWriteFileOperation::MetadataStorageFromPlainObjectStorageWriteFileOperation(
@@ -402,9 +386,10 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
     remote_source_path = layout->constructFileObjectKey(directory_remote_path_from, normalized_path_from.filename());
     remote_tmp_path = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
 
-    blob_removal_attempted = true;
-
+    copy_started = true;
     object_storage->copyObject(StoredObject(remote_source_path), StoredObject(remote_tmp_path), getReadSettings(), getWriteSettings());
+
+    remove_started = true;
     object_storage->removeObjectIfExists(StoredObject(remote_source_path));
 
     fs_tree->removeFile(path);
@@ -412,40 +397,20 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
 
 void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
 {
-    if (!blob_removal_attempted)
+    if (!copy_started)
         return;
 
-    auto log = getLogger("MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation");
-
-    /// The temporary copy is dropped in a later stage, so a failure never strands the restore.
-    undoWithRetries(log, fmt::format("restore the blob of the file '{}'", path), [&]
-    {
-        if (object_storage->exists(StoredObject(remote_source_path)))
-            return;
-
-        if (!object_storage->exists(StoredObject(remote_tmp_path)))
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot restore the blob of the file '{}': it is absent both under its own key '{}' and under the "
-                "temporary key '{}' the removal copied it to",
-                path,
-                remote_source_path,
-                remote_tmp_path);
-
+    if (remove_started)
         object_storage->copyObject(StoredObject(remote_tmp_path), StoredObject(remote_source_path), getReadSettings(), getWriteSettings());
-    });
 
-    undoWithRetries(log, fmt::format("remove the temporary copy of the blob of the file '{}'", path), [&]
-    {
-        object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
-    });
+    object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
 }
 
 void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::finalize()
 {
     removed_objects.push_back(StoredObject(remote_source_path));
 
-    if (blob_removal_attempted)
+    if (copy_started)
         object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
 }
 
@@ -497,14 +462,13 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::undo()
     if (!copy_attempted)
         return;
 
-    auto log = getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation");
-    LOG_WARNING(log, "Removing file '{}' that was copied from '{}", path_to, path_from);
+    LOG_WARNING(
+        getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation"),
+        "Removing file '{}' that was copied from '{}",
+        path_to,
+        path_from);
 
-    /// The target held no file before the copy, so the key has to be empty again whether or not the copy said so.
-    undoWithRetries(log, fmt::format("remove the copy of the file '{}'", path_to), [&]
-    {
-        object_storage->removeObjectIfExists(StoredObject(remote_path_to));
-    });
+    object_storage->removeObjectIfExists(StoredObject(remote_path_to));
 }
 
 MetadataStorageFromPlainObjectStorageMoveFileOperation::MetadataStorageFromPlainObjectStorageMoveFileOperation(
@@ -557,14 +521,11 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
     const auto read_settings = getReadSettingsForMetadata();
     const auto write_settings = getWriteSettingsForMetadata();
 
-    had_existing_target = fs_tree->existsFile(path_to);
-    if (had_existing_target && !replaceable)
-        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Target file '{}' already exists", path_to);
-
-    blob_move_attempted = true;
-
-    if (had_existing_target)
+    if (fs_tree->existsFile(path_to))
     {
+        if (!replaceable)
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Target file '{}' already exists", path_to);
+
         fiu_do_on(FailPoints::plain_object_storage_copy_temp_target_file_fail_on_file_move, {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
         });
@@ -574,6 +535,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
             /*object_to=*/StoredObject(tmp_remote_path_to),
             read_settings,
             write_settings);
+        moved_existing_target_file = true;
 
         fs_tree->removeFile(path_to);
         fs_tree->recordFile(path_to, file_from_remote_info.value());
@@ -595,6 +557,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
             /*object_to=*/StoredObject(tmp_remote_path_from),
             read_settings,
             write_settings);
+        moved_existing_source_file = true;
     }
 
     {
@@ -603,13 +566,8 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
         });
         object_storage->copyObject(
             /*object_from=*/StoredObject(remote_path_from), /*object_to=*/StoredObject(remote_path_to), read_settings, write_settings);
-
-        /// Fires once the blob is published and before this method knows it.
-        fiu_do_on(FailPoints::plain_object_storage_fail_after_copy_on_file_move, {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault after moving from '{}' to '{}'", path_from, path_to);
-        });
-
         object_storage->removeObjectIfExists(StoredObject(remote_path_from));
+        moved_file = true;
     }
 
     fs_tree->removeFile(path_from);
@@ -617,79 +575,53 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
 
 void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
 {
-    if (!blob_move_attempted)
-        return;
-
     const auto read_settings = getReadSettings();
     const auto write_settings = getWriteSettings();
 
-    auto log = getLogger("MetadataStorageFromPlainObjectStorageMoveFileOperation");
-    LOG_WARNING(log, "Reversing the move (replaceable = {}) of '{}' to '{}'", replaceable, path_from, path_to);
-
-    /// Each stage says where one key has to end up and asks object storage whether it is already there, so it holds
-    /// whether the matching step of `execute` never ran, ran, or ran and lost its answer.
-    undoWithRetries(log, fmt::format("restore the blob of the source file '{}'", path_from), [&]
+    if (moved_file)
     {
-        if (object_storage->exists(StoredObject(remote_path_from)))
-            return;
+        LOG_WARNING(
+            getLogger("MetadataStorageFromPlainObjectStorageMoveFileOperation"),
+            "Removing file '{}' that was moved (replaceable = {}) from '{}",
+            path_to,
+            replaceable,
+            path_from);
 
-        if (!object_storage->exists(StoredObject(tmp_remote_path_from)))
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot restore the blob of the file '{}': it is absent both under its own key '{}' and under the "
-                "temporary key '{}' the move copied it to",
-                path_from,
-                remote_path_from,
-                tmp_remote_path_from);
+        object_storage->removeObjectIfExists(StoredObject(remote_path_to));
+    }
 
+    if (moved_existing_source_file)
+    {
         object_storage->copyObject(
             /*object_from=*/StoredObject(tmp_remote_path_from),
             /*object_to=*/StoredObject(remote_path_from),
             read_settings,
             write_settings);
-    });
 
-    undoWithRetries(log, fmt::format("restore the blob of the target file '{}'", path_to), [&]
-    {
-        if (!had_existing_target)
-        {
-            /// The key held no file before the move, so nothing of value can be there.
-            object_storage->removeObjectIfExists(StoredObject(remote_path_to));
-            return;
-        }
-
-        if (object_storage->exists(StoredObject(tmp_remote_path_to)))
-            object_storage->copyObject(
-                /*object_from=*/StoredObject(tmp_remote_path_to),
-                /*object_to=*/StoredObject(remote_path_to),
-                read_settings,
-                write_settings);
-
-        /// Otherwise there is nothing to restore: the copy above comes before anything overwrites or removes the
-        /// target, so either it succeeded and its result is here, or it threw and the target was never touched.
-    });
-
-    /// The temporary copies go last, so a stage that fails never leaves the reversal without a copy it still needs.
-    undoWithRetries(log, fmt::format("remove the temporary copy of the blob of the source file '{}'", path_from), [&]
-    {
         object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
-    });
+    }
 
-    undoWithRetries(log, fmt::format("remove the temporary copy of the blob of the target file '{}'", path_to), [&]
+    if (moved_existing_target_file)
     {
+        object_storage->copyObject(
+            /*object_from=*/StoredObject(tmp_remote_path_to),
+            /*object_to=*/StoredObject(remote_path_to),
+            read_settings,
+            write_settings);
+
         object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
-    });
+    }
 }
 
 void MetadataStorageFromPlainObjectStorageMoveFileOperation::finalize()
 {
     removed_objects.push_back(StoredObject(remote_path_from));
 
-    if (blob_move_attempted)
-    {
+    if (moved_existing_source_file)
         object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
+
+    if (moved_existing_target_file)
         object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
-    }
 }
 
 MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation(

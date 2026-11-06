@@ -728,20 +728,6 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
             nullable_group = true;
         }
     }
-    /// Case 2 in schema inference mode (sample_block is null only there), where only the type is
-    /// named: the read gets that type as its hint and re-derives nullable_group above. Excluded: a
-    /// Map key_value tuple (DataTypeMap requires Tuple(keys, values)) and a Map key (never Nullable).
-    const bool infer_nullable_group =
-        !sample_block
-        && !node.type_hint
-        && node.requested
-        && group_is_optional
-        && !has_optional_ancestor
-        && node.schema_context != SchemaContext::MapTuple
-        && node.schema_context != SchemaContext::MapKey
-        && options.format.schema_inference_allow_nullable_tuple_type
-        && !options.schema_inference_force_not_nullable
-        && tupleSubtreeIsAllRequired(file_metadata.schema, schema_idx - 1);
 
     /// Mark leaves recursed below as belonging to a physically-nullable group (case 2 above).
     nullable_tuple_group_depth += nullable_group ? 1 : 0;
@@ -897,10 +883,6 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     else
     {
         output_type = std::make_shared<DataTypeTuple>(types, names);
-        /// The group null map is reconstructed from a physical leaf's definition levels, so a group
-        /// with no leaf below it cannot be Nullable(Tuple(...)) and stays a plain Tuple.
-        if (infer_nullable_group && primitive_start != primitive_columns.size())
-            output_type = makeNullable(output_type);
     }
 
     /// Physically-nullable struct (OPTIONAL group, case 2 above): the assembled ColumnTuple must be
@@ -1489,10 +1471,8 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for UUID column: {}", thriftToString(element));
 
         out_inferred_type = std::make_shared<DataTypeUUID>();
+        out_decoder.allow_stats = true; // UUIDs support min/max stats
         out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
-        /// (Parquet's sort order for `uuid` is unsigned big-endian byte comparison, while ClickHouse
-        ///  sorts `UUID` by its second half, so the min/max pair is not an interval in the column's
-        ///  own order. Leaving allow_stats == false.)
         return;
     }
     else if (logical.__isset.FLOAT16)
@@ -1550,7 +1530,9 @@ void SchemaConverter::processPrimitiveColumn(
         case parq::Type::INT96:
         {
             out_inferred_type = std::make_shared<DataTypeDateTime64>(9, "UTC");
-            out_decoder.fixed_size_converter = std::make_shared<Int96Converter>();
+            auto converter = std::make_shared<Int96Converter>();
+            converter->overflow_behavior = options.format.date_time_overflow_behavior;
+            out_decoder.fixed_size_converter = std::move(converter);
             /// (Leaving allow_stats == false because INT96 sort order is undefined.)
             return;
         }
@@ -1597,7 +1579,7 @@ void SchemaConverter::processPrimitiveColumn(
                 {
                     out_inferred_type = type_hint;
                     out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
-                    /// (Leaving allow_stats == false: see the `UUID` logical type branch above.)
+                    out_decoder.allow_stats = true;
                     return;
                 }
 
@@ -1616,7 +1598,7 @@ void SchemaConverter::processPrimitiveColumn(
             {
                 out_inferred_type = std::make_shared<DataTypeUUID>();
                 out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
-                /// (Leaving allow_stats == false: see the `UUID` logical type branch above.)
+                out_decoder.allow_stats = true;
                 return;
             }
 

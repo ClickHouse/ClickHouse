@@ -122,7 +122,9 @@ public:
     /// in custom serializations (e.g. Sparse) for parsing and avoid extra conversion.
     virtual void setSerializationHints(const SerializationInfoByName & /*hints*/) {}
 
-    void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
+    /// Not by value: if the insertion throws, `buffer` must stay with the caller, since this format still reads it.
+    template <typename Buffer>
+    void addBuffer(std::unique_ptr<Buffer> && buffer) { owned_buffers.emplace_back(std::move(buffer)); }
 
     void setErrorsLogger(const InputFormatErrorsLoggerPtr & errors_logger_) { errors_logger = errors_logger_; }
 

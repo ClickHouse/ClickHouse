@@ -25,6 +25,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/System/StorageSystemIcebergHistory.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -202,7 +203,7 @@ void StorageSystemIcebergHistory::fillData(
             // Table was dropped while acquiring the lock, skipping table
             continue;
 
-        if (auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(storage.get()))
+        if (auto * object_storage_table = castStorage<StorageObjectStorage>(storage, DeferredTable::Skip).get())
         {
             add_history_record(database_name, table_name, object_storage_table);
         }

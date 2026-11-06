@@ -40,9 +40,6 @@ class MutationCommands;
 struct PartitionCommand;
 using PartitionCommands = std::vector<PartitionCommand>;
 
-class DDLGuard;
-using DDLGuardPtr = std::unique_ptr<DDLGuard>;
-
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::list<ProcessorPtr>;
@@ -405,6 +402,14 @@ public:
      *
      * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
      */
+    virtual Pipe watch(
+        const Names & /*column_names*/,
+        const SelectQueryInfo & /*query_info*/,
+        ContextPtr /*context*/,
+        QueryProcessingStage::Enum & /*processed_stage*/,
+        size_t /*max_block_size*/,
+        size_t /*num_streams*/);
+
     /// Returns true if FINAL modifier must be added to SELECT query depending on required columns.
     /// It's needed for ReplacingMergeTree wrappers such as MaterializedPostrgeSQL
     virtual bool needRewriteQueryWithFinal(const Names & /*column_names*/) const { return false; }
@@ -450,10 +455,6 @@ private:
     virtual bool parallelizeOutputAfterReading(ContextPtr) const { return !isSystemStorage(); }
 
 public:
-    /// Returns an upper bound on the number of sources created for a read request.
-    /// The default is conservative: a storage may create one source per requested stream.
-    virtual size_t getMaxReadStreams(size_t num_streams, ContextPtr) { return num_streams; }
-
     /// Other version of read which adds reading step to query plan.
     /// Default implementation creates ReadFromStorageStep and uses usual read.
     /// Can be called after `shutdown`, but not after `drop`.
@@ -548,15 +549,8 @@ public:
 
     /** ALTER tables in the form of column changes that do not affect the change
       * to Storage or its parameters. Executes under alter lock (lockForAlter).
-      *
-      * `ddl_guard` serializes with RENAME/EXCHANGE TABLES, null when the caller already holds it.
-      * Storages that wait on replicas or mutations may `ddl_guard.reset()` once the change is durably submitted.
       */
-    virtual void alter(
-        const AlterCommands & params,
-        ContextPtr context,
-        AlterLockHolder & alter_lock_holder,
-        DDLGuardPtr & ddl_guard);
+    virtual void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder);
 
     /// Updates metadata that can be changed by other processes
     /// Return true if external metadata exists and was updated.
@@ -654,16 +648,6 @@ public:
     /// Might be called multiple times; only the first call needs to be processed.
     /// Data in memory need to be persistent. Any background work that affects other tables
     /// (e.g. materialized view refreshes that create/drop tables) needs to be stopped.
-    /** Hand over rows that are still buffered in memory, before any database is shut down.
-      *
-      * A `Buffer` table writes into another table, which may live in another database or be another
-      * `Buffer`. Databases shut down one at a time in name order, so by the time a `Buffer` prepares
-      * for shutdown its destination can already be gone, and one pass moves rows at most one link
-      * down a chain. `DatabaseCatalog` therefore calls this for every table first, repeating while
-      * rows keep moving; the return value is the number of buffers this call actually flushed.
-      */
-    virtual size_t flushBufferedRowsBeforeShutdown() { return 0; }
-
     virtual void flushAndPrepareForShutdown() {}
 
     /// Asks table to stop executing some action identified by action_type

@@ -1500,6 +1500,134 @@ def test_system_users_required_privileges():
     instance.query("DROP USER u2")
 
 
+# Access backups include every entity of a type, so these checks need this module's isolated server.
+def test_restore_row_policy_replace_requires_scoped_drop():
+    instance.query("CREATE DATABASE test")
+    instance.query(
+        "CREATE TABLE test.table (owner UInt64) ENGINE = MergeTree ORDER BY owner"
+    )
+    instance.query("CREATE USER u2")
+    instance.query("GRANT READ ON DISK TO u2")
+    instance.query("GRANT CREATE ROW POLICY ON test.table TO u2")
+    instance.query(
+        "CREATE ROW POLICY rowpol1 ON test.table AS RESTRICTIVE USING 1 TO ALL"
+    )
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE system.row_policies TO {backup_name}")
+    instance.query("ALTER ROW POLICY rowpol1 ON test.table USING owner = 1")
+
+    restore = f"RESTORE TABLE system.row_policies FROM {backup_name}"
+    select_filter = "SELECT select_filter FROM system.row_policies WHERE short_name = 'rowpol1' AND database = 'test' AND table = 'table'"
+    instance.query(f"{restore} SETTINGS create_access='if-not-exists'", user="u2")
+    assert instance.query(select_filter) == "owner = 1\n"
+
+    error = instance.query_and_get_error(
+        f"{restore} SETTINGS create_access='replace'", user="u2"
+    )
+    assert "ACCESS_DENIED" in error
+    assert "DROP ROW POLICY" in error
+    assert instance.query(select_filter) == "owner = 1\n"
+
+    instance.query("GRANT DROP ROW POLICY ON test.another_table TO u2")
+    error = instance.query_and_get_error(
+        f"{restore} SETTINGS create_access='replace'", user="u2"
+    )
+    assert "ACCESS_DENIED" in error
+    assert "DROP ROW POLICY" in error
+    assert instance.query(select_filter) == "owner = 1\n"
+
+    instance.query("DROP ROW POLICY rowpol1 ON test.table")
+    error = instance.query_and_get_error(
+        f"{restore} SETTINGS create_access='replace'", user="u2"
+    )
+    assert "ACCESS_DENIED" in error
+    assert "DROP ROW POLICY" in error
+    assert instance.query(select_filter) == ""
+
+    instance.query(f"{restore} SETTINGS create_access='create'", user="u2")
+    assert instance.query(select_filter) == "1\n"
+    instance.query("ALTER ROW POLICY rowpol1 ON test.table USING owner = 1")
+    instance.query("GRANT DROP ROW POLICY ON test.table TO u2")
+    instance.query(f"{restore} SETTINGS create_access='replace'", user="u2")
+    assert instance.query(select_filter) == "1\n"
+
+
+@pytest.mark.parametrize(
+    "kind,system_table,target", [("USER", "users", "u1"), ("ROLE", "roles", "r1")]
+)
+def test_restore_access_partial_revoke_cannot_cancel_drop(kind, system_table, target):
+    instance.query(f"CREATE {kind} {target} SETTINGS max_threads = 1")
+    instance.query(f"GRANT DROP {kind} ON * TO {target}")
+    instance.query(f"REVOKE DROP {kind} ON {target} FROM {target}")
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE system.{system_table} TO {backup_name}")
+    instance.query(f"ALTER {kind} {target} SETTINGS max_threads = 2")
+
+    # Create the actor after the backup so its grants cannot mask the target's partial revoke.
+    instance.query("CREATE USER u2")
+    instance.query("GRANT READ ON DISK TO u2")
+    instance.query(f"GRANT CREATE {kind} ON {target} TO u2")
+    instance.query(f"GRANT DROP {kind} ON * TO u2 WITH GRANT OPTION")
+    instance.query(f"REVOKE DROP {kind} ON {target} FROM u2")
+    restore = f"RESTORE TABLE system.{system_table} FROM {backup_name} SETTINGS create_access='replace'"
+    error = instance.query_and_get_error(restore, user="u2")
+    assert "ACCESS_DENIED" in error
+    assert f"DROP {kind}" in error
+    assert "max_threads = 2" in instance.query(f"SHOW CREATE {kind} {target}")
+
+    # Ordinary `DROP` is sufficient; the target's grants exclude `DROP` on itself.
+    instance.query(f"GRANT DROP {kind} ON {target} TO u2")
+    instance.query(restore, user="u2")
+    assert "max_threads = 1" in instance.query(f"SHOW CREATE {kind} {target}")
+
+
+def test_restore_access_partial_revokes_preserve_grant_and_table_requirements():
+    instance.query("CREATE DATABASE test")
+    instance.query(
+        "CREATE TABLE test.table (owner UInt64) ENGINE = MergeTree ORDER BY owner"
+    )
+    instance.query("INSERT INTO test.table VALUES (1)")
+    instance.query("CREATE ROLE r1 SETTINGS max_threads = 1")
+    instance.query("GRANT SELECT, INSERT ON test.* TO r1 WITH GRANT OPTION")
+    instance.query("REVOKE GRANT OPTION FOR SELECT ON test.table FROM r1")
+    instance.query("REVOKE INSERT ON test.table FROM r1")
+    backup_name = new_backup_name()
+    backup_tables = "TABLE system.roles, TABLE test.table"
+    instance.query(f"BACKUP {backup_tables} TO {backup_name}")
+    instance.query("ALTER ROLE r1 SETTINGS max_threads = 2")
+
+    instance.query("CREATE USER u2")
+    instance.query("GRANT READ ON DISK TO u2")
+    instance.query("GRANT CREATE ROLE, DROP ROLE ON r1 TO u2")
+    instance.query("GRANT CREATE TABLE ON test.table TO u2")
+    instance.query("GRANT SELECT, INSERT ON test.* TO u2 WITH GRANT OPTION")
+    instance.query("REVOKE GRANT OPTION FOR SELECT ON test.table FROM u2")
+    restore = f"RESTORE TABLE system.roles FROM {backup_name} SETTINGS create_access='replace'"
+    error = instance.query_and_get_error(restore, user="u2")
+    assert "ACCESS_DENIED" in error
+    assert "SELECT" in error
+    assert "WITH GRANT OPTION" in error
+    assert "max_threads = 2" in instance.query("SHOW CREATE ROLE r1")
+
+    instance.query("GRANT SELECT ON test.table TO u2 WITH GRANT OPTION")
+    instance.query(restore, user="u2")
+    assert "max_threads = 1" in instance.query("SHOW CREATE ROLE r1")
+
+    instance.query("TRUNCATE TABLE test.table")
+    instance.query("REVOKE INSERT ON test.table FROM u2")
+    restore_with_table = (
+        f"RESTORE {backup_tables} FROM {backup_name} SETTINGS create_access='replace'"
+    )
+    error = instance.query_and_get_error(restore_with_table, user="u2")
+    assert "ACCESS_DENIED" in error
+    assert "INSERT" in error
+    assert instance.query("SELECT count() FROM test.table") == "0\n"
+
+    instance.query("GRANT INSERT ON test.table TO u2")
+    instance.query(restore_with_table, user="u2")
+    assert instance.query("SELECT * FROM test.table") == "1\n"
+
+
 def test_system_users_async():
     instance.query("CREATE USER u1 IDENTIFIED BY 'qwe123' SETTINGS custom_c = 3")
 
@@ -1976,124 +2104,6 @@ def test_system_backups():
     assert info.compressed_size == 0
     assert info.files_read == 0
     assert info.bytes_read == 0
-
-
-def test_system_backups_read_counters_survive_a_stale_publisher():
-    # A restore publishes its progress from inside each of its concurrent tasks, and every task
-    # snapshots the counters before publishing them. This holds one task after its snapshot until
-    # its siblings have restored everything, so it publishes the oldest counts last.
-    instance.query("CREATE DATABASE test")
-    # More partitions than the default 16 of `restore_threads`: when the first task reaches the
-    # publish point the queued parts are still unread, so its snapshot is below the final counts.
-    instance.query(
-        "CREATE TABLE test.table(x UInt32, y String) ENGINE=MergeTree ORDER BY y PARTITION BY x % 24"
-    )
-    instance.query(
-        "INSERT INTO test.table SELECT number, toString(number) FROM numbers(240)"
-    )
-
-    backup_name = new_backup_name()
-    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
-
-    # An undisturbed restore reads exactly the same files from the same backup, so it gives the
-    # counts the disturbed restore below has to end up with.
-    undisturbed_id = instance.query(
-        f"RESTORE TABLE test.table AS test.undisturbed FROM {backup_name}"
-    ).split("\t")[0]
-    undisturbed = get_backup_info_from_system_backups(by_id=undisturbed_id)
-    assert undisturbed.files_read > 0
-    assert undisturbed.bytes_read > 0
-
-    def restore_jobs_scheduled():
-        return int(
-            instance.query(
-                "SELECT value FROM system.metrics WHERE metric = 'RestoreThreadsScheduled'"
-            )
-        )
-
-    # A restore reports RESTORED from inside its own job, so the one above can still be counted
-    # here. The barrier below counts jobs, so let it drain first or the baseline would be too high.
-    wait_condition(
-        restore_jobs_scheduled, lambda scheduled: scheduled == 0, max_attempts=100
-    )
-
-    try:
-        instance.query(
-            "SYSTEM ENABLE FAILPOINT restore_pause_before_data_restore_tasks"
-        )
-        restore_id = instance.query(
-            f"RESTORE TABLE test.table AS test.restored FROM {backup_name} SETTINGS async = 1"
-        ).split("\t")[0]
-        instance.query(
-            "SYSTEM WAIT FAILPOINT restore_pause_before_data_restore_tasks PAUSE",
-            timeout=60,
-        )
-        # No data restore task is scheduled yet, so only this restore's own job is counted.
-        assert restore_jobs_scheduled() == 1
-
-        # Arm the publish pauses only now that the earlier stages have joined, then let the data
-        # restore tasks run: the first of them to publish is held with its own snapshot.
-        instance.query(
-            "SYSTEM ENABLE FAILPOINT backups_pause_before_publishing_progress"
-        )
-        instance.query(
-            "SYSTEM ENABLE FAILPOINT restore_pause_before_publishing_final_progress"
-        )
-        instance.query(
-            "SYSTEM NOTIFY FAILPOINT restore_pause_before_data_restore_tasks"
-        )
-        instance.query(
-            "SYSTEM WAIT FAILPOINT backups_pause_before_publishing_progress PAUSE",
-            timeout=60,
-        )
-
-        # Wait until the held task is the only one left: every sibling has published by then, so
-        # releasing it makes its own snapshot the last published one instead of leaving a straggler
-        # to publish after it. They restored the remaining parts, hence the full counts.
-        wait_condition(
-            restore_jobs_scheduled, lambda scheduled: scheduled == 2, max_attempts=100
-        )
-        assert (
-            get_backup_info_from_system_backups(by_id=restore_id).files_read
-            == undisturbed.files_read
-        )
-
-        # Releasing the held task makes it publish its stale snapshot last. The restore then stops
-        # right before the publication that follows the join, which is the state a restore used to
-        # end in, so the counters can be read there rather than raced against their repair.
-        instance.query(
-            "SYSTEM NOTIFY FAILPOINT backups_pause_before_publishing_progress"
-        )
-        instance.query(
-            "SYSTEM WAIT FAILPOINT restore_pause_before_publishing_final_progress PAUSE",
-            timeout=60,
-        )
-        held = get_backup_info_from_system_backups(by_id=restore_id)
-        assert held.files_read == undisturbed.files_read
-        assert held.bytes_read == undisturbed.bytes_read
-
-        instance.query(
-            "SYSTEM NOTIFY FAILPOINT restore_pause_before_publishing_final_progress"
-        )
-        restored = wait_condition(
-            lambda: get_backup_info_from_system_backups(by_id=restore_id),
-            lambda info: info.status == "RESTORED",
-            max_attempts=100,
-        )
-        assert restored.error == ""
-        assert restored.files_read == undisturbed.files_read
-        assert restored.bytes_read == undisturbed.bytes_read
-        assert instance.query("SELECT count() FROM test.restored") == "240\n"
-    finally:
-        instance.query(
-            "SYSTEM DISABLE FAILPOINT restore_pause_before_data_restore_tasks"
-        )
-        instance.query(
-            "SYSTEM DISABLE FAILPOINT backups_pause_before_publishing_progress"
-        )
-        instance.query(
-            "SYSTEM DISABLE FAILPOINT restore_pause_before_publishing_final_progress"
-        )
 
 
 def test_mutation():

@@ -2,7 +2,6 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
-#include <limits>
 #include <memory>
 #include <mutex>
 #include <gtest/gtest.h>
@@ -14,6 +13,8 @@
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
+#include <Common/ThreadStatus.h>
+#include <Common/CurrentThread.h>
 #include <Common/Scheduler/CPUSlotsAllocation.h>
 #include <Common/Scheduler/CPULeaseAllocation.h>
 #include <Common/Scheduler/ISpaceSharedNode.h>
@@ -66,6 +67,7 @@ namespace ProfileEvents
 {
     extern const Event ConcurrencyControlUpscales;
     extern const Event ConcurrencyControlDownscales;
+    extern const Event ConcurrencyControlWaitMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -476,6 +478,45 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueue)
 // failed the request), the thread-local `Request` must be reset back to `Finished`. Otherwise
 // the next `ResourceGuard` on the same thread chasserts in `enqueue` because the request is
 // still in `Dequeued` state with `exception` set.
+TEST(SchedulerWorkloadResourceManager, DropWorkloadFailsPendingRequests)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
+    t.query("CREATE WORKLOAD all SETTINGS max_io_requests = 1");
+    t.query("CREATE WORKLOAD intermediate IN all");
+
+    std::barrier<std::__empty_completion> sync_before_enqueue(2);
+    std::barrier<std::__empty_completion> sync_before_drop(3);
+    std::barrier<std::__empty_completion> sync_after_drop(2);
+    t.async("intermediate", "res1", [&] (ResourceLink link)
+    {
+        TestGuard g(t, link, 1);
+        sync_before_enqueue.arrive_and_wait();
+        sync_before_drop.arrive_and_wait(); // 1st resource request is consuming
+        sync_after_drop.arrive_and_wait(); // 1st resource request is still consuming
+    });
+
+    sync_before_enqueue.arrive_and_wait(); // to maintain correct order of resource requests
+
+    t.async("intermediate", "res1", [&] (ResourceLink link)
+    {
+        {
+            TestGuard g(t, link, 1, EnqueueOnly);
+            sync_before_drop.arrive_and_wait(); // 2nd resource request is enqueued
+            g.waitFailed("is about to be destructed");
+        }
+        // The dropped workload's queue is kept alive by this classifier, but it must not accept new requests.
+        EXPECT_THROW(ResourceGuard(ResourceGuard::Metrics::getIOWrite(), link, 1), DB::Exception);
+    });
+
+    sync_before_drop.arrive_and_wait();
+    t.query("DROP WORKLOAD intermediate");
+    sync_after_drop.arrive_and_wait();
+
+    t.wait(); // Wait for threads to finish before destructing locals
+}
+
 TEST(SchedulerWorkloadResourceManager, ResourceGuardDefaultLockResetsOnFailure)
 {
     ResourceTest t;
@@ -1291,6 +1332,41 @@ TEST(SchedulerWorkloadResourceManager, CPUSchedulingRoundRobin)
     }
 
     t.wait();
+}
+
+/// The wait for a CPU slot is accounted to the query even when the allocation outlives the thread that created it
+/// (here: destroyed on another thread while its request is still queued, like a `KILL QUERY` of a waiting query).
+TEST(SchedulerWorkloadResourceManager, CPUSlotsWaitTimerOutlivesCreatingThread)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 1");
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("cpu");
+
+    /// Takes the only slot, so the next allocation keeps its request queued.
+    auto blocker = std::make_shared<CPUSlotsAllocation>(1, 0, link, link);
+    auto blocker_slot = blocker->acquire();
+
+    std::weak_ptr<ThreadGroup> weak_group;
+    SlotAllocationPtr allocation;
+    std::thread([&]
+    {
+        DB::ThreadStatus thread_status;
+        auto group = std::make_shared<ThreadGroup>(Context::getGlobalContextInstance(), 0);
+        weak_group = group;
+        CurrentThread::attachToGroupIfDetached(group);
+        allocation = std::make_shared<CPUSlotsAllocation>(1, 0, link, link);
+        CurrentThread::detachFromGroupIfNotDetached();
+    }).join();
+
+    ASSERT_TRUE(allocation->isRequesting());
+    /// The creating thread is gone, so only the allocation can still own the group.
+    ThreadGroupPtr group = weak_group.lock();
+    ASSERT_NE(group, nullptr);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    allocation.reset();
+    EXPECT_GE(group->performance_counters[ProfileEvents::ConcurrencyControlWaitMicroseconds], 10'000);
 }
 
 TEST(SchedulerWorkloadResourceManager, CPUSchedulingFairness)
@@ -2698,6 +2774,102 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationDropQueueWhilePending)
     EXPECT_EQ(threw.load(), waiter_count);
 }
 
+TEST(SchedulerWorkloadResourceManager, RetiredAllocationQueueOutlivesWorkload)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    // This branch allows a single root workload, so `A` and `B` share a parent.
+    t.query("CREATE WORKLOAD all");
+    t.query("CREATE WORKLOAD A IN all SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD B IN all SETTINGS max_memory = 100");
+
+    // Only `B`'s classifier retains the old hierarchy version after the temporary classifier for `A` is released.
+    ClassifierPtr classifier_b = t.manager->acquire("B");
+    auto * retired_queue = t.manager->acquire("A")->get("memory").allocation_queue;
+    ASSERT_NE(retired_queue, nullptr);
+    t.executeFromScheduler("memory", [&]
+    {
+        EXPECT_EQ(retired_queue->getWorkloadName(), "A");
+    });
+
+    t.query("CREATE WORKLOAD child IN A");
+    t.executeFromScheduler("memory", [&]
+    {
+        // Check retirement while `A` is still alive: this fails deterministically without relying on
+        // ASan or on the contents of freed memory when the retired queue is eventually destroyed.
+        EXPECT_TRUE(retired_queue->getWorkloadName().empty());
+    });
+
+    t.query("DROP WORKLOAD child");
+    EXPECT_NE(retired_queue, t.manager->acquire("A")->get("memory").allocation_queue);
+    t.query("DROP WORKLOAD A");
+
+    // Destroy the original queue after its workload, through the classifier for a different workload.
+    classifier_b.reset();
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationDropWorkloadFailsRunningAllocation)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD A IN all");
+    t.query("CREATE WORKLOAD B IN all");
+
+    ClassifierPtr c_a = t.manager->acquire("A");
+    TestAllocation a(c_a->get("memory"), "a", 60);
+    a.waitSync();
+
+    // The classifier keeps `A`'s queue alive, but the allocation must not keep running outside the limits of `all`.
+    t.query("DROP WORKLOAD A");
+    EXPECT_THROW(a.waitSync(), Exception);
+    a.setSize(80);
+    EXPECT_THROW(a.waitSync(), Exception);
+
+    // The memory of the failed allocation is available to the rest of the hierarchy.
+    ClassifierPtr c_b = t.manager->acquire("B");
+    TestAllocation b(c_b->get("memory"), "b", 100);
+    b.waitSync();
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationDropWorkloadWhileAllocating)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD A SETTINGS max_memory = 100, max_waiting_queries = 0");
+
+    ClassifierPtr c_a = t.manager->acquire("A");
+    ResourceLink link = c_a->get("memory");
+
+    // Keep inserting allocations into `A`'s queue while `A` is dropped. Every one is rejected and the rejection reads
+    // the workload's name: by `max_waiting_queries` before the purge, as an unusable queue after it. This lets TSan
+    // check those reads against the drop and the destruction of the workload node.
+    std::atomic<bool> dropped{false};
+    std::atomic<size_t> rejected{0};
+    std::thread allocator([&]
+    {
+        while (!dropped.load() || rejected.load() < 100)
+        {
+            try
+            {
+                TestAllocation allocation(link, "racer", 10);
+            }
+            catch (const Exception &)
+            {
+                rejected.fetch_add(1);
+            }
+        }
+    });
+
+    t.query("DROP WORKLOAD A");
+    dropped.store(true);
+    allocator.join();
+    EXPECT_GE(rejected.load(), 100);
+}
+
 // Regression: simulate the race where the owner's destructor reaches `queue.removeAllocation`
 // AFTER `updateMinMaxAllocated`/`updateQueueLimit` has already rejected the allocation. The
 // guard in `removeAllocation` must keep an already-failed allocation out of
@@ -3553,62 +3725,6 @@ TEST(SchedulerWorkloadResourceManager, WorkloadSettingsMaxMemoryRatio)
     }
 }
 
-TEST(SchedulerWorkloadResourceManager, WorkloadSettingsMaxConcurrentThreadsRatioToCores)
-{
-    const Int64 cores = static_cast<Int64>(getNumberOfCPUCoresToUse());
-    ASSERT_GT(cores, 0) << "Test host must report a non-zero core count";
-
-    // In-range ratio — resolves to `ratio * cores`, unaffected by the clamp.
-    {
-        WorkloadSettings ws;
-        ASTCreateWorkloadQuery::SettingsChanges changes;
-        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(Float64(2.5)), "");
-        ws.initFromChanges(changes);
-        EXPECT_EQ(ws.max_concurrent_threads, static_cast<Int64>(2.5 * static_cast<Float64>(cores)));
-    }
-
-    // Ratios whose product with the core count exceeds `Int64` range must clamp to `unlimited`
-    // instead of narrowing a float outside the destination range, which is undefined behaviour and
-    // could yield a negative or garbage limit.
-    for (Float64 ratio : {9223372036854775807.0, 1e19, 1e100, std::numeric_limits<Float64>::max()})
-    {
-        WorkloadSettings ws;
-        ASTCreateWorkloadQuery::SettingsChanges changes;
-        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(ratio), "");
-        ws.initFromChanges(changes);
-        EXPECT_EQ(ws.max_concurrent_threads, WorkloadSettings::unlimited) << "ratio = " << ratio;
-    }
-
-    // The reported input arrived as an integer literal, which takes the `UInt64` branch of
-    // `getFloat64` and so bypasses its finiteness check entirely.
-    {
-        WorkloadSettings ws;
-        ASTCreateWorkloadQuery::SettingsChanges changes;
-        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(UInt64(9223372036854775807ULL)), "");
-        ws.initFromChanges(changes);
-        EXPECT_EQ(ws.max_concurrent_threads, WorkloadSettings::unlimited);
-    }
-
-    // A smaller exact limit still wins over the saturated ratio limit.
-    {
-        WorkloadSettings ws;
-        ASTCreateWorkloadQuery::SettingsChanges changes;
-        changes.emplace_back("max_concurrent_threads", Field(Int64(4)), "");
-        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(Float64(1e100)), "");
-        ws.initFromChanges(changes);
-        EXPECT_EQ(ws.max_concurrent_threads, 4);
-    }
-
-    // Zero ratio does not constrain.
-    {
-        WorkloadSettings ws;
-        ASTCreateWorkloadQuery::SettingsChanges changes;
-        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(Float64(0)), "");
-        ws.initFromChanges(changes);
-        EXPECT_EQ(ws.max_concurrent_threads, WorkloadSettings::unlimited);
-    }
-}
-
 // Unit-test coverage for the lazy-allocation path in CPULeaseAllocation
 // (current_max_slots gated schedule + setMax growth). Higher-level fairness /
 // preemption behaviour is exercised by the PreemptiveCPUScheduling* tests above;
@@ -3847,157 +3963,4 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingEagerDefaultIsUnch
     });
 
     t.wait();
-}
-
-// Shared with in-flight handlers, so it must outlive every subscriber that owns a subscription.
-struct UnsubscribeProbe
-{
-    std::mutex mutex;
-    std::condition_variable blocker_entered_cv;
-    bool blocker_entered = false;
-    std::condition_variable release_cv;
-    bool release_blocker = false;
-    std::chrono::seconds blocker_hold{2};
-    std::atomic<bool> armed{false};
-    std::atomic<int> blocker_in_flight{0};
-    std::atomic<int> unsubscribed_handler_calls{0};
-    std::atomic<int> live_handler_calls{0};
-};
-
-// Captures `this` in its handler, like every real subscriber of getAllEntitiesAndSubscribe.
-// `subscription` is declared last, so it is destroyed before any state the handler reads.
-struct UnsubscribeTestSubscriber
-{
-    enum class Role
-    {
-        Blocker, // holds the notification inside the handler for a while
-        CountUnsubscribed, // increments unsubscribed_handler_calls
-        CountLive, // increments live_handler_calls
-    };
-
-    UnsubscribeTestSubscriber(WorkloadEntityTestStorage & storage, std::shared_ptr<UnsubscribeProbe> probe_, Role role_)
-        : probe(std::move(probe_)), role(role_)
-    {
-        subscription = storage.getAllEntitiesAndSubscribe(
-            [this, shared_probe = probe] (const std::vector<IWorkloadEntityStorage::Event> &)
-            {
-                // Reading a member is what makes the `this` capture load-bearing.
-                if (state.empty())
-                    return;
-
-                if (!shared_probe->armed.load())
-                    return;
-
-                switch (role)
-                {
-                    case Role::Blocker:
-                    {
-                        shared_probe->blocker_in_flight.fetch_add(1);
-                        {
-                            std::lock_guard lock{shared_probe->mutex};
-                            shared_probe->blocker_entered = true;
-                        }
-                        shared_probe->blocker_entered_cv.notify_all();
-                        // Held until the test releases it, or for blocker_hold if the test has nothing to signal.
-                        {
-                            std::unique_lock lock{shared_probe->mutex};
-                            shared_probe->release_cv.wait_for(
-                                lock, shared_probe->blocker_hold, [&] { return shared_probe->release_blocker; });
-                        }
-                        shared_probe->blocker_in_flight.fetch_sub(1);
-                        break;
-                    }
-                    case Role::CountUnsubscribed:
-                        shared_probe->unsubscribed_handler_calls.fetch_add(1);
-                        break;
-                    case Role::CountLive:
-                        shared_probe->live_handler_calls.fetch_add(1);
-                        break;
-                }
-            });
-    }
-
-    std::shared_ptr<UnsubscribeProbe> probe;
-    Role role;
-    String state = "subscribed";
-    scope_guard subscription;
-};
-
-// Blocks until the blocker handler is provably inside its window.
-static bool waitForBlocker(UnsubscribeProbe & probe)
-{
-    std::unique_lock lock{probe.mutex};
-    return probe.blocker_entered_cv.wait_for(lock, std::chrono::seconds(60), [&] { return probe.blocker_entered; });
-}
-
-TEST(SchedulerWorkloadResourceManager, UnsubscribeWaitsForInFlightNotification)
-{
-    WorkloadEntityTestStorage storage;
-    auto probe = std::make_shared<UnsubscribeProbe>();
-    auto blocker = std::make_unique<UnsubscribeTestSubscriber>(
-        storage, probe, UnsubscribeTestSubscriber::Role::Blocker);
-
-    // The initial handler(current_state) call already happened above, with `armed == false`.
-    probe->armed.store(true);
-
-    ThreadFromGlobalPool notifier([&storage]
-    {
-        storage.executeQuery("CREATE RESOURCE res1 (WRITE DISK disk1, READ DISK disk1)");
-    });
-
-    EXPECT_TRUE(waitForBlocker(*probe)) << "Handler never started, so the barrier was never exercised";
-    EXPECT_EQ(probe->blocker_in_flight.load(), 1) << "Handler is not in flight, so the barrier was never exercised";
-
-    // Destroys the scope_guard returned by getAllEntitiesAndSubscribe.
-    // The handler must still be running when unsubscribe is entered, so only the blocked thread could signal a release.
-    blocker.reset();
-
-    EXPECT_EQ(probe->blocker_in_flight.load(), 0) << "Unsubscribe returned while the handler was still running";
-
-    notifier.join();
-}
-
-TEST(SchedulerWorkloadResourceManager, UnsubscribeSkipsHandlerNotYetReached)
-{
-    WorkloadEntityTestStorage storage;
-    auto probe = std::make_shared<UnsubscribeProbe>();
-
-    // Subscription order is notification order, so the blocker holds the notification before it
-    // reaches the two handlers below.
-    auto blocker = std::make_unique<UnsubscribeTestSubscriber>(
-        storage, probe, UnsubscribeTestSubscriber::Role::Blocker);
-    auto unsubscribed = std::make_unique<UnsubscribeTestSubscriber>(
-        storage, probe, UnsubscribeTestSubscriber::Role::CountUnsubscribed);
-    auto live = std::make_unique<UnsubscribeTestSubscriber>(
-        storage, probe, UnsubscribeTestSubscriber::Role::CountLive);
-
-    // A deadlock escape that must never fire; the release after the unsubscribe below ends the hold.
-    probe->blocker_hold = std::chrono::seconds(60);
-    probe->armed.store(true);
-
-    ThreadFromGlobalPool notifier([&storage]
-    {
-        storage.executeQuery("CREATE RESOURCE res1 (WRITE DISK disk1, READ DISK disk1)");
-    });
-
-    EXPECT_TRUE(waitForBlocker(*probe)) << "Blocker handler never started, so nothing was exercised";
-
-    // The notifier already copied all three handlers out of the list and is parked in the first
-    // one, so this unsubscribe cannot wait for anything and must return immediately.
-    // Only the guard is dropped: the subscriber stays alive so that a handler invoked in breach of
-    // the contract reads live state and fails the assertion below instead of reading freed memory.
-    unsubscribed->subscription.reset();
-
-    {
-        std::lock_guard lock{probe->mutex};
-        probe->release_blocker = true;
-    }
-    probe->release_cv.notify_all();
-
-    notifier.join();
-
-    EXPECT_EQ(probe->live_handler_calls.load(), 1)
-        << "The notification never reached the handlers after the blocker, so the assertion below is vacuous";
-    EXPECT_EQ(probe->unsubscribed_handler_calls.load(), 0)
-        << "A handler was called after its subscription guard had already been destroyed";
 }

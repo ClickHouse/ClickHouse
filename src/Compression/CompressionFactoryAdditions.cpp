@@ -41,6 +41,7 @@ extern const int LOGICAL_ERROR;
 namespace Setting
 {
 extern const SettingsBool allow_suspicious_codecs;
+extern const SettingsBool allow_experimental_codecs;
 }
 
 
@@ -219,29 +220,24 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                     result_codec = getImpl(codec_family_name, codec_arguments, nullptr);
                 }
 
-                if (settings)
+                if (settings && result_codec->isExperimental())
                 {
-                    const String gate_setting_name = getGateSettingName(codec_family_name);
-                    const std::optional<SettingsTierType> tier = getGateTier(gate_setting_name);
-                    if (tier && !settings->get(gate_setting_name).safeGet<bool>())
-                    {
-                        std::string_view reason;
-                        /// `getGateTier` maps OBSOLETE to nullopt (the codec is GA). Included for switch exhaustiveness.
-                        switch (*tier)
-                        {
-                            case SettingsTierType::EXPERIMENTAL: reason = "is experimental and not meant to be used in production"; break;
-                            case SettingsTierType::BETA: reason = "is in beta and not yet recommended for production use"; break;
-                            case SettingsTierType::PRODUCTION:
-                            case SettingsTierType::PRIVATE_PREVIEW:
-                            case SettingsTierType::OBSOLETE: reason = "is disabled"; break;
-                        }
+                    const String enable_setting_name = fmt::format("enable_{}_codec", Poco::toLower(codec_family_name));
+                    Field enable_setting_value;
+                    if (!settings->tryGet(enable_setting_name, enable_setting_value))
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Experimental codec {} has no dedicated '{}' setting. Every experimental codec"
+                            " must declare one",
+                            codec_family_name,
+                            enable_setting_name);
+                    if (!enable_setting_value.safeGet<bool>() && !(*settings)[Setting::allow_experimental_codecs])
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
-                            "Codec {} {}. You can enable it with the '{}' setting",
+                            "Codec {} is experimental and not meant to be used in production."
+                            " You can enable it with the '{}' setting",
                             codec_family_name,
-                            reason,
-                            gate_setting_name);
-                    }
+                            enable_setting_name);
                 }
 
                 /// Lossy codecs must not be applied to Map columns: a Map exposes its keys as a substream
@@ -269,7 +265,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                         "codec, or in any other context where the column data type is unknown",
                         codec_family_name);
 
-                codecs_descriptions->children.emplace_back(result_codec->getCodecDescription());
+                codecs_descriptions->children.emplace_back(result_codec->getCodecDesc());
             }
 
             /// A codec that was not resolved per substream is the same one for all of them.
@@ -319,7 +315,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Too many codecs in the codec chain: {}. The size they reserve for compressing a block "
                             "overflows 4 GiB at codec {} ({}), so no block could be compressed. Use fewer codecs.",
-                            chain.size(), i + 1, chain[i]->getCodecDescription()->formatForErrorMessage());
+                            chain.size(), i + 1, chain[i]->getCodecDesc()->formatForErrorMessage());
                     reserve_size = next_reserve_size;
                 }
             }

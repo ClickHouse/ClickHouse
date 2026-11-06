@@ -43,12 +43,7 @@ FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
 
 ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
-    return object_storage->patchSettings(IObjectStorage::patchSettings(read_settings));
-}
-
-WriteSettings CachedObjectStorage::patchSettings(const WriteSettings & write_settings) const
-{
-    return object_storage->patchSettings(IObjectStorage::patchSettings(write_settings));
+    return object_storage->patchSettings(read_settings);
 }
 
 void CachedObjectStorage::startup()
@@ -167,17 +162,10 @@ void CachedObjectStorage::removeObjectIfExists(const StoredObject & object)
     removeCacheIfExists(object.remote_path);
 }
 
-void CachedObjectStorage::removeObjectsIfExist( /// NOLINT
-    const StoredObjects & objects,
-    StoredObjects * successful_objects)
+void CachedObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
     for (const auto & object : objects)
-    {
         removeCacheIfExists(object.remote_path);
-
-        if (successful_objects)
-            successful_objects->emplace_back(object);
-    }
 }
 
 void CachedObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT

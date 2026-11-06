@@ -2,7 +2,6 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
-#include <Common/MemoryPressureMonitor.h>
 #include <Common/ThreadStatus.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
@@ -13,7 +12,7 @@
 namespace DB
 {
 
-constinit FiberLocal<ThreadStatus *, FiberLocalSlot::CURRENT_THREAD> current_thread;
+thread_local ThreadStatus constinit * current_thread = nullptr;
 
 namespace ErrorCodes
 {
@@ -113,13 +112,6 @@ ContextPtr CurrentThread::tryGetQueryContext()
         return {};
 
     return current_thread->tryGetQueryContext();
-}
-
-MemoryPressureMonitor & CurrentThread::getMemoryPressureMonitor()
-{
-    if (auto group = getGroup())
-        return group->memory_pressure_monitor;
-    return getGlobalMemoryPressureMonitor();
 }
 
 void CurrentThread::checkIfNotCancelled()

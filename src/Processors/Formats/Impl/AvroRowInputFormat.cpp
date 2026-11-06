@@ -1041,6 +1041,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(const avro::NodePtr & ro
             }
             return [&skip_fn = it->second](avro::Decoder & decoder)
             {
+                checkStackSize();
                 skip_fn(decoder);
             };
         }
@@ -1377,9 +1378,8 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
             schema_id,
             format_settings.avro.schema_registry_timeouts,
             format_settings.avro.schema_registry_retry);
-        AvroDeserializer deserializer(
-            output.getHeader(), schema, format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings);
-        it = deserializer_cache.emplace(schema_id, std::move(deserializer)).first;
+        it = deserializer_cache.try_emplace(
+            schema_id, output.getHeader(), schema, format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings).first;
     }
     return it->second;
 }
@@ -1419,14 +1419,14 @@ NamesAndTypesList AvroSchemaReader::readSchema()
 
 DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node, bool allow_nullable_tuple_type)
 {
-    checkStackSize();
-
     std::unordered_set<std::string> seen_names;
     return avroNodeToDataTypeImpl(node, seen_names, allow_nullable_tuple_type);
 }
 
 DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names, bool allow_nullable_tuple_type)
 {
+    checkStackSize();
+
     switch (node->type())
     {
         case avro::Type::AVRO_INT:
@@ -1707,9 +1707,9 @@ Each message uses the Confluent wire format: a magic byte (`0x00`) followed by a
 | `input_format_avro_allow_missing_fields`             | Whether to use a default value instead of throwing an error when a field is not found in the schema. | `0`     |
 | `input_format_avro_null_as_default`                  | Whether to use a default value instead of throwing an error when inserting a `null` value into a non-nullable column. |   `0`   |
 | `format_avro_schema_registry_url`                    | The Confluent Schema Registry URL. For basic authentication, URL-encoded credentials can be included directly in the URL path. |         |
-| `format_avro_schema_registry_connection_timeout`     | Connection timeout in seconds for the Schema Registry HTTP client (used for both schema fetch and registration). Must be greater than 0; a value of 600 (10 minutes) or more is reduced to 599. | `1`     |
-| `format_avro_schema_registry_send_timeout`           | Send timeout in seconds for the Schema Registry HTTP client. Must be greater than 0; a value of 600 (10 minutes) or more is reduced to 599. | `1`     |
-| `format_avro_schema_registry_receive_timeout`        | Receive timeout in seconds for the Schema Registry HTTP client. Must be greater than 0; a value of 600 (10 minutes) or more is reduced to 599. | `1`     |
+| `format_avro_schema_registry_connection_timeout`     | Connection timeout in seconds for the Schema Registry HTTP client (used for both schema fetch and registration). Must be greater than 0 and less than 600 (10 minutes). | `1`     |
+| `format_avro_schema_registry_send_timeout`           | Send timeout in seconds for the Schema Registry HTTP client. Must be greater than 0 and less than 600 (10 minutes). | `1`     |
+| `format_avro_schema_registry_receive_timeout`        | Receive timeout in seconds for the Schema Registry HTTP client. Must be greater than 0 and less than 600 (10 minutes). | `1`     |
 | `output_format_avro_confluent_subject`               | For output: the subject name under which the schema is registered in the Schema Registry. Required when writing. |         |
 | `output_format_avro_string_column_pattern`           | For output: regexp of String columns to serialize as Avro `string` (default is `bytes`). |         |
 

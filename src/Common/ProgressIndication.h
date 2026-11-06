@@ -73,13 +73,6 @@ public:
     /// How much seconds passed since query execution start.
     double elapsedSeconds() const { return static_cast<double>(getElapsedNanoseconds()) / 1e9; }
 
-    /// How much seconds passed since query execution start, measured by the client's own clock.
-    /// Unlike `elapsedSeconds`, this never uses the server-reported time, which only advances when a
-    /// `Progress` packet arrives. The server does not send a final `Progress` packet when a query
-    /// fails, so after an error the server-reported time is the one from the last periodic packet and
-    /// can be arbitrarily older than the real duration of the query.
-    double clientElapsedSeconds() const { return watch.elapsedSeconds(); }
-
     struct MemoryUsage
     {
         UInt64 total = 0;
@@ -112,6 +105,10 @@ private:
     /// Width of how much has been printed currently into stderr. Used to define size of progress bar and
     /// to check whether progress output needs to be cleared.
     size_t written_progress_chars = 0;
+
+    /// Selects the frame of the spinning indicator. It is per instance, because several clients
+    /// (e.g. the sessions of the web terminal) can show progress concurrently in one process.
+    size_t indicator_frame = 0;
 
     /// The server periodically sends information about how much data was read since last time.
     /// This information is stored here.

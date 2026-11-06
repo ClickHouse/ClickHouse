@@ -429,34 +429,23 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
         new_settings[Setting::additional_table_filters].value.push_back(std::move(tuple));
     }
 
-    /// disable parallel replicas if cluster contains only shards with 1 replica
-    if (context->canUseTaskBasedParallelReplicas())
+    if (context->canUseTaskBasedParallelReplicas() && is_remote_function)
     {
-        bool disable_parallel_replicas = false;
-        if (is_remote_function)
-        {
-            if (cluster.getName().empty()) // disable parallel replicas with remote() table functions w/o configured cluster
-                disable_parallel_replicas = true;
-            else
-                new_settings[Setting::cluster_for_parallel_replicas] = cluster.getName();
-        }
-
-        if (!disable_parallel_replicas)
-        {
-            disable_parallel_replicas = true;
-            for (const auto & shard : cluster.getShardsInfo())
-            {
-                if (shard.getAllNodeCount() > 1)
-                {
-                    disable_parallel_replicas = false;
-                    break;
-                }
-            }
-        }
-
-        if (disable_parallel_replicas)
+        /// `remote()` without a configured cluster has no cluster to scope parallel replicas to.
+        if (cluster.getName().empty())
             new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
+        else
+            new_settings[Setting::cluster_for_parallel_replicas] = cluster.getName();
     }
+    /// Parallel replicas are not disabled here for a cluster whose every shard has one replica:
+    /// `new_settings` is what the shard receives, and its own table may be a `Distributed` table over a
+    /// cluster that can use them. Whether this hop uses them is decided per shard below, and a shard
+    /// that cannot declines on its own, see `canUseParallelReplicasOnInitiator`.
+
+    /// `clusterAllReplicas` already reads every replica as a shard of its own, so there is nothing left
+    /// for parallel replicas to split
+    if (context->canUseTaskBasedParallelReplicas() && cluster.replicasAsShards())
+        new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
 
     if (settings[Setting::max_execution_time_leaf].totalMicroseconds() > 0)
     {
@@ -746,32 +735,6 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
             logger,
             "Disabling 'parallel_replicas_support_projection'. Currently, it's not supported for queries with parallel replicas over distributed tables");
         context_mutable->setSetting("parallel_replicas_support_projection", Field{false});
-    }
-
-    if (settings[Setting::max_execution_time_leaf].totalMicroseconds() > 0)
-    {
-        /// Replace 'max_execution_time' of this sub-query with 'max_execution_time_leaf' and 'timeout_overflow_mode'
-        /// with 'timeout_overflow_mode_leaf'
-        context_mutable->setSetting("max_execution_time", static_cast<Field>(settings[Setting::max_execution_time_leaf]));
-        context_mutable->setSetting("timeout_overflow_mode", static_cast<Field>(settings[Setting::timeout_overflow_mode_leaf]));
-
-        /// The substitution above only affects remote replicas: each of them builds its own 'QueryStatus'
-        /// from the settings shipped with the sub-query, so 'max_execution_time_leaf' is enforced there.
-        /// The local replica, however, executes inside the initiator's pipeline and shares the initiator's
-        /// 'QueryStatus', whose limits come from the original (outer) query and are not bounded by the leaf
-        /// timeout. As a result, with a local plan the leaf reading would not use the leaf timeout contract.
-        /// Disable the local plan when that contract is stricter than, or differs from, the initiator's timeout
-        /// contract so that all leaf reading happens on remote replicas where it is honored (see
-        /// 'leafTimeoutRequiresRemoteOnlyLeafReading').
-        if (settings[Setting::parallel_replicas_local_plan] && leafTimeoutRequiresRemoteOnlyLeafReading(settings))
-        {
-            LOG_TRACE(
-                logger,
-                "Disabling 'parallel_replicas_local_plan' because the leaf timeout contract differs from the "
-                "initiator's: the local replica shares the initiator's query status and cannot use the leaf "
-                "timeout separately");
-            context_mutable->setSetting("parallel_replicas_local_plan", Field{false});
-        }
     }
 
     /// Strip the initiator-only settings (the query-shaping and result-serialisation settings, and
@@ -1401,22 +1364,6 @@ void executeQueryWithParallelReplicasCustomKey(
     executeQueryWithParallelReplicasCustomKey(query_plan, storage_id, query_info, columns, snapshot, processed_stage, header, context);
 }
 
-bool leafTimeoutRequiresRemoteOnlyLeafReading(const Settings & settings)
-{
-    const auto leaf_timeout = settings[Setting::max_execution_time_leaf].totalMicroseconds();
-    if (leaf_timeout == 0)
-        return false;
-
-    /// The initiator's own 'max_execution_time' bounds the shared 'QueryStatus' and with it the local reading.
-    /// Only a leaf timeout stricter than that needs the local reading to be moved to remote replicas. When the
-    /// timeouts are equal, the overflow modes must also be equal: the shared query status uses the initiator's
-    /// `timeout_overflow_mode`, while remote replicas use `timeout_overflow_mode_leaf`.
-    const auto initiator_timeout = settings[Setting::max_execution_time].totalMicroseconds();
-    return initiator_timeout == 0 || leaf_timeout < initiator_timeout
-        || (leaf_timeout == initiator_timeout
-            && settings[Setting::timeout_overflow_mode] != settings[Setting::timeout_overflow_mode_leaf]);
-}
-
 bool canUseParallelReplicasOnInitiator(const ContextPtr & context)
 {
     if (!context->canUseParallelReplicasOnInitiator())
@@ -1595,28 +1542,6 @@ LocalPlanParallelReplicasInfo dropReadFromRemoteInPlan(QueryPlan & query_plan)
     return {};
 }
 
-/// Remove only 'max_execution_time' and 'timeout_overflow_mode' from the top-level query-text SETTINGS clauses of
-/// a query that is about to be sent to a remote replica. 'updateContextForParallelReplicas' substitutes
-/// 'max_execution_time_leaf' / 'timeout_overflow_mode_leaf' into 'max_execution_time' / 'timeout_overflow_mode' in
-/// the context that travels with the sub-query; a query text carrying the original (outer) values in its top-level
-/// SETTINGS would re-apply them on top of the context on the remote replica and defeat the leaf timeout. Every
-/// other query-level setting is intentionally left in the query text: the remote replica relies on them
-/// (e.g. 'max_block_size'), and - unlike the SELECT path, where 'rewriteSelectQuery' strips the whole clause - the
-/// INSERT SELECT sub-query does not re-ship every setting via the context, so stripping the whole clause would
-/// drop such settings on the remote replica.
-/// Only the top-level carriers are stripped ('removeSettingsFromQueryTopLevel'): a SETTINGS clause the user wrote
-/// inside a nested subquery (the documented leaf-node pattern 'view(SELECT ... SETTINGS max_execution_time = 10)')
-/// does not override the shipped context and must keep its user-authored timeout on the remote replica.
-/// Every occurrence is removed (not just the first), and a SETTINGS clause that becomes empty is detached, so the
-/// query text never re-serializes to a bare 'SETTINGS' keyword that fails to re-parse.
-/// The caller gates this on 'max_execution_time_leaf > 0' - without a leaf timeout the context carries the
-/// original values and the query text must stay untouched.
-static void removeLeafOverriddenTimeoutSettings(const ASTPtr & ast)
-{
-    static constexpr std::string_view leaf_timeout_settings[] = {"max_execution_time", "timeout_overflow_mode"};
-    removeSettingsFromQueryTopLevel(ast, leaf_timeout_settings);
-}
-
 std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     const ASTInsertQuery & query_ast,
     const ContextPtr & context,
@@ -1689,15 +1614,6 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         /// forwarded query text still carries the INSERT's own `SETTINGS` — strip the initiator-only names
         /// (both `changes` and `default_settings`) from it too.
         stripInitiatorOnlySettingsFromQuery(new_query_ast);
-
-        /// When a leaf timeout is set, drop 'max_execution_time' / 'timeout_overflow_mode' from the top-level
-        /// SETTINGS of the query text (both on the INSERT itself and on the top-level SELECT) so that the leaf
-        /// values shipped with 'new_context' are authoritative on the remote replica; otherwise the original outer
-        /// values in the query text would override them. Other settings, SETTINGS clauses in nested subqueries,
-        /// and the whole query text when no leaf timeout is set are left intact so the remote replica still
-        /// receives them (see 'removeLeafOverriddenTimeoutSettings').
-        if (settings[Setting::max_execution_time_leaf].totalMicroseconds() > 0)
-            removeLeafOverriddenTimeoutSettings(new_query_ast);
 
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(

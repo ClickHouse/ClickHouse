@@ -54,6 +54,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int AZURE_BLOB_STORAGE_ERROR;
+    extern const int AZURE_OBJECT_CHANGED_DURING_READ;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -249,6 +250,26 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
             blob_storage_log->local_path = object.local_path;
     }
 
+    /// An object whose size is known to be zero is read as empty without a single `Download`
+    /// request, so no `If-Match` condition pins that read to the generation the caller has seen.
+    /// A blob listed as empty and replaced with a non-empty one since must still be rejected rather
+    /// than returned as a clean empty file, so its generation is checked on the properties instead.
+    if (object.bytes_size == 0 && !object.etag.empty())
+        getObjectMetadataOfListedGeneration(object);
+
+    /// The size of the object recorded in the metadata is a locally known bound, so it is used
+    /// as the right bound of the read rather than trusting the length of whatever the endpoint
+    /// answers with. `UnknownSize` is the only sentinel for "the size was never determined":
+    /// it is the default-constructed value, so a caller that does not know the size leaves it
+    /// there, and `bytes_size == 0` means a genuinely empty object, which must read as empty
+    /// rather than unbounded.
+    /// `S3ObjectStorage::readObject` maps `0` to "no bound" as well, because
+    /// `ReadBufferFromS3::read_until_position` is a plain `size_t` whose `0` already means
+    /// "unbounded" and therefore cannot express the empty range at all.
+    const std::optional<size_t> known_size = object.bytes_size != StoredObject::UnknownSize
+        ? std::optional<size_t>(object.bytes_size)
+        : std::nullopt;
+
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
         client.get(),
         object.remote_path,
@@ -257,9 +278,18 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
         settings_ptr->max_single_download_retries,
         use_external_buffer,
         restrict_seek,
-        /* read_until_position */0,
+        /* read_until_position */ known_size,
         std::move(blob_storage_log),
-        connection_params.getContainer());
+        connection_params.getContainer(),
+        /// The size is only a correct bound for the generation of the object it was recorded for,
+        /// so the read is pinned to that generation when the caller has recorded its `ETag`, and
+        /// a replaced object is rejected instead of being truncated to the stale size.
+        object.etag,
+        /// The same size is what the buffer reports as the size of the file, so that a wrapper
+        /// that sizes itself by `getFileSize` (`CachedInMemoryReadBufferFromFile` does, and treats
+        /// an earlier end of the file as corruption) sees the bound the read has, and not the size
+        /// of whatever generation a live `GetProperties` request would meet.
+        /* file_size */ known_size);
 }
 
 SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
@@ -268,6 +298,17 @@ SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetad
     size_t max_size_bytes,
     std::optional<size_t> read_hint) const
 {
+    /// An object whose size is known to be zero is read as empty without issuing a single
+    /// `Download` request, because `readObject` bounds the read by that size. There is then no
+    /// response to take the metadata from, so it is requested explicitly, and the check that
+    /// `readObject` performs on the `ETag` of the response is made on the properties instead.
+    if (object.bytes_size == 0)
+    {
+        SmallObjectDataWithMetadata result;
+        result.metadata = getObjectMetadataOfListedGeneration(object);
+        return result;
+    }
+
     auto buffer = readObject(object, read_settings, read_hint);
     SmallObjectDataWithMetadata result;
     WriteBufferFromString out(result.data);
@@ -342,8 +383,7 @@ void AzureObjectStorage::removeObjectImpl(
     const StoredObject & object,
     const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
     bool if_exists,
-    BlobStorageLogWriterPtr blob_storage_log,
-    StoredObjects * successful_objects)
+    BlobStorageLogWriterPtr blob_storage_log)
 {
     ProfileEvents::increment(ProfileEvents::AzureDeleteObjects);
     if (client_ptr->IsClientForDisk())
@@ -407,20 +447,12 @@ void AzureObjectStorage::removeObjectImpl(
                     elapsed,
                     error_code,
                     error_message);
-
-            if (successful_objects)
-                successful_objects->emplace_back(object);
-
             return;
         }
 
         tryLogCurrentException(__PRETTY_FUNCTION__);
         throw;
     }
-
-    if (successful_objects)
-        successful_objects->emplace_back(object);
-
     auto elapsed = watch.elapsedMicroseconds();
 
     if (blob_storage_log)
@@ -444,8 +476,7 @@ void AzureObjectStorage::removeObjectIfExists(const StoredObject & object)
 void AzureObjectStorage::removeObjectsBatchIfExists(
     const StoredObjects & objects,
     const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
-    BlobStorageLogWriterPtr blob_storage_log,
-    StoredObjects * successful_objects)
+    BlobStorageLogWriterPtr blob_storage_log)
 {
     /// https://github.com/Azure/azure-sdk-for-python/issues/22821#issuecomment-1024753986
     static constexpr size_t AZURE_BATCH_MAX_SUBREQUESTS = 256;
@@ -518,18 +549,12 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
             {
                 deferred_response.GetResponse();
                 add_log_entry(object, avg_elapsed_us);
-
-                if (successful_objects)
-                    successful_objects->emplace_back(object);
             }
             catch (const Azure::Storage::StorageException & e)
             {
                 if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
                 {
                     add_log_entry(object, avg_elapsed_us);
-
-                    if (successful_objects)
-                        successful_objects->emplace_back(object);
                 }
                 else
                 {
@@ -548,9 +573,7 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
     }
 }
 
-void AzureObjectStorage::removeObjectsIfExist( /// NOLINT
-    const StoredObjects & objects,
-    StoredObjects * successful_objects)
+void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
     if (objects.empty())
         return;
@@ -561,54 +584,59 @@ void AzureObjectStorage::removeObjectsIfExist( /// NOLINT
     if (isAdlsGen2Endpoint(connection_params.endpoint))
     {
         for (const auto & object : objects)
-            removeObjectImpl(object, client_ptr, /*if_exists=*/ true, blob_storage_log, successful_objects);
+            removeObjectImpl(object, client_ptr, /*if_exists=*/ true, blob_storage_log);
         return;
     }
 
-    removeObjectsBatchIfExists(objects, client_ptr, blob_storage_log, successful_objects);
+    removeObjectsBatchIfExists(objects, client_ptr, blob_storage_log);
 }
 
 static void setAzureBlobTag(
     const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
-    const StoredObjects & objects,
+    const Strings & blob_names,
     const String & tag_key,
-    const String & tag_value,
-    StoredObjects * successful_objects)
+    const String & tag_value)
 {
     auto log = getLogger("setAzureBlobTag");
-    for (const StoredObject & object : objects)
+    for (const auto & blob_name : blob_names)
     {
-        const String & blob_name = object.remote_path;
-
         auto blob_client = client_ptr->GetBlobClient(blob_name);
         auto get_response = blob_client.GetTags();
         auto & tags = get_response.Value;
         const auto tag_iter = tags.find(tag_key);
-
         if (tag_iter != tags.end() && tag_iter->second == tag_value)
         {
             LOG_TRACE(log, "Azure blob {} skipped as it already had the tag {}={}", blob_name, tag_key, tag_value);
-        }
-        else
-        {
-            tags[tag_key] = tag_value;
-            blob_client.SetTags(tags);
-            LOG_TRACE(log, "Tags of Azure blob {} updated", blob_name);
+            continue;
         }
 
-        if (successful_objects)
-            successful_objects->emplace_back(object);
+        tags[tag_key] = tag_value;
+        blob_client.SetTags(tags);
+        LOG_TRACE(log, "Tags of Azure blob {} updated", blob_name);
     }
 }
 
-void AzureObjectStorage::tagObjects( /// NOLINT
-    const StoredObjects & objects,
-    const std::string & tag_key,
-    const std::string & tag_value,
-    StoredObjects * successful_objects)
+void AzureObjectStorage::tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value)
 {
     auto client_ptr = client.get();
-    setAzureBlobTag(client_ptr, objects, tag_key, tag_value, successful_objects);
+    Strings blob_names = collectRemotePaths(objects);
+    setAzureBlobTag(client_ptr, blob_names, tag_key, tag_value);
+}
+
+ObjectMetadata AzureObjectStorage::getObjectMetadataOfListedGeneration(const StoredObject & object) const
+{
+    ObjectMetadata metadata = getObjectMetadata(object.remote_path, /* with_tags */ false);
+
+    /// A listing spells the `ETag` without the quotes that the `ETag` header of the properties has.
+    const String listed_etag = ReadBufferFromAzureBlobStorage::quotedETag(object.etag);
+    const String current_etag = ReadBufferFromAzureBlobStorage::quotedETag(metadata.etag);
+    if (!listed_etag.empty() && current_etag != listed_etag)
+        throw Exception(
+            ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ,
+            "Azure blob {} was replaced during read (ETag changed from {} to {}); retry the query, or set azure_validate_etag_on_read=0 to disable this check for table reads",
+            object.remote_path, listed_etag, current_etag);
+
+    return metadata;
 }
 
 ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, bool) const

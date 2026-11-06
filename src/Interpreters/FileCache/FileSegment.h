@@ -1,6 +1,8 @@
 #pragma once
 
+#include <algorithm>
 #include <condition_variable>
+#include <optional>
 #include <boost/noncopyable.hpp>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/Guards.h>
@@ -23,6 +25,24 @@ namespace DB
 
 class ReadBufferFromFileBase;
 struct FileCacheReserveStat;
+
+/// Reserve-ahead state of one reader/writer: the first reservation is exact, then the reserve-ahead
+/// doubles up to `max_reserve_granularity` (the cache's `reserve_granularity`). Reset on a failed reservation.
+struct FileCacheReserveAhead
+{
+    /// Returns the size to reserve, at least `size_to_reserve`, and grows the reserve-ahead.
+    /// `segment_reserve_limit` is the room left in the segment, capped by the end of the read if known.
+    size_t getReserveSize(size_t size_to_reserve, size_t segment_reserve_limit, size_t max_reserve_granularity)
+    {
+        const size_t result = std::max(size_to_reserve, std::min({granularity, max_reserve_granularity, segment_reserve_limit}));
+        granularity = std::min(max_reserve_granularity, std::max(granularity, size_to_reserve) * 2);
+        return result;
+    }
+
+    void reset() { granularity = 0; }
+
+    size_t granularity = 0;
+};
 
 
 struct CreateFileSegmentSettings
@@ -211,18 +231,15 @@ public:
      * ========== Methods for _only_ file segment's `downloader` ==================
      */
 
-    /// Try to reserve exactly `size` bytes (in addition to the getDownloadedSize() bytes already downloaded).
-    /// Returns true if reservation was successful, false otherwise.
-    ///
-    /// `reserve_hint`, if non-zero, bounds the reserve-ahead to the bytes left to read from the
-    /// current download offset (e.g. up to read_until_position), so the segment is never reserved
-    /// ahead past what the read will consume.
+    /// Try to reserve `size` bytes on top of getDownloadedSize(). Reserves ahead if `reserve_ahead` is
+    /// set, but not past `reserve_hint` bytes from the current download offset.
     bool reserve(
         size_t size_to_reserve,
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason,
         FileCacheReserveStat * reserve_stat = nullptr,
-        size_t reserve_hint = 0);
+        std::optional<size_t> reserve_hint = std::nullopt,
+        FileCacheReserveAhead * reserve_ahead = nullptr);
 
     /// Write data into reserved space.
     void write(char * from, size_t size, size_t offset_in_file);

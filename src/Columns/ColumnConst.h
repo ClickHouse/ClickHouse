@@ -218,6 +218,11 @@ public:
         ++s;
     }
 
+    void skipSerializedInArena(ReadBuffer & in) const override
+    {
+        data->skipSerializedInArena(in);
+    }
+
     void updateHashWithValue(size_t, SipHash & hash) const override
     {
         data->updateHashWithValue(0, hash);
@@ -324,11 +329,6 @@ public:
     UInt64 getNumberOfDefaultRows() const override
     {
         return data->isDefaultAt(0) ? s : 0;
-    }
-
-    bool hasOnlyTypeDefaults() const override
-    {
-        return s == 0 || data->hasOnlyTypeDefaults();
     }
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override

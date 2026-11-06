@@ -78,14 +78,12 @@ public:
     std::string_view getDataAt(size_t n) const override;
     bool isDefaultAt(size_t n) const override;
     UInt64 getNumberOfDefaultRows() const override;
-
-    /// All arrays are empty iff every offset is zero.
-    bool hasOnlyTypeDefaults() const override;
     void insertData(const char * pos, size_t length) override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     char * serializeValueIntoMemory(size_t, char * memory, const IColumn::SerializationSettings * settings) const override;
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
     void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
@@ -135,7 +133,6 @@ public:
     size_t allocatedBytes() const override;
     void protect() override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
-    ColumnPtr convertToFullColumnIfConst() const override;
     void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     bool hasEqualOffsets(const ColumnArray & other) const;
@@ -245,13 +242,6 @@ private:
 
     /// Multiply the values if the nested column is ColumnString. The code is too complicated.
     ColumnPtr replicateString(const Offsets & replicate_offsets) const;
-
-    /** Non-constant arrays of constant values are quite rare.
-      * Most functions can not work with them, and does not create such columns as a result.
-      * An exception is the function `replicate` (see FunctionsMiscellaneous.h), which has service meaning for the implementation of lambda functions.
-      * Only for its sake is the implementation of the `replicate` method for ColumnArray(ColumnConst).
-      */
-    ColumnPtr replicateConst(const Offsets & replicate_offsets) const;
 
     /** The following is done by simply replicating of nested columns.
       */

@@ -15,16 +15,9 @@
 #include <IO/WriteBufferFromString.h>
 #include <DataTypes/DataTypesCache.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool type_json_skip_null_typed_paths;
-}
 
 namespace ErrorCodes
 {
@@ -43,11 +36,7 @@ class FunctionJSONAllValues final : public IFunction
 public:
     static constexpr auto name = "JSONAllValues";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionJSONAllValues>(context); }
-    explicit FunctionJSONAllValues(ContextPtr context)
-        : skip_null_typed_paths(context->getSettingsRef()[Setting::type_json_skip_null_typed_paths])
-    {
-    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionJSONAllValues>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -89,7 +78,6 @@ private:
         const IColumn * column;
         SerializationPtr serialization;
         bool is_dynamic; /// dynamic paths need a null check before serialization
-        bool is_typed; /// typed paths may need a null check when skip_null_typed_paths is enabled
     };
 
     ColumnPtr execute(const ColumnObject & column_object, const DataTypeObject & type_object) const
@@ -100,8 +88,6 @@ private:
         auto & offsets = offsets_column->getData();
 
         FormatSettings format_settings;
-        /// Values can be JSON objects themselves, so the setting must reach nested serializers.
-        format_settings.json.type_json_skip_null_typed_paths = skip_null_typed_paths;
 
         /// Collect typed + dynamic paths, sorted for deterministic output order.
         const auto & typed_path_types = type_object.getTypedPaths();
@@ -115,11 +101,11 @@ private:
         for (const auto & [path, type] : typed_path_types)
         {
             const auto & column = typed_path_columns.at(path);
-            sorted_paths.push_back({path, column.get(), type->getDefaultSerialization(), false, true});
+            sorted_paths.push_back({path, column.get(), type->getDefaultSerialization(), false});
         }
 
         for (const auto & [path, column] : dynamic_path_columns)
-            sorted_paths.push_back({path, column.get(), dynamic_serialization, true, false});
+            sorted_paths.push_back({path, column.get(), dynamic_serialization, true});
 
         std::sort(sorted_paths.begin(), sorted_paths.end(),
             [](const PathInfo & a, const PathInfo & b) { return a.path < b.path; });
@@ -166,16 +152,13 @@ private:
         return ColumnArray::create(std::move(result_data_column), std::move(offsets_column));
     }
 
-    void emitValue(
+    static void emitValue(
         const PathInfo & entry,
         size_t row,
         const FormatSettings & format_settings,
-        ColumnString & result_data) const
+        ColumnString & result_data)
     {
         if (entry.is_dynamic && entry.column->isNullAt(row))
-            return;
-
-        if (entry.is_typed && skip_null_typed_paths && entry.column->isNullAt(row))
             return;
 
         serializeValueIntoResult(*entry.serialization, *entry.column, row, format_settings, result_data);
@@ -260,8 +243,6 @@ private:
 
         result_offsets.push_back(result_chars.size());
     }
-
-    bool skip_null_typed_paths = false;
 };
 
 }
@@ -282,15 +263,15 @@ Values are serialized in their text representation and ordered by their path nam
         "Usage example",
         R"(
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
-INSERT INTO test FORMAT JSONEachRow {"json": {"a": 42}}, {"json": {"b": "Hello"}}, {"json": {"a": [1, 2, 3], "c": "2020-01-01"}};
+INSERT INTO test FORMAT JSONEachRow {"json": {"a": 42}}, {"json": {"b": "Hello"}}, {"json": {"a": [1, 2, 3], "c": "2020-01-01"}}
 SELECT json, JSONAllValues(json) FROM test;
         )",
         R"(
-┌─json───────────────────────────┬─JSONAllValues(json)──────┐
-│ {"a":42}                       │ ['42']                   │
-│ {"b":"Hello"}                  │ ['Hello']                │
-│ {"a":[1,2,3],"c":"2020-01-01"} │ ['[1,2,3]','2020-01-01'] │
-└────────────────────────────────┴──────────────────────────┘
+┌─json─────────────────────────────────┬─JSONAllValues(json)──────┐
+│ {"a":42}                             │ ['42']                   │
+│ {"b":"Hello"}                        │ ['Hello']                │
+│ {"a":[1,2,3],"c":"2020-01-01"}       │ ['[1,2,3]','2020-01-01'] │
+└──────────────────────────────────────┴──────────────────────────┘
         )"
     }
     };

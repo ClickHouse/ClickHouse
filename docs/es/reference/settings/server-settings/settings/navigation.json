@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "Server Settings",
+  "group": "Configuración del servidor",
   "pages": [
     "es/reference/settings/server-settings/settings",
     "es/reference/settings/server-settings/settings/access-control",

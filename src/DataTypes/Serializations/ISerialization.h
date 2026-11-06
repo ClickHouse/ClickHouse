@@ -94,6 +94,30 @@ public:
     ///  - etc
     using KindStack = std::vector<Kind>;
 
+    /// The kind of a column in the Native format is chosen by the peer that sends the data, so a
+    /// reader declares with such a set which kinds the peer is allowed to select.
+    class KindSet
+    {
+    public:
+        constexpr KindSet(std::initializer_list<Kind> kinds) /// NOLINT(google-explicit-constructor)
+        {
+            for (auto kind : kinds)
+                bits |= maskOf(kind);
+        }
+
+        static constexpr KindSet all() { return KindSet(~UInt32(0)); }
+
+        constexpr bool contains(Kind kind) const { return (bits & maskOf(kind)) != 0; }
+        constexpr KindSet without(Kind kind) const { return KindSet(bits & ~maskOf(kind)); }
+
+    private:
+        explicit constexpr KindSet(UInt32 bits_) : bits(bits_) { }
+
+        static constexpr UInt32 maskOf(Kind kind) { return UInt32(1) << static_cast<UInt8>(kind); }
+
+        UInt32 bits = 0;
+    };
+
     virtual KindStack getKindStack() const { return {Kind::DEFAULT}; }
     SerializationPtr getPtr() const { return shared_from_this(); }
 
@@ -104,6 +128,7 @@ public:
     virtual MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const { return column; }
 
     static KindStack getKindStack(const IColumn & column);
+    static String kindToString(Kind kind);
     static String kindStackToString(const KindStack & kind);
     static KindStack stringToKindStack(const String & str);
     /// Check if provided kind stack contains specific kind.
@@ -277,11 +302,6 @@ public:
             ObjectSharedDataCopyValues,
             ObjectStructure,
 
-            MapKeyValue,
-            ObjectDistinctPaths,
-            ObjectSubObject,
-            ObjectCombinedPath,
-
             Bucket,
             MapBucketsInfo,
             MapBucketIndexes,
@@ -367,8 +387,6 @@ public:
         MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version = MergeTreeObjectSharedDataSerializationVersion::MAP;
         /// Number of buckets that should be used for Object shared data serialization.
         size_t object_shared_data_buckets = 1;
-        /// Target number of rows per chunk in ADVANCED_CHUNKED Object shared data serialization.
-        size_t object_shared_data_target_chunk_rows = 8192;
         /// The maximum number of buckets that can be used for Map type with "with_buckets" serialization.
         size_t max_buckets_in_map = 1;
         /// Strategy for choosing the number of buckets in Map type with "with_buckets" serialization.
@@ -442,8 +460,6 @@ public:
 
         /// Number of buckets to use in Object shared data serialization if corresponding version supports it.
         size_t object_shared_data_buckets = 1;
-        /// Target number of rows per chunk in ADVANCED_CHUNKED Object shared data serialization.
-        size_t object_shared_data_target_chunk_rows = 8192;
         /// The maximum number of buckets that can be used for Map type with "with_buckets" serialization.
         size_t max_buckets_in_map = 1;
         /// Strategy for choosing the number of buckets in Map type with "with_buckets" serialization.
@@ -469,10 +485,6 @@ public:
         /// Used only in MergeTree for Object shared data serialization.
         StreamMarkGetter stream_mark_getter;
 
-        /// Minimum compressed block size. Some serializations use it to decide when to start a new
-        /// compressed block at a stream boundary. Used only in MergeTree; 0 - start a new block at every boundary.
-        size_t min_compress_block_size = 0;
-
         /// Type of MergeTree data part we serialize data from if any.
         /// Some serializations may differ from type part for more optimal deserialization.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
@@ -491,16 +503,18 @@ public:
         bool native_format = false;
         const FormatSettings * format_settings{};
 
-        bool object_and_dynamic_read_statistics = false;
+        /// Whether the stream contains statistics for `Dynamic`, `JSON`, and `Map`.
+        bool read_statistics = false;
 
         /// Callback that should be called when new dynamic subcolumns are discovered during prefix deserialization.
         StreamCallback dynamic_subcolumns_callback;
         /// Callback to start prefetches for specific substreams during prefixes deserialization.
         StreamCallback prefixes_prefetch_callback;
         /// ThreadPool that can be used to read prefixes of subcolumns in parallel.
-        /// Setting it requires all the callbacks in these settings to be thread safe: prefixes are then
-        /// deserialized from several pool threads at once, each one owning a disjoint set of subcolumns.
         ThreadPool * prefixes_deserialization_thread_pool = nullptr;
+        /// True when an ancestor parallel prefix-deserialization level already made the callbacks above
+        /// thread safe; a nested level then reuses them instead of wrapping again (avoids a second mutex).
+        bool prefix_deserialization_callbacks_are_thread_safe = false;
 
         /// If set to true, all prefixes and suffixes should be read from separate specialized substreams.
         /// For example prefix for discriminators in Variant column should be read from a separate
@@ -544,12 +558,6 @@ public:
         /// If true, call release_stream on all streams used in the prefixes deserialization
         /// even for streams that will be used later for data deserialization.
         bool release_all_prefixes_streams = false;
-
-        /// Set for a column that its caller discards after reading it only partially and refills
-        /// with defaults - the MergeTree readers, see `IMergeTreeReader::fillMissingColumns`. Only
-        /// such a column may be read with its sizes stream present while its elements stream is
-        /// missing: a `Nested` column added by `ALTER`, read from parts written before it.
-        bool partially_read_columns_are_refilled = false;
 
         /// Returns true if all marks for the given substream have at most
         /// `max_transitions` distinct consecutive positions.

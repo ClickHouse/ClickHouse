@@ -105,7 +105,7 @@ public:
 
         /// Look up the filter by the rendezvous id; if it has not been registered/built yet, all rows pass.
         auto filter = filter_lookup->find(filter_id);
-        if (!filter || !filter->isReady())
+        if (!filter)
             return DataTypeUInt8().createColumnConst(input_rows_count, true);
 
         const auto & data_column = arguments[1];

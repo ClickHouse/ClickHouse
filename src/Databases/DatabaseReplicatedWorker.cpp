@@ -293,9 +293,9 @@ void DatabaseReplicatedDDLWorker::scheduleTasks(bool reinitialized)
     DDLWorker::scheduleTasks(reinitialized);
     if (need_update_cached_cluster)
     {
-        database->updateCluster(false /* all_groups */, true /* force_overwrite */);
+        database->setCluster(database->getClusterImpl());
         if (!database->replica_group_name.empty())
-            database->updateCluster(true /* all_groups */, true /* force_overwrite */);
+            database->setCluster(database->getClusterImpl(/*all_groups*/ true), /*all_groups*/ true);
         need_update_cached_cluster = false;
     }
 }
@@ -539,7 +539,7 @@ static bool getRMVCoordinationInfo(
         return false;
     auto in_memory_metadata = storage->getInMemoryMetadataPtr(context, false);
     const auto * refresh = in_memory_metadata->refresh->as<ASTRefreshStrategy>();
-    if (!refresh || refresh->isAppend())
+    if (!refresh || refresh->append)
         return false;
     const auto * mv = dynamic_cast<const StorageMaterializedView *>(storage.get());
     if (!mv)
