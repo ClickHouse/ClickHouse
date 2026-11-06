@@ -1,0 +1,55 @@
+--- histogram with two timestamps: each point is contiguous
+# TYPE h histogram
+h_bucket{le="1"} 1 1
+h_bucket{le="+Inf"} 3 1
+h_count 3 1
+h_sum 5 1
+h_bucket{le="1"} 2 2
+h_bucket{le="+Inf"} 4 2
+h_count 4 2
+h_sum 6 2
+# EOF
+--- histogram round trip through the reader
+h_bucket	h	histogram	[('le','+Inf')]	[('1970-01-01 00:00:01.000',3),('1970-01-01 00:00:02.000',4)]
+h_bucket	h	histogram	[('le','1')]	[('1970-01-01 00:00:01.000',1),('1970-01-01 00:00:02.000',2)]
+h_count	h	histogram	[]	[('1970-01-01 00:00:01.000',3),('1970-01-01 00:00:02.000',4)]
+h_sum	h	histogram	[]	[('1970-01-01 00:00:01.000',5),('1970-01-01 00:00:02.000',6)]
+--- counter with two timestamps and two label sets
+# TYPE c counter
+c_total{a="1"} 1 1
+c_created{a="1"} 0 1
+c_total{a="1"} 2 2
+c_created{a="1"} 0 2
+c_total{a="2"} 7 1
+# EOF
+--- unsuffixed types require the family name
+# TYPE bar gauge
+bar 1 1
+# EOF
+--- metadata-only family on output
+# HELP unused Not used
+# TYPE unused gauge
+# EOF
+--- metadata-only family on input
+	unused	Not used	gauge		[]	[]
+used	used		gauge		[]	[('1970-01-01 00:00:01.000',1)]
+--- HELP escaping on output
+# HELP m a\\nb\nc \"d\"
+m 1 1
+# EOF
+--- HELP unescaping on input
+a\\nb\nc "d"	615C6E620A6320226422
+--- TimeSeries round trip with a two-timestamp histogram, escaped help, and a family without samples
+# HELP h Latency with a \\ backslash\nand a second line
+# TYPE h histogram
+h_bucket{le="1"} 1 1
+h_bucket{le="+Inf"} 3 1
+h_count 3 1
+h_sum 5 1
+h_bucket{le="1"} 2 2
+h_bucket{le="+Inf"} 4 2
+h_count 4 2
+h_sum 6 2
+# HELP unused Not used
+# TYPE unused gauge
+# EOF

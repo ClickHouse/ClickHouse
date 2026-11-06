@@ -259,14 +259,8 @@ void OpenMetricsTextOutputFormat::flushCurrentFamily()
         return;
     }
 
-    size_t total_points = 0;
-    for (const auto & series : current_family.series)
-        total_points += series.points.size();
-    if (total_points == 0)
-    {
-        current_family = {};
-        return;
-    }
+    /// A family without points is still emitted: its `# HELP`/`# TYPE`/`# UNIT` descriptors are written
+    /// (OpenMetrics permits families without samples, and `TimeSeries` keeps their metadata separately).
 
     /// OpenMetrics 1.0 family-metadata conformance, checked before any of this family's bytes are
     /// written so a rejected family fails up front rather than leaving a dangling header on the wire.
@@ -298,6 +292,10 @@ void OpenMetricsTextOutputFormat::flushCurrentFamily()
     /// name must be the family name plus one of the type's suffixes, which is the same table the reader
     /// uses to fold samples back into their family. Histogram buckets must also carry a valid `le`, and
     /// bare summary samples a valid `quantile`.
+    ///
+    /// `point_group[i]` identifies the metric point (the label set without the boundary label) that the
+    /// i-th series belongs to; all samples of one metric point at one timestamp must be emitted together.
+    std::vector<size_t> point_group(current_family.series.size());
     if (const auto * suffixes = OpenMetricsText::familySampleSuffixes(current_family.type))
     {
         /// The canonical position of each series within the family, used below to order the samples.
@@ -368,9 +366,27 @@ void OpenMetricsTextOutputFormat::flushCurrentFamily()
 
         std::vector<Series> sorted;
         sorted.reserve(order.size());
-        for (size_t i : order)
-            sorted.push_back(std::move(current_family.series[i]));
+        for (size_t k = 0; k < order.size(); ++k)
+        {
+            point_group[k] = label_set_rank.at(keys[order[k]].labels);
+            sorted.push_back(std::move(current_family.series[order[k]]));
+        }
         current_family.series = std::move(sorted);
+    }
+    else
+    {
+        /// The types without a suffix rule (`unknown`, `gauge`, `stateset`, and an absent type) only
+        /// have samples named after the family itself. A sample with another name would be read back
+        /// as a separate family by any OpenMetrics parser, losing its association with this family.
+        for (const auto & series : current_family.series)
+            if (series.metric_name != current_family.name)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "OpenMetrics sample '{}' of metric family '{}' with type '{}' must be named after its family for output format '{}'",
+                    series.metric_name, current_family.name, current_family.type.empty() ? "unknown" : current_family.type, FORMAT_NAME);
+
+        /// Each series is a metric point of its own.
+        for (size_t i = 0; i < point_group.size(); ++i)
+            point_group[i] = i;
     }
 
     /// Validate every label value before emitting any bytes, so a malformed value (a tab or other
@@ -379,49 +395,83 @@ void OpenMetricsTextOutputFormat::flushCurrentFamily()
         for (const auto & [label_name, label_value] : series.tags)
             validateLabelValue(label_value);
 
-    const auto write_descriptor = [this](const char * marker, const String & value)
+    const auto write_descriptor = [this](const char * marker, const String & value, bool escape)
     {
         if (value.empty())
             return;
         writeCString(marker, out);
         writeString(current_family.name, out);
         writeChar(' ', out);
-        writeString(value, out);
+        if (escape)
+            OpenMetricsText::writeEscapedHelp(value, out);
+        else
+            writeString(value, out);
         writeChar('\n', out);
     };
 
-    write_descriptor("# HELP ", current_family.help);
-    write_descriptor("# TYPE ", current_family.type);
-    write_descriptor("# UNIT ", current_family.unit);
+    write_descriptor("# HELP ", current_family.help, /*escape=*/ true);
+    write_descriptor("# TYPE ", current_family.type, /*escape=*/ false);
+    write_descriptor("# UNIT ", current_family.unit, /*escape=*/ false);
 
-    for (const auto & series : current_family.series)
+    const auto write_sample = [this](const Series & series, Int64 ms, double value)
     {
-        for (const auto & [ms, value] : series.points)
+        writeString(series.metric_name, out);
+
+        if (!series.tags.empty())
         {
-            writeString(series.metric_name, out);
-
-            if (!series.tags.empty())
+            writeChar('{', out);
+            bool is_first = true;
+            for (const auto & [name, label_value] : series.tags)
             {
-                writeChar('{', out);
-                bool is_first = true;
-                for (const auto & [name, label_value] : series.tags)
-                {
-                    if (!is_first)
-                        writeChar(',', out);
-                    is_first = false;
-                    writeString(name, out);
-                    writeChar('=', out);
-                    writeQuotedLabelValue(label_value, out);
-                }
-                writeChar('}', out);
+                if (!is_first)
+                    writeChar(',', out);
+                is_first = false;
+                writeString(name, out);
+                writeChar('=', out);
+                writeQuotedLabelValue(label_value, out);
             }
-
-            writeChar(' ', out);
-            writeString(formatSampleValue(value), out);
-            writeChar(' ', out);
-            writeString(millisToSecondsString(ms), out);
-            writeChar('\n', out);
+            writeChar('}', out);
         }
+
+        writeChar(' ', out);
+        writeString(formatSampleValue(value), out);
+        writeChar(' ', out);
+        writeString(millisToSecondsString(ms), out);
+        writeChar('\n', out);
+    };
+
+    /// OpenMetrics requires the samples of one metric point to be contiguous: for a histogram at a given
+    /// timestamp, all its buckets, `_count`, `_sum` and `_created` come before the next timestamp. The
+    /// series of one metric point are adjacent (see the sort above), so merge their points by timestamp:
+    /// repeatedly take the next point with the smallest timestamp, preferring the earlier series on ties.
+    /// Each series keeps the order of its own points, so a single series is written as given.
+    std::vector<size_t> cursors;
+    for (size_t group_begin = 0; group_begin < current_family.series.size();)
+    {
+        size_t group_end = group_begin + 1;
+        while (group_end < current_family.series.size() && point_group[group_end] == point_group[group_begin])
+            ++group_end;
+
+        cursors.assign(group_end - group_begin, 0);
+        while (true)
+        {
+            std::optional<size_t> next;
+            for (size_t i = group_begin; i < group_end; ++i)
+            {
+                const auto & points = current_family.series[i].points;
+                const size_t cursor = cursors[i - group_begin];
+                if (cursor < points.size()
+                    && (!next || points[cursor].first < current_family.series[*next].points[cursors[*next - group_begin]].first))
+                    next = i;
+            }
+            if (!next)
+                break;
+            const auto & series = current_family.series[*next];
+            const auto & [ms, value] = series.points[cursors[*next - group_begin]++];
+            write_sample(series, ms, value);
+        }
+
+        group_begin = group_end;
     }
 
     current_family = {};
@@ -479,8 +529,8 @@ void OpenMetricsTextOutputFormat::write(const Columns & columns, size_t row_num)
 
     if (pos.help.has_value() && !columns[*pos.help]->isNullAt(row_num))
     {
+        /// The help text is stored decoded; it is escaped when written (see `writeEscapedHelp`).
         String help = getString(columns, row_num, *pos.help);
-        std::replace(help.begin(), help.end(), '\n', ' ');
         if (!help.empty())
         {
             if (current_family.help.empty())
@@ -580,9 +630,9 @@ The format reports `supports_subsets_of_columns = 1`, so a query that reads Open
 
 ### Row grouping {#row-grouping}
 
-- **Input** buffers the whole exposition to `# EOF`, then emits one row per `(metric_name, tags)` series with all of that series' points collected into `samples`. Labels are sorted by name so a series' `tags` array is deterministic. `metric_family` is derived from the sample name and the declared `# TYPE` metadata (for example a `foo_bucket` sample under `# TYPE foo histogram` gets `metric_family = foo`).
+- **Input** buffers the whole exposition to `# EOF`, then emits one row per `(metric_name, tags)` series with all of that series' points collected into `samples`. Labels are sorted by name so a series' `tags` array is deterministic. `metric_family` is derived from the sample name and the declared `# TYPE` metadata (for example a `foo_bucket` sample under `# TYPE foo histogram` gets `metric_family = foo`). A family with `# HELP`/`# TYPE`/`# UNIT` descriptors but no samples becomes a metadata-only row: empty `metric_name`, `tags` and `samples`, and the family metadata.
 - **Output** groups consecutive rows by `metric_family` (or by `metric_name` when `metric_family` is empty) to emit `# HELP`/`# TYPE`/`# UNIT` once per family, then one sample line per point. Rows must therefore be ordered so that each family is contiguous — add `ORDER BY metric_family` (or `metric_name`) to the query. Conflicting `help`/`type`/`unit` values within one family raise `BAD_ARGUMENTS`.
-- On output, a `__name__` tag is not written as a label: it is the sample name, and it must match `metric_name` if both are set. A row with an empty `metric_name`, no tags and no points only provides the metadata of its `metric_family`; `SELECT * FROM <TimeSeries table>` returns such a row for every metric family.
+- On output, a `__name__` tag is not written as a label: it is the sample name, and it must match `metric_name` if both are set. A row with an empty `metric_name`, no tags and no points only provides the metadata of its `metric_family`; `SELECT * FROM <TimeSeries table>` returns such a row for every metric family. A family whose rows have no points is still written with its `# HELP`/`# TYPE`/`# UNIT` descriptors.
 
 ### Timestamp handling {#timestamp-handling}
 
@@ -596,8 +646,9 @@ Point timestamps are carried as `DateTime64` inside the `samples` tuple. OpenMet
 The writer enforces the [OpenMetrics 1.0](https://prometheus.io/docs/specs/om/open_metrics_spec/) structural rules, raising `BAD_ARGUMENTS` when a row cannot be represented conformantly:
 
 - **Metric type vocabulary.** `type` must be one of `unknown`, `gauge`, `counter`, `stateset`, `info`, `histogram`, `gaugehistogram`, `summary`, or empty. The Prometheus spelling `untyped` is normalized to `unknown` on both input and output.
-- **Sample names.** For the types with a suffix rule, each sample name must be the family name plus one of the type's suffixes: `_total` or `_created` for `counter`; `_bucket`, `_count`, `_sum`, or `_created` for `histogram`; `_bucket`, `_gcount`, `_gsum`, or `_created` for `gaugehistogram`; no suffix, `_count`, `_sum`, or `_created` for `summary`; `_info` for `info`. A `counter` family name must not end with `_total`: the suffix lives on `metric_name`, never on `metric_family`. Histogram `_bucket` samples must carry an `le` label (a real number or `+Inf`, not `NaN`), and bare `summary` samples a `quantile` label (a real number in `[0, 1]`).
-- **Sample order.** Within a `histogram`, `gaugehistogram`, or `summary` family, the series of each label set are kept together, buckets are sorted by increasing `le` and quantiles by increasing `quantile`, and they are followed by the other samples in the order `_count` (`_gcount`), `_sum` (`_gsum`), `_created`. The writer establishes this order itself, so the query only has to keep each family contiguous.
+- **Sample names.** For the types with a suffix rule, each sample name must be the family name plus one of the type's suffixes: `_total` or `_created` for `counter`; `_bucket`, `_count`, `_sum`, or `_created` for `histogram`; `_bucket`, `_gcount`, `_gsum`, or `_created` for `gaugehistogram`; no suffix, `_count`, `_sum`, or `_created` for `summary`; `_info` for `info`. For `unknown`, `gauge`, `stateset`, and an empty type, the sample name must be the family name itself. A `counter` family name must not end with `_total`: the suffix lives on `metric_name`, never on `metric_family`. Histogram `_bucket` samples must carry an `le` label (a real number or `+Inf`, not `NaN`), and bare `summary` samples a `quantile` label (a real number in `[0, 1]`).
+- **Sample order.** Within a `counter`, `info`, `histogram`, `gaugehistogram`, or `summary` family, the series of each label set are kept together, buckets are sorted by increasing `le` and quantiles by increasing `quantile`, and they are followed by the other samples in the order `_count` (`_gcount`), `_sum` (`_gsum`), `_created`. The samples of one metric point are contiguous: all samples of a label set at one timestamp are written before the samples at the next timestamp, ordered by increasing timestamp. The writer establishes this order itself, so the query only has to keep each family contiguous.
+- **Escaping.** `# HELP` text is escaped on output (`\\`, `\n`, `\"`) and unescaped on input, so it may contain backslashes, newlines and double quotes. Label values use the same escapes.
 - **Unit suffix rule.** When `unit` is set, `metric_family` must end with `_<unit>`.
 - **Exposition structure.** `# HELP`/`# TYPE`/`# UNIT` are emitted at most once per family; there are no blank lines between families; the stream ends with `# EOF`.
 

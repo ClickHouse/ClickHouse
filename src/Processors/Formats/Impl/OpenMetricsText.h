@@ -82,8 +82,8 @@ inline String normalizeOpenMetricsType(std::string_view type)
 
 /// Sample-name suffixes that make a sample a member of a family of the given (normalized) type, per
 /// the OpenMetrics 1.0 MetricType rules. An empty suffix means the sample carries the family name
-/// itself (the quantile samples of a `summary`). Returns nullptr for types whose sample names are not
-/// constrained by a suffix rule (`unknown`, `gauge`, `stateset`, and an absent type).
+/// itself (the quantile samples of a `summary`). Returns nullptr for the types without a suffix rule
+/// (`unknown`, `gauge`, `stateset`, and an absent type): their only sample name is the family name.
 inline const std::vector<std::string_view> * familySampleSuffixes(std::string_view type)
 {
     static const std::vector<std::string_view> counter = {"_total", "_created"};
@@ -186,6 +186,49 @@ inline void writeQuotedLabelValue(std::string_view s, WriteBuffer & buf)
         }
     }
     writeChar('"', buf);
+}
+
+/// `# HELP` text uses the OpenMetrics `escaped-string` grammar: a backslash, a newline and a double
+/// quote are written as `\\`, `\n` and `\"`. `writeEscapedHelp` encodes the stored help text for the wire.
+inline void writeEscapedHelp(std::string_view s, WriteBuffer & buf)
+{
+    for (char c : s)
+    {
+        switch (c)
+        {
+            case '\\': writeCString("\\\\", buf); break;
+            case '"': writeCString("\\\"", buf); break;
+            case '\n': writeCString("\\n", buf); break;
+            default: writeChar(c, buf);
+        }
+    }
+}
+
+/// Decodes the `# HELP` text read from the wire: `\\`, `\n` and `\"` become a backslash, a newline and
+/// a double quote. Any other escape sequence, including a trailing lone backslash, is rejected.
+inline String unescapeHelp(std::string_view s, std::string_view line)
+{
+    String out;
+    out.reserve(s.size());
+    for (size_t i = 0; i < s.size(); ++i)
+    {
+        const char c = s[i];
+        if (c != '\\')
+        {
+            out.push_back(c);
+            continue;
+        }
+        if (++i >= s.size())
+            throwIncorrect("Invalid escape sequence in '# HELP' text", line);
+        switch (s[i])
+        {
+            case '\\': out.push_back('\\'); break;
+            case '"': out.push_back('"'); break;
+            case 'n': out.push_back('\n'); break;
+            default: throwIncorrect("Invalid escape sequence in '# HELP' text", line);
+        }
+    }
+    return out;
 }
 
 /// ASCII case-insensitive equality. OpenMetrics `number` special values (`nan`, `inf`, `infinity`)

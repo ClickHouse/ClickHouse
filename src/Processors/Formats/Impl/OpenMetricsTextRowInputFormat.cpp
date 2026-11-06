@@ -32,6 +32,7 @@
 #include <optional>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -451,6 +452,15 @@ void OpenMetricsTextRowInputFormat::parseAll()
     /// the same series accumulate into one `samples` array.
     std::unordered_map<String, size_t> series_index;
 
+    /// Families in the order of their first `# HELP` / `# TYPE` / `# UNIT` descriptor, used to emit the
+    /// families without samples as metadata-only rows after the whole exposition is read.
+    std::vector<String> declared_families;
+    const auto declare_family = [&](const String & family, const FamilyMeta & fm)
+    {
+        if (!fm.has_help && !fm.has_type && !fm.has_unit)
+            declared_families.push_back(family);
+    };
+
     while (!in->eof() && !saw_eof)
     {
         String line;
@@ -484,7 +494,8 @@ void OpenMetricsTextRowInputFormat::parseAll()
                     throwIncorrect("'# HELP' metadata cannot follow samples for a metric family", line);
                 if (fm.has_help)
                     throwIncorrect("Duplicate '# HELP' metadata for a metric family", line);
-                fm.help = std::move(rest);
+                declare_family(name, fm);
+                fm.help = OpenMetricsText::unescapeHelp(rest, line);
                 fm.has_help = true;
             }
             else if (line.starts_with("# TYPE "))
@@ -505,6 +516,7 @@ void OpenMetricsTextRowInputFormat::parseAll()
                     throwIncorrect("'# TYPE' metadata cannot follow samples for a metric family", line);
                 if (fm.has_type)
                     throwIncorrect("Duplicate '# TYPE' metadata for a metric family", line);
+                declare_family(name, fm);
                 /// Normalize to the OpenMetrics 1.0 vocabulary (Prometheus `untyped` -> `unknown`).
                 fm.type = OpenMetricsText::normalizeOpenMetricsType(rest);
                 if (!OpenMetricsText::isValidOpenMetricsType(fm.type))
@@ -519,6 +531,7 @@ void OpenMetricsTextRowInputFormat::parseAll()
                     throwIncorrect("'# UNIT' metadata cannot follow samples for a metric family", line);
                 if (fm.has_unit)
                     throwIncorrect("Duplicate '# UNIT' metadata for a metric family", line);
+                declare_family(name, fm);
                 fm.unit = std::move(rest);
                 fm.has_unit = true;
             }
@@ -634,6 +647,28 @@ void OpenMetricsTextRowInputFormat::parseAll()
         /// for the owning family is rejected (`operator[]` deliberately grows the map here).
         family_meta[stem].samples_emitted = true;
     }
+
+    /// OpenMetrics permits a family without samples. Keep its descriptors as a metadata-only row (empty
+    /// `metric_name`, `tags` and `samples`), the same shape `SELECT * FROM <TimeSeries table>` returns for
+    /// a metric family and `FORMAT OpenMetrics` writes back as a family without samples.
+    std::unordered_set<std::string_view> families_with_samples;
+    for (const auto & row : output_rows)
+        families_with_samples.insert(row.metric_family);
+    std::vector<OutputSeries> metadata_rows;
+    for (const auto & family : declared_families)
+    {
+        if (families_with_samples.contains(family))
+            continue;
+        const FamilyMeta & fm = family_meta.at(family);
+        OutputSeries row;
+        row.metric_family = family;
+        row.help = fm.help;
+        row.type = fm.type;
+        row.unit = fm.unit;
+        metadata_rows.push_back(std::move(row));
+    }
+    for (auto & row : metadata_rows)
+        output_rows.push_back(std::move(row));
 }
 
 bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
