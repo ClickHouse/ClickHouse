@@ -34,6 +34,8 @@
 #include <Core/ServerSettings.h>
 #include <Core/UUID.h>
 
+#include <Disks/DiskFromAST.h>
+
 #include <IO/WriteHelpers.h>
 
 #include <Parsers/ASTAsterisk.h>
@@ -4255,6 +4257,9 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 
     /// Settings that send the table's data elsewhere, e.g. the move destination of a queue, need the grants of that place.
     required_access.append_range(StorageFactory::instance().getExportAccess(create));
+    /// The same for the custom metadata disk of a database, whose engine is not in `StorageFactory`.
+    if (!create.table && create.storage)
+        required_access.append_range(DiskFromAST::getSourceAccess(create.storage->ptr()));
 
     return required_access;
 }

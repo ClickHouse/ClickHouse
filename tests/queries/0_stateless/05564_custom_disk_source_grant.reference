@@ -1,0 +1,38 @@
+A: s3 disk
+READ, WRITE ON S3
+0
+0
+B: s3 disk inside a cache disk
+READ, WRITE ON S3
+0
+H: local disk
+allowed
+1
+C: ALTER to an s3 disk
+READ, WRITE ON S3
+0
+D: ON CLUSTER
+READ, WRITE ON S3
+0
+E: database metadata disk
+READ, WRITE ON S3
+0
+F: projection settings do not build a disk
+BAD_ARGUMENTS
+0
+J: cache over a configured disk
+allowed
+1
+K: web disk needs only READ ON URL
+READ ON URL
+allowed
+L: repeated type
+READ, WRITE ON *
+0
+N: unknown type
+READ, WRITE ON *
+G: with the S3 grant
+10
+M: a substituted type needs the grant on every source
+READ, WRITE ON *
+allowed
