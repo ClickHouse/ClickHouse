@@ -1,6 +1,5 @@
 <clickhouse>
     <dictionary>
-        <database>default</database>
         <name>slow_dict_7</name>
         <source>
            <executable>
@@ -27,7 +26,6 @@
     </dictionary>
 
     <dictionary>
-        <database>default</database>
         <name>slow_dict_3</name>
         <source>
            <executable>

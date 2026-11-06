@@ -1,7 +1,3 @@
-#include "config.h"
-
-#if USE_NURAFT
-
 #include <gtest/gtest.h>
 
 #include <Coordination/Storage/BackgroundWork.h>
@@ -15,14 +11,8 @@
 #include <Coordination/KeeperContext.h>
 #include <Common/SharedMutex.h>
 #include <Disks/DiskLocal.h>
-#include <IO/CompressionMethod.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadBufferFromMemory.h>
-#include <IO/ReadHelpers.h>
-#include <base/scope_guard.h>
 
 #include <fmt/format.h>
-#include <pcg_random.hpp>
 
 #include <chrono>
 #include <filesystem>
@@ -665,53 +655,6 @@ TEST(KeeperStorage, OnDiskWriterCleanup)
     storage.shutdown();
 }
 
-/// A block group can start when the previous group's compressed output filled the file buffer
-/// exactly. The adapter must still give the compressor room to write, or ZSTD loops forever.
-TEST(KeeperStorage, AppendWriteBufferOverFullBuffer)
-{
-    TestDataDir data_dir("./keeper_storage_append_full_buffer_test");
-    auto data_disk = std::make_shared<DB::DiskLocal>("DataDisk", data_dir.path);
-
-    auto file_writer = data_disk->writeFile("file", /*buf_size=*/ 4096, DB::WriteMode::Rewrite, {});
-    const std::string filler(file_writer->available(), 'f');
-    file_writer->write(filler.data(), filler.size());
-    ASSERT_EQ(file_writer->available(), 0u);
-
-    AppendWriteBuffer appender(file_writer.get());
-    SCOPE_EXIT({
-        appender.cancel();
-        file_writer->cancel();
-    });
-    ASSERT_GT(appender.available(), 0u);
-
-    /// Incompressible, so that the compressed output overflows the file buffer several times.
-    std::string payload(16384, '\0');
-    pcg64 rng(42);
-    for (char & c : payload)
-        c = static_cast<char>(rng());
-
-    auto compressed_writer = DB::wrapWriteBufferWithCompressionMethod(
-        &appender, DB::CompressionMethod::Zstd, /*level=*/ 3, /*zstd_window_log=*/ 0, DB::SnappyMode::Basic, /*buf_size=*/ 256);
-    compressed_writer->write(payload.data(), payload.size());
-    compressed_writer->finalize();
-    file_writer->finalize();
-
-    std::string contents;
-    {
-        DB::ReadBufferFromFile in(data_dir.path + "/file");
-        DB::readStringUntilEOF(contents, in);
-    }
-    ASSERT_GT(contents.size(), filler.size());
-    EXPECT_EQ(std::string_view(contents).substr(0, filler.size()), filler);
-
-    auto reader = DB::wrapReadBufferWithCompressionMethod(
-        std::make_unique<DB::ReadBufferFromMemory>(contents.data() + filler.size(), contents.size() - filler.size()),
-        DB::CompressionMethod::Zstd);
-    std::string decompressed;
-    DB::readStringUntilEOF(decompressed, *reader);
-    EXPECT_EQ(decompressed, payload);
-}
-
 /// SnapshotWriterNodeStream emits exactly the set of existing committed nodes, with no NodeAction
 /// nonsense. Here everything stays in a single mutable memtable (large committed_memtable_size, no
 /// flush), which exercises the memtable phase, including that a tombstone must suppress (not emit)
@@ -831,5 +774,3 @@ TEST(KeeperStorage, WriteThrottling)
     storage.recalculateWriteThrottling();
     EXPECT_EQ(storage.write_throttling_us.load(), 0u);
 }
-
-#endif

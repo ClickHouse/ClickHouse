@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Common/HashTable/ClearableHashSet.h>
@@ -14,6 +13,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 
 /// Find different elements in an array.
 class FunctionArrayDistinct final : public IFunction
@@ -39,7 +44,17 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override { return "(Array(T)) -> Array(removeNullable(T))"; }
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
+        if (!array_type)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be array but it  has type {}.",
+                getName(), arguments[0]->getName());
+
+        auto nested_type = removeNullable(array_type->getNestedType());
+
+        return std::make_shared<DataTypeArray>(nested_type);
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
@@ -54,15 +69,6 @@ private:
         IColumn & res_data_col,
         ColumnArray::Offsets & res_offsets,
         const ColumnNullable * nullable_col);
-
-    /// `NO_INLINE` to keep the loop's register allocation independent of the caller.
-    template <typename T, bool has_null_map>
-    NO_INLINE static void executeNumberImpl(
-        const T * values,
-        const UInt8 * null_map,
-        const ColumnArray::Offsets & src_offsets,
-        PaddedPODArray<T> & res_data,
-        ColumnArray::Offsets & res_offsets);
 
     static bool executeString(
         const IColumn & src_data,
@@ -119,10 +125,6 @@ ColumnPtr FunctionArrayDistinct::executeImpl(const ColumnsWithTypeAndName & argu
         || executeNumber<Int64>(*inner_col, offsets, res_data, res_offsets, nullable_col)
         || executeNumber<Float32>(*inner_col, offsets, res_data, res_offsets, nullable_col)
         || executeNumber<Float64>(*inner_col, offsets, res_data, res_offsets, nullable_col)
-        || executeNumber<Decimal32>(*inner_col, offsets, res_data, res_offsets, nullable_col)
-        || executeNumber<Decimal64>(*inner_col, offsets, res_data, res_offsets, nullable_col)
-        || executeNumber<Decimal128>(*inner_col, offsets, res_data, res_offsets, nullable_col)
-        || executeNumber<Decimal256>(*inner_col, offsets, res_data, res_offsets, nullable_col)
         || executeString(*inner_col, offsets, res_data, res_offsets, nullable_col)))
         executeHashed(*inner_col, offsets, res_data, res_offsets, nullable_col);
 
@@ -137,33 +139,21 @@ bool FunctionArrayDistinct::executeNumber(
     ColumnArray::Offsets & res_offsets,
     const ColumnNullable * nullable_col)
 {
-    using ColVecType = ColumnVectorOrDecimal<T>;
-
-    const ColVecType * src_data_concrete = checkAndGetColumn<ColVecType>(&src_data);
+    const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data);
 
     if (!src_data_concrete)
     {
         return false;
     }
 
-    const T * values = src_data_concrete->getData().data();
-    PaddedPODArray<T> & res_data = typeid_cast<ColVecType &>(res_data_col).getData();
+    const PaddedPODArray<T> & values = src_data_concrete->getData();
+    PaddedPODArray<T> & res_data = typeid_cast<ColumnVector<T> &>(res_data_col).getData();
+
+    const PaddedPODArray<UInt8> * src_null_map = nullptr;
 
     if (nullable_col)
-        executeNumberImpl<T, true>(values, nullable_col->getNullMapData().data(), src_offsets, res_data, res_offsets);
-    else
-        executeNumberImpl<T, false>(values, nullptr, src_offsets, res_data, res_offsets);
-    return true;
-}
+        src_null_map = &nullable_col->getNullMapData();
 
-template <typename T, bool has_null_map>
-void FunctionArrayDistinct::executeNumberImpl(
-    const T * values,
-    const UInt8 * null_map,
-    const ColumnArray::Offsets & src_offsets,
-    PaddedPODArray<T> & res_data,
-    ColumnArray::Offsets & res_offsets)
-{
     using Set = ClearableHashSetWithStackMemory<T, DefaultHash<T>,
         INITIAL_SIZE_DEGREE>;
 
@@ -178,12 +168,14 @@ void FunctionArrayDistinct::executeNumberImpl(
 
         for (ColumnArray::Offset j = prev_src_offset; j < curr_src_offset; ++j)
         {
-            if constexpr (has_null_map)
-                if (null_map[j])
-                    continue;
+            if (nullable_col && (*src_null_map)[j])
+                continue;
 
-            if (set.insert(values[j]).second)
+            if (!set.find(values[j]))
+            {
                 res_data.emplace_back(values[j]);
+                set.insert(values[j]);
+            }
         }
 
         res_offset += set.size();
@@ -191,6 +183,7 @@ void FunctionArrayDistinct::executeNumberImpl(
 
         prev_src_offset = curr_src_offset;
     }
+    return true;
 }
 
 bool FunctionArrayDistinct::executeString(
@@ -231,8 +224,11 @@ bool FunctionArrayDistinct::executeString(
 
             std::string_view str_ref = src_data_concrete->getDataAt(j);
 
-            if (set.insert(str_ref).second)
+            if (!set.find(str_ref))
+            {
+                set.insert(str_ref);
                 res_data_column_string.insertData(str_ref.data(), str_ref.size());
+            }
         }
 
         res_offset += set.size();
@@ -276,8 +272,11 @@ void FunctionArrayDistinct::executeHashed(
             src_data.updateHashWithValue(j, hash_function);
             const auto hash = hash_function.get128();
 
-            if (set.insert(hash).second)
+            if (!set.find(hash))
+            {
+                set.insert(hash);
                 res_data_col.insertFrom(src_data, j);
+            }
         }
 
         res_offset += set.size();

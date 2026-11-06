@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/InterpolateDescription.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/FillingRow.h>
 #include <Processors/ISimpleTransform.h>
@@ -38,13 +37,10 @@ public:
     static Block transformHeader(Block header, const SortDescription & sort_description);
 
 protected:
-    void onCancel() noexcept override;
     void transform(Chunk & chunk) override;
 
 private:
-    void transformImpl(Chunk & chunk);
-
-    using MutableColumnRawPtrs = VectorWithMemoryTracking<IColumn *>;
+    using MutableColumnRawPtrs = std::vector<IColumn *>;
     void transformRange(
         const Columns & input_fill_columns,
         const Columns & input_interpolate_columns,
@@ -102,12 +98,12 @@ private:
     FillingRow next_row; /// Row to which we need to generate filling rows.
     bool filling_row_inserted = false;
 
-    using Positions = VectorWithMemoryTracking<size_t>;
+    using Positions = std::vector<size_t>;
     Positions fill_column_positions;
     Positions interpolate_column_positions;
     Positions other_column_positions;
     Positions sort_prefix_positions;
-    VectorWithMemoryTracking<std::pair<size_t, NameAndTypePair>> input_positions; /// positions in result columns required for actions
+    std::vector<std::pair<size_t, NameAndTypePair>> input_positions; /// positions in result columns required for actions
     ExpressionActionsPtr interpolate_actions;
     Columns last_row;
     Columns last_range_sort_prefix;

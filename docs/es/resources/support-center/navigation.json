@@ -71,7 +71,7 @@
           ]
         },
         {
-          "group": "Integraciones y bibliotecas cliente",
+          "group": "Integraciones y bibliotecas client",
           "pages": [
             "es/resources/support-center/knowledge-base/integrations/node-js-example",
             "es/resources/support-center/knowledge-base/integrations/ODBC-authentication-failed-error-using-PowerBI-CH-connector",
@@ -83,7 +83,7 @@
           ]
         },
         {
-          "group": "Solución de problemas y errores",
+          "group": "Resolución de problemas y errores",
           "pages": [
             "es/resources/support-center/troubleshooting/index",
             "es/resources/support-center/troubleshooting/troubleshooting",
@@ -131,8 +131,7 @@
             "es/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
             "es/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
             "es/resources/support-center/knowledge-base/materialized-views/how-to-use-parametrised-views",
-            "es/resources/support-center/knowledge-base/materialized-views/projection-example",
-            "es/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts"
+            "es/resources/support-center/knowledge-base/materialized-views/projection-example"
           ]
         },
         {
@@ -181,8 +180,7 @@
             "es/resources/support-center/knowledge-base/setup-installation/how-to-increase-thread-pool-size",
             "es/resources/support-center/knowledge-base/setup-installation/install-clickhouse-windows10",
             "es/resources/support-center/knowledge-base/setup-installation/llvm-clang-up-to-date",
-            "es/resources/support-center/knowledge-base/setup-installation/production",
-            "es/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server"
+            "es/resources/support-center/knowledge-base/setup-installation/production"
           ]
         },
         {
@@ -257,5 +255,5 @@
     }
   ],
   "icon": "/images/icons/icon-support-center.svg",
-  "item": "Centro de asistencia"
+  "item": "Centro de soporte"
 }
