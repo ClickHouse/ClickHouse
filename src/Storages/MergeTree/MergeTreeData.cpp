@@ -311,6 +311,8 @@ struct LookupTableState
     int32_t metadata_version = -1;
     String schema_signature;
     std::vector<std::weak_ptr<const IMergeTreeDataPart>> parts;
+    /// The number of rows a complete read of the snapshot returns.
+    size_t expected_rows = 0;
     bool cacheable = true;
 };
 
@@ -374,6 +376,7 @@ LookupReadResult readLookupIndexColumns(
     result.schema_signature = lookup_table_state.schema_signature;
     result.parts = std::move(lookup_table_state.parts);
     result.cacheable = lookup_table_state.cacheable;
+    const size_t expected_rows = lookup_table_state.expected_rows;
 
     SelectQueryInfo query_info;
     query_info.query = new ASTSelectQuery();
@@ -403,6 +406,15 @@ LookupReadResult readLookupIndexColumns(
     while (executor.pull(block))
         appendBlock(result.block, block);
 
+    /// The read inherits the limits of the query, and some of them (`max_execution_time` with
+    /// `timeout_overflow_mode = 'break'`, `max_rows_to_read` with `read_overflow_mode = 'break'`, ...)
+    /// finish the pipeline normally after reading only a part of the table. Such a result is good
+    /// enough for this query, which asked for that, but must not be published to the shared cache.
+    /// A cacheable snapshot has no deleted rows, mutations or patches, so a complete read returns
+    /// exactly the rows of its parts.
+    if (result.block.rows() != expected_rows)
+        result.cacheable = false;
+
     return result;
 }
 
@@ -415,7 +427,12 @@ LookupTableState getLookupTableState(
 
     LookupTableState result;
     result.metadata_version = storage_snapshot->metadata->getMetadataVersion();
-    result.schema_signature = storage_snapshot->getSampleBlockForColumns(columns_to_read).dumpStructure();
+    /// The non-replicated `MergeTree` does not maintain the metadata version, and the sample block has
+    /// only names and types. Column defaults affect the values read from parts written before a column
+    /// was added, and an `ALTER` modifying only a default does not create a mutation, so include the
+    /// whole columns description in the signature.
+    result.schema_signature = storage_snapshot->getSampleBlockForColumns(columns_to_read).dumpStructure()
+        + "\n" + storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false);
     /// The cached value is valid only for exactly the same part objects. A part name is not enough:
     /// `REPLACE PARTITION`, `ATTACH PARTITION FROM` or attaching detached parts can bring different
     /// data under a name seen before. A part object is immutable, and holding `weak_ptr` to it keeps
@@ -427,6 +444,7 @@ LookupTableState getLookupTableState(
         auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges_in_part.data_part, snapshot_data.mutations_snapshot, query_context);
 
         result.parts.push_back(ranges_in_part.data_part);
+        result.expected_rows += ranges_in_part.getRowsCount();
         if (ranges_in_part.data_part->hasLightweightDelete() || alter_conversions->hasLightweightDelete()
             || alter_conversions->hasMutations() || alter_conversions->hasPatches())
         {
