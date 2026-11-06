@@ -265,6 +265,12 @@ void StorageMaterializedPostgreSQL::shutdown(bool)
         nested->shutdown();
 }
 
+void StorageMaterializedPostgreSQL::flushAndPrepareForShutdown()
+{
+    if (replication_handler)
+        replication_handler->shutdown();
+}
+
 
 void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 {

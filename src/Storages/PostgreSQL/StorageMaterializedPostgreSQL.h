@@ -87,6 +87,10 @@ public:
 
     void shutdown(bool is_drop) override;
 
+    /// A standalone table stops its replication here and keeps the nested table writable until `shutdown`.
+    void flushAndPrepareForShutdown() override;
+    bool hasBackgroundWrites() const override { return !is_materialized_postgresql_database; }
+
     /// Used only for single MaterializedPostgreSQL storage.
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
 

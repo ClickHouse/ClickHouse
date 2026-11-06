@@ -33,7 +33,8 @@ public:
     void shutdown(bool is_drop) override;
     /// Discards the queued jobs and waits for the running ones, which write into other tables.
     void flushAndPrepareForShutdown() override;
-    bool hasBackgroundWrites() const override { return true; }
+    /// Only in the asynchronous mode. A synchronous job finishes within the query that inserted it.
+    bool hasBackgroundWrites() const override;
     void drop() override;
 
     void waitForQueriesToFinish(const QueryStatusPtr & query_status);

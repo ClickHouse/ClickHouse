@@ -827,6 +827,11 @@ void StorageQueryRunner::flushAndPrepareForShutdown()
     dispatcher->shutdown();
 }
 
+bool StorageQueryRunner::hasBackgroundWrites() const
+{
+    return mode == QueryRunnerMode::ASYNCHRONOUS;
+}
+
 void StorageQueryRunner::waitForQueriesToFinish(const QueryStatusPtr & query_status)
 {
     dispatcher->waitForAllPending(query_status);
