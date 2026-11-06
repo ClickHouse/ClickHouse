@@ -1080,6 +1080,11 @@ PreparedJoinStorage tryGetLookupJoinStorage(
     if (!storage)
         return {};
 
+    /// A lazily loaded table is a `StorageTableProxy` whose snapshot carries no `MergeTreeData` parts,
+    /// while the lookup entity is built from the parts of the snapshot. Take the regular path for it.
+    if (&table_node->getStorageSnapshot()->storage != storage.get())
+        return {};
+
     /// A `SELECT_FILTER` row policy on the right table would be applied during regular
     /// join planning; the filled direct join built from the lookup index bypasses the
     /// right query plan, so reject this optimization to preserve visibility.
@@ -1173,8 +1178,7 @@ static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<T
     if (!storage)
         return {};
 
-    bool allowed_inner = isInner(table_join->kind()) && (table_join->strictness() == JoinStrictness::All
-        || table_join->strictness() == JoinStrictness::Any);
+    bool allowed_inner = isInner(table_join->kind()) && table_join->strictness() == JoinStrictness::All;
     bool allowed_left = isLeft(table_join->kind()) && (table_join->strictness() == JoinStrictness::Any ||
                                                           table_join->strictness() == JoinStrictness::All ||
                                                           table_join->strictness() == JoinStrictness::Semi ||

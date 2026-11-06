@@ -46,9 +46,9 @@ INSERT INTO t_lookup_take_last_dim_noidx VALUES (1, 'first'), (1, 'last');
 -- path must be declined for `ANY` joins under that setting, otherwise enabling the index would
 -- silently change query results.
 
--- Without the setting, the `ANY` join uses the lookup index (a `DirectKeyValueJoin`).
+-- Without the setting, the `ANY LEFT` join uses the lookup index (a `DirectKeyValueJoin`).
 SELECT count() > 0
-FROM (EXPLAIN actions = 1 SELECT val FROM t_lookup_take_last_probe ANY INNER JOIN t_lookup_take_last_dim USING (id)
+FROM (EXPLAIN actions = 1 SELECT val FROM t_lookup_take_last_probe ANY LEFT JOIN t_lookup_take_last_dim USING (id)
       SETTINGS join_any_take_last_row = 0)
 WHERE explain LIKE '%DirectKeyValueJoin%';
 

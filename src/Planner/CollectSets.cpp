@@ -67,12 +67,26 @@ bool hasUnsupportedLookupModifiers(const std::optional<TableExpressionModifiers>
             || table_expression_modifiers->hasStream());
 }
 
+/// A lazily loaded table is a `StorageTableProxy` whose snapshot carries no `MergeTreeData` parts, so the
+/// lookup fast path, which reads the parts from the snapshot, is only taken when the snapshot belongs to
+/// the `MergeTreeData` itself. A proxied table takes the regular path.
+bool isLookupSnapshotOfStorage(const std::shared_ptr<MergeTreeData> & storage, const StorageSnapshotPtr & storage_snapshot)
+{
+    return storage && storage_snapshot && &storage_snapshot->storage == storage.get();
+}
+
 std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const QueryTreeNodePtr & table_expression, PlannerContext & planner_context)
 {
     const auto & query_context = planner_context.getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
     if (!settings[Setting::allow_experimental_lookup_index])
+        return std::nullopt;
+
+    /// The lookup set is carried by `FutureSetFromStorage`, which `QueryPlan::serializeSets` ships as a
+    /// reference to a `StorageSet` by name. A `MergeTree` table is not a `StorageSet`, so a serialized plan
+    /// could not be read on the remote side.
+    if (planner_context.mayBeSerializedForRemoteExecution())
         return std::nullopt;
 
     /// The lookup `Set` is built once and cached/shared across queries with empty `SizeLimits`,
@@ -89,7 +103,7 @@ std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const Que
             return std::nullopt;
 
         auto storage = castStorage<MergeTreeData>(table_node->getStorage(), DeferredTable::Load);
-        if (!storage)
+        if (!isLookupSnapshotOfStorage(storage, table_node->getStorageSnapshot()))
             return std::nullopt;
 
         /// A `SELECT_FILTER` row policy on the right table would normally be applied
@@ -140,6 +154,8 @@ std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const Que
         || query_node->hasOrderBy()
         || query_node->hasLimitBy()
         || query_node->hasLimit()
+        || query_node->hasLimitAfter()
+        || query_node->hasLimitUntil()
         || query_node->hasOffset()
         || query_node->isGroupByWithTotals())
     {
@@ -155,7 +171,7 @@ std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const Que
         return std::nullopt;
 
     auto storage = castStorage<MergeTreeData>(inner_table_node->getStorage(), DeferredTable::Load);
-    if (!storage)
+    if (!isLookupSnapshotOfStorage(storage, inner_table_node->getStorageSnapshot()))
         return std::nullopt;
 
     if (getEffectiveRowPolicyFilter(*storage, query_context))

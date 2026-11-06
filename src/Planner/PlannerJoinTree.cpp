@@ -3515,8 +3515,10 @@ void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
 
 std::optional<Names> tryExtractLookupJoinRightKeys(const JoinOperator & join_operator, bool join_any_take_last_row)
 {
-    bool allowed_inner = isInner(join_operator.kind) && (join_operator.strictness == JoinStrictness::All
-        || join_operator.strictness == JoinStrictness::Any);
+    /// Inner `ANY` is not allowed: with `any_join_distinct_right_table_keys = 0` it emits one row per
+    /// matching key across both sides, so `HashJoin` suppresses repeated left keys, while a direct join
+    /// probes every left row independently.
+    bool allowed_inner = isInner(join_operator.kind) && join_operator.strictness == JoinStrictness::All;
     bool allowed_left = isLeft(join_operator.kind) && (join_operator.strictness == JoinStrictness::Any
         || join_operator.strictness == JoinStrictness::All
         || join_operator.strictness == JoinStrictness::Semi
