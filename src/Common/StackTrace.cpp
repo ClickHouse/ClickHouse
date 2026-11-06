@@ -394,14 +394,15 @@ static void * getCallerAddress([[maybe_unused]] const ucontext_t & context)
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 namespace
 {
-/// Returns the address relative to the object that contains it plus that object, or the address
-/// unchanged and `nullptr` when no loaded object contains it.
+/// Returns the address relative to the object that contains it plus that object, or 0 and `nullptr`
+/// when no loaded object contains it: the runtime address (e.g. of JIT code) must not be published.
 std::pair<uintptr_t, const DB::SymbolIndex::Object *>
 resolveAddressImpl(const DB::SymbolIndex & symbol_index, const void * virtual_addr)
 {
     const auto * object = symbol_index.findObject(virtual_addr);
-    const uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
-    return {uintptr_t(virtual_addr) - virtual_offset, object};
+    if (!object)
+        return {0, nullptr};
+    return {uintptr_t(virtual_addr) - uintptr_t(object->address_begin), object};
 }
 
 /// The load bias and the address range of the main executable, read from its own headers,
@@ -1170,7 +1171,6 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         else
             out << "?";
 
-        /// Without an object, `physical_addr` is the runtime address (e.g. JIT code).
         if (frame.object && shouldShowAddress(frame.physical_addr))
         {
             out << " @ ";
