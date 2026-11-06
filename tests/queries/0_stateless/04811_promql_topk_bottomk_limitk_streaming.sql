@@ -12,14 +12,14 @@ SET allow_experimental_time_series_table = 1;
 
 CREATE TABLE prometheus ENGINE = TimeSeries;
 
-INSERT INTO prometheus (metric_name, tags, samples)
+INSERT INTO prometheus (metric_name, tags, time_series)
 SELECT
     'big',
     map('inst', toString(number)),
     arrayMap(step -> (toDateTime64(100 + step * 10, 3), toFloat64(number + 1)), range(200))
 FROM numbers(3000);
 
-SELECT count(), sum(length(samples))
+SELECT count(), sum(length(time_series))
 FROM prometheusQueryRange('prometheus', 'topk(10, last_over_time(big[10]))', 100, 2090, 10)
 SETTINGS max_memory_usage = 2000000000;
 

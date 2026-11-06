@@ -1,6 +1,7 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/21558
 
 SET secondary_indices_enable_bulk_filtering = 0;
+SET query_plan_optimize_prewhere = 1;
 
 DROP TABLE IF EXISTS test_array_bloom;
 
