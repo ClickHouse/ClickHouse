@@ -4,7 +4,7 @@
 drop database if exists test_log_queries	8423962102517407543	Drop	['test_log_queries']	[]	[]
 create database test_log_queries	18329631544365042880	Create	['test_log_queries']	[]	[]
 create table test_log_queries.logtable(i int, j int, k int) engine MergeTree order by i	14473140110122260412	Create	['test_log_queries']	['test_log_queries.logtable']	[]
-insert into test_log_queries.logtable values 	10533878590475998223	Insert	['test_log_queries']	['test_log_queries.logtable']	[]
+insert into test_log_queries.logtable values 	10533878590475998223	Insert	['test_log_queries']	['test_log_queries.logtable']	['test_log_queries.logtable.i','test_log_queries.logtable.j','test_log_queries.logtable.k']
 select k from test_log_queries.logtable where i = 4	10551554599491277990	Select	['test_log_queries']	['test_log_queries.logtable']	['test_log_queries.logtable.i','test_log_queries.logtable.k']
 select k from test_log_queries.logtable where i > \'\'	10861140285495151963	Select	['test_log_queries']	['test_log_queries.logtable']	['test_log_queries.logtable.i','test_log_queries.logtable.k']
 select k from test_log_queries.logtable where i = 1	10551554599491277990	Select	['test_log_queries']	['test_log_queries.logtable']	['test_log_queries.logtable.i','test_log_queries.logtable.k']
