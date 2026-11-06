@@ -276,6 +276,41 @@ Pipe buildDistributedFinalPipe(
     return Pipe::unitePipes(std::move(final_merge_pipes));
 }
 
+std::optional<FilterDAGInfo> createNonIntersectingFinalEngineFilter(
+    const MergeTreeData::MergingParams & merging_params, const Block & header, const ContextPtr & context)
+{
+    String column_name;
+    std::pair<std::shared_ptr<ExpressionActions>, String> expression;
+    if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
+    {
+        column_name = merging_params.sign_column;
+        expression = createExpressionForPositiveSign(column_name, header, context);
+    }
+    else if (!merging_params.is_deleted_column.empty())
+    {
+        column_name = merging_params.is_deleted_column;
+        expression = createExpressionForIsDeleted(column_name, header, context);
+    }
+    else
+    {
+        return std::nullopt;
+    }
+
+    FilterDAGInfo filter;
+    filter.actions = expression.first->getActionsDAG().clone();
+    filter.column_name = expression.second;
+    filter.do_remove_column = true;
+
+    const auto * filter_node = &filter.actions.findInOutputs(filter.column_name);
+    const auto & inputs = filter.actions.getInputs();
+    const auto input_it = std::ranges::find_if(inputs, [&](const auto * input) { return input->result_name == column_name; });
+    if (input_it == inputs.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The filter of non-intersecting FINAL ranges does not read column {}", column_name);
+
+    filter.actions.getOutputs() = {filter_node, *input_it};
+    return filter;
+}
+
 Pipe readNonIntersectingFinalWithEngineFilter(
     const MergeTreeData::MergingParams & merging_params,
     const Names & origin_column_names,

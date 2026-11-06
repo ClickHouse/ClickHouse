@@ -921,4 +921,83 @@ std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(cons
     return findAppliedRuntimeFilters(dag.tryFindInOutputs(filter_column_name));
 }
 
+
+static bool isAndFunction(const ActionsDAG::Node * node)
+{
+    return node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and";
+}
+
+/// Whether `node` reaches `atom` through `and` nodes, and if so, collects these `and` nodes, including `node`, into `chain`.
+static bool collectAndNodesToAtom(
+    const ActionsDAG::Node * node,
+    const ActionsDAG::Node * atom,
+    NodeMap & reaches_atom,
+    NodeSet & chain)
+{
+    if (node == atom)
+        return true;
+    if (!isAndFunction(node))
+        return false;
+    if (auto it = reaches_atom.find(node); it != reaches_atom.end())
+        return it->second;
+
+    /// All the children: another one may reach `atom` too, through `and` nodes that also have to be collected.
+    bool res = false;
+    for (const auto * child : node->children)
+        res |= collectAndNodesToAtom(child, atom, reaches_atom, chain);
+    reaches_atom[node] = res;
+    if (res)
+        chain.insert(node);
+    return res;
+}
+
+bool isComputedOnlyForConjunction(
+    const ActionsDAG & dag, const ActionsDAG::Node * atom, const ActionsDAG::Node * conjunction, bool conjunction_may_be_output)
+{
+    NodeSet computed;
+    for (const auto * node : findReachableNodes({atom}))
+        if (node->type != ActionsDAG::ActionType::INPUT && node->type != ActionsDAG::ActionType::COLUMN)
+            computed.insert(node);
+
+    /// The `and` nodes between `conjunction` and `atom`. Without `atom`, they are not computed either, so a node that uses
+    /// one of them, e.g. the output `f` in `SELECT (a AND b) AS f ... WHERE f AND c`, would compute `atom` once more.
+    NodeMap reaches_atom;
+    NodeSet chain;
+    collectAndNodesToAtom(conjunction, atom, reaches_atom, chain);
+
+    for (const auto & node : dag.getNodes())
+    {
+        if (computed.contains(&node))
+            continue;
+        const bool in_chain = chain.contains(&node);
+        for (const auto * child : node.children)
+        {
+            if (!computed.contains(child) && !chain.contains(child))
+                continue;
+            if (!in_chain || (child != atom && !chain.contains(child)))
+                return false;
+        }
+    }
+
+    for (const auto * output : dag.getOutputs())
+        if ((computed.contains(output) || chain.contains(output)) && !(output == conjunction && conjunction_may_be_output))
+            return false;
+
+    return true;
+}
+
+ActionsDAG::NodeRawConstPtrs addActionsOverSameBlock(ActionsDAG & dag, ActionsDAG other)
+{
+    /// `mergeInplace` binds the inputs of `other` to the outputs of `dag` with the same names, so let these be the inputs.
+    auto outputs = std::move(dag.getOutputs());
+    dag.getOutputs() = dag.getInputs();
+    const size_t num_other_outputs = other.getOutputs().size();
+    ActionsDAG::NodeMapping inputs_map;
+    dag.mergeInplace(std::move(other), inputs_map, /*remove_dangling_inputs=*/ true);
+    /// The outputs of `other` come first.
+    ActionsDAG::NodeRawConstPtrs other_outputs(dag.getOutputs().begin(), dag.getOutputs().begin() + num_other_outputs);
+    dag.getOutputs() = std::move(outputs);
+    return other_outputs;
+}
+
 }

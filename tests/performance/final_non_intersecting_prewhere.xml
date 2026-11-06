@@ -1,0 +1,74 @@
+<test>
+    <!--
+        A FINAL query with a selective condition on columns outside the sorting key, on a table where most of the data is
+        in a merged part that no other part intersects. `optimize_move_to_prewhere_if_final_non_intersecting` applies the
+        condition as PREWHERE to these ranges, so the other columns are read only for the rows that pass it.
+    -->
+    <settings>
+        <use_query_condition_cache>0</use_query_condition_cache>
+    </settings>
+
+    <create_query>
+        CREATE TABLE final_non_intersecting_prewhere
+        (
+            key UInt64,
+            ver UInt64,
+            selector UInt32,
+            c1 String, c2 String, c3 String, c4 String,
+            c5 UInt64, c6 UInt64, c7 UInt64, c8 UInt64,
+            c9 Float64, c10 Float64, c11 Float64, c12 Float64,
+            c13 LowCardinality(String), c14 LowCardinality(String),
+            c15 DateTime, c16 DateTime
+        )
+        ENGINE = ReplacingMergeTree(ver)
+        ORDER BY key
+    </create_query>
+
+    <fill_query>
+        INSERT INTO final_non_intersecting_prewhere SELECT
+            number, 1, cityHash64(number) % 1000,
+            toString(number), toString(number * 3), toString(number * 7), toString(number * 11),
+            number * 2, number * 5, number * 13, number * 17,
+            number / 3, number / 7, number / 11, number / 13,
+            toString(number % 100), toString(number % 1000),
+            toDateTime('2026-01-01 00:00:00') + number, toDateTime('2026-01-01 00:00:00') - number
+        FROM numbers(10000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE final_non_intersecting_prewhere FINAL</fill_query>
+    <fill_query>SYSTEM STOP MERGES final_non_intersecting_prewhere</fill_query>
+    <fill_query>
+        INSERT INTO final_non_intersecting_prewhere SELECT
+            5000000 + number, 2, cityHash64(number) % 1000,
+            'new', 'new', 'new', 'new',
+            number, number, number, number,
+            number, number, number, number,
+            'new', 'new',
+            toDateTime('2026-01-01 00:00:00'), toDateTime('2026-01-01 00:00:00')
+        FROM numbers(10000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO final_non_intersecting_prewhere SELECT
+            9990000 + number, 3, cityHash64(number) % 1000,
+            'new', 'new', 'new', 'new',
+            number, number, number, number,
+            number, number, number, number,
+            'new', 'new',
+            toDateTime('2026-01-01 00:00:00'), toDateTime('2026-01-01 00:00:00')
+        FROM numbers(100000)
+    </fill_query>
+
+    <!-- About 0.1%, 1% and 5% of rows pass the condition. It is correlated with the sorting key, so PREWHERE skips whole granules. -->
+    <query>SELECT * FROM final_non_intersecting_prewhere FINAL WHERE c5 BETWEEN 6000000 AND 6020000 FORMAT Null</query>
+    <query>SELECT * FROM final_non_intersecting_prewhere FINAL WHERE c5 BETWEEN 6000000 AND 6200000 FORMAT Null</query>
+    <query>SELECT * FROM final_non_intersecting_prewhere FINAL WHERE c5 BETWEEN 6000000 AND 7000000 FORMAT Null</query>
+    <query>SELECT sum(c6), max(c1) FROM final_non_intersecting_prewhere FINAL WHERE c5 BETWEEN 6000000 AND 6200000 FORMAT Null</query>
+    <!-- About 1% of rows pass the condition, spread over all granules. -->
+    <query>SELECT * FROM final_non_intersecting_prewhere FINAL WHERE selector &lt; 10 FORMAT Null</query>
+    <!-- Most rows pass an expensive condition: it must not be evaluated again after FINAL. -->
+    <query>SELECT sum(c5) FROM final_non_intersecting_prewhere FINAL WHERE NOT match(c2, '^9.*7$') FORMAT Null</query>
+    <query>SELECT sum(c5) FROM final_non_intersecting_prewhere FINAL WHERE NOT match(c2, '^9.*7$') AND NOT match(c3, '^8.*6$') FORMAT Null</query>
+    <!-- The condition shares an expensive computation with the result, which must not be done twice. -->
+    <query>SELECT sum(length(extractAll(c1, '[0-5]+'))) FROM final_non_intersecting_prewhere FINAL WHERE notEmpty(extractAll(c1, '[0-5]+')) FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS final_non_intersecting_prewhere</drop_query>
+</test>

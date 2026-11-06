@@ -4,6 +4,7 @@
 #include <Interpreters/ActionsDAG.h>
 
 #include <optional>
+#include <unordered_set>
 
 namespace DB
 {
@@ -35,6 +36,7 @@ public:
         , filter_column_name(other.filter_column_name)
         , remove_filter_column(other.remove_filter_column)
         , condition(other.condition)
+        , prefiltered_conditions(other.prefiltered_conditions)
         , optimize_constant_columns_after_filter(other.optimize_constant_columns_after_filter)
     {}
 
@@ -66,6 +68,15 @@ public:
     static std::optional<bool> combineOptimizeConstantColumnsAfterFilter(std::optional<bool> lhs, std::optional<bool> rhs);
 
     static bool canUseType(const DataTypePtr & type);
+
+    /// The rows of the chunks with `PrefilteredChunkInfo` with `token` already passed the conditions with these hashes
+    /// (see `optimize_move_to_prewhere_if_final_non_intersecting`), so they are not evaluated again for these chunks.
+    void setPrefilteredConditions(UInt64 token, std::unordered_set<UInt64> condition_hashes);
+    /// Takes over the prefiltered conditions of `other`, which this step replaces. Conditions are matched by hash, so any
+    /// condition that this step computes differently is evaluated for all chunks.
+    void copyPrefilteredConditions(const FilterStep & other) { prefiltered_conditions = other.prefiltered_conditions; }
+    /// Adds the conditions that the rows of all chunks passed, like the columns of PREWHERE conditions, if there are prefiltered conditions.
+    void addPrefilteredConditions(const std::unordered_set<UInt64> & condition_hashes);
 
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
@@ -164,6 +175,12 @@ private:
 
     std::optional<std::pair<UInt64, String>> condition; /// for query condition cache
 
+    struct PrefilteredConditions
+    {
+        UInt64 token = 0;
+        std::unordered_set<UInt64> condition_hashes;
+    };
+    std::optional<PrefilteredConditions> prefiltered_conditions;
     std::optional<bool> optimize_constant_columns_after_filter;
 };
 

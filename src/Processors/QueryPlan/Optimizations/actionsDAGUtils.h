@@ -190,6 +190,18 @@ NodeSet findReachableNodes(
 
 bool isInjectiveFunction(const ActionsDAG::Node * node);
 
+/// Whether `dag` uses the values that `atom` of the AND chain of `conjunction` computes only to compute `conjunction`: no other
+/// node uses its computed nodes (an input or a constant may be shared) or the `and` nodes between `conjunction` and `atom`,
+/// except these `and` nodes, and none of them is an output, except `conjunction` if `conjunction_may_be_output`. Then
+/// removing `atom` from the AND chain does not leave a part of its computation to do anyway.
+bool isComputedOnlyForConjunction(
+    const ActionsDAG & dag, const ActionsDAG::Node * atom, const ActionsDAG::Node * conjunction, bool conjunction_may_be_output);
+
+/// Adds the actions of `other` to `dag`, both over the same block: an input of `other` becomes the input of `dag` with the same name
+/// (added if there is none), and no other node is matched by name, unlike `mergeNodes`, which would take a column named `2_UInt8`
+/// for the constant 2. Returns the nodes of `dag` for the outputs of `other`. The outputs of `dag` do not change.
+ActionsDAG::NodeRawConstPtrs addActionsOverSameBlock(ActionsDAG & dag, ActionsDAG other);
+
 /// Our objective is to replace injective function nodes in `actions` results with its children
 /// until only the irreducible subset of nodes remains. Against these set of nodes we will match partition key expression
 /// to determine if it maps all rows with the same value of group by key to the same partition.

@@ -38,5 +38,6 @@ Expression ((Project names + (Before ORDER BY + Projection) [lifted up part]))
                                   ReadFromMergeTree (default.t_lazy_both)
                         LazilyReadFromMergeTree
                     ReadFromMergeTree (default.t_lazy_both)
-                  ReadFromMergeTree (default.t_lazy_both)
+                  Expression
+                    ReadFromMergeTree (default.t_lazy_both)
         LazilyReadFromMergeTree
