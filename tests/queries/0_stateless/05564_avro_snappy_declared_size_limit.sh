@@ -45,7 +45,9 @@ EOF
 
 # The reader reports malformed data as `INCORRECT_DATA` (`avro::Exception` caught in `AvroRowInputFormat`)
 # or as `AVRO_EXCEPTION`. It must not hit the memory limit.
-error=$(make_file | $CLICKHOUSE_LOCAL --max_memory_usage='200Mi' --input-format Avro -S 'x Int32' -q 'SELECT * FROM table' 2>&1)
+# Allocations made through the generic `operator new` only throw on the memory limit when they are at least
+# `min_allocation_size_to_throw_on_memory_limit` bytes, so set it to make the 4 GiB snappy buffer fail without the fix.
+error=$(make_file | $CLICKHOUSE_LOCAL --max_memory_usage='200Mi' --input-format Avro -S 'x Int32' -q 'SELECT * FROM table' -- --min_allocation_size_to_throw_on_memory_limit=1Mi 2>&1)
 
 if grep -q 'MEMORY_LIMIT_EXCEEDED' <<< "$error"; then
     echo "FAIL: memory limit exceeded"
