@@ -6,7 +6,6 @@
 #include <Core/Joins.h>
 
 #include <Interpreters/Context_fwd.h>
-#include <Storages/IStorage_fwd.h>
 
 #include <Storages/IStorage_fwd.h>
 
