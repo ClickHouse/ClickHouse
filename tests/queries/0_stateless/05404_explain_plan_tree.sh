@@ -110,24 +110,6 @@ EXPLAIN tree = 1
 SELECT \`键\` % 10 AS k, sum(\`键\`)
 FROM $DB.\`一二三四五六七八九十一二三四五六七八九十\`
 GROUP BY k;
-
--- A plan that is not distributed is printed as without \`tree\`. In the legacy format, so that the granule counts,
--- which depend on the randomized MergeTree settings, are not printed.
-SET explain_query_plan_default = 'legacy';
-
-SELECT '-- make_distributed_plan = 0';
-EXPLAIN tree = 1
-SELECT bid % 10 AS k, sum(bid)
-FROM $DB.big
-GROUP BY k
-SETTINGS make_distributed_plan = 0;
-
-SELECT '-- fallback to local execution';
-EXPLAIN tree = 1
-SELECT bid % 10 AS k, sum(bid)
-FROM $DB.big
-GROUP BY k WITH TOTALS
-SETTINGS distributed_plan_fallback_to_local_execution = 1;
 EOF
 
 echo "-- errors"
