@@ -710,6 +710,12 @@ WHERE hasAnyTokens(tupleElement(t.tp, 1), ['ell']) OR b.category = 'nonexistent'
 SELECT count() FROM t_115999_element AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
 WHERE hasAnyTokens(variantElement(t.vr, 'String'), ['ell']) OR b.category = 'nonexistent';
 SELECT count() FROM t_115999_element WHERE hasAnyTokens(tp.k, ['ell']);
+-- Tracked gap, both print 0: over a subquery output the element access is never normalized, so the
+-- function spelling disagrees with the direct one above.
+SELECT count() FROM (SELECT tp FROM t_115999_element LIMIT 10) AS sub CROSS JOIN t_115999_side AS b
+WHERE hasAnyTokens(tupleElement(sub.tp, 'k'), ['ell']) OR b.category = 'nonexistent';
+SELECT count() FROM (SELECT vr FROM t_115999_element LIMIT 10) AS sub CROSS JOIN t_115999_side AS b
+WHERE hasAnyTokens(variantElement(sub.vr, 'String'), ['ell']) OR b.category = 'nonexistent';
 
 DROP TABLE t_115999_element;
 
