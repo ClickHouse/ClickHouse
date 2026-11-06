@@ -664,6 +664,16 @@ bool isEmptySetForConstantValue(const ColumnPtr & rhs_column, const DataTypePtr 
     return false;
 }
 
+bool setContainsNullForConstantValue(const ColumnPtr & rhs_column, const DataTypePtr & rhs_type)
+{
+    const WhichDataType rhs_which_type(rhs_type);
+    if (rhs_which_type.isArray() || rhs_which_type.isTuple())
+        return columnCollectionHasNull(rhs_column, rhs_which_type);
+
+    const auto full_column = rhs_column->convertToFullColumnIfConst();
+    return !full_column->empty() && full_column->isNullAt(0);
+}
+
 /// Format: lhs IN rhs
 /// Explanation of the setting: `transform_null_in`. First of all, it is only applicable if the lhs is nullable.
 /// Then if lhs is nullable and `transform_null_in` is true, then NULLs from rhs are inserted into the result set as well.

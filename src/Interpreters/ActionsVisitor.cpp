@@ -189,6 +189,12 @@ std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
 }
 
 
+struct SetSourceInfo
+{
+    bool is_empty = false;
+    bool has_null = false;
+};
+
 /** Create a block for set from expression.
   * 'set_element_types' - types of what are on the left hand side of IN.
   * 'right_arg' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
@@ -199,11 +205,17 @@ std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
 ColumnsWithTypeAndName createBlockForSet(
     const DataTypePtr & left_arg_type,
     const ASTPtr & right_arg,
-    ContextPtr context)
+    ContextPtr context,
+    SetSourceInfo * source_info = nullptr)
 {
     const auto right_value = evaluateConstantExpressionAsColumn(right_arg, context);
     const auto & right_arg_column = right_value.getColumn();
     const auto & right_arg_type = right_value.getType();
+    if (source_info)
+    {
+        source_info->is_empty = isEmptySetForConstantValue(right_arg_column, right_arg_type);
+        source_info->has_null = setContainsNullForConstantValue(right_arg_column, right_arg_type);
+    }
 
     auto set_element_type = left_arg_type;
     if (context->getSettingsRef()[Setting::in_null_as_unknown])
@@ -227,7 +239,8 @@ ColumnsWithTypeAndName createBlockForSet(
 ColumnsWithTypeAndName createBlockForSet(
     const DataTypePtr & left_arg_type,
     const boost::intrusive_ptr<ASTFunction> & right_arg,
-    ContextPtr context)
+    ContextPtr context,
+    SetSourceInfo * source_info = nullptr)
 {
     auto set_element_type = left_arg_type;
     if (context->getSettingsRef()[Setting::in_null_as_unknown])
@@ -241,6 +254,11 @@ ColumnsWithTypeAndName createBlockForSet(
     };
 
     auto [right_arg_column, right_arg_type] = buildCollectionColumnAndTypeFromASTFunction(right_arg, context);
+    if (source_info)
+    {
+        source_info->is_empty = isEmptySetForConstantValue(right_arg_column, right_arg_type);
+        source_info->has_null = setContainsNullForConstantValue(right_arg_column, right_arg_type);
+    }
 
     /// Reuse the analyzer logic
     return getSetElementsForConstantValue(set_element_type, right_arg_column, right_arg_type, params);
@@ -600,10 +618,11 @@ FutureSetPtr makeExplicitSet(
     const auto & right_arg_func = boost::dynamic_pointer_cast<ASTFunction>(right_arg);
 
     ColumnsWithTypeAndName block;
+    SetSourceInfo source_info;
     if (right_arg_func && (right_arg_func->name == "tuple" || right_arg_func->name == "array"))
-        block = createBlockForSet(left_arg_type, right_arg_func, context);
+        block = createBlockForSet(left_arg_type, right_arg_func, context, &source_info);
     else
-        block = createBlockForSet(left_arg_type, right_arg, context);
+        block = createBlockForSet(left_arg_type, right_arg, context, &source_info);
 
     if (block.empty())
         throw Exception(
@@ -624,11 +643,13 @@ FutureSetPtr makeExplicitSet(
     if (auto set = prepared_sets.findTuple(set_key, set_element_keys))
         return set; /// Already prepared.
 
-    const bool source_is_empty = right_arg_func
-        && (right_arg_func->name == "tuple" || right_arg_func->name == "array")
-        && right_arg_func->arguments->children.empty();
     return prepared_sets.addFromTuple(
-        set_key, right_arg_func, std::move(block), context->getSettingsRef(), source_is_empty);
+        set_key,
+        right_arg_func,
+        std::move(block),
+        context->getSettingsRef(),
+        source_info.is_empty,
+        context->getSettingsRef()[Setting::in_null_as_unknown] && source_info.has_null);
 }
 
 class ScopeStack::Index

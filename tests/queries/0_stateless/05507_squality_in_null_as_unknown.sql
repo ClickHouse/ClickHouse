@@ -1,3 +1,5 @@
+-- Tags: shard
+
 SET in_null_as_unknown = 0;
 
 SELECT 84 IN (63, NULL), 84 NOT IN (63, NULL), NULL IN (NULL), NULL NOT IN (NULL), NULL IN (), NULL NOT IN ();
@@ -75,5 +77,28 @@ SELECT
     NULL IN materialize([toNullable(63)]),
     NULL IN materialize([]),
     toTypeName(84 IN materialize([63]));
+
+SELECT [1] IN (NULL), [1] NOT IN ([2], NULL);
+SELECT map('a', 1) IN (NULL), map('a', 1) NOT IN (map('b', 2), NULL);
+
+SET allow_experimental_analyzer = 0;
+SELECT materialize(NULL) IN emptyArrayUInt8(), materialize(NULL) NOT IN emptyArrayUInt8();
+SET allow_experimental_analyzer = 1;
+
+DROP TABLE IF EXISTS squality_in_null_serialized;
+CREATE TABLE squality_in_null_serialized (k Nullable(UInt8)) ENGINE = Memory;
+INSERT INTO squality_in_null_serialized VALUES (NULL), (1);
+
+SELECT isNull(k), k NOT IN (256)
+FROM squality_in_null_serialized
+ORDER BY isNull(k) DESC;
+
+SELECT isNull(k), k NOT IN (256)
+FROM remote('127.0.0.1', currentDatabase(), squality_in_null_serialized)
+ORDER BY isNull(k) DESC
+SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0,
+    enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+
+DROP TABLE squality_in_null_serialized;
 
 SELECT (1, NULL) IN ((1, NULL)); -- { serverError NOT_IMPLEMENTED }

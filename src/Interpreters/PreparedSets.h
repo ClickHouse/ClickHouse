@@ -139,7 +139,8 @@ public:
         ColumnsWithTypeAndName block,
         bool transform_null_in,
         SizeLimits size_limits,
-        std::optional<bool> source_is_empty_ = std::nullopt);
+        std::optional<bool> source_is_empty_ = std::nullopt,
+        bool source_has_null_ = false);
 
     SetPtr get() const override { return set; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
@@ -165,6 +166,7 @@ public:
     /// (e.g. `buildOrderedSetInplace`, which filters the original key columns).
     size_t getInputRowCount() const;
     bool isSourceEmpty() const { return source_is_empty; }
+    bool sourceHasNull() const { return source_has_null; }
 private:
     void fillSetElementsOnce() const;
     Columns getUniqueKeyColumns() const;
@@ -175,6 +177,7 @@ private:
     ASTPtr ast;
     SetPtr set;
     bool source_is_empty;
+    bool source_has_null;
     mutable SetKeyColumns set_key_columns;
     mutable OnceFlag fill_set_elements_once;
     mutable OnceFlag content_hash_once;
@@ -318,7 +321,8 @@ public:
         ASTPtr ast,
         ColumnsWithTypeAndName block,
         const Settings & settings,
-        std::optional<bool> source_is_empty = std::nullopt);
+        std::optional<bool> source_is_empty = std::nullopt,
+        bool source_has_null = false);
 
     FutureSetFromSubqueryPtr addFromSubquery(
         const Hash & key,

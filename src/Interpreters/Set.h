@@ -139,6 +139,9 @@ public:
     ColumnPtr execute(const ColumnsWithTypeAndName & columns, bool negative) const;
 
     bool hasNull() const;
+    void markContainsNull() { contains_null_row.store(true); }
+    bool sourceIsEmpty() const { return !has_input_rows.load(); }
+    void markSourceNonempty() { has_input_rows.store(true); }
 
     bool empty() const;
     size_t getTotalRowCount() const;
@@ -232,6 +235,14 @@ private:
 
     /// Whether the set was truncated due to overflow with OverflowMode::BREAK.
     std::atomic<bool> is_truncated = false;
+
+    /// Whether the original single-column input contained a top-level `NULL`, independently of
+    /// whether conversion to the key type could retain that row.
+    std::atomic<bool> contains_null_row = false;
+
+    /// Whether the original input contained at least one row, independently of whether conversion
+    /// or deduplication retained a key.
+    std::atomic<bool> has_input_rows = false;
 
     /// Collected elements of `Set`.
     /// It is necessary for the index to work on the primary key in the IN statement.
