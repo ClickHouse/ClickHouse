@@ -724,12 +724,17 @@ ORDER BY group_id;
 
 INSERT INTO t_115999_element VALUES (1, tuple('hello'), 'hello');
 
+-- Pinned: the function spelling is normalized by `optimize_functions_to_subcolumns`, which the test
+-- runner randomizes. With it off the spelling reads the default tokenizer at the scan too, consistently.
 SELECT count() FROM t_115999_element AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
-WHERE hasAnyTokens(tupleElement(t.tp, 'k'), ['ell']) OR b.category = 'nonexistent';
+WHERE hasAnyTokens(tupleElement(t.tp, 'k'), ['ell']) OR b.category = 'nonexistent'
+SETTINGS optimize_functions_to_subcolumns = 1;
 SELECT count() FROM t_115999_element AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
-WHERE hasAnyTokens(tupleElement(t.tp, 1), ['ell']) OR b.category = 'nonexistent';
+WHERE hasAnyTokens(tupleElement(t.tp, 1), ['ell']) OR b.category = 'nonexistent'
+SETTINGS optimize_functions_to_subcolumns = 1;
 SELECT count() FROM t_115999_element AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
-WHERE hasAnyTokens(variantElement(t.vr, 'String'), ['ell']) OR b.category = 'nonexistent';
+WHERE hasAnyTokens(variantElement(t.vr, 'String'), ['ell']) OR b.category = 'nonexistent'
+SETTINGS optimize_functions_to_subcolumns = 1;
 SELECT count() FROM t_115999_element WHERE hasAnyTokens(tp.k, ['ell']);
 -- Tracked gap, both print 0: over a subquery output the element access is never normalized, so the
 -- function spelling disagrees with the direct one above.
