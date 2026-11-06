@@ -2343,8 +2343,8 @@ public:
     }
 
     /// Two integers without a common integer type of up to 64 bits: a 128-bit integer, or a `UInt64` with a signed integer.
-    /// `executeImpl` compares them exactly (`accurate::lessOp` and friends); compiled code compares them extended to a
-    /// type one bit wider than both, where every value of both fits.
+    /// `executeImpl` compares them exactly (`accurate::lessOp` and friends); so does compiled code, in native widths (see
+    /// `compileImpl`).
     static bool isWideIntegerPair(const IDataType & left, const IDataType & right)
     {
         const auto left_traits = integerTraits(left);
@@ -2484,10 +2484,30 @@ public:
             {
                 const auto left_traits = *integerTraits(left_type);
                 const auto right_traits = *integerTraits(right_type);
-                auto * wide_type = b.getIntNTy(std::max(left_traits.bits, right_traits.bits) + 1);
-                auto * left_value = left_traits.is_signed ? b.CreateSExt(arguments[0].value, wide_type) : b.CreateZExt(arguments[0].value, wide_type);
-                auto * right_value = right_traits.is_signed ? b.CreateSExt(arguments[1].value, wide_type) : b.CreateZExt(arguments[1].value, wide_type);
-                return b.CreateSelect(CompileOp<Op>::compile(b, left_value, right_value, /*is_signed=*/ true), b.getInt8(1), b.getInt8(0));
+                const unsigned bits = std::max(left_traits.bits, right_traits.bits);
+                auto * type = b.getIntNTy(bits);
+                auto * left_value = left_traits.is_signed ? b.CreateSExt(arguments[0].value, type) : b.CreateZExt(arguments[0].value, type);
+                auto * right_value = right_traits.is_signed ? b.CreateSExt(arguments[1].value, type) : b.CreateZExt(arguments[1].value, type);
+
+                /// Both values fit the wider type when the signs are the same, or when the signed one is wider: compare there.
+                const IntegerTraits & unsigned_traits = left_traits.is_signed ? right_traits : left_traits;
+                const IntegerTraits & signed_traits = left_traits.is_signed ? left_traits : right_traits;
+                if (left_traits.is_signed == right_traits.is_signed || unsigned_traits.bits < signed_traits.bits)
+                {
+                    const bool is_signed = left_traits.is_signed || right_traits.is_signed;
+                    return b.CreateSelect(CompileOp<Op>::compile(b, left_value, right_value, is_signed), b.getInt8(1), b.getInt8(0));
+                }
+
+                /// An unsigned value at least as wide as the signed one: compare unsigned, except where the signed value is negative,
+                /// where the unsigned value is the greater. Native widths only: one bit wider is slower than the interpreter.
+                auto * unsigned_result = CompileOp<Op>::compile(b, left_value, right_value, /*is_signed=*/ false);
+                auto * signed_value = left_traits.is_signed ? arguments[0].value : arguments[1].value;
+                auto * signed_is_negative = b.CreateICmpSLT(signed_value, llvm::ConstantInt::get(signed_value->getType(), 0));
+                auto * negative_result = left_traits.is_signed
+                    ? CompileOp<Op>::compile(b, b.getInt8(0), b.getInt8(1), /*is_signed=*/ true)
+                    : CompileOp<Op>::compile(b, b.getInt8(1), b.getInt8(0), /*is_signed=*/ true);
+                auto * result = b.CreateSelect(signed_is_negative, negative_result, unsigned_result);
+                return b.CreateSelect(result, b.getInt8(1), b.getInt8(0));
             }
 
             if (isSameEnumPair(left_type, right_type))
