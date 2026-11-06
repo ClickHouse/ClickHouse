@@ -11258,10 +11258,12 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         }
         else
         {
-            /// E.g. a cast of an empty tuple, produced by a substituted query parameter of type `Tuple()`.
-            const auto partition_key_type = resolveActiveAlternative(evaluateConstantExpressionAsColumn(partition_value_ast, local_context)).getType();
+            /// E.g. a cast of an empty tuple, produced by a substituted query parameter of type `Tuple()`. The value may be
+            /// carried by a `Variant`/`Dynamic` or a `Nullable`; `NULL` is not an empty tuple.
+            const auto partition_key_value = resolveActiveAlternative(evaluateConstantExpressionAsColumn(partition_value_ast, local_context));
+            const auto partition_key_type = removeNullable(partition_key_value.getType());
             const auto * partition_key_tuple = typeid_cast<const DataTypeTuple *>(partition_key_type.get());
-            if (!partition_key_tuple || !partition_key_tuple->getElements().empty())
+            if (partition_key_value.isNull() || !partition_key_tuple || !partition_key_tuple->getElements().empty())
                 throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition key is empty, expected 'tuple()' as partition key");
         }
     }
