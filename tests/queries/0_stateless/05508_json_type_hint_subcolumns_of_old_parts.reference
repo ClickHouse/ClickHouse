@@ -243,6 +243,9 @@ a subcolumn passed between pending mutations gets the patches of an older type w
 2	2	3
 1	2	2	['1','2']
 2	2	3	['7','8','9']
+a subcolumn of a path is not read from another column named as the path
+2	999999
+2	999999
 05508_read_cast_path_added	1
 05508_read_cast_path_array	1
 05508_read_cast_path_changed	1

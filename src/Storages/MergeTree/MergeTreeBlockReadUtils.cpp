@@ -537,6 +537,14 @@ std::optional<String> getSourceOfSubcolumnInPart(
             source = std::move(source_in_patch);
     }
 
+    /// A path is read by its name, which another column of the table can have.
+    if (source && *source != column_name)
+    {
+        auto source_in_storage = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), *source);
+        if (!source_in_storage || source_in_storage->getNameInStorage() != column_name)
+            source = column_name;
+    }
+
     const auto & metadata = storage_snapshot->metadata;
     if (source
         && (std::ranges::contains(metadata->getColumnsRequiredForSortingKey(), subcolumn.name)

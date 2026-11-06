@@ -62,6 +62,8 @@ DROP TABLE IF EXISTS t_mutation_source_patch_compact;
 DROP TABLE IF EXISTS t_chained_mutations;
 DROP TABLE IF EXISTS t_chained_mutations_old_patch_wide;
 DROP TABLE IF EXISTS t_chained_mutations_old_patch_compact;
+DROP TABLE IF EXISTS t_shadowed_path_wide;
+DROP TABLE IF EXISTS t_shadowed_path_compact;
 
 SELECT 'issue 123339';
 CREATE TABLE t_issue (id UInt32, j JSON) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = '1G';
@@ -588,6 +590,18 @@ ALTER TABLE t_chained_mutations_old_patch_compact UPDATE y = j.a.size0 WHERE 1 S
 ALTER TABLE t_chained_mutations_old_patch_compact MODIFY COLUMN j JSON(a Array(String)) SETTINGS enable_json_lazy_type_hints = 1;
 SELECT id, x, y, j.a FROM t_chained_mutations_old_patch_compact ORDER BY id SETTINGS apply_mutations_on_fly = 1;
 
+SELECT 'a subcolumn of a path is not read from another column named as the path';
+CREATE TABLE t_shadowed_path_wide (id UInt64, j JSON(a UInt32), `j.a` UInt64) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_shadowed_path_wide VALUES (1, '{"a" : 42}', 999999);
+SYSTEM STOP MERGES t_shadowed_path_wide;
+ALTER TABLE t_shadowed_path_wide MODIFY COLUMN j JSON(a String) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT j.a.size, `j.a` FROM t_shadowed_path_wide;
+CREATE TABLE t_shadowed_path_compact (id UInt64, j JSON(a UInt32), `j.a` UInt64) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = '1G';
+INSERT INTO t_shadowed_path_compact VALUES (1, '{"a" : 42}', 999999);
+SYSTEM STOP MERGES t_shadowed_path_compact;
+ALTER TABLE t_shadowed_path_compact MODIFY COLUMN j JSON(a String) SETTINGS enable_json_lazy_type_hints = 1;
+SELECT j.a.size, `j.a` FROM t_shadowed_path_compact;
+
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, read_bytes < 50000 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment LIKE '05508_read_%' AND type = 'QueryFinish'
@@ -647,3 +661,5 @@ DROP TABLE t_mutation_source_patch_compact;
 DROP TABLE t_chained_mutations;
 DROP TABLE t_chained_mutations_old_patch_wide;
 DROP TABLE t_chained_mutations_old_patch_compact;
+DROP TABLE t_shadowed_path_wide;
+DROP TABLE t_shadowed_path_compact;
