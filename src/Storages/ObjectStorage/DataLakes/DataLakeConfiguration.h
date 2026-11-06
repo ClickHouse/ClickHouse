@@ -31,6 +31,7 @@
 
 #include <Common/ErrorCodes.h>
 #include <Common/filesystemHelpers.h>
+#include <base/pathToString.h>
 #include <Disks/DiskType.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
@@ -567,8 +568,8 @@ private:
             /// A relative path is resolved the same way the local object storage resolves the keys of data files:
             /// relative to `user_files_path` in the server and to the current directory in `clickhouse-local`.
             String table_path = this->getPathForRead().path;
-            if (std::filesystem::path(table_path).is_relative())
-                table_path = resolvePathRelativelyToBase(table_path, object_storage->getCommonKeyPrefix());
+            if (pathFromString(table_path).is_relative())
+                table_path = pathToString(resolvePathRelativelyToBase(table_path, object_storage->getCommonKeyPrefix()));
             if (!fileOrSymlinkPathStartsWith(table_path, user_files_path) || !pathStartsWith(table_path, user_files_path))
                 throw Exception(
                     ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", table_path, user_files_path);
