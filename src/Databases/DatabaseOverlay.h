@@ -146,12 +146,6 @@ protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
 
 private:
-    /// Whether the caller can see the table of the source database, i.e. has `SHOW_TABLES` on it.
-    static bool isSourceTableVisible(const String & source, const String & table_name, const ContextPtr & context);
-
-    /// The caller's filter narrowed to the tables of the source database that the caller can see.
-    static FilterByNameFunction sourceFilter(const String & source, const FilterByNameFunction & filter_by_table_name, const ContextPtr & context);
-
     /// The name of the first source database that has the table visible to the caller, or an empty string.
     String findSourceDatabase(const String & table_name, ContextPtr context) const;
 

@@ -657,27 +657,27 @@ DatabasePtr tryGetOverlaySource(const String & name)
     return database;
 }
 
+/// Whether the caller can see the table of the source database, i.e. has `SHOW_TABLES` on it.
+bool isSourceTableVisible(const String & source, const String & table_name, const ContextPtr & context)
+{
+    return context->getAccess()->isGranted(AccessType::SHOW_TABLES, source, table_name);
+}
+
+/// The caller's filter narrowed to the tables of the source that the caller can see. A source waits for the tables
+/// that pass its filter to load and reports a load failure to the caller, so an invisible table is excluded here, not after.
+IDatabase::FilterByNameFunction sourceFilter(const String & source, const IDatabase::FilterByNameFunction & filter_by_table_name, const ContextPtr & context)
+{
+    return [source, filter_by_table_name, context](const String & table_name)
+    {
+        return isSourceTableVisible(source, table_name, context) && (!filter_by_table_name || filter_by_table_name(table_name));
+    };
+}
+
 }
 
 DatabaseOverlayReadOnly::DatabaseOverlayReadOnly(const String & name_, Strings source_databases_, ContextPtr context_)
     : IDatabase(name_), WithContext(context_->getGlobalContext()), source_databases(std::move(source_databases_))
 {
-}
-
-bool DatabaseOverlayReadOnly::isSourceTableVisible(const String & source, const String & table_name, const ContextPtr & context_)
-{
-    return context_->getAccess()->isGranted(AccessType::SHOW_TABLES, source, table_name);
-}
-
-IDatabase::FilterByNameFunction DatabaseOverlayReadOnly::sourceFilter(
-    const String & source, const FilterByNameFunction & filter_by_table_name, const ContextPtr & context_)
-{
-    /// A source waits for the tables that pass its filter to load and reports a load failure to the caller,
-    /// so a table the caller cannot see is excluded before the source lists it, not after.
-    return [source, filter_by_table_name, context_](const String & table_name)
-    {
-        return isSourceTableVisible(source, table_name, context_) && (!filter_by_table_name || filter_by_table_name(table_name));
-    };
 }
 
 String DatabaseOverlayReadOnly::findSourceDatabase(const String & table_name, ContextPtr context_) const
