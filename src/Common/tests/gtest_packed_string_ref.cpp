@@ -1,8 +1,10 @@
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cstring>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <base/PackedStringRef.h>
 #include <base/defines.h>
@@ -36,7 +38,8 @@ struct FixedHash
     uint32_t operator()(const char *, size_t) const { return value; }
 };
 
-std::array<uint8_t, 16> rawBytesOf(PackedStringRef ref)
+template <typename Ref>
+std::array<uint8_t, 16> rawBytesOf(Ref ref)
 {
     std::array<uint8_t, 16> bytes{};
     std::memcpy(bytes.data(), &ref, sizeof(ref));
@@ -208,7 +211,7 @@ TEST(PackedStringRef, EqualityMediumVersusLargeLowCollision)
 namespace
 {
 
-/// Fills the bytes past the end of the string with garbage: `build` must zero them.
+/// Fills the bytes past the end of the string with garbage: `buildShort` must zero them.
 struct GarbagePaddedString
 {
     explicit GarbagePaddedString(std::string_view s)
@@ -225,13 +228,6 @@ struct GarbagePaddedString
     size_t size = 0;
 };
 
-std::array<uint8_t, 16> rawBytesOf(UnhashedPackedStringRef ref)
-{
-    std::array<uint8_t, 16> bytes{};
-    std::memcpy(bytes.data(), &ref, sizeof(ref));
-    return bytes;
-}
-
 std::array<uint8_t, 16> unhashedSmallImage(std::string_view s)
 {
     std::array<uint8_t, 16> bytes{};
@@ -246,14 +242,28 @@ UnhashedPackedStringRef buildUnhashed(std::string_view s)
     return UnhashedPackedStringRef::build(padded.data(), padded.size);
 }
 
+template <typename Ref>
+concept HasHash = requires(Ref ref) { ref.getHash(); };
+
+template <typename Ref>
+concept HasMediumEncoding = requires(Ref ref) { ref.isMedium(); };
+
+/// The unhashed layout has no hash and no medium encoding.
+static_assert(HasHash<PackedStringRef> && HasMediumEncoding<PackedStringRef>);
+static_assert(!HasHash<UnhashedPackedStringRef> && !HasMediumEncoding<UnhashedPackedStringRef>);
+
+static_assert(sizeof(PackedStringRef) == 16 && alignof(PackedStringRef) == 8);
+static_assert(sizeof(UnhashedPackedStringRef) == 16 && alignof(UnhashedPackedStringRef) == 4);
+
 }
 
 TEST(UnhashedPackedStringRef, EmptyIsAllZeros)
 {
-    UnhashedPackedStringRef ref = UnhashedPackedStringRef::build(nullptr, 0);
+    UnhashedPackedStringRef ref = buildUnhashed("");
     EXPECT_EQ(ref.low, 0u);
     EXPECT_EQ(ref.high, 0u);
     EXPECT_TRUE(ref.isEmpty());
+    EXPECT_EQ(ref.size(), 0u);
     EXPECT_EQ(static_cast<std::string_view>(ref), std::string_view{});
 }
 
@@ -269,7 +279,6 @@ TEST(UnhashedPackedStringRef, SmallLayout)
 
         EXPECT_TRUE(ref.isSmall()) << "len=" << len;
         EXPECT_FALSE(ref.isLarge()) << "len=" << len;
-        EXPECT_FALSE(ref.isMedium()) << "len=" << len;
         EXPECT_EQ(ref.getSmallSize(), len) << "len=" << len;
         EXPECT_EQ(static_cast<std::string_view>(ref), std::string_view(s)) << "len=" << len;
         EXPECT_EQ(rawBytesOf(ref), unhashedSmallImage(s)) << "len=" << len;
@@ -312,22 +321,141 @@ TEST(UnhashedPackedStringRef, LargeLayout)
     for (size_t len : {16ul, 17ul, 100ul, 100000ul})
     {
         const std::string s(len, 'x');
-        UnhashedPackedStringRef ref = UnhashedPackedStringRef::build(s.data(), s.size());
+        UnhashedPackedStringRef ref = UnhashedPackedStringRef::buildLong(s.data(), s.size());
 
         EXPECT_TRUE(ref.isLarge()) << "len=" << len;
         EXPECT_FALSE(ref.isSmall()) << "len=" << len;
-        EXPECT_FALSE(ref.isMedium()) << "len=" << len;
         EXPECT_EQ(ref.getLargeSize(), len) << "len=" << len;
         EXPECT_EQ(ref.getLargePtr(), s.data()) << "len=" << len;
         EXPECT_EQ(ref.heapSize(), len) << "len=" << len;
+        EXPECT_EQ(ref.getHeapPtr(), s.data()) << "len=" << len;
+        EXPECT_EQ(ref.size(), len) << "len=" << len;
         EXPECT_EQ(static_cast<std::string_view>(ref), std::string_view(s)) << "len=" << len;
     }
 
-    /// `build` does not read the content of a large string.
+    /// `buildLong` does not read the content of the string.
     const char * ptr = reinterpret_cast<const char *>(0x0000123456789ABCull);
     const size_t len = (1ull << 32) + 5;
-    UnhashedPackedStringRef ref = UnhashedPackedStringRef::build(ptr, len);
+    UnhashedPackedStringRef ref = UnhashedPackedStringRef::buildLong(ptr, len);
     EXPECT_TRUE(ref.isLarge());
     EXPECT_EQ(ref.getLargeSize(), len);
     EXPECT_EQ(ref.getLargePtr(), ptr);
+}
+
+TEST(UnhashedPackedStringRef, EqualityOfRefs)
+{
+    /// Small refs are equal as bytes if and only if their strings are equal.
+    EXPECT_EQ(rawBytesOf(buildUnhashed("abc")), rawBytesOf(buildUnhashed("abc")));
+    EXPECT_NE(rawBytesOf(buildUnhashed("abc")), rawBytesOf(buildUnhashed("abd")));
+
+    /// A large ref holds the address of its string, so equal strings at different addresses differ.
+    const std::string first(20, 'x');
+    const std::string second(20, 'x');
+    EXPECT_EQ(rawBytesOf(UnhashedPackedStringRef::buildLong(first.data(), first.size())),
+        rawBytesOf(UnhashedPackedStringRef::buildLong(first.data(), first.size())));
+    EXPECT_NE(rawBytesOf(UnhashedPackedStringRef::buildLong(first.data(), first.size())),
+        rawBytesOf(UnhashedPackedStringRef::buildLong(second.data(), second.size())));
+}
+
+TEST(UnhashedPackedStringRef, SizeAndCopyTo)
+{
+    for (size_t len : {0ul, 1ul, 7ul, 15ul, 16ul, 40ul})
+    {
+        /// The buffers are as small as the contract allows, so that AddressSanitizer reports any wider access.
+        /// A small string needs 16 bytes at both ends, the empty string too.
+        const std::vector<char> src(std::max<size_t>(len, 16), 'q');
+        const UnhashedPackedStringRef ref = UnhashedPackedStringRef::build(src.data(), len);
+        EXPECT_EQ(ref.size(), len) << "len=" << len;
+
+        std::vector<char8_t> dst(std::max<size_t>(len, 16));
+        const char8_t * end = ref.copyTo(dst.data());
+        EXPECT_EQ(static_cast<size_t>(end - dst.data()), len) << "len=" << len;
+        EXPECT_EQ(std::string_view(reinterpret_cast<const char *>(dst.data()), len), std::string_view(src.data(), len)) << "len=" << len;
+    }
+}
+
+TEST(UnhashedPackedStringRef, FourByteAligned)
+{
+    /// A row holds the value at an offset that is a multiple of 4 and not of 8.
+    alignas(8) std::array<char, 40> row{};
+    const UnhashedPackedStringRef ref = buildUnhashed("abc");
+    std::memcpy(row.data() + 4, &ref, sizeof(ref));
+
+    const auto * stored = reinterpret_cast<const UnhashedPackedStringRef *>(row.data() + 4);
+    EXPECT_EQ(stored->size(), 3u);
+    EXPECT_EQ(static_cast<std::string_view>(*stored), std::string_view("abc"));
+}
+
+TEST(UnhashedPackedStringRef, BuildChoosesTheLayoutByLength)
+{
+    const GarbagePaddedString small("abcdefghijklmno");
+    EXPECT_EQ(
+        rawBytesOf(UnhashedPackedStringRef::build(small.data(), small.size)),
+        rawBytesOf(UnhashedPackedStringRef::buildShort(small.data(), small.size)));
+
+    const std::string large(16, 'x');
+    EXPECT_EQ(
+        rawBytesOf(UnhashedPackedStringRef::build(large.data(), large.size())),
+        rawBytesOf(UnhashedPackedStringRef::buildLong(large.data(), large.size())));
+}
+
+TEST(UnhashedPackedStringRef, Equality)
+{
+    const std::string first = std::string(20, 'x');
+    const std::string same_content = std::string(20, 'x');
+    const std::string other_content = std::string(19, 'x') + "y";
+    const std::string longer = std::string(21, 'x');
+
+    auto large = [](const std::string & s) { return UnhashedPackedStringRef::buildLong(s.data(), s.size()); };
+
+    EXPECT_TRUE(buildUnhashed("") == buildUnhashed(""));
+    EXPECT_TRUE(buildUnhashed("abc") == buildUnhashed("abc"));
+    EXPECT_FALSE(buildUnhashed("abc") == buildUnhashed("abd"));
+    EXPECT_FALSE(buildUnhashed("abc") == buildUnhashed(std::string_view("abc\0", 4)));
+    EXPECT_FALSE(buildUnhashed("") == buildUnhashed("a"));
+
+    EXPECT_TRUE(large(first) == large(first));
+    /// The same bytes at another address.
+    EXPECT_TRUE(large(first) == large(same_content));
+    EXPECT_FALSE(large(first) == large(other_content));
+    EXPECT_FALSE(large(first) == large(longer));
+
+    EXPECT_FALSE(buildUnhashed("abc") == large(first));
+    EXPECT_FALSE(large(first) == buildUnhashed(std::string(15, 'x')));
+}
+
+TEST(UnhashedPackedStringRef, HeapPointer)
+{
+    EXPECT_EQ(buildUnhashed("abc").heapSize(), 0u);
+    EXPECT_EQ(buildUnhashed("").heapSize(), 0u);
+
+    const std::string original(40, 'q');
+    const std::string copy(original.data(), original.size());
+    UnhashedPackedStringRef ref = UnhashedPackedStringRef::buildLong(original.data(), original.size());
+    ASSERT_EQ(ref.getHeapPtr(), original.data());
+
+    /// Rebinding to a copy keeps the length and the tag, and the value still equals the one that viewed the original.
+    const UnhashedPackedStringRef before = ref;
+    ref.setHeapPointer(copy.data());
+    EXPECT_EQ(ref.getHeapPtr(), copy.data());
+    EXPECT_EQ(ref.getLargePtr(), copy.data());
+    EXPECT_EQ(ref.heapSize(), original.size());
+    EXPECT_TRUE(ref.isLarge());
+    EXPECT_TRUE(ref == before);
+}
+
+TEST(UnhashedPackedStringRef, StringView)
+{
+    EXPECT_EQ(static_cast<std::string_view>(buildUnhashed("")), std::string_view{});
+
+    /// A small string is viewed in the value, and a large one where it is.
+    const UnhashedPackedStringRef small = buildUnhashed("abc");
+    const std::string_view small_view = static_cast<std::string_view>(small);
+    EXPECT_EQ(small_view, std::string_view("abc"));
+    EXPECT_EQ(small_view.data(), reinterpret_cast<const char *>(&small));
+
+    const std::string large_string(30, 'z');
+    const UnhashedPackedStringRef large = UnhashedPackedStringRef::buildLong(large_string.data(), large_string.size());
+    EXPECT_EQ(static_cast<std::string_view>(large).data(), large_string.data());
+    EXPECT_EQ(static_cast<std::string_view>(large).size(), large_string.size());
 }
