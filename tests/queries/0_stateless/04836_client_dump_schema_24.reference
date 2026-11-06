@@ -1,0 +1,8 @@
+--- a dump changes no part and no FileLog offset ---
+data path unchanged
+--- dumps replay ---
+lossy_supertype: replay rc=0 
+named_tuple: replay rc=0 
+computed_key_type: replay rc=0 
+eval_filter: replay rc=0 
+constraint_subquery: replay rc=0 
