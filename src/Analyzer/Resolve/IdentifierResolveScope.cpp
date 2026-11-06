@@ -1,11 +1,17 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
+#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+
+#include <functional>
 
 namespace DB
 {
@@ -132,6 +138,18 @@ void IdentifierResolveScope::popExpressionNode()
     expressions_in_resolve_process_stack.pop();
 }
 
+bool IdentifierResolveScope::hasFunctionAlias(const std::string & name) const
+{
+    for (const auto * current_scope = this; current_scope; current_scope = current_scope->parent_scope)
+    {
+        if (current_scope->aliases.alias_name_to_lambda_node.contains(name)
+            || current_scope->global_with_aliases.alias_name_to_lambda_node.contains(name))
+            return true;
+    }
+
+    return false;
+}
+
 namespace
 {
 
@@ -160,9 +178,8 @@ bool subtreeContainsQueryOrUnion(const QueryTreeNodePtr & root)
     return false;
 }
 
-/// Whether the subtree contains any node that is a key in `nodes` (the registered nullable GROUP BY
-/// key shapes), compared by the map's hash (ignoring aliases, exact types).
-bool subtreeContainsAnyNode(const QueryTreeNodePtr & root, const QueryTreeNodePtrWithHashIgnoreAliasesMap<QueryTreeNodePtr> & nodes)
+/// Whether the subtree contains any node for which `is_key` is true.
+bool subtreeContainsAnyNode(const QueryTreeNodePtr & root, const std::function<bool(const QueryTreeNodePtr &)> & is_key)
 {
     std::vector<QueryTreeNodePtr> nodes_to_process;
     nodes_to_process.push_back(root);
@@ -172,7 +189,7 @@ bool subtreeContainsAnyNode(const QueryTreeNodePtr & root, const QueryTreeNodePt
         auto node = nodes_to_process.back();
         nodes_to_process.pop_back();
 
-        if (nodes.contains(node))
+        if (is_key(node))
             return true;
 
         for (const auto & child : node->getChildren())
@@ -262,6 +279,93 @@ std::optional<IdentifierResolveResult> IdentifierResolveScope::findCachedIdentif
     return result;
 }
 
+namespace
+{
+
+/** A hash of the parts of the node that `IQueryTreeNode::isEqual` compares, so that equal nodes have equal hashes.
+  * Unlike the tree hash, it does not include the types of the columns and the functions, and it does not go into the columns
+  * and the subqueries, so it is computed in the time proportional to the size of the expression, regardless of the sources
+  * of its columns.
+  */
+UInt64 getNullableGroupByKeyShallowHash(const IQueryTreeNode & root)
+{
+    SipHash hash_state;
+    std::vector<const IQueryTreeNode *> nodes_to_process{&root};
+    while (!nodes_to_process.empty())
+    {
+        const auto * node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        if (!node)
+        {
+            hash_state.update(static_cast<UInt8>(0));
+            continue;
+        }
+
+        auto node_type = node->getNodeType();
+        hash_state.update(static_cast<UInt8>(node_type) + 1);
+
+        if (const auto * column_node = node->as<ColumnNode>())
+        {
+            const auto & column_name = column_node->getColumnName();
+            hash_state.update(column_name.size());
+            hash_state.update(column_name);
+            continue;
+        }
+
+        if (const auto * function_node = node->as<FunctionNode>())
+        {
+            const auto & function_name = function_node->getFunctionName();
+            hash_state.update(function_name.size());
+            hash_state.update(function_name);
+        }
+        else if (const auto * constant_node = node->as<ConstantNode>())
+        {
+            /// The same as `ConstantNode::updateTreeHashImpl`, so `max(t.k + 2)` is distinguished from `GROUP BY t.k + 1`.
+            constant_node->getColumn()->updateHashFast(hash_state);
+            constant_node->getResultType()->updateHash(hash_state);
+            continue;
+        }
+        else if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION
+            || node_type == QueryTreeNodeType::TABLE || node_type == QueryTreeNodeType::TABLE_FUNCTION)
+        {
+            continue;
+        }
+
+        const auto & children = node->getChildren();
+        hash_state.update(children.size());
+        for (const auto & child : children)
+            nodes_to_process.push_back(child.get());
+    }
+
+    return hash_state.get64();
+}
+
+}
+
+void IdentifierResolveScope::addNullableGroupByKey(QueryTreeNodePtr key_shape, const QueryTreeNodePtr & key)
+{
+    auto shallow_hash = getNullableGroupByKeyShallowHash(*key_shape);
+    if (nullable_group_by_keys.emplace(key_shape, key).second)
+        nullable_group_by_keys_by_shallow_hash[shallow_hash].emplace_back(std::move(key_shape), key);
+}
+
+const QueryTreeNodePtr * IdentifierResolveScope::findNullableGroupByKey(const QueryTreeNodePtr & node) const
+{
+    if (nullable_group_by_keys.empty())
+        return nullptr;
+
+    auto it = nullable_group_by_keys_by_shallow_hash.find(getNullableGroupByKeyShallowHash(*node));
+    if (it == nullable_group_by_keys_by_shallow_hash.end())
+        return nullptr;
+
+    for (const auto & [key_shape, key] : it->second)
+        if (node->isEqual(*key_shape, {.compare_aliases = false}))
+            return &key;
+
+    return nullptr;
+}
+
 void IdentifierResolveScope::tryCacheIdentifier(
     const IdentifierLookup & lookup,
     const IdentifierResolveResult & result,
@@ -277,7 +381,8 @@ void IdentifierResolveScope::tryCacheIdentifier(
     /// node, so a key embedded deeper in a cached tree (e.g. `k` inside `k + 1 AS a`)
     /// would keep whichever nullability the first resolution baked in and corrupt
     /// later use sites in the opposite context.
-    if (!nullable_group_by_keys.empty() && subtreeContainsAnyNode(result.resolved_identifier, nullable_group_by_keys))
+    if (!nullable_group_by_keys.empty() && subtreeContainsAnyNode(result.resolved_identifier,
+            [this](const QueryTreeNodePtr & node) { return findNullableGroupByKey(node) != nullptr; }))
         return;
 
     identifier_resolve_cache[lookup] = IdentifierResolveCacheEntry{

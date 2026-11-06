@@ -1,0 +1,29 @@
+materialized, unqualified
+0	0	0
+1	0	1
+2	0	2
+\N	1	\N
+\N	1	\N
+\N	1	\N
+\N	1	\N
+materialized, qualified
+0	0	0
+1	0	1
+2	0	2
+\N	1	\N
+\N	1	\N
+\N	1	\N
+\N	1	\N
+alias, unqualified
+0	0	0
+1	0	1
+2	0	2
+\N	1	\N
+\N	1	\N
+\N	1	\N
+\N	1	\N
+materialized, included
+0	0	1
+1	1	1
+2	2	1
+\N	\N	1

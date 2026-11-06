@@ -1,0 +1,23 @@
+dead branch, HAVING
+7
+7
+dead branch, WHERE
+7
+7
+positional, APPLY
+0	0
+1	0
+2	0
+\N	1
+positional, REPLACE
+0	0
+1	0
+2	0
+\N	1
+positional, the matcher
+1
+2
+3
+\N
+nested REPLACE, 0
+nested REPLACE, 1
