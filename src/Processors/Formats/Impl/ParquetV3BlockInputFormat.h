@@ -1,8 +1,8 @@
 #pragma once
 #include "config.h"
-#include <Common/VectorWithMemoryTracking.h>
 #if USE_PARQUET
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatSettings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -15,11 +15,11 @@ namespace DB
 
 struct ParquetFileBucketInfo : public FileBucketInfo
 {
-    VectorWithMemoryTracking<size_t> row_group_ids;
+    RowGroupIndices row_group_ids;
     std::optional<std::pair<UInt64, UInt64>> byte_range;
 
     ParquetFileBucketInfo() = default;
-    explicit ParquetFileBucketInfo(const VectorWithMemoryTracking<size_t> & row_group_ids_);
+    explicit ParquetFileBucketInfo(const RowGroupIndices & row_group_ids_);
     ParquetFileBucketInfo(UInt64 offset, UInt64 length);
     void serialize(WriteBuffer & buffer, size_t protocol_version) const override;
     void deserialize(ReadBuffer & buffer, size_t protocol_version) override;
@@ -28,7 +28,7 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     {
         return "Parquet";
     }
-    std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const VectorWithMemoryTracking<size_t> & matching_row_groups) const override;
+    std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const RowGroupIndices & matching_row_groups) const override;
 };
 using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
 

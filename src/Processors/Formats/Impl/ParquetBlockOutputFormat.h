@@ -1,11 +1,11 @@
 #pragma once
 #include "config.h"
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/DequeWithMemoryTracking.h>
 
 #if USE_PARQUET
 
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/Impl/Parquet/Write.h>
 #include <Formats/FormatSettings.h>

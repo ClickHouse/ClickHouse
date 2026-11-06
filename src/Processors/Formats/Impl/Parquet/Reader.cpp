@@ -4,10 +4,8 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/logger_useful.h>
 #include <Common/Allocator.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Formats/ColumnNameMaps.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/MapWithMemoryTracking.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
@@ -403,7 +401,7 @@ const parq::ColumnChunk & Reader::getColumnChunk(size_t row_group_idx, size_t co
 
 void Reader::parseColumnChunks()
 {
-    VectorWithMemoryTracking<size_t> column_indices;
+    ColumnIndices column_indices;
     column_indices.reserve(primitive_columns.size());
     for (const PrimitiveColumnInfo & column_info : primitive_columns)
         column_indices.push_back(column_info.column_idx);
@@ -414,11 +412,11 @@ void Reader::parseColumnChunks()
     ensureColumnChunks(column_indices);
 }
 
-void Reader::ensureColumnChunks(const VectorWithMemoryTracking<size_t> & column_indices)
+void Reader::ensureColumnChunks(const ColumnIndices & column_indices)
 {
     if (!column_indices.empty() && column_indices.back() >= column_chunks.size())
         column_chunks.resize(column_indices.back() + 1);
-    VectorWithMemoryTracking<size_t> indices_to_parse;
+    ColumnIndices indices_to_parse;
     for (size_t column_idx : column_indices)
     {
         if (column_chunks[column_idx])
@@ -957,8 +955,8 @@ void Reader::prefilterAndInitRowGroups(const RowGroupSelection & row_group_selec
     /// i.e. the very same raw name `geo_meta` already carries. Translating them to the query-side
     /// name (as an earlier version of this code did) breaks the match against
     /// `primitive_columns[i].name` for any bbox sub-column that was itself renamed.
-    std::optional<UnorderedMapWithMemoryTracking<String, String>> clickhouse_to_parquet_name;
-    auto get_clickhouse_to_parquet_name = [&]() -> const UnorderedMapWithMemoryTracking<String, String> &
+    std::optional<ColumnNameMap> clickhouse_to_parquet_name;
+    auto get_clickhouse_to_parquet_name = [&]() -> const ColumnNameMap &
     {
         if (!clickhouse_to_parquet_name)
         {
@@ -1834,7 +1832,7 @@ void Reader::initializePrefetches()
         size_t max_column_chunks = 0;
         for (size_t row_group_idx = 0; row_group_idx < file_metadata().row_groups.size(); ++row_group_idx)
             max_column_chunks = std::max(max_column_chunks, numColumnChunks(row_group_idx));
-        VectorWithMemoryTracking<size_t> all_column_indices(max_column_chunks);
+        ColumnIndices all_column_indices(max_column_chunks);
         std::iota(all_column_indices.begin(), all_column_indices.end(), 0);
         ensureColumnChunks(all_column_indices);
 

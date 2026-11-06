@@ -2,7 +2,6 @@
 
 #include <span>
 #include <Core/NamesAndTypes.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>

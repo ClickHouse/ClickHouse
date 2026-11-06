@@ -1,5 +1,4 @@
 #include <IO/ReadHelpers.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <IO/Operators.h>
 
 #include <Columns/IColumn.h>

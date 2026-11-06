@@ -14,9 +14,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Common/StringValueFilter.h>
 
-#include <deque>
 #include <optional>
-#include <unordered_set>
 #include <variant>
 
 namespace DB
@@ -677,7 +675,7 @@ struct Reader
     void parseColumnChunks();
     /// Takes from the cache or parses those of `column_indices` (sorted, unique) that are not in `column_chunks` yet.
     /// Never replaces an entry: ColumnChunk::meta points into them.
-    void ensureColumnChunks(const VectorWithMemoryTracking<size_t> & column_indices);
+    void ensureColumnChunks(const ColumnIndices & column_indices);
     /// Only for the columns of `primitive_columns`, see parseColumnChunks.
     const parq::ColumnChunk & getColumnChunk(size_t row_group_idx, size_t column_idx) const;
     /// By Parquet column index, nullptr for the columns that are not parsed.

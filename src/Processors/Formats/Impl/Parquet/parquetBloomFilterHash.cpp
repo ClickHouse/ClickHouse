@@ -1,5 +1,4 @@
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>

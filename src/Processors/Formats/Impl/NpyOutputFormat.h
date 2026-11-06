@@ -5,8 +5,6 @@
 #include <Formats/NumpyDataTypes.h>
 #include <Columns/IColumn_fwd.h>
 
-#include <vector>
-
 
 namespace DB
 {

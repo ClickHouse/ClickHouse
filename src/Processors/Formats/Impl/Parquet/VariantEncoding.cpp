@@ -26,9 +26,7 @@
 #include <algorithm>
 #include <bit>
 #include <cstring>
-#include <list>
 #include <optional>
-#include <vector>
 
 #include <fmt/format.h>
 

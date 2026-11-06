@@ -1,5 +1,4 @@
 #include <Processors/Formats/Impl/BSONEachRowRowOutputFormat.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/BSONTypes.h>

@@ -95,7 +95,7 @@ VortexExpressionConverter::VortexExpressionConverter(
     const arrow::Schema & file_schema_,
     const FormatSettings & format_settings_,
     const FormatSettings & comparison_format_settings_,
-    const UnorderedMapWithMemoryTracking<String, String> * file_column_names_)
+    const ColumnNameMap * file_column_names_)
     : header(header_)
     , file_schema(file_schema_)
     , format_settings(format_settings_)

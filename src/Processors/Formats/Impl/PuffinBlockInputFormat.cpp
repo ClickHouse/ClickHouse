@@ -1,13 +1,9 @@
 #include <algorithm>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/MapWithMemoryTracking.h>
 #include <cstring>
 #include <functional>
 #include <limits>
 #include <optional>
-#include <unordered_map>
-#include <vector>
 #include <zlib.h>
 #include <lz4frame.h>
 #include <roaring/roaring.hh>

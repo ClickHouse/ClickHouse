@@ -1,5 +1,4 @@
 #include <Common/Logger.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeFactory.h>

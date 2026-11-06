@@ -126,7 +126,7 @@ protected:
     {
         String cache_file_key;
         size_t total_row_groups = 0;
-        VectorWithMemoryTracking<size_t> matched_row_groups;
+        RowGroupIndices matched_row_groups;
         /// The best value of the sort column in each matched row group, see `IInputFormat::getTopKBestValuesOfBuckets`.
         VectorWithMemoryTracking<std::pair<size_t, Field>> best_values;
     };

@@ -17,6 +17,12 @@ namespace DB::Parquet
 /// Namespace with structs generated from parquet.thrift
 namespace parq = parquet::format;
 
+/// Indices of column chunks in a row group.
+using ColumnIndices = VectorWithMemoryTracking<size_t>;
+
+/// For each row group: where each serialized `ColumnChunk` starts, then where the last one ends.
+using ColumnChunkOffsets = VectorWithMemoryTracking<VectorWithMemoryTracking<UInt32>>;
+
 /// Parquet file footer whose column chunks are parsed on demand, see deserializeColumnChunks.
 struct FileFooter
 {
@@ -25,7 +31,7 @@ struct FileFooter
     /// Serialized FileMetaData.
     std::string serialized;
     /// For each row group: where each serialized ColumnChunk starts in `serialized`, then where the last one ends.
-    VectorWithMemoryTracking<VectorWithMemoryTracking<UInt32>> column_chunk_offsets;
+    ColumnChunkOffsets column_chunk_offsets;
 
     size_t numColumnChunks(size_t row_group_idx) const;
 };
@@ -43,13 +49,13 @@ using FileColumnChunksPtr = std::shared_ptr<const FileColumnChunks>;
 /// Like deserializeThriftStruct<parq::FileMetaData>, but skips the elements of `RowGroup::columns`
 /// and records their offsets in `column_chunk_offsets` (see FileFooter).
 void deserializeFileMetaDataWithoutColumnChunks(
-    parq::FileMetaData & out, const char * buf, size_t limit, VectorWithMemoryTracking<VectorWithMemoryTracking<UInt32>> & column_chunk_offsets);
+    parq::FileMetaData & out, const char * buf, size_t limit, ColumnChunkOffsets & column_chunk_offsets);
 
 /// Parses the column chunks `column_indices` (sorted, unique) of every row group:
 /// `out[k].chunks[i]` is column chunk `column_indices[k]` of row group `i`.
 void deserializeColumnChunks(
-    const char * buf, size_t limit, const VectorWithMemoryTracking<VectorWithMemoryTracking<UInt32>> & column_chunk_offsets,
-    const VectorWithMemoryTracking<size_t> & column_indices, VectorWithMemoryTracking<FileColumnChunks> & out);
+    const char * buf, size_t limit, const ColumnChunkOffsets & column_chunk_offsets,
+    const ColumnIndices & column_indices, VectorWithMemoryTracking<FileColumnChunks> & out);
 
 /// All templates are explicitly instantiated, feel free to add more types.
 

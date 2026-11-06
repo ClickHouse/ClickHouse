@@ -1,5 +1,4 @@
 #include <IO/ReadHelpers.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/Operators.h>

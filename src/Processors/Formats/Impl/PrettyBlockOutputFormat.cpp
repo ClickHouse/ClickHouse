@@ -1,5 +1,4 @@
 #include <Processors/Formats/Impl/PrettyBlockOutputFormat.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/Impl/VerticalRowOutputFormat.h>
 #include <Processors/Formats/Framing/IFramingFormat.h>
 #include <Processors/Formats/IOutputFormat.h>

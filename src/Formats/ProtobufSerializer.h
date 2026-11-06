@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include "config.h"
 
 #if USE_PROTOBUF
+#include <Common/VectorWithMemoryTracking.h>
 #   include <Columns/IColumn_fwd.h>
 #   include <Core/NamesAndTypes.h>
 #   include <Formats/ProtobufSchemas.h>

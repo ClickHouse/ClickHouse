@@ -118,7 +118,7 @@ void ColumnMapping::addColumns(std::span<const String> column_names, const Block
         });
 }
 
-void ColumnMapping::insertDefaultsForNotSeenColumns(MutableColumns & columns, VectorWithMemoryTracking<UInt8> & read_columns)
+void ColumnMapping::insertDefaultsForNotSeenColumns(MutableColumns & columns, std::span<UInt8> read_columns)
 {
     for (auto index : not_presented_columns)
     {

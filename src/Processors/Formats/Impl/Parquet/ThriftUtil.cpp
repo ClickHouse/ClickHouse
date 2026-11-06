@@ -374,7 +374,7 @@ private:
 class ColumnChunkSkippingProtocol : public CompactProtocol
 {
 public:
-    ColumnChunkSkippingProtocol(std::shared_ptr<MemoryTransport> trans, size_t limit_, VectorWithMemoryTracking<VectorWithMemoryTracking<UInt32>> & offsets_)
+    ColumnChunkSkippingProtocol(std::shared_ptr<MemoryTransport> trans, size_t limit_, ColumnChunkOffsets & offsets_)
         : CompactProtocol(trans, /*string_limit=*/ sizeLimit(limit_), /*container_limit=*/ sizeLimit(limit_))
         , limit(limit_)
         , offsets(offsets_)
@@ -445,7 +445,7 @@ private:
     UInt32 position() const { return UInt32(limit - trans_->available_read()); }
 
     const size_t limit;
-    VectorWithMemoryTracking<VectorWithMemoryTracking<UInt32>> & offsets;
+    ColumnChunkOffsets & offsets;
     /// Depth of the struct that the generated reader is reading, 1 for FileMetaData.
     size_t depth = 0;
     /// field_ids[d] is the id of the current field of the struct at depth d.
@@ -474,7 +474,7 @@ size_t FileFooter::numColumnChunks(size_t row_group_idx) const
 }
 
 void deserializeFileMetaDataWithoutColumnChunks(
-    parq::FileMetaData & out, const char * buf, size_t limit, VectorWithMemoryTracking<VectorWithMemoryTracking<UInt32>> & column_chunk_offsets)
+    parq::FileMetaData & out, const char * buf, size_t limit, ColumnChunkOffsets & column_chunk_offsets)
 {
     limit = std::min(limit, size_t(UINT32_MAX));
     column_chunk_offsets.clear();
@@ -491,8 +491,8 @@ void deserializeFileMetaDataWithoutColumnChunks(
 }
 
 void deserializeColumnChunks(
-    const char * buf, size_t limit, const VectorWithMemoryTracking<VectorWithMemoryTracking<UInt32>> & column_chunk_offsets,
-    const VectorWithMemoryTracking<size_t> & column_indices, VectorWithMemoryTracking<FileColumnChunks> & out)
+    const char * buf, size_t limit, const ColumnChunkOffsets & column_chunk_offsets,
+    const ColumnIndices & column_indices, VectorWithMemoryTracking<FileColumnChunks> & out)
 {
     limit = std::min(limit, size_t(UINT32_MAX));
     out.clear();

@@ -1,4 +1,3 @@
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Common/Exception.h>
 #include <Core/Settings.h>
@@ -124,7 +123,7 @@ UInt64 fileFormatPruningSettingsSalt(const FormatSettings & format_settings)
     return hash.get64();
 }
 
-void ColumnMapper::setStorageColumnEncoding(UnorderedMapWithMemoryTracking<String, Int64> && storage_encoding_)
+void ColumnMapper::setStorageColumnEncoding(ColumnNameToFieldId && storage_encoding_)
 {
     chassert(storage_encoding.empty());
     storage_encoding = std::move(storage_encoding_);
@@ -133,11 +132,11 @@ void ColumnMapper::setStorageColumnEncoding(UnorderedMapWithMemoryTracking<Strin
             throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Duplicate field id {}", field_id);
 }
 
-std::pair<UnorderedMapWithMemoryTracking<String, String>, UnorderedMapWithMemoryTracking<String, String>> ColumnMapper::makeMapping(
-    const UnorderedMapWithMemoryTracking<Int64, String> & format_encoding) const
+std::pair<ColumnNameMap, ColumnNameMap> ColumnMapper::makeMapping(
+    const FieldIdToColumnName & format_encoding) const
 {
-    UnorderedMapWithMemoryTracking<String, String> clickhouse_to_parquet_names;
-    UnorderedMapWithMemoryTracking<String, String> parquet_names_to_clickhouse;
+    ColumnNameMap clickhouse_to_parquet_names;
+    ColumnNameMap parquet_names_to_clickhouse;
     for (const auto & [column_name, field_id] : storage_encoding)
     {
         if (auto it = format_encoding.find(field_id); it != format_encoding.end())

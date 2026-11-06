@@ -1,13 +1,11 @@
 #include <Processors/Formats/Impl/ORCBlockOutputFormat.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
-#include <unordered_map>
 
 #include <fmt/ranges.h>
 
 #if USE_ORC
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Formats/FormatFactory.h>
 

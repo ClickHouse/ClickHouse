@@ -1,5 +1,4 @@
 #include <Processors/Formats/Impl/CSVRowOutputFormat.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FlattenTupleForCSVHeader.h>

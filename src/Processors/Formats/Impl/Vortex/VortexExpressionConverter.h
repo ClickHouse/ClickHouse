@@ -10,6 +10,7 @@
 
 #include <optional>
 #include <string_view>
+#include <Formats/ColumnNameMaps.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace arrow
@@ -60,7 +61,7 @@ public:
         const arrow::Schema & file_schema_,
         const FormatSettings & format_settings_,
         const FormatSettings & comparison_format_settings_,
-        const UnorderedMapWithMemoryTracking<String, String> * file_column_names_ = nullptr);
+        const ColumnNameMap * file_column_names_ = nullptr);
 
     /// Translates the subtree rooted at `node`, exactly or - in the positions where
     /// `allow_widening` permits - keeping at least every matching row. Returns null when the
@@ -159,7 +160,7 @@ private:
     const arrow::Schema & file_schema;
     const FormatSettings & format_settings;
     const FormatSettings & comparison_format_settings;
-    const UnorderedMapWithMemoryTracking<String, String> * file_column_names;
+    const ColumnNameMap * file_column_names;
 };
 
 }

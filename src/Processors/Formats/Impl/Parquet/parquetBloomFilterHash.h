@@ -1,13 +1,13 @@
 #pragma once
 
 #include <config.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <Core/Field.h>
 #include <Columns/ColumnString.h>
 
 #if USE_PARQUET
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <parquet/encoding.h>
 #include <parquet/schema.h>
 

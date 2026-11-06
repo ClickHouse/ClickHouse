@@ -2,7 +2,6 @@
 
 #include <span>
 #include <Formats/FormatSettings.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <IO/WriteBufferFromString.h>
 

@@ -1,8 +1,7 @@
 #include <Processors/Formats/Impl/AvroRowOutputFormat.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #if USE_AVRO
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>

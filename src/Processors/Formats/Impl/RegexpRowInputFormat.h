@@ -2,7 +2,6 @@
 
 #include <string>
 #include <Common/VectorWithMemoryTracking.h>
-#include <vector>
 #include <Common/re2.h>
 #include <IO/PeekableReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>

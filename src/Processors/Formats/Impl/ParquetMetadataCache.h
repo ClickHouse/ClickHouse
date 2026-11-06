@@ -19,7 +19,6 @@
 #include <generated/parquet_types.h>
 
 #include <mutex>
-#include <unordered_map>
 
 #if USE_AWS_S3
 #include <IO/ReadBufferFromS3.h>

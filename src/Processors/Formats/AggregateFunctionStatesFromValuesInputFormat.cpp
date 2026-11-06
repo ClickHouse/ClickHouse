@@ -1,5 +1,4 @@
 #include <Processors/Formats/AggregateFunctionStatesFromValuesInputFormat.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>

@@ -1,6 +1,5 @@
 #include <Columns/IColumn.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/Formats/Impl/JSONColumnsBlockInputFormatBase.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Port.h>

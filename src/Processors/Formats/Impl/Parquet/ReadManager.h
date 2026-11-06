@@ -2,7 +2,6 @@
 
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/SharedMutex.h>
 
 namespace DB::Parquet

@@ -1,5 +1,4 @@
 #include <Processors/Formats/Impl/JSONCompactEachRowRowInputFormat.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>

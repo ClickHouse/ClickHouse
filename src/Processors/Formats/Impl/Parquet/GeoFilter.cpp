@@ -1,6 +1,4 @@
 #include <algorithm>
-#include <unordered_set>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <Processors/Formats/Impl/Parquet/GeoFilter.h>

@@ -1,13 +1,13 @@
 #pragma once
 
 #include "config.h"
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <list>
 
 #if USE_ORC
 
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/BlockMissingValues.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFilterInfo.h>

@@ -1,8 +1,8 @@
 #include <Processors/Formats/Impl/DWARFBlockInputFormat.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/CurrentThread.h>
 #if USE_DWARF_PARSER && defined(__ELF__) && !defined(OS_FREEBSD)
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <llvm/DebugInfo/DWARF/DWARFFormValue.h>
 #include <llvm/DebugInfo/DWARF/DWARFDebugRnglists.h>
 #include <llvm/DebugInfo/DWARF/DWARFDebugRangeList.h>

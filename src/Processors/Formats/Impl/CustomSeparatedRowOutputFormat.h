@@ -2,7 +2,6 @@
 
 #include <span>
 #include <Processors/Formats/IRowOutputFormat.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/ParsedTemplateFormatString.h>
 
 namespace DB

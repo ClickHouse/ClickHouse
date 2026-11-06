@@ -2,7 +2,7 @@
 
 #include <Columns/IColumn_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Formats/ColumnNameMaps.h>
 #include <DataTypes/IDataType.h>
 #include <IO/CompressionMethod.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
@@ -212,14 +212,14 @@ using ColumnChunkWriteStates = VectorWithMemoryTracking<ColumnChunkWriteState>;
 /// Parquet schema is a tree of SchemaElements, flattened into a list in depth-first order.
 /// Leaf nodes correspond to physical columns of primitive types. Inner nodes describe logical
 /// groupings of those columns, e.g. tuples or structs.
-SchemaElements convertSchema(const Block & sample, const WriteOptions & options, const std::optional<UnorderedMapWithMemoryTracking<String, Int64>> & column_field_ids, const IcebergOptionality & iceberg_optionality = {});
+SchemaElements convertSchema(const Block & sample, const WriteOptions & options, const std::optional<ColumnNameToFieldId> & column_field_ids, const IcebergOptionality & iceberg_optionality = {});
 
 /// `iceberg_optionality` must be passed identically on the schema and the data path: the reader
 /// derives its max definition level from the schema while the writer derives the level bit width
 /// from the state produced here, so a schema-only change would desynchronize them.
 void prepareColumnForWrite(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema = nullptr, const std::optional<UnorderedMapWithMemoryTracking<String, Int64>> & column_field_ids = std::nullopt,
+    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema = nullptr, const std::optional<ColumnNameToFieldId> & column_field_ids = std::nullopt,
     const IcebergOptionality & iceberg_optionality = {});
 
 void writeFileHeader(FileWriteState & file, WriteBuffer & out);

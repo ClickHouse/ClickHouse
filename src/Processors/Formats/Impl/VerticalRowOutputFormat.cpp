@@ -1,5 +1,4 @@
 #include <cmath>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <span>
 #include <Columns/IColumn_fwd.h>
 #include <Core/Block_fwd.h>
@@ -40,7 +39,7 @@ struct ColumnMapping
     void addColumns(
         std::span<const String> column_names, const CaseAwareBlockNameMap & column_indexes_by_names, const FormatSettings & settings);
 
-    void insertDefaultsForNotSeenColumns(MutableColumns & columns, VectorWithMemoryTracking<UInt8> & read_columns);
+    void insertDefaultsForNotSeenColumns(MutableColumns & columns, std::span<UInt8> read_columns);
 };
 
 }

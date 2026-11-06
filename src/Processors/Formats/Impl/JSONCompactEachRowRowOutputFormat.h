@@ -1,9 +1,10 @@
 #pragma once
 
 #include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/RowOutputFormatWithExceptionHandlerAdaptor.h>
 #include <Formats/FormatSettings.h>
+
+#include <span>
 
 
 namespace DB
@@ -48,7 +49,7 @@ protected:
 
     void resetFormatterImpl() override;
 
-    void writeLine(const Strings & values);
+    void writeLine(std::span<const String> values);
 
     FormatSettings settings;
     bool with_names;

@@ -1,5 +1,4 @@
 #include <Common/assert_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/Impl/CustomSeparatedRowInputFormat.h>
 #include <Processors/Formats/Impl/TemplateRowInputFormat.h>
 #include <Formats/EscapingRuleUtils.h>

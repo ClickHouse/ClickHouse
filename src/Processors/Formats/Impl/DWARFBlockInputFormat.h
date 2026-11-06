@@ -1,9 +1,9 @@
 #pragma once
 #include "config.h"
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/DequeWithMemoryTracking.h>
 #if USE_DWARF_PARSER && defined(__ELF__) && !defined(OS_FREEBSD)
 
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <llvm/DebugInfo/DWARF/DWARFDebugAbbrev.h>
 #include <llvm/DebugInfo/DWARF/DWARFDataExtractor.h>
 #include <llvm/DebugInfo/DWARF/DWARFContext.h>

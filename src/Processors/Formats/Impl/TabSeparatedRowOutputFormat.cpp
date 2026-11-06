@@ -1,5 +1,4 @@
 #include <Processors/Formats/Impl/TabSeparatedRowOutputFormat.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatFactory.h>

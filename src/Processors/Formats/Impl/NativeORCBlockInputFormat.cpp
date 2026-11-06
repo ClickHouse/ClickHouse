@@ -1,7 +1,4 @@
 #include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #if USE_ORC
 

@@ -14,7 +14,6 @@
 #include <IO/WriteBuffer.h>
 #include <IO/NullWriteBuffer.h>
 
-#include <deque>
 #include <atomic>
 
 

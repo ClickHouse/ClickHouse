@@ -1,9 +1,10 @@
 #pragma once
 #include "config.h"
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #if USE_ARROW || USE_PARQUET
 
+#include <Formats/ColumnNameMaps.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Chunk.h>
@@ -62,7 +63,7 @@ public:
         const Chunk * chunk,
         const Settings & settings,
         std::optional<size_t> columns_num = std::nullopt,
-        const std::optional<UnorderedMapWithMemoryTracking<String, Int64>> & column_to_field_id = std::nullopt
+        const std::optional<ColumnNameToFieldId> & column_to_field_id = std::nullopt
     );
 
     /// Because an arrow table can only have one dictionary per column, if the returned table is intended to be inserted into a larger table,
@@ -93,7 +94,7 @@ public:
     void initializeArrowSchema(
         const Chunk * chunk = nullptr,
         std::optional<size_t> columns_num = std::nullopt,
-        const std::optional<UnorderedMapWithMemoryTracking<String, Int64>> & column_to_field_id = std::nullopt);
+        const std::optional<ColumnNameToFieldId> & column_to_field_id = std::nullopt);
 
     /// Returns the arrow schema (if it's not initialized yet this function will initialize it from the header columns).
     /// Arrow schemas are immutable (all members of class arrow::Schema are const), so
@@ -104,7 +105,7 @@ public:
         std::shared_ptr<arrow::Table> & res,
         const Chunks & chunk,
         size_t columns_num,
-        const std::optional<UnorderedMapWithMemoryTracking<String, Int64>> & column_to_field_id = std::nullopt);
+        const std::optional<ColumnNameToFieldId> & column_to_field_id = std::nullopt);
 
 private:
     ColumnsWithTypeAndName header_columns;

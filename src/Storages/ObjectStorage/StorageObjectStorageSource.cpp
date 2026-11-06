@@ -1,4 +1,3 @@
-#include <Common/VectorWithMemoryTracking.h>
 #include <memory>
 #include <optional>
 #include <unordered_set>
@@ -1491,7 +1490,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             {
                 const auto & marks = *matching_marks;
                 size_t total_row_groups = marks.size();
-                VectorWithMemoryTracking<size_t> matching_row_groups;
+                RowGroupIndices matching_row_groups;
                 for (size_t i = 0; i < total_row_groups; ++i)
                     if (marks[i])
                         matching_row_groups.push_back(i);

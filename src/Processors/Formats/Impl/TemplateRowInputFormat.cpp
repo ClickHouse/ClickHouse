@@ -1,5 +1,4 @@
 #include <Processors/Formats/Impl/TemplateRowInputFormat.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/verbosePrintString.h>

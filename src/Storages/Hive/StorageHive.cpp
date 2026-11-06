@@ -1,8 +1,8 @@
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Storages/Hive/StorageHive.h>
 
 #if USE_HIVE
 
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <fmt/core.h>

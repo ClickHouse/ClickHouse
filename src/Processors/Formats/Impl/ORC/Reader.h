@@ -4,7 +4,6 @@
 #include <Processors/Formats/Impl/ORC/SearchArgument.h>
 #include <Processors/Formats/Impl/ORC/Vector.h>
 #include <Common/ListWithMemoryTracking.h>
-#include <Common/MapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <future>

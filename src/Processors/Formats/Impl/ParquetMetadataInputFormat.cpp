@@ -1,10 +1,9 @@
 #include <span>
 #include <Processors/Formats/Impl/ParquetMetadataInputFormat.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #if USE_PARQUET
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <DataTypes/DataTypeString.h>

@@ -1,6 +1,4 @@
 #include <Processors/Formats/Impl/Parquet/Prefetcher.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/copyData.h>

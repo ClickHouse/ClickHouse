@@ -1,7 +1,5 @@
 #include <DataTypes/DataTypeDynamic.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <Common/checkStackSize.h>
@@ -27,7 +25,6 @@
 #include <Processors/Formats/Impl/Parquet/FileLogicalType.h>
 
 #include <array>
-#include <unordered_set>
 #include <fmt/ranges.h>
 
 namespace DB::ErrorCodes

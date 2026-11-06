@@ -1,12 +1,11 @@
 #pragma once
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include "config.h"
 
 #if USE_HIVE
 
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <vector>
 #include <memory>
-#include <unordered_set>
 
 #include <boost/algorithm/string/join.hpp>
 #include <Processors/Formats/Impl/ORC/Reader.h>

@@ -1,4 +1,3 @@
-#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/ProtobufSerializer.h>
 #include <Common/Arena.h>
 

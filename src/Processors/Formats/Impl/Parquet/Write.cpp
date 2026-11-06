@@ -1,5 +1,4 @@
 #include <Processors/Formats/Impl/Parquet/Write.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <Processors/Formats/Impl/Parquet/ALPEncoding.h>
 #include <arrow/util/key_value_metadata.h>

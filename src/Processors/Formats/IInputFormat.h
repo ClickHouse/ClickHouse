@@ -55,6 +55,9 @@ struct ChunkInfoRowNumbers : public ChunkInfo
     std::optional<IColumnFilter> applied_filter;
 };
 
+/// Indices of row groups (or stripes) in a file.
+using RowGroupIndices = VectorWithMemoryTracking<size_t>;
+
 /// Structure for storing information about buckets that IInputFormat needs to read.
 struct FileBucketInfo
 {
@@ -66,7 +69,7 @@ struct FileBucketInfo
     virtual void deserialize(ReadBuffer & buffer, size_t protocol_version) = 0;
     virtual String getIdentifier() const = 0;
     virtual String getFormatName() const = 0;
-    virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const VectorWithMemoryTracking<size_t> & matching_row_groups) const = 0;
+    virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const RowGroupIndices & matching_row_groups) const = 0;
 
     virtual ~FileBucketInfo() = default;
 };

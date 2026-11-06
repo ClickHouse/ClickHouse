@@ -206,7 +206,7 @@ std::shared_ptr<FileFooter> makeFooter(const parq::FileMetaData & metadata)
 }
 
 /// By Parquet column index, like Reader::getColumnChunks.
-VectorWithMemoryTracking<FileColumnChunksPtr> parseColumns(const FileFooter & footer, const VectorWithMemoryTracking<size_t> & column_indices)
+VectorWithMemoryTracking<FileColumnChunksPtr> parseColumns(const FileFooter & footer, const ColumnIndices & column_indices)
 {
     VectorWithMemoryTracking<FileColumnChunks> parsed;
     deserializeColumnChunks(footer.serialized.data(), footer.serialized.size(), footer.column_chunk_offsets, column_indices, parsed);
@@ -276,7 +276,7 @@ size_t expectedCellWeight(const ParquetMetadataCacheCell & cell)
 struct Skeleton
 {
     parq::FileMetaData metadata;
-    VectorWithMemoryTracking<VectorWithMemoryTracking<UInt32>> offsets;
+    ColumnChunkOffsets offsets;
 };
 
 Skeleton parseSkeleton(const std::string & bytes)
@@ -293,7 +293,7 @@ parq::FileMetaData parseLazy(const std::string & bytes)
     size_t max_columns = 0;
     for (const auto & offsets : skeleton.offsets)
         max_columns = std::max(max_columns, offsets.empty() ? 0 : offsets.size() - 1);
-    VectorWithMemoryTracking<size_t> all_columns(max_columns);
+    ColumnIndices all_columns(max_columns);
     std::iota(all_columns.begin(), all_columns.end(), 0);
 
     VectorWithMemoryTracking<FileColumnChunks> chunks;

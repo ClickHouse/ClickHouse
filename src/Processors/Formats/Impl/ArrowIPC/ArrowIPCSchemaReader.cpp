@@ -1,8 +1,8 @@
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/Formats/Impl/ArrowIPC/ArrowIPCSchemaReader.h>
 
 #if USE_ARROW
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/Formats/Impl/ArrowIPC/MessageReader.h>
 #include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>

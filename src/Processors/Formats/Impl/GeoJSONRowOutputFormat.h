@@ -3,7 +3,6 @@
 #include <array>
 #include <Common/VectorWithMemoryTracking.h>
 #include <optional>
-#include <vector>
 
 #include <Columns/ColumnVariant.h>
 #include <Core/Names.h>

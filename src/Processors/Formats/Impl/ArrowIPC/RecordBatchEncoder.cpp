@@ -30,7 +30,6 @@
 #include <IO/WriteBufferFromVector.h>
 #include <Processors/Formats/Impl/ArrowOpaqueColumn.h>
 #include <Core/UUID.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <base/arithmeticOverflow.h>
 

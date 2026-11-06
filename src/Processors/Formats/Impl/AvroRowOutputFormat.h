@@ -1,10 +1,10 @@
 #pragma once
 
 #include "config.h"
-#include <Common/VectorWithMemoryTracking.h>
 
 #if USE_AVRO
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Formats/FormatSchemaInfo.h>

@@ -1,4 +1,3 @@
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/DataFileStatistics.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>

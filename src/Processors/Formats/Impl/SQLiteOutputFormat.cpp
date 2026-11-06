@@ -1,7 +1,7 @@
 #include "config.h"
-#include <Common/VectorWithMemoryTracking.h>
 
 #if USE_SQLITE
+#include <Common/VectorWithMemoryTracking.h>
 
 #    include <Columns/IColumn.h>
 #    include <Databases/SQLite/SQLiteUtils.h>

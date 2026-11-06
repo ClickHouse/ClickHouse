@@ -10,6 +10,9 @@ class DateLUTImpl;
 namespace DB::ORC
 {
 
+/// The positions from the row indexes of the columns at the beginning of a row group, by column id.
+using RowGroupPositions = UnorderedMapWithMemoryTracking<UInt64, PositionProvider>;
+
 /// Access to the streams of one stripe for the column readers.
 class StripeStreams
 {
@@ -51,7 +54,7 @@ public:
     virtual size_t skip(size_t num_values);
 
     /// Moves to the beginning of a row group, by the positions from the row indexes of the columns.
-    virtual void seekToRowGroup(UnorderedMapWithMemoryTracking<UInt64, PositionProvider> & positions);
+    virtual void seekToRowGroup(RowGroupPositions & positions);
 
 protected:
     const UInt64 column_id;

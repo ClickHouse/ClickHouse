@@ -1,6 +1,4 @@
 #include <Processors/Formats/Impl/Parquet/ReadManager.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <Common/BitHelpers.h>
 #include <Common/Logger.h>

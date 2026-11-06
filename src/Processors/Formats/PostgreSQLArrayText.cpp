@@ -20,7 +20,6 @@
 #include <Poco/String.h>
 
 #include <optional>
-#include <vector>
 
 namespace DB
 {

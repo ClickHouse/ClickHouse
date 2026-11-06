@@ -8,7 +8,6 @@
 
 #include <optional>
 #include <span>
-#include <unordered_set>
 
 namespace DB
 {

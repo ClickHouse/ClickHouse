@@ -1,8 +1,4 @@
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/MapWithMemoryTracking.h>
 #if USE_AVRO
 
 #include <Columns/ColumnArray.h>
@@ -54,7 +50,6 @@
 #include <Types.hh>
 #include <ValidSchema.hh>
 
-#include <unordered_set>
 
 namespace DB
 {

@@ -4,7 +4,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <memory>
-#include <vector>
 
 #include <Common/GeoBbox.h>
 #include <Common/StringUtils.h>

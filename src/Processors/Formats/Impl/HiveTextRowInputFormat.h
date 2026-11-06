@@ -1,9 +1,9 @@
 #pragma once
 
 #include "config.h"
-#include <Common/VectorWithMemoryTracking.h>
 
 #if USE_HIVE
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/PeekableReadBuffer.h>
 #include <Processors/Formats/Impl/CSVRowInputFormat.h>
 

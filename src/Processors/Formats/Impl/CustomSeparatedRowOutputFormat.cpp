@@ -1,5 +1,4 @@
 #include <Processors/Formats/Impl/CustomSeparatedRowOutputFormat.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <Common/isValidUTF8.h>
 #include <Formats/EscapingRuleUtils.h>

@@ -1,9 +1,9 @@
 #pragma once
 
 #include "config.h"
-#include <Common/VectorWithMemoryTracking.h>
 
 #if USE_PROTOBUF
+#include <Common/VectorWithMemoryTracking.h>
 #   include <Processors/Formats/IRowInputFormat.h>
 #   include <Processors/Formats/ISchemaReader.h>
 #   include <Formats/FormatSchemaInfo.h>

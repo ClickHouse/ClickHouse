@@ -1,7 +1,5 @@
 #include <Processors/Formats/Impl/FreeformRowInputFormat.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
@@ -14,7 +12,6 @@
 #include <base/find_symbols.h>
 #include <base/sort.h>
 #include <fmt/ranges.h>
-#include <unordered_set>
 #include <Common/logger_useful.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeNullable.h>

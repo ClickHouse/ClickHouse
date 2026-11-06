@@ -1,5 +1,4 @@
 #include <cmath>
-#include <Common/VectorWithMemoryTracking.h>
 #include <string>
 #include <Processors/Formats/Impl/NpyRowInputFormat.h>
 #include <DataTypes/DataTypeString.h>

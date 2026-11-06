@@ -1,5 +1,4 @@
 #include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #if USE_PARQUET
 

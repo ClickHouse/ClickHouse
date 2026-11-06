@@ -1,9 +1,8 @@
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #if USE_ARROW || USE_PARQUET
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/AccurateComparison.h>
 #include <Columns/ColumnFixedString.h>
@@ -1988,7 +1987,7 @@ namespace DB
         const Chunk * chunk,
         const Settings & settings,
         std::optional<size_t> columns_num,
-        const std::optional<UnorderedMapWithMemoryTracking<String, Int64>> & column_to_field_id
+        const std::optional<ColumnNameToFieldId> & column_to_field_id
     )
     {
         if (!columns_num)
@@ -2195,7 +2194,7 @@ namespace DB
     }
 
     void CHColumnToArrowColumn::initializeArrowSchema(
-        const Chunk * chunk, std::optional<size_t> columns_num, const std::optional<UnorderedMapWithMemoryTracking<String, Int64>> & column_to_field_id)
+        const Chunk * chunk, std::optional<size_t> columns_num, const std::optional<ColumnNameToFieldId> & column_to_field_id)
     {
         if (arrow_schema)
             return;
@@ -2213,7 +2212,7 @@ namespace DB
         std::shared_ptr<arrow::Table> & res,
         const Chunks & chunks,
         size_t columns_num,
-        const std::optional<UnorderedMapWithMemoryTracking<String, Int64>> & column_to_field_id)
+        const std::optional<ColumnNameToFieldId> & column_to_field_id)
     {
         /// We use the first chunk to initialize the arrow schema.
         const Chunk * chunk_to_initialize_schema = chunks.empty() ? nullptr : chunks.data();

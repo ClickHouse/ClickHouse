@@ -688,7 +688,7 @@ UInt64 RowReader::computeBatchSize(UInt64 requested, UInt64 current_row) const
 
 void RowReader::seekToRowGroup(size_t row_group)
 {
-    UnorderedMapWithMemoryTracking<UInt64, PositionProvider> positions;
+    RowGroupPositions positions;
     for (const auto & [column, index] : row_indexes)
     {
         if (row_group >= index.entry.size())

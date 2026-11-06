@@ -8,7 +8,6 @@
 #include <Core/Types.h>
 #include <Formats/NumpyDataTypes.h>
 
-#include <vector>
 
 namespace DB
 {

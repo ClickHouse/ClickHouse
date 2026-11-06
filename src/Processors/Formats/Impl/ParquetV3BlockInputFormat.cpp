@@ -1,14 +1,13 @@
 #include <memory>
 #include <Common/ProfileEvents.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/CurrentThread.h>
 #include <optional>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 
 #if USE_PARQUET
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Common/ThreadPool.h>
@@ -633,7 +632,7 @@ void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer, size_t protocol_ver
 {
     size_t size_chunks = 0;
     readVarUInt(size_chunks, buffer);
-    row_group_ids = VectorWithMemoryTracking<size_t>{};
+    row_group_ids = RowGroupIndices{};
     row_group_ids.resize(size_chunks);
     size_t bucket = 0;
     for (size_t i = 0; i < size_chunks; ++i)
@@ -668,7 +667,7 @@ String ParquetFileBucketInfo::getIdentifier() const
     return result;
 }
 
-ParquetFileBucketInfo::ParquetFileBucketInfo(const VectorWithMemoryTracking<size_t> & row_group_ids_)
+ParquetFileBucketInfo::ParquetFileBucketInfo(const RowGroupIndices & row_group_ids_)
     : row_group_ids(row_group_ids_)
 {
 }
@@ -678,7 +677,7 @@ ParquetFileBucketInfo::ParquetFileBucketInfo(UInt64 offset, UInt64 length)
 {
 }
 
-std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups(const VectorWithMemoryTracking<size_t> & matching_row_groups) const
+std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups(const RowGroupIndices & matching_row_groups) const
 {
     if (byte_range)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot filter a byte range bucket of a Parquet file by row groups");

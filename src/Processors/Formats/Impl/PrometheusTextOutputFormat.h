@@ -6,7 +6,6 @@
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
-#include <map>
 #include <string>
 
 

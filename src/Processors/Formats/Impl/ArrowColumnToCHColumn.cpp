@@ -1,10 +1,9 @@
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/Exception.h>
 
 #if USE_ARROW || USE_PARQUET
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -1917,8 +1916,8 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     std::optional<GeoColumnMetadata> geo_metadata,
     const ReadColumnFromArrowColumnSettings & settings,
     const std::shared_ptr<arrow::Field> & arrow_field,
-    const std::optional<UnorderedMapWithMemoryTracking<String, String>> & parquet_columns_to_clickhouse,
-    const std::optional<UnorderedMapWithMemoryTracking<String, String>> & clickhouse_columns_to_parquet);
+    const std::optional<ColumnNameMap> & parquet_columns_to_clickhouse,
+    const std::optional<ColumnNameMap> & clickhouse_columns_to_parquet);
 
 static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
@@ -1931,8 +1930,8 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
     std::optional<GeoColumnMetadata> geo_metadata,
     const ReadColumnFromArrowColumnSettings & settings,
     const std::shared_ptr<arrow::Field> & arrow_field,
-    const std::optional<UnorderedMapWithMemoryTracking<String, String>> & parquet_columns_to_clickhouse,
-    const std::optional<UnorderedMapWithMemoryTracking<String, String>> & clickhouse_columns_to_parquet)
+    const std::optional<ColumnNameMap> & parquet_columns_to_clickhouse,
+    const std::optional<ColumnNameMap> & clickhouse_columns_to_parquet)
 {
     switch (arrow_column->type()->id())
     {
@@ -2624,8 +2623,8 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     std::optional<GeoColumnMetadata> geo_metadata,
     const ReadColumnFromArrowColumnSettings & settings,
     const std::shared_ptr<arrow::Field> & arrow_field,
-    const std::optional<UnorderedMapWithMemoryTracking<String, String>> & parquet_columns_to_clickhouse,
-    const std::optional<UnorderedMapWithMemoryTracking<String, String>> & clickhouse_columns_to_parquet)
+    const std::optional<ColumnNameMap> & parquet_columns_to_clickhouse,
+    const std::optional<ColumnNameMap> & clickhouse_columns_to_parquet)
 {
     /// Validate each chunk up front, before anything reads the declared length:
     ///   - checkValidityBitmap rejects a negative length/offset and a validity bitmap (buffers[0])
@@ -2821,8 +2820,8 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
     bool case_insensitive_matching,
     bool allow_geoparquet_parser,
     bool enable_json_parsing,
-    const std::optional<UnorderedMapWithMemoryTracking<String, String>> & parquet_columns_to_clickhouse,
-    const std::optional<UnorderedMapWithMemoryTracking<String, String>> & clickhouse_columns_to_parquet)
+    const std::optional<ColumnNameMap> & parquet_columns_to_clickhouse,
+    const std::optional<ColumnNameMap> & clickhouse_columns_to_parquet)
 {
     ReadColumnFromArrowColumnSettings settings
     {
@@ -2879,8 +2878,8 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     const Block & header_,
     const std::string & format_name_,
     const FormatSettings & format_settings_,
-    const std::optional<UnorderedMapWithMemoryTracking<String, String>> & parquet_columns_to_clickhouse_,
-    const std::optional<UnorderedMapWithMemoryTracking<String, String>> & clickhouse_columns_to_parquet_,
+    const std::optional<ColumnNameMap> & parquet_columns_to_clickhouse_,
+    const std::optional<ColumnNameMap> & clickhouse_columns_to_parquet_,
     bool allow_missing_columns_,
     bool null_as_default_,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,

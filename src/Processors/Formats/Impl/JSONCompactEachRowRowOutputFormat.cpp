@@ -1,5 +1,4 @@
 #include <IO/WriteHelpers.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <IO/WriteBufferValidUTF8.h>
 #include <Processors/Formats/Impl/JSONCompactEachRowRowOutputFormat.h>
 #include <Processors/Port.h>
@@ -72,7 +71,7 @@ void JSONCompactEachRowRowOutputFormat::writeTotals(const Columns & columns, siz
     writeRowEndDelimiter();
 }
 
-void JSONCompactEachRowRowOutputFormat::writeLine(const Strings & values)
+void JSONCompactEachRowRowOutputFormat::writeLine(std::span<const String> values)
 {
     JSONUtils::makeNamesValidJSONStrings(values, settings, settings.json.validate_utf8);
     writeRowStartDelimiter();
