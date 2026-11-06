@@ -84,7 +84,8 @@ public:
         /// The inode of the directory entry: of the symlink itself for a symlink, else the same as `inode`.
         UInt64 entry_inode{};
         std::optional<std::ifstream> reader = std::nullopt;
-        /// The last attempt to open the file failed for a reason of the file itself (missing, not readable).
+        /// The last attempt to read the file failed for a reason of the file itself (missing, not readable, read under
+        /// another name), so it is retried.
         bool open_failed = false;
     };
 

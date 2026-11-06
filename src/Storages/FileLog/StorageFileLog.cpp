@@ -642,6 +642,7 @@ void StorageFileLog::openFilesAndSetPos()
             const auto inode_to_read = getInodeToRead(file, file_ctx);
             if (!inode_to_read)
             {
+                file_ctx.open_failed = true;
                 skip_file();
                 continue;
             }
@@ -1537,7 +1538,11 @@ void StorageFileLog::resetReadPosition(const std::optional<String> & file_name, 
         {
             chassert(offset == 0);
             for (const auto & name : file_infos.file_names)
-                add_target(name, findInMap(file_infos.context_by_name, name), 0);
+            {
+                auto & file_ctx = findInMap(file_infos.context_by_name, name);
+                if (!add_target(name, file_ctx, 0))
+                    file_ctx.open_failed = true;
+            }
         }
         else
         {

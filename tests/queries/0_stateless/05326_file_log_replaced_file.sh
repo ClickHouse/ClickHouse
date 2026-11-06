@@ -2,6 +2,7 @@
 # A FileLog table reads a file that replaced another one under the same name (moved over it, created again after the
 # old file was renamed by a rotation, a symlink moved over it, or the target of a symlink replaced) once and from its
 # start, and the rotated file from its own offset, also when the replacement happens before the table learns about it.
+# Symlinks whose targets are rotated read each file once, also when the rotation happens before the first read.
 # A single-file table reads a replaced file from its start, or from an offset set after the replacement, also after the
 # table is attached again. A reset of a name that leads to a file read under another name fails.
 
@@ -12,17 +13,18 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 base=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}
 rm -rf "${base:?}"
 # `outside` is not watched and is on the same file system, so `mv` from there is an atomic rename with a new inode.
-mkdir -p "${base}/replace" "${base}/rotate" "${base}/single" "${base}/outside" "${base}/link" "${base}/target"
+mkdir -p "${base}/replace" "${base}/rotate" "${base}/single" "${base}/outside" "${base}/link" "${base}/target" "${base}/rotated"
 
 settings="poll_directory_watch_events_backoff_init = 100, poll_directory_watch_events_backoff_max = 500"
 
 # Waits until table $1 applied the directory event of a new empty file in $2, i.e. it watches $2, without reading data.
+# $3 is the prefix of the file name, new for each call in one directory.
 function wait_watched()
 {
     for i in {1..120}; do
-        : > "$2/w$i.csv"
+        : > "$2/${3:-w}$i.csv"
         sleep 0.5
-        ${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG $1 FILE 'w$i.csv'" 2>/dev/null && return
+        ${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG $1 FILE '${3:-w}$i.csv'" 2>/dev/null && return
     done
     echo timeout
 }
@@ -107,6 +109,30 @@ ln "${base}/target/z.csv" "${base}/outside/u.new"
 mv "${base}/outside/u.new" "${base}/outside/u.csv"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG file_log_target FILE 'a.csv'" 2>&1 | grep -o -m1 BAD_ARGUMENTS
 
+echo '-- symlink targets rotated'
+echo 100 > "${base}/outside/r1"
+echo 200 > "${base}/outside/r2"
+ln -s "${base}/outside/r1" "${base}/rotated/a.csv"
+ln -s "${base}/outside/r2" "${base}/rotated/b.csv"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_rotated (a UInt64) ENGINE = FileLog('${base}/rotated/', 'CSV') SETTINGS ${settings}"
+wait_watched file_log_rotated "${base}/rotated"
+# Nothing changes in the watched directory: a.csv leads to the file of b.csv, b.csv to a new file.
+function rotate_targets()
+{
+    mv "${base}/outside/r1" "${base}/outside/r1.$1"
+    mv "${base}/outside/r2" "${base}/outside/r1"
+    echo "$2" > "${base}/outside/r2"
+    # Where the watcher reports a replaced target (macOS), its events are applied before the next read.
+    wait_watched file_log_rotated "${base}/rotated" "v$1_"
+}
+rotate_targets 1 300
+for _ in 1 2; do
+    ${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT a FROM file_log_rotated"
+done | sort -n | xargs
+rotate_targets 2 400
+${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG file_log_rotated"
+${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT groupArray(a) FROM (SELECT a FROM file_log_rotated ORDER BY a)"
+
 echo '-- single file'
 printf '1\n2\n3\n' > "${base}/single/s.csv"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_single (a UInt64) ENGINE = FileLog('${base}/single/s.csv', 'CSV')"
@@ -138,5 +164,6 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_link"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE mv_target"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE dst_target"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_target"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_rotated"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_single"
 rm -rf "${base:?}"

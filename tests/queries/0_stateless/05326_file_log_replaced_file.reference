@@ -7,6 +7,9 @@
 -- symlink target replaced
 [400,401,402,403,404,405,406,407,408,409,999]
 BAD_ARGUMENTS
+-- symlink targets rotated
+200 300
+[300,400]
 -- single file
 [1,2,3]
 [10,20,30,40]
