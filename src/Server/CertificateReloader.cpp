@@ -482,6 +482,14 @@ std::optional<Poco::Net::Context::CAPaths> CertificateReloader::getCAPaths(const
 CertificateReloader::Data::Data(std::string cert_path, std::string key_path, std::string pass_phrase)
     : certs_chain(X509Certificate::fromFile(cert_path)), key(KeyPair::fromFile(key_path, pass_phrase))
 {
+    /// The files may be replaced one by one, keep the current pair until both of them are new.
+    if (X509_check_private_key(static_cast<X509 *>(certs_chain.front()), static_cast<EVP_PKEY *>(key)) != 1)
+        throw Exception(
+            ErrorCodes::OPENSSL_ERROR,
+            "Certificate ({}) does not match key ({}): {}",
+            cert_path,
+            key_path,
+            Poco::Net::Utility::getLastError());
 }
 
 CertificateReloader::Data::Data(KeyPair _pkey, X509Certificate::List _certs_chain, std::string _hash)

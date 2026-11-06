@@ -40,7 +40,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def change_config_to_key(name, pass_phrase=""):
+def change_config_to_key(name, pass_phrase="", key_name=None):
     """
     * Generate config with certificate/key name from args.
     * Reload config.
@@ -55,7 +55,7 @@ def change_config_to_key(name, pass_phrase=""):
     <openSSL>
         <server>
             <certificateFile>/etc/clickhouse-server/config.d/{cur_name}.crt</certificateFile>
-            <privateKeyFile>/etc/clickhouse-server/config.d/{cur_name}.key</privateKeyFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/{key_name}.key</privateKeyFile>
             <loadDefaultCAFile>true</loadDefaultCAFile>
             <cacheSessions>true</cacheSessions>
             <disableProtocols>sslv2,sslv3</disableProtocols>
@@ -64,9 +64,7 @@ def change_config_to_key(name, pass_phrase=""):
         </server>
     </openSSL>
 </clickhouse>
-EOF""".format(
-                cur_name=name, pass_phrase=pass_phrase
-            ),
+EOF""".format(cur_name=name, key_name=key_name or name, pass_phrase=pass_phrase),
         ]
     )
     node.query("SYSTEM RELOAD CONFIG")
@@ -176,4 +174,22 @@ def test_chain_reload():
             ]
         )
         == "2\n"
+    )
+
+
+def test_mismatched_key_keeps_current_pair():
+    """Check that a certificate and key that do not match are not loaded"""
+    change_config_to_key("first")
+    change_config_to_key("first", key_name="second")
+    assert (
+        node.exec_in_container(
+            [
+                "curl",
+                "--silent",
+                "--cacert",
+                "/etc/clickhouse-server/config.d/first.crt",
+                "https://localhost:8443/",
+            ]
+        )
+        == "Ok.\n"
     )
