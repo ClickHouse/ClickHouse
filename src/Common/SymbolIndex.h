@@ -40,6 +40,10 @@ public:
         const void * address_end{};
         std::string name;
         std::shared_ptr<Elf> elf;
+#if defined(__ELF__)
+        /// Symbols of a loaded library (not the main executable), as offsets relative to it; never published.
+        std::vector<Symbol> symbols;
+#endif
 #if defined(OS_DARWIN)
         /// ASLR slide for this image. Subtract from runtime address to get linked (DWARF) address.
         uintptr_t slide = 0;
@@ -48,7 +52,12 @@ public:
 #endif
     };
 
-    const Symbol * findSymbol(const void * address) const;
+    /// On ELF takes an offset inside the main executable, the form stored in system tables;
+    /// 0 (the stored form of frames outside it) finds nothing. On macOS takes a runtime address.
+    const Symbol * findSymbol(const void * offset) const;
+    /// Takes a runtime address of this process, also resolves symbols of loaded libraries.
+    /// Only for addresses the process itself captured, never for user input.
+    const Symbol * findSymbolByAddress(const void * address) const;
     const Object * findObject(const void * address) const;
     const Object * thisObject() const;
 

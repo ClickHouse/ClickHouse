@@ -279,7 +279,7 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
         size_t num_frames = trace.size();
         for (size_t frame = 0; frame < num_frames; ++frame)
         {
-            if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(trace[frame])))
+            if (const auto * symbol = symbol_index.findSymbolByAddress(reinterpret_cast<const void *>(trace[frame])))
             {
                 auto demangled = tryDemangle(symbol->name);
                 if (demangled)

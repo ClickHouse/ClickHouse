@@ -281,7 +281,7 @@ void attachSystemTablesServerExceptOne(ContextPtr context, IDatabase & system_da
     attach<StorageSystemScheduler>(context, system_database, "scheduler", "Contains information and status for scheduling nodes residing on the local server.");
     attach<StorageSystemDNSCache>(context, system_database, "dns_cache", "Contains information about cached DNS records.");
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
-    attachNoDescription<StorageSystemSymbols>(context, system_database, "symbols", "Contains information for introspection of ClickHouse binary. This table is only useful for C++ experts and ClickHouse engineers.");
+    attachNoDescription<StorageSystemSymbols>(context, system_database, "symbols", "Contains information for introspection of ClickHouse binary. Only symbols of the main executable are listed; addresses are offsets inside it. This table is only useful for C++ experts and ClickHouse engineers.");
 #endif
 #if USE_RDKAFKA
     attach<StorageSystemKafkaConsumers>(context, system_database, "kafka_consumers", "Contains information about Kafka consumers. Applicable for Kafka table engine (native ClickHouse integration).");
