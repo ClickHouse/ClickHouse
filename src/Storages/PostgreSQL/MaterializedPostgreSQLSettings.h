@@ -34,6 +34,8 @@ struct MaterializedPostgreSQLSettings
     void applyChange(const SettingChange & change);
     bool has(std::string_view name) const;
     void loadFromQuery(ASTStorage & storage_def);
+    /// Must be called after `loadFromQuery` when creating or attaching a `MaterializedPostgreSQL` database or table.
+    void applyDefaultsForNewOrExistingObject(ASTStorage & storage_def, bool is_attach);
     /// Throws if the settings contradict each other. Must be called only for a freshly supplied definition,
     /// so that a definition stored by an older version, which did not check it, can still be loaded.
     void checkConsistencyForFreshDefinition() const;
