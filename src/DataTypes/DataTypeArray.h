@@ -66,6 +66,8 @@ public:
     bool hasDynamicSubcolumnsData() const override { return nested->hasDynamicSubcolumnsData(); }
     bool hasDynamicStructure() const override { return nested->hasDynamicStructure(); }
     std::unique_ptr<SubcolumnInfo> getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
+    bool canResolveDynamicSubcolumn(std::string_view subcolumn_name) const override { return nested->canResolveDynamicSubcolumn(subcolumn_name); }
+
     void forEachKnownDynamicSubcolumnName(const SubcolumnNameCallback & callback, size_t array_level) const override
     {
         nested->forEachKnownDynamicSubcolumnName(callback, array_level + 1);
