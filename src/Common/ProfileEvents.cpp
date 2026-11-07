@@ -598,6 +598,9 @@
     M(FilteringMarksWithPrimaryKeyProcessedMarks, "Total marks processed during PK analysis.", ValueType::Number) \
     M(FilteringMarksWithPrimaryKeyMicroseconds, "Time spent filtering parts by PK.", ValueType::Microseconds) \
     M(FilteringMarksWithSecondaryKeysMicroseconds, "Time spent filtering parts by skip indexes.", ValueType::Microseconds) \
+    M(GranulesDroppedByPartitionKey, "Number of marks (index granules) excluded from reading a MergeTree table by the partition key and its min-max index during index analysis.", ValueType::Number) \
+    M(GranulesDroppedByPrimaryKey, "Number of marks (index granules) excluded from reading a MergeTree table by the primary key during index analysis.", ValueType::Number) \
+    M(GranulesDroppedBySkipIndexes, "Number of marks (index granules) excluded from reading a MergeTree table by data skipping indexes during index analysis. Indexes applied at read time (`use_skip_indexes_on_data_read`) are not counted.", ValueType::Number) \
     M(DistributedIndexAnalysisMicroseconds, "Total time spent during distributed index analysis", ValueType::Microseconds) \
     M(DistributedIndexAnalysisScheduledReplicas, "Number of replicas (local replica will be accounted once) to which distributed index analysis has been scheduled", ValueType::Number) \
     M(DistributedIndexAnalysisReplicaUnavailable, "Number of times distributed index analysis failed on one of replicas without fallback (failed during connect)", ValueType::Number) \

@@ -1,0 +1,8 @@
+5
+0
+1
+skip_index_early_exit_1	['t_skip_index_early_exit.idx_a']
+skip_index_early_exit_2	['t_skip_index_early_exit.idx_a']
+skip_index_early_exit_3	['t_skip_index_early_exit.idx_a','t_skip_index_early_exit.idx_b']
+skip_index_early_exit_4	['t_skip_index_early_exit.idx_a']
+skip_index_early_exit_5	['t_skip_index_early_exit.idx_a','t_skip_index_early_exit.idx_b']

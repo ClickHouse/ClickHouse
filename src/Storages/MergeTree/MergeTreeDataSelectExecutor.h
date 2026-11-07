@@ -146,7 +146,8 @@ public:
         VectorSimilarityIndexCache * vector_similarity_index_cache,
         bool use_skip_indexes_for_disjunctions,
         PartialDisjunctionResult & partial_disjunction_result,
-        LoggerPtr log);
+        LoggerPtr log,
+        bool * index_applied = nullptr); /// set when the index is evaluated on the part
 
     static MergeTreeIndexBulkGranulesMinMaxPtr getMinMaxIndexGranules(
         const MergeTreeDataPartInfoForReaderPtr & part_info,
@@ -264,7 +265,8 @@ public:
         const ContextPtr & context,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         LoggerPtr log,
-        ReadFromMergeTree::IndexStats & index_stats);
+        ReadFromMergeTree::IndexStats & index_stats,
+        bool check_index_usage = true);
 
     /// Filter parts using minmax index and partition key.
     static RangesInDataParts filterPartsByPartition(

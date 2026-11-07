@@ -421,6 +421,10 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
 
     String description = makeStepDescription(*search_query);
 
+    if (!matched->reading->getQueryInfo().is_internal && matched->reading->getContext()->hasQueryContext())
+        matched->reading->getContext()->getQueryContext()->addUsedDataSkippingIndex(
+            matched->reading->getMergeTreeData().getStorageID(), search_query->index.index->index.name);
+
     auto & source_node = nodes.emplace_back();
     source_node.step = std::make_unique<ReadFromTextIndexCount>(
         std::move(indexed_parts),

@@ -229,6 +229,7 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event RejectedInserts;
+    extern const Event GranulesDroppedByPartitionKey;
     extern const Event SystemPartsEnumerationSlowdownSleeps;
     extern const Event DelayedInserts;
     extern const Event DelayedInsertsMilliseconds;
@@ -13388,13 +13389,11 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                 continue;
         }
 
-        if (minmax_idx_condition && !minmax_idx_condition->generateForPart(part).checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
-            continue;
-
-        if (partition_pruner)
+        if ((minmax_idx_condition && !minmax_idx_condition->generateForPart(part).checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
+            || (partition_pruner && partition_pruner->canBePruned(*part)))
         {
-            if (partition_pruner->canBePruned(*part))
-                continue;
+            ProfileEvents::increment(ProfileEvents::GranulesDroppedByPartitionKey, part->index_granularity->getMarksCountWithoutFinal());
+            continue;
         }
 
         /// It's extremely rare that some parts have final marks while others don't. To make it
