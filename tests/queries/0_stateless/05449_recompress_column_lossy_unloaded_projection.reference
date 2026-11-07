@@ -1,0 +1,3 @@
+Cannot RECOMPRESS COLUMN `val` with the lossy codec
+projection `p` reads this column
+1000

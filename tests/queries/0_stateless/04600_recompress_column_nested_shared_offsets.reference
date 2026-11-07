@@ -1,0 +1,8 @@
+shared part	Wide
+shared before	20000	40000	40000	20000	20000
+shared after	20000	40000	40000	20000	20000
+shared point	[0,1,2,3]	['0','1','2','3']
+shared scan	2858
+1
+one sibling after	20000	40000	40000	20000	20000
+1
