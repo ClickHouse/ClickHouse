@@ -1,0 +1,89 @@
+{
+  "format-version": 3,
+  "table-uuid": "50736bf5-9fb6-69a0-9c3a-6cf718bbadc2",
+  "location": "file:///iceberg-geo-testbed/v3_geometry",
+  "last-sequence-number": 1,
+  "last-updated-ms": 1700000003000,
+  "last-column-id": 2,
+  "current-schema-id": 0,
+  "schemas": [
+    {
+      "schema-id": 0,
+      "type": "struct",
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "id": 2,
+          "name": "geom",
+          "required": false,
+          "type": "geometry"
+        }
+      ]
+    }
+  ],
+  "default-spec-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": []
+    }
+  ],
+  "last-partition-id": 999,
+  "default-sort-order-id": 0,
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": []
+    }
+  ],
+  "properties": {
+    "schema.name-mapping.default": "[{\"field-id\": 1, \"names\": [\"id\"]}, {\"field-id\": 2, \"names\": [\"geom\"]}]"
+  },
+  "current-snapshot-id": 1700000003000,
+  "refs": {
+    "main": {
+      "snapshot-id": 1700000003000,
+      "type": "branch"
+    }
+  },
+  "snapshots": [
+    {
+      "snapshot-id": 1700000003000,
+      "sequence-number": 1,
+      "timestamp-ms": 1700000003000,
+      "manifest-list": "file:///iceberg-geo-testbed/v3_geometry/metadata/snap-1700000003000-manifest-list.avro",
+      "schema-id": 0,
+      "summary": {
+        "operation": "append",
+        "added-data-files": "10",
+        "added-records": "10000",
+        "added-files-size": "206010",
+        "total-data-files": "10",
+        "total-records": "10000",
+        "total-files-size": "206010",
+        "total-delete-files": "0",
+        "total-equality-deletes": "0",
+        "total-position-deletes": "0",
+        "changed-partition-count": "1"
+      },
+      "first-row-id": 0,
+      "added-rows": 10000
+    }
+  ],
+  "snapshot-log": [
+    {
+      "snapshot-id": 1700000003000,
+      "timestamp-ms": 1700000003000
+    }
+  ],
+  "metadata-log": [],
+  "next-row-id": 10000,
+  "statistics": [],
+  "partition-statistics": [],
+  "row-lineage": false
+}

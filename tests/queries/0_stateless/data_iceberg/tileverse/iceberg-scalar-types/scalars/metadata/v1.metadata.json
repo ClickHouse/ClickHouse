@@ -1,0 +1,210 @@
+{
+  "format-version": 3,
+  "table-uuid": "30a9a2fd-a015-419a-a5b2-1c10a5e88004",
+  "location": "file:///iceberg-scalar-types/scalars",
+  "last-sequence-number": 2,
+  "last-updated-ms": 1789084308900,
+  "last-column-id": 13,
+  "current-schema-id": 0,
+  "schemas": [
+    {
+      "type": "struct",
+      "schema-id": 0,
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "required": true,
+          "type": "long"
+        },
+        {
+          "id": 2,
+          "name": "ts",
+          "required": false,
+          "type": "timestamp"
+        },
+        {
+          "id": 3,
+          "name": "tstz",
+          "required": false,
+          "type": "timestamptz"
+        },
+        {
+          "id": 4,
+          "name": "ts_ns",
+          "required": false,
+          "type": "timestamp_ns"
+        },
+        {
+          "id": 5,
+          "name": "tstz_ns",
+          "required": false,
+          "type": "timestamptz_ns"
+        },
+        {
+          "id": 6,
+          "name": "t",
+          "required": false,
+          "type": "time"
+        },
+        {
+          "id": 7,
+          "name": "dec",
+          "required": false,
+          "type": "decimal(9, 2)"
+        },
+        {
+          "id": 8,
+          "name": "bigdec",
+          "required": false,
+          "type": "decimal(20, 3)"
+        },
+        {
+          "id": 9,
+          "name": "u",
+          "required": false,
+          "type": "uuid"
+        },
+        {
+          "id": 10,
+          "name": "fx",
+          "required": false,
+          "type": "fixed[4]"
+        },
+        {
+          "id": 11,
+          "name": "bin",
+          "required": false,
+          "type": "binary"
+        },
+        {
+          "id": 12,
+          "name": "d",
+          "required": false,
+          "type": "date"
+        },
+        {
+          "id": 13,
+          "name": "label",
+          "required": false,
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "default-spec-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": [
+        {
+          "name": "ts",
+          "transform": "identity",
+          "source-id": 2,
+          "field-id": 1000
+        }
+      ]
+    }
+  ],
+  "last-partition-id": 1000,
+  "default-sort-order-id": 0,
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": []
+    }
+  ],
+  "properties": {
+    "write.merge.mode": "merge-on-read",
+    "write.update.mode": "merge-on-read",
+    "write.delete.mode": "merge-on-read",
+    "write.metadata.compression-codec": "none",
+    "write.parquet.compression-codec": "uncompressed"
+  },
+  "current-snapshot-id": 4849314334551536165,
+  "next-row-id": 12,
+  "refs": {
+    "main": {
+      "snapshot-id": 4849314334551536165,
+      "type": "branch"
+    }
+  },
+  "snapshots": [
+    {
+      "sequence-number": 1,
+      "snapshot-id": 2632629176542255663,
+      "timestamp-ms": 1789084308783,
+      "summary": {
+        "operation": "append",
+        "manifests-created": "1",
+        "manifests-kept": "0",
+        "manifests-replaced": "0",
+        "added-data-files": "3",
+        "added-records": "12",
+        "added-files-size": "10976",
+        "changed-partition-count": "3",
+        "total-records": "12",
+        "total-files-size": "10976",
+        "total-data-files": "3",
+        "total-delete-files": "0",
+        "total-position-deletes": "0",
+        "total-equality-deletes": "0",
+        "iceberg-version": "Apache Iceberg 1.11.0 (commit 6976e020b894f6a6777704df2b8c4458cb291ae9)"
+      },
+      "manifest-list": "file:///iceberg-scalar-types/scalars/metadata/snap-2632629176542255663-1-6f6aa1d8-6fa5-417d-bdeb-8f68e952eadc.avro",
+      "schema-id": 0,
+      "first-row-id": 0,
+      "added-rows": 12
+    },
+    {
+      "sequence-number": 2,
+      "snapshot-id": 4849314334551536165,
+      "parent-snapshot-id": 2632629176542255663,
+      "timestamp-ms": 1789084308900,
+      "summary": {
+        "operation": "delete",
+        "manifests-created": "1",
+        "manifests-kept": "1",
+        "manifests-replaced": "0",
+        "added-equality-delete-files": "2",
+        "added-delete-files": "2",
+        "added-files-size": "988",
+        "added-equality-deletes": "2",
+        "changed-partition-count": "2",
+        "total-records": "12",
+        "total-files-size": "11964",
+        "total-data-files": "3",
+        "total-delete-files": "2",
+        "total-position-deletes": "0",
+        "total-equality-deletes": "2",
+        "iceberg-version": "Apache Iceberg 1.11.0 (commit 6976e020b894f6a6777704df2b8c4458cb291ae9)"
+      },
+      "manifest-list": "file:///iceberg-scalar-types/scalars/metadata/snap-4849314334551536165-1-b86cbea1-cf00-416f-b653-bc35623dfc63.avro",
+      "schema-id": 0,
+      "first-row-id": 12,
+      "added-rows": 0
+    }
+  ],
+  "statistics": [],
+  "partition-statistics": [],
+  "snapshot-log": [
+    {
+      "timestamp-ms": 1789084308783,
+      "snapshot-id": 2632629176542255663
+    },
+    {
+      "timestamp-ms": 1789084308900,
+      "snapshot-id": 4849314334551536165
+    }
+  ],
+  "metadata-log": [
+    {
+      "timestamp-ms": 1789084308195,
+      "metadata-file": "file:///iceberg-scalar-types/scalars/metadata/v1.metadata.json"
+    },
+    {
+      "timestamp-ms": 1789084308787,
+      "metadata-file": "file:///iceberg-scalar-types/scalars/metadata/v2.metadata.json"
+    }
+  ]
+}

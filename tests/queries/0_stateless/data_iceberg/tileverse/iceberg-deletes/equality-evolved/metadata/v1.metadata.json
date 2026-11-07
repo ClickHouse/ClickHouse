@@ -1,0 +1,145 @@
+{
+  "format-version": 2,
+  "table-uuid": "7c069e39-d699-4bf4-8e0d-dee5d644b152",
+  "location": "file:///iceberg-deletes/equality-evolved",
+  "last-sequence-number": 2,
+  "last-updated-ms": 1782762012000,
+  "last-column-id": 3,
+  "current-schema-id": 0,
+  "schemas": [
+    {
+      "type": "struct",
+      "schema-id": 0,
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "required": true,
+          "type": "long"
+        },
+        {
+          "id": 2,
+          "name": "category",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "id": 3,
+          "name": "value",
+          "required": false,
+          "type": "double"
+        }
+      ]
+    }
+  ],
+  "default-spec-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": [
+        {
+          "name": "category",
+          "transform": "identity",
+          "source-id": 2,
+          "field-id": 1000
+        }
+      ]
+    }
+  ],
+  "last-partition-id": 1000,
+  "default-sort-order-id": 0,
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": []
+    }
+  ],
+  "properties": {
+    "write.merge.mode": "merge-on-read",
+    "write.update.mode": "merge-on-read",
+    "write.delete.mode": "merge-on-read",
+    "write.metadata.compression-codec": "none",
+    "write.parquet.compression-codec": "uncompressed"
+  },
+  "current-snapshot-id": 614711846410308889,
+  "refs": {
+    "main": {
+      "snapshot-id": 614711846410308889,
+      "type": "branch"
+    }
+  },
+  "snapshots": [
+    {
+      "sequence-number": 1,
+      "snapshot-id": 6730232167238804454,
+      "timestamp-ms": 1782762011884,
+      "summary": {
+        "operation": "append",
+        "manifests-created": "1",
+        "manifests-kept": "0",
+        "manifests-replaced": "0",
+        "added-data-files": "3",
+        "added-records": "15",
+        "added-files-size": "2961",
+        "changed-partition-count": "3",
+        "total-records": "15",
+        "total-files-size": "2961",
+        "total-data-files": "3",
+        "total-delete-files": "0",
+        "total-position-deletes": "0",
+        "total-equality-deletes": "0",
+        "iceberg-version": "Apache Iceberg 1.11.0 (commit 6976e020b894f6a6777704df2b8c4458cb291ae9)"
+      },
+      "manifest-list": "file:///iceberg-deletes/equality-evolved/metadata/snap-6730232167238804454-1-2cebcbcf-28d6-422c-b5bf-3e57ee9a9af4.avro",
+      "schema-id": 0
+    },
+    {
+      "sequence-number": 2,
+      "snapshot-id": 614711846410308889,
+      "parent-snapshot-id": 6730232167238804454,
+      "timestamp-ms": 1782762012000,
+      "summary": {
+        "operation": "delete",
+        "manifests-created": "1",
+        "manifests-kept": "1",
+        "manifests-replaced": "0",
+        "added-equality-delete-files": "1",
+        "added-delete-files": "1",
+        "added-files-size": "451",
+        "added-equality-deletes": "1",
+        "changed-partition-count": "1",
+        "total-records": "15",
+        "total-files-size": "3412",
+        "total-data-files": "3",
+        "total-delete-files": "1",
+        "total-position-deletes": "0",
+        "total-equality-deletes": "1",
+        "iceberg-version": "Apache Iceberg 1.11.0 (commit 6976e020b894f6a6777704df2b8c4458cb291ae9)"
+      },
+      "manifest-list": "file:///iceberg-deletes/equality-evolved/metadata/snap-614711846410308889-1-3b610c9d-5ac9-4cd1-b31d-cfe680684f9e.avro",
+      "schema-id": 0
+    }
+  ],
+  "statistics": [],
+  "partition-statistics": [],
+  "snapshot-log": [
+    {
+      "timestamp-ms": 1782762011884,
+      "snapshot-id": 6730232167238804454
+    },
+    {
+      "timestamp-ms": 1782762012000,
+      "snapshot-id": 614711846410308889
+    }
+  ],
+  "metadata-log": [
+    {
+      "timestamp-ms": 1782762011307,
+      "metadata-file": "file:///iceberg-deletes/equality-evolved/metadata/v1.metadata.json"
+    },
+    {
+      "timestamp-ms": 1782762011889,
+      "metadata-file": "file:///iceberg-deletes/equality-evolved/metadata/v2.metadata.json"
+    }
+  ]
+}

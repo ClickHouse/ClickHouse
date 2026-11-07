@@ -1,0 +1,108 @@
+{
+  "format-version": 2,
+  "table-uuid": "467e32df-cb35-1b8f-5664-4295c36d5bf5",
+  "location": "file:///iceberg-geo-testbed/v2_geo_convention",
+  "last-sequence-number": 1,
+  "last-updated-ms": 1700000002000,
+  "last-column-id": 6,
+  "current-schema-id": 0,
+  "schemas": [
+    {
+      "schema-id": 0,
+      "type": "struct",
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "id": 2,
+          "name": "fp_xmin",
+          "required": false,
+          "type": "double"
+        },
+        {
+          "id": 3,
+          "name": "fp_ymin",
+          "required": false,
+          "type": "double"
+        },
+        {
+          "id": 4,
+          "name": "fp_xmax",
+          "required": false,
+          "type": "double"
+        },
+        {
+          "id": 5,
+          "name": "fp_ymax",
+          "required": false,
+          "type": "double"
+        },
+        {
+          "id": 6,
+          "name": "geom_wkb",
+          "required": false,
+          "type": "binary"
+        }
+      ]
+    }
+  ],
+  "default-spec-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": []
+    }
+  ],
+  "last-partition-id": 999,
+  "default-sort-order-id": 0,
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": []
+    }
+  ],
+  "properties": {
+    "schema.name-mapping.default": "[{\"field-id\": 1, \"names\": [\"id\"]}, {\"field-id\": 2, \"names\": [\"fp_xmin\"]}, {\"field-id\": 3, \"names\": [\"fp_ymin\"]}, {\"field-id\": 4, \"names\": [\"fp_xmax\"]}, {\"field-id\": 5, \"names\": [\"fp_ymax\"]}, {\"field-id\": 6, \"names\": [\"geom_wkb\"]}]",
+    "geo": "{\"version\": \"1.0\", \"primary_column\": \"geom_wkb\", \"columns\": {\"geom_wkb\": {\"encoding\": \"WKB\", \"crs\": \"OGC:CRS84\", \"edges\": \"planar\", \"bbox_columns\": [\"fp_xmin\", \"fp_ymin\", \"fp_xmax\", \"fp_ymax\"]}}}"
+  },
+  "current-snapshot-id": 1700000002000,
+  "refs": {
+    "main": {
+      "snapshot-id": 1700000002000,
+      "type": "branch"
+    }
+  },
+  "snapshots": [
+    {
+      "snapshot-id": 1700000002000,
+      "sequence-number": 1,
+      "timestamp-ms": 1700000002000,
+      "manifest-list": "file:///iceberg-geo-testbed/v2_geo_convention/metadata/snap-1700000002000-manifest-list.avro",
+      "schema-id": 0,
+      "summary": {
+        "operation": "append",
+        "added-data-files": "10",
+        "added-records": "10000",
+        "added-files-size": "542614",
+        "total-data-files": "10",
+        "total-records": "10000",
+        "total-files-size": "542614",
+        "total-delete-files": "0",
+        "total-equality-deletes": "0",
+        "total-position-deletes": "0",
+        "changed-partition-count": "1"
+      }
+    }
+  ],
+  "snapshot-log": [
+    {
+      "snapshot-id": 1700000002000,
+      "timestamp-ms": 1700000002000
+    }
+  ],
+  "metadata-log": []
+}
