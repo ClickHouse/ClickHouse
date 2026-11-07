@@ -56,6 +56,23 @@ REPLICA IDENTITY FULL also enables replication of unchanged TOAST columns. More 
 
 Note that using `REPLICA IDENTITY FULL` can have performance implications and also faster WAL growth, especially for tables without a primary key and with frequent updates or deletes, as it requires more data to be logged for each change. If you have any doubts or need assistance with setting up primary keys or replica identities for your tables, please reach out to our support team for guidance.
 
+<Warning>
+For a table with no primary key and `REPLICA IDENTITY FULL`, ClickPipes uses every column as the `ORDER BY` of the ClickHouse table. Because `ReplacingMergeTree` keeps one row per `ORDER BY` value, this causes data differences between Postgres and ClickHouse, even when querying with `FINAL`:
+
+- **Updates leave the old row visible**: an update changes the key, so the old and new versions both remain. See [Can I update primary key columns in PostgreSQL?](#can-i-update-primary-key-columns-in-postgresql).
+- **Exact duplicate rows collapse into one.**
+- **Deleting one of two identical rows removes both.**
+- **NULL values can collide with defaults**: with **Preserve NULL values from source** off (the default), NULL is stored as `0` or `''`, so a row with NULL and a row with `0` become identical.
+</Warning>
+
+To avoid these issues, in order of preference:
+
+1. Add a primary key, or add a unique index and set `REPLICA IDENTITY USING INDEX index_name`.
+2. Otherwise, set a [custom ordering key](/integrations/clickpipes/postgres/ordering_keys) on columns that are both unique and immutable. A non-unique ordering key merges distinct rows that share the same key.
+3. Turn on **Preserve NULL values from source**.
+
+Both settings only apply when the ClickHouse table is created, and a pipe [resync](/integrations/clickpipes/postgres/resync) keeps the existing settings. To change the ordering key of a table in an existing pipe, [resync that table](/integrations/clickpipes/postgres/table_resync): remove it from the pipe, drop or rename its ClickHouse table, then add it back with the new ordering key. **Preserve NULL values from source** can't be changed after the pipe is created, so turning it on requires a new pipe.
+
 It's important to note that if neither a primary key nor a replica identity is defined, ClickPipes won't be able to replicate changes for that table, and you may encounter errors during the replication process. Therefore, it's recommended to review your table schemas and ensure that they meet these requirements before setting up your ClickPipe.
 
 ### Do you support partitioned tables as part of Postgres CDC? {#do-you-support-partitioned-tables-as-part-of-postgres-cdc}
@@ -85,6 +102,8 @@ For more details, refer to:
 Primary key updates in PostgreSQL can't be properly replayed in ClickHouse by default.
 
 This limitation exists because `ReplacingMergeTree` deduplication works based on the `ORDER BY` columns (which typically correspond to the primary key). When a primary key is updated in PostgreSQL, it appears as a new row with a different key in ClickHouse, rather than an update to the existing row. This can lead to both the old and new primary key values existing in your ClickHouse table.
+
+For tables with no primary key and `REPLICA IDENTITY FULL`, every column is part of the `ORDER BY`, so every update counts as a primary key update.
 </Warning>
 
 Note that updating primary key columns isn't a common practice in PostgreSQL database design, as primary keys are intended to be immutable identifiers. Most applications avoid primary key updates by design, making this limitation rarely encountered in typical use cases.
