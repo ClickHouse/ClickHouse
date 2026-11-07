@@ -1,0 +1,42 @@
+-- duplicates on the one side outside the matched groups, then in a matched group
+rate(req{instance="i1"}[1m]) / on(instance) rate(lim[1m]): same, 1 series
+req{instance=~"i1|i4"} / on(instance) lim: same, 2 series
+req{instance="i3"} / on(instance) lim: same, error
+req{instance="i1"} / ignoring(team) lim: same, 1 series
+req{job="api"} * on(job) group_left(owner) info: same, 2 series
+req{job="db"} * on(job) group_left(owner) info: same, error
+info * on(job) group_right(owner) req{job="api"}: same, 2 series
+req{instance="i1"} / ignoring(team) group_left sum without (team) (lim): same, 1 series
+-- a side which fails by itself is not skipped because the other side became empty
+rate({__name__=~"m1|m2", a="2"}[1m]) / on(a) m3: same, error
+rate({__name__=~"m1|m2", a="2"}[1m]) / on(a) sum by (a) (m3): same, error
+rate({__name__=~"m1|m2", a="2"}[1m]) and on(a) m3: same, error
+rate({__name__=~"m1|m2", a="2"}[1m]) * on(a) group_right m3: same, error
+(rate({__name__=~"m1|m2"}[1m]) and on(a) m3) / on(a) m1{a="2"}: same, error
+m3 / on(a) rate({__name__=~"m1|m2", a="2"}[1m]): same, error
+-- the selectors read
+rate(req{instance="i1"}[1m]) / on(instance) rate(lim[1m])
+lim i1
+req i1
+req{job="api"} * on(job) group_left(owner) info
+info api
+req api
+info * on(job) group_right(owner) req{job="api"}
+info api
+req api
+req{instance="i1"} / ignoring(team) group_left sum without (team) (lim)
+lim i1
+req i1
+(req{instance="i1"} - ignoring(team) lim) / on(instance) lim
+lim
+lim i1
+req i1
+req{instance="i1"} / on(instance) label_replace(lim, "x", "y", "", "")
+lim
+req i1
+rate({__name__=~"m1|m2", a="2"}[1m]) / on(a) m3
+2
+m3
+m3 / on(a) rate({__name__=~"m1|m2", a="2"}[1m])
+2
+m3
