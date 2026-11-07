@@ -308,60 +308,24 @@ set(LLVM_COMPILE_DEFINITIONS
 #
 # Cross-compilation support for tablegen tools
 #
-# When cross-compiling, we need to build tablegen for the HOST system (not target).
-# The tablegen executables must be runnable on the build machine to generate .inc files.
-#
-# We detect cross-compilation by checking CMAKE_CROSSCOMPILING.
+# The tablegen executables run on the build machine to generate .inc files, so when
+# cross-compiling they come from the native sub-build of the whole project (see
+# `add_native_target` in the top-level CMakeLists.txt), like `protoc` and `flatc`. That
+# sub-build uses the host's toolchain file, so tablegen is linked like every other
+# executable of ours (statically against our musl by default) and does not depend on
+# whatever compiler and libc the build machine happens to have. In the sub-build itself
+# `CMAKE_CROSSCOMPILING` is false (see cmake/target.cmake), so it builds the two targets
+# below inline.
 #
 if (CMAKE_CROSSCOMPILING)
-    message(STATUS "LLVM: Cross-compiling detected, building native tablegen tools")
+    message(STATUS "LLVM: Cross-compiling detected, using tablegen from the native build")
 
-    include(ExternalProject)
+    # `llvm-tblgen` depends on `llvm-min-tblgen` and `GenVT.inc` there.
+    add_native_target(llvm-tblgen)
 
-    set(NATIVE_TBLGEN_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/native-tblgen")
-
-    # Build native tablegen tools using ExternalProject
-    # This runs a separate CMake configuration WITHOUT the target toolchain,
-    # so it builds for the host system.
-    #
-    # IMPORTANT: We do NOT pass CMAKE_C_COMPILER/CMAKE_CXX_COMPILER here.
-    # The toolchain file sets sysroot and gcc-toolchain flags that make binaries
-    # link against target system libraries, not host libraries.
-    # By not specifying compilers, CMake will use the default host compilers.
-    ExternalProject_Add(native-tblgen-build
-        SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/native-tblgen"
-        BINARY_DIR "${NATIVE_TBLGEN_BUILD_DIR}"
-        CMAKE_ARGS
-            -DLLVM_SOURCE_DIR=${LLVM_SOURCE_DIR}
-            -DLLVM_NATIVE_OUTPUT_DIR=${NATIVE_TBLGEN_BUILD_DIR}
-            -DCMAKE_BUILD_TYPE=Release
-        # Do NOT pass toolchain file or compilers - let CMake find host compilers
-        BUILD_ALWAYS OFF
-        INSTALL_COMMAND ""
-        CMAKE_GENERATOR "${CMAKE_GENERATOR}"
-    )
-
-    # Paths to native tablegen executables
-    # Note: native-tblgen builds for the host (not the cross-compilation target),
-    # so we do not append CMAKE_EXECUTABLE_SUFFIX (which is the target's suffix).
-    set(LLVM_TABLEGEN_EXE "${NATIVE_TBLGEN_BUILD_DIR}/llvm-tblgen")
-    set(LLVM_MIN_TABLEGEN_EXE "${NATIVE_TBLGEN_BUILD_DIR}/llvm-min-tblgen")
-
-    # Create imported targets for native tablegen
-    add_executable(llvm-tblgen-native IMPORTED GLOBAL)
-    set_target_properties(llvm-tblgen-native PROPERTIES IMPORTED_LOCATION "${LLVM_TABLEGEN_EXE}")
-    add_dependencies(llvm-tblgen-native native-tblgen-build)
-
-    add_executable(llvm-min-tblgen-native IMPORTED GLOBAL)
-    set_target_properties(llvm-min-tblgen-native PROPERTIES IMPORTED_LOCATION "${LLVM_MIN_TABLEGEN_EXE}")
-    add_dependencies(llvm-min-tblgen-native native-tblgen-build)
-
-    # We still need dummy targets for non-cross builds that expect these
-    # But tablegen commands will use the imported targets
-    set(TABLEGEN_TARGET llvm-tblgen-native)
-    set(MIN_TABLEGEN_TARGET llvm-min-tblgen-native)
+    set(NATIVE_LLVM_BINARY_DIR "${PROJECT_BINARY_DIR}/native/contrib/llvm-project/llvm")
+    set(LLVM_TABLEGEN_EXE "${PROJECT_BINARY_DIR}/native/contrib/llvm-project-cmake/llvm-tblgen")
     set(USE_NATIVE_TABLEGEN ON)
-
 else()
     # Native build - build tablegen as part of the normal build
     message(STATUS "LLVM: Native build, building tablegen inline")
@@ -370,7 +334,7 @@ endif()
 
 #
 # Build llvm-min-tblgen and llvm-tblgen (only for native builds)
-# For cross-compilation, these are built by ExternalProject above.
+# For cross-compilation, they come from the native build (see above).
 #
 if (NOT USE_NATIVE_TABLEGEN)
 
@@ -580,9 +544,9 @@ endif() # NOT USE_NATIVE_TABLEGEN
 # Set up tablegen executable variables
 #
 if (USE_NATIVE_TABLEGEN)
-    # For cross-compilation: use native (host) tablegen
-    set(LLVM_TABLEGEN_DEPENDS native-tblgen-build)
-    # The executable path is set above as LLVM_TABLEGEN_EXE
+    # For cross-compilation: the host tablegen from the native build (path set above). It is
+    # built at configure time, so depend on the file to rerun the generators when it changes.
+    set(LLVM_TABLEGEN_DEPENDS "${LLVM_TABLEGEN_EXE}")
 else()
     # For native compilation: use the tablegen we just built
     set(LLVM_TABLEGEN_EXE "$<TARGET_FILE:llvm-tblgen>")
@@ -595,7 +559,7 @@ endif()
 # (For native compilation, llvm_gen_vt is defined inside the if (NOT USE_NATIVE_TABLEGEN) block above)
 #
 if (USE_NATIVE_TABLEGEN)
-    set(NATIVE_GENVT_INC "${NATIVE_TBLGEN_BUILD_DIR}/include/llvm/CodeGen/GenVT.inc")
+    set(NATIVE_GENVT_INC "${NATIVE_LLVM_BINARY_DIR}/include/llvm/CodeGen/GenVT.inc")
 
     # Copy GenVT.inc from native build to our include dir
     add_custom_command(
@@ -603,7 +567,7 @@ if (USE_NATIVE_TABLEGEN)
         COMMAND ${CMAKE_COMMAND} -E copy
             "${NATIVE_GENVT_INC}"
             "${LLVM_BINARY_DIR}/include/llvm/CodeGen/GenVT.inc"
-        DEPENDS native-tblgen-build
+        DEPENDS "${NATIVE_GENVT_INC}"
         COMMENT "Copying native GenVT.inc"
         VERBATIM
     )

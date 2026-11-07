@@ -9,15 +9,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # `system.stack_trace` stores frames inside the main binary as file offsets, which `system.symbols`
-# bounds, and every other frame as 0, so no runtime address is published. Threads waiting in the
-# C library keep both kinds present in any snapshot of a running server. Only a few long-lived threads are
+# bounds, and every other frame as 0, so no runtime address is published. The binary is statically
+# linked, so the C library is inside the main executable and a frame outside it appears only when a thread
+# happens to be caught inside the vDSO; zeroed frames are therefore not measured. Only a few long-lived threads are
 # read: each snapshot signals every thread it reads, one at a time across all queries, which is too slow
 # with many copies of the test in parallel.
 query="
 SELECT
     countIf(x BETWEEN 1 AND (SELECT max(address_end) FROM system.symbols)) > 10,
-    countIf(x > (SELECT max(address_end) FROM system.symbols)) = 0,
-    countIf(x = 0) > 0
+    countIf(x > (SELECT max(address_end) FROM system.symbols)) = 0
 FROM (SELECT arrayJoin(trace) AS x FROM system.stack_trace WHERE thread_name IN ('AsyncMetrics', 'ConfigReloader'))
 SETTINGS allow_introspection_functions = 1"
 

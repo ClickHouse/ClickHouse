@@ -809,6 +809,11 @@ endif()
 # satisfies the bare name), while every musl-internal call site - getdelim,
 # strdup, asprintf, realpath, or anything else - keeps resolving to the same
 # interposed allocator the application will later call to free() the result.
+# `sincos` is excluded as well, for a different reason: `sin` and `cos` are not
+# intercepted and come from llvm-libc, so `__real_sincos` must be llvm-libc's
+# `sincos` too (defined in contrib/libllvmlibc-cmake/math/real_sincos.cpp), or
+# `sincos(x)` would disagree with `sin(x)` and `cos(x)` in the last bit. Its
+# strong reference is still emitted, so that the llvm-libc member is linked.
 # The linked libc is switched to the renamed archive in
 # cmake/linux/default_libs.cmake (MUSL_LIBC_TARGET).
 if (USE_MUSL AND _interceptor_runtime)
@@ -827,9 +832,9 @@ if (USE_MUSL AND _interceptor_runtime)
             $nm --defined-only $<TARGET_FILE:${_interceptor_runtime}> | awk '$2 == \"T\" {print $3}' > strong_defs.txt;\
             cat real_refs.txt strong_defs.txt | sort -u > intercepted.txt;\
             $nm --defined-only $<TARGET_FILE:musl> | awk '{print $NF}' | sort -u > musl_defined.txt;\
-            comm -12 intercepted.txt musl_defined.txt | grep -vx -E 'malloc|calloc|realloc|reallocarray|free|posix_memalign|aligned_alloc|valloc|pvalloc|memalign' > names.txt;\
+            comm -12 intercepted.txt musl_defined.txt | grep -vx -E 'malloc|calloc|realloc|reallocarray|free|posix_memalign|aligned_alloc|valloc|pvalloc|memalign|sincos' > names.txt;\
             sed -e 's/.*/& __real_&/' names.txt > ${_musl_renames};\
-            { echo '.section .rodata.musl_real_refs,\"a\"'; sed -e 's/.*/.quad __real_&/' names.txt; } > musl_real_refs.s;\
+            { echo '.section .rodata.musl_real_refs,\"a\"'; sed -e 's/.*/.quad __real_&/' names.txt; echo '.quad __real_sincos'; } > musl_real_refs.s;\
             ${CMAKE_C_COMPILER} --target=${CMAKE_C_COMPILER_TARGET} -c musl_real_refs.s -o ${_musl_real_refs}"
         COMMAND ${CMAKE_OBJCOPY} --redefine-syms=${_musl_renames} $<TARGET_FILE:musl> ${_musl_intercepted}
         DEPENDS musl ${_interceptor_runtime}

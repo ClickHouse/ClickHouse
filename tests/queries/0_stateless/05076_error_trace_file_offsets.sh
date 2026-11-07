@@ -19,15 +19,15 @@ $CLICKHOUSE_CLIENT -m -q "SELECT throwIf(true, 'file offsets', toInt16(300)) SET
 # `system.symbols` reports offsets into the binary, so its largest one bounds every frame the symbol table
 # can resolve. A locally thrown exception captures deep ClickHouse frames, so requiring more than ten of
 # them keeps a short, empty or missing trace from passing.
-# Frames outside the main executable are stored as 0, which the last two columns assert: an offset into
-# a library is indistinguishable from a main executable offset once stored as a bare number, a runtime
-# address must not be published, and the stack of a thrown exception ends in the C library.
-# Keep the throw above shallow: a trace holds at most 32 frames and those C library ones are last.
+# Frames outside the main executable are stored as 0: an offset into a library is indistinguishable from
+# a main executable offset once stored as a bare number, and a runtime address must not be published.
+# The binary is statically linked, so the C library frames that end the stack of a thrown exception are
+# inside the main executable too, and the last two columns assert that every frame is a file offset.
 $CLICKHOUSE_CLIENT -m -q "
 SELECT
     countIf(x BETWEEN 1 AND (SELECT max(address_end) FROM system.symbols)) > 10,
     countIf(x > (SELECT max(address_end) FROM system.symbols)) = 0,
-    countIf(x = 0) > 0
+    countIf(x = 0) = 0
 FROM (
     SELECT arrayJoin(last_error_trace) AS x
     FROM system.errors
