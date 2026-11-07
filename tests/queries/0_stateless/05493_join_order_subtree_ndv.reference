@@ -1,0 +1,10 @@
+dpsub direct	1	1	1	1
+dpsub equivalence	1	1	1	1
+dpsize direct	1	1	1	1
+dpsize equivalence	1	1	1	1
+dphyp direct	1	1	1	1
+dphyp equivalence	1	1	1	1
+greedy direct	1	1	1	1
+greedy equivalence	1	1	1	1
+cache context	1	1
+bushy both sides capped	1	1	1
