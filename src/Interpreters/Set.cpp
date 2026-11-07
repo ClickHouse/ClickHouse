@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -733,6 +734,21 @@ void Set::processDateTime64Column(
     }
 }
 
+/// A conversion into `Bool` turns every nonzero number into `true`, while one into `UInt8`, which stores `Bool`,
+/// keeps the value or fails, so a number is looked up among `Bool` keys by its value.
+static DataTypePtr getTypeToConvertKeyTo(const DataTypePtr & set_key_type, const DataTypePtr & key_type)
+{
+    const DataTypePtr key_value_type = removeLowCardinalityAndNullable(key_type);
+    const WhichDataType key_which(key_value_type);
+    if (!key_which.isInteger() && !key_which.isFloat())
+        return set_key_type;
+    if (isBool(key_value_type) || !isBool(removeNullable(set_key_type)))
+        return set_key_type;
+
+    DataTypePtr type = std::make_shared<DataTypeUInt8>();
+    return set_key_type->isNullable() ? makeNullable(type) : type;
+}
+
 ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
 {
     size_t num_key_columns = columns.size();
@@ -785,7 +801,8 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         /// we will enter the `castColumnAccurateOrNull` path; however, it can lead to casted column type
         /// becomes `Tuple(Nullable(...), Nullable(...))` which will create problems during matching keys in Set.
         /// To avoid that, we do not do `castColumnAccurateOrNull` for Tuple types.
-        auto target_type_without_nullable = removeNullable(data_types[i]);
+        const DataTypePtr type_to_convert_to = getTypeToConvertKeyTo(data_types[i], column_to_cast.type);
+        auto target_type_without_nullable = removeNullable(type_to_convert_to);
         bool is_tuple_type = typeid_cast<const DataTypeTuple *>(target_type_without_nullable.get()) != nullptr;
 
         bool use_cast_accurate_or_null = !transform_null_in && data_types[i]->canBeInsideNullable() && !is_tuple_type;
@@ -798,7 +815,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
         if (use_cast_accurate_or_null)
         {
-            result = castColumnAccurateOrNull(column_to_cast, data_types[i], cast_cache.get());
+            result = castColumnAccurateOrNull(column_to_cast, type_to_convert_to, cast_cache.get());
         }
         else
         {
@@ -881,12 +898,12 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
                 /// `Nullable`) still needs the source NULLs kept away from the strict cast.
                 auto nested_type = assert_cast<const DataTypeNullable &>(*column_to_cast.type).getNestedType();
                 const auto & column_nullable = assert_cast<const ColumnNullable &>(*column_to_cast.column);
-                result = castColumnAccurate(ColumnWithTypeAndName(column_nullable.getNestedColumnPtr(), nested_type, column_to_cast.name), data_types[i], cast_cache.get());
+                result = castColumnAccurate(ColumnWithTypeAndName(column_nullable.getNestedColumnPtr(), nested_type, column_to_cast.name), type_to_convert_to, cast_cache.get());
                 add_non_member_rows(column_nullable.getNullMapColumnPtr());
             }
             else
             {
-                result = castColumnAccurate(column_to_cast, data_types[i], cast_cache.get());
+                result = castColumnAccurate(column_to_cast, type_to_convert_to, cast_cache.get());
             }
         }
 
