@@ -21,6 +21,7 @@
 #include <Storages/MergeTree/MergeTreeCommittingBlock.h>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsLock.h>
+#include <Storages/MergeTree/PartitionIds.h>
 
 #include <Disks/StoragePolicy.h>
 #include <Common/SimpleIncrement.h>
@@ -126,6 +127,11 @@ public:
     bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) override;
 
     std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
+    Strings getMutationsWithLegacyPartitionScope() const override;
+
+    /// True if no active part, including patch parts still in use, has a data version below `version`.
+    /// Used by `MergeTreeMutationEntry` while the mutations are loaded.
+    bool areAllPartsMutatedTo(Int64 version) const;
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
@@ -163,6 +169,12 @@ private:
     std::map<std::string, std::string> current_parts_postpone_reasons;
 
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
+
+    /// Files of legacy mutations (see `MergeTreeMutationEntry::needs_file_upgrade`) which were removed
+    /// from `current_mutations_by_version` but are not deleted from disk yet. A file stays here if its
+    /// deletion failed, because the next load of the table still reads it (see `getMutationsWithLegacyPartitionScope`).
+    /// Protected by `currently_processing_in_background_mutex`.
+    std::set<String> legacy_mutation_files_pending_removal;
 
     /// Unfinished mutations that are required for AlterConversions.
     MutationCounters mutation_counters;
@@ -268,6 +280,14 @@ private:
     friend class MergeTreeMergePredicate;
     friend struct PlainCommittingBlockHolder;
 
+    /// Requires currently_processing_in_background_mutex to be held.
+    std::map<std::string, MutationCommands> getUnfinishedMutationCommandsUnlocked(std::lock_guard<std::mutex> & /*lock*/) const;
+
+    bool mutationVersionsEquivalent(
+        const MergeTreePartInfo & left,
+        const MergeTreePartInfo & right,
+        std::unique_lock<std::mutex> & lock) const;
+
     std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> selectPartsToMerge(
         const StorageMetadataPtr & metadata_snapshot,
         bool aggressive,
@@ -286,11 +306,11 @@ private:
     /// Returns a lock for lightweight update according to the update_parallel_mode setting
     std::unique_ptr<PlainLightweightUpdateLock> getLockForLightweightUpdate(const MutationCommands & commands, const ContextPtr & local_context);
 
-    /// For current mutations queue, returns maximum version of mutation for a part,
+    /// For current mutations queue, returns next version of mutation for a part,
     /// with respect of mutations which would not change it.
+    /// Mutations that do not affect the given partition are skipped.
     /// Returns 0 if there is no such mutation in active status.
-    UInt64 getCurrentMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
-    UInt64 getNextMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
+    UInt64 getNextMutationVersion(const String & partition_id, UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
     /// A merge writes its result with the column names of the current metadata, so it materializes
     /// every pending metadata mutation (`RENAME COLUMN`, `DROP COLUMN`) by itself. Returns the
@@ -321,6 +341,8 @@ private:
     size_t markFinishedMutations(UInt64 first_just_completed_version = std::numeric_limits<UInt64>::max());
 
     size_t clearOldMutations(bool truncate = false);
+    /// Delete the file of a mutation already removed from `current_mutations_by_version`.
+    void removeMutationFile(MergeTreeMutationEntry & entry);
 
     /// Delete irrelevant parts from memory and disk.
     /// If 'force' - don't wait for old_parts_lifetime.
@@ -486,11 +508,21 @@ private:
 
     struct MutationsSnapshot final : public MutationsSnapshotBase
     {
-        using MutationsByVersion = std::map<UInt64, std::shared_ptr<const MutationCommands>>;
+        struct MutationSnapshotEntry
+        {
+            std::shared_ptr<const MutationCommands> commands;
+            PartitionIds partition_ids;
+        };
+
+        using MutationsByVersion = std::map<UInt64, MutationSnapshotEntry>;
         MutationsByVersion mutations_by_version;
 
         MutationsSnapshot() = default;
-        MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByVersion mutations_snapshot, DataPartsVector patches_);
+        MutationsSnapshot(
+            Params params_,
+            MutationCounters counters_,
+            MutationsByVersion mutations_snapshot,
+            DataPartsVector patches_);
 
         MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
         std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
