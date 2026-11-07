@@ -326,12 +326,13 @@ void ThreadStatus::publishUntrackedMemory()
 
 namespace
 {
-thread_local bool query_cancellation_blocked = false;
+constinit FiberLocal<bool, FiberLocalSlot::QUERY_CANCELLATION_BLOCKED> query_cancellation_blocked;
 }
 
 ThreadStatus::QueryCancellationBlocker::QueryCancellationBlocker()
-    : previous(std::exchange(query_cancellation_blocked, true))
+    : previous(query_cancellation_blocked)
 {
+    query_cancellation_blocked = true;
 }
 
 ThreadStatus::QueryCancellationBlocker::~QueryCancellationBlocker()

@@ -11,9 +11,13 @@
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 
 #include <IO/ReadSettings.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
+#include <Common/FiberLocal.h>
 
 #include <algorithm>
+#include <exception>
 
 #include <base/unaligned.h>
 
@@ -29,6 +33,11 @@
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char unique_key_sst_before_read[];
+}
 
 namespace ErrorCodes
 {
@@ -48,6 +57,46 @@ namespace ErrorCodes
 
 namespace
 {
+    /// RocksDB must unwind through its status API. Keep the original exception
+    /// per synchronous call, including concurrent calls sharing an SST reader.
+    class SSTReadExceptionScope
+    {
+    public:
+        SSTReadExceptionScope() : previous(current)
+        {
+            current = &exception;
+        }
+
+        ~SSTReadExceptionScope()
+        {
+            current = previous;
+        }
+
+        SSTReadExceptionScope(const SSTReadExceptionScope &) = delete;
+        SSTReadExceptionScope & operator=(const SSTReadExceptionScope &) = delete;
+
+        static void capture() noexcept
+        {
+            auto * target = static_cast<std::exception_ptr *>(current);
+            chassert(target);
+            if (!*target)
+                *target = std::current_exception();
+        }
+
+        void rethrowCancellation() const
+        {
+            if (exception && CurrentThread::isQueryCancellationException(exception))
+                std::rethrow_exception(exception);
+        }
+
+    private:
+        static constinit FiberLocal<std::exception_ptr *, FiberLocalSlot::UNIQUE_KEY_SST_READ_EXCEPTION> current;
+        std::exception_ptr exception;
+        std::exception_ptr * previous;
+    };
+
+    constinit FiberLocal<std::exception_ptr *, FiberLocalSlot::UNIQUE_KEY_SST_READ_EXCEPTION> SSTReadExceptionScope::current;
+
     /// Decode the 4-byte big-endian row number written by `SSTIndexWriter`
     /// (`encodeRowNumberBE`), widened to UInt64 (== `_part_offset`). The writer
     /// always emits exactly 4 bytes; any other size is a corrupt or
@@ -94,12 +143,14 @@ namespace
                 }
                 n = std::min(n, static_cast<size_t>(file_size - offset));
 
+                FailPointInjection::pauseFailPoint(FailPoints::unique_key_sst_before_read);
                 size_t bytes_read = buffer->readBigAt(scratch, n, offset, {});
                 *result = rocksdb::Slice(scratch, bytes_read);
                 return rocksdb::IOStatus::OK();
             }
             catch (...)
             {
+                SSTReadExceptionScope::capture();
                 return rocksdb::IOStatus::IOError(getCurrentExceptionMessage(/*with_stacktrace=*/false));
             }
         }
@@ -153,6 +204,7 @@ namespace
             }
             catch (...)
             {
+                SSTReadExceptionScope::capture();
                 return rocksdb::IOStatus::IOError(getCurrentExceptionMessage(/*with_stacktrace=*/false));
             }
         }
@@ -168,6 +220,7 @@ namespace
             }
             catch (...)
             {
+                SSTReadExceptionScope::capture();
                 return rocksdb::IOStatus::IOError(getCurrentExceptionMessage(/*with_stacktrace=*/false));
             }
         }
@@ -185,6 +238,7 @@ namespace
             }
             catch (...)
             {
+                SSTReadExceptionScope::capture();
                 return rocksdb::IOStatus::IOError(getCurrentExceptionMessage(/*with_stacktrace=*/false));
             }
         }
@@ -235,6 +289,7 @@ namespace
 
 SSTFileReader::SSTFileReader(const DataPartStoragePtr & storage, const String & sst_file_name, const ReadSettings & read_settings)
 {
+    SSTReadExceptionScope exceptions;
     sst_env = rocksdb::NewCompositeEnv(std::make_shared<ReadBufferFileSystem>(storage, read_settings));
 
     /// Bloom policy must match `SSTIndexWriter`.
@@ -248,6 +303,8 @@ SSTFileReader::SSTFileReader(const DataPartStoragePtr & storage, const String & 
 
     auto reader = std::make_unique<rocksdb::SstFileReader>(options);
     auto status = reader->Open(sst_file_name);
+    status.PermitUncheckedError();
+    exceptions.rethrowCancellation();
     if (!status.ok())
         /// A corruption means the file itself is damaged, so a caller may rebuild
         /// it; any other failure may be transient and the file must be kept.
@@ -271,7 +328,11 @@ std::vector<rocksdb::Status> SSTFileReader::multiGet(
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "UNIQUE KEY SST MultiGet called with {} keys, cap is {}", keys.size(), PROBE_BATCH_SIZE);
 
+    SSTReadExceptionScope exceptions;
     auto statuses = index_reader->MultiGet(rocksdb::ReadOptions(), keys, &values_out);
+    for (const auto & status : statuses)
+        status.PermitUncheckedError();
+    exceptions.rethrowCancellation();
     if (statuses.size() != keys.size() || values_out.size() != keys.size())
         throw Exception(ErrorCodes::ROCKSDB_ERROR,
             "UNIQUE KEY SST MultiGet returned {} statuses / {} values for {} keys",
@@ -293,7 +354,11 @@ std::shared_ptr<const rocksdb::TableProperties> SSTFileReader::getProperties() c
 
 rocksdb::Status SSTFileReader::verifyChecksum() const
 {
-    return index_reader->VerifyChecksum();
+    SSTReadExceptionScope exceptions;
+    auto status = index_reader->VerifyChecksum();
+    status.PermitUncheckedError();
+    exceptions.rethrowCancellation();
+    return status;
 }
 
 SSTFileReaderPtr openSSTReaderFromStorage(

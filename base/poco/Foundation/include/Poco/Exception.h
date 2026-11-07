@@ -19,6 +19,7 @@
 
 
 #include <exception>
+#include <cstdint>
 #include "Poco/Foundation.h"
 
 
@@ -78,6 +79,13 @@ public:
     int code() const;
     /// Returns the exception code if defined.
 
+    /// Identifies the originating exception, including copies made by `clone` or `rethrow`.
+    /// Independent exceptions with the same code and message have different origins.
+    std::uint64_t origin() const
+    {
+        return _origin;
+    }
+
     void resetCode(int code);
 
     virtual std::string displayText() const;
@@ -108,9 +116,12 @@ protected:
     /// Sets the extended message for the exception.
 
 private:
+    static std::uint64_t nextOrigin();
+
     std::string _msg;
     Exception * _pNested;
     int _code;
+    std::uint64_t _origin = nextOrigin();
 };
 
 
