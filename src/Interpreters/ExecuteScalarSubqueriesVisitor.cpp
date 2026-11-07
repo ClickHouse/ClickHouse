@@ -5,6 +5,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -290,7 +291,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                                         "Scalar subquery returned empty result of type {} which cannot be Nullable",
                                         type->getName());
 
-                    type = makeNullable(type);
+                    type = makeNullable(removeSimpleAggregateFunction(type));
                 }
 
                 ASTPtr ast_new = make_intrusive<ASTLiteral>(Null());
@@ -335,7 +336,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
             /// In case of many columns, do not check it cause tuple can't be nullable.
             if (!column.type->isNullable() && column.type->canBeInsideNullable())
             {
-                column.type = makeNullable(column.type);
+                column.type = makeNullable(removeSimpleAggregateFunction(column.type));
                 column.column = makeNullable(column.column);
             }
             scalar = block;

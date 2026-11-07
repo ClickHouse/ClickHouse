@@ -3,6 +3,7 @@
 
 #if USE_ARROW || USE_PARQUET
 
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -2703,7 +2704,8 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
             return {};
 
         auto nullmap_column = readByteMapFromArrowColumn(arrow_column, column_name);
-        auto nullable_type = std::make_shared<DataTypeNullable>(std::move(nested_column.type));
+        /// The hint keeps its custom name, which the opaque tag check needs, but `Nullable` cannot wrap it.
+        auto nullable_type = std::make_shared<DataTypeNullable>(removeSimpleAggregateFunction(nested_column.type));
         auto nullable_column = ColumnNullable::create(nested_column.column, nullmap_column);
 
         return {std::move(nullable_column), std::move(nullable_type), column_name};
