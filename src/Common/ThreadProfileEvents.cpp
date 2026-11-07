@@ -440,6 +440,7 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
         int & fd = thread_events_descriptors_holder.descriptors[i];
         // disable by default to add as little extra time as possible
         fd = openPerfEventDisabled(perf_event_paranoid, has_cap_sys_admin, event_info.event_type, event_info.event_config);
+        previous_values[i] = PerfEventValue{};
 
         if (fd == -1 && errno != ENOENT)
         {
