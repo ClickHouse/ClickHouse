@@ -67,7 +67,7 @@ CREATE TABLE ${DB_LAZY}.t_alias ENGINE = Alias('${DB_LAZY}', 't_lake');
 CREATE TABLE ${DB_LAZY}.t_writer ENGINE = IcebergLocal('${DIR_LAZY}', 'Parquet');
 DETACH DATABASE ${DB_LAZY};
 ATTACH DATABASE ${DB_LAZY};
-SELECT 'lazy', engine FROM system.tables WHERE database = '${DB_LAZY}' AND name = 't_lake';
+SELECT 'lazy', engine, is_loaded FROM system.tables WHERE database = '${DB_LAZY}' AND name = 't_lake';
 
 INSERT INTO ${DB_LAZY}.t_lake SELECT number + 100 FROM numbers(10);
 SELECT 'lazy merge()', count(), sum(k) FROM merge('${DB_LAZY}', '^t_lake\$');

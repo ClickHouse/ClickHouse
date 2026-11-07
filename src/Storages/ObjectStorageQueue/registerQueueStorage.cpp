@@ -202,6 +202,8 @@ void registerStorageS3Queue(StorageFactory & factory)
         {
             .supports_settings = true,
             .supports_schema_inference = true,
+            .supports_deferred_load = true,
+            .defers_only_without_dependent_views = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
             .get_export_access_fn = getS3QueueMoveDestinationAccess,
@@ -810,6 +812,8 @@ void registerStorageAzureQueue(StorageFactory & factory)
         {
             .supports_settings = true,
             .supports_schema_inference = true,
+            .supports_deferred_load = true,
+            .defers_only_without_dependent_views = true,
             .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
             .get_export_access_fn = getAzureQueueMoveDestinationAccess,

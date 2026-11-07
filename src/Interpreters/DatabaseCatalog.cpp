@@ -1701,7 +1701,7 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
 
     /// It's unsafe to create another instance while the old one exists
     /// We cannot wait on shared_ptr's refcount, so it's busy wait
-    while (!isSharedPtrUnique(dropped_table.table))
+    while (!isTableUnused(dropped_table.table))
     {
         if (throw_if_cancelled)
             throw_if_cancelled(); /// throws QUERY_WAS_CANCELLED if the query has been killed
@@ -1733,7 +1733,7 @@ std::tuple<size_t, size_t> DatabaseCatalog::getDroppedTablesCountAndInuseCount()
     size_t in_use_count = 0;
     for (const auto & item : tables_marked_dropped)
     {
-        bool in_use = item.table && !isSharedPtrUnique(item.table);
+        bool in_use = item.table && !isTableUnused(item.table);
         in_use_count += in_use;
     }
     return {tables_marked_dropped.size(), in_use_count};
@@ -1758,7 +1758,7 @@ DatabaseCatalog::TablesMarkedAsDropped DatabaseCatalog::getTablesToDrop()
 
     for (auto it = tables_marked_dropped.begin(); it != tables_marked_dropped.end();)
     {
-        bool in_use = it->table && !isSharedPtrUnique(it->table);
+        bool in_use = it->table && !isTableUnused(it->table);
         bool old_enough = it->drop_time <= current_time;
         if (!in_use && old_enough)
         {
@@ -2764,6 +2764,42 @@ bool TableNameHints::isHintNameVisible(const String & name) const
     }
 
     return false;
+}
+
+
+void loadTableIfLazy(const StorageID & table_id, ContextPtr context, AccessType access)
+{
+    /// Only a local database defers loading, and looking a table up in a remote one costs a round trip.
+    if (DatabaseCatalog::instance().isRemoteDatabase(table_id.database_name))
+        return;
+
+    auto table = DatabaseCatalog::instance().tryGetTable(table_id, context);
+    if (!table)
+        return;
+
+    const auto access_rights = context->getAccess();
+    if (!access_rights->isGranted(access, table_id.database_name, table_id.table_name))
+    {
+        /// A column-level right such as `SHOW_COLUMNS` can be granted for some columns only, and the user then
+        /// sees those columns, so one of them is enough. The stand-in knows the columns without being loaded.
+        if (!AccessFlags::allFlagsGrantableOnColumnLevel().contains(AccessFlags(access)))
+            return;
+
+        const auto metadata = table->getInMemoryMetadataPtr(context, false);
+        bool any_column_granted = false;
+        for (const auto & column : metadata->getColumns())
+        {
+            if (access_rights->isGranted(access, table_id.database_name, table_id.table_name, column.name))
+            {
+                any_column_granted = true;
+                break;
+            }
+        }
+        if (!any_column_granted)
+            return;
+    }
+
+    resolveStorageProxyLoading(table);
 }
 
 }

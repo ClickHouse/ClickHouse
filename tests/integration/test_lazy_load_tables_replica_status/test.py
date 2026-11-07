@@ -66,9 +66,9 @@ def test_lazy_loaded_replica_is_not_reported_up_to_date(started_cluster):
     node_lazy.start_clickhouse()
     assert (
         node_lazy.query(
-            "SELECT engine FROM system.tables WHERE database = 'repl' AND name = 't'"
+            "SELECT is_loaded FROM system.tables WHERE database = 'repl' AND name = 't'"
         ).strip()
-        == "TableProxy"
+        == "0"
     )
 
     # Keep it from catching up, so its delay is real for the whole test.
@@ -146,9 +146,9 @@ def test_lazy_loaded_local_replica_is_not_reported_up_to_date(started_cluster):
     def assert_stand_in():
         assert (
             node_lazy.query(
-                "SELECT engine FROM system.tables WHERE database = 'repl_local' AND name = 't'"
+                "SELECT is_loaded FROM system.tables WHERE database = 'repl_local' AND name = 't'"
             ).strip()
-            == "TableProxy"
+            == "0"
         )
 
     assert_stand_in()

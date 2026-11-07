@@ -2,7 +2,10 @@
 
 #include <functional>
 
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/StorageProxy.h>
+#include <base/isSharedPtrUnique.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
@@ -16,9 +19,13 @@ namespace DB
 class StorageTableProxy final : public StorageProxy
 {
 public:
-    StorageTableProxy(const StorageID & table_id_, std::function<StoragePtr()> get_nested_, ColumnsDescription cached_columns)
+    StorageTableProxy(
+        const StorageID & table_id_, std::function<StoragePtr()> get_nested_, ColumnsDescription cached_columns, String engine_name_)
         : StorageProxy(table_id_)
         , get_nested(std::move(get_nested_))
+        , engine_name(std::move(engine_name_))
+        , stores_data_on_disk(engineStoresDataOnDisk(engine_name))
+        , supports_replication(engineSupportsReplication(engine_name))
         , log(getLogger("StorageTableProxy (" + table_id_.getFullTableName() + ")"))
     {
         StorageInMemoryMetadata cached_metadata;
@@ -26,12 +33,14 @@ public:
         setInMemoryMetadata(cached_metadata);
     }
 
+    /// The proxy is an implementation detail, so report the engine from the `CREATE` query until
+    /// the real storage can answer for itself.
     std::string getName() const override
     {
         std::lock_guard lock{nested_mutex};
         if (nested)
             return nested->getName();
-        return "TableProxy";
+        return engine_name;
     }
 
     /// Same forwarding as `getInMemoryMetadataPtr` below, for the same reason: the proxy's own
@@ -70,6 +79,12 @@ public:
 
     bool isLazyStandIn() const override { return true; }
 
+    bool isNestedInUse() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested && !isSharedPtrUnique(nested);
+    }
+
     StoragePtr getNested() const override
     {
         std::lock_guard lock{nested_mutex};
@@ -78,7 +93,8 @@ public:
 
         LOG_TRACE(log, "Loading lazy table on first access");
 
-        auto nested_storage = get_nested();
+        /// A storage built for a `DROP` that did not go through is started and used from here on.
+        auto nested_storage = built_for_drop ? std::exchange(built_for_drop, nullptr) : get_nested();
         nested_storage->startup();
         nested_storage->renameInMemory(getStorageID());
         nested = nested_storage;
@@ -86,11 +102,72 @@ public:
         return nested;
     }
 
-    bool storesDataOnDisk() const override { return true; }
+    /// Answered from the engine while the storage does not exist, like `getName`.
+    bool storesDataOnDisk() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested ? nested->storesDataOnDisk() : stores_data_on_disk;
+    }
+
     /// Report the restrictive answer instead of loading the nested table just to inspect its on-disk data.
-    bool hasUnreplicatedTableDataOnDisk() const override { return true; }
-    StoragePolicyPtr getStoragePolicy() const override { return nullptr; }
+    bool hasUnreplicatedTableDataOnDisk() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested ? nested->hasUnreplicatedTableDataOnDisk() : true;
+    }
+
     bool isView() const override { return false; }
+
+    void cancelBackgroundActivity() override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            nested->cancelBackgroundActivity();
+    }
+
+    /// Nothing runs in a table that was never started, like in a table created after a global `SYSTEM STOP`.
+    ActionLock getActionLock(StorageActionBlockType action_type) override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested ? nested->getActionLock(action_type) : ActionLock{};
+    }
+
+    /// Nothing was locked in a table that was never started, but a loaded one has to resume its background work.
+    void onActionLockRemove(StorageActionBlockType action_type) override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            nested->onActionLockRemove(action_type);
+    }
+
+    /// The answers that exist only once the storage does. An observer that walks every table gets
+    /// the empty answer rather than loading one.
+    template <typename Ask>
+    auto answerIfLoaded(Ask && ask) const
+    {
+        std::lock_guard lock{nested_mutex};
+        using Answer = decltype(ask(*nested));
+        return nested ? ask(*nested) : Answer{};
+    }
+
+    /// `system.tables` reads these, so answering must not load the table. While the storage does not
+    /// exist they are answered from the `CREATE` query, like `getName`, or reported as unknown.
+    StoragePolicyPtr getStoragePolicy() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested ? nested->getStoragePolicy() : nullptr;
+    }
+
+    Strings getDataPaths() const override
+    {
+        return answerIfLoaded([](const IStorage & storage) { return storage.getDataPaths(); });
+    }
+
+    bool supportsReplication() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested ? nested->supportsReplication() : supports_replication;
+    }
 
     /// Startup is deferred until first access via `getNested`.
     void startup() override { }
@@ -109,6 +186,14 @@ public:
             nested->flushAndPrepareForShutdown();
     }
 
+    /// `DROP` drops the inner tables a storage owns through this, before the storage itself.
+    void dropInnerTableIfAny(bool sync, ContextPtr local_context) override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (auto storage = tryGetNestedForDrop())
+            storage->dropInnerTableIfAny(sync, local_context);
+    }
+
     void drop() override
     {
         std::lock_guard lock{nested_mutex};
@@ -119,24 +204,20 @@ public:
             return;
         }
 
+        auto storage = tryGetNestedForDrop();
+        if (!storage)
+        {
+            LOG_WARNING(log, "Cannot load table for drop, data cleanup will be handled by the database engine");
+            return;
+        }
+
         try
         {
-            LOG_TRACE(log, "Loading table for drop without startup");
-
-            if (!get_nested)
-            {
-                LOG_WARNING(log, "Cannot load table for drop, data cleanup will be handled by the database engine");
-                return;
-            }
-
-            auto nested_storage = get_nested();
-            nested_storage->drop();
-            get_nested = {};
+            storage->drop();
         }
         catch (...)
         {
-            LOG_WARNING(log, "Failed to load table for drop: {}. "
-                             "Data cleanup will be handled by the database engine.",
+            LOG_WARNING(log, "Failed to drop table: {}. Data cleanup will be handled by the database engine.",
                         getCurrentExceptionMessage(false));
         }
     }
@@ -197,40 +278,107 @@ public:
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override
     {
+        return answerIfLoaded([&](const IStorage & storage) { return storage.totalRows(query_context); });
+    }
+
+    std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG & filter, ContextPtr query_context) const override
+    {
+        return answerIfLoaded([&](const IStorage & storage) { return storage.totalRowsByPartitionPredicate(filter, query_context); });
+    }
+
+    std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override
+    {
+        return answerIfLoaded([&](const IStorage & storage) { return storage.totalBytesUncompressed(settings); });
+    }
+
+    /// `system.data_skipping_indices` and `system.columns` ask every table for these, so answering
+    /// must not load one.
+    IndexSizeByName getSecondaryIndexSizes() const override
+    {
+        return answerIfLoaded([](const IStorage & storage) { return storage.getSecondaryIndexSizes(); });
+    }
+
+    ColumnSizeByName getColumnSizes() const override
+    {
+        return answerIfLoaded([](const IStorage & storage) { return storage.getColumnSizes(); });
+    }
+
+    ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override
+    {
+        return answerIfLoaded([&](const IStorage & storage) { return storage.getColumnSizes(columns, calculate_subcolumn_sizes); });
+    }
+
+    SerializationInfoByName getSerializationHints() const override
+    {
         std::lock_guard lock{nested_mutex};
         if (nested)
-            return nested->totalRows(query_context);
-        return std::nullopt;
+            return nested->getSerializationHints();
+        return SerializationInfoByName{{}};
     }
 
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->totalBytes(query_context);
-        return std::nullopt;
+        return answerIfLoaded([&](const IStorage & storage) { return storage.totalBytes(query_context); });
     }
 
     std::optional<UInt64> lifetimeRows() const override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->lifetimeRows();
-        return std::nullopt;
+        return answerIfLoaded([](const IStorage & storage) { return storage.lifetimeRows(); });
     }
 
     std::optional<UInt64> lifetimeBytes() const override
     {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->lifetimeBytes();
-        return std::nullopt;
+        return answerIfLoaded([](const IStorage & storage) { return storage.lifetimeBytes(); });
     }
 
 private:
+    static bool engineStoresDataOnDisk(const String & engine_name_)
+    {
+        const auto * features = StorageFactory::instance().tryGetStorageFeatures(engine_name_);
+        return features && features->stores_data_on_disk;
+    }
+
+    /// The replicated MergeTree engines are registered with `supports_replication`. A data lake engine replicates
+    /// as well, since its data is shared (`StorageObjectStorage::supportsReplication`), but it is not registered so,
+    /// and is recognized by the settings it declares instead. This is what the storage says once it exists.
+    static bool engineSupportsReplication(const String & engine_name_)
+    {
+        const auto * features = StorageFactory::instance().tryGetStorageFeatures(engine_name_);
+        return features
+            && (features->supports_replication || features->has_builtin_setting_fn == &DataLakeStorageSettings::hasBuiltin);
+    }
+
+    /// The storage of a table that was never loaded, built without startup for `DROP` and kept so that
+    /// `dropInnerTableIfAny` and `drop` work on the same one. Null when it cannot be built.
+    StoragePtr tryGetNestedForDrop()
+    {
+        if (nested)
+            return nested;
+
+        if (!built_for_drop && get_nested)
+        {
+            try
+            {
+                LOG_TRACE(log, "Loading table for drop without startup");
+                built_for_drop = get_nested();
+                get_nested = {};
+            }
+            catch (...)
+            {
+                LOG_WARNING(log, "Failed to load table for drop: {}. Data cleanup will be handled by the database engine.",
+                            getCurrentExceptionMessage(false));
+            }
+        }
+        return built_for_drop;
+    }
+
     mutable std::recursive_mutex nested_mutex; /// Guards both `get_nested` and `nested`.
     mutable std::function<StoragePtr()> get_nested; /// Factory that creates the real storage. Cleared after first use.
+    const String engine_name; /// Engine from the `CREATE` query, reported until the real storage exists.
+    const bool stores_data_on_disk; /// What the engine keeps its data on, reported until the real storage exists.
+    const bool supports_replication; /// Whether the engine replicates, reported until the real storage exists.
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
+    mutable StoragePtr built_for_drop; /// Built without startup for `DROP`, see `tryGetNestedForDrop`.
     LoggerPtr log;
 };
 

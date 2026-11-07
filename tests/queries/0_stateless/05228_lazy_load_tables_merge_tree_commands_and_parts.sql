@@ -18,7 +18,7 @@ DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
-SELECT 'stand-in', engine FROM system.tables WHERE database = currentDatabase() AND name = 't';
+SELECT 'stand-in', engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 't';
 -- Reading a system table only inspects tables and must not load them.
 SELECT 'in system.parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't';
 SELECT 'in system.parts_columns', count() FROM system.parts_columns WHERE database = currentDatabase() AND table = 't';
@@ -27,7 +27,7 @@ SELECT 'in system.parts_columns', count() FROM system.parts_columns WHERE databa
 -- A `SYSTEM` command addressed to the table is an access to it, so it resolves the stand-in instead of
 -- refusing the table as not a `MergeTree` table.
 SYSTEM WAIT LOADING PARTS t;
-SELECT 'loaded', engine FROM system.tables WHERE database = currentDatabase() AND name = 't';
+SELECT 'loaded', engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 't';
 SELECT 'in system.parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't' AND active;
 SELECT 'in system.parts_columns', count() FROM system.parts_columns WHERE database = currentDatabase() AND table = 't' AND active;
 
@@ -36,14 +36,14 @@ ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
 SYSTEM LOAD PRIMARY KEY t;
-SELECT 'loaded', engine FROM system.tables WHERE database = currentDatabase() AND name = 't';
+SELECT 'loaded', engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 't';
 
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
 SYSTEM PREWARM MARK CACHE t;
-SELECT 'loaded', engine FROM system.tables WHERE database = currentDatabase() AND name = 't';
+SELECT 'loaded', engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 't';
 
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
@@ -51,6 +51,6 @@ USE {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- The table is resolved and recognized as `MergeTree`; the command is refused only for its selector.
 SYSTEM SYNC MERGES t; -- { serverError BAD_ARGUMENTS }
-SELECT 'loaded', engine FROM system.tables WHERE database = currentDatabase() AND name = 't';
+SELECT 'loaded', engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 't';
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

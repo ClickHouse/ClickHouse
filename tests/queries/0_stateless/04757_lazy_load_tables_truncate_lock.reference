@@ -1,6 +1,6 @@
-log	TableProxy
-mt	TableProxy
-rmt	TableProxy
+log	Log	0
+mt	MergeTree	0
+rmt	ReplicatedMergeTree	0
 A_lazy_mergetree blocked=0 rows_after=0
 B_lazy_replicated_mergetree blocked=0 rows_after=0
 C_plain_memory blocked=1 rows_after=300

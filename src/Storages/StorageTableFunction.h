@@ -3,6 +3,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/StorageProxy.h>
+#include <base/isSharedPtrUnique.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -38,8 +39,13 @@ public:
 
     StoragePtr tryGetNested() const override
     {
-        std::lock_guard lock{nested_mutex};
-        return nested;
+        return nestedIfResolved();
+    }
+
+    bool isNestedInUse() const override
+    {
+        std::lock_guard lock{resolved_nested_mutex};
+        return nested && !isSharedPtrUnique(nested);
     }
 
     StoragePtr getNestedImpl() const
@@ -51,7 +57,10 @@ public:
         auto nested_storage = get_nested();
         nested_storage->startup();
         nested_storage->renameInMemory(getStorageID());
-        nested = nested_storage;
+        {
+            std::lock_guard resolved_lock{resolved_nested_mutex};
+            nested = nested_storage;
+        }
         get_nested = {};
         return nested;
     }
@@ -72,6 +81,37 @@ public:
     /// Reported by the table function itself, so that the check does not execute it.
     bool hasUnreplicatedTableDataOnDisk() const override { return has_unreplicated_table_data_on_disk; }
     bool supportsReplication() const override { return false; }
+
+    /// `RENAME` calls this with the database mutex held, and resolving a table function there can look up
+    /// a table in the same database (`view` analyzes its query) and deadlock. No storage a table function
+    /// yields restricts a rename, so an unresolved one has nothing to check.
+    void checkTableCanBeRenamed(const StorageID & new_name) const override
+    {
+        if (auto storage = nestedIfResolved())
+            storage->checkTableCanBeRenamed(new_name);
+    }
+    void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override
+    {
+        if (auto storage = nestedIfResolved())
+            storage->checkTableCanBeRenamedByDatabaseRename(new_database_name);
+    }
+
+    /// A table defined from a table function keeps no data of its own, so `BACKUP` and `RESTORE` store and recreate only
+    /// its definition. Forwarding these would run the table function, which fails while its source is missing.
+    void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const override
+    {
+        IStorage::applyMetadataChangesToCreateQueryForBackup(create_query); // NOLINT(bugprone-parent-virtual-call)
+    }
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
+    {
+        IStorage::backupData(backup_entries_collector, data_path_in_backup, partitions); // NOLINT(bugprone-parent-virtual-call)
+    }
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
+    {
+        IStorage::restoreDataFromBackup(restorer, data_path_in_backup, partitions); // NOLINT(bugprone-parent-virtual-call)
+    }
+    bool supportsBackupPartition() const override { return false; }
+    void finalizeRestoreFromBackup() override {}
 
     /// A table function that has not been resolved yet holds no data and has started no background
     /// activity, so size and lock queries have a correct answer that does not require resolving it.
@@ -296,13 +336,20 @@ private:
     /// The nested storage if the table function has already been resolved, otherwise null.
     /// Never forward while holding `nested_mutex`: a nested size query can read remote metadata,
     /// and every read and write of this table takes the same mutex.
+    /// Takes only `resolved_nested_mutex`, not `nested_mutex`: callers may hold the database mutex
+    /// (`RENAME` does), while `getNestedImpl` holds `nested_mutex` when the table function looks up
+    /// a table in the same database (`view` analyzes its query), so taking it here inverts the lock order.
     StoragePtr nestedIfResolved() const
     {
-        std::lock_guard lock{nested_mutex};
+        std::lock_guard lock{resolved_nested_mutex};
         return nested;
     }
 
+    /// Serializes resolving the table function and the operations on the nested storage.
     mutable std::recursive_mutex nested_mutex;
+    /// Guards `nested` for readers that must not wait for the resolution. A leaf mutex: nothing is
+    /// acquired or called while holding it. `nested` is written while holding both mutexes.
+    mutable std::mutex resolved_nested_mutex;
     mutable GetNestedStorageFunc get_nested;
     mutable StoragePtr nested;
     const bool add_conversion;
