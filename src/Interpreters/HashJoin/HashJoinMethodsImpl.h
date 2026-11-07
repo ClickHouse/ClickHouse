@@ -552,7 +552,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
     {
         /// Several clauses have no required right keys (see the `HashJoin` constructor), and the probe never
         /// scatters a block, so only these copies can run.
-        if constexpr (need_filter == join_features.need_filter)
+        if constexpr (need_filter == join_features.need_filter && !join_features.one_clause_only)
         {
             if (selector.isContinuousRange())
             {
@@ -607,9 +607,9 @@ template <
     typename AddedColumns>
 requires SetJoinMaps<MapsTemplate>
 void processMatch(
-    const typename KeyGetter::FindResult &,
+    [[maybe_unused]] const typename KeyGetter::FindResult & find_result,
     [[maybe_unused]] AddedColumns & added_columns,
-    JoinStuff::JoinUsedFlags &,
+    [[maybe_unused]] JoinStuff::JoinUsedFlags & used_flags,
     [[maybe_unused]] size_t i,
     size_t,
     IColumn::Offset &,
@@ -618,11 +618,20 @@ void processMatch(
 {
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
     static_assert(
-        join_features.left && (join_features.is_semi_join || join_features.is_anti_join),
-        "A set map is only chosen for LEFT SEMI and LEFT ANTI");
+        (join_features.left && (join_features.is_semi_join || join_features.is_anti_join))
+            || (join_features.inner && join_features.is_any_join),
+        "A set map is only chosen for LEFT SEMI, LEFT ANTI and INNER ANY");
 
     if constexpr (join_features.is_semi_join)
+    {
         setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
+    }
+    else if constexpr (join_features.inner)
+    {
+        /// Only the first left row of a key is emitted. A set map has one disjunct, so the key is marked, not the row.
+        if (used_flags.template setUsedOnce<join_features.need_flags, /*flag_per_row=*/ false>(find_result))
+            setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
+    }
 }
 
 template <

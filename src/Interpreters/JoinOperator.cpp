@@ -31,6 +31,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace Setting
@@ -608,7 +609,7 @@ static void serializeNodeList(WriteBuffer & out, const std::unordered_map<const 
     }
 }
 
-void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag) const
+void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag, UInt64 step_version) const
 {
     auto node_to_id = actions_dag->getNodeToIdMap();
     serializeNodeList(out, node_to_id, expression);
@@ -617,6 +618,16 @@ void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag) 
     serializeJoinKind(kind, out);
     serializeJoinStrictness(strictness, out);
     serializeJoinLocality(locality, out);
+
+    if (step_version == 0 && set_operation != JoinSetOperation::None)
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Serializing the join of `{}` requires query plan serialization version >= {}",
+            toString(set_operation),
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_OPERATION_AS_JOIN);
+
+    if (step_version >= 1)
+        serializeJoinSetOperation(set_operation, out);
 }
 
 static std::vector<JoinActionRef> deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node, JoinExpressionActions & expression_actions)
@@ -641,7 +652,7 @@ static std::vector<JoinActionRef> deserializeNodeList(ReadBuffer & in, const Act
     return result;
 }
 
-JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions)
+JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions, UInt64 step_version)
 {
     auto id_to_node = expression_actions.getActionsDAG()->getIdToNode();
     auto actions = deserializeNodeList(in, id_to_node, expression_actions);
@@ -655,13 +666,17 @@ JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & 
     result.expression = std::move(actions);
     result.residual_filter = std::move(residual_filter);
 
+    /// Version 1 of the `Join` step added the set operation.
+    if (step_version >= 1)
+        result.set_operation = deserializeJoinSetOperation(in);
+
     return result;
 }
 
 String JoinOperator::dump() const
 {
-    return fmt::format("JoinOperator(kind={}, strictness={}, locality={}, expression=[{}], residual_filter=[{}])",
-        toString(kind), toString(strictness), toString(locality),
+    return fmt::format("JoinOperator(kind={}, strictness={}{}, locality={}, expression=[{}], residual_filter=[{}])",
+        toString(kind), toString(strictness), set_operation == JoinSetOperation::None ? "" : fmt::format(", set_operation={}", toString(set_operation)), toString(locality),
         fmt::join(expression | std::views::transform(&JoinActionRef::dump), ", "),
         fmt::join(residual_filter | std::views::transform(&JoinActionRef::dump), ", "));
 }

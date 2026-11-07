@@ -51,7 +51,13 @@ SELECT 'join equality and <>:', countIf(explain LIKE '%Filter%(rows: ~2999999.0,
 -- estimate would fall back to 10% of the 600000000-row left input.
 SELECT 'intersect distinct bound:', countIf(explain LIKE '%Distinct%(rows: ~3000000.0%') > 0 FROM (
     EXPLAIN estimates = 1 SELECT count() FROM (SELECT k + v FROM t_filter_sel INTERSECT DISTINCT SELECT k FROM t_filter_dim)
-    SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1
+    SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1, rewrite_intersect_except_distinct_to_join = 0
+) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+
+-- Executed as a join, `INTERSECT DISTINCT` emits each key once and its `Distinct` passes the join's estimate through.
+SELECT 'intersect distinct as join:', countIf(explain LIKE '%Distinct%(rows: ~3000000.0%') > 0 FROM (
+    EXPLAIN estimates = 1 SELECT count() FROM (SELECT k + v FROM t_filter_sel INTERSECT DISTINCT SELECT k FROM t_filter_dim)
+    SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1, rewrite_intersect_except_distinct_to_join = 1
 ) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
 DROP TABLE t_filter_dim;

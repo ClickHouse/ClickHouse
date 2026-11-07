@@ -56,7 +56,8 @@ public:
 
     bool hasEquiKeys() const { return !equi_keys.empty(); }
     bool hasMultipleEquiKeys() const { return equi_keys.size() >= 2; }
-    bool isBroadcastSafe() const { return left_preserved; }
+    /// A set-operation join removes duplicates only among the rows it sees, so its left side must not be split.
+    bool isBroadcastSafe() const { return left_preserved && join_step.getJoinOperator().set_operation == JoinSetOperation::None; }
 
 private:
     /// `hash_type_name` is the least supertype both sides are cast to before hashing when

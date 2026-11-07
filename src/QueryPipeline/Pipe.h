@@ -86,6 +86,8 @@ public:
     void detachExtremes();
     OutputPort * getDetachedExtremesPort() const { return detached_extremes_port; }
     void attachExtremes(ProcessorPtr converting);
+    /// Takes the totals port out of the pipe without connecting it, the caller connects it.
+    OutputPort * detachTotalsPort();
 
     /// Add processor to list. It should have size() input ports with compatible header.
     /// Output ports should have same headers.

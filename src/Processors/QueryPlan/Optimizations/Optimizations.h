@@ -393,6 +393,9 @@ bool convertLogicalJoinToPhysical(
 
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 
+/// Skip the deduplication of the `DISTINCT` after `EXCEPT DISTINCT` executed as RIGHT ANTI. Needs the physical join.
+void skipDeduplicationAfterSetOperationJoin(QueryPlan::Node & node);
+
 /// Convert an OUTER join whose null-extended rows cannot survive above it, when the proof comes from
 /// arbitrarily higher in the plan (a filter, or the conditions of an enclosing INNER/SEMI join).
 /// This pass is complementary to `tryConvertOuterJoinToInnerJoin`, which only sees the filter directly

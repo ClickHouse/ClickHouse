@@ -196,6 +196,14 @@ bool DistinctStep::tryScatterStreams(QueryPipelineBuilder & pipeline) const
 
 void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
+    if (skip_deduplication)
+    {
+        if (settings.set_size_limits.max_rows)
+            pipeline.addTransform(std::make_shared<DistinctLimitsCheckingTransform>(
+                pipeline.getSharedHeader(), settings.set_size_limits, pipeline.getNumStreams(), /*input_is_distinct_=*/ true));
+        return;
+    }
+
     const size_t external_threshold = getMaxBytesBeforeExternalProcessing(
         settings.max_bytes_before_external_distinct,
         settings.max_bytes_ratio_before_external_distinct,
@@ -339,6 +347,8 @@ void DistinctStep::describeActions(FormatSettings & format_settings) const
         format_settings.out << prefix << "Skip stream merging: 1\n";
     if (preserve_input_order)
         format_settings.out << prefix << "Preserve input order: 1\n";
+    if (skip_deduplication)
+        format_settings.out << prefix << "Skip deduplication: 1\n";
 }
 
 void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -352,6 +362,8 @@ void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
         map.add("Skip stream merging", true);
     if (preserve_input_order)
         map.add("Preserve input order", true);
+    if (skip_deduplication)
+        map.add("Skip deduplication", true);
 }
 
 void DistinctStep::updateOutputHeader()
@@ -375,6 +387,12 @@ void DistinctStep::serialize(Serialization & ctx) const
 
     if (ctx.step_version >= 1 && !ctx.for_cache_key)
         writeBinary(preserve_input_order, ctx.out);
+
+    if (ctx.step_version >= 2 && !ctx.for_cache_key)
+    {
+        writeBinary(skip_deduplication, ctx.out);
+        writeBinary(deduplicates_except_join, ctx.out);
+    }
 }
 
 QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_distinct_)
@@ -392,10 +410,22 @@ QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_disti
     if (ctx.step_version >= 1)
         readBinary(preserve_input_order, ctx.in);
 
+    bool skip_deduplication = false;
+    bool deduplicates_except_join = false;
+    if (ctx.step_version >= 2)
+    {
+        readBinary(skip_deduplication, ctx.in);
+        readBinary(deduplicates_except_join, ctx.in);
+    }
+
     auto step = std::make_unique<DistinctStep>(
         ctx.input_headers.front(), Settings(ctx.settings), 0, column_names, pre_distinct_);
     if (preserve_input_order)
         step->preserveInputOrder();
+    if (skip_deduplication)
+        step->skipDeduplication();
+    if (deduplicates_except_join)
+        step->markDeduplicatesExceptJoin();
     return step;
 }
 
@@ -418,7 +448,10 @@ void registerDistinctStep(QueryPlanStepRegistry & registry)
 {
     /// Preliminary distinct probably can be a query plan optimization.
     /// It's easier to serialize it using different names, so that pre-distinct can be potentially removed later.
-    const QueryPlanStepRegistry::StepVersions versions{{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT}};
+    const QueryPlanStepRegistry::StepVersions versions{
+        {0, 0},
+        {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT},
+        {2, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_OPERATION_AS_JOIN}};
     registry.registerStep("Distinct", DistinctStep::deserializeNormal, versions);
     registry.registerStep("PreDistinct", DistinctStep::deserializePre, versions);
 }

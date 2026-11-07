@@ -2,6 +2,7 @@
 -- `DistinctStep` and must be able to spill.
 SET max_bytes_ratio_before_external_distinct = 0;
 SET max_bytes_before_external_distinct = 1;
+SET rewrite_intersect_except_distinct_to_join = 0;
 SET max_untracked_memory = 0;
 SET max_block_size = 1000;
 SET log_comment = '04498_external_distinct_set_operations';

@@ -90,6 +90,10 @@ static JoinSide coordinatedJoinSide(const QueryPlan::Node * node)
     if (!join)
         return JoinSide::None;
 
+    /// A set-operation join removes duplicates only among the rows it sees, so neither side may be split.
+    if (join->getJoinOperator().set_operation != JoinSetOperation::None)
+        return JoinSide::None;
+
     const JoinKind kind = join->getJoinOperator().kind;
     const JoinStrictness strictness = join->getJoinOperator().strictness;
 

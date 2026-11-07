@@ -20,6 +20,8 @@
 #include <Common/typeid_cast.h>
 #include <Core/BlockNameMap.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
+#include <Processors/ConcatProcessor.h>
+#include <Processors/LimitTransform.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <fmt/format.h>
@@ -150,6 +152,73 @@ JoinStep::JoinStep(
     updateInputHeaders({left_header_, right_header_});
 }
 
+/// The totals of a set operation are not joined: it returns the first arm's totals, or the second arm's if the first did
+/// not have totals. They get the names of the side whose columns the join outputs.
+static void attachSetOperationTotals(
+    QueryPipelineBuilder & pipeline,
+    const QueryPipelineBuilder::DetachedTotals & left_totals,
+    const QueryPipelineBuilder::DetachedTotals & right_totals,
+    const TableJoin::SetOperationTotals & set_operation,
+    const SharedHeader & output_header,
+    IQueryPlanStep * step,
+    Processors & step_processors)
+{
+    if (!left_totals.port && !right_totals.port)
+        return;
+
+    const auto & output_columns = set_operation.output_from_left ? set_operation.left_columns : set_operation.right_columns;
+
+    Processors processors;
+    OutputPortRawPtrs totals_ports;
+    auto add_totals = [&](const QueryPipelineBuilder::DetachedTotals & totals, const Names & input_columns)
+    {
+        if (!totals.port)
+            return;
+
+        NameToNameMap output_to_input;
+        for (size_t i = 0; i < output_columns.size(); ++i)
+            output_to_input[output_columns[i]] = input_columns[i];
+
+        auto transform = std::make_shared<SetOperationTotalsTransform>(totals.header, output_header, std::move(output_to_input));
+        connect(*totals.port, transform->getInputPort());
+        totals_ports.push_back(&transform->getOutputPort());
+        processors.push_back(std::move(transform));
+    };
+
+    /// The totals that win go first, and only the first row is kept.
+    if (set_operation.prefer_left_totals)
+    {
+        add_totals(left_totals, set_operation.left_columns);
+        add_totals(right_totals, set_operation.right_columns);
+    }
+    else
+    {
+        add_totals(right_totals, set_operation.right_columns);
+        add_totals(left_totals, set_operation.left_columns);
+    }
+
+    OutputPort * totals_port = totals_ports.front();
+    if (totals_ports.size() > 1)
+    {
+        auto concat = std::make_shared<ConcatProcessor>(output_header, totals_ports.size());
+        auto limit = std::make_shared<LimitTransform>(output_header, 1, 0);
+        auto concat_input = concat->getInputs().begin();
+        for (auto * port : totals_ports)
+            connect(*port, *concat_input++);
+        connect(concat->getOutputs().front(), limit->getInputPort());
+        totals_port = &limit->getOutputPort();
+        processors.push_back(std::move(concat));
+        processors.push_back(std::move(limit));
+    }
+
+    for (const auto & processor : processors)
+    {
+        processor->setQueryPlanStep(step, static_cast<size_t>(JoinStep::JoinStage::Probe));
+        step_processors.push_back(processor);
+    }
+    pipeline.attachTotals(totals_port, std::move(processors));
+}
+
 QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
 {
     if (pipelines.size() != 2)
@@ -180,6 +249,15 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         }
         else
         {
+            const auto & set_operation_totals = join->getTableJoin().setOperationTotals();
+            QueryPipelineBuilder::DetachedTotals left_totals;
+            QueryPipelineBuilder::DetachedTotals right_totals;
+            if (set_operation_totals)
+            {
+                left_totals = pipelines[0]->detachTotals();
+                right_totals = pipelines[1]->detachTotals();
+            }
+
             joined_pipeline = QueryPipelineBuilder::joinPipelinesRightLeft(
                 std::move(pipelines[0]),
                 std::move(pipelines[1]),
@@ -192,7 +270,13 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
                 this,
                 left_pipeline_order != LeftPipelineOrder::None,
                 seal_gate,
-                &processors);
+                &processors,
+                left_totals.port != nullptr,
+                right_totals.port != nullptr);
+
+            if (set_operation_totals)
+                attachSetOperationTotals(
+                    *joined_pipeline, left_totals, right_totals, *set_operation_totals, join_algorithm_header, this, processors);
         }
     }
     else

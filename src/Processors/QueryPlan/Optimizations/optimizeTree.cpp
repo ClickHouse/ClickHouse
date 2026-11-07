@@ -548,7 +548,11 @@ void optimizeTreeSecondPass(
     /// when nothing was distributed).
     traverseQueryPlan(stack, root,
         [&](auto &) {},
-        [&](auto & frame_node) { convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings); });
+        [&](auto & frame_node)
+        {
+            convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
+            skipDeduplicationAfterSetOperationJoin(frame_node);
+        });
 
     /// The runtime filters were pushed down while the joins were logical, so merge what the conversion
     /// added around the joins, as that push-down did when the joins were converted before it. With the

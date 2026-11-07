@@ -29,6 +29,10 @@ struct JoinOperator
     /// The locality of the join (e.g., LOCAL, GLOBAL)
     JoinLocality locality;
 
+    /// The set operation (`INTERSECT` or `EXCEPT`) this join executes on all columns of its inputs, compared with `<=>`.
+    /// The join removes duplicate rows itself.
+    JoinSetOperation set_operation = JoinSetOperation::None;
+
     /// An expression in ON/USING clause of a JOIN statement
     std::vector<JoinActionRef> expression = {};
     /// Additional filter after join (e.g. from WHERE clause)
@@ -52,8 +56,8 @@ struct JoinOperator
         , expression(std::move(expression_))
     {}
 
-    void serialize(WriteBuffer & out, const ActionsDAG * actions_dag_) const;
-    static JoinOperator deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions);
+    void serialize(WriteBuffer & out, const ActionsDAG * actions_dag_, UInt64 step_version) const;
+    static JoinOperator deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions, UInt64 step_version);
 
     String dump() const;
 };
