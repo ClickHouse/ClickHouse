@@ -1,0 +1,18 @@
+unrepresentable members
+0
+0
+0
+0
+1
+[NULL]
+top-level carrier holding a composite with nested carriers
+1
+0
+1
+['2020-01-01']
+['2020-01-01']
+whole composite to String
+[\'2020-01-01\']
+[\'2020-01-01\']
+(true,\'2020-01-02\')
+('[\'2020-01-01\']')
