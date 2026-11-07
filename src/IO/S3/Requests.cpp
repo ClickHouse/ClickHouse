@@ -87,6 +87,7 @@ namespace
 constexpr std::pair<std::string_view, std::string_view> GCS_TRANSLATED_HEADERS[] = {
     {"x-amz-copy-source", "x-goog-copy-source"},
     {"x-amz-metadata-directive", "x-goog-metadata-directive"},
+    {"x-amz-acl", "x-goog-acl"},
     /// Only the name is translated: S3 and GCS share no class name but STANDARD, so an S3 class
     /// reaches GCS as 400 InvalidStorageClass.
     {"x-amz-storage-class", "x-goog-storage-class"},
@@ -155,6 +156,9 @@ Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCol
 
     for (const auto & dropped_header : GCS_DROPPED_HEADERS)
         headers.erase(std::string(dropped_header));
+
+    if (const auto it = headers.find("if-none-match"); it != headers.end() && it->second == "*")
+        headers.emplace("x-goog-if-generation-match", "0");
 
     /// replace all x-amz-meta- headers
     VectorWithMemoryTracking<std::pair<std::string, std::string>> new_meta_headers;
