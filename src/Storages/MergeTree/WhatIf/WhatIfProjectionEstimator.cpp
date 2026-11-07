@@ -1391,7 +1391,7 @@ WhatIfCandidateResult evaluateProjection(
     /// the optimization of aggregate projections matches the aggregation of the query, not the columns that the query reads
     for (const auto & column_name : aggregate ? Names{} : read_step->getAllColumnNames())
     {
-        if (!projection->sample_block.findColumnOrSubcolumnByName(column_name) && !projection->metadata->virtuals.has(column_name))
+        if (!projection->providesColumn(column_name, metadata->getColumns()))
         {
             result.not_applicable_reason = fmt::format(
                 "Projection does not contain column {} required by the query, so it could only filter the base table's "

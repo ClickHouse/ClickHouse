@@ -1,0 +1,20 @@
+projection
+14
+14
+15
+15
+15
+15
+projection, deduplicate_merge_projection_mode = ignore
+14
+14
+14
+14
+ttl
+[1]	1
+[1]	1
+projection, overlapping marker
+14
+14
+14
+14

@@ -1727,6 +1727,33 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// the freshly written value of the column it depends on.
     emit_materialized_recompute_stages(patch_affected_materialized, std::nullopt);
 
+    /// A projection part whose source column is named like a subcolumn of another column (`a.size0` added next to
+    /// an `Array` column `a`) and is missing from the mutated part may hold states, keys or values computed from that
+    /// subcolumn, while the part reads the column's default (see `projectionPartHasRequiredColumns`). It must not be
+    /// carried over: the new part may store the column, and then nothing would tell that the projection is stale.
+    if (const auto & mutated_part = source.getMergeTreeDataPart())
+    {
+        const auto & table_columns = metadata_snapshot->getColumns();
+        for (const auto & projection : metadata_snapshot->getProjections())
+        {
+            if (!source.hasProjection(projection.name) || source.hasBrokenProjection(projection.name))
+                continue;
+
+            bool is_stale = std::ranges::any_of(projection.required_columns, [&](const auto & name)
+            {
+                return mutated_part->readsColumnFromShadowedSubcolumn(name, table_columns);
+            });
+
+            if (is_stale)
+            {
+                LOG_DEBUG(logger, "Will rebuild projection {} computed from a subcolumn shadowed by a column", projection.name);
+                for (const auto & column : projection.required_columns)
+                    dependencies.emplace(column, ColumnDependency::PROJECTION);
+                materialized_projections.insert(projection.name);
+            }
+        }
+    }
+
     /// Without a TTL target the mutation only recalculates TTL infos (see `MutationHelpers::shouldExecuteTTL`),
     /// and `TTLCalcTransform` evaluates every TTL rule, so it needs the inputs of all of them.
     auto is_ttl_expression = [](const ColumnDependency & dependency) { return dependency.kind == ColumnDependency::TTL_EXPRESSION; };
