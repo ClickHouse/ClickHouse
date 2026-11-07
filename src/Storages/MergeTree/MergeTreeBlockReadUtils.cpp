@@ -257,6 +257,16 @@ MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
     : data_part(data_part_), allow_subcolumns_sizes_calculation(allow_subcolumns_sizes_calculation_)
 {
     number_of_rows_in_part = data_part->getRowCount();
+
+    /// Remember all columns that are read from the part. Some of them are read only by `PREWHERE` steps
+    /// and are absent from the result block, so they cannot be measured in `update` and keep this estimation.
+    NameSet names_set(columns.begin(), columns.end());
+    for (const auto & column : sample_block)
+    {
+        if (names_set.contains(column.name))
+            columns_from_part.insert(column);
+    }
+
     /// Initialize with sample block until update won't called.
     initialize(sample_block, {}, columns);
 }
@@ -341,7 +351,14 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
     if (!is_initialized_in_update)
     {
         /// Reinitialize with read block to update estimation for DEFAULT and MATERIALIZED columns without data.
-        initialize(sample_block, columns, {}, true);
+        /// Columns that are read only by `PREWHERE` steps are not in the result block (the header of the reading step
+        /// contains only columns that are used later in the query), but they still occupy memory while the block
+        /// is being read. Keep them with the estimation obtained from the part.
+        Block block = sample_block.cloneWithColumns(columns);
+        for (const auto & column : columns_from_part)
+            block.insertUnique(column);
+
+        initialize(block, block.getColumns(), {}, true);
         is_initialized_in_update = true;
     }
 
@@ -364,7 +381,19 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
     max_size_per_row_dynamic = 0;
     for (auto & info : dynamic_columns_infos)
     {
-        size_t new_size = columns[sample_block.getPositionByName(info.name)]->byteSize();
+        auto position = sample_block.findPositionByName(info.name);
+        if (!position)
+        {
+            /// The column is read only by `PREWHERE` steps, its actual size in the block is unknown.
+            /// Keep the current estimation of bytes per row and account the estimated size of the column.
+            info.size_bytes = static_cast<size_t>(info.bytes_per_row * static_cast<double>(num_rows));
+            block_size_bytes += info.size_bytes;
+            bytes_per_row_current += info.bytes_per_row;
+            max_size_per_row_dynamic = std::max<double>(max_size_per_row_dynamic, info.bytes_per_row);
+            continue;
+        }
+
+        size_t new_size = columns[*position]->byteSize();
         size_t diff_size = new_size - info.size_bytes;
 
         double local_bytes_per_row = static_cast<double>(diff_size) / static_cast<double>(diff_rows);
