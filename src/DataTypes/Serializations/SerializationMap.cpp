@@ -1043,7 +1043,7 @@ namespace
 /// This is the innermost function in the two-level dispatch chain (key type -> value type).
 /// All casts are performed upfront: source key/value columns and every
 /// destination bucket column are cast to their concrete types before entering the hot loop,
-/// so that `insertFrom` and `getBucketForKeyImpl` are resolved at compile time.
+/// so that `insertFrom` is resolved at compile time.
 /// We use `static_cast` here because the dispatch macro guarantees the correct type,
 /// and `assert_cast` would fail in debug builds for the `IColumn` fallback case
 /// (it requires exact `typeid` match, but the runtime type is a concrete column).
@@ -1055,7 +1055,8 @@ void splitMapToBucketsTyped(
     std::vector<IColumn *> & dst_keys_raw,
     std::vector<IColumn *> & dst_values_raw,
     std::vector<ColumnArray::Offsets *> & dst_offsets,
-    IndexColumn & bucket_index_col,
+    const IndexColumn & bucket_index_col,
+    size_t first_bucket_index,
     size_t start, size_t end, size_t num_buckets)
 {
     const auto & src_keys = static_cast<const KeyColumn &>(src_keys_col);
@@ -1069,30 +1070,17 @@ void splitMapToBucketsTyped(
         dst_values[b] = static_cast<ValueColumn *>(dst_values_raw[b]);
     }
 
-    if (num_buckets == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of buckets cannot be zero");
-
-    /// The bucket of a key is `getBucketForKey`: `get64` of the `SipHash` is the XOR of the halves of `get128`.
-    std::optional<ColumnsHashing::Hash128InOrder> key_hashes;
-    if (ColumnsHashing::canHash128InPlace({&src_keys_col}))
-        key_hashes.emplace(ColumnRawPtrs{&src_keys_col}, src_offsets[ssize_t(start) - 1], src_offsets[ssize_t(end) - 1]);
-    auto get_bucket = [&](size_t row) -> size_t
-    {
-        if (!key_hashes)
-            return getBucketForKeyImpl(src_keys, row, num_buckets);
-        const UInt128 key_hash = key_hashes->get(row);
-        return (key_hash.items[0] ^ key_hash.items[1]) % num_buckets;
-    };
+    const auto & buckets = bucket_index_col.getData();
+    size_t bucket_index = first_bucket_index;
     for (size_t i = start; i != end; ++i)
     {
         size_t offset_start = src_offsets[ssize_t(i) - 1];
         size_t offset_end = src_offsets[ssize_t(i)];
         for (size_t j = offset_start; j != offset_end; ++j)
         {
-            size_t bucket = get_bucket(j);
+            size_t bucket = buckets[bucket_index++];
             dst_keys[bucket]->insertFrom(src_keys, j);
             dst_values[bucket]->insertFrom(src_values, j);
-            bucket_index_col.getData().push_back(static_cast<typename IndexColumn::ValueType>(bucket));
         }
 
         for (size_t bucket = 0; bucket < num_buckets; ++bucket)
@@ -1115,6 +1103,61 @@ void splitMapToBucketsTyped(
     }
 // clang-format on
 
+void insertBucketIndexes(IColumn & bucket_index_column, const UInt64 * buckets, size_t size)
+{
+// NOLINTBEGIN(bugprone-macro-parentheses) -- IndexColumn is a type used in static_cast<>
+#define CALL_INSERT(IndexColumn) \
+    { \
+        auto & data = static_cast<IndexColumn &>(bucket_index_column).getData(); \
+        for (size_t k = 0; k < size; ++k) \
+            data.push_back(static_cast<typename IndexColumn::ValueType>(buckets[k])); \
+    }
+// NOLINTEND(bugprone-macro-parentheses)
+    DISPATCH_BUCKET_INDEX_COLUMN_TYPE(bucket_index_column.getDataType(), CALL_INSERT)
+#undef CALL_INSERT
+}
+
+/// Appends the bucket of every key of the rows [start, end), `getBucketForKeyImpl` of the key, to `bucket_index_column`.
+template <typename KeyColumn>
+void insertBucketsOfKeys(
+    const IColumn & src_keys_col, const ColumnArray::Offsets & src_offsets, size_t start, size_t end, size_t num_buckets,
+    IColumn & bucket_index_column)
+{
+    const size_t first_key = src_offsets[ssize_t(start) - 1];
+    const size_t end_key = src_offsets[ssize_t(end) - 1];
+    if (first_key == end_key)
+        return;
+    if (num_buckets == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of buckets cannot be zero");
+
+    const auto & src_keys = static_cast<const KeyColumn &>(src_keys_col);
+    std::optional<ColumnsHashing::Hash128InOrder> key_hashes;
+    if (ColumnsHashing::canHash128InPlace({&src_keys_col}))
+        key_hashes.emplace(ColumnRawPtrs{&src_keys_col}, first_key, end_key);
+
+    std::array<UInt64, 256> buckets{};
+    for (size_t begin = first_key; begin != end_key;)
+    {
+        const size_t size = std::min(buckets.size(), end_key - begin);
+        if (key_hashes)
+        {
+            /// `get64` of the `SipHash` is the XOR of the halves of `get128`.
+            for (size_t k = 0; k < size; ++k)
+            {
+                const UInt128 key_hash = key_hashes->get(begin + k);
+                buckets[k] = (key_hash.items[0] ^ key_hash.items[1]) % num_buckets;
+            }
+        }
+        else
+        {
+            for (size_t k = 0; k < size; ++k)
+                buckets[k] = getBucketForKeyImpl(src_keys, begin + k, num_buckets);
+        }
+        insertBucketIndexes(bucket_index_column, buckets.data(), size);
+        begin += size;
+    }
+}
+
 /// Third level of the three-level type dispatch for `splitMapToBuckets`.
 /// Key and value column types are already fixed; this dispatches on the bucket index column type.
 template <typename KeyColumn, typename ValueColumn>
@@ -1123,13 +1166,13 @@ void splitMapToBucketsDispatchByIndex(
     const ColumnArray::Offsets & src_offsets,
     std::vector<IColumn *> & dst_keys, std::vector<IColumn *> & dst_values,
     std::vector<ColumnArray::Offsets *> & dst_offsets,
-    IColumn & bucket_index_column,
+    const IColumn & bucket_index_column, size_t first_bucket_index,
     size_t start, size_t end, size_t num_buckets)
 {
 // NOLINTBEGIN(bugprone-macro-parentheses) -- IndexColumn is a type used in static_cast<>
 #define CALL_SPLIT(IndexColumn) splitMapToBucketsTyped<KeyColumn, ValueColumn, IndexColumn>( \
     src_keys, src_values, src_offsets, dst_keys, dst_values, dst_offsets, \
-    static_cast<IndexColumn &>(bucket_index_column), start, end, num_buckets)
+    static_cast<const IndexColumn &>(bucket_index_column), first_bucket_index, start, end, num_buckets)
 // NOLINTEND(bugprone-macro-parentheses)
     DISPATCH_BUCKET_INDEX_COLUMN_TYPE(bucket_index_column.getDataType(), CALL_SPLIT)
 #undef CALL_SPLIT
@@ -1147,9 +1190,12 @@ void splitMapToBucketsDispatchByValue(
     IColumn & bucket_index_column,
     size_t start, size_t end, size_t num_buckets)
 {
+    const size_t first_bucket_index = bucket_index_column.size();
+    insertBucketsOfKeys<KeyColumn>(src_keys, src_offsets, start, end, num_buckets, bucket_index_column);
 // NOLINTNEXTLINE(bugprone-macro-parentheses) -- ValueColumn is a type used as a template argument
 #define CALL_SPLIT(ValueColumn) splitMapToBucketsDispatchByIndex<KeyColumn, ValueColumn>( \
-    src_keys, src_values, src_offsets, dst_keys, dst_values, dst_offsets, bucket_index_column, start, end, num_buckets)
+    src_keys, src_values, src_offsets, dst_keys, dst_values, dst_offsets, bucket_index_column, first_bucket_index, start, end, \
+    num_buckets)
     DISPATCH_MAP_COLUMN_TYPE(src_values.getDataType(), CALL_SPLIT)
 #undef CALL_SPLIT
 }
