@@ -156,8 +156,17 @@ struct AdaptiveAggregationSession
     /// Maps a merge claim to its bucket, ordered by pruning bounds when pruning is enabled.
     UInt32 bucketToMerge(UInt32 claim) const;
 
-    /// Whether some producer froze, which makes the merge adaptive. Read after the finish barrier.
+    /// Whether some producer froze. Read after the finish barrier.
     bool engaged() const { return frozen_producers > 0; }
+
+    /// Whether the tables take the adaptive merge: when some producer froze, or when the merge prunes by the top-K,
+    /// which only the adaptive merge does (see `Aggregator::prepareAdaptiveTopKPruning`). Before the preparation
+    /// `top_k_pruning` is set for every top-K query, so the answer is only valid after it.
+    bool mergesAdaptively() const
+    {
+        chassert(top_k_pruning_prepared);
+        return engaged() || top_k_pruning;
+    }
 
     /// Every producer uses the layout chosen for the pipeline's aggregation streams.
     const AdaptivePartitionLayout layout;
@@ -170,6 +179,8 @@ struct AdaptiveAggregationSession
     /// `AdaptiveTopKPruning`). The producers hand their count bins, or their tables if they never froze, over to it,
     /// and after the finish barrier `Aggregator::prepareAdaptiveTopKPruning` keeps it only for a merge that can prune.
     std::unique_ptr<AdaptiveTopKPruning> top_k_pruning;
+    /// Set by `Aggregator::prepareAdaptiveTopKPruning`.
+    bool top_k_pruning_prepared = false;
 
     /// The producers' staged records, handed over by each producer when it finishes (see
     /// `Aggregator::finishAdaptiveProducer`). While other producers still run, the memory scheduler may write them to
@@ -198,6 +209,11 @@ struct AdaptiveAggregationSession
     /// the verdict of the run (see `Aggregator::adaptiveStagingVerdict`).
     size_t frozen_producers = 0;
     size_t repeat_dominated_producers = 0;
+
+    /// The cells of the producers' tables, and the single-level tables whose cells they could not index (see
+    /// `AggregatedDataVariants::indexCells`), published under the same mutex.
+    size_t table_cells = 0;
+    size_t unindexed_tables = 0;
 
     /// The staged records the producers spilled over the external-aggregation threshold (see
     /// `Aggregator::spillAdaptivePartitions`): one raw stream per partition, shared by the producers and created by the
@@ -257,7 +273,7 @@ struct AdaptiveMergeTask
     PaddedPODArray<AggregateDataPtr> places;
     PaddedPODArray<AggregateDataPtr *> source_slots;
     /// The merges of `source_slots` into `places` ordered by their destination, and one destination's states, for the
-    /// pool-parallel merge of a group many producers hold (see `Aggregator::mergeAdaptiveSourceStates`).
+    /// pool-parallel merge of a group many producers hold (see `Aggregator::mergeSourceStates`).
     PaddedPODArray<UInt32> merge_order;
     AggregateDataPtrs merge_group;
     PaddedPODArray<AggregateDataPtr> record_places;

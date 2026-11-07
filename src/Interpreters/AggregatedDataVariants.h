@@ -1,11 +1,14 @@
 #pragma once
 #include <Core/Block_fwd.h>
 #include <Core/Names.h>
+#include <Interpreters/AdaptiveAggregation/AdaptivePartitionLayout.h>
 #include <Interpreters/AggregatedData.h>
 #include <Interpreters/AggregationMethod.h>
+#include <Common/PODArray.h>
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <boost/noncopyable.hpp>
 
 
@@ -21,6 +24,11 @@ struct HashMethodContextSettings;
 
 class Arena;
 class Aggregator;
+
+/// Whether an aggregation table iterates its cells, which an index of its cells needs (see
+/// `AggregatedDataVariants::CellIndex`): the string table with its sub-maps does not.
+template <typename Table>
+concept IterableCells = requires (Table & table) { table.begin(); };
 
 struct AggregatedDataVariants : private boost::noncopyable
 {
@@ -503,12 +511,62 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// Memory held by the variants: the arenas (keys and states) plus the active method's
     /// hash-table buffer, which dominates for inline states over fixed keys.
     size_t allocatedBytes() const;
+    /// Bytes of the active method's hash-table buffer: its cells, which hold the keys (references to
+    /// the bytes of string keys) and the states' pointers, or the states themselves where they are
+    /// stored inline.
+    size_t hashTableBufferBytes() const;
     /// Bytes that the keys and states took in the arenas. Unlike the arenas' allocated bytes,
     /// which grow by whole chunks of doubling size, they follow every allocation.
     size_t usedArenaBytes() const;
     /// Tracked size of the state; without a tracker (merge-only aggregation) only arenas and
     /// hash table are known.
     size_t memoryUsage() const;
+
+    /// The cells of the single-level table partitioned by the partitions of an adaptive layout (see
+    /// `indexCells`), which nest in the buckets of the two-level counterpart: a merge reads the cells of a
+    /// bucket, or of any run of consecutive partitions, without walking the whole table. The index points into
+    /// the table's buffer, which an insertion may move, so it serves only while the table takes no more keys:
+    /// the serial merge, which inserts into the first table, drops the index of that table first, and `init`,
+    /// `convertToTwoLevel` and `resetAfterStateOwnershipTransfer`, which replace the table, clear it.
+    struct CellIndex
+    {
+        explicit CellIndex(const AdaptivePartitionLayout & layout_) : layout(layout_) { }
+
+        /// The partitions of the cells, whose partitions of a bucket are consecutive (see
+        /// `AdaptivePartitionLayout::firstPartition`).
+        AdaptivePartitionLayout layout;
+
+        size_t numPartitions() const { return layout.numPartitions(); }
+
+        /// The cells of the partitions from `first_partition` to `end_partition`.
+        size_t rangeSize(size_t first_partition, size_t end_partition) const
+        {
+            return offsets[end_partition] - offsets[first_partition];
+        }
+
+        /// The cells of bucket `bucket` of the two-level counterpart.
+        size_t bucketSize(size_t bucket) const
+        {
+            return rangeSize(layout.firstPartition(bucket), layout.firstPartition(bucket + 1));
+        }
+
+        /// Calls `callback(cell, hash)` for each cell of the partitions from `first_partition` to
+        /// `end_partition`, partition by partition and in the order of the table within a partition. `Cell` is
+        /// the cell type of the indexed table, which is also the cell type of its two-level counterpart.
+        template <typename Cell, typename Callback>
+        void forEachCell(size_t first_partition, size_t end_partition, Callback && callback) const
+        {
+            for (size_t i = offsets[first_partition]; i < offsets[end_partition]; ++i)
+                callback(*static_cast<Cell *>(cells[i]), hashes[i]);
+        }
+
+        /// The cells of partition `p` and their hashes are at the positions from `offsets[p]` to
+        /// `offsets[p + 1]`.
+        PaddedPODArray<void *> cells;
+        PaddedPODArray<UInt64> hashes;
+        PaddedPODArray<UInt64> offsets;
+    };
+    std::optional<CellIndex> cell_index;
 
     /// The adaptive bucket-parallel merge's arena slots, one per bucket, populated on the merge
     /// destination (see `Aggregator::createAdaptiveMergeDestination`). A slot holds the arena of
@@ -530,6 +588,13 @@ struct AggregatedDataVariants : private boost::noncopyable
     bool isConvertibleToTwoLevel() const;
     static bool isConvertibleToTwoLevel(Type type);
     void convertToTwoLevel();
+    /// Whether the cells of the single-level table can be indexed: the table of every method with a
+    /// two-level counterpart, except the string table (see `IterableCells`).
+    bool canIndexCells() const;
+    /// Builds `cell_index` with the partitions of `layout`, the partitions of the staged records of the
+    /// adaptive aggregation. The merges then read the cells of a bucket, or of a part of it, without walking
+    /// the table, which spares its conversion to two-level.
+    void indexCells(const AdaptivePartitionLayout & layout);
     /// Replaces an empty two-level table with an empty single-level table of the same method: the reverse of
     /// `convertToTwoLevel` for a table whose data was written to disk.
     void resetToSingleLevel();

@@ -22,12 +22,13 @@ namespace DB
 /// a fixed-width key costs less than storing and reading the extra bytes. Records never point into the
 /// source block, so the block is released.
 ///
-/// The byte bound of the freeze measures the table's own tracked memory, which counts the heap
-/// memory its states own, so a few groups with growing states, such as `uniqExact` per region,
-/// freeze the table by its memory where its key count never would. Each table freezes on its own
-/// bounds alone: a bound on the memory of the whole aggregation would let the growth of some tables
-/// freeze the others. A table that reaches no bound is small and keeps learning, like a small
-/// baseline table. Over the external-aggregation threshold a learning table that holds enough
+/// The byte bound of the freeze measures the table's hash-table buffer, the cells that every probe
+/// walks, so wide cells freeze the table before its key count would. The memory of the states is no
+/// bound: it grows through the keys that the table already holds, which a freeze does not stop, so a
+/// few groups with growing states, such as `uniqExact` per region, keep learning. Each table freezes
+/// on its own bounds alone: a bound on the memory of the whole aggregation would let the growth of
+/// some tables freeze the others. A table that reaches no bound is small and keeps learning, like a
+/// small baseline table. Over the external-aggregation threshold a learning table that holds enough
 /// memory, or a frozen one whose states keep growing, is written to disk, and its thread learns its
 /// keys again from empty.
 ///
@@ -40,11 +41,11 @@ namespace DB
 /// thread's rows: a table that absorbs nearly every row in place loses little to a sliver of
 /// repeated misses.
 ///
-/// Merge phase: at the end of input every thread hands its partitions to the session and its local table converts
-/// to two-level. The merge task owning bucket b then merges the bucket's partitions a few at a time: it drains every
-/// thread's records of those partitions and the locals' cells routed to them into one table sized for them, converts
-/// that table into a chunk and frees the partitions' memory, so the table stays in the cache and the staged memory
-/// shrinks as the merge proceeds. When the aggregation feeds a descending top-K by `count`, `uniqExact` or
+/// Merge phase: at the end of input every thread hands its partitions to the session and indexes the cells of its
+/// local table by the same partitions. The merge task owning bucket b then merges the bucket's partitions a few at a
+/// time: it drains every thread's records of those partitions and the locals' cells in them into one table sized for
+/// them, converts that table into a chunk and frees the partitions' memory, so the table stays in the cache and the
+/// staged memory shrinks as the merge proceeds. When the aggregation feeds a descending top-K by `count`, `uniqExact` or
 /// `uniqExactIf`, the merge skips the partitions, records and cells whose groups provably cannot reach the top
 /// (see `AdaptiveTopKPruning`).
 ///
