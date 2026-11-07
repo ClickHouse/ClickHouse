@@ -1,0 +1,31 @@
+negate of an ascending subquery, DESC NULLS FIRST
+nan
+-1
+-2
+nan
+-1
+-2
+negate of a descending subquery, ASC NULLS FIRST
+nan
+-2
+-1
+nan
+-2
+-1
+under an outer LIMIT, where the wrong order also returns wrong rows
+nan
+nan
+the placement the stream already has can still be elided
+-1
+-2
+nan
+-1
+-2
+nan
+NULL through a division by a negative constant
+\N
+-0.5
+-1
+\N
+-0.5
+-1
