@@ -250,6 +250,11 @@ StorageMergeTree::StorageMergeTree(
     , cleanup_thread(*this)
     , support_transaction(supportTransaction(getDisks(), log.load()))
 {
+    if (mode <= LoadingStrictnessLevel::CREATE && metadata_.hasUniqueKey() && !support_transaction)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "UNIQUE KEY is not supported for table {}: a disk of its storage policy does not support transactions",
+            getStorageID().getNameForLogs());
+
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
 
     loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
@@ -518,6 +523,11 @@ SinkToStoragePtr
 StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     assertNotReadonly();
+
+    if (metadata_snapshot->hasUniqueKey() && !support_transaction)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "UNIQUE KEY is not supported for table {}: a disk of its storage policy does not support transactions",
+            getStorageID().getNameForLogs());
 
     const auto & settings = local_context->getSettingsRef();
     return std::make_shared<MergeTreeSink>(*this, metadata_snapshot, settings[Setting::max_partitions_per_insert_block], local_context);
@@ -1563,6 +1573,11 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
     context_copy->setPartitionIdToMaxBlock(getStorageID().uuid, std::move(partition_id_to_max_block));
     /// Updates currently don't work with parallel replicas.
     context_copy->setSetting("max_parallel_replicas", Field(1));
+
+    /// A snapshot cached by `enable_shared_storage_snapshot_in_query` before the wait for committing
+    /// inserts above (e.g. by the validation of `IN` operands in `InterpreterUpdateQuery`) would hide
+    /// the parts committed during the wait from the update. See `StorageReplicatedMergeTree::updateLightweight`.
+    discardSharedStorageSnapshot(context_copy);
 
     auto [pipeline, patch_metadata] = updateLightweightImpl(commands, context_copy);
 

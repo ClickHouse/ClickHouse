@@ -1,0 +1,49 @@
+simple_table_without_checkpoint	[1,2,3,4,5,6,7,8,9]
+simple_table_ending_on_checkpoint	[1,2,3,4,5,6,7,8,9,10]
+simple_table_past_checkpoint	[1,2,3,4,5,6,7,8,9,10,11]
+multipart_checkpoint
+[1,2,3,4,5,6,7]
+[1,2,3,4,5]
+[1,2,3,4,5,6]
+[1,2,3,4,5,6,7]
+multipart_v2_checkpoint
+1	2
+3	4
+5	6
+7	8
+v2_checkpoint (Databricks)
+1	2
+1	2
+v2_checkpoint (OSS Delta Lake)
+1	2
+1	2
+v2_checkpoint_using_temporal
+1	2
+3	4
+5	6
+1	2
+3	4
+5	6
+checksum
+1
+1
+1
+1
+1
+1
+1
+in_commit_timestamp_history_read
+1	1
+5	5
+trino440/time_travel
+[1,2,3,4]
+[1]
+[1,2]
+[1,2,3]
+test_write_checkpoint_on_schema_change
+4	version4
+version6
+version8
+10
+version12
+version12
