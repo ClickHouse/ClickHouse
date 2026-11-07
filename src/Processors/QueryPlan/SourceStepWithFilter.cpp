@@ -89,7 +89,9 @@ void SourceStepWithFilterBase::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void SourceStepWithFilter::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    auto dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, query_info.buildNodeNameToInputNodeColumn());
+    auto index_hint_node_name_to_input = query_info.buildNodeNameToInputNodeColumn(/*for_index_hint=*/ true);
+    auto dag = ActionsDAG::buildFilterActionsDAG(
+        added_filter_nodes.nodes, query_info.buildNodeNameToInputNodeColumn(), true, &index_hint_node_name_to_input);
     filter_actions_dag = dag ? std::make_shared<const ActionsDAG>(std::move(*dag)) : nullptr;
 }
 
