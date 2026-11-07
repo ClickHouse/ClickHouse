@@ -2,6 +2,8 @@
 #include <Interpreters/FileCache/FileCache.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
+#include <Disks/warnIfExt4CorruptionKernelBug.h>
+#include <fmt/format.h>
 
 namespace fs = std::filesystem;
 
@@ -104,9 +106,16 @@ FileCachePtr FileCacheFactory::getOrCreate(
                         "but with different cache settings ({} and {})",
                         it->first, cache_name);
     }
-    else if (it->first != cache_name)
+    else
     {
-        caches_by_name.emplace(cache_name, it->second);
+        if (it->first != cache_name)
+            caches_by_name.emplace(cache_name, it->second);
+
+        /// A reused cache does not run its constructor, which is where the probe is recorded. A failed
+        /// reload drops what the earlier attempt recorded while this cache stays in the factory,
+        /// so record it again for the attempt that now uses it.
+        warnIfAffectedByExt4CorruptionKernelBug(
+            it->second->cache->getBasePath(), fmt::format("the path of filesystem cache '{}'", cache_name));
     }
 
     return it->second->cache;
