@@ -19,6 +19,8 @@
 
 
 #include <cstdlib>
+#include <string>
+#include <vector>
 #include <openssl/ssl.h>
 #include "Poco/AutoPtr.h"
 #include "Poco/Net/NetSSL.h"
@@ -339,6 +341,10 @@ namespace Net
         /// preferences.
 
         const CAPaths & getCAPaths();
+
+        static std::vector<std::string> defaultCAProbeLocations();
+        /// The well-known trust store locations that are probed, in order, when the
+        /// OpenSSL default file and directory are missing or contain no certificates.
 
     private:
         void init(const Params & params);

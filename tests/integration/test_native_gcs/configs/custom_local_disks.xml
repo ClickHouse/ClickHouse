@@ -1,0 +1,6 @@
+<clickhouse>
+    <!-- A dynamic `disk(type = local, ...)` definition is only accepted inside this directory. The
+         marker-scope test needs one: it checks that an `include` resolving to a *non*-object-storage
+         backend does not earn the persisted `_server_credentials_allowed` grant. -->
+    <custom_local_disks_base_directory>/var/lib/clickhouse/custom_disks/</custom_local_disks_base_directory>
+</clickhouse>

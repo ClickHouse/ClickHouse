@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
+#include <Common/Exception.h>
 
 using namespace DB;
 using Iceberg::IcebergPathResolver;
@@ -114,4 +115,29 @@ TEST(IcebergDeriveTableRoot, EmptyTailIsNotARoot)
 {
     check({"storage root", "", "", "//metadata/v2.metadata.json",
         "", IcebergPathResolver::RootRelation::Unknown});
+}
+
+/// The native GCS object storage reads every key from its own bucket. A path in another bucket must
+/// not be reduced to its key, which would read the object with the same key in the table's bucket.
+TEST(IcebergPathResolver, NativeGCSRejectsForeignBucket)
+{
+    IcebergPathResolver resolver(
+        "gs://bucket-a/table",
+        "table",
+        Iceberg::BlobStorageDescription{
+            .type_name = "gcs", .namespace_name = "bucket-a", .allow_foreign_namespaces = false, .reject_foreign_namespaces = true});
+
+    using Iceberg::IcebergPathFromMetadata;
+    EXPECT_EQ(resolver.resolve(IcebergPathFromMetadata::deserialize("gs://bucket-a/table/data/a.parquet")), "table/data/a.parquet");
+    EXPECT_EQ(resolver.resolve(IcebergPathFromMetadata::deserialize("gs://bucket-a/other/table/data/a.parquet")), "table/data/a.parquet");
+    EXPECT_THROW(resolver.resolve(IcebergPathFromMetadata::deserialize("gs://bucket-b/table/data/a.parquet")), DB::Exception);
+    EXPECT_THROW(resolver.resolve(IcebergPathFromMetadata::deserialize("s3://bucket-b/table/data/a.parquet")), DB::Exception);
+}
+
+/// Iceberg implementations resolve Google Cloud Storage locations by the `gs` scheme, not by the
+/// `gcs` token of the native backend.
+TEST(IcebergLocationURI, NativeGCSUsesGsScheme)
+{
+    EXPECT_EQ(Iceberg::makeIcebergLocationURI("gcs", "bucket", "table/metadata/v1.metadata.json"),
+        "gs://bucket/table/metadata/v1.metadata.json");
 }
