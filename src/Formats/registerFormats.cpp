@@ -104,6 +104,7 @@ void registerOutputFormatMarkdown(FormatFactory & factory);
 void registerOutputFormatPostgreSQLWire(FormatFactory & factory);
 void registerOutputFormatPrometheus(FormatFactory & factory);
 void registerOutputFormatSQLInsert(FormatFactory & factory);
+void registerOutputFrormatDiagram(FormatFactory & factory);
 void registerOutputFormatPNG(FormatFactory & factory);
 void registerOutputFormatHash(FormatFactory & factory);
 
@@ -278,6 +279,7 @@ void registerFormats()
     registerOutputFormatCapnProto(factory);
     registerOutputFormatPrometheus(factory);
     registerOutputFormatSQLInsert(factory);
+    registerOutputFrormatDiagram(factory);
     registerOutputFormatPNG(factory);
     registerOutputFormatHash(factory);
 
