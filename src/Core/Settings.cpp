@@ -6361,6 +6361,19 @@ Result:
 
 - [NULL Processing in IN Operators](/reference/statements/in#null-processing)
 )", 0) \
+    DECLARE(Bool, in_null_as_unknown, false, R"(
+Uses SQL three-valued logic for scalar [IN](/reference/statements/in) and `NOT IN` expressions.
+
+When enabled, an expression returns `NULL` if no set element matches and either the left operand or a set element is `NULL`. A matching non-`NULL` element still returns `1` for `IN` and `0` for `NOT IN`. An empty set returns `0` for `IN` and `1` for `NOT IN`, including for a `NULL` left operand.
+
+This setting does not support a `Tuple` left operand because SQL row-value comparison requires element-wise three-valued logic.
+
+Possible values:
+
+- 0 — Use the default ClickHouse `IN` handling for `NULL` values.
+- 1 — Use SQL three-valued logic for scalar `IN` and `NOT IN` expressions.
+)", 0, \
+        {"26.11", false, false, "New setting to use SQL three-valued logic for scalar `IN` and `NOT IN` expressions."}) \
     DECLARE(Bool, allow_nondeterministic_mutations, false, R"(
 User-level setting that allows mutations on replicated tables to make use of non-deterministic functions such as `dictGet`, and of the virtual columns whose values may differ between replicas, such as `_table`, `_database` and `_disk_name`.
 

@@ -191,7 +191,8 @@ private:
         bool compare_nulls,
         const ProjectionNames & arguments_projection_names,
         const ProjectionNames & parameters_projection_names,
-        IdentifierResolveScope & scope);
+        IdentifierResolveScope & scope,
+        bool source_has_null);
 
     QueryTreeNodePtr convertTupleToArray(
         const QueryTreeNodes & tuple_args,

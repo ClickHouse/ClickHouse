@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Interpreters/Set.h>
 #include <Interpreters/castColumn.h>
@@ -644,6 +645,35 @@ bool columnCollectionHasTuple(const ColumnPtr & rhs_column, const DataTypePtr & 
 
 }
 
+bool isEmptySetForConstantValue(const ColumnPtr & rhs_column, const DataTypePtr & rhs_type)
+{
+    const WhichDataType rhs_which_type(rhs_type);
+    if (rhs_which_type.isArray())
+    {
+        const auto full_column = rhs_column->convertToFullColumnIfConst();
+        const auto & array = assert_cast<const ColumnArray &>(*full_column);
+        return array.getOffsets().empty() || array.getOffsets()[0] == 0;
+    }
+
+    if (rhs_which_type.isTuple())
+    {
+        const auto full_column = rhs_column->convertToFullColumnIfConst();
+        return assert_cast<const ColumnTuple &>(*full_column).tupleSize() == 0;
+    }
+
+    return false;
+}
+
+bool setContainsNullForConstantValue(const ColumnPtr & rhs_column, const DataTypePtr & rhs_type)
+{
+    const WhichDataType rhs_which_type(rhs_type);
+    if (rhs_which_type.isArray() || rhs_which_type.isTuple())
+        return columnCollectionHasNull(rhs_column, rhs_which_type);
+
+    const auto full_column = rhs_column->convertToFullColumnIfConst();
+    return !full_column->empty() && full_column->isNullAt(0);
+}
+
 /// Format: lhs IN rhs
 /// Explanation of the setting: `transform_null_in`. First of all, it is only applicable if the lhs is nullable.
 /// Then if lhs is nullable and `transform_null_in` is true, then NULLs from rhs are inserted into the result set as well.
@@ -653,6 +683,26 @@ bool columnCollectionHasTuple(const ColumnPtr & rhs_column, const DataTypePtr & 
 ColumnsWithTypeAndName getSetElementsForConstantValue(
     const DataTypePtr & lhs_expression_type, const ColumnPtr & rhs_column, const DataTypePtr & rhs_type, GetSetElementParams params)
 {
+    if (params.in_null_as_unknown && lhs_expression_type->onlyNull())
+    {
+        SetMembers members;
+        const WhichDataType rhs_which_type(rhs_type);
+        if (rhs_which_type.isArray())
+            members = membersFromArray(rhs_column, rhs_type);
+        else if (rhs_which_type.isTuple())
+            members = membersFromTuple(rhs_column, rhs_type);
+        else
+            members = membersFromSingleValue(rhs_column, rhs_type);
+
+        auto nested_column = ColumnUInt8::create(members.size(), UInt8{0});
+        auto null_map = ColumnUInt8::create(members.size(), UInt8{0});
+
+        ColumnsWithTypeAndName result(1);
+        result[0].type = makeNullable(std::make_shared<DataTypeUInt8>());
+        result[0].column = ColumnNullable::create(std::move(nested_column), std::move(null_map));
+        return result;
+    }
+
     DataTypes lhs_unpacked_types = {lhs_expression_type};
 
     /// Unpack `Tuple(...)` into tuple elements.

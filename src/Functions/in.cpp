@@ -1,13 +1,17 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/Set.h>
 
 
@@ -18,7 +22,13 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+namespace Setting
+{
+    extern const SettingsBool in_null_as_unknown;
 }
 
 namespace
@@ -31,21 +41,30 @@ namespace
 class FunctionIn final : public IFunction
 {
 public:
-    FunctionIn(String name_, bool negative_, bool null_is_skipped_, bool ignore_set_)
-        : function_name(std::move(name_)), negative(negative_), null_is_skipped(null_is_skipped_), ignore_set(ignore_set_) {}
+    FunctionIn(String name_, bool negative_, bool null_is_skipped_, bool ignore_set_, bool in_null_as_unknown_)
+        : function_name(std::move(name_))
+        , negative(negative_)
+        , null_is_skipped(null_is_skipped_)
+        , ignore_set(ignore_set_)
+        , in_null_as_unknown(in_null_as_unknown_)
+    {
+    }
 
     /// ignore_set flag means that we don't use set from the second argument, just return zero column.
     /// It is needed to perform type analysis without creation of set.
 
-    static FunctionPtr create(String name, bool negative, bool null_is_skipped, bool ignore_set)
+    static FunctionPtr create(String name, bool negative, bool null_is_skipped, bool ignore_set, bool in_null_as_unknown)
     {
-        return std::make_shared<FunctionIn>(std::move(name), negative, null_is_skipped, ignore_set);
+        return std::make_shared<FunctionIn>(std::move(name), negative, null_is_skipped, ignore_set, in_null_as_unknown);
     }
 
     String getName() const override
     {
         return function_name;
     }
+
+    void updateHash(SipHash & hash) const override { hash.update(in_null_as_unknown); }
+    bool useNullAsUnknownSemanticsForIn() const override { return in_null_as_unknown; }
 
     /// The `IgnoreSet` variants are called with the left operand alone during type analysis, but
     /// `inIgnoreSet(x, set)` written explicitly stays valid, hence the variadic arity.
@@ -60,7 +79,8 @@ public:
     {
         /// The `IgnoreSet` variants are called with the left operand alone during type analysis,
         /// hence the optional second argument there.
-        return ignore_set ? "(Any, [Any]) -> UInt8" : "(Any, Any) -> UInt8";
+        const auto * const result_type = in_null_as_unknown ? "Nullable(UInt8)" : "UInt8";
+        return ignore_set ? fmt::format("(Any, [Any]) -> {}", result_type) : fmt::format("(Any, Any) -> {}", result_type);
     }
 
     /// The `Any` matchers document the arity and return type, but they cannot express the legacy
@@ -79,7 +99,16 @@ public:
         if (arguments[0].type->hasDynamicStructure())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of function {}", arguments[0].type->getName(), getName());
-        return IFunction::getReturnTypeImpl(arguments);
+
+        if (in_null_as_unknown
+            && typeid_cast<const DataTypeTuple *>(removeNullable(removeLowCardinality(arguments[0].type)).get()))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Setting 'in_null_as_unknown' does not support a Tuple left operand in function {}",
+                getName());
+
+        auto result_type = IFunction::getReturnTypeImpl(arguments);
+        return in_null_as_unknown ? makeNullable(result_type) : result_type;
     }
 
     /// We can't use the default constant-folding wrapper because it would wrap a
@@ -94,7 +123,7 @@ public:
         return false;
     }
 
-    bool useDefaultImplementationForNulls() const override { return null_is_skipped; }
+    bool useDefaultImplementationForNulls() const override { return null_is_skipped && !in_null_as_unknown; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -108,9 +137,12 @@ public:
         if (ignore_set || arguments.size() != 2)
             return nullptr;
 
-        /// Fold only a non-`Nullable` result: a NULL left operand yields NULL, so the set no longer
-        /// determines the result on its own. `LowCardinality` does not affect the value.
-        if (!isUInt8(removeLowCardinality(result_type)))
+        /// Under the standard semantics, an immutable empty set determines the result even for a
+        /// `NULL` left operand. Under the legacy semantics, keep the default nullable wrapper so a
+        /// nullable left operand still produces `NULL`. `LowCardinality` does not affect the value.
+        const auto result_type_without_low_cardinality = removeLowCardinality(result_type);
+        if ((!in_null_as_unknown && !isUInt8(result_type_without_low_cardinality))
+            || (in_null_as_unknown && !isUInt8(removeNullable(result_type_without_low_cardinality))))
             return nullptr;
 
         const ColumnSet * column_set = tryGetColumnSet(arguments[1].column);
@@ -140,7 +172,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, bool dry_run, size_t input_rows_count) const
     {
         if (ignore_set)
-            return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
+            return createResultColumn(input_rows_count, false);
 
         ColumnPtr column_set_ptr = arguments[1].column;
         const ColumnSet * column_set = tryGetColumnSet(column_set_ptr);
@@ -152,7 +184,7 @@ public:
         if (!future_set)
         {
             if (dry_run)
-                return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
+                return createResultColumn(input_rows_count, false);
 
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No Set is passed as the second argument for function '{}'", getName());
         }
@@ -161,15 +193,29 @@ public:
         if (!set)
         {
             if (dry_run)
-                return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
+                return createResultColumn(input_rows_count, false);
 
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Not-ready Set is passed as the second argument for function '{}'", getName());
         }
 
         /// Empty set: return a constant result, checked before input_rows_count == 0 so that header
         /// evaluation produces a `ColumnConst` detectable by `ConstantFilterDescription`.
-        if (set->getTotalRowCount() == 0 && canReportEmptySetAsConstant(*future_set))
-            return ColumnConst::create(ColumnUInt8::create(1, negative), input_rows_count);
+        if (set->getTotalRowCount() == 0)
+        {
+            /// Conversion to the left operand type can discard every literal even though the
+            /// source list is not empty. Such a set still depends on a `NULL` left operand under
+            /// SQL three-valued semantics, so do not apply the logically-empty-set shortcut.
+            const auto * tuple_set = typeid_cast<const FutureSetFromTuple *>(future_set.get());
+            const bool normalized_from_nonempty_tuple = in_null_as_unknown && tuple_set && !tuple_set->isSourceEmpty();
+            if (!normalized_from_nonempty_tuple)
+            {
+                if (canReportEmptySetAsConstant(*future_set))
+                    return ColumnConst::create(createResultColumn(1, negative), input_rows_count);
+
+                if (in_null_as_unknown)
+                    return createResultColumn(input_rows_count, negative);
+            }
+        }
 
         /// Unwrap ColumnConst for the first argument if needed.
         ColumnWithTypeAndName left_arg = arguments[0];
@@ -178,7 +224,7 @@ public:
         if (left_is_const)
             left_arg.column = assert_cast<const ColumnConst &>(*left_arg.column).getDataColumnPtr();
         else if (input_rows_count == 0)
-            return ColumnUInt8::create();
+            return createResultColumn(0, false);
 
         const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(left_arg.column.get());
         const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(left_arg.type.get());
@@ -197,7 +243,10 @@ public:
         else
             columns_of_key_columns.emplace_back(left_arg);
 
-        auto res = set->execute(columns_of_key_columns, negative);
+        auto res = set->execute(columns_of_key_columns, in_null_as_unknown ? false : negative);
+
+        if (in_null_as_unknown)
+            res = applyStandardNullSemantics(*res, *left_arg.column, set->hasNull());
 
         if (left_is_const)
             return ColumnConst::create(std::move(res), input_rows_count);
@@ -209,6 +258,36 @@ public:
     }
 
 private:
+    ColumnPtr createResultColumn(size_t size, bool value) const
+    {
+        auto result = ColumnUInt8::create(size, static_cast<UInt8>(value));
+        if (!in_null_as_unknown)
+            return result;
+
+        return ColumnNullable::create(std::move(result), ColumnUInt8::create(size, UInt8{0}));
+    }
+
+    ColumnPtr applyStandardNullSemantics(const IColumn & membership, const IColumn & left, bool set_has_null) const
+    {
+        const size_t size = membership.size();
+        auto result = ColumnUInt8::create(size);
+        auto null_map = ColumnUInt8::create(size);
+        auto & result_data = result->getData();
+        auto & null_map_data = null_map->getData();
+
+        for (size_t row = 0; row < size; ++row)
+        {
+            const bool left_is_null = left.isNullAt(row);
+            const bool is_member = membership.getBool(row);
+            const bool is_unknown = left_is_null || (!is_member && set_has_null);
+
+            null_map_data[row] = is_unknown;
+            result_data[row] = negative ? !is_member : is_member;
+        }
+
+        return ColumnNullable::create(std::move(result), std::move(null_map));
+    }
+
     /// The set argument arrives either bare or wrapped in a ColumnConst.
     static const ColumnSet * tryGetColumnSet(const ColumnPtr & column)
     {
@@ -218,16 +297,18 @@ private:
     }
 
     /// Emptiness is a property of the plan only for a tuple set, which is finished in its constructor
-    /// and never mutated afterwards. A storage-backed set is the live set of an `ENGINE = Set` table
-    /// and grows on INSERT, and a subquery set is still consulted for index analysis.
-    static bool isImmutableEmptySet(const FutureSet & future_set)
+    /// and never mutated afterwards. Under standard semantics, use the original input size because
+    /// type conversion can discard values. A storage-backed set is the live set of an `ENGINE = Set`
+    /// table and grows on INSERT, and a subquery set is still consulted for index analysis.
+    bool isImmutableEmptySet(const FutureSet & future_set) const
     {
         const auto * tuple_set = typeid_cast<const FutureSetFromTuple *>(&future_set);
         if (!tuple_set)
             return false;
 
-        auto set = tuple_set->get();
-        return set && set->getTotalRowCount() == 0;
+        return in_null_as_unknown
+            ? tuple_set->isSourceEmpty()
+            : tuple_set->get()->getTotalRowCount() == 0;
     }
 
     /// A tuple set is reported as constant by the DAG node too, and a subquery set holds no value while
@@ -243,6 +324,7 @@ private:
     bool negative;
     bool null_is_skipped;
     bool ignore_set;
+    bool in_null_as_unknown;
 };
 
 void registerFunctionsInImpl(FunctionFactory & factory, bool ignore_set)
@@ -265,9 +347,9 @@ Checks if the left operand is a member of the right operand set. Returns 1 if it
         documentation_in.description = String(documentation_in.description) + ignore_set_description_suffix;
     String full_name_in = "in";
     full_name_in += suffix;
-    factory.registerFunction(full_name_in, [ignore_set, n = full_name_in](ContextPtr)
+    factory.registerFunction(full_name_in, [ignore_set, n = full_name_in](ContextPtr context)
     {
-        return FunctionIn::create(n, false, true, ignore_set);
+        return FunctionIn::create(n, false, true, ignore_set, context && context->getSettingsRef()[Setting::in_null_as_unknown]);
     }, std::move(documentation_in));
 
     /// globalIn
@@ -285,9 +367,9 @@ Same as `in`, but uses global set distribution in distributed queries. The set i
         documentation_globalIn.description = String(documentation_globalIn.description) + ignore_set_description_suffix;
     String full_name_globalIn = "globalIn";
     full_name_globalIn += suffix;
-    factory.registerFunction(full_name_globalIn, [ignore_set, n = full_name_globalIn](ContextPtr)
+    factory.registerFunction(full_name_globalIn, [ignore_set, n = full_name_globalIn](ContextPtr context)
     {
-        return FunctionIn::create(n, false, true, ignore_set);
+        return FunctionIn::create(n, false, true, ignore_set, context && context->getSettingsRef()[Setting::in_null_as_unknown]);
     }, std::move(documentation_globalIn));
 
     /// notIn
@@ -305,9 +387,9 @@ Checks if the left operand is NOT a member of the right operand set. Returns 1 i
         documentation_notIn.description = String(documentation_notIn.description) + ignore_set_description_suffix;
     String full_name_notIn = "notIn";
     full_name_notIn += suffix;
-    factory.registerFunction(full_name_notIn, [ignore_set, n = full_name_notIn](ContextPtr)
+    factory.registerFunction(full_name_notIn, [ignore_set, n = full_name_notIn](ContextPtr context)
     {
-        return FunctionIn::create(n, true, true, ignore_set);
+        return FunctionIn::create(n, true, true, ignore_set, context && context->getSettingsRef()[Setting::in_null_as_unknown]);
     }, std::move(documentation_notIn));
 
     /// globalNotIn
@@ -325,9 +407,9 @@ Same as `notIn`, but uses global set distribution in distributed queries. The se
         documentation_globalNotIn.description = String(documentation_globalNotIn.description) + ignore_set_description_suffix;
     String full_name_globalNotIn = "globalNotIn";
     full_name_globalNotIn += suffix;
-    factory.registerFunction(full_name_globalNotIn, [ignore_set, n = full_name_globalNotIn](ContextPtr)
+    factory.registerFunction(full_name_globalNotIn, [ignore_set, n = full_name_globalNotIn](ContextPtr context)
     {
-        return FunctionIn::create(n, true, true, ignore_set);
+        return FunctionIn::create(n, true, true, ignore_set, context && context->getSettingsRef()[Setting::in_null_as_unknown]);
     }, std::move(documentation_globalNotIn));
 
     /// nullIn
@@ -345,9 +427,9 @@ Checks if the left operand is a member of the right operand set. Unlike `in`, NU
         documentation_nullIn.description = String(documentation_nullIn.description) + ignore_set_description_suffix;
     String full_name_nullIn = "nullIn";
     full_name_nullIn += suffix;
-    factory.registerFunction(full_name_nullIn, [ignore_set, n = full_name_nullIn](ContextPtr)
+    factory.registerFunction(full_name_nullIn, [ignore_set, n = full_name_nullIn](ContextPtr context)
     {
-        return FunctionIn::create(n, false, false, ignore_set);
+        return FunctionIn::create(n, false, false, ignore_set, context && context->getSettingsRef()[Setting::in_null_as_unknown]);
     }, std::move(documentation_nullIn));
 
     /// globalNullIn
@@ -365,9 +447,9 @@ Same as `nullIn`, but uses global set distribution in distributed queries. The s
         documentation_globalNullIn.description = String(documentation_globalNullIn.description) + ignore_set_description_suffix;
     String full_name_globalNullIn = "globalNullIn";
     full_name_globalNullIn += suffix;
-    factory.registerFunction(full_name_globalNullIn, [ignore_set, n = full_name_globalNullIn](ContextPtr)
+    factory.registerFunction(full_name_globalNullIn, [ignore_set, n = full_name_globalNullIn](ContextPtr context)
     {
-        return FunctionIn::create(n, false, false, ignore_set);
+        return FunctionIn::create(n, false, false, ignore_set, context && context->getSettingsRef()[Setting::in_null_as_unknown]);
     }, std::move(documentation_globalNullIn));
 
     /// notNullIn
@@ -385,9 +467,9 @@ Checks if the left operand is NOT a member of the right operand set. Unlike `not
         documentation_notNullIn.description = String(documentation_notNullIn.description) + ignore_set_description_suffix;
     String full_name_notNullIn = "notNullIn";
     full_name_notNullIn += suffix;
-    factory.registerFunction(full_name_notNullIn, [ignore_set, n = full_name_notNullIn](ContextPtr)
+    factory.registerFunction(full_name_notNullIn, [ignore_set, n = full_name_notNullIn](ContextPtr context)
     {
-        return FunctionIn::create(n, true, false, ignore_set);
+        return FunctionIn::create(n, true, false, ignore_set, context && context->getSettingsRef()[Setting::in_null_as_unknown]);
     }, std::move(documentation_notNullIn));
 
     /// globalNotNullIn
@@ -405,9 +487,9 @@ Same as `notNullIn`, but uses global set distribution in distributed queries. Th
         documentation_globalNotNullIn.description = String(documentation_globalNotNullIn.description) + ignore_set_description_suffix;
     String full_name_globalNotNullIn = "globalNotNullIn";
     full_name_globalNotNullIn += suffix;
-    factory.registerFunction(full_name_globalNotNullIn, [ignore_set, n = full_name_globalNotNullIn](ContextPtr)
+    factory.registerFunction(full_name_globalNotNullIn, [ignore_set, n = full_name_globalNotNullIn](ContextPtr context)
     {
-        return FunctionIn::create(n, true, false, ignore_set);
+        return FunctionIn::create(n, true, false, ignore_set, context && context->getSettingsRef()[Setting::in_null_as_unknown]);
     }, std::move(documentation_globalNotNullIn));
 }
 

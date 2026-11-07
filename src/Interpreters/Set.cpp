@@ -519,6 +519,22 @@ bool Set::insertFromColumnsImpl(const Columns & columns, SetKeyColumns & holder)
     if (data && data->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method Set::setHeader must be called before Set::insertFromBlock");
 
+    if (!columns.at(0)->empty())
+        has_input_rows.store(true);
+
+    if (transform_null_in && keys_size == 1 && !contains_null_row.load())
+    {
+        const auto & column = *columns.at(0);
+        for (size_t row = 0, rows = column.size(); row < rows; ++row)
+        {
+            if (column.isNullAt(row))
+            {
+                contains_null_row.store(true);
+                break;
+            }
+        }
+    }
+
     holder.key_columns.reserve(keys_size);
     holder.materialized_columns.reserve(keys_size);
 
@@ -929,20 +945,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 bool Set::hasNull() const
 {
     checkIsCreated();
-
-    if (!transform_null_in)
-        return false;
-
-    if (data_types.size() != 1)
-        return false;
-
-    if (!data_types[0]->isNullable())
-        return false;
-
-    auto col = data_types[0]->createColumn();
-    col->insert(Field());
-    auto res = execute({ColumnWithTypeAndName(std::move(col), data_types[0], std::string())}, false);
-    return res->getBool(0);
+    return transform_null_in && contains_null_row.load();
 }
 
 bool Set::empty() const

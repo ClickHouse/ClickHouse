@@ -78,6 +78,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool in_null_as_unknown;
     extern const SettingsBool force_grouping_standard_compatibility;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsBool transform_null_in;
@@ -96,6 +97,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int DUPLICATE_COLUMN;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
@@ -187,6 +189,12 @@ std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
 }
 
 
+struct SetSourceInfo
+{
+    bool is_empty = false;
+    bool has_null = false;
+};
+
 /** Create a block for set from expression.
   * 'set_element_types' - types of what are on the left hand side of IN.
   * 'right_arg' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
@@ -197,19 +205,31 @@ std::pair<ColumnPtr, DataTypePtr> buildCollectionColumnAndTypeFromASTFunction(
 ColumnsWithTypeAndName createBlockForSet(
     const DataTypePtr & left_arg_type,
     const ASTPtr & right_arg,
-    ContextPtr context)
+    ContextPtr context,
+    SetSourceInfo * source_info = nullptr)
 {
     const auto right_value = evaluateConstantExpressionAsColumn(right_arg, context);
     const auto & right_arg_column = right_value.getColumn();
     const auto & right_arg_type = right_value.getType();
+    if (source_info)
+    {
+        source_info->is_empty = isEmptySetForConstantValue(right_arg_column, right_arg_type);
+        source_info->has_null = setContainsNullForConstantValue(right_arg_column, right_arg_type);
+    }
+
+    auto set_element_type = left_arg_type;
+    if (context->getSettingsRef()[Setting::in_null_as_unknown])
+        set_element_type = makeNullableOrLowCardinalityNullableSafe(set_element_type);
 
     GetSetElementParams params{
-        .transform_null_in = context->getSettingsRef()[Setting::transform_null_in],
+        .transform_null_in = context->getSettingsRef()[Setting::transform_null_in]
+            || context->getSettingsRef()[Setting::in_null_as_unknown],
+        .in_null_as_unknown = context->getSettingsRef()[Setting::in_null_as_unknown],
         .forbid_unknown_enum_values = context->getSettingsRef()[Setting::validate_enum_literals_in_operators],
     };
 
     /// Reuse the analyzer logic
-    return getSetElementsForConstantValue(left_arg_type, right_arg_column, right_arg_type, params);
+    return getSetElementsForConstantValue(set_element_type, right_arg_column, right_arg_type, params);
 }
 
 /** Create a block for set from literal.
@@ -219,17 +239,29 @@ ColumnsWithTypeAndName createBlockForSet(
 ColumnsWithTypeAndName createBlockForSet(
     const DataTypePtr & left_arg_type,
     const boost::intrusive_ptr<ASTFunction> & right_arg,
-    ContextPtr context)
+    ContextPtr context,
+    SetSourceInfo * source_info = nullptr)
 {
+    auto set_element_type = left_arg_type;
+    if (context->getSettingsRef()[Setting::in_null_as_unknown])
+        set_element_type = makeNullableOrLowCardinalityNullableSafe(set_element_type);
+
     GetSetElementParams params{
-        .transform_null_in = context->getSettingsRef()[Setting::transform_null_in],
+        .transform_null_in = context->getSettingsRef()[Setting::transform_null_in]
+            || context->getSettingsRef()[Setting::in_null_as_unknown],
+        .in_null_as_unknown = context->getSettingsRef()[Setting::in_null_as_unknown],
         .forbid_unknown_enum_values = context->getSettingsRef()[Setting::validate_enum_literals_in_operators],
     };
 
     auto [right_arg_column, right_arg_type] = buildCollectionColumnAndTypeFromASTFunction(right_arg, context);
+    if (source_info)
+    {
+        source_info->is_empty = isEmptySetForConstantValue(right_arg_column, right_arg_type);
+        source_info->has_null = setContainsNullForConstantValue(right_arg_column, right_arg_type);
+    }
 
     /// Reuse the analyzer logic
-    return getSetElementsForConstantValue(left_arg_type, right_arg_column, right_arg_type, params);
+    return getSetElementsForConstantValue(set_element_type, right_arg_column, right_arg_type, params);
 }
 
 bool hasIdentifiers(const ASTPtr & ast)
@@ -375,11 +407,20 @@ ASTPtr makeFunctionCall(const String & function_name, ASTs arguments)
     return function;
 }
 
-ASTPtr makeScalarNonConstantInReplacement(const ASTFunction & node, bool left_operand_can_be_null)
+ASTPtr makeScalarNonConstantInReplacement(
+    const ASTFunction & node,
+    bool left_operand_can_be_null,
+    bool use_standard_null_semantics)
 {
     const auto & left_operand = node.arguments->children.at(0);
     const auto & right_operand = node.arguments->children.at(1);
     const bool is_negative = isNegativeInFunctionName(node.name);
+
+    ASTPtr comparison = makeASTFunction(
+        is_negative ? "notEquals" : "equals", left_operand->clone(), right_operand->clone());
+
+    if (use_standard_null_semantics)
+        return makeASTFunction("toNullable", std::move(comparison));
 
     if (inFunctionComparesNulls(node.name))
         return makeASTFunction(
@@ -388,9 +429,7 @@ ASTPtr makeScalarNonConstantInReplacement(const ASTFunction & node, bool left_op
             right_operand->clone());
 
     ASTPtr result = makeASTFunction(
-        "ifNull",
-        makeASTFunction(is_negative ? "notEquals" : "equals", left_operand->clone(), right_operand->clone()),
-        make_intrusive<ASTLiteral>(is_negative ? 1u : 0u));
+        "ifNull", std::move(comparison), make_intrusive<ASTLiteral>(is_negative ? 1u : 0u));
 
     if (left_operand_can_be_null)
         result = makeASTFunction(
@@ -411,11 +450,55 @@ ASTPtr makeNonConstantInReplacement(
     bool left_operand_is_tuple,
     size_t left_operand_tuple_size,
     bool left_operand_is_always_null,
-    const DataTypePtr & cast_elements_to)
+    const DataTypePtr & cast_elements_to,
+    bool use_standard_null_semantics)
 {
     const auto & arguments = node.arguments->children;
     const auto & left_operand = arguments.at(0);
     const auto & right_operand = arguments.at(1);
+
+    if (use_standard_null_semantics)
+    {
+        ASTPtr right_operand_array = makeArrayForNonConstantInRightOperand(
+            right_operand,
+            right_operand_is_array,
+            right_operand_tuple_function_is_set,
+            include_right_operand_tuple_value,
+            right_operand_type,
+            left_operand_is_tuple,
+            cast_elements_to);
+
+        ASTPtr result = makeFunctionCall("if",
+            {
+                makeASTFunction("has", right_operand_array->clone(), left_operand->clone()),
+                make_intrusive<ASTLiteral>(1u),
+                makeFunctionCall("if",
+                    {
+                        makeASTFunction("has", right_operand_array->clone(), make_intrusive<ASTLiteral>(Field{})),
+                        make_intrusive<ASTLiteral>(Field{}),
+                        make_intrusive<ASTLiteral>(0u),
+                    }),
+            });
+
+        result = makeFunctionCall("if",
+            {
+                makeASTFunction("isNull", left_operand->clone()),
+                make_intrusive<ASTLiteral>(Field{}),
+                std::move(result),
+            });
+
+        result = makeFunctionCall("if",
+            {
+                makeASTFunction("empty", std::move(right_operand_array)),
+                make_intrusive<ASTLiteral>(0u),
+                std::move(result),
+            });
+
+        if (isNegativeInFunctionName(node.name))
+            result = makeASTFunction("not", std::move(result));
+
+        return result;
+    }
 
     /// The constant `Set` path decides `NULL IN (...)` under compare-nulls semantics purely
     /// by `NULL` presence among the set elements, without requiring a common element type.
@@ -535,10 +618,11 @@ FutureSetPtr makeExplicitSet(
     const auto & right_arg_func = boost::dynamic_pointer_cast<ASTFunction>(right_arg);
 
     ColumnsWithTypeAndName block;
+    SetSourceInfo source_info;
     if (right_arg_func && (right_arg_func->name == "tuple" || right_arg_func->name == "array"))
-        block = createBlockForSet(left_arg_type, right_arg_func, context);
+        block = createBlockForSet(left_arg_type, right_arg_func, context, &source_info);
     else
-        block = createBlockForSet(left_arg_type, right_arg, context);
+        block = createBlockForSet(left_arg_type, right_arg, context, &source_info);
 
     if (block.empty())
         throw Exception(
@@ -552,13 +636,20 @@ FutureSetPtr makeExplicitSet(
 
     auto set_element_keys = Set::getElementTypes(
         std::move(set_element_types),
-        context->getSettingsRef()[Setting::transform_null_in]);
+        context->getSettingsRef()[Setting::transform_null_in]
+            || context->getSettingsRef()[Setting::in_null_as_unknown]);
 
     auto set_key = right_arg->getTreeHash(/*ignore_aliases=*/ true);
     if (auto set = prepared_sets.findTuple(set_key, set_element_keys))
         return set; /// Already prepared.
 
-    return prepared_sets.addFromTuple(set_key, right_arg_func, std::move(block), context->getSettingsRef());
+    return prepared_sets.addFromTuple(
+        set_key,
+        right_arg_func,
+        std::move(block),
+        context->getSettingsRef(),
+        source_info.is_empty,
+        context->getSettingsRef()[Setting::in_null_as_unknown] && source_info.has_null);
 }
 
 class ScopeStack::Index
@@ -1085,6 +1176,13 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         if (auto name_and_type = getNameAndTypeFromAST(node.arguments->children.at(0), data))
             left_argument_type = name_and_type->type;
         const bool left_argument_is_tuple = isTupleType(left_argument_type) || isTupleFunction(node.arguments->children.at(0));
+        const bool use_standard_null_semantics = data.getContext()->getSettingsRef()[Setting::in_null_as_unknown];
+
+        if (use_standard_null_semantics && left_argument_is_tuple)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Setting 'in_null_as_unknown' does not support a Tuple left operand in function {}",
+                node.name);
 
         const auto & right_argument = node.arguments->children.at(1);
         bool rewrite_row_wise = false;
@@ -1202,7 +1300,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 {
                     replacement = makeScalarNonConstantInReplacement(
                         node,
-                        isNullableOrLowCardinalityNullable(left_argument_type));
+                        isNullableOrLowCardinalityNullable(left_argument_type),
+                        use_standard_null_semantics);
                 }
                 else
                 {
@@ -1295,7 +1394,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         left_argument_is_tuple,
                         getTupleElementCount(left_argument_type, node.arguments->children.at(0)),
                         left_argument_type && left_argument_type->onlyNull(),
-                        cast_elements_to);
+                        cast_elements_to,
+                        use_standard_null_semantics);
                 }
 
                 visit(replacement, data);

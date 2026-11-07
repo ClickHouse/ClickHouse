@@ -148,6 +148,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 21 also adds the `hash_join_layout` plan setting, written only towards a peer at this version or above.
 /// A peer below it picks the layout of a hash join itself. That can change only the speed, the memory use and the
 /// order of rows.
+/// Version 21 also records logical emptiness and top-level `NULL` presence for serialized `IN` sets.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -161,6 +162,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 ///
 /// Last bumped for release 26.11.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 21;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SET_SOURCE_STATE = 21;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a

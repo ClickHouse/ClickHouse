@@ -16,6 +16,7 @@ using SetPtr = std::shared_ptr<Set>;
 struct GetSetElementParams
 {
     bool transform_null_in = true;
+    bool in_null_as_unknown = false;
     bool forbid_unknown_enum_values = false;
 };
 
@@ -28,5 +29,13 @@ struct GetSetElementParams
 /// `rhs_column` is a size-1 (const) column holding the constant right-hand side of `IN` (a scalar,
 /// Array or Tuple). Values are read column-natively - no `Field` is materialized.
 ColumnsWithTypeAndName getSetElementsForConstantValue(const DataTypePtr & expression_type, const ColumnPtr & rhs_column, const DataTypePtr & rhs_type, GetSetElementParams params);
+
+/// Return whether a constant right-hand side denotes an empty collection before its elements are
+/// converted to the left operand type.
+bool isEmptySetForConstantValue(const ColumnPtr & rhs_column, const DataTypePtr & rhs_type);
+
+/// Return whether a constant right-hand side contains a top-level `NULL` member before its
+/// elements are converted to the left operand type.
+bool setContainsNullForConstantValue(const ColumnPtr & rhs_column, const DataTypePtr & rhs_type);
 
 }
