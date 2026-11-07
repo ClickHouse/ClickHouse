@@ -353,6 +353,22 @@ bool referencesAlias(const ASTPtr & node, const IAST * excluded, const String & 
     return false;
 }
 
+bool referencesProjectionAlias(const ASTPtr & node, const ASTIdentifier & identifier)
+{
+    if (node.get() == &identifier)
+        return false;
+
+    const auto & alias = node->tryGetAlias();
+    if (!alias.empty() && (identifier.name() == alias || identifier.name().starts_with(alias + ".")))
+        return true;
+
+    for (const auto & child : node->children)
+        if (referencesProjectionAlias(child, identifier))
+            return true;
+
+    return false;
+}
+
 struct DirectViewProjection
 {
     const ASTIdentifier * identifier = nullptr;
@@ -394,6 +410,12 @@ std::optional<DirectViewProjection> getDirectViewProjection(
 
         auto source_column = underlying_snapshot->tryGetColumn(GetColumnsOptions::Ordinary, identifier->getColumnName());
         if (!source_column || !source_column->type->equals(*view_column->type))
+            return {};
+
+        /// An input identifier may bind another projection's alias rather than the physical column,
+        /// e.g. `SELECT y AS x, x AS m FROM t`. Leave alias binding to the analyzer, including
+        /// `prefer_column_name_to_alias`, instead of assuming the identifier names the stored column.
+        if (referencesProjectionAlias(select->select(), *identifier))
             return {};
 
         /// The rewrite replaces the projection, and its alias with it, so other expressions

@@ -2048,6 +2048,7 @@ public:
             || isIndexColumn(map_column.name, *storage_snapshot->metadata))
             return;
 
+        auto result_type = function_node->getResultType();
         QueryTreeNodePtr rewritten_function = node->clone();
         auto * rewritten_function_node = rewritten_function->as<FunctionNode>();
         ColumnContext column_context{map_column, table_source, getContext(), subcolumn_support_cache};
@@ -2084,6 +2085,8 @@ public:
         }
 
         node = std::make_shared<ColumnNode>(subcolumn, query_source);
+        if (!result_type->equals(*node->getResultType()))
+            node = buildCastFunction(node, result_type, getContext());
     }
 
 private:
