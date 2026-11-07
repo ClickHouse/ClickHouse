@@ -275,6 +275,15 @@ namespace
         }
     };
 
+    /// Called when the reserve is exceeded. If rows were dropped (`src_offset >= evidence_offset`) but all elements before
+    /// `src_offset` were copied, the dropped rows were empty, as with `s != ''`: assume so for the rest, reserve the whole source.
+    template <typename T>
+    NO_INLINE void reserveSourceIfDroppedEmpty(PaddedPODArray<T> & res_elems, size_t src_offset, size_t src_size, size_t evidence_offset)
+    {
+        if (src_offset >= evidence_offset && res_elems.size() == src_offset)
+            res_elems.reserve_exact(src_size);
+    }
+
     template <typename T, typename ResultOffsetsBuilder>
     void filterArraysImplGeneric(
         const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
@@ -302,6 +311,9 @@ namespace
 
         const auto * offsets_pos = src_offsets.data();
         const auto * offsets_begin = offsets_pos;
+        /// A non-empty row starts at or after the end of the first dropped row iff it follows it. Hint 0 asks for no reserve.
+        const auto * first_dropped = result_size_hint > 0 ? static_cast<const UInt8 *>(std::memchr(filt.data(), 0, size)) : nullptr;
+        const size_t evidence_offset = first_dropped ? src_offsets[first_dropped - filt.data()] : std::numeric_limits<size_t>::max();
 
         /// copy array ending at *end_offset_ptr
         const auto copy_array = [&] (const IColumn::Offset * offset_ptr)
@@ -312,6 +324,8 @@ namespace
             result_offsets_builder.insertOne(arr_size);
 
             const auto elems_size_old = res_elems.size();
+            if (elems_size_old + arr_size > res_elems.capacity()) [[unlikely]]
+                reserveSourceIfDroppedEmpty(res_elems, arr_offset, src_elems.size(), evidence_offset);
             res_elems.resize(elems_size_old + arr_size);
             memcpy(&res_elems[elems_size_old], &src_elems[arr_offset], arr_size * sizeof(T));
         };
@@ -340,6 +354,8 @@ namespace
 
                 /// copy elements for SIMD_BYTES arrays at once
                 const auto elems_size_old = res_elems.size();
+                if (elems_size_old + chunk_size > res_elems.capacity()) [[unlikely]]
+                    reserveSourceIfDroppedEmpty(res_elems, chunk_offset, src_elems.size(), evidence_offset);
                 res_elems.resize(elems_size_old + chunk_size);
                 memcpy(&res_elems[elems_size_old], &src_elems[chunk_offset], chunk_size * sizeof(T));
             }
