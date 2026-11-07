@@ -1158,7 +1158,8 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         }
         case ASTAlterCommand::FETCH_PARTITION:
         {
-            required_access.emplace_back(AccessType::ALTER_FETCH_PARTITION, database, table);
+            /// The source is a ZooKeeper path, it is checked in `StorageReplicatedMergeTree::fetchPartition`.
+            required_access.emplace_back(AccessType::ALTER_FETCH_PARTITION | AccessType::INSERT, database, table);
             break;
         }
         case ASTAlterCommand::FREEZE_PARTITION:
