@@ -857,7 +857,7 @@ DataTypePtr DeltaLakeMetadata::getSimpleTypeByName(const String & type_name)
     if (type_name == "date")
         return std::make_shared<DataTypeDate32>();
     if (type_name == "timestamp" || type_name == "timestamp_ntz")
-        return std::make_shared<DataTypeDateTime64>(6);
+        return std::make_shared<DataTypeDateTime64>(6, "UTC");
     if (type_name.starts_with("decimal(") && type_name.ends_with(')'))
     {
         ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));
