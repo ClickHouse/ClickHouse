@@ -16,6 +16,7 @@ namespace DB
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+class ASTIndexDeclaration;
 
 /// Description of non-primary index for Storage
 struct IndexDescription
@@ -85,6 +86,19 @@ struct IndexDescription
 
     bool isSimpleSingleColumnIndex() const;
 };
+
+/// Checks that the functions referenced by the text index preprocessor and postprocessor expressions
+/// may run with the permissions of `context`. Call only where a user declares an index, on the node
+/// they submitted it to; elsewhere these resolve under the global context.
+void checkTextIndexPreAndPostProcessorPermissions(const IndexDescription & index, const ContextPtr & context);
+
+/// Refuses a transform when the other hosts of an `ON CLUSTER` query do not run it as the initiator.
+void rejectTextIndexTransformWithoutInitiatorUser(const ASTIndexDeclaration & declaration);
+void rejectTextIndexTransformWithoutInitiatorUser(const IndexDescription & index);
+
+/// Whether the declaration is a text index with a `preprocessor` or a `postprocessor` argument.
+bool hasTextIndexPreOrPostProcessor(const ASTIndexDeclaration & declaration);
+bool hasTextIndexPreOrPostProcessor(const IndexDescription & index);
 
 /// All secondary indices in storage
 struct IndicesDescription : public std::vector<IndexDescription>, IHints<>

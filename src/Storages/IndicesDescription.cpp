@@ -1,8 +1,12 @@
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/IndicesDescription.h>
 
+#include <Functions/FunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -28,25 +32,106 @@ namespace ErrorCodes
 namespace
 {
 
-/// Only the `preprocessor` and `postprocessor` arguments contain column expressions.
-void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDescription & columns)
+/// Calls `fn` with the value of each `preprocessor` / `postprocessor` argument of a text index.
+template <typename F>
+void forEachTransformArgument(const ASTPtr & arguments, F && fn)
 {
-    using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
     for (const auto & child : arguments->children)
     {
-        const auto * func = child->as<ASTFunction>();
+        auto * func = child->as<ASTFunction>();
         if (!func || func->name != "equals" || !func->arguments || func->arguments->children.size() != 2)
             continue;
 
         const auto * key = func->arguments->children[0]->as<ASTIdentifier>();
         if (key && (key->name() == "preprocessor" || key->name() == "postprocessor"))
-        {
-            ReplaceAliasToExprVisitor::Data data{columns, {}, /*reject_lambda_capture=*/ true};
-            ReplaceAliasToExprVisitor{data}.visit(func->arguments->children[1]);
-        }
+            fn(func->arguments->children[1]);
     }
 }
 
+void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDescription & columns)
+{
+    using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+    forEachTransformArgument(arguments, [&](ASTPtr & expression)
+    {
+        ReplaceAliasToExprVisitor::Data data{columns, {}, /*reject_lambda_capture=*/ true};
+        ReplaceAliasToExprVisitor{data}.visit(expression);
+    });
+}
+
+void resolveFunctionsAsUser(const ASTPtr & ast, const ContextPtr & context)
+{
+    if (const auto * func = ast->as<ASTFunction>())
+        FunctionFactory::instance().tryGet(func->name, context);
+
+    for (const auto & child : ast->children)
+        resolveFunctionsAsUser(child, context);
+}
+
+void checkTransformPermissions(const ASTPtr & arguments, const ContextPtr & context)
+{
+    forEachTransformArgument(arguments, [&](ASTPtr & argument)
+    {
+        auto expression = argument->clone();
+        /// Inlines SQL UDF bodies, as `TreeRewriter` does, so a function used only inside one is seen.
+        if (!UserDefinedSQLFunctionFactory::instance().empty())
+            UserDefinedSQLFunctionVisitor::visit(expression, context);
+
+        /// Resolving a name runs the function's `create`, where `checkAccess` lives. Names only:
+        /// building the expression would report its type errors from here, not from the validator.
+        resolveFunctionsAsUser(expression, context);
+    });
+}
+
+}
+
+void checkTextIndexPreAndPostProcessorPermissions(const IndexDescription & index, const ContextPtr & context)
+{
+    if (index.type == TEXT_INDEX_NAME && index.arguments)
+        checkTransformPermissions(index.arguments, context);
+}
+
+bool hasTextIndexPreOrPostProcessor(const IndexDescription & index)
+{
+    if (index.type != TEXT_INDEX_NAME || !index.arguments)
+        return false;
+
+    bool found = false;
+    forEachTransformArgument(index.arguments, [&](ASTPtr &) { found = true; });
+    return found;
+}
+
+[[noreturn]] static void throwTransformNeedsInitiatorUser()
+{
+    throw Exception(
+        ErrorCodes::INCORRECT_QUERY,
+        "A text index preprocessor or postprocessor is authorized on the host the query is submitted to, and the "
+        "other hosts resolve it against their own schema without that user. Let every host run the query as the "
+        "initiating user instead: enable the server setting distributed_ddl_use_initial_user_and_roles on every "
+        "host, and set distributed_ddl_entry_format_version to at least {}",
+        DDLLogEntry::INITIATOR_USER_VERSION);
+}
+
+void rejectTextIndexTransformWithoutInitiatorUser(const ASTIndexDeclaration & declaration)
+{
+    if (hasTextIndexPreOrPostProcessor(declaration))
+        throwTransformNeedsInitiatorUser();
+}
+
+void rejectTextIndexTransformWithoutInitiatorUser(const IndexDescription & index)
+{
+    if (hasTextIndexPreOrPostProcessor(index))
+        throwTransformNeedsInitiatorUser();
+}
+
+bool hasTextIndexPreOrPostProcessor(const ASTIndexDeclaration & declaration)
+{
+    const auto * type = declaration.getType() ? declaration.getType()->as<ASTFunction>() : nullptr;
+    if (!type || Poco::toLower(type->name) != TEXT_INDEX_NAME || !type->arguments)
+        return false;
+
+    bool found = false;
+    forEachTransformArgument(type->arguments, [&](ASTPtr &) { found = true; });
+    return found;
 }
 
 IndexDescription::IndexDescription(const IndexDescription & other)
