@@ -81,6 +81,8 @@ public:
 protected:
      /// Count index_granularity for block and store in `index_granularity`
     size_t computeIndexGranularity(const Block & block) const;
+    /// The same, with the size of the block already computed by `getBlockSizeForGranularity`.
+    size_t computeIndexGranularity(size_t rows, size_t block_bytes) const;
 
     /// Write primary index according to granules_to_write
     void calculateAndSerializePrimaryIndex(const Block & primary_index_block, const Granules & granules_to_write);

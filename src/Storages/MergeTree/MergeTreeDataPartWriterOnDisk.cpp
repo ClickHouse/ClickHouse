@@ -118,9 +118,14 @@ void MergeTreeDataPartWriterOnDisk::cancel() noexcept
 
 size_t MergeTreeDataPartWriterOnDisk::computeIndexGranularity(const Block & block) const
 {
+    return computeIndexGranularity(block.rows(), getBlockSizeForGranularity(block));
+}
+
+size_t MergeTreeDataPartWriterOnDisk::computeIndexGranularity(size_t rows, size_t block_bytes) const
+{
     return DB::computeIndexGranularity(
-        block.rows(),
-        getBlockSizeForGranularity(block),
+        rows,
+        block_bytes,
         (*storage_settings)[MergeTreeSetting::index_granularity_bytes],
         (*storage_settings)[MergeTreeSetting::index_granularity],
         settings.blocks_are_granules_size,
