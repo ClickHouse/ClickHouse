@@ -1670,7 +1670,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (is_special_function_dict_get)
             {
-                scope.context->getExternalDictionariesLoader().assertDictionaryStructureExists(identifier.getFullName(), scope.context);
+                /// Check access before reading the dictionary definition, so that a user without access learns nothing
+                /// about the dictionary.
+                const auto & external_loader = scope.context->getExternalDictionariesLoader();
+                external_loader.getDictionaryStructure(external_loader.resolveDictionaryCheckingAccess(identifier.getFullName(), scope.context));
             }
             else
             {

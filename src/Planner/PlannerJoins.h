@@ -304,6 +304,4 @@ std::set<JoinTableSide> extractJoinTableSidesFromExpression(
 
 QueryTreeNodePtr getJoinExpressionFromNode(const JoinNode & join_node);
 
-void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::shared_ptr<TableJoin> & table_join);
-
 }

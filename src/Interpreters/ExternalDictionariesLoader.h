@@ -56,7 +56,36 @@ public:
     /// a definition whose layout element does not have exactly one child, like loading it would.
     std::string getDictionaryLayoutType(const std::string & dictionary_name, ContextPtr context) const;
 
-    void assertDictionaryStructureExists(const std::string & dictionary_name, ContextPtr context) const;
+    /// A dictionary name resolved once, so that an access check and the reads after it refer to the same dictionary.
+    /// The reads go by `key`, which for a dictionary in an `Atomic` database is its UUID and does not change on rename.
+    /// For an XML dictionary or one in an `Ordinary` database the key is the name.
+    struct ResolvedDictionary
+    {
+        /// The name as the query wrote it.
+        std::string name;
+        /// The key the loader stores the dictionary under, empty if there is no such dictionary.
+        std::string key;
+        /// The ID to check access rights with, taken from the loaded dictionary if there is one, otherwise from its
+        /// configuration. For a dictionary that does not exist, the ID it would have, so that a user without access
+        /// gets the access error and cannot tell a missing dictionary from an existing one.
+        StorageID id;
+
+        /// Throws if there is no such dictionary.
+        const std::string & getKey() const;
+    };
+
+    /// Resolves the name without loading the dictionary, so that access can be checked before loading.
+    ResolvedDictionary resolveDictionary(const std::string & dictionary_name, ContextPtr query_context) const;
+
+    /// The same, resolving an unqualified name against the given database rather than the current database of the query.
+    ResolvedDictionary resolveDictionary(const std::string & dictionary_name, const std::string & current_database_name, ContextPtr query_context) const;
+
+    /// The same, and checks that the user of `query_context` has `dictGet` on the dictionary.
+    ResolvedDictionary resolveDictionaryCheckingAccess(const std::string & dictionary_name, ContextPtr query_context) const;
+
+    DictPtr getDictionary(const ResolvedDictionary & dictionary, ContextPtr local_context) const;
+    DictionaryStructure getDictionaryStructure(const ResolvedDictionary & dictionary) const;
+    std::string getDictionaryLayoutType(const ResolvedDictionary & dictionary) const;
 
     /// Reloads all previously tried-to-load dictionaries in topological order
     /// based on their source dependencies (dictionaries sourcing from other dictionaries).
@@ -95,6 +124,13 @@ protected:
 
     /// Resolution without a record.
     ResolvedDictionaryName resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const;
+
+    /// The same, but the key may name no dictionary.
+    ResolvedDictionaryName resolveDictionaryNameUnchecked(const std::string & dictionary_name, const std::string & current_database_name) const;
+
+    DictPtr loadDictionary(const std::string & key, ContextPtr local_context) const;
+    DictionaryStructure getDictionaryStructureByKey(const std::string & key, const std::string & dictionary_name) const;
+    std::string getDictionaryLayoutTypeByKey(const std::string & key, const std::string & dictionary_name) const;
 
     std::string resolveDictionaryName(const QualifiedTableName & dictionary_name) const;
 

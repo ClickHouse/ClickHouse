@@ -132,6 +132,12 @@ private:
     /// `setEngine` has resolved an engine inherited through `AS`, which `getRequiredAccess` cannot see.
     void checkExportAccess(const ASTCreateQuery & create) const;
 
+    /// A `Dictionary` table, including the inner table of a materialized view and a table created `AS dictionary(...)`,
+    /// needs access to the dictionary it reads, see `StorageDictionary::checkDictionaryAccess`. Checked here, while the
+    /// query still runs as the user: `Replicated` and `ON CLUSTER` replays run with full access. Replaces the dictionary
+    /// name argument with the evaluated name.
+    void checkDictionaryEngineAccess(ASTCreateQuery & create) const;
+
     /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.
     bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode);
     BlockIO doCreateOrReplaceTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode);

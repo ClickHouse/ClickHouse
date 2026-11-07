@@ -1,0 +1,34 @@
+--- ON CLUSTER
+CREATE TABLE cluster_db.w_1 ON CLUSTER test_shard_localhost (id UInt64, value String) ENGINE = Dictionary(db.d)
+ACCESS_DENIED
+NOT_LOADED
+CREATE TABLE cluster_db.w_2 ON CLUSTER test_shard_localhost (id UInt64, value String) ENGINE = Dictionary(db.d)
+ACCESS_DENIED
+NOT_LOADED
+CREATE TABLE cluster_db.w_default ON CLUSTER test_shard_localhost (id UInt64, value String) ENGINE = Dictionary(db.d)
+ACCESS_DENIED
+NOT_LOADED
+--- inner table of a materialized view
+CREATE MATERIALIZED VIEW mv ENGINE = Dictionary(db.d) AS SELECT id, value FROM db.src
+ACCESS_DENIED
+NOT_LOADED
+--- table function
+CREATE TABLE w_function (id UInt64, value String) AS dictionary('db.d')
+ACCESS_DENIED
+NOT_LOADED
+0
+CREATE TABLE cluster_db.w_function ON CLUSTER test_shard_localhost (id UInt64, value String) AS dictionary('db.d')
+ACCESS_DENIED
+NOT_LOADED
+0
+--- unqualified name, resolved by ON CLUSTER in the default database of the server
+CREATE TABLE cluster_db.w_unqualified ON CLUSTER test_shard_localhost (id UInt64, value String) ENGINE = Dictionary('d_unqualified')
+ACCESS_DENIED
+NOT_LOADED
+--- dictionary name given by an expression
+CREATE TABLE w_expression (id UInt64, value String) ENGINE = Dictionary(concat(currentDatabase(), '.d'))
+ACCESS_DENIED
+NOT_LOADED
+CREATE TABLE cluster_db.w_expression ON CLUSTER test_shard_localhost (id UInt64, value String) ENGINE = Dictionary(concat(currentDatabase(), '.d'))
+
+1
