@@ -37,3 +37,7 @@ filtered
 -- a second SETTINGS clause under EXECUTE AS and EXPLAIN
 rejected
 rejected
+-- ALTER with a second SETTINGS clause is rejected, the handler keeps its definition
+rejected
+1
+2

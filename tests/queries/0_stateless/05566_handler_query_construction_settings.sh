@@ -97,3 +97,8 @@ ${CLICKHOUSE_CLIENT} -q "CREATE HANDLER h16_${DB} URL '/h16_${DB}' METHODS (POST
     | grep -q BAD_ARGUMENTS && echo rejected || echo accepted
 ${CLICKHOUSE_CLIENT} -q "CREATE HANDLER h17_${DB} URL '/h17_${DB}' AS EXPLAIN SELECT a FROM ${DB}.t SETTINGS filter = 'a > 1' FORMAT TSV SETTINGS limit = 1" 2>&1 \
     | grep -q BAD_ARGUMENTS && echo rejected || echo accepted
+
+echo "-- ALTER with a second SETTINGS clause is rejected, the handler keeps its definition"
+${CLICKHOUSE_CLIENT} -q "ALTER HANDLER h9_${DB} AS SELECT a FROM ${DB}.t ORDER BY a SETTINGS max_threads = 1 FORMAT TSV SETTINGS limit = 1" 2>&1 \
+    | grep -q BAD_ARGUMENTS && echo rejected || echo accepted
+${CLICKHOUSE_CURL} -sS "${BASE}/h9_${DB}"
