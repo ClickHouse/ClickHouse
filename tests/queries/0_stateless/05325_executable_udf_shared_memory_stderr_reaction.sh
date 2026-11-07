@@ -2,11 +2,11 @@
 # Tags: no-darwin
 # - no-darwin: shared-memory regions for executable UDFs are supported only on Linux
 
-# How `stderr_reaction` and the timeouts apply to a single query of the shared-memory transport: stderr
-# a command writes at startup, just before or on its way out, or after answering, and a command that is
-# slow to exit or stops answering. Each scenario runs in a `clickhouse-local` of its own, so its log is
-# its own. What a pooled worker leaves behind between borrows is in
-# `05324_executable_udf_shared_memory_stderr`.
+# How `stderr_reaction` applies to a single query of the shared-memory transport: stderr a command
+# writes at startup, just before or on its way out, or after answering. Each scenario runs in a
+# `clickhouse-local` of its own, so its log is its own. What a pooled worker leaves behind between
+# borrows is in `05324_executable_udf_shared_memory_stderr`; timeouts are covered by
+# `05565_executable_udf_shared_memory_timeouts`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,12 +21,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
     shm_function shm_on_the_way_out executable "<stderr_reaction>throw</stderr_reaction><shared_memory_size>4096</shared_memory_size>" "shm_udf_noisy.py --after-answer stderr-on-the-way-out"
     shm_function shm_on_the_way_out_no_exit_check executable \
         "<stderr_reaction>throw</stderr_reaction><check_exit_code>0</check_exit_code><shared_memory_size>4096</shared_memory_size>" "shm_udf_noisy.py --after-answer stderr-on-the-way-out"
-    shm_function shm_lingers executable "<command_termination_timeout>2</command_termination_timeout><shared_memory_size>4096</shared_memory_size>" "shm_udf.py --linger 4"
-    shm_function shm_lingers_no_exit_check executable \
-        "<command_termination_timeout>2</command_termination_timeout><check_exit_code>0</check_exit_code><shared_memory_size>4096</shared_memory_size>" "shm_udf.py --linger 4"
-    shm_function shm_quiet_stderr_stalls executable "<command_read_timeout>2000</command_read_timeout><command_termination_timeout>1</command_termination_timeout><shared_memory_size>4096</shared_memory_size>" "shm_udf_broken.py --stall quiet"
-    shm_function shm_chatty_stderr_stalls executable \
-        "<command_read_timeout>2000</command_read_timeout><command_termination_timeout>1</command_termination_timeout><stderr_reaction>none</stderr_reaction><shared_memory_size>4096</shared_memory_size>" "shm_udf_broken.py --stall chatty"
     shm_function shm_stderr_after_stdout executable "<stderr_reaction>none</stderr_reaction><shared_memory_size>4096</shared_memory_size>" "shm_udf_noisy.py --after-answer stderr-flood-on-the-way-out"
     shm_function shm_chatty_stderr_throw executable_pool \
         "<pool_size>1</pool_size><stderr_reaction>throw</stderr_reaction><shared_memory_size>16777216</shared_memory_size>" "shm_udf_noisy.py --report-pid --stderr-before-frame line"
@@ -63,23 +57,6 @@ shm_local "
     SELECT shm_on_the_way_out_no_exit_check(1) FORMAT Null;
 "
 shm_log_contains "complaining on the way out"
-
-echo "--- a command slow to exit is waited for"
-# On stdin EOF it exits successfully only after its \`command_termination_timeout\`.
-shm_local "
-    SELECT shm_lingers(1);
-    SELECT shm_lingers_no_exit_check(1);
-"
-
-echo "--- a command that stops answering times out"
-# One closes its stderr first, which then polls as a hangup forever; the other keeps writing to
-# stderr every 50 ms. Neither may stop \`command_read_timeout\` from firing. Neither exits on stdin EOF
-# either, so each is given a short \`command_termination_timeout\` instead of the default 10 seconds.
-shm_local "
-    SELECT shm_quiet_stderr_stalls(1) FORMAT Null;
-    SELECT shm_chatty_stderr_stalls(1) FORMAT Null;
-"
-shm_log_contains "Pipe read timeout exceeded"
 
 echo "--- stderr written after closing stdout does not hang the reap"
 shm_local "

@@ -165,11 +165,12 @@ function shm_local_listening()
 # A query that runs the query given as the user given, through the HTTP interface of the
 # `shm_local_listening` it is run in. `http_make_head_request` is off, because a `HEAD` request runs
 # the query too, and `url` does not retry: a retry would run the query again - on a fresh worker, say,
-# hiding a borrow that failed.
+# hiding a borrow that failed. Close each HTTP connection after its response so that
+# `clickhouse-local` does not wait for idle keep-alive connections during shutdown.
 function shm_as_user()
 {
     echo "SELECT * FROM url('http://127.0.0.1:' || toString(getServerPort('http_port'))
-        || '/?user=$1&query=' || encodeURLComponent('$2'), TSV, 'result String') SETTINGS http_make_head_request = 0, http_max_tries = 1;"
+        || '/?user=$1&query=' || encodeURLComponent('$2'), TSV, 'result String', headers('Connection' = 'close')) SETTINGS http_make_head_request = 0, http_max_tries = 1;"
 }
 
 # Prints `gone` once the process is gone, or a zombie waiting to be reaped - either way it runs no

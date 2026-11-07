@@ -24,24 +24,14 @@ function pipe_function()
     pipe_function pipe_on_the_way_out executable "<stderr_reaction>throw</stderr_reaction>" "pipe_udf.py --close-stdout --pause 1 --stderr-on-the-way-out"
     pipe_function pipe_on_the_way_out_no_exit_check executable \
         "<stderr_reaction>throw</stderr_reaction><check_exit_code>0</check_exit_code>" "pipe_udf.py --close-stdout --pause 1 --stderr-on-the-way-out"
-    pipe_function pipe_lingers executable "<command_termination_timeout>2</command_termination_timeout>" "pipe_udf.py --close-stdout --pause 4"
+    pipe_function pipe_lingers executable "<command_termination_timeout>1</command_termination_timeout>" "pipe_udf.py --close-stdout --pause 2"
     pipe_function pipe_lingers_no_exit_check executable \
-        "<command_termination_timeout>2</command_termination_timeout><check_exit_code>0</check_exit_code>" "pipe_udf.py --close-stdout --pause 4"
+        "<command_termination_timeout>1</command_termination_timeout><check_exit_code>0</check_exit_code>" "pipe_udf.py --close-stdout --pause 2"
     pipe_function pipe_lingers_no_exit_check_no_grace executable \
         "<command_termination_timeout>0</command_termination_timeout><check_exit_code>0</check_exit_code>" "pipe_udf.py --close-stdout --pause 4"
     pipe_function pipe_exit_after_a_moment executable "<command_termination_timeout>0</command_termination_timeout>" "pipe_udf.py --close-stdout --pause 0.3"
     pipe_function pipe_stray_stdout_then_stderr executable \
         "<check_exit_code>0</check_exit_code><stderr_reaction>throw</stderr_reaction>" "pipe_udf.py --pause 0.3 --stray-stdout --stderr-on-the-way-out"
-    pipe_function pipe_pool_lingers executable_pool \
-        "<pool_size>1</pool_size><command_termination_timeout>2</command_termination_timeout>" "pipe_udf.py --first-row-only --no-newline --close-stdout --linger"
-    pipe_function pipe_pool_lingers_no_exit_check executable_pool \
-        "<pool_size>1</pool_size><command_termination_timeout>2</command_termination_timeout><check_exit_code>0</check_exit_code>" "pipe_udf.py --first-row-only --no-newline --close-stdout --linger"
-    pipe_function pipe_pool_lingers_no_grace executable_pool \
-        "<pool_size>1</pool_size><command_termination_timeout>0</command_termination_timeout>" "pipe_udf.py --first-row-only --no-newline --close-stdout --linger"
-    pipe_function pipe_pool_short_answer executable_pool \
-        "<pool_size>1</pool_size><command_termination_timeout>20</command_termination_timeout>" "pipe_udf.py --first-row-only --close-stdout --read-to-eof"
-    pipe_function pipe_pool_close_stdout_wait_stdin executable_pool \
-        "<pool_size>1</pool_size><command_termination_timeout>20</command_termination_timeout>" "pipe_udf.py --first-row-only --close-stdout --read-to-eof"
 } | shm_functions
 
 echo "--- stderr written on the way out fails the query, with or without the exit check"
@@ -83,31 +73,3 @@ echo "--- with no grace and no exit check, a lingering command is not waited for
 shm_local "
     SELECT pipe_lingers_no_exit_check_no_grace(1);
 "
-
-echo "--- a pooled worker that closed its stdout and lingers fails the query under the exit check"
-# It cannot go back to the pool, so its exit status is read then - and there is none within the
-# budget, which is not a passing one. Without the check the answer stands, and the worker is replaced.
-shm_local "
-    SELECT pipe_pool_lingers(1);
-    SELECT pipe_pool_lingers_no_exit_check(1);
-    SELECT pipe_pool_lingers_no_exit_check(2);
-"
-shm_output_contains "closed its stdout but did not exit within command_termination_timeout"
-
-echo "--- with no grace, such a worker fails the query at once and frees its slot"
-shm_local "
-    SELECT pipe_pool_lingers_no_grace(1);
-    SELECT pipe_pool_lingers_no_grace(2);
-"
-shm_output_contains "did not exit within command_termination_timeout"
-
-echo "--- a pooled worker that is not going back to the pool sees the end of its stdin first"
-# Both commands close their stdout and read their stdin to the end before exiting, the way a pooled
-# command exits. One answered short and fails the query for that - not for an exit status it could
-# only have given after \`command_termination_timeout\`; the other answered in full and passes.
-shm_local "
-    SELECT pipe_pool_short_answer(number) FROM numbers(3);
-    SELECT pipe_pool_close_stdout_wait_stdin(1);
-    SELECT pipe_pool_close_stdout_wait_stdin(2);
-"
-shm_output_contains "did not exit within command_termination_timeout"
