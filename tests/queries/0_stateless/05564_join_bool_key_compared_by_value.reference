@@ -27,6 +27,9 @@ nested	2
 nested reversed	2
 json	2
 json reversed	2
+empty array	2
+empty array anti rf	2
+empty array anti rf built	1	1
 asof	[1]
 natural	2
 using full	3	0

@@ -54,6 +54,10 @@ SELECT 'nested reversed', count() FROM t_nested_int a JOIN t_nested_bool b ON a.
 SELECT 'json', count() FROM (SELECT CAST(toJSONString(map('a', k)), 'JSON(a Nullable(Bool))') AS k FROM t_bool) a JOIN (SELECT CAST(toJSONString(map('a', k)), 'JSON(a UInt8)') AS k FROM t_int) b ON a.k = b.k;
 SELECT 'json reversed', count() FROM (SELECT CAST(toJSONString(map('a', k)), 'JSON(a UInt8)') AS k FROM t_int) a JOIN (SELECT CAST(toJSONString(map('a', k)), 'JSON(a Nullable(Bool))') AS k FROM t_bool) b ON a.k = b.k;
 
+SELECT 'empty array', count() FROM (SELECT (CAST([], 'Array(Array(UInt8))'), k) AS k FROM t_bool) a JOIN (SELECT ([], k) AS k FROM t_int) b ON a.k = b.k;
+SELECT 'empty array anti rf', count() FROM (SELECT ([], k) AS k FROM t_int) a LEFT ANTI JOIN (SELECT (CAST([], 'Array(Array(UInt8))'), k) AS k FROM t_bool) b ON a.k = b.k SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
+SELECT 'empty array anti rf built', countIf(explain LIKE '%BuildRuntimeFilter%') > 0, countIf(position(explain, '__applyFilter(') > 0) > 0 FROM (EXPLAIN actions = 1 SELECT count() FROM (SELECT ([], k) AS k FROM t_int) a LEFT ANTI JOIN (SELECT (CAST([], 'Array(Array(UInt8))'), k) AS k FROM t_bool) b ON a.k = b.k SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0);
+
 SELECT 'asof', groupArray(b.k)
 FROM (SELECT 1 AS g, k AS t FROM t_bool WHERE k) a
 ASOF JOIN (SELECT 1 AS g, k AS t, k FROM t_int) b ON a.g = b.g AND a.t >= b.t;

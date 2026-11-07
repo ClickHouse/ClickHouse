@@ -224,6 +224,9 @@ DataTypePtr replaceNestedTypesInPairImpl(
     if (!descendable)
         return on_leaf(left, right);
 
+    if (left_is_common_type && right_which.isNothing())
+        return left;
+
     /// Rebuilding below cannot keep the name, so hand back `right` whole, and only once the children clear:
     /// restoring a customization over children that did not is how a relabel changes what a level means.
     if (!skip_custom_name && (left->hasCustomName() || (right->hasCustomName() && !left_is_common_type))
