@@ -193,8 +193,10 @@ TEST(NativeWriterTypeCache, KeepsTheSerializationsForTheFirstKindsOnly)
 }
 
 /// The map keeps what the current protocol writes, so a writer that writes the types in another way must not take it.
-TEST(NativeWriterTypeCache, RejectsWritersThatChangeTheTypes)
+TEST(NativeWriterTypeCacheDeathTest, RejectsWritersThatChangeTheTypes)
 {
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+
     const DataTypePtr number_type = std::make_shared<DataTypeUInt64>();
     auto header = std::make_shared<const Block>(Block{ColumnWithTypeAndName(number_type->createColumn(), number_type, "x")});
     NativeWriterTypeCache type_cache;
@@ -203,10 +205,17 @@ TEST(NativeWriterTypeCache, RejectsWritersThatChangeTheTypes)
     FormatSettings binary_types;
     binary_types.native.encode_types_in_binary_format = true;
 
-    EXPECT_THROW(NativeWriter(out, 0, header, std::nullopt, false, nullptr, 0, &type_cache), Exception);
-    EXPECT_THROW(NativeWriter(out, DBMS_TCP_PROTOCOL_VERSION - 1, header, std::nullopt, false, nullptr, 0, &type_cache), Exception);
-    EXPECT_THROW(NativeWriter(out, DBMS_TCP_PROTOCOL_VERSION, header, std::nullopt, true, nullptr, 0, &type_cache), Exception);
-    EXPECT_THROW(NativeWriter(out, DBMS_TCP_PROTOCOL_VERSION, header, binary_types, false, nullptr, 0, &type_cache), Exception);
+    auto make_writer = [&](UInt64 revision, const std::optional<FormatSettings> & format_settings, bool remove_low_cardinality)
+    {
+        abort_on_logical_error = true;
+        NativeWriter(out, revision, header, format_settings, remove_low_cardinality, nullptr, 0, &type_cache);
+    };
+    const char * message = "NativeWriter got a type cache";
+
+    EXPECT_DEATH(make_writer(0, std::nullopt, false), message);
+    EXPECT_DEATH(make_writer(DBMS_TCP_PROTOCOL_VERSION - 1, std::nullopt, false), message);
+    EXPECT_DEATH(make_writer(DBMS_TCP_PROTOCOL_VERSION, std::nullopt, true), message);
+    EXPECT_DEATH(make_writer(DBMS_TCP_PROTOCOL_VERSION, binary_types, false), message);
     EXPECT_NO_THROW(NativeWriter(out, DBMS_TCP_PROTOCOL_VERSION, header, std::nullopt, false, nullptr, 0, &type_cache));
     out.finalize();
 }
