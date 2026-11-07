@@ -5667,6 +5667,16 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 result_table_function_arguments.push_back(std::move(table_function_node_to_resolve));
                 continue;
             }
+
+            /// The left side of `key = value` is a key name (e.g. a named collection override), it must not be resolved to an alias.
+            const auto & equals_arguments = table_function_argument_function->getArguments().getNodes();
+            if (table_function_argument_function_name == "equals" && equals_arguments.size() == 2
+                && equals_arguments[0]->as<IdentifierNode>())
+            {
+                skip_analysis_arguments_indexes.push_back(table_function_argument_index);
+                result_table_function_arguments.push_back(table_function_argument);
+                continue;
+            }
         }
 
         /** If the argument is already a TableFunctionNode (e.g. from a previous resolution of this
