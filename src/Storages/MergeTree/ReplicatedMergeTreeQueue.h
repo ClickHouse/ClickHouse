@@ -192,7 +192,8 @@ private:
     /// (see `MergeTreeData::getColumnDefaultnessStats`). Protected by `state_mutex`.
     std::unordered_map<String, Int64> max_removed_mutation_block_number_by_partition;
 
-    void updateMaxRemovedMutationBlockNumber(const String & partition_id, Int64 block_number, std::lock_guard<SharedMutex> & state_lock);
+    /// Must be called under `state_mutex`.
+    void updateMaxRemovedMutationBlockNumber(const String & partition_id, Int64 block_number);
     /// Znode ID of the latest mutation that is done.
     String mutation_pointer;
     /// Modification time of the `mutation_pointer` znode, i.e. the time when the mutation
