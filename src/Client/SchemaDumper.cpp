@@ -34,6 +34,7 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
@@ -85,6 +86,7 @@
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
+#include <bit>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
@@ -5624,10 +5626,11 @@ bool analysisStaysOnServer(const IAST & query, const ProbeCatalog & catalog, con
     return passive;
 }
 
-/// For the settings that change how `if`, `array`, `tuple` and the like type their result, picks for each table the value
-/// its stored expressions analyze with on the source: 0 if they do, else 1 if they do, else the dump session's value.
+/// For the settings that change how `if`, `array`, `tuple` and the like type their result, picks for each table the values its
+/// session-analyzed expressions analyze with together, else the dump session's, and warns when its storage needs non-defaults.
 void markTypingSettings(
-    std::vector<TableInfo> & tables, const std::map<String, bool> & session_values, const AnalyzesOnSource & analyzes_on_source)
+    std::vector<TableInfo> & tables, const std::map<String, bool> & session_values, const std::map<String, bool> & default_values,
+    const AnalyzesOnSource & analyzes_on_source, std::ostream & err)
 {
     for (auto & table : tables)
     {
@@ -5662,76 +5665,187 @@ void markTypingSettings(
         if (carried.empty())
             continue;
 
-        /// The stored expressions as one query: a materialized view's SELECT, or a table's column expressions, each cast
-        /// to its column's type like CREATE checks it, and its key expressions.
-        String probe;
-        if (create->is_materialized_view)
+        /// CREATE analyzes defaults and a view's SELECT with the session's settings, which a SET reaches, keys and TTL with the
+        /// server's own, which it does not, and indices and projections with both.
+        std::set<const IAST *> carriers;
+        std::set<const IAST *> probed_carriers;
+        auto collect_carriers = [](const IAST & root, std::set<const IAST *> & out)
         {
-            if (create->select)
-                probe = create->select->formatWithSecretsOneLine();
-        }
-        else
+            forEachNode(root, [&](const IAST & node)
+            {
+                const auto * function = node.as<ASTFunction>();
+                if (!function)
+                    return;
+                for (const auto * name : {"if", "multiIf", "coalesce", "ifNull", "array", "map", "tuple", "tupleElement"})
+                    if (equalsCaseInsensitive(function->name, name))
+                        out.insert(&node);
+            });
+        };
+        collect_carriers(*ast, carriers);
+        const String table_relation = backQuoteIfNeed(table.database) + "." + backQuoteIfNeed(table.name);
+        String session_relation = table_relation;
+        String storage_relation = table_relation;
+        if (create->is_materialized_view && create->select)
         {
-            std::vector<String> expressions;
+            session_relation = "(" + create->select->formatWithSecretsOneLine() + ")";
+            collect_carriers(*create->select, probed_carriers);
+            /// The inner table's columns are stored, so its storage expressions are checked on them, not on the SELECT.
+            String columns;
             if (create->columns_list && create->columns_list->columns)
+                for (const auto & child : create->columns_list->columns->children)
+                    if (const auto * column = child->as<ASTColumnDeclaration>(); column && column->getType())
+                        columns += String(columns.empty() ? "SELECT " : ", ") + "materialize(defaultValueOfTypeName("
+                            + quoteString(column->getType()->formatWithSecretsOneLine()) + ")) AS " + backQuoteIfNeed(column->name);
+            storage_relation = columns.empty() ? session_relation : "(" + columns + ")";
+        }
+        std::vector<String> session_expressions;
+        std::vector<String> storage_expressions;
+        std::vector<String> both_expressions;
+        std::vector<String> projection_probes;
+        auto add = [&](const IAST * part, const String & text, std::vector<String> & to)
+        {
+            std::set<const IAST *> found;
+            collect_carriers(*part, found);
+            if (found.empty())
+                return;
+            probed_carriers.insert(found.begin(), found.end());
+            to.push_back(text);
+        };
+        if (create->columns_list)
+        {
+            if (create->columns_list->columns)
                 for (const auto & child : create->columns_list->columns->children)
                 {
                     const auto * column = child->as<ASTColumnDeclaration>();
-                    if (!column || !column->getDefaultExpression())
+                    if (!column)
                         continue;
-                    String expression = column->getDefaultExpression()->formatWithSecretsOneLine();
-                    if (column->getType())
-                        expression = "CAST(" + expression + ", " + quoteString(column->getType()->formatWithSecretsOneLine()) + ")";
-                    expressions.push_back(expression);
+                    if (const auto expression = column->getDefaultExpression())
+                    {
+                        String text = expression->formatWithSecretsOneLine();
+                        if (column->getType())
+                            text = "CAST(" + text + ", " + quoteString(column->getType()->formatWithSecretsOneLine()) + ")";
+                        add(expression.get(), text, session_expressions);
+                    }
+                    if (const auto ttl = column->getTTL())
+                        add(ttl.get(), ttl->formatWithSecretsOneLine(), storage_expressions);
                 }
-            if (create->storage)
-                for (const auto * key : {create->storage->order_by, create->storage->primary_key, create->storage->partition_by,
-                                         create->storage->sample_by})
-                    if (key)
-                        expressions.push_back(key->formatWithSecretsOneLine());
-            for (size_t i = 0; i < expressions.size(); ++i)
-                probe += (i ? ", " : "SELECT ") + expressions[i];
-            if (!probe.empty())
-                probe += " FROM " + backQuoteIfNeed(table.database) + "." + backQuoteIfNeed(table.name);
-        }
-        ASTPtr probe_ast;
-        if (!probe.empty())
-        {
-            try
-            {
-                ParserSelectWithUnionQuery parser;
-                probe_ast = parseQuery(parser, probe, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-            }
-            catch (const Exception &) // NOLINT(bugprone-empty-catch)
-            {
-                /// Not probed: the dump session's value is used.
-            }
-        }
-        /// A probe that would run a subquery is not asked, see `analyzes_on_source`.
-        const bool can_probe = probe_ast && analyzes_on_source && !analysisMayRunSubquery(*probe_ast);
-
-        for (const auto & name : carried)
-        {
-            const auto session_value = session_values.find(name);
-            if (session_value == session_values.end())
-                continue;
-            bool value = session_value->second;
-            if (can_probe)
-            {
-                SettingsChanges changes = {{"allow_suspicious_types_in_group_by", Field(true)},
-                    {"allow_suspicious_types_in_order_by", Field(true)}, {"allow_experimental_correlated_subqueries", Field(true)}};
-                changes.setSetting(name, Field(false));
-                if (analyzes_on_source(probe, changes))
-                    value = false;
-                else
+            if (create->columns_list->indices)
+                for (const auto & child : create->columns_list->indices->children)
+                    if (const auto * index = child->as<ASTIndexDeclaration>(); index && index->getExpression())
+                        add(index->getExpression().get(), index->getExpression()->formatWithSecretsOneLine(), both_expressions);
+            /// CREATE does not analyze a constraint.
+            if (create->columns_list->constraints)
+                collect_carriers(*create->columns_list->constraints, probed_carriers);
+            if (create->columns_list->projections)
+                for (const auto & child : create->columns_list->projections->children)
                 {
-                    changes.setSetting(name, Field(true));
-                    if (analyzes_on_source(probe, changes))
-                        value = true;
+                    const auto * projection = child->as<ASTProjectionDeclaration>();
+                    if (projection && projection->index)
+                        add(projection->index, projection->index->formatWithSecretsOneLine(), both_expressions);
+                    const auto * query = projection && projection->query ? projection->query->as<ASTProjectionSelectQuery>() : nullptr;
+                    if (!query || query->with() || !query->select())
+                        continue;
+                    String text = "SELECT " + query->select()->formatWithSecretsOneLine() + " FROM " + storage_relation;
+                    if (query->where())
+                        text += " WHERE " + query->where()->formatWithSecretsOneLine();
+                    if (query->groupBy())
+                        text += " GROUP BY " + query->groupBy()->formatWithSecretsOneLine();
+                    if (query->orderBy())
+                        text += " ORDER BY " + query->orderBy()->formatWithSecretsOneLine();
+                    add(query, text, projection_probes);
+                }
+        }
+        const ASTStorage * storage = create->is_materialized_view ? create->getTargetInnerEngine(ViewTarget::To) : create->storage;
+        if (storage)
+        {
+            for (const auto * key : {storage->order_by, storage->primary_key, storage->partition_by, storage->sample_by})
+                if (key)
+                    add(key, key->formatWithSecretsOneLine(), storage_expressions);
+            if (storage->ttl_table)
+                for (const auto & child : storage->ttl_table->children)
+                    if (const auto * element = child->as<ASTTTLElement>())
+                        for (const auto & part : {element->ttl(), element->where()})
+                            if (part)
+                                add(part.get(), part->formatWithSecretsOneLine(), storage_expressions);
+        }
+        auto select_of = [](const std::vector<String> & expressions, const String & relation)
+        {
+            String res;
+            for (size_t i = 0; i < expressions.size(); ++i)
+                res += (i ? ", " : "SELECT ") + expressions[i];
+            return res + " FROM " + relation;
+        };
+        std::vector<String> session_probes = projection_probes;
+        std::vector<String> storage_probes = projection_probes;
+        if (!session_expressions.empty())
+            session_probes.push_back(select_of(session_expressions, session_relation));
+        else if (create->is_materialized_view && create->select)
+            session_probes.push_back(create->select->formatWithSecretsOneLine());
+        if (!both_expressions.empty())
+            session_probes.push_back(select_of(both_expressions, storage_relation));
+        storage_expressions.insert(storage_expressions.end(), both_expressions.begin(), both_expressions.end());
+        if (!storage_expressions.empty())
+            storage_probes.push_back(select_of(storage_expressions, storage_relation));
+
+        /// A carrier outside the probes, or a probe that would run a subquery (see `analyzes_on_source`), leaves no proof.
+        bool can_probe = analyzes_on_source
+            && std::includes(probed_carriers.begin(), probed_carriers.end(), carriers.begin(), carriers.end());
+        for (const auto * probes : {&session_probes, &storage_probes})
+            for (const auto & probe : *probes)
+            {
+                if (!can_probe)
+                    break;
+                try
+                {
+                    ParserSelectWithUnionQuery parser;
+                    can_probe = !analysisMayRunSubquery(
+                        *parseQuery(parser, probe, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
+                }
+                catch (const Exception &)
+                {
+                    can_probe = false;
                 }
             }
-            table.typing_settings.emplace_back(name, value);
+
+        std::vector<std::pair<String, bool>> values;
+        for (const auto & name : carried)
+            if (const auto session_value = session_values.find(name); session_value != session_values.end())
+                values.emplace_back(name, session_value->second);
+        auto analyzes_with = [&](const std::vector<String> & probes, size_t mask)
+        {
+            SettingsChanges changes = {{"allow_suspicious_types_in_group_by", Field(true)},
+                {"allow_suspicious_types_in_order_by", Field(true)}, {"allow_experimental_correlated_subqueries", Field(true)}};
+            for (size_t i = 0; i < values.size(); ++i)
+                changes.setSetting(values[i].first, Field(((mask >> i) & 1) != 0));
+            return std::all_of(probes.begin(), probes.end(), [&](const String & probe) { return analyzes_on_source(probe, changes); });
+        };
+        /// The combination, with the fewest settings on, under which every probe analyzes.
+        auto find_combination = [&](const std::vector<String> & probes) -> std::optional<size_t>
+        {
+            for (size_t ones = 0; ones <= values.size(); ++ones)
+                for (size_t mask = 0; mask < (size_t{1} << values.size()); ++mask)
+                    if (static_cast<size_t>(std::popcount(mask)) == ones && analyzes_with(probes, mask))
+                        return mask;
+            return std::nullopt;
+        };
+        if (can_probe && !session_probes.empty())
+            if (const auto mask = find_combination(session_probes))
+                for (size_t i = 0; i < values.size(); ++i)
+                    values[i].second = ((*mask >> i) & 1) != 0;
+        size_t default_mask = 0;
+        for (size_t i = 0; i < values.size(); ++i)
+            default_mask |= size_t{default_values.at(values[i].first)} << i;
+        if (can_probe && !storage_probes.empty() && !analyzes_with(storage_probes, default_mask))
+        {
+            err << "Warning: the storage expressions of " << table_relation;
+            if (const auto mask = find_combination(storage_probes))
+                for (size_t i = 0; i < values.size(); ++i)
+                    err << (i ? ", " : " need ") << values[i].first << " = " << ((*mask >> i) & 1);
+            else
+                err << " do not analyze with the default typing settings";
+            err << " in the replaying server's settings profile; a SET in the dump does not reach them.\n";
         }
+        table.typing_settings = std::move(values);
     }
 }
 
@@ -6076,8 +6190,9 @@ void dumpDatabaseSchema(
         markMaterializedViewsNeedingBadSelectGate(tables, context, user_defined_functions, analyzes_on_source, err);
 
         std::map<String, bool> typing_session_values;
+        std::map<String, bool> typing_default_values;
         executeQuery(connection, timeouts, client_info,
-            "SELECT name, value FROM system.settings "
+            "SELECT name, value, `default` FROM system.settings "
             "WHERE name IN ('allow_lossy_numeric_supertype', 'enable_named_columns_in_function_tuple')",
             [&](const Block & block)
             {
@@ -6086,10 +6201,14 @@ void dumpDatabaseSchema(
                 const Block full = unwrapColumns(block);
                 const auto & name_column = typeid_cast<const ColumnString &>(*full.getByPosition(0).column);
                 const auto & value_column = typeid_cast<const ColumnString &>(*full.getByPosition(1).column);
+                const auto & default_column = typeid_cast<const ColumnString &>(*full.getByPosition(2).column);
                 for (size_t i = 0; i < name_column.size(); ++i)
+                {
                     typing_session_values[name_column[i].safeGet<String>()] = value_column[i].safeGet<String>() != "0";
+                    typing_default_values[name_column[i].safeGet<String>()] = default_column[i].safeGet<String>() != "0";
+                }
             }, context->getSettingsRef());
-        markTypingSettings(tables, typing_session_values, analyzes_on_source);
+        markTypingSettings(tables, typing_session_values, typing_default_values, analyzes_on_source, err);
     }
 
     if (output_dir.empty())
