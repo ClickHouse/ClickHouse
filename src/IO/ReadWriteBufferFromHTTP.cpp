@@ -698,7 +698,8 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
     content_encoding = response.get("Content-Encoding", "");
 
     // Remember file size. It'll be used to report eof in next nextImpl() call.
-    if (!read_range.end && response.hasContentLength())
+    /// A POST has no HEAD to ask, so its metadata always comes from this response.
+    if (!read_range.end && (response.hasContentLength() || method == Poco::Net::HTTPRequest::HTTP_POST))
         file_info = parseFileInfo(response, range.has_value() ? getOffset() : 0);
 
     return result;

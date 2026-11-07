@@ -207,11 +207,11 @@ bool urlPathHasListableGlobs(std::string_view uri)
     return path.contains('*');
 }
 
-/// A copy of the URL with its password and presigned signature hidden, for error messages.
+/// A copy of the URL with its password, presigned signature and credential-like parameters hidden, for errors.
 static String maskedURLForError(String url)
 {
     maskURICredentials(url);
-    return url;
+    return maskSensitiveQueryParametersInURI(url);
 }
 
 /// `ENGINE = URL` picks the wildcard (read-only, always `GET`) or the plain URL backend once, when the
@@ -738,6 +738,10 @@ StorageURLSource::StorageURLSource(
             /// already read, and after a hard teardown the failure or the kill is reported elsewhere.
             if (stop_if_query_cancelled())
                 return false;
+
+            /// Start a POST now so that `_size` and `_time` come from its response, see getFileInfo.
+            if (http_method == Poco::Net::HTTPRequest::HTTP_POST)
+                uri_and_buf.second->eof();
 
             curr_uri = uri_and_buf.first;
             current_file_last_modified = uri_and_buf.second->tryGetLastModificationTime();

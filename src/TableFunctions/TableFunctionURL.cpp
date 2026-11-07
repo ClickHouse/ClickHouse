@@ -21,6 +21,7 @@
 #include <Storages/StorageURLCluster.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
+#include <Common/maskSensitiveQueryParameters.h>
 #include <Common/maskURIPassword.h>
 #include <Poco/Net/HTTPRequest.h>
 
@@ -49,11 +50,11 @@ namespace ErrorCodes
 
 namespace
 {
-    /// A copy of the URL with its password and presigned signature hidden, for error messages.
+    /// A copy of the URL with its password, presigned signature and credential-like parameters hidden, for errors.
     String maskedURLForError(String url)
     {
         maskURICredentials(url);
-        return url;
+        return maskSensitiveQueryParametersInURI(url);
     }
 
     void checkExperimentalURLWildcardFromIndexPages(const ContextPtr & context)
