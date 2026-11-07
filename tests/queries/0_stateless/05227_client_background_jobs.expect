@@ -1,4 +1,6 @@
 #!/usr/bin/expect -f
+# Tags: no-fasttest
+# Tag no-fasttest: the background-job cases sleep for longer than the Fast test allows a new test
 
 # Exercise background commands, output replay, cancellation, validation, and Ctrl+B detachment.
 # Long-running cases also verify prompt responsiveness and isolated output.
