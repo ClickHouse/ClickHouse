@@ -6,6 +6,8 @@
 #include <Server/HTTPResponseHeaderWriter.h>
 
 #include <Core/ServerSettings.h>
+#include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
@@ -15,6 +17,7 @@
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 
 #include <Common/Exception.h>
+#include <Common/filesystemHelpers.h>
 
 #include <memory>
 #include <unordered_map>
@@ -34,6 +37,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int HTTP_LENGTH_REQUIRED;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int PATH_ACCESS_DENIED;
 }
 void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 {
@@ -84,11 +88,40 @@ void StaticRequestHandler::writeResponse(WriteBuffer & out)
         if (file_name.starts_with('/'))
             file_name = file_name.substr(1);
 
-        fs::path user_files_absolute_path = fs::canonical(fs::path(server.context()->getUserFilesPath()));
-        String file_path = fs::weakly_canonical(user_files_absolute_path / file_name);
+        /// `file_name` comes from the handler config and may contain `..` segments that leave
+        /// `user_files`. Without an explicit boundary check, `file://../etc/passwd` would expose
+        /// arbitrary server-side files, so containment is required before reading.
+        ///
+        /// `file://` is served via local `ReadBufferFromFile` and is a local-filesystem
+        /// feature. With `user_files_policy` configured on a non-local disk (e.g.
+        /// `s3_plain`), `getUserFilesPath` resolves to the disk's local metadata root,
+        /// so accepting `file://` would expose unrelated local metadata instead of the
+        /// configured backend. Reject up front, mirroring other call sites that gate
+        /// features on disk type.
+        if (auto user_files_volume = server.context()->getUserFilesVolume())
+        {
+            for (const auto & disk : user_files_volume->getDisks())
+            {
+                if (!isPlainLocalDisk(*disk))
+                    throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
+                        "Static HTTP handler `file://` source is not supported "
+                        "with non-plain-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
+                        disk->getName());
+            }
+        }
 
-        if (!fs::exists(file_path))
-            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Invalid file name {} for static HTTPHandler. ", file_path);
+        /// The containment check is the one every other `user_files` consumer applies
+        /// (`Context::isUserFilesPath`): lexical on a plain `user_files_path`, so an admin-managed
+        /// symlink inside the directory keeps working as before, and resolved for a
+        /// `user_files_policy` disk. A root that cannot be resolved contains nothing.
+        const String file_path = (fs::path(server.context()->getUserFilesPath()) / file_name).lexically_normal().string();
+        if (!server.context()->isUserFilesPath(file_path))
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
+                "File `{}` for static HTTPHandler is not inside user files path", file_name);
+
+        if (!existsOrFileNameTooLong([&] { return fs::exists(file_path); }))
+            throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
+                "Invalid file name {} for static HTTPHandler. ", file_name);
 
         ReadBufferFromFile in(file_path);
         copyData(in, out);

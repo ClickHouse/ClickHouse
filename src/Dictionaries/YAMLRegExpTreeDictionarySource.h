@@ -26,7 +26,7 @@ class YAMLRegExpTreeDictionarySource : public IDictionarySource
 {
 #if USE_YAML_CPP
 public:
-    YAMLRegExpTreeDictionarySource(const String & filepath_, const DictionaryStructure & dict_struct_, ContextPtr context_, bool created_from_ddl);
+    YAMLRegExpTreeDictionarySource(const String & filepath_, const DictionaryStructure & dict_struct_, ContextPtr context_, bool created_from_ddl_);
 
     YAMLRegExpTreeDictionarySource(const YAMLRegExpTreeDictionarySource & other);
 
@@ -63,11 +63,17 @@ private:
     const DictionaryStructure structure;
 
     ContextPtr context;
+    const bool created_from_ddl;
 
     LoggerPtr logger;
     Poco::Timestamp last_modification;
 
     Poco::Timestamp getLastModification() const;
+
+    /// Throws if the dictionary was created from DDL and the file is not inside the user files path.
+    /// Checked before every access to the file, not only on creation: a reload opens the path again,
+    /// and a symlink inside the user files path could have been retargeted outside since then.
+    void checkFilePath() const;
 #endif
 };
 

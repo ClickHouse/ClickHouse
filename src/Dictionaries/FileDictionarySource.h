@@ -19,7 +19,7 @@ class FileDictionarySource final : public IDictionarySource
 {
 public:
     FileDictionarySource(const std::string & filepath_, const std::string & format_,
-        Block & sample_block_, ContextPtr context_, bool created_from_ddl);
+        Block & sample_block_, ContextPtr context_, bool created_from_ddl_);
 
     FileDictionarySource(const FileDictionarySource & other);
 
@@ -60,10 +60,16 @@ public:
 private:
     Poco::Timestamp getLastModification() const;
 
+    /// Throws if the dictionary was created from DDL and the file is not inside the user files path.
+    /// Checked before every access to the file, not only on creation: a reload opens the path again,
+    /// and a symlink inside the user files path could have been retargeted outside since then.
+    void checkFilePath() const;
+
     const std::string filepath;
     const std::string format;
     Block sample_block;
     ContextPtr context;
+    const bool created_from_ddl;
     Poco::Timestamp last_modification;
 };
 

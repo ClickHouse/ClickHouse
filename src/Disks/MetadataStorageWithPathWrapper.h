@@ -284,6 +284,11 @@ public:
         return delegate->isRemote();
     }
 
+    bool cachesObjectMetadata() const override
+    {
+        return delegate->cachesObjectMetadata();
+    }
+
     void updateCache(const std::vector<std::string> & paths, bool recursive, bool enforce_fresh, std::string * serialized_cache_update_description) override
     {
         delegate->updateCache(wrappedPaths(paths), recursive, enforce_fresh, serialized_cache_update_description);

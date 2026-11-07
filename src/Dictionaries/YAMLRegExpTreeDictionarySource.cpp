@@ -37,6 +37,8 @@
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
 
+#include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
@@ -361,17 +363,43 @@ static Block parseYAMLAsRegExpTree(const YAML::Node & node, const String & key_n
 }
 
 YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(
-    const String & filepath_, const DictionaryStructure & dict_struct, ContextPtr context_, bool created_from_ddl)
-    : filepath(filepath_), structure(dict_struct), context(context_), logger(getLogger(kYAMLRegExpTreeDictionarySource))
+    const String & filepath_, const DictionaryStructure & dict_struct, ContextPtr context_, bool created_from_ddl_)
+    : filepath(filepath_), structure(dict_struct), context(context_), created_from_ddl(created_from_ddl_), logger(getLogger(kYAMLRegExpTreeDictionarySource))
 {
     key_name = (*structure.key)[0].name;
 
-    const auto user_files_path = context->getUserFilesPath();
-
-    if (created_from_ddl && !fileOrSymlinkPathStartsWith(filepath_, user_files_path))
+    /// DDL-created dictionaries are required to live under `user_files_path`.
+    /// `loadAll` reads them via `YAML::LoadFile`, which only works on the local
+    /// filesystem. With `user_files_policy` on a non-local disk (for example
+    /// `s3_plain`), the configured user-files roots are not reachable through local
+    /// APIs, so a DDL-created dictionary cannot work. Reject up front instead of
+    /// failing later with an opaque local I/O error.
+    ///
+    /// XML-config dictionaries (`created_from_ddl == false`) are not constrained to
+    /// `user_files_path` and may point at arbitrary local files, so they are not
+    /// affected by `user_files_policy` and must not be rejected here.
+    if (created_from_ddl)
     {
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File {} is not inside {}", filepath_, user_files_path);
+        if (auto user_files_volume = context->getUserFilesVolume())
+        {
+            for (const auto & disk : user_files_volume->getDisks())
+            {
+                if (!isPlainLocalDisk(*disk))
+                    throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
+                                    "Dictionary source `{}` is not supported "
+                                    "with non-plain-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
+                                    kYAMLRegExpTree, disk->getName());
+            }
+        }
+
+        checkFilePath();
     }
+}
+
+void YAMLRegExpTreeDictionarySource::checkFilePath() const
+{
+    if (created_from_ddl && !context->isUserFilesPath(filepath))
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File {} is not inside user files path", filepath);
 }
 
 YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(const YAMLRegExpTreeDictionarySource & other)
@@ -379,6 +407,7 @@ YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(const YAMLRegExpT
     , key_name(other.key_name)
     , structure(other.structure)
     , context(Context::createCopy(other.context))
+    , created_from_ddl(other.created_from_ddl)
     , logger(other.logger)
     , last_modification(other.last_modification)
 {
@@ -387,6 +416,7 @@ YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(const YAMLRegExpT
 BlockIO YAMLRegExpTreeDictionarySource::loadAll()
 {
     LOG_INFO(logger, "Loading regexp tree from yaml '{}'", filepath);
+    /// Also checks the path, see `checkFilePath`.
     last_modification = getLastModification();
 
     const auto node = loadYAML(filepath);
@@ -413,6 +443,7 @@ String YAMLRegExpTreeDictionarySource::toString() const
 
 Poco::Timestamp YAMLRegExpTreeDictionarySource::getLastModification() const
 {
+    checkFilePath();
     return FS::getModificationTimestamp(filepath);
 }
 
