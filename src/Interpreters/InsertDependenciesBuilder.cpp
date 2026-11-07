@@ -68,6 +68,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SensitiveDataMasker.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Core/DeduplicateInsert.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -1043,6 +1044,20 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
 
     deduplicate_blocks = isDeduplicationEnabledForInsert(async_insert, settings);
     LOG_DEBUG(logger, "deduplicate_blocks : {}", deduplicate_blocks);
+
+    auto init_metadata = init_storage->getInMemoryMetadataPtr(init_context, false);
+    const Names insert_names = init_header->getNames();
+    if (insert_names != InterpreterInsertQuery::getSampleBlockWithoutColumnList(init_metadata, skip_destination_table).getNames())
+    {
+        SipHash hash;
+        for (const auto & name : insert_names)
+        {
+            hash.update(name.size());
+            hash.update(name);
+        }
+        insert_column_names_hash = hash.get128();
+    }
+
     deduplicate_blocks_in_dependent_materialized_views = deduplicate_blocks && settings[Setting::deduplicate_blocks_in_dependent_materialized_views];
     materialized_views_ignore_errors = settings[Setting::materialized_views_ignore_errors];
     /// Squashing from multiple streams breaks deduplication for now so the optimization will be disabled

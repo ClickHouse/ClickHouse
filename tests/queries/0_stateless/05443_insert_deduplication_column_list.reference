@@ -1,0 +1,18 @@
+sync
+3
+async
+3
+insert select
+2
+replicated
+2
+materialized view
+2
+refreshable materialized view
+2
+retry
+1
+default list
+1
+sync and async
+1
