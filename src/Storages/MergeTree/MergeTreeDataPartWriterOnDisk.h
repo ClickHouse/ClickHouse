@@ -88,6 +88,8 @@ protected:
     /// and one skip index granule can contain multiple "normal" marks. So skip indices serialization
     /// require additional state: skip_indices_aggregators and skip_index_accumulated_marks
     void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write);
+    /// Writes the current granule of the i-th skip index.
+    void serializeSkipIndexGranule(size_t i);
 
     /// Finishes primary index serialization: write final primary index row (if required) and compute checksums
     void fillPrimaryIndexChecksums(MergeTreeDataPartChecksums & checksums);
@@ -140,6 +142,12 @@ protected:
 
     MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_accumulated_marks;
+    /// Current granule of each partial index (with `WHERE`): whether it is open and whether it got any rows.
+    std::vector<bool> partial_index_granule_open;
+    std::vector<bool> partial_index_granule_has_rows;
+    /// The signature of each partial index (empty for the others), taken when the writer is created, in the thread
+    /// that evaluates the conditions: finalization can run elsewhere, with another session time zone.
+    std::vector<String> partial_index_signatures;
 
     /// Optional packed archive shared by all skip-index substreams that stayed under the
     /// per-substream size threshold. Substreams that exceeded it were spilled to standalone
@@ -156,6 +164,9 @@ protected:
     /// Output buffer for the skp_idx.packed file itself. Constructed lazily during
     /// fillSkipIndicesChecksums when the writer has content to flush.
     std::unique_ptr<WriteBufferFromFileBase> skip_indices_packed_file;
+    /// The marker files of partial indexes, kept open until the part is finished so that they are synchronized
+    /// together with the rest of its files.
+    std::vector<std::unique_ptr<WriteBufferFromFileBase>> partial_index_marker_files;
 
     std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_file_hashing_stream;

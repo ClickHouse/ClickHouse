@@ -2,6 +2,7 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
+#include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -10,6 +11,8 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
+
+#include <Common/SipHash.h>
 
 #include <memory>
 #include <ranges>
@@ -41,6 +44,7 @@ public:
         , arguments_column_names(std::move(arguments_column_names_))
         , context(std::move(context_))
         , format_settings(getFormatSettings(context))
+        , format_settings_hash(getFormatSettingsHash(context->getSettingsRef()))
     {
         FormatFactory::instance().checkFormatName(format_name);
 
@@ -51,6 +55,20 @@ public:
     }
 
     String getName() const override { return function_name; }
+
+    /// The row is formatted with the settings captured above: they decide the value, see `IFunctionBase::updateHash`.
+    void updateHash(SipHash & hash) const override
+    {
+        hash.update(format_settings_hash);
+        /// The argument names are the field names of the row.
+        hash.update(arguments_column_names.size());
+        for (const auto & name : arguments_column_names)
+        {
+            hash.update(name.size());
+            hash.update(name);
+        }
+    }
+
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -120,6 +138,7 @@ private:
     Names arguments_column_names;
     ContextPtr context;
     FormatSettings format_settings;
+    UInt64 format_settings_hash;
 };
 
 class FormatRowOverloadResolver final : public IFunctionOverloadResolver, private WithContext

@@ -1345,8 +1345,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [STATISTICS(stat1)] [TTL expr1] [PRIMARY KEY] [SETTINGS (name = value, ...)],
     name2 [type2] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr2] [COMMENT ...] [CODEC(codec2)] [STATISTICS(stat2)] [TTL expr2] [PRIMARY KEY] [SETTINGS (name = value, ...)],
     ...
-    INDEX index_name1 expr1 TYPE type1(...) [GRANULARITY value1],
-    INDEX index_name2 expr2 TYPE type2(...) [GRANULARITY value2],
+    INDEX index_name1 expr1 TYPE type1(...) [GRANULARITY value1] [WHERE condition1],
+    INDEX index_name2 expr2 TYPE type2(...) [GRANULARITY value2] [WHERE condition2],
     ...
     PROJECTION projection_name_1 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]),
     PROJECTION projection_name_2 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY])
@@ -1649,7 +1649,7 @@ ClickHouse uses this logic not only for days of the month sequences, but for any
 The index declaration is in the columns section of the `CREATE` query.
 
 ```sql
-INDEX index_name expr TYPE type(...) [GRANULARITY granularity_value]
+INDEX index_name expr TYPE type(...) [GRANULARITY granularity_value] [WHERE condition]
 ```
 
 For tables from the `*MergeTree` family, data skipping indices can be specified.
@@ -1680,6 +1680,19 @@ Indices from the example can be used by ClickHouse to reduce the amount of data 
 SELECT count() FROM table WHERE u64 == 10;
 SELECT count() FROM table WHERE u64 * i32 >= 1234
 SELECT count() FROM table WHERE u64 * length(s) == 1234
+```
+
+A partial index with a `WHERE` clause indexes only the rows that satisfy the condition, which saves space and insert time when queries only target a fraction of the data.
+It is used only by queries whose filter contains the same condition as an `AND` operand, and granules without such rows are skipped.
+Index types `minmax`, `set`, `bloom_filter`, `tokenbf_v1`, `ngrambf_v1` and `sparse_grams` support `WHERE`.
+This feature is experimental and requires the setting `allow_experimental_partial_skip_indexes`.
+The condition cannot contain lambda functions. A function that captures settings, such as `JSON_VALUE`, matches only a query filter that runs with the same settings the index was defined with.
+
+```sql
+INDEX error_message_index message TYPE tokenbf_v1(32768, 3, 0) WHERE level = 'Error'
+
+-- uses the index
+SELECT count() FROM table WHERE level = 'Error' AND hasToken(message, 'timeout');
 ```
 
 Data skipping indexes can also be created on composite columns:

@@ -86,11 +86,20 @@ public:
     MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
-    MergeTreeIndexSubstreams getSubstreams() const override { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}; }
+    MergeTreeIndexSubstreams getSubstreams() const override
+    {
+        return {{MergeTreeIndexSubstream::Type::Regular, "", index.where_expression ? ".idxp" : ".idx2"}};
+    }
     /// Format changed `.idx` (v1) -> `.idx2` (v2); a part may hold either.
     MergeTreeIndexSubstreams getPotentialSubstreams() const override
     {
-        return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}, {MergeTreeIndexSubstream::Type::Regular, "", ".idx"}};
+        MergeTreeIndexSubstreams ordinary = {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}, {MergeTreeIndexSubstream::Type::Regular, "", ".idx"}};
+        if (!index.where_expression)
+            return ordinary;
+        /// A partial index also lists the ordinary layout: a part attached under the other definition can hold it.
+        auto substreams = withPartialIndexMarker(getSubstreams());
+        substreams.insert(substreams.end(), ordinary.begin(), ordinary.end());
+        return substreams;
     }
     using IMergeTreeIndex::getPhysicalFormat;
     MergeTreeIndexFormat getPhysicalFormat(

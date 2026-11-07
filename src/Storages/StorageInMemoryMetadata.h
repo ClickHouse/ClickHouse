@@ -256,6 +256,10 @@ struct StorageInMemoryMetadata
     bool hasSortingKey() const;
     /// Returns column names that need to be read to calculate sorting key.
     Names getColumnsRequiredForSortingKey() const;
+
+    /// The columns an index is calculated from, as they are stored: a subcolumn such as `p.size0` is replaced with the
+    /// column it is read from, `p`, which is what an update or a type change of that column has to be matched against.
+    Names getColumnsRequiredForIndex(const IndexDescription & index) const;
     /// Returns columns names in sorting key specified by user in ORDER BY
     /// expression. For example: 'a', 'x * y', 'toStartOfMonth(date)', etc.
     Names getSortingKeyColumns() const;
