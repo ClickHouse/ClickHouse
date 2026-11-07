@@ -2645,11 +2645,50 @@ static bool shouldUseQueryCacheForSubquery(
     return false;
 }
 
+/// Whether the query tree contains the body of a view inlined by the analyzer (`analyzer_inline_views`),
+/// or any other query or union planned under its own view-inner context (e.g. the definer's one of a
+/// `SQL SECURITY DEFINER` view). The AST of the tree keeps only the explicit `SETTINGS` of such a node,
+/// not its context, so hashing the tables of the AST under the context of the root misses the
+/// dependencies of that context (e.g. `additional_table_filters` of the definer that read other tables).
+static bool queryTreeHasNodeWithOwnViewInnerContext(const QueryTreeNodePtr & root)
+{
+    auto get_context = [](const IQueryTreeNode & node) -> ContextPtr
+    {
+        if (const auto * query_node = node.as<QueryNode>())
+            return query_node->getContext();
+        if (const auto * union_node = node.as<UnionNode>())
+            return union_node->getContext();
+        return nullptr;
+    };
+
+    const ContextPtr root_context = get_context(*root);
+
+    std::vector<const IQueryTreeNode *> nodes_to_visit{root.get()};
+    while (!nodes_to_visit.empty())
+    {
+        const auto * node = nodes_to_visit.back();
+        nodes_to_visit.pop_back();
+
+        if (node != root.get())
+        {
+            if (auto context = get_context(*node); context && context != root_context && context->isViewInnerQuery())
+                return true;
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                nodes_to_visit.push_back(child.get());
+    }
+
+    return false;
+}
+
 /// When the query cache is restricted to consistent results, returns the combined modification hash of the
 /// referenced tables to fold into the (subquery) cache key. If consistency cannot be guaranteed, resets
 /// `should_cache`, so the subquery is not cached.
 static std::optional<UInt128> prepareSubqueryCacheReferencedTablesModificationHash(
     bool & should_cache,
+    const QueryTreeNodePtr & query_tree,
     const ASTPtr & ast,
     const ContextPtr & query_context,
     const Settings & settings)
@@ -2665,6 +2704,12 @@ static std::optional<UInt128> prepareSubqueryCacheReferencedTablesModificationHa
         should_cache = false;
 
     std::optional<UInt128> referenced_tables_modification_hash;
+    /// The modification hash is computed from the AST under `query_context`. An inlined view body is
+    /// planned under its own context, whose dependencies the AST does not carry: fail closed.
+    if (should_cache && settings[Setting::query_cache_use_only_when_data_was_not_changed]
+        && queryTreeHasNodeWithOwnViewInnerContext(query_tree))
+        should_cache = false;
+
     if (should_cache && settings[Setting::query_cache_use_only_when_data_was_not_changed])
     {
         referenced_tables_modification_hash = computeQueryReferencedTablesModificationHash(ast, query_context);
@@ -2860,7 +2905,7 @@ void Planner::buildPlanForUnionNode()
         ast = query_tree->toAST({.qualify_indentifiers_with_database = false});
         settings_copy = settings;
         referenced_tables_modification_hash
-            = prepareSubqueryCacheReferencedTablesModificationHash(should_cache, ast, query_context, settings);
+            = prepareSubqueryCacheReferencedTablesModificationHash(should_cache, query_tree, ast, query_context, settings);
     }
 
     if (should_cache)
@@ -3036,7 +3081,7 @@ void Planner::buildPlanForQueryNode()
         settings_copy = settings;
 
     std::optional<UInt128> referenced_tables_modification_hash
-        = prepareSubqueryCacheReferencedTablesModificationHash(should_cache, ast, query_context, settings);
+        = prepareSubqueryCacheReferencedTablesModificationHash(should_cache, query_tree, ast, query_context, settings);
 
     /// The query result cache on disk (backed by a preconfigured filesystem cache), see setting `query_cache_on_disk_cache_name`.
     QueryResultCacheOnDiskPtr query_result_cache_on_disk;
