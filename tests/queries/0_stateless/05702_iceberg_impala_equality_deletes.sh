@@ -10,7 +10,7 @@
 # https://github.com/ClickHouse/ClickHouse/issues/129989 is fixed the tables fail with `ICEBERG_SPECIFICATION_VIOLATION`.
 # The data files are referenced as `/test-warehouse/...` in the manifests, but as `hdfs://localhost:20500/test-warehouse/...`
 # in the position delete files: both are the same file in the table location, but the position deletes are currently
-# not applied because the paths are compared as strings.
+# not applied because the paths are compared as strings: https://github.com/ClickHouse/ClickHouse/issues/129990
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

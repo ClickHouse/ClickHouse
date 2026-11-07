@@ -6,7 +6,8 @@
 # test data, see `data_iceberg/impala/README.md`. The expected results are the ones of the Impala tests
 # `iceberg-v3-delete-existing-dv.test`, `iceberg-v3-optimize-shared-puffin.test` and `iceberg-v3-row-lineage.test`.
 #
-# For ORC data files, `_row_id` is currently NULL and `_last_updated_sequence_number` stored in the data file is ignored.
+# For ORC data files, `_row_id` is currently NULL and `_last_updated_sequence_number` stored in the data file is ignored:
+# https://github.com/ClickHouse/ClickHouse/issues/130032
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

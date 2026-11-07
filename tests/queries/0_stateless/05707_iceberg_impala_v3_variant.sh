@@ -14,7 +14,7 @@
 #   the manifest list is not found: https://github.com/ClickHouse/ClickHouse/issues/129990
 # - Variant in Avro data files: https://github.com/ClickHouse/ClickHouse/issues/129998
 # - `trino_variant` has manifests without `partition-spec` in the Avro header: https://github.com/ClickHouse/ClickHouse/issues/129989
-# - Variant values in ORC data files are read as NULL.
+# - Variant values in ORC data files are read as NULL: https://github.com/ClickHouse/ClickHouse/issues/130031
 # - Reading only the subcolumn `arr_struct_v.v` (a variant inside an array of structs) returns empty arrays:
 #   https://github.com/ClickHouse/ClickHouse/issues/130023
 

@@ -8,7 +8,8 @@
 #
 # All of these tables have the legacy `schema` field without `schema-id` in the metadata and in the manifest
 # headers, and snapshots without `schema-id`; some have no `sort-orders`.
-# Until https://github.com/ClickHouse/ClickHouse/issues/129991 is fixed, they fail with `BAD_ARGUMENTS` or `POCO_EXCEPTION`.
+# Until https://github.com/ClickHouse/ClickHouse/issues/129991 is fixed, they fail with `BAD_ARGUMENTS` or `POCO_EXCEPTION`
+# (also the missing `schema-id` in the manifest headers and the missing `sort-orders`).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
