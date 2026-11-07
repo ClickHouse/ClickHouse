@@ -5,14 +5,14 @@ from kafka import KafkaProducer
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, wait_condition
 
 from helpers.config_cluster import kafka_sasl_user, kafka_sasl_pass
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/sasl_settings.xml"],
+    main_configs=["configs/sasl_settings.xml", "configs/kip848.xml"],
     with_kafka_sasl=True,
     stay_alive=True,
 )
@@ -144,3 +144,169 @@ def test_dead_letter_segfault(kafka_cluster):
     )
 
     assert "The table system.dead_letter_queue is not configured on the server" in res
+
+
+
+def kafka_cli(kafka_cluster, tool, *args):
+    config = "/tmp/kip848_client.properties"
+    properties = (
+        "security.protocol=SASL_PLAINTEXT\n"
+        "sasl.mechanism=PLAIN\n"
+        "sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required "
+        f'username="{kafka_sasl_user}" password="{kafka_sasl_pass}";\n'
+    )
+    kafka_cluster.exec_in_container(
+        kafka_cluster.kafka_sasl_docker_id, ["bash", "-c", f"echo '{properties}' > {config}"]
+    )
+    return kafka_cluster.exec_in_container(
+        kafka_cluster.kafka_sasl_docker_id,
+        [tool, "--bootstrap-server", "kafka_sasl:19092", "--command-config", config, *args],
+    )
+
+
+# `group_protocol = consumer` (KIP-848) is set for the topics in configs/kip848.xml.
+def create_kip848_table(name, topic, flush_interval_ms):
+    instance.query(
+        f"""
+        CREATE TABLE test.{name} (id UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka_sasl:19092',
+                     kafka_security_protocol = 'sasl_plaintext',
+                     kafka_sasl_mechanism = 'PLAIN',
+                     kafka_sasl_username = '{kafka_sasl_user}',
+                     kafka_sasl_password = '{kafka_sasl_pass}',
+                     kafka_flush_interval_ms = {flush_interval_ms},
+                     kafka_topic_list = '{topic}',
+                     kafka_group_name = '{topic}',
+                     kafka_format = 'JSONEachRow';
+        CREATE MATERIALIZED VIEW test.{name}_mv TO test.messages AS SELECT id FROM test.{name}
+            WHERE NOT throwIf((SELECT count() FROM test.fail_inserts) > 0);
+        """
+    )
+
+
+def wait_kafka_consumer(name, condition):
+    assert_eq_with_retry(
+        instance,
+        f"SELECT {condition} FROM system.kafka_consumers WHERE table = '{name}'",
+        "1",
+        retry_count=120,
+        sleep_time=0.5,
+    )
+
+
+def wait_assigned_partitions(name, condition):
+    wait_kafka_consumer(name, f"sum(length(assignments.partition_id)) {condition}")
+
+
+# The broker assigns the partitions, and every rebalance is incremental. Members joining and leaving the group
+# must not lose or stall messages.
+def test_kafka_kip848_consumer_group_protocol(kafka_cluster):
+    kafka_cli(kafka_cluster, "kafka-topics", "--create", "--topic", "kip848", "--partitions", "6")
+
+    def create_kafka_table(name):
+        create_kip848_table(name, "kip848", 500)
+
+    producer = get_kafka_producer(kafka_cluster.kafka_sasl_port)
+    produced = 0
+
+    def produce(count):
+        nonlocal produced
+        for i in range(produced, produced + count):
+            producer.send(topic="kip848", value=f'{{"id":{i}}}', partition=i % 6)
+        producer.flush()
+        produced += count
+
+    def produce_and_wait(count):
+        produce(count)
+        assert_eq_with_retry(
+            instance, "SELECT uniqExact(id) FROM test.messages", str(produced), retry_count=120, sleep_time=0.5
+        )
+
+    instance.query("CREATE TABLE test.messages (id UInt64) ENGINE = MergeTree ORDER BY id")
+    instance.query("CREATE TABLE test.fail_inserts (x UInt8) ENGINE = Memory")
+    create_kafka_table("kafka1")
+    produce_and_wait(1000)
+    wait_assigned_partitions("kafka1", "= 6")
+
+    # The new member takes a part of the partitions, the first one keeps the rest.
+    create_kafka_table("kafka2")
+    wait_assigned_partitions("kafka2", "> 0")
+    produce_and_wait(1000)
+
+    # And gets them back when the new member leaves.
+    instance.query("DROP TABLE test.kafka2_mv; DROP TABLE test.kafka2 SYNC")
+    wait_assigned_partitions("kafka1", "= 6")
+    produce_and_wait(1000)
+
+    # The messages of a failed insert are read again, not skipped.
+    errors_query = "SELECT sum(value) FROM system.errors WHERE name = 'FUNCTION_THROW_IF_VALUE_IS_NON_ZERO'"
+    errors = int(instance.query(errors_query))
+    instance.query("INSERT INTO test.fail_inserts VALUES (1)")
+    produce(1000)
+    assert_eq_with_retry(instance, f"SELECT ({errors_query}) > {errors}", "1", retry_count=120, sleep_time=0.5)
+    instance.query("TRUNCATE TABLE test.fail_inserts")
+    produce_and_wait(0)
+    producer.close()
+
+    assert instance.query("SELECT min(id), max(id) FROM test.messages") == f"0\t{produced - 1}\n"
+    assert int(instance.query("SELECT num_rebalance_revocations FROM system.kafka_consumers WHERE table = 'kafka1'")) > 0
+    assert "kip848" in kafka_cli(kafka_cluster, "kafka-groups", "--list", "--group-type", "consumer")
+
+
+# A partial revocation drops the block being formed, including the rows already read from the partitions the
+# consumer keeps. Those partitions must be rewound, otherwise the rows are skipped and the next commit loses them.
+def test_kafka_kip848_partial_revocation_rewinds_unfinished_block(kafka_cluster):
+    topic = "kip848_rewind"
+    failpoint = "kafka_consumer_pause_mid_block"
+    produced = 60
+    kafka_cli(kafka_cluster, "kafka-topics", "--create", "--topic", topic, "--partitions", "6")
+    instance.query("CREATE TABLE test.messages (id UInt64) ENGINE = MergeTree ORDER BY id")
+    instance.query("CREATE TABLE test.fail_inserts (x UInt8) ENGINE = Memory")
+
+    producer = get_kafka_producer(kafka_cluster.kafka_sasl_port)
+    for i in range(produced):
+        producer.send(topic=topic, value=f'{{"id":{i}}}', partition=i % 6)
+    producer.flush()
+    producer.close()
+
+    def read_offsets():
+        return instance.query(
+            "SELECT sum(arraySum(assignments.current_offset)) FROM system.kafka_consumers WHERE table = 'kafka1'"
+        )
+
+    def member_partitions():
+        out = kafka_cli(kafka_cluster, "kafka-consumer-groups", "--describe", "--group", topic, "--members")
+        return [int(line.split()[-1]) for line in out.splitlines() if line.startswith(topic)]
+
+    rejected_query = "SELECT sum(value) FROM system.events WHERE name = 'KafkaRowsRejected'"
+    rejected = int(instance.query(rejected_query))
+
+    # The failpoint holds the block when a poll returns nothing; the long flush interval keeps it from ending meanwhile.
+    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    try:
+        create_kip848_table("kafka1", topic, 600000)
+        instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
+        # The block must hold the rows of all the partitions, so let it poll until it has read them all.
+        for _ in range(5):
+            if read_offsets() == f"{produced}\n":
+                break
+            instance.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+            instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
+        assert read_offsets() == f"{produced}\n"
+
+        # The broker tells the first member to revoke a part of its partitions, it keeps the rest, and the new one
+        # gets nothing until the first member revokes them while polling.
+        create_kip848_table("kafka2", topic, 500)
+        wait_condition(member_partitions, lambda p: len(p) == 2 and max(p) < 6, max_attempts=120, delay=0.5)
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+    # The next poll of the first member revokes the partitions, and the block is dropped.
+    assert_eq_with_retry(
+        instance, f"SELECT ({rejected_query}) >= {rejected + produced}", "1", retry_count=120, sleep_time=0.5
+    )
+    assert_eq_with_retry(
+        instance, "SELECT uniqExact(id) FROM test.messages", str(produced), retry_count=120, sleep_time=0.5
+    )
+    assert instance.query("SELECT count(), min(id), max(id) FROM test.messages") == f"{produced}\t0\t{produced - 1}\n"
