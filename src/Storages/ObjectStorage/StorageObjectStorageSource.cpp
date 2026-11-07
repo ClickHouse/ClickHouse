@@ -31,6 +31,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
@@ -1418,6 +1419,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     if ((format_filter_info && format_filter_info->condition_hash) || top_k_query_condition_cache_key)
         query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
 
+    std::shared_ptr<NamesAndTypesList> initial_schema;
+    bool reads_file_under_own_names = false;
+
     while (true)
     {
         object_info = file_iterator->next(processor);
@@ -1469,7 +1473,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             ? top_k_query_condition_cache_key->format_filter_info_tracking_best_values
             : query_format_filter_info;
 
-        const bool consult_plain_condition = format_filter_info && format_filter_info->condition_hash
+        /// A file with a schema transform is read under the column names it was written with, and the cache entries of the
+        /// plain predicate are not scoped by schema.
+        initial_schema = configuration->getInitialSchemaByPath(context_, object_info);
+        reads_file_under_own_names
+            = initial_schema && object_info->data_lake_metadata && object_info->data_lake_metadata->schema_transform;
+
+        const bool consult_plain_condition = !reads_file_under_own_names && format_filter_info && format_filter_info->condition_hash
             && (use_query_condition_cache_for_top_k || !format_filter_info->top_k_filter
                 || !format_filter_info->top_k_filter->filter_rows);
 
@@ -1671,7 +1681,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         Block initial_header = read_from_format_info.format_header;
         bool schema_changed = false;
 
-        if (auto initial_schema = configuration->getInitialSchemaByPath(context_, object_info))
+        if (initial_schema)
         {
             Block sample_header;
             for (const auto & [name, type] : *initial_schema)
@@ -1704,6 +1714,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             if (!format_filter_info)
                 return nullptr;
+
+            /// The filters use the current column names: apply them after the schema transform, not to the columns of the file.
+            if (reads_file_under_own_names)
+            {
+                stripped_row_level_filter = format_filter_info->row_level_filter;
+                stripped_prewhere_info = format_filter_info->prewhere_info;
+                return std::make_shared<FormatFilterInfo>(nullptr, format_filter_info->context.lock(), nullptr, nullptr, nullptr);
+            }
 
             /// Check if the actual file format supports PREWHERE. For mixed-format data lake
             /// tables (e.g. Iceberg with Parquet + ORC files), table-level PREWHERE support
@@ -2034,7 +2052,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 add_filter_required_names(stripped_row_level_filter->actions);
             if (stripped_prewhere_info)
                 add_filter_required_names(stripped_prewhere_info->prewhere_actions);
-            schema_transform->removeUnusedActions(needed_names);
+            /// A file read under its own schema has all its columns as inputs, as in the `getSchemaTransformer` case below.
+            if (!schema_changed)
+                schema_transform->removeUnusedActions(needed_names);
         }
         if (!schema_transform)
         {
@@ -2156,6 +2176,25 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 {
                     return std::make_shared<AddingDefaultsTransform>(header, read_from_format_info.columns_description, *input_format, context_);
                 });
+        }
+
+        /// A file read under its own names yields whole columns, while a tuple element can be requested as a flat
+        /// column (see `filterTupleColumnsToRead`).
+        if (reads_file_under_own_names)
+        {
+            NameSet names_in_storage;
+            for (const auto & column : read_from_format_info.requested_columns)
+                names_in_storage.insert(column.getNameInStorage());
+            auto extract_dag = createSubcolumnsExtractionActions(
+                builder.getHeader(), Names(names_in_storage.begin(), names_in_storage.end()), context_);
+            if (!extract_dag.getNodes().empty())
+            {
+                auto extract_actions = std::make_shared<ExpressionActions>(std::move(extract_dag));
+                builder.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<ExpressionTransform>(header, extract_actions);
+                });
+            }
         }
 
         source = input_format;
