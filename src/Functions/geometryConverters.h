@@ -15,6 +15,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Functions/CancellationBudget.h>
 #include <Interpreters/castColumn.h>
 
 #include <cmath>
@@ -268,6 +269,7 @@ public:
         {
             geometries = Converter::convert(column_const->getDataColumnPtr());
             boost::geometry::correct(geometries[0]);
+            constant_units = countUnits(geometries[0]);
         }
         else
             geometries = Converter::convert(column->convertToFullColumnIfConst());
@@ -282,10 +284,46 @@ public:
         return geometries[row];
     }
 
+    /// The work of visiting the geometry of `row`, in `CancellationBudget` units.
+    size_t units(size_t row) const
+    {
+        return is_const ? constant_units : countUnits(geometries[row]);
+    }
+
 private:
+    /// Parts are counted as well as points: an empty ring or member has no points but is still visited.
+    template <typename Geometry>
+    static size_t countUnits(const Geometry & geometry)
+    {
+        return boost::geometry::num_points(geometry) + boost::geometry::num_geometries(geometry)
+            + boost::geometry::num_interior_rings(geometry);
+    }
+
     decltype(Converter::convert(std::declval<ColumnPtr>())) geometries;
     bool is_const = false;
+    size_t constant_units = 0;
 };
+
+/// Calls `f` with the corrected geometries of every row, observing cancellation in proportion to the points and parts visited.
+template <typename LeftConverter, typename RightConverter, typename F>
+void forEachCorrectedGeometryPair(
+    const ColumnPtr & left_column, const ColumnPtr & right_column, size_t input_rows_count, const char * function_name, F && f)
+{
+    CorrectedGeometries<LeftConverter> left(left_column);
+    CorrectedGeometries<RightConverter> right(right_column);
+
+    const std::function<void()> check_cancellation = makeCancellationCheck(function_name);
+    CancellationBudget budget(check_cancellation);
+
+    /// NOLINTNEXTLINE(clang-analyzer-core.uninitialized.Assign)
+    for (size_t row = 0; row < input_rows_count; ++row)
+    {
+        const auto & left_geometry = left.get(row);
+        const auto & right_geometry = right.get(row);
+        budget.chargeUnits(1 + left.units(row) + right.units(row));
+        f(left_geometry, right_geometry);
+    }
+}
 
 
 /// To serialize Spherical or Cartesian point (a pair of numbers in both cases).
