@@ -10,7 +10,12 @@ from helpers.keeper_utils import (
     replace_zookeeper_config,
     reset_zookeeper_config,
 )
-from helpers.test_tools import TSV, assert_eq_with_retry
+from helpers.test_tools import (
+    TSV,
+    assert_eq_with_retry,
+    assert_logs_contain_with_retry,
+    wait_condition,
+)
 
 default_zk_config = p.join(p.dirname(p.realpath(__file__)), "configs/zookeeper.xml")
 cluster = ClickHouseCluster(__file__, zookeeper_config_path="configs/zookeeper.xml")
@@ -218,6 +223,40 @@ def test_rename_replicated(started_cluster, entity):
     )
     node1.query("SYSTEM RELOAD USERS")
     node1.query(f"DROP {entity.keyword} {entity.name}2 {entity.options}")
+
+
+def test_query_masking_rule_replicated(started_cluster):
+    node1.query(
+        "CREATE QUERY MASKING RULE replicated_rule ON CLUSTER default REGEXP 'REPLSECRET_[0-9]+' REPLACE '[repl-hidden]'",
+        settings={"ignore_on_cluster_for_replicated_access_entities_queries": 1},
+    )
+    try:
+        assert_eq_with_retry(
+            node2,
+            "SELECT name, replace FROM system.query_masking_rules",
+            "replicated_rule\t[repl-hidden]\n",
+        )
+        # The replication thread publishes the rule to the masker after storing it.
+        wait_condition(
+            lambda: node2.query_and_get_error("SELECT throwIf(1, 'REPLSECRET_0')"),
+            lambda error: "[repl-hidden]" in error,
+            max_attempts=50,
+            delay=0.2,
+        )
+        node2.rotate_logs()
+        node2.query("SELECT 'REPLSECRET_1'")
+        assert_logs_contain_with_retry(node2, r"SELECT '\[repl-hidden\]'")
+        assert not node2.contains_in_log("REPLSECRET_1")
+
+        # The rules already in ZooKeeper are applied at startup.
+        node2.restart_clickhouse()
+        node2.rotate_logs()
+        node2.query("SELECT 'REPLSECRET_2'")
+        assert_logs_contain_with_retry(node2, r"SELECT '\[repl-hidden\]'")
+        assert not node2.contains_in_log("REPLSECRET_2")
+    finally:
+        node1.query("DROP QUERY MASKING RULE IF EXISTS replicated_rule")
+    assert_eq_with_retry(node2, "SELECT count() FROM system.query_masking_rules", "0\n")
 
 
 # ReplicatedAccessStorage must be able to continue working after reloading ZooKeeper.

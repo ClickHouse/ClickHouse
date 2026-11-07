@@ -104,7 +104,7 @@ This statement allows to move an access entity from one access storage to anothe
 Syntax:
 
 ```sql
-MOVE {USER, ROLE, QUOTA, SETTINGS PROFILE, ROW POLICY} name1 [, name2, ...] TO access_storage_type
+MOVE {USER, ROLE, QUOTA, SETTINGS PROFILE, ROW POLICY, QUERY MASKING RULE} name1 [, name2, ...] TO access_storage_type
 ```
 
 Currently, there are five access storages in ClickHouse:
@@ -125,7 +125,7 @@ MOVE ROLE test TO memory
 ```
 )DOCS_MD",
         .syntax = R"(
-MOVE {USER | ROLE | QUOTA | SETTINGS PROFILE | ROW POLICY} name1 [, name2, ...] TO access_storage_type
+MOVE {USER | ROLE | QUOTA | SETTINGS PROFILE | ROW POLICY | QUERY MASKING RULE} name1 [, name2, ...] TO access_storage_type
 )",
         .related = {"CREATE USER", "CREATE ROLE", "SHOW"},
     };

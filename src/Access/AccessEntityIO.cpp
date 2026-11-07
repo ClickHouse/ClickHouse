@@ -1,6 +1,7 @@
 #include <Access/AccessEntityIO.h>
 #include <Access/IAccessEntity.h>
 #include <Access/IAccessStorage.h>
+#include <Access/QueryMaskingRule.h>
 #include <Access/Quota.h>
 #include <Access/Role.h>
 #include <Access/RowPolicy.h>
@@ -8,6 +9,7 @@
 #include <Access/User.h>
 #include <Core/Defines.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Access/InterpreterCreateQueryMaskingRuleQuery.h>
 #include <Interpreters/Access/InterpreterCreateQuotaQuery.h>
 #include <Interpreters/Access/InterpreterCreateRoleQuery.h>
 #include <Interpreters/Access/InterpreterCreateRowPolicyQuery.h>
@@ -16,6 +18,7 @@
 #include <Interpreters/Access/InterpreterGrantQuery.h>
 #include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/Access/InterpreterShowGrantsQuery.h>
+#include <Parsers/Access/ASTCreateQueryMaskingRuleQuery.h>
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
@@ -123,6 +126,14 @@ static AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
                 throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "Two access entities attached in the same file");
             res = profile = std::make_unique<SettingsProfile>();
             InterpreterCreateSettingsProfileQuery::updateSettingsProfileFromQuery(*profile, *create_profile_query);
+        }
+        else if (auto * create_query_masking_rule_query = query->as<ASTCreateQueryMaskingRuleQuery>())
+        {
+            if (res)
+                throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "Two access entities attached in the same file");
+            auto rule = std::make_shared<QueryMaskingRule>();
+            InterpreterCreateQueryMaskingRuleQuery::updateQueryMaskingRuleFromQuery(*rule, *create_query_masking_rule_query);
+            res = rule;
         }
         else if (auto * grant_query = query->as<ASTGrantQuery>())
         {

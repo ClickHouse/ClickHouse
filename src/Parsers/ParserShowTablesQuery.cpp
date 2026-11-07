@@ -943,6 +943,27 @@ The `SHOW CREATE MASKING POLICY` statement shows parameters which were used at [
 ```sql title="Syntax"
 SHOW CREATE MASKING POLICY name ON [database.]table
 ```
+
+## SHOW CREATE QUERY MASKING RULE {#show-create-query-masking-rule}
+
+The `SHOW CREATE QUERY MASKING RULE` statement shows parameters which were used at [query masking rule creation](/reference/statements/create/query-masking-rule). The `REGEXP` is shown as `'[HIDDEN]'` unless the display of secrets is enabled. Requires the `QUERY MASKING RULE ADMIN` privilege.
+
+### Syntax {#syntax-27}
+
+```sql title="Syntax"
+SHOW CREATE QUERY MASKING RULE name1 [, name2 ...]
+SHOW CREATE QUERY MASKING RULES
+```
+
+## SHOW QUERY MASKING RULES {#show-query-masking-rules}
+
+The `SHOW QUERY MASKING RULES` statement returns a list of the query masking rules created by [CREATE QUERY MASKING RULE](/reference/statements/create/query-masking-rule). The rules from the `query_masking_rules` server setting are not listed. Requires the `QUERY MASKING RULE ADMIN` privilege.
+
+### Syntax {#syntax-28}
+
+```sql title="Syntax"
+SHOW QUERY MASKING RULES
+```
 )DOCS_MD",
         .syntax = R"(
 SHOW [CREATE] TABLE | DICTIONARY | VIEW | DATABASE [db.]name [INTO OUTFILE filename] [FORMAT format]
@@ -953,8 +974,8 @@ SHOW [FULL] DICTIONARIES [{FROM | IN} <db>] [LIKE | ILIKE '<pattern>'] [LIMIT <N
 SHOW [EXTENDED] {INDEX | INDEXES | INDICES | KEYS } {FROM | IN} <table> [{FROM | IN} <db>] [WHERE <expr>] [INTO OUTFILE <filename>] [FORMAT <format>]
 SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 SHOW GRANTS [FOR user1 [, user2 ...]] [WITH IMPLICIT] [FINAL]
-SHOW [CREATE] USER | ROLE | ROW POLICY | MASKING POLICY | QUOTA | [SETTINGS] PROFILE ...
-SHOW USERS | ROLES | PROFILES | POLICIES | QUOTAS | QUOTA | ACCESS
+SHOW [CREATE] USER | ROLE | ROW POLICY | MASKING POLICY | QUERY MASKING RULE | QUOTA | [SETTINGS] PROFILE ...
+SHOW USERS | ROLES | PROFILES | POLICIES | QUERY MASKING RULES | QUOTAS | QUOTA | ACCESS
 SHOW [SETTINGS] PROFILES
 SHOW CLUSTER '<name>' | CLUSTERS [[NOT] LIKE|ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 SHOW [CHANGED] SETTINGS LIKE | ILIKE '<name>'

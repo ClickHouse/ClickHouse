@@ -1,0 +1,3 @@
+<clickhouse>
+    <min_allocation_size_to_throw_on_memory_limit>1</min_allocation_size_to_throw_on_memory_limit>
+</clickhouse>
