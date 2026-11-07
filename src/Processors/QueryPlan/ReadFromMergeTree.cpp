@@ -3137,6 +3137,54 @@ std::optional<size_t> ReadFromMergeTree::estimateCompressedBytesToRead() const
 namespace
 {
 
+bool canSkipIndexBeUsedForTopKFiltering(const std::optional<TopKFilterInfo> & top_k_filter_info, const MergeTreeIndexPtr & skip_index)
+{
+    if (!top_k_filter_info || !skip_index->index.isSimpleSingleColumnIndex()
+        || skip_index->index.type != "minmax"
+        || top_k_filter_info->column_name != skip_index->index.column_names[0])
+        return false;
+
+    /// The skip-index top-k path ranks granules via raw Field comparison
+    /// (MinMaxGranuleItem::operator<) which does not respect nulls_direction
+    /// or collation. Only allow types where raw Field ordering matches
+    /// the ORDER BY semantics.
+    /// TODO: generalize MinMaxGranuleItem comparison and getTopKMarks to use
+    /// nulls_direction/collator so this restriction can be lifted.
+    if (top_k_filter_info->data_type->isNullable()
+        || !top_k_filter_info->data_type->isValueRepresentedByNumber())
+        return false;
+
+    if (top_k_filter_info->threshold_tracker
+        && top_k_filter_info->threshold_tracker->getCollator())
+        return false;
+
+    /// The `minmax` index leaves NaN out of the granule bounds. That is harmless while NaN ranks last,
+    /// but under NULLS FIRST a granule whose finite values are all beyond the threshold would be
+    /// skipped together with the NaN rows it holds, which rank before the threshold.
+    if (top_k_filter_info->threshold_tracker
+        && isFloat(removeLowCardinality(top_k_filter_info->data_type))
+        && top_k_filter_info->threshold_tracker->getNullsDirection() != top_k_filter_info->threshold_tracker->getDirection())
+        return false;
+
+    return true;
+}
+
+void useSkipIndexForTopKFilteringIfPossible(
+    UsefulSkipIndexes & skip_indexes,
+    const MergeTreeIndexPtr & index_helper,
+    const std::optional<TopKFilterInfo> & top_k_filter_info,
+    const Settings & settings)
+{
+    if (settings[Setting::use_skip_indexes_for_top_k] && canSkipIndexBeUsedForTopKFiltering(top_k_filter_info, index_helper))
+    {
+        skip_indexes.skip_index_for_top_k_filtering = index_helper;
+        LOG_TRACE(getLogger("MergeTreeSkipIndexReader"), "Selected index {} on column {} for top-K optimization, k = {}, direction = {}, sort columns = {}",
+                    index_helper->index.name, top_k_filter_info->column_name, top_k_filter_info->limit_n, top_k_filter_info->direction, top_k_filter_info->num_sort_columns);
+        if (settings[Setting::use_skip_indexes_on_data_read])
+            skip_indexes.threshold_tracker = top_k_filter_info->threshold_tracker;
+    }
+}
+
 /// Check if all columns of all useful skip indexes are also part of the primary key (float columns do not count).
 /// When true, skip indexes cannot cause incorrect FINAL results (since PK-based filtering cannot drop parts with overlapping key ranges),
 /// so the `findPKRangesForFinalAfterSkipIndex` recovery pass can be skipped.
@@ -3384,46 +3432,7 @@ void ReadFromMergeTree::buildIndexes(
         if (unsubstituted && !unsubstituted->alwaysUnknownOrTrue())
             skip_indexes.useful_indices.emplace_back(index_helper, std::move(condition_template));
 
-        auto can_skip_index_be_used_for_top_k_filtering = [top_k_filter_info](const MergeTreeIndexPtr & skip_index)
-        {
-                if (!top_k_filter_info || !skip_index->index.isSimpleSingleColumnIndex()
-                    || skip_index->index.type != "minmax"
-                    || top_k_filter_info->column_name != skip_index->index.column_names[0])
-                    return false;
-
-                /// The skip-index top-k path ranks granules via raw Field comparison
-                /// (MinMaxGranuleItem::operator<) which does not respect nulls_direction
-                /// or collation. Only allow types where raw Field ordering matches
-                /// the ORDER BY semantics.
-                /// TODO: generalize MinMaxGranuleItem comparison and getTopKMarks to use
-                /// nulls_direction/collator so this restriction can be lifted.
-                if (top_k_filter_info->data_type->isNullable()
-                    || !top_k_filter_info->data_type->isValueRepresentedByNumber())
-                    return false;
-
-                if (top_k_filter_info->threshold_tracker
-                    && top_k_filter_info->threshold_tracker->getCollator())
-                    return false;
-
-                /// The `minmax` index leaves NaN out of the granule bounds. That is harmless while NaN ranks last,
-                /// but under NULLS FIRST a granule whose finite values are all beyond the threshold would be
-                /// skipped together with the NaN rows it holds, which rank before the threshold.
-                if (top_k_filter_info->threshold_tracker
-                    && isFloat(removeLowCardinality(top_k_filter_info->data_type))
-                    && top_k_filter_info->threshold_tracker->getNullsDirection() != top_k_filter_info->threshold_tracker->getDirection())
-                    return false;
-
-                return true;
-        };
-
-        if (settings[Setting::use_skip_indexes_for_top_k] && can_skip_index_be_used_for_top_k_filtering(index_helper))
-        {
-            skip_indexes.skip_index_for_top_k_filtering = index_helper;
-            LOG_TRACE(getLogger("MergeTreeSkipIndexReader"), "Selected index {} on column {} for top-K optimization, k = {}, direction = {}, sort columns = {}",
-                        index_helper->index.name, top_k_filter_info->column_name, top_k_filter_info->limit_n, top_k_filter_info->direction, top_k_filter_info->num_sort_columns);
-            if (settings[Setting::use_skip_indexes_on_data_read])
-                skip_indexes.threshold_tracker = top_k_filter_info->threshold_tracker;
-        }
+        useSkipIndexForTopKFilteringIfPossible(skip_indexes, index_helper, top_k_filter_info, settings);
     }
 
     indexes->use_skip_indexes_for_disjunctions = settings[Setting::use_skip_indexes_for_disjunctions]
@@ -5429,6 +5438,26 @@ static std::vector<RangesInDataPartsDescription> sliceMarksAcrossBuckets(const R
     return result;
 }
 
+static bool allPartsStoreColumns(const RangesInDataParts & parts, const ColumnsDescription & columns, const Names & column_names)
+{
+    for (const auto & name : column_names)
+    {
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+        if (!column)
+            continue;
+
+        const auto name_in_storage = column->getNameInStorage();
+        const DataTypePtr type = columns.getPhysical(name_in_storage).type;
+        for (const auto & part : parts)
+        {
+            auto in_part = part.data_part->tryGetColumn(name_in_storage);
+            if (!in_part || !in_part->type->equals(*type))
+                return false;
+        }
+    }
+    return true;
+}
+
 Pipe ReadFromMergeTree::createEmptyPipe(size_t num_streams) const
 {
     Pipes pipes;
@@ -5726,7 +5755,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     }
 
     if (top_k_filter_info)
+    {
         reader_settings.top_k_filter_rows_equal_to_threshold_dropped = top_k_filter_info->rows_equal_to_threshold_dropped;
+        reader_settings.top_k_record_marks_beyond_threshold
+            = allPartsStoreColumns(getParts(), storage_snapshot->metadata->getColumns(), all_column_names);
+    }
 
     /// Push down substring search conditions from PREWHERE into the column scan: the readers check
     /// every value of the corresponding String columns and read non-matching values as empty strings.
@@ -6904,6 +6937,30 @@ void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
     size_t combined_hash = top_k_filter_info->condition_hash;
     boost::hash_combine(combined_hash, parts_hash.get64());
     top_k_filter_info->condition_hash = combined_hash;
+
+    /// The `GROUP BY ... LIMIT` top-K pass runs after `buildIndexes`, so the `minmax` index for the threshold is picked here.
+    /// Floats are left out: a NaN max does not bound a granule, so a descending threshold could skip its finite rows.
+    const auto & settings = context->getSettingsRef();
+    if (indexes && indexes->use_skip_indexes && !indexes->skip_indexes.skip_index_for_top_k_filtering
+        && settings[Setting::use_skip_indexes_for_top_k] && !isFloat(removeLowCardinality(top_k_filter_info->data_type)))
+    {
+        std::unordered_set<std::string> ignored_index_names;
+        if (settings[Setting::ignore_data_skipping_indexes].changed)
+            ignored_index_names = parseIdentifiersOrStringLiteralsToSet(settings[Setting::ignore_data_skipping_indexes].toString(), settings);
+
+        for (const auto & index : storage_snapshot->metadata->getSecondaryIndices())
+        {
+            if (index.type != "minmax" || index.column_names.size() != 1 || index.column_names[0] != top_k_filter_info->column_name
+                || ignored_index_names.contains(index.name))
+                continue;
+
+            auto index_helper = MergeTreeIndexFactory::instance().get(storage_snapshot->metadata, index, *data_settings);
+            if (index_helper->isInert())
+                continue;
+
+            useSkipIndexForTopKFilteringIfPossible(indexes->skip_indexes, index_helper, top_k_filter_info, settings);
+        }
+    }
 }
 
 bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) const

@@ -82,6 +82,11 @@ static std::optional<String> findPassedThroughInput(const ActionsDAG & dag, cons
     return node->result_name;
 }
 
+static bool hasNonDeterministicOutput(const ActionsDAG & dag)
+{
+    return std::ranges::any_of(dag.getOutputs(), [](const ActionsDAG::Node * output) { return !VirtualColumnUtils::isDeterministic(output); });
+}
+
 /// Links the top-K heap of the aggregation to the `ReadFromMergeTree` step below it.
 ///
 /// The heap admits only keys not worse than its boundary once it holds `LIMIT` of them, so a row whose
@@ -124,10 +129,10 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     QueryPlan::Node * node = aggregating_node->children.front();
     FilterStep * closest_filter_step = nullptr;
     ReadFromMergeTree * read_step = nullptr;
-    /// A filter that is deterministic only within one query (a join runtime filter `__applyFilter` pushed below
-    /// the aggregation, `now`) changes which rows reach the heap, and so the boundary, but its contents are not
-    /// part of the query condition cache key.
-    bool has_non_deterministic_filter = false;
+    /// An expression deterministic only within one query (`__applyFilter`, `now`, `joinGet`) changes the boundary, but
+    /// what it depends on is not in the query condition cache key: as a filter it changes which rows reach the heap, as
+    /// a grouping key the number of groups per value of the first key.
+    bool has_non_deterministic_expression = false;
     /// The expressions between the read and the aggregation, for the query condition cache salt below.
     std::vector<const ActionsDAG *> path_expressions;
 
@@ -151,6 +156,9 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
             }
             key_name = std::move(*input_name);
             path_expressions.push_back(&expression_step->getExpression());
+
+            if (hasNonDeterministicOutput(expression_step->getExpression()))
+                has_non_deterministic_expression = true;
         }
         else if (auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
         {
@@ -173,8 +181,9 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
             path_expressions.push_back(&filter_step->getExpression());
 
             const auto * filter_node = filter_step->getExpression().tryFindInOutputs(filter_step->getFilterColumnName());
-            if (!filter_node || !VirtualColumnUtils::isDeterministicAllowingTopKFilter(filter_node))
-                has_non_deterministic_filter = true;
+            if (!filter_node || !VirtualColumnUtils::isDeterministicAllowingTopKFilter(filter_node)
+                || hasNonDeterministicOutput(filter_step->getExpression()))
+                has_non_deterministic_expression = true;
         }
         else if (auto * read = typeid_cast<ReadFromMergeTree *>(node->step.get()))
         {
@@ -303,17 +312,17 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     read_step->setTopKColumn(info);
 
     /// This pass runs after `disableTopKQueryConditionCacheUnderNonDeterministicFilters`, so it applies the same
-    /// protection itself: under such a filter the boundary-dependent PREWHERE entries must be neither reused nor written.
-    if (has_non_deterministic_filter)
+    /// protection itself: under such an expression the boundary-dependent PREWHERE entries must be neither reused nor written.
+    if (has_non_deterministic_expression)
         read_step->disableTopKPrewhereQueryConditionCache();
 
     /// `updateQueryConditionCache` tagged the WHERE filter with the hash of the plain predicate. Under the running
     /// filter the granules it sees are only those the boundary let through, so the entry must be salted with the
     /// top-K parameters (the same way `updateQueryConditionCache` salts a read stamped by `tryOptimizeTopK`), or
-    /// dropped when the cache is not to be used for top-K reads at all or a filter above the read is not deterministic.
+    /// dropped when the cache is not to be used for top-K reads at all or an expression above the read is not deterministic.
     if (closest_filter_step && closest_filter_step->hasConditionForQueryConditionCache())
     {
-        if (settings.use_query_condition_cache_for_top_k && !has_non_deterministic_filter)
+        if (settings.use_query_condition_cache_for_top_k && !has_non_deterministic_expression)
             closest_filter_step->saltConditionForQueryConditionCache(read_step->getTopKFilterInfo()->condition_hash);
         else
             closest_filter_step->resetConditionForQueryConditionCache();
