@@ -28,6 +28,7 @@
 #include <Storages/StorageDummy.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/QueryConsumedObjectSets.h>
 #include <Interpreters/ExpressionContainsColumnMatcher.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTFunction.h>
@@ -738,6 +739,13 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
 
     if (check_access_rights)
         checkAccessRightsForFilter(filter_query_tree, table_expression, query_context);
+
+    /// The filter is resolved into its own tree, which the check of the main query tree in `Planner` does not see.
+    /// As there, the determinism of some functions is known only after they are resolved, e.g.
+    /// `arrayReduce('groupArraySample(1)', ...)` without a seed, so the check of the filter text is not enough.
+    if (auto consumed_object_sets = query_context->getQueryConsumedObjectSets();
+        consumed_object_sets && queryTreeHasNonDeterministicFunction(filter_query_tree))
+        consumed_object_sets->markNonDeterministic();
 
     /// The inner query of an ordinary view reads the table itself, not the inserted block.
     if (auto view_source = query_context->getViewSource(); view_source && !query_context->isViewInnerQuery())

@@ -92,7 +92,8 @@ void ReplicatedMergeTreeQueue::clear()
     mutations_by_partition.clear();
     mutation_pointer.clear();
     mutation_pointer_mtime = 0;
-    mutation_counters = {};
+    /// Keep `version` monotonic, it must not repeat a value that a modification hash has already seen.
+    mutation_counters = MutationCounters{.version = mutation_counters.version + 1};
     num_metadata_mutations_in_map.store(0, std::memory_order_release);
 }
 

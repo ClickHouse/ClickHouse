@@ -1,0 +1,3 @@
+no filter: not NULL
+definer filter reading a private table keeps the hash: yes
+a change of the private table keeps the hash: yes

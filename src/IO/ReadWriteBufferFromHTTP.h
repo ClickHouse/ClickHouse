@@ -62,6 +62,8 @@ public:
         // nullopt if the server doesn't report it.
         std::optional<size_t> file_size;
         std::optional<time_t> last_modified;
+        // Empty if the server doesn't report an ETag.
+        String etag;
         /// The `Date` of the response: the time by the clock of the server that reported `last_modified`.
         std::optional<time_t> response_date;
         bool seekable = false;

@@ -1,0 +1,18 @@
+-- hash changed on insert (A != B)
+1
+-- hash changed on drop (B != A_again)
+1
+-- loop-free: the round trip did NOT reproduce the earlier hash (A != A_again)
+1
+-- loop-free across DETACH PARTITION too (D_A != D_A_again)
+1
+-- hash changed on metadata change (M_A != M_B)
+1
+-- hash changed back on metadata revert (M_B != M_A_again)
+1
+-- loop-free across a metadata round trip (M_A != M_A_again)
+1
+-- Memory: hash changed on metadata change (MM_A != MM_B)
+1
+-- Memory: loop-free across a metadata round trip (MM_A != MM_A_again)
+1
