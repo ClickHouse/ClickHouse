@@ -1,0 +1,97 @@
+-- Tags: long
+
+-- The randomized join statistics of `query_plan_optimize_join_order_randomize` must not depend on how a
+-- relation is spelled: the initiator and its parallel replicas plan the same query with different
+-- aliases, and they must choose the same join order.
+
+SET enable_analyzer = 1;
+SET enable_cascades_optimizer = 0;
+SET query_plan_optimize_join_order_limit = 10;
+SET query_plan_optimize_join_order_algorithm = 'greedy';
+SET query_plan_join_swap_table = 'auto';
+SET query_plan_display_internal_aliases = 0;
+SET enable_join_runtime_filters = 0;
+SET join_algorithm = 'hash';
+SET automatic_parallel_replicas_mode = 0;
+
+DROP TABLE IF EXISTS l;
+DROP TABLE IF EXISTS r;
+DROP TABLE IF EXISTS l3;
+DROP TABLE IF EXISTS r3;
+DROP TABLE IF EXISTS m3;
+-- One row per mark, so the reading is shared between the replicas.
+CREATE TABLE l (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
+CREATE TABLE r (k UInt64, w UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
+INSERT INTO l SELECT number, number FROM numbers(1000);
+INSERT INTO r SELECT number, number FROM numbers(1000);
+CREATE TABLE l3 (a UInt64, x UInt64) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE r3 (b UInt64, y UInt64) ENGINE = MergeTree ORDER BY b;
+CREATE TABLE m3 (c UInt64, z UInt64) ENGINE = MergeTree ORDER BY c;
+INSERT INTO l3 SELECT number, number FROM numbers(1000);
+INSERT INTO r3 SELECT number, number FROM numbers(1000);
+INSERT INTO m3 SELECT number, number FROM numbers(1000);
+
+{% set seeds = range(2, 14) -%}
+
+-- One node: the same plan for two spellings of the same query.
+{% for s in seeds -%}
+SELECT {{ s }},
+    (SELECT arrayMap(x -> extract(x, 'ReadFromMergeTree \\(([^)]*)\\)'), arrayFilter(x -> x LIKE '%ReadFromMergeTree%', groupArray(explain)))
+     FROM (EXPLAIN SELECT * FROM l AS a LEFT JOIN r AS b ON a.k = b.k SETTINGS enable_parallel_replicas = 0, query_plan_optimize_join_order_randomize = {{ s }}))
+    = (SELECT arrayMap(x -> extract(x, 'ReadFromMergeTree \\(([^)]*)\\)'), arrayFilter(x -> x LIKE '%ReadFromMergeTree%', groupArray(explain)))
+     FROM (EXPLAIN SELECT * FROM l AS x LEFT JOIN r AS y ON x.k = y.k SETTINGS enable_parallel_replicas = 0, query_plan_optimize_join_order_randomize = {{ s }}));
+{% endfor -%}
+
+-- One node, three tables: the right-nested join is flattened into the same join graph as the left-deep one, so
+-- it gets the same plan. Without transitive predicates the two spellings can be priced differently.
+{% for s in seeds -%}
+SELECT {{ s }},
+    (SELECT arrayMap(x -> extract(x, 'ReadFromMergeTree \\(([^)]*)\\)'), arrayFilter(x -> x LIKE '%ReadFromMergeTree%', groupArray(explain)))
+     FROM (EXPLAIN SELECT * FROM l3 JOIN r3 ON a = b JOIN m3 ON b = c SETTINGS enable_parallel_replicas = 0, enable_join_transitive_predicates = 1, query_plan_optimize_join_order_randomize = {{ s }}))
+    = (SELECT arrayMap(x -> extract(x, 'ReadFromMergeTree \\(([^)]*)\\)'), arrayFilter(x -> x LIKE '%ReadFromMergeTree%', groupArray(explain)))
+     FROM (EXPLAIN SELECT * FROM l3 JOIN (r3 JOIN m3 ON b = c) AS s ON a = b SETTINGS enable_parallel_replicas = 0, enable_join_transitive_predicates = 1, query_plan_optimize_join_order_randomize = {{ s }}));
+{% endfor -%}
+
+-- Parallel replicas: the replicas, which get the query re-spelled by the initiator, execute the join
+-- the initiator plans for the user's spelling. Without a local plan the replicas do all the reading.
+-- The start time keeps the queries of an earlier run in the same database out of the check below.
+CREATE TEMPORARY TABLE run_start AS SELECT now64(6) AS t;
+{% for s in seeds -%}
+SELECT * FROM l AS a LEFT JOIN r AS b ON a.k = b.k
+SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+    parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 0, serialize_query_plan = 0, parallel_replicas_plan_based = 0,
+    query_plan_optimize_join_order_randomize = {{ s }}, log_comment = '05339_join_order_randomize_same_on_every_replica-{{ s }}'
+FORMAT Null;
+{% endfor -%}
+
+SYSTEM FLUSH LOGS query_log;
+
+-- Every seed has executed replica queries, they all match the initiator's plan, and both join orders occur.
+SELECT countIf(p.kind != s.kinds[1]), uniqExact(i.seed), uniqExact(p.kind)
+FROM
+(
+    SELECT query_id, toUInt64(extract(log_comment, '-(\\d+)$')) AS seed FROM system.query_log
+    WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query
+        AND query_start_time_microseconds >= (SELECT t FROM run_start)
+        AND log_comment LIKE '05339_join_order_randomize_same_on_every_replica-%'
+) AS i
+INNER JOIN
+(
+    SELECT initial_query_id, used_join_kinds AS kinds FROM system.query_log
+    WHERE event_date >= yesterday() AND type IN ('QueryFinish', 'ExceptionWhileProcessing') AND NOT is_initial_query
+        AND used_number_of_joins > 0 AND log_comment LIKE '05339_join_order_randomize_same_on_every_replica-%'
+) AS s ON i.query_id = s.initial_query_id
+INNER JOIN
+(
+{% for s in seeds -%}
+    SELECT toUInt64({{ s }}) AS seed, if((SELECT extract(explain, 'ReadFromMergeTree \\(([^)]*)\\)') FROM (EXPLAIN SELECT * FROM l AS a LEFT JOIN r AS b ON a.k = b.k SETTINGS enable_parallel_replicas = 0, query_plan_optimize_join_order_randomize = {{ s }}) WHERE explain LIKE '%ReadFromMergeTree%' LIMIT 1) LIKE '%.l', 'LEFT', 'RIGHT') AS kind
+    {% if not loop.last %}UNION ALL{% endif %}
+{% endfor -%}
+) AS p ON i.seed = p.seed
+SETTINGS enable_parallel_replicas = 0;
+
+DROP TABLE l;
+DROP TABLE r;
+DROP TABLE l3;
+DROP TABLE r3;
+DROP TABLE m3;

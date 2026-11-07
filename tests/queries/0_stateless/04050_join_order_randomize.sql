@@ -20,12 +20,12 @@ SET optimize_move_to_prewhere = 1;
 SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
 
 -- Determinism: same seed produces same plan twice
-SET query_plan_optimize_join_order_randomize = 42;
+SET query_plan_optimize_join_order_randomize = 3;
 EXPLAIN PLAN
 SELECT * FROM t1 JOIN t2 ON a = b JOIN t3 ON b = c
 FORMAT LineAsString;
 
-SET query_plan_optimize_join_order_randomize = 42;
+SET query_plan_optimize_join_order_randomize = 3;
 EXPLAIN PLAN
 SELECT * FROM t1 JOIN t2 ON a = b JOIN t3 ON b = c
 FORMAT LineAsString;
@@ -35,7 +35,7 @@ SET query_plan_optimize_join_order_randomize = 0;
 SELECT count(), sum(a), sum(x), sum(y), sum(z)
 FROM t1 JOIN t2 ON a = b JOIN t3 ON b = c;
 
-SET query_plan_optimize_join_order_randomize = 42;
+SET query_plan_optimize_join_order_randomize = 3;
 SELECT count(), sum(a), sum(x), sum(y), sum(z)
 FROM t1 JOIN t2 ON a = b JOIN t3 ON b = c;
 
