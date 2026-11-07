@@ -43,8 +43,9 @@ SET enable_filesystem_cache = 0;
 
 -- Full scan; marked so the check below finds it by query id. Its result is
 -- irrelevant (it only drives the executor), so discard it with FORMAT Null.
+-- One thread: the request map is per part, so a thread fetches past its share into the next one.
 SELECT count(), sum(id), sum(v), sum(length(s)) FROM t_reader_executor_metrics
-SETTINGS log_comment = '04327_reader_executor_metrics_probe' FORMAT Null;
+SETTINGS log_comment = '04327_reader_executor_metrics_probe', max_threads = 1 FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 

@@ -4,6 +4,8 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -25,6 +27,12 @@ public:
     void remove(ByteRange range);
 
     ByteRangeSet intersect(ByteRange range) const;
+
+    /// End of the run that holds `offset`, where gaps up to `max_gap` do not break a run; `nullopt` in a wider gap.
+    std::optional<size_t> contiguousEnd(size_t offset, size_t max_gap) const;
+
+    /// The set with every gap up to `max_gap` filled, so each interval is one `contiguousEnd` run.
+    ByteRangeSet coalesce(size_t max_gap) const;
 
     void shift(size_t delta);
 

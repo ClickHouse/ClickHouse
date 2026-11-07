@@ -12,11 +12,13 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <limits>
 
 namespace ProfileEvents
 {
     extern const Event ReaderExecutorSourceRequests;
     extern const Event ReaderExecutorBytesFromSource;
+    extern const Event ReaderExecutorBytesOutsideRequestMap;
     extern const Event ReaderExecutorDeliveredBytes;
     extern const Event ReaderExecutorCacheGetRequests;
     extern const Event ReaderExecutorCachePopulateRequests;
@@ -104,6 +106,9 @@ void ReaderExecutor::Stats::add(Counter c, UInt64 value)
             ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromSource, value);
             ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds, 20000ULL * value / (1024 * 1024));
             break;
+        case BytesOutsideRequestMap:
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesOutsideRequestMap, value);
+            break;
         case DeliveredBytes:
             ProfileEvents::increment(ProfileEvents::ReaderExecutorDeliveredBytes, value);
             break;
@@ -164,9 +169,11 @@ ReaderExecutor::ReaderExecutor(
     , cache_chain(std::move(options.cache_chain))
     , min_bytes_for_seek(options.min_bytes_for_seek)
     , max_tail_for_drain(options.max_tail_for_drain)
-    , plan_look_ahead(options.plan_look_ahead)   /// `getReadSettings` enforces `>= block_size`
+    , plan_look_ahead(options.plan_look_ahead)
     , active_metric(CurrentMetrics::ReaderExecutorActive)
 {
+    /// `getReadSettings` enforces it; `sampleWindowSizes` keeps it at every pressure level.
+    chassert(plan_look_ahead >= 2 * window_size);
     offset_map.build(objects);
     log_file_path = objects.empty() ? "" : objects.front().remote_path;
     LOG_DEBUG(log, "Created: source={}, objects={}, total_size={}, block_size={}, long_connections={}",
@@ -196,9 +203,9 @@ ReaderExecutor::~ReaderExecutor()
     }
 
     LOG_DEBUG(log,
-        "Destroyed: file={} src_reqs={} from_source={} requested={} work_us={}",
+        "Destroyed: file={} src_reqs={} from_source={} outside_map={} requested={} work_us={}",
         log_file_path, stats.get(Stats::SourceRequests), stats.get(Stats::BytesFromSource),
-        stats.get(Stats::DeliveredBytes), stats.get(Stats::WorkMicroseconds));
+        stats.get(Stats::BytesOutsideRequestMap), stats.get(Stats::DeliveredBytes), stats.get(Stats::WorkMicroseconds));
 }
 
 size_t ReaderExecutor::LongConnection::readInto(char * dst, size_t want)
@@ -261,18 +268,36 @@ size_t ReaderExecutor::clampReach(size_t predicted_end, size_t phys_pos) const
     return end;
 }
 
-bool ReaderExecutor::shouldOpenLongConnection(size_t window_bytes) const
+size_t ReaderExecutor::demandEnd(size_t block_bytes) const
+{
+    const size_t file_end = offset_map.hasUnknownSize() ? std::numeric_limits<size_t>::max() : offset_map.totalSize();
+    if (!request_runs)
+        return file_end;
+    const std::optional<size_t> run_end = request_runs->contiguousEnd(position, min_bytes_for_seek);
+    /// Outside the map, serve one block at a time.
+    const size_t end = run_end ? toPhysical(*run_end) : toPhysical(position) + block_bytes;
+    return std::min(end, file_end);
+}
+
+size_t ReaderExecutor::longConnectionReach(size_t block_bytes) const
+{
+    if (request_map)
+        return demandEnd(block_bytes);
+    return clampReach(fetch_tracker.predictedEnd(), toPhysical(position));
+}
+
+bool ReaderExecutor::shouldOpenLongConnection(size_t reach, size_t window_bytes) const
 {
     if (long_conn || !long_connection_limit)
         return false;
-    /// Open a long connection when the predicted run end runs past this window (physical coords).
+    /// Open a long connection when the reach runs past this window (physical coords).
     /// `window_bytes` is the pressure-adjusted window actually being served, so a shrunken window
     /// admits the shorter runs that now outlive it instead of falling back to one-shot reads.
-    const size_t phys = toPhysical(position);
-    return clampReach(fetch_tracker.predictedEnd(), phys) > phys + window_bytes;
+    return reach > toPhysical(position) + window_bytes;
 }
 
-bool ReaderExecutor::tryOpenLongConnection(const StoredObject & object, size_t object_offset)
+bool ReaderExecutor::tryOpenLongConnection(
+    const StoredObject & object, size_t object_offset, size_t file_base, size_t want, size_t reach)
 {
     auto slot = long_connection_limit->tryAcquire(long_connection_limit);
     if (!slot)
@@ -281,10 +306,8 @@ bool ReaderExecutor::tryOpenLongConnection(const StoredObject & object, size_t o
         return false;
     }
 
-    /// Bound the held GET to the predicted run end, clamped to the object -- a growing run reads
-    /// further ahead while sparse access stays small.
-    const size_t phys = toPhysical(position);
-    const size_t forward = clampReach(fetch_tracker.predictedEnd(), phys) - phys;
+    /// Bound the held GET to the reach, clamped to the object.
+    const size_t forward = std::max(want, reach > file_base ? reach - file_base : 0);
     size_t read_until_obj = object_offset + forward;
     if (!offset_map.hasUnknownSize())
         read_until_obj = std::min<size_t>(read_until_obj, object.bytes_size);
@@ -298,6 +321,7 @@ bool ReaderExecutor::tryOpenLongConnection(const StoredObject & object, size_t o
     long_conn.emplace(LongConnection{
         .buffer = std::move(buffer),
         .object_path = object.remote_path,
+        .object_start = file_base - object_offset,
         .opened_at = object_offset,
         .current_position = object_offset,
         .read_until = read_until_obj,
@@ -353,8 +377,9 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
         stats.add(Stats::LongConnectionHits);
         if (object_offset > long_conn->current_position)
         {
-            const size_t skipped = long_conn->skipForward(object_offset - long_conn->current_position, sizes.block_bytes);
-            stats.add(Stats::BytesFromSource, skipped);
+            const size_t gap = object_offset - long_conn->current_position;
+            const size_t skipped = long_conn->skipForward(gap, sizes.block_bytes);
+            countBytesFromSource(file_base - gap, skipped);
             stats.add(Stats::LongConnectionBytes, skipped);
         }
         /// Serve only up to the bound (short window); avoids draining and re-reading the tail.
@@ -367,7 +392,9 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
     {
         if (long_conn)
             dropLongConnection(sizes);
-        if (shouldOpenLongConnection(sizes.window_bytes) && tryOpenLongConnection(object, object_offset))
+        const size_t reach = longConnectionReach(sizes.block_bytes);
+        if (shouldOpenLongConnection(reach, sizes.window_bytes)
+            && tryOpenLongConnection(object, object_offset, file_base, want, reach))
         {
             fill(want, from_long_conn);
             if (long_conn && long_conn->atBound())
@@ -385,9 +412,25 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
         }
     }
 
-    stats.add(Stats::BytesFromSource, got_total);
+    countBytesFromSource(file_base, got_total);
     fetch_tracker.recordReadRange(file_base, got_total);
     return chain;
+}
+
+void ReaderExecutor::countBytesFromSource(size_t file_offset, size_t size)
+{
+    stats.add(Stats::BytesFromSource, size);
+    if (!request_map || size == 0)
+        return;
+    /// The map is logical: the encryption header is never in it.
+    const size_t end = file_offset + size;
+    size_t in_map = 0;
+    if (end > data_start_offset)
+    {
+        const size_t begin = toLogical(std::max(file_offset, data_start_offset));
+        in_map = request_map->intersect(ByteRange{begin, toLogical(end) - begin}).totalBytes();
+    }
+    stats.add(Stats::BytesOutsideRequestMap, size - in_map);
 }
 
 ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want, BlockAndWindowSizes sizes)
@@ -408,7 +451,7 @@ ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want, Block
     return chain;
 }
 
-void ReaderExecutor::ensureResolved(size_t pos, size_t look_ahead)
+void ReaderExecutor::ensureResolved(size_t pos, size_t look_ahead, size_t demand_end)
 {
     /// Re-anchor on a discontinuity (first read, seek, backward jump, or past the resolved end),
     /// else drop the consumed prefix. A forward seek inside the range keeps the resolved cells.
@@ -417,15 +460,17 @@ void ReaderExecutor::ensureResolved(size_t pos, size_t look_ahead)
     else
         read_plan.dropBefore(pos);
 
+    const size_t reach = std::min(pos + look_ahead, demand_end);
+
     /// Give the pins back now - the window shrinks too, so draining a `Normal` range takes many reads.
-    read_plan.dropAfter(pos + look_ahead);
+    read_plan.dropAfter(reach);
 
     /// Refill lazily: grow only once less than half the look-ahead remains ahead of the cursor, and
     /// then resolve up to the full length. Batches the per-window top-ups into fewer, larger resolves.
     if (read_plan.end() - pos > look_ahead / 2)
         return;
 
-    size_t target = pos + look_ahead;
+    size_t target = reach;
     if (!offset_map.hasUnknownSize())
         target = std::min(target, offset_map.totalSize());
 
@@ -446,17 +491,15 @@ void ReaderExecutor::ensureResolved(size_t pos, size_t look_ahead)
     }
 }
 
-ChainedBuffers ReaderExecutor::readThroughCaches(size_t pos, size_t max_serve, BlockAndWindowSizes sizes)
+ChainedBuffers ReaderExecutor::readThroughCaches(size_t pos, size_t max_serve, size_t max_fetch, size_t demand_end, BlockAndWindowSizes sizes)
 {
-    chassert(!cache_chain.empty());
-
     /// Serve one block from `pos`, capped by the window and by the run's contiguous extent.
     auto serve_len = [&](size_t end) { return std::min({sizes.block_bytes, max_serve, end - pos}); };
 
     /// Catch the plan up to `pos` and grow the look-ahead; then it decides the run.
-    ensureResolved(pos, sizes.plan_bytes);
+    ensureResolved(pos, sizes.plan_bytes, demand_end);
 
-    const ReadPlan::PlanRun run = read_plan.runAt(pos, max_serve);
+    const ReadPlan::PlanRun run = read_plan.runAt(pos, max_fetch);
     ChainedBuffers out;
     if (const auto * m = std::get_if<ReadPlan::ServeFromMemory>(&run))
         out = m->memory->slice(ByteRange{pos, serve_len(m->range.end())});
@@ -465,13 +508,28 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t pos, size_t max_serve, B
     else if (const auto * wr = std::get_if<ReadPlan::ServeFromWriter>(&run))
         out = wr->writer->read(ByteRange{pos, serve_len(wr->range.end())});
     else if (const auto * f = std::get_if<ReadPlan::Fetch>(&run))
-        out = fetchFillServe(pos, f->range, max_serve, sizes);
+        out = fetchFillServe(pos, extendFetchThroughAppendOnlyCell(f->range, pos + sizes.window_bytes), max_serve, sizes);
     /// std::monostate: offset outside the resolved range -> serve nothing.
 
     /// Eagerly drop what we served, freeing its pins and memory hold now (`out` owns its bytes).
     if (!out.empty())
         read_plan.dropBefore(pos + out.totalBytes());
     return out;
+}
+
+ByteRange ReaderExecutor::extendFetchThroughAppendOnlyCell(ByteRange fetch, size_t limit) const
+{
+    const size_t end = fetch.end();
+    if (!request_map || end >= limit)
+        return fetch;
+    const std::optional<size_t> cell_end = read_plan.appendOnlyCellEnd(end);
+    if (!cell_end)
+        return fetch;
+    const size_t until = std::min(*cell_end, limit);
+    const ByteRangeSet later = request_map->intersect(ByteRange{toLogical(end), until - end});
+    if (later.empty())
+        return fetch;
+    return ByteRange{fetch.offset, toPhysical(later.ranges().back().end()) - fetch.offset};
 }
 
 ChainedBuffers ReaderExecutor::fetchFillServe(size_t pos, ByteRange fetch_range, size_t max_serve, BlockAndWindowSizes sizes)
@@ -486,10 +544,6 @@ ChainedBuffers ReaderExecutor::fetchFillServe(size_t pos, ByteRange fetch_range,
             pos, getFileName());
 
     const auto writers = read_plan.writersFor(fetch_range);
-
-    /// All bypass (no populating tier): read the extent whole from source and serve it.
-    if (writers.empty())
-        return readSource(fetch_range.offset, fetch_range.size, sizes);
 
     /// One pass over the writers (fastest-first) resolving the head inline: serve `pos` from a committed
     /// prefix; else if a concurrent downloader leads it, wait once and serve from cache if it lands; else
@@ -574,8 +628,9 @@ ReaderExecutor::BlockAndWindowSizes ReaderExecutor::sampleWindowSizes() const
     const MemoryPressureLevel pressure = CurrentThread::getMemoryPressureMonitor().currentLevel();
     const size_t window = sizeAtPressure(pressure, window_size, WINDOW_REDUCTION);
     const size_t block = std::min(sizeAtPressure(pressure, block_size, BLOCK_REDUCTION), window);
-    /// The floor holds `getReadSettings`' `plan_look_ahead >= block_size` at every level.
-    const size_t plan = std::max(sizeAtPressure(pressure, plan_look_ahead, PLAN_LOOK_AHEAD_REDUCTION), block);
+    /// At least twice the window at every level: the lazy refill in `ensureResolved` then keeps a whole window
+    /// resolved ahead, so the plan never cuts a fetch.
+    const size_t plan = std::max(sizeAtPressure(pressure, plan_look_ahead, PLAN_LOOK_AHEAD_REDUCTION), 2 * window);
     return {.window_bytes = window, .block_bytes = block, .plan_bytes = plan};
 }
 
@@ -589,10 +644,11 @@ void ReaderExecutor::dropLongConnection(BlockAndWindowSizes sizes)
     bool drain_failed = false;
     if (!long_conn->atBound())
     {
+        const size_t drain_from = long_conn->object_start + long_conn->current_position;
         const auto drain = long_conn->drainTail(max_tail_for_drain, sizes.block_bytes, log);
         if (drain.bytes)
         {
-            stats.add(Stats::BytesFromSource, drain.bytes);
+            countBytesFromSource(drain_from, drain.bytes);
             stats.add(Stats::LongConnectionBytes, drain.bytes);
         }
         drain_failed = drain.failed;
@@ -721,12 +777,10 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     /// Sample the pressure level once per window; `Normal` keeps the base sizes.
     const BlockAndWindowSizes sizes = sampleWindowSizes();
 
-    /// The most this window may serve: the pressure-adjusted window, clamped to the file end (when the
-    /// size is known) and to the `read_until` bound. The cache path serves at most one block of it; the
-    /// no-cache path serves it whole.
-    size_t max_serve = sizes.window_bytes;
-    if (!offset_map.hasUnknownSize())
-        max_serve = std::min(max_serve, offset_map.totalSize() - position_physical);
+    /// The window and the demand bound the fetch; `read_until` bounds only the serve, at most one block.
+    const size_t demand_end = demandEnd(sizes.block_bytes);
+    const size_t max_fetch = std::min(sizes.window_bytes, demand_end - position_physical);
+    size_t max_serve = max_fetch;
     chassert(!read_until || *read_until >= position);
     if (read_until && *read_until - position < max_serve)
         max_serve = *read_until - position;
@@ -736,9 +790,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
         return {};
     }
 
-    ChainedBuffers chain = cache_chain.empty()
-        ? readSource(position_physical, max_serve, sizes)
-        : readThroughCaches(position_physical, max_serve, sizes);
+    ChainedBuffers chain = readThroughCaches(position_physical, max_serve, max_fetch, demand_end, sizes);
 
     const size_t got = chain.empty() ? 0 : chain.range().size;
     if (got == 0)
@@ -796,6 +848,7 @@ void ReaderExecutor::seek(size_t new_position)
 void ReaderExecutor::setRequestMap(ByteRangeSet ranges)
 {
     request_map = std::move(ranges);
+    request_runs = request_map->coalesce(min_bytes_for_seek);
     if (request_map->empty())
     {
         LOG_TEST(log, "Request map of {}: nothing", log_file_path);
