@@ -249,6 +249,15 @@ private:
     void stopLoading() override;
 
     void initDDLWorkerUnlocked() TSA_REQUIRES(ddl_worker_mutex);
+    /// Returns a reference to the DDL worker taken under `ddl_worker_mutex`, or nullptr if the database
+    /// is not initialized yet or is being dropped.
+    std::shared_ptr<DatabaseReplicatedDDLWorker> tryGetDDLWorker() const;
+    /// Assigns `ddl_worker` and returns the previous worker. Requires both mutexes, see `ddl_worker_ptr_mutex`.
+    std::shared_ptr<DatabaseReplicatedDDLWorker> replaceDDLWorkerUnlocked(std::shared_ptr<DatabaseReplicatedDDLWorker> new_worker)
+        TSA_REQUIRES(ddl_worker_mutex);
+    /// Whether the current DDL worker exists and is active. Does not take `ddl_worker_mutex`,
+    /// so it is safe to call from the callbacks of DDL queries executed by the worker.
+    bool isDDLWorkerCurrentlyActive() const;
 
     void restoreDatabaseNodesInKeeper(const ZooKeeperPtr & zookeeper);
     void reinitializeDDLWorker();
@@ -276,9 +285,20 @@ private:
     std::atomic_bool is_probably_dropped = false;
     std::atomic_bool is_recovering = false;
     std::atomic_bool ddl_worker_initialized = false;
-    std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
+    /// Shared, so that a query thread that uses the worker outside of `ddl_worker_mutex` (e.g. waiting in
+    /// `tryEnqueueAndExecuteEntry`) keeps it alive while `shutdown`, `restoreDatabaseInKeeper` or
+    /// `reinitializeDDLWorker` concurrently stop and replace it. Such a thread must take its own reference
+    /// under the mutex with `tryGetDDLWorker` and never dereference this member without the lock.
+    std::shared_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
     mutable std::mutex ddl_worker_mutex;
+    /// Protects only the `ddl_worker` pointer itself: it is assigned under both mutexes and can be read under either.
+    /// Unlike `ddl_worker_mutex`, it is never held while the worker is shut down (and its threads are joined),
+    /// so the callbacks of DDL queries (`commitCreateTable`, `dropTable`, ...) can take it with `isDDLWorkerCurrentlyActive`
+    /// even when they are executed by the worker's threads or concurrently with `SYSTEM RESTORE DATABASE REPLICA`.
+    mutable std::mutex ddl_worker_ptr_mutex;
     UInt32 max_log_ptr_at_creation = 0;
+    /// Serializes `restoreDatabaseInKeeper`. Taken before `ddl_worker_mutex`.
+    std::mutex restore_in_keeper_mutex;
 
     /// Usually operation with metadata are single-threaded because of the way replication works,
     /// but StorageReplicatedMergeTree may call alterTable outside from DatabaseReplicatedDDLWorker causing race conditions.
