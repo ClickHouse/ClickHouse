@@ -72,6 +72,10 @@ public:
         DROP_REPLICA,
         DROP_DATABASE_REPLICA,
         DROP_CATALOG_REPLICA,
+        DROP_AMBER_NODE,
+        ALLOCATE_AMBER_VOLUME,
+        CREATE_AMBER_VOLUME,
+        DROP_AMBER_VOLUME,
         JEMALLOC_PURGE,
         JEMALLOC_ENABLE_PROFILE,
         JEMALLOC_DISABLE_PROFILE,
@@ -205,6 +209,11 @@ public:
     String disk;
     UInt64 seconds{};
     UInt64 untracked_memory_size{};
+    String amber_node_name;
+    UInt64 amber_cluster_id{};
+    UInt64 amber_volume_id{};
+    UInt64 amber_shard_count{};
+    UInt64 amber_segment_count{};
 
     std::optional<String> query_result_cache_tag;
 

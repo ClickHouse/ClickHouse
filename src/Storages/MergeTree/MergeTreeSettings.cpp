@@ -1935,6 +1935,13 @@ Read virtual parts from leader when possible. Only available in ClickHouse
 Cloud
 )", 0, \
         {"25.1", true, true, "Cloud sync"}) \
+    DECLARE(UInt64, shared_merge_tree_max_noop_updates_from_leader, 16, R"(
+Number of consecutive metadata updates that changed neither virtual parts nor
+mutations, after which a follower reads metadata from Keeper instead of the
+parts update leader until something changes again. 0 disables the switch. Only
+available in ClickHouse Cloud
+)", 0, \
+        {"26.11", 16, 16, "New setting: after this many consecutive no-op metadata updates a follower reads metadata from Keeper instead of the parts update leader"}) \
     DECLARE(UInt64, shared_merge_tree_initial_parts_update_backoff_ms, 50, R"(
 Initial delay, in milliseconds, before retrying a `SharedMergeTree` parts-update operation. Repeated retries increase the delay up to `shared_merge_tree_max_parts_update_backoff_ms`. Only available in ClickHouse Cloud.
 )", 0, \

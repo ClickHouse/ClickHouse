@@ -131,6 +131,7 @@ static struct InitFiu
     ONCE(distributed_cache_server_fail_metrics_request) \
     ONCE(distributed_cache_server_fail_show_request) \
     ONCE(distributed_cache_server_fail_show_streaming) \
+    ONCE(distributed_cache_fail_show_row_insert) \
     ONCE(distributed_cache_server_reply_slow_down) \
     REGULAR(distributed_cache_fail_request_in_the_middle_of_request_always) \
     REGULAR(distributed_cache_assume_gap_buffered_on_seek) \
