@@ -34,10 +34,18 @@ public:
 
     bool isASCIILowerOrUpper() const { return is_ascii_lower_or_upper; }
 
+    /// The preprocessor can turn a non-NULL source value into NULL, e.g. `nullIf(str, '')`.
+    bool producesNull() const { return produces_null; }
+
+    /// The preprocessor strips the source nullability, e.g. `ifNull(str, '')`.
+    bool removesNull() const { return removes_null; }
+
 private:
     /// True only when the preprocessor is exactly lower/upper applied directly to the index column
     /// (no nested transformations, and not the UTF-8 variants).
     bool is_ascii_lower_or_upper = false;
+    bool produces_null = false;
+    bool removes_null = false;
     /// The name of the column on which the index is defined.
     String index_column_name;
     /// The type of the column on which the index is defined.
