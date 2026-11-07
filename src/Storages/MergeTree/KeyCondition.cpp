@@ -5181,6 +5181,8 @@ bool anyFieldBelowTuplesSatisfies(const Field & field, bool (*predicate)(const F
 
 bool hasNullOrNaNInside(const Field & field)
 {
+    if (field.getType() != Field::Types::Tuple)
+        return isRealNullOrNaN(field);
     return anyFieldBelowTuplesSatisfies(field, isRealNullOrNaN);
 }
 
@@ -8574,31 +8576,37 @@ BoolMask KeyCondition::checkInHyperrectangle(
             else
             {
                 /// The upper bound is widened when it holds a nested NULL, as in the overload above.
-                Range sparse_key_range = sparse_hyperrectangle[sparse_pos];
-                const bool upper_bound_widened = fieldHasNullInside(sparse_key_range.right);
+                const Range * key_range_ptr = &sparse_hyperrectangle[sparse_pos];
+                std::optional<Range> key_range_storage;
+                const bool upper_bound_widened = fieldHasNullInside(key_range_ptr->right);
                 if (unlikely(upper_bound_widened))
                 {
-                    sparse_key_range.right = POSITIVE_INFINITY;
-                    sparse_key_range.right_included = true;
+                    key_range_storage = *key_range_ptr;
+                    key_range_storage->right = POSITIVE_INFINITY;
+                    key_range_storage->right_included = true;
+                    key_range_ptr = &*key_range_storage;
                 }
 
-                /// The column may be wrapped in a chain of possibly monotonic functions; for an empty chain
-                /// the helper returns the range unchanged.
-                std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                    std::move(sparse_key_range),
-                    element.monotonic_functions_chain,
-                    element.first_function_number,
-                    sparse_data_types[sparse_pos],
-                    single_point);
+                /// The column may be wrapped in a chain of possibly monotonic functions.
+                if (!element.monotonic_functions_chain.empty())
+                {
+                    key_range_storage = applyMonotonicFunctionsChainToRange(
+                        *key_range_ptr,
+                        element.monotonic_functions_chain,
+                        element.first_function_number,
+                        sparse_data_types[sparse_pos],
+                        single_point);
+                    key_range_ptr = key_range_storage ? &*key_range_storage : nullptr;
+                }
 
-                if (!new_range)
+                if (!key_range_ptr)
                 {
                     /// Cannot determine monotonicity on this range – unknown.
                     rpn_stack.emplace_back(true, true);
                 }
                 else
                 {
-                    const Range & key_range = *new_range;
+                    const Range & key_range = *key_range_ptr;
 
                     bool intersects = element.range.intersectsRange(key_range);
                     bool contains = element.range.containsRange(key_range);
