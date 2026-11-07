@@ -4,7 +4,21 @@
         <max_insert_threads>1</max_insert_threads>
     </settings>
 
+    <substitutions>
+        <substitution>
+            <name>wide_type</name>
+            <values>
+                <value>Int128</value>
+                <value>UInt128</value>
+                <value>Int256</value>
+                <value>UInt256</value>
+            </values>
+        </substitution>
+    </substitutions>
+
     <create_query>CREATE TABLE array_compact_decimal (with_duplicates Array(Decimal64(4)), no_duplicates Array(Decimal64(4)), all_equal Array(Decimal64(4)), numeric Array(UInt64), nullable Array(Nullable(Decimal64(4)))) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE array_compact_wide_{wide_type} (with_duplicates Array({wide_type}), no_duplicates Array({wide_type})) ENGINE = Memory</create_query>
+
     <fill_query><![CDATA[
         INSERT INTO array_compact_decimal
         SELECT
@@ -15,6 +29,13 @@
             arrayMap(i -> if(intDiv(i, 4) % 2 = 0, CAST(NULL, 'Nullable(Decimal64(4))'), toDecimal64(i + number % 17, 4)), range(128))
         FROM numbers(200000)
     ]]></fill_query>
+    <fill_query><![CDATA[
+        INSERT INTO array_compact_wide_{wide_type}
+        SELECT
+            arrayMap(i -> CAST(intDiv(i, 4) + number % 17, '{wide_type}'), range(128)),
+            arrayMap(i -> CAST(i + number % 17, '{wide_type}'), range(128))
+        FROM numbers(50000)
+    ]]></fill_query>
 
     <query>SELECT arrayCompact(with_duplicates) FROM array_compact_decimal FORMAT Null</query>
     <query>SELECT arrayCompact(no_duplicates) FROM array_compact_decimal FORMAT Null</query>
@@ -22,5 +43,9 @@
     <query>SELECT arrayCompact(numeric) FROM array_compact_decimal FORMAT Null</query>
     <query>SELECT arrayCompact(nullable) FROM array_compact_decimal FORMAT Null</query>
 
+    <query>SELECT arrayCompact(with_duplicates) FROM array_compact_wide_{wide_type} FORMAT Null</query>
+    <query>SELECT arrayCompact(no_duplicates) FROM array_compact_wide_{wide_type} FORMAT Null</query>
+
     <drop_query>DROP TABLE IF EXISTS array_compact_decimal</drop_query>
+    <drop_query>DROP TABLE IF EXISTS array_compact_wide_{wide_type}</drop_query>
 </test>
