@@ -714,6 +714,18 @@ def should_skip_job(job_name):
         _info_cache = Info()
         print(f"INFO: PR labels: {_info_cache.pr_labels}")
 
+    # These are alternatives, even for `ci-force-all`: never execute both the
+    # six-shard selection and the eight-shard full suite for the same PR.
+    performance = re.fullmatch(
+        r"Performance Comparison \((?:amd|arm)_release, master_head, \d+/(6|8)\)",
+        job_name,
+    )
+    if performance and _info_cache.pr_number > 0:
+        from ci.jobs.scripts.performance_selection import pr_shards
+
+        if int(performance[1]) != pr_shards(_info_cache):
+            return True, "Other performance shard family selected"
+
     if Labels.CI_FORCE_ALL in _info_cache.pr_labels:
         return False, ""
 

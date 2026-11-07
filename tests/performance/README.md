@@ -2,6 +2,35 @@
 
 This directory contains `.xml`-files with performance tests.
 
+### Which tests run in pull requests
+
+Ordinary PR comparisons against master choose whole XML tests from a recent,
+complete performance coverage run. They use the shared stateless and integration
+selection rules independently, with limits of 250 and 100 tests, then combine
+their results without another limit. Only query execution coverage is used:
+setup and teardown still run, but their coverage does not choose tests. Regions
+covered by more than 300 tests are ignored. A changed source header also adds
+its covering tests when at most 300 tests cover that header.
+
+The selection always includes the fixed set in
+[`performance_fixed_tests.json`](../../ci/jobs/scripts/performance_fixed_tests.json),
+tests that failed earlier in the PR, and new or changed tests. Changes to included
+XML, query files and settings count as changes to their owning test. Tests that
+have no coverage, including shell tests, are included too. Every query in every
+selected XML runs, with the usual adaptive timing repetitions. These runs use six
+shards per enabled architecture.
+
+The `pr-performance` or `ci-force-all` label selects the full test suite on eight
+shards. These full runs retain the existing query sampling settings. Master,
+release, nightly and special Iceberg comparisons keep their existing behavior.
+
+Each job attaches `performance_selection.json` with its tests, selection reasons,
+coverage identities, source mapping gaps and query policy. Missing or incomplete
+coverage is reported rather than silently running all tests. A transient CIDB or
+GitHub failure skips the job with a warning and is not cached; rerun it to test.
+Selection reduces work, but does not guarantee that every performance change is
+caught. Coverage collected on AMD is also used for ARM selection.
+
 ### How to write a performance test
 
 First of all please check that existing tests don't cover your case. If there are no such tests then you can write your own test.

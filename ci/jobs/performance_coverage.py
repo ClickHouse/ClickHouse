@@ -41,6 +41,24 @@ from ci.praktika.utils import Utils
 EXPORT_RESERVE = 20 * 60
 
 
+def record_phase_manifests(output, manifest):
+    """Let selectors verify the complete publication without downloading TSVs."""
+    for filename, state in manifest["tests"].items():
+        if state["status"] != "collected":
+            continue
+        data = json.loads((output / f"{Path(filename).stem}.json").read_text())
+        names = sorted(phase["test_name"] for phase in data["phases"])
+        if len(names) != len(set(names)):
+            raise ValueError(f"Duplicate coverage phase in {filename}")
+        state["phase_names_sha256"] = hashlib.sha256(
+            "\n".join(names).encode()
+        ).hexdigest()
+        state["query_count"] = sum(
+            not query.get("disabled") for query in data["queries"]
+        )
+    manifest["phase_manifest_version"] = 1
+
+
 def configure(binary):
     """The normal perf configuration and datasets, with one instrumented server."""
     config = Path(perf.perf_right_config)
@@ -431,6 +449,7 @@ def main():
             state["status"] == "collected" for state in manifest["tests"].values()
         ):
             raise RuntimeError("No tests produced coverage")
+        record_phase_manifests(output, manifest)
         # The TSV layout is the integration collector's file-sink format, so
         # use its existing aggregation and eight-column CIDB export unchanged.
         if dest:

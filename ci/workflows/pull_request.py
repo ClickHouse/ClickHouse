@@ -83,7 +83,8 @@ PLAIN_INTEGRATION_TEST_JOB = [
 workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
-    base_branches=[BASE_BRANCH],
+    # Temporary stacked-PR validation target; remove after the selector CI run.
+    base_branches=[BASE_BRANCH, "codex/perf-query-coverage"],
     engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         JobConfigs.style_check,
@@ -225,7 +226,7 @@ workflow = Workflow.Config(
         ],
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.performance_comparison_with_master_head_jobs
+            for job in JobConfigs.performance_comparison_pr_jobs
         ],
         # Only when the Iceberg code changes, see `_has_iceberg_performance_changes` in `filter_job.py`.
         *[
