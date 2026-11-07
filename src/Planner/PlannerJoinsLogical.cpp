@@ -201,12 +201,6 @@ static bool conversionKeepsDefault(const DataTypePtr & from, const DataTypePtr &
     return castColumn({from->createColumnConstWithDefaultValue(1), from, ""}, to)->isDefaultAt(0);
 }
 
-/// Whether the type default is the column default that `firstNonDefault` skips; not so for `Enum` and `Date32`.
-static bool typeDefaultIsColumnDefault(const DataTypePtr & type)
-{
-    return removeLowCardinality(type)->createColumnConstWithDefaultValue(1)->isDefaultAt(0);
-}
-
 /// Whether a join fills a not-matched row with the column default; not so for an `Enum` whose smallest value is not 0.
 static bool fillIsColumnDefault(const DataTypePtr & type)
 {
@@ -273,10 +267,13 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
             const auto * component = nodes.at(0);
             const auto * merged = nodes.at(1);
             const auto & context = builder_context.planner_context->getQueryContext();
+            /// The column default, which `firstNonDefault` skips; the type default is not one for `Date32`.
             auto add_default = [&dag](const DataTypePtr & type)
             {
-                return &dag.addColumn(
-                    type->createColumnConstWithDefaultValue(0), type, calculateConstantActionNodeName(type->getDefault(), type));
+                auto column = type->createColumn();
+                column->insertDefault();
+                const auto value = (*column)[0];
+                return &dag.addColumn(type->createColumnConst(0, value), type, calculateConstantActionNodeName(value, type));
             };
             auto add_function = [&dag, &context](const String & name, ActionsDAG::NodeRawConstPtrs children)
             {
@@ -325,7 +322,6 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
             if (is_merged_key_component
                 && removeLowCardinality(arg_type)->canBeInsideNullable() && removeLowCardinality(lhs.getType())->canBeInsideNullable()
                 && fillIsColumnDefault(arg_type) && fillIsColumnDefault(lhs.getType())
-                && typeDefaultIsColumnDefault(result_type)
                 && !conversionKeepsDefault(arg_type, result_type))
                 JoinActionRef::transform({arg, lhs}, cast_filled_component);
             else
