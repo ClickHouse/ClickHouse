@@ -26,6 +26,7 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Common/logger_useful.h>
 #include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
@@ -59,6 +60,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
     extern const SettingsDistributedProductMode distributed_product_mode;
     extern const SettingsUInt64 interactive_delay;
@@ -78,6 +80,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -955,14 +958,8 @@ void rejectUnshippableJoinUsingKeys(const QueryTreeNodePtr & root)
     }
 }
 
-}
-
-void inlineAliasColumns(QueryTreeNodePtr & query_tree_to_modify)
-{
-    inlineAliasColumnsImpl(query_tree_to_modify);
-}
-
-bool shippingQueryMaterializesSubqueries(const QueryTreeNodePtr & query_tree, const ContextPtr & context)
+/// The `GLOBAL IN` / `GLOBAL JOIN` nodes that shipping `query_tree` to parallel replicas would materialize.
+std::vector<QueryTreeNodePtr> predictGlobalInOrJoinNodesForParallelReplicas(const QueryTreeNodePtr & query_tree, const ContextPtr & context)
 {
     /// Fixed rather than a parameter: this predicts the parallel-replicas path, and both of its
     /// `buildQueryTreeForShard` call sites - `findParallelReplicasQuery` and
@@ -981,7 +978,50 @@ bool shippingQueryMaterializesSubqueries(const QueryTreeNodePtr & query_tree, co
     rewriteJoinToGlobalJoin(query_tree_copy, context);
     DistributedProductModeRewriteInJoinVisitor visitor(context, allow_global_join_for_right_table, /*enforce_distributed_product_mode*/ false);
     visitor.visit(query_tree_copy);
-    return !visitor.getGlobalInOrJoinNodes().empty();
+
+    std::vector<QueryTreeNodePtr> nodes;
+    for (const auto & global_in_or_join_node : visitor.getGlobalInOrJoinNodes())
+        nodes.push_back(global_in_or_join_node.query_node);
+    return nodes;
+}
+
+}
+
+void inlineAliasColumns(QueryTreeNodePtr & query_tree_to_modify)
+{
+    inlineAliasColumnsImpl(query_tree_to_modify);
+}
+
+bool shippingQueryMaterializesSubqueries(const QueryTreeNodePtr & query_tree, const ContextPtr & context)
+{
+    return !predictGlobalInOrJoinNodesForParallelReplicas(query_tree, context).empty();
+}
+
+bool canShipJoinsToParallelReplicas(const QueryTreeNodePtr & query_tree, const ContextPtr & context)
+{
+    for (const auto & node : predictGlobalInOrJoinNodesForParallelReplicas(query_tree, context))
+    {
+        auto * join_node = node->as<JoinNode>();
+        if (!join_node)
+            continue;
+
+        /// The node types `getSubqueryFromTableExpression` can materialize.
+        const auto node_type = getMaterializedTableExpressionNode(*join_node, /*allow_global_join_for_right_table=*/true)->getNodeType();
+        if (node_type == QueryTreeNodeType::TABLE || node_type == QueryTreeNodeType::TABLE_FUNCTION
+            || node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION
+            || node_type == QueryTreeNodeType::ARRAY_JOIN)
+            continue;
+
+        if (context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "RIGHT JOIN whose left side is a join is not supported with parallel replicas when that side has to be sent to the replicas");
+
+        LOG_DEBUG(getLogger("buildQueryTreeForShard"),
+            "RIGHT JOIN whose left side is a join cannot be sent to parallel replicas. Query will be executed without parallel replicas");
+        return false;
+    }
+
+    return true;
 }
 
 QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table)
