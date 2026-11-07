@@ -4,7 +4,7 @@ from random import randint
 import pytest
 
 from helpers.cluster import ClickHouseCluster, QueryRuntimeException
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, wait_condition
 
 cluster = ClickHouseCluster(__file__)
 
@@ -337,6 +337,42 @@ def test_refresh_requested_on_read_only_node_runs_elsewhere(started_cluster, cle
     )
 
 
+def test_takeover_waits_for_recreated_request(started_cluster, cleanup):
+    for node in [node1, node2, reading_node]:
+        node.query(
+            f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}');"
+        )
+    # ~20 s per refresh: longer than the Keeper session timeout (15 s) a takeover waits for.
+    node1.query(
+        "create materialized view re.a refresh every 1 year append (x Int64) engine ReplicatedMergeTree order by x empty as "
+        "select number + sleepEachRow(1) as x from numbers(20) settings max_block_size = 1, insert_deduplicate = 0"
+    )
+    for node in [node2, reading_node]:
+        node.query("system sync database replica re")
+        wait_until_view_registered(node, "a")
+
+    def wait_status(predicate):
+        wait_condition(lambda: node2.query("select status from system.view_refreshes where view = 'a'").strip(), predicate, max_attempts=600)
+
+    # node2's failed read is retried 5 s later, so its takeover clock starts after node1's: node1 takes the first request over.
+    # That sets its count to 1 for the second: a new request, so node2's clock must start over once nothing runs.
+    fp = "refresh_mv_fail_znodes_read"
+    node2.query(f"system enable failpoint {fp}")
+    try:
+        reading_node.query("system refresh view re.a")
+        reading_node.query("system refresh view re.a")
+        time.sleep(2)
+    finally:
+        node2.query(f"system disable failpoint {fp}")
+    wait_status(lambda s: s == "RunningOnAnotherReplica")
+    wait_status(lambda s: s != "RunningOnAnotherReplica")
+    first_refresh_ended = time.monotonic()
+    wait_status(lambda s: s in ("Running", "RunningOnAnotherReplica"))
+    assert time.monotonic() - first_refresh_ended >= 10
+    reading_node.query("system wait view re.a", timeout=180)
+    assert_eq_with_retry(node1, "select count() from re.a", "40\n")
+
+
 def test_refreshable_mv_in_read_only_node_no_ddl(started_cluster, cleanup):
     node1.query(
         f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}');"
@@ -465,8 +501,8 @@ def test_pause(started_cluster, cleanup):
         node2.query("system wait view re.a")
     except QueryRuntimeException as ex:
         # If the node1.restart_clickhouse() interrupted a refresh, the error message (with substring
-        # "cancelled") is written to keeper, then thrown by "system wait view". That's normal.
-        assert "cancelled" in str(ex)
+        # "shutdown") is written to keeper, then thrown by "system wait view". That's normal.
+        assert "shutdown" in str(ex)
     node2.query("truncate table re.src;" "insert into re.src values (2);")
     time.sleep(3)
     assert node1.query("select * from re.a") == "1\n"
