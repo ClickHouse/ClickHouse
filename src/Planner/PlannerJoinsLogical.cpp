@@ -7,6 +7,8 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -199,6 +201,12 @@ static bool conversionKeepsDefault(const DataTypePtr & from, const DataTypePtr &
     return castColumn({from->createColumnConstWithDefaultValue(1), from, ""}, to)->isDefaultAt(0);
 }
 
+/// Whether the type default is the column default, which `firstNonDefault` and the fill check below compare with; not so for `Enum` and `Date32`.
+static bool typeDefaultIsColumnDefault(const DataTypePtr & type)
+{
+    return removeLowCardinality(type)->createColumnConstWithDefaultValue(1)->isDefaultAt(0);
+}
+
 static std::unordered_map<String, const ActionsDAG::Node *>
 buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext & builder_context)
 {
@@ -267,9 +275,12 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
                 return &dag.addFunction(FunctionFactory::instance().get(name, context), std::move(children), {});
             };
 
-            const auto * is_fill = add_function("and", {
-                add_function("equals", {component, add_default(component->result_type)}),
-                add_function("not", {add_function("equals", {merged, add_default(merged->result_type)})})});
+            /// `firstNonDefault` tells a default by `isDefaultAt`, which `equals` does not do for `-0.0`.
+            auto is_default = [&](const ActionsDAG::Node * key)
+            {
+                return add_function("isNull", {add_function("firstNonDefault", {key, add_default(makeNullable(removeLowCardinality(key->result_type)))})});
+            };
+            const auto * is_fill = add_function("and", {is_default(component), add_function("not", {is_default(merged)})});
             const auto * value = add_function("if", {is_fill, add_default(result_type), &dag.addCast(*component, result_type, {}, context)});
             if (!value->result_type->equals(*result_type))
                 value = &dag.addCast(*value, result_type, {}, context);
@@ -303,8 +314,10 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
             const auto & arg = args[index];
             const auto & arg_type = arg.getType();
             const bool is_merged_key_component = left_args.size() > 1 && index < left_args.size();
-            if (is_merged_key_component && !conversionKeepsDefault(arg_type, result_type)
-                && arg_type->isComparableForEquality() && lhs.getType()->isComparableForEquality())
+            if (is_merged_key_component
+                && removeLowCardinality(arg_type)->canBeInsideNullable() && removeLowCardinality(lhs.getType())->canBeInsideNullable()
+                && typeDefaultIsColumnDefault(arg_type) && typeDefaultIsColumnDefault(lhs.getType()) && typeDefaultIsColumnDefault(result_type)
+                && !conversionKeepsDefault(arg_type, result_type))
                 JoinActionRef::transform({arg, lhs}, cast_filled_component);
             else
                 JoinActionRef::transform({arg}, cast_to_super);

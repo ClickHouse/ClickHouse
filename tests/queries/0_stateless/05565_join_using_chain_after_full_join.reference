@@ -20,6 +20,10 @@ RIGHT
 \N	\N	\N			cn
 WHERE
 1
+GROUP BY
+0	1
+2	1
+3	1
 INNER JOIN in between
 0
 2
@@ -30,6 +34,11 @@ String, LowCardinality, Tuple
 y
 y
 (2)
+Float64 negative zero
+-0	-inf
+Enum
+c
+c
 join_use_nulls = 1
 0	0	0	a0	b0	c0
 2	\N	2	\N	b2	c2
