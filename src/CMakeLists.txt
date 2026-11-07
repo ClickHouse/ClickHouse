@@ -1100,6 +1100,11 @@ if (ENABLE_TESTS)
 
     target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::heks)
 
+    # `gtest_memchr_strlen_page_boundary` calls every x86_64 `memchr` / `strlen` tier directly.
+    if (TARGET libllvmlibc_str_test_candidates)
+        target_link_libraries(unit_tests_dbms PRIVATE libllvmlibc_str_test_candidates)
+    endif()
+
     if (TARGET ch_contrib::krb5)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::krb5)
     endif()
