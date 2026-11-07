@@ -253,6 +253,13 @@ public:
     /// Extract data from the backup and put it to the storage.
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
+    /// Same, and also applies `metadata_version` (see `restoreMetadataVersionFromBackup`) before the parts are restored.
+    void restoreDataFromBackup(
+        RestorerFromBackup & restorer,
+        const String & data_path_in_backup,
+        const std::optional<ASTs> & partitions,
+        std::optional<Int32> metadata_version);
+
     /** Remove a specific replica from zookeeper.
      * returns true if there are no replicas left
      */
@@ -329,6 +336,12 @@ public:
     /// Used only on restarted readonly replicas (not checked). All active (Active) parts are moved to detached/
     /// folder and attached. Parts in all other states are just moved to detached/ folder.
     void restoreMetadataInZooKeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info, bool is_called_during_attach);
+
+    /// Makes the table's metadata version in ZooKeeper at least `metadata_version`. If this replica's version is lower,
+    /// raises it to the version in ZooKeeper; throws if this replica does not have the structure the table has at that version.
+    /// Never decreases the version. Waits for the replica to become writable within `zookeeper_retries_info`,
+    /// and uses its `query_status` (may be null) to interrupt the version bumps.
+    void restoreMetadataVersionFromBackup(Int32 metadata_version, const ZooKeeperRetriesInfo & zookeeper_retries_info);
 
     /// Get throttler for replicated fetches
     ThrottlerPtr getFetchesThrottler() const
