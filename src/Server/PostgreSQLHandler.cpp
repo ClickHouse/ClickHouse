@@ -1049,7 +1049,7 @@ bool PostgreSQLHandler::startup()
         for (char c : client_encoding_it->second)
             if (isAlphaNumericASCII(c))
                 normalized_encoding += toUpperASCII(c);
-        if (normalized_encoding != "UTF8" && normalized_encoding != "UNICODE")
+        if (normalized_encoding != "UTF8" && normalized_encoding != "UNICODE" && normalized_encoding != "SQLASCII")
         {
             message_transport->send(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
