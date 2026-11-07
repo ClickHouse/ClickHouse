@@ -31,6 +31,10 @@ public:
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
 
     void shutdown(bool is_drop) override;
+    /// Discards the queued jobs and waits for the running ones, which write into other tables.
+    void flushAndPrepareForShutdown() override;
+    /// Only in the asynchronous mode. A synchronous job finishes within the query that inserted it.
+    bool hasBackgroundWrites() const override;
     void drop() override;
 
     void waitForQueriesToFinish(const QueryStatusPtr & query_status);

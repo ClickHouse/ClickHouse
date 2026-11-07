@@ -560,6 +560,11 @@ void StorageFileLog::startup()
 
 void StorageFileLog::shutdown(bool)
 {
+    flushAndPrepareForShutdown();
+}
+
+void StorageFileLog::flushAndPrepareForShutdown()
+{
     if (task)
     {
         task->stream_cancelled = true;

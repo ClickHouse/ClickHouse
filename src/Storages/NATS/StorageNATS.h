@@ -48,6 +48,9 @@ public:
 
     void startup() override;
     void shutdown(bool is_drop) override;
+    /// Stops consuming but keeps `shutdown_called` unset and the event loop running, so inserts into the table still publish.
+    void flushAndPrepareForShutdown() override;
+    bool hasBackgroundWrites() const override { return true; }
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
     /// This is a bad way to let storage know in shutdown() that table is going to be dropped. There are some actions which need

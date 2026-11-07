@@ -773,6 +773,15 @@ ActionLock StorageNATS::getActionLock(StorageActionBlockType action_type)
 }
 
 
+void StorageNATS::flushAndPrepareForShutdown()
+{
+    /// The consumers initialization task activates streaming, so it stops first.
+    deactivateTask(initialize_consumers_task);
+    /// Blocking lets the in-flight cycle finish instead of streaming until the time limit.
+    auto lock = stream_control.block();
+    deactivateTask(streaming_task);
+}
+
 void StorageNATS::shutdown(bool /* is_drop */)
 {
     shutdown_called = true;
