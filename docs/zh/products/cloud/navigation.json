@@ -252,19 +252,8 @@
       "group": "AI 工具与智能体",
       "pages": [
         "zh/products/cloud/features/ai-ml/index",
-        "zh/products/cloud/features/ai-ml/aichat/using-ai-chat",
-        "zh/products/cloud/features/ai-ml/aichat/customizing-semantic-layer",
-        "zh/products/cloud/features/ai-ml/langfuse",
         {
-          "expanded": false,
-          "group": "远程 MCP",
-          "pages": [
-            "zh/products/cloud/features/ai-ml/remote-mcp",
-            "zh/products/cloud/features/ai-ml/mcp/remote-mcp"
-          ]
-        },
-        {
-          "group": "ClickHouse 智能体",
+          "group": "Agents",
           "pages": [
             "zh/products/cloud/features/ai-ml/agents/index",
             "zh/products/cloud/features/ai-ml/agents/quickstart",
@@ -286,7 +275,23 @@
             "zh/products/cloud/features/ai-ml/agents/prompts",
             "zh/products/cloud/features/ai-ml/agents/memory",
             "zh/products/cloud/features/ai-ml/agents/marketplace",
-            "zh/products/cloud/features/ai-ml/agents/sharing-and-access"
+            "zh/products/cloud/features/ai-ml/agents/sharing-and-access",
+            {
+              "group": "Assistant",
+              "pages": [
+                "zh/products/cloud/features/ai-ml/agents/assistant/using-ai-chat",
+                "zh/products/cloud/features/ai-ml/agents/assistant/customizing-semantic-layer"
+              ]
+            }
+          ]
+        },
+        "zh/products/cloud/features/ai-ml/langfuse",
+        {
+          "expanded": false,
+          "group": "远程 MCP",
+          "pages": [
+            "zh/products/cloud/features/ai-ml/remote-mcp",
+            "zh/products/cloud/features/ai-ml/mcp/remote-mcp"
           ]
         },
         "zh/products/cloud/features/ai-ml/model-developer-terms"
