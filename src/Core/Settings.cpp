@@ -2309,6 +2309,19 @@ Possible values:
 - 1 — Enabled.
 )", 0, \
         {"26.4", false, true, "New setting to use statistics for part pruning during query execution."}) \
+    DECLARE(UInt64, min_marks_per_part_to_load_statistics, 64, R"(
+The minimum number of marks left to read after the primary key analysis, per data part whose statistics are not in memory yet, for column statistics to be loaded for pruning parts and for ordering the conditions of `PREWHERE`.
+
+Loading statistics costs a few reads per data part, and on a cold start it can take longer than reading the data itself when the primary key already narrows the read to a small number of granules. If fewer marks than this setting multiplied by the number of parts whose statistics would be loaded are left to read, statistics are not loaded for these optimizations: parts are not pruned by statistics, and `PREWHERE` conditions are ordered by the sizes of their columns, as for tables without statistics. Statistics that are already in memory are used regardless of the size of the read.
+
+Answering `min`, `max` and `count` from statistics (see `use_statistics_for_min_max_aggregation`) replaces the read and is not affected by this setting.
+
+Possible values:
+
+- 0 — Load statistics regardless of the size of the read.
+- Positive integer — The number of marks per data part.
+)", 0, \
+        {"26.11", 0, 64, "New setting to skip loading statistics when the primary key leaves only a small read."}) \
     DECLARE(Bool, use_statistics_for_min_max_aggregation, true, R"(
 Answer `min`, `max` and `count` aggregations from per-part column statistics instead of reading data.
 
@@ -7317,7 +7330,7 @@ Possible values:
     DECLARE(Bool, use_query_condition_cache_for_top_k, true, R"(
 Enable the [query condition cache](/concepts/features/performance/caches/query-condition-cache) for queries that use the `ORDER BY <column> LIMIT n` (TopK) optimization (dynamic filtering or skip-index based). When disabled, such reads neither consult nor populate the cache. Reads of Parquet files that use the threshold only to skip row groups by their statistics (a `String` sort column with `use_top_k_dynamic_filtering_for_variable_length_types` disabled) use the cache like reads without TopK, whatever the value of this setting.
 
-Such queries can drop granules during execution depending on the running threshold, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read (for a `File` table, by the set of files read and their versions; for a data lake table, by its snapshot). This setting has no effect unless `use_query_condition_cache` is also enabled.
+Such queries can drop granules during execution depending on the running threshold, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read (for a `File` table, by the set of files read and their versions; for a data lake table, by its snapshot; for object storage, by the set of objects read and their ETags). This setting has no effect unless `use_query_condition_cache` is also enabled.
 
 Possible values:
 
@@ -8173,6 +8186,24 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"23.1", false, true, "Remove redundant sorting in query plan. For example, sorting steps related to ORDER BY clauses in subqueries"}) \
+    DECLARE(Bool, query_plan_use_shuffle_for_order_by_rand, true, R"(
+Toggles a query-plan-level optimization which executes `ORDER BY rand()` and `ORDER BY rand64()` by shuffling the rows
+(the same way as the `SHUFFLE` clause) instead of sorting them, which takes O(n) time instead of O(n * log(n)).
+The result has the same distribution: the values of the `rand()` column are replaced by other random values in sorted order.
+Applies when the `rand()` value is not used in other expressions, and when there is a `LIMIT` or the external sorting is disabled
+(the shuffle does not spill to disk).
+Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
+
+<Note>
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+</Note>
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0, \
+        {"26.11", false, true, "New setting to execute `ORDER BY rand()` by shuffling the rows instead of sorting them."}) \
     DECLARE(Bool, query_plan_remove_redundant_distinct, true, R"(
 Toggles a query-plan-level optimization which removes redundant DISTINCT steps.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
@@ -10591,9 +10622,9 @@ Use roaring bitmap for iceberg positional deletes.
 )", 0, \
         {"25.8", false, false, "New setting"}) \
     DECLARE(Bool, inject_random_order_for_select_without_order_by, false, R"(
-If enabled, injects 'ORDER BY rand()' into SELECT queries without ORDER BY clause.
+If enabled, injects `SHUFFLE` into SELECT queries without ORDER BY clause.
 Applied only for subquery depth = 0. Subqueries and INSERT INTO ... SELECT are not affected.
-If the top-level construct is UNION, 'ORDER BY rand()' is injected into all children independently.
+If the top-level construct is UNION, `SHUFFLE` is injected into all children independently.
 Only useful for testing and development (missing ORDER BY is a source of non-deterministic query results).
 )", 0, \
         {"25.10", false, false, "New setting"}) \
@@ -10899,6 +10930,10 @@ If true, ALTER MODIFY COLUMN on a named Tuple that only adds new subfields is me
 Set to false to force the old full-mutation behavior.
 )", 0, \
         {"26.8", false, false, "New setting to control metadata-only ALTER for named Tuple subfield additions."}) \
+    DECLARE(Bool, allow_experimental_shuffle_query, false, R"(
+Allow the experimental `SHUFFLE` clause in `SELECT` queries. `SHUFFLE` is used in place of `ORDER BY` and returns the rows in a uniformly random order.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to enable the experimental `SHUFFLE` clause in `SELECT` queries."}) \
     DECLARE(Bool, enable_streaming_queries, false, R"(
 Allow `SELECT ... FROM t STREAM [CURSOR '{...}']` continuous queries.
 When off, any table expression using the `STREAM` modifier is rejected
@@ -11147,11 +11182,6 @@ Adaptively spill eligible aggregation, sorting, `DISTINCT`, and hash-join proces
 Supported hash joins include `grace_hash` and the adaptive `hash` / `parallel_hash` path.
 )", EXPERIMENTAL, \
         {"25.2", false, false, "New setting. Enable spill memory data into external storage adaptively."}) \
-    DECLARE_WITH_ALIAS(Bool, allow_delta_kernel_rs, true, R"(
-Allow the `delta-kernel-rs` implementation for reading Delta Lake tables.
-)", BETA, allow_experimental_delta_kernel_rs, \
-        {"26.8", true, true, "New name of `allow_experimental_delta_kernel_rs`, which is no longer experimental and is kept as an alias. The default is unchanged."}, \
-        {"25.5", false, true, "New setting. Introduced under the name `allow_experimental_delta_kernel_rs`, which is now an alias of it; the row is carried forward under the canonical name so that it keeps the whole history."}) \
     DECLARE(Bool, allow_delta_lake_create_table, false, R"(
 Allow creating a new DeltaLake table using delta-kernel-rs or registering an existing one into a catalog. Creating a partitioned table (`PARTITION BY`) is not supported yet. In a `DataLakeCatalog` database the table is registered with its Delta schema, so declared ClickHouse types that map to a wider Delta type (e.g. `UInt8` -> `short`, `FixedString(N)` -> `string`) are read back as the Delta-mapped type rather than the declared one.
 )", EXPERIMENTAL, \
@@ -11579,6 +11609,10 @@ Enable table function `eval`.
         {"24.11", 1, 1, "Rename of setting skip_download_if_exceeds_query_cache_limit"}) \
     MAKE_OBSOLETE(M, UInt64, filesystem_cache_max_download_size, (128UL * 1024 * 1024 * 1024), \
         {"26.10", 137438953472, 137438953472, "Obsolete: the per-query filesystem cache write limit was removed. A query is no longer capped in how much it writes into a filesystem cache; the cache's own `max_size` and eviction policy bound it."}) \
+    ALIAS(Bool, allow_delta_kernel_rs, true, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE, allow_experimental_delta_kernel_rs, \
+        {"26.11", true, true, "Obsolete: the legacy Delta Lake reader was removed, `delta-kernel-rs` is always used."}, \
+        {"26.8", true, true, "New name of `allow_experimental_delta_kernel_rs`, which is no longer experimental and is kept as an alias. The default is unchanged."}, \
+        {"25.5", false, true, "New setting. Introduced under the name `allow_experimental_delta_kernel_rs`, which is now an alias of it; the row is carried forward under the canonical name so that it keeps the whole history."}) \
     MAKE_OBSOLETE(M, String, function_implementation, "") \
     MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false, \
         {"26.6", false, false, "The setting is obsolete, the feature has been removed."}) \
