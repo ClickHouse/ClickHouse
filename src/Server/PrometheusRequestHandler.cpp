@@ -17,6 +17,7 @@
 #include <Common/setThreadName.h>
 #include "config.h"
 
+#include <Access/Common/AccessFlags.h>
 #include <Access/Credentials.h>
 #include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
@@ -294,6 +295,14 @@ protected:
         return StorageID{full_name};
     }
 
+    /// Grant before existence: a caller without the right must not learn whether the name exists.
+    StoragePtr getTimeSeriesTable(const AccessFlags & required_access)
+    {
+        auto table_id = getTimeSeriesTableID();
+        context->checkAccess(required_access, table_id);
+        return DatabaseCatalog::instance().getTable(table_id, context);
+    }
+
     void onException() override
     {
         // So that the next requests on the connection have to always start afresh in case of exceptions.
@@ -341,7 +350,9 @@ public:
             throw Exception(ErrorCodes::UNSUPPORTED_MEDIA_TYPE,
                 "HTTP header Content-Encoding has unsupported value '{}' (must be 'snappy' or 'zstd')", content_encoding);
 
-        auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+        /// Only the right to know the name exists, which any grant on the table carries: the INSERT grant
+        /// is asked for in write(), with the columns this request turns out to name.
+        auto table = getTimeSeriesTable(AccessType::SHOW_TABLES);
         PrometheusRemoteWriteProtocol protocol{table, context};
 
         prometheus::WriteRequest write_request;
@@ -394,7 +405,7 @@ public:
         checkHTTPHeader(request, "Content-Type", "application/x-protobuf");
         checkHTTPHeader(request, "Content-Encoding", "snappy");
 
-        auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+        auto table = getTimeSeriesTable(AccessType::SELECT);
         PrometheusRemoteReadProtocol protocol{table, context};
 
         prometheus::ReadRequest read_request;
@@ -520,7 +531,7 @@ public:
         /// A failed table lookup goes to the outer handler, which keeps its HTTP status (e.g. 404 for an unknown table).
         StoragePtr table;
         if (!Poco::URI(uri).getPath().ends_with("/format_query"))
-            table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+            table = getTimeSeriesTable(AccessType::SELECT);
 
         try
         {

@@ -31,6 +31,7 @@ public:
         SharedHeader header_,
         AsynchronousInsertQueue * queue_,
         ContextMutablePtr context_,
+        ContextMutablePtr queue_context_,
         ASTPtr query_ast_,
         Names insert_column_names_,
         UInt64 max_data_size_,
@@ -63,6 +64,8 @@ private:
 
     AsynchronousInsertQueue * queue;
     ContextMutablePtr context;
+    /// The context whose settings the queue keeps for the flush.
+    ContextMutablePtr queue_context;
     ASTPtr query_ast;
     /// Frozen onto the AST clone pushed to the queue instead of re-resolved against a possibly newer schema.
     Names insert_column_names;
