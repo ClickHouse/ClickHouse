@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Random settings limits: merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=(0, 0)
+# `PartsSplitter` fault injection reads the granule on each layer border twice, which changes `SelectedRows`.
 # A query without `FROM` reads only `system.one`, which is exempt from quotas, but its scalar subquery is not:
 # what the subquery consumes is charged to the quotas over profile events, with and without the analyzer.
 
