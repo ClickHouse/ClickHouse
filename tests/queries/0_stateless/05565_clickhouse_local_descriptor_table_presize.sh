@@ -7,3 +7,4 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # clickhouse-local starts with a descriptor table of min(4096, soft RLIMIT_NOFILE) entries (not in sanitizer builds).
 (ulimit -Sn 1024 && ${CLICKHOUSE_LOCAL} -q "SELECT toUInt32(extract(line, '[0-9]+')) >= 1024 FROM file('/proc/self/status', LineAsString) WHERE startsWith(line, 'FDSize')")
+(ulimit -Sn 16384 && ${CLICKHOUSE_LOCAL} -q "SELECT toUInt32(extract(line, '[0-9]+')) BETWEEN 4096 AND 16383 FROM file('/proc/self/status', LineAsString) WHERE startsWith(line, 'FDSize')")
