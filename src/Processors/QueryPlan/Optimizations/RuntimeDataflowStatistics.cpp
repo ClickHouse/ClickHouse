@@ -67,12 +67,13 @@ RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
     {
         LOG_TEST(
             getLogger("RuntimeDataflowStatisticsCacheUpdater"),
-            "{} bytes={}, sample_bytes={}, compressed_bytes={}, compression_ratio={}, elapsed_microseconds={}",
+            "{} bytes={}, sample_bytes={}, compressed_bytes={}, compression_ratio={}, compressed_bytes_read={}, elapsed_microseconds={}",
             type,
             stats.bytes,
             stats.sample_bytes,
             stats.compressed_bytes,
             static_cast<double>(stats.sample_bytes) / static_cast<double>(stats.compressed_bytes),
+            stats.compressed_bytes_read,
             stats.elapsed_microseconds);
     };
 
@@ -86,6 +87,7 @@ RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
             const auto compression_ratio = static_cast<double>(stats.sample_bytes) / static_cast<double>(stats.compressed_bytes);
             res.input_bytes += static_cast<size_t>(static_cast<double>(stats.bytes) / compression_ratio);
         }
+        res.input_bytes += stats.compressed_bytes_read;
     }
     for (size_t i = 0; i < InputStatisticsType::MaxInputType; ++i)
     {
@@ -96,6 +98,7 @@ RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
             const auto compression_ratio = static_cast<double>(stats.sample_bytes) / static_cast<double>(stats.compressed_bytes);
             res.duplicated_bytes += static_cast<size_t>(static_cast<double>(stats.bytes) / compression_ratio);
         }
+        res.duplicated_bytes += stats.compressed_bytes_read;
     }
     for (size_t i = 0; i < OutputStatisticsType::MaxOutputType; ++i)
     {
@@ -403,14 +406,27 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(
 void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     const ColumnsWithTypeAndName & input_columns,
     const NameSet & partially_read_columns,
+    const std::unordered_map<String, size_t> & bytes_skipped_by_string_value_filters,
     const NamesAndTypesList & part_columns,
     const ColumnSizeByName & column_sizes,
     const ColumnCodecByName & column_codecs,
     const CompressionCodecPtr & default_codec,
     size_t read_bytes,
+    std::optional<size_t> compressed_bytes_read,
     std::optional<bool> & should_continue_sampling)
 {
     Stopwatch watch;
+
+    if (compressed_bytes_read)
+    {
+        auto & statistics = (duplicated ? block->duplicated_bytes_statistics : block->input_bytes_statistics)[InputStatisticsType::WithByteHint];
+        std::lock_guard lock(statistics.mutex);
+        statistics.compressed_bytes_read += *compressed_bytes_read;
+        const auto elapsed_nanoseconds = watch.elapsedNanoseconds();
+        statistics.elapsed_microseconds += elapsed_nanoseconds / 1000;
+        ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds, elapsed_nanoseconds);
+        return;
+    }
 
     const auto type = read_bytes ? InputStatisticsType::WithByteHint : InputStatisticsType::WithoutByteHint;
     if (type == InputStatisticsType::WithoutByteHint)
@@ -418,6 +434,15 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
         for (const auto & column : input_columns)
             read_bytes += column.column->byteSize();
     }
+
+    /// The values replaced with empty strings were read from disk all the same.
+    auto get_bytes_skipped = [&](const String & name) -> size_t
+    {
+        const auto it = bytes_skipped_by_string_value_filters.find(name);
+        return it == bytes_skipped_by_string_value_filters.end() ? 0 : it->second;
+    };
+    for (const auto & [_, bytes_skipped] : bytes_skipped_by_string_value_filters)
+        read_bytes += bytes_skipped;
 
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
@@ -434,8 +459,9 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
                         ? (static_cast<double>(column_sizes.at(column.name).data_compressed)
                            / static_cast<double>(column_sizes.at(column.name).data_uncompressed))
                         : 1.0;
-                    sample_bytes += column.column->byteSize();
-                    compressed_bytes += static_cast<size_t>(static_cast<double>(column.column->byteSize()) * compressed_ratio);
+                    const size_t column_bytes = column.column->byteSize() + get_bytes_skipped(column.name);
+                    sample_bytes += column_bytes;
+                    compressed_bytes += static_cast<size_t>(static_cast<double>(column_bytes) * compressed_ratio);
                 }
             }
         }

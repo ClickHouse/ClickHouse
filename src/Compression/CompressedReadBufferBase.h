@@ -4,7 +4,10 @@
 #include <Compression/ICompressionCodec.h>
 #include <IO/BufferBase.h>
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <city.h>
+
+#include <utility>
 
 
 namespace DB
@@ -12,6 +15,9 @@ namespace DB
 
 class Exception;
 class ReadBuffer;
+
+/// Ranges in a file, [begin, end), of compressed blocks.
+using CompressedBlockRanges = VectorWithMemoryTracking<std::pair<size_t, size_t>>;
 
 /** Basic functionality for implementation of
   *  CompressedReadBuffer, CompressedReadBufferFromFile and CachedCompressedReadBuffer.
@@ -61,6 +67,9 @@ protected:
     /// Adds diagnostics to the error message.
     void addDiagnostics(Exception & e) const;
 
+    /// See `setBlocksReadSink`. Maintained by the buffers that read from a file.
+    CompressedBlockRanges * blocks_read = nullptr;
+
 public:
     /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
     explicit CompressedReadBufferBase(ReadBuffer * in = nullptr, bool allow_different_codecs_ = false, bool external_data_ = false);
@@ -74,6 +83,10 @@ public:
     {
         disable_checksum = true;
     }
+
+    /// Makes the buffer append the range in the file, [offset, offset + compressed size with the header and the checksum),
+    /// of every block it decompresses or takes decompressed from a cache, every time it loads it.
+    void setBlocksReadSink(CompressedBlockRanges * blocks_read_) { blocks_read = blocks_read_; }
 
     /// Identifies the column this buffer reads, see LZ4StatisticsHint.h.
     void setStatisticsHint(UInt64 hint) { statistics_hint = hint; }
