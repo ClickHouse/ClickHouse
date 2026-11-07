@@ -1007,6 +1007,38 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
     throwIfNestedTableFunctionDependsOnCurrentUserGrants(table_function_ast, context);
 }
 
+/// A table created `AS` a table function reads the columns of the function's storage by name, converting their types
+/// (see `StorageTableFunctionProxy`), so a stored column of the table that the structure of the function does not have
+/// fails on every read. Checked only for a function whose structure does not depend on the table: a fixed one, or an
+/// explicit structure argument, which only parses that argument. Not for a function that takes the table's columns as
+/// its structure, or that infers its structure from the data or a remote server.
+void throwIfTableColumnsAreMissingFromTableFunction(const ColumnsDescription & columns, const ITableFunction & table_function, const ContextPtr & context)
+{
+    if (!table_function.hasStaticStructure())
+        return;
+
+    const auto function_columns = table_function.getActualTableStructure(context, /*is_insert_query=*/ true);
+    String missing;
+    size_t missing_count = 0;
+    for (const auto & column : columns.getAllPhysical())
+    {
+        if (function_columns.has(column.name))
+            continue;
+        if (!missing.empty())
+            missing += ", ";
+        missing += backQuote(column.name);
+        ++missing_count;
+    }
+
+    if (missing_count)
+        throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
+            "The structure of table function '{}' has no {} {} of the table, so the table could not read {}. The "
+            "structure has the columns {}. A column of the table can have another type, but needs the name of a column of "
+            "the structure, unless it is an `ALIAS` column",
+            table_function.getName(), missing_count == 1 ? "column" : "columns", missing, missing_count == 1 ? "it" : "them",
+            function_columns.getAllPhysical().toNamesAndTypesDescription());
+}
+
 /// Whether `database_replicated_allow_only_replicated_engine` restricts the tables that `create` may define.
 bool isOnlyReplicatedEngineAllowed(const ASTCreateQuery & create, const DatabasePtr & database, const ContextPtr & context)
 {
@@ -2936,6 +2968,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// from the function; a definition with an explicit column list skips that inference and is
         /// checked here.
         throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, getContext());
+
+        /// Only for a definition written now: a table created before this check still loads.
+        if (isFreshTableDefinition(mode, create.attach_short_syntax))
+            throwIfTableColumnsAreMissingFromTableFunction(properties.columns, *table_function, getContext());
 
         /// Classify the table function before executing it: with a static structure it returns the final storage
         /// directly, which may not have enough information to decide (e.g. `url` with a relative URL resolved

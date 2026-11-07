@@ -1,0 +1,13 @@
+--- a column the explicit structure does not have
+--- a column a function with a fixed structure does not have
+--- a DEFAULT or MATERIALIZED column is read from the function too
+--- an ALIAS column is computed
+0	0
+1	2
+2	4
+--- the same name with another type is converted
+UInt16
+--- a subset of the columns of the structure
+x
+--- a function that takes the columns of the table as its structure is not checked
+0

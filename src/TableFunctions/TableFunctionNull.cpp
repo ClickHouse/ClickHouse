@@ -32,6 +32,8 @@ public:
 
     bool needStructureHint() const override { return structure == "auto"; }
 
+    bool hasStaticStructure() const override { return structure != "auto"; }
+
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
 private:
