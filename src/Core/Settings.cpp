@@ -1675,6 +1675,26 @@ Possible values:
 
     If a shard is unavailable, ClickHouse throws an exception.
 )", 0) \
+    DECLARE(UInt64, distributed_shard_retry_count, 0, R"(
+The maximum number of retries per shard after a replica returns a retryable exception in a distributed read. Retryable errors are `TOO_MANY_SIMULTANEOUS_QUERIES`, `CANNOT_OPEN_FILE`, and `CANNOT_READ_FROM_FILE_DESCRIPTOR` received in a server exception packet. Network errors, connection loss, and timeouts are not retried by this setting.
+
+Retries are supported for reads that select one replica per shard, including hedged requests, `remote`/`cluster` table functions, and lazy remote reads. Task-based parallel replicas can retry the same assigned replica before it announces parts or requests work; the limit applies separately to each replica. Other reads using multiple replicas or a task iterator are not retried by this setting.
+
+A retry is allowed only before the shard has returned rows, progress, totals, extremes, or profile information. Once that state has been applied, retrying could duplicate results or charge read limits and quotas twice.
+
+The failed replica's error count is increased before selecting another connection. This favors other replicas but does not guarantee a different replica: the same replica can be retried, and the retry count is not capped by the number of replicas.
+
+Possible values:
+
+- 0 — Shard retries disabled (default).
+- Positive integer — Maximum number of additional attempts per shard.
+
+**See Also**
+
+- [Distributed Table Engine](../../engines/table-engines/special/distributed.md)
+- [skip_unavailable_shards](#skip_unavailable_shards)
+)", 0, \
+        {"26.11", 0, 0, "New setting. Maximum number of retries per shard after a retryable server exception in a distributed read."}) \
     \
     DECLARE(SkipUnavailableShardsMode, skip_unavailable_shards_mode, SkipUnavailableShardsMode::UNAVAILABLE_OR_TABLE_MISSING, R"(
 Controls which exceptions from a remote shard are silently ignored when `skip_unavailable_shards` is enabled. The setting has no effect when `skip_unavailable_shards = 0`.

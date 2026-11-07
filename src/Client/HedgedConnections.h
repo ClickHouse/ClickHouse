@@ -134,6 +134,10 @@ public:
 
     void setDistributedFanout(size_t total_connections) override { distributed_fanout = total_connections; }
 
+    /// Return the pool that produced the last exception packet.
+    /// Not part of `IConnections`: used by `RemoteQueryExecutor` for retry accounting.
+    ConnectionPoolPtr getReplicaPool() const { return replica_pool; }
+
     void setAsyncCallback(AsyncCallback async_callback) override;
 
 private:
@@ -225,6 +229,9 @@ private:
     bool cancelled = false;
 
     ReplicaInfo replica_info;
+
+    /// The pool of the replica that produced the last exception packet.
+    ConnectionPoolPtr replica_pool;
 
     mutable std::mutex cancel_mutex;
 };

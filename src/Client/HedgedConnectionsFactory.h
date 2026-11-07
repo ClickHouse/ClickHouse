@@ -80,6 +80,9 @@ public:
 
     size_t numberOfProcessingReplicas() const;
 
+    /// Return the originating pool of a connection handed out by this factory.
+    ConnectionPoolPtr getReplicaPool(const Connection * connection) const { return replica_pools.at(connection); }
+
     /// Tell Factory to not return connections with two level aggregation incompatibility.
     void skipReplicasWithTwoLevelAggregationIncompatibility() { skip_replicas_with_two_level_aggregation_incompatibility = true; }
 
@@ -178,6 +181,9 @@ private:
     const size_t max_parallel_replicas = 1;
     const bool skip_unavailable_shards = false;
     const bool fail_if_replica_unprobed = false;
+
+    /// Includes replicas selected after a hedged request changes its connection.
+    std::unordered_map<const Connection *, ConnectionPoolPtr> replica_pools;
 };
 
 }
