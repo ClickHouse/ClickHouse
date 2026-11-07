@@ -8588,9 +8588,8 @@ std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(
         [&](const auto & nested_registration) { return nested_registration->getDiskName() == wrapped_disk_name; });
 
     /// The released disks with other names, not shut down yet, that the new disk would overlap with, see below.
-    /// Each of them is waited for once, without any lock held.
+    /// They are waited for without any lock held.
     std::vector<String> overlapping_retiring_disk_names;
-    std::set<String> waited_for_retiring_disk_names;
 
     while (true)
     {
@@ -8599,10 +8598,18 @@ std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(
         /// metadata and data, so it is created only after the old one is shut down.
         shared->custom_disk_registry.waitForShutdown(name, settings_hash);
 
+        /// A disk that is being shut down is waited for until it is done. Only a disk that is still referenced
+        /// by something else after a while is an error. The check is repeated after the wait, because a retiring
+        /// disk may still be found while it is being shut down: e.g. the reference taken by `getRetiringDisks`
+        /// below may have been the last one when the shutdown was finished.
         for (const auto & retiring_disk_name : overlapping_retiring_disk_names)
         {
-            shared->custom_disk_registry.waitForShutdown(retiring_disk_name, /* settings_hash = */ 0);
-            waited_for_retiring_disk_names.insert(retiring_disk_name);
+            if (!shared->custom_disk_registry.waitForShutdown(retiring_disk_name, /* settings_hash = */ 0))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot create the disk '{}' yet: the plain-rewritable disk '{}' works with the same object "
+                    "storage prefix, it is not used by any table or database anymore, but it is still referenced "
+                    "and not shut down",
+                    name, retiring_disk_name);
         }
         overlapping_retiring_disk_names.clear();
 
@@ -8653,16 +8660,7 @@ std::pair<DiskPtr, CustomDiskRegistrationPtr> Context::getOrCreateCustomDisk(
                 if (find_overlapping_disks)
                 {
                     for (auto & retiring_disk_name : find_overlapping_disks(retiring_disks))
-                    {
-                        if (waited_for_retiring_disk_names.contains(retiring_disk_name))
-                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Cannot create the disk '{}' yet: the plain-rewritable disk '{}' works with the same object "
-                                "storage prefix, it is not used by any table or database anymore, but it is still referenced "
-                                "and not shut down",
-                                name, retiring_disk_name);
-
                         overlapping_retiring_disk_names.push_back(std::move(retiring_disk_name));
-                    }
 
                     if (!overlapping_retiring_disk_names.empty())
                         continue;

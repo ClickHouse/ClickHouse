@@ -164,7 +164,7 @@ void CustomDiskRegistry::scheduleShutdown(const String & name, DiskPtr disk)
 }
 
 /// TSA_NO_THREAD_SAFETY_ANALYSIS because TSA does not support `std::unique_lock` used with `std::condition_variable`.
-void CustomDiskRegistry::waitForShutdown(const String & name, UInt128 settings_hash) TSA_NO_THREAD_SAFETY_ANALYSIS
+bool CustomDiskRegistry::waitForShutdown(const String & name, UInt128 settings_hash) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     /// A disk is usually referenced only briefly after the last table using it is gone.
     static constexpr auto max_wait_for_referenced_disk = std::chrono::seconds(10);
@@ -177,7 +177,7 @@ void CustomDiskRegistry::waitForShutdown(const String & name, UInt128 settings_h
 
     auto it = lingering_disks.find(name);
     if (it == lingering_disks.end())
-        return;
+        return true;
 
     const bool same_definition = it->second->getCustomDiskSettings() == settings_hash;
     const auto max_wait = same_definition ? max_wait_for_referenced_disk_with_same_definition : max_wait_for_referenced_disk;
@@ -187,9 +187,13 @@ void CustomDiskRegistry::waitForShutdown(const String & name, UInt128 settings_h
         return !names_pending_shutdown.contains(name) && !lingering_disks.contains(name);
     };
 
-    if (!shutdown_finished_cv.wait_for(lock, max_wait, can_create) && !same_definition && !names_pending_shutdown.contains(name))
+    if (shutdown_finished_cv.wait_for(lock, max_wait, can_create))
+        return true;
+
+    if (!same_definition && !names_pending_shutdown.contains(name))
         LOG_WARNING(log, "Custom disk {} released earlier, with another definition, is still referenced after {} seconds",
             backQuote(name), max_wait_for_referenced_disk.count());
+    return false;
 }
 
 std::optional<DiskPtr> CustomDiskRegistry::tryTakeReleasedDisk(const String & name)

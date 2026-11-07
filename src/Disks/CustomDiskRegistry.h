@@ -55,7 +55,8 @@ public:
     /// A released disk that is not shut down yet because something still references it is waited for
     /// to be shut down, but only for a while, and then `tryTakeReleasedDisk` returns it anyway. The wait
     /// is short if it has the same definition (`settings_hash`), because then it can be used again.
-    void waitForShutdown(const String & name, UInt128 settings_hash);
+    /// Returns false if the disk is still referenced by something else after the wait, and true otherwise.
+    bool waitForShutdown(const String & name, UInt128 settings_hash);
     /// The released disk `name` that is not shut down yet because something still references it, to be
     /// used again instead of creating a new disk with the same name. nullptr if there is none.
     /// std::nullopt if the disk `name` is being shut down, and `waitForShutdown` has to be called first.
