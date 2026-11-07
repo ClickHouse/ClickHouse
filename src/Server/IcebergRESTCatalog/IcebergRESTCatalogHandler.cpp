@@ -22,9 +22,11 @@
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogCommitTable.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogCreateTable.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogJSON.h>
+#include <Server/IcebergRESTCatalog/IcebergRESTCatalogLoopbackAuth.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogStorage.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 
+#include <Common/StringUtils.h>
 #include <Common/ZooKeeper/KeeperException.h>
 
 #include <Poco/JSON/Array.h>
@@ -177,7 +179,24 @@ ContextMutablePtr IcebergRESTCatalogHandler::authenticateUser(HTTPServerRequest 
     const HTTPHandlerConnectionConfig connection_config;
     /// Each request gets a fresh handler, so partial multi-step credentials do not survive a 401 anyway.
     std::unique_ptr<Credentials> request_credentials;
-    if (!authenticateUserByHTTP(request, params, response, session, request_credentials, connection_config, server.context(), log))
+    if (request.has(LOOPBACK_SECRET_HEADER))
+    {
+        /// A `DataLakeCatalog` database of this server with `catalog_type = 'clickhouse'`. The secret
+        /// exists only in this process' memory, so a matching value proves the request is internal
+        /// and the user header is trusted as is, like the cluster `secret` in `TCPHandler`.
+        const auto & secret = server.context()->getIcebergRESTCatalogSecret();
+        const String user = request.get(LOOPBACK_USER_HEADER, "");
+        if (!request.clientAddress().host().isLoopback() || user.empty()
+            || !constantTimeEquals(std::string_view(request.get(LOOPBACK_SECRET_HEADER)), std::string_view(secret)))
+        {
+            LOG_WARNING(log, "Rejected an internal catalog request from {}", request.clientAddress().toString());
+            sendError(response, Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED, "NotAuthorizedException", "Authentication failed");
+            return nullptr;
+        }
+        session.setHTTPClientInfo(request);
+        session.authenticate(AlwaysAllowCredentials{user}, request.clientAddress());
+    }
+    else if (!authenticateUserByHTTP(request, params, response, session, request_credentials, connection_config, server.context(), log))
         return nullptr;
 
     auto context = session.makeQueryContext();

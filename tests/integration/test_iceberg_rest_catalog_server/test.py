@@ -710,6 +710,134 @@ def test_clickhouse_rest_catalog_client(started_cluster):
         node.query("DROP DATABASE IF EXISTS rest_client_db")
 
 
+def clickhouse_catalog_database_query(name, engine="DataLakeCatalog", user_settings=""):
+    return f"""
+        DROP DATABASE IF EXISTS {name};
+        SET allow_experimental_database_iceberg = 1;
+        CREATE DATABASE {name}
+        ENGINE = {engine}
+        SETTINGS catalog_type = 'clickhouse', warehouse = 'my_warehouse',
+            storage_endpoint = 'http://minio1:9001/{BUCKET}',
+            vended_credentials = 0,
+            aws_access_key_id = '{minio_access_key}',
+            aws_secret_access_key = '{minio_secret_key}'{user_settings}
+        """
+
+
+def test_clickhouse_catalog_type(started_cluster):
+    ns = f"chclient_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    create_table(ns, "events")
+
+    node.query(clickhouse_catalog_database_query("ch_catalog_db"))
+    try:
+        create_query = node.query("SHOW CREATE DATABASE ch_catalog_db FORMAT TSVRaw")
+        assert "catalog_type = 'clickhouse'" in create_query
+        assert "catalog_user = 'default'" in create_query
+        assert "DataLakeCatalog(" not in create_query
+
+        tables = node.query("SHOW TABLES FROM ch_catalog_db").splitlines()
+        assert f"{ns}.events" in tables
+        assert node.query(f"SELECT count() FROM ch_catalog_db.`{ns}.events`") == "0\n"
+        assert node.query(
+            f"DESCRIBE ch_catalog_db.`{ns}.events` FORMAT TSVRaw SETTINGS describe_compact_output = 1"
+        ) == "id\tInt64\nname\tNullable(String)\n"
+
+        # The user name is fixed at CREATE and cannot be chosen or changed.
+        error = node.query_and_get_error(
+            "ALTER DATABASE ch_catalog_db MODIFY SETTING catalog_user = 'readonly_user'"
+        )
+        assert "NOT_IMPLEMENTED" in error, error
+        error = node.query_and_get_error(
+            clickhouse_catalog_database_query("ch_user_db", user_settings=", catalog_user = 'readonly_user'")
+        )
+        assert "cannot be specified" in error, error
+    finally:
+        node.query("DROP DATABASE IF EXISTS ch_catalog_db")
+
+
+def test_clickhouse_catalog_type_acts_as_creator(started_cluster):
+    ns = f"chuser_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    create_table(ns, "events")
+
+    node.query("DROP USER IF EXISTS catalog_creator")
+    node.query("CREATE USER catalog_creator IDENTIFIED WITH no_password")
+    node.query("GRANT CREATE DATABASE, SHOW, SELECT ON *.* TO catalog_creator")
+    try:
+        node.query(
+            clickhouse_catalog_database_query("ch_creator_db"), user="catalog_creator"
+        )
+        create_query = node.query("SHOW CREATE DATABASE ch_creator_db FORMAT TSVRaw")
+        assert "catalog_user = 'catalog_creator'" in create_query
+
+        # Any user may query the database. The catalog request is made as catalog_creator.
+        assert node.query(f"SELECT count() FROM ch_creator_db.`{ns}.events`") == "0\n"
+
+        # Once the creator is gone the catalog rejects the database, whoever runs the query.
+        node.query("DROP USER catalog_creator")
+        error = node.query_and_get_error(f"SELECT count() FROM ch_creator_db.`{ns}.events`")
+        assert "401" in error, error
+    finally:
+        node.query("DROP DATABASE IF EXISTS ch_creator_db")
+        node.query("DROP USER IF EXISTS catalog_creator")
+
+
+def test_clickhouse_catalog_type_survives_restart(started_cluster):
+    ns = f"chrestart_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    create_table(ns, "events")
+
+    node.query(clickhouse_catalog_database_query("ch_restart_db"))
+    try:
+        # The secret is regenerated on restart. The database must load its user from metadata
+        # and authenticate with the new secret.
+        restart_node()
+        assert node.query(f"SELECT count() FROM ch_restart_db.`{ns}.events`") == "0\n"
+        assert "catalog_user = 'default'" in node.query("SHOW CREATE DATABASE ch_restart_db FORMAT TSVRaw")
+    finally:
+        node.query("DROP DATABASE IF EXISTS ch_restart_db")
+
+
+def test_clickhouse_catalog_type_rejects_arguments(started_cluster):
+    error = node.query_and_get_error(
+        clickhouse_catalog_database_query(
+            "ch_args_db", engine=f"DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1')"
+        )
+    )
+    assert "takes no arguments" in error, error
+
+
+def test_loopback_secret_cannot_be_forged(started_cluster):
+    forged = {"X-ClickHouse-User": "default", "X-ClickHouse-Iceberg-Catalog-Secret": "guess"}
+
+    # From the test runner: not a loopback address, so the request is rejected before the compare.
+    response = catalog_request(
+        "GET", "/v1/config", params={"warehouse": "my_warehouse"}, headers=forged, expected_code=401
+    )
+    assert_error_shape(response, "NotAuthorizedException")
+
+    # From the server itself over loopback: the secret does not match.
+    error = node.query_and_get_error(
+        f"""
+        SELECT * FROM url(
+            'http://127.0.0.1:{CATALOG_PORT}/v1/config?warehouse=my_warehouse',
+            JSONEachRow, 'defaults String',
+            headers('X-ClickHouse-User' = 'default', 'X-ClickHouse-Iceberg-Catalog-Secret' = 'guess'))
+        """
+    )
+    assert "401" in error, error
+
+    # Without the secret header the regular password check still applies.
+    catalog_request(
+        "GET",
+        "/v1/config",
+        params={"warehouse": "my_warehouse"},
+        headers={"X-ClickHouse-User": "default"},
+        expected_code=200,
+    )
+
+
 def test_keeper_layout(started_cluster):
     ns = f"layout-{uuid.uuid4().hex[:8]}"
     create_namespace([ns, "eu-west"], properties={"owner": "asya"})

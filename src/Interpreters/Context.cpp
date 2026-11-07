@@ -9,6 +9,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include "config.h"
@@ -679,6 +680,8 @@ struct ContextSharedPart : boost::noncopyable
     UInt16 interserver_io_port = 0;                         /// and port.
     String interserver_scheme;                              /// http or https
     MultiVersion<InterserverCredentials> interserver_io_credentials;
+    /// Generated once per process and kept only in memory, so no client outside this process can learn it.
+    const String iceberg_rest_catalog_secret = getRandomASCIIString(64);
 
     String path TSA_GUARDED_BY(mutex);                       /// Path to the data directory, with a slash at the end.
     String flags_path TSA_GUARDED_BY(mutex);                 /// Path to the directory with some control flags for server maintenance.
@@ -7648,6 +7651,11 @@ void Context::updateInterserverCredentials(const Poco::Util::AbstractConfigurati
 {
     auto credentials = InterserverCredentials::make(config, "interserver_http_credentials");
     shared->interserver_io_credentials.set(std::move(credentials));
+}
+
+const String & Context::getIcebergRESTCatalogSecret() const
+{
+    return shared->iceberg_rest_catalog_secret;
 }
 
 void Context::setInterserverIOAddress(const String & host, UInt16 port)

@@ -1465,6 +1465,10 @@ public:
     void updateInterserverCredentials(const Poco::Util::AbstractConfiguration & config);
     InterserverCredentialsPtr getInterserverCredentials() const;
 
+    /// Random per-process secret. A `DataLakeCatalog` database with `catalog_type = 'clickhouse'`
+    /// sends it over loopback to the Iceberg REST catalog listener of the same server.
+    const String & getIcebergRESTCatalogSecret() const;
+
     /// Interserver requests scheme (http or https)
     void setInterserverScheme(const String & scheme);
     String getInterserverScheme() const;

@@ -425,7 +425,8 @@ IMPLEMENT_SETTING_ENUM(
      {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST},
      {"horizon", DatabaseDataLakeCatalogType::ICEBERG_HORIZON},
      {"s3tables", DatabaseDataLakeCatalogType::S3_TABLES},
-     {"delta_sharing", DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING}})
+     {"delta_sharing", DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING},
+     {"clickhouse", DatabaseDataLakeCatalogType::ICEBERG_CLICKHOUSE}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,
