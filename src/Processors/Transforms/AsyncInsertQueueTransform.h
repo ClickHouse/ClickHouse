@@ -60,6 +60,8 @@ private:
     /// Ends eligibility for the queue route: starts the fallback if it is not running yet, replays
     /// `pending` (which still holds `*held`, if any, at its original position), then pushes `chunk`.
     void disqualify(Chunk chunk);
+    /// `disqualify` without a chunk of its own to push.
+    void fallBack();
 
     AsynchronousInsertQueue * queue;
     ContextMutablePtr context;
