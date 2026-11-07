@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/StatisticsCache.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadGroupSwitcher.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -18,6 +19,11 @@
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char mt_merge_task_pause_in_prepare_with_patches[];
+}
 
 namespace ErrorCodes
 {
@@ -100,6 +106,9 @@ void MergePlainMergeTreeTask::prepare()
         storage.getStorageID(),
         future_part,
         task_context);
+
+    if (!future_part->patch_parts.empty())
+        FailPointInjection::pauseFailPoint(FailPoints::mt_merge_task_pause_in_prepare_with_patches);
 
     storage.writePartLog(
         PartLogElement::MERGE_PARTS_START, {}, 0,

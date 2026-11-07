@@ -101,6 +101,10 @@ using DataVersionsByPartition = std::unordered_map<String, std::vector<Int64>>;
 DataVersionsByPartition getDataVersionsByPartition(const DataPartsVector & parts);
 DataVersionsByPartition getDataVersionsByPartition(const std::vector<MergeTreePartInfo> & parts);
 
+/// Restores the sorted and deduplicated order of 'DataVersionsByPartition' that
+/// 'findDataVersionInRange' requires. Call it after adding versions to the map.
+void sortDataVersions(DataVersionsByPartition & data_versions);
+
 /// Returns the data version of some regular part of the partition that lies between from and to, if there is one.
 /// The bounds are unordered because merge order is independent of data-version order.
 /// A merge of patch parts unions their ranges of data versions, and a patch part is applied to a part either
