@@ -1,7 +1,0 @@
-parts: 1, level 0
-Baseline (after PK + partition + existing indexes):
-marks: 7535
-With p (aggregate projection, hypothetical):
-marks: 5
-marks_span: 5 to 38
-verdict: too close to call
