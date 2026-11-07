@@ -43,6 +43,19 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
     const IcebergSchemaProcessor & schema_processor,
     DB::ContextPtr context);
 
+/// Java and iceberg-rust compute `truncate[W]` of an `int` in 32 bits, so for the lowest values, whose truncated value is below
+/// INT32_MIN, they store it plus 2^32, while `icebergTruncate` returns it as `Int64`. A column promoted to `long` keeps these
+/// values, and no `long` value truncates to one of them.
+struct Int32TruncateWraparound
+{
+    size_t tuple_index;
+    Int64 stored;
+    Int64 value;
+};
+
+std::vector<Int32TruncateWraparound> getInt32TruncateWraparounds(
+    const PartitionSpecification & partition_specification, const IcebergSchemaProcessor & schema_processor, Int32 schema_id);
+
 /// NOTE: tricky part to support RENAME column.
 /// Takes ActionDAG representation of user's WHERE expression and
 /// renames columns to their original numeric ID's in iceberg.
@@ -63,6 +76,7 @@ private:
     Int32 initial_schema_id;
     const DB::KeyDescription * partition_key = nullptr;
     std::optional<DB::KeyCondition> partition_key_condition;
+    std::vector<Int32TruncateWraparound> int32_truncate_wraparounds;
 
     std::unordered_map<Int32, DB::KeyCondition> min_max_key_conditions;
     std::unordered_map<Int32, DB::NameAndTypePair> row_lineage_columns;
@@ -77,6 +91,7 @@ public:
         Int32 initial_schema_id_,
         const DB::ActionsDAG * filter_dag,
         const DB::KeyDescription * partition_key_,
+        const PartitionSpecification & partition_specification,
         DB::ContextPtr context,
         bool require_ready_sets = false);
 
