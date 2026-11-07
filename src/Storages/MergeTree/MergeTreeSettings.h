@@ -118,6 +118,9 @@ struct MergeTreeSettings
 
     bool needSyncPart(size_t input_rows, size_t input_bytes) const;
     void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
+    /// The same, except the checks of the `number_of_free_entries_in_pool_to_*` settings against the background pool:
+    /// for settings that cannot change these, such as the ones of a projection, which are merged by its table.
+    void sanityCheckWithoutBackgroundPool() const;
 
     void dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToSystemCompletionsColumns(MutableColumns & columns) const;
