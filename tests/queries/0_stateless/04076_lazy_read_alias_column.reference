@@ -1,0 +1,66 @@
+physical_column_plan
+LazilyReadFromMergeTree
+alias_column_plan
+LazilyReadFromMergeTree
+alias_filtered_plan
+LazilyReadFromMergeTree
+physical_topk_filter
+1
+alias_topk_filter
+1
+alias_result
+short
+short
+short
+long
+long
+long
+long
+long
+long
+long
+explicit_result
+short
+short
+short
+long
+long
+long
+long
+long
+long
+long
+alias_filtered_topk_filter
+1
+physical_filtered_topk_filter
+1
+alias_filtered_skip_index_execution
+short
+short
+short
+alias_filtered_skip_index_rows_read
+1
+dup_alias_lazy_plan
+LazilyReadFromMergeTree
+dup_alias_names_result
+val_99	693	val_99	693
+val_98	686	val_98	686
+val_97	679	val_97	679
+dup_alias_names_result_no_lazy
+val_99	693	val_99	693
+val_98	686	val_98	686
+val_97	679	val_97	679
+dup_star_lazy_plan
+LazilyReadFromMergeTree
+dup_star_result
+999	999	9990	yyyyy	999
+996	996	9960	yy	996
+993	993	9930	yyyyyy	993
+990	990	9900	yyy	990
+987	987	9870		987
+dup_star_result_no_lazy
+999	999	9990	yyyyy	999
+996	996	9960	yy	996
+993	993	9930	yyyyyy	993
+990	990	9900	yyy	990
+987	987	9870		987
