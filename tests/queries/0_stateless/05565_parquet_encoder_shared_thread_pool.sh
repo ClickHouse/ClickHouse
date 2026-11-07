@@ -2,8 +2,9 @@
 # Tags: no-fasttest
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
 
-# Every Parquet writer had its own pool of `max_threads` encoder threads, so 24 writers with `max_threads = 32`
-# did not fit in a 500-thread global pool: the parallel sinks of an Iceberg INSERT, and the partitions of one stream.
+# Every Parquet writer had its own pool of `max_threads` encoder threads, so many open writers with `max_threads = 32`
+# did not fit in a 500-thread global pool: 24 parallel sinks of an Iceberg INSERT with 4 partitions each, and the
+# 24 partitions of one stream.
 # https://github.com/ClickHouse/ClickHouse/issues/129864
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -21,11 +22,14 @@ SETTINGS="SET max_threads = 32, max_threads_min_free_memory_per_thread = 0, max_
     output_format_parquet_parallel_encoding = 1, output_format_parquet_row_group_size = 1000,
     max_block_size = 1000, min_insert_block_size_rows = 1000, min_insert_block_size_bytes = 0"
 
+# An Iceberg table takes its format settings from its `SETTINGS` clause, not from the session. Small row groups make
+# every writer encode while the INSERT runs, not only when its file is finalized.
 ${CLICKHOUSE_LOCAL} --query "
     ${SETTINGS}, allow_insert_into_iceberg = 1, max_insert_threads = 24;
-    CREATE TABLE t (id Int64 ${COLS}) ENGINE = IcebergLocal('${TABLE_DIR}/iceberg/');
-    INSERT INTO t SELECT number ${EXPRS} FROM numbers(120000);
-    SELECT count(), sum(c48), uniqExact(_path) > 1 FROM t;
+    CREATE TABLE t (p Int32 ${COLS}) ENGINE = IcebergLocal('${TABLE_DIR}/iceberg/') PARTITION BY p
+        SETTINGS output_format_parquet_row_group_size = 200;
+    INSERT INTO t SELECT number % 4 ${EXPRS} FROM numbers(120000);
+    SELECT count(), sum(c48), uniqExact(p), uniqExact(_path) > 4 FROM t;
 " -- --max_thread_pool_size=500 --thread_pool_queue_size=500
 
 ${CLICKHOUSE_LOCAL} --query "
