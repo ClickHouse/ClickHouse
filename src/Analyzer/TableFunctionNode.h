@@ -117,6 +117,18 @@ public:
     /// `table_function`, because a cloned node does not carry the `ITableFunction` object.
     const std::optional<String> & getParallelReplicasReadID() const { return parallel_replicas_read_id; }
 
+    /// Rewrite the leading arguments that name a table to `'database', 'table'`, so the call resolves to the
+    /// same table on a server whose current database is different. See `ITableFunction::getTableArgument`.
+    void qualifyTableArgument();
+
+    /// Make the node call the table function of `other`, with its arguments, and keep its own storage, which the
+    /// call of `other` has to give as well. The node keeps its alias and the columns that read from it.
+    void replaceTableFunction(const TableFunctionNode & other);
+
+    /// Make the node call the table function `name` with its first `num_arguments` arguments, and keep its own
+    /// storage, which that call has to give as well.
+    void replaceTableFunction(String name, size_t num_arguments);
+
     const VectorWithMemoryTracking<size_t> & getUnresolvedArgumentIndexes() const
     {
         return unresolved_arguments_indexes;
@@ -177,6 +189,8 @@ private:
     StoragePtr storage;
     StorageID storage_id;
     std::optional<String> parallel_replicas_read_id;
+    StorageID table_argument_id = StorageID::createEmpty();
+    size_t num_table_arguments = 0;
     StorageSnapshotPtr storage_snapshot;
     VectorWithMemoryTracking<size_t> unresolved_arguments_indexes;
     std::optional<TableExpressionModifiers> table_expression_modifiers;

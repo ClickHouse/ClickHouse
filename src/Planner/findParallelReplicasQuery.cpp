@@ -1,7 +1,10 @@
 #include <Analyzer/ArrayJoinNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
@@ -735,6 +738,185 @@ StorageID getStorageIDForParallelReplicas(const ITableExpressionNode & table_exp
     return table_function_node->getStorageID();
 }
 
+namespace
+{
+
+bool dependsOnSubquery(const QueryTreeNodePtr & node)
+{
+    if (node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION)
+        return true;
+    if (const auto * constant_node = node->as<ConstantNode>(); constant_node && constant_node->hasSourceExpression())
+        return dependsOnSubquery(constant_node->getSourceExpression());
+    for (const auto & child : node->getChildren())
+        if (child && dependsOnSubquery(child))
+            return true;
+    return false;
+}
+
+/// Type-only analysis does not execute scalar subqueries, and a constant it makes of one, or folds from one, holds a
+/// placeholder value. Such a constant is replaced with the expression it was made of.
+class RestoreScalarSubqueriesVisitor : public InDepthQueryTreeVisitor<RestoreScalarSubqueriesVisitor>
+{
+public:
+    static void visitImpl(QueryTreeNodePtr & node)
+    {
+        while (const auto * constant_node = node->as<ConstantNode>())
+        {
+            if (!constant_node->hasSourceExpression() || !dependsOnSubquery(constant_node->getSourceExpression()))
+                return;
+            node = constant_node->getSourceExpression();
+        }
+    }
+};
+
+/// Settings of the analysis that qualifies the query of `view`. They are set on the context of every query and union,
+/// after `buildQueryTree` has applied their own `SETTINGS` to these: without the optimization, a scalar subquery
+/// becomes a constant rather than `__getScalar`, which names a scalar the replicas do not have; without early
+/// short-circuit, a constant folded from `and` or `or` has a resolved source expression, whose tables are qualified
+/// when it is restored.
+class SetAnalysisSettingsVisitor : public InDepthQueryTreeVisitor<SetAnalysisSettingsVisitor>
+{
+public:
+    static void visitImpl(QueryTreeNodePtr & node)
+    {
+        ContextMutablePtr context;
+        if (auto * query_node = node->as<QueryNode>())
+            context = query_node->getMutableContext();
+        else if (auto * union_node = node->as<UnionNode>())
+            context = union_node->getMutableContext();
+        else
+            return;
+
+        context->setSetting("enable_scalar_subquery_optimization", false);
+        context->setSetting("enable_function_early_short_circuit", false);
+    }
+};
+
+class CollectTableFunctionNodesVisitor : public InDepthQueryTreeVisitor<CollectTableFunctionNodesVisitor>
+{
+public:
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        auto * table_function_node = node->as<TableFunctionNode>();
+        if (!table_function_node)
+            return;
+
+        table_function_nodes.push_back(table_function_node);
+
+        /// A replica would choose the branch of `viewIfPermitted` again, as another user maybe, and on a query it
+        /// resolves in another database. It is sent the branch this server reads instead, as `view` of the query
+        /// or as the `ELSE` table function, which can be one of these two again.
+        while (table_function_node->getTableFunctionName() == "viewIfPermitted")
+        {
+            const auto & arguments = table_function_node->getArguments().getNodes();
+            const auto * else_node = arguments.size() == 2 ? arguments[1]->as<TableFunctionNode>() : nullptr;
+            if (!else_node)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function viewIfPermitted has no ELSE table function in {}",
+                    table_function_node->formatASTForErrorMessage());
+
+            if (readsElse(*table_function_node, *else_node))
+            {
+                /// Held: it is an argument of the node it replaces.
+                auto else_node_holder = arguments[1];
+                table_function_node->replaceTableFunction(*else_node);
+            }
+            else
+            {
+                table_function_node->replaceTableFunction("view", 1);
+            }
+        }
+
+        if (table_function_node->getTableFunctionName() == "view")
+            qualifyViewQuery(*table_function_node);
+    }
+
+    /// The arguments of `remote` and `cluster` are not entered: they are evaluated on the servers these name,
+    /// against the current database there. Left as written, such a call resolves the way it does without
+    /// parallel replicas.
+    static bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr &)
+    {
+        const auto * table_function_node = parent->as<TableFunctionNode>();
+        if (!table_function_node)
+            return true;
+
+        const auto & name = table_function_node->getTableFunctionName();
+        return !(name == "remote" || name == "remoteSecure" || name == "cluster" || name == "clusterAllReplicas");
+    }
+
+    std::vector<TableFunctionNode *> table_function_nodes;
+
+private:
+    /// Whether `viewIfPermitted` reads its `ELSE` table function, as `TableFunctionViewIfPermitted` decided when it
+    /// made the storage: otherwise the storage is a view of its query. The `ELSE` table function can give a view as
+    /// well, of another query.
+    static bool readsElse(const TableFunctionNode & table_function_node, const TableFunctionNode & else_node)
+    {
+        if (!typeid_cast<const StorageView *>(table_function_node.getStorage().get()))
+            return true;
+
+        const auto & query = table_function_node.getArguments().getNodes().at(0);
+        ContextPtr context;
+        if (const auto * query_node = query->as<QueryNode>())
+            context = query_node->getContext();
+        else if (const auto * union_node = query->as<UnionNode>())
+            context = union_node->getContext();
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function viewIfPermitted has no query in {}",
+                table_function_node.formatASTForErrorMessage());
+
+        const auto & view_query = table_function_node.getStorageSnapshot()->metadata->getSelectQuery().inner_query;
+        if (buildQueryTree(view_query, context)->isEqual(*query))
+            return false;
+
+        const auto & else_name = else_node.getTableFunctionName();
+        if (else_name != "view" && else_name != "viewIfPermitted")
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The view made by viewIfPermitted is not of its query in {}",
+                table_function_node.formatASTForErrorMessage());
+        return true;
+    }
+
+    /// The analyzer leaves the query of `view` unresolved, and sent as written it names its tables and table
+    /// function arguments the way the user wrote them. It is replaced with the query a resolved copy prints,
+    /// which names them qualified. The argument stays unresolved, so that the initiator, which plans the
+    /// query it sends, plans it as it does without parallel replicas.
+    static void qualifyViewQuery(TableFunctionNode & table_function_node)
+    {
+        const auto & unresolved_indexes = table_function_node.getUnresolvedArgumentIndexes();
+        if (std::find(unresolved_indexes.begin(), unresolved_indexes.end(), 0) == unresolved_indexes.end())
+            return;
+
+        auto & argument = table_function_node.getArguments().getNodes().at(0);
+        ContextPtr context;
+        if (auto * query_node = argument->as<QueryNode>())
+            context = query_node->getContext();
+        else if (auto * union_node = argument->as<UnionNode>())
+            context = union_node->getContext();
+        else
+            return;
+
+        /// A copy, which `SetAnalysisSettingsVisitor` changes for the queries that share it.
+        auto analysis_context = Context::createCopy(context);
+        auto view_query = buildQueryTree(argument->toAST(), analysis_context);
+        SetAnalysisSettingsVisitor().visit(view_query);
+        QueryAnalysisPass(/*only_analyze=*/true).run(view_query, analysis_context);
+        /// Before the qualification, which does not look into the source expressions of constants.
+        RestoreScalarSubqueriesVisitor().visit(view_query);
+        qualifyTableFunctionArguments(view_query);
+        argument = buildQueryTree(view_query->toAST(), context);
+    }
+};
+
+}
+
+void qualifyTableFunctionArguments(QueryTreeNodePtr & query_tree_node)
+{
+    /// Collected first: the traversal relies on the argument lists it walks staying as they are.
+    CollectTableFunctionNodesVisitor visitor;
+    visitor.visit(query_tree_node);
+    for (auto * table_function_node : visitor.table_function_nodes)
+        table_function_node->qualifyTableArgument();
+}
+
 const ITableExpressionNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options)
 {
     if (select_query_options.only_analyze)
@@ -855,6 +1037,7 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     inlineAliasColumns(modified_query_tree);
     rewriteJoinToGlobalJoin(modified_query_tree, context);
     modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
+    qualifyTableFunctionArguments(modified_query_tree);
 
     auto [header, new_planner_context] = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
