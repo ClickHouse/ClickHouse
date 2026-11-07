@@ -28,6 +28,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/Exception.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Macros.h>
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
@@ -236,6 +237,7 @@ StorageFileLog::StorageFileLog(
 
         loadMetaFiles(LoadingStrictnessLevel::ATTACH <= mode);
         loadFiles();
+        syncFileStatistics();
 
         chassert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
         chassert(file_infos.file_names.size() == file_infos.context_by_name.size());
@@ -597,6 +599,7 @@ void StorageFileLog::openFilesAndSetPos()
         auto & file_ctx = findInMap(file_infos.context_by_name, file);
         if (file_ctx.status != FileStatus::NO_CHANGE || file_ctx.open_failed)
         {
+            setFilePolled(file_ctx.inode);
             file_ctx.reader.emplace(getFullDataPath(file));
             const int open_errno = errno;
             if (!file_ctx.reader->is_open() && open_errno == ENOENT && isTrackedByDirectoryEvents(file))
@@ -611,6 +614,7 @@ void StorageFileLog::openFilesAndSetPos()
             {
                 if (!file_ctx.open_failed)
                     LOG_ERROR(log, "Cannot open file {}, will retry: {}", getFullDataPath(file), errnoToString(open_errno));
+                setFileOpenFailed(file_ctx.inode, fmt::format("Cannot open file {}: {}", getFullDataPath(file), errnoToString(open_errno)));
                 file_ctx.reader.reset();
                 file_ctx.status = FileStatus::NO_CHANGE;
                 file_ctx.open_failed = true;
@@ -648,7 +652,10 @@ void StorageFileLog::openFilesAndSetPos()
                     disk->removeFileIfExists(getFullMetaPath(file));
                     file_ctx.inode = inode;
                     file_infos.meta_by_inode.insert_or_assign(inode, FileMeta{.file_name = file});
+                    syncFileStatistics();
+                    setFilePolled(inode);
                 }
+                setFileOpened(file_ctx.inode);
                 file_ctx.open_failed = false;
                 file_ctx.status = FileStatus::UPDATED;
             }
@@ -701,6 +708,7 @@ void StorageFileLog::closeFilesAndStoreMeta(size_t start, size_t end)
 
         auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
         serialize(file_ctx.inode, meta);
+        setFileOffset(file_ctx.inode, meta);
     }
 }
 
@@ -715,6 +723,7 @@ void StorageFileLog::storeMetas(size_t start, size_t end)
 
         auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
         serialize(file_ctx.inode, meta);
+        setFileOffset(file_ctx.inode, meta);
     }
 }
 
@@ -802,6 +811,7 @@ size_t StorageFileLog::getTableDependentCount() const
 void StorageFileLog::threadFunc()
 {
     bool reschedule = false;
+    std::vector<UInt64> round_inodes;
     try
     {
         auto table_id = getStorageID();
@@ -826,7 +836,7 @@ void StorageFileLog::threadFunc()
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
-                if (streamToViews())
+                if (streamToViews(round_inodes))
                 {
                     LOG_TRACE(log, "Stream stalled. Reschedule.");
                     if (milliseconds_to_wait
@@ -852,6 +862,7 @@ void StorageFileLog::threadFunc()
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+        setFilesException(round_inodes, getCurrentExceptionMessage(/* with_stacktrace */ false));
     }
 
     mv_attached.store(false);
@@ -880,7 +891,7 @@ void StorageFileLog::threadFunc()
     }
 }
 
-bool StorageFileLog::streamToViews()
+bool StorageFileLog::streamToViews(std::vector<UInt64> & round_inodes)
 {
     std::lock_guard lock(file_infos_mutex);
     if (running_streams)
@@ -906,6 +917,11 @@ bool StorageFileLog::streamToViews()
         LOG_INFO(log, "There is a idle table named {}, no files need to parse.", getName());
         return updateFileInfos();
     }
+
+    round_inodes.clear();
+    for (const auto & file : file_infos.file_names)
+        if (const auto & file_ctx = findInMap(file_infos.context_by_name, file); file_ctx.status != FileStatus::NO_CHANGE || file_ctx.open_failed)
+            round_inodes.push_back(file_ctx.inode);
 
     /// Nothing to read until the watcher events are applied, e.g. when only files that the glob excludes changed.
     /// A file that could not be opened is retried by `openFilesAndSetPos`.
@@ -968,6 +984,9 @@ bool StorageFileLog::streamToViews()
         CompletedPipelineExecutor executor(block_io.pipeline);
         executor.execute();
     }
+
+    setFilesConsuming(round_inodes);
+    round_inodes.clear();
 
     UInt64 milliseconds = watch.elapsedMilliseconds();
     LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", rows.load(), table_id.getNameForLogs(), milliseconds);
@@ -1122,6 +1141,8 @@ Optional parameters:
 The delivered records are tracked automatically, so each record in a log file is only counted once. A file that is shorter than the offset recorded for it when it is next read, as after `logrotate` with `copytruncate`, is read again from the beginning. A truncation is not detected if the file grows back to at least that offset before it is next read. A file with several names in the directory (hard links) is read under one of them.
 
 A file that cannot be opened (a symlink whose target was removed, a file not readable by the server, or the file of a single-file table that was removed) is skipped with an error in the server log and retried until it can be opened while the table is loaded; a file that was missing is then read from its start. A symlink is read only if its target exists when the table finds it.
+
+The read offset, the unread size, the number of records read and the last exception of every file are shown in [system.filelog_files](/reference/system-tables/filelog_files).
 
 `SELECT` is not particularly useful for reading records (except for debugging), because each record can be read only once. It is more practical to create real-time threads using [materialized views](/reference/statements/create/view). To do this:
 
@@ -1342,6 +1363,7 @@ bool StorageFileLog::updateFileInfos()
                         it->second = FileMeta{.file_name = file_name};
                     else
                         file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
+                    eraseFileStatistics(inode);
                 }
                 break;
             }
@@ -1447,7 +1469,108 @@ bool StorageFileLog::updateFileInfos()
     chassert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
     chassert(file_infos.file_names.size() == file_infos.context_by_name.size());
 
+    syncFileStatistics();
+
     return events.empty() || file_infos.file_names.empty();
+}
+
+void StorageFileLog::syncFileStatistics()
+{
+    std::lock_guard lock(file_statistics_mutex);
+    std::erase_if(file_statistics, [&](const auto & entry) { return !file_infos.meta_by_inode.contains(entry.first); });
+    for (const auto & [inode, meta] : file_infos.meta_by_inode)
+    {
+        auto & statistics = file_statistics[inode];
+        statistics.file_name = meta.file_name;
+        statistics.offset = meta.last_writen_position;
+    }
+}
+
+void StorageFileLog::eraseFileStatistics(UInt64 inode)
+{
+    std::lock_guard lock(file_statistics_mutex);
+    file_statistics.erase(inode);
+}
+
+void StorageFileLog::setFileOffset(UInt64 inode, const FileMeta & meta)
+{
+    std::lock_guard lock(file_statistics_mutex);
+    if (auto it = file_statistics.find(inode); it != file_statistics.end())
+    {
+        it->second.file_name = meta.file_name;
+        it->second.offset = meta.last_writen_position;
+    }
+}
+
+void StorageFileLog::setFilePolled(UInt64 inode)
+{
+    const auto now = static_cast<UInt64>(time(nullptr));
+    std::lock_guard lock(file_statistics_mutex);
+    if (auto it = file_statistics.find(inode); it != file_statistics.end())
+        it->second.last_poll_time = now;
+}
+
+void StorageFileLog::addRecordsRead(UInt64 inode, size_t num_records)
+{
+    std::lock_guard lock(file_statistics_mutex);
+    if (auto it = file_statistics.find(inode); it != file_statistics.end())
+        it->second.num_records_read += num_records;
+}
+
+void StorageFileLog::setFileOpenFailed(UInt64 inode, const String & error)
+{
+    const auto now = static_cast<UInt64>(time(nullptr));
+    std::lock_guard lock(file_statistics_mutex);
+    if (auto it = file_statistics.find(inode); it != file_statistics.end())
+    {
+        it->second.last_exception = error;
+        it->second.last_exception_time = now;
+        it->second.open_failed = true;
+    }
+}
+
+void StorageFileLog::setFileOpened(UInt64 inode)
+{
+    std::lock_guard lock(file_statistics_mutex);
+    if (auto it = file_statistics.find(inode); it != file_statistics.end())
+        it->second.open_failed = false;
+}
+
+void StorageFileLog::setFilesException(const std::vector<UInt64> & inodes, const String & exception)
+{
+    /// Called from a catch handler, where the memory tracker may still throw.
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+    const auto now = static_cast<UInt64>(time(nullptr));
+    const std::unordered_set<UInt64> in_round(inodes.begin(), inodes.end());
+    std::lock_guard lock(file_statistics_mutex);
+    for (auto & [inode, statistics] : file_statistics)
+    {
+        /// A round can fail before it reads, while files with new data are not part of it yet.
+        if (!in_round.contains(inode))
+        {
+            struct stat file_stat{};
+            if (::stat(getFullDataPath(statistics.file_name).c_str(), &file_stat) != 0 || file_stat.st_ino != inode
+                || static_cast<UInt64>(file_stat.st_size) <= getReadOffset(statistics.offset, file_stat.st_size))
+                continue;
+        }
+        statistics.last_exception = exception;
+        statistics.last_exception_time = now;
+        statistics.stuck = true;
+    }
+}
+
+void StorageFileLog::setFilesConsuming(const std::vector<UInt64> & inodes)
+{
+    std::lock_guard lock(file_statistics_mutex);
+    for (const auto inode : inodes)
+        if (auto it = file_statistics.find(inode); it != file_statistics.end())
+            it->second.stuck = false;
+}
+
+StorageFileLog::InodeToFileStatistics StorageFileLog::getFileStatistics() const
+{
+    std::lock_guard lock(file_statistics_mutex);
+    return file_statistics;
 }
 
 void StorageFileLog::resetReadPosition(const std::optional<String> & file_name, std::optional<UInt64> offset)
@@ -1515,6 +1638,7 @@ void StorageFileLog::resetReadPosition(const std::optional<String> & file_name, 
             auto & target = targets[i];
             disk->replaceFile(tmp_paths[i], getFullMetaPath(target.new_meta.file_name));
             LOG_INFO(log, "File {} will be read from offset {}", target.name, target.new_meta.last_writen_position);
+            setFileOffset(target.file_ctx->inode, target.new_meta);
             findInMap(file_infos.meta_by_inode, target.file_ctx->inode) = std::move(target.new_meta);
             target.file_ctx->status = FileStatus::UPDATED;
         }
