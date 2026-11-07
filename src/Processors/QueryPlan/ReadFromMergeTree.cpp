@@ -5753,8 +5753,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             boost::hash_combine(salt, query_info.filter_actions_dag->getOutputs().front()->getHash());
         reader_settings.query_condition_cache_top_k_salt = salt;
 
-        /// The granules beyond the final threshold are recorded for the sort column types with a non-virtual best
-        /// value scan, see `MergeTreeSelectProcessor::recordTopKBestValues`.
+        /// Only sort column types with a typed best value scan, see `MergeTreeSelectProcessor::recordTopKBestValues`.
         const auto & tracker = top_k_filter_info->threshold_tracker;
         const auto sort_column = top_k_filter_info->data_type->createColumn();
         NameSet read_columns(all_column_names.begin(), all_column_names.end());
@@ -6915,8 +6914,8 @@ void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
     /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
     /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, turn the
     /// cache off for this read: a TopK read can drop granules during execution depending on the running
-    /// `__topKFilter` threshold, so writing threshold-oblivious QCC entries is unsound. The same when a
-    /// masking policy rewrites the columns at read time for this user, which no cache key holds.
+    /// `__topKFilter` threshold, so writing threshold-oblivious QCC entries is unsound.
+    /// The same when a masking policy rewrites the columns at read time for this user, which no cache key holds.
     /// Use `allow_query_condition_cache` rather than mutating `reader_settings` directly: it is the
     /// step's persistent "this read must not use the cache" flag, it is carried over by `clone`, and it
     /// disables the cache both for index analysis (`selectRangesToReadImpl`) and for the reader
@@ -6931,8 +6930,8 @@ void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
     /// *different* part is dropped or mutated and the threshold that made the granule skippable
     /// no longer holds. Fold a hash of the whole part-set snapshot into the salt so that any
     /// change to the set of parts read (`DROP PARTITION`, mutation, merge, new `INSERT`) yields a
-    /// fresh key and the now-stale decisions of the unchanged parts are never reused. The column
-    /// list of the metadata goes in too, as for the columns cache, so does a change of the columns.
+    /// fresh key and the now-stale decisions of the unchanged parts are never reused.
+    /// The columns of the metadata go in too, so a change of the columns also yields a fresh key.
     SipHash parts_hash;
     const String columns_description = storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false);
     parts_hash.update(columns_description.size());

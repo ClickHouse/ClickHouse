@@ -821,7 +821,6 @@ void MergeTreeSelectProcessor::recordTopKBestValues(const MergeTreeReadTask & cu
             best_row = string_column ? findTopKBestRowOfStrings(*string_column, begin, end, direction)
                                      : findTopKBestRowOfNumbers(*column, begin, end, direction);
 
-        /// Charged before the copy, so the budget bounds what the processors of the read hold.
         const size_t bytes = best_row ? sizeof(size_t) + column->byteSizeAt(*best_row) : 0;
         if (!best_row || state.reserved_payload_bytes.fetch_add(bytes, std::memory_order_relaxed) + bytes > state.max_payload_bytes)
         {
@@ -860,7 +859,6 @@ void MergeTreeSelectProcessor::writeTopKQueryConditionCacheEntries() noexcept
         return;
     state->reserved_payload_bytes.fetch_sub(std::exchange(reserved_top_k_bytes, 0), std::memory_order_relaxed);
 
-    /// An unfinished or cancelled read writes nothing.
     const auto & rows_equal_to_threshold_dropped = reader_settings.top_k_filter_rows_equal_to_threshold_dropped;
     if (pending_top_k_granules.empty() || !all_tasks_read || is_cancelled || top_k_gave_up
         || (rows_equal_to_threshold_dropped && rows_equal_to_threshold_dropped->load(std::memory_order_relaxed)))
