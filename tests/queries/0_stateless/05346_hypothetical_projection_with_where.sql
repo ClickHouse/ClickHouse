@@ -1,5 +1,6 @@
 -- a projection with WHERE stores only the rows that pass its filter, and a part with no such rows has no projection part
 -- the twin table has the projection materialized and shows the read that the optimizer selects
+-- the implicit minmax indices of add_minmax_index_for_numeric_columns would give the projection its own skip indexes, which EXPLAIN WHATIF does not estimate
 
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_optimize_projection = 0, force_optimize_projection = 0, enable_parallel_replicas = 0, log_queries = 1;
 
@@ -7,7 +8,7 @@ DROP TABLE IF EXISTS t_est;
 DROP TABLE IF EXISTS t_real;
 
 CREATE TABLE t_est (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0,
         merge_max_block_size = 8192;
 CREATE TABLE t_real AS t_est;
 ALTER TABLE t_real ADD PROJECTION p (SELECT a, b, v WHERE v % 10 = 0 ORDER BY b);
@@ -52,7 +53,7 @@ ORDER BY log_comment;
 
 -- the rows that pass the filter are in one granule, a sample that misses it shows no projection part
 CREATE TABLE c_est (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+    SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO c_est SELECT number, number % 100, intDiv(number, 100) FROM numbers(10000);
 CREATE HYPOTHETICAL PROJECTION p ON c_est (SELECT a, b, v WHERE v = 0 ORDER BY b);
 SELECT '-- the rows of the filter in one granule, with a full scan';
@@ -66,7 +67,7 @@ WHERE match(line, '^(empirical_status|empirical_reason):');
 
 -- a projection part keeps only the rows that exist after a lightweight delete
 CREATE TABLE d_est (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+    SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE d_real AS d_est;
 INSERT INTO d_est SELECT number, number % 100, number FROM numbers(10000);
 INSERT INTO d_real SELECT number, number % 100, number FROM numbers(10000);

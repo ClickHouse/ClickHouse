@@ -4,10 +4,14 @@
 -- Group 1: Column operations (rename, add, drop, multiple ops) - reuse one table
 DROP TABLE IF EXISTS t_column_ops SYNC;
 
+-- Wide parts: `RENAME COLUMN` keeps the files of the implicit index under the old name
+-- (`skp_idx_auto_minmax_index_b`) in them, so the column added later as `b` must not get an
+-- implicit index that would read the ranges of the renamed column.
 CREATE TABLE t_column_ops (a UInt64, b UInt64)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_column_ops', '1')
 ORDER BY a
-SETTINGS add_minmax_index_for_numeric_columns = 1;
+SETTINGS add_minmax_index_for_numeric_columns = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0;
 
 INSERT INTO t_column_ops VALUES (1, 2), (3, 4);
 
@@ -37,6 +41,7 @@ WHERE database = currentDatabase() AND table = 't_column_ops'
 ORDER BY name;
 
 SELECT * FROM t_column_ops ORDER BY a;
+SELECT count() FROM t_column_ops WHERE b = 0 SETTINGS use_query_condition_cache = 0;
 
 -- Test 5: Drop column with implicit index
 ALTER TABLE t_column_ops DROP COLUMN b;
@@ -101,13 +106,14 @@ SETTINGS add_minmax_index_for_numeric_columns = 1;
 
 INSERT INTO t_explicit_ops VALUES (1, 2), (3, 4);
 
--- Test 7: Explicit index on same column (should not create duplicate implicit index)
+-- Test 7: Explicit index on same column. The existing implicit index stays next to it, as with a local
+-- `ALTER`: an explicit `minmax` index neither removes nor restores the implicit one of an existing column.
 SELECT 'Before adding explicit index:';
 SELECT name, type, expr FROM system.data_skipping_indices
 WHERE database = currentDatabase() AND table = 't_explicit_ops'
 ORDER BY name;
 
--- Add explicit minmax index on column b (should not duplicate the implicit one)
+-- Add explicit minmax index on column b (the implicit one is kept)
 ALTER TABLE t_explicit_ops ADD INDEX idx_explicit_b b TYPE minmax GRANULARITY 1;
 SYSTEM SYNC REPLICA t_explicit_ops;
 
@@ -116,7 +122,7 @@ SELECT name, type, expr FROM system.data_skipping_indices
 WHERE database = currentDatabase() AND table = 't_explicit_ops'
 ORDER BY name;
 
--- Verify only one index exists per column
+-- Count the minmax indices per column
 SELECT column_name, count() as index_count FROM (
     SELECT arrayJoin(splitByChar(',', expr)) as column_name
     FROM system.data_skipping_indices
@@ -126,7 +132,7 @@ SELECT column_name, count() as index_count FROM (
 GROUP BY column_name
 ORDER BY column_name;
 
--- Test 8: Drop explicit index (implicit should remain/regenerate)
+-- Test 8: Drop explicit index (implicit should remain)
 ALTER TABLE t_explicit_ops DROP INDEX idx_explicit_b;
 SYSTEM SYNC REPLICA t_explicit_ops;
 

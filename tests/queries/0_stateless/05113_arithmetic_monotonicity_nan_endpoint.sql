@@ -27,7 +27,11 @@ SELECT count() FROM t_monotonicity_nan_zero WHERE k * inf = inf SETTINGS use_pri
 
 SELECT 'pruning still applies where no endpoint becomes NaN';
 DROP TABLE IF EXISTS t_monotonicity_finite;
-CREATE TABLE t_monotonicity_finite (k Float64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
+-- The implicit min-max index on `k` resolves this `count()` exactly, so the whole `ReadFromMergeTree`
+-- section is replaced by `AggregatingProjection` and the `Granules: N/M` line the assertion below
+-- greps for disappears altogether. The primary key is the pruning layer under test here, so opt out.
+CREATE TABLE t_monotonicity_finite (k Float64) ENGINE = MergeTree ORDER BY k
+    SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_monotonicity_finite SELECT number FROM numbers(100);
 SELECT count() FROM t_monotonicity_finite WHERE k / 2 > 40;
 SELECT count() FROM t_monotonicity_finite WHERE k * 2 > 80;

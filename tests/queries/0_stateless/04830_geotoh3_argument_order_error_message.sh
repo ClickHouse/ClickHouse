@@ -21,8 +21,15 @@ $CLICKHOUSE_CLIENT --query "SET geotoh3_argument_order = 'lon_lat'; SELECT geoTo
 
 # A stored expression over Float32 coordinates keeps loading: unrelated columns stay readable
 # and an unrelated ALTER still succeeds.
+#
+# The implicit min-max indices are pinned off here: an implicit index of an ALIAS column is built
+# over the alias expression, so with the indices enabled every INSERT evaluates `geoToH3` over the
+# `Float32` column and fails, and the table cannot be written to at all. `geoToH3` accepts any
+# `Float` argument during analysis and rejects everything but `Float64` during execution, so the
+# expression cannot be rejected when the index is created either. Both belong to the engine rather
+# than to the index default, see https://github.com/ClickHouse/ClickHouse/issues/118527.
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_04830"
-$CLICKHOUSE_CLIENT --query "CREATE TABLE t_04830 (f32 Float32, f64 Float64, other String, h UInt64 ALIAS geoToH3(f32, f64, 15)) ENGINE = MergeTree ORDER BY tuple()"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE t_04830 (f32 Float32, f64 Float64, other String, h UInt64 ALIAS geoToH3(f32, f64, 15)) ENGINE = MergeTree ORDER BY tuple() SETTINGS add_minmax_index_for_numeric_columns = 0"
 $CLICKHOUSE_CLIENT --query "INSERT INTO t_04830 VALUES (55.71, 37.79, 'kept')"
 $CLICKHOUSE_CLIENT --query "SELECT other FROM t_04830"
 $CLICKHOUSE_CLIENT --query "ALTER TABLE t_04830 MODIFY COMMENT 'unrelated'"

@@ -8,6 +8,8 @@
 -- `MODIFY COLUMN`, `CLEAR COLUMN` and TTL lifecycle that `MutationsInterpreter` applies. The series
 -- is split across files because one test exceeded the flaky-check runtime limit under sanitizers;
 -- the original case numbering is kept.
+-- The tables opt out of the implicit min-max indices (`add_minmax_index_for_numeric_columns`):
+-- they would add index files to the counts of built skip indices that these cases check.
 
 SET mutations_sync = 0, alter_sync = 0;
 -- Statistics part pruning is an independent mechanism that can drop a whole part before any index
@@ -21,7 +23,7 @@ DROP TABLE IF EXISTS t_sibling_modify_rebuilt;
 CREATE TABLE t_sibling_modify_rebuilt (k UInt64, d DateTime, c String TTL d + INTERVAL 1 SECOND,
     g String, INDEX idx_old (c, g) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_sibling_modify_rebuilt SELECT number, '2000-01-01 00:00:00', toString(number * 3), toString(number) FROM numbers(64);
 ALTER TABLE t_sibling_modify_rebuilt MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
@@ -60,7 +62,7 @@ DROP TABLE IF EXISTS t_sibling_cleared;
 CREATE TABLE t_sibling_cleared (k UInt64, d DateTime, c String TTL d + INTERVAL 1 SECOND,
     g String, INDEX idx_old (c, g) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_sibling_cleared SELECT number, '2000-01-01 00:00:00', toString(number * 3), toString(number) FROM numbers(64);
 ALTER TABLE t_sibling_cleared MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
@@ -104,7 +106,7 @@ CREATE TABLE t_sibling_cleared_shadowed (k UInt64, d DateTime, a Array(UInt64),
     `a.size0` UInt64 TTL d + INTERVAL 1 SECOND, c String TTL d + INTERVAL 1 SECOND,
     INDEX idx_old (c, `a.size0`) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_sibling_cleared_shadowed SELECT number, '2000-01-01 00:00:00', [number, number], number + 1, toString(number * 3) FROM numbers(64);
 ALTER TABLE t_sibling_cleared_shadowed MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
@@ -138,7 +140,7 @@ CREATE TABLE t_sibling_modified_shadowed (k UInt64, d DateTime, a Array(UInt64),
     `a.size0` UInt64 TTL d + INTERVAL 1 SECOND, c String TTL d + INTERVAL 1 SECOND,
     INDEX idx_old (c, `a.size0`) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_sibling_modified_shadowed SELECT number, '2000-01-01 00:00:00', [number, number], number + 1, toString(number * 3) FROM numbers(64);
 ALTER TABLE t_sibling_modified_shadowed MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()
@@ -173,7 +175,7 @@ DROP TABLE IF EXISTS t_sibling_ttl_recalculate_only;
 CREATE TABLE t_sibling_ttl_recalculate_only (k UInt64, d DateTime, c String TTL d + INTERVAL 1 SECOND,
     g String TTL d + INTERVAL 100 YEAR, e UInt64, INDEX idx_old (c, g) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_sibling_ttl_recalculate_only SELECT number, '2000-01-01 00:00:00', toString(number * 3), toString(number), number FROM numbers(64);
 ALTER TABLE t_sibling_ttl_recalculate_only MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase()

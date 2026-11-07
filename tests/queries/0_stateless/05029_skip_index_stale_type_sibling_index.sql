@@ -7,6 +7,8 @@
 -- bytes of, and a SECOND index on the part decides whether the mutation may record that column.
 -- The series is split across files because one test exceeded the flaky-check runtime limit under
 -- sanitizers; the original case numbering is kept.
+-- The tables opt out of the implicit min-max indices (`add_minmax_index_for_numeric_columns`):
+-- they would add index files to the counts of built skip indices that these cases check.
 
 SET mutations_sync = 0, alter_sync = 0;
 -- Statistics part pruning is an independent mechanism that can drop a whole part before any index
@@ -22,7 +24,7 @@ DROP TABLE IF EXISTS t_two_indices_absent;
 CREATE TABLE t_two_indices_absent (k UInt64, d DateTime, c String TTL d + INTERVAL 1 SECOND,
     INDEX idx_old c TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_two_indices_absent SELECT number, '2000-01-01 00:00:00', toString(number * 3) FROM numbers(64);
 ALTER TABLE t_two_indices_absent MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_two_indices_absent' AND active AND column = 'c';
@@ -57,7 +59,7 @@ DROP TABLE IF EXISTS t_two_indices_dotted;
 CREATE TABLE t_two_indices_dotted (k UInt64, d DateTime, a Bool, `a.b` Tuple(x UInt64) TTL d + INTERVAL 1 SECOND,
     INDEX idx_old `a.b.x` TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_two_indices_dotted SELECT number, '2000-01-01 00:00:00', 1, tuple(number * 3) FROM numbers(64);
 ALTER TABLE t_two_indices_dotted MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_two_indices_dotted' AND active AND column = 'a.b';
@@ -83,7 +85,7 @@ DROP TABLE IF EXISTS t_sibling_rebuilt;
 CREATE TABLE t_sibling_rebuilt (k UInt64, d DateTime, c String TTL d + INTERVAL 1 SECOND, e UInt64,
     INDEX idx_old (c, e) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_sibling_rebuilt SELECT number, '2000-01-01 00:00:00', toString(number * 3), number FROM numbers(64);
 ALTER TABLE t_sibling_rebuilt MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
 SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_sibling_rebuilt' AND active AND column = 'c';
@@ -118,7 +120,7 @@ SELECT '-- 36. a mutation that rewrites the whole part rebuilds a sibling index 
 DROP TABLE IF EXISTS t_full_rewrite_stale;
 CREATE TABLE t_full_rewrite_stale (k UInt64, dt DateTime('UTC'), INDEX idx_old toHour(dt) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 4, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
     packed_skip_index_max_bytes = 0;
 INSERT INTO t_full_rewrite_stale SELECT number, toDateTime('2020-01-01 00:00:00', 'UTC') FROM numbers(64);
 ALTER TABLE t_full_rewrite_stale MODIFY COLUMN dt DateTime('Asia/Tokyo') SETTINGS mutations_sync = 2, alter_sync = 2;
@@ -138,7 +140,7 @@ DROP TABLE IF EXISTS t_full_rewrite_stale_update;
 CREATE TABLE t_full_rewrite_stale_update (k UInt64, dt DateTime('UTC'), v UInt64,
     INDEX idx_old toHour(dt) TYPE set(100) GRANULARITY 1, INDEX idx_all (k, v, dt) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 4, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
     packed_skip_index_max_bytes = 0;
 INSERT INTO t_full_rewrite_stale_update SELECT number, toDateTime('2020-01-01 00:00:00', 'UTC'), number FROM numbers(64);
 ALTER TABLE t_full_rewrite_stale_update MODIFY COLUMN dt DateTime('Asia/Tokyo') SETTINGS mutations_sync = 2, alter_sync = 2;
@@ -157,7 +159,7 @@ DROP TABLE IF EXISTS t_adopted_src;
 DROP TABLE IF EXISTS t_adopted;
 CREATE TABLE t_adopted_src (k UInt64)
 ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 4, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
     packed_skip_index_max_bytes = 0, enable_block_number_column = 1, enable_block_offset_column = 1,
     add_minmax_index_for_block_number_column = 1, add_minmax_index_for_block_offset_column = 1;
 INSERT INTO t_adopted_src SELECT number FROM numbers(32);
@@ -184,7 +186,7 @@ DROP TABLE IF EXISTS t_adopted_update_src;
 DROP TABLE IF EXISTS t_adopted_update;
 CREATE TABLE t_adopted_update_src (k UInt64, v UInt64, INDEX idx_all (k, v) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 4, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 4, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
     packed_skip_index_max_bytes = 0, enable_block_number_column = 1, enable_block_offset_column = 1,
     add_minmax_index_for_block_number_column = 1, add_minmax_index_for_block_offset_column = 1;
 INSERT INTO t_adopted_update_src SELECT number, number FROM numbers(32);

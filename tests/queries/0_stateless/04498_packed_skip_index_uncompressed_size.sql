@@ -16,7 +16,7 @@ CREATE TABLE packed_bf
     INDEX bf s TYPE tokenbf_v1(8192, 3, 0) GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, index_granularity = 1024, packed_skip_index_max_bytes = '4M';
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 1024, packed_skip_index_max_bytes = '4M', add_minmax_index_for_numeric_columns = 0;
 
 CREATE TABLE unpacked_bf
 (
@@ -25,7 +25,7 @@ CREATE TABLE unpacked_bf
     INDEX bf s TYPE tokenbf_v1(8192, 3, 0) GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, index_granularity = 1024, packed_skip_index_max_bytes = 0;
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 1024, packed_skip_index_max_bytes = 0, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO packed_bf SELECT number, 'a' FROM numbers(100000);
 INSERT INTO unpacked_bf SELECT number, 'a' FROM numbers(100000);

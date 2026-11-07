@@ -109,7 +109,7 @@ MIXED_INSERT="SELECT number, number * 7, toString(number) FROM numbers(20000)"
 PACKED_MIXED_FILES=$($CLIENT --multiquery -q "
     DROP TABLE IF EXISTS ref_packed_mixed;
     CREATE TABLE ref_packed_mixed ($MIXED_COLUMNS) ENGINE = MergeTree ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4194304, index_granularity = 1024;
+    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4194304, index_granularity = 1024, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO ref_packed_mixed $MIXED_INSERT;
     SELECT files FROM system.parts
         WHERE database = currentDatabase() AND table = 'ref_packed_mixed' AND active ORDER BY name LIMIT 1;
@@ -125,7 +125,7 @@ run_scenario "A_wide_update_indexed" a_wide_indexed \
      CREATE TABLE a_wide_indexed (
          id UInt64, v UInt64, INDEX m_v v TYPE minmax GRANULARITY 1
      ) ENGINE = MergeTree ORDER BY id
-     SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024;
+     SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024, add_minmax_index_for_numeric_columns = 0;
      INSERT INTO a_wide_indexed SELECT number, number * 7 FROM numbers(2000);"
 
 # Scenario B: Wide, sole packed minmax, ALTER UPDATE on a NON-indexed column.
@@ -137,7 +137,7 @@ run_scenario "B_wide_update_unindexed" b_wide_unindexed \
      CREATE TABLE b_wide_unindexed (
          id UInt64, v UInt64, s String, INDEX m_v v TYPE minmax GRANULARITY 1
      ) ENGINE = MergeTree ORDER BY id
-     SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024;
+     SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024, add_minmax_index_for_numeric_columns = 0;
      INSERT INTO b_wide_unindexed SELECT number, number * 7, toString(number % 50) FROM numbers(2000);"
 
 # Scenario C: Wide, packed minmax, lightweight DELETE. Index data untouched; m_v still prunes.
@@ -148,7 +148,7 @@ run_scenario "C_wide_lightweight_delete" c_wide_lwd \
      CREATE TABLE c_wide_lwd (
          id UInt64, v UInt64, INDEX m_v v TYPE minmax GRANULARITY 1
      ) ENGINE = MergeTree ORDER BY id
-     SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024;
+     SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024, add_minmax_index_for_numeric_columns = 0;
      INSERT INTO c_wide_lwd SELECT number, number * 7 FROM numbers(2000);"
 
 # Scenario D: Wide, mixed (packed minmax + per-file set), ALTER UPDATE on the set's column.
@@ -159,7 +159,7 @@ run_scenario "D_wide_mixed_update_set" d_wide_mixed_update_set \
     "v BETWEEN 70 AND 700" 91 m_v \
     "DROP TABLE IF EXISTS d_wide_mixed_update_set;
      CREATE TABLE d_wide_mixed_update_set ($MIXED_COLUMNS) ENGINE = MergeTree ORDER BY id
-     SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4096, index_granularity = 1024;
+     SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4096, index_granularity = 1024, add_minmax_index_for_numeric_columns = 0;
      INSERT INTO d_wide_mixed_update_set $MIXED_INSERT;" \
     "$PACKED_MIXED_FILES"
 
@@ -170,7 +170,7 @@ run_scenario "E_wide_mixed_update_minmax" e_wide_mixed_update_minmax \
     "v BETWEEN 70 AND 700" 91 m_v \
     "DROP TABLE IF EXISTS e_wide_mixed_update_minmax;
      CREATE TABLE e_wide_mixed_update_minmax ($MIXED_COLUMNS) ENGINE = MergeTree ORDER BY id
-     SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4096, index_granularity = 1024;
+     SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4096, index_granularity = 1024, add_minmax_index_for_numeric_columns = 0;
      INSERT INTO e_wide_mixed_update_minmax $MIXED_INSERT;" \
     "$PACKED_MIXED_FILES"
 
@@ -185,7 +185,7 @@ run_scenario "F_wide_drop_one_of_two_packed" f_wide_drop_packed \
          INDEX m_v v TYPE minmax GRANULARITY 1,
          INDEX m_w w TYPE minmax GRANULARITY 1
      ) ENGINE = MergeTree ORDER BY id
-     SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024;
+     SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024, add_minmax_index_for_numeric_columns = 0;
      INSERT INTO f_wide_drop_packed SELECT number, number * 7, number * 11 FROM numbers(2000);"
 
 # Scenario G: Wide, packed minmax + per-file set, DROP the per-file set. Per-file files gone,
@@ -196,7 +196,7 @@ run_scenario "G_wide_drop_perfile_index" g_wide_drop_perfile \
     "v BETWEEN 70 AND 700" 91 m_v \
     "DROP TABLE IF EXISTS g_wide_drop_perfile;
      CREATE TABLE g_wide_drop_perfile ($MIXED_COLUMNS) ENGINE = MergeTree ORDER BY id
-     SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4096, index_granularity = 1024;
+     SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4096, index_granularity = 1024, add_minmax_index_for_numeric_columns = 0;
      INSERT INTO g_wide_drop_perfile $MIXED_INSERT;" \
     "$PACKED_MIXED_FILES"
 
@@ -209,7 +209,7 @@ run_scenario "H_wide_add_column" h_wide_add_column \
      CREATE TABLE h_wide_add_column (
          id UInt64, v UInt64, INDEX m_v v TYPE minmax GRANULARITY 1
      ) ENGINE = MergeTree ORDER BY id
-     SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024;
+     SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024, add_minmax_index_for_numeric_columns = 0;
      INSERT INTO h_wide_add_column SELECT number, number * 7 FROM numbers(2000);"
 
 # Scenario I: Compact, sole packed minmax, ALTER UPDATE on the indexed column. Compact mutations
@@ -224,7 +224,7 @@ run_scenario "I_compact_update_indexed" i_compact_update_indexed \
          id UInt64, v UInt64, INDEX m_v v TYPE minmax GRANULARITY 1
      ) ENGINE = MergeTree ORDER BY id
      SETTINGS min_bytes_for_wide_part = '1G', min_rows_for_wide_part = 100000000,
-              packed_skip_index_max_bytes = '1M', index_granularity = 1024;
+              packed_skip_index_max_bytes = '1M', index_granularity = 1024, add_minmax_index_for_numeric_columns = 0;
      INSERT INTO i_compact_update_indexed SELECT number, number * 7 FROM numbers(2000);"
 
 # Scenario J: Wide, sole packed minmax, DROP the only packed index. Special-cased because it
@@ -235,7 +235,7 @@ out_J=$($CLIENT --multiquery $SYNC_ALTER -q "
     CREATE TABLE j_wide_drop_only (
         id UInt64, v UInt64, INDEX m_v v TYPE minmax GRANULARITY 1
     ) ENGINE = MergeTree ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024;
+    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO j_wide_drop_only SELECT number, number * 7 FROM numbers(2000);
 
     SELECT 'sec_before', secondary_indices_compressed_bytes FROM system.parts

@@ -5,8 +5,10 @@ SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_
     enable_parallel_replicas = 0, optimize_aggregation_in_order = 0;
 
 -- a parent row has fewer bytes than a group of the projection, so only the projection reaches min_bytes_for_wide_part
+-- the implicit minmax indices of add_minmax_index_for_numeric_columns would prune the marks of the base table and change
+-- the estimates and the real reads this test compares, so the tables opt out
 CREATE TABLE c_est (b UInt64, v UInt8, a FixedString(6)) ENGINE = MergeTree ORDER BY v
-    SETTINGS index_granularity = 8192, index_granularity_bytes = 1024, use_const_adaptive_granularity = 1, min_bytes_for_wide_part = 4600,
+    SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 8192, index_granularity_bytes = 1024, use_const_adaptive_granularity = 1, min_bytes_for_wide_part = 4600,
         min_rows_for_wide_part = 0, merge_max_block_size = 8192, enable_vertical_merge_algorithm = 0, enable_block_number_column = 0,
         enable_block_offset_column = 0, ratio_of_defaults_for_sparse_serialization = 1;
 CREATE TABLE c_real AS c_est;

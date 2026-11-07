@@ -1,0 +1,21 @@
+the alias expression is indexed
+auto_minmax_index_a
+auto_minmax_index_expr_alias
+alias values	0
+expression alias to physical
+auto_minmax_index_a
+physical values	100000
+unrelated setting alter
+auto_minmax_index_a
+physical values after unrelated setting alter	100000
+physical to expression alias
+auto_minmax_index_a
+alias values again	0
+type change of an expression alias
+auto_minmax_index_a
+alias values after the type change	0
+identifier alias to physical
+auto_minmax_index_a
+auto_minmax_index_a
+auto_minmax_index_id_alias
+physical values	100000

@@ -1244,6 +1244,11 @@ public:
         bool run_sanity_checks = true);
 
     std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
+
+    /// True iff a settings-only ALTER changed the set of implicitly created skip indices of the table
+    /// or of one of its projections (e.g. `enable_block_number_column` gating `add_minmax_index_for_block_number_column`),
+    /// so the recomputed metadata must be installed into the running table and not only persisted.
+    static bool implicitIndicesChanged(const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata);
     static void verifySortingKey(const KeyDescription & sorting_key);
 
     /// True iff the resolved sorting key (column list or data types) differs between two metadata snapshots.
@@ -1396,6 +1401,18 @@ public:
     /// Tables structure should be locked.
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
     MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
+
+    /// Finds a part among `src_parts` (parts of the source table of ATTACH/REPLACE PARTITION FROM or
+    /// MOVE PARTITION TO TABLE) that has files of an index of the destination table (`my_snapshot`) under the
+    /// file name that the destination reads, while the source table (`src_snapshot`) does not read them: either it
+    /// does not declare the index, or it derives a different file name from the index name because its
+    /// `escape_index_filenames` differs. Such files are left from a previous index with the same name.
+    /// Returns the index name and the part.
+    static std::optional<std::pair<String, DataPartPtr>> findSourcePartWithIndexFilesUnreadBySource(
+        const DataPartsVector & src_parts, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot);
+    /// The same, but throws `BAD_ARGUMENTS` if there is such a part.
+    static void checkSourcePartsHaveNoIndexFilesUnreadBySource(
+        const DataPartsVector & src_parts, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot);
 
     /// Level for a part adopted from `source_data` (ATTACH/REPLACE PARTITION FROM, CLONE AS,
     /// MOVE PARTITION TO TABLE). Preserve the source level only when this table merges parts

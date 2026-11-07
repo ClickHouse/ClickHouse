@@ -4,8 +4,10 @@
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 0, prefer_optimize_projection = 0, force_optimize_projection = 0,
     enable_parallel_replicas = 0, optimize_aggregation_in_order = 0;
 
+-- the implicit minmax indices of add_minmax_index_for_numeric_columns would prune the marks of the base table and change
+-- the estimates and the real reads this test compares, so the tables opt out
 CREATE TABLE t_est (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 100, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
         merge_max_block_size = 8192, enable_vertical_merge_algorithm = 0, enable_block_number_column = 0, enable_block_offset_column = 0;
 CREATE TABLE t_real AS t_est;
 ALTER TABLE t_real ADD PROJECTION p (SELECT b, sum(v), count() GROUP BY b);
@@ -101,7 +103,7 @@ FROM (EXPLAIN ESTIMATE SELECT b, sum(v) FROM w_real WHERE v % 2 = 0 AND b < 300 
 
 -- the exact count of whole ranges removes parts from the base read, but the optimizer weighs the projection on all of them
 CREATE TABLE c_est (d Date, id UInt64) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY (d, id)
-    SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 100, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
         merge_max_block_size = 8192, enable_block_number_column = 0, enable_block_offset_column = 0;
 CREATE TABLE c_real AS c_est;
 ALTER TABLE c_real ADD PROJECTION p_c (SELECT d, count() GROUP BY d);
@@ -117,7 +119,7 @@ FROM (EXPLAIN ESTIMATE SELECT count() FROM c_real WHERE d >= '2026-01-15' AND d 
 
 -- the key of an aggregate projection can be an expression over the columns of the table
 CREATE TABLE h_est (ts DateTime, v UInt64) ENGINE = MergeTree ORDER BY v
-    SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 100, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
         merge_max_block_size = 8192, enable_block_number_column = 0, enable_block_offset_column = 0;
 CREATE TABLE h_real AS h_est;
 ALTER TABLE h_real ADD PROJECTION p_h (SELECT toStartOfHour(ts), sum(v) GROUP BY toStartOfHour(ts));

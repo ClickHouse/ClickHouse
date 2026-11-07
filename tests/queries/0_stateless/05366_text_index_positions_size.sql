@@ -48,8 +48,8 @@ OPTIMIZE TABLE tab_plain FINAL;
 OPTIMIZE TABLE tab_phrase FINAL;
 
 WITH
-    (SELECT data_compressed_bytes FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab_phrase') AS phrase_bytes,
-    (SELECT data_compressed_bytes FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab_plain') AS plain_bytes
+    (SELECT data_compressed_bytes FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab_phrase' AND name = 'idx') AS phrase_bytes,
+    (SELECT data_compressed_bytes FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab_plain' AND name = 'idx') AS plain_bytes
 SELECT ((phrase_bytes - plain_bytes) / 1200000) < 0.7;
 
 SELECT 'Single positions: under 0.05 bytes per position';
@@ -62,8 +62,8 @@ OPTIMIZE TABLE tab_plain FINAL;
 OPTIMIZE TABLE tab_phrase FINAL;
 
 WITH
-    (SELECT data_compressed_bytes FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab_phrase') AS phrase_bytes,
-    (SELECT data_compressed_bytes FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab_plain') AS plain_bytes
+    (SELECT data_compressed_bytes FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab_phrase' AND name = 'idx') AS phrase_bytes,
+    (SELECT data_compressed_bytes FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab_plain' AND name = 'idx') AS plain_bytes
 SELECT ((phrase_bytes - plain_bytes) / 1200000) < 0.05;
 
 DROP TABLE tab_src;
