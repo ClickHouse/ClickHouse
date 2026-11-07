@@ -116,6 +116,7 @@ namespace FailPoints
 {
     extern const char merge_task_projection_stage_pause[];
     extern const char merge_task_pause_after_reserving_tmp_dir[];
+    extern const char merge_task_throw_while_preparing_next_column[];
 }
 
 namespace Setting
@@ -170,6 +171,7 @@ namespace MergeTreeSetting
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int FAULT_INJECTED;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
@@ -1369,7 +1371,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;
 
-    ctx->is_cancelled = [merges_blocker = global_ctx->merges_blocker,
+    ctx->merge_cancelled = [merges_blocker = global_ctx->merges_blocker,
         ttl_merges_blocker = global_ctx->ttl_merges_blocker,
         ttl_cancellable = ctx->need_remove_expired_values || isTTLMergeType(global_ctx->future_part->merge_type),
         merge_list_element = global_ctx->merge_list_element_ptr,
@@ -1394,10 +1396,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     /// Lets the worker threads of long single-block steps (e.g. vector similarity index build) stop on cancellation.
     global_ctx->merge_list_element_ptr->thread_group->setQueryCancellationPredicates(
-        ctx->is_cancelled,
-        [is_cancelled = ctx->is_cancelled]
+        ctx->merge_cancelled,
+        [merge_cancelled = ctx->merge_cancelled]
         {
-            if (is_cancelled())
+            if (merge_cancelled())
                 throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
         });
 
@@ -1997,7 +1999,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
         /// set, persist it into merge_list_element so that `checkOperationIsNotCanceled`
         /// in `finalize` reliably throws ABORTED even if SYSTEM START MERGES
         /// clears the blocker between these two reads.
-        bool cancelled = ctx->is_cancelled();
+        bool cancelled = ctx->merge_cancelled();
         if (cancelled || !global_ctx->merging_executor->pull(block))
         {
             if (cancelled)
@@ -2115,7 +2117,10 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     ctx->use_prefetch = all_parts_on_remote_disks && storage_settings[MergeTreeSetting::vertical_merge_remote_filesystem_prefetch];
 
     if (ctx->use_prefetch && ctx->it_name_and_type != global_ctx->gathering_columns.end())
+    {
         ctx->prepared_pipeline = createPipelineForReadingOneColumn(ctx->it_name_and_type->name);
+        prefetchMergeTreeSequentialSources(ctx->prepared_pipeline->pipeline);
+    }
 
     return false;
 }
@@ -2222,7 +2227,6 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
             apply_deleted_mask,
             /*filter=*/ std::nullopt,
             ctx->read_with_direct_io,
-            ctx->use_prefetch,
             allow_remote_fs_prefetch,
             global_ctx->context,
             getLogger("VerticalMergeStage"));
@@ -2312,23 +2316,27 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     ctx->progress_before = global_ctx->merge_list_element_ptr->progress.load(std::memory_order_relaxed);
     global_ctx->column_progress = std::make_unique<MergeStageProgress>(ctx->progress_before, ctx->column_sizes->columnWeight(column_name));
 
-    VerticalMergeRuntimeContext::PreparedColumnPipeline column_pipepline;
-    if (ctx->prepared_pipeline)
-    {
-        column_pipepline = std::move(*ctx->prepared_pipeline);
+    if (!ctx->prepared_pipeline)
+        ctx->prepared_pipeline.emplace(createPipelineForReadingOneColumn(column_name));
 
-        /// Prepare next column pipeline to initiate prefetching
-        auto next_column_it = std::next(ctx->it_name_and_type);
-        if (next_column_it != global_ctx->gathering_columns.end())
-            ctx->prepared_pipeline = createPipelineForReadingOneColumn(next_column_it->name);
-    }
-    else
-    {
-        column_pipepline = createPipelineForReadingOneColumn(column_name);
-    }
+    /// From `ctx` to `ctx`, never through a local: if anything below throws, a pipeline with prefetches in flight
+    /// must be destroyed with the task, after its runner cancels it.
+    ctx->build_statistics_transforms = std::move(ctx->prepared_pipeline->build_statistics_transforms);
+    ctx->column_parts_pipeline = std::move(ctx->prepared_pipeline->pipeline);
+    MergeTreeIndices indexes_to_recalc = std::move(ctx->prepared_pipeline->indexes_to_recalc);
+    ctx->prepared_pipeline.reset();
 
-    ctx->build_statistics_transforms = std::move(column_pipepline.build_statistics_transforms);
-    ctx->column_parts_pipeline = std::move(column_pipepline.pipeline);
+    /// Prepare next column pipeline to initiate prefetching
+    auto next_column_it = std::next(ctx->it_name_and_type);
+    if (ctx->use_prefetch && next_column_it != global_ctx->gathering_columns.end())
+    {
+        fiu_do_on(FailPoints::merge_task_throw_while_preparing_next_column,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while preparing the next column");
+        });
+        ctx->prepared_pipeline.emplace(createPipelineForReadingOneColumn(next_column_it->name));
+        prefetchMergeTreeSequentialSources(ctx->prepared_pipeline->pipeline);
+    }
 
     /// Dereference unique_ptr
     ctx->column_parts_pipeline.setProgressCallback(MergeProgressCallback(
@@ -2353,7 +2361,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         global_ctx->data_settings,
         global_ctx->metadata_snapshot,
         columns_list,
-        column_pipepline.indexes_to_recalc,
+        indexes_to_recalc,
         global_ctx->compression_codec,
         global_ctx->to->getIndexGranularity(),
         global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,
@@ -2961,6 +2969,8 @@ catch (...)
 
 void MergeTask::cancel() noexcept
 {
+    (*global_ctx->merge_entry)->is_cancelled.store(true, std::memory_order_relaxed);
+
     if (stages_iterator != stages.end())
         (*stages_iterator)->cancel();
 
@@ -3579,7 +3589,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             apply_deleted_mask,
             /*filter=*/ std::nullopt,
             ctx->read_with_direct_io,
-            /*prefetch_begin_of_range=*/ false,
             allow_remote_fs_prefetch,
             global_ctx->context,
             ctx->log);
