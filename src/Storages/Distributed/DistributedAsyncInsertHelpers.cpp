@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int EMPTY_DATA_PASSED;
     extern const int DISTRIBUTED_BROKEN_BATCH_INFO;
     extern const int DISTRIBUTED_BROKEN_BATCH_FILES;
+    extern const int UNKNOWN_FORMAT_VERSION;
 }
 
 /// 'remote_error' argument is used to decide whether some errors should be
@@ -46,6 +47,7 @@ bool isDistributedSendBroken(int code, bool remote_error)
         || code == ErrorCodes::CANNOT_DECOMPRESS
         || code == ErrorCodes::DISTRIBUTED_BROKEN_BATCH_INFO
         || code == ErrorCodes::DISTRIBUTED_BROKEN_BATCH_FILES
+        || code == ErrorCodes::UNKNOWN_FORMAT_VERSION
         || (!remote_error && code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
 }
 
