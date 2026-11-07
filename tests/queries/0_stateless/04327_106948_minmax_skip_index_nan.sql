@@ -190,9 +190,8 @@ DROP TABLE t_minmax_nan_tuple_set;
 
 -- Array and Map are excluded from the rule, so an all-finite Array minmax index keeps its pruning:
 -- only the sibling granule is read for a negated range. An Array bound hides a NaN as much as a float
--- one does, but a NaN element is ordered, so it also makes a positive predicate true and would need a
--- stronger treatment than this rule applies. That carrier is out of scope, so no arm asserts its
--- result and this fixture holds no NaN.
+-- one does, but a NaN element is ordered, so it also makes a positive predicate true: the upper end of
+-- such a bound is read as unbounded, so the pruned range here is on the lower side.
 DROP TABLE IF EXISTS t_minmax_nan_array;
 
 CREATE TABLE t_minmax_nan_array
@@ -204,7 +203,7 @@ INSERT INTO t_minmax_nan_array VALUES (4, [100.]), (5, [150.]), (6, [200.]);
 
 SELECT count() FROM t_minmax_nan_array WHERE NOT (a <= [3.]);
 SELECT count() FROM t_minmax_nan_array WHERE NOT (a <= [3.]) SETTINGS use_skip_indexes = 0;
-SELECT countIf(explain LIKE '%Granules: 1/2%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_minmax_nan_array WHERE NOT (a <= [3.]));
+SELECT countIf(explain LIKE '%Granules: 1/2%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_minmax_nan_array WHERE NOT (a >= [50.]));
 
 DROP TABLE t_minmax_nan_array;
 

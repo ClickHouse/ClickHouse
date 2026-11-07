@@ -67,6 +67,7 @@ public:
     ~MergeTreeIndexConditionMinMax() override = default;
 private:
     DataTypes index_data_types;
+    std::vector<size_t> columns_may_hide_value_above_max;
     KeyCondition condition;
 };
 
