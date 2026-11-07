@@ -1,0 +1,3 @@
+<clickhouse>
+    <seccomp_allow_io_uring>true</seccomp_allow_io_uring>
+</clickhouse>

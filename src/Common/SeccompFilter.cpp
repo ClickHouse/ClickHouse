@@ -22,10 +22,12 @@ std::atomic<int> requested_mode{-1};
 /// The mode of the filter in force: the requested one, or `Disabled` if no filter was installed.
 /// -1 if `installSeccompFilter` has not returned.
 std::atomic<int> installed_mode{-1};
+std::atomic<int> requested_allow_io_uring{-1};
 
-void rememberRequestedMode(SeccompMode mode)
+void rememberRequestedConfiguration(SeccompMode mode, bool allow_io_uring)
 {
     requested_mode.store(static_cast<int>(mode), std::memory_order_relaxed);
+    requested_allow_io_uring.store(allow_io_uring ? 1 : 0, std::memory_order_relaxed);
 }
 
 void rememberInstalledMode(SeccompMode mode)
@@ -51,6 +53,22 @@ std::optional<SeccompMode> getRequestedSeccompMode()
 std::optional<SeccompMode> getInstalledSeccompMode()
 {
     return loadMode(installed_mode);
+}
+
+std::optional<bool> getRequestedSeccompAllowIOUring()
+{
+    const int allow_io_uring = requested_allow_io_uring.load(std::memory_order_relaxed);
+    if (allow_io_uring < 0)
+        return std::nullopt;
+    return allow_io_uring != 0;
+}
+
+bool isIOUringRefusedBySeccomp()
+{
+    const auto mode = getInstalledSeccompMode();
+    const auto allow_io_uring = getRequestedSeccompAllowIOUring();
+    const bool enforcing = mode == SeccompMode::Errno || mode == SeccompMode::Trap || mode == SeccompMode::Kill;
+    return enforcing && allow_io_uring && !*allow_io_uring;
 }
 
 }
@@ -119,15 +137,8 @@ namespace DB
 /// action - see `refused_with_enosys`). Making a device node with `mknodat` is refused too, while
 /// its other uses - a FIFO for an executable user defined function among them - are not.
 ///
-/// Two of the allowed calls are worth calling out, because they are the largest remaining surface
-/// and both are here only because ClickHouse genuinely uses them: `perf_event_open` (for
-/// `metrics_perf_events_enabled`) and the `io_uring` family (for
-/// `local_filesystem_read_method = io_uring`). The filter sees `io_uring_enter` but not the
-/// operations queued in the ring, so whoever can make a ring can reach through it the operations
-/// that `io_uring` implements even where their system calls are refused here - such as the
-/// extended-attribute ones. `IORING_REGISTER_RESTRICTIONS` would not close that, since nothing
-/// stops a second, unrestricted ring from being made; refusing `io_uring_setup` would, at the price
-/// of the read method.
+/// `perf_event_open` (for `metrics_perf_events_enabled`) is worth calling out: it is the largest
+/// remaining allowed surface and is here only because ClickHouse genuinely uses it.
 /// clang-format off
 #define SECCOMP_ALLOWED_SYSCALLS_COMMON(M) \
     /* Reading and writing data. */ \
@@ -234,8 +245,6 @@ namespace DB
     N(rseq, rseq_syscall_number) \
     /* Watching and signalling a process by descriptor, used by the OOM canary. */ \
     N(pidfd_send_signal, 424) N(pidfd_open, 434) \
-    /* The `io_uring` read method. */ \
-    N(io_uring_setup, 425) N(io_uring_enter, 426) N(io_uring_register, 427) \
     /* Newer spellings of calls allowed above; which one is used is up to the libc. */ \
     N(close_range, 436) N(openat2, 437) N(faccessat2, 439) N(epoll_pwait2, 441) \
     N(futex_waitv, 449) N(fchmodat2, 452) N(futex_wake, 454) N(futex_wait, 455) \
@@ -288,6 +297,10 @@ constexpr int refused_with_enosys[] = {
     __NR_removexattr, __NR_lremovexattr, __NR_fremovexattr,
     setxattrat_syscall_number, getxattrat_syscall_number, listxattrat_syscall_number, removexattrat_syscall_number,
 };
+
+/// `io_uring_setup`, `io_uring_enter` and `io_uring_register`, numbered alike on every architecture.
+/// Refused with `ENOSYS` like the calls above unless allowed: the filter does not see a ring's operations.
+constexpr int io_uring_syscall_numbers[] = {425, 426, 427};
 
 constexpr int allowed_syscalls[] =
 {
@@ -511,7 +524,7 @@ void link(Program & program, const Blocks & blocks)
     }
 }
 
-Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt32 enosys_action)
+Program buildProgram(std::span<const Range> ranges, std::span<const int> enosys_numbers, UInt32 default_action, UInt32 enosys_action)
 {
     if (ranges.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The seccomp policy allows no system calls at all");
@@ -546,9 +559,9 @@ Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt3
 #endif
 
     /// Last, after the calls that are usually allowed: only refused calls get this far.
-    std::vector<int> enosys_numbers(std::begin(refused_with_enosys), std::end(refused_with_enosys));
-    std::sort(enosys_numbers.begin(), enosys_numbers.end());
-    for (const Range & range : toRanges(enosys_numbers))
+    std::vector<int> sorted_enosys_numbers(enosys_numbers.begin(), enosys_numbers.end());
+    std::sort(sorted_enosys_numbers.begin(), sorted_enosys_numbers.end());
+    for (const Range & range : toRanges(sorted_enosys_numbers))
     {
         if (range.first == range.last)
             program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, static_cast<UInt32>(range.first), 0, 1));
@@ -668,9 +681,13 @@ UInt32 evaluate(const Program & program, const struct seccomp_data & data)
 }
 
 void verifyProgram(
-    const Program & program, const std::unordered_set<int> & allowed, UInt32 default_action, UInt32 enosys_action)
+    const Program & program,
+    const std::unordered_set<int> & allowed,
+    std::span<const int> enosys_numbers,
+    UInt32 default_action,
+    UInt32 enosys_action)
 {
-    const std::unordered_set<int> enosys(std::begin(refused_with_enosys), std::end(refused_with_enosys));
+    const std::unordered_set<int> enosys(enosys_numbers.begin(), enosys_numbers.end());
 
     auto check = [&](const struct seccomp_data & data, UInt32 expected)
     {
@@ -897,9 +914,9 @@ void setNoNewPrivs()
 
 }
 
-SeccompFilterStatus installSeccompFilter(SeccompMode mode)
+SeccompFilterStatus installSeccompFilter(SeccompMode mode, bool allow_io_uring)
 {
-    rememberRequestedMode(mode);
+    rememberRequestedConfiguration(mode, allow_io_uring);
 
     if (mode == SeccompMode::Disabled)
     {
@@ -932,6 +949,9 @@ SeccompFilterStatus installSeccompFilter(SeccompMode mode)
     }
 
     std::vector<int> numbers(std::begin(allowed_syscalls), std::end(allowed_syscalls));
+    std::vector<int> enosys_numbers(std::begin(refused_with_enosys), std::end(refused_with_enosys));
+    std::vector<int> & io_uring_destination = allow_io_uring ? numbers : enosys_numbers;
+    io_uring_destination.insert(io_uring_destination.end(), std::begin(io_uring_syscall_numbers), std::end(io_uring_syscall_numbers));
     std::sort(numbers.begin(), numbers.end());
     numbers.erase(std::unique(numbers.begin(), numbers.end()), numbers.end());
 
@@ -950,8 +970,8 @@ SeccompFilterStatus installSeccompFilter(SeccompMode mode)
     /// Nothing is refused in the `log` mode, so there the calls refused with `ENOSYS` elsewhere
     /// get the same treatment as the rest of the policy.
     const UInt32 enosys_action = mode == SeccompMode::Log ? default_action : (SECCOMP_RET_ERRNO | UInt32{ENOSYS});
-    Program program = buildProgram(toRanges(numbers), default_action, enosys_action);
-    verifyProgram(program, allowed, default_action, enosys_action);
+    Program program = buildProgram(toRanges(numbers), enosys_numbers, default_action, enosys_action);
+    verifyProgram(program, allowed, enosys_numbers, default_action, enosys_action);
 
     if (program.size() > size_t{BPF_MAXINSNS})
         throw Exception(
@@ -1019,9 +1039,9 @@ SeccompFilterStatus installSeccompFilter(SeccompMode mode)
 namespace DB
 {
 
-SeccompFilterStatus installSeccompFilter(SeccompMode mode)
+SeccompFilterStatus installSeccompFilter(SeccompMode mode, bool allow_io_uring)
 {
-    rememberRequestedMode(mode);
+    rememberRequestedConfiguration(mode, allow_io_uring);
     /// Whatever the mode, no filter is installed here.
     rememberInstalledMode(SeccompMode::Disabled);
 
@@ -1049,9 +1069,9 @@ SeccompFilterStatus installSeccompFilter(SeccompMode mode)
 namespace DB
 {
 
-SeccompFilterStatus installSeccompFilter(SeccompMode mode)
+SeccompFilterStatus installSeccompFilter(SeccompMode mode, bool allow_io_uring)
 {
-    rememberRequestedMode(mode);
+    rememberRequestedConfiguration(mode, allow_io_uring);
     /// seccomp is a facility of the Linux kernel, so no filter is installed here, whatever the mode.
     rememberInstalledMode(SeccompMode::Disabled);
 

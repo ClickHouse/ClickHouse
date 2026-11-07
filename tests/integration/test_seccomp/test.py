@@ -21,7 +21,12 @@ errno_node = cluster.add_instance(
 )
 log_node = cluster.add_instance("log_node", main_configs=["configs/log.xml"])
 trap_node = cluster.add_instance(
-    "trap_node", main_configs=["configs/trap.xml", "configs/binary_checksum.xml"]
+    "trap_node",
+    main_configs=[
+        "configs/trap.xml",
+        "configs/binary_checksum.xml",
+        "configs/allow_io_uring.xml",
+    ],
 )
 # The setting comes from ZooKeeper, which the server reads only after it has loaded the local
 # configuration - where the setting is `trap`, from the shipped configuration file.
@@ -384,3 +389,106 @@ def test_reloaded_setting_does_not_replace_the_one_in_force(started_cluster):
             )
             == f"{installed}\n"
         )
+
+
+def run_io_uring_probe(node):
+    if node.is_built_with_memory_sanitizer():
+        pytest.skip("Memory Sanitizer cannot work with vfork")
+
+    return node.query(
+        "SELECT * FROM executable('io_uring_status.py', 'TabSeparated', "
+        "'setup_result String, enter_result String, register_result String')"
+    ).split()
+
+
+def test_io_uring_is_refused_unless_allowed(started_cluster):
+    # The `io_uring` calls are refused with `ENOSYS` unless `seccomp_allow_io_uring` is set, and
+    # not with the configured action: under `trap` that would have killed the script with `SIGSYS`
+    # and failed the query. `trap_node` sets the setting, `log` refuses nothing, `disabled` installs
+    # no filter.
+    for node in [default_node, errno_node]:
+        assert run_io_uring_probe(node) == ["ENOSYS", "ENOSYS", "ENOSYS"]
+    for node in [trap_node, log_node, disabled_node]:
+        assert run_io_uring_probe(node) == ["0", "EBADF", "EBADF"]
+
+    for node, expected in [(default_node, "0"), (trap_node, "1")]:
+        assert (
+            node.query(
+                "SELECT value, changeable_without_restart FROM system.server_settings "
+                "WHERE name = 'seccomp_allow_io_uring'"
+            )
+            == f"{expected}\tNo\n"
+        )
+
+
+def get_io_uring_sqes_submitted(node):
+    return int(
+        node.query(
+            "SELECT sum(value) FROM system.events WHERE event = 'IOUringSQEsSubmitted'"
+        )
+    )
+
+
+def test_query_with_io_uring_gets_a_clean_error(started_cluster):
+    # A query that asks for the `io_uring` read method on a server whose policy refuses the calls
+    # gets an error naming the setting, and the server keeps running under `trap`. Where the calls
+    # are allowed, or only logged, the read goes through the ring.
+    nodes = [default_node, trap_node, log_node]
+    for node in nodes:
+        node.query("CREATE TABLE io_uring_t (n UInt64) ENGINE = MergeTree ORDER BY n")
+        node.query("INSERT INTO io_uring_t SELECT number FROM numbers(1000)")
+        node.query(
+            "INSERT INTO FUNCTION file('io_uring_probe.tsv', 'TSV', 'n UInt64') "
+            "SELECT number FROM numbers(1000) SETTINGS engine_file_truncate_on_insert = 1"
+        )
+
+    merge_tree_query = (
+        "SELECT sum(n) FROM io_uring_t SETTINGS local_filesystem_read_method = 'io_uring'"
+    )
+    file_query = (
+        "SELECT sum(n) FROM file('io_uring_probe.tsv', 'TSV', 'n UInt64') "
+        "SETTINGS storage_file_read_method = 'io_uring'"
+    )
+
+    try:
+        for query in [merge_tree_query, file_query]:
+            assert "seccomp_allow_io_uring" in default_node.query_and_get_error(query)
+        assert default_node.query("SELECT 1") == "1\n"
+
+        for node in [trap_node, log_node]:
+            for query in [merge_tree_query, file_query]:
+                submitted_before = get_io_uring_sqes_submitted(node)
+                assert node.query(query) == "499500\n"
+                assert get_io_uring_sqes_submitted(node) > submitted_before
+    finally:
+        for node in nodes:
+            node.query("DROP TABLE IF EXISTS io_uring_t SYNC")
+
+
+def test_reloaded_io_uring_setting_does_not_replace_the_one_in_force(started_cluster):
+    # Like `seccomp`, the setting takes effect only after a restart, and `system.server_settings`
+    # keeps showing the value the policy was installed with.
+    with trap_node.with_replace_config(
+        "/etc/clickhouse-server/config.d/allow_io_uring.xml",
+        "<clickhouse><seccomp_allow_io_uring>false</seccomp_allow_io_uring></clickhouse>",
+        reload_before=True,
+        reload_after=True,
+    ):
+        assert (
+            trap_node.query(
+                "SELECT value, changeable_without_restart FROM system.server_settings "
+                "WHERE name = 'seccomp_allow_io_uring'"
+            )
+            == "1\tNo\n"
+        )
+        # See `test_setting_from_zookeeper_is_the_one_installed` for the dots.
+        assert trap_node.contains_in_log(
+            "seccomp_allow_io_uring. server setting was changed from .true. to .false. in the configuration"
+        )
+
+    assert (
+        trap_node.query(
+            "SELECT value FROM system.server_settings WHERE name = 'seccomp_allow_io_uring'"
+        )
+        == "1\n"
+    )

@@ -59,6 +59,12 @@
     <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>
     <columns_cache_size>0</columns_cache_size>
     <!--
+        `io_uring.xml` reads with `io_uring`, which the seccomp policy of the shipped configuration
+        refuses otherwise. The reference server, built from master before this setting exists,
+        accepts the key only because of `skip_check_for_incorrect_settings` above.
+    -->
+    <seccomp_allow_io_uring>1</seccomp_allow_io_uring>
+    <!--
         The tables of the tests live in `Atomic` databases, which keep the data of a dropped table
         for this long; the tests create and drop large tables, so free their disk space at once.
     -->

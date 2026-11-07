@@ -4,6 +4,7 @@
 
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
+#include <Common/SeccompFilter.h>
 
 namespace DB
 {
@@ -21,6 +22,12 @@ std::unique_ptr<IOUringReader> createIOUringReader()
 
 IOUringReader & getIOUringReaderOrThrow(ContextPtr context)
 {
+    if (isIOUringRefusedBySeccomp())
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "Cannot use the io_uring read method: the seccomp policy of the server refuses the io_uring system calls. "
+            "Set the `seccomp_allow_io_uring` server setting to `true` and restart the server, or use another read method");
+
     auto & reader = context->getIOUringReader();
     if (!reader.isSupported())
     {
