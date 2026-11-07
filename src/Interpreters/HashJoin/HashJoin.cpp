@@ -12,6 +12,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsCommon.h>
@@ -454,7 +455,7 @@ HashJoin::HashJoin(
     initRightBlockStructure(data->sample_block);
     data->sample_block = prepareRightBlock(data->sample_block);
 
-    if (!table_join->isRowStoreEnabled() || !isRowStoreSupported() || data->sample_block.columns() == 0)
+    if (!table_join->isRowStoreEnabled() || data->sample_block.columns() == 0)
         data->row_store_state = RowStoreState::Disabled;
 
     JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
@@ -1030,11 +1031,19 @@ void HashJoin::initRowStore(const Block & block)
     Columns row_store_columns;
     DataTypes row_store_types;
     size_t remaining_columns = 0;
+
+    /// A candidate chosen at planning goes to the row store if it arrives as a plain column
+    /// and is later reconstructed in the output.
+    auto can_be_in_row_store = [&](const String & name, const ColumnPtr & column)
+    {
+        return table_join->getRowStoreCandidateColumns().contains(name)
+            && !typeid_cast<const ColumnReplicated *>(column.get()) && !column->isSparse()
+            && (sample_block_with_columns_to_add.has(name) || name == asof_key_name);
+    };
+
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        /// Only add columns that will be later reconstructed in the output.
-        const String & saved_name = block_to_save.getByPosition(i).name;
-        if (isRowStorageUseful(columns[i]) && (sample_block_with_columns_to_add.has(saved_name) || saved_name == asof_key_name))
+        if (can_be_in_row_store(block_to_save.getByPosition(i).name, columns[i]))
         {
             access_indexes.push_back({ColumnAccessIndex::Type::RowStore, row_store_columns.size()});
             row_store_columns.push_back(columns[i]);
@@ -1068,6 +1077,7 @@ void HashJoin::initRowStore(const Block & block)
         access_index.field_offset = field.offset;
         access_index.field_size = field.size;
         access_index.is_nullable = field.is_nullable;
+        access_index.is_string = field.is_string;
     }
 
     data->row_store_state = RowStoreState::Initialized;
@@ -3102,15 +3112,6 @@ void HashJoin::tryConvertToFixedHashMap()
         reinitUsedFlags();
         recomputeBucketBytes();
     }
-}
-
-bool HashJoin::isRowStoreSupported() const
-{
-    /// ANY joins materialize eagerly and doesn't run the batched fill the row store accelerates.
-    return kind != JoinKind::Cross
-        && strictness != JoinStrictness::Any
-        && !table_join->getClauses().empty()
-        && !table_join->getMixedJoinExpression();
 }
 
 bool HashJoin::recordsRowRefsForStats() const

@@ -17,7 +17,6 @@
 #include <Common/memcpySmall.h>
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <Interpreters/Aggregator.h>
-#include <Interpreters/RowDataStore.h>
 
 namespace ProfileEvents
 {
@@ -878,11 +877,11 @@ AdaptiveStagedBytes NO_INLINE Aggregator::appendDelayedRecords(
             for (const auto & field : argument_layout.fixed_fields)
             {
                 const auto & [column, rows] = arguments[field.position];
-                RowDataStore::gatherFieldToRows(
-                    *column,
+                column->gatherSelectedIntoRows(
                     {rows + batch_begin, batch_rows},
                     {argument_rows.data(), batch_rows},
-                    field.offset);
+                    field.offset,
+                    /*null_map=*/ nullptr);
             }
         }
     };

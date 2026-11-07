@@ -590,3 +590,27 @@ TEST(JoinBlockNestedLoopPlanSetting, GatedOnThePlanVersion)
     EXPECT_FALSE(JoinSettings(serializeAt(makeJoinSettings({}), pre_block_nested_loop_version), pre_block_nested_loop_version)
                      .allow_block_nested_loop_join);
 }
+
+/// `min_string_column_bytes_for_hash_join_row_store` is written only towards a peer that knows the name, even with
+/// default join settings, and a plan from a peer that predates it is read back with the default.
+TEST(JoinRowStoreStringPlanSetting, GatedOnThePlanVersion)
+{
+    constexpr UInt64 pre_row_store_strings_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROW_STORE_STRING_COLUMN_BYTES - 1;
+    const auto defaults = makeJoinSettings({});
+    const auto changed = makeJoinSettings({{"min_string_column_bytes_for_hash_join_row_store", 1000u}});
+
+    auto carries_setting = [](const QueryPlanSerializationSettings & settings)
+    {
+        WriteBufferFromOwnString out;
+        settings.writeChangedBinary(out);
+        return out.str().contains("min_string_column_bytes_for_hash_join_row_store");
+    };
+
+    EXPECT_TRUE(carries_setting(serializeAt(defaults, current_version)));
+    EXPECT_EQ(JoinSettings(serializeAt(changed, current_version), current_version).min_string_column_bytes_for_hash_join_row_store, 1000u);
+
+    EXPECT_FALSE(carries_setting(serializeAt(defaults, pre_row_store_strings_version)));
+    EXPECT_FALSE(carries_setting(serializeAt(changed, pre_row_store_strings_version)));
+    const JoinSettings read_back(serializeAt(changed, pre_row_store_strings_version), pre_row_store_strings_version);
+    EXPECT_EQ(read_back.min_string_column_bytes_for_hash_join_row_store, defaults.min_string_column_bytes_for_hash_join_row_store);
+}
