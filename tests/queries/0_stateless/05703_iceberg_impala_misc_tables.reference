@@ -1,0 +1,42 @@
+iceberg_v2_no_deletes
+1	x
+2	y
+3	z
+6	3
+iceberg_v2_no_deletes_orc
+1	x
+2	y
+3	z
+6	3
+iceberg_with_key_metadata
+1	x
+2	y
+3	z
+iceberg_uppercase_col
+0
+iceberg_column_case_sensitivity_issue
+1	impala
+2	hive
+1	impala
+iceberg_migrated_alter_test
+0	A	0.5
+1	B	1.5
+2	C	2.5
+iceberg_migrated_alter_test_orc
+0	A	0.5
+1	B	1.5
+2	C	2.5
+iceberg_migrated_complex_test
+([0],'A',{true:1})	{2:3}	((0.5,{'B':1.5},[4]),{5:6})
+A	0.5
+iceberg_migrated_complex_test_orc
+([0],'A',{true:1})	{2:3}	((0.5,{'B':1.5},[4]),{5:6})
+A	0.5
+iceberg_mixed_file_format_test
+1	A	0.5
+2	B	1.5
+3	C	2.5
+4	D	3.5
+iceberg_with_puffin_stats
+1	1
+2	2

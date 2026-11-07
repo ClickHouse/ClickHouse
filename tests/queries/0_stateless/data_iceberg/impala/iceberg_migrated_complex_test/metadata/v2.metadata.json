@@ -1,0 +1,279 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "61beb841-ed4d-40f3-8be1-7b994886212f",
+  "location" : "/test-warehouse/iceberg_migrated_complex_test",
+  "last-updated-ms" : 1656501596751,
+  "last-column-id" : 21,
+  "schema" : {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "struct_1_col",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 4,
+          "name" : "int_array_col",
+          "required" : false,
+          "type" : {
+            "type" : "list",
+            "element-id" : 7,
+            "element" : "int",
+            "element-required" : false
+          }
+        }, {
+          "id" : 5,
+          "name" : "string_col",
+          "required" : false,
+          "type" : "string"
+        }, {
+          "id" : 6,
+          "name" : "bool_int_map_col",
+          "required" : false,
+          "type" : {
+            "type" : "map",
+            "key-id" : 8,
+            "key" : "boolean",
+            "value-id" : 9,
+            "value" : "int",
+            "value-required" : false
+          }
+        } ]
+      }
+    }, {
+      "id" : 2,
+      "name" : "int_bigint_map_col",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 10,
+        "key" : "int",
+        "value-id" : 11,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "struct_2_col",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 12,
+          "name" : "struct_3_col",
+          "required" : false,
+          "type" : {
+            "type" : "struct",
+            "fields" : [ {
+              "id" : 14,
+              "name" : "float_col",
+              "required" : false,
+              "type" : "float"
+            }, {
+              "id" : 15,
+              "name" : "string_double_map_col",
+              "required" : false,
+              "type" : {
+                "type" : "map",
+                "key-id" : 17,
+                "key" : "string",
+                "value-id" : 18,
+                "value" : "double",
+                "value-required" : false
+              }
+            }, {
+              "id" : 16,
+              "name" : "bigint_array_col",
+              "required" : false,
+              "type" : {
+                "type" : "list",
+                "element-id" : 19,
+                "element" : "long",
+                "element-required" : false
+              }
+            } ]
+          }
+        }, {
+          "id" : 13,
+          "name" : "int_int_map_col",
+          "required" : false,
+          "type" : {
+            "type" : "map",
+            "key-id" : 20,
+            "key" : "int",
+            "value-id" : 21,
+            "value" : "int",
+            "value-required" : false
+          }
+        } ]
+      }
+    } ]
+  },
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "struct_1_col",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 4,
+          "name" : "int_array_col",
+          "required" : false,
+          "type" : {
+            "type" : "list",
+            "element-id" : 7,
+            "element" : "int",
+            "element-required" : false
+          }
+        }, {
+          "id" : 5,
+          "name" : "string_col",
+          "required" : false,
+          "type" : "string"
+        }, {
+          "id" : 6,
+          "name" : "bool_int_map_col",
+          "required" : false,
+          "type" : {
+            "type" : "map",
+            "key-id" : 8,
+            "key" : "boolean",
+            "value-id" : 9,
+            "value" : "int",
+            "value-required" : false
+          }
+        } ]
+      }
+    }, {
+      "id" : 2,
+      "name" : "int_bigint_map_col",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 10,
+        "key" : "int",
+        "value-id" : 11,
+        "value" : "long",
+        "value-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "struct_2_col",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 12,
+          "name" : "struct_3_col",
+          "required" : false,
+          "type" : {
+            "type" : "struct",
+            "fields" : [ {
+              "id" : 14,
+              "name" : "float_col",
+              "required" : false,
+              "type" : "float"
+            }, {
+              "id" : 15,
+              "name" : "string_double_map_col",
+              "required" : false,
+              "type" : {
+                "type" : "map",
+                "key-id" : 17,
+                "key" : "string",
+                "value-id" : 18,
+                "value" : "double",
+                "value-required" : false
+              }
+            }, {
+              "id" : 16,
+              "name" : "bigint_array_col",
+              "required" : false,
+              "type" : {
+                "type" : "list",
+                "element-id" : 19,
+                "element" : "long",
+                "element-required" : false
+              }
+            } ]
+          }
+        }, {
+          "id" : 13,
+          "name" : "int_int_map_col",
+          "required" : false,
+          "type" : {
+            "type" : "map",
+            "key-id" : 20,
+            "key" : "int",
+            "value-id" : 21,
+            "value" : "int",
+            "value-required" : false
+          }
+        } ]
+      }
+    } ]
+  } ],
+  "partition-spec" : [ ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "last_modified_time" : "1656501596",
+    "gc.enabled" : "TRUE",
+    "bucketing_version" : "2",
+    "schema.name-mapping.default" : "[ {\n  \"field-id\" : 1,\n  \"names\" : [ \"struct_1_col\" ],\n  \"fields\" : [ {\n    \"field-id\" : 2,\n    \"names\" : [ \"int_array_col\" ],\n    \"fields\" : [ {\n      \"field-id\" : 3,\n      \"names\" : [ \"element\" ]\n    } ]\n  }, {\n    \"field-id\" : 4,\n    \"names\" : [ \"string_col\" ]\n  }, {\n    \"field-id\" : 5,\n    \"names\" : [ \"bool_int_map_col\" ],\n    \"fields\" : [ {\n      \"field-id\" : 6,\n      \"names\" : [ \"key\" ]\n    }, {\n      \"field-id\" : 7,\n      \"names\" : [ \"value\" ]\n    } ]\n  } ]\n}, {\n  \"field-id\" : 8,\n  \"names\" : [ \"int_bigint_map_col\" ],\n  \"fields\" : [ {\n    \"field-id\" : 9,\n    \"names\" : [ \"key\" ]\n  }, {\n    \"field-id\" : 10,\n    \"names\" : [ \"value\" ]\n  } ]\n}, {\n  \"field-id\" : 11,\n  \"names\" : [ \"struct_2_col\" ],\n  \"fields\" : [ {\n    \"field-id\" : 12,\n    \"names\" : [ \"struct_3_col\" ],\n    \"fields\" : [ {\n      \"field-id\" : 13,\n      \"names\" : [ \"float_col\" ]\n    }, {\n      \"field-id\" : 14,\n      \"names\" : [ \"string_double_map_col\" ],\n      \"fields\" : [ {\n        \"field-id\" : 15,\n        \"names\" : [ \"key\" ]\n      }, {\n        \"field-id\" : 16,\n        \"names\" : [ \"value\" ]\n      } ]\n    }, {\n      \"field-id\" : 17,\n      \"names\" : [ \"bigint_array_col\" ],\n      \"fields\" : [ {\n        \"field-id\" : 18,\n        \"names\" : [ \"element\" ]\n      } ]\n    } ]\n  }, {\n    \"field-id\" : 19,\n    \"names\" : [ \"int_int_map_col\" ],\n    \"fields\" : [ {\n      \"field-id\" : 20,\n      \"names\" : [ \"key\" ]\n    }, {\n      \"field-id\" : 21,\n      \"names\" : [ \"value\" ]\n    } ]\n  } ]\n} ]",
+    "last_modified_by" : "gfurnstahl",
+    "storage_handler" : "org.apache.iceberg.mr.hive.HiveIcebergStorageHandler",
+    "numFilesErasureCoded" : "0",
+    "engine.hive.enabled" : "true",
+    "MIGRATED_TO_ICEBERG" : "true",
+    "totalSize" : "3006",
+    "EXTERNAL" : "TRUE",
+    "write.format.default" : "parquet",
+    "numFiles" : "1",
+    "TRANSLATED_TO_EXTERNAL" : "TRUE",
+    "table_type" : "ICEBERG"
+  },
+  "current-snapshot-id" : 3911840040574896148,
+  "snapshots" : [ {
+    "snapshot-id" : 3911840040574896148,
+    "timestamp-ms" : 1656501596751,
+    "summary" : {
+      "operation" : "append",
+      "added-data-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "3006",
+      "changed-partition-count" : "1",
+      "total-records" : "1",
+      "total-files-size" : "3006",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "/test-warehouse/iceberg_migrated_complex_test/metadata/snap-3911840040574896148-1-152e384f-2851-44b7-9ada-1bfbec74e9fc.avro",
+    "schema-id" : 0
+  } ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1656501596751,
+    "snapshot-id" : 3911840040574896148
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1656501596629,
+    "metadata-file" : "/test-warehouse/iceberg_migrated_complex_test/metadata/00000-050bc482-2885-4c5f-82a5-db316f892552.metadata.json"
+  } ]
+}

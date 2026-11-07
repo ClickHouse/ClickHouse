@@ -1,0 +1,81 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "7068d1a4-ba6e-4f14-ba63-4014606f91fe",
+  "location" : "/test-warehouse/iceberg_migrated_alter_test",
+  "last-updated-ms" : 1656338172830,
+  "last-column-id" : 3,
+  "schema" : {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "int_col",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "string_col",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "double_col",
+      "required" : false,
+      "type" : "double"
+    } ]
+  },
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "int_col",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "string_col",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "double_col",
+      "required" : false,
+      "type" : "double"
+    } ]
+  } ],
+  "partition-spec" : [ ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "last_modified_time" : "1656338172",
+    "gc.enabled" : "TRUE",
+    "bucketing_version" : "2",
+    "schema.name-mapping.default" : "[ {\n  \"field-id\" : 1,\n  \"names\" : [ \"int_col\" ]\n}, {\n  \"field-id\" : 2,\n  \"names\" : [ \"string_col\" ]\n}, {\n  \"field-id\" : 3,\n  \"names\" : [ \"double_col\" ]\n} ]",
+    "last_modified_by" : "gfurnstahl",
+    "storage_handler" : "org.apache.iceberg.mr.hive.HiveIcebergStorageHandler",
+    "numFilesErasureCoded" : "0",
+    "engine.hive.enabled" : "true",
+    "MIGRATED_TO_ICEBERG" : "true",
+    "totalSize" : "817",
+    "EXTERNAL" : "TRUE",
+    "write.format.default" : "parquet",
+    "numFiles" : "1",
+    "TRANSLATED_TO_EXTERNAL" : "TRUE",
+    "table_type" : "ICEBERG"
+  },
+  "current-snapshot-id" : -1,
+  "snapshots" : [ ],
+  "snapshot-log" : [ ],
+  "metadata-log" : [ ]
+}

@@ -1,0 +1,70 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "574fa22d-ffd7-4ee5-984f-5a4b2d1d5c84",
+  "location" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_v2_positional_delete_all_rows",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1660914572575,
+  "last-column-id" : 2,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "i",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "s",
+      "required" : false,
+      "type" : "string"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "engine.hive.enabled" : "true",
+    "bucketing_version" : "2",
+    "serialization.format" : "1",
+    "storage_handler" : "org.apache.iceberg.mr.hive.HiveIcebergStorageHandler"
+  },
+  "current-snapshot-id" : 8593920101374128463,
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 8593920101374128463,
+    "timestamp-ms" : 1660914572575,
+    "summary" : {
+      "operation" : "append",
+      "added-data-files" : "1",
+      "added-records" : "3",
+      "added-files-size" : "625",
+      "changed-partition-count" : "1",
+      "total-records" : "3",
+      "total-files-size" : "625",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_v2_positional_delete_all_rows/metadata/snap-8593920101374128463-1-236523f7-a5bc-459f-b4c9-16af5bd43bca.avro",
+    "schema-id" : 0
+  } ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1660914572575,
+    "snapshot-id" : 8593920101374128463
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1660914560473,
+    "metadata-file" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_v2_positional_delete_all_rows/metadata/00000-2bb68bdc-ac69-4fc7-9647-a09f3ee32c4f.metadata.json"
+  } ]
+}

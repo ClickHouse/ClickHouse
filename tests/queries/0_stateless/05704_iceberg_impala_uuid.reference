@@ -1,0 +1,40 @@
+iceberg_uuid_test
+1	12345678-1234-5678-1234-567812345678	alice
+2	abcdefab-cdef-abcd-efab-cdefabcdefab	bob
+3	00000000-0000-0000-0000-000000000000	zeros
+4	\N	null_uuid
+5	ffffffff-ffff-ffff-ffff-ffffffffffff	max
+1
+2
+5
+4
+5	4	4
+iceberg_uuid_test_orc
+1	12345678-1234-5678-1234-567812345678	alice
+2	abcdefab-cdef-abcd-efab-cdefabcdefab	bob
+3	00000000-0000-0000-0000-000000000000	zeros
+4	\N	null_uuid
+5	ffffffff-ffff-ffff-ffff-ffffffffffff	max
+1
+2
+5
+4
+iceberg_uuid_test_avro
+1	12345678-1234-5678-1234-567812345678	alice
+2	abcdefab-cdef-abcd-efab-cdefabcdefab	bob
+3	00000000-0000-0000-0000-000000000000	zeros
+4	\N	null_uuid
+5	ffffffff-ffff-ffff-ffff-ffffffffffff	max
+1
+iceberg_uuid_test_part
+1	00000000-0000-0000-0000-000000000000	00000000-0000-0000-0000-000000000000
+2	ffffffff-ffff-ffff-ffff-ffffffffffff	ffffffff-ffff-ffff-ffff-ffffffffffff
+3	12345678-1234-5678-1234-567812345678	12345678-1234-5678-1234-567812345678
+4	12345678-1234-5678-1234-567812345678	80000000-0000-0000-0000-000000000000
+5	\N	\N
+3
+4
+5
+3
+3
+4

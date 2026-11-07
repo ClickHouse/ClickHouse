@@ -1,0 +1,116 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "40f528e5-19f7-465b-86a6-6943e536b009",
+  "location" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_legacy_partition_schema_evolution_orc",
+  "last-updated-ms" : 1645033713901,
+  "last-column-id" : 4,
+  "schema" : {
+    "type" : "struct",
+    "fields" : [ {
+      "id" : 2,
+      "name" : "p_int_long",
+      "required" : false,
+      "type" : "long",
+      "doc" : "from deserializer"
+    }, {
+      "id" : 3,
+      "name" : "p_float_double",
+      "required" : false,
+      "type" : "double",
+      "doc" : "from deserializer"
+    }, {
+      "id" : 4,
+      "name" : "p_dec_dec",
+      "required" : false,
+      "type" : "decimal(8, 3)",
+      "doc" : "from deserializer"
+    }, {
+      "id" : 1,
+      "name" : "i",
+      "required" : false,
+      "type" : "int",
+      "doc" : "from deserializer"
+    } ]
+  },
+  "partition-spec" : [ {
+    "name" : "p_int_long",
+    "transform" : "identity",
+    "source-id" : 2,
+    "field-id" : 1000
+  }, {
+    "name" : "p_float_double",
+    "transform" : "identity",
+    "source-id" : 3,
+    "field-id" : 1001
+  }, {
+    "name" : "p_dec_dec",
+    "transform" : "identity",
+    "source-id" : 4,
+    "field-id" : 1002
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "p_int_long",
+      "transform" : "identity",
+      "source-id" : 2,
+      "field-id" : 1000
+    }, {
+      "name" : "p_float_double",
+      "transform" : "identity",
+      "source-id" : 3,
+      "field-id" : 1001
+    }, {
+      "name" : "p_dec_dec",
+      "transform" : "identity",
+      "source-id" : 4,
+      "field-id" : 1002
+    } ]
+  } ],
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "engine.hive.enabled" : "true",
+    "last_modified_time" : "1645033399",
+    "EXTERNAL" : "TRUE",
+    "write.format.default" : "orc",
+    "gc.enabled" : "TRUE",
+    "TRANSLATED_TO_EXTERNAL" : "TRUE",
+    "bucketing_version" : "2",
+    "schema.name-mapping.default" : "[ {\n  \"field-id\" : 1,\n  \"names\" : [ \"i\" ]\n}, {\n  \"field-id\" : 2,\n  \"names\" : [ \"p_int_long\" ]\n}, {\n  \"field-id\" : 3,\n  \"names\" : [ \"p_float_double\" ]\n}, {\n  \"field-id\" : 4,\n  \"names\" : [ \"p_dec_dec\" ]\n} ]",
+    "last_modified_by" : "boroknagyz",
+    "storage_handler" : "org.apache.iceberg.mr.hive.HiveIcebergStorageHandler",
+    "table_type" : "ICEBERG"
+  },
+  "current-snapshot-id" : 6654673546382518186,
+  "snapshots" : [ {
+    "snapshot-id" : 6654673546382518186,
+    "timestamp-ms" : 1645033399760,
+    "summary" : {
+      "operation" : "append",
+      "added-data-files" : "2",
+      "added-records" : "2",
+      "added-files-size" : "858",
+      "changed-partition-count" : "2",
+      "total-records" : "2",
+      "total-files-size" : "858",
+      "total-data-files" : "2",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_legacy_partition_schema_evolution_orc/metadata/snap-888589552112488046-1-8db62f0e-38e5-434b-94dc-c84210302ad8.avro"
+  } ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1645033399760,
+    "snapshot-id" : 6654673546382518186
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1645033399611,
+    "metadata-file" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_legacy_partition_schema_evolution_orc/metadata/v1.metadata.json"
+  } ]
+}
