@@ -88,7 +88,12 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     /// for unsupported overloads and mixed expressions.
     std::unordered_set<const ActionsDAG::Node *> volume_reducing_functions;
     if (settings.push_down_volume_reducing_functions)
-        volume_reducing_functions = collectVolumeReducingFunctionsToKeepBelow(expression);
+    {
+        ActionsDAG::NodeRawConstPtrs sort_column_nodes;
+        for (const auto & sort_column : sort_columns)
+            sort_column_nodes.push_back(expression.tryFindInOutputs(sort_column));
+        volume_reducing_functions = collectVolumeReducingFunctionsToKeepBelow(expression, sort_column_nodes, /*is_filter=*/ false);
+    }
     auto [needed_for_sorting, unneeded_for_sorting, _]
         = expression.splitActionsBySortingDescription(sort_columns, std::move(volume_reducing_functions));
 
