@@ -5,9 +5,11 @@
 #include <Common/FailPoint.h>
 #include <Common/Exception.h>
 #include <Common/ProcfsMetricsProvider.h>
+#include <Common/SeccompFilter.h>
 #include <Common/hasLinuxCapability.h>
 
 #include <fstream>
+#include <mutex>
 #include <optional>
 
 #include <fcntl.h>
@@ -402,6 +404,18 @@ bool PerfEventsCounters::processThreadLocalChanges(const std::string & needed_ev
     if (events_to_open.empty())
     {
         return true;
+    }
+
+    if (isPerfEventOpenRefusedBySeccomp())
+    {
+        static std::once_flag logged;
+        std::call_once(logged, []
+        {
+            LOG_WARNING(getLogger("PerfEvents"),
+                "`metrics_perf_events_enabled` is set, but the seccomp policy of this process refuses `perf_event_open`, "
+                "because the `seccomp_allow_perf_events` server setting is `false`, so no perf events are measured");
+        });
+        return false;
     }
 
     // check permissions
