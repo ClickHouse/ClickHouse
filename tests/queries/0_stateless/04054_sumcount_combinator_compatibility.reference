@@ -44,14 +44,14 @@ SELECT finalizeAggregation(CAST(unhex('00'), 'AggregateFunction(sumCountDistinct
 (0,0)
 -- sumCountDistinct: round-trip.
 SELECT hex(sumCountDistinctState(x)) FROM (SELECT number::Nullable(UInt8) AS x FROM numbers(5) WHERE x > 0);
-0404020103
+0401040203
 SELECT hex(sumCountDistinctState(x)) FROM (SELECT CAST(1, 'Nullable(UInt8)') AS x WHERE 0);
 00
 SELECT hex(sumCountDistinctState(x)) FROM (SELECT CAST(NULL, 'Nullable(UInt8)') AS x);
 00
 -- sumCountDistinct: LowCardinality(Nullable) same format.
 SELECT hex(sumCountDistinctState(x)) FROM (SELECT CAST(number, 'LowCardinality(Nullable(UInt8))') AS x FROM numbers(5) WHERE x > 0);
-0404020103
+0401040203
 -- sumCountDistinctIf: deserialize old state and round-trip.
 SELECT finalizeAggregation(CAST(unhex('03040203'), 'AggregateFunction(sumCountDistinctIf, Nullable(UInt8), UInt8)'));
 (9,3)
