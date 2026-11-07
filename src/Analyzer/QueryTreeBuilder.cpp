@@ -25,6 +25,7 @@
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTInterpolateElement.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Core/Streaming/CursorTree.h>
 
 #include <Parsers/ASTSampleRatio.h>
@@ -67,6 +68,7 @@ namespace Setting
     extern const SettingsBool any_join_distinct_right_table_keys;
     extern const SettingsJoinStrictness join_default_strictness;
     extern const SettingsBool enable_order_by_all;
+    extern const SettingsBool enable_unaligned_array_join;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsUInt64 max_query_size;
@@ -148,6 +150,11 @@ std::optional<UnnestTableExpression> tryGetUnnestTableExpression(const ASTTableE
     if (result.arguments.empty())
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function {} requires at least one argument",
             function.formatForErrorMessage());
+
+    for (const auto & argument : result.arguments)
+        if (!dynamic_cast<const ASTWithAlias *>(argument.get()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function {} expects expressions as arguments, got {}",
+                function.formatForErrorMessage(), argument->formatForErrorMessage());
 
     result.with_ordinality = table_expression.with_ordinality;
     result.table_alias = function.tryGetAlias();
@@ -253,30 +260,43 @@ ASTPtr makeSelectWithUnionQuery(ASTPtr select_expression_list, ASTPtr from_selec
     return select_with_union_query;
 }
 
-/// `range(1, length(e1) + 1)`; for several arrays the longest one counts.
+/// `length(e1)`; for several arrays the longest one counts.
+ASTPtr buildUnnestLength(const ASTs & arguments)
+{
+    if (arguments.size() == 1)
+        return makeASTFunction("length", arguments.front()->clone());
+
+    auto greatest = makeASTFunction("greatest");
+    for (const auto & argument : arguments)
+        greatest->arguments->children.push_back(makeASTFunction("length", argument->clone()));
+    return greatest;
+}
+
+/// `range(1, length(e1) + 1)`.
 ASTPtr buildUnnestOrdinalityArray(const ASTs & arguments)
 {
-    ASTPtr length;
-    if (arguments.size() == 1)
-    {
-        length = makeASTFunction("length", arguments.front()->clone());
-    }
-    else
-    {
-        auto greatest = makeASTFunction("greatest");
-        for (const auto & argument : arguments)
-            greatest->arguments->children.push_back(makeASTFunction("length", argument->clone()));
-        length = std::move(greatest);
-    }
-
     return makeASTFunction("range",
         make_intrusive<ASTLiteral>(UInt64(1)),
-        makeASTOperator("plus", std::move(length), make_intrusive<ASTLiteral>(UInt64(1))));
+        makeASTOperator("plus", buildUnnestLength(arguments), make_intrusive<ASTLiteral>(UInt64(1))));
+}
+
+/// With `enable_unaligned_array_join`, several arrays are padded to the longest one.
+ASTs buildUnnestArrays(const ASTs & arguments, bool pad_unaligned)
+{
+    ASTs arrays;
+    for (const auto & argument : arguments)
+    {
+        if (pad_unaligned && arguments.size() > 1)
+            arrays.push_back(makeASTFunction("arrayResize", argument->clone(), buildUnnestLength(arguments)));
+        else
+            arrays.push_back(argument->clone());
+    }
+    return arrays;
 }
 
 /// Standalone `unnest(...)`: `SELECT arrayJoin(e1) AS c1`, or one `arrayJoin` of the zipped arrays whose
 /// tuple elements are the columns.
-ASTPtr buildUnnestSubquery(const UnnestTableExpression & unnest)
+ASTPtr buildUnnestSubquery(const UnnestTableExpression & unnest, bool pad_unaligned)
 {
     if (unnest.arguments.size() == 1 && !unnest.with_ordinality)
     {
@@ -292,8 +312,8 @@ ASTPtr buildUnnestSubquery(const UnnestTableExpression & unnest)
     auto element_name = makeFreshName("__unnest_element", used_names);
 
     auto zipped_arrays = makeASTFunction("arrayZip");
-    for (const auto & argument : unnest.arguments)
-        zipped_arrays->arguments->children.push_back(argument->clone());
+    for (auto & array : buildUnnestArrays(unnest.arguments, pad_unaligned))
+        zipped_arrays->arguments->children.push_back(std::move(array));
     if (unnest.with_ordinality)
         zipped_arrays->arguments->children.push_back(buildUnnestOrdinalityArray(unnest.arguments));
 
@@ -364,15 +384,16 @@ void replaceUnnestQualifiedColumns(ASTPtr & ast, const String & table_alias, con
   * with the per-row mask `arrayMap((c1, ..., ck, Q1, ..., Qk) -> c, A1, ..., Ak, A1, ..., Ak)`, where `u.ci` in `c` is
   * replaced by the fresh name `Qi`, so that no lambda in `c` can capture it.
   */
-ASTPtr buildUnnestArrayJoinExpressions(const UnnestTableExpression & unnest, const ASTPtr & on_expression)
+ASTPtr buildUnnestArrayJoinExpressions(const UnnestTableExpression & unnest, const ASTPtr & on_expression, bool pad_unaligned)
 {
-    ASTs arrays;
-    for (const auto & argument : unnest.arguments)
-        arrays.push_back(argument->clone());
+    bool has_condition = !isTrivialUnnestJoinCondition(on_expression);
+
+    /// Without a condition this is a plain `ARRAY JOIN`, which pads by itself.
+    ASTs arrays = buildUnnestArrays(unnest.arguments, pad_unaligned && has_condition);
     if (unnest.with_ordinality)
         arrays.push_back(buildUnnestOrdinalityArray(unnest.arguments));
 
-    if (!isTrivialUnnestJoinCondition(on_expression))
+    if (has_condition)
     {
         NameSet used_names(unnest.column_names.begin(), unnest.column_names.end());
         collectNames(on_expression, used_names);
@@ -1351,6 +1372,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
     auto & tables = tables_in_select_query->as<ASTTablesInSelectQuery &>();
 
     QueryTreeNodes table_expressions;
+    bool pad_unaligned = context->getSettingsRef()[Setting::enable_unaligned_array_join];
 
     for (const auto & table_element_untyped : tables.children)
     {
@@ -1409,7 +1431,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 /// A lateral `unnest` becomes an ARRAY JOIN of the preceding tables, built with the join below.
                 if (!is_lateral_unnest)
                 {
-                    auto subquery = buildUnnestSubquery(*unnest);
+                    auto subquery = buildUnnestSubquery(*unnest, pad_unaligned);
                     auto node = buildSelectWithUnionExpression(subquery, true /*is_subquery*/, {} /*cte_data*/, select_query.aliases(), context);
                     node->setAlias(unnest->table_alias);
                     node->setOriginalAST(subquery);
@@ -1525,7 +1547,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             auto left_table_expression = std::move(table_expressions.back());
             table_expressions.pop_back();
 
-            auto array_join_expressions = buildUnnestArrayJoinExpressions(*unnest, table_join.on_expression);
+            auto array_join_expressions = buildUnnestArrayJoinExpressions(*unnest, table_join.on_expression, pad_unaligned);
             auto array_join_node = std::make_shared<ArrayJoinNode>(
                 std::move(left_table_expression), buildExpressionList(array_join_expressions, context), table_join.kind == JoinKind::Left);
             array_join_node->setUnnestAlias(unnest->table_alias);

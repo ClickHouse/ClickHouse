@@ -38,7 +38,8 @@ DESCRIBE (SELECT * FROM unnest([1, 2], ['a', 'b']));
 DESCRIBE (SELECT * FROM unnest(['a', 'b']) WITH ORDINALITY);
 DESCRIBE (SELECT * FROM unnest(['a', 'b']) WITH ORDINALITY AS u(x));
 DESCRIBE (SELECT * FROM unnest(['a', 'b']) WITH ORDINALITY AS t);
-SELECT * FROM unnest(map('a', 1, 'b', 2)) ORDER BY ALL;
+SELECT * FROM unnest([1, 2], ['a']) ORDER BY ALL SETTINGS enable_unaligned_array_join = 1;
+SELECT * FROM unnest([1, 2], ['a']) WITH ORDINALITY ORDER BY ALL SETTINGS enable_unaligned_array_join = 1;
 SELECT a.x, b.y FROM unnest([1, 2, 3]) AS a(x) JOIN unnest([2, 3, 4]) AS b(y) ON a.x = b.y ORDER BY ALL;
 
 SELECT '-- errors';
@@ -56,6 +57,12 @@ SELECT * FROM unnest([1]) AS u, unnest([2]) AS u; -- { serverError MULTIPLE_EXPR
 SELECT * FROM t_unnest AS t, unnest(t.arr), unnest(t.tags); -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 SELECT * FROM t_unnest AS t, unnest(t.arr) AS u(x) WHERE 10 IN u; -- { serverError UNKNOWN_IDENTIFIER }
 SELECT * FROM t_unnest AS t, unnest(t.arr) AS u(x) JOIN u ON 1; -- { serverError UNKNOWN_TABLE }
+SELECT * FROM t_unnest AS t, unnest(*); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM t_unnest AS t CROSS JOIN unnest(COLUMNS('arr')) AS u(x); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM unnest(*); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM t_unnest AS t, unnest(t.arr, SETTINGS max_threads = 1); -- { serverError BAD_ARGUMENTS }
+SELECT one.x FROM system.one, unnest([1]) AS one(x); -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
+SELECT * FROM t_unnest, unnest(t_unnest.arr) AS t_unnest; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 
 SELECT '-- lateral';
 SELECT id, x FROM t_unnest AS t, unnest(t.arr) AS x ORDER BY ALL;
@@ -96,6 +103,7 @@ SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS x ON false ORDER BY ALL;
 SELECT id, tag FROM t_unnest AS t JOIN unnest(t.tags) AS tag ON tag IS NOT NULL ORDER BY ALL;
 SELECT id, u.tag FROM t_unnest AS t JOIN unnest(t.tags) AS u(tag) ON u.tag = t.tags[1] ORDER BY ALL;
 SELECT id, tag FROM t_unnest AS t JOIN unnest(t.tags) AS tag ON tag IN (SELECT 'a') ORDER BY ALL;
+SELECT id, x, tag FROM t_unnest AS t JOIN unnest(t.arr, t.tags) AS u(x, tag) ON u.x > 0 OR u.tag != '' ORDER BY ALL SETTINGS enable_unaligned_array_join = 1;
 -- A lambda in `ON` cannot capture the unnest column: `u.x` stays the element, `x` is the lambda parameter.
 SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON arrayExists(x -> u.x = x, [10]) ORDER BY ALL;
 SELECT id, x FROM t_unnest AS t JOIN unnest(t.arr) AS u(x) ON arrayExists(u -> u = x, [20]) ORDER BY ALL;
@@ -140,6 +148,7 @@ SELECT t.id, x FROM t_unnest AS t RIGHT JOIN unnest(t.arr) AS x ON t.id = x; -- 
 SELECT '-- correlated';
 SELECT id FROM t_unnest AS t WHERE EXISTS (SELECT 1 FROM unnest(t.tags) AS tag WHERE tag = 'b') ORDER BY id;
 SELECT id, (SELECT groupArray(x) FROM unnest(t.arr) AS x) AS g FROM t_unnest AS t ORDER BY id;
+SELECT arrayMap((x -> x + 1) | (u -> (SELECT u.x FROM numbers(1) AS t, unnest([1]) AS u(x))), [1]);
 
 SELECT '-- distributed';
 SELECT id, x FROM remote('127.0.0.{1,2}', currentDatabase(), t_unnest) AS t, unnest(t.arr) AS u(x) WHERE u.x > 10 ORDER BY ALL;
@@ -171,6 +180,7 @@ CREATE MATERIALIZED VIEW rmv_unnest REFRESH EVERY 1 YEAR APPEND TO rmv_dst_unnes
     AS SELECT x FROM unnest([1, 2]) AS x;
 SYSTEM REFRESH VIEW rmv_unnest;
 SYSTEM WAIT VIEW rmv_unnest;
+SELECT * FROM rmv_dst_unnest ORDER BY x;
 SELECT 'refreshed';
 SELECT x FROM unnest([7]) AS x FORMAT Null SETTINGS log_comment = '05566_unnest_masking';
 SYSTEM FLUSH LOGS query_log;

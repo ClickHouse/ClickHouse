@@ -1649,15 +1649,15 @@ As in PostgreSQL, `unnest` can be used as a table source in `FROM` and `JOIN`:
 unnest(arr1[, arr2, ...]) [WITH ORDINALITY] [[AS] alias[(column1, column2, ...)]]
 ```
 
-- It gives one row per element of the array. Several arrays (or maps) are zipped: the elements at the same position go to the same row, as in `ARRAY JOIN arr1, arr2`.
+- It gives one row per element of the array. Several arrays are zipped: the elements at the same position go to the same row, as in `ARRAY JOIN arr1, arr2`.
 - `WITH ORDINALITY` adds a last column with the 1-based position of the element.
-- The column list names the columns. A column that is not named is called as the alias (`unnest` without an alias) when there is one array, `unnest1`, `unnest2`, ... when there are several arrays, and `ordinality` for the position. The alias (`unnest` without an alias) qualifies the columns: `u.x`, `u.*`.
+- The column list names the columns. A column that is not named is called as the alias (`unnest` without an alias) when there is one array, `unnest1`, `unnest2`, ... when there are several arrays, and `ordinality` for the position. The alias (`unnest` without an alias) qualifies the columns: `u.x`, `u.*`. It must differ from the names and aliases of the preceding tables.
 
 After a comma, `CROSS JOIN`, `[INNER] JOIN ... ON` or `LEFT [OUTER] JOIN ... ON`, the arguments of `unnest` can use the columns of the preceding tables, and it is evaluated for each of their rows: it is implicitly `LATERAL` (`LATERAL unnest(...)` is also accepted and does not need `enable_lateral_join`). This is `ARRAY JOIN`: `FROM t, unnest(t.arr) AS u(x)` is `FROM t ARRAY JOIN t.arr AS x`, and a `LEFT JOIN` is a `LEFT ARRAY JOIN`, which gives the default values (`NULL` with [join_use_nulls](/reference/settings/session-settings/join#join_use_nulls)) to a row without elements. The `ON` condition can use the columns of both sides and keeps the elements for which it is true. As for `ARRAY JOIN`, the columns of `unnest` can also be used without the alias, and then they hide the columns of the preceding tables with the same names.
 
 Anywhere else, for example as the first table of `FROM` or after a `RIGHT JOIN`, `unnest(arr) AS x` is the subquery `(SELECT arrayJoin(arr) AS x) AS x`. In a correlated subquery, its arguments can use the columns of the outer query: `WHERE EXISTS (SELECT 1 FROM unnest(t.tags) AS tag WHERE tag = 'b')`.
 
-Several arrays must have the same size in the subquery form and when the `ON` condition is not `ON true`. Otherwise, as for `ARRAY JOIN`, the setting [enable_unaligned_array_join](/reference/settings/session-settings/enable#enable_unaligned_array_join) pads the shorter arrays.
+As for `ARRAY JOIN`, several arrays must have the same size, unless the setting [enable_unaligned_array_join](/reference/settings/session-settings/enable#enable_unaligned_array_join) is enabled, which pads the shorter arrays with default values.
 
 Examples:
 

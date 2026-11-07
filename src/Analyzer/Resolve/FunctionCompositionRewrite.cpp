@@ -237,11 +237,15 @@ void collectNamesBoundInJoinTree(const QueryTreeNodePtr & node, BoundNames & bou
     }
 
     /// The alias of an `ARRAY JOIN` expression binds a bare expression identifier
-    /// (`IdentifierResolver::tryBindIdentifierToArrayJoinExpressions`), e.g. `ARRAY JOIN [5] AS y`.
+    /// (`IdentifierResolver::tryBindIdentifierToArrayJoinExpressions`), e.g. `ARRAY JOIN [5] AS y`,
+    /// and the alias of `unnest(...)`, a qualifier.
     /// An unaliased `ARRAY JOIN y` is not collected: the joined `y` is itself looked up in this
     /// scope, so it may be the very outer reference the caller is looking for.
     if (const auto * array_join_node = node->as<ArrayJoinNode>())
     {
+        if (array_join_node->isUnnest())
+            bound_names.qualifiers.insert(array_join_node->getUnnestAlias());
+
         for (const auto & join_expression : array_join_node->getJoinExpressions().getNodes())
             if (join_expression->hasAlias())
                 bound_names.expressions.insert(join_expression->getAlias());

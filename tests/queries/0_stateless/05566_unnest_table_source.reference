@@ -38,8 +38,10 @@ x	String
 ordinality	UInt64					
 t	String					
 ordinality	UInt64					
-('a',1)
-('b',2)
+1	a
+2	
+1	a	1
+2		2
 2	2
 3	3
 -- errors
@@ -150,6 +152,10 @@ c
 1	a
 2	c
 1	a
+1	10	a
+1	20	b
+2	0	c
+3	30	
 1	10
 1	20
 1	20
@@ -202,6 +208,7 @@ id	t.u	arr	x
 1	[10,20]
 2	[]
 3	[30]
+[1]
 -- distributed
 1	20
 1	20
@@ -232,6 +239,8 @@ b	2
 1	5
 1	6
 3	7
+1
+2
 refreshed
 1	0
 -- syntax

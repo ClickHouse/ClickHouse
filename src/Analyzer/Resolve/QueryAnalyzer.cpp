@@ -6028,6 +6028,20 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
     auto & array_join_node_typed = array_join_node->as<ArrayJoinNode &>();
     resolveQueryJoinTreeNode(array_join_node_typed.getTableExpressionNode(), scope, expressions_visitor);
 
+    /// As in PostgreSQL, the alias of `unnest` cannot name a preceding table.
+    if (array_join_node_typed.isUnnest())
+    {
+        for (const auto & table_expression : extractTableExpressions(array_join_node_typed.getTableExpressionNodeTyped()))
+        {
+            auto it = scope.table_expression_node_to_data.find(table_expression);
+            if (it != scope.table_expression_node_to_data.end() && it->second.table_name == array_join_node_typed.getUnnestAlias())
+                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                    "Multiple table expressions with same alias {}. In scope {}",
+                    array_join_node_typed.getUnnestAlias(),
+                    scope.scope_node->formatASTForErrorMessage());
+        }
+    }
+
     std::unordered_set<String> array_join_column_names;
 
     /// Wrap array join expressions into column nodes, where array join expression is inner expression
