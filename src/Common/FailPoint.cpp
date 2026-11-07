@@ -39,6 +39,7 @@ static struct InitFiu
     REGULAR(replicated_queue_unfail_entries) \
     REGULAR(executing_graph_add_node_fail) \
     REGULAR(executing_graph_build_fail) \
+    REGULAR(time_series_inner_table_fail_after_create) \
     PAUSEABLE_ONCE(polling_queue_before_try_poll) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
