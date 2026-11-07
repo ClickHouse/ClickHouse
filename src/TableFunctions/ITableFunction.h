@@ -167,8 +167,7 @@ public:
     /// `uri` normalized by Poco; an unparsable URI becomes empty.
     static String normalizeURIForAccessCheck(const String & uri);
 
-    /// Checks the source grant for `uri`. A filter is matched only when it would see the location the source
-    /// accesses; any other location needs the grant on the whole source.
+    /// Checks the source grant for `uri`; a location that no filter would see as accessed needs the whole-source grant.
     static void checkSourceAccessForURI(
         const ContextPtr & context, const AccessFlags & flags, AccessTypeObjects::Source source, const String & uri);
 

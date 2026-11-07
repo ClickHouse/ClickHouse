@@ -190,7 +190,6 @@ String unescapeGlobCharacters(const String & subject, bool unescape_comma)
     return result;
 }
 
-/// `*?{}|` escaped as `toString` escapes them in a path.
 String escapeGlobCharacters(const String & name)
 {
     String result;
@@ -213,9 +212,7 @@ String escapeGlobCharacters(const String & name)
     return result;
 }
 
-/// What source grant filters are matched against for `uri`: the location with glob characters as written, and with
-/// them escaped. Both are empty when no filter can be trusted with the location, which leaves only the grant on the
-/// whole source.
+/// Filter subjects for `uri`: glob characters as written and escaped. Both empty: only the whole-source grant passes.
 std::pair<String, String> getSourceAccessSubjects(AccessTypeObjects::Source source, const String & uri)
 {
     /// A blob path and a local path are names, used as written, but their dot and empty segments may be resolved on access.
@@ -241,8 +238,7 @@ std::pair<String, String> getSourceAccessSubjects(AccessTypeObjects::Source sour
             return {};
         if (source == AccessTypeObjects::Source::S3)
         {
-            /// `S3::URI` decodes the path once, as the subject does, but folds a query into the key, where `?`
-            /// matches any character.
+            /// `S3::URI` decodes the path once, as the subject does, but folds a query into the key, where `?` is a wildcard.
             if (uri.contains('?'))
                 return {};
         }
@@ -275,8 +271,7 @@ void ITableFunction::checkSourceAccessForURI(
     const auto access = context->getAccess();
     const auto source_name = toStringSource(source);
     auto [subject, escaped_subject] = getSourceAccessSubjects(source, uri);
-    /// A glob is expanded after the check, so its characters must match both as written and escaped: a single `.` (as in
-    /// `report.csv`) matches `*` but not its expansion.
+    /// Globs expand after the check, so they must match as written and escaped: `.` in `report.csv` matches `*`, not its expansion.
     if (subject != escaped_subject && !access->isGrantedWithFilter(flags, source_name, escaped_subject))
         subject.clear();
     access->checkAccessWithFilter(flags, source_name, subject);
