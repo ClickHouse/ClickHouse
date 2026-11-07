@@ -414,6 +414,15 @@ void TTLTransform::executeAlgorithms(Block & block)
         recomputeDependentColumns(block, recompute_stages[next_stage].columns);
 
     refreshSharedOffsetsColumns(block);
+    for (const auto & [name, source] : shared_offsets_sources)
+    {
+        if (!block.has(name) || !block.has(source))
+            continue;
+
+        const auto & offsets = assert_cast<const ColumnArray &>(*block.getByName(source).column).getOffsets();
+        if (!offsets.empty() && offsets.back() != 0)
+            shared_offsets_columns_to_keep.insert(source);
+    }
 }
 
 void TTLTransform::consume(Chunk chunk)
@@ -472,6 +481,11 @@ void TTLTransform::finalize()
     data_part->ttl_infos = {};
     for (const auto & algorithm : algorithms)
         algorithm->finalize(data_part);
+
+    /// A fully expired source can still have a nonempty `DEFAULT`. Keep the already-written column so
+    /// removing it does not discard offsets used by omitted arrays and their materialized consumers.
+    for (const auto & source : shared_offsets_columns_to_keep)
+        data_part->expired_columns.erase(source);
 
     if (delete_algorithm)
     {

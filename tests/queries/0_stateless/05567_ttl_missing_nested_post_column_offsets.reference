@@ -4,6 +4,7 @@ full wide projection	0
 0	0	0
 1	0	0
 full wide stored	0
+full wide source	0
 full compact before	0
 full compact base	0
 full compact projection	0
@@ -16,6 +17,7 @@ partial wide projection	1
 0	0	0
 1	1	1
 partial wide stored	0
+partial wide source	1
 partial compact before	3
 partial compact base	1
 partial compact projection	1
@@ -42,3 +44,13 @@ rollup compact projection	4
 1	4	4
 2	0	0
 rollup compact stored	0
+default source wide base	4
+default source wide projection	4
+0	2	2
+1	2	2
+default source wide stored	['id','m','n.a','ts']
+default source compact base	4
+default source compact projection	4
+0	2	2
+1	2	2
+default source compact stored	['id','m','n.a','ts']

@@ -67,6 +67,8 @@ private:
     };
     UnorderedMapWithMemoryTracking<String, ExpiredColumnData> expired_columns_data;
     UnorderedMapWithMemoryTracking<String, String> shared_offsets_sources;
+    /// Writer-eligible sources with nonempty offsets in at least one post-TTL output block.
+    NameSet shared_offsets_columns_to_keep;
 
     /// A `MATERIALIZED` column whose expression reads a column that a column TTL resets to its default.
     /// Its stored value describes the pre-expiry data, so it is recomputed once the TTL algorithms that
