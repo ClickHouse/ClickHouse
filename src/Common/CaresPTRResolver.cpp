@@ -266,7 +266,7 @@ bool CaresPTRResolver::wait_and_process(AresChannelRAII & channel_raii)
             /// `ares_socket_t`, not `int`: on Windows it is a `SOCKET`, which is pointer-sized
             /// and unsigned, and `ARES_SOCKET_BAD` is `INVALID_SOCKET` - neither survives a
             /// round trip through `int`. It is what `ares_process_fd` takes in any case.
-            const ares_socket_t rfd = (pfd.revents & POLLIN) ? pfd.fd : ARES_SOCKET_BAD;
+            const ares_socket_t rfd = (pfd.revents & (POLLIN | POLLERR | POLLHUP)) ? pfd.fd : ARES_SOCKET_BAD;
             const ares_socket_t wfd = (pfd.revents & POLLOUT) ? pfd.fd : ARES_SOCKET_BAD;
 
             if (rfd != ARES_SOCKET_BAD || wfd != ARES_SOCKET_BAD)
@@ -297,14 +297,5 @@ void CaresPTRResolver::process_possible_timeout(ares_channel channel)
     /* Call ares_process() unconditionally here, even if we simply timed out
         above, as otherwise the ares name resolve won't timeout! */
     ares_process_fd(channel, ARES_SOCKET_BAD, ARES_SOCKET_BAD);
-}
-
-void CaresPTRResolver::process_readable_sockets(std::span<pollfd> readable_sockets, ares_channel channel)
-{
-    for (auto readable_socket : readable_sockets)
-    {
-        auto fd = readable_socket.revents & C_ARES_POLL_EVENTS ? readable_socket.fd : ARES_SOCKET_BAD;
-        ares_process_fd(channel, fd, ARES_SOCKET_BAD);
-    }
 }
 }
