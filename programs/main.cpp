@@ -13,6 +13,8 @@
 #include "config.h"
 #include "config_tools.h"
 
+#include <fcntl.h>
+#include <sys/resource.h>
 #include <unistd.h>
 
 #include <filesystem>
@@ -312,6 +314,37 @@ static __attribute__((constructor(0))) void init_je_malloc_message()
 #    endif
     };
 }
+#endif
+
+#if defined(OS_LINUX) && !defined(USE_MUSL) && !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER)
+/// Linux grows the descriptor table of a multithreaded process only after an RCU grace period, and threads that open
+/// files meanwhile wait. Grow it from `.preinit_array`, which glibc runs before any constructor, so before jemalloc
+/// starts its background thread. Sanitizer runtimes initialize from `.preinit_array` too and intercept these calls.
+static void reserveFileDescriptorTable(int, char **, char **)
+{
+    rlimit rlim{};
+    if (0 != getrlimit(RLIMIT_NOFILE, &rlim))
+        return;
+    rlim_t count = 4096;
+    if (rlim.rlim_cur != RLIM_INFINITY && rlim.rlim_cur < count)
+        count = rlim.rlim_cur;
+    /// The initial table has 64 entries.
+    if (count <= 64)
+        return;
+
+    int fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
+    if (fd < 0)
+        return;
+    int high_fd = fcntl(fd, F_DUPFD_CLOEXEC, static_cast<int>(count - 1));
+    if (high_fd >= 0)
+    {
+        [[maybe_unused]] int high_err = close(high_fd);
+    }
+    [[maybe_unused]] int err = close(fd);
+}
+
+__attribute__((section(".preinit_array"), used))
+static void (* const reserve_file_descriptor_table)(int, char **, char **) = reserveFileDescriptorTable;
 #endif
 
 /// OpenSSL early initialization.
