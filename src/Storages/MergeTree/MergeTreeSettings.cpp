@@ -2344,6 +2344,13 @@ Allow usage of '_part_offset' column in projections select query.
 Remove empty parts after they were pruned by TTL, mutation, or collapsing
 merge algorithm.
 )", 0) \
+    DECLARE(Seconds, empty_parts_lifetime, 0, R"(
+Minimal age in seconds of an empty part before `remove_empty_parts` removes it. The age is counted from the part's
+`modification_time`, so a merge or a mutation that produces a new empty part starts it again. It does not delay
+other ways to replace the part: a merge that includes it, or a `TRUNCATE` or `DROP` that covers it, makes it outdated
+as for any other part. 0 removes empty parts without waiting.
+)", 0, \
+        {"26.11", 0, 0, "New setting"}) \
     DECLARE(Bool, remove_unused_patch_parts, true, R"(
 Remove in background patch parts which are applied for all active parts.
 )", 0, \
@@ -2865,6 +2872,10 @@ Compression codec selecting order for a column:
     1. Compression codec defined for the column in the table declaration
     2. Compression codec defined in `default_compression_codec` (this setting)
     3. Default compression codec defined in `compression` settings
+
+The codec combinator `FirstApplicable` selects a codec for the data type of every column (and every stream of it),
+e.g. `FirstApplicable(PCO, ZSTD(3))` compresses numbers with `PCO` and other data with `ZSTD(3)`. At least one of its
+alternatives must be applicable to any data type, and lossy codecs are not allowed among them.
 Default value: an empty string (not defined).
 )", 0, \
         {"25.4", "", "", "New setting"}) \

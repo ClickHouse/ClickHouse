@@ -96,7 +96,7 @@ no_zero_threads_lambda = lambda: random.randint(1, multiprocessing.cpu_count())
 SERVER_STOP_WAIT_SECONDS = 30
 
 # How long `dolor.py` waits for a restarted server to answer before giving up on it.
-SERVER_START_WAIT_SECONDS = 10
+SERVER_START_WAIT_SECONDS = 180
 
 # The sleeps `dolor.py` takes between stopping and starting a server: one for the process to
 # settle before the binary may be swapped, one for the Keeper session to expire.
@@ -725,8 +725,10 @@ object_storages_properties = {
             0.2, 0.2, 1000, 10000, allow_unlimited=False
         ),
         "s3_slow_all_threads_after_network_error": true_false_lambda,
+        # Never above the lower bound of s3_max_upload_part_size: validateUploadSettings
+        # rejects strict > max
         "s3_strict_upload_part_size": threshold_generator(
-            0.2, 0.2, 0, 100 * 1024 * 1024
+            0.2, 0.2, 0, 16 * 1024 * 1024, 24
         ),
         "s3_upload_part_size_multiply_factor": threshold_generator(0.2, 0.2, 1, 10, 4),
         "s3_upload_part_size_multiply_parts_count_threshold": threshold_generator(
@@ -1145,6 +1147,7 @@ def add_single_disk(
     disk_type: str,
     created_disks_types: list[tuple[int, str]],
     is_private_binary: bool,
+    readonly_disks: set[int],
 ) -> tuple[int, str, str, str]:
     prev_disk = 0
     if disk_type in ("cache", "encrypted"):
@@ -1290,10 +1293,11 @@ def add_single_disk(
             path_xml.text = f"/var/lib/clickhouse/disk{i}/"
             allowed_path_xml = ET.SubElement(backups_element, "allowed_path")
             allowed_path_xml.text = f"/var/lib/clickhouse/disk{i}/"
-        elif random.randint(1, 2) == 1:
+        elif random.randint(1, 2) == 1 and iter_prev_disk not in readonly_disks:
             # The path of an encrypted disk is relative to the disk it wraps (`DiskEncrypted` uses
             # `wrapped_disk->getPath() + path`). An absolute path is rejected by object storage disks
-            # with `PATH_ACCESS_DENIED`, and the server refuses to start.
+            # with `PATH_ACCESS_DENIED`, and the server refuses to start. A readonly disk cannot
+            # create the directory, so the server would not start either.
             path_xml = ET.SubElement(next_disk, "path")
             path_xml.text = f"disk{i}/"
 
@@ -1356,6 +1360,7 @@ class DiskPropertiesGroup(PropertiesGroup):
         allowed_disk_xml = ET.SubElement(backups_element, "allowed_disk")
         allowed_disk_xml.text = "default"
         created_disks_types = []
+        readonly_disks = set()
         created_cache_disks = []
         created_keeper_disks = []
         safe_for_database_disk = []
@@ -1381,8 +1386,11 @@ class DiskPropertiesGroup(PropertiesGroup):
                 random.choice(possible_types),
                 created_disks_types,
                 is_private_binary,
+                readonly_disks,
             )
             created_disks_types.append(next_created_disk_pair)
+            if disk_xml_elem.findtext("readonly") == "1":
+                readonly_disks.add(i)
             if next_created_disk_pair[1] == "cache":
                 created_cache_disks.append(i)
             elif (

@@ -322,7 +322,6 @@ Pipe makePartPipe(
         std::make_shared<std::atomic<size_t>>(0),
         false,
         false,
-        /*prefetch_begin_of_range=*/ false,
         /*allow_remote_fs_prefetch=*/ true);
 
     /// keep speed limits, the caller checks sizes
