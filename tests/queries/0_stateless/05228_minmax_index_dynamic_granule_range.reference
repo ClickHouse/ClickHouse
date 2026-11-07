@@ -1,0 +1,39 @@
+-- 1. Dynamic column, equality atom
+no index      	1
+granule       	1
+default       	1
+granules 16/16	1
+-- 2. Dynamic column, range atom
+no index      	53
+granule       	53
+-- 3. Dynamic column holding NULLs. IS NOT NULL loses rows; IS NULL never did, and must not start
+not null no idx	32
+not null granul	32
+is null no idx 	32
+is null granule	32
+-- 4. Nested Dynamic in an Array
+no index      	64
+granule       	64
+-- 5. Multi-column index, flagged column first
+no index        	1
+u prunes        	1
+u granules 1/16 	1
+d kept          	1
+d granules 16/16	1
+-- 6. Dynamic column on the data-read path
+no index      	1
+on data read  	1
+-- 7. Control: UInt64 must still prune
+no index      	1
+granule       	1
+granules 1/16 	1
+-- 8. Control: Nullable(UInt64) must still prune and still keep NULLs
+no index      	1
+granule       	1
+granules 1/16 	1
+no index null 	32
+granule null  	32
+-- 9. Control: DDL still refuses these types
+1
+1
+1
