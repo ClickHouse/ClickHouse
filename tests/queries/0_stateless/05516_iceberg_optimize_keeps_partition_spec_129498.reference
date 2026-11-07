@@ -1,0 +1,4 @@
+first OPTIMIZE compacted the position deletes: 1
+rows matching the second DELETE: 0
+second OPTIMIZE compacted the position deletes: 1
+17	880
