@@ -393,7 +393,7 @@ public:
             return {};
 
         MutableColumns columns;
-        std::vector<IColumn *> raw_columns;
+        std::vector<IColumn *> raw_columns; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- required by `Method::insertKeyIntoColumns`.
         if (representation == DistinctKeyRepresentation::Columns)
         {
             columns.reserve(key_types.size());
