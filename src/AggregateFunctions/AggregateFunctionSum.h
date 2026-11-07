@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstring>
 #include <memory>
 #include <type_traits>
@@ -91,6 +92,66 @@ struct AggregateFunctionSumData
         Impl::add(sum, toAccumulateResult(value));
     }
 
+    /// `sum` and `sumIf` over Decimal32 and Decimal64 accumulate into Decimal128, and sumWithOverflow over them into the
+    /// same type. The generic loop widens each row to the total's type and adds it as one value. Instead, sum the raw
+    /// integers in 64-bit arithmetic, which vectorizes, and add the total once. The total is exact, or wraps modulo 2^N,
+    /// so the result is the same bit for bit, including on overflow.
+    template <typename Value>
+    static constexpr bool sum_narrow_decimals = (std::is_same_v<Value, Decimal32> || std::is_same_v<Value, Decimal64>)
+        && (std::is_same_v<T, Value> || std::is_same_v<T, Decimal128>);
+
+    template <typename Value, bool conditional, bool add_if_zero>
+    static ALWAYS_INLINE NativeType<T> sumNarrowDecimals(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t count)
+    {
+        using Native = NativeType<Value>;
+        /// Unsigned arithmetic wraps modulo 2^N without undefined behaviour.
+        using Total = make_unsigned_t<NativeType<T>>;
+        /// At most 2^31 rows per chunk keeps the 64-bit partial sums below 2^63.
+        constexpr size_t max_chunk = size_t(1) << 31;
+
+        Total total = 0;
+        while (count > 0)
+        {
+            const size_t chunk = std::min(count, max_chunk);
+            if constexpr (sizeof(Native) == 4 || std::is_same_v<T, Value>)
+            {
+                /// Decimal32 aggregated into Decimal128. |value| <= 2^31, so a chunk sums to at most 2^62.
+                /// Or Decimal32 or Decimal64 aggregated into a total of its own type, where the sum may wrap.
+                using Partial = std::conditional_t<std::is_same_v<T, Value>, make_unsigned_t<Native>, Int64>;
+                Partial partial = 0;
+                for (size_t i = 0; i < chunk; ++i)
+                {
+                    Partial value = static_cast<Partial>(ptr[i].value);
+                    if constexpr (conditional)
+                        value &= -static_cast<Partial>(condition_map[i] != add_if_zero);
+                    partial += value;
+                }
+                total += static_cast<Total>(partial);
+            }
+            else
+            {
+                /// Decimal64 aggregated into Decimal128. A chunk sums to at most 2^62 in `high` and below 2^63 in `low`.
+                Int64 high = 0;
+                UInt64 low = 0;
+                for (size_t i = 0; i < chunk; ++i)
+                {
+                    Int64 value = ptr[i].value;
+                    if constexpr (conditional)
+                        value &= -static_cast<Int64>(condition_map[i] != add_if_zero);
+                    high += value >> 32;
+                    low += static_cast<UInt64>(value) & 0xFFFFFFFF;
+                }
+                total += (static_cast<Total>(high) << 32) + static_cast<Total>(low);
+            }
+
+            ptr += chunk;
+            count -= chunk;
+            if constexpr (conditional)
+                condition_map += chunk;
+        }
+        return static_cast<NativeType<T>>(total);
+    }
+
     /// Vectorized version
     MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(
@@ -101,6 +162,12 @@ struct AggregateFunctionSumData
         ptr += start;
         size_t count = end - start;
         const auto * end_ptr = ptr + count;
+
+        if constexpr (sum_narrow_decimals<Value>)
+        {
+            Impl::add(sum, T(sumNarrowDecimals<Value, false, false>(ptr, nullptr, count)));
+            return;
+        }
 
         if constexpr (is_floating_point<T>)
         {
@@ -160,6 +227,12 @@ struct AggregateFunctionSumData
         condition_map += start;
         size_t count = end - start;
         const auto * end_ptr = ptr + count;
+
+        if constexpr (sum_narrow_decimals<Value>)
+        {
+            Impl::add(sum, T(sumNarrowDecimals<Value, true, add_if_zero>(ptr, condition_map, count)));
+            return;
+        }
 
         if constexpr ((is_integer<T> || is_decimal<T>) && !is_over_big_int<T>)
         {
