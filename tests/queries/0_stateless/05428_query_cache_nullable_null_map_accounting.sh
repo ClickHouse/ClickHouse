@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# A `Nullable` column without NULLs may have no null map, and a reading query may create it lazily
+# A `Nullable` column without NULLs may have no null map, and a reading query must not create it
 # in the shared column of an uncompressed query cache entry. The weight of the entry must not change on reads,
 # otherwise the eviction subtracts more bytes than were added. `Arrow` over HTTP is formatted on the server.
 

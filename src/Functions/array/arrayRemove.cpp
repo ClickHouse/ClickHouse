@@ -167,13 +167,17 @@ ColumnPtr FunctionArrayRemove::executeImpl(
     {
         /// NULL in filter means comparison was indeterminate (e.g., tuple with NULL component).
         /// Treat as "not equal" → keep the element (filter = 1).
-        auto result_col = ColumnUInt8::create(nullable_filter->size());
-        auto & result_data = result_col->getData();
-        const auto & nested_data = assert_cast<const ColumnUInt8 &>(nullable_filter->getNestedColumn()).getData();
-        const auto & null_map = nullable_filter->getNullMapData();
-        for (size_t i = 0; i < null_map.size(); ++i)
-            result_data[i] = null_map[i] ? 1 : nested_data[i];
-        filter_col = std::move(result_col);
+        if (const auto * null_map = nullable_filter->tryGetNullMapData())
+        {
+            auto result_col = ColumnUInt8::create(nullable_filter->size());
+            auto & result_data = result_col->getData();
+            const auto & nested_data = assert_cast<const ColumnUInt8 &>(nullable_filter->getNestedColumn()).getData();
+            for (size_t i = 0; i < null_map->size(); ++i)
+                result_data[i] = (*null_map)[i] ? 1 : nested_data[i];
+            filter_col = std::move(result_col);
+        }
+        else
+            filter_col = nullable_filter->getNestedColumnPtr();
     }
 
     const auto * filter_col_uint8 = checkAndGetColumn<ColumnUInt8>(filter_col.get());

@@ -260,13 +260,13 @@ ColumnWithTypeAndName prepareArrowColumnForCast(
         {
             /// Null structs contain undefined child values. Convert only visible rows, then restore the
             /// null rows in the destination type so text parsers never see substitute empty strings.
-            const auto & null_map = from_null_column.getNullMapData();
-            const bool has_nulls = !memoryIsZero(null_map.data(), 0, null_map.size());
+            const NullMap * null_map = from_null_column.tryGetNullMapData();
+            const bool has_nulls = null_map && !memoryIsZero(null_map->data(), 0, null_map->size());
             if (has_nulls)
             {
-                IColumn::Filter visible_rows(null_map.size());
-                for (size_t i = 0; i < null_map.size(); ++i)
-                    visible_rows[i] = !null_map[i];
+                IColumn::Filter visible_rows(null_map->size());
+                for (size_t i = 0; i < null_map->size(); ++i)
+                    visible_rows[i] = !(*null_map)[i];
                 nested.column = nested.column->filter(visible_rows, -1);
             }
             nested = prepareArrowColumnForCast(std::move(nested), to_nested, settings);
@@ -277,24 +277,24 @@ ColumnWithTypeAndName prepareArrowColumnForCast(
                 auto converted = IColumn::mutate(castColumn(nested, to_nested)->convertToFullColumnIfConst());
                 const size_t default_index = converted->size();
                 to_nested->insertDefaultInto(*converted);
-                auto indexes = ColumnUInt64::create(null_map.size());
+                auto indexes = ColumnUInt64::create(null_map->size());
                 auto & index_data = indexes->getData();
                 size_t visible_index = 0;
-                for (size_t i = 0; i < null_map.size(); ++i)
-                    index_data[i] = null_map[i] ? default_index : visible_index++;
+                for (size_t i = 0; i < null_map->size(); ++i)
+                    index_data[i] = (*null_map)[i] ? default_index : visible_index++;
                 nested.column = converted->index(*indexes, 0);
                 nested.type = to_nested;
             }
             if (!to->isNullable() && (settings.null_as_default || !settings.schema_inference_allow_nullable_tuple_type))
             {
                 if (has_nulls && settings.null_as_default && missing_values)
-                    missing_values->setBitsFromNullMap(column_index, null_map);
+                    missing_values->setBitsFromNullMap(column_index, *null_map);
                 return nested;
             }
         }
         else
             nested = prepareArrowColumnForCast(std::move(nested), to_nested, settings);
-        from.column = ColumnNullable::create(nested.column, from_null_column.getNullMapColumnPtr());
+        from.column = ColumnNullable::create(nested.column, from_null_column.tryGetNullMapColumnPtr());
         from.type = std::make_shared<DataTypeNullable>(nested.type);
         return from;
     }
@@ -714,7 +714,8 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
             /// The peeled wrapper's nulls make the rows under them invisible for every row-aligned
             /// descendant; compose them into the inherited set.
             NullMap combined_storage;
-            const NullMap * combined = ArrowIPC::unionNullMaps(col_nullable->getNullMapData(), ancestor_nulls, combined_storage);
+            const NullMap * own_nulls = col_nullable->tryGetNullMapData();
+            const NullMap * combined = own_nulls ? ArrowIPC::unionNullMaps(*own_nulls, ancestor_nulls, combined_storage) : ancestor_nulls;
             auto [new_nested, new_nested_type]
                 = reinterpretRawBytes(
                     col_nullable->getNestedColumnPtr(), from_no_null, to_type, combined, case_insensitive, field, format_settings);
@@ -723,7 +724,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
             if (new_nested.get() == col_nullable->getNestedColumnPtr().get() && new_nested_type.get() == from_no_null.get())
                 return {col, from_type};
             if (new_nested->canBeInsideNullable())
-                return {ColumnNullable::create(new_nested, col_nullable->getNullMapColumnPtr()),
+                return {ColumnNullable::create(new_nested, col_nullable->tryGetNullMapColumnPtr()),
                         std::make_shared<DataTypeNullable>(new_nested_type)};
             return {std::move(new_nested), std::move(new_nested_type)};
         }
@@ -813,7 +814,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
 
     const auto * nullable = typeid_cast<const ColumnNullable *>(col.get());
     const IColumn & nested = nullable ? nullable->getNestedColumn() : *col;
-    const NullMap * null_map = nullable ? &nullable->getNullMapData() : nullptr;
+    const NullMap * null_map = nullable ? nullable->tryGetNullMapData() : nullptr;
     /// A rewritten leaf keeps the source column's Nullable wrapper; the request's own wrappers are
     /// restored by the later cast.
     const auto with_source_nullability = [&](DataTypePtr type) -> DataTypePtr
@@ -847,7 +848,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
                 = ArrowIPC::deserializeOpaqueBinaryLeaf(*str, undefined_rows(), to_leaf, *field, format_settings))
             {
                 if (nullable && to_leaf->canBeInsideNullable())
-                    return {ColumnNullable::create(std::move(typed), nullable->getNullMapColumnPtr()),
+                    return {ColumnNullable::create(std::move(typed), nullable->tryGetNullMapColumnPtr()),
                             std::make_shared<DataTypeNullable>(to_leaf)};
                 return {ColumnPtr(std::move(typed)), to_leaf};
             }
@@ -879,7 +880,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
 
     ColumnPtr result = std::move(typed);
     if (nullable)
-        result = ColumnNullable::create(result, nullable->getNullMapColumnPtr());
+        result = ColumnNullable::create(result, nullable->tryGetNullMapColumnPtr());
     return {std::move(result), with_source_nullability(to_leaf)};
 }
 

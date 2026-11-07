@@ -2122,8 +2122,7 @@ namespace
         void writeRow(size_t row_num) override
         {
             const auto & column_nullable = assert_cast<const ColumnNullable &>(*column);
-            const auto & null_map = column_nullable.getNullMapData();
-            if (!null_map[row_num])
+            if (!column_nullable.isNullAt(row_num))
                 nested_serializer->writeRow(row_num);
         }
 

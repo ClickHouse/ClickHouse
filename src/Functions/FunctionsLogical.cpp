@@ -322,7 +322,7 @@ struct TernaryValueBuilderImpl<Type, Types...>
         {
             if (const auto * nested_column = typeid_cast<const ColumnVector<Type> *>(nullable_column->getNestedColumnPtr().get()))
             {
-                const auto& null_data = nullable_column->getNullMapData();
+                const auto & null_data = *nullable_column->tryGetNullMapData();
                 const auto& column_data = nested_column->getData();
 
                 if constexpr (sizeof(Type) == 1)

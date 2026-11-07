@@ -128,10 +128,12 @@ public:
                 columns[arg] = &nullable->getNestedColumn();
                 if (!result_null_map)
                     result_null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
-                auto & result_null_map_data = result_null_map->getData();
-                const auto & null_map = nullable->getNullMapData();
-                for (size_t i = 0; i < input_rows_count; ++i)
-                    result_null_map_data[i] |= null_map[i];
+                if (const auto * null_map = nullable->tryGetNullMapData())
+                {
+                    auto & result_null_map_data = result_null_map->getData();
+                    for (size_t i = 0; i < input_rows_count; ++i)
+                        result_null_map_data[i] |= (*null_map)[i];
+                }
             }
         }
 

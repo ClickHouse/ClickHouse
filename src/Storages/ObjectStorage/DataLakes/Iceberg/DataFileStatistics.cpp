@@ -62,8 +62,11 @@ void DataFileStatistics::update(const Chunk & chunk)
         const auto & col = chunk.getColumns()[i];
         if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(col.get()))
         {
-            for (UInt8 v : nullable_col->getNullMapData())
-                null_counts[i] += v;
+            if (const auto * null_map = nullable_col->tryGetNullMapData())
+            {
+                for (UInt8 v : *null_map)
+                    null_counts[i] += v;
+            }
         }
         ranges[i] = uniteRanges(ranges[i], getExtremeRangeFromColumn(col));
     }

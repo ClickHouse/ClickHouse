@@ -403,7 +403,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, ColumnPtr null_map)
         else
         {
             /// Share the null map between src and result.
-            null_map = nullable->getNullMapColumnPtr();
+            null_map = nullable->tryGetNullMapColumnPtr();
         }
 
         return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), null_map);

@@ -19,7 +19,6 @@
 #include <IO/Operators.h>
 #include <Common/ProfileEvents.h>
 
-#include <mutex>
 #include <sys/mman.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -47,7 +46,7 @@ namespace ErrorCodes
 
 
 ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumnPtr && null_map_)
-    : nested_column(std::move(nested_column_)), null_map(std::move(null_map_)), has_null_map(static_cast<bool>(null_map))
+    : nested_column(std::move(nested_column_)), null_map(std::move(null_map_))
 {
     /// ColumnNullable cannot have constant nested column. But constant argument could be passed. Materialize it.
     nested_column = nested_column->convertToFullColumnIfConst();
@@ -67,26 +66,12 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_)
 ColumnNullable::ColumnNullable(const ColumnNullable & other)
     : COWHelper<IColumnHelper<ColumnNullable>, ColumnNullable>(other)
     , nested_column(other.nested_column)
+    , null_map(other.null_map)
 {
-    /// The null map of `other` can be created concurrently, read it only if it is published.
-    if (other.hasNullMap())
-    {
-        null_map = other.null_map;
-        has_null_map.store(true, std::memory_order_relaxed);
-    }
 }
 
 namespace
 {
-
-/// The null maps created on demand in the const methods of shared columns are rare,
-/// so a small set of mutexes shared by all columns is enough.
-std::mutex & getNullMapMaterializationMutex(const void * column)
-{
-    static constexpr size_t num_mutexes = 64;
-    static std::mutex mutexes[num_mutexes];
-    return mutexes[(reinterpret_cast<uintptr_t>(column) >> 6) % num_mutexes];
-}
 
 /// Feeds `size` zero bytes into the hash, as if a zero-filled null map of this size was hashed.
 void updateHashWithZeros(SipHash & hash, size_t size)
@@ -102,14 +87,9 @@ void updateHashWithZeros(SipHash & hash, size_t size)
 
 }
 
-void ColumnNullable::materializeNullMapSlow() const
+void ColumnNullable::materializeNullMapSlow()
 {
-    std::lock_guard lock(getNullMapMaterializationMutex(this));
-    if (has_null_map.load(std::memory_order_relaxed))
-        return;
-
     null_map = ColumnUInt8::create(nested_column->size(), static_cast<UInt8>(0));
-    has_null_map.store(true, std::memory_order_release);
     ProfileEvents::increment(ProfileEvents::NullableNullMapMaterializations);
 }
 
@@ -117,17 +97,17 @@ namespace
 {
 
 /// A read-only anonymous mapping, so it does not take memory: its pages are mapped to the zero page on reading.
-/// Not a static array in `.bss`, which would take 16 MiB of the 2 GiB reach of the PC-relative references of the binary.
+/// Only the address space is reserved, and it is large enough for any column that fits in memory.
 /// Padded on both sides like `PaddedPODArray`, because the readers may read past the end of the null map
 /// (e.g. `memcpySmallAllowReadWriteOverflow15` in `GatherUtils`). Never unmapped.
-constexpr size_t zeros_size = 16 << 20;
+constexpr size_t zeros_size = 1ULL << 36;
 constexpr size_t zeros_pad_left = PADDING_FOR_SIMD;
 
 const UInt8 * getZeros()
 {
     static const UInt8 * const zeros = []
     {
-        void * mapping = mmap(nullptr, zeros_pad_left + zeros_size + PADDING_FOR_SIMD, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        void * mapping = mmap(nullptr, zeros_pad_left + zeros_size + PADDING_FOR_SIMD, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
         if (MAP_FAILED == mapping)
             throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot mmap the zero null map");
         return static_cast<const UInt8 *>(mapping) + zeros_pad_left;
@@ -141,9 +121,9 @@ const UInt8 * ColumnNullable::getNullMapRawDataOrZeros() const
 {
     if (const auto * map = tryGetNullMapData())
         return map->data();
-    if (size() <= zeros_size)
-        return getZeros();
-    return getNullMapData().data();
+    if (size() > zeros_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many rows in a Nullable column without a null map: {}", size());
+    return getZeros();
 }
 
 ColumnPtr ColumnNullable::convertToFullIfWrapped() const
@@ -167,7 +147,6 @@ bool ColumnNullable::dropNullMapIfNoNulls()
     if (!memoryIsZero(map->data(), 0, map->size()))
         return false;
 
-    has_null_map.store(false, std::memory_order_relaxed);
     null_map = nullptr;
     return true;
 }
@@ -493,7 +472,7 @@ void ColumnNullable::doInsertManyFrom(const IColumn & src, size_t position, size
 #endif
 {
     const ColumnNullable & src_concrete = assert_cast<const ColumnNullable &>(src);
-    const UInt8 is_null = src_concrete.isNullAt(position) ? src_concrete.getNullMapData()[position] : 0;
+    const UInt8 is_null = src_concrete.isNullAt(position) ? (*src_concrete.tryGetNullMapData())[position] : 0;
     if (is_null)
         materializeNullMap();
     nested_column->insertManyFrom(src_concrete.getNestedColumn(), position, length);
@@ -1256,10 +1235,21 @@ ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, co
     const ColumnNullable & nullable_column_with_default_value = assert_cast<const ColumnNullable &>(column_with_default_value.getDataColumn());
     if (nullable_column_with_default_value.isNullAt(0))
     {
-        const auto & map = getNullMapColumnPtr();
         /// Value in main column, when null map is 1 is implementation defined. So, take any value.
         new_values = nested_column->createWithOffsets(offsets, *createColumnConstWithDefaultValue(nested_column), total_rows, shift);
-        new_null_map = map->createWithOffsets(offsets, *createColumnConst(map, Field(1u)), total_rows, shift);
+        if (hasNullMap())
+        {
+            new_null_map = null_map->createWithOffsets(offsets, *createColumnConst(null_map, Field(1u)), total_rows, shift);
+        }
+        else
+        {
+            /// The rows at `offsets` are not NULL, all the other rows are.
+            auto map = ColumnUInt8::create(total_rows, static_cast<UInt8>(1));
+            auto & map_data = map->getData();
+            for (size_t offset : offsets)
+                map_data[offset] = 0;
+            new_null_map = std::move(map);
+        }
     }
     else
     {
@@ -1274,7 +1264,7 @@ ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, co
 void ColumnNullable::updateAt(const IColumn & src, size_t dst_pos, size_t src_pos)
 {
     const auto & src_nullable = assert_cast<const ColumnNullable &>(src);
-    const UInt8 is_null = src_nullable.isNullAt(src_pos) ? src_nullable.getNullMapData()[src_pos] : 0;
+    const UInt8 is_null = src_nullable.isNullAt(src_pos) ? (*src_nullable.tryGetNullMapData())[src_pos] : 0;
     if (is_null)
         materializeNullMap();
     nested_column->updateAt(src_nullable.getNestedColumn(), dst_pos, src_pos);
@@ -1477,18 +1467,6 @@ ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column)
         return makeNullable(column);
 
     return column;
-}
-
-void materializeNullMapsRecursively(const IColumn & column)
-{
-    auto materialize = [](const IColumn & subcolumn)
-    {
-        if (const auto * nullable = typeid_cast<const ColumnNullable *>(&subcolumn))
-            nullable->materializeNullMap();
-    };
-
-    materialize(column);
-    column.forEachSubcolumnRecursively(materialize);
 }
 
 ColumnPtr removeNullable(const ColumnPtr & column)

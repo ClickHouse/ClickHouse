@@ -1,9 +1,8 @@
 -- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-parallel-replicas
 -- Tag no-parallel: `SYSTEM DROP COLUMNS CACHE` and the checks of the cache contents are global.
 
--- A `Nullable` column without NULLs may be read without a null map, and a later query reading the same cached
--- column may create it lazily. The columns cache must create the null maps before it accounts an entry,
--- so that the weight of the entry covers the memory it retains.
+-- A `Nullable` column without NULLs may be read without a null map. A later query reading the same cached
+-- column must not create the null map in it, so that the weight of the entry covers the memory it retains.
 
 SET use_columns_cache = 1, enable_reads_from_columns_cache = 1, enable_writes_to_columns_cache = 1;
 SET max_threads = 1, enable_parallel_replicas = 0, compile_expressions = 0;

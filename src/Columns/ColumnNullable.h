@@ -5,7 +5,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
-#include <atomic>
 
 #include "config.h"
 
@@ -29,12 +28,15 @@ using ConstNullMapPtr = const NullMap *;
 /// greatly complicate the implementation with little to no benefits.
 ///
 /// The null map is optional: a column that is known to have no NULLs may hold no null map at all,
-/// which saves memory and lets the algorithms skip the null handling. Use `hasNullMap`,
-/// `tryGetNullMapData` and `tryGetNullMapColumnPtr` to take advantage of it. The methods returning
-/// the null map by reference (`getNullMapData`, `getNullMapColumn`, `getNullMapColumnPtr`) and the
-/// non-const methods returning the nested column (`getNestedColumn`, `getNestedColumnPtr`) create
-/// a zero-filled null map on demand, so the code not aware of the optional null map keeps working.
-/// The creation from the const methods is thread-safe, as the column may be shared between threads.
+/// which saves memory and lets the algorithms skip the null handling.
+///
+/// The column is immutable like any other column: the const methods never create the null map.
+/// The readers check for its presence with `hasNullMap`, `tryGetNullMapData`, `tryGetNullMapColumn`,
+/// or `tryGetNullMapColumnPtr`, and take a faster code path if it is absent. The readers that need
+/// the null map by a raw pointer can use `getNullMapRawDataOrZeros`.
+/// The non-const methods returning the null map (`getNullMapData`, `getNullMapColumn`, `getNullMapColumnPtr`)
+/// or the nested column (`getNestedColumn`, `getNestedColumnPtr`) create a zero-filled null map if it is absent,
+/// because the caller owns the column and may modify it.
 class ColumnNullable final : public COWHelper<IColumnHelper<ColumnNullable>, ColumnNullable>
 {
 private:
@@ -277,7 +279,7 @@ public:
 
     /// Whether the column has a null map. If it does not, the column has no NULLs.
     /// If it does, the column may or may not have NULLs.
-    bool hasNullMap() const { return has_null_map.load(std::memory_order_acquire); }
+    bool hasNullMap() const { return null_map != nullptr; }
 
     /// Return the null map, or nullptr if the column has no null map (and so has no NULLs).
     const ColumnUInt8 * tryGetNullMapColumn() const
@@ -292,24 +294,20 @@ public:
     }
 
     /// Return the data of the null map, or a pointer to zeros if the column has no null map.
-    /// For the code reading the null map by a raw pointer. The null map is created only for huge columns.
+    /// For the code reading the null map by a raw pointer.
     const UInt8 * getNullMapRawDataOrZeros() const;
 
     /// Can be passed to `ColumnNullable::create` to create a column with the same NULLs.
     ColumnPtr tryGetNullMapColumnPtr() const { return hasNullMap() ? ColumnPtr(null_map) : ColumnPtr(); }
 
-    /// Return the column that represents the byte map. These methods create the null map if it is absent.
-    const ColumnPtr & getNullMapColumnPtr() const { materializeNullMap(); return null_map; }
+    /// Return the column that represents the byte map, to modify it. These methods create the null map if it is absent.
+    /// There are no const variants: the readers use `tryGetNullMapColumn`, `tryGetNullMapData`, or `tryGetNullMapColumnPtr`.
     ColumnPtr & getNullMapColumnPtr() { materializeNullMap(); return null_map; }
-
     ColumnUInt8 & getNullMapColumn() { materializeNullMap(); return assert_cast<ColumnUInt8 &>(*null_map); }
-    const ColumnUInt8 & getNullMapColumn() const { materializeNullMap(); return assert_cast<const ColumnUInt8 &>(*null_map); }
-
     NullMap & getNullMapData() { return getNullMapColumn().getData(); }
-    const NullMap & getNullMapData() const { return getNullMapColumn().getData(); }
 
     /// Create a zero-filled null map if the column has no null map.
-    void materializeNullMap() const
+    void materializeNullMap()
     {
         if (!hasNullMap()) [[unlikely]]
             materializeNullMapSlow();
@@ -349,13 +347,10 @@ public:
 private:
     WrappedPtr nested_column;
 
-    /// nullptr if the column has no NULLs. It is mutable, because it can be created on demand
-    /// in the const methods. It is read only after `has_null_map` is checked to be true,
-    /// so its creation by one thread does not race with the readers in other threads.
-    mutable WrappedPtr null_map;
-    mutable std::atomic<bool> has_null_map = false;
+    /// nullptr if the column has no NULLs.
+    WrappedPtr null_map;
 
-    void materializeNullMapSlow() const;
+    void materializeNullMapSlow();
 
     template <bool negative>
     void applyNullMapImpl(const NullMap & map, size_t offset = 0);
@@ -381,11 +376,5 @@ ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column);
 
 ColumnPtr removeNullable(const ColumnPtr & column);
 ColumnPtr removeNullableOrLowCardinalityNullable(const ColumnPtr & column);
-
-/// Create the missing null maps of `column` and its subcolumns, if they are `ColumnNullable`.
-/// The readers of a shared `Nullable` column may create its null map lazily, which changes `allocatedBytes`
-/// and `byteSize` of the column. Call it for the columns that are retained and accounted (e.g. stored
-/// in a table, in a hash join, or in a cache) before they are accounted and shared with the readers.
-void materializeNullMapsRecursively(const IColumn & column);
 
 }

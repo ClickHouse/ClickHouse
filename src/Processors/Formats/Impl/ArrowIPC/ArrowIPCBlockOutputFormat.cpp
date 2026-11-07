@@ -299,7 +299,7 @@ std::pair<ColumnPtr, DataTypePtr> ArrowIPCBlockOutputFormat::substituteDictionar
     {
         const auto & nullable = assert_cast<const ColumnNullable &>(*column);
         auto [nested, nested_type] = substituteDictionaries(nullable.getNestedColumnPtr(), removeNullable(type), plan);
-        return {ColumnNullable::create(nested, nullable.getNullMapColumnPtr()), std::make_shared<DataTypeNullable>(nested_type)};
+        return {ColumnNullable::create(nested, nullable.tryGetNullMapColumnPtr()), std::make_shared<DataTypeNullable>(nested_type)};
     }
 
     /// No dictionary at this node, but a descendant has one: rebuild the container with its children

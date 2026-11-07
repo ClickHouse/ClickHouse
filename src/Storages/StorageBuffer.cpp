@@ -2,7 +2,6 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnNullable.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Interpreters/Context.h>
@@ -802,10 +801,6 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
             /// To avoid this, prohibit sharing the aggregate states.
             last_col->ensureOwnership();
             last_col->insertRangeFrom(col_from, 0, rows);
-
-            /// The readers share the buffered columns and may create a missing null map lazily, which would change
-            /// the size of the buffer after it was accounted (`total_writes`, `StorageBufferBytes`), so create it now.
-            materializeNullMapsRecursively(*last_col);
 
             {
                 DENY_ALLOCATIONS_IN_SCOPE;

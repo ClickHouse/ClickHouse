@@ -141,8 +141,8 @@ ColumnWithTypeAndName unwrapNullableTuple(const ColumnWithTypeAndName & column)
 
     const auto & col_nullable = assert_cast<const ColumnNullable &>(*column.column);
 
-    const auto & null_map_data = col_nullable.getNullMapData();
-    bool has_nulls = !memoryIsZero(null_map_data.data(), 0, null_map_data.size());
+    const auto * null_map_data = col_nullable.tryGetNullMapData();
+    bool has_nulls = null_map_data && !memoryIsZero(null_map_data->data(), 0, null_map_data->size());
 
     if (!has_nulls)
     {
@@ -152,7 +152,7 @@ ColumnWithTypeAndName unwrapNullableTuple(const ColumnWithTypeAndName & column)
 
     /// Propagate the struct null map to each Tuple element.
     const auto & inner_tuple = assert_cast<const ColumnTuple &>(col_nullable.getNestedColumn());
-    const auto & null_map_ptr = col_nullable.getNullMapColumnPtr();
+    ColumnPtr null_map_ptr = col_nullable.tryGetNullMapColumnPtr();
     Columns new_elements;
     DataTypes new_types;
     for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
@@ -165,7 +165,7 @@ ColumnWithTypeAndName unwrapNullableTuple(const ColumnWithTypeAndName & column)
             const auto & existing = assert_cast<const ColumnNullable &>(*elem_col);
             auto merged = ColumnUInt8::create(null_map_ptr->size());
             const auto & s = assert_cast<const ColumnUInt8 &>(*null_map_ptr).getData();
-            const auto & e = existing.getNullMapData();
+            const UInt8 * e = existing.getNullMapRawDataOrZeros();
             auto & m = merged->getData();
             for (size_t j = 0; j < s.size(); ++j)
                 m[j] = s[j] | e[j];
@@ -180,7 +180,7 @@ ColumnWithTypeAndName unwrapNullableTuple(const ColumnWithTypeAndName & column)
         else
         {
             /// Array, Map, etc. — replace values at null positions with type defaults.
-            const auto & nm = col_nullable.getNullMapData();
+            const auto & nm = *null_map_data;
             auto mutable_col = elem_col->cloneEmpty();
             for (size_t j = 0; j < elem_col->size(); ++j)
             {

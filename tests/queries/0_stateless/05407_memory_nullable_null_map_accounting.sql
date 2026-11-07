@@ -1,4 +1,4 @@
--- A `Nullable` column without NULLs may have no null map, and a reading query may create it lazily
+-- A `Nullable` column without NULLs may have no null map, and a reading query must not create it
 -- in the shared stored column. The accounted bytes of the stored `Memory` blocks must stay consistent,
 -- so that the FIFO eviction does not make `total_bytes` underflow.
 

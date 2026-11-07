@@ -22,7 +22,7 @@ static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nulla
         /// We have to replace values masked by NULLs with defaults.
         if (column.column)
             if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&*column.column); nullable_column && nullable_column->hasNullMap())
-                column.column = JoinCommon::filterWithBlanks(column.column, nullable_column->getNullMapData(), true);
+                column.column = JoinCommon::filterWithBlanks(column.column, *nullable_column->tryGetNullMapData(), true);
 
         JoinCommon::removeColumnNullability(column);
     }

@@ -199,10 +199,12 @@ public:
         }
 
         /// Handle Nullable(Tuple)
+        bool is_nullable = false;
         ColumnPtr null_map_column = nullptr;
         if (const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(input_col))
         {
-            null_map_column = nullable_col->getNullMapColumnPtr();
+            is_nullable = true;
+            null_map_column = nullable_col->tryGetNullMapColumnPtr();
             input_col = &nullable_col->getNestedColumn();
 
             if (const DataTypeNullable * nullable_type = checkAndGetDataType<DataTypeNullable>(input_type))
@@ -222,12 +224,12 @@ public:
 
             res = input_col_as_tuple.getColumnPtr(index.value());
 
-            if (null_map_column)
+            if (is_nullable)
                 res = applyOuterNullMap(res, input_type_as_tuple->getElements()[index.value()], null_map_column);
         }
         else if (const DataTypeQBit * input_type_as_qbit = checkAndGetDataType<DataTypeQBit>(input_type))
         {
-            if (null_map_column)
+            if (is_nullable)
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -258,7 +260,7 @@ public:
             res = getObjectElement(*input_type_as_object, input_col->getPtr(), subcolumn_name);
 
             /// Fold the outer `Nullable(JSON)` null map into the extracted path, matching `getReturnTypeImpl`.
-            if (null_map_column)
+            if (is_nullable)
                 res = applyOuterNullMap(res, getObjectElementType(*input_type_as_object, subcolumn_name), null_map_column);
         }
         else
@@ -375,7 +377,7 @@ private:
     }
 
     /// Fold the null map of a `Nullable(Tuple(...))` / `Nullable(JSON)` first argument into the element
-    /// extracted from its nested column, so that outer NULLs are visible in the result.
+    /// extracted from its nested column, so that outer NULLs are visible in the result. A null `null_map_column` means no NULLs.
     ColumnPtr applyOuterNullMap(const ColumnPtr & element_column, const DataTypePtr & element_type, const ColumnPtr & null_map_column) const
     {
         if (canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(element_type) || canContainNull(*element_type))
@@ -392,6 +394,9 @@ private:
         /// has no NULL representation. Write the element's default for outer-NULL rows -- matching
         /// `NestedUtils::unwrapNullableTuple` and the stored subcolumn -- instead of leaking whatever payload
         /// sits under the null map in the hidden nested column.
+        if (!null_map_column)
+            return element_column;
+
         const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
 
         auto result_column = element_type->createColumn();

@@ -149,8 +149,8 @@ bool FunctionArrayDistinct::executeNumber(
     const T * values = src_data_concrete->getData().data();
     PaddedPODArray<T> & res_data = typeid_cast<ColVecType &>(res_data_col).getData();
 
-    if (nullable_col)
-        executeNumberImpl<T, true>(values, nullable_col->getNullMapData().data(), src_offsets, res_data, res_offsets);
+    if (ConstNullMapPtr null_map = nullable_col ? nullable_col->tryGetNullMapData() : nullptr)
+        executeNumberImpl<T, true>(values, null_map->data(), src_offsets, res_data, res_offsets);
     else
         executeNumberImpl<T, false>(values, nullptr, src_offsets, res_data, res_offsets);
     return true;
@@ -210,10 +210,7 @@ bool FunctionArrayDistinct::executeString(
     using Set = ClearableHashSetWithStackMemory<std::string_view, StringViewHash,
         INITIAL_SIZE_DEGREE>;
 
-    const PaddedPODArray<UInt8> * src_null_map = nullptr;
-
-    if (nullable_col)
-        src_null_map = &nullable_col->getNullMapData();
+    const PaddedPODArray<UInt8> * src_null_map = nullable_col ? nullable_col->tryGetNullMapData() : nullptr;
 
     Set set;
 
@@ -226,7 +223,7 @@ bool FunctionArrayDistinct::executeString(
 
         for (ColumnArray::Offset j = prev_src_offset; j < curr_src_offset; ++j)
         {
-            if (nullable_col && (*src_null_map)[j])
+            if (src_null_map && (*src_null_map)[j])
                 continue;
 
             std::string_view str_ref = src_data_concrete->getDataAt(j);
@@ -253,10 +250,7 @@ void FunctionArrayDistinct::executeHashed(
     using Set = ClearableHashSetWithStackMemory<UInt128, UInt128TrivialHash,
         INITIAL_SIZE_DEGREE>;
 
-    const PaddedPODArray<UInt8> * src_null_map = nullptr;
-
-    if (nullable_col)
-        src_null_map = &nullable_col->getNullMapData();
+    const PaddedPODArray<UInt8> * src_null_map = nullable_col ? nullable_col->tryGetNullMapData() : nullptr;
 
     Set set;
 
@@ -269,7 +263,7 @@ void FunctionArrayDistinct::executeHashed(
 
         for (ColumnArray::Offset j = prev_src_offset; j < curr_src_offset; ++j)
         {
-            if (nullable_col && (*src_null_map)[j])
+            if (src_null_map && (*src_null_map)[j])
                 continue;
 
             SipHash hash_function;

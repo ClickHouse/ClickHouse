@@ -63,7 +63,6 @@ void SerializationNullable::enumerateStreams(
 
         /// The null map subcolumn is provided even if the column has no null map.
         /// The zero null map is created only if the subcolumn is actually requested.
-        /// Do not create the null map in the column itself, because the column may be shared.
         if (column_nullable && !column_null_map)
         {
             null_map_data.withLazyColumnCreator([size = column_nullable->size()]() -> ColumnPtr

@@ -156,7 +156,7 @@ ColumnPtr FunctionArrayUniq::executeImpl(const ColumnsWithTypeAndName & argument
             if (num_arguments == 1)
                 data_columns[i] = &nullable_col->getNestedColumn();
 
-            null_map = &nullable_col->getNullMapData();
+            null_map = nullable_col->tryGetNullMapData();
             break;
         }
     }

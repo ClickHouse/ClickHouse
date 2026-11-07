@@ -430,7 +430,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
                 {
                     MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
                     auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
-                    const auto & null_map = arg_nullable.getNullMapData();
+                    const auto & null_map = *arg_nullable.tryGetNullMapData();
                     for (size_t i = 0; i < input_rows_count; ++i)
                         result_null_map_data[i] |= null_map[i];
                     result_null_map = std::move(mut);
@@ -438,7 +438,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
                 else
                 {
                     /// If only one arg is nullable, share its null map between the arg and the result.
-                    result_null_map = arg_nullable.getNullMapColumnPtr();
+                    result_null_map = arg_nullable.tryGetNullMapColumnPtr();
                 }
             }
         }

@@ -940,13 +940,13 @@ void RangeHashedDictionary<dictionary_key_type>::blockToAttributes(const Block &
     if (const auto * min_range_column_nullable = checkAndGetColumn<ColumnNullable>(min_range_column))
     {
         min_range_column = &min_range_column_nullable->getNestedColumn();
-        min_range_null_map = &min_range_column_nullable->getNullMapColumn().getData();
+        min_range_null_map = min_range_column_nullable->tryGetNullMapData();
     }
 
     if (const auto * max_range_column_nullable = checkAndGetColumn<ColumnNullable>(max_range_column))
     {
         max_range_column = &max_range_column_nullable->getNestedColumn();
-        max_range_null_map = &max_range_column_nullable->getNullMapColumn().getData();
+        max_range_null_map = max_range_column_nullable->tryGetNullMapData();
     }
 
     impl::callOnRangeType(dict_struct.range_min->type, [&](const auto & types)

@@ -1656,12 +1656,12 @@ private:
         ColumnPtr elements1 = gathered.full_elements1;
         if (const auto * nullable0 = checkAndGetColumn<ColumnNullable>(gathered.full_elements0.get()))
         {
-            gathered.null_map0 = &nullable0->getNullMapData();
+            gathered.null_map0 = nullable0->tryGetNullMapData();
             elements0 = nullable0->getNestedColumnPtr();
         }
         if (const auto * nullable1 = checkAndGetColumn<ColumnNullable>(gathered.full_elements1.get()))
         {
-            gathered.null_map1 = &nullable1->getNullMapData();
+            gathered.null_map1 = nullable1->tryGetNullMapData();
             elements1 = nullable1->getNestedColumnPtr();
         }
 
