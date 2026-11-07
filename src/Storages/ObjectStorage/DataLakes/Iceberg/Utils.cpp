@@ -86,6 +86,9 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_METHOD;
 extern const int READONLY;
+extern const int FILE_ALREADY_EXISTS;
+extern const int STALE_VERSION;
+extern const int S3_ERROR;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -366,6 +369,13 @@ void writeMessageToFile(
     }
 }
 
+bool isConditionalWriteConflict(const Exception & e)
+{
+    return e.code() == ErrorCodes::FILE_ALREADY_EXISTS
+        || e.code() == ErrorCodes::STALE_VERSION
+        || (e.code() == ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"));
+}
+
 /// Whether the storage refused the request itself rather than its condition, so that a retry is refused again.
 static bool isRefusedWrite(const Exception & e)
 {
@@ -426,7 +436,11 @@ bool writeMetadataFile(
         /// a refusal (e.g. of the check after an upload) proves nothing was written only while the file is absent.
         if (isRefusedWrite(e) && (!write_attempted || isKnownAbsent(object_storage, storage_metadata_path)))
             throw;
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        if (isConditionalWriteConflict(e))
+            LOG_DEBUG(
+                getLogger("IcebergWrites"), "Metadata file {} was written by a concurrent commit: {}", storage_metadata_path, e.message());
+        else
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         return false;
     }
     catch (...)
@@ -513,6 +527,17 @@ bool tryWriteVersionHintFile(
 
             if (!assert_version_exactly)
                 return true;
+        }
+        catch (const Exception & e)
+        {
+            if (isConditionalWriteConflict(e))
+                LOG_DEBUG(
+                    getLogger("IcebergWrites"),
+                    "Version hint {} was changed by a concurrent writer: {}",
+                    storage_version_hint_path,
+                    e.message());
+            else
+                tryLogCurrentException(__PRETTY_FUNCTION__);
         }
         catch (...)
         {
