@@ -1,3 +1,6 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: make_distributed_plan requires the analyzer.
+
 -- A distributed set operation (UNION / INTERSECT / EXCEPT) can produce a column as a constant in one
 -- branch and as a full column (aliased from an exchange) in another. Plan serialization re-derives
 -- constness per step, so the branches used to mismatch at the strict set-operation header check.
@@ -13,6 +16,7 @@ SET max_rows_to_group_by = 0;
 SET distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3;
 
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1;
+SET automatic_parallel_replicas_mode = 0;
 
 -- UNION: a constant in one branch vs a full column aliased from an exchange in the other.
 SELECT DISTINCT toFixedString(NULL, 'null'), minus(NULL, (SELECT NULL))

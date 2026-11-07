@@ -9,81 +9,98 @@
 
 using namespace DB;
 
-TEST(MaskURIPassword, FollowsRFC3986AndFailsClosed)
+namespace
 {
-    const std::vector<std::pair<std::string, std::string>> cases = {
-        /// Ordinary URIs with credentials.
-        {"http://user:password@host", "http://user:[HIDDEN]@host"},
-        {"https://user:password@host:8080/path?query=1", "https://user:[HIDDEN]@host:8080/path?query=1"},
-        {"amqp://guest:guest@localhost:5672/", "amqp://guest:[HIDDEN]@localhost:5672/"},
-        {"mongodb://u:p@h1:27017,h2:27017/db?replicaSet=r", "mongodb://u:[HIDDEN]@h1:27017,h2:27017/db?replicaSet=r"},
-        {"http://u:p@[::1]:8123/", "http://u:[HIDDEN]@[::1]:8123/"},
-        {"http://user:pass:word@host", "http://user:[HIDDEN]@host"},
-        {"http://user%3Aname:password@host", "http://user%3Aname:[HIDDEN]@host"},
-        {"http://:password@host", "http://:[HIDDEN]@host"},
-        {"mysql://root:@host", "mysql://root:[HIDDEN]@host"},
 
-        /// A '@' after the authority is not the end of a userinfo.
-        {"http://localhost:11111/x?email=a@b.com", "http://localhost:11111/x?email=a@b.com"},
-        {"http://host/user:password@x", "http://host/user:password@x"},
-        {"http://u:p@a/b@host", "http://u:[HIDDEN]@a/b@host"},
-        {"http://host?email=a@b.com", "http://host?email=a@b.com"},
+/// The regular expression `maskURIPassword` used to be. Kept here so that the hand-written scan
+/// can be checked against it: this is masking of secrets, so "close enough" is not good enough.
+bool maskURIPasswordWithRE2(std::string * uri)
+{
+    return RE2::Replace(uri, R"(([^:]+://[^:]*):([^@]*)@(.*))", "\\1:[HIDDEN]@\\3");
+}
 
-        /// No password: a userinfo without ':' is a user name, and an authority without '@' has no userinfo.
-        {"http://user@host", "http://user@host"},
-        {"http://host:8080", "http://host:8080"},
-        {"http://[::1]:8123/path@x", "http://[::1]:8123/path@x"},
-        {"file:///etc/passwd", "file:///etc/passwd"},
-        {"http://user:password", "http://user:password"},
-        {"user:password@host", "user:password@host"},
-        {"just some text", "just some text"},
-        {"", ""},
-        {"://", "://"},
+const std::vector<std::string> corpus = {
+    /// Ordinary URIs with credentials.
+    "http://user:password@host",
+    "https://user:password@host:8080/path?query=1",
+    "amqp://guest:guest@localhost:5672/",
+    "nats://u:p@127.0.0.1:4222",
+    "postgres://user:p@ss@host/db",
+    "mysql://root:@host",
+    "scheme://:password@host",
 
-        /// Fails closed: a raw '@' in the password extends the userinfo to the last '@' of the authority.
-        {"https://user:SEKRIT@PW@localhost:11111/x", "https://user:[HIDDEN]@localhost:11111/x"},
-        {"http://user:password@host@another/x", "http://user:[HIDDEN]@another/x"},
+    /// No credentials to mask.
+    "http://host",
+    "http://host/path",
+    "http://user@host",
+    "just some text",
+    "",
+    "://",
+    ":",
+    "a://b",
 
-        /// Fails closed: an authority that is not `host[:port]` was cut by a raw '/', '?' or '#' in the password.
-        {"http://u:pa/ss@host/x", "http://u:[HIDDEN]@host/x"},
-        {"http://u:pa?ss@host", "http://u:[HIDDEN]@host"},
-        {"http://u:pa#ss@host", "http://u:[HIDDEN]@host"},
-        {"http://u:12/ss@host", "http://u:12/ss@host"},
-        {"http://u:pa/ss", "http://u:pa/ss"},
+    /// The scheme must be non-empty and colon-free, so these do not match at the first "://".
+    "://user:password@host",
+    ":://user:password@host",
+    "x:://user:password@host",
 
-        /// Any `://` can start a URI, also inside a longer text.
-        {"://user:password@host", "://user:[HIDDEN]@host"},
-        {"line one\nhttp://user:password@host", "line one\nhttp://user:[HIDDEN]@host"},
-        {"http://host/ ftp://user:password@elsewhere", "http://host/ ftp://user:[HIDDEN]@elsewhere"},
-        /// Here the first authority is `host ftp:`, which is not `host[:port]`, so it fails closed.
-        {"http://host ftp://user:password@elsewhere", "http://host ftp:[HIDDEN]@elsewhere"},
-        {"https://host/key?redirect=http://u:p@elsewhere", "https://host/key?redirect=http://u:[HIDDEN]@elsewhere"},
+    /// A second "://" can match when the first one cannot.
+    "://nope http://user:password@host",
+    "http://host ftp://user:password@elsewhere",
 
-        /// Fails closed by default: a consumer like the MongoDB driver ends the userinfo at the first '/' only.
-        {"mongodb://usr:999999?TOPSECRET@localhost:27017/db", "mongodb://usr:[HIDDEN]@localhost:27017/db"},
-        {"http://host#frag:x@y", "http://host#frag:[HIDDEN]@y"},
-    };
+    /// Colons and at signs in unusual places.
+    "http://user:pass:word@host",
+    "http://user:password@host@another",
+    "http://a:b@c://d:e@f",
+    "@:://",
+    "http://user:password",
+    "user:password@host",
 
-    /// `Poco::URI` ends the authority where the RFC does, so a '@' after '?' or '#' is not in its userinfo.
-    const std::vector<std::pair<std::string, std::string>> rfc_cases = {
-        {"mongodb://usr:999999?TOPSECRET@localhost:27017/db", "mongodb://usr:999999?TOPSECRET@localhost:27017/db"},
-        {"http://host#frag:x@y", "http://host#frag:x@y"},
-        {"http://u:pa?ss@host", "http://u:[HIDDEN]@host"},
-        {"https://user:SEKRIT@PW@localhost:11111/x", "https://user:[HIDDEN]@localhost:11111/x"},
-    };
+    /// Newlines: `[^:]` matches them but `.` does not, which only affects the tail.
+    "http://user:password@host\nsecond line",
+    "line one\nhttp://user:password@host",
+};
 
-    for (const auto & [input, expected] : cases)
+}
+
+TEST(MaskURIPassword, MatchesTheRegularExpressionItReplaced)
+{
+    for (const auto & input : corpus)
     {
-        std::string uri = input;
-        EXPECT_EQ(maskURIPassword(&uri), input != expected) << "return value for: " << input;
-        EXPECT_EQ(uri, expected) << "result for: " << input;
+        std::string with_scan = input;
+        std::string with_re2 = input;
+
+        bool scanned = maskURIPassword(&with_scan);
+        bool matched = maskURIPasswordWithRE2(&with_re2);
+
+        EXPECT_EQ(scanned, matched) << "return value differs for: " << input;
+        EXPECT_EQ(with_scan, with_re2) << "result differs for: " << input;
     }
+}
 
-    for (const auto & [input, expected] : rfc_cases)
+TEST(MaskURIPassword, AgreesWithTheRegularExpressionOnRandomStrings)
+{
+    /// The fixed corpus above documents the interesting cases; this is the safety net for the ones
+    /// nobody thought of. The alphabet is the characters the regular expression assigns meaning to.
+    constexpr std::string_view alphabet = "ab:@/.\n";
+    std::mt19937_64 rng(20260731); /// NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) deterministic seed, so a failure is reproducible
+    std::uniform_int_distribution<size_t> length_dist(0, 32);
+    std::uniform_int_distribution<size_t> char_dist(0, alphabet.size() - 1);
+
+    for (size_t round = 0; round < 200000; ++round)
     {
-        std::string uri = input;
-        EXPECT_EQ(maskURIPassword(&uri, URI_AUTHORITY_TERMINATORS), input != expected) << "return value for: " << input;
-        EXPECT_EQ(uri, expected) << "result for: " << input;
+        std::string input(length_dist(rng), ' ');
+        for (auto & c : input)
+            c = alphabet[char_dist(rng)];
+
+        std::string with_scan = input;
+        std::string with_re2 = input;
+
+        bool scanned = maskURIPassword(&with_scan);
+        bool matched = maskURIPasswordWithRE2(&with_re2);
+
+        ASSERT_EQ(scanned, matched) << "return value differs for: " << input;
+        ASSERT_EQ(with_scan, with_re2) << "result differs for: " << input;
     }
 }
 
@@ -115,7 +132,7 @@ bool maskPresignedURLParametersWithRE2(std::string & url)
 {
     return RE2::GlobalReplace(
         &url,
-        R"(([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|sig|(?i:X-Amz-|X-Goog-)[^=?&]*)=)[^&#]*)",
+        R"(([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|X-Amz-[A-Za-z0-9\-]*|X-Goog-[A-Za-z0-9\-]*)=)[^&#]*)",
         "\\1[HIDDEN]");
 }
 
@@ -156,25 +173,6 @@ const std::vector<std::string> url_corpus = {
     "https://bucket/key?Expires=1&Expires=2&Expires=3",
     "https://bucket/key?Signature=a=b&next=1",
 
-    /// The prefixes are header names, so any case: a SigV2 presigned URL carries `x-amz-security-token`.
-    "https://s3.amazonaws.com/b/k?AWSAccessKeyId=AKIA&Signature=abc&x-amz-security-token=tok&Expires=1",
-    "https://h/f?X-AMZ-SECURITY-TOKEN=a",
-    "https://h/f?x-goog-signature=a",
-    "https://h/f?x-amz-=empty",
-    "https://h/f?x-amz-any_name=hidden",
-
-    /// An Azure shared access signature: `sig` is the signature, the other fields say what it grants.
-    "https://acct.blob.core.windows.net/c/b?sp=r&sig=abc",
-    "abfss://c@a.dfs.core.windows.net/d/?sp=r&sig=abc",
-    "https://h/f?X-Amz-Signature=a&sig=b",
-    "https://h/f?SIG=abc",
-    "https://h/f?Sig=abc",
-    "https://h/f?design=visible",
-    "https://h/f?signed=visible",
-    "https://h/f?sig",
-    "https://h/f?sig=",
-    "https://h/f?sig=a&sig=b",
-
     /// Both at once, and neither.
     "https://user:password@bucket/key?X-Amz-Signature=abc&format=CSV",
     "",
@@ -207,7 +205,6 @@ TEST(MaskS3URLCredentials, AgreeWithTheRegularExpressionsOnRandomStrings)
     const std::vector<std::string> tokens = {
         "https://", "s3://", "1://", "-x://", ":/", "user", "pass", ":", "@", "/", "?", "&", "=", "#",
         "Signature", "AWSAccessKeyId", "Expires", "GoogleAccessId", "X-Amz-", "X-Goog-", "Credential", "_", "a", "\n", "",
-        "sig", "SIG", "design", "x-amz-", "X-AMZ-", "x-Goog-",
     };
     std::mt19937_64 rng(20260731); /// NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp) deterministic seed, so a failure is reproducible
     std::uniform_int_distribution<size_t> count_dist(0, 12);
@@ -233,50 +230,10 @@ TEST(MaskS3URLCredentials, AgreeWithTheRegularExpressionsOnRandomStrings)
     }
 }
 
-TEST(MaskS3URLCredentials, MasksPercentEncodedSecretParameterNames)
-{
-    /// Which of these spellings authenticates was measured against Azurite 3.35 with one valid
-    /// shared access signature: the lower-case ones do, encoded or not, and the upper-case ones
-    /// do not. The name itself is never rewritten, only its value, so the expectations keep it.
-    struct Arm
-    {
-        std::string url;
-        std::string expected;
-    };
-
-    const std::vector<Arm> arms = {
-        {"https://h/f?%73ig=x", "https://h/f?%73ig=[HIDDEN]"},
-        {"https://h/f?s%69g=x", "https://h/f?s%69g=[HIDDEN]"},
-        {"https://h/f?%73%69%67=x", "https://h/f?%73%69%67=[HIDDEN]"},
-
-        /// The decoding serves every name in the set, and the prefixes too.
-        {"https://h/f?%53ignature=x", "https://h/f?%53ignature=[HIDDEN]"},
-        {"https://h/f?%58-Amz-Signature=x", "https://h/f?%58-Amz-Signature=[HIDDEN]"},
-        {"https://h/f?%78-amz-security-token=x", "https://h/f?%78-amz-security-token=[HIDDEN]"},
-
-        /// Decodes to `SIG`, which does not authenticate, so it stays readable like `?SIG=` itself.
-        {"https://h/f?%53IG=x", "https://h/f?%53IG=x"},
-        /// The endpoint decodes once as well, so to it this name is `%73ig` rather than `sig`.
-        {"https://h/f?%2573ig=x", "https://h/f?%2573ig=x"},
-        /// A malformed and a truncated escape are copied through rather than throwing.
-        {"https://h/f?%7Xig=x", "https://h/f?%7Xig=x"},
-        {"https://h/f?%7=x", "https://h/f?%7=x"},
-        /// `+` decodes to a space, so this name is not `sig`.
-        {"https://h/f?s+ig=x", "https://h/f?s+ig=x"},
-    };
-
-    for (const auto & arm : arms)
-    {
-        std::string url = arm.url;
-        EXPECT_EQ(maskPresignedURLParameters(url), arm.url != arm.expected) << "return value differs for: " << arm.url;
-        EXPECT_EQ(url, arm.expected) << "result differs for: " << arm.url;
-    }
-}
-
 TEST(MaskS3URLCredentials, MasksUserinfoAndPresignedParameters)
 {
-    std::string url = "https://key:secret@bucket/path?X-Amz-Signature=abcdef&sig=ghijkl&format=CSV";
+    std::string url = "https://key:secret@bucket/path?X-Amz-Signature=abcdef&format=CSV";
     EXPECT_TRUE(maskURIUserinfo(url));
     EXPECT_TRUE(maskPresignedURLParameters(url));
-    EXPECT_EQ(url, "https://[HIDDEN]@bucket/path?X-Amz-Signature=[HIDDEN]&sig=[HIDDEN]&format=CSV");
+    EXPECT_EQ(url, "https://[HIDDEN]@bucket/path?X-Amz-Signature=[HIDDEN]&format=CSV");
 }

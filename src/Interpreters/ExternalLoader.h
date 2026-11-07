@@ -100,10 +100,6 @@ public:
     /// Sets whether all the objects from the configuration should be always loaded (even those which are never used).
     void enableAlwaysLoadEverything(bool enable);
 
-    /// Sets whether the objects which are not loaded lazily start loading on their own when they are added to the configuration.
-    /// When disabled, the objects are registered, but loaded only on explicit request.
-    void enableAutomaticLoading(bool enable);
-
     /// Sets whether the objects should be loaded asynchronously, each loading in a new thread (from the thread pool).
     void enableAsyncLoading(bool enable);
 
@@ -211,9 +207,6 @@ public:
     /// Check if object with name exists in configuration
     bool has(const String & name) const;
 
-    /// Returns whether the object is loaded on first use instead of eagerly.
-    bool isObjectLazy(const ObjectConfig & config) const;
-
     /// Unloads a loaded object, releasing its memory. It will be reloaded lazily on next access.
     bool unload(const String & name) const;
 
@@ -246,7 +239,7 @@ protected:
         IExternalLoadable & /* object */, const Poco::Util::AbstractConfiguration & /* config */, const String & /* key_in_config */) const {}
 
     /// Returns whether the object's configuration overrides lazy loading, or no value to follow the loader-wide setting.
-    virtual std::optional<bool> getObjectLazyLoadOverride(
+    virtual std::optional<bool> isObjectLazy(
         const Poco::Util::AbstractConfiguration & /* config */, const String & /* key_in_config */) const { return {}; }
 
     Strings getAllTriedToLoadNames() const;

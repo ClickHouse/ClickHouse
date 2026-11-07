@@ -5,7 +5,7 @@
       "pages": [
         "fr/resources/support-center/home",
         {
-          "group": "Performances et optimisation",
+          "group": "Performance et optimisation",
           "pages": [
             "fr/resources/support-center/knowledge-base/performance-optimization/insert-select-settings-tuning",
             "fr/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order",
@@ -40,7 +40,7 @@
           ]
         },
         {
-          "group": "Importation et exportation de données",
+          "group": "Importation et exportation des données",
           "pages": [
             "fr/resources/support-center/knowledge-base/data-import-export/achieving-atomic-inserts",
             "fr/resources/support-center/knowledge-base/data-import-export/cannot-append-data-to-parquet-format",
@@ -99,7 +99,7 @@
           ]
         },
         {
-          "group": "Tables et schémas",
+          "group": "Tables et schéma",
           "pages": [
             "fr/resources/support-center/knowledge-base/tables-schema/add-column",
             "fr/resources/support-center/knowledge-base/tables-schema/delete-old-data",
@@ -131,12 +131,11 @@
             "fr/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
             "fr/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
             "fr/resources/support-center/knowledge-base/materialized-views/how-to-use-parametrised-views",
-            "fr/resources/support-center/knowledge-base/materialized-views/projection-example",
-            "fr/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts"
+            "fr/resources/support-center/knowledge-base/materialized-views/projection-example"
           ]
         },
         {
-          "group": "Supervision et débogage",
+          "group": "Monitoring et débogage",
           "pages": [
             "fr/resources/support-center/knowledge-base/monitoring-debugging/check-query-cache-in-use",
             "fr/resources/support-center/knowledge-base/monitoring-debugging/collect-and-draw-traces",
@@ -181,16 +180,15 @@
             "fr/resources/support-center/knowledge-base/setup-installation/how-to-increase-thread-pool-size",
             "fr/resources/support-center/knowledge-base/setup-installation/install-clickhouse-windows10",
             "fr/resources/support-center/knowledge-base/setup-installation/llvm-clang-up-to-date",
-            "fr/resources/support-center/knowledge-base/setup-installation/production",
-            "fr/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server"
+            "fr/resources/support-center/knowledge-base/setup-installation/production"
           ]
         },
         {
-          "group": "Généralités et FAQ",
+          "group": "Général et FAQ",
           "pages": [
             "fr/resources/support-center/knowledge-base/general-faqs/faq-index",
             {
-              "group": "Généralités",
+              "group": "Général",
               "pages": [
                 "fr/resources/support-center/knowledge-base/general-faqs/index",
                 "fr/resources/support-center/knowledge-base/general-faqs/columnar-database",
@@ -242,7 +240,7 @@
           ]
         },
         {
-          "group": "Conseils et astuces",
+          "group": "Trucs et astuces",
           "pages": [
             "fr/resources/support-center/tips-and-tricks/community-wisdom",
             "fr/resources/support-center/tips-and-tricks/cost-optimization",
@@ -257,5 +255,5 @@
     }
   ],
   "icon": "/images/icons/icon-support-center.svg",
-  "item": "Centre d’assistance"
+  "item": "Centre de support"
 }
