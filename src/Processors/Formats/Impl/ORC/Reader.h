@@ -4,6 +4,7 @@
 #include <Processors/Formats/Impl/ORC/SearchArgument.h>
 #include <Processors/Formats/Impl/ORC/Vector.h>
 
+#include <functional>
 #include <future>
 #include <list>
 #include <map>
@@ -40,6 +41,8 @@ struct ReaderOptions
     UInt64 range_size_limit = 32 * 1024 * 1024;
 };
 
+using RowGroupFilter = std::function<bool(const std::function<const Proto::ColumnStatistics *(UInt64)> &)>;
+
 struct RowReaderOptions
 {
     /// The ids of the columns to read, with the same semantics as in the reference implementation
@@ -53,6 +56,9 @@ struct RowReaderOptions
     /// The time zone to show the values of the TIMESTAMP (not TIMESTAMP_INSTANT) columns in.
     std::string timezone_name = "GMT";
     std::shared_ptr<SearchArgument> search_argument;
+    /// Used only with `search_argument`, for the row groups it does not skip: gets the statistics of
+    /// a column of the row group by the column id (nullptr if none) and returns false to skip it.
+    RowGroupFilter row_group_filter;
 };
 
 class RowReader;

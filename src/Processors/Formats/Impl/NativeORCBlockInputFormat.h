@@ -100,6 +100,7 @@ private:
     std::unique_ptr<ORCColumnToCHColumn> orc_column_to_ch_column;
 
     std::shared_ptr<ORC::SearchArgument> sargs;
+    ORC::RowGroupFilter row_group_filter;
 
     // indices of columns to read from ORC file
     std::vector<UInt64> include_indices;
