@@ -2,6 +2,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <cstddef>
+#include <cstring>
 
 #include <Interpreters/SetWithState.h>
 #include <Common/Stopwatch.h>
@@ -185,6 +186,9 @@ void FilterBySetOnTheFlyTransform::transform(Chunk & chunk)
         auto key_columns = getColumnsByIndices(key_sample_block, chunk, key_column_indices);
         ColumnPtr mask_col = set->execute(key_columns, false);
         const auto & mask = assert_cast<const ColumnUInt8 *>(mask_col.get())->getData();
+
+        if (mask.front() && std::memchr(mask.data() + 1, 0, mask.size() - 1) == nullptr)
+            return;
 
         stat.result_rows -= chunk.getNumRows();
 
