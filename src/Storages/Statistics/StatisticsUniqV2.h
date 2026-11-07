@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/Arena.h>
+#include <Common/AlignedBuffer.h>
 #include <Storages/Statistics/Statistics.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -28,9 +28,13 @@ public:
     size_t allocatedBytes() const override;
 
 private:
-    std::unique_ptr<Arena> arena;
+    /// Shared by the statistics of all columns of the same type, see `getCollector`.
     AggregateFunctionPtr collector;
+    /// The state of `collector`. It does not allocate memory in an arena.
+    AlignedBuffer state;
     AggregateDataPtr data;
+    /// The size of the serialized state if it is known (after `deserialize`), otherwise 0.
+    size_t serialized_size = 0;
 
     /// Cached result of estimateCardinality + 1. Zero (0) means "not computed yet".
     mutable std::atomic<UInt64> cached_cardinality_plus_one{0};
