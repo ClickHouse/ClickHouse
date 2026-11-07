@@ -2,6 +2,38 @@
 
 This directory contains `.xml`-files with performance tests.
 
+### Which tests run in pull requests
+
+Ordinary PR comparisons against master choose whole XML tests from a recent,
+complete performance coverage run. They use the shared stateless and integration
+selection rules independently, with limits of 250 and 100 tests, then combine
+their results without another limit. Only query execution coverage is used:
+setup and teardown still run, but their coverage does not choose tests. Regions
+covered by more than 300 tests are ignored. A changed source header also adds
+its covering tests when at most 300 tests cover that header.
+
+The selection always includes the fixed set in
+[`performance_fixed_tests.json`](../../ci/jobs/scripts/performance_fixed_tests.json),
+tests that failed earlier in the PR, and new or changed tests. Failure history
+uses the preceding 30 days of normal performance runs: slowdowns in failed jobs,
+recorded dashboard failures and XML execution errors. As in the shared selectors,
+a commit and job with failures in 20 or more tests is excluded from this history.
+Changes to included XML, query files and settings count as changes to their owning test. Tests that
+have no coverage, including shell tests, are included too. Every query in every
+selected XML runs, with the usual adaptive timing repetitions. These runs use six
+shards per enabled architecture.
+
+The `pr-performance` or `ci-force-all` label selects the full test suite on eight
+shards. These full runs retain the existing query sampling settings. Master,
+release, nightly and special Iceberg comparisons keep their existing behavior.
+
+Each job attaches `performance_selection.json` with its tests, selection reasons,
+coverage identities, source mapping gaps and query policy. Missing or incomplete
+coverage is reported rather than silently running all tests. A transient CIDB or
+GitHub failure skips the job with a warning and is not cached; rerun it to test.
+Selection reduces work, but does not guarantee that every performance change is
+caught. Coverage collected on AMD is also used for ARM selection.
+
 ### How to write a performance test
 
 First of all please check that existing tests don't cover your case. If there are no such tests then you can write your own test.
@@ -202,3 +234,165 @@ TODO
 pip3 install clickhouse_driver scipy
 ../../tests/performance/scripts/perf.py --min-runs 1 --cap 1 --cap-fast 1 insert_parallel.xml
 ```
+
+### LLVM coverage collection
+
+`NightlyCoverage` runs 16 separate performance coverage shards using
+`amd_llvm_coverage_per_test`. These runs collect source regions; they do not
+produce performance measurements or change PR test selection. The regular
+performance comparison continues to use release binaries.
+
+The collector attaches the prebuilt dataset parts and renames `datasets.hits_v1`
+to `test.hits`, as the PGO collector does. It keeps the fixture rows without the
+timing job's bulk rewrite, which is too expensive with LLVM instrumentation.
+The manifest records `dataset_layout=prebuilt`; test-defined setup and writes
+still run under coverage.
+
+Coverage setup and fill statements have a 30-minute execution limit. The client
+socket timeout is one minute longer than the larger of that limit and the query
+execution limit. The CI wrapper allows 30 minutes per query statement (unless
+the XML test specifies `max_query_seconds`) and twelve hours per shard, including
+a 20-minute export reserve. Each test can use the remaining collection budget;
+there is no separate one-hour limit for an entire XML file.
+
+Shard assignment uses measured instrumented runtimes in
+`ci/jobs/performance_coverage_timings.json`. Whole XML files are sorted from
+longest to shortest, with lexical ties, then placed on the least-loaded shard.
+The weights include test setup and teardown. The load prediction also includes
+measured shard-level fixture and export overhead. The first 808 timings comprise
+478 measured whole-test wall times and 330 measured stage totals with an estimated
+wrapper cost; they are not release-query medians.
+
+Discovery defines the test universe, so a newly added XML is included without
+editing the timing table. New tests use the table's upper-quartile runtime as an
+explicit estimate. Changed XML, included fragments, SQL or settings use the
+larger of that estimate and its previous runtime. Deleted tests disappear automatically. New and changed
+tests are listed in the job manifest; they are never assigned zero cost. Long
+and shell-query XMLs retain explicit skipped entries but do not affect load.
+Every discovered XML belongs to exactly one shard, including these exclusions.
+The same source revision, timing table and shard count reproduce the assignment.
+Updating any of them may move tests; a resumed shard rejects changed assignments.
+
+Inspect the current deterministic assignment without starting a server:
+
+```bash
+python3 -m ci.jobs.performance_coverage_sharding --show-plan --shards 16
+```
+
+To refresh the weights, download completed shard manifests and run this from the
+repository root. The command uses fresh per-test wall times from compatible
+first-plus-one-warm jobs, takes the median for repeated measurements, and ignores
+restored tests. Commit the updated timing table after reviewing the new balance:
+
+```bash
+python3 -m ci.jobs.performance_coverage_sharding --update-timings tmp/coverage-*/manifest.json
+```
+
+To collect just performance coverage on a PR branch, dispatch the existing
+workflow with `suite=performance` (the scheduled run still collects all suites):
+
+```bash
+gh workflow run nightly_coverage.yml --ref <branch> -f suite=performance
+```
+
+To retry only missing shards on a corrected branch revision, keep the same
+16-way assignment and specify their numbers:
+
+```bash
+gh workflow run nightly_coverage.yml --ref <branch> -f suite=performance -f performance_shards=4,13
+```
+
+Successful shards publish independently and do not need to be rerun. The selector
+combines successful shards from separate attempts when their binary commit and
+checksum, source inputs, execution policy and complete test assignment match.
+Each manifest must match its own successful CIDB job, and every shard must pass
+the freshness and phase-publication checks. Wrapper-only fixes may use a different
+workflow commit; changed collection inputs cannot be mixed. GitHub's normal
+failed-job rerun uses the original commit,
+so it does not pick up collector fixes pushed afterward.
+
+For a failed attempt that preserved completed test artifacts, add
+`performance_resume_from=<full workflow commit SHA>`. The collector downloads
+that shard's archive from the same branch, checks the binary revision, source
+inputs, assignment, warm-run count, complete phase identities, teardown marker,
+and nonempty region files, then reuses only completed whole XML tests. A failed
+XML always restarts from setup. The combined manifest retains each reused test's
+origin; CIDB publication still requires completion of the entire shard. New
+manifests also record the binary checksum and per-test wall times.
+
+Recovery also requires `performance_binary_url` and
+`performance_binary_sha256`. Use the immutable artifact URL from the original
+coverage build report and the SHA256 of its unpacked executable from a verified
+manifest. The collector downloads and unpacks that binary, verifies its checksum
+before initializing datasets, and records the URL in the new manifest. The build
+cache may choose another executable even at the same workflow revision; recovery
+must not rely on that choice. A mismatch remains an error. The checksum is not
+the compressed download's checksum or its S3 ETag.
+
+The default scheduled and manual budget is twelve hours. A single measured
+`string_sort.xml` needs 6h36m51s with instrumentation; assigning it to its own
+shard cannot make the complete collection fit six hours. The budget is a limit,
+not a target runtime. The initial balance predicted about 6h46m for the slowest
+shard, including fixture and export overhead. A complete 16-shard validation
+collected all 808 eligible XML files and 7,132 queries: shard times ranged from
+5h17m to 6h33m, totaling 93.4 runner-hours. New tests and runtime variation can
+change that result.
+`performance_max_hours=6` remains available for explicitly shorter manual runs.
+
+```bash
+gh workflow run nightly_coverage.yml --ref <branch> \
+    -f suite=performance -f performance_shards=4,13 \
+    -f performance_resume_from=<full-sha> -f performance_max_hours=12 \
+    -f performance_binary_url=<original-artifact-url> \
+    -f performance_binary_sha256=<unpacked-binary-sha256>
+```
+
+The collector reuses `perf.py` for parameter expansion, query groups, settings,
+setup and teardown. It runs every expanded SQL query in each non-`long` test,
+without random query sampling or the adaptive timing loop:
+
+* `first`: one execution after test setup. This is not guaranteed to be cold:
+  setup and earlier queries may have warmed OS, filesystem, or process caches.
+* `warm`: one additional execution under a separate coverage identity.
+  This captures repeated-execution paths, without claiming that every cache or
+  compilation threshold in every test has been reached. `--coverage-warm-runs`
+  changes the count for standalone collection.
+* `setup` and `teardown`: separate test-wide coverage. A future selector must
+  associate these regions with the whole test, rather than one arbitrary query.
+
+A query group remains one query, matching the comparison report's query index.
+The coverage identity is `<test>.query<index>.<query-sha256-prefix>.<phase>`;
+the test-wide identities are `<test>.setup` and `<test>.teardown`.
+Collecting per query preserves the option to select either individual queries
+or whole tests later. Selection should use the union of `first` and `warm`;
+separate phases let us measure the coverage gained by repeated execution.
+
+`SYSTEM SET COVERAGE TEST` flushes LLVM counters to `system.coverage_log`, just
+as in stateless tests. Attribution is process-global, so queries run serially
+on one dedicated server; background work can still contribute to a phase.
+The collector must not use LLVM continuous profiling (`%c`). Each successful
+test exports the integration collector's six-column TSV format. The existing
+exporter aggregates it into `default.checks_coverage_lines`, using the job's
+start time and check name. Only completed test batches reach the coverage upload.
+
+Each shard attaches `performance_coverage.tar.gz` and a job manifest. Per-test
+manifests contain full expanded queries, hashes, settings, phase names and row
+counts. The job manifest records the workflow and binary commits, snapshot identity, completed tests,
+skips, failures and tests not reached before a timeout. A missing mapping is not
+evidence that a query is unaffected. Shell queries are explicitly skipped until
+their subprocesses can be instrumented too; `long` tests are outside this initial
+collection. Any future selector must account for these gaps and stale mappings.
+
+To collect one test against an already configured **dedicated** instrumented
+server, from the repository root:
+
+```bash
+python3 tests/performance/scripts/perf.py tests/performance/array_sort.xml \
+    --host localhost --port 9000 --coverage-output tmp/perf-coverage \
+    --coverage-warm-runs 1 --stop-merges --jemalloc-purge disabled
+```
+
+The mode requires `WITH_COVERAGE=ON` and `WITH_COVERAGE_DEPTH=ON` and clears
+`system.coverage_log` and `system.coverage_indirect_calls` on that server.
+Use a fresh output directory for each attempt. The CI wrapper is
+`ci/jobs/performance_coverage.py`; local runs retain artifacts without uploading.
