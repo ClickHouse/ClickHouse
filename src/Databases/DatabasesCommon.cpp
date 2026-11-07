@@ -1,4 +1,5 @@
 #include <Databases/DatabasesCommon.h>
+#include <Storages/StorageTableProxy.h>
 #include <Databases/DatabaseOnDisk.h>
 
 #include <Backups/BackupEntriesCollector.h>
@@ -573,37 +574,44 @@ bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, ContextP
 
 StoragePtr DatabaseWithOwnTablesBase::replaceLoadedLazyTableUnlocked(Tables::iterator it) const
 {
-    /// By value: the map slot is overwritten below, and the proxy is still needed after that.
-    StoragePtr proxy = it->second;
-    StoragePtr real_table = proxy->getLoadedLazyTable();
-    if (!real_table)
-        return proxy;
+    const auto * proxy = dynamic_cast<const StorageTableProxy *>(it->second.get());
+    if (!proxy)
+        return it->second;
+    StoragePtr loaded = proxy->getLoadedTable();
+    if (!loaded)
+        return it->second;
 
-    /// A loaded proxy answers with the identity of the storage it stands for, see `IStorage::getStorageID`.
-    auto table_id = real_table->getStorageID();
-
-    /// The UUID mapping has to be updated as well: `DatabaseCatalog::getTableImpl` answers a
-    /// StorageID that already carries a UUID straight from it, without asking the database.
-    if (table_id.hasUUID())
-        DatabaseCatalog::instance().updateUUIDMapping(
-            table_id.uuid, std::const_pointer_cast<IDatabase>(shared_from_this()), real_table);
-
-    /// A proxy and the storage it stands for are not counted the same way: `AttachedReplicatedTable`
-    /// is only counted for `StorageReplicatedMergeTree`.
-    if (!real_table->isSystemStorage() && !DatabaseCatalog::isPredefinedDatabase(database_name))
+    /// Replace the proxy only if nobody holds it, so that no query can be using the proxy and its own
+    /// table locks while other queries use the loaded storage and its locks. Under the mutexes of the
+    /// database and of the UUID mapping, nobody can obtain the proxy anew. Otherwise, keep the proxy for
+    /// now and try again on the next lookup.
+    ///
+    /// The UUID mapping has to be updated as well: `DatabaseCatalog::getTableImpl` answers a `StorageID`
+    /// that already carries a UUID straight from it, without asking the database.
+    const auto uuid = it->second->getStorageID().uuid;
+    if (uuid != UUIDHelpers::Nil)
     {
-        for (auto metric : getAttachedCountersForStorage(proxy))
+        if (!DatabaseCatalog::instance().replaceUnusedTableInUUIDMapping(uuid, it->second, loaded, /* other_owners = */ 1))
+            return it->second;
+    }
+    else if (it->second.use_count() != 1)
+        return it->second;
+
+    /// The proxy is not counted like the loaded storage, e.g. `AttachedReplicatedTable` is only counted
+    /// for `StorageReplicatedMergeTree`.
+    if (!loaded->isSystemStorage() && !DatabaseCatalog::isPredefinedDatabase(database_name))
+    {
+        for (auto metric : getAttachedCountersForStorage(it->second))
             CurrentMetrics::sub(metric);
-        for (auto metric : getAttachedCountersForStorage(real_table))
+        for (auto metric : getAttachedCountersForStorage(loaded))
             CurrentMetrics::add(metric);
     }
 
-    it->second = real_table;
-
     LOG_TRACE(log, "Replaced the proxy of lazily loaded table {} with the loaded {}",
-              table_id.getNameForLogs(), real_table->getName());
+              loaded->getStorageID().getNameForLogs(), loaded->getName());
 
-    return real_table;
+    it->second = loaded;
+    return loaded;
 }
 
 StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, ContextPtr) const

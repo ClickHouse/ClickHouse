@@ -224,6 +224,10 @@ public:
     void removeUUIDMappingFinally(const UUID & uuid);
     /// For moving table between databases
     void updateUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table);
+    /// Replaces `old_table` with `new_table` in the mapping of `uuid`, but only if the mapping holds
+    /// `old_table` and nobody else holds it apart from `other_owners` known owners. Returns whether
+    /// the mapping was replaced. For a lazily loaded table, see `DatabaseWithOwnTablesBase::replaceLoadedLazyTableUnlocked`.
+    bool replaceUnusedTableInUUIDMapping(const UUID & uuid, const StoragePtr & old_table, StoragePtr new_table, long other_owners);
     /// This method adds empty mapping (with database and storage equal to nullptr).
     /// It's required to "lock" some UUIDs and protect us from collision.
     /// Collisions of random 122-bit integers are very unlikely to happen,

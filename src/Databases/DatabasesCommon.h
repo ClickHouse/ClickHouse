@@ -93,8 +93,8 @@ protected:
     StoragePtr tryGetTableNoWait(const String & table_name) const;
 
     /// If `it` holds a lazily loaded table (see the `lazy_load_tables` database setting) that has
-    /// already been loaded, put the storage it stands for in its place and return that storage;
-    /// otherwise return what is already there.
+    /// already been loaded and is not held by anybody else, put the storage it stands for in its
+    /// place and return that storage; otherwise return what is already there.
     ///
     /// Doing this makes everything that resolves the table from now on - including everything that
     /// only recognizes a table by its concrete type, such as `system.parts` or mutations - see the

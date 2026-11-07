@@ -678,8 +678,7 @@ void MergeTreeData::acquireTableDiskRoots()
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Table {} cannot store its data at '{}' on disk {}: table {} already stores its data at '{}' on disk {} on the same storage. {}",
                 getStorageID().getNameForLogs(), root.path.string(), backQuote(root.disk_name),
-                /// The owner may be being destroyed by another thread, see getOwnStorageID.
-                owned.owner->getOwnStorageID().getNameForLogs(), owned.path.string(), backQuote(owned.disk_name), remedy);
+                owned.owner->getStorageID().getNameForLogs(), owned.path.string(), backQuote(owned.disk_name), remedy);
         }
     }
     table_disk_roots.insert(table_disk_roots.end(), roots.begin(), roots.end());

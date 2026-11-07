@@ -3,6 +3,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageTableProxy.h>
 
 
 namespace DB
@@ -34,30 +35,15 @@ ActionLocksManager::ActionLocksManager(ContextPtr context_) : WithContext(contex
 namespace
 {
 
-/// The key a lock for `table` is held under.
-///
-/// A table in a database with `lazy_load_tables` is handed out as a `StorageTableProxy` until it has
-/// been loaded, and as the loaded storage from then on, so the same table can arrive here as either
-/// object: a `SYSTEM STOP MERGES` may see the proxy and the matching `SYSTEM START MERGES` the
-/// storage itself, or a database-wide `SYSTEM STOP ...` may still hold the proxy from its snapshot
-/// of the tables after the database has already replaced it. Keying by the storage the proxy stands
-/// for makes both objects address the same locks.
-///
-/// Taking a lock loads the table: taking an action lock on the proxy loads it anyway. Lifting one
-/// does not: a proxy that has not been loaded yet cannot hold a lock, because taking one would have
-/// loaded it, so there is nothing to lift, and loading here would turn a no-op `SYSTEM START ...` on
-/// a whole database into loading every table in it.
-const IStorage * lockKeyForAdd(const StoragePtr & table)
+/// The key a lock for `table` is held under. A lazily loaded table is a `StorageTableProxy` until the
+/// database replaces it with the loaded storage, so `SYSTEM STOP ...` and `SYSTEM START ...` may see
+/// different objects for the same table. Both address the loaded storage. A proxy that has not been
+/// loaded cannot hold a lock: taking one loads the table.
+const IStorage * lockKey(const StoragePtr & table)
 {
-    if (auto loaded = table->loadLazyTable())
-        return loaded.get();
-    return table.get();
-}
-
-const IStorage * lockKeyForRemove(const StoragePtr & table)
-{
-    if (auto loaded = table->getLoadedLazyTable())
-        return loaded.get();
+    if (const auto * proxy = dynamic_cast<const StorageTableProxy *>(table.get()))
+        if (auto loaded = proxy->getLoadedTable())
+            return loaded.get();
     return table.get();
 }
 
@@ -75,7 +61,7 @@ void ActionLocksManager::add(const StoragePtr & table, StorageActionBlockType ac
 
     if (!action_lock.expired())
     {
-        const auto * key = lockKeyForAdd(table);
+        const auto * key = lockKey(table);
         std::lock_guard lock(mutex);
         storage_locks[key][action_type] = std::move(action_lock);
     }
@@ -89,7 +75,7 @@ void ActionLocksManager::remove(const StorageID & table_id, StorageActionBlockTy
 
 void ActionLocksManager::remove(const StoragePtr & table, StorageActionBlockType action_type)
 {
-    const auto * key = lockKeyForRemove(table);
+    const auto * key = lockKey(table);
     std::lock_guard lock(mutex);
 
     if (auto it = storage_locks.find(key); it != storage_locks.end())
