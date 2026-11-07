@@ -605,7 +605,8 @@ ASTPtr tryBuildAdditionalFilterAST(
                             auto storage = table_id ? DatabaseCatalog::instance().tryGetTable(table_id, context) : nullptr;
                             if (!storage)
                                 continue;
-                            columns = storage->getInMemoryMetadataPtr(context, false)->getColumns().getOrdinary();
+                            const auto storage_metadata = storage->getInMemoryMetadataPtr(context, false);
+                            columns = storage_metadata->getColumns().getOrdinary();
                         }
                         else
                         {
