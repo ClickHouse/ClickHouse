@@ -121,6 +121,7 @@ TEST_F(MixedCodecReaderFixture, ReaderReadsStreamWithDifferentCodecsPerBlock)
         settings,
         /*uncompressed_cache=*/nullptr,
         stream.size(),
+        /*file_hash=*/std::nullopt,
         /*marks_loader=*/nullptr,
         ReadBufferFromFileBase::ProfileCallback{},
         CLOCK_MONOTONIC_COARSE);

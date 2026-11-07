@@ -311,6 +311,7 @@ PostingListCursorPtr makeMultiBlockCursor(const MultiBlockTestData & data)
         settings,
         /*uncompressed_cache=*/nullptr,
         data.buffer.size(),
+        /*file_hash=*/std::nullopt,
         /*marks_loader=*/nullptr,
         ReadBufferFromFileBase::ProfileCallback{},
         CLOCK_MONOTONIC_COARSE);

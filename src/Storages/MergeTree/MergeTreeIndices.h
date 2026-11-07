@@ -474,4 +474,11 @@ bool indexFileExistsInChecksums(
     const std::string & path_prefix,
     const std::string & extension,
     const IDataPartStorage * storage = nullptr);
+
+/// Checksum of a part file found as in `indexFileExistsInChecksums` (for a member of `skp_idx.packed`, the archive's one).
+std::optional<UInt128> getFileHashForCaches(
+    const MergeTreeDataPartChecksums & checksums,
+    const std::string & path_prefix,
+    const std::string & extension,
+    const IDataPartStorage * storage = nullptr);
 }

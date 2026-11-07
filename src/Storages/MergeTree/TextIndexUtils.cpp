@@ -1331,6 +1331,7 @@ static std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStreamImpl(
         reader_settings,
         /*uncompressed_cache=*/ nullptr,
         data_file_size,
+        /*file_hash=*/ std::nullopt,
         /*marks_loader=*/ nullptr,
         ReadBufferFromFileBase::ProfileCallback{},
         CLOCK_MONOTONIC_COARSE);
