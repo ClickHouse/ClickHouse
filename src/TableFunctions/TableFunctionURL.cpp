@@ -425,7 +425,9 @@ StoragePtr TableFunctionURL::getStorage(
         configuration.headers,
         configuration.http_method,
         nullptr,
-        /*distributed_processing=*/false);
+        /*distributed_processing=*/ false,
+        /*is_replayed_definition=*/ false,
+        /*check_redirect_access=*/ true);
 }
 
 ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context, bool is_insert_query) const
@@ -467,7 +469,8 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
                 std::nullopt,
-                context).first;
+                context,
+                /*check_redirect_access=*/ true).first;
         }
         else
         {
@@ -476,7 +479,8 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
                 std::nullopt,
-                context);
+                context,
+                /*check_redirect_access=*/ true);
         }
 
         HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
