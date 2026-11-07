@@ -93,6 +93,14 @@ Field convertNumericTypeImpl(const Field & from, bool strict, bool convert_inexa
     /// `values('x BFloat16', 0.1)` rounds to the nearest `BFloat16` like `CAST`, rather than being rejected).
     const bool exact = strict || !convert_inexact_floats || !is_floating_point<To>;
 
+    /// A `NaN` or infinity is not representable in an integer type, and `accurate::convertNumeric` would cast a
+    /// `NaN` before noticing (undefined behavior). The same guard as in the accurate `CAST` (`convertNumericGeneral`).
+    if constexpr (is_floating_point<From> && !is_floating_point<To>)
+    {
+        if (!isFinite(from.safeGet<From>()))
+            return {};
+    }
+
     const bool converted = exact
         ? accurate::convertNumeric<From, To, true>(from.safeGet<From>(), result)
         : accurate::convertNumeric<From, To, false>(from.safeGet<From>(), result);

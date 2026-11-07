@@ -1,3 +1,4 @@
+#include <cmath>
 #include <limits>
 #include <string>
 #include <vector>
@@ -236,7 +237,7 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
         {"IPv4", Field(IPv4(0x7f000001)), "String"},
 
         /// `strict` native-number matrix. `convertColumnToType` now serves `strict` for native numbers
-        /// via the column-native fast path (`castColumnAccurateOrNull`), which must match
+        /// via the column-native fast path (`accurate::convertNumeric` on the column value), which must match
         /// `convertFieldToType` with `strict=true`. This is what the IN/set set builder relies on
         /// (it converts with `strict=true` to exclude values not exactly representable in the LHS type).
         {"UInt64", Field(UInt64(5)), "UInt8", true},                       // in range -> 5
@@ -250,10 +251,23 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
         {"Float64", Field(Float64(1e300)), "Float32", true},               // overflow -> null
         {"Int64", Field(Int64(9007199254740993ll)), "Float64", true},      // int -> float precision loss
         {"Int64", Field(Int64(5)), "Float32", true},                       // exact int -> float
+        /// `Float32` sources are widened to `Float64` (their `Field` type) before the conversion, as there.
+        {"Float32", Field(Float64(0.5)), "Int32", true},                   // exact -> 0
+        {"Float32", Field(Float64(0.5)), "Float32", true},                 // same type
+        {"Float32", Field(inf), "Int32", true},                            // inf -> null
+        /// `NaN` -> integer: not representable (guarded before the cast, as in the accurate `CAST`).
+        {"Float64", Field(nan), "Int32", true},
+        {"Float64", Field(nan), "Int32"},
+        {"Float32", Field(nan), "Int64", true},
+        {"Float64", Field(nan), "UInt256", true},
+        {"Float32", Field(nan), "Float64", true},                          // NaN stays NaN
+        {"UInt8", Field(UInt64(200)), "Int256", true},                     // native -> wide
+        {"Int256", Field(Int256(-5)), "UInt8", true},                      // wide negative -> null
+        {"UInt128", Field(UInt128(255)), "UInt8", true},                   // wide -> native, fits
         {"UInt64", Field(UInt64(5)), "Int8", true},                        // in range across sign -> 5
 
         /// `strict` non-native controls: these keep going through the `Field` fallback (Decimal must NOT
-        /// use `castColumnAccurateOrNull`, which would round `33.33` to `33.3` instead of rejecting it).
+        /// use an accurate `CAST`, which would round `33.33` to `33.3` instead of rejecting it).
         {"Decimal64(2)", Field(DecimalField<Decimal64>(Decimal64(3333), 2)), "Decimal64(1)", true}, // scale loss -> null
         {"Decimal64(1)", Field(DecimalField<Decimal64>(Decimal64(333), 1)), "Decimal64(2)", true},  // widen -> 33.30
         /// Rescaling that does not fit the target: `strict` -> not representable (an `IN` set skips it), while
@@ -321,6 +335,31 @@ TEST(ConvertColumnToType, DateToDateTimeOutOfRange)
     auto before_epoch = date32->createColumn();
     before_epoch->insert(Field(Int64(-719528)));
     EXPECT_ANY_THROW(convertColumnToTypeOrThrow(*before_epoch, date32, type_factory.get("DateTime('UTC')")));
+}
+
+/// Checked directly rather than against `convertFieldToType`: converting `NaN` to an integer must be rejected before
+/// any cast, in both modes and for native and wide targets.
+TEST(ConvertColumnToType, NaNToIntegerIsNotRepresentable)
+{
+    const auto & type_factory = DataTypeFactory::instance();
+    for (const char * from_type : {"Float32", "Float64"})
+    {
+        const auto from = type_factory.get(from_type);
+        auto column = from->createColumn();
+        column->insert(Field(std::numeric_limits<double>::quiet_NaN()));
+        for (const char * to_type : {"UInt8", "Int32", "Int64", "UInt128", "Int256"})
+        {
+            for (const bool strict : {false, true})
+            {
+                SCOPED_TRACE(std::string(from_type) + " -> " + to_type + (strict ? " strict" : ""));
+                EXPECT_EQ(convertColumnToTypeOrNull(*column, from, type_factory.get(to_type), {}, strict), nullptr);
+            }
+        }
+        /// A floating-point target keeps the `NaN`.
+        const auto to_float = convertColumnToTypeOrNull(*column, from, type_factory.get("Float64"), {}, true);
+        ASSERT_NE(to_float, nullptr);
+        EXPECT_TRUE(std::isnan(to_float->getFloat64(0)));
+    }
 }
 
 TEST(ConvertColumnToType, OrThrow)
