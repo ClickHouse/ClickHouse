@@ -1883,9 +1883,6 @@ Possible values:
 )", 0) \
     \
     DECLARE(NonZeroUInt64, min_chunk_bytes_for_parallel_parsing, (10 * 1024 * 1024), R"(
-- Type: unsigned int
-- Default value: 1 MiB
-
 The minimum chunk size in bytes, which each thread will parse in parallel.
 )", 0) \
     DECLARE(Bool, allow_special_serialization_kinds_in_output_formats, true, R"(
