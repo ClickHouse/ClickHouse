@@ -1,0 +1,5 @@
+-- the writer disk is unregistered, but not shut down yet
+0
+reader	1
+-- after the shutdown
+writer	3

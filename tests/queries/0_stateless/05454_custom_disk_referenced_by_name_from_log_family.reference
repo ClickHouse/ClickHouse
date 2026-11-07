@@ -1,0 +1,8 @@
+disks after the defining table is dropped	1
+rows in Log	1
+rows in TinyLog	2
+rows in StripeLog	3
+rows in Set	4
+rows in Join	5
+disks before the last table is dropped	1
+disks after the last table is dropped	0

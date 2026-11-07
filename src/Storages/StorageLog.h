@@ -3,6 +3,7 @@
 #include <map>
 #include <shared_mutex>
 
+#include <Disks/CustomDiskRegistration.h>
 #include <Disks/IDisk.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
@@ -30,6 +31,9 @@ class StorageLog final : public StorageWithCommonVirtualColumns, public WithMuta
     friend class LogSink;
 
 public:
+    /// Keeps the custom disk the table uses registered, see `Context::tryGetCustomDiskRegistration`.
+    void setCustomDiskRegistration(CustomDiskRegistrationPtr registration) { custom_disk_registration = std::move(registration); }
+
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
       *  (the correctness of names and paths is not verified)
       *  consisting of the specified columns; Create files if they do not exist.
@@ -150,6 +154,9 @@ private:
     };
 
     const String engine_name;
+    /// Keeps a custom disk that the table refers to by name (`SETTINGS disk = '<name>'`) registered for as
+    /// long as the table exists. Declared before `disk`, so it is destroyed after it.
+    CustomDiskRegistrationPtr custom_disk_registration;
     const DiskPtr disk;
     String table_path;
 

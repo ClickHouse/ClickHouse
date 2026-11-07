@@ -43,6 +43,7 @@ namespace DB
     M(COMPLETED_PIPELINE_EXECUTOR, "QueryCompPipeEx") \
     M(CONFIG_RELOADER, "ConfigReloader") \
     M(CREATE_TABLES, "CreateTables") \
+    M(CUSTOM_DISK_SHUTDOWN, "CustomDiskStop") \
     M(DATABASE_BACKUP, "DatabaseBackup") \
     M(DATABASE_ON_DISK, "DatabaseOnDisk") \
     M(DATABASE_REPLICAS, "DBReplicas") \

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Disks/CustomDiskRegistration.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 
@@ -32,6 +33,9 @@ public:
     bool hasUnreplicatedTableDataOnDisk() const override { return persistent; }
     Strings getDataPaths() const override { return {path}; }
 
+    /// Keeps the custom disk the table uses registered, see `Context::tryGetCustomDiskRegistration`.
+    void setCustomDiskRegistration(CustomDiskRegistrationPtr registration) { custom_disk_registration = std::move(registration); }
+
 protected:
     StorageSetOrJoinBase(
         DiskPtr disk_,
@@ -42,6 +46,9 @@ protected:
         const String & comment,
         bool persistent_);
 
+    /// Keeps a custom disk that the table refers to by name (`SETTINGS disk = '<name>'`) registered for as
+    /// long as the table exists. Declared before `disk`, so it is destroyed after it.
+    CustomDiskRegistrationPtr custom_disk_registration;
     DiskPtr disk;
     String path;
     bool persistent;

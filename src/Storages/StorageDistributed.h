@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/SecretArgumentsSpec.h>
+#include <Disks/CustomDiskRegistration.h>
 #include <Storages/IStorage.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/getStructureOfRemoteTable.h>
@@ -293,6 +294,9 @@ private:
 
     String relative_data_path;
 
+    /// Keeps a custom disk registered for as long as the table uses its implicit storage policy (`__<disk>`).
+    /// Declared before `storage_policy`, so it is destroyed after it.
+    CustomDiskRegistrationPtr custom_disk_registration;
     /// Can be empty if relative_data_path is empty. In this case, a directory for the data to be sent is not created.
     StoragePolicyPtr storage_policy;
     /// The main volume to store data.

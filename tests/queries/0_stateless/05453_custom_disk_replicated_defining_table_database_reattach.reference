@@ -1,0 +1,5 @@
+disks after detach	0
+rows in the replicated defining table	5
+rows in the table on the implicit policy	6
+disks after attach	1
+disks after drop	0
