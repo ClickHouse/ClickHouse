@@ -2549,12 +2549,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         const auto & in_arguments = function_node_ptr->getArguments().getNodes();
         if (in_arguments.size() == 2)
         {
-            if (const auto * rhs_tuple = in_arguments[1]->as<FunctionNode>();
-                rhs_tuple && rhs_tuple->getFunctionName() == "tuple")
-                in_rhs_has_explicit_null = std::any_of(
-                    rhs_tuple->getArguments().getNodes().begin(),
-                    rhs_tuple->getArguments().getNodes().end(),
-                    isNullConstant);
+            in_rhs_has_explicit_null = isNullConstant(in_arguments[1]);
+            if (!in_rhs_has_explicit_null)
+            {
+                if (const auto * rhs_tuple = in_arguments[1]->as<FunctionNode>();
+                    rhs_tuple && rhs_tuple->getFunctionName() == "tuple")
+                    in_rhs_has_explicit_null = std::any_of(
+                        rhs_tuple->getArguments().getNodes().begin(),
+                        rhs_tuple->getArguments().getNodes().end(),
+                        isNullConstant);
+            }
         }
     }
 
