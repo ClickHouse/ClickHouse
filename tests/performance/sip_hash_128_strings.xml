@@ -4,12 +4,18 @@
     <create_query>CREATE TABLE strings_0_300 (s String) ENGINE = Memory</create_query>
     <create_query>CREATE TABLE strings_1000_2000 (s String) ENGINE = Memory</create_query>
     <create_query>CREATE TABLE fixed_strings_16 (s FixedString(16)) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE uint32_values (x UInt32) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE arrays_0_8 (a Array(UInt32)) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE maps_0_5 (m Map(String, UInt64)) ENGINE = Memory</create_query>
 
     <fill_query>INSERT INTO strings_0_15 SELECT substring(hex(cityHash64(number)), 1, number % 16) FROM numbers(20000000)</fill_query>
     <fill_query>INSERT INTO strings_16_64 SELECT substring(repeat(hex(cityHash64(number)), 4), 1, 16 + number % 49) FROM numbers(4000000)</fill_query>
     <fill_query>INSERT INTO strings_0_300 SELECT substring(repeat(hex(cityHash64(number)), 19), 1, number % 301) FROM numbers(1000000)</fill_query>
     <fill_query>INSERT INTO strings_1000_2000 SELECT substring(repeat(hex(cityHash64(number)), 125), 1, 1000 + number % 1001) FROM numbers(100000)</fill_query>
     <fill_query>INSERT INTO fixed_strings_16 SELECT toFixedString(hex(cityHash64(number)), 16) FROM numbers(5000000)</fill_query>
+    <fill_query>INSERT INTO uint32_values SELECT cityHash64(number) FROM numbers(20000000)</fill_query>
+    <fill_query>INSERT INTO arrays_0_8 SELECT arrayMap(i -> toUInt32(cityHash64(number, i)), range(number % 9)) FROM numbers(3000000)</fill_query>
+    <fill_query>INSERT INTO maps_0_5 SELECT mapFromArrays(arrayMap(i -> substring(hex(cityHash64(number, i)), 1, 1 + (number + i) % 12), range(number % 6)), arrayMap(i -> number + i, range(number % 6))) FROM numbers(2000000)</fill_query>
 
     <query>SELECT count() FROM strings_0_15 WHERE NOT ignore(sipHash128(s)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM strings_16_64 WHERE NOT ignore(sipHash128(s)) SETTINGS max_threads = 1</query>
@@ -18,10 +24,21 @@
     <query>SELECT count() FROM fixed_strings_16 WHERE NOT ignore(sipHash128(s)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(sipHash128(SearchPhrase)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM hits_10m_single WHERE NOT ignore(sipHash128(URL)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM strings_0_15 WHERE NOT ignore(sipHash64(s)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM fixed_strings_16 WHERE NOT ignore(sipHash64(s)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM uint32_values WHERE NOT ignore(sipHash64(x)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM uint32_values WHERE NOT ignore(sipHash128(x, 'c')) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM arrays_0_8 WHERE NOT ignore(sipHash64(a)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM maps_0_5 WHERE NOT ignore(sipHash128(m)) SETTINGS max_threads = 1</query>
+    <!-- Blocks of 7 rows are smaller than a group of rows hashed side by side. -->
+    <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore(sipHash64(toUInt8(number))) SETTINGS max_block_size = 7, max_threads = 1</query>
 
     <drop_query>DROP TABLE IF EXISTS strings_0_15</drop_query>
     <drop_query>DROP TABLE IF EXISTS strings_16_64</drop_query>
     <drop_query>DROP TABLE IF EXISTS strings_0_300</drop_query>
     <drop_query>DROP TABLE IF EXISTS strings_1000_2000</drop_query>
     <drop_query>DROP TABLE IF EXISTS fixed_strings_16</drop_query>
+    <drop_query>DROP TABLE IF EXISTS uint32_values</drop_query>
+    <drop_query>DROP TABLE IF EXISTS arrays_0_8</drop_query>
+    <drop_query>DROP TABLE IF EXISTS maps_0_5</drop_query>
 </test>
