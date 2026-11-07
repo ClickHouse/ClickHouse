@@ -121,10 +121,7 @@ set(LIB_SOVERSION ${VERSION_MAJOR})
 enable_language(ASM)
 
 add_definitions(-Wno-unused-command-line-argument)
-# Note that s390x build uses mold linker
-if(NOT ARCH_S390X)
-    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=lld") # only relevant for -DENABLE_OPENSSL_DYNAMIC=1
-endif()
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=lld") # only relevant for -DENABLE_OPENSSL_DYNAMIC=1
 
 set(CRYPTO_SRC
     common/providers/der_digests_gen.c

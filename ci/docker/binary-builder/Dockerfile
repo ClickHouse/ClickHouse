@@ -84,20 +84,6 @@ RUN if [ "$CLICKHOUSE_PROFILES_COMMIT" != "none" ]; then \
     done \
     ; fi
 
-# Download and install mold for s390x build
-ARG MOLD_VERSION=2.40.4
-RUN arch=${TARGETARCH:-amd64} \
-    && case $arch in \
-        amd64) rarch=x86_64 ;; \
-        arm64) rarch=aarch64 ;; \
-    esac \
-    && curl -Lo /tmp/mold.tar.gz "https://github.com/rui314/mold/releases/download/v${MOLD_VERSION}/mold-${MOLD_VERSION}-${rarch}-linux.tar.gz" \
-    && mkdir /tmp/mold \
-    && tar -xzf /tmp/mold.tar.gz -C /tmp/mold \
-    && cp -r /tmp/mold/mold*/* /usr \
-    && rm -rf /tmp/mold \
-    && rm /tmp/mold.tar.gz
-
 # Architecture of the image when BuildKit/buildx is used
 ARG NFPM_VERSION=2.20.0
 RUN arch=${TARGETARCH:-amd64} \
