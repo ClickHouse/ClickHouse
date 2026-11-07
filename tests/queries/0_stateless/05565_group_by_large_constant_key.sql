@@ -1,7 +1,7 @@
 -- A constant GROUP BY key of 1 MiB or more is not folded by the analyzer, but a local aggregation still drops it.
 
--- Parallel replicas keep the key (checked at the end).
-SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+-- Parallel replicas keep the key (checked at the end), as GROUPING SETS do under group_by_use_nulls.
+SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, group_by_use_nulls = 0;
 
 SELECT countIf(explain ILIKE '%Keys:%'), countIf(explain ILIKE '%Keys:%xxxxxxxxxx%')
 FROM (EXPLAIN actions = 1 SELECT number % 3 AS g, count() FROM numbers(10) GROUP BY repeat('xx', 1000000), g);
@@ -11,6 +11,9 @@ FROM (EXPLAIN actions = 1 SELECT number % 2 AS g, count() FROM numbers(4) GROUP 
 -- The shape from the stress test: a LowCardinality constant, serialized per row while it was a key.
 SELECT g, count() FROM (SELECT number % 13 AS g FROM numbers(1000))
 GROUP BY repeat(toLowCardinality('\0\0\0\0\0\0\0\0\0\0a'), 1000000), g ORDER BY g;
+SELECT countIf(explain ILIKE '%Keys:%'), countIf(explain ILIKE '%Keys:%xxxxxxxxxx%' OR explain ILIKE '%Keys:%repeat(%')
+FROM (EXPLAIN actions = 1 SELECT g, count() FROM (SELECT number % 13 AS g FROM numbers(1000))
+    GROUP BY repeat(toLowCardinality('xx'), 1000000), g);
 
 SELECT length(k), g, count() FROM numbers(10) GROUP BY repeat('xx', 1000000) AS k, number % 3 AS g ORDER BY g;
 SELECT length(k), g, count() FROM numbers(10) GROUP BY repeat('xx', 1000000) AS k, number % 3 AS g WITH TOTALS ORDER BY g;
