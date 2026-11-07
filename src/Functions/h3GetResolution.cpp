@@ -100,7 +100,7 @@ Returns the resolution of the [H3](#h3-index) index.
         {"index", "Hexagon index number.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns the resolution of the H3 index with range `[0, 15]`. Throws an exception if the input is not a valid H3 cell (controlled by the `functions_h3_default_if_invalid` setting).",
+        "Returns the resolution of the H3 index with range `[0, 15]`. Throws `INCORRECT_DATA` if the input is not a valid H3 cell unless `functions_h3_default_if_invalid = 1`, in which case it returns `0`.",
         {"UInt8"}
     };
     FunctionDocumentation::Examples examples = {

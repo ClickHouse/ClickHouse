@@ -63,10 +63,10 @@ h3GetResolution(h3index)
 
 - `h3index` — Hexagon index number. [UInt64](/reference/data-types/int-uint).
 
-**Returned values**
+**Returned value**
 
 - Index resolution. Range: `[0, 15]`. [UInt8](/reference/data-types/int-uint).
-- If the index is not valid, the function returns a random value. Use [h3IsValid](#h3isvalid) to verify the index. [UInt8](/reference/data-types/int-uint).
+- Throws `INCORRECT_DATA` on invalid cells by default; returns `0` when `functions_h3_default_if_invalid = 1`.
 
 **Example**
 
@@ -651,6 +651,7 @@ h3GetResolution(index)
 **Returned value**
 
 - Index resolution. Range: `[0, 15]`. [UInt8](/reference/data-types/int-uint).
+- Throws `INCORRECT_DATA` on invalid cells by default; returns `0` when `functions_h3_default_if_invalid = 1`.
 
 **Example**
 
