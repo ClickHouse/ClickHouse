@@ -21,6 +21,9 @@ t_base
 -- view with UNION DISTINCT: inner query sent over t_base/t_base2
 t_base
 t_base2
+-- view with an aggregation and no GROUP BY: inner query sent over t_base
+t_base
 -- correctness check
 4995000
 4995000
+9990
