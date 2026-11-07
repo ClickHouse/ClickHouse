@@ -303,6 +303,9 @@ void MergeTreeSink::finishDelayedChunk()
 
     auto process_list_element = context->getProcessListElement();
 
+    /// Start uploads for the delayed batch before waiting for individual parts.
+    startPackedPartsFinalization(delayed_chunk->partitions, storage, process_list_element);
+
     for (auto & partition : delayed_chunk->partitions)
     {
         /// Honor cancellation/timeout between parts; finalizing each can be slow on object storage.

@@ -455,8 +455,16 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
     if (delayed_parts.empty())
         return;
 
+    auto process_list_element = context->getProcessListElement();
+
+    /// Start uploads for the delayed batch before waiting for individual parts.
+    startPackedPartsFinalization(delayed_parts, storage, process_list_element);
+
     for (auto & partition : delayed_parts)
     {
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
+
         ExecutionStatus status;
         std::vector<std::string> block_ids_for_log;
 
