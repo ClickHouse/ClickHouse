@@ -58,13 +58,14 @@ INSERT INTO t_nest (n) VALUES (1);
 CREATE TABLE m_nest (tup Tuple(a Tuple(b UInt8), c UInt8), n UInt64) ENGINE = Merge(currentDatabase(), '^t_nest$');
 SELECT 'nested element', (SELECT tup.a.b FROM m_nest) AS through_merge, (SELECT tup.a.b FROM t_nest) AS direct SETTINGS optimize_functions_to_subcolumns = 0;
 
--- Map has no readable subcolumn on the Merge table either, so this stays a loud error.
+-- A subcolumn of a Map alias resolves as a dynamic subcolumn of the child, which still has no data for it.
 DROP TABLE IF EXISTS t_map;
 DROP TABLE IF EXISTS m_map;
 CREATE TABLE t_map (n UInt64, mp Map(String, UInt8) ALIAS map('k', 1)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_map (n) VALUES (1);
 CREATE TABLE m_map (mp Map(String, UInt8), n UInt64) ENGINE = Merge(currentDatabase(), '^t_map$');
-SELECT mp.size0 FROM m_map SETTINGS optimize_functions_to_subcolumns = 0; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+SELECT 'map size0', (SELECT mp.size0 FROM m_map) AS through_merge, (SELECT mp.size0 FROM t_map) AS direct SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'map keys subcolumns on', (SELECT mapKeys(mp) FROM m_map) AS through_merge, (SELECT mapKeys(mp) FROM t_map) AS direct SETTINGS optimize_functions_to_subcolumns = 1;
 
 -- A row policy on the child must still bound which rows the subcolumn is computed over.
 DROP TABLE IF EXISTS t_pol;
