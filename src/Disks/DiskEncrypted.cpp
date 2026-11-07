@@ -9,12 +9,12 @@
 #include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <IO/FileEncryptionCommon.h>
+#include <IO/FileEncryptionKeys.h>
 #include <IO/ReadBufferFromEncryptedFile.h>
 #include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/S3/Credentials.h>
 #include <IO/S3Common.h>
-#include <boost/algorithm/hex.hpp>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
@@ -41,174 +41,6 @@ namespace
 {
     using DiskEncryptedPtr = std::shared_ptr<DiskEncrypted>;
     using namespace FileEncryption;
-
-    constexpr Algorithm DEFAULT_ENCRYPTION_ALGORITHM = Algorithm::AES_128_CTR;
-
-    String unhexKey(const String & hex)
-    {
-        try
-        {
-            return boost::algorithm::unhex(hex);
-        }
-        catch (const std::exception &)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read key_hex, check for valid characters [0-9a-fA-F] and length");
-        }
-    }
-
-    struct Key
-    {
-        String plain;
-        std::optional<String> encrypted;
-    };
-
-    /// Reads encryption keys from the configuration.
-    void getKeysFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
-                           std::map<UInt64, Key> & out_keys_by_id, std::vector<Key>& out_keys_without_id)
-    {
-        Strings config_keys;
-        config.keys(config_prefix, config_keys);
-
-        /// The keys are picked by a pattern of their names (`key`, `key[1]`, ...). Look up the bare names,
-        /// so that a configuration tracking the read keys (`ConfigurationWithUsageTracking`, used for
-        /// a definition of a disk) knows that the elements with these names are read even when they are absent.
-        config.has(config_prefix + ".key");
-        config.has(config_prefix + ".key_hex");
-#if CLICKHOUSE_CLOUD
-        config.has(config_prefix + ".key_aws");
-        config.has(config_prefix + ".key_gcp");
-        config.has(config_prefix + ".key_azure");
-        /// The options of a key management service are read only to decrypt a key, so they are read only
-        /// when there is such a key. Look them up as well, so that they are known for a disk that gets
-        /// such a key on a configuration reload.
-        config.has(config_prefix + ".no_sign_request");
-        config.has(config_prefix + ".aws_kms_endpoint");
-#endif
-
-        for (const std::string & config_key : config_keys)
-        {
-            Key key;
-            std::optional<UInt64> key_id;
-
-            if ((config_key == "key") || config_key.starts_with("key["))
-            {
-                String key_path = config_prefix + "." + config_key;
-                key.plain = config.getString(key_path);
-                String key_id_path = key_path + "[@id]";
-                if (config.has(key_id_path))
-                    key_id = config.getUInt64(key_id_path);
-            }
-            else if ((config_key == "key_hex") || config_key.starts_with("key_hex["))
-            {
-                String key_path = config_prefix + "." + config_key;
-                key.plain = unhexKey(config.getString(key_path));
-                String key_id_path = key_path + "[@id]";
-                if (config.has(key_id_path))
-                    key_id = config.getUInt64(key_id_path);
-            }
-#if CLICKHOUSE_CLOUD
-            else if ((config_key == "key_aws") || config_key.starts_with("key_aws[") || (config_key == "key_gcp") || config_key.starts_with("key_gcp[") ||
-                     (config_key == "key_azure") || config_key.starts_with("key_azure["))
-            {
-                String key_path = config_prefix + "." + config_key;
-                String key_id_path = key_path + "[@id]";
-                if (config.has(key_id_path))
-                    key_id = config.getUInt64(key_id_path);
-                key.plain = decryptKeyUsingCloudKeyManagementService(config,config_prefix, key_path, config_key);
-                key.encrypted = config.getString(key_path);
-            }
-#endif
-            else
-                continue;
-
-            if (key_id)
-            {
-                if (!out_keys_by_id.contains(*key_id))
-                    out_keys_by_id[*key_id] = key;
-                else
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple keys specified for same ID {}", *key_id);
-            }
-            else
-                out_keys_without_id.push_back(key);
-        }
-
-        if (out_keys_by_id.empty() && out_keys_without_id.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No encryption keys found");
-
-        if (out_keys_by_id.empty() && (out_keys_without_id.size() == 1))
-        {
-            out_keys_by_id[0] = out_keys_without_id.front();
-            out_keys_without_id.clear();
-        }
-    }
-
-    /// Reads the current encryption key from the configuration.
-    String getCurrentKeyFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
-                                   const std::map<UInt64, Key> & keys_by_id, const std::vector<Key> & keys_without_id)
-    {
-        String key_path = config_prefix + ".current_key";
-        String key_hex_path = config_prefix + ".current_key_hex";
-        String key_id_path = config_prefix + ".current_key_id";
-
-        if (config.has(key_path) + config.has(key_hex_path) + config.has(key_id_path) > 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The current key is specified multiple times");
-
-        auto check_current_key_found = [&](const String & current_key_)
-        {
-            for (const auto & [_, key] : keys_by_id)
-            {
-                if (key.plain == current_key_)
-                    return current_key_;
-
-                if (std::string_view(key.encrypted.value_or("")) == std::string_view(current_key_))
-                    return key.plain;
-            }
-            for (const auto & key : keys_without_id)
-            {
-                if (key.plain == current_key_)
-                    return current_key_;
-
-                if (std::string_view(key.encrypted.value_or("")) == std::string_view(current_key_))
-                    return key.plain;
-            }
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The current key is not found in keys");
-        };
-
-        if (config.has(key_path))
-        {
-            String current_key = config.getString(key_path);
-            return check_current_key_found(current_key);
-        }
-        if (config.has(key_hex_path))
-        {
-            String current_key = unhexKey(config.getString(key_hex_path));
-            return check_current_key_found(current_key);
-        }
-        if (config.has(key_id_path))
-        {
-            UInt64 current_key_id = config.getUInt64(key_id_path);
-            auto it = keys_by_id.find(current_key_id);
-            if (it == keys_by_id.end())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found a key with the current ID {}", current_key_id);
-            return it->second.plain;
-        }
-        if (keys_by_id.size() == 1 && keys_without_id.empty() && keys_by_id.begin()->first == 0)
-        {
-            /// There is only a single key defined with id=0, so we can choose it as current.
-            return keys_by_id.begin()->second.plain;
-        }
-
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The current key is not specified");
-    }
-
-    /// Reads the current encryption algorithm from the configuration.
-    Algorithm getCurrentAlgorithmFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
-    {
-        String path = config_prefix + ".algorithm";
-        if (!config.has(path))
-            return DEFAULT_ENCRYPTION_ALGORITHM;
-        return parseAlgorithmFromString(config.getString(path));
-    }
 
     void checkCustomDiskPathIsInsideWrappedDisk(const String & path)
     {
@@ -250,45 +82,14 @@ namespace
     {
         try
         {
-            auto res = std::make_unique<DiskEncryptedSettings>();
-
-            std::map<UInt64, Key> keys_by_id;
-            std::vector<Key> keys_without_id;
-            getKeysFromConfig(config, config_prefix, keys_by_id, keys_without_id);
-
-            for (const auto & [key_id, key_entry] : keys_by_id)
-            {
-                const auto key = key_entry.plain;
-                auto fingerprint = calculateKeyFingerprint(key);
-                res->all_keys[fingerprint] = key;
-
-                /// Version 1 used key fingerprints based on the key id.
-                /// We have to add such fingerprints to the map too to support reading files encrypted by version 1.
-                auto v1_fingerprint = calculateV1KeyFingerprint(key, key_id);
-                res->all_keys[v1_fingerprint] = key;
-            }
-
-            for (const auto & key : keys_without_id)
-            {
-                auto fingerprint = calculateKeyFingerprint(key.plain);
-                res->all_keys[fingerprint] = key.plain;
-            }
-
-            String current_key = getCurrentKeyFromConfig(config, config_prefix, keys_by_id, keys_without_id);
-            res->current_key = current_key;
-            res->current_key_fingerprint = calculateKeyFingerprint(current_key);
-
-            res->current_algorithm = getCurrentAlgorithmFromConfig(config, config_prefix);
-
-            FileEncryption::checkKeySize(res->current_key.size(), res->current_algorithm);
+            auto keys = FileEncryption::parseKeysFromConfig(config, config_prefix);
 
             DiskPtr wrapped_disk;
             String disk_path;
             getDiskAndPathFromConfig(config, config_prefix, disk_map, wrapped_disk, disk_path);
-            res->wrapped_disk = wrapped_disk;
-            res->disk_path = disk_path;
 
-            return res;
+            return std::make_unique<const DiskEncryptedSettings>(
+                DiskEncryptedSettings{std::move(keys), std::move(wrapped_disk), std::move(disk_path)});
         }
         catch (Exception & e)
         {
@@ -508,7 +309,7 @@ void DiskEncrypted::prepareRead(
         settings.local_fs_settings.buffer_size,
         [encryption_settings](UInt128 key_fingerprint, const String & path_for_logs) -> String
         {
-            return encryption_settings->findKeyByFingerprint(key_fingerprint, path_for_logs);
+            return encryption_settings->findKeyByFingerprint(key_fingerprint, "file " + quoteString(path_for_logs));
         });
 
     /// Only cache encryption headers when the backend assigns a fresh blob path to every write

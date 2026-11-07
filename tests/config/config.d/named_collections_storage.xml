@@ -1,9 +1,12 @@
 <clickhouse>
     <!-- Encrypted storage for SQL-created named collections, so that stateless tests cover the
          encrypted path of BACKUP/RESTORE of named collections. The encryption is transparent to
-         the queries. The key is a fixed test value. -->
+         the queries. The keys are fixed test values; two of them, with `current_key_id`, cover
+         the configuration of a rotated key: new entries are encrypted with the current key. -->
     <named_collections_storage>
         <type>local_encrypted</type>
-        <key_hex>5e4acb1bce2688abbc7f546d7877f04d</key_hex>
+        <key_hex id="0">5e4acb1bce2688abbc7f546d7877f04d</key_hex>
+        <key_hex id="1">8f2c4a6e1b3d5f7092a4c6e8d0b2f4a6</key_hex>
+        <current_key_id>1</current_key_id>
     </named_collections_storage>
 </clickhouse>
