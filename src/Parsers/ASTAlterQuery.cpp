@@ -53,6 +53,7 @@ void ASTAlterCommand::updateTreeHashImpl(SipHash & hash_state, bool ignore_alias
 
     hash_state.update(detach);
     hash_state.update(part);
+    hash_state.update(part_like);
     hash_state.update(clear_column);
     hash_state.update(clear_index);
     hash_state.update(clear_statistics);
@@ -142,6 +143,7 @@ void ASTAlterCommand::writeJSON(WriteBuffer & out) const
 
     w.writeBool("detach", detach);
     w.writeBool("part", part);
+    w.writeBool("part_like", part_like);
     w.writeBool("clear_column", clear_column);
     w.writeBool("clear_index", clear_index);
     w.writeBool("clear_statistics", clear_statistics);
@@ -224,6 +226,10 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
 
     detach = r.getBool("detach");
     part = r.getBool("part");
+    part_like = r.getBool("part_like");
+    if (part_like && (type != ASTAlterCommand::DROP_DETACHED_PARTITION || !part))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'part_like' is only valid for DROP DETACHED PART during AST JSON deserialization");
     clear_column = r.getBool("clear_column");
     clear_index = r.getBool("clear_index");
     clear_statistics = r.getBool("clear_statistics");
@@ -959,8 +965,9 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     }
     else if (type == ASTAlterCommand::DROP_DETACHED_PARTITION)
     {
-        ostr << "DROP DETACHED" << (part ? " PART " : " PARTITION ")
-                     ;
+        ostr << "DROP DETACHED" << (part ? " PART " : " PARTITION ");
+        if (part_like)
+            ostr << "LIKE ";
         partition->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::FORGET_PARTITION)
