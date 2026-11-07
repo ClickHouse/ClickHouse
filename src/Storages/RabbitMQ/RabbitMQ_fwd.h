@@ -2,6 +2,7 @@
 #include <Core/Types.h>
 #include <Core/Field.h>
 #include <Common/HiddenSecret.h>
+#include <Common/quoteString.h>
 #include <optional>
 
 namespace RabbitMQ
@@ -26,7 +27,7 @@ static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
         /// an RFC 3986 authority (`contrib/AMQP-CPP/include/amqpcpp/address.h`), so no URI masker bounds it.
         if (masked_value.contains('@'))
             masked_value = DB::HIDDEN_SECRET;
-        return fmt::format("'{}'", masked_value);
+        return DB::quoteString(masked_value);
     }}
 };
 
