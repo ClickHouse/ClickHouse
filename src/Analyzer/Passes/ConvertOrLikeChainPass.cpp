@@ -278,14 +278,13 @@ public:
         return true;
     }
 
-    void enterImpl(QueryTreeNodePtr & node)
+    void leaveImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || function_node->getFunctionName() != "or")
             return;
 
-        /// Prevent infinite recursion - don't process the same OR node twice
-        /// (this can happen when we wrap the transformed OR in an AND node)
+        /// A node shared by several references is reached once per reference.
         if (processed_nodes.contains(function_node))
             return;
         processed_nodes.insert(function_node);
@@ -587,26 +586,41 @@ public:
         if (flattened.size() == 1)
             flattened.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(0)));
 
-        function_node->getArguments().getNodes() = std::move(flattened);
-        function_node->resolveAsFunction(or_function_resolver);
+        rewrites.push_back({node, std::move(flattened), std::move(index_hint_node)});
+    }
 
-        if (!index_hint_node)
-            return;
+    /// `rewrites` is in post-order, so each chain is copied after the chains inside it are final.
+    void applyRewrites()
+    {
+        for (auto & rewrite : rewrites)
+        {
+            auto & function_node = rewrite.node->as<FunctionNode &>();
+            function_node.getArguments().getNodes() = std::move(rewrite.arguments);
+            function_node.resolveAsFunction(or_function_resolver);
+        }
 
-        /// Clone the optimized OR node
-        auto optimized_or_clone = node->clone();
-
-        /// Mark the cloned OR as processed to prevent re-visiting
-        processed_nodes.insert(optimized_or_clone->as<FunctionNode>());
-
-        /// Rewrite the node in place to optimized_or AND indexHint(original_like_chain), as it may be shared by several references.
-        function_node->getArguments().getNodes() = {std::move(optimized_or_clone), std::move(index_hint_node)};
-        function_node->resolveAsFunction(and_function_resolver);
+        for (auto & rewrite : rewrites)
+        {
+            if (!rewrite.index_hint)
+                continue;
+            auto rewritten_or_copy = rewrite.node->clone();
+            auto & function_node = rewrite.node->as<FunctionNode &>();
+            function_node.getArguments().getNodes() = {std::move(rewritten_or_copy), std::move(rewrite.index_hint)};
+            function_node.resolveAsFunction(and_function_resolver);
+        }
     }
 private:
+    struct Rewrite
+    {
+        QueryTreeNodePtr node;
+        QueryTreeNodes arguments;
+        QueryTreeNodePtr index_hint;
+    };
+
     const FunctionOverloadResolverPtr or_function_resolver;
     const FunctionOverloadResolverPtr and_function_resolver;
     std::unordered_set<const FunctionNode *> processed_nodes;
+    std::vector<Rewrite> rewrites;
 };
 
 }
@@ -618,6 +632,7 @@ void ConvertOrLikeChainPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr 
 
     ConvertOrLikeChainVisitor visitor(std::move(or_function_resolver), std::move(and_function_resolver), std::move(context));
     visitor.visit(query_tree_node);
+    visitor.applyRewrites();
 }
 
 }
