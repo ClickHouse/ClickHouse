@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/PartitionStatistics.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Common/LazyPreformattedMessage/fwd.h>
 
 #include <memory>
 #include <optional>
@@ -31,7 +32,7 @@ public:
         const std::optional<PartitionIdsHint> & partitions_hint,
         LogSeriesLimiter & series_log) const = 0;
 
-    virtual std::expected<PartsRange, PreformattedMessage> grabAllPartsInsidePartition(
+    virtual std::expected<PartsRange, LazyPreformattedMessage> grabAllPartsInsidePartition(
         const StorageMetadataPtr & metadata_snapshot,
         const StoragePolicyPtr & storage_policy,
         const time_t & current_time,
