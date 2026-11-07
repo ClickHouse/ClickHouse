@@ -59,7 +59,6 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_database_unity_catalog", 1);
     context->setSetting("allow_database_glue_catalog", 1);
     context->setSetting("allow_database_iceberg", 1);
-    context->setSetting("allow_delta_kernel_rs", 1);
     context->setSetting("allow_experimental_ytsaurus_table_function", 1);
     context->setSetting("allow_experimental_eval_table_function", 1);
     context->setSetting("allow_experimental_ytsaurus_table_engine", 1);

@@ -281,6 +281,7 @@
     M(KeeperReadSnapshotObject) \
     M(KeeperReadSnapshotFailed) \
     M(KeeperReadSnapshotDeferred) \
+    M(KeeperReadSnapshotStreamingSeeks) \
     M(KeeperSaveSnapshotObject) \
     M(KeeperSaveSnapshotFailed) \
     M(KeeperSaveSnapshot) \

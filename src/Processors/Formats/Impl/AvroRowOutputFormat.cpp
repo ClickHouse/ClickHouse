@@ -646,6 +646,14 @@ static avro::Codec getCodec(const std::string & codec_name)
     if (codec_name == "snappy")
         return avro::Codec::SNAPPY_CODEC;
 #endif
+#ifdef BZIP2_CODEC_AVAILABLE
+    if (codec_name == "bzip2")
+        return avro::Codec::BZIP2_CODEC;
+#endif
+#ifdef XZ_CODEC_AVAILABLE
+    if (codec_name == "xz")
+        return avro::Codec::XZ_CODEC;
+#endif
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Avro codec {} is not available", codec_name);
 }
