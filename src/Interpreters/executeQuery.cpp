@@ -1885,7 +1885,8 @@ bool hasConstructionSettings(const IAST & ast)
 }
 
 static void wrapStoredQueryConstructionSettings(
-    ASTPtr & ast, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks);
+    ASTPtr & ast, const std::optional<String> & implicit_table, size_t max_query_size, size_t max_parser_depth,
+    size_t max_parser_backtracks);
 
 /// Recursively materialize the construction settings (`select` / `filter` / `order` / `sort` and
 /// `limit` / `offset` / `page`) that a nested (sub)query carries in its OWN `SETTINGS` clause, by
@@ -1960,7 +1961,7 @@ void wrapNestedConstructionSettings(
         if (create_handler->query)
         {
             ASTPtr query = create_handler->query;
-            wrapStoredQueryConstructionSettings(query, max_query_size, max_parser_depth, max_parser_backtracks);
+            wrapStoredQueryConstructionSettings(query, String{}, max_query_size, max_parser_depth, max_parser_backtracks);
             if (query != create_handler->query)
             {
                 for (auto & child : create_handler->children)
@@ -2531,16 +2532,61 @@ static bool hasQueryLevelConstructionSettings(const ASTSelectWithUnionQuery & se
     return (trailing && hasConstructionSettings(*trailing)) || (arm && hasConstructionSettings(*arm));
 }
 
+static ConstructionSettings peekConstructionSettings(const ASTSetQuery & settings)
+{
+    ASTPtr copy = settings.clone();
+    ConstructionSettings cs;
+    takeConstructionSettingsFromSetQuery(copy->as<ASTSetQuery &>(), cs);
+    return cs;
+}
+
+/// `implicit_table_at_top_level` after `settings` is applied on top of `implicit_table`; nullopt if it is not a string literal.
+static std::optional<String> applyImplicitTable(std::optional<String> implicit_table, const ASTSetQuery * settings)
+{
+    if (!settings)
+        return implicit_table;
+    for (const auto & change : settings->changes)
+        if (change.name == "implicit_table_at_top_level")
+            implicit_table = change.value.getType() == Field::Types::String
+                ? std::optional<String>(change.value.safeGet<String>()) : std::nullopt;
+    for (const auto & name : settings->default_settings)
+        if (name == "implicit_table_at_top_level")
+            implicit_table = String{};
+    return implicit_table;
+}
+
+static std::optional<String> getStatementImplicitTable(
+    const ASTSelectWithUnionQuery & select_union, const std::optional<String> & implicit_table)
+{
+    auto [trailing, arm] = getQueryLevelSettingsClauses(select_union);
+    return applyImplicitTable(applyImplicitTable(implicit_table, trailing), arm);
+}
+
+/// True if an arm without `FROM` reads an implicit table that is not known before the query runs.
+static bool readsUnknownImplicitTable(const ASTSelectWithUnionQuery & select_union, const std::optional<String> & implicit_table)
+{
+    if (implicit_table || !select_union.list_of_selects)
+        return false;
+    for (const auto & child : select_union.list_of_selects->children)
+        if (const auto * select = child->as<ASTSelectQuery>(); select && !select->tables())
+            return true;
+    return false;
+}
+
 /// `EXPLAIN` and `EXECUTE AS` keep their statement's query-level `SETTINGS` clause after `FORMAT` on their own node.
-/// Materialize its construction settings on the statement; return false if the statement's own clauses have them too.
+/// Materialize its construction settings on the statement; return false if they cannot be materialized.
 static bool wrapWrapperConstructionSettings(
-    ASTQueryWithOutput & wrapper, ASTPtr & statement, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
+    ASTQueryWithOutput & wrapper, ASTPtr & statement, const std::optional<String> & implicit_table,
+    size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
 {
     const auto * select_union = statement->as<ASTSelectWithUnionQuery>();
     auto * wrapper_settings = wrapper.settings_ast ? wrapper.settings_ast->as<ASTSetQuery>() : nullptr;
     if (!select_union || !wrapper_settings || !hasConstructionSettings(*wrapper_settings))
         return true;
     if (hasQueryLevelConstructionSettings(*select_union))
+        return false;
+    auto statement_implicit_table = getStatementImplicitTable(*select_union, implicit_table);
+    if (readsUnknownImplicitTable(*select_union, statement_implicit_table) && !peekConstructionSettings(*wrapper_settings).empty())
         return false;
 
     ConstructionSettings cs;
@@ -2549,22 +2595,27 @@ static bool wrapWrapperConstructionSettings(
         wrapper.reset(wrapper.settings_ast);
     if (!cs.empty())
         wrapTopLevelQuery(statement, cs.select_expr, cs.filter_expr, cs.order_expr, cs.limit, cs.offset,
-            /* implicit_table= */ {}, max_query_size, max_parser_depth, max_parser_backtracks);
+            statement_implicit_table.value_or(String{}), max_query_size, max_parser_depth, max_parser_backtracks);
     return true;
 }
 
 /// Materialize the construction settings of a query stored now and run later as a top-level query (a handler's query)
 /// as for a query sent directly. The statement of `EXPLAIN` / `EXECUTE AS` also runs as a top-level query.
 static void wrapStoredQueryConstructionSettings(
-    ASTPtr & ast, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
+    ASTPtr & ast, const std::optional<String> & implicit_table, size_t max_query_size, size_t max_parser_depth,
+    size_t max_parser_backtracks)
 {
     if (auto * explain_query = ast->as<ASTExplainQuery>())
     {
         if (ASTPtr explained = explain_query->getExplainedQuery())
         {
             ASTPtr wrapped = explained;
-            if (wrapWrapperConstructionSettings(*explain_query, wrapped, max_query_size, max_parser_depth, max_parser_backtracks))
-                wrapStoredQueryConstructionSettings(wrapped, max_query_size, max_parser_depth, max_parser_backtracks);
+            auto inner_implicit_table = applyImplicitTable(
+                implicit_table, explain_query->settings_ast ? explain_query->settings_ast->as<ASTSetQuery>() : nullptr);
+            if (wrapWrapperConstructionSettings(
+                    *explain_query, wrapped, inner_implicit_table, max_query_size, max_parser_depth, max_parser_backtracks))
+                wrapStoredQueryConstructionSettings(
+                    wrapped, inner_implicit_table, max_query_size, max_parser_depth, max_parser_backtracks);
             else
                 for (auto & child : wrapped->children)
                     wrapNestedConstructionSettings(child, max_query_size, max_parser_depth, max_parser_backtracks);
@@ -2578,8 +2629,12 @@ static void wrapStoredQueryConstructionSettings(
     {
         if (ASTPtr statement = execute_as->subquery)
         {
-            if (wrapWrapperConstructionSettings(*execute_as, statement, max_query_size, max_parser_depth, max_parser_backtracks))
-                wrapStoredQueryConstructionSettings(statement, max_query_size, max_parser_depth, max_parser_backtracks);
+            auto inner_implicit_table = applyImplicitTable(
+                implicit_table, execute_as->settings_ast ? execute_as->settings_ast->as<ASTSetQuery>() : nullptr);
+            if (wrapWrapperConstructionSettings(
+                    *execute_as, statement, inner_implicit_table, max_query_size, max_parser_depth, max_parser_backtracks))
+                wrapStoredQueryConstructionSettings(
+                    statement, inner_implicit_table, max_query_size, max_parser_depth, max_parser_backtracks);
             else
                 for (auto & child : statement->children)
                     wrapNestedConstructionSettings(child, max_query_size, max_parser_depth, max_parser_backtracks);
@@ -2600,22 +2655,19 @@ static void wrapStoredQueryConstructionSettings(
     if (const auto * select_union = ast->as<ASTSelectWithUnionQuery>())
     {
         auto [trailing, arm] = getQueryLevelSettingsClauses(*select_union);
-        if (trailing && arm)
+        const auto * settings = (trailing && arm) ? nullptr : (trailing ? trailing : arm);
+        ConstructionSettings cs = settings ? peekConstructionSettings(*settings) : ConstructionSettings{};
+        auto statement_implicit_table = getStatementImplicitTable(*select_union, implicit_table);
+        if ((trailing && arm) || (!cs.empty() && readsUnknownImplicitTable(*select_union, statement_implicit_table)))
         {
-            /// Two query-level clauses stay as written; `checkStoredQueryConstructionSettings` rejects construction settings.
+            /// Stays as written; `checkStoredQueryConstructionSettings` rejects its construction settings.
             for (auto & child : ast->children)
                 wrapNestedConstructionSettings(child, max_query_size, max_parser_depth, max_parser_backtracks);
             return;
         }
-        if (const auto * settings = trailing ? trailing : arm)
-        {
-            ASTPtr copy = settings->clone();
-            ConstructionSettings cs;
-            takeConstructionSettingsFromSetQuery(copy->as<ASTSetQuery &>(), cs);
-            if (!cs.empty())
-                wrapTopLevelQuery(ast, cs.select_expr, cs.filter_expr, cs.order_expr, cs.limit, cs.offset,
-                    /* implicit_table= */ {}, max_query_size, max_parser_depth, max_parser_backtracks);
-        }
+        if (!cs.empty())
+            wrapTopLevelQuery(ast, cs.select_expr, cs.filter_expr, cs.order_expr, cs.limit, cs.offset,
+                statement_implicit_table.value_or(String{}), max_query_size, max_parser_depth, max_parser_backtracks);
     }
 
     wrapNestedConstructionSettings(ast, max_query_size, max_parser_depth, max_parser_backtracks);
@@ -2650,12 +2702,51 @@ static bool hasUnmaterializableConstructionSettings(const IAST & ast)
     return hasUnmaterializableConstructionSettings(*statement);
 }
 
+/// Mirrors the cases `wrapStoredQueryConstructionSettings` leaves as written because of `readsUnknownImplicitTable`.
+static bool hasUnmaterializableImplicitTable(const IAST & ast, const std::optional<String> & implicit_table)
+{
+    const ASTQueryWithOutput * wrapper = nullptr;
+    const IAST * statement = nullptr;
+    if (const auto * explain_query = ast.as<ASTExplainQuery>())
+    {
+        wrapper = explain_query;
+        statement = explain_query->getExplainedQuery().get();
+    }
+    else if (const auto * execute_as = ast.as<ASTExecuteAsQuery>())
+    {
+        wrapper = execute_as;
+        statement = execute_as->subquery.get();
+    }
+    else if (const auto * select_union = ast.as<ASTSelectWithUnionQuery>())
+    {
+        auto [trailing, arm] = getQueryLevelSettingsClauses(*select_union);
+        const auto * settings = (trailing && arm) ? nullptr : (trailing ? trailing : arm);
+        return settings && !peekConstructionSettings(*settings).empty()
+            && readsUnknownImplicitTable(*select_union, getStatementImplicitTable(*select_union, implicit_table));
+    }
+
+    if (!statement)
+        return false;
+    const auto * wrapper_settings = wrapper->settings_ast ? wrapper->settings_ast->as<ASTSetQuery>() : nullptr;
+    auto inner_implicit_table = applyImplicitTable(implicit_table, wrapper_settings);
+    if (const auto * select_union = statement->as<ASTSelectWithUnionQuery>();
+        select_union && wrapper_settings && !peekConstructionSettings(*wrapper_settings).empty()
+        && readsUnknownImplicitTable(*select_union, getStatementImplicitTable(*select_union, inner_implicit_table)))
+        return true;
+    return hasUnmaterializableImplicitTable(*statement, inner_implicit_table);
+}
+
 void checkStoredQueryConstructionSettings(const IAST & ast)
 {
     if (hasUnmaterializableConstructionSettings(ast))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Query-construction settings (`select`/`filter`/`order`/`sort`/`limit`/`offset`/`page`) in the query of a "
             "handler cannot be combined with a second query-level `SETTINGS` clause. Put the settings into one clause.");
+    if (hasUnmaterializableImplicitTable(ast, String{}))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Query-construction settings (`select`/`filter`/`order`/`sort`/`limit`/`offset`/`page`) in the query of a "
+            "handler cannot be combined with a `SELECT` without `FROM` whose `implicit_table_at_top_level` is not a string "
+            "literal (for example, a query parameter).");
 }
 
 

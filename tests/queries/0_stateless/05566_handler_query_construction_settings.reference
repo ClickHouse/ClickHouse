@@ -41,3 +41,14 @@ rejected
 rejected
 1
 2
+-- implicit_table_at_top_level for a SELECT without FROM
+1
+2
+1
+1
+2
+1
+1
+2
+1
+rejected

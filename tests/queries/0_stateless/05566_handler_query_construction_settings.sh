@@ -15,7 +15,7 @@ APP_USER="u_05566_${DB}"
 
 cleanup() {
     local drops=""
-    for i in 1 3 4 5 6 7 8 9 10 11 12 14 15 16 17; do
+    for i in 1 3 4 5 6 7 8 9 10 11 12 14 15 16 17 18 19 20 21; do
         drops+="DROP HANDLER IF EXISTS h${i}_${DB}; "
     done
     ${CLICKHOUSE_CLIENT} -q "${drops}DROP USER IF EXISTS ${APP_USER}"
@@ -102,3 +102,18 @@ echo "-- ALTER with a second SETTINGS clause is rejected, the handler keeps its 
 ${CLICKHOUSE_CLIENT} -q "ALTER HANDLER h9_${DB} AS SELECT a FROM ${DB}.t ORDER BY a SETTINGS max_threads = 1 FORMAT TSV SETTINGS limit = 1" 2>&1 \
     | grep -q BAD_ARGUMENTS && echo rejected || echo accepted
 ${CLICKHOUSE_CURL} -sS "${BASE}/h9_${DB}"
+
+echo "-- implicit_table_at_top_level for a SELECT without FROM"
+${CLICKHOUSE_CLIENT} -q "
+CREATE HANDLER h18_${DB} URL '/h18_${DB}' AS SELECT a ORDER BY a SETTINGS implicit_table_at_top_level = '${DB}.t', limit = 2;
+CREATE HANDLER h19_${DB} URL '/h19_${DB}' METHODS (POST) AS EXECUTE AS ${APP_USER} SELECT a ORDER BY a FORMAT TSV SETTINGS implicit_table_at_top_level = '${DB}.t', limit = 2;
+CREATE HANDLER h20_${DB} URL '/h20_${DB}' METHODS (POST) AS EXECUTE AS ${APP_USER} SELECT a ORDER BY a SETTINGS limit = 2 FORMAT TSV SETTINGS implicit_table_at_top_level = '${DB}.t';
+"
+${CLICKHOUSE_CURL} -sS "${BASE}/h18_${DB}"
+${CLICKHOUSE_CURL} -sS "${BASE}/h18_${DB}?limit=1"
+${CLICKHOUSE_CURL} -sS -X POST "${BASE}/h19_${DB}"
+${CLICKHOUSE_CURL} -sS -X POST "${BASE}/h19_${DB}?limit=1"
+${CLICKHOUSE_CURL} -sS -X POST "${BASE}/h20_${DB}"
+${CLICKHOUSE_CURL} -sS -X POST "${BASE}/h20_${DB}?limit=1"
+${CLICKHOUSE_CLIENT} -q "CREATE HANDLER h21_${DB} URL '/h21_${DB}' AS SELECT a SETTINGS implicit_table_at_top_level = {tb:String}, limit = 2" 2>&1 \
+    | grep -q BAD_ARGUMENTS && echo rejected || echo accepted
