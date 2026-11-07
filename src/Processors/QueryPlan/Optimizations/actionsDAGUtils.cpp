@@ -704,32 +704,6 @@ HeaderColumnsToInputs mapHeaderColumnsToInputs(const ActionsDAG::NodeRawConstPtr
     return result;
 }
 
-NodeSet findReachableNodes(
-    const ActionsDAG::NodeRawConstPtrs & roots,
-    const std::function<bool(const ActionsDAG::Node *)> & is_barrier)
-{
-    NodeSet visited;
-    std::stack<const ActionsDAG::Node *> stack;
-    for (const auto * root : roots)
-        if (visited.insert(root).second)
-            stack.push(root);
-
-    while (!stack.empty())
-    {
-        const auto * current = stack.top();
-        stack.pop();
-
-        if (is_barrier && is_barrier(current))
-            continue;
-
-        for (const auto * child : current->children)
-            if (visited.insert(child).second)
-                stack.push(child);
-    }
-
-    return visited;
-}
-
 bool isInjectiveFunction(const ActionsDAG::Node * node)
 {
     if (node->function_base->isInjective(getFunctionArgumentColumns(*node)))
