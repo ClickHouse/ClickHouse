@@ -134,8 +134,11 @@ ManifestListPruner::ManifestListPruner(
             /* single_point_ */ false,
             /* skip_analysis_ */ false,
             require_ready_sets);
+        auto int32_truncate_wraparounds
+            = getInt32TruncateWraparounds(partition_key.partition_specification, schema_processor_, partition_schema_id_);
         conditions_by_spec_id.emplace(
-            spec->getValue<Int32>(f_spec_id), SpecCondition{*partition_key.key_description, std::move(condition)});
+            spec->getValue<Int32>(f_spec_id),
+            SpecCondition{*partition_key.key_description, std::move(condition), std::move(int32_truncate_wraparounds)});
     }
 }
 
@@ -161,6 +164,19 @@ bool ManifestListPruner::canBePruned(Int32 partition_spec_id, const PartitionFie
 
         left_keys[i] = bounds.has_value() ? FieldRef(bounds->first) : FieldRef(NEGATIVE_INFINITY);
         right_keys[i] = bounds.has_value() ? FieldRef(bounds->second) : FieldRef(POSITIVE_INFINITY);
+    }
+
+    /// A summary that covers a wrapped value may hold it for rows whose key is the unwrapped one.
+    for (const auto & wraparound : condition_it->second.int32_truncate_wraparounds)
+    {
+        if (wraparound.tuple_index >= left_keys.size())
+            continue;
+        auto & lower = left_keys[wraparound.tuple_index];
+        const auto & upper = right_keys[wraparound.tuple_index];
+        if (lower.getType() == Field::Types::Int64 && upper.getType() == Field::Types::Int64
+            && lower.safeGet<Int64>() <= wraparound.stored && wraparound.stored <= upper.safeGet<Int64>()
+            && wraparound.value < lower.safeGet<Int64>())
+            lower = FieldRef(wraparound.value);
     }
 
     return !condition_it->second.condition.mayBeTrueInRange(
