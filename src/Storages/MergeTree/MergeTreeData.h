@@ -1162,6 +1162,11 @@ public:
     /// Throws if a column TTL is set on a column that a key reads, directly or through a subcolumn.
     static void checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata);
 
+    /// The expressions stored in the metadata (keys, TTL, skip indices, projections) are built with the global context,
+    /// which has full access, and are executed in the background. Builds them again with a copy of the query context,
+    /// which checks the user's access to their functions and rejects functions that are not executed in the background.
+    static void checkStoredExpressions(const StorageInMemoryMetadata & metadata, const ContextPtr & local_context);
+
     /// Throw exception if command is some kind of DROP command (drop column, drop index, etc) or rename command
     /// and we have unfinished mutation which need this column to finish.
     void checkDropOrRenameCommandDoesntAffectInProgressMutations(
