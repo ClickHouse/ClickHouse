@@ -219,7 +219,8 @@ std::vector<ScatteredBlock::Selector> scatterImpl(
     const Sizes & key_sizes,
     const ScatteredBlock::Selector & selector,
     size_t num_slots,
-    bool is_asof)
+    bool is_asof,
+    [[maybe_unused]] PaddedPODArray<UInt128> & prebuilt_keys)
 {
     using KeyGetter = KeyGetterForType<type, Map>::Type;
 
@@ -230,6 +231,10 @@ std::vector<ScatteredBlock::Selector> scatterImpl(
     KeyGetter key_getter = is_asof
         ? KeyGetter(ColumnRawPtrs(key_columns.begin(), key_columns.end() - 1), Sizes(key_sizes.begin(), key_sizes.end() - 1), nullptr)
         : KeyGetter(key_columns, key_sizes, nullptr);
+
+    /// The rows are routed by these keys below, and the slot inserts read them too.
+    if constexpr (PreparedKeyGetter<KeyGetter>)
+        key_getter.buildAllKeys(selector, prebuilt_keys);
 
     /// Nothing here outlives the call: the key holders are read for their hash, never persisted.
     Arena scratch_pool;
@@ -277,7 +282,8 @@ std::vector<ScatteredBlock::Selector> scatterBlockBySlot(
     const ColumnRawPtrs & key_columns,
     const Sizes & key_sizes,
     const ScatteredBlock::Selector & selector,
-    size_t num_slots)
+    size_t num_slots,
+    PaddedPODArray<UInt128> & prebuilt_keys)
 {
     /// `MapsAsof` is the map of every ASOF clause and of no other strictness.
     constexpr bool is_asof = std::is_same_v<Maps, HashJoin::MapsAsof>;
@@ -285,7 +291,7 @@ std::vector<ScatteredBlock::Selector> scatterBlockBySlot(
     {
 #define M(NAME) \
         case HashJoin::Type::NAME: \
-            return scatterImpl<HashJoin::Type::NAME>(*maps.NAME, key_columns, key_sizes, selector, num_slots, is_asof);
+            return scatterImpl<HashJoin::Type::NAME>(*maps.NAME, key_columns, key_sizes, selector, num_slots, is_asof, prebuilt_keys);
             APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M)
 #undef M
         default:
@@ -1279,10 +1285,18 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
                 {
                     std::vector<ScatteredBlock::Selector> scattered;
                     std::span<const ScatteredBlock::Selector> per_slot(&stored_columns->selector, 1);
+                    /// If the key getter can build its keys ahead, the scatter builds them here once, for the inserts of all slots.
+                    PaddedPODArray<UInt128> prebuilt_keys;
                     if (data->slots.size() > 1)
                     {
                         scattered = scatterBlockBySlot(
-                            data->type, map, key_columns, key_sizes[onexpr_idx], stored_columns->selector, data->slots.size());
+                            data->type,
+                            map,
+                            key_columns,
+                            key_sizes[onexpr_idx],
+                            stored_columns->selector,
+                            data->slots.size(),
+                            prebuilt_keys);
                         per_slot = scattered;
                     }
 
@@ -1296,7 +1310,8 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
                         key_sizes[onexpr_idx],
                         stored_columns->block_no,
                         null_map,
-                        join_mask_col);
+                        join_mask_col,
+                        prebuilt_keys.empty() ? nullptr : &prebuilt_keys);
                     is_inserted = result.is_inserted;
                     if (!result.all_values_unique)
                         all_values_unique.store(false, std::memory_order_relaxed);
