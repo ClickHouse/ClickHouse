@@ -908,7 +908,15 @@ public:
 
         DataTypes element_types;
         for (size_t i = 0; i < num_tensors; ++i)
+        {
+            /// The default implementation for `Variant` and `Dynamic` executes the function for each alternative separately,
+            /// but the arguments of the lambda function have the types of the elements determined here once.
+            if (isVariant(arguments[i + 2]) || isDynamic(arguments[i + 2]))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Argument {} of function {} with a lambda function must be an array, got {}",
+                    i + 3, getName(), arguments[i + 2]->getName());
             element_types.push_back(getTensorType(arguments[i + 2]).element);
+        }
 
         arguments[1] = std::make_shared<DataTypeFunction>(element_types);
     }
