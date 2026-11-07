@@ -60,6 +60,7 @@
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/StorageID.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
@@ -84,6 +85,7 @@ extern const int FILE_DOESNT_EXIST;
 extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
+extern const int TIMEOUT_EXCEEDED;
 extern const int UNSUPPORTED_METHOD;
 extern const int READONLY;
 }
@@ -158,6 +160,13 @@ FileCategory inspectFileCategory(const String & relative_path)
         return FileCategory::POSITION_DELETE_FILE;
 
     return FileCategory::DATA_FILE;
+}
+
+void throwIfQueryCancelled(const ContextPtr & context)
+{
+    auto process_list_element = context->getProcessListElementSafe();
+    if (process_list_element && !process_list_element->checkTimeLimit())
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached");
 }
 
 CompressionMethod getCompressionMethodFromMetadataFile(const String & path)
