@@ -56,7 +56,10 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
 
     if (settings.create_new_file_on_insert)
     {
-        auto pos = key.find_first_of('.');
+        /// Insert the sequence number before the first dot of the file name (the last path component),
+        /// so that a dot in a directory name does not move the new file into another directory.
+        auto last_slash = key.find_last_of('/');
+        auto pos = key.find_first_of('.', last_slash == std::string::npos ? 0 : last_slash + 1);
         String new_key;
         do
         {

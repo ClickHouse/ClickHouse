@@ -86,6 +86,8 @@ struct DataObjectInfo : public DB::ObjectInfo
     {
     }
 
+    std::shared_ptr<DB::ObjectInfo> clone() const override { return std::make_shared<DataObjectInfo>(*this); }
+
     std::optional<size_t> getFileSizeHint() const override
     {
         if (size > 0)

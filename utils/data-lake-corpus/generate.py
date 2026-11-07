@@ -562,10 +562,6 @@ def _q(s):
 # workaround `settings`, and one extra check runs without them, so the reference records
 # the current (wrong) behavior until the bug is fixed.
 KNOWN_ISSUES = {
-    # Arrow C++ writes an empty data page v2 (0 values, 0 rows) in nested columns when `data_page_size` is
-    # tiny. With the offset index ClickHouse rejects the duplicate `first_row_index` of the empty page
-    # (`INCORRECT_DATA`), without it decoding fails with `ATTEMPT_TO_READ_AFTER_EOF`; pyarrow reads it.
-    "parquet/pyarrow-26.0.0/nested.tiny_pages.dpv2.parquet": {"issue": "empty data page v2 in a nested column", "expect_error": True},
     # DuckDB (`PARQUET_VERSION V2`) and arrow-go compute the DELTA_BINARY_PACKED deltas of INT32 columns in
     # 64 bits, so a column with a wide range of values has miniblocks of bit width 33. Both read their files
     # back; ClickHouse rejects them (`INCORRECT_DATA`), like Arrow C++. Before the check was added, ClickHouse
