@@ -34,4 +34,5 @@ url glob in the query: denied READ ON URL
 file empty segment: denied READ ON FILE
 azure empty segment: denied WRITE ON AZURE
 url raw character against an escaped filter: denied READ ON URL
+url raw comma against an escaped filter: denied READ ON URL
 s3 dot segment with the whole-source grant: not denied

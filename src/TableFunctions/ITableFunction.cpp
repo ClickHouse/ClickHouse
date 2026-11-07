@@ -154,8 +154,8 @@ bool hasDotSegment(std::string_view path)
 }
 
 /// Glob characters are expanded after the check, so the filter sees them as written. `toString` encodes a `%` of the
-/// path as `%25`, so before the query these escapes can only come from a glob character.
-String unescapeGlobCharacters(const String & subject)
+/// path as `%25`, so before the query these escapes can only come from a glob character. `url` also sends `,` as written.
+String unescapeGlobCharacters(const String & subject, bool unescape_comma)
 {
     const size_t query = std::min(subject.find('?'), subject.size());
     String result;
@@ -176,6 +176,8 @@ String unescapeGlobCharacters(const String & subject)
                 c = '}';
             else if (escape == "7C")
                 c = '|';
+            else if (unescape_comma && escape == "2C")
+                c = ',';
             if (c)
             {
                 result += c;
@@ -261,7 +263,7 @@ std::pair<String, String> getSourceAccessSubjects(AccessTypeObjects::Source sour
     }
 
     String escaped = ITableFunction::normalizeURIForAccessCheck(uri);
-    String as_written = unescapeGlobCharacters(escaped);
+    String as_written = unescapeGlobCharacters(escaped, /* unescape_comma */ source == AccessTypeObjects::Source::URL);
     return {std::move(as_written), std::move(escaped)};
 }
 
