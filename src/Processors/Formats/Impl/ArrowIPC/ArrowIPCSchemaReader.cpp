@@ -14,10 +14,8 @@
 #include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
-#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WithFileSize.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -90,7 +88,7 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
             throw Exception(ErrorCodes::INCORRECT_DATA, "The Arrow stream is empty");
         if (msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_Schema)
             throw Exception(ErrorCodes::INCORRECT_DATA, "The first Arrow IPC message must be the schema");
-        schema = ArrowIPC::parseSchema(*msg.header->header_as_Schema());
+        schema = ArrowIPC::parseSchema(*msg.header->header_as_Schema(), msg.header->version());
     }
     else
     {
@@ -98,8 +96,8 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
         /// directly only when it is genuinely seekable, the size is known, and `input_format_allow_seeks`
         /// is not disabled (mirroring `asArrowFile` in the library reader); otherwise load it into memory.
         SeekableReadBuffer * seekable = format_settings.seekable_read ? dynamic_cast<SeekableReadBuffer *>(&in) : nullptr;
-        std::unique_ptr<ReadBufferFromMemory> memory_buffer;
-        String file_data;
+        std::unique_ptr<ArrowIPC::InMemoryFile> file_data;
+        std::unique_ptr<SeekableReadBuffer> memory_buffer;
         size_t file_size = 0;
         std::optional<size_t> known_size;
         if (seekable)
@@ -118,13 +116,13 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
             in.readStrict(magic, sizeof(magic));
             if (std::string_view(magic, sizeof(magic)) != ARROW_FILE_MAGIC)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Not an Arrow file: the leading {} magic is missing", ARROW_FILE_MAGIC);
-            file_data.assign(magic, sizeof(magic));
-            WriteBufferFromString out(file_data, AppendModeTag{});
-            copyData(in, out);
-            out.finalize();
-            file_size = file_data.size();
-            memory_buffer = std::make_unique<ReadBufferFromMemory>(file_data.data(), file_data.size());
-            seekable = memory_buffer.get(); /// `ReadBufferFromMemory` is a `SeekableReadBuffer` (implicit upcast).
+            file_data = std::make_unique<ArrowIPC::InMemoryFile>();
+            file_data->write(magic, sizeof(magic));
+            copyData(in, *file_data);
+            file_data->finalize();
+            file_size = file_data->count();
+            memory_buffer = file_data->getSeekableReadBuffer();
+            seekable = memory_buffer.get();
         }
         ArrowIPC::ArrowFileFooter footer = ArrowIPC::readArrowFileFooter(*seekable, file_size);
         schema = std::move(footer.schema);

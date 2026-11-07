@@ -413,6 +413,9 @@ public:
         const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
 
     bool checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const;
+    /// The same check for a read whose files can have any format, such as the data files of a data
+    /// lake snapshot: it allows parallelizing only when every format would.
+    bool checkParallelizeOutputAfterReadingForAnyFormat(const ContextPtr & context) const;
 
     void registerAdditionalInfoForSchemaCacheGetter(const String & name, AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter);
     String getAdditionalInfoForSchemaCache(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);

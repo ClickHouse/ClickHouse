@@ -430,6 +430,27 @@ PaimonTableClient::getDataManifest(String manifest_path, const PaimonTableSchema
     return paimon_manifest;
 }
 
+PaimonIndexManifest PaimonTableClient::getIndexManifest(const String & index_manifest_path, bool disable_filesystem_cache)
+{
+    Paimon::checkPathIsRelativeToTable(index_manifest_path, "index manifest");
+    auto context = getContext();
+    RelativePathWithMetadata object_info(std::filesystem::path(table_location) / PAIMON_MANIFEST_DIR / index_manifest_path);
+    auto read_settings = getPaimonMetadataReadSettings(disable_filesystem_cache);
+    auto index_manifest_buf = createReadBuffer(object_info, object_storage, context, log, read_settings);
+    Iceberg::AvroForIcebergDeserializer index_manifest_deserializer(
+        std::move(index_manifest_buf), Iceberg::IcebergPathFromMetadata::deserialize(index_manifest_path), getFormatSettings(context));
+
+    for (size_t i = 0; i < index_manifest_deserializer.rows(); ++i)
+    {
+        /// When compaction removes the last deletion vector of a bucket, Paimon writes an empty index file for it.
+        if (index_manifest_deserializer.getValueFromRowByName(i, COLUMN_PAIMON_INDEX_MANIFEST_INDEX_TYPE, TypeIndex::String).safeGet<String>()
+                == PAIMON_DELETION_VECTORS_INDEX
+            && index_manifest_deserializer.getValueFromRowByName(i, COLUMN_PAIMON_INDEX_MANIFEST_ROW_COUNT, TypeIndex::Int64).safeGet<Int64>() > 0)
+            return {.has_deletion_vectors = true};
+    }
+    return {};
+}
+
 }
 
 #endif

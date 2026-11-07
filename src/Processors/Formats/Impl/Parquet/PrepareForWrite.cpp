@@ -1014,10 +1014,11 @@ SchemaElements convertSchema(const Block & sample, const WriteOptions & options,
     return schema;
 }
 
-static void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
+/// Returns true if the column is a geo column and was converted to WKB.
+static bool prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
 {
     if (!type->getCustomName())
-        return;
+        return false;
 
     /// The conversions below cast the column to its concrete type, which a constant column is not
     /// (e.g. `SELECT readWKT(...) FORMAT Parquet`). Materialize it.
@@ -1074,7 +1075,7 @@ static void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
         }
         column = ColumnNullable::create(std::move(result), std::move(null_map));
         type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
-        return;
+        return true;
     }
 
     std::shared_ptr<IWKBTransform> transform;
@@ -1092,7 +1093,7 @@ static void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
         transform = std::make_shared<WKBMultiPolygonTransform>();
 
     if (!transform)
-        return;
+        return false;
 
     auto transformed_column = ColumnString::create();
     for (size_t i = 0; i < column->size(); ++i)
@@ -1104,6 +1105,7 @@ static void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
     }
     column = std::move(transformed_column);
     type = std::make_shared<DataTypeString>();
+    return true;
 }
 
 void prepareColumnForWrite(
@@ -1116,9 +1118,26 @@ void prepareColumnForWrite(
 
     ColumnChunkWriteStates states;
     SchemaElements schemas;
+    bool is_geometry = false;
     if (options.write_geometadata)
-        prepareGeoColumn(column, type);
+        is_geometry = prepareGeoColumn(column, type) && options.write_geometry_logical_type;
     prepareColumnRecursive(column, type, name, options, states, schemas, column_field_ids, name, iceberg_optionality);
+
+    if (is_geometry)
+    {
+        /// The WKB column is a single `BYTE_ARRAY` leaf (`String` or `Nullable(String)`). Replace the
+        /// `STRING` annotation that `output_format_parquet_string_as_string` may have put on it by
+        /// `GEOMETRY` with the default CRS (`OGC:CRS84`, i.e. longitude/latitude), which has no
+        /// `ConvertedType` counterpart.
+        if (schemas.size() != 1 || schemas[0].type != parq::Type::BYTE_ARRAY)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected Parquet schema for geo column '{}'", name);
+        parq::LogicalType logical_type;
+        logical_type.__set_GEOMETRY({});
+        schemas[0].__set_logicalType(logical_type);
+        schemas[0].__isset.converted_type = false;
+        for (auto & s : states)
+            s.is_geometry = true;
+    }
 
     if (out_columns_to_write)
         for (auto & s : states)

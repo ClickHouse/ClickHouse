@@ -87,7 +87,8 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
     /// Search and remove BOM only in textual formats (CSV, TSV etc), not in binary ones (RowBinary*).
     /// Also, we assume that column name or type cannot contain BOM, so, if format has header,
     /// then BOM at beginning of stream cannot be confused with name or type of field, and it is safe to skip it.
-    if (!is_binary && (with_names || with_types || data_types.at(0)->textCanContainOnlyValidUTF8()))
+    /// The same applies if the header can be detected automatically, because the first row can be a header.
+    if (!is_binary && (with_names || with_types || try_detect_header || data_types.at(0)->textCanContainOnlyValidUTF8()))
     {
         skipBOMIfExists(*in);
     }
@@ -452,7 +453,8 @@ FormatWithNamesAndTypesSchemaReader::FormatWithNamesAndTypesSchemaReader(
 
 NamesAndTypesList FormatWithNamesAndTypesSchemaReader::readSchema()
 {
-    if (with_names || with_types)
+    /// The first row can be a header, so a BOM before it is skipped, see `RowInputFormatWithNamesAndTypes::readPrefix`.
+    if (with_names || with_types || try_detect_header)
         skipBOMIfExists(in);
 
     format_reader->skipPrefixBeforeHeader();
