@@ -149,6 +149,13 @@ std::optional<ActionsDAG> buildRewrittenExpressionWithAnalyzer(
     /// running the same query tree passes (with the same settings) the query itself goes through.
     auto source_columns = expression->getRequiredColumnsWithTypes();
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, ColumnsDescription(source_columns));
+    /// `FunctionToSubcolumnsPass` rewrites `m['k']` to the subcolumn read `m.key_k` only for a storage
+    /// with bucketed map serialization. Allow the rewrite here regardless of the real table: if the
+    /// query did not apply it (the table has no bucketed maps, or the query uses `m` in another way),
+    /// its filter does not read `m.key_k`, and `getAlternativeExpression` computes the alternative form
+    /// again without the subcolumn rewrites of `m`. So the result does not depend on the table's
+    /// serialization, and it is not a part of the cache identity.
+    storage->setHasBucketedMapSerialization(true);
 
     /// The passes treat the columns of the table's keys and indexes specially (e.g.
     /// `FunctionToSubcolumnsPass` does not rewrite most functions of such columns), and every source
