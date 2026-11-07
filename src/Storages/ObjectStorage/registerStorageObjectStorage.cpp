@@ -1910,6 +1910,7 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 - Partition pruning when `use_paimon_partition_pruning` is enabled.
 - Optional background refresh of metadata when configured.
 - Stable table UUID when using Atomic/Replicated databases, enabling `{uuid}` macros in Keeper paths.
+- Schema evolution: each data file is read with the schema it was written with, and its top-level columns are matched to the current schema by Paimon field id, so renamed columns and columns dropped and re-added under the same name read as in Spark.
 
 ## Primary-key tables {#primary-key-tables}
 
@@ -2132,7 +2133,7 @@ Stop the MV before dropping it to prevent background refresh from blocking DDL o
 - The first incremental read returns every row of the current snapshot. After that, an incremental read delivers the rows of `APPEND` snapshots only, like Paimon's streaming read of an append table: `COMPACT`, `OVERWRITE` and `ANALYZE` snapshots are skipped. Paimon commits every write that deletes or rewrites data files as `OVERWRITE` (`INSERT OVERWRITE`, `TRUNCATE`, and the copy-on-write rewrites of `DELETE`, `UPDATE` and of a `MERGE INTO` that updates or deletes rows), so the rows such a commit writes, such as the new versions of updated rows, are not delivered, and a warning is logged for every skipped `OVERWRITE` snapshot. With `paimon_incremental_read_append_overwrite = 1` they are delivered, like with Paimon's `streaming-read-append-overwrite`, together with the unchanged rows of every data file the commit rewrote, except for the data files that a later snapshot read by the same query removes. `COMPACT` snapshots are not read, so a query that reads an `APPEND` snapshot, a `COMPACT` that merges the file it added and an `OVERWRITE` that rewrites the merged file returns the rows of both the original and the rewritten file: the unchanged rows appear twice in its result, and the changed ones in their old and new versions. `paimon_target_snapshot_id` still returns the delta of any snapshot.
 - After the first incremental read, a snapshot with a commit kind that ClickHouse does not know fails the incremental read, and every later one fails too until ClickHouse is upgraded or the cursor is moved past the snapshot in Keeper, as the error message describes.
 - If the underlying Paimon table is dropped and recreated at the same object-storage path (e.g. via Flink or Spark), you must `DROP` and re-`CREATE` the corresponding ClickHouse table. ClickHouse detects the recreation by comparing the schema-0 creation timestamp and raises an error; the stale ClickHouse table cannot be used until it is recreated.
-- Columns are matched to data files by name, not by Paimon field id. Reading a data file written before a column was renamed, or before a column was dropped and another one with the same name (compared case-insensitively) was added, therefore throws: the result would contain `NULL` for the renamed column and the dropped column's values for the re-added one. Adding and dropping columns is supported. Rewriting the table with the current schema in Paimon, for example with `INSERT OVERWRITE <table> SELECT * FROM <table>`, makes the snapshots created after it readable. An incremental read that reaches such a data file throws without advancing its cursor. To move on, wait until Paimon expires the snapshots committed before the change, or abandon them by moving the cursor to the last of them, which drops every snapshot not yet consumed up to it (see [When a snapshot cannot be read](#when-a-snapshot-cannot-be-read)).
+- Fields inside a `ROW` column are matched to data files by name, not by Paimon field id. Reading a data file written before a field inside a `ROW` was renamed, or before such a field was dropped and another one with the same name (compared case-insensitively) was added, therefore throws: the result would contain `NULL` for the renamed field and the dropped field's values for the re-added one. Adding and dropping fields is supported. Rewriting the table with the current schema in Paimon, for example with `INSERT OVERWRITE <table> SELECT * FROM <table>`, makes the snapshots created after it readable. An incremental read that reaches such a data file throws without advancing its cursor. To move on, wait until Paimon expires the snapshots committed before the change, or abandon them by moving the cursor to the last of them, which drops every snapshot not yet consumed up to it (see [When a snapshot cannot be read](#when-a-snapshot-cannot-be-read)).
 
 ## Aliases {#aliases}
 
@@ -2737,6 +2738,10 @@ Using named collections:
 ```sql
 CREATE TABLE hudi_table ENGINE=Hudi(hudi_conf, filename = 'test_table')
 ```
+
+## Limitations {#limitations}
+
+Merge-on-Read is not implemented: the log files of a Merge-on-Read table are not read. Reading a table whose latest file slices have log files, that is changes written after the last compaction, therefore throws `NOT_IMPLEMENTED` instead of returning the values from before those changes. Schema inference throws for such a table too. Copy-on-Write tables and Merge-on-Read tables without such log files, for example right after a compaction in Hudi, are read as usual.
 
 ## See also {#see-also}
 

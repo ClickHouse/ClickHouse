@@ -2790,6 +2790,11 @@ bool ReadFromMerge::canReadInOrder(const InputOrderInfo & order_info_, bool allo
     auto table_it = selected_tables.begin();
     for (const auto & child_plan : *child_plans)
     {
+        /// A distributed child plan returns its result through one exchange stream, which does not keep the order
+        /// of the streams it gathers.
+        if (child_plan.plan.staysDistributed())
+            return false;
+
         const auto table_metadata = std::get<StoragePtr>(*table_it++)->getInMemoryMetadataPtr(context, false);
         auto can_read = [&](ReadFromMergeTree & read_from_merge_tree)
         {
