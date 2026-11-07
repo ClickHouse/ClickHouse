@@ -4723,7 +4723,7 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         {
             if (!state.column)
                 continue;
-            if (filter_in_place && canInplaceFilter(state.column, filter_column))
+            if (filter_in_place && canInplaceFilter(state.column))
             {
                 auto mutable_column = IColumn::mutate(std::move(state.column));
                 mutable_column->filter(filter);
