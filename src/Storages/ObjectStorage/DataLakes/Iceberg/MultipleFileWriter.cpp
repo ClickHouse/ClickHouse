@@ -28,11 +28,45 @@ static std::vector<Int64> fieldIdsOfWrittenColumns(const ColumnMapper & mapper, 
     return field_ids;
 }
 
+DataFileUploads::DataFileUploads(size_t max_files_in_upload_)
+    : max_files_in_upload(max_files_in_upload_)
+{
+}
+
+void DataFileUploads::add(std::unique_ptr<WriteBufferFromFileBase> && buffer)
+{
+    buffers.push_back(std::move(buffer));
+    finalizeUntilAtMost(max_files_in_upload);
+}
+
+void DataFileUploads::finalize()
+{
+    finalizeUntilAtMost(0);
+}
+
+void DataFileUploads::cancel() noexcept
+{
+    for (auto & buffer : buffers)
+        buffer->cancel();
+    buffers.clear();
+}
+
+void DataFileUploads::finalizeUntilAtMost(size_t max_files)
+{
+    while (buffers.size() > max_files)
+    {
+        auto buffer = std::move(buffers.front());
+        buffers.pop_front();
+        buffer->finalize();
+    }
+}
+
 MultipleFileWriter::MultipleFileWriter(
     UInt64 max_data_file_num_rows_,
     UInt64 max_data_file_num_bytes_,
     Poco::JSON::Array::Ptr schema_,
     FileNamesGenerator & filename_generator_,
+    DataFileUploads & data_file_uploads_,
     const Iceberg::IcebergPathResolver & path_resolver_,
     ObjectStoragePtr object_storage_,
     ContextPtr context_,
@@ -45,6 +79,7 @@ MultipleFileWriter::MultipleFileWriter(
     , column_mapper(Iceberg::createColumnMapperFromFields(schema_))
     , stats(schema_, fieldIdsOfWrittenColumns(*column_mapper, *sample_block_))
     , filename_generator(filename_generator_)
+    , data_file_uploads(data_file_uploads_)
     , path_resolver(path_resolver_)
     , object_storage(object_storage_)
     , context(context_)
@@ -120,7 +155,10 @@ void MultipleFileWriter::finalize()
     }
     stats.addColumnSizesOnDisk(column_sizes_on_disk, *sample_block);
 
-    buffer->finalize();
+    /// A finished format can still hold resources: a Parquet one keeps its idle encoder threads.
+    output_format.reset();
+
+    /// Read before `preFinalize`: the S3 and Azure buffers move their unflushed tail out of `count` there.
     UInt64 file_bytes = buffer->count();
     total_bytes += file_bytes;
 
@@ -129,8 +167,8 @@ void MultipleFileWriter::finalize()
     data_file_byte_counts.push_back(file_bytes);
     data_file_row_counts.push_back(current_file_num_rows.value_or(0));
 
-    /// A finished format can still hold resources: a Parquet one keeps its idle encoder threads.
-    release();
+    buffer->preFinalize();
+    data_file_uploads.add(std::move(buffer));
 }
 
 void MultipleFileWriter::release()
