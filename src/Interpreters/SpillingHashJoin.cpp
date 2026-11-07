@@ -90,11 +90,13 @@ void SpillingHashJoin::tryConvertBuildStreams(JoinBuildContext context)
         if (stream >= num_build_streams)
             break;
 
+        /// Each block is decompressed (when `enable_join_in_memory_compression` compressed it) and materialized
+        /// only here and freed after insertion, so the peak memory overhead stays at a single block.
         auto blocks = hash_join->releaseBuildStreamBlocks(stream);
         while (!blocks.empty())
         {
-            addBlockToExternalJoin(blocks.front(), blocks.front().rows(), context.callerChecksLimits());
-            blocks.pop_front();
+            Block block = blocks.next();
+            addBlockToExternalJoin(block, block.rows(), context.callerChecksLimits());
         }
     }
 }
