@@ -2118,20 +2118,6 @@ void forEachAvroMetadataBatch(
     AvroForIcebergDeserializer::forEachBatch(
         std::move(buffer), IcebergPathFromMetadata::deserialize(filename), getFormatSettings(context), callback);
 }
-
-void forEachAvroMetadataColumnsBatch(
-    const String & filename,
-    ObjectStoragePtr object_storage,
-    ContextPtr context,
-    const String & logger_name,
-    const NamesAndTypesList & fields,
-    const std::function<void(const Columns & columns, size_t rows)> & callback)
-{
-    RelativePathWithMetadata relative_path_with_metadata(filename);
-    auto buffer = createReadBuffer(relative_path_with_metadata, object_storage, context, getLogger(logger_name));
-    AvroForIcebergDeserializer::forEachColumnsBatch(
-        std::move(buffer), IcebergPathFromMetadata::deserialize(filename), getFormatSettings(context), fields, callback);
-}
 #else
 void forEachAvroEntry(
     const String & filename,

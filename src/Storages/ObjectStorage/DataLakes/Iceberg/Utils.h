@@ -198,20 +198,6 @@ void forEachAvroMetadataBatch(
     ContextPtr context,
     const String & logger_name,
     const std::function<void(const AvroForIcebergDeserializer & batch)> & callback);
-
-/// Streams only the fields `fields` (dotted paths like "data_file.file_path", with their non-`Nullable` types) of the Avro
-/// metadata file `filename` in batches of at most `CANCELLATION_CHECK_PERIOD_ROWS` entries. The rest of every entry, like
-/// the column statistics of a manifest, is skipped and never materialized, so memory stays bounded by one batch of the
-/// requested fields, however wide the entries are. `callback` gets the columns of a batch in the order of `fields` and the
-/// number of its rows. Throws if the file is not a valid Avro file, its root is not a record, or a field is missing or
-/// null.
-void forEachAvroMetadataColumnsBatch(
-    const String & filename,
-    ObjectStoragePtr object_storage,
-    ContextPtr context,
-    const String & logger_name,
-    const NamesAndTypesList & fields,
-    const std::function<void(const Columns & columns, size_t rows)> & callback);
 #else
 /// Streams the entries of the Avro metadata file `filename` (a manifest list or a manifest, as a path in `object_storage`)
 /// one by one as `avro::GenericDatum` into `callback`, without holding the whole file in memory.

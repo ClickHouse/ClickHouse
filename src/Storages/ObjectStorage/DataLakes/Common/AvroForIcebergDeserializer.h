@@ -38,8 +38,7 @@ using ParsedManifestFileEntryPtr = std::shared_ptr<const ParsedManifestFileEntry
 /// Field values back. Also manages avro file metadata which is basically just mapping string -> string.
 /// With `USE_AVRO_RUST` it is the reader of every Iceberg and Paimon metadata file that is read for its values: the
 /// manifest files and manifest lists of Iceberg and Paimon, read whole by the constructor, and the parent manifest list
-/// that the writer copies, read in bounded batches by `forEachBatch`. A metadata file of which only a few fields are needed
-/// can be read through `forEachColumnsBatch`, which decodes just those fields. Without `USE_AVRO_RUST`, the writer and the
+/// that the writer copies, read in bounded batches by `forEachBatch`. Without `USE_AVRO_RUST`, the writer and the
 /// Hudi reader stream the entries as `avro::GenericDatum` through `Iceberg::forEachAvroEntry` instead of loading the whole
 /// file.
 class AvroForIcebergDeserializer
@@ -139,20 +138,6 @@ public:
         const Iceberg::IcebergPathFromMetadata & manifest_file_path,
         const DB::FormatSettings & format_settings,
         const std::function<void(const AvroForIcebergDeserializer & batch)> & callback);
-
-    /// Reads only the top level fields or nested fields `fields` (dotted names like "data_file.file_path" and their types)
-    /// of the file in batches of at most `CANCELLATION_CHECK_PERIOD_ROWS` rows, so the rest of every row, like the column
-    /// statistics of a manifest, is skipped, never materialized, and only one batch is in memory at a time. Calls `callback`
-    /// with the columns of the batch in the order of `fields` and the number of its rows.
-    /// Every field has to exist, and be a value and not an Avro null in every row. Errors of the file are reported as
-    /// by the constructor, a field that is missing or not of its type as `ICEBERG_SPECIFICATION_VIOLATION`; an exception
-    /// of `callback` is rethrown as it is.
-    static void forEachColumnsBatch(
-        std::unique_ptr<DB::ReadBufferFromFileBase> buffer,
-        const Iceberg::IcebergPathFromMetadata & manifest_file_path,
-        const DB::FormatSettings & format_settings,
-        const DB::NamesAndTypesList & fields,
-        const std::function<void(const DB::Columns & columns, size_t rows)> & callback);
 #endif
 
     std::optional<std::string> tryGetAvroMetadataValue(std::string metadata_key) const;

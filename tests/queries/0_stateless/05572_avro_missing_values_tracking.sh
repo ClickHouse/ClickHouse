@@ -19,12 +19,12 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 
 ROWS=20000
 
-# Several blocks (7000 rows each), and each of them is decoded in more than one batch.
+# Several blocks (the sync interval is large enough that the 20000 rows fall in a few blocks), and each of them is decoded in more than one batch.
 ${CLICKHOUSE_LOCAL} --query "
     INSERT INTO FUNCTION file('${WORK_DIR}/f.avro', Avro, 'p0 Int64, p1 Int64, u Nullable(Int64), s String, w Nullable(String)')
     SELECT number, -number, if(number % 3 = 0, NULL, number * 10), toString(number), if(number % 5 = 0, NULL, toString(number))
     FROM numbers(${ROWS})
-    SETTINGS output_format_avro_rows_in_file = 7000, engine_file_truncate_on_insert = 1"
+    SETTINGS output_format_avro_sync_interval = 1000000, engine_file_truncate_on_insert = 1"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_present"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_missing"

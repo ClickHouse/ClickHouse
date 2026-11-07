@@ -9,10 +9,6 @@
 
 #include <IO/ReadBufferFromMemory.h>
 
-#if USE_AVRO_RUST
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#endif
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
@@ -172,9 +168,8 @@ size_t touchDatum(const avro::GenericDatum & root)
   *     `getDataTypeForPath`, `getValueFromRowByName`, `isNullInRow` (`USE_AVRO_RUST`), `getParsedManifestFileEntry`,
   *     `getContent`, `getMetadataContent`, `getFormatVersionFromManifestFileMetadata`.
   *
-  *  1b. With `USE_AVRO_RUST`, the readers of the metadata files that stream them in batches: `forEachBatch`, which the copy of
-  *     the parent manifest list in `generateManifestList` goes through, and `forEachColumnsBatch`, which decodes only the fields
-  *     that it is asked for.
+  *  1b. With `USE_AVRO_RUST`, the reader of the metadata files that streams them in batches: `forEachBatch`, which the copy of
+  *     the parent manifest list in `generateManifestList` goes through.
   *
   *  2. Without `USE_AVRO_RUST`, the shape of `Iceberg::forEachAvroEntry`, which streams the entries of the parent manifest list
   *     for the writer and the replaced files for the Hudi reader: `DataFileReaderBase` on an
@@ -294,29 +289,6 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
                         }
                     });
             });
-        for (const NamesAndTypesList & fields :
-             {NamesAndTypesList{{Iceberg::f_manifest_path, std::make_shared<DataTypeString>()}},
-              NamesAndTypesList{
-                  {Iceberg::c_data_file_file_path, std::make_shared<DataTypeString>()},
-                  {Iceberg::c_data_file_record_count, std::make_shared<DataTypeInt64>()}}})
-        {
-            attempt(
-                [&]
-                {
-                    const auto manifest_path = Iceberg::IcebergPathFromMetadata::deserialize("metadata/fuzzer-m2.avro");
-                    Iceberg::AvroForIcebergDeserializer::forEachColumnsBatch(
-                        std::make_unique<ReadBufferFromOutsideMemoryFile>(manifest_path.serialize(), bytes),
-                        manifest_path,
-                        getFormatSettings(AvroFuzzer::getContext()),
-                        fields,
-                        [&](const Columns & columns, size_t rows)
-                        {
-                            for (const auto & column : columns)
-                                for (size_t row = 0; row != std::min(rows, MAX_ROWS_TO_WALK); ++row)
-                                    (void) column->getDataAt(row);
-                        });
-                });
-        }
 #endif
 
         /// 2. Without `USE_AVRO_RUST`, the shape of `Iceberg::forEachAvroEntry`, which streams the entries of the parent manifest
