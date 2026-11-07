@@ -402,6 +402,7 @@ add_object_library(clickhouse_interpreters_filecache Interpreters/FileCache)
 add_object_library(clickhouse_interpreters_hash_join Interpreters/HashJoin)
 add_object_library(clickhouse_interpreters_adaptive_aggregation Interpreters/AdaptiveAggregation)
 add_object_library(clickhouse_interpreters_access Interpreters/Access)
+add_object_library(clickhouse_interpreters_whatif Interpreters/WhatIf)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
 add_object_library(clickhouse_interpreters_jit Interpreters/JIT)
@@ -428,6 +429,7 @@ add_object_library(clickhouse_storages_mergetree_compaction_parts_collectors Sto
 add_object_library(clickhouse_storages_mergetree_compaction_parts_finders Storages/MergeTree/Compaction/PartsFinders)
 add_object_library(clickhouse_storages_mergetree_patch_parts Storages/MergeTree/PatchParts)
 add_object_library(clickhouse_storages_mergetree_projection_index Storages/MergeTree/ProjectionIndex)
+add_object_library(clickhouse_storages_mergetree_whatif Storages/MergeTree/WhatIf)
 add_object_library(clickhouse_storages_statistics Storages/Statistics)
 add_object_library(clickhouse_storages_s3queue Storages/ObjectStorageQueue)
 add_object_library(clickhouse_storages_materializedview Storages/MaterializedView)
@@ -523,6 +525,7 @@ add_object_library(clickhouse_processors_transforms_window Processors/Transforms
 add_object_library(clickhouse_window_functions WindowFunctions)
 add_object_library(clickhouse_window_functions_common WindowFunctions/Common)
 add_object_library(clickhouse_window_functions_general WindowFunctions/General)
+add_object_library(clickhouse_window_functions_aggregate WindowFunctions/Aggregate)
 add_object_library(clickhouse_processors_sources Processors/Sources)
 add_object_library(clickhouse_processors_sinks Processors/Sinks)
 add_object_library(clickhouse_processors_merges Processors/Merges)
@@ -580,6 +583,9 @@ set_property(SOURCE
     WindowFunctions/General/WindowFunctionLagLead.cpp                # window functions
     WindowFunctions/General/WindowFunctionExponentialTimeDecayed.cpp # window functions
     WindowFunctions/General/WindowFunctionNonNegativeDerivative.cpp  # window functions
+    WindowFunctions/Aggregate/AggregateState.cpp                     # window functions
+    WindowFunctions/Aggregate/AggregateWindowFunctionPrefix.cpp      # window functions
+    WindowFunctions/Aggregate/AggregateWindowFunctionRecalculate.cpp # window functions
     Interpreters/Aggregator.cpp                # destroy_aggregate_states
     Common/IntervalTree.cpp                    # range_hashed_dictionary
     PROPERTY COMPILE_FLAGS "-U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE")
@@ -667,6 +673,7 @@ target_link_libraries (clickhouse_compression
             clickhouse_parsers
         PRIVATE
             ch_contrib::lz4
+            ch_contrib::gdeflate
             ch_contrib::zxc
             ch_contrib::roaring
 )

@@ -63,6 +63,7 @@ json_type_skip_regexp.xml                                # JSON column
 json_typed_path_subcolumn_lookup.xml                     # JSON column
 json_typed_paths_insert.xml                              # JSON column
 kway_merge_expensive_comparator.xml                      # FINAL
+lazy_final_aggregation_in_order.xml                      # assertion in the test (throwIf)
 lazy_final_early_exit_limit.xml                          # assertion in the test (throwIf)
 lazy_final_replacing.xml                                 # FINAL
 lazy_materialization_final_limit.xml                     # assertion in the test (throwIf)
@@ -87,6 +88,7 @@ polymorphic_parts_l.xml                                  # type UInt64 in CREATE
 polymorphic_parts_m.xml                                  # type UInt64 in CREATE ... AS hits_10m_single
 polymorphic_parts_s.xml                                  # type UInt64 in CREATE ... AS hits_10m_single
 prewhere_column_sizes_pruned_parts.xml                   # JSON column
+prewhere_subcolumn_read_steps.xml                        # JSON column
 prewhere_subcolumns.xml                                  # JSON column
 projection_materialize.xml                               # ALTER ADD_PROJECTION, ALTER DROP_PROJECTION
 qbit_distance_transposed_micro.xml                       # QBit column

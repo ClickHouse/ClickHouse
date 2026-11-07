@@ -603,11 +603,19 @@ convertFieldToORCLiteral(const ORC::Type & orc_type, const Field & field, DataTy
                 }
 
                 DecimalField<Decimal64> ts;
-                if (field.tryGet(ts))
+                if (field.tryGet(ts) && ts.getScale() <= 9)
                 {
-                    Int64 secs = (ts.getValue() / ts.getScaleMultiplier()).convertTo<Int64>();
-                    Int32 nanos = (ts.getValue() - (ts.getValue() / ts.getScaleMultiplier()) * ts.getScaleMultiplier()).convertTo<Int32>();
-                    return ORC::Literal(secs, nanos);
+                    /// The nanoseconds are not negative, as in the reference implementation and in the statistics.
+                    const Int64 value = ts.getValue().value;
+                    const Int64 multiplier = ts.getScaleMultiplier().value;
+                    Int64 secs = value / multiplier;
+                    Int64 rest = value % multiplier;
+                    if (rest < 0)
+                    {
+                        rest += multiplier;
+                        --secs;
+                    }
+                    return ORC::Literal(secs, static_cast<Int32>(rest * (1'000'000'000 / multiplier)));
                 }
                 break;
             }
@@ -1657,6 +1665,15 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
     size_t dict_size = orc_dict.size();
     if (dict_size == 0)
     {
+        /// Only nulls can be encoded with an empty dictionary.
+        for (size_t i = 0; i < rows; ++i)
+        {
+            if (!orc_str_column.hasNulls || orc_str_column.notNull[i])
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "ORC dictionary index {} at row {} is out of range [0, 0)",
+                    orc_str_column.index[i], i);
+        }
         auto result_column = internal_type->createColumn();
         result_column->insertManyDefaults(rows);
         return {std::move(result_column), internal_type, column_name};
