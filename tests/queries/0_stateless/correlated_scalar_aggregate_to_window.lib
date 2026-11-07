@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+
+# Shared by the tests of `optimize_correlated_scalar_aggregate_to_window`. Each case prints the result of the query
+# with the rewrite and whether the subquery was rewritten into a window function. The reference pins the results
+# of the queries without the rewrite.
+
+declare -A TABLES=(
+    [t]="CREATE TABLE t (k Int32, v Float64, al Float64 ALIAS v * 2) ENGINE = MergeTree ORDER BY k;
+        INSERT INTO t VALUES (1, 10), (1, 30), (2, 5), (2, 1e308), (3, -7);"
+    [u]="CREATE TABLE u (k Int32, w Int32) ENGINE = MergeTree ORDER BY k;
+        INSERT INTO u VALUES (1, 100), (1, 101), (2, 200), (4, 400);"
+    [x]="CREATE TABLE x (w Int32, z Int32) ENGINE = MergeTree ORDER BY w;
+        INSERT INTO x VALUES (100, 1), (101, 2), (101, 3), (200, 4);"
+    [u64]="CREATE TABLE u64 (k Int64) ENGINE = MergeTree ORDER BY k;
+        INSERT INTO u64 VALUES (1), (2);"
+    [dq]="CREATE TABLE dq (k Int32, v Decimal(12, 2)) ENGINE = MergeTree ORDER BY k;
+        INSERT INTO dq VALUES (1, 10.25), (1, 30.75), (2, 5.00);"
+    [nn]="CREATE TABLE nn (k Nullable(Int32), v Nullable(Float64)) ENGINE = MergeTree ORDER BY k SETTINGS allow_nullable_key = 1;
+        INSERT INTO nn VALUES (1, 10), (1, NULL), (2, NULL), (NULL, 5), (NULL, 7);"
+    [nk]="CREATE TABLE nk (k Nullable(Int32), w Int32) ENGINE = MergeTree ORDER BY k SETTINGS allow_nullable_key = 1;
+        INSERT INTO nk VALUES (1, 1), (2, 2), (NULL, 3);"
+    [r]="CREATE TABLE r (k Int32, v Float64) ENGINE = ReplacingMergeTree ORDER BY (k, v);
+        INSERT INTO r VALUES (1, 10), (1, 30), (2, 5);"
+    [fk]="CREATE TABLE fk (k Float64, v Int32) ENGINE = MergeTree ORDER BY k;
+        INSERT INTO fk VALUES (0, 1), (-0, 2), (nan, 3), (nan, 4), (1.5, 5);"
+    [tn]="CREATE TABLE tn (k Tuple(Nullable(Int32)), v Int32) ENGINE = MergeTree ORDER BY tuple();
+        INSERT INTO tn VALUES (tuple(NULL), 1), (tuple(NULL), 2), (tuple(1), 3);"
+    [tc]="CREATE TABLE tc (k Int32, __correlated_aggregate_0 Int32) ENGINE = MergeTree ORDER BY k;
+        INSERT INTO tc VALUES (1, 5), (1, 7), (2, 3);"
+    [vt]="CREATE TABLE vt (k Variant(Int32, String), v Int32) ENGINE = MergeTree ORDER BY tuple();
+        INSERT INTO vt VALUES (1, 10), (1, 20), ('a', 5), (NULL, 3), (NULL, 4);"
+    [tp]="CREATE TABLE tp (id Int32, k Int32, v Int32) ENGINE = MergeTree ORDER BY id;
+        INSERT INTO tp VALUES (1, 2, 10), (2, 1, 20), (3, 2, 30), (4, 1, 40);"
+    [ts]="CREATE TABLE ts (k Int32, s String) ENGINE = MergeTree ORDER BY k;
+        INSERT INTO ts VALUES (1, 'a'), (1, 'bcd'), (2, 'ef');"
+    [jt]="CREATE TABLE jt (k Int32, w Int32) ENGINE = Join(ALL, INNER, k);
+        INSERT INTO jt VALUES (1, 100), (2, 200), (4, 400);"
+    [ku]="CREATE TABLE ku (k UInt64, k32 Int32, w Int32) ENGINE = MergeTree ORDER BY k;
+        INSERT INTO ku VALUES (1, 1, 100), (2, 2, 200), (4, 4, 400);"
+)
+
+# Creates and fills the tables named in the arguments.
+function create_tables()
+{
+    local table query=""
+    for table in "$@"; do
+        query+="${TABLES[$table]}"$'\n'
+    done
+    $CLICKHOUSE_CLIENT -q "$query"
+}
+
+SQ="(SELECT max(v) FROM t AS s WHERE s.k = u.k)"
+
+# Starting a client per query is too slow in sanitizer builds, so the cases are collected first and then sent
+# in one batch. Each query is preceded by the check of its query tree, where the rewrite shows up as a window
+# function. The check returns exactly one row, which starts with a marker and separates the results of the cases.
+# The rewrite relies on runtime join filters and the automatic swap of the join sides (done by the join order
+# optimization), which are randomized.
+MARKER='--- rewritten: '
+ITEMS=()
+QUERIES=()
+
+function check()
+{
+    ITEMS+=("check:$1")
+    QUERIES+=("$2")
+}
+
+function section()
+{
+    ITEMS+=("echo:$1")
+}
+
+function run_batch()
+{
+    local tree_check="SELECT '$MARKER' || toString(countIf(explain LIKE '%function_type: window%') > 0) FROM (EXPLAIN QUERY TREE"
+    local query
+    for query in "${QUERIES[@]}"; do
+        printf "%s %s);\n%s;\n" "$tree_check" "$query" "$query"
+    done | $CLICKHOUSE_CLIENT --optimize_correlated_scalar_aggregate_to_window=1 --enable_join_runtime_filters=1 --query_plan_join_swap_table=auto --query_plan_optimize_join_order_limit=10
+}
+
+function run_all()
+{
+    # Whether the subquery of each case was rewritten, and the result of its query.
+    local fired=() on=() line current=""
+    while IFS= read -r line; do
+        if [[ "$line" == "$MARKER"* ]]; then
+            fired+=("${line#"$MARKER"}")
+            on+=("${current%$'\n'}")
+            current=""
+        else
+            current+="$line"$'\n'
+        fi
+    done < <(run_batch)
+    on+=("${current%$'\n'}")
+    # Drop the empty result before the first marker.
+    on=("${on[@]:1}")
+
+    local item i=0
+    for item in "${ITEMS[@]}"; do
+        case "$item" in
+            echo:*)
+                echo "${item#echo:}"
+                ;;
+            check:*)
+                echo "=== ${item#check:}: rewritten ${fired[i]} ==="
+                echo "${on[i]}"
+                i=$((i + 1))
+                ;;
+        esac
+    done
+}
