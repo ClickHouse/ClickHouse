@@ -75,6 +75,8 @@ namespace FailPoints
     extern const char replicated_merge_tree_insert_retry_pause[];
     extern const char replicated_merge_tree_restore_attach_retry[];
     extern const char rmt_delay_commit_part[];
+    extern const char rmt_delay_dedup_conflict_resolution[];
+    extern const char rmt_dedup_conflict_node_missing[];
     extern const char rmt_dedup_conflict_part_name_missing[];
     extern const char merge_tree_sink_on_start_random_sleep[];
 }
@@ -92,6 +94,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TABLE_IS_READ_ONLY;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int UNFINISHED;
 }
 
 namespace
@@ -547,8 +550,8 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                     {
                         chassert(conflicts.size() == 1);
                         auto block_id = conflicts.front().getBlockId();
-                        /// The conflicting part name may be unresolved (see ZNONODE skip in
-                        /// resolve_duplicate_stage), same guard as the quorum collection above.
+                        /// Every surviving conflict carries a part name; only the test failpoint in
+                        /// resolve_duplicate_stage leaves it unresolved.
                         if (conflicts.front().hasConflictPartName())
                         {
                             auto actual_part_name = conflicts.front().getConflictPartName();
@@ -713,12 +716,14 @@ struct CommitRetryContext
     /// LOCK_AND_COMMIT -> ERROR
 
     /// RESOLVE_CONFLICTS -> FILTER_CONFLICTS_AND_RETRY
+    /// RESOLVE_CONFLICTS -> LOCK_AND_COMMIT
     /// RESOLVE_CONFLICTS -> ERROR
 
     Stages stage = LOCK_AND_COMMIT;
 
     String actual_part_name;
     std::vector<DeduplicationHash> conflict_deduplication_hashes;
+    bool skip_cache_prefilter = false;
 };
 
 
@@ -755,23 +760,50 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
     {
         chassert(!retry_context.conflict_deduplication_hashes.empty());
 
+        fiu_do_on(FailPoints::rmt_delay_dedup_conflict_resolution, { sleepForSeconds(5); });
+
         /// This block was already written to some replica. Get the part name for it.
-        /// Note: race condition with DROP PARTITION operation is possible. User will get "No node" exception and it is Ok.
-        auto response = zookeeper->tryGet(getDeduplicationPaths(storage.zookeeper_path, retry_context.conflict_deduplication_hashes));
+        auto deduplication_paths = getDeduplicationPaths(storage.zookeeper_path, retry_context.conflict_deduplication_hashes);
+        auto response = zookeeper->tryGet(deduplication_paths);
+
+        /// Keeper is the authority for deduplication: a conflict whose node is already gone
+        /// (concurrent DROP PARTITION/TRUNCATE, or dedup window expiry) must not suppress rows.
+        std::vector<DeduplicationHash> surviving_hashes;
+        surviving_hashes.reserve(retry_context.conflict_deduplication_hashes.size());
+
         for (size_t i = 0; i < retry_context.conflict_deduplication_hashes.size(); ++i)
         {
             auto & deduplication_hash = retry_context.conflict_deduplication_hashes[i];
             const auto & resp = response[i];
 
             bool simulate_missing_node = false;
-            fiu_do_on(FailPoints::rmt_dedup_conflict_part_name_missing, { simulate_missing_node = true; });
+            fiu_do_on(FailPoints::rmt_dedup_conflict_node_missing, { simulate_missing_node = true; });
 
-            /// If we cannot get the node, then probably it was removed in the meantime. Just skip it then.
             if (resp.error == Coordination::Error::ZNONODE || simulate_missing_node)
                 continue;
 
-            const String & part_name = resp.data;
-            deduplication_hash.setConflictPartName(part_name);
+            /// tryGet does not check per-item errors on the MULTI_READ transport.
+            if (resp.error != Coordination::Error::ZOK)
+                throw zkutil::KeeperException::fromPath(resp.error, deduplication_paths[i]);
+
+            bool simulate_missing_part_name = false;
+            fiu_do_on(FailPoints::rmt_dedup_conflict_part_name_missing, { simulate_missing_part_name = true; });
+
+            if (!simulate_missing_part_name)
+                deduplication_hash.setConflictPartName(resp.data);
+
+            surviving_hashes.push_back(deduplication_hash);
+        }
+
+        retry_context.conflict_deduplication_hashes = std::move(surviving_hashes);
+
+        if (retry_context.conflict_deduplication_hashes.empty())
+        {
+            /// truncate() spares later inserts the vanished hash, but an in-flight cache update can still
+            /// republish it, so this retry skips the cache and asks Keeper.
+            storage.deduplication_hashes_cache.truncate();
+            retry_context.skip_cache_prefilter = true;
+            return CommitRetryContext::LOCK_AND_COMMIT;
         }
 
         return CommitRetryContext::FILTER_CONFLICTS_AND_RETRY;
@@ -902,7 +934,7 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
         }
 
         UInt64 checked_cache_version = 0;
-        if (is_async_insert)
+        if (is_async_insert && !retry_context.skip_cache_prefilter)
         {
             /// prefilter by cache
             auto cache_conflicts = storage.deduplication_hashes_cache.detectConflicts(deduplication_hashes, deduplication_cache_min_version);
@@ -1229,6 +1261,8 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
         return retry_context.stage;
     };
 
+    size_t vanished_conflict_resolutions = 0;
+
     retries_ctl.retryLoop([&]()
     {
         zookeeper->setKeeper(storage.getZooKeeper());
@@ -1250,6 +1284,22 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
             {
                 /// operation is done
                 return;
+            }
+
+            /// A concurrent insert can re-create the node a resolution has just found gone, so
+            /// RESOLVE_CONFLICTS -> LOCK_AND_COMMIT is the only edge here that can repeat.
+            if (prev_stage == CommitRetryContext::RESOLVE_CONFLICTS)
+            {
+                ++vanished_conflict_resolutions;
+                if (vanished_conflict_resolutions > 1)
+                {
+                    /// retries_ctl counts the attempt against insert_keeper_max_retries and backs off.
+                    retries_ctl.setUserError(Exception(
+                        ErrorCodes::UNFINISHED,
+                        "Deduplication nodes for block IDs '{}' keep being created and removed by concurrent queries",
+                        fmt::join(deduplication_block_ids, ", ")));
+                    return;
+                }
             }
         }
     });
