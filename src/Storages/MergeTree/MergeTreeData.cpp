@@ -3669,6 +3669,15 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     std::vector<PartLoadingTree::PartLoadingInfos> parts_to_load_by_disk(disks.size());
     std::vector<PartLoadingTree::PartLoadingInfos> unexpected_parts_to_load_by_disk(disks.size());
 
+    /// Under `leader_election`, the identity of every listed directory (see `getPartDirectorySharedStorageIncarnation`),
+    /// recorded right when the directory is listed, i.e. from the same view of the shared storage that establishes
+    /// which parts cover which. The parts that end up queued for the asynchronous loading of outdated parts get the
+    /// identity from here: looking it up only when they are queued, after the covering parts were loaded, could record
+    /// the identity of a replacement written with the same name in the meantime (another table sharing the disk can
+    /// refresh the disk-wide metadata), and the queued load would then retire that replacement as an old covered part.
+    const bool record_shared_storage_incarnation = (*settings)[MergeTreeSetting::leader_election];
+    std::vector<std::unordered_map<String, std::optional<String>>> listed_shared_storage_incarnations_by_disk(disks.size());
+
     ThreadPoolCallbackRunnerLocal<void> runner(getActivePartsLoadingThreadPool().get(), ThreadName::MERGETREE_LOAD_ACTIVE_PARTS);
 
     bool all_disks_are_readonly = true;
@@ -3682,12 +3691,15 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
         auto & disk_parts = parts_to_load_by_disk[i];
         auto & unexpected_disk_parts = unexpected_parts_to_load_by_disk[i];
+        auto & disk_listed_incarnations = listed_shared_storage_incarnations_by_disk[i];
 
         /// Capturing by references here is ok:
         /// expected_parts outlives runner
         /// unexpected_disk_parts references unexpected_parts_to_load_by_disk which outlives runner
         /// disk_parts references parts_to_load_by_disk which outlives runner
-        runner.enqueueAndKeepTrack([&expected_parts, &unexpected_disk_parts, &disk_parts, this, disk_ptr, component_name = Coordination::getCurrentComponent()]()
+        /// disk_listed_incarnations references listed_shared_storage_incarnations_by_disk which outlives runner
+        runner.enqueueAndKeepTrack([&expected_parts, &unexpected_disk_parts, &disk_parts, &disk_listed_incarnations,
+            record_shared_storage_incarnation, this, disk_ptr, component_name = Coordination::getCurrentComponent()]()
         {
             auto local_component_guard = Coordination::setCurrentComponent(component_name);
             for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
@@ -3704,6 +3716,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                         unexpected_disk_parts.emplace_back(*part_info, it->name(), disk_ptr);
                     else
                         disk_parts.emplace_back(*part_info, it->name(), disk_ptr);
+
+                    if (record_shared_storage_incarnation)
+                        disk_listed_incarnations[it->name()] = getPartDirectorySharedStorageIncarnation(
+                            disk_ptr->getName(), fs::path(relative_data_path) / it->name());
                 }
             }
         }, Priority{0});
@@ -3950,16 +3966,25 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             });
     }
 
-    const bool record_shared_storage_incarnation = (*getSettings())[MergeTreeSetting::leader_election];
+    std::unordered_map<String, size_t> disk_index_by_name;
+    for (size_t i = 0; i < disks.size(); ++i)
+        disk_index_by_name.emplace(disks[i]->getName(), i);
+
     loading_tree.traverse(/*recursive=*/ true, [&](const auto & node)
     {
         if (!node->is_loaded)
         {
-            /// See `PartLoadingTree::Node::queued_shared_storage_incarnation`.
+            /// See `PartLoadingTree::Node::queued_shared_storage_incarnation` and
+            /// `listed_shared_storage_incarnations_by_disk`. Every node of the tree comes from the listing.
             if (record_shared_storage_incarnation)
             {
-                node->queued_shared_storage_incarnation
-                    = getPartDirectorySharedStorageIncarnation(node->disk->getName(), fs::path(relative_data_path) / node->name);
+                const auto & disk_listed_incarnations = listed_shared_storage_incarnations_by_disk.at(disk_index_by_name.at(node->disk->getName()));
+                auto it = disk_listed_incarnations.find(node->name);
+                if (it == disk_listed_incarnations.end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "The identity of the directory of part {} on disk {} was not recorded when it was listed",
+                        node->name, node->disk->getName());
+                node->queued_shared_storage_incarnation = it->second;
                 node->has_queued_shared_storage_incarnation = true;
             }
             unloaded_parts.push_back(node);
