@@ -26,6 +26,7 @@ SELECT id, value, _row_id, _last_updated_sequence_number FROM icebergLocal('iceb
 SELECT 'materialized';
 SELECT id, value, _row_id, _last_updated_sequence_number FROM icebergLocal('iceberg-row-lineage/materialized') ORDER BY id;
 -- A filter on \`_row_id\` must not prune file 1 by its \`first_row_id\` range [5, 10): its materialized values are outside of it.
--- Bug: today the file is pruned and nothing is returned (with \`use_iceberg_partition_pruning = 0\` the rows are found).
+-- Bug: today the file is pruned and nothing is returned (with \`use_iceberg_partition_pruning = 0\` the rows are found),
+-- https://github.com/ClickHouse/ClickHouse/issues/130022.
 SELECT id FROM icebergLocal('iceberg-row-lineage/materialized') WHERE _row_id > 1000 ORDER BY id;
 "
