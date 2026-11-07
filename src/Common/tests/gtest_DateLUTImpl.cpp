@@ -651,7 +651,6 @@ INSTANTIATE_TEST_SUITE_P(AllTimeZones,
             << "\n\t year              : " << static_cast<unsigned int>(v.year)
             << "\n\t month             : " << static_cast<unsigned int>(v.month)
             << "\n\t day               : " << static_cast<unsigned int>(v.day_of_month)
-            << "\n\t weekday           : " << static_cast<unsigned int>(v.day_of_week)
             << "\n\t days in month     : " << static_cast<unsigned int>(v.days_in_month)
             << "\n\t offset change     : " << v.amount_of_offset_change()
             << "\n\t offset change at : " << v.time_at_offset_change()
