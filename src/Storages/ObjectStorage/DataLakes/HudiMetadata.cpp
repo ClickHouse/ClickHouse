@@ -389,7 +389,6 @@ Strings HudiMetadata::getDataFilesImpl(const ContextPtr & local_context) const
     std::optional<RelativePathWithMetadata> properties_file;
     std::optional<RelativePathWithMetadata> backup_file;
     std::vector<RelativePathWithMetadata> instants;
-    /// Directory in the table -> names of its files, for the timeline directories of both layouts.
     std::unordered_map<String, Strings> timeline_directory_files;
     /// Listed before the data files, so the new files of every instant applied below are listed too.
     listFiles(
