@@ -21,6 +21,10 @@ class Context;
 /// constructor cannot prove its caller's lock state, so publication is deferred to the drain below.
 void warnIfAffectedByExt4CorruptionKernelBug(const String & directory, const String & description);
 
+/// What the probe above records on an affected kernel for a filesystem type: "ext4", empty (undetermined)
+/// or another type (nothing). Separate so tests can drive it on any kernel.
+void recordExt4CorruptionKernelBugProbe(const String & fs_type, const String & directory, const String & description);
+
 /// Stages what the probes on the current thread record until `commit()`. A batch destroyed
 /// uncommitted, i.e. by the exception that aborted a disk selector update, discards them: those
 /// disks never became active, so nothing is published for them.

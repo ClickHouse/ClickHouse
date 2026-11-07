@@ -34,8 +34,7 @@ namespace
     /// The batch the current thread stages into while one is open on it.
     thread_local Ext4CorruptionKernelBugWarningBatch::Recorded * staging = nullptr;
 
-    /// Only reached on Linux; the probe below is compiled out elsewhere.
-    [[maybe_unused]] void recordWarning(PreformattedMessage message, bool ext4)
+    void recordWarning(PreformattedMessage message, bool ext4)
     {
         if (staging)
         {
@@ -101,6 +100,22 @@ size_t flushExt4CorruptionKernelBugWarning(const Context & context)
     return published;
 }
 
+void recordExt4CorruptionKernelBugProbe(const String & fs_type, const String & directory, const String & description)
+{
+    if (fs_type == "ext4")
+    {
+        recordWarning(PreformattedMessage::create(ext4_hit_format, description, directory), /* ext4 */ true);
+    }
+    else if (fs_type.empty())
+    {
+        /// Whether a stored ext4 hit outranks it is decided when it is published.
+        recordWarning(PreformattedMessage::create(
+            "This Linux kernel has a known ext4 filesystem corruption bug (fixed in 4.16.4) and the filesystem of {} ({}) "
+            "could not be determined. Consider upgrading the kernel.",
+            description, directory), /* ext4 */ false);
+    }
+}
+
 void warnIfAffectedByExt4CorruptionKernelBug([[maybe_unused]] const String & directory, [[maybe_unused]] const String & description)
 {
 #if defined(OS_LINUX)
@@ -125,19 +140,7 @@ void warnIfAffectedByExt4CorruptionKernelBug([[maybe_unused]] const String & dir
         if (candidate.empty() || !fs::is_directory(candidate, ec))
             return;
 
-        const String fs_type = getDirectoryFilesystemType(candidate.string());
-        if (fs_type == "ext4")
-        {
-            recordWarning(PreformattedMessage::create(ext4_hit_format, description, directory), /* ext4 */ true);
-        }
-        else if (fs_type.empty())
-        {
-            /// Whether a stored ext4 hit outranks it is decided when it is published.
-            recordWarning(PreformattedMessage::create(
-                "This Linux kernel has a known ext4 filesystem corruption bug (fixed in 4.16.4) and the filesystem of {} ({}) "
-                "could not be determined. Consider upgrading the kernel.",
-                description, directory), /* ext4 */ false);
-        }
+        recordExt4CorruptionKernelBugProbe(getDirectoryFilesystemType(candidate.string()), directory, description);
     }
     catch (...) /// Ok: a failed probe must not break disk construction. // NOLINT(bugprone-empty-catch)
     {
