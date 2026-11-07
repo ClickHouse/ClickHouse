@@ -1,0 +1,5 @@
+1	1
+kafka_plain	format_csv_delimiter	,	0	1
+kafka_plain	kafka_max_block_size	0	0	1
+kafka_stated	format_csv_delimiter	;	1	0
+kafka_stated	kafka_max_block_size	100	1	0

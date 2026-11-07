@@ -1,5 +1,6 @@
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/FormatFactorySettings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -984,6 +985,18 @@ void StorageFileLog::wakeUp()
     cv.notify_one();
 }
 
+/// The settings of `FileLog`: the engine reads with the header detection disabled (`configureContext`), and does not apply
+/// the other format settings a table states (https://github.com/ClickHouse/ClickHouse/issues/124738), so they are left out
+/// unless the table states them.
+static SettingDescriptions enumerateFileLogSettings(ContextPtr context, const SettingsChanges & changes)
+{
+    auto settings = enumerateStreamingEngineDefaults<FileLogSettings>(context, changes);
+    /// A format setting the table's definition states is kept, so that the table's rows show what its definition says.
+    std::erase_if(settings, [&](const SettingDescription & setting)
+        { return isFormatFactorySetting(setting.name) && !isHeaderDetectionSetting(setting.name) && !changes.tryGet(setting.name); });
+    return settings;
+}
+
 void registerStorageFileLog(StorageFactory & factory);
 void registerStorageFileLog(StorageFactory & factory)
 {
@@ -1072,6 +1085,11 @@ void registerStorageFileLog(StorageFactory & factory)
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::FILE,
             .has_builtin_setting_fn = FileLogSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateFileLogSettings,
+            /// A table that does not state these takes the server's `max_insert_block_size`, `max_block_size` and
+            /// `stream_poll_timeout_ms`.
+            .is_inherited_setting_fn = [](std::string_view name)
+            { return name == "max_block_size" || name == "poll_max_batch_size" || name == "poll_timeout_ms"; },
         },
         Documentation{
             .description = R"DOCS_MD(

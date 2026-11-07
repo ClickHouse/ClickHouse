@@ -205,6 +205,7 @@ void registerStorageElasticsearch(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::ELASTICSEARCH,
             .has_builtin_setting_fn = ElasticsearchSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaults<ElasticsearchSettings>,
         },
         Documentation{
             .description = R"DOCS_MD(

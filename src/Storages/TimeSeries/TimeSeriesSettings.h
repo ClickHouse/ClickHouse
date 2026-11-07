@@ -4,6 +4,7 @@
 #include <Core/SettingFieldASTFunction.h>
 #include <Core/SettingFieldDataType.h>
 #include <Core/SettingsFields.h>
+#include <Storages/SettingDescription.h>
 
 
 namespace DB
@@ -48,6 +49,7 @@ struct TimeSeriesSettings
     void applyChanges(const SettingsChanges & changes);
 
     static bool hasBuiltin(std::string_view name);
+    SettingDescriptions enumerateSettings(const SettingsChanges & changes) const;
 
     /// Whether the setting was explicitly set, even if to its default value.
     bool isChanged(std::string_view name) const;
