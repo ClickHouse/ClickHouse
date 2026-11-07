@@ -69,6 +69,8 @@ struct RowRange
 {
     size_t begin = 0;
     size_t end = std::numeric_limits<size_t>::max();
+    /// Some rows of the range are never asked about (e.g. the rows with a NULL key), so no state hashes rows ahead of the asked ones.
+    bool skips_rows = false;
 };
 
 /// The state type to build over a sub-range of a block. It differs from `State` only where `State` does
