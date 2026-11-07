@@ -55,7 +55,7 @@ public:
 
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context)
     {
-        StorageObjectStorageConfiguration::initialize(*getConfiguration(context), args, context, true);
+        StorageObjectStorageConfiguration::initialize(*getConfiguration(context), args, context, true, nullptr, loading_mode);
     }
 
     static void updateStructureAndFormatArgumentsIfNeeded(
@@ -81,6 +81,8 @@ public:
         partition_by = partition_by_;
     }
 
+    void setLoadingStrictnessLevel(LoadingStrictnessLevel mode) override { loading_mode = mode; }
+
 protected:
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
@@ -105,6 +107,7 @@ protected:
     ColumnsDescription structure_hint;
     std::shared_ptr<Settings> settings;
     ASTPtr partition_by;
+    LoadingStrictnessLevel loading_mode = LoadingStrictnessLevel::CREATE;
 
     VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 };
