@@ -76,7 +76,7 @@ test "materialize([map(42, tuple(1, [tuple(2, map(1, 2))]))])::Dynamic"
 test "materialize([map(42, tuple(1, [tuple(2, map(1, 2))]))])::Dynamic(max_types=10)"
 test "materialize([map(42, tuple(1, [tuple(2, map(1, 2))]))])::Dynamic(max_types=254)"
 
-$CLICKHOUSE_LOCAL --stacktrace --allow_experimental_dynamic_type=1 --allow_experimental_variant_type=1 --output_format_binary_encode_types_in_binary_format=1 --output_format_native_encode_types_in_binary_format=1 -q "$encode_queries"
+$CLICKHOUSE_LOCAL --stacktrace --output_format_binary_encode_types_in_binary_format=1 --output_format_native_encode_types_in_binary_format=1 -q "$encode_queries"
 $CLICKHOUSE_LOCAL --input_format_binary_decode_types_in_binary_format=1 --input_format_native_decode_types_in_binary_format=1 -q "$decode_queries"
 
 rm -f "${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"_*

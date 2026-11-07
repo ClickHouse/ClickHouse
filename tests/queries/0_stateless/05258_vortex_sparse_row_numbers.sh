@@ -26,7 +26,7 @@ mkdir -p "$DATA_DIR"
     SETTINGS engine_file_truncate_on_insert = 1;
 "
 
-"${LOCAL[@]}" --enable_analyzer=1 --query "
+"${LOCAL[@]}" --query "
     SELECT '-- the second pass reads no column of the file, only the selected rows';
     SELECT _row_number, absent
     FROM file('${DATA_DIR}/data.vortex', Vortex, 'absent UInt64')

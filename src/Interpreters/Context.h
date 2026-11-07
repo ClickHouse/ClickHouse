@@ -910,6 +910,7 @@ public:
         JEMALLOC_PERCPU_ARENA_DISABLED,
         OBSOLETE_MONGO_TABLE_DEFINITION,
         OBSOLETE_SETTINGS,
+        OBSOLETE_SETTINGS_USED,
         PROCESS_USER_MATCHES_DATA_OWNER,
         RABBITMQ_UNSUPPORTED_COLUMNS,
         REPLICATED_DB_WITH_ALL_GROUPS_CLUSTER_PREFIX,
@@ -2305,6 +2306,9 @@ private:
     void setSettingWithLock(std::string_view name, const Field & value, const std::lock_guard<ContextSharedMutex> & lock);
 
     void applySettingChangeWithLock(const SettingChange & change, const std::lock_guard<ContextSharedMutex> & lock);
+
+    /// Remembers an obsolete setting changed by a query or a settings profile for `system.warnings`, and logs a warning.
+    void reportObsoleteSettingChange(const SettingChange & change) const;
 
     void applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex> & lock);
 

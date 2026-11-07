@@ -1467,7 +1467,8 @@ arrow::Status ArrowFlightServer::DoAction(
                         auto string_value = std::visit(to_string_value, value);
                         SettingChange change{setting, Field{string_value}};
                         session_context->checkSettingsConstraints(change, SettingSource::QUERY);
-                        session_context->setSetting(setting, string_value);
+                        /// `applySettingChange` also reports a change of an obsolete setting.
+                        session_context->applySettingChange(change);
                     }
                 }
                 catch (DB::Exception & e)

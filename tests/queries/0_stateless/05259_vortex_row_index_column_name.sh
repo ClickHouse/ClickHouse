@@ -24,7 +24,7 @@ mkdir -p "$DATA_DIR"
     SETTINGS engine_file_truncate_on_insert = 1;
 "
 
-"${LOCAL[@]}" --enable_analyzer=1 --query "
+"${LOCAL[@]}" --query "
     SELECT '-- the columns of the file next to the row number';
     SELECT _row_number, _row_index, __row_index FROM file('${DATA_DIR}/data.vortex', Vortex) ORDER BY _row_number LIMIT 3;
 

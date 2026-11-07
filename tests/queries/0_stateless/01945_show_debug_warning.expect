@@ -57,9 +57,7 @@ if {$Debug_type > 0} {
     expect eof
 }
 
+# The client refuses an obsolete setting on the command line instead of starting with it.
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--no-warnings} --max_memory_usage_for_all_queries=123 --history_file=$history_file"
-expect "Warnings:"
-expect " * Obsolete setting"
-expect ":) "
-send -- "q\r"
+expect -ex {Obsolete setting ['max_memory_usage_for_all_queries'] is specified on the command line}
 expect eof

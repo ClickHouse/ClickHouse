@@ -9,6 +9,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include "config.h"
@@ -920,6 +921,11 @@ struct ContextSharedPart : boost::noncopyable
     std::optional<S3SettingsByEndpoint> storage_s3_settings TSA_GUARDED_BY(mutex);   /// Settings of S3 storage
     std::optional<AzureSettingsByEndpoint> storage_azure_settings TSA_GUARDED_BY(mutex);   /// Settings of AzureBlobStorage
     std::unordered_map<Context::WarningType, PreformattedMessage> warnings TSA_GUARDED_BY(mutex); /// Store warning messages about server.
+
+    /// Obsolete query-level settings that queries or settings profiles changed since the server start.
+    /// A separate mutex, because they are reported while the mutex of a (non-global) context is held.
+    mutable std::mutex used_obsolete_settings_mutex;
+    std::set<String, std::less<>> used_obsolete_settings TSA_GUARDED_BY(used_obsolete_settings_mutex);
 
     /// Background executors for *MergeTree tables
     /// Has background executors for MergeTree tables been initialized?
@@ -2095,6 +2101,22 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
             String settings_list = fmt::format("'{}'", fmt::join(obsolete_settings, "', '"));
             common_warnings[Context::WarningType::OBSOLETE_SETTINGS]
                 = PreformattedMessage::create(message_format_string, single_element ? "" : "s", settings_list, single_element ? " is" : " are");
+        }
+
+        std::vector<String> used_obsolete_settings;
+        {
+            std::lock_guard lock(shared->used_obsolete_settings_mutex);
+            used_obsolete_settings.assign(shared->used_obsolete_settings.begin(), shared->used_obsolete_settings.end());
+        }
+
+        if (!used_obsolete_settings.empty())
+        {
+            common_warnings[Context::WarningType::OBSOLETE_SETTINGS_USED] = PreformattedMessage::create(
+                "Queries or settings profiles changed obsolete settings since the server start: ['{}']. "
+                "They have no effect or must be defined in the server configuration instead, and they will be removed. "
+                "Please check 'SELECT name, description FROM system.settings WHERE is_obsolete', "
+                "and find their usage in the `Settings` column of `system.query_log`",
+                fmt::join(used_obsolete_settings, "', '"));
         }
     }
 
@@ -3998,6 +4020,7 @@ void Context::applySettingChangeWithLock(const SettingChange & change, const std
         settings->checkShorthandChange(change);
         setSettingWithLock(change.name, change.value, lock);
         contextSanityClampSettingsWithLock(*this, *settings, lock);
+        reportObsoleteSettingChange(change);
     }
     catch (Exception & e)
     {
@@ -4006,6 +4029,40 @@ void Context::applySettingChangeWithLock(const SettingChange & change, const std
                          change.name, applyVisitor(FieldVisitorToString(), change.value)));
         throw;
     }
+}
+
+void Context::reportObsoleteSettingChange(const SettingChange & change) const
+{
+    /// A `merge_tree_`-prefixed name refers to a `MergeTreeSettings` setting, which has its own tier.
+    if (settingGetTier(change.name) != SettingsTierType::OBSOLETE)
+        return;
+
+    /// The client refuses obsolete settings on its command line. Besides, it applies the settings of the user's
+    /// profile it receives from the server (`apply_settings_from_server`), and the server reports them itself.
+    if (getApplicationType() == ApplicationType::CLIENT)
+        return;
+
+    /// The initiator of a distributed query sends its changed settings on (and always sends some obsolete ones,
+    /// such as `allow_experimental_analyzer`, for compatibility with older servers). The initiator reports them itself.
+    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        return;
+
+    {
+        std::lock_guard lock(shared->used_obsolete_settings_mutex);
+        /// Log only the first use of each setting, so that a settings profile with an obsolete setting,
+        /// which is applied to every session, does not flood the log.
+        if (!shared->used_obsolete_settings.emplace(change.name).second)
+            return;
+    }
+
+    /// Only the first use is logged, so sending it to the client would be arbitrary: the setting is shown to
+    /// every user in `system.warnings` instead.
+    CurrentThread::HideLogsFromClientScope hide_logs_from_client;
+    LOG_WARNING(shared->log,
+        "Obsolete setting `{}` is changed (to {}). It has no effect or must be defined in the server configuration instead, "
+        "and it will be removed. Please remove it from queries, settings profiles and client configurations. "
+        "Further uses of this setting will not be logged, but they are visible in the `Settings` column of `system.query_log`",
+        change.name, applyVisitor(FieldVisitorToString(), change.value));
 }
 
 void Context::applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex>& lock)
@@ -4041,6 +4098,7 @@ void Context::applySettingChange(const SettingChange & change)
     {
         settings->checkShorthandChange(change);
         setSetting(change.name, change.value);
+        reportObsoleteSettingChange(change);
     }
     catch (Exception & e)
     {
