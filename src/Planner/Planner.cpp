@@ -42,6 +42,7 @@
 #include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
+#include <Processors/QueryPlan/BypassExtremesSteps.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/RollupStep.h>
@@ -88,6 +89,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
+#include <Analyzer/traverseQueryTree.h>
 
 #include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/CollectMaterializedCTE.h>
@@ -119,6 +121,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMap additional_table_filters;
+    extern const SettingsBool optimize_constant_columns_after_filter;
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
@@ -333,21 +336,29 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     ResultReplacementMap replacement_map;
 
     auto updated_query_tree = replaceTableExpressionsWithDummyTables(query_tree, table_nodes, query_context, &replacement_map);
-    /// disable parallel replicas to collect filters
+    /// Disable parallel replicas to collect filters, in every (sub)query: each one is planned with its own context,
+    /// which the clone still shares with the original tree, and an `IN` subquery keeps its real tables.
+    /// A materialized CTE keeps its contexts: the plan built for it here is stored in the handle the query shares and executes.
+    auto not_materialized_cte = [](const QueryTreeNodePtr & parent, const QueryTreeNodePtr & child)
     {
-        if (auto * query_node = updated_query_tree->as<QueryNode>())
+        const auto * table_node = parent->as<TableNode>();
+        return !table_node || child != table_node->getMaterializedCTESubquery();
+    };
+    traverseQueryTree(updated_query_tree, not_materialized_cte, [](const QueryTreeNodePtr & node)
+    {
+        if (auto * query_node = node->as<QueryNode>())
         {
             auto new_context = Context::createCopy(query_node->getMutableContext());
             new_context->setSetting("enable_parallel_replicas", false);
             query_node->getMutableContext() = new_context;
         }
-        else if (auto * union_node = updated_query_tree->as<UnionNode>())
+        else if (auto * union_node = node->as<UnionNode>())
         {
             auto new_context = Context::createCopy(union_node->getMutableContext());
             new_context->setSetting("enable_parallel_replicas", false);
             union_node->getMutableContext() = new_context;
         }
-    }
+    });
 
     std::unordered_map<const IStorage *, QueryTreeNodePtr> dummy_storage_to_table;
 
@@ -733,6 +744,8 @@ ALWAYS_INLINE void addFilterStep(
         std::move(actions),
         filter_analysis_result.filter_column_name,
         filter_analysis_result.remove_filter_column);
+    where_step->setOptimizeConstantColumnsAfterFilter(
+        planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_constant_columns_after_filter]);
     appendSetsFromActionsDAG(where_step->getExpression(), useful_sets);
     where_step->setStepDescription(step_description);
     query_plan.addStep(std::move(where_step));
@@ -2355,7 +2368,16 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
         filter_info.do_remove_column);
     filter_step->setStepDescription("additional result filter");
     appendSetsFromActionsDAG(filter_step->getExpression(), useful_sets);
+
+    /// The extremes are computed before `LIMIT`, and the result filter, which comes after it, must not filter them either.
+    const bool bypass_extremes = settings[Setting::extremes];
+    if (bypass_extremes)
+        query_plan.addStep(std::make_unique<DetachExtremesStep>(query_plan.getCurrentHeader()));
+
     query_plan.addStep(std::move(filter_step));
+
+    if (bypass_extremes)
+        query_plan.addStep(std::make_unique<AttachExtremesStep>(query_plan.getCurrentHeader()));
 }
 
 /// Replace a header that holds nothing but row-count-only columns (or no column at all) with one
@@ -2774,6 +2796,9 @@ void Planner::buildPlanForUnionNode()
             return;
     }
 
+    /// Each arm is checked only against its own context, so compare the arms with the union here.
+    checkParallelReplicasImplementationOfSubqueries(query_tree, query_context);
+
     const auto & union_queries_nodes = union_node.getQueries().getNodes();
     size_t queries_size = union_queries_nodes.size();
 
@@ -2971,6 +2996,9 @@ void Planner::buildPlanForQueryNode()
         query_node.getHaving() = {};
     }
 
+    /// Before collecting sets and materialized CTEs, whose subqueries are planned separately.
+    checkParallelReplicasImplementationOfSubqueries(query_tree, query_context);
+
     collectSets(query_tree, *planner_context);
     auto materialized_ctes = collectMaterializedCTEs(query_tree, select_query_options);
 
@@ -2999,14 +3027,17 @@ void Planner::buildPlanForQueryNode()
     /// patch the match (which differs case by case), disable the combination on the analyzer path.
     /// With `serialize_query_plan` the initiator lowers `additional_table_filters` into an explicit
     /// `FilterStep` and ships the serialized plan, so the follower never re-resolves the setting —
-    /// the combination works there and the check is skipped.
+    /// the combination works there and the check is skipped. Plan-based parallel replicas ships the
+    /// plan the same way, whatever `serialize_query_plan` says, so the check is skipped there too.
     if (query_context->canUseParallelReplicasOnInitiator()
         && !settings[Setting::serialize_query_plan]
+        && !settings[Setting::parallel_replicas_plan_based]
         && !settings[Setting::additional_table_filters].value.empty())
     {
         if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "additional_table_filters is not supported with parallel and without serialize_query_plan=1");
+                "additional_table_filters is not supported with parallel replicas unless the plan is "
+                "shipped (parallel_replicas_plan_based=1 or serialize_query_plan=1)");
 
         auto & mutable_context = planner_context->getMutableQueryContext();
         mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
