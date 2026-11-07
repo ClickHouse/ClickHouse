@@ -38,16 +38,16 @@ SELECT aiGenerate(x, map('credentials', 'ai_remote_http')) FROM tab; -- { server
 SELECT aiEmbed(x, 'embed-model', map('credentials', 'ai_embed_remote_http')) FROM tab; -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- Remote https endpoint is allowed';
-SELECT count() FROM (SELECT aiGenerate(x, map('credentials', 'ai_remote_https')) AS r FROM tab);
+SELECT count(r) FROM (SELECT aiGenerate(x, map('credentials', 'ai_remote_https')) AS r FROM tab);
 
 SELECT '-- Loopback http endpoint is allowed (localhost and 127.0.0.1)';
-SELECT count() FROM (SELECT aiGenerate(x, map('credentials', 'ai_local_http')) AS r FROM tab);
-SELECT count() FROM (SELECT aiGenerate(x, map('credentials', 'ai_local_ip_http')) AS r FROM tab);
+SELECT count(r) FROM (SELECT aiGenerate(x, map('credentials', 'ai_local_http')) AS r FROM tab);
+SELECT count(r) FROM (SELECT aiGenerate(x, map('credentials', 'ai_local_ip_http')) AS r FROM tab);
 
 SELECT '-- Setting ai_function_allow_insecure_endpoint permits a remote http endpoint';
 SET ai_function_allow_insecure_endpoint = 1;
-SELECT count() FROM (SELECT aiGenerate(x, map('credentials', 'ai_remote_http')) AS r FROM tab);
-SELECT count() FROM (SELECT aiEmbed(x, 'embed-model', map('credentials', 'ai_embed_remote_http')) AS r FROM tab);
+SELECT count(r) FROM (SELECT aiGenerate(x, map('credentials', 'ai_remote_http')) AS r FROM tab);
+SELECT count(r) FROM (SELECT aiEmbed(x, 'embed-model', map('credentials', 'ai_embed_remote_http')) AS r FROM tab);
 SET ai_function_allow_insecure_endpoint = 0;
 
 -- =============================================================================
