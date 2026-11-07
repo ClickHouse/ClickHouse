@@ -216,13 +216,8 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
         result.emplace_back(field.name, type);
     }
 
-    /// Without this, `ReadSchemaUtils` would report the empty schema with an empty error message.
-    if (result.empty() && !schema.fields.empty())
-        throw Exception(
-            ErrorCodes::UNKNOWN_TYPE,
-            "The native Arrow IPC reader does not support the type of any of the {} columns, and "
-            "`input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference` skipped all of them",
-            schema.fields.size());
+    /// An empty result is not an error here: with `schema_inference_mode = 'union'` such a file contributes no columns.
+    /// `readSchemaFromFormatImpl` explains an empty schema when it has to fail on it.
     return result;
 }
 
