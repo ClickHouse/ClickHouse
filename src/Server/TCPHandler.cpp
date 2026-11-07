@@ -235,7 +235,8 @@ void validateClientInfo(const ClientInfo & session_client_info, const ClientInfo
     // shard_1 receives a message with 'ClickHouse client' client_name
     // shard_1 initiates TCP connection with shard_2 with 'ClickHouse server' client_name.
     // shard_1 sends 'ClickHouse client' client_name in Protocol::Client::Query message to shard_2.
-    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        || session_client_info.interface == ClientInfo::Interface::TCP_INTERSERVER)
         return;
 
     if (session_client_info.interface != client_info.interface)

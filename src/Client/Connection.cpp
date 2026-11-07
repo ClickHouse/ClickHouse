@@ -1124,12 +1124,7 @@ void Connection::sendQuery(
     if (server_revision >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET)
     {
         /// Hash
-        ///
-        /// Send correct hash only for !INITIAL_QUERY, due to:
-        /// - this will avoid extra protocol complexity for simplest cases
-        /// - there is no need in hash for the INITIAL_QUERY anyway
-        ///   (since there is no secure/non-secure changes)
-        if (client_info && !cluster_secret.empty() && client_info->query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+        if (client_info && !cluster_secret.empty())
         {
 #if USE_SSL
             if (!nonce.has_value())
