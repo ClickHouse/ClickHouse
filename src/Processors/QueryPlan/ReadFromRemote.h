@@ -55,6 +55,8 @@ public:
 
     bool hasSerializedPlan() const;
 
+    bool hasTotals() const;
+
     void allowReadingShardFromSeveralReplicas(bool allow) { allow_reading_shard_from_several_replicas = allow; }
 
 private:
