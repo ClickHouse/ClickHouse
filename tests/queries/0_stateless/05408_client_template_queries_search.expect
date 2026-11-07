@@ -1,0 +1,52 @@
+#!/usr/bin/expect -f
+
+# Ctrl-O with --enable-template-queries-search opens the template queries picker (skim, or a short
+# message when the build has no skim). The flag is passed bare, as documented. Aborting it must leave the prompt usable and the line unchanged.
+# Without skim or TERM (as in Fast test and the other CI jobs) the client prints why, and the line must be kept too.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --enable-template-queries-search --history_file=$history_file"
+expect ":) "
+
+# The query text differs from its result, so the echo of the typed line cannot match the expected output
+send -- "SELECT 'kept' || '_line'"
+
+# Ctrl-O (octal code of O is 017, see ascii(7))
+send -- "\017"
+expect {
+    # No picker was opened, so there is nothing to abort.
+    -re "requires a build with skim support|skim failed" {}
+    # skim turns on mouse reporting when the picker opens, and Escape aborts it.
+    -ex "\033\[?1000h" { send -- "\033" }
+}
+
+# Wait until the line is repainted, so that Enter goes to the prompt and not to the picker.
+expect "SELECT 'kept' || '_line'"
+
+# the line survived: executing it prints the result, which is not present in the echo
+send -- "\r"
+expect "kept_line"
+expect ":) "
+
+send -- "exit\r"
+expect eof
