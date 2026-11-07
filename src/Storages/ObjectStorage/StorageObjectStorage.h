@@ -91,6 +91,16 @@ public:
         ContextPtr context,
         bool async_insert) override;
 
+    ProcessorPtr createInsertCommitSink(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
+
+    static ProcessorPtr createInsertCommitSink(
+        const StorageObjectStorageConfigurationPtr & configuration,
+        const ObjectStoragePtr & object_storage,
+        const StorageID & storage_id,
+        const std::shared_ptr<DataLake::ICatalog> & catalog,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ContextPtr & local_context);
+
     static SinkToStoragePtr createSink(
         const StorageObjectStorageConfigurationPtr & configuration,
         const ObjectStoragePtr & object_storage,

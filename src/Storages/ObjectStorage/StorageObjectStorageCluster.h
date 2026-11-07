@@ -45,6 +45,8 @@ public:
         ContextPtr context,
         bool async_insert) override;
 
+    ProcessorPtr createInsertCommitSink(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
+
     bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
 
     bool isObjectStorage() const override { return true; }

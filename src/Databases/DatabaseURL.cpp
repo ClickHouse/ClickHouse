@@ -197,6 +197,11 @@ public:
         return getNestedForWrite(context)->write(query, metadata_snapshot, context, async_insert);
     }
 
+    ProcessorPtr createInsertCommitSink(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override
+    {
+        return getNestedForWrite(context)->createInsertCommitSink(metadata_snapshot, context);
+    }
+
     void truncate(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,

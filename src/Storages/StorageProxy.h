@@ -108,6 +108,11 @@ public:
         return getNested()->write(query, metadata_snapshot, context, async_insert);
     }
 
+    ProcessorPtr createInsertCommitSink(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override
+    {
+        return getNested()->createInsertCommitSink(metadata_snapshot, context);
+    }
+
     void checkInsertIsAllowed(ContextPtr context) const override { getNested()->checkInsertIsAllowed(context); }
 
     void drop() override { getNested()->drop(); }

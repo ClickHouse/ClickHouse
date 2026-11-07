@@ -2099,6 +2099,20 @@ void IcebergMetadata::addDeleteTransformers(
     }
 }
 
+ProcessorPtr IcebergMetadata::createInsertCommitSink(
+    SharedHeader sample_block,
+    const StorageID & table_id,
+    ObjectStoragePtr /*object_storage*/,
+    StorageObjectStorageConfigurationPtr configuration,
+    ContextPtr context,
+    std::shared_ptr<DataLake::ICatalog> catalog)
+{
+    checkTableRootIsQueriedPath("INSERT");
+    auto committer = std::make_unique<IcebergInsertCommitter>(
+        object_storage, configuration, sample_block, context, catalog, persistent_components, table_id);
+    return std::make_shared<IcebergCommit>(sample_block, std::move(committer));
+}
+
 SinkToStoragePtr IcebergMetadata::write(
     SharedHeader sample_block,
     const StorageID & table_id,

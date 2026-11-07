@@ -49,7 +49,7 @@ MultipleFileWriter::MultipleFileWriter(
     , object_storage(object_storage_)
     , context(context_)
     , format_settings(format_settings_)
-    , write_format(std::move(write_format_))
+    , write_format(write_format_)
     , sample_block(sample_block_)
 {
 }
