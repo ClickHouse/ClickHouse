@@ -1921,6 +1921,14 @@ void wrapNestedConstructionSettings(
         }
         return;
     }
+    /// The construction settings of the query itself are applied where the statement runs, by `applyQueryConstructionSettings`.
+    if (auto * show_grants_query = ast->as<ASTShowGrantsQuery>())
+    {
+        if (show_grants_query->for_query)
+            for (auto & child : show_grants_query->for_query->children)
+                wrapNestedConstructionSettings(child, max_query_size, max_parser_depth, max_parser_backtracks);
+        return;
+    }
     if (auto * create_query = ast->as<ASTCreateQuery>())
     {
         /// A view definition (ordinary / materialized / window, including a `POPULATE` materialized view)

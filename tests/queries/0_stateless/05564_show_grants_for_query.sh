@@ -99,6 +99,8 @@ echo "--- 5c: the settings of the query and of the session apply as when the que
 client -q "SHOW GRANTS FOR $u2 FOR QUERY SELECT a FROM t2 SETTINGS filter = 'a IN (SELECT x FROM t3)'"
 client -n -q "SET filter = 'a IN (SELECT x FROM t3)'; SHOW GRANTS FOR $u2 FOR QUERY SELECT a FROM t2"
 client -q "SHOW GRANTS FOR $u1 FOR QUERY SELECT a FROM t2 SETTINGS database = '${CLICKHOUSE_DATABASE_1}'"
+client -q "EXECUTE AS $u2 SHOW GRANTS FOR QUERY SELECT a FROM t2 SETTINGS filter = 'a IN (SELECT x FROM t3)'"
+client -q "EXECUTE AS $u1 SHOW GRANTS FOR QUERY SELECT a FROM t2 SETTINGS filter = 'a IN (SELECT x FROM ${CLICKHOUSE_DATABASE}.t3)', database = '${CLICKHOUSE_DATABASE_1}'"
 
 echo "--- 6: trivial count"
 client -q "SHOW GRANTS FOR $u2 FOR QUERY SELECT count() FROM t2"
