@@ -1556,7 +1556,7 @@ The server successfully detected this situation and will download merged part fr
     M(StreamingExchangeSerializeMicroseconds, "Time spent serializing and compressing chunks into streaming exchange packets.", ValueType::Microseconds) \
     M(StreamingExchangeDeserializeMicroseconds, "Time spent decompressing and deserializing streaming exchange packets into chunks.", ValueType::Microseconds) \
     M(NativeReaderTypeCacheHits, "Columns whose type `NativeReader` took from a map of the types it had already parsed, instead of parsing the type name again. The receivers of streaming exchanges pass such a map.", ValueType::Number) \
-    M(NativeWriterTypeCacheHits, "Columns for which `NativeWriter` took the type name and the serialization from a map of what it had already made for the column type, instead of making them again. The senders of streaming exchanges pass such a map.", ValueType::Number) \
+    M(NativeWriterTypeCacheHits, "Columns for which `NativeWriter` took the type and its name from a map of what it had already made for the column type, instead of making them again. The senders of streaming exchanges pass such a map.", ValueType::Number) \
     M(StreamingExchangeSendQueueFullMicroseconds, "Time a streaming exchange sink did not take chunks because its queue of packets waiting for the socket was full.", ValueType::Microseconds) \
     M(StreamingExchangeReceiveWaitMicroseconds, "Time a streaming exchange source waited for the next bytes from its sender.", ValueType::Microseconds) \
     M(StreamingExchangeConnectionWaitMicroseconds, "Time a streaming exchange sink waited for the receiving task to connect.", ValueType::Microseconds) \

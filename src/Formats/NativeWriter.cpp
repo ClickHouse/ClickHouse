@@ -154,15 +154,17 @@ NativeWriterTypeCache::Entry & NativeWriter::getCachedType(const DataTypePtr & t
     return type_cache->entries.emplace(type.get(), std::move(entry)).first->second;
 }
 
-const SerializationPtr & NativeWriter::getCachedSerialization(NativeWriterTypeCache::Entry & entry, const SerializationInfo & info)
+SerializationPtr NativeWriter::getCachedSerialization(NativeWriterTypeCache::Entry & entry, const SerializationInfo & info)
 {
     WriteBufferFromOwnString kinds;
     info.serialializeKindStackBinary(kinds);
     for (const auto & cached : entry.serializations)
         if (cached.kinds == kinds.str())
             return cached.serialization;
-    NativeWriterTypeCache::Serialization serialization{.kinds = kinds.str(), .serialization = entry.type->getSerialization(info)};
-    return entry.serializations.emplace_back(std::move(serialization)).serialization;
+    SerializationPtr serialization = entry.type->getSerialization(info);
+    if (entry.serializations.size() < NativeWriterTypeCache::max_serializations_per_type)
+        entry.serializations.push_back({.kinds = kinds.str(), .serialization = serialization});
+    return serialization;
 }
 
 void NativeWriter::setAggregateFunctionStateVersions(DataTypePtr & type, UInt64 client_revision)

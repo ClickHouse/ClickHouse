@@ -45,8 +45,8 @@ public:
 private:
     /// The entry of `type_cache` for a column type of the block. It is made when the type is new.
     NativeWriterTypeCache::Entry & getCachedType(const DataTypePtr & type);
-    /// The serialization for `info` of a column with the type of `entry`. It is made when the kinds are new.
-    static const SerializationPtr & getCachedSerialization(NativeWriterTypeCache::Entry & entry, const SerializationInfo & info);
+    /// The serialization for `info` of a column with the type of `entry`. It is made when the kinds are not in `entry`.
+    static SerializationPtr getCachedSerialization(NativeWriterTypeCache::Entry & entry, const SerializationInfo & info);
 
     WriteBuffer & ostr;
     UInt64 client_revision;
