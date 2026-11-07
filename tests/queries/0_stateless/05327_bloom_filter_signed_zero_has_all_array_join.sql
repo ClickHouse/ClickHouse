@@ -64,3 +64,23 @@ SELECT 'LEFT ARRAY JOIN b, x = -0.0', count(), (SELECT count() FROM t_bf_zero_pa
 SELECT 'LEFT ARRAY JOIN a, x = 1', count(), (SELECT count() FROM t_bf_zero_padded LEFT ARRAY JOIN a AS x WHERE x = 1 SETTINGS use_skip_indexes = 0) FROM t_bf_zero_padded LEFT ARRAY JOIN a AS x WHERE x = 1 SETTINGS use_query_condition_cache = 0;
 
 DROP TABLE t_bf_zero_padded;
+
+-- Enum arrays are padded with integer zero even when their smallest declared member is negative.
+DROP TABLE IF EXISTS t_bf_enum_padded;
+CREATE TABLE t_bf_enum_padded
+(
+    id UInt64,
+    a Array(Enum8('negative' = -1, 'zero' = 0, 'one' = 1)),
+    b Array(Enum16('negative' = -256, 'zero' = 0, 'one' = 1)),
+    INDEX idx_a a TYPE bloom_filter(0.0001) GRANULARITY 1,
+    INDEX idx_b b TYPE bloom_filter(0.0001) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 2, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_bf_enum_padded SELECT number, if(number % 2 = 0, [], ['one']), if(number % 2 = 0, [], ['one']) FROM numbers(100);
+
+SELECT 'LEFT ARRAY JOIN Enum8, x = zero', count(), (SELECT count() FROM t_bf_enum_padded LEFT ARRAY JOIN a AS x WHERE x = CAST('zero', 'Enum8(\'negative\' = -1, \'zero\' = 0, \'one\' = 1)') SETTINGS use_skip_indexes = 0) FROM t_bf_enum_padded LEFT ARRAY JOIN a AS x WHERE x = CAST('zero', 'Enum8(\'negative\' = -1, \'zero\' = 0, \'one\' = 1)') SETTINGS use_query_condition_cache = 0;
+SELECT 'LEFT ARRAY JOIN Enum16, x = zero', count(), (SELECT count() FROM t_bf_enum_padded LEFT ARRAY JOIN b AS x WHERE x = CAST('zero', 'Enum16(\'negative\' = -256, \'zero\' = 0, \'one\' = 1)') SETTINGS use_skip_indexes = 0) FROM t_bf_enum_padded LEFT ARRAY JOIN b AS x WHERE x = CAST('zero', 'Enum16(\'negative\' = -256, \'zero\' = 0, \'one\' = 1)') SETTINGS use_query_condition_cache = 0;
+SELECT 'pruned for LEFT ARRAY JOIN Enum8, x = negative', count() FROM t_bf_enum_padded LEFT ARRAY JOIN a AS x WHERE x = CAST('negative', 'Enum8(\'negative\' = -1, \'zero\' = 0, \'one\' = 1)') SETTINGS force_data_skipping_indices = 'idx_a', max_rows_to_read = 30, use_query_condition_cache = 0;
+
+DROP TABLE t_bf_enum_padded;

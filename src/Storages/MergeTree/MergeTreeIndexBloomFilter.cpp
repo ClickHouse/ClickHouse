@@ -1217,8 +1217,14 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     if (converted_field.isNull())
                         return false;
 
-                    if (padded && accurateEquals(converted_field, array_type->getNestedType()->getDefault()))
-                        return false;
+                    if (padded)
+                    {
+                        /// Nonconstant arrays are padded with insertDefault(), not the type's declared default.
+                        auto padding_column = array_type->getNestedType()->createColumn();
+                        padding_column->insertDefault();
+                        if (accurateEquals(converted_field, (*padding_column)[0]))
+                            return false;
+                    }
 
                     out.function = RPNElement::FUNCTION_HAS;
                     out.predicate.emplace_back(std::make_pair(position, hashWithFieldAndOtherZero(actual_type, converted_field)));

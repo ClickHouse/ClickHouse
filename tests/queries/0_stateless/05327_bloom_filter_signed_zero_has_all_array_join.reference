@@ -20,3 +20,6 @@ LEFT ARRAY JOIN a, x = -0.0	50	50
 LEFT ARRAY JOIN a, x = 0.0	50	50
 LEFT ARRAY JOIN b, x = -0.0	50	50
 LEFT ARRAY JOIN a, x = 1	50	50
+LEFT ARRAY JOIN Enum8, x = zero	50	50
+LEFT ARRAY JOIN Enum16, x = zero	50	50
+pruned for LEFT ARRAY JOIN Enum8, x = negative	0
