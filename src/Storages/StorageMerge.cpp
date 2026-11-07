@@ -499,7 +499,7 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
         {
             const auto & column_default = table_columns.getDefault(column.name).value_or(ColumnDefault{});
             const auto & [root_type, src_default_kind] = column_info[column.name];
-            if ((root_type && !root_type->equals(*column.type)) ||
+            if ((root_type && needsConvertingCast(*column.type, *root_type)) ||
                 !columnDefaultKindHasSameType(src_default_kind, column_default.kind))
             {
                 supported_columns.erase(column.name);
@@ -578,6 +578,14 @@ bool StorageMerge::supportedPrewhereColumnsIncludeSubcolumns() const
     return include_subcolumns;
 }
 
+/// A child computes in its own type, so it cannot run before a cast that relabels an equal type.
+static bool childCanProcessBeforeConversion(const IDataType & child_type, const IDataType & declared_type)
+{
+    if (child_type.equals(declared_type))
+        return !needsConvertingCast(child_type, declared_type);
+    return conversionPreservesOrder(child_type, declared_type);
+}
+
 QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,
@@ -632,7 +640,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
                 for (const auto & child_column : table_metadata->getColumns().get(order_relevant_columns))
                 {
                     auto declared_column = declared_columns.tryGetColumn(order_relevant_columns, child_column.name);
-                    if (declared_column && !conversionPreservesOrder(*child_column.type, *declared_column->type))
+                    if (declared_column && !childCanProcessBeforeConversion(*child_column.type, *declared_column->type))
                         any_child_conversion_breaks_order = true;
                 }
             }
@@ -1261,7 +1269,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 for (const auto & child_column : storage_metadata_snapshot->getColumns().get(order_relevant_columns))
                 {
                     auto declared_column = declared_columns.tryGetColumn(order_relevant_columns, child_column.name);
-                    if (declared_column && !conversionPreservesOrder(*child_column.type, *declared_column->type))
+                    if (declared_column && !childCanProcessBeforeConversion(*child_column.type, *declared_column->type))
                         throw Exception(
                             ErrorCodes::INCOMPATIBLE_COLUMNS,
                             "Column {} of table {} has type {}, which does not preserve the order when converted to "

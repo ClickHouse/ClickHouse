@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/Utils.h>
 
 #include <Functions/FunctionFactory.h>
 
@@ -2541,7 +2542,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                     continue;
                                 }
                                 auto it = inner_types.find(name);
-                                if (it == inner_types.end() || !view_columns.get(name).type->equals(*it->second))
+                                if (it == inner_types.end() || needsConvertingCast(*it->second, *view_columns.get(name).type))
                                 {
                                     column_checks_passed = false;
                                     break;

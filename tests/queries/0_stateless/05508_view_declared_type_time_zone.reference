@@ -1,0 +1,43 @@
+view
+2026-01-01 00:00:00	0	2026-01-01 00:00:00	2026-01-01 00:00:00.123	0	['2026-01-01 00:00:00']
+1
+{'k':'2026-01-01 00:00:00'}	('2026-01-01 00:00:00')
+inlined view
+DateTime(\'UTC\')	2026-01-01 00:00:00	0	['2026-01-01 00:00:00']
+1	1
+explicit CAST and same types
+2026-01-01 00:00:00	0
+2026-01-01 05:30:00	2
+0
+0
+view over MergeTree
+1
+2026-01-01 00:00:00
+1
+view over Distributed
+2026-01-01 00:00:00	0
+2026-01-01 00:00:00	0
+1
+Merge
+2026-01-01 00:00:00	0
+1
+Merge over Distributed
+0	2
+2
+Variant
+2026-01-01 00:00:00	DateTime(\'UTC\')
+2026-01-01 00:00:00
+2026-01-01 00:00:00
+2026-01-01 00:00:00
+AggregateFunction state version
+10
+10
+10
+AggregateFunction over a time zone
+0
+0
+0
+AggregateFunction of another function with the same state
+[3.6]
+[3.6]
+10

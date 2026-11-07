@@ -40,4 +40,14 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
   */
 bool conversionPreservesOrder(const IDataType & from, const IDataType & to);
 
+/** Returns true if a column of type `from` must be cast to type `to`. `IDataType::equals` ignores time zones, custom names
+  * and `AggregateFunction` state versions, so equal types that differ in those are cast too, unless they differ in `Bool`
+  * (its cast changes values) or in an aggregate function or its parameters: `AggregateFunction(quantile, UInt64)` equals
+  * `AggregateFunction(quantiles(0.9), UInt64)` although their states finalize to different types.
+  */
+bool needsConvertingCast(const IDataType & from, const IDataType & to);
+
+/// Returns true if `from` equals `to` and a cast between them only relabels the column, in the sense of `needsConvertingCast`.
+bool isRelabellingCast(const IDataType & from, const IDataType & to);
+
 }
