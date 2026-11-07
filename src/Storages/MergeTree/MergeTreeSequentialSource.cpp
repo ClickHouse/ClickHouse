@@ -206,11 +206,19 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
             patch_read_request_maps.push_back(std::make_shared<const MarkRanges>(ranges));
     }
 
+    auto reader_settings = MergeTreeReaderSettings::createForMergeMutation(std::move(read_settings));
+    /// A merge writes every column it reads, so the defaults it reconciles with the shared `Nested`
+    /// offsets are stored in the new part. A mutation may read a missing column only to compute
+    /// something derived from it (a projection, a skip index, a `MATERIALIZED` column) and leave the
+    /// column itself missing, so the reads of the mutated part would still evaluate the default as is
+    /// and disagree with the derived data. So a mutation reads the defaults like a query does.
+    reader_settings.reconcile_missing_defaults_with_shared_offsets = (type == Merge);
+
     MergeTreeReadTask::Extras extras =
     {
         .mark_cache = mark_cache.get(),
         .patch_join_cache = patch_join_cache.get(),
-        .reader_settings = MergeTreeReaderSettings::createForMergeMutation(std::move(read_settings)),
+        .reader_settings = std::move(reader_settings),
         .storage_snapshot = storage_snapshot,
     };
 
