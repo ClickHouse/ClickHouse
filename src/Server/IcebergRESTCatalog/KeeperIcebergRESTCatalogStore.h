@@ -23,6 +23,7 @@ constexpr char NAMESPACE_LEVEL_SEPARATOR = '\x1F';
 struct IcebergTablePointer
 {
     String uuid;
+    /// Full path of the current `metadata.json`. By convention it is under the `metadata/` directory of the table location, but Iceberg does not require that.
     String metadata_location;
     /// Znode version of the uuid node. Set by `getTable`, checked by `updateTable`.
     ZooKeeperNodeVersion version{};
@@ -43,10 +44,14 @@ struct UpdateNamespacePropertiesResult
 ///   <root>/namespaces/<level>              data: JSON object of namespace properties
 ///   <root>/namespaces/<level>/namespaces   child namespaces, same shape recursively
 ///   <root>/namespaces/<level>/tables       one child per table
-///   <root>/namespaces/<level>/tables/<t>        data: table uuid, written once at create
+///   <root>/namespaces/<level>/tables/<t>        data: JSON {"uuid": ..., "location": ...}, written once at create
 ///   <root>/namespaces/<level>/tables/<t>/<uuid> data: metadata location, the node a commit updates
+///   <root>/locations                       data: empty. Its data version guards the index below.
+///   <root>/locations/<location>            data: table uuid. One child per table root on object storage.
 /// A table commit replaces the uuid node data with a version check, so concurrent commits are serialized by Keeper.
-/// Namespace levels and table names are encoded with `escapeForFileName`.
+/// Create bumps the version of `locations` in the same multi that adds the index entry, so a create that
+/// checked the index against a stale version fails and retries. This keeps table locations disjoint.
+/// Namespace levels, table names and locations are encoded with `escapeForFileName`.
 class KeeperIcebergRESTCatalogStore
 {
 public:
@@ -71,9 +76,20 @@ public:
         Created,
         TableExists,
         NamespaceMissing,
+        /// `location` is equal to, inside, or above the location of another table.
+        LocationOverlaps,
     };
 
-    CreateTableResult createTable(const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & pointer);
+    struct CreateTableOutcome
+    {
+        CreateTableResult result;
+        /// Set when `result` is `LocationOverlaps`.
+        String conflicting_location;
+    };
+
+    /// `table_root` comes without a trailing slash.
+    CreateTableOutcome
+    createTable(const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & pointer, const String & table_root);
 
     std::optional<IcebergTablePointer> getTable(const IcebergNamespaceName & ns, const String & table) const;
 
@@ -105,14 +121,25 @@ private:
     /// Creates the root nodes and checks the format marker.
     void initRoot(const zkutil::ZooKeeperPtr & zookeeper) const;
 
+    /// One attempt of `createTable`. nullopt means another create ran in between and the attempt must be repeated.
+    std::optional<CreateTableOutcome> createTableAttempt(
+        const zkutil::ZooKeeperPtr & zookeeper,
+        const IcebergNamespaceName & ns,
+        const String & table,
+        const IcebergTablePointer & pointer,
+        const String & table_root);
+
     String namespacePath(const IcebergNamespaceName & name) const;
     /// Node that holds the direct children of `name`. Empty `name` means the root list.
     String childNamespacesPath(const IcebergNamespaceName & name) const;
     String tablesPath(const IcebergNamespaceName & name) const;
     String tablePath(const IcebergNamespaceName & name, const String & table) const;
     String tableUuidPath(const IcebergNamespaceName & name, const String & table, const String & uuid) const;
+    String locationPath(const String & location) const;
 
     const String root_path;
+    /// Parent of one child per table location, used for the overlap check.
+    const String locations_path;
     const zkutil::GetZooKeeper get_zookeeper;
 
     /// The session that passed `initRoot`. Requests wait here while a new session is initialized.

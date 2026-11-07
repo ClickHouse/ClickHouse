@@ -53,7 +53,7 @@ DEFAULT_AUTH = ("default", "")
 CATALOG_PORT = 8182
 CATALOG_SECURE_PORT = 8183
 KEEPER_ROOT = "/clickhouse/iceberg_rest_catalog/my_warehouse"
-FORMAT_MARKER = b"IcebergRESTCatalog\nformat_version: 1"
+FORMAT_MARKER = b"IcebergRESTCatalog\nformat_version: 2"
 BUCKET = "warehouse"
 BASE_LOCATION = f"s3://{BUCKET}/my_warehouse"
 
@@ -207,6 +207,17 @@ def drop_table(ns, table, expected_code=204, auth=None):
     return catalog_request(
         "DELETE", tables_url(ns, table), expected_code=expected_code, auth=auth
     )
+
+
+def location_node(location):
+    # Every table location has one node under `locations`. Create adds it, drop removes it.
+    # A Keeper node name cannot contain `/`, so the server encodes the location first.
+    # Same rule as `escapeForFileName`: ASCII letters, digits and `_` stay, every other byte becomes `%XX`.
+    escaped_location = "".join(
+        chr(b) if (b < 128 and chr(b).isalnum()) or b == ord("_") else f"%{b:02X}"
+        for b in location.encode()
+    )
+    return f"{KEEPER_ROOT}/locations/{escaped_location}"
 
 
 def metadata_key(metadata_location):
@@ -717,6 +728,7 @@ def test_keeper_layout(started_cluster):
 
     zk = get_keeper()
     assert zk.get(KEEPER_ROOT)[0] == FORMAT_MARKER
+    assert sorted(zk.get_children(KEEPER_ROOT)) == ["locations", "namespaces"]
 
     # Levels are escaped like file names, so the tree stays walkable with a Keeper client.
     escaped = ns.replace("-", "%2D")
@@ -730,10 +742,13 @@ def test_keeper_layout(started_cluster):
     # The uuid is in the path, so a commit cannot target a table re-created under the same name.
     table_path = f"{child_path}/tables/my%2Etable"
     table_uuid = result["metadata"]["table-uuid"]
+    location = result["metadata"]["location"]
     assert zk.get_children(f"{child_path}/tables") == ["my%2Etable"]
-    assert zk.get(table_path)[0] == table_uuid.encode()
+    assert json.loads(zk.get(table_path)[0]) == {"uuid": table_uuid, "location": location}
     assert zk.get_children(table_path) == [table_uuid]
     assert zk.get(f"{table_path}/{table_uuid}")[0] == result["metadata-location"].encode()
+
+    assert zk.exists(location_node(location))
 
     assert list_namespaces(parent=ns) == [[ns, "eu-west"]]
     assert list_tables(f"{ns}\x1feu-west") == ["my.table"]
@@ -838,10 +853,94 @@ def test_table_location(started_cluster):
     assert result["metadata"]["location"] == f"{ns_location}/events-{table_uuid}"
     cluster.minio_client.stat_object(BUCKET, metadata_key(result["metadata-location"]))
 
-    # The catalog chooses every table path, so a client-chosen location is refused.
-    response = create_table(ns, "explicit", location=f"s3://{BUCKET}/explicit/{ns}", expected_code=400)
+    # A client-chosen location is used as given, without the trailing slash.
+    explicit_location = f"s3://{BUCKET}/explicit/{ns}"
+    result = create_table(ns, "explicit", location=explicit_location + "/").json()
+    assert result["metadata"]["location"] == explicit_location
+    assert result["metadata-location"].startswith(explicit_location + "/metadata/")
+    cluster.minio_client.stat_object(BUCKET, metadata_key(result["metadata-location"]))
+
+    # Creating the same table again reports the name conflict, not the overlap with its own location.
+    response = create_table(ns, "explicit", location=explicit_location, expected_code=409)
+    assert_error_shape(response, "TableAlreadyExistsException")
+
+    # The overlap check covers client-chosen locations too.
+    response = create_table(ns, "inside", location=f"{explicit_location}/data", expected_code=400)
     assert_error_shape(response, "BadRequestException")
-    assert not table_exists(ns, "explicit")
+    assert "overlaps location" in response.json()["error"]["message"]
+    assert not table_exists(ns, "inside")
+
+    # The server has credentials for one bucket only.
+    response = create_table(ns, "foreign", location=f"s3://other-bucket/{ns}", expected_code=400)
+    assert_error_shape(response, "BadRequestException")
+    assert not table_exists(ns, "foreign")
+
+
+def test_table_location_overlap(started_cluster):
+    ns = f"overlap_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    outer = create_table(ns, "outer").json()["metadata"]["location"]
+    parent = outer.rsplit("/", 1)[0]
+
+    def assert_refused(table, location):
+        response = create_table(ns, table, location=location, expected_code=400)
+        assert_error_shape(response, "BadRequestException")
+        assert f"Location {location} overlaps location {outer}" in response.json()["error"]["message"]
+        assert not table_exists(ns, table)
+
+    # Inside `outer`.
+    assert_refused("inner", f"{outer}/data")
+
+    # Equal to `outer`.
+    assert_refused("twin", outer)
+
+    # Above `outer`.
+    assert_refused("above", parent)
+
+    # The refused tables wrote nothing.
+    assert list(cluster.minio_client.list_objects(BUCKET, metadata_key(outer) + "/data/")) == []
+    assert list(cluster.minio_client.list_objects(BUCKET, metadata_key(parent) + "/metadata/")) == []
+
+    # Next to `outer`, under the same parent. Allowed.
+    create_table(ns, "sibling", location=f"{parent}/sibling")
+
+    # Same string prefix as `outer`, but another directory. Allowed.
+    create_table(ns, "same_prefix", location=f"{outer}_x")
+
+
+def test_table_location_overlap_concurrent(started_cluster):
+    ns = f"overlap_concurrent_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    parent = create_table(ns, "anchor").json()["metadata"]["location"].rsplit("/", 1)[0]
+    locations = {"outer": f"{parent}/race", "inner": f"{parent}/race/inner"}
+
+    # Both creates pass the overlap scan when they start together. One wins the Keeper transaction.
+    # The other hits the version check on `locations`, scans again, and is refused.
+    def create(table):
+        return requests.post(
+            catalog_url(tables_url(ns)),
+            json={"name": table, "schema": DEFAULT_SCHEMA, "location": locations[table]},
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = dict(zip(locations, executor.map(create, locations)))
+    codes = {table: response.status_code for table, response in responses.items()}
+    assert sorted(codes.values()) == [200, 400], codes
+
+    winner = next(table for table, code in codes.items() if code == 200)
+    loser = next(table for table, code in codes.items() if code == 400)
+    assert_error_shape(responses[loser], "BadRequestException")
+    assert f"overlaps location {locations[winner]}" in responses[loser].json()["error"]["message"]
+
+    assert sorted(list_tables(ns)) == sorted(["anchor", winner])
+    zk = get_keeper()
+    assert zk.exists(location_node(locations[winner]))
+    assert not zk.exists(location_node(locations[loser]))
+
+    # Only the winner's metadata file is left under the shared root.
+    objects = cluster.minio_client.list_objects(BUCKET, metadata_key(locations["outer"]) + "/", recursive=True)
+    keys = [obj.object_name for obj in objects]
+    assert keys and all(key.startswith(metadata_key(locations[winner]) + "/metadata/") for key in keys), keys
 
 
 def test_metadata_compression(started_cluster):
@@ -899,6 +998,8 @@ def test_list_and_exists_and_drop(started_cluster):
     assert list_tables(ns) == ["b_table"]
     # Files stay on object storage.
     cluster.minio_client.stat_object(BUCKET, metadata_key(result["metadata-location"]))
+    # Drop frees the location for other tables.
+    assert not get_keeper().exists(location_node(result["metadata"]["location"]))
 
     response = catalog_request("GET", tables_url(ns, "a_table"), expected_code=404)
     assert_error_shape(response, "NoSuchTableException")
@@ -928,7 +1029,7 @@ def test_malformed_create_table(started_cluster):
         {"name": "t", "schema": numeric_type},
         {"name": "t", "schema": bad_element_type},
         {"name": "t", "schema": DEFAULT_SCHEMA, "stage-create": True},
-        {"name": "t", "schema": DEFAULT_SCHEMA, "location": f"s3://{BUCKET}/explicit/t"},
+        {"name": "t", "schema": DEFAULT_SCHEMA, "location": 42},
         {"name": "t", "schema": DEFAULT_SCHEMA, "partition-spec": bad_spec},
         {"name": "t", "schema": DEFAULT_SCHEMA, "partition-spec": {"fields": [{"source-id": 1}]}},
         {"name": "t", "schema": DEFAULT_SCHEMA, "write-order": {"fields": [{"source-id": 1}]}},
@@ -1109,7 +1210,7 @@ def test_commit_append(started_cluster):
 
     zk = get_keeper()
     table_path = f"{KEEPER_ROOT}/namespaces/{ns}/tables/events"
-    table_uuid = zk.get(table_path)[0].decode()
+    table_uuid = json.loads(zk.get(table_path)[0])["uuid"]
     assert zk.get(f"{table_path}/{table_uuid}")[0] == second["metadata-location"].encode()
 
 
@@ -1340,6 +1441,36 @@ def test_clickhouse_insert(started_cluster):
         # pyiceberg reads what ClickHouse wrote.
         pyiceberg_table = load_pyiceberg_catalog().load_table(f"{ns}.events")
         assert pyiceberg_table.scan().to_arrow().num_rows == 12
+    finally:
+        node.query("DROP DATABASE IF EXISTS rest_tables_db")
+
+
+def test_clickhouse_create_table(started_cluster):
+    ns = f"chcreate_{uuid.uuid4().hex[:8]}"
+    ns_location = f"s3://{BUCKET}/{ns}"
+    # The ClickHouse client takes the table location from the namespace.
+    create_namespace([ns], properties={"location": ns_location})
+    table = f"rest_tables_db.`{ns}.events`"
+
+    node.query(create_database_query("ZGVmYXVsdDo="))  # default:
+    try:
+        node.query(
+            f"CREATE TABLE {table} (id Int64, name String) ENGINE = Iceberg",
+            settings={"allow_experimental_database_iceberg": 1},
+        )
+        result = catalog_request("GET", tables_url(ns, "events")).json()
+        assert result["metadata"]["location"] == f"{ns_location}/events"
+        zk = get_keeper()
+        assert zk.exists(location_node(f"{ns_location}/events"))
+
+        node.query(f"INSERT INTO {table} SETTINGS allow_insert_into_iceberg = 1 VALUES (1, 'a'), (2, 'b')")
+        assert node.query(f"SELECT * FROM {table} ORDER BY id") == "1\ta\n2\tb\n"
+        pyiceberg_table = load_pyiceberg_catalog().load_table(f"{ns}.events")
+        assert pyiceberg_table.scan().to_arrow().num_rows == 2
+
+        node.query(f"DROP TABLE {table}")
+        assert not table_exists(ns, "events")
+        assert not zk.exists(location_node(f"{ns_location}/events"))
     finally:
         node.query("DROP DATABASE IF EXISTS rest_tables_db")
 
