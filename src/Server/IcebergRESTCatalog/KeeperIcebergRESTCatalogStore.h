@@ -24,7 +24,7 @@ struct IcebergTablePointer
 {
     String uuid;
     String metadata_location;
-    /// Znode version of the uuid node. Set by `getTable`, checked by `updateTable`.
+    /// Znode version of the uuid node. Set by `getTable`, checked by `updateTables`.
     ZooKeeperNodeVersion version{};
 };
 
@@ -94,10 +94,26 @@ public:
         UuidMismatch,
     };
 
-    /// Replaces the metadata location only if the uuid node still has `expected.version`.
+    struct TableUpdate
+    {
+        IcebergNamespaceName ns;
+        String table;
+        /// The set is applied only if the uuid node still has `expected.version`.
+        IcebergTablePointer expected;
+        /// An empty metadata location only checks that the node still has `expected.version`.
+        IcebergTablePointer new_pointer;
+    };
+
+    struct UpdateTablesResult
+    {
+        UpdateTableResult result = UpdateTableResult::Updated;
+        /// Position in `updates` of the table whose check or set failed. Unused when `result` is `Updated`.
+        size_t failed_index = 0;
+    };
+
+    /// Moves every table pointer in one multi, so either every table moves or none does.
     /// Throws `KeeperException` for session or hardware errors. The caller must treat those as an unknown outcome.
-    UpdateTableResult updateTable(
-        const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & expected, const IcebergTablePointer & new_pointer);
+    UpdateTablesResult updateTables(const std::vector<TableUpdate> & updates);
 
 private:
     /// Returns the current session. Runs `initRoot` once per new session.

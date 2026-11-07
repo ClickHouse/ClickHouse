@@ -23,7 +23,7 @@ const std::vector<IcebergRESTRoute> & getIcebergRESTRoutes()
         {HTTPRequest::HTTP_POST, {"v1", "oauth", "tokens"}, IcebergRESTOperation::GetToken, false},
 
         {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "tables", "rename"}, IcebergRESTOperation::RenameTable, false},
-        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "transactions", "commit"}, IcebergRESTOperation::CommitTransaction, false},
+        {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "transactions", "commit"}, IcebergRESTOperation::CommitTransaction, true},
         {HTTPRequest::HTTP_POST, {"v1", "{prefix}", "views", "rename"}, IcebergRESTOperation::RenameView, false},
 
         {HTTPRequest::HTTP_GET, {"v1", "{prefix}", "namespaces"}, IcebergRESTOperation::ListNamespaces, true},
