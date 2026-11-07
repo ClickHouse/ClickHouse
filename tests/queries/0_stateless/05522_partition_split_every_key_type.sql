@@ -57,3 +57,37 @@ SELECT count(), uniqExact(partition) FROM system.parts
 WHERE database = currentDatabase() AND table = 't_partition_split_every_key_type' AND active;
 
 DROP TABLE t_partition_split_every_key_type;
+
+-- A key of one `FixedString` or `Decimal` column is hashed many rows at a time. 600 rows, more than two chunks of 256
+-- rows, with 17 keys: 0 to 6 in the rows 0 to 299, 7 to 12 in the rows 300 to 449, 13 to 16 in the others.
+DROP TABLE IF EXISTS t_partition_split_fixed_string;
+DROP TABLE IF EXISTS t_partition_split_decimal;
+
+CREATE TABLE t_partition_split_fixed_string (id UInt64, p FixedString(3)) ENGINE = MergeTree PARTITION BY p ORDER BY id;
+CREATE TABLE t_partition_split_decimal (id UInt64, p Decimal64(2)) ENGINE = MergeTree PARTITION BY p ORDER BY id;
+
+INSERT INTO t_partition_split_fixed_string
+SELECT id, concat('f', toString(k), if(k < 10, 'x', ''))
+FROM (SELECT number AS id, multiIf(id < 300, 5 * id % 7, id < 450, 7 + 5 * id % 6, 13 + 3 * id % 4) AS k FROM numbers(600))
+SETTINGS max_block_size = 1000, max_insert_block_size = 1000, min_insert_block_size_rows = 1000, min_insert_block_size_bytes = 0,
+    max_insert_threads = 1, max_partitions_per_insert_block = 0;
+
+INSERT INTO t_partition_split_decimal
+SELECT id, toDecimal64(toInt64(k) - 8, 2) / 4
+FROM (SELECT number AS id, multiIf(id < 300, 5 * id % 7, id < 450, 7 + 5 * id % 6, 13 + 3 * id % 4) AS k FROM numbers(600))
+SETTINGS max_block_size = 1000, max_insert_block_size = 1000, min_insert_block_size_rows = 1000, min_insert_block_size_bytes = 0,
+    max_insert_threads = 1, max_partitions_per_insert_block = 0;
+
+SELECT p.table, p.partition, p.min_block_number, p.max_block_number, p.rows, r.first_id
+FROM system.parts AS p
+INNER JOIN
+(
+    SELECT 't_partition_split_fixed_string' AS table, _part AS name, min(id) AS first_id FROM t_partition_split_fixed_string GROUP BY name
+    UNION ALL
+    SELECT 't_partition_split_decimal' AS table, _part AS name, min(id) AS first_id FROM t_partition_split_decimal GROUP BY name
+) AS r USING (table, name)
+WHERE p.database = currentDatabase() AND p.table IN ('t_partition_split_fixed_string', 't_partition_split_decimal') AND p.active
+ORDER BY p.table DESC, p.min_block_number;
+
+DROP TABLE t_partition_split_fixed_string;
+DROP TABLE t_partition_split_decimal;

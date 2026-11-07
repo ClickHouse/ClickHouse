@@ -152,6 +152,14 @@ Constant Tuple sipHash64:                                   2344648856449067997
 Constant Tuple sipHash128:                                  10113043603047197827
 String and constant Tuple sipHash64:                        7996981947292254897
 String and constant Tuple sipHash128:                       5981383015043799280
+String and JSON sipHash64:                                  3844995047006882970
+String and JSON sipHash128:                                 17831152743408638816
+UInt64 and Variant sipHash64:                               5272256088480870223
+UInt64 and Variant sipHash128:                              763922931041471977
+Constant Tuple(JSON) and String sipHash64:                  15314674583770090252
+Constant Tuple(JSON) and String sipHash128:                 6544091404423592588
+String and constant Tuple(JSON, Variant) sipHash64:         9847312105388382837
+String and constant Tuple(JSON, Variant) sipHash128:        6062606149321210495
 Row 1:
 ──────
 rows:                                                       301
@@ -306,6 +314,14 @@ Constant Tuple sipHash64:                                   4971628396210123806
 Constant Tuple sipHash128:                                  2425820738816298447
 String and constant Tuple sipHash64:                        7460280830969383701
 String and constant Tuple sipHash128:                       6716933868083934977
+String and JSON sipHash64:                                  14768936850399612690
+String and JSON sipHash128:                                 14468755187230340574
+UInt64 and Variant sipHash64:                               17758534924052197269
+UInt64 and Variant sipHash128:                              17351423193833522823
+Constant Tuple(JSON) and String sipHash64:                  3232088511374912134
+Constant Tuple(JSON) and String sipHash128:                 12194762007043400163
+String and constant Tuple(JSON, Variant) sipHash64:         7056023786183446877
+String and constant Tuple(JSON, Variant) sipHash128:        4336986072753817807
 Row 1:
 ──────
 rows:                                                       301
@@ -460,6 +476,14 @@ Constant Tuple sipHash64:                                   4971628396210123806
 Constant Tuple sipHash128:                                  2425820738816298447
 String and constant Tuple sipHash64:                        7460280830969383701
 String and constant Tuple sipHash128:                       6716933868083934977
+String and JSON sipHash64:                                  14768936850399612690
+String and JSON sipHash128:                                 14468755187230340574
+UInt64 and Variant sipHash64:                               17758534924052197269
+UInt64 and Variant sipHash128:                              17351423193833522823
+Constant Tuple(JSON) and String sipHash64:                  3232088511374912134
+Constant Tuple(JSON) and String sipHash128:                 12194762007043400163
+String and constant Tuple(JSON, Variant) sipHash64:         7056023786183446877
+String and constant Tuple(JSON, Variant) sipHash128:        4336986072753817807
 Row 1:
 ──────
 rows:                                                       1003
@@ -614,6 +638,14 @@ Constant Tuple sipHash64:                                   15489426196464711034
 Constant Tuple sipHash128:                                  5727733014765360935
 String and constant Tuple sipHash64:                        13370686762453462228
 String and constant Tuple sipHash128:                       14809241007677582635
+String and JSON sipHash64:                                  5551035256534505603
+String and JSON sipHash128:                                 2839493798928808206
+UInt64 and Variant sipHash64:                               10668823511038512577
+UInt64 and Variant sipHash128:                              18196340776095087857
+Constant Tuple(JSON) and String sipHash64:                  7103393461857601105
+Constant Tuple(JSON) and String sipHash128:                 8932071798970269065
+String and constant Tuple(JSON, Variant) sipHash64:         481977240171327700
+String and constant Tuple(JSON, Variant) sipHash128:        15833233286489447448
 Row 1:
 ──────
 rows:                                                       1003
@@ -768,6 +800,14 @@ Constant Tuple sipHash64:                                   15489426196464711034
 Constant Tuple sipHash128:                                  5727733014765360935
 String and constant Tuple sipHash64:                        13370686762453462228
 String and constant Tuple sipHash128:                       14809241007677582635
+String and JSON sipHash64:                                  5551035256534505603
+String and JSON sipHash128:                                 2839493798928808206
+UInt64 and Variant sipHash64:                               10668823511038512577
+UInt64 and Variant sipHash128:                              18196340776095087857
+Constant Tuple(JSON) and String sipHash64:                  7103393461857601105
+Constant Tuple(JSON) and String sipHash128:                 8932071798970269065
+String and constant Tuple(JSON, Variant) sipHash64:         481977240171327700
+String and constant Tuple(JSON, Variant) sipHash128:        15833233286489447448
 Row 1:
 ──────
 functions:                                                           keyed

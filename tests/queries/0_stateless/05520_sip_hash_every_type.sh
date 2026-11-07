@@ -98,6 +98,10 @@ String and constant String|str, 'c'
 Constant UInt32 and String|toUInt32(5), str
 Constant Tuple|(1, 'abc', [2, 3])
 String and constant Tuple|str, (1, 'abc', [2, 3])
+String and JSON|str, js
+UInt64 and Variant|h, multiIf(number % 4 = 0, NULL, number % 4 = 1, CAST(h AS $V), number % 4 = 2, CAST(str AS $V), CAST(au32 AS $V))
+Constant Tuple(JSON) and String|tuple(CAST('{"a":{"b":7},"c":"x"}' AS JSON)), str
+String and constant Tuple(JSON, Variant)|str, (CAST('{"a":{"b":7},"c":"x"}' AS JSON), CAST('x' AS $V))
 EOF
 )
 

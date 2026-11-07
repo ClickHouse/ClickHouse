@@ -16,3 +16,37 @@
 (\'s3\',NULL,\'l1\',\'f1x\',\'00000000-0000-0000-0000-000000000000\',\'2020-01-01\',0,-700000000000000000000000,(0,\'t1\'),[1,2,3])	16	16	32	382
 (\'s2\',\'n2\',\'l0\',\'f0x\',\'00000000-001e-8486-0000-000000000000\',\'2020-01-05\',-0.25,-600000000000000000000000,(2,\'t0\'),[1,2])	17	17	32	383
 17	17
+t_partition_split_fixed_string	f0x	1	1	43	0
+t_partition_split_fixed_string	f5x	2	2	43	1
+t_partition_split_fixed_string	f3x	3	3	43	2
+t_partition_split_fixed_string	f1x	4	4	43	3
+t_partition_split_fixed_string	f6x	5	5	43	4
+t_partition_split_fixed_string	f4x	6	6	43	5
+t_partition_split_fixed_string	f2x	7	7	42	6
+t_partition_split_fixed_string	f7x	8	8	25	300
+t_partition_split_fixed_string	f12	9	9	25	301
+t_partition_split_fixed_string	f11	10	10	25	302
+t_partition_split_fixed_string	f10	11	11	25	303
+t_partition_split_fixed_string	f9x	12	12	25	304
+t_partition_split_fixed_string	f8x	13	13	25	305
+t_partition_split_fixed_string	f15	14	14	38	450
+t_partition_split_fixed_string	f14	15	15	38	451
+t_partition_split_fixed_string	f13	16	16	37	452
+t_partition_split_fixed_string	f16	17	17	37	453
+t_partition_split_decimal	-2	1	1	43	0
+t_partition_split_decimal	-0.75	2	2	43	1
+t_partition_split_decimal	-1.25	3	3	43	2
+t_partition_split_decimal	-1.75	4	4	43	3
+t_partition_split_decimal	-0.5	5	5	43	4
+t_partition_split_decimal	-1	6	6	43	5
+t_partition_split_decimal	-1.5	7	7	42	6
+t_partition_split_decimal	-0.25	8	8	25	300
+t_partition_split_decimal	1	9	9	25	301
+t_partition_split_decimal	0.75	10	10	25	302
+t_partition_split_decimal	0.5	11	11	25	303
+t_partition_split_decimal	0.25	12	12	25	304
+t_partition_split_decimal	0	13	13	25	305
+t_partition_split_decimal	1.75	14	14	38	450
+t_partition_split_decimal	1.5	15	15	38	451
+t_partition_split_decimal	1.25	16	16	37	452
+t_partition_split_decimal	2	17	17	37	453
