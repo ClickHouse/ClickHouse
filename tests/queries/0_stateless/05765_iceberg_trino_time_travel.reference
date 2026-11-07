@@ -1,0 +1,23 @@
+1
+2
+3
+Code: 57. DB::Exception: Table default.timetravel already exists. (TABLE_ALREADY_EXISTS)
+Europe/Vienna 2023-07-01: []
+America/Los_Angeles 2023-07-01: [1]
+Europe/Vienna 2023-07-02: [1]
+America/Los_Angeles 2023-07-02: [1,2]
+Europe/Vienna 2023-07-03: [1,2]
+America/Los_Angeles 2023-07-03: [1,2,3]
+Europe/Vienna 2023-07-04: [1,2,3]
+America/Los_Angeles 2023-07-04: [1,2,3]
+Europe/Vienna 2023-07-01 00:00:00: []
+UTC 2023-07-01 05:02:43.953: []
+UTC 2023-07-01 05:02:43.954: [1]
+Europe/Vienna 2023-07-01 07:02:43.954: [1]
+America/Los_Angeles 2023-07-01 00:00:00.1: [1]
+Europe/Vienna 2023-07-02 01:00:00.12: [1]
+America/Los_Angeles 2023-07-02 01:00:00.123: [1,2]
+Europe/Vienna 2023-07-03 02:00:00.123: [1,2]
+America/Los_Angeles 2023-07-03 02:00:00.123456: [1,2,3]
+Europe/Vienna 2023-07-04 03:00:00.123456789: [1,2,3]
+America/Los_Angeles 2023-07-04 03:00:00.123456789012: [1,2,3]
