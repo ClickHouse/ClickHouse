@@ -1,0 +1,51 @@
+150000	11249925000	0
+150000	11249925000	0
+100000	4999950000	0
+100000	4999950000	0
+50000	1249975000	0
+150000	11249925000	0
+42000	3230979000	0
+42000	3230979000	0
+75000	2812462500	0
+75000	337500	0
+74999	0
+150000	11249925000	0
+100000	4999950000	0
+100000	4999950000	0
+60000	1799970000	1799970000	0
+12000	35988000	0
+150000	11249925000	0
+60000	1799970000	0
+THERE_IS_NO_COLUMN 1
+THERE_IS_NO_COLUMN 1
+INCORRECT_DATA 1
+1	0
+1	1
+a_six_files	1
+b_no_remote_prefetch	0
+c_larger_than_read_task	0
+d_larger_than_memory_share	0
+e_two_files	0
+f_local_object_storage	0
+g_shared_share_refused	1
+h_shared_share_control	2
+i_manual_parsing	0
+j_small_files	0
+k_top_n	0
+l_aggregate_states	1
+m_plain_refused	0
+n_plain_refused_control	0
+o_wide_refused	0
+p_wide_refused_control	0
+q_spans_refused	0
+r_spans_refused_control	0
+s_handed_back	0
+t_row_groups_refused	0
+u_row_groups_refused_control	0
+v_prewhere_refused	0
+w_columns_cache	0
+x_far_row_groups	1
+2
+1
+1
+1

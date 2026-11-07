@@ -66,4 +66,7 @@
 
     <!-- limit_early_exit: reader startup and cancellation - open only the first data file and stop after the first thousand wide rows. -->
     <query>SELECT * FROM {database}.lineitem LIMIT 1000</query>
+
+    <!-- scan_4_streams: the time_travel baseline scan on 4 threads (~21 data files per stream), so that the next file's offset index and first row group are read ahead. -->
+    <query>SELECT count(), sum(l_extendedprice) FROM {database}.lineitem SETTINGS max_threads = 4</query>
 </fragment>

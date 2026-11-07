@@ -3,6 +3,12 @@
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Common/SharedMutex.h>
 
+namespace DB
+{
+struct InputFormatStreamMemory;
+using InputFormatStreamMemoryPtr = std::shared_ptr<InputFormatStreamMemory>;
+}
+
 namespace DB::Parquet
 {
 
@@ -50,7 +56,12 @@ public:
     /// (I'm trying this style because the usual pattern of passing-through lots of arguments through
     /// layers of constructors seems bad. This seems better but still not great, hopefully there's an
     /// even better way.)
-    void init(FormatParserSharedResourcesPtr parser_shared_resources_, RowGroupSelection row_groups_to_read_);
+    /// If `defer_decoding`, nothing is decoded before the first `read`, see `deferTasks`.
+    void init(
+        FormatParserSharedResourcesPtr parser_shared_resources_,
+        RowGroupSelection row_groups_to_read_,
+        bool defer_decoding = false,
+        InputFormatStreamMemoryPtr stream_memory_ = nullptr);
 
     ~ReadManager();
 
@@ -152,6 +163,15 @@ private:
     /// Slots held by all row groups.
     std::atomic<size_t> column_data_read_ahead_count {0};
 
+    /// Shared with the reader of the other file of the same source. Null if the reader is not created by such a source.
+    InputFormatStreamMemoryPtr stream_memory;
+
+    /// Cleared by the first `read` with `column_data_prefetch_mutex` locked.
+    std::atomic<bool> decoding_deferred {false};
+    bool first_row_group_read_ahead = false;
+    /// Modified with `column_data_prefetch_mutex` locked.
+    bool first_row_group_read_ahead_done = false;
+
     void scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, std::vector<Task> & out_tasks);
     /// The estimated memory of the output of the primitive column `column_idx` in the row subgroup.
     MemoryUsageToken reserveOutputColumnMemory(size_t column_idx, const RowGroup & row_group, const RowSubgroup & row_subgroup, MemoryUsageDiff & diff);
@@ -167,7 +187,14 @@ private:
     PruningMemoryReservation pruningMemoryReservation(const MemoryUsageDiff & diff);
     void runBatchOfTasks(const std::vector<Task> & tasks) noexcept;
     void scheduleTasksIfNeeded(ReadStage stage_idx);
+    /// Whether the tasks of the stage wait for the first `read`. For `ColumnData`, reads the first row group ahead instead.
+    bool deferTasks(ReadStage stage_idx);
     void readAheadColumnData();
+    /// Called with `column_data_prefetch_mutex` locked.
+    void readAheadFirstRowGroup();
+    void addMemoryUsage(size_t stage_idx, ssize_t bytes);
+    /// With `stream_memory`, that of both readers of the source, which share one stream's budget.
+    size_t getColumnDataMemoryUsage() const;
     void addColumnDataPrefetches(const Task & task, std::vector<PrefetchHandle *> & out);
     void finishRowGroupStage(size_t row_group_idx, ReadStage stage, MemoryUsageDiff & diff);
     void finishRowSubgroupStage(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff);
