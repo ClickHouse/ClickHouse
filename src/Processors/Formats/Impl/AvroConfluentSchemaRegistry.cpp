@@ -7,6 +7,7 @@
 #include <Common/CacheBase.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/maskURIPassword.h>
@@ -16,6 +17,8 @@
 #include <Formats/FormatSettings.h>
 
 #include <IO/HTTPCommon.h>
+
+#include <Interpreters/Context.h>
 
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 
@@ -145,6 +148,11 @@ void ConfluentSchemaRegistry::applyAuth(const Poco::URI & url, Poco::Net::HTTPRe
 {
     if (!url.getUserInfo().empty())
     {
+        /// The userinfo is sent in the `Authorization` header, which <http_forbid_headers> may forbid. It is checked here,
+        /// when the request is sent, for `url`, the URL of the request, which can have a userinfo the base URL has not:
+        /// `http:http://user:password@host/` has no authority, and its path resolves to `http://user:password@host/schemas/ids/1`.
+        Context::getGlobalContextInstance()->getHTTPHeaderFilter().checkURIUserInfo(url);
+
         Poco::Net::HTTPCredentials http_credentials;
         Poco::Net::HTTPBasicCredentials http_basic_credentials;
 

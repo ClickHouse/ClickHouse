@@ -3,7 +3,9 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/re2.h>
+#include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/String.h>
+#include <Poco/URI.h>
 #include <algorithm>
 
 namespace DB
@@ -53,6 +55,38 @@ void HTTPHeaderFilter::checkHeaders(NormalizedHTTPHeaderEntries & entries) const
     /// The check only validates the entries; it does not modify them, so the container's
     /// lower-case invariant is preserved.
     checkHeaders(entries.entries);
+}
+
+void HTTPHeaderFilter::checkBasicCredentials(const Poco::Net::HTTPBasicCredentials & credentials) const
+{
+    if (credentials.getUsername().empty())
+        return;
+
+    checkAuthorizationHeader("Basic authentication credentials, for example the userinfo of a URL, are sent in this header");
+}
+
+void HTTPHeaderFilter::checkURIUserInfo(const Poco::URI & uri) const
+{
+    if (uri.getUserInfo().empty())
+        return;
+
+    checkAuthorizationHeader("The userinfo of the URL is sent in this header as Basic authentication credentials");
+}
+
+void HTTPHeaderFilter::checkAuthorizationHeader(const std::string & reason) const
+{
+    /// Only the name decides whether a header is forbidden, and a Base64 value of Basic credentials
+    /// cannot contain CR or LF, so a placeholder stands in for the real value.
+    HTTPHeaderEntries entries{{"Authorization", "Basic"}};
+    try
+    {
+        checkHeaders(entries);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(reason);
+        throw;
+    }
 }
 
 void HTTPHeaderFilter::setValuesFromConfig(const Poco::Util::AbstractConfiguration & config)
