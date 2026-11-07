@@ -390,8 +390,3 @@ if (UNIX AND NOT APPLE)
 elseif (UNIX)
     target_link_libraries(llvm-tblgen PRIVATE pthread)
 endif()
-
-# Install the executables to the output directory
-install(TARGETS llvm-min-tblgen llvm-tblgen
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
