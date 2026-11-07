@@ -36,6 +36,7 @@ DROP TABLE IF EXISTS tab_str;
 DROP TABLE IF EXISTS tab_ties;
 DROP TABLE IF EXISTS tab_group;
 DROP TABLE IF EXISTS tab_default;
+DROP TABLE IF EXISTS tab_alter;
 
 SYSTEM CLEAR QUERY CONDITION CACHE;
 
@@ -115,7 +116,8 @@ SELECT * FROM (SELECT g, count(), sum(v) FROM tab_group GROUP BY g LIMIT 5) ORDE
 
 -- A part that does not store the sort column computes it from its `DEFAULT`, which a later `ALTER` changes without
 -- renaming the part. The first 50 granules hold 1000 on the first run, equal to the threshold of the first block, so
--- `__topKFilter` empties none of them; they hold 0 after the `ALTER`.
+-- `__topKFilter` empties none of them; they hold 0 after the `ALTER`. The computed DEFAULT also turns the new writes
+-- off, so the repeated run before the ALTER reads all rows.
 CREATE TABLE tab_default (id UInt32) ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 64, index_granularity_bytes = 10485760, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
     add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_temporal_columns = 0, add_minmax_index_for_string_columns = 0,
@@ -124,13 +126,34 @@ SYSTEM STOP MERGES tab_default;
 INSERT INTO tab_default SELECT number FROM numbers(6400);
 ALTER TABLE tab_default ADD COLUMN v UInt32 DEFAULT if(id < 3200, 1000, id % 7 + 1);
 
-SELECT '--- DEFAULT column: first run';
-SELECT v FROM tab_default ORDER BY v LIMIT 5;
+SELECT '--- DEFAULT column: first and repeated runs';
+SELECT v FROM tab_default ORDER BY v LIMIT 5 SETTINGS log_comment = '05565-default-first';
+SELECT v FROM tab_default ORDER BY v LIMIT 5 SETTINGS log_comment = '05565-default-repeat';
 ALTER TABLE tab_default MODIFY COLUMN v UInt32 DEFAULT if(id < 3200, 0, id % 7 + 1);
 SELECT '--- DEFAULT column: reference after ALTER';
 SELECT v FROM tab_default ORDER BY v LIMIT 5 SETTINGS use_query_condition_cache = 0, use_top_k_dynamic_filtering = 0;
 SELECT '--- DEFAULT column: repeated run after ALTER';
 SELECT v FROM tab_default ORDER BY v LIMIT 5;
+
+-- A part that does not store `v` reads the type's default 0, and a later `DEFAULT` changes it without renaming the
+-- part: the repeated run after the `ALTER` must not reuse the granules recorded with 0.
+CREATE TABLE tab_alter (id UInt32) ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 64, index_granularity_bytes = 10485760, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+    add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_temporal_columns = 0, add_minmax_index_for_string_columns = 0,
+    auto_statistics_types = '';
+SYSTEM STOP MERGES tab_alter;
+INSERT INTO tab_alter SELECT number FROM numbers(6400);
+ALTER TABLE tab_alter ADD COLUMN v UInt32;
+INSERT INTO tab_alter SELECT 6400 + number, 1 + number FROM numbers(64);
+
+SELECT '--- column added without DEFAULT: first and repeated runs';
+SELECT v FROM tab_alter ORDER BY v DESC LIMIT 5 SETTINGS log_comment = '05565-alter-first';
+SELECT v FROM tab_alter ORDER BY v DESC LIMIT 5 SETTINGS log_comment = '05565-alter-repeat';
+ALTER TABLE tab_alter MODIFY COLUMN v UInt32 DEFAULT 1000;
+SELECT '--- column added without DEFAULT: reference after ALTER';
+SELECT v FROM tab_alter ORDER BY v DESC LIMIT 5 SETTINGS use_query_condition_cache = 0, use_top_k_dynamic_filtering = 0;
+SELECT '--- column added without DEFAULT: repeated run after ALTER';
+SELECT v FROM tab_alter ORDER BY v DESC LIMIT 5;
 
 SYSTEM FLUSH LOGS query_log;
 SELECT '--- rows read';
@@ -153,3 +176,4 @@ DROP TABLE tab_str;
 DROP TABLE tab_ties;
 DROP TABLE tab_group;
 DROP TABLE tab_default;
+DROP TABLE tab_alter;

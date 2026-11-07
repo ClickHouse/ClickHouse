@@ -33,6 +33,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/extractStringValueFilters.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/PredicateStatisticsLog.h>
 #include <Interpreters/TreeRewriter.h>
@@ -5456,14 +5457,17 @@ size_t ReadFromMergeTree::getNumStreamsWhenNothingToRead(const AnalysisResult & 
     return result.split_parts.layers.size();
 }
 
-/// Whether every part stores every one of the columns with the table's type: then the values read for the parts are
-/// the stored ones, never computed from the table metadata.
-static bool partsStoreColumns(const RangesInDataParts & parts, const NameSet & column_names, const ColumnsDescription & columns)
+/// Whether every part stores, with the table's type, each of these columns that a reader may compute from a default
+/// expression; the other columns read as stored or as the type's default.
+static bool partsStoreColumns(const RangesInDataParts & parts, const NameSet & column_names, const StorageSnapshotPtr & storage_snapshot)
 {
+    const auto & columns = storage_snapshot->metadata->getColumns();
     for (const auto & name : column_names)
     {
         auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
         if (!column)
+            continue;
+        if (!mayLeaveColumnToMissingDefaults(storage_snapshot, *column))
             continue;
 
         const String name_in_storage = column->getNameInStorage();
@@ -5759,7 +5763,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                 read_columns.insert(column_name);
         if (tracker && !tracker->getCollator()
             && (canFindTopKBestRowOfNumbers(*sort_column) || typeid_cast<const ColumnString *>(sort_column.get()))
-            && partsStoreColumns(result.parts_with_ranges, read_columns, storage_snapshot->metadata->getColumns()))
+            && partsStoreColumns(result.parts_with_ranges, read_columns, storage_snapshot))
         {
             auto final_threshold = std::make_shared<TopKFinalThresholdWrites>();
             final_threshold->threshold_tracker = tracker;
