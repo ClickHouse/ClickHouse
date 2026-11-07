@@ -28,6 +28,8 @@ ACCESS_DENIED SELECT(restricted)
 NOT_IMPLEMENTED
 -- alias table, rename
 NOT_IMPLEMENTED
+-- alias table, modify
+NOT_IMPLEMENTED
 -- alias table, constant
 OK
 -- alias table, lambda only

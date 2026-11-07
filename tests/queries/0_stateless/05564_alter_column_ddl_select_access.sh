@@ -90,6 +90,7 @@ check "${U_PARTIAL}" "subcolumn of an alias column" "ALTER TABLE t ADD COLUMN a_
 check "${U_PARTIAL}" "ephemeral column" "ALTER TABLE t ADD COLUMN a_eph String DEFAULT eph" restricted
 check default "alias table, expression" "ALTER TABLE t_alias ADD COLUMN via_alias String DEFAULT upper(other)"
 check default "alias table, rename" "ALTER TABLE t_alias RENAME COLUMN other TO other2"
+check default "alias table, modify" "ALTER TABLE t_alias MODIFY COLUMN other String DEFAULT upper(restricted)"
 check default "alias table, constant" "ALTER TABLE t_alias ADD COLUMN via_alias_const String DEFAULT 'k'"
 check default "alias table, lambda only" "ALTER TABLE t_alias ADD COLUMN via_alias_lambda Array(UInt8) DEFAULT arrayMap(x -> x + 1, [1])"
 check "${U_PARTIAL}" "rename" "ALTER TABLE t RENAME COLUMN restricted TO s2" restricted
