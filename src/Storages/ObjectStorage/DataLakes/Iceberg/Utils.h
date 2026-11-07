@@ -126,6 +126,11 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     ContextPtr context,
     UInt64 format_version = 2);
 
+/// Adds the metadata compression codec from the settings to the table properties.
+/// A catalog that writes the first metadata file reads the codec from there.
+/// Returns the compression method.
+CompressionMethod setMetadataCompressionCodecProperty(Poco::JSON::Object::Ptr metadata_object, const ContextPtr & context);
+
 /// Format version 1 requires `schema` (the current schema) and `partition-spec` (the default spec's fields) next to `schemas` and `partition-specs`.
 void setFormatVersion1SchemaAndPartitionSpec(Poco::JSON::Object::Ptr metadata);
 
