@@ -445,6 +445,12 @@ bool StorageMerge::supportsOptimizationToTupleElementSubcolumns() const
     return traverseTablesUntil([](const auto & table) { return !table->supportsOptimizationToTupleElementSubcolumns(); }) == nullptr;
 }
 
+bool StorageMerge::hasBucketedMapSerialization() const
+{
+    /// The rewritten query is sent to every underlying table, so all of them must benefit from it.
+    return traverseTablesUntil([](const auto & table) { return !table->hasBucketedMapSerialization(); }) == nullptr;
+}
+
 bool StorageMerge::canMoveConditionsToPrewhere() const
 {
     /// NOTE: This check and the above check are used during query analysis as condition for applying
@@ -2784,6 +2790,11 @@ bool ReadFromMerge::canReadInOrder(const InputOrderInfo & order_info_, bool allo
     auto table_it = selected_tables.begin();
     for (const auto & child_plan : *child_plans)
     {
+        /// A distributed child plan returns its result through one exchange stream, which does not keep the order
+        /// of the streams it gathers.
+        if (child_plan.plan.staysDistributed())
+            return false;
+
         const auto table_metadata = std::get<StoragePtr>(*table_it++)->getInMemoryMetadataPtr(context, false);
         auto can_read = [&](ReadFromMergeTree & read_from_merge_tree)
         {

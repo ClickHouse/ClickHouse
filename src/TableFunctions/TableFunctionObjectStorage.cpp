@@ -39,6 +39,8 @@ namespace Setting
 {
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsInt64 delta_lake_snapshot_end_version;
+    extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
 }
 
@@ -83,7 +85,7 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
 
                     if (std::string_view(Definition::name).starts_with("iceberg"))
                         configuration = std::make_shared<StorageS3IcebergConfiguration>(settings);
-#if USE_PARQUET
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
                     else
                         configuration = std::make_shared<StorageS3DeltaLakeConfiguration>(settings);
 #endif
@@ -100,7 +102,7 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
 
                     if (std::string_view(Definition::name).starts_with("iceberg"))
                         configuration = std::make_shared<StorageAzureIcebergConfiguration>(settings);
-#if USE_PARQUET
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
                     else
                         configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(settings);
 #endif
@@ -116,7 +118,7 @@ StorageObjectStorageConfigurationPtr TableFunctionObjectStorage<Definition, Conf
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type doesn't match with table engine type storage");
                     if (std::string_view(Definition::name).starts_with("iceberg"))
                         configuration = std::make_shared<StorageLocalIcebergConfiguration>(settings);
-#if USE_PARQUET
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
                     else
                         configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(settings);
 #endif
@@ -251,8 +253,14 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     /// Only use parallel replicas if the Cluster variant of this table function exists
     /// (e.g. `s3Cluster` for `s3`). Table functions without a Cluster variant (e.g. `paimonLocal`)
     /// cannot distribute work via task iterators, so distributing would just read all data on every replica.
+    /// The change data feed of a Delta Lake table (`delta_lake_snapshot_start_version`) is read by
+    /// `ReadFromDeltaLakeTableChangesStep`, which does not distribute work either, so every replica would return all changes.
+    const bool is_delta_lake_change_data_feed = configuration->isDataLakeConfiguration()
+        && (query_settings[Setting::delta_lake_snapshot_start_version] != -1
+            || query_settings[Setting::delta_lake_snapshot_end_version] != -1);
     const auto can_use_parallel_replicas = context->canReplaceClusterEngineWithClusterVariant()
-        && TableFunctionFactory::instance().isTableFunctionName(String(name) + "Cluster");
+        && TableFunctionFactory::instance().isTableFunctionName(String(name) + "Cluster")
+        && !is_delta_lake_change_data_feed;
 
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
