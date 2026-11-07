@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/TextIndexDictionaryDFA.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Functions/JSONPathValues.h>
 
 namespace DB
 {
@@ -44,6 +45,17 @@ enum class TextIndexDirectReadMode : uint8_t
     Exact,
     /// Use direct read and add a hint to the original condition.
     Hint,
+};
+
+struct JSONTextQueryPayload
+{
+    std::vector<String> pattern_token_prefixes{};
+    bool match_patterns_by_prefix = false;
+    VectorWithMemoryTracking<String> validation_tokens{};
+    std::vector<String> validation_pattern_prefixes{};
+
+    bool matchesPatternToken(std::string_view token) const;
+    bool requiresValidation(std::string_view token) const;
 };
 
 /// Bounds the work and memory spent on dictionary automata (see `TextIndexDictionaryDFA`) by all `LIKE` patterns of one
@@ -104,7 +116,15 @@ struct TextSearchQuery
         VectorWithMemoryTracking<String> tokens_,
         std::vector<OptimizedRegularExpression> patterns_ = {},
         VectorWithMemoryTracking<String> phrase_tokens_ = {},
-        TextIndexAutomatonBudget * automaton_budget = nullptr);
+        TextIndexAutomatonBudget * automaton_budget = nullptr,
+        std::optional<JSONTextQueryPayload> json_payload_ = std::nullopt);
+    TextSearchQuery(
+        String function_name_,
+        TextSearchMode search_mode_,
+        TextIndexDirectReadMode direct_read_mode_,
+        VectorWithMemoryTracking<String> tokens_,
+        std::vector<OptimizedRegularExpression> patterns_,
+        std::optional<JSONTextQueryPayload> json_payload_);
 
     const String & getFunctionName() const { return function_name; }
     TextSearchMode getSearchMode() const { return search_mode; }
@@ -113,6 +133,8 @@ struct TextSearchQuery
     const std::vector<OptimizedRegularExpression> & getPatterns() const { return patterns; }
     const auto & getPatternAutomata() const { return pattern_automata; }
     const VectorWithMemoryTracking<String> & getPhraseTokens() const { return phrase_tokens; }
+    const std::optional<JSONTextQueryPayload> & getJSONPayload() const { return json_payload; }
+    bool hasPatternLookup() const { return !patterns.empty() || (json_payload && !json_payload->pattern_token_prefixes.empty()); }
     UInt128 getHash() const { return hash; }
 
 private:
@@ -125,8 +147,10 @@ private:
     /// Sorted in the constructor.
     VectorWithMemoryTracking<String> tokens;
     std::vector<OptimizedRegularExpression> patterns;
+    std::optional<JSONTextQueryPayload> json_payload;
     /// Compiled once per query, shared by the dictionary readers of all parts.
     /// A null entry means this pattern uses the existing literal/matcher scan.
+    /// Empty for JSON queries: their patterns match decoded values, not raw dictionary tokens.
     std::vector<std::shared_ptr<const TextIndexDictionaryDFA>> pattern_automata;
     /// Not sorted, not deduplicated.
     VectorWithMemoryTracking<String> phrase_tokens;
@@ -151,7 +175,7 @@ public:
     MergeTreeIndexConditionText(
         const ActionsDAG::Node * predicate,
         ContextPtr context_,
-        const Block & index_sample_block,
+        const IndexDescription & index_description,
         const std::optional<String> & normalized_index_column_name_,
         TokenizerPtr tokenizer_,
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
@@ -193,6 +217,10 @@ public:
     TokenizerPtr getTokenizer() const { return tokenizer; }
     MergeTreeIndexTextPreprocessorPtr getPreprocessor() const { return preprocessor; }
     MergeTreeIndexTextPostprocessorPtr getPostprocessor() const { return postprocessor; }
+    bool canUseQueryWithPartConfiguration(
+        const TextSearchQuery & query,
+        const std::optional<JSONPathValues::IndexConfiguration> & part_configuration) const;
+    bool isJSONPathValuesQuery(const TextSearchQuery & query) const { return json_query_paths.contains(query.getHash()); }
 
 private:
     /// Uses RPN like KeyCondition
@@ -220,6 +248,7 @@ private:
 
         Function function = FUNCTION_UNKNOWN;
         std::vector<TextSearchQueryPtr> text_search_queries;
+        std::optional<String> json_path;
     };
 
     using RPN = std::vector<RPNElement>;
@@ -242,6 +271,26 @@ private:
     bool traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
     bool traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const;
     bool traverseJSONSubcolumnKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
+    struct JSONPathValuesNodeInfo
+    {
+        JSONSubcolumnIndexInfo subcolumn;
+        DataTypePtr source_type;
+        std::optional<String> map_key;
+        size_t array_json_levels = 0;
+    };
+    std::optional<JSONPathValuesNodeInfo> tryMatchJSONPathValuesNode(const RPNBuilderTreeNode & node) const;
+    bool traverseJSONPathValuesFunction(
+        const RPNBuilderFunctionTreeNode & function_node,
+        const RPNBuilderTreeNode & index_column_node,
+        DataTypePtr value_type,
+        Field value_field,
+        RPNElement & out) const;
+    bool tryPrepareJSONPathValuesSet(
+        const RPNBuilderTreeNode & index_column_node,
+        const String & function_name,
+        const std::vector<String> & values,
+        RPNElement & out,
+        TextIndexDirectReadMode direct_read_mode) const;
 
     /// Returns true if the node represents `arrayElement(map_col, 'key')`
     /// and there is a text index built on `mapValues(map_col)`.
@@ -293,6 +342,14 @@ private:
     /// E.g. "hasAnyTokens(s, 'tokens')" or "hasAllTokens(s, 'tokens1') OR hasAllTokens(s, 'tokens2')""
     static bool requiresReadingAllTokens(const RPNElement & element);
 
+    struct JSONPathValuesConfiguration
+    {
+        String column_name;
+        UInt64 max_token_bytes;
+        DataTypePtr json_type;
+        std::shared_ptr<const JSONPathValues::PathMatcher> path_matcher;
+    };
+
     Block header;
     /// Argument types of the JSON index functions of this index, by position in `header`.
     JSONIndexArgumentTypes json_argument_types;
@@ -305,6 +362,7 @@ private:
     /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not
     /// share mutable parsing state; null otherwise.
     std::shared_ptr<const ITokenizer> owned_tokenizer;
+    std::optional<JSONPathValuesConfiguration> json_path_values_configuration;
     TokenizerPtr tokenizer;
     RPN rpn;
     PreparedSetsPtr prepared_sets;
@@ -313,6 +371,7 @@ private:
     std::vector<String> all_search_tokens;
     /// Search queries from all RPN elements
     std::unordered_map<UInt128, TextSearchQueryPtr> all_search_queries;
+    mutable std::unordered_map<UInt128, String> json_query_paths;
     /// Stable hash of the set of search queries containing patterns.
     UInt128 search_patterns_hash{};
     /// If global mode is All, then we can exit analysis earlier if any token is missing in granule.

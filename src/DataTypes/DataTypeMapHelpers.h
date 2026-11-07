@@ -27,6 +27,10 @@ void extractKeyValueFromMap(
 /// Tells whether the table has a real column (or a subcolumn of one) with the given name.
 using IsShadowingColumn = std::function<bool(const String &)>;
 
+/// Whether the column name has the shape of a Map key subcolumn `<map>.key_<k>`, the only shape
+/// `IsShadowingColumn` may be asked about.
+bool looksLikeMapSubcolumnName(const String & column_name);
+
 /// Try to parse a Map subcolumn reference like `map.key_<serialized_key>`.
 /// Returns {map_column_name, serialized_key} if the column name has the expected format.
 ///

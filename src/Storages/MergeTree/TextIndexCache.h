@@ -121,7 +121,8 @@ struct TextIndexHeaderWeightFunction
 {
     size_t operator()(const TextIndexHeader & header) const
     {
-        return header.sparse_index.memoryUsageBytes();
+        return header.sparse_index.memoryUsageBytes()
+            + (header.json_path_values_configuration ? header.json_path_values_configuration->memoryUsageBytes() : 0);
     }
 };
 
