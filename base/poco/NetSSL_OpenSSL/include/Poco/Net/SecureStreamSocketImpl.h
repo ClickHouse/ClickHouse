@@ -246,7 +246,8 @@ namespace Net
         void setBioMethod(const BIO_METHOD * method);
         /// Optionally inject a custom BIO_METHOD into the underlying SSL machinery.
         /// Has no effect once the SSL handshake has been initiated (i.e. once
-        /// any I/O has happened). If never called, `BIO_s_socket()` is used.
+        /// any I/O has happened). See `SecureSocketImpl::setBioMethod` for the
+        /// default and for what a custom method must provide.
 
         void setMutex(std::unique_ptr<SecureSocketImpl::RecursiveMutex> mutex);
         /// Replace the lock guarding SSL operations on the underlying impl.

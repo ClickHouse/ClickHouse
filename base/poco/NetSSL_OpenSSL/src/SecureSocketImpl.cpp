@@ -29,7 +29,6 @@
 #include <openssl/x509v3.h>
 #include <openssl/err.h>
 
-#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 
@@ -150,6 +149,113 @@ private:
 	::Stopwatch watch;
 };
 
+
+/// The default transport BIO: OpenSSL's own socket BIO (`BIO_s_socket`), except that its reads
+/// and writes never block, whatever the blocking mode of the descriptor. An OpenSSL operation
+/// that cannot progress thus always returns `SSL_ERROR_WANT_READ` or `SSL_ERROR_WANT_WRITE` at
+/// once, and the waiting for the peer, bounded by the socket timeouts, is done by `mustRetry`,
+/// outside of OpenSSL and with the SSL lock released. With a blocking BIO the lock would be held
+/// for as long as the system call blocks, which keeps the other direction of the connection out:
+/// see `ScopedUnlockAll`. The descriptor is taken from the `SocketImpl` stored in the BIO's data.
+namespace
+{
+
+SocketImpl * socketOf(BIO * pBIO)
+{
+	return static_cast<SocketImpl *>(BIO_get_data(pBIO));
+}
+
+int nonBlockingSocketRead(BIO * pBIO, char * buffer, int length)
+{
+	if (!buffer)
+		return 0;
+
+	BIO_clear_retry_flags(pBIO);
+	const int rc = static_cast<int>(::recv(socketOf(pBIO)->sockfd(), buffer, length, MSG_DONTWAIT));
+	if (rc < 0)
+	{
+		/// `errno` is left for `performSSLOperation` to pick up right after the operation.
+		if (BIO_sock_non_fatal_error(errno))
+			BIO_set_retry_read(pBIO);
+	}
+	else if (rc == 0)
+		BIO_set_flags(pBIO, BIO_FLAGS_IN_EOF);
+	return rc;
+}
+
+int nonBlockingSocketWrite(BIO * pBIO, const char * buffer, int length)
+{
+	int flags = MSG_DONTWAIT;
+#ifdef MSG_NOSIGNAL
+	flags |= MSG_NOSIGNAL;
+#endif
+	BIO_clear_retry_flags(pBIO);
+	const int rc = static_cast<int>(::send(socketOf(pBIO)->sockfd(), buffer, length, flags));
+	if (rc < 0 && BIO_sock_non_fatal_error(errno))
+		BIO_set_retry_write(pBIO);
+	return rc;
+}
+
+long nonBlockingSocketCtrl(BIO * pBIO, int cmd, long, void * parg)
+{
+	switch (cmd)
+	{
+	case BIO_C_SET_FD:
+		/// Not stored: the descriptor is read from the `SocketImpl` on every operation.
+		BIO_set_init(pBIO, 1);
+		return 1;
+	case BIO_C_GET_FD:
+	{
+		SocketImpl * pSocket = socketOf(pBIO);
+		if (!pSocket)
+			return -1;
+		const int fd = static_cast<int>(pSocket->sockfd());
+		if (parg)
+			*static_cast<int *>(parg) = fd;
+		return fd;
+	}
+	case BIO_CTRL_DUP:
+	case BIO_CTRL_FLUSH:
+		return 1;
+	case BIO_CTRL_EOF:
+		return BIO_test_flags(pBIO, BIO_FLAGS_IN_EOF) != 0;
+	default:
+		return 0;
+	}
+}
+
+int nonBlockingSocketCreate(BIO * pBIO)
+{
+	BIO_set_init(pBIO, 0);
+	BIO_set_data(pBIO, nullptr);
+	return 1;
+}
+
+int nonBlockingSocketDestroy(BIO *)
+{
+	/// The socket is owned and closed by `SecureSocketImpl`, as with `BIO_NOCLOSE`.
+	return 1;
+}
+
+const BIO_METHOD * nonBlockingSocketBioMethod()
+{
+	static const BIO_METHOD * method = []
+	{
+		BIO_METHOD * m = BIO_meth_new(BIO_get_new_index() | BIO_TYPE_SOURCE_SINK | BIO_TYPE_DESCRIPTOR, "non-blocking socket");
+		poco_check_ptr (m);
+		BIO_meth_set_read(m, nonBlockingSocketRead);
+		BIO_meth_set_write(m, nonBlockingSocketWrite);
+		BIO_meth_set_ctrl(m, nonBlockingSocketCtrl);
+		BIO_meth_set_create(m, nonBlockingSocketCreate);
+		BIO_meth_set_destroy(m, nonBlockingSocketDestroy);
+		return m;
+	}();
+	return method;
+}
+
+}
+
+
 SecureSocketImpl::SecureSocketImpl(Poco::AutoPtr<SocketImpl> pSocketImpl, Context::Ptr pContext):
 	_pSSL(nullptr),
 	_pSocket(pSocketImpl),
@@ -211,7 +317,7 @@ void SecureSocketImpl::markFatalError()
 
 const BIO_METHOD * SecureSocketImpl::getBioMethod() const
 {
-	return _bioMethod ? _bioMethod : BIO_s_socket();
+	return _bioMethod ? _bioMethod : nonBlockingSocketBioMethod();
 }
 
 
@@ -225,9 +331,7 @@ void SecureSocketImpl::acceptSSL()
 	BIO* pBIO = BIO_new(getBioMethod());
 	if (!pBIO) throw SSLException("Cannot create BIO object");
 	BIO_set_fd(pBIO, static_cast<int>(_pSocket->sockfd()), BIO_NOCLOSE);
-
-	if (_bioMethod)
-		BIO_set_data(pBIO, _pSocket.get());
+	BIO_set_data(pBIO, _pSocket.get());
 
 	_pSSL = SSL_new(_pContext->sslContext());
 	if (!_pSSL)
@@ -296,9 +400,7 @@ void SecureSocketImpl::connectSSL(bool performHandshake)
 	BIO* pBIO = BIO_new(getBioMethod());
 	if (!pBIO) throw SSLException("Cannot create SSL BIO object");
 	BIO_set_fd(pBIO, static_cast<int>(_pSocket->sockfd()), BIO_NOCLOSE);
-
-	if (_bioMethod)
-		BIO_set_data(pBIO, _pSocket.get());
+	BIO_set_data(pBIO, _pSocket.get());
 
 	_pSSL = SSL_new(_pContext->sslContext());
 	if (!_pSSL)
@@ -536,34 +638,6 @@ int SecureSocketImpl::completeHandshake()
 }
 
 
-SecureSocketImpl::HandshakeDriver::HandshakeDriver(SecureSocketImpl & impl_)
-	: impl(impl_), drives(impl_._pSocket->getBlocking() && impl_._pSocket->supportsNonBlocking())
-{
-	if (drives)
-	{
-		impl._pSocket->setBlocking(false);
-		impl._drivingHandshake = true;
-	}
-}
-
-
-SecureSocketImpl::HandshakeDriver::~HandshakeDriver()
-{
-	if (!drives)
-		return;
-
-	impl._drivingHandshake = false;
-	try
-	{
-		impl._pSocket->setBlocking(true);
-	}
-	catch (...)
-	{
-		DB::tryLogCurrentException("SecureSocketImpl", "Cannot restore the blocking mode after the handshake");
-	}
-}
-
-
 int SecureSocketImpl::completeHandshakeImpl(bool verifyPeer)
 {
 	ScopedLock lock(*_mutex);
@@ -572,11 +646,9 @@ int SecureSocketImpl::completeHandshakeImpl(bool verifyPeer)
 
 	HandshakeProfileEventCounter handshakeCounter(SSL_is_server(_pSSL) != 0);
 
+	/// The transport BIO never blocks, so OpenSSL hands control back with WANT_READ/WANT_WRITE
+	/// instead of reading in its own loop, and the whole handshake is bounded by one budget.
 	int rc;
-	/// Non-blocking, so that OpenSSL hands control back with WANT_READ/WANT_WRITE instead of
-	/// reading in its own loop, where only SO_RCVTIMEO applies and only per read.
-	HandshakeDriver handshake_driver(*this);
-
 	try
 	{
 		SSLOperationResult result;
@@ -739,6 +811,12 @@ bool SecureSocketImpl::mustRetry(int rc, int sslError, int socketError, Poco::Ti
 				/// Charge the wait too, or a peer sending a byte before every timeout never
 				/// depletes the budget.
 				RemainingTimeCounter counter(remaining_time);
+				/// Never wait for the socket while holding the SSL lock: the lock only serialises
+				/// calls into the `SSL` object, and the other direction of the connection may have
+				/// to make progress before this one can. OpenSSL allows an `SSL_read` between the
+				/// attempts of one `SSL_write` and vice versa, as long as each is retried with the
+				/// same arguments, which the callers' loops do.
+				ScopedUnlockAll unlock(*_mutex);
 				if (_pSocket->pollImpl(remaining_time, Poco::Net::Socket::SELECT_READ))
 					return true;
 				else
@@ -749,6 +827,7 @@ bool SecureSocketImpl::mustRetry(int rc, int sslError, int socketError, Poco::Ti
 			if (waitHere())
 			{
 				RemainingTimeCounter counter(remaining_time);
+				ScopedUnlockAll unlock(*_mutex);
 				if (_pSocket->pollImpl(remaining_time, Poco::Net::Socket::SELECT_WRITE))
 					return true;
 				else
