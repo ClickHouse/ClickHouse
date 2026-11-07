@@ -10,6 +10,7 @@
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateHandlerQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
@@ -17,6 +18,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
@@ -52,6 +54,26 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
         visitQueryParameter(ast);
     else if (ast->as<ASTIdentifier>() || ast->as<ASTTableIdentifier>())
         visitIdentifier(ast);
+    else if (auto * table_expression = ast->as<ASTTableExpression>())
+    {
+        /// Only a function-like table expression may carry a parameterized name, see `ASTFunction::query_parameter_name`.
+        auto * function = table_expression->table_function ? table_expression->table_function->as<ASTFunction>() : nullptr;
+        if (function && function->query_parameter_name)
+        {
+            visit(function->query_parameter_name);
+            function->name = function->query_parameter_name->as<ASTIdentifier &>().name();
+            function->setIsCompoundName(function->name.contains('.'));
+            function->reset(function->query_parameter_name);
+        }
+        visitChildren(ast);
+    }
+    else if (auto * function = ast->as<ASTFunction>(); function && function->query_parameter_name)
+    {
+        /// Both the SQL parser and the JSON reader accept the placeholder in a table expression alone; keep the invariant explicit.
+        throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
+            "Query parameter {} can name only a table function or a parameterized view in a table expression",
+            function->query_parameter_name->formatForErrorMessage());
+    }
     else if (auto * set_query = ast->as<ASTSetQuery>())
         visitSetQuery(*set_query);
     else if (const auto * settings = [&] -> const ASTSetQuery *
@@ -91,8 +113,9 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
     }
     else
     {
+        /// Visit the table expression itself, so a parameterized table function name resolves as it does after `FROM`.
         if (auto * describe_query = dynamic_cast<ASTDescribeQuery *>(ast.get()); describe_query && describe_query->table_expression)
-            visitChildren(describe_query->table_expression);
+            visit(describe_query->table_expression);
         else if (dynamic_cast<ASTCreateHandlerQuery *>(ast.get()))
         {
             /// The handler's query (the AS clause) is the parameterizable interface of the handler;
