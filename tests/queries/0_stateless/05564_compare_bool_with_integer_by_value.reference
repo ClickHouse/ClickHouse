@@ -46,3 +46,8 @@ key lt plan	1
 expr key	0	3000	3000
 expr key keep plan	1
 expr key scalar	3000	3000
+expr key string keep plan	1
+expr key tuple	3000
+expr key tuple keep plan	1
+key has	0	3000
+key not has keep plan	1

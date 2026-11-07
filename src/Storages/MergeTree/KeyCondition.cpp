@@ -2019,7 +2019,24 @@ static bool castChangedComparedValue(
 
     const DataTypePtr compared_type = tryGetLeastSupertypeForComparison(type, cast_type);
     if (!compared_type)
-        return false;
+    {
+        /// Without a common type, tuples are compared element by element and a string is parsed into the other type.
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+        const auto * cast_tuple_type = typeid_cast<const DataTypeTuple *>(cast_type.get());
+        if (tuple_type && cast_tuple_type && tuple_type->getElements().size() == cast_tuple_type->getElements().size())
+        {
+            const ColumnPtr full = column->convertToFullIfWrapped();
+            const ColumnPtr cast_full = cast_column->convertToFullIfWrapped();
+            const auto & tuple_column = assert_cast<const ColumnTuple &>(*full);
+            const auto & cast_tuple_column = assert_cast<const ColumnTuple &>(*cast_full);
+            for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
+                if (castChangedComparedValue(
+                        tuple_column.getColumnPtr(i), tuple_type->getElement(i), cast_tuple_column.getColumnPtr(i), cast_tuple_type->getElement(i)))
+                    return true;
+            return false;
+        }
+        return !isStringOrFixedString(removeNullable(type));
+    }
 
     const ColumnPtr compared = castColumn({column, type, ""}, compared_type)->convertToFullColumnIfConst();
     const ColumnPtr cast_compared = castColumn({cast_column, cast_type, ""}, compared_type)->convertToFullColumnIfConst();
@@ -3661,6 +3678,8 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
         if (canBeSafelyCast(set_element_type, key_column_type))
         {
             transformed_set_columns[set_element_index] = castColumn({set_column, set_element_type, {}}, key_column_type);
+            if (castChangedComparedValue(set_column, set_element_type, transformed_set_columns[set_element_index], key_column_type))
+                out_is_exact = false;
             continue;
         }
 

@@ -70,4 +70,19 @@ DROP TABLE IF EXISTS t_key_expr_scalar;
 CREATE TABLE t_key_expr_scalar (b Nullable(Bool)) ENGINE = MergeTree ORDER BY materialize(b) SETTINGS index_granularity = 8, allow_nullable_key = 1;
 INSERT INTO t_key_expr_scalar SELECT number % 2 = 1 FROM numbers(3000);
 SELECT 'expr key scalar', (SELECT count() FROM t_key_expr_scalar WHERE b != toUInt8(2)), (SELECT count() FROM t_key_expr_scalar WHERE b > toInt8(-1)) SETTINGS use_primary_key = 1;
+SELECT 'expr key string keep plan', countIf(explain ILIKE '%Condition: (materialize(b) in [1, 1])%') FROM (EXPLAIN indexes = 1 SELECT b FROM t_key_expr_scalar WHERE b = 'true' SETTINGS use_primary_key = 1, enable_parallel_replicas = 0);
 DROP TABLE t_key_expr_scalar;
+
+DROP TABLE IF EXISTS t_key_expr_tuple;
+CREATE TABLE t_key_expr_tuple (v Tuple(Bool, Int64)) ENGINE = MergeTree ORDER BY materialize(v) SETTINGS index_granularity = 8;
+INSERT INTO t_key_expr_tuple SELECT tuple(number % 2 = 1, toInt64(1)) FROM numbers(3000);
+SELECT 'expr key tuple', (SELECT count() FROM t_key_expr_tuple WHERE v < tuple(toUInt8(2), toUInt64(0))) SETTINGS use_primary_key = 1;
+SELECT 'expr key tuple keep plan', countIf(explain ILIKE '%Condition: (materialize(v) in (-Inf, (1, 0)])%') FROM (EXPLAIN indexes = 1 SELECT v FROM t_key_expr_tuple WHERE v < tuple(toUInt8(1), toUInt64(0)) SETTINGS use_primary_key = 1, enable_parallel_replicas = 0);
+DROP TABLE t_key_expr_tuple;
+
+DROP TABLE IF EXISTS t_key_has;
+CREATE TABLE t_key_has (arr Array(Nullable(Bool))) ENGINE = MergeTree ORDER BY arr SETTINGS index_granularity = 8, allow_nullable_key = 1;
+INSERT INTO t_key_has SELECT [number % 2 = 1] FROM numbers(3000);
+SELECT 'key has', (SELECT count() FROM t_key_has WHERE has([[toUInt8(2)]], arr)), (SELECT count() FROM t_key_has WHERE NOT has([[toUInt8(2)]], arr)) SETTINGS use_primary_key = 1, optimize_rewrite_has_to_in = 0;
+SELECT 'key not has keep plan', countIf(match(explain, 'Granules: \\d+/') AND toUInt32(extract(explain, 'Granules: (\\d+)/')) < toUInt32(extract(explain, 'Granules: \\d+/(\\d+)'))) FROM (EXPLAIN indexes = 1 SELECT arr FROM t_key_has WHERE NOT has([[toUInt8(1)]], arr) SETTINGS use_primary_key = 1, optimize_rewrite_has_to_in = 0, enable_parallel_replicas = 0);
+DROP TABLE t_key_has;
