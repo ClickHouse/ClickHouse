@@ -378,10 +378,11 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(
             block.insert({column.type->createColumn(), column.type, column.name});
     }
 
+    /// Subcolumns are not parsed from the path, so files are not pruned by them.
     for (const auto & column : hive_columns)
     {
         /// In the filter block `_path` and `_file` are the path and the file name, never a Hive column with that name.
-        if (column.name != "_path" && column.name != "_file" && !block.has(column.name))
+        if (!column.isSubcolumn() && column.name != "_path" && column.name != "_file" && !block.has(column.name))
             block.insert({column.type->createColumn(), column.type, column.name});
     }
 
@@ -415,7 +416,7 @@ ColumnPtr getFilterByPathAndFileIndexes(
 
     for (const auto & column : hive_columns)
     {
-        if (required.contains(column.name) && !block.has(column.name))
+        if (!column.isSubcolumn() && required.contains(column.name) && !block.has(column.name))
             block.insert({column.type->createColumn(), column.type, column.name});
     }
 
