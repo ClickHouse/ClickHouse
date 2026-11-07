@@ -197,6 +197,8 @@ namespace Setting
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsBool enable_global_with_statement;
     extern const SettingsMap additional_table_filters;
+    extern const SettingsString insert_expected_table_engine;
+    extern const SettingsMap insert_expected_column_types;
 }
 
 namespace DistributedSetting
@@ -1698,6 +1700,12 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     const Settings & settings = local_context->getSettingsRef();
     if (settings[Setting::max_distributed_depth] && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
         throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
+
+    /// Below mode 2 a shard runs the insert into this wrapper, and would check the wrapper instead of its own table.
+    if (settings[Setting::parallel_distributed_insert_select] != PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL
+        && (!settings[Setting::insert_expected_table_engine].value.empty()
+            || !settings[Setting::insert_expected_column_types].value.empty()))
+        return {};
 
     auto & select = query.select->as<ASTSelectWithUnionQuery &>();
 

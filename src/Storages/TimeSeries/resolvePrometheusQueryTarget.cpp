@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -50,6 +51,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
+    extern const SettingsBool push_external_roles_in_interserver_queries;
 }
 
 namespace DistributedSetting
@@ -217,6 +219,15 @@ namespace
         probe_context->setSetting("skip_unavailable_shards_mode", String("unavailable"));
         /// The type must come back as the column declares it.
         probe_context->setSetting("print_pretty_type_names", false);
+        /// Forward roles only as the caller's own read would.
+        probe_context->setSetting("push_external_roles_in_interserver_queries",
+            context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries].value);
+        /// Like the fan-out, send no initiator-only setting, so a replica resolves the table in its own default database.
+        {
+            Settings probe_settings = probe_context->getSettingsRef();
+            ClusterProxy::stripInitiatorOnlySettings(probe_settings);
+            probe_context->setSettings(probe_settings);
+        }
 
         Strings wrong_engine_replicas;
         Strings wrong_type_replicas;

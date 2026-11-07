@@ -58,6 +58,11 @@ INSERT INTO insert_expected_engine_plain_dist SETTINGS insert_expected_column_ty
 INSERT INTO insert_expected_engine_src_dist SETTINGS insert_expected_table_engine = 'Memory', distributed_foreground_insert = 1 VALUES (15);
 INSERT INTO insert_expected_engine_src_dist SETTINGS insert_expected_column_types = {'x': 'UInt8'}, distributed_foreground_insert = 1, prefer_localhost_replica = 0 VALUES (16);
 
+-- An INSERT SELECT between two wrappers on one cluster checks the destination's shards in every mode.
+INSERT INTO insert_expected_engine_plain_dist SETTINGS insert_expected_table_engine = 'Memory', parallel_distributed_insert_select = 1, distributed_foreground_insert = 1 SELECT x + 100 FROM insert_expected_engine_src_dist;
+INSERT INTO insert_expected_engine_plain_dist SETTINGS insert_expected_table_engine = 'Memory', parallel_distributed_insert_select = 2, distributed_foreground_insert = 1 SELECT x + 200 FROM insert_expected_engine_src_dist;
+INSERT INTO insert_expected_engine_plain_dist SETTINGS insert_expected_table_engine = 'TimeSeries', parallel_distributed_insert_select = 1, distributed_foreground_insert = 1 SELECT x + 30 FROM insert_expected_engine_src_dist; -- { serverError UNEXPECTED_TABLE_ENGINE }
+
 SELECT * FROM insert_expected_engine ORDER BY x;
 SELECT * FROM insert_expected_engine_log ORDER BY x;
 SELECT * FROM insert_expected_engine_wide ORDER BY x;
