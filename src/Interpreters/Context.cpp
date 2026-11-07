@@ -33,6 +33,8 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
+#include <Common/MemoryTrackerSwitcher.h>
+#include <Common/GlobalMemoryAllocator.h>
 #include <Common/PageCache.h>
 #if USE_GPU
 #include <GPU/GPUDevice.h>
@@ -505,6 +507,7 @@ namespace FailPoints
 
 namespace ErrorCodes
 {
+    extern const int FAULT_INJECTED;
     extern const int BAD_ARGUMENTS;
 #if USE_GPU
     extern const int GPU_ERROR;
@@ -1781,6 +1784,46 @@ ContextMutablePtr Context::createCopy(const ContextWeakPtr & other)
 ContextMutablePtr Context::createCopy(const ContextMutablePtr & other)
 {
     return createCopy(std::const_pointer_cast<const Context>(other));
+}
+
+namespace
+{
+
+/// Weak references can retain the control block after query detachment.
+template <typename T>
+struct QueryContextControlBlockAllocator : GlobalMemoryAllocator<T>
+{
+    using value_type = T;
+
+    QueryContextControlBlockAllocator() = default;
+    template <typename U>
+    explicit QueryContextControlBlockAllocator(const QueryContextControlBlockAllocator<U> &)
+    {
+    }
+
+    T * allocate(size_t count)
+    {
+        MemoryTrackerSwitcher scope(&total_memory_tracker);
+        fiu_do_on("query_context_control_block_allocation_failure",
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected query context control block allocation failure");
+        });
+        return std::allocator<T>{}.allocate(count);
+    }
+
+    template <typename U>
+    bool operator==(const QueryContextControlBlockAllocator<U> &) const noexcept
+    {
+        return true;
+    }
+};
+
+}
+
+ContextMutablePtr Context::createCopyForQuery(const ContextPtr & other)
+{
+    SharedLockGuard lock(other->mutex);
+    return ContextMutablePtr(new Context(*other), std::default_delete<Context>{}, QueryContextControlBlockAllocator<Context>{});
 }
 
 Context::~Context() = default;
@@ -3253,7 +3296,10 @@ SessionQueryIdsHistory & Context::getSessionQueryIdsHistory() const
 
     std::lock_guard lock(mutex);
     if (!session_query_ids_history)
+    {
+        MemoryTrackerSwitcher history_memory_scope(&total_memory_tracker);
         session_query_ids_history = std::make_shared<SessionQueryIdsHistory>();
+    }
     return *session_query_ids_history;
 }
 

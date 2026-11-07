@@ -1,6 +1,9 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/GlobalMemoryAllocator.h>
+#include <Common/MemoryTrackerSwitcher.h>
+#include <Common/QueryScope.h>
 #include <Common/ThreadStatus.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/Logger.h>
@@ -4547,13 +4550,30 @@ std::future<void> executeQueryInBackground(std::string_view query, ContextMutabl
     if (context->hasSessionContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A background query context must not be attached to a session");
 
-    /// The caller keeps using its own context to finish the response, so the background query gets its own copy.
-    auto background_context = Context::createCopy(context);
-    background_context->makeQueryContext();
+    /// Keep the request context alive until the worker has copied it. A discarded job may release it on another thread.
+    struct SourceContext
+    {
+        ThreadGroupPtr group;
+        ContextMutablePtr context;
+
+        ~SourceContext()
+        {
+            MemoryTrackerSwitcher global_scope(&total_memory_tracker);
+            {
+                MemoryTrackerSwitcher source_scope(group ? &group->memory_tracker : &total_memory_tracker);
+                context.reset();
+            }
+            group.reset();
+        }
+    };
+
+    MemoryTrackerSwitcher task_memory_scope(&total_memory_tracker);
+    auto source_context = std::allocate_shared<SourceContext>(
+        GlobalMemoryAllocator<SourceContext>{}, CurrentThread::getGroup(), context);
 
     struct ExecutionStart
     {
-        std::promise<void> promise;
+        std::promise<void> promise{std::allocator_arg, GlobalMemoryAllocator<char>{}};
         std::atomic<bool> fulfilled{false};
 
         ~ExecutionStart()
@@ -4575,18 +4595,28 @@ std::future<void> executeQueryInBackground(std::string_view query, ContextMutabl
         }
     };
 
-    auto background_query_execution_started = std::make_shared<ExecutionStart>();
-    background_context->setQueryExecutionStartedCallback([background_query_execution_started] { background_query_execution_started->setStarted(); });
-
-    context->getBackgroundQueryPool().scheduleOrThrow([query_text = String(query), background_context, background_query_execution_started]
+    auto background_query_execution_started = std::allocate_shared<ExecutionStart>(GlobalMemoryAllocator<ExecutionStart>{});
+    context->getBackgroundQueryPool().scheduleOrThrow([query_text = String(query), source = std::move(source_context), background_query_execution_started]() mutable
     {
         try
         {
-            auto thread_group = ThreadGroup::createForQuery(background_context);
-            ThreadGroupSwitcher switcher(thread_group, ThreadName::BACKGROUND_QUERY);
-            SCOPE_EXIT_SAFE(thread_group->memory_tracker.logPeakMemoryUsage());
+            auto query_scope = QueryScope::createForQueryContext(source->context);
+            ProcessList::EntryPtr process_list_entry;
+            SCOPE_EXIT({
+                CurrentThread::flushUntrackedMemory();
+                process_list_entry.reset();
+            });
+            auto background_context = Context::createCopyForQuery(source->context);
+            background_context->makeQueryContext();
+            source.reset();
+            background_context->setQueryExecutionStartedCallback(
+                [background_query_execution_started] { background_query_execution_started->setStarted(); });
+            query_scope.attachToQueryContext(background_context);
+            setThreadName(ThreadName::BACKGROUND_QUERY);
 
             auto io = executeQuery(query_text, background_context, QueryFlags{ .background = true }).second;
+            if (auto process_list_element = background_context->getProcessListElementSafe())
+                process_list_entry = process_list_element->getProcessListEntry();
             background_context->onQueryExecutionStarted();
             try
             {

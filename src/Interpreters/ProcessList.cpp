@@ -1,6 +1,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/MemoryTrackerSwitcher.h>
 #include <Core/Settings.h>
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/Context.h>
@@ -188,6 +189,16 @@ ProcessList::EntryPtr ProcessList::insert(
         }
     }
 
+    /// Flush and check setup memory before taking `mutex`: diagnostics may allocate or take other locks.
+    const auto setup_thread_group = CurrentThread::getGroup();
+    if (setup_thread_group)
+        setup_thread_group->memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage]);
+    CurrentThread::flushUntrackedMemory();
+    /// Existing ancestors already accounted for setup bytes. Rechecking the global limit
+    /// here would defeat `users_to_ignore_early_memory_limit_check` for recovery queries.
+    if (setup_thread_group)
+        setup_thread_group->memory_tracker.checkQueryLimit();
+
     {
         LockAndOverCommitTrackerBlocker<std::unique_lock, Mutex> locker(mutex); /// To avoid deadlock in case of OOM
         auto & lock = locker.getUnderlyingLock();
@@ -313,6 +324,8 @@ ProcessList::EntryPtr ProcessList::insert(
         auto user_process_list_it = user_to_queries.find(client_info.current_user);
         if (user_process_list_it == user_to_queries.end())
         {
+            /// User entries and map buckets survive query teardown and tracker resets.
+            MemoryTrackerSwitcher user_metadata_memory_scope(&total_memory_tracker);
             user_process_list_it = user_to_queries.emplace(std::piecewise_construct,
                 std::forward_as_tuple(client_info.current_user),
                 std::forward_as_tuple(query_context->getGlobalContext(), this)).first;
@@ -364,7 +377,6 @@ ProcessList::EntryPtr ProcessList::insert(
             }
 
             /// Set query-level memory trackers
-            thread_group->memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage]);
             configureMemoryTrackerFromSettings(query_context->hasTraceCollector(), thread_group->memory_tracker, settings);
 
             /// Reapply sampling
