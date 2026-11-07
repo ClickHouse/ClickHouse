@@ -1,0 +1,70 @@
+{
+    "format-version": 3,
+    "table-uuid": "276d170c-c6ea-46c7-80bb-176063e4507d",
+    "location": "file://FILEPATH",
+    "last-sequence-number": 0,
+    "last-updated-ms": 1785949436415,
+    "last-column-id": 4,
+    "current-schema-id": 0,
+    "schemas": [
+        {
+            "type": "struct",
+            "schema-id": 0,
+            "fields": [
+                {
+                    "id": 1,
+                    "name": "name",
+                    "required": false,
+                    "type": "string"
+                },
+                {
+                    "id": 2,
+                    "name": "mapgeometry",
+                    "required": false,
+                    "type": {
+                        "type": "map",
+                        "key-id": 3,
+                        "key": "string",
+                        "value-id": 4,
+                        "value": "geometry",
+                        "value-required": false
+                    }
+                }
+            ]
+        }
+    ],
+    "default-spec-id": 0,
+    "partition-specs": [
+        {
+            "spec-id": 0,
+            "fields": []
+        }
+    ],
+    "last-partition-id": 999,
+    "default-sort-order-id": 0,
+    "sort-orders": [
+        {
+            "order-id": 0,
+            "fields": []
+        }
+    ],
+    "properties": {
+        "write.format.default": "PARQUET",
+        "write.delete.mode": "merge-on-read",
+        "write.metadata.previous-versions-max": "100",
+        "write.parquet.compression-codec": "ZSTD",
+        "write.metadata.metrics.max-inferred-column-defaults": "100",
+        "write.metadata.delete-after-commit.enabled": "false",
+        "commit.retry.num-retries": "4",
+        "write.update.mode": "merge-on-read",
+        "read.split.target-size": "134217728"
+    },
+    "current-snapshot-id": null,
+    "next-row-id": 0,
+    "refs": {},
+    "snapshots": [],
+    "statistics": [],
+    "partition-statistics": [],
+    "snapshot-log": [],
+    "metadata-log": []
+}
