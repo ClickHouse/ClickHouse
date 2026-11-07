@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
 
 # --dump-schema keeps the type gates of a table-function structure that the stored CREATE computes instead of spelling
 # it out: in the target of a local Remote table, which the server stores unfolded and resolves at CREATE, and in the
