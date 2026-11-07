@@ -20,6 +20,8 @@
 #include <Common/RemoteHostFilter.h>
 #include <IO/WriteHelpers.h>
 #include <Databases/DatabaseFactory.h>
+#include <Databases/LoadingStrictnessLevel.h>
+#include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
@@ -724,12 +726,15 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         auto use_table_cache = false;
         StoragePostgreSQL::Configuration configuration;
 
-        /// The connection-pool parameters are seeded from the query-level `postgresql_*` settings
-        /// (preserving the historical behaviour); a named collection may override them.
+        /// Precedence, as for the table engine: the SETTINGS clause, the named collection, the session; a new database stores
+        /// the values from the session that differ from the server's.
         PostgreSQLSettings postgresql_settings;
-        postgresql_settings.loadFromQueryContext(*args.context);
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
+        /// The SETTINGS clause overrides the collection like its key-value arguments do, so it is checked the same way.
+        auto named_collection = tryGetNamedCollectionWithOverrides(
+            engine_args, args.context, /*throw_unknown_collection=*/ true, /*complex_args=*/ nullptr,
+            /*dependent_table_id=*/ nullptr, engine_define->settings);
+        if (named_collection)
         {
             configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, &postgresql_settings, args.context, /*require_table=*/ false);
             use_table_cache = named_collection->getOrDefault<UInt64>("use_table_cache", 0);
@@ -796,6 +801,38 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
                 args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
         }
 
+        /// The settings of the clause are settings of the engine, not query settings that `applySettingsFromQuery` checks, so
+        /// a definition the user gives is held to the user's constraints on them here, as a `SET` would be. Not a definition
+        /// the server stored itself.
+        const bool is_stored_definition = is_internal_metadata_replay || isLoadingFromExistingMetadata(args.mode)
+            || args.create_query.attach_short_syntax;
+        const bool check_constraints = engine_define->settings && !is_stored_definition;
+        const auto & query_settings = args.context->getSettingsRef();
+        const auto constraints = args.context->getSettingsConstraintsAndCurrentProfiles();
+        if (check_constraints)
+        {
+            query_settings.checkShorthandChanges(engine_define->settings->changes);
+            constraints->constraints.check(query_settings, engine_define->settings->changes, SettingSource::QUERY);
+        }
+        postgresql_settings.loadFromQuery(*engine_define);
+
+        /// Only a definition that is written now stores the values: not one read from the metadata file, and not on `RESTORE`,
+        /// which rejects a database whose definition differs from the one in the backup.
+        const bool is_new_definition = !is_stored_definition && !args.is_restore_from_backup;
+        postgresql_settings.loadFromQueryContext(*args.context, engine_define->settings, is_new_definition ? engine_define : nullptr);
+
+        /// A setting the clause resets with `name = DEFAULT` gets the default of the engine instead of the session's value, so
+        /// that value is held to the constraints too. Not one a named collection sets: the database takes it from there.
+        if (check_constraints)
+        {
+            for (const auto & name : engine_define->settings->default_settings)
+            {
+                if (PostgreSQLSettings::hasBuiltin(name) && !(named_collection && named_collection->has(name)))
+                    constraints->constraints.check(
+                        query_settings, SettingChange{name, postgresql_settings.get(name)}, SettingSource::QUERY);
+            }
+        }
+
         if (!postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "postgresql_connection_pool_size cannot be zero.");
 
@@ -819,8 +856,10 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
     };
     factory.registerDatabase("PostgreSQL", create_fn, mysqlPostgreSQLSecretArguments(3), {
         .supports_arguments = true,
+        .supports_settings = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::POSTGRES,
+        .has_builtin_setting_fn = PostgreSQLSettings::hasBuiltin,
     }, Documentation{
         .description = R"DOCS_MD(
 Allows to connect to databases on a remote [PostgreSQL](https://www.postgresql.org) server. Supports read and write operations (`SELECT` and `INSERT` queries) to exchange data between ClickHouse and PostgreSQL.
@@ -846,6 +885,18 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 - `use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
 
 TLS/SSL parameters are forwarded to `libpq` and can be supplied through a [named collection](/operations/named-collections.md) or as trailing key-value arguments: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`), and the certificates and the key in one of two forms. `sslrootcert` (CA certificate), `sslcert` (client certificate) and `sslkey` (client private key) are paths to server-local files, accepted only from a named collection defined in the server configuration file. `sslrootcert_pem`, `sslcert_pem` and `sslkey_pem` accept the literal contents of the corresponding file instead, can be specified from SQL (for example, `ENGINE = PostgreSQL('host:port', 'database', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')`), and are masked in logs and `SHOW` queries like a password. When unset, `libpq` defaults apply (`sslmode=prefer`).
+
+## Settings {#settings}
+
+The connection pool of the database, which its tables share, can be configured with a `SETTINGS` clause, using the settings of the [`PostgreSQL` table engine](/reference/engines/table-engines/integrations/postgresql#settings): `postgresql_connection_pool_size`, `postgresql_connection_pool_wait_timeout`, `postgresql_connection_pool_retries`, `postgresql_connection_pool_auto_close_connection` and `postgresql_connection_attempt_timeout`.
+
+```sql
+CREATE DATABASE test_database
+ENGINE = PostgreSQL('host:port', 'database', 'user', 'password')
+SETTINGS postgresql_connection_pool_size = 32;
+```
+
+The `SETTINGS` clause takes precedence over a named collection, unless the collection marks the setting `NOT OVERRIDABLE`. When a setting is set by neither, it defaults to the value of the corresponding query-level `postgresql_*` setting. A new database, except one restored from a backup, adds the values it takes this way that differ from the server's values, e.g. set with `SET` or a settings profile of the user, to its `SETTINGS`, so that it keeps them after a server restart. A value equal to the server's is not stored, so such a database follows the server's value if it changes later. A setting that a named collection sets is not taken from the query-level setting, so nothing is stored for it. A stored value is a part of the `SETTINGS` of the database, so it overrides the same key added to the named collection later, and if that key is `NOT OVERRIDABLE`, the database fails to load with `Override not allowed`. In the `SETTINGS` clause of a database, a setting reset with `name = DEFAULT` is not taken from the query-level setting.
 
 <a id="data_types-support"></a>
 ## Data types support {#data-types-support}

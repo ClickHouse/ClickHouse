@@ -123,6 +123,11 @@ VectorWithMemoryTracking<std::string_view> PostgreSQLSettings::getAllRegisteredN
     return all_settings;
 }
 
+Field PostgreSQLSettings::get(std::string_view name) const
+{
+    return impl->get(name);
+}
+
 bool PostgreSQLSettings::hasBuiltin(std::string_view name)
 {
     return PostgreSQLSettingsImpl::hasBuiltin(name);
