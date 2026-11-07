@@ -191,7 +191,7 @@ TEST(SSLSocketConcurrentReadWrite, WriterWaitingForPeerDoesNotBlockReader)
         {
             return e.what();
         }
-        catch (...)
+        catch (...) /// Ok: only the text for the failure message is made here, the exception itself is already recorded.
         {
             return "unknown";
         }
