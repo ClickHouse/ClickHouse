@@ -1,0 +1,30 @@
+<clickhouse>
+    <!-- Secure cluster discovery on the offset node. The node must register the *secure* listener
+         it actually bound: tcp_port_secure 9340 + port_offset 100 = 9440. -->
+    <tcp_port_secure>9340</tcp_port_secure>
+    <openSSL>
+        <server>
+            <certificateFile>/etc/clickhouse-server/config.d/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/server.key</privateKeyFile>
+            <dhParamsFile>/etc/clickhouse-server/config.d/dhparam.pem</dhParamsFile>
+            <verificationMode>none</verificationMode>
+            <cacheSessions>true</cacheSessions>
+        </server>
+        <client>
+            <cacheSessions>true</cacheSessions>
+            <verificationMode>none</verificationMode>
+            <invalidCertificateHandler>
+                <name>AcceptCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+    <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
+    <remote_servers>
+        <secure_discovery>
+            <discovery>
+                <path>/clickhouse/discovery/secure_discovery</path>
+                <secure>1</secure>
+            </discovery>
+        </secure_discovery>
+    </remote_servers>
+</clickhouse>
