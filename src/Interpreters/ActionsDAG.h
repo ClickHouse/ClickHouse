@@ -489,6 +489,11 @@ public:
     /// *out_outputs is filled with pointers to the nodes corresponding to second.getOutputs().
     void mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs = nullptr);
 
+    using NodeNameToNode = std::unordered_map<std::string_view, const Node *>;
+    /// `node_name_to_node` indexes this DAG's nodes by name: built if empty, extended with the merged nodes,
+    /// so it can be reused for the next merge into this DAG as long as nothing else changes the DAG in between.
+    void mergeNodes(ActionsDAG && second, NodeNameToNode & node_name_to_node, NodeRawConstPtrs * out_outputs = nullptr);
+
     /// Union current nodes with second dag without any matching of inputs and outputs.
     void unite(ActionsDAG && second);
 

@@ -3247,9 +3247,17 @@ void ActionsDAG::mergeInplace(ActionsDAG && second, std::unordered_map<const Nod
 
 void ActionsDAG::mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs)
 {
-    std::unordered_map<std::string, const ActionsDAG::Node *> node_name_to_node;
-    for (auto & node : nodes)
-        node_name_to_node.emplace(node.result_name, &node);
+    NodeNameToNode node_name_to_node;
+    mergeNodes(std::move(second), node_name_to_node, out_outputs);
+}
+
+void ActionsDAG::mergeNodes(ActionsDAG && second, NodeNameToNode & node_name_to_node, NodeRawConstPtrs * out_outputs)
+{
+    if (node_name_to_node.empty())
+    {
+        for (auto & node : nodes)
+            node_name_to_node.emplace(node.result_name, &node);
+    }
 
     struct Frame
     {
@@ -3343,6 +3351,7 @@ void ActionsDAG::mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs
         auto node_to_move_it = second_node_it;
         ++second_node_it;
         nodes.splice(nodes.end(), second.nodes, node_to_move_it);
+        node_name_to_node.emplace(node_to_move_it->result_name, &*node_to_move_it);
 
         if (node_to_move_it->type == ActionType::INPUT)
             inputs.push_back(&(*node_to_move_it));
