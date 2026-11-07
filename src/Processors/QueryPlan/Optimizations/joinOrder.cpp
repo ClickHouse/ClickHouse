@@ -97,11 +97,18 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
         }
     }
 
-    /// Cap all NDVs at the estimated output rows.
+    /// Cap all NDVs at the estimated output rows. The estimate is not a proven row-count upper bound,
+    /// so an NDV reduced by it is no longer a proven upper bound either.
     if (cardinality_)
     {
         for (auto & [_, stats] : column_stats)
-            stats.num_distinct_values = std::min(stats.num_distinct_values, *cardinality_);
+        {
+            if (stats.num_distinct_values > *cardinality_)
+            {
+                stats.num_distinct_values = *cardinality_;
+                stats.ndv_provenance.add(EstimatedRowCountClamp);
+            }
+        }
     }
 }
 
