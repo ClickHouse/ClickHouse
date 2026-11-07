@@ -1,0 +1,22 @@
+<test>
+    <create_query>CREATE TABLE perf_has_chain (id UInt64, tags Array(String), tags_lc Array(LowCardinality(String)), nums Array(UInt64)) ENGINE = MergeTree ORDER BY id SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1</create_query>
+
+    <fill_query>
+        INSERT INTO perf_has_chain
+        SELECT number, tags, tags, arrayMap(x -> cityHash64(number, x) % 1000, range(3 + number % 8)) FROM (SELECT number, arrayMap(x -> concat('tag', toString(toUInt32(floor(pow(200000, (cityHash64(number, x) % 1000000) / 1000000.0))))), range(3 + number % 8)) AS tags FROM numbers(10000000))
+        SETTINGS max_insert_threads = 1
+    </fill_query>
+
+    <query>SELECT count(), sum(id) FROM perf_has_chain WHERE NOT has(tags, 'tag21598') AND NOT has(tags, 'tag90001') AND NOT has(tags, 'tag31337') AND NOT has(tags, 'tag77777')</query>
+    <query>SELECT count(), sum(id) FROM perf_has_chain WHERE NOT has(tags, 'tag20011') AND NOT has(tags, 'tag23918') AND NOT has(tags, 'tag27825') AND NOT has(tags, 'tag31732') AND NOT has(tags, 'tag35639') AND NOT has(tags, 'tag39546') AND NOT has(tags, 'tag43453') AND NOT has(tags, 'tag47360') AND NOT has(tags, 'tag51267') AND NOT has(tags, 'tag55174') AND NOT has(tags, 'tag59081') AND NOT has(tags, 'tag62988') AND NOT has(tags, 'tag66895') AND NOT has(tags, 'tag70802') AND NOT has(tags, 'tag74709') AND NOT has(tags, 'tag78616')</query>
+    <query>SELECT count(), sum(id) FROM perf_has_chain WHERE has(tags, 'tag21598') OR has(tags, 'tag90001') OR has(tags, 'tag31337') OR has(tags, 'tag77777')</query>
+    <query>SELECT count(), sum(id) FROM perf_has_chain WHERE NOT has(tags_lc, 'tag21598') AND NOT has(tags_lc, 'tag90001') AND NOT has(tags_lc, 'tag31337') AND NOT has(tags_lc, 'tag77777')</query>
+    <query>SELECT count(), sum(id) FROM perf_has_chain WHERE NOT has(tags_lc, 'tag20011') AND NOT has(tags_lc, 'tag23918') AND NOT has(tags_lc, 'tag27825') AND NOT has(tags_lc, 'tag31732') AND NOT has(tags_lc, 'tag35639') AND NOT has(tags_lc, 'tag39546') AND NOT has(tags_lc, 'tag43453') AND NOT has(tags_lc, 'tag47360') AND NOT has(tags_lc, 'tag51267') AND NOT has(tags_lc, 'tag55174') AND NOT has(tags_lc, 'tag59081') AND NOT has(tags_lc, 'tag62988') AND NOT has(tags_lc, 'tag66895') AND NOT has(tags_lc, 'tag70802') AND NOT has(tags_lc, 'tag74709') AND NOT has(tags_lc, 'tag78616')</query>
+
+    <query>SELECT count(), sum(id) FROM perf_has_chain WHERE NOT has(nums, 1) AND NOT has(nums, 2) AND NOT has(nums, 3) AND NOT has(nums, 4)</query>
+    <query>SELECT count(), sum(id) FROM perf_has_chain WHERE NOT has(nums, 1) AND NOT has(nums, 2) AND NOT has(nums, 3) AND NOT has(nums, 4) AND NOT has(nums, 5) AND NOT has(nums, 6) AND NOT has(nums, 7) AND NOT has(nums, 8) AND NOT has(nums, 9) AND NOT has(nums, 10) AND NOT has(nums, 11) AND NOT has(nums, 12) AND NOT has(nums, 13) AND NOT has(nums, 14) AND NOT has(nums, 15) AND NOT has(nums, 16)</query>
+
+    <query>SELECT count(), sum(id) FROM perf_has_chain WHERE NOT hasAny(tags, ['tag20011', 'tag23918']) AND NOT hasAny(tags, ['tag27825', 'tag31732']) AND NOT has(tags, 'tag35639') AND NOT has(tags, 'tag39546')</query>
+
+    <drop_query>DROP TABLE IF EXISTS perf_has_chain</drop_query>
+</test>

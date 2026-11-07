@@ -40,6 +40,7 @@
 #include <Analyzer/Passes/DistanceTransposedPartialReadsPass.h>
 #include <Analyzer/Passes/LikePerfectAffixRewritePass.h>
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
+#include <Analyzer/Passes/MergeHasChainToHasAnyPass.h>
 #include <Analyzer/Passes/MultiIfToIfPass.h>
 #include <Analyzer/Passes/NormalizeCountVariantsPass.h>
 #include <Analyzer/Passes/OptimizeDateOrDateTimeConverterWithPreimagePass.h>
@@ -309,6 +310,7 @@ void addQueryTreePasses(
     manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
     manager.addPass(std::make_unique<RewriteArrayFilterLengthToArrayCountPass>());
     manager.addPass(std::make_unique<RewriteHasToInPass>());
+    manager.addPass(std::make_unique<MergeHasChainToHasAnyPass>());
     manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
     manager.addPass(std::make_unique<DistanceTransposedPartialReadsPass>());
 
