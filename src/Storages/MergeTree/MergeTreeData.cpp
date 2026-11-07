@@ -12915,6 +12915,16 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
     return cache->emplace(this, createStorageSnapshot(metadata_snapshot, query_context, false)).first->second;
 }
 
+void MergeTreeData::discardSharedStorageSnapshot(const ContextPtr & query_context) const
+{
+    auto query_metadata_cache = query_context->getQueryMetadataCache();
+    if (!query_metadata_cache)
+        return;
+
+    auto [cache, lock] = query_metadata_cache->getStorageSnapshotCache();
+    cache->erase(this);
+}
+
 StorageSnapshotPtr
 MergeTreeData::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
