@@ -346,14 +346,26 @@ void addSourceAccessOfDiskFunction(const ASTFunction & function, AccessRightsEle
     }
 }
 
-void collectSourceAccess(const ASTPtr & ast, AccessRightsElements & res)
+/// Inside a `disk` setting value every `disk*` function is a disk, as `DiskConfigurationFlattener` builds them.
+void collectSourceAccessOfDiskDefinition(const ASTPtr & ast, AccessRightsElements & res)
 {
     checkStackSize();
     if (!ast)
         return;
     if (isDiskFunction(ast))
         addSourceAccessOfDiskFunction(ast->as<const ASTFunction &>(), res);
-    else if (const auto * set_query = ast->as<ASTSetQuery>())
+
+    for (const auto & child : ast->children)
+        collectSourceAccessOfDiskDefinition(child, res);
+}
+
+/// Only `disk` settings define disks: a `disk*` function elsewhere, e.g. a UDF in `ORDER BY`, is not one.
+void collectSourceAccess(const ASTPtr & ast, AccessRightsElements & res)
+{
+    checkStackSize();
+    if (!ast)
+        return;
+    if (const auto * set_query = ast->as<ASTSetQuery>())
         res.append_range(DiskFromAST::getSourceAccessOfSettings(set_query->changes));
 
     for (const auto & child : ast->children)
@@ -376,7 +388,7 @@ AccessRightsElements DiskFromAST::getSourceAccessOfSettings(const SettingsChange
     {
         CustomType custom;
         if (change.name == "disk" && change.value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
-            collectSourceAccess(dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast, res);
+            collectSourceAccessOfDiskDefinition(dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast, res);
     }
     return res;
 }

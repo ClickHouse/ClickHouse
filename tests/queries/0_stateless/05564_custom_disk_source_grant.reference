@@ -58,6 +58,9 @@ local_plain_rewritable: allowed
 1
 encrypted: allowed
 1
+U: a function named disk* outside a disk setting defines no disk
+allowed
+1
 G: with the S3 grant
 10
 I: include needs the grant on every source, even with an s3 type

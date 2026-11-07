@@ -53,7 +53,9 @@ function cleanup()
         DROP TABLE IF EXISTS t_05564_p SYNC;
         DROP TABLE IF EXISTS t_05564_q SYNC;
         DROP TABLE IF EXISTS t_05564_s SYNC;
+        DROP TABLE IF EXISTS t_05564_u SYNC;
         DROP TABLE IF EXISTS t_05564_z SYNC;
+        DROP FUNCTION IF EXISTS disk_05564_${DB};
         DROP DATABASE IF EXISTS ${OTHER_DB} SYNC;
         DROP USER IF EXISTS ${USER_NAME};"
 }
@@ -155,6 +157,11 @@ done
 echo "encrypted: $(as_user "CREATE TABLE t_05564_s ${TABLE} SETTINGS disk = disk(type = encrypted, key = '1234567812345678',
     path = '05564_s/', disk = disk(type = local, path = '${CLICKHOUSE_DISKS_FILES}/05564_s_encrypted_${DB}/'))")"
 $CLICKHOUSE_CLIENT -q "EXISTS TABLE t_05564_s"
+
+echo "U: a function named disk* outside a disk setting defines no disk"
+$CLICKHOUSE_CLIENT -q "CREATE FUNCTION disk_05564_${DB} AS (x) -> x"
+as_user "CREATE TABLE t_05564_u (id UInt64, type String) ENGINE = MergeTree ORDER BY (id, disk_05564_${DB}(type = 's3'))"
+$CLICKHOUSE_CLIENT -q "EXISTS TABLE t_05564_u"
 
 echo "G: with the S3 grant"
 $CLICKHOUSE_CLIENT -q "GRANT READ, WRITE ON S3 TO ${USER_NAME}"
