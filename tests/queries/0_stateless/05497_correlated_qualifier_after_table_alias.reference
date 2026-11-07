@@ -1,0 +1,23 @@
+11	22
+12	21
+13	22
+11	1
+12	0
+13	1
+11
+13
+2
+2
+21	12
+22	24
+2
+1	1
+2	2
+3	3
+4	4
+1	1
+2	2
+Nullable(UInt64)	Nullable(UInt64)
+Nullable(UInt64)	Nullable(UInt64)
+Nullable(UInt64)	Nullable(UInt64)
+6

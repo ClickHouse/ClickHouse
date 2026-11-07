@@ -127,6 +127,7 @@ namespace Setting
     extern const SettingsBool enable_identifier_resolve_cache;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_plan_based;
+    extern const SettingsBool prefer_outer_table_name_for_correlated_identifier;
 }
 
 
@@ -2526,6 +2527,31 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     auto table_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::TABLE_EXPRESSION};
     auto table_identifier_resolve_result = tryResolveIdentifier(table_identifier_lookup, scope, identifier_resolve_settings);
     auto table_expression_node = table_identifier_resolve_result.resolved_identifier;
+    auto * table_expression_scope = &scope;
+
+    /// A qualified matcher can refer to a table expression in a parent query scope, just like an
+    /// ordinary qualified column. General table-expression lookup intentionally excludes parent
+    /// join trees because table identifiers in `FROM` must not bind to an outer table. A matcher is
+    /// an expression, so after the current scope declines the qualifier, look through parent join
+    /// trees explicitly when standard correlation-name precedence is requested.
+    if (!table_expression_node
+        && scope.context->getSettingsRef()[Setting::prefer_outer_table_name_for_correlated_identifier])
+    {
+        for (auto * parent_scope = scope.parent_scope; parent_scope; parent_scope = parent_scope->parent_scope)
+        {
+            auto parent_resolve_result
+                = tryResolveIdentifierFromAliases(table_identifier_lookup, *parent_scope, identifier_resolve_settings);
+            if (!parent_resolve_result.resolved_identifier)
+                parent_resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(table_identifier_lookup, *parent_scope);
+            if (!parent_resolve_result.resolved_identifier)
+                continue;
+
+            table_identifier_resolve_result = std::move(parent_resolve_result);
+            table_expression_node = table_identifier_resolve_result.resolved_identifier;
+            table_expression_scope = parent_scope;
+            break;
+        }
+    }
 
     if (!table_expression_node)
     {
@@ -2589,7 +2615,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     }
 
     /// Check if the table is from the non-preserved side of a SEMI or ANTI JOIN
-    checkSemiAntiJoinTableAccess(table_expression_node, scope, matcher_node);
+    checkSemiAntiJoinTableAccess(table_expression_node, *table_expression_scope, matcher_node);
 
     NamesAndTypes matched_columns;
 
@@ -2622,10 +2648,56 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     auto result_matched_column_nodes_with_names = getMatchedColumnNodesWithNames(matcher_node,
         static_pointer_cast<ITableExpressionNode>(table_expression_node),
         matched_columns,
-        scope);
+        *table_expression_scope);
 
-    updateMatchedColumnsFromJoinUsing(
-        result_matched_column_nodes_with_names, /*is_qualified_matcher=*/ true, matcher_node_typed.getQualifiedIdentifier(), scope);
+    if (table_expression_scope != &scope)
+    {
+        /// Resolve every generated parent column through the same expression path as an explicit
+        /// `qualifier.column` reference. This applies `ARRAY JOIN`, nullable grouping-key, and
+        /// `JOIN USING` transformations in the scope that owns the table before the column is
+        /// registered as correlated in the current scope.
+        for (auto & [matched_column_node, column_name] : result_matched_column_nodes_with_names)
+        {
+            Identifier explicit_identifier = matcher_node_typed.getQualifiedIdentifier();
+            explicit_identifier.push_back(column_name);
+            auto explicit_lookup = IdentifierLookup{explicit_identifier, IdentifierLookupContext::EXPRESSION};
+            auto explicit_resolve_result = tryResolveIdentifier(explicit_lookup, *table_expression_scope, identifier_resolve_settings);
+            if (!explicit_resolve_result.resolved_identifier)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Qualified matcher {} resolved table {}, but its column {} could not be resolved in the owning scope",
+                    matcher_node->formatASTForErrorMessage(),
+                    table_expression_node->formatASTForErrorMessage(),
+                    column_name);
+
+            matched_column_node = explicit_resolve_result.resolved_identifier;
+            resolveExpressionNode(
+                matched_column_node,
+                *table_expression_scope,
+                false /*allow_lambda_expression*/,
+                false /*allow_table_expression*/);
+            node_to_projection_name.emplace(matched_column_node, explicit_identifier.getFullName());
+        }
+
+        bool has_correlated_columns = false;
+        for (const auto & column_with_name : result_matched_column_nodes_with_names)
+            has_correlated_columns |= checkCorrelatedColumn(&scope, column_with_name.first);
+
+        if (has_correlated_columns && !scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Qualified matcher {} resolved to correlated columns"
+                " (Enable `allow_correlated_subqueries` setting to allow correlated subqueries execution). In scope {}",
+                matcher_node->formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
+    }
+    else
+    {
+        updateMatchedColumnsFromJoinUsing(
+            result_matched_column_nodes_with_names,
+            /*is_qualified_matcher=*/ true,
+            matcher_node_typed.getQualifiedIdentifier(),
+            *table_expression_scope);
+    }
 
     return result_matched_column_nodes_with_names;
 }
