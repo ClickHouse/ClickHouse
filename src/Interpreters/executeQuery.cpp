@@ -134,6 +134,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageSet.h>
 #include <Interpreters/IInterpreter.h>
@@ -1615,6 +1616,10 @@ struct CollectTablesData
     bool global_with_statement;
     bool scopes_for_with_statement;
 
+    /// A private copy of `context`, created on first use, against which the nested `SETTINGS` changes of the
+    /// two settings above are clamped to the session's settings constraints (see `effectiveNestedScopeSetting`).
+    ContextMutablePtr constraints_context;
+
     /// The `WITH` aliases the analyzer keeps in `IdentifierResolveScope::global_with_aliases`: those declared
     /// by an enclosing select that runs with `enable_scopes_for_with_statement = 0`. They are copied into
     /// every nested scope, so they stay visible even where `enable_global_with_statement = 0` hides the
@@ -1835,6 +1840,10 @@ AccessRightsElements createQueryDestinationAccess(
 
     if (create.storage && create.storage->engine)
         required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
+
+    /// Settings that send the table's data elsewhere (e.g. the move destination of `S3Queue`/`AzureQueue`),
+    /// of the outer engine and of the inner engines, need the grants of that place.
+    required_access.append_range(StorageFactory::instance().getExportAccess(create));
 
     return required_access;
 }
@@ -3176,6 +3185,27 @@ void collectScopeAliasNames(const ASTPtr & ast, std::unordered_set<String> & ali
     }
 }
 
+/// The value a nested `SETTINGS` change of the boolean scope setting `change.name` takes effect with, given
+/// that the enclosing scope runs with `current`: the change clamped to the session's settings constraints, as
+/// `QueryTreeBuilder::applyQueryLevelSettings` clamps it. A forbidden change keeps `current`.
+bool effectiveNestedScopeSetting(CollectTablesData & data, const SettingChange & change, bool current)
+{
+    if (!data.constraints_context)
+        data.constraints_context = Context::createCopy(data.context);
+
+    /// A `CONST` constraint allows assigning the value in effect, so clamp against the enclosing scope's value.
+    data.constraints_context->setSetting(change.name, Field(current));
+
+    SettingsChanges single_change{change};
+    data.constraints_context->clampToSettingsConstraintsRejectingInvalidChanges(single_change, SettingSource::QUERY);
+
+    bool result = current;
+    for (const auto & clamped : single_change)
+        if (clamped.name == change.name)
+            result = SettingFieldBool(clamped.value).value;
+    return result;
+}
+
 /// Walk the AST and collect tables, tracking CTE scope so that an in-scope CTE name does not cause us to
 /// treat an unqualified table reference of the same name as a real table. `active_ctes` is passed by value
 /// so each `ASTSelectQuery`'s WITH names propagate only to its descendants, not to siblings or ancestors.
@@ -3228,10 +3258,17 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
 
         if (const auto * set_query = select->settings() ? select->settings()->as<ASTSetQuery>() : nullptr)
         {
-            if (const auto * value = set_query->changes.tryGet("enable_global_with_statement"))
-                data.global_with_statement = SettingFieldBool(*value).value;
-            if (const auto * value = set_query->changes.tryGet("enable_scopes_for_with_statement"))
-                data.scopes_for_with_statement = SettingFieldBool(*value).value;
+            /// Applied one change at a time and clamped to the settings constraints, exactly as
+            /// `QueryTreeBuilder::applyQueryLevelSettings` applies a nested `SETTINGS` clause: a change that a
+            /// `CONST`, `readonly`, or `MIN`/`MAX` constraint forbids is dropped or clamped there, so the scope
+            /// the analyzer resolves names in keeps the value the constraint allows.
+            for (const auto & change : set_query->changes)
+            {
+                if (change.name == "enable_global_with_statement")
+                    data.global_with_statement = effectiveNestedScopeSetting(data, change, data.global_with_statement);
+                else if (change.name == "enable_scopes_for_with_statement")
+                    data.scopes_for_with_statement = effectiveNestedScopeSetting(data, change, data.scopes_for_with_statement);
+            }
         }
 
         /// With `enable_global_with_statement = 0` the analyzer does not look up CTEs or aliases across a
