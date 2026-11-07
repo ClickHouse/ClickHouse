@@ -9031,6 +9031,11 @@ void Context::shutdown() TSA_NO_THREAD_SAFETY_ANALYSIS
     shared->shutdown();
 }
 
+bool Context::isShutdownCalled() const
+{
+    return shared->shutdown_called;
+}
+
 
 Context::ApplicationType Context::getApplicationType() const
 {
