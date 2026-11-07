@@ -354,17 +354,30 @@ bool referencesAlias(const ASTPtr & node, const IAST * excluded, const String & 
     return false;
 }
 
-bool referencesProjectionAlias(const ASTPtr & node, const ASTIdentifier & identifier)
+bool definesAliasInQueryScope(const ASTPtr & node, const String & identifier_name, const IAST * excluded)
 {
-    if (node.get() == &identifier)
+    if (node.get() == excluded)
         return false;
 
     const auto & alias = node->tryGetAlias();
-    if (!alias.empty() && (identifier.name() == alias || identifier.name().starts_with(alias + ".")))
+    if (!alias.empty() && (identifier_name == alias || identifier_name.starts_with(alias + ".")))
         return true;
 
+    /// An alias on a subquery expression belongs to this scope, but aliases inside its body do not.
+    if (node->as<ASTSubquery>() || node->as<ASTSelectQuery>() || node->as<ASTSelectWithUnionQuery>())
+        return false;
+
     for (const auto & child : node->children)
-        if (referencesProjectionAlias(child, identifier))
+        if (definesAliasInQueryScope(child, identifier_name, excluded))
+            return true;
+
+    return false;
+}
+
+bool referencesQueryScopeAlias(const ASTSelectQuery & select, const String & identifier_name, const IAST * excluded)
+{
+    for (const auto & child : select.children)
+        if (definesAliasInQueryScope(child, identifier_name, excluded))
             return true;
 
     return false;
@@ -373,6 +386,7 @@ bool referencesProjectionAlias(const ASTPtr & node, const ASTIdentifier & identi
 struct DirectViewProjection
 {
     const ASTIdentifier * identifier = nullptr;
+    const ASTSelectQuery * query_scope = nullptr;
     StorageSnapshotPtr underlying_snapshot;
 };
 
@@ -413,10 +427,10 @@ std::optional<DirectViewProjection> getDirectViewProjection(
         if (!source_column || !source_column->type->equals(*view_column->type))
             return {};
 
-        /// An input identifier may bind another projection's alias rather than the physical column,
-        /// e.g. `SELECT y AS x, x AS m FROM t`. Leave alias binding to the analyzer, including
+        /// An input identifier may bind another alias in the query scope rather than the physical column,
+        /// e.g. `SELECT x AS m FROM t WHERE notEmpty(y AS x)`. Leave alias binding to the analyzer, including
         /// `prefer_column_name_to_alias`, instead of assuming the identifier names the stored column.
-        if (referencesProjectionAlias(select->select(), *identifier))
+        if (referencesQueryScopeAlias(*select, identifier->name(), identifier))
             return {};
 
         /// The rewrite replaces the projection, and its alias with it, so other expressions
@@ -431,7 +445,7 @@ std::optional<DirectViewProjection> getDirectViewProjection(
     if (!result)
         return {};
 
-    return DirectViewProjection{result, std::move(underlying_snapshot)};
+    return DirectViewProjection{result, select, std::move(underlying_snapshot)};
 }
 
 /// True if `<source column>.<subcolumn_name>` in the underlying table is the key subcolumn of the Map
@@ -442,6 +456,12 @@ bool sourceHasMapKeySubcolumn(
     const auto & source_column_name = projection.identifier->getColumnName();
     auto full_name = source_column_name + "." + subcolumn_name;
     const auto & snapshot = *projection.underlying_snapshot;
+
+    /// `rewriteViewProjectionToSubcolumn` drops the qualifier with `setShortName`, and the generated
+    /// identifier is resolved again in the view's alias scope, where `x.key_k` may itself be an alias.
+    auto rewritten_name = projection.identifier->shortName() + "." + subcolumn_name;
+    if (referencesQueryScopeAlias(*projection.query_scope, rewritten_name, projection.identifier))
+        return false;
 
     if (snapshot.tryGetColumn(GetColumnsOptions::All, full_name))
         return false;
