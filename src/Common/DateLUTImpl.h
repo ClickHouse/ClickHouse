@@ -2068,26 +2068,18 @@ public:
 
     TimeComponents toTimeComponents(Time t) const
     {
+        constexpr Time max_time = 1000 * 3600 - 1;
+
         TimeComponents res;
+        res.is_negative = t < 0;
 
-        bool is_negative = false;
-
-        if (unlikely(t < 0))
-        {
-            is_negative = true;
+        t = std::clamp(t, -max_time, max_time);
+        if (res.is_negative)
             t = -t;
-        }
 
-        // Cap at 3599999 seconds (999:59:59)
-        if (unlikely(t > 3599999))
-            t = 3599999;
-
-        res.second = t % 60;
-        res.minute = t / 60 % 60;
         res.hour = t / 3600;
-
-        res.is_negative = is_negative;
-
+        res.minute = t / 60 % 60;
+        res.second = t % 60;
         return res;
     }
 

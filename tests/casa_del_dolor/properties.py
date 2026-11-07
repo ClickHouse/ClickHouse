@@ -680,6 +680,12 @@ object_storages_properties = {
     "web": {},
 }
 
+# Object storage elements that only one metadata storage reads: the server rejects them on any other.
+metadata_type_properties = {
+    "metadata_keep_free_space_bytes": {"local"},
+    "object_metadata_cache_size": {"plain"},
+}
+
 s3_with_keeper_properties = {
     "metadata_cache_cleanup_interval": threshold_generator(0.2, 0.2, 1, 60),
     "metadata_cache_enabled": true_false_lambda,
@@ -756,13 +762,31 @@ policy_properties = {
 
 
 all_disks_properties = {
-    "description": lambda: generate_xml_safe_string(random.randint(1, 1024)),
-    "keep_free_space_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
-    "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
-    "perform_ttl_move_on_insert": true_false_lambda,
-    "readonly": lambda: 1 if random.randint(0, 9) < 2 else 0,
     # "skip_access_check": true_false_lambda, may break the startup
     "thread_pool_size": no_zero_threads_lambda,
+}
+
+# The server rejects a disk element that its disk type does not read, so these go only to the
+# kinds that read them (`object_storage/<type>` for an object storage disk).
+disk_kind_properties = {
+    "keep_free_space_bytes": (
+        threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+        {"local", "object_storage/local"},
+    ),
+    "min_bytes_for_seek": (
+        threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+        {"object_storage/azure"},
+    ),
+    "readonly": (
+        lambda: 1 if random.randint(0, 9) < 2 else 0,
+        {
+            "object_storage/local",
+            "object_storage/s3",
+            "object_storage/s3_with_keeper",
+            "object_storage/azure",
+            "s3_with_keeper",
+        },
+    ),
 }
 
 
@@ -840,6 +864,28 @@ def remove_element(property_element: ET.Element, elem: str):
     remove_xml.text = ""
 
 
+def get_cache_setting(cache_element: ET.Element, name: str, default: str) -> str:
+    element = cache_element.find(name)
+    if element is None or element.get("remove") is not None or not element.text:
+        return default
+    return element.text
+
+
+def set_cache_setting(cache_element: ET.Element, name: str, value: str):
+    element = cache_element.find(name)
+    if element is None:
+        element = ET.SubElement(cache_element, name)
+    element.attrib.pop("remove", None)
+    element.text = value
+
+
+def parse_cache_size(text: str) -> int:
+    for suffix, multiplier in (("Ki", 1 << 10), ("Mi", 1 << 20), ("Gi", 1 << 30), ("Ti", 1 << 40)):
+        if text.endswith(suffix):
+            return int(text[: -len(suffix)]) * multiplier
+    return int(text)
+
+
 def normalize_cache_properties(cache_element: ET.Element):
     # `FileCacheSettings::validate` rejects split cache with overcommit policies.
     use_split_cache = cache_element.find("use_split_cache")
@@ -851,6 +897,30 @@ def normalize_cache_properties(cache_element: ET.Element):
         and cache_policy.text in ("LRU_OVERCOMMIT", "SLRU_OVERCOMMIT")
     ):
         use_split_cache.text = "0"
+
+    # `FileCacheSettings::validate` rejects an SLRU cache whose file segment does not fit
+    # each SLRU queue (of both parts with `use_split_cache`), so shrink the file segment.
+    if get_cache_setting(cache_element, "cache_policy", "SLRU") in ("SLRU", "SLRU_OVERCOMMIT"):
+        # The same rounding as `std::lround` and `std::clamp` in `FileCacheSettings::validate`.
+        get_ratio = lambda total, ratio: int(total * min(max(ratio, 0.0), 1.0) + 0.5)
+        max_size = parse_cache_size(get_cache_setting(cache_element, "max_size", "0"))
+        ratio = float(get_cache_setting(cache_element, "slru_size_ratio", "0.6"))
+        parts = [max_size]
+        if get_cache_setting(cache_element, "use_split_cache", "0") == "1":
+            system_ratio = float(get_cache_setting(cache_element, "split_cache_ratio", "0.1"))
+            parts = [get_ratio(max_size, 1 - system_ratio), get_ratio(max_size, system_ratio)]
+        smallest_queue_size = min(min(get_ratio(part, ratio), get_ratio(part, 1 - ratio)) for part in parts)
+
+        max_file_segment_size = parse_cache_size(
+            get_cache_setting(cache_element, "max_file_segment_size", str(32 << 20))
+        )
+        if 0 < smallest_queue_size < max_file_segment_size:
+            set_cache_setting(cache_element, "max_file_segment_size", str(smallest_queue_size))
+            boundary_alignment = parse_cache_size(
+                get_cache_setting(cache_element, "boundary_alignment", str(4 << 20))
+            )
+            if boundary_alignment > smallest_queue_size:
+                set_cache_setting(cache_element, "boundary_alignment", str(smallest_queue_size))
 
 
 def add_single_cluster(
@@ -1027,8 +1097,12 @@ def add_single_disk(
             allowed_path_xml = ET.SubElement(backups_element, "allowed_path")
             allowed_path_xml.text = f"/var/lib/clickhouse/disk{i}/"
 
-        # Add a endpoint_subpath
-        if metadata_type == "plain_rewritable" and random.randint(1, 100) <= 70:
+        # Add a endpoint_subpath, read only by the S3 and Azure object storages
+        if (
+            metadata_type == "plain_rewritable"
+            and object_storage_type in ("s3", "s3_with_keeper", "azure")
+            and random.randint(1, 100) <= 70
+        ):
             endpoint_subpath_xml = ET.SubElement(next_disk, "endpoint_subpath")
             endpoint_subpath_xml.text = (
                 f"node{random.choice(range(0, len(args.replica_values)))}"
@@ -1039,9 +1113,12 @@ def add_single_disk(
             "s3" if object_storage_type == "s3_with_keeper" else object_storage_type
         )
         if object_storages_properties[dict_entry] and random.randint(1, 100) <= 70:
-            apply_properties_recursively(
-                next_disk, object_storages_properties[dict_entry]
-            )
+            storage_properties = {
+                name: generator
+                for name, generator in object_storages_properties[dict_entry].items()
+                if metadata_type in metadata_type_properties.get(name, {metadata_type})
+            }
+            apply_properties_recursively(next_disk, storage_properties)
         if (
             is_private_binary
             and (object_storage_type == "s3_with_keeper" or metadata_type == "keeper")
@@ -1080,7 +1157,7 @@ def add_single_disk(
             # Add random settings
             if random.randint(1, 100) <= 70:
                 apply_properties_recursively(next_disk, cache_storage_properties)
-                normalize_cache_properties(next_disk)
+            normalize_cache_properties(next_disk)
         else:
             enc_algorithm = random.choice(["aes_128_ctr", "aes_192_ctr", "aes_256_ctr"])
             algorithm_xml = ET.SubElement(next_disk, "algorithm")
@@ -1099,7 +1176,16 @@ def add_single_disk(
                 )
 
     if disk_type != "cache" and random.randint(1, 100) <= 50:
-        apply_properties_recursively(next_disk, all_disks_properties)
+        kind = (
+            f"object_storage/{final_type}"
+            if disk_type == "object_storage"
+            else disk_type
+        )
+        disk_properties = dict(all_disks_properties)
+        for name, (generator, kinds) in disk_kind_properties.items():
+            if kind in kinds:
+                disk_properties[name] = generator
+        apply_properties_recursively(next_disk, disk_properties)
     return (prev_disk, final_type, final_super_type, final_metadata_type)
 
 
@@ -1278,7 +1364,7 @@ def add_single_cache(i: int, next_cache: ET.Element):
     # Add random settings
     if random.randint(1, 100) <= 70:
         apply_properties_recursively(next_cache, cache_storage_properties)
-        normalize_cache_properties(next_cache)
+    normalize_cache_properties(next_cache)
 
 
 class CachePropertiesGroup(PropertiesGroup):

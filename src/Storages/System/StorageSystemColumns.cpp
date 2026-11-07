@@ -8,6 +8,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -59,6 +60,8 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
         { "is_in_primary_key",   std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the column is in the primary key expression."},
         { "is_in_sampling_key",  std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the column is in the sampling key expression."},
         { "compression_codec",   std::make_shared<DataTypeString>(), "Compression codec name."},
+        { "subcolumn_codecs",    std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()),
+            "Compression codecs declared for subcolumns of the column, by the subcolumn name relative to the column."},
         { "character_octet_length",     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Maximum length in bytes for binary data, character data, or text data and images. In ClickHouse makes sense only for FixedString data type. Otherwise, the NULL value is returned."},
         { "numeric_precision",          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
@@ -173,7 +176,7 @@ protected:
                     chain_granted = alias->filterColumnsGrantedThroughChain(context, AccessType::SHOW_COLUMNS, all_columns);
                 }
 
-                const bool needs_column_metadata = columns_mask[7] || columns_mask[8] || columns_mask[9] || columns_mask[21];
+                const bool needs_column_metadata = columns_mask[7] || columns_mask[8] || columns_mask[9] || columns_mask[22];
                 bool can_expose_any_column_metadata = !needs_column_metadata;
                 if (needs_column_metadata)
                 {
@@ -203,7 +206,7 @@ protected:
                 if (columns_mask[14])
                     cols_required_for_sampling = metadata_snapshot->getColumnsRequiredForSampling();
 
-                if (can_expose_any_column_metadata && columns_mask[21])
+                if (can_expose_any_column_metadata && columns_mask[22])
                 {
                     if (auto hints = storage->tryGetSerializationHints())
                         serialization_hints = std::move(*hints);
@@ -302,6 +305,14 @@ protected:
                         res_columns[res_index++]->insert(column.codec->formatForLogging());
                     else
                         res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    Map subcolumn_codecs;
+                    for (const auto & [subcolumn_name, codec] : column.subcolumn_codecs)
+                        subcolumn_codecs.push_back(Tuple{subcolumn_name, codec->formatForLogging()});
+                    res_columns[res_index++]->insert(subcolumn_codecs);
                 }
 
                 /// character_octet_length makes sense for FixedString only

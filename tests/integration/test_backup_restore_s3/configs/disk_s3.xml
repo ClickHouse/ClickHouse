@@ -58,6 +58,14 @@
                     </main>
                 </volumes>
             </policy_s3_plain>
+            <policy_s3_plain_backup_metadata_only>
+                <volumes>
+                    <main>
+                        <disk>disk_s3_plain</disk>
+                    </main>
+                </volumes>
+                <backup_metadata_only>true</backup_metadata_only>
+            </policy_s3_plain_backup_metadata_only>
             <policy_s3_plain_rewritable>
                 <volumes>
                     <main>

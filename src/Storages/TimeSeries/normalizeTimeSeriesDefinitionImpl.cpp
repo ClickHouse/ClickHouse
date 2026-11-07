@@ -555,6 +555,12 @@ namespace
         if (new_version < TimeSeriesVersion::MIN_WITH_ID_TYPE_SETTING)
             old_settings.removeSetting("id_type");
 
+        /// The `id` type and the expression generating identifiers are declared in the inner columns from version
+        /// MIN_WITHOUT_ID_SETTINGS (see TimeSeriesVersion.h), so the settings declaring them aren't copied into a table of
+        /// that version: the `id` type is still inherited through the resolved types, the expression is generated for it.
+        if (new_version >= TimeSeriesVersion::MIN_WITHOUT_ID_SETTINGS)
+            old_settings.removeSettings({"id_type", "id_generator"});
+
         /// The same for the settings of the deduplication caches which exist from version 7.
         if (new_version < TimeSeriesVersion::MIN_WITH_DEDUPLICATION_CACHES)
             old_settings.removeSettings({"metric_families_deduplication_cache_size_bytes", "metric_families_deduplication_cache_expiration_seconds",
@@ -1728,13 +1734,25 @@ namespace
 
     /// Checks that a target table or an inner-columns list has all the columns required by the
     /// TimeSeries table engine, and that those columns match the resolved types.
+    /// `is_external` is set for an external target table, then `table_id` is the name of that table.
     void checkTargetTable(
         const ColumnsDescription & target_table_columns,
         ViewTarget::Kind target_kind,
+        bool is_external,
         const TimeSeriesSettings & time_series_settings,
         const ResolvedTimeSeriesTypes & resolved_types,
         const StorageID & table_id)
     {
+        /// A table of version MIN_WITHOUT_EXTERNAL_TARGETS or later can have inner target tables only (see TimeSeriesVersion.h),
+        /// an existing table keeps the external target tables of its version.
+        if (is_external && (time_series_settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITHOUT_EXTERNAL_TARGETS))
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "The {} target refers to the external table {}, but a table of version {} can have inner target tables only "
+                "(external target tables are supported for version {} and earlier); "
+                "use the INNER COLUMNS and INNER ENGINE clauses to customize the inner table instead",
+                target_kind, table_id.getNameForLogs(), time_series_settings[TimeSeriesSetting::version].value,
+                TimeSeriesVersion::MIN_WITHOUT_EXTERNAL_TARGETS - 1);
+
         auto check_column = [&](std::string_view column_name)
         {
             if (!target_table_columns.tryGet(String(column_name)))
@@ -2056,20 +2074,11 @@ namespace
                 }
             }
 
+            /// An external target of the old table (a table of version 9 or earlier could have one) has no inner engine
+            /// and isn't copied: the new table gets an inner target instead, generated unless the query declares it.
             if (!hasTargetTableID(create_query, kind) && !hasInnerEngine(create_query, kind))
             {
-                if (hasTargetTableID(old_create_query, kind))
-                {
-                    /// An external target of the old table is not copied, but the query can declare an inner target
-                    /// instead by its columns, then the engine is generated.
-                    if (!hasInnerColumns(create_query, kind))
-                    {
-                        StorageID old_table_id{old_create_query.getDatabase(), old_create_query.getTable()};
-                        throw Exception(ErrorCodes::INCORRECT_QUERY,
-                            "Cannot CREATE a table AS {} because it has external tables", old_table_id.getNameForLogs());
-                    }
-                }
-                else if (const auto * old_inner_engine = old_create_query.getTargetInnerEngine(kind))
+                if (const auto * old_inner_engine = old_create_query.getTargetInnerEngine(kind))
                 {
                     auto new_inner_engine = boost::static_pointer_cast<ASTStorage>(old_inner_engine->clone());
                     removeInnerEngineKeysDisabledByNewSettings(*new_inner_engine, kind, new_settings);
@@ -2275,7 +2284,7 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
             if (hasTargetTableID(create_query, kind))
             {
                 /// An external target table is specified - check it has all the required columns.
-                checkTargetTable(get_external_target_columns(kind), kind, settings, resolved_types, create_query.getTargetTableID(kind));
+                checkTargetTable(get_external_target_columns(kind), kind, /* is_external = */ true, settings, resolved_types, create_query.getTargetTableID(kind));
             }
             else
             {
@@ -2287,7 +2296,7 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
                     create_query.setTargetInnerColumns(kind, inner_columns);
 
                 /// Validate the user-provided types of the inner columns the same way external targets are validated.
-                checkTargetTable(getInnerColumnsDescription(*inner_columns, kind, table_id), kind, settings, resolved_types, table_id);
+                checkTargetTable(getInnerColumnsDescription(*inner_columns, kind, table_id), kind, /* is_external = */ false, settings, resolved_types, table_id);
 
                 auto inner_engine = create_query.getTargetInnerEngine(kind)
                     ? boost::static_pointer_cast<ASTStorage>(create_query.getTargetInnerEngine(kind)->clone())
@@ -2306,8 +2315,10 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
         checkInnerEnginesReplicationTypesMatch(create_query, table_id);
 
         /// Record `id_type` and `id_generator` in the SETTINGS clause if they aren't kept in the definition otherwise.
-        /// A table pinned to an earlier version is written the way that version did it, without the settings.
-        if (create_query.storage && (settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_ID_TYPE_SETTING))
+        /// A table pinned to an earlier version is written the way that version did it, without the settings,
+        /// and a table of version MIN_WITHOUT_ID_SETTINGS or later keeps them in the inner columns only (see TimeSeriesVersion.h).
+        if (create_query.storage && (settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_ID_TYPE_SETTING)
+            && (settings[TimeSeriesSetting::version] < TimeSeriesVersion::MIN_WITHOUT_ID_SETTINGS))
         {
             bool tags_are_external = hasTargetTableID(create_query, ViewTarget::Tags);
             recordIdTypeAndIdGenerator(

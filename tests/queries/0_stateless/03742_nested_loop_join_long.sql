@@ -66,7 +66,6 @@ INSERT INTO attributes2 SELECT 32 AS EventId, 32 AS OtherId, 'Attribute_Dup' AS 
 INSERT INTO attributes2 SELECT 1_000_001 AS EventId, NULL AS OtherId, 'Attribute_Dup' AS Attribute;
 
 SET query_plan_join_swap_table = 0;
-SET enable_analyzer = 1;
 SET join_algorithm = 'direct';
 SET min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
 

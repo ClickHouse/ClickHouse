@@ -6,7 +6,6 @@
 -- NULL handling, and join mask (ON condition) paths.
 
 SET join_algorithm = 'hash';
-SET allow_experimental_analyzer = 1;
 SET session_timezone = 'UTC';
 
 -- ============================================================

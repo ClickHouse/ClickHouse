@@ -13,7 +13,6 @@ CREATE TABLE t_skip_index_insert
 )
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns=0;
 
-SET enable_analyzer = 1;
 SET materialize_skip_indexes_on_insert = 0;
 SET use_skip_indexes_on_data_read = 1;
 SET optimize_move_to_prewhere = 1;

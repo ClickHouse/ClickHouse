@@ -1,6 +1,7 @@
 #include <Columns/Collator.h>
 #include <Core/Field.h>
 #include <Core/SortDescription.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/TypeTree.h>
 #include <Functions/IFunction.h>
@@ -311,12 +312,14 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
     /// path behind an explicit opt-in. Nullable and Tuple of fixed-length types are still
     /// considered fixed-length (haveMaximumSizeOfValue forwards through them).
     const bool sort_column_is_variable_length = !sort_column.type->haveMaximumSizeOfValue();
+    const bool single_string_sort_column = num_sort_columns == 1 && settings.use_top_k_dynamic_filtering_for_single_string_sort_column
+        && isString(removeNullable(sort_column.type));
     const auto * sort_column_tuple_type = typeid_cast<const DataTypeTuple *>(sort_column.type.get());
     bool use_dynamic_filtering = settings.use_top_k_dynamic_filtering
         && !isDynamic(sort_column.type)
         && !isVariant(sort_column.type)
         && (!sort_column_tuple_type || !sort_column_tuple_type->getElements().empty())
-        && (!sort_column_is_variable_length || settings.use_top_k_dynamic_filtering_for_variable_length_types);
+        && (!sort_column_is_variable_length || settings.use_top_k_dynamic_filtering_for_variable_length_types || single_string_sort_column);
 
     /// Refused before stamping: `applyParallelReplicas` keeps a stamped read local even if no filter is added later.
     if (use_dynamic_filtering && actions_depend_on_block)
@@ -354,6 +357,8 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
     if (use_skip_index || use_dynamic_filtering)
     {
         TopKFilterInfo info{sort_column_name, sort_column.type, num_sort_columns, n, sort_col_desc.direction, where_clause, threshold_tracker, /*condition_hash=*/ 0, /*dynamic_filter_pending=*/ use_dynamic_filtering};
+        if (use_dynamic_filtering && single_string_sort_column)
+            info.rows_equal_to_threshold_dropped = std::make_shared<std::atomic<bool>>(false);
 
         /// Used by `updateQueryConditionCache` to partition QCC entries by TopK plan.
         info.condition_hash = topKPlanHash(info.column_name, info.data_type, info.num_sort_columns, info.limit_n, sort_col_desc);
@@ -376,7 +381,8 @@ static bool hasResultNameClash(const ActionsDAG & dag, const ActionsDAG::Node * 
 
 PrewhereInfoPtr buildTopKDynamicFilterPrewhere(const PrewhereInfoPtr & existing_prewhere_info, const TopKFilterInfo & top_k_filter_info)
 {
-    auto filter_function = DB::createInternalFunctionTopKFilterResolver(top_k_filter_info.threshold_tracker);
+    auto filter_function = DB::createInternalFunctionTopKFilterResolver(
+        top_k_filter_info.threshold_tracker, top_k_filter_info.rows_equal_to_threshold_dropped);
 
     auto prewhere_info = std::make_shared<PrewhereInfo>();
     if (existing_prewhere_info)
@@ -484,6 +490,11 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     const auto & top_k_filter_info = *read_from_mergetree_step->getTopKFilterInfo();
     read_from_mergetree_step->clearPendingTopKDynamicFilter();
 
+    /// A projection read inherits the stamp but reads a stored `_part_offset` as `_parent_part_offset`.
+    const auto & read_columns = read_from_mergetree_step->getAllColumnNames();
+    if (std::ranges::find(read_columns, top_k_filter_info.column_name) == read_columns.end())
+        return;
+
     auto initial_header = read_from_mergetree_step->getOutputHeader();
 
     auto prewhere_info = buildTopKDynamicFilterPrewhere(read_from_mergetree_step->getPrewhereInfo(), top_k_filter_info);
@@ -493,6 +504,13 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     /// The reader resolves the prewhere column by name and then removes it, so the name must not be one the read produces.
     if (initial_header->has(prewhere_info->prewhere_column_name))
         return;
+
+    /// Nor the threshold filter's: the reader does not read a column after PREWHERE when a PREWHERE step
+    /// computes a node of the same name.
+    for (const auto & dag_node : prewhere_info->prewhere_actions.getNodes())
+        if (dag_node.type == ActionsDAG::ActionType::FUNCTION && dag_node.function_base
+            && dag_node.function_base->getName() == "__topKFilter" && initial_header->has(dag_node.result_name))
+            return;
 
     read_from_mergetree_step->updatePrewhereInfo(prewhere_info);
     auto updated_header = read_from_mergetree_step->getOutputHeader();

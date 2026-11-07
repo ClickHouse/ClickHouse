@@ -15,7 +15,7 @@ insert into X (id, x_a, x_b) select number, toString(number), toString(-number) 
 insert into Y (id, y_a) values      (1, 'r1'), (1, 'r2'), (2, 'r3'), (3, 'r4'), (3, 'r5');
 insert into Y (id, y_a, y_b) values (4, 'r6', 'nr6'), (6, 'r7', 'nr7'), (7, 'r8', 'nr8'), (9, 'r9', 'nr9');
 
-set enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+set enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 
 -- Pin the settings that the flaky/stress randomizer changes and that would otherwise alter the plan:
 -- with automatic_parallel_replicas_mode=2 only statistics are collected and parallel replicas are not

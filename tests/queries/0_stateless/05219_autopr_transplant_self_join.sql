@@ -22,7 +22,6 @@ INSERT INTO t_transplant_self SELECT number, number FROM numbers(300000);
 -- happened to be split.
 OPTIMIZE TABLE t_transplant_self FINAL;
 
-SET enable_analyzer = 1;
 -- Each side has to be pruned by its own key condition - that is what the transplant must carry over -
 -- and not by a filter built from the other side at runtime.
 SET enable_join_runtime_filters = 0;

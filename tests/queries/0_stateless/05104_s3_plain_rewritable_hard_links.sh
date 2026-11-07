@@ -12,7 +12,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # into the mutated part, so the two parts share the blobs. A readonly reader on the same endpoint sees the mutated data.
 
 endpoint="http://localhost:11111/test/${CLICKHOUSE_TEST_UNIQUE_NAME}/"
-disk_args="type = s3_plain_rewritable, endpoint = '${endpoint}', access_key_id = clickhouse, secret_access_key = clickhouse, enable_hard_links = 1"
+# `metadata_snapshot_write_delay_ms = 0`: the writer rewrites the snapshot right after every commit, so the readonly disks see the latest state.
+disk_args="type = s3_plain_rewritable, endpoint = '${endpoint}', access_key_id = clickhouse, secret_access_key = clickhouse, enable_hard_links = 1, metadata_snapshot_write_delay_ms = 0"
 
 ${CLICKHOUSE_CLIENT} -m --query "
 DROP TABLE IF EXISTS writer SYNC;

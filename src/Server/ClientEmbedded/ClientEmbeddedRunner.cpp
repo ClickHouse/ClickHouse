@@ -71,6 +71,12 @@ void ClientEmbeddedRunner::clientRoutine(NameToNameMap envs, String starting_que
         auto descr = client_descriptors->getDescriptorsForClient();
         auto stre = client_descriptors->getStreamsForClient();
         ClientEmbedded client(std::move(db_session), descr.in, descr.out, descr.err, stre.in, stre.out, stre.err);
+        client.setWaitingForQueryInputCallback([this](bool waiting)
+        {
+            if (waiting)
+                prompts_count.fetch_add(1);
+            waiting_for_query_input.store(waiting);
+        });
         exit_code = client.run(envs, starting_query);
     }
     catch (...)

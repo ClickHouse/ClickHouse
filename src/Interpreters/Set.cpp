@@ -1154,7 +1154,12 @@ MergeTreeSetIndex::FieldValueRanges & MergeTreeSetIndex::getFieldValueRangesBuff
   * 1: the intersection of the set and the range is non-empty
   * 2: the range contains elements not in the set
   */
-BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_sparse_pos, const Ranges & sparse_key_ranges, const DataTypes & sparse_data_types, bool single_point) const
+BoolMask MergeTreeSetIndex::checkInRange(
+    const std::vector<int> & key_col_to_sparse_pos,
+    const Ranges & sparse_key_ranges,
+    const DataTypes & sparse_data_types,
+    size_t first_function_number,
+    bool single_point) const
 {
     auto get_sparse_info = [&](size_t key_column) -> std::pair<bool, size_t>
     {
@@ -1167,8 +1172,12 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
 
     FieldValueRanges scratch;
     FieldValueRanges & ranges = getFieldValueRangesBuffer(scratch);
+    size_t function_number = first_function_number;
     for (size_t i = 0; i < tuple_size; ++i)
     {
+        const size_t mapping_first_function_number = function_number;
+        function_number += indexes_mapping[i].functions.size();
+
         size_t key_column = indexes_mapping[i].key_index;
         auto [is_key_col_present, sparse_pos] = get_sparse_info(key_column);
 
@@ -1192,6 +1201,7 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
         std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
             sparse_key_ranges[sparse_pos],
             indexes_mapping[i].functions,
+            mapping_first_function_number,
             sparse_data_types[sparse_pos],
             single_point);
 
@@ -1321,20 +1331,25 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
     return {can_be_true, true};
 }
 
-BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTypes & data_types, bool single_point) const
+BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTypes & data_types, size_t first_function_number, bool single_point) const
 {
     size_t tuple_size = indexes_mapping.size();
 
     FieldValueRanges scratch;
     FieldValueRanges & ranges = getFieldValueRangesBuffer(scratch);
+    size_t function_number = first_function_number;
     for (size_t i = 0; i < tuple_size; ++i)
     {
+        const size_t mapping_first_function_number = function_number;
+        function_number += indexes_mapping[i].functions.size();
+
         if (indexes_mapping[i].key_index >= key_ranges.size())
             return {true, true};
 
         std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
             key_ranges[indexes_mapping[i].key_index],
             indexes_mapping[i].functions,
+            mapping_first_function_number,
             data_types[indexes_mapping[i].key_index],
             single_point);
 

@@ -421,9 +421,12 @@ void DiskLocal::prepareRead(
         && settings.local_fs_settings.method != LocalFSReadMethod::mmap;
 
     {
-        /// Use the same estimated size basis as createReadBufferFromFileBase:
-        /// read_hint first, then file_size. A large file with a small read_hint
-        /// won't trigger O_DIRECT, so page cache remains safe.
+        /// Legacy pipeline: selection is read_hint-based (0 when absent), so falling back to
+        /// file_size is a conservative upper bound when there is no hint. The optional reader
+        /// executor is different: LocalSourceReader selects by file_size and ignores read_hint,
+        /// so this expression is not an upper bound for that path (a small hint can hide a large
+        /// file). This check predates the current change; it only decides whether the userspace
+        /// page cache may coexist with an unaligned page-cache block size.
         size_t estimated_size = read_hint.value_or(file_size);
         if (use_page_cache && settings.local_fs_settings.direct_io_threshold
             && estimated_size >= settings.local_fs_settings.direct_io_threshold

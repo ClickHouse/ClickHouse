@@ -5,8 +5,6 @@
 -- and an enclosing Nullable can wrap the automatic subcolumn. Every query below must give the same
 -- answer with the optimization on and off.
 
-SET enable_analyzer = 1;
-
 -- A Tuple element named `<sibling>.<automatic name>` claims the sibling's automatic subcolumn.
 -- Memory, because the Map cases collide on file names in MergeTree.
 

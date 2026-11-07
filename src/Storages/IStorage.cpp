@@ -59,7 +59,7 @@ IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadat
 {
     const String type_str = type == RWLockImpl::Type::Read ? "READ" : "WRITE";
     throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
-        "{} locking attempt on \"{}\" has timed out! ({}ms) Possible deadlock avoided. Client should retry. Owner query ids: {}",
+        "{} locking attempt on \"{}\" has timed out ({}ms) Possible deadlock avoided. Client should retry. Owner query ids: {}",
         type_str, getStorageID(), acquire_timeout.totalMilliseconds(), rwlock->getOwnerQueryIdsDescription());
 }
 
@@ -170,7 +170,7 @@ IStorage::AlterLockHolder IStorage::lockForAlter(const Poco::Timespan & acquire_
     auto lock = tryLockForAlter(acquire_timeout);
     if (lock == std::nullopt)
         throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
-                        "Locking attempt for ALTER on \"{}\" has timed out! ({} ms) "
+                        "Locking attempt for ALTER on \"{}\" has timed out ({} ms) "
                         "Possible deadlock avoided. Client should retry.",
                         getStorageID().getFullTableName(), acquire_timeout.totalMilliseconds());
     return std::move(*lock);

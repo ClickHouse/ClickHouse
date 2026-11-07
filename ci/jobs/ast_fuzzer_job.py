@@ -495,6 +495,8 @@ def run_fuzz_job(check_name: str):
     # Their contents are also merged into stderr.log/server.log, but upload the
     # originals too for debugging truncated reports.
     paths.extend(sorted(WORKSPACE_PATH.glob("sanitizer.log.*")))
+    # Logs of the object storage emulators started by run-fuzzer.sh
+    paths.extend([WORKSPACE_PATH / "seaweedfs.log", WORKSPACE_PATH / "azurite.log"])
 
     # jemalloc heap profiles dumped by the server on peak growth and on hitting its memory
     # limit, plus a symbolized rendering of the latest one (see run-fuzzer.sh).

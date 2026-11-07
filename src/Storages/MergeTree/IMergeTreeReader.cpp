@@ -1,6 +1,7 @@
 #include <cstddef>
 #include <vector>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
@@ -19,6 +20,10 @@
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSparse.h>
+#include <DataTypes/DataTypeObject.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/typeid_cast.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/Context.h>
@@ -113,7 +118,10 @@ IMergeTreeReader::IMergeTreeReader(
 
     /// The columns read from the part may be written to the columns cache and then served to other
     /// queries, which must not see the substituted empty strings. Read the values in full then.
-    const bool may_write_to_columns_cache = columns_cache && settings.enable_columns_cache_writes;
+    /// The readers of wide and compact parts write to the cache, but only for the parts the cache can hold
+    /// (see `initColumnsCache` and `IMergeTreeDataPart::mayStoreColumnsInColumnsCache`).
+    const bool may_write_to_columns_cache = columns_cache && settings.enable_columns_cache_writes
+        && canUseColumnsCacheForPart(data_part_info_for_read->getTableUUID());
 
     if (settings.string_value_filters && !settings.string_value_filters->empty() && !has_mutations_on_fly && !may_write_to_columns_cache)
     {
@@ -658,6 +666,189 @@ bool IMergeTreeReader::hasSubcolumnInPart(const String & name_in_part, const IDa
         return type_in_part.tryGetSubcolumnType(subcolumn_name, serialization_in_part) != nullptr;
 
     return type_in_part.hasSubcolumn(subcolumn_name);
+}
+
+void IMergeTreeReader::initColumnsCache(bool can_read)
+{
+    requested_column_names.reserve(getColumns().size());
+    for (const auto & column : getColumns())
+        requested_column_names.push_back(column.name);
+
+    /// `columns_cache` is null when the cache is disabled or sized zero, see `getColumnsCacheIfEnabled`.
+    const bool cache_possible = columns_cache
+        && canUseColumnsCacheForPart(data_part_info_for_read->getTableUUID());
+
+    columns_cache_reads_possible = cache_possible && settings.enable_columns_cache_reads && can_read;
+    columns_cache_writes_possible = cache_possible && settings.enable_columns_cache_writes;
+
+    if (!columns_cache_reads_possible && !columns_cache_writes_possible)
+        return;
+
+    stripes = ColumnsCacheStripes::forPart(data_part_info_for_read->getIndexGranularity());
+    columns_cache_part_name = getColumnsCachePartName(data_part_info_for_read->getPartName(), data_part_info_for_read->getParentPartName());
+
+    column_identities.reserve(requested_column_names.size());
+    for (const auto & name : requested_column_names)
+        column_identities.push_back(getColumnsCacheColumnIdentity(
+            data_part_info_for_read->getTableUUID(), columns_cache_part_name, name, settings.columns_cache_schema_identity));
+
+    /// Capture the invalidation generation once, before anything is read, so that any
+    /// invalidation racing with this reader is observed. It is passed to `setMany` by every
+    /// deferred write of the reader: the write is dropped if the table was invalidated or the
+    /// whole cache dropped after this point. It is not refreshed when a later mark range
+    /// starts, otherwise a reader that began before `SYSTEM DROP COLUMNS CACHE` would
+    /// repopulate the cache from its next range. The schema token of the cache keys is not
+    /// taken from here but from the metadata snapshot of the query
+    /// (`settings.columns_cache_schema_identity`), so that it cannot disagree with the
+    /// schema this read actually uses, see `getColumnsCacheColumnIdentity`.
+    if (columns_cache_writes_possible)
+        cache_table_generation = columns_cache->getInvalidationGeneration(data_part_info_for_read->getTableUUID());
+}
+
+bool IMergeTreeReader::canWriteToColumnsCache() const
+{
+    /// The query-wide estimate gate can disable cache writes while reads
+    /// are already in flight: the estimate is accumulated as read
+    /// pools build their tasks, and another pool of the same query may
+    /// exceed the budget after this reader started. Consult the shared flag
+    /// before writing so the estimate budget applies to the whole query.
+    if (settings.columns_cache_writes_disabled
+        && settings.columns_cache_writes_disabled->load(std::memory_order_relaxed))
+        return false;
+
+    /// The per-query runtime budget only grows during the query, so once it is exhausted the
+    /// rest of the read is not worth copying either. 0 means half of the size limit the cache has
+    /// now, which `autoResize` lowers under memory pressure, so it is resolved on every check.
+    const auto & bytes_written = settings.columns_cache_bytes_written_so_far;
+    if (bytes_written)
+    {
+        const size_t max_bytes = settings.columns_cache_max_bytes_to_write_to_cache != 0
+            ? settings.columns_cache_max_bytes_to_write_to_cache
+            : columns_cache->maxSizeInBytes() / 2;
+        if (bytes_written->load(std::memory_order_relaxed) >= max_bytes)
+            return false;
+    }
+
+    return true;
+}
+
+bool IMergeTreeReader::admitStripeToColumnsCache(size_t stripe)
+{
+    if (!stripe_admission || stripe_admission->first != stripe)
+        stripe_admission.emplace(stripe, columns_cache->shouldAdmit());
+    return stripe_admission->second;
+}
+
+void IMergeTreeReader::addPendingColumnsCacheEntry(size_t pos, size_t first_mark, size_t end_mark, ColumnPtr column)
+{
+    auto entry = makeColumnsCacheEntry();
+    {
+        MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+        entry->part_name = columns_cache_part_name;
+        entry->column_name = requested_column_names[pos];
+    }
+    entry->table_uuid = data_part_info_for_read->getTableUUID();
+    entry->schema_identity = settings.columns_cache_schema_identity;
+    entry->first_mark = first_mark;
+    entry->end_mark = end_mark;
+    entry->row_begin = data_part_info_for_read->getIndexGranularity().getMarkStartingRow(first_mark);
+    entry->rows = column->size();
+    entry->key = ColumnsCacheKey{column_identities[pos], stripes.stripeOf(first_mark)};
+    entry->column = std::move(column);
+
+    pending_entries.push_back(std::move(entry));
+}
+
+void IMergeTreeReader::flushPendingColumnsCacheWrites()
+{
+    if (pending_entries.empty())
+        return;
+
+    std::vector<ColumnsCache::MappedPtr> entries;
+    entries.swap(pending_entries);
+
+    /// The budget is an advisory soft threshold, not a hard cap: the entries that cross it are
+    /// stored in full and charged afterwards, so the total written may overshoot by up to the
+    /// entries of one call (and slightly more under concurrency).
+    /// This matches columns_cache_max_bytes_to_write_to_cache's docs.
+    if (!canWriteToColumnsCache())
+        return;
+
+    /// Charge the budget only for entries that were actually inserted: a write that is rejected
+    /// as stale or does not stay resident must not consume the budget, otherwise a query could
+    /// exhaust the cap and skip later real inserts even though those bytes were never written.
+    const size_t bytes_admitted = columns_cache->setMany(entries, cache_table_generation);
+    if (bytes_admitted && settings.columns_cache_bytes_written_so_far)
+        settings.columns_cache_bytes_written_so_far->fetch_add(bytes_admitted, std::memory_order_relaxed);
+}
+
+IColumn::MutablePtr & IMergeTreeReader::takeColumnForAppending(MutableColumns & res_columns, Columns & shared_columns, size_t pos)
+{
+    if (shared_columns[pos])
+        res_columns[pos] = IColumn::mutate(std::move(shared_columns[pos]));
+    return res_columns[pos];
+}
+
+void IMergeTreeReader::serveRowsFromColumnsCacheEntry(
+    const ColumnsCacheEntry & entry, size_t pos, size_t row_begin, size_t rows, MutableColumns & res_columns, Columns & shared_columns) const
+{
+    const IColumn & cached_column = *entry.column;
+    if (row_begin < entry.row_begin || entry.row_begin + cached_column.size() < row_begin + rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Columns cache entry of column {} of part {} holds rows [{}, {}), but rows [{}, {}) are requested",
+            requested_column_names[pos], columns_cache_part_name,
+            entry.row_begin, entry.row_begin + cached_column.size(), row_begin, row_begin + rows);
+    const size_t offset = row_begin - entry.row_begin;
+
+    if (!res_columns[pos] && !shared_columns[pos])
+    {
+        /// The first rows of the result column are the cached rows, so that the column keeps
+        /// the structure the part gives it and a freshly created column would not have: the
+        /// dynamic paths of a `JSON` column and the variants of a `Dynamic` column come from
+        /// the prefix of the part, the value of a column stored as a single value per part is
+        /// in the data, and a part with sparse serialization produces a `ColumnSparse`.
+        /// Downstream behavior depends on all of these: some aggregate functions (for example
+        /// `groupConcat`) have a sparse fast path that processes non-defaults first and all
+        /// defaults at the end, while the full path preserves the natural row order.
+        ///
+        /// Rows that are the whole entry are the cached column itself, shared with the cache;
+        /// other rows are a copy, which the read may go on to modify.
+        if (offset == 0 && rows == cached_column.size())
+            shared_columns[pos] = entry.column;
+        else
+            res_columns[pos] = IColumn::mutate(cached_column.cut(offset, rows));
+        return;
+    }
+
+    auto & column = takeColumnForAppending(res_columns, shared_columns, pos);
+
+    /// The result column already has its structure, from the granules before this one - read
+    /// from the part or served from the cache, both of the same part. If the entry was written
+    /// under different settings and holds a `ColumnSparse` while the result is a full column,
+    /// insert from a full copy of the range so that `insertRangeFrom` is type-compatible.
+    const bool cached_is_sparse = typeid_cast<const ColumnSparse *>(&cached_column) != nullptr;
+    const bool dst_is_sparse = typeid_cast<const ColumnSparse *>(column.get()) != nullptr;
+    if (cached_is_sparse && !dst_is_sparse)
+    {
+        auto full = cached_column.cut(offset, rows)->convertToFullColumnIfSparse();
+        column->insertRangeFrom(*full, 0, rows);
+    }
+    else
+    {
+        /// The copy is what keeps the cached column immutable: the result column is mutated
+        /// by the read in progress.
+        column->insertRangeFrom(cached_column, offset, rows);
+    }
+}
+
+bool IMergeTreeReader::isColumnNotCacheable(const NameAndTypePair & column)
+{
+    if (!column.isSubcolumn())
+        return false;
+
+    const auto & subcolumn_name = column.getSubcolumnName();
+    const std::string_view special_name = DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION;
+    return subcolumn_name == special_name || subcolumn_name.ends_with(fmt::format(".{}", special_name));
 }
 
 void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const

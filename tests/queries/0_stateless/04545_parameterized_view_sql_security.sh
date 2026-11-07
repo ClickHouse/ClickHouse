@@ -31,21 +31,17 @@ GRANT SELECT ON $db.pv_none TO $invoker;
 EOF
 
 # The invoker has SELECT on the views only, not on the base table.
-# DEFINER/NONE must return rows; INVOKER must be denied. This must hold for BOTH the
-# default analyzer and the old analyzer (the old-analyzer path was the bug: issue #84188).
-for analyzer in 1; do
-    echo "--- enable_analyzer=$analyzer ---"
-    echo -n "definer: "
-    ${CLICKHOUSE_CLIENT} --user "$invoker" --query \
-        "SELECT count() FROM $db.pv_definer(lim = 5000) SETTINGS enable_analyzer = $analyzer, enable_parallel_replicas = 0"
-    echo -n "none:    "
-    ${CLICKHOUSE_CLIENT} --user "$invoker" --query \
-        "SELECT count() FROM $db.pv_none(lim = 5000) SETTINGS enable_analyzer = $analyzer, enable_parallel_replicas = 0"
-    echo -n "invoker: "
-    ${CLICKHOUSE_CLIENT} --user "$invoker" --query \
-        "SELECT count() FROM $db.pv_invoker(lim = 5000) SETTINGS enable_analyzer = $analyzer, enable_parallel_replicas = 0" 2>&1 \
-        | grep -m1 -oF "ACCESS_DENIED" || echo "UNEXPECTED"
-done
+# DEFINER/NONE must return rows; INVOKER must be denied (issue #84188).
+echo -n "definer: "
+${CLICKHOUSE_CLIENT} --user "$invoker" --query \
+    "SELECT count() FROM $db.pv_definer(lim = 5000) SETTINGS enable_parallel_replicas = 0"
+echo -n "none:    "
+${CLICKHOUSE_CLIENT} --user "$invoker" --query \
+    "SELECT count() FROM $db.pv_none(lim = 5000) SETTINGS enable_parallel_replicas = 0"
+echo -n "invoker: "
+${CLICKHOUSE_CLIENT} --user "$invoker" --query \
+    "SELECT count() FROM $db.pv_invoker(lim = 5000) SETTINGS enable_parallel_replicas = 0" 2>&1 \
+    | grep -m1 -oF "ACCESS_DENIED" || echo "UNEXPECTED"
 
 # Originally reported scenario: parameterized DEFINER view read via parallel replicas by a
 # low-privilege invoker must succeed (no ACCESS_DENIED, no data leak) and must actually use

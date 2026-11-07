@@ -14,6 +14,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
+#include <bit>
 #include <climits>
 
 #ifdef __SSE4_2__
@@ -601,10 +602,28 @@ struct ByteEditDistanceImpl
     using WorkingType = UInt32;
     using SymbolT = std::conditional_t<is_utf8, UInt32, UInt8>;
 
-    static ResultType process(const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
+    /// If `max_length` is set, it gets the length of the longer string, counted as for the distance.
+    static ResultType process(
+        const char * __restrict haystack,
+        size_t haystack_size,
+        const char * __restrict needle,
+        size_t needle_size,
+        size_t * max_length = nullptr)
     {
+        /// The distance to an empty string is the length of the other string: its size in bytes,
+        /// or its number of code points for the UTF8 variant (validated as in the general case).
         if (haystack_size == 0 || needle_size == 0)
-            return haystack_size + needle_size;
+        {
+            size_t length = haystack_size + needle_size;
+            if constexpr (is_utf8)
+            {
+                length = 0;
+                parseUTF8String(haystack_size ? haystack : needle, haystack_size + needle_size, [&](UInt32) { ++length; });
+            }
+            if (max_length)
+                *max_length = length;
+            return length;
+        }
 
         /// Safety threshold against DoS, since we use two arrays to calculate the distance.
         if (haystack_size > max_string_size || needle_size > max_string_size)
@@ -634,6 +653,8 @@ struct ByteEditDistanceImpl
                 std::swap(needle, haystack);
             }
         }
+        if (max_length)
+            *max_length = haystack_size;
 
         auto dispatchMyers = [&]<typename F>()
         {
@@ -683,6 +704,147 @@ struct ByteEditDistanceImpl
                     static_cast<UInt32>(needle_size));
             }
         }
+    }
+};
+
+/// Normalized Levenshtein similarity: 1 - editDistance / max(length1, length2),
+/// with lengths in bytes, or in code points for the UTF8 variant. Two empty strings are equal (1).
+template <bool is_utf8>
+struct ByteEditDistanceRatioImpl
+{
+    using ResultType = Float64;
+
+    static ResultType process(const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
+    {
+        /// Safety threshold against DoS, as for editDistance. It protects the distance computation, which does not run
+        /// when one string is empty.
+        if (haystack_size != 0 && needle_size != 0 && (haystack_size > max_string_size || needle_size > max_string_size))
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "The string size is too big for function editDistanceRatio, should be at most {}",
+                max_string_size);
+
+        /// The length comes from the same parse as the distance, so they count the same symbols: a byte from 0x80 to 0xBF
+        /// without a lead byte is one symbol in both. A non-empty string against an empty one gives 0.
+        size_t max_length = 0;
+        const UInt64 distance = ByteEditDistanceImpl<is_utf8>::process(haystack, haystack_size, needle, needle_size, &max_length);
+        if (max_length == 0)
+            return 1;
+
+        return 1 - static_cast<Float64>(distance) / static_cast<Float64>(max_length);
+    }
+};
+
+/// Length of the longest common subsequence, bit-parallel: one bit per needle symbol, 64 symbols per word.
+/// From: Bit-Parallel LCS-length Computation Revisited (Heikki Hyyro, 2004).
+/// For each haystack symbol c: U = S & PM[c], S = (S + U) | (S - U). The zero bits of S count the LCS.
+/// U is a subset of S, so S - U never borrows and only the addition carries from word to word.
+template <bool is_utf8, typename Word = UInt64>
+struct LongestCommonSubsequenceImpl
+{
+    using SymbolT = std::conditional_t<is_utf8, UInt32, UInt8>;
+    static constexpr size_t W = sizeof(Word) * 8;
+
+    /// Requires needle_len > 0
+    static UInt32 length(const SymbolT * __restrict haystack, UInt32 haystack_len, const SymbolT * __restrict needle, UInt32 needle_len)
+    {
+        using PatternMasks = std::conditional_t<is_utf8,
+            typename BlockMyersEditDistance<is_utf8, Word>::PatternMasksUTF8,
+            typename BlockMyersEditDistance<is_utf8, Word>::PatternMasksASCII>;
+        PatternMasks pm_table;
+        pm_table.build(needle, needle_len);
+
+        const UInt32 num_blocks = static_cast<UInt32>((needle_len + W - 1) / W);
+        constexpr size_t stack_limit = 128;
+        PODArrayWithStackMemory<Word, stack_limit * sizeof(Word)> s;
+        s.assign(static_cast<size_t>(num_blocks), ~Word(0));
+
+        for (UInt32 i = 0; i < haystack_len; ++i)
+        {
+            const Word * pm = pm_table[haystack[i]];
+            if (!pm)
+                continue; /// The symbol does not occur in the needle, S stays the same.
+
+            Word carry = 0;
+            for (UInt32 k = 0; k < num_blocks; ++k)
+            {
+                const Word u = s[k] & pm[k];
+                const Word sum = s[k] + u;
+                const Word with_carry = sum + carry;
+                carry = (sum < u) | (with_carry < sum);
+                s[k] = with_carry | (s[k] - u);
+            }
+        }
+
+        /// Bits above needle_len in the last word do not belong to the needle.
+        const size_t bits_in_last = needle_len - (num_blocks - 1) * W;
+        UInt32 lcs = 0;
+        for (UInt32 k = 0; k < num_blocks; ++k)
+        {
+            Word zeros = ~s[k];
+            if (k == num_blocks - 1 && bits_in_last < W)
+                zeros &= (Word(1) << bits_in_last) - 1;
+            lcs += static_cast<UInt32>(std::popcount(zeros));
+        }
+        return lcs;
+    }
+};
+
+/// Normalized indel similarity, as in Python's Levenshtein.ratio: 2 * LCS / (length1 + length2),
+/// i.e. 1 - (insertions + deletions) / (length1 + length2). Two empty strings are equal (1).
+template <bool is_utf8>
+struct ByteStringSimilarityRatioImpl
+{
+    using ResultType = Float64;
+    using SymbolT = std::conditional_t<is_utf8, UInt32, UInt8>;
+
+    static ResultType process(const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
+    {
+        /// Safety threshold against DoS, as for editDistance. It protects the LCS computation, which does not run
+        /// when one string is empty.
+        if (haystack_size != 0 && needle_size != 0 && (haystack_size > max_string_size || needle_size > max_string_size))
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "The string size is too big for function stringSimilarityRatio, should be at most {}",
+                max_string_size);
+
+        PaddedPODArray<UInt32> haystack_utf8;
+        PaddedPODArray<UInt32> needle_utf8;
+        const SymbolT * haystack_symbols = nullptr;
+        const SymbolT * needle_symbols = nullptr;
+        if constexpr (is_utf8)
+        {
+            parseUTF8String(haystack, haystack_size, [&](UInt32 code_point) { haystack_utf8.push_back(code_point); });
+            parseUTF8String(needle, needle_size, [&](UInt32 code_point) { needle_utf8.push_back(code_point); });
+            haystack_symbols = haystack_utf8.data();
+            haystack_size = haystack_utf8.size();
+            needle_symbols = needle_utf8.data();
+            needle_size = needle_utf8.size();
+        }
+        else
+        {
+            haystack_symbols = reinterpret_cast<const SymbolT *>(haystack);
+            needle_symbols = reinterpret_cast<const SymbolT *>(needle);
+        }
+
+        const size_t total_length = haystack_size + needle_size;
+        if (total_length == 0)
+            return 1;
+        if (haystack_size == 0 || needle_size == 0)
+            return 0;
+
+        /// The bit vector runs over the shorter string.
+        if (needle_size > haystack_size)
+        {
+            std::swap(haystack_symbols, needle_symbols);
+            std::swap(haystack_size, needle_size);
+        }
+
+        const UInt32 lcs = LongestCommonSubsequenceImpl<is_utf8>::length(
+            haystack_symbols, static_cast<UInt32>(haystack_size), needle_symbols, static_cast<UInt32>(needle_size));
+        /// Computed as 1 - indel / total rather than 2 * lcs / total to give bit-for-bit the same value as Python.
+        const size_t indel_distance = total_length - 2 * static_cast<size_t>(lcs);
+        return 1 - static_cast<Float64>(indel_distance) / static_cast<Float64>(total_length);
     }
 };
 
@@ -1098,6 +1260,28 @@ struct NameEditDistanceUTF8
 };
 using FunctionEditDistanceUTF8 = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceImpl<true>>, NameEditDistanceUTF8>;
 
+struct NameEditDistanceRatio
+{
+    static constexpr auto name = "editDistanceRatio";
+};
+using FunctionEditDistanceRatio = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceRatioImpl<false>>, NameEditDistanceRatio>;
+struct NameEditDistanceRatioUTF8
+{
+    static constexpr auto name = "editDistanceRatioUTF8";
+};
+using FunctionEditDistanceRatioUTF8 = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceRatioImpl<true>>, NameEditDistanceRatioUTF8>;
+
+struct NameStringSimilarityRatio
+{
+    static constexpr auto name = "stringSimilarityRatio";
+};
+using FunctionStringSimilarityRatio = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteStringSimilarityRatioImpl<false>>, NameStringSimilarityRatio>;
+struct NameStringSimilarityRatioUTF8
+{
+    static constexpr auto name = "stringSimilarityRatioUTF8";
+};
+using FunctionStringSimilarityRatioUTF8 = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteStringSimilarityRatioImpl<true>>, NameStringSimilarityRatioUTF8>;
+
 struct NameDamerauLevenshteinDistance
 {
     static constexpr auto name = "damerauLevenshteinDistance";
@@ -1198,6 +1382,110 @@ Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) betw
     };
     FunctionDocumentation::IntroducedIn introduced_in_utf8 = {24, 6};
     FunctionDocumentation documentation_edit_utf8 = {description_edit_utf8, syntax_edit_utf8, arguments_edit_utf8, {}, returned_value_edit_utf8, examples_edit_utf8, introduced_in_utf8, category};
+
+    FunctionDocumentation::Description description_edit_ratio = R"(
+Calculates the normalized [edit distance](https://en.wikipedia.org/wiki/Edit_distance) similarity between two byte strings:
+`1 - editDistance(s1, s2) / max(length(s1), length(s2))`.
+Returns a value between `0` (the edit distance equals the length of the longer string, as for `'ab'` and `'ba'`) and `1` (equal strings). Two empty strings are equal.
+)";
+    FunctionDocumentation::Syntax syntax_edit_ratio = "editDistanceRatio(s1, s2)";
+    FunctionDocumentation::Arguments arguments_edit_ratio = {
+        {"s1", "First input string.", {"String"}},
+        {"s2", "Second input string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_edit_ratio = {"Returns the normalized edit distance similarity between the two strings.", {"Float64"}};
+    FunctionDocumentation::Examples examples_edit_ratio = {
+    {
+        "Usage example",
+        "SELECT editDistanceRatio('kitten', 'sitting')",
+        R"(
+┌─editDistanceRatio('kitten', 'sitting')─┐
+│                     0.5714285714285714 │
+└────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_ratio = {26, 11};
+    FunctionDocumentation documentation_edit_ratio = {description_edit_ratio, syntax_edit_ratio, arguments_edit_ratio, {}, returned_value_edit_ratio, examples_edit_ratio, introduced_in_ratio, category};
+
+    FunctionDocumentation::Description description_edit_ratio_utf8 = R"(
+Like [`editDistanceRatio`](#editDistanceRatio) but for UTF8-encoded strings: the edit distance and the lengths are counted in code points.
+)";
+    FunctionDocumentation::Syntax syntax_edit_ratio_utf8 = "editDistanceRatioUTF8(s1, s2)";
+    FunctionDocumentation::Arguments arguments_edit_ratio_utf8 = {
+        {"s1", "First input UTF8 string.", {"String"}},
+        {"s2", "Second input UTF8 string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_edit_ratio_utf8 = {"Returns the normalized edit distance similarity between the two UTF8 strings.", {"Float64"}};
+    FunctionDocumentation::Examples examples_edit_ratio_utf8 = {
+    {
+        "Usage example",
+        "SELECT editDistanceRatioUTF8('我是谁', '我是我') AS ratio",
+        R"(
+┌──────────────ratio─┐
+│ 0.6666666666666667 │
+└────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation documentation_edit_ratio_utf8 = {description_edit_ratio_utf8, syntax_edit_ratio_utf8, arguments_edit_ratio_utf8, {}, returned_value_edit_ratio_utf8, examples_edit_ratio_utf8, introduced_in_ratio, category};
+
+    FunctionDocumentation::Description description_similarity_ratio = R"(
+Calculates the normalized indel similarity between two byte strings, the same value as Python's `Levenshtein.ratio`:
+`2 * LCS / (length(s1) + length(s2))`, where `LCS` is the length of the [longest common subsequence](https://en.wikipedia.org/wiki/Longest_common_subsequence).
+Equivalently, `1 - (insertions + deletions) / (length(s1) + length(s2))`.
+Returns a value between `0` (nothing in common) and `1` (equal strings). Two empty strings are equal.
+)";
+    FunctionDocumentation::Syntax syntax_similarity_ratio = "stringSimilarityRatio(s1, s2)";
+    FunctionDocumentation::Arguments arguments_similarity_ratio = {
+        {"s1", "First input string.", {"String"}},
+        {"s2", "Second input string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_similarity_ratio = {"Returns the normalized indel similarity between the two strings.", {"Float64"}};
+    FunctionDocumentation::Examples examples_similarity_ratio = {
+    {
+        "Usage example",
+        "SELECT stringSimilarityRatio('kitten', 'sitting')",
+        R"(
+┌─stringSimilarityRatio('kitten', 'sitting')─┐
+│                         0.6153846153846154 │
+└────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Fuzzy matching of names",
+        "SELECT name FROM (SELECT arrayJoin(['Equinix', 'Equinix Inc.', 'Digital Realty']) AS name) WHERE stringSimilarityRatio(lower(name), 'equinix inc') > 0.7",
+        R"(
+┌─name─────────┐
+│ Equinix      │
+│ Equinix Inc. │
+└──────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation documentation_similarity_ratio = {description_similarity_ratio, syntax_similarity_ratio, arguments_similarity_ratio, {}, returned_value_similarity_ratio, examples_similarity_ratio, introduced_in_ratio, category};
+
+    FunctionDocumentation::Description description_similarity_ratio_utf8 = R"(
+Like [`stringSimilarityRatio`](#stringSimilarityRatio) but for UTF8-encoded strings: the lengths are counted in code points.
+)";
+    FunctionDocumentation::Syntax syntax_similarity_ratio_utf8 = "stringSimilarityRatioUTF8(s1, s2)";
+    FunctionDocumentation::Arguments arguments_similarity_ratio_utf8 = {
+        {"s1", "First input UTF8 string.", {"String"}},
+        {"s2", "Second input UTF8 string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_similarity_ratio_utf8 = {"Returns the normalized indel similarity between the two UTF8 strings.", {"Float64"}};
+    FunctionDocumentation::Examples examples_similarity_ratio_utf8 = {
+    {
+        "Usage example",
+        "SELECT stringSimilarityRatioUTF8('我是谁', '我是我') AS ratio",
+        R"(
+┌──────────────ratio─┐
+│ 0.6666666666666667 │
+└────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation documentation_similarity_ratio_utf8 = {description_similarity_ratio_utf8, syntax_similarity_ratio_utf8, arguments_similarity_ratio_utf8, {}, returned_value_similarity_ratio_utf8, examples_similarity_ratio_utf8, introduced_in_ratio, category};
 
     FunctionDocumentation::Description description_damerau = R"(
 Calculates the [Damerau-Levenshtein distance](https://en.wikipedia.org/wiki/Damerau%E2%80%93Levenshtein_distance) between two byte strings.
@@ -1325,6 +1613,15 @@ Returns `0` if either string is empty.
     factory.registerFunction<FunctionEditDistanceUTF8>(documentation_edit_utf8);
     factory.registerAlias("levenshteinDistanceUTF8", NameEditDistanceUTF8::name);
     factory.registerAlias("levenshtein_distance", NameEditDistanceUTF8::name, FunctionFactory::Case::Insensitive);
+
+    factory.registerFunction<FunctionEditDistanceRatio>(documentation_edit_ratio);
+    factory.registerAlias("levenshteinRatio", NameEditDistanceRatio::name);
+
+    factory.registerFunction<FunctionEditDistanceRatioUTF8>(documentation_edit_ratio_utf8);
+    factory.registerAlias("levenshteinRatioUTF8", NameEditDistanceRatioUTF8::name);
+
+    factory.registerFunction<FunctionStringSimilarityRatio>(documentation_similarity_ratio);
+    factory.registerFunction<FunctionStringSimilarityRatioUTF8>(documentation_similarity_ratio_utf8);
 
     factory.registerFunction<FunctionDamerauLevenshteinDistance>(documentation_damerau);
 

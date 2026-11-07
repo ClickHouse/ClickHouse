@@ -2,7 +2,6 @@
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: Dictionary is not available on parallel-replica workers.
 
-SET enable_analyzer = 1;
 SET optimize_inverse_dictionary_lookup = 1;
 -- Keep `LIKE` as `like` in `EXPLAIN` output regardless of settings randomization.
 SET optimize_rewrite_like_perfect_affix = 0;

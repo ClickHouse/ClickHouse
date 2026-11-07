@@ -33,6 +33,7 @@
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ExpressionVisitor.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <delta_kernel_ffi.hpp>
 #include <fmt/ranges.h>
 #include <roaring/roaring.hh>
@@ -415,7 +416,8 @@ public:
             }
 
             parseDVHandle(*scan_item, object);
-            object->setObjectMetadata(object_storage->getObjectMetadata(object->getPath(), /*with_tags=*/ false));
+            object->setObjectMetadata(
+                DB::getObjectMetadataForRead(*object_storage, DB::RelativePathWithMetadata(object->getPath()), /*with_tags=*/ false));
 
             if (callback)
             {

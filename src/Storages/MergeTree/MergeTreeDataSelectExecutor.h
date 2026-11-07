@@ -114,9 +114,6 @@ public:
         const Settings & settings,
         LoggerPtr log);
 
-    static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
-        const StorageMetadataPtr & metadata_snapshot, const MergeTreeSettingsPtr & data_settings);
-
     static std::pair<MarkRanges, RangesInDataPartReadHints> filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
@@ -330,7 +327,7 @@ public:
 
     /// Calculate row limits for reading based on settings and query info.
     /// Returns limits and leaf_limits that should be applied during part processing.
-    static RowLimits getRowLimits(const Settings & settings, const SelectQueryInfo & query_info);
+    static RowLimits getRowLimits(const Context & context, const SelectQueryInfo & query_info);
 
     static MarkRanges mergePartialResultsForDisjunctions(
         const IMergeTreeDataPartInfoForReader & part_info,

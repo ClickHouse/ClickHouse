@@ -812,6 +812,62 @@ def test_timestamps(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"
 
 
+def test_timestamp_types_cache_does_not_keep_metadata(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ts_cache_{uuid.uuid4().hex}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    database_name = f"db_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    schema = Schema(
+        NestedField(field_id=1, name="timestamp", field_type=TimestampType(), required=False),
+        NestedField(field_id=2, name="timestamptz", field_type=TimestamptzType(), required=False),
+    )
+    table = create_table(catalog, root_namespace, table_name, schema, dir=test_ref)
+
+    create_clickhouse_glue_database(started_cluster, node, database_name)
+
+    def cache_metrics():
+        return [
+            int(value)
+            for value in node.query(
+                "SELECT value FROM system.metrics "
+                "WHERE metric IN ('GlueCatalogSchemaCacheBytes', 'GlueCatalogSchemaCacheEntries') ORDER BY metric"
+            ).split()
+        ]
+
+    bytes_before, entries_before = cache_metrics()
+
+    row = pa.Table.from_pylist(
+        [{"timestamp": datetime(2024, 1, 1, 12), "timestamptz": datetime(2024, 1, 1, 12, tzinfo=pytz.UTC)}]
+    )
+    versions = 30
+    for _ in range(versions):
+        table.append(row)
+        description = node.query(f"DESCRIBE TABLE {database_name}.`{root_namespace}.{table_name}`")
+        assert [line.split("\t")[1] for line in description.splitlines()] == [
+            "Nullable(DateTime64(6))",
+            "Nullable(DateTime64(6, \\'UTC\\'))",
+        ]
+
+    bytes_after, entries_after = cache_metrics()
+    assert entries_after - entries_before == versions
+
+    metadata_size = int(
+        node.query(
+            f"SELECT max(_size) FROM s3('http://minio1:9001/warehouse-glue/{test_ref}/metadata/*.metadata.json', "
+            f"'{minio_access_key}', '{minio_secret_key}', 'One')"
+        )
+    )
+    assert bytes_after - bytes_before < metadata_size
+
+    node.query(f"DROP DATABASE {database_name}")
+
+
 def test_insert(started_cluster):
     node = started_cluster.instances["node1"]
 

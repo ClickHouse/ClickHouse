@@ -1,0 +1,65 @@
+<test>
+    <!-- the setting is off by default, so run each query with it off and on (#115157) -->
+    <substitutions>
+        <substitution>
+            <name>top_k</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE topk_array_join (id UInt64, k Int64, arr Array(UInt32), payload String)
+        ENGINE = MergeTree() ORDER BY id SETTINGS auto_statistics_types=''
+    </create_query>
+
+    <!-- the moved sort keeps whole arrays instead of single elements, so long arrays can need more memory -->
+    <create_query>
+        CREATE TABLE topk_array_join_long (k UInt64, arr Array(UInt32))
+        ENGINE = MergeTree() ORDER BY tuple() SETTINGS auto_statistics_types=''
+    </create_query>
+
+    <!-- k does not follow id, so read in order cannot replace the sort, arrays have 16 elements on average -->
+    <fill_query>
+        INSERT INTO topk_array_join
+        SELECT number, sipHash64(number), range(number % 32), repeat('a', 16)
+        FROM numbers(2000000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO topk_array_join_long
+        SELECT sipHash64(number), range(toUInt32(4096 + number % 2))
+        FROM numbers(8192)
+    </fill_query>
+
+    <query>
+        SELECT k, arr FROM topk_array_join ARRAY JOIN arr ORDER BY k DESC LIMIT 10
+        SETTINGS query_plan_top_k_through_array_join = {top_k} FORMAT Null
+    </query>
+
+    <query>
+        SELECT k, arr FROM topk_array_join LEFT ARRAY JOIN arr ORDER BY k DESC LIMIT 10
+        SETTINGS query_plan_top_k_through_array_join = {top_k} FORMAT Null
+    </query>
+
+    <query>
+        SELECT k, payload, arr FROM topk_array_join ARRAY JOIN arr ORDER BY k LIMIT 100 OFFSET 50
+        SETTINGS query_plan_top_k_through_array_join = {top_k} FORMAT Null
+    </query>
+
+    <!-- the sort key is the joined column, so nothing must change -->
+    <query>
+        SELECT arr FROM topk_array_join ARRAY JOIN arr ORDER BY arr DESC LIMIT 10
+        SETTINGS query_plan_top_k_through_array_join = {top_k} FORMAT Null
+    </query>
+
+    <query>
+        SELECT k, arr FROM topk_array_join_long ARRAY JOIN arr ORDER BY k LIMIT 1000
+        SETTINGS query_plan_top_k_through_array_join = {top_k} FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS topk_array_join</drop_query>
+    <drop_query>DROP TABLE IF EXISTS topk_array_join_long</drop_query>
+</test>

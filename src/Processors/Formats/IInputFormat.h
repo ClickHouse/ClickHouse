@@ -148,6 +148,8 @@ public:
     virtual bool isTopKFilterApplied() const { return false; }
     /// Whether the rows returned for this file were built from statistics (`FormatFilterInfo::min_max_from_statistics`).
     virtual bool isMinMaxFromStatisticsApplied() const { return false; }
+    /// Called after the file was read, if its version provably did not change during the read.
+    virtual void cacheFilterColumnStatistics() {}
 
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }

@@ -53,10 +53,11 @@ Connection::Connection(
     unsigned rw_timeout,
     bool enable_local_infile,
     bool opt_reconnect,
-    bool enable_compression)
+    bool enable_compression,
+    const char * ssl_key_passphrase)
     : Connection()
 {
-    connect(db, server, user, password, port, socket, ssl_ca, ssl_cert, ssl_key, timeout, rw_timeout, enable_local_infile, opt_reconnect, enable_compression);
+    connect(db, server, user, password, port, socket, ssl_ca, ssl_cert, ssl_key, timeout, rw_timeout, enable_local_infile, opt_reconnect, enable_compression, ssl_key_passphrase);
 }
 
 Connection::Connection(const std::string & config_name)
@@ -84,7 +85,8 @@ void Connection::connect(const char* db,
     unsigned rw_timeout,
     bool enable_local_infile,
     bool opt_reconnect,
-    bool enable_compression)
+    bool enable_compression,
+    const char * ssl_key_passphrase)
 {
     if (is_connected)
         disconnect();
@@ -119,6 +121,17 @@ void Connection::connect(const char* db,
     /// Specifies particular ssl key and certificate if it needs
     if (mysql_ssl_set(driver.get(), ifNotEmpty(ssl_key), ifNotEmpty(ssl_cert), ifNotEmpty(ssl_ca), nullptr, nullptr))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+
+    /// mariadb-connector-c hands this to OpenSSL when the private key is encrypted
+    /// (`BEGIN ENCRYPTED PRIVATE KEY`). Without it the client library cannot load such a key.
+    if (ifNotEmpty(ssl_key_passphrase))
+    {
+        if (!ifNotEmpty(ssl_key))
+            throw ConnectionFailed("ssl_key_passphrase is set but no client key was given", 0);
+
+        if (mysql_options(driver.get(), MARIADB_OPT_TLS_PASSPHRASE, ssl_key_passphrase))
+            throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+    }
 
     if (!mysql_real_connect(driver.get(), server, user, password, db, port, ifNotEmpty(socket), driver->client_flag))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));

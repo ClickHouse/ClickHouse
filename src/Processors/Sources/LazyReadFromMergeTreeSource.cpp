@@ -290,6 +290,7 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
             lazy_materializing_rows);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), log_name);
+        source->keepReadingOnPartialResult();
         source->addTotalRowsApprox(total_rows);
 
         processors.emplace_back(std::move(source));

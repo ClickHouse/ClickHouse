@@ -282,7 +282,7 @@ enum class OpCase : uint8_t
 constexpr const auto & undec(const auto & x) { return x; }
 constexpr const auto & undec(const is_decimal auto & x) { return x.value; }
 
-template <typename A, typename B, typename Op, typename OpResultType = typename Op::ResultType>
+template <typename A, typename B, typename Op, typename OpResultType = typename Op::ResultType, bool can_have_division_by_nullable = true>
 struct BinaryOperation
 {
     using ResultType = OpResultType;
@@ -313,7 +313,7 @@ struct BinaryOperation
 
         if constexpr (op_case == OpCase::RightConstant)
         {
-            if (right_nullmap && (*right_nullmap)[0])
+            if (can_have_division_by_nullable && right_nullmap && (*right_nullmap)[0])
                 return;
 
             if constexpr (disable_vectorization)
@@ -330,7 +330,7 @@ struct BinaryOperation
         }
         else
         {
-            if (right_nullmap)
+            if (can_have_division_by_nullable && right_nullmap)
             {
                 if constexpr (disable_vectorization)
                 {
@@ -614,8 +614,8 @@ private:
     }
 };
 
-template <typename A, typename B, typename Op, typename ResultType = typename Op::ResultType>
-struct BinaryOperationImpl : BinaryOperation<A, B, Op, ResultType> { };
+template <typename A, typename B, typename Op, typename ResultType = typename Op::ResultType, bool can_have_division_by_nullable = true>
+struct BinaryOperationImpl : BinaryOperation<A, B, Op, ResultType, can_have_division_by_nullable> { };
 
 /**
  * Binary operations with Decimals (either Decimal OP Decimal or Decimal Op Float) need to scale the args correctly.
@@ -729,7 +729,7 @@ private:
     template <OpCase op_case, typename ApplyFunc>
     static void processWithRightNullmapImpl(const auto & a, const auto & b, ResultContainerType & c, size_t size, const NullMap * right_nullmap, ApplyFunc apply_func)
     {
-        if (right_nullmap)
+        if (can_have_division_by_nullable && right_nullmap)
         {
             if constexpr (op_case == OpCase::RightConstant)
             {
@@ -770,6 +770,7 @@ private:
                                             IsOperation<Operation>::greatest;
     static constexpr bool is_plus_minus_compare = is_plus_minus || is_compare;
     static constexpr bool can_overflow = is_plus_minus || is_multiply;
+    static constexpr bool can_have_division_by_nullable = IsOperation<Operation>::can_have_division_by_nullable;
 
     using Op = std::conditional_t<is_float_division,
         DivideIntegralImpl<NativeResultType, NativeResultType>, /// substitute divide by intDiv (throw on division by zero)
@@ -907,6 +908,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
     static constexpr bool is_division_or_null = IsOperation<Op>::division_or_null;
     static constexpr bool is_div_floating_or_null = IsOperation<Op>::div_floating_or_null;
     static constexpr bool is_int_div_or_null = IsOperation<Op>::int_div_or_null;
+    static constexpr bool can_have_division_by_nullable = IsOperation<Op>::can_have_division_by_nullable;
 
     bool check_decimal_overflow = true;
 
@@ -2299,7 +2301,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
 
         /// Likewise, when every divisor row is `NULL`, the whole result is `NULL`, so the constant operand
         /// is not narrowed (and cannot raise `DECIMAL_OVERFLOW`).
-        if (right_nullmap && (col_left_const || col_right_const)
+        if (can_have_division_by_nullable && right_nullmap && (col_left_const || col_right_const)
             && std::all_of(right_nullmap->begin(), right_nullmap->end(), [](UInt8 is_null) { return is_null != 0; }))
         {
             std::fill(vec_res.begin(), vec_res.end(), ResultType());
@@ -3183,6 +3185,31 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             return moduloLeadsToFPE(a, b);
     }
 
+    template <typename CommonDataType, typename ResultDataType>
+    ColumnPtr executeNumericViaCommonType(const ColumnsWithTypeAndName & arguments, const NullMap * right_nullmap, NullMap * result_nullmap) const
+    {
+        const auto common_type = std::make_shared<CommonDataType>();
+        ColumnsWithTypeAndName converted_arguments
+        {
+            {castColumn(arguments[0], common_type), common_type, arguments[0].name},
+            {castColumn(arguments[1], common_type), common_type, arguments[1].name},
+        };
+
+        ColumnPtr res = executeNumeric(converted_arguments, *common_type, *common_type, right_nullmap, result_nullmap);
+        if (!res)
+            return nullptr;
+
+        /// The result type of the same-type kernel can be wider than the declared result
+        /// type (e.g. `modulo(UInt256, UInt8)` is `UInt8` while `modulo(UInt256, UInt256)`
+        /// is `UInt256`). Narrowing is exact: the fused kernel casts its result to the
+        /// declared type in the same way.
+        using CommonResultDataType = typename BinaryOperationTraits<Op, CommonDataType, CommonDataType>::ResultDataType;
+        if constexpr (!std::is_same_v<CommonResultDataType, ResultDataType>)
+            res = castColumn({res, std::make_shared<CommonResultDataType>(), ""}, std::make_shared<ResultDataType>());
+
+        return res;
+    }
+
     template <typename A, typename B>
     ColumnPtr executeNumeric(const ColumnsWithTypeAndName & arguments, const A & left, const B & right, const NullMap * right_nullmap, NullMap * result_nullmap = nullptr) const
     {
@@ -3344,33 +3371,9 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 /// arguments to a common type chosen so that the same-type kernel performs exactly
                 /// the same arithmetic as the fused kernel for the original pair would, and execute
                 /// the same-type kernel.
-                auto execute_via_common_type = [&]<typename CommonDataType>() -> ColumnPtr
-                {
-                    const auto common_type = std::make_shared<CommonDataType>();
-                    ColumnsWithTypeAndName converted_arguments
-                    {
-                        {castColumn(arguments[0], common_type), common_type, arguments[0].name},
-                        {castColumn(arguments[1], common_type), common_type, arguments[1].name},
-                    };
-
-                    ColumnPtr res = executeNumeric(converted_arguments, *common_type, *common_type, right_nullmap, result_nullmap);
-                    if (!res)
-                        return nullptr;
-
-                    /// The result type of the same-type kernel can be wider than the declared result
-                    /// type (e.g. `modulo(UInt256, UInt8)` is `UInt8` while `modulo(UInt256, UInt256)`
-                    /// is `UInt256`). Narrowing is exact: the fused kernel casts its result to the
-                    /// declared type in the same way.
-                    using CommonResultDataType = typename BinaryOperationTraits<Op, CommonDataType, CommonDataType>::ResultDataType;
-                    if constexpr (!std::is_same_v<CommonResultDataType, ResultDataType>)
-                        res = castColumn({res, std::make_shared<CommonResultDataType>(), ""}, std::make_shared<ResultDataType>());
-
-                    return res;
-                };
-
                 if constexpr (op_computes_in_result_type)
                 {
-                    return execute_via_common_type.template operator()<ResultDataType>();
+                    return executeNumericViaCommonType<ResultDataType, ResultDataType>(arguments, right_nullmap, result_nullmap);
                 }
                 else if constexpr (op_is_prunable_int_div)
                 {
@@ -3379,12 +3382,12 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     /// type otherwise.
                     using WiderType = std::conditional_t<(sizeof(T0) >= sizeof(T1)), T0, T1>;
                     using CommonType = std::conditional_t<is_signed_v<T0> || is_signed_v<T1>, make_signed_t<WiderType>, WiderType>;
-                    return execute_via_common_type.template operator()<DataTypeNumber<CommonType>>();
+                    return executeNumericViaCommonType<DataTypeNumber<CommonType>, ResultDataType>(arguments, right_nullmap, result_nullmap);
                 }
                 else if constexpr (op_is_prunable_positive_modulo)
                 {
                     /// See `op_is_prunable_positive_modulo`: the divisor is strictly narrower.
-                    return execute_via_common_type.template operator()<DataTypeNumber<T0>>();
+                    return executeNumericViaCommonType<DataTypeNumber<T0>, ResultDataType>(arguments, right_nullmap, result_nullmap);
                 }
                 else if constexpr (IsOperation<Op>::modulo_legacy)
                 {
@@ -3396,13 +3399,13 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     /// (non-legacy) rule below: legacy must keep the historical, sometimes
                     /// unsigned-computed behaviour byte for byte.
                     using CommonType = std::conditional_t<(sizeof(T0) > sizeof(T1)), T0, T1>;
-                    return execute_via_common_type.template operator()<DataTypeNumber<CommonType>>();
+                    return executeNumericViaCommonType<DataTypeNumber<CommonType>, ResultDataType>(arguments, right_nullmap, result_nullmap);
                 }
                 else if constexpr (is_unsigned_v<T0> && is_unsigned_v<T1>)
                 {
                     /// For two unsigned operands `ModuloImpl` takes the plain remainder in the wider type.
                     using CommonType = std::conditional_t<(sizeof(T0) > sizeof(T1)), T0, T1>;
-                    return execute_via_common_type.template operator()<DataTypeNumber<CommonType>>();
+                    return executeNumericViaCommonType<DataTypeNumber<CommonType>, ResultDataType>(arguments, right_nullmap, result_nullmap);
                 }
                 else
                 {
@@ -3422,13 +3425,13 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     using SafeSignedT1 = typename NumberTraits::Construct<true, false,
                         is_signed_v<T1> ? sizeof(T1) : next_integer_size(sizeof(T1))>::Type;
                     using CommonType = std::conditional_t<(sizeof(SafeSignedT0) >= sizeof(SafeSignedT1)), SafeSignedT0, SafeSignedT1>;
-                    return execute_via_common_type.template operator()<DataTypeNumber<CommonType>>();
+                    return executeNumericViaCommonType<DataTypeNumber<CommonType>, ResultDataType>(arguments, right_nullmap, result_nullmap);
                 }
             }
             else // can't avoid else and another indentation level, otherwise the compiler would try to instantiate
                  // ColVecResult for Decimals which would lead to a compile error.
             {
-                using OpImpl = BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>;
+                using OpImpl = BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType, can_have_division_by_nullable>;
 
                 /// non-vector result
                 if (col_left_const && col_right_const)
@@ -4273,6 +4276,10 @@ public:
                 // `intDiv`/`divide` computes in a Decimal operand's own native signed width: a Decimal
                 // divisor wraps the dividend at a boundary set by its width and scale, a Decimal dividend
                 // truncates the divisor into that width, and a Float operand stays in floating point.
+                if (isDecimal(arg_type) && isDecimal(divisor_type)
+                    && decimalDivisionRescaleFits(left_point, right_point, *arg_type, *divisor_type, return_type))
+                    return {true, is_constant_positive, false, false};
+
                 if ((name_view == "intDiv" || name_view == "divide")
                     && (isDecimal(divisor_type) || decimalDivConstDivisorTruncates(arg_type, divisor_type, constant)))
                     return {false, true, false, false};
@@ -4526,6 +4533,45 @@ public:
         }
     }
 
+    /// `Decimal` division rescales the dividend by the divisor scale in the native type of the wider operand. It throws
+    /// (or wraps with `decimal_check_overflow = 0`) outside a finite range, but is monotonic within a range whose ends
+    /// rescale without overflow. `intDiv` then casts the quotient to an integer result, which must be as wide.
+    static bool decimalDivisionRescaleFits(
+        const Field & left_point, const Field & right_point, const IDataType & arg_type, const IDataType & divisor_type,
+        const DataTypePtr & result_type)
+    {
+        auto result = removeNullable(recursiveRemoveLowCardinality(result_type));
+        const size_t width = std::max(arg_type.getSizeOfValueInMemory(), divisor_type.getSizeOfValueInMemory());
+        if (!(isDecimal(result) || isInteger(result)) || result->getSizeOfValueInMemory() < width)
+            return false;
+
+        Int256 limit;
+        switch (width)
+        {
+            case sizeof(Int32): limit = std::numeric_limits<Int32>::max(); break;
+            case sizeof(Int64): limit = std::numeric_limits<Int64>::max(); break;
+            case sizeof(Int128): limit = std::numeric_limits<Int128>::max(); break;
+            case sizeof(Int256): limit = std::numeric_limits<Int256>::max(); break;
+            default: return false;
+        }
+        const Int256 bound = limit / DecimalUtils::scaleMultiplier<Int256>(getDecimalScale(divisor_type));
+
+        auto fits = [&](const Field & point)
+        {
+            Int256 value;
+            switch (point.getType())
+            {
+                case Field::Types::Decimal32: value = point.safeGet<DecimalField<Decimal32>>().getValue().value; break;
+                case Field::Types::Decimal64: value = point.safeGet<DecimalField<Decimal64>>().getValue().value; break;
+                case Field::Types::Decimal128: value = point.safeGet<DecimalField<Decimal128>>().getValue().value; break;
+                case Field::Types::Decimal256: value = point.safeGet<DecimalField<Decimal256>>().getValue().value; break;
+                default: return false;
+            }
+            return -bound <= value && value <= bound;
+        };
+        return fits(left_point) && fits(right_point);
+    }
+
 private:
     ColumnWithTypeAndName left;
     ColumnWithTypeAndName right;
@@ -4583,12 +4629,8 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
-        /// Only division-like operations can have division_by_nullable=true.
-        static constexpr bool can_have_division_by_nullable =
-            IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo || IsOperation<Op>::div_floating;
-
         bool division_by_nullable = false;
-        if constexpr (can_have_division_by_nullable)
+        if constexpr (IsOperation<Op>::can_have_division_by_nullable)
         {
             /// Check the case when operation is divide, intDiv or modulo and denominator is Nullable(Something).
             /// For divide operation we should check only Nullable(Decimal), because only this case can throw division by zero error.

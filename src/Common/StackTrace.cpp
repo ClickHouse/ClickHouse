@@ -473,12 +473,17 @@ StackTrace::ResolvedAddress StackTrace::tryResolveAddress(const void * virtual_a
 UInt64 StackTrace::resolveAddressForStorage(const void * virtual_addr)
 {
     const ResolvedAddress resolved = resolveAddress(virtual_addr);
-    /// Only the main executable's offsets are unambiguous on their own: a column of bare numbers has
-    /// nowhere to record which object an offset belongs to. A runtime address keeps that information,
-    /// because the object that contains it is the one it is mapped into.
-    if (resolved.kind != AddressKind::MainObject)
-        return reinterpret_cast<UInt64>(virtual_addr);
-    return reinterpret_cast<UInt64>(resolved.address);
+    switch (resolved.kind)
+    {
+        case AddressKind::MainObject:
+        case AddressKind::Unsupported:
+            return reinterpret_cast<UInt64>(resolved.address);
+        /// A bare offset cannot say which object it belongs to, and the runtime address must not be published.
+        case AddressKind::OtherObject:
+        case AddressKind::UnknownMapping:
+            return 0;
+    }
+    UNREACHABLE();
 }
 
 void StackTrace::forEachFrame(

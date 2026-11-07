@@ -25,14 +25,33 @@ def list_test_files(perf_dir):
     return sorted(f for f in os.listdir(perf_dir) if f.endswith(".xml"))
 
 
+def _root_flag(test_path, name):
+    return ElementTree.parse(test_path).getroot().get(name) == "1"
+
+
 def test_requires_s3(test_path):
     """Whether a test declares that it needs the job-local S3 endpoint."""
-    return ElementTree.parse(test_path).getroot().get("requires_s3") == "1"
+    return _root_flag(test_path, "requires_s3")
+
+
+def test_is_long(test_path):
+    """Whether a test is tagged `long`: `perf.py` skips it unless given `--long`."""
+    return any(tag.text == "long" for tag in ElementTree.parse(test_path).getroot().iter("tag"))
 
 
 def test_requires_read_dataset(test_path):
     """Whether a test needs the shared TPC-H dataset attached before startup."""
-    return ElementTree.parse(test_path).getroot().get("requires_s3_read_dataset") == "1"
+    return _root_flag(test_path, "requires_s3_read_dataset")
+
+
+def test_requires_public_data(test_path):
+    """Whether a test reads the public prefixes that `s3_service.seed_public_data` copies."""
+    return _root_flag(test_path, "requires_s3_public_data")
+
+
+def test_requires_s3_catalog(test_path):
+    """Whether a test reads the Iceberg REST catalog that `s3_service.seed_catalog` fills."""
+    return _root_flag(test_path, "requires_s3_catalog")
 
 
 def _iter_queries(parent, source_dir, stack):

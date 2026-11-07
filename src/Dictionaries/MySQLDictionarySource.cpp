@@ -62,7 +62,7 @@ static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allow
     "query", "where", "name" /* name_collection */, "socket",
     "share_connection", "fail_on_connection_loss", "close_connection",
     "ssl_ca", "ssl_cert", "ssl_key",
-    "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem",
+    "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem", "ssl_key_passphrase",
     "enable_local_infile", "opt_reconnect", "enable_compression",
     "connect_timeout", "mysql_connect_timeout",
     "mysql_rw_timeout", "rw_timeout"};
@@ -247,7 +247,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 #endif
     };
 
-    factory.registerSource("mysql", create_table_source, SecretArgumentsSpec{.secret_keys = {"password", "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem"}}, Documentation{
+    factory.registerSource("mysql", create_table_source, SecretArgumentsSpec{.secret_keys = {"password", "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem", "ssl_key_passphrase"}}, Documentation{
         .description = R"DOCS_MD(
 # MySQL dictionary source
 
@@ -326,6 +326,7 @@ Setting fields:
 | `ssl_ca_pem` | Contents of the CA certificate that the MySQL server certificate is verified against. Optional. |
 | `ssl_cert_pem` | Contents of the client certificate, for certificate-based authentication. Optional. |
 | `ssl_key_pem` | Contents of the private key belonging to `ssl_cert_pem`. Optional. |
+| `ssl_key_passphrase` | Passphrase of an encrypted `ssl_key` / `ssl_key_pem`. Optional. |
 | `ssl_ca`, `ssl_cert`, `ssl_key` | The same credentials as paths to files on the server. Only allowed for a dictionary defined in a server configuration file, or through a named collection defined there, see below. Optional. |
 
 <Note>

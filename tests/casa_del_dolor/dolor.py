@@ -426,7 +426,80 @@ with open(first_server, "rb") as f:
     mm.close()
 
 logger.info(f"Private binary {'' if is_private_binary else 'not '}detected")
-keeper_configs: list[str] = modify_keeper_settings(args, is_private_binary)
+
+# Set as they are created, so a failure or a signal during startup still cleans up what exists
+keeper_configs: list[str] = []
+credentials_file = None
+cluster = None
+modified_server_settings = modified_user_settings = False
+server_settings = user_settings = None
+catalog_server = None
+generator = None
+client = None
+cleanup_started = False
+cleanup_ok = True
+
+
+def dolor_cleanup() -> bool:
+    """Tear everything down once; returns False if the teardown failed or found a problem."""
+    global cleanup_started, cleanup_ok
+    if cleanup_started:
+        return cleanup_ok
+    cleanup_started = True
+    # Another Ctrl+C must not abandon the teardown half-way; SIGKILL still works
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+
+    if client is not None:
+        if client.process.poll() is None:
+            client.process.kill()
+            client.process.wait()
+        logger.info(f"Load generator exited with code: {client.process.returncode}")
+
+    if cluster is not None:
+        # Raises on a sanitizer report, a logical error or a fatal message in the server logs
+        try:
+            cluster.shutdown(kill=True, ignore_fatal=False)
+        except Exception:
+            logger.exception("Cluster shutdown failed or found a problem")
+            cleanup_ok = False
+    # After the cluster: closing waits for in-flight Spark requests, which stopping the servers releases.
+    # Done first, a stalled request would keep the containers running and their logs unchecked.
+    if catalog_server is not None:
+        try:
+            close_spark_http_server(catalog_server)
+        except Exception:
+            logger.exception("Failed to close the Spark HTTP server")
+            cleanup_ok = False
+
+    files = list(keeper_configs)
+    if modified_server_settings:
+        files.append(server_settings)
+    if modified_user_settings:
+        files.append(user_settings)
+    if generator is not None and getattr(generator, "temp", None) is not None:
+        files.append(generator.temp.name)
+    if credentials_file is not None:
+        files.append(credentials_file.name)
+    for entry in files:
+        try:
+            os.unlink(entry)
+        except FileNotFoundError:
+            pass
+    return cleanup_ok
+
+
+def my_signal_handler(sig, frame):
+    logger.info(f"Received {signal.Signals(sig).name}, cleaning up")
+    dolor_cleanup()
+    sys.exit(128 + sig)
+
+
+signal.signal(signal.SIGINT, my_signal_handler)
+signal.signal(signal.SIGTERM, my_signal_handler)
+atexit.register(dolor_cleanup)
+
+keeper_configs = modify_keeper_settings(args, is_private_binary)
 
 if args.with_minio:
     # Set environment variables before cluster starts
@@ -462,7 +535,6 @@ test_env_variables = set_environment_variables(logger, args, "cluster")
 # Use random server settings sometimes
 server_settings = args.server_config
 user_settings = args.user_config
-modified_server_settings = modified_user_settings = False
 generated_clusters = 0
 if server_settings is not None:
     modified_server_settings, server_settings, generated_clusters = (
@@ -561,56 +633,6 @@ if args.generator == "buzzhouse":
 logger.info("Starting load generator")
 client = generator.run_generator(servers[0], logger, args)
 logger.info("Load generator started with PID %s", client.process.pid)
-everything_cleaned = False
-
-
-def dolor_cleanup():
-    global everything_cleaned
-    if not everything_cleaned:
-        if client.process.poll() is None:
-            client.process.kill()
-            client.process.wait()
-        logger.info(f"Load generator exited with code: {client.process.returncode}")
-
-        try:
-            cluster.shutdown(kill=True, ignore_fatal=False)
-        except:
-            pass
-        close_spark_http_server(catalog_server)
-        if modified_server_settings:
-            try:
-                os.unlink(server_settings)
-            except FileNotFoundError:
-                pass
-        if modified_user_settings:
-            try:
-                os.unlink(user_settings)
-            except FileNotFoundError:
-                pass
-        try:
-            os.unlink(generator.temp.name)
-        except FileNotFoundError:
-            pass
-        if args.with_minio:
-            try:
-                os.unlink(credentials_file.name)
-            except FileNotFoundError:
-                pass
-        for entry in keeper_configs:
-            try:
-                os.unlink(entry)
-            except FileNotFoundError:
-                pass
-        everything_cleaned = True
-
-
-def my_signal_handler(sig, frame):
-    dolor_cleanup()
-    sys.exit(0)
-
-
-signal.signal(signal.SIGINT, my_signal_handler)
-atexit.register(dolor_cleanup)
 time.sleep(3)
 
 integrations = []
@@ -806,4 +828,6 @@ while all_running and (not reached_limit):
     if all_running:
         tables_oracle.collect_table_hash_after_shutdown(cluster, logger, dump_table)
 
+# Tear down here rather than in `atexit`, so what the shutdown finds in the logs decides the exit code
+good_exit = dolor_cleanup() and good_exit
 sys.exit(0 if good_exit else 1)

@@ -40,8 +40,6 @@ ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), loc
 
 INSERT INTO loc_win (a, cat, cur, dt) VALUES (1, 'Empty', 'USD', '2024-01-01 00:00:00');
 
-SET enable_analyzer = 1;
-
 SELECT 'case 1 wrong results';
 -- Reported case 1: the two projected columns came back swapped, with no error at all.
 SELECT al AS category, cur, row_number() OVER (PARTITION BY a ORDER BY dt DESC) AS rn
@@ -247,7 +245,7 @@ FROM loc_win ORDER BY rn
 SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
          cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
          parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1,
-         automatic_parallel_replicas_mode = 0, parallel_replicas_plan_based = 0, enable_analyzer = 1,
+         automatic_parallel_replicas_mode = 0, parallel_replicas_plan_based = 0,
          log_comment = '05043_pr_alias';
 SELECT al AS category, cur, row_number() OVER (PARTITION BY a ORDER BY dt DESC) AS rn
 FROM loc_win ORDER BY rn SETTINGS enable_parallel_replicas = 0;
@@ -257,7 +255,7 @@ FROM loc_win ORDER BY rn
 SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
          cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
          parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1,
-         automatic_parallel_replicas_mode = 0, parallel_replicas_plan_based = 0, enable_analyzer = 1,
+         automatic_parallel_replicas_mode = 0, parallel_replicas_plan_based = 0,
          log_comment = '05043_pr_upper_alias';
 SELECT upper_al AS category, cur, row_number() OVER (ORDER BY a) AS rn
 FROM loc_win ORDER BY rn SETTINGS enable_parallel_replicas = 0;
