@@ -1,0 +1,106 @@
+-- Random settings limits: query_plan_optimize_join_order_randomize=(0, 0)
+-- The primary key range layers of a read must together return exactly the rows of the same read without
+-- layers: FINAL, a split ordinary read, a join sharded by primary key ranges and a distributed FINAL.
+-- A two-column key tests two key types: the second column decides the comparison with a layer border
+-- wherever the first one ties, so every table keeps all key columns in the index. `enum` repeats its key
+-- values across rows, and `repeated_key` repeats its key column.
+
+SET enable_parallel_replicas = 0;
+
+{% set tables = [
+    ('int128_bool', [('Int128', 'toInt128(intDiv(number, 2)) - 25'), ('Bool', 'number % 2 = 1')]),
+    ('date_datetime64', [('Date', "toDate('2020-01-01') + intDiv(number, 10)"), ("DateTime64(3, 'UTC')", "addMilliseconds(toDateTime64('2020-01-01 00:00:00', 3, 'UTC'), number % 10)")]),
+    ('date32_decimal', [('Date32', "toDate32('1950-01-01') + intDiv(number, 10)"), ('Decimal(9, 2)', 'toDecimal32(toString(toInt64(number % 10) - 5), 2) / 4')]),
+    ('datetime_fixedstring', [("DateTime('UTC')", "toDateTime('2020-01-01 00:00:00', 'UTC') + intDiv(number, 10)"), ('FixedString(2)', "leftPad(toString(number % 10), 2, '0')")]),
+    ('string_uuid', [('String', "leftPad(toString(intDiv(number, 10)), 2, '0')"), ('UUID', "toUUID(concat('00000000-0000-0000-0000-', leftPad(toString(number % 10), 12, '0')))")]),
+    ('ipv6_interval', [('IPv6', 'toIPv6(IPv4NumToString(toUInt32(intDiv(number, 10))))'), ('IntervalSecond', 'toIntervalSecond(number % 10)')]),
+    ('array_tuple', [('Array(UInt16)', '[toUInt16(intDiv(number, 10)), toUInt16(number % 2)]'), ('Tuple(String, UInt16)', '(toString(number % 10), toUInt16(number % 3))')]),
+    ('lowcardinality', [('LowCardinality(String)', "leftPad(toString(number), 4, '0')")]),
+    ('enum', [("Enum8('a' = -2, 'b' = -1, 'c' = 0, 'd' = 1, 'e' = 2)", 'toInt8(number % 5) - 2')]),
+    ('repeated_key', [('UInt64', 'number')]),
+] -%}
+{# Split reads, joins and distributed reads build their filters like FINAL does, so a few tables cover them. #}
+{% set read_and_join = ['array_tuple', 'enum', 'repeated_key'] -%}
+{% set distributed_reads = ['array_tuple'] -%}
+
+{% set layers_final = 'max_threads = 4, max_final_threads = 4, do_not_merge_across_partitions_select_final = 0, split_parts_ranges_into_intersecting_and_non_intersecting_final = 1' -%}
+{# make_distributed_plan rejects aggregation under a global max_rows_to_group_by, which the CI test profile sets. #}
+{% set distributed = 'distributed_plan_fallback_to_local_execution = 0, distributed_plan_default_reader_bucket_count = 4, distributed_plan_max_rows_to_broadcast = 0, max_rows_to_group_by = 0' -%}
+{% set join = "join_algorithm = 'full_sorting_merge', max_threads = 4" -%}
+{# Each UNION ALL branch is one block, and without insert squashing each block is one part. #}
+{% set two_parts = 'FROM (SELECT number, 0 AS batch FROM numbers(0, 60) UNION ALL SELECT number, 1 FROM numbers(30, 60))' -%}
+{% set unsquashed = 'min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0' -%}
+
+CREATE TABLE results (name String, arm String, layers Bool, rows UInt64, hash UInt64) ENGINE = Memory;
+
+{% for name, columns in tables -%}
+{% set key = 'k1, k1' if name == 'repeated_key' else ('k1, k2' if columns | length == 2 else 'k1') -%}
+CREATE TABLE t_{{ name }} ({% for type, value in columns %}k{{ loop.index }} {{ type }}, {% endfor %}v UInt64, ver UInt64)
+ENGINE = ReplacingMergeTree(ver) ORDER BY ({{ key }})
+SETTINGS index_granularity = 2, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0{{ ', allow_suspicious_indices = 1' if name == 'repeated_key' }};
+SYSTEM STOP MERGES t_{{ name }};
+INSERT INTO t_{{ name }} SELECT {% for type, value in columns %}{{ value }}, {% endfor %}batch * 10000 + number, batch * 1000000 + number
+{{ two_parts }}
+SETTINGS optimize_on_insert = 0, {{ unsquashed }};
+
+{% for layers in [1, 0] -%}
+INSERT INTO results SELECT '{{ name }}', 'final', {{ layers }}, count(), sum(cityHash64(v)) FROM t_{{ name }} FINAL
+SETTINGS {{ layers_final }}, split_intersecting_parts_ranges_into_layers_final = {{ layers }};
+{% endfor -%}
+
+{% if name in read_and_join -%}
+{% set on = 'a.k1 = b.k1 AND a.k2 = b.k2' if columns | length == 2 else 'a.k1 = b.k1' -%}
+{% for layers in [1, 0] -%}
+INSERT INTO results SELECT '{{ name }}', 'read', {{ layers }}, count(), sum(cityHash64(v)) FROM t_{{ name }}
+SETTINGS max_threads = 4, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = {{ layers }};
+INSERT INTO results SELECT '{{ name }}', 'join', {{ layers }}, count(), sum(cityHash64(a.v, b.v)) FROM t_{{ name }} AS a JOIN t_{{ name }} AS b ON {{ on }}
+SETTINGS {{ join }}, query_plan_join_shard_by_pk_ranges = {{ layers }};
+{% endfor -%}
+{% endif -%}
+
+{% if name in distributed_reads -%}
+{% for layers in [1, 0] -%}
+INSERT INTO results SELECT '{{ name }}', 'distributed', {{ layers }}, count(), sum(cityHash64(v)) FROM t_{{ name }} FINAL
+SETTINGS make_distributed_plan = {{ layers }}{{ ', ' ~ distributed if layers }};
+{% endfor -%}
+{% endif %}
+{% endfor -%}
+
+-- A join sharded by the borders of two tables with different keys: some borders exist only in the other table's index.
+CREATE TABLE t_other (k1 LowCardinality(String), v UInt64) ENGINE = MergeTree ORDER BY k1 SETTINGS index_granularity = 2;
+SYSTEM STOP MERGES t_other;
+INSERT INTO t_other SELECT leftPad(toString(number * 3), 4, '0'), batch * 10000 + number
+FROM (SELECT number, 0 AS batch FROM numbers(10, 30) UNION ALL SELECT number, 1 FROM numbers(20, 30))
+SETTINGS {{ unsquashed }};
+{% for layers in [1, 0] -%}
+INSERT INTO results SELECT 'two_tables', 'join', {{ layers }}, count(), sum(cityHash64(a.v, b.v)) FROM t_lowcardinality AS a JOIN t_other AS b ON a.k1 = b.k1
+SETTINGS {{ join }}, query_plan_join_shard_by_pk_ranges = {{ layers }};
+{% endfor %}
+-- A hash join sharded by a key prefix: its reads lack the source column of the computed key suffix.
+CREATE TABLE t_prefix (k1 UInt64, k2 UInt64, v UInt64) ENGINE = MergeTree ORDER BY (k1, k2 + 1)
+SETTINGS index_granularity = 2, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0;
+SYSTEM STOP MERGES t_prefix;
+INSERT INTO t_prefix SELECT intDiv(number, 2), number, batch * 10000 + number {{ two_parts }} SETTINGS {{ unsquashed }};
+{% for layers in [1, 0] -%}
+INSERT INTO results SELECT 'prefix_hash', 'join', {{ layers }}, count(), sum(cityHash64(a.v, b.v)) FROM t_prefix AS a JOIN t_prefix AS b ON a.k1 = b.k1
+SETTINGS join_algorithm = 'hash', max_threads = 4, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, enable_join_runtime_filters = 0,
+    query_plan_join_shard_by_pk_ranges = {{ layers }};
+{% endfor %}
+SELECT name, arm, anyIf((rows, hash), layers) = anyIf((rows, hash), NOT layers) AS same
+FROM results
+GROUP BY name, arm
+ORDER BY name, arm;
+
+-- Each FINAL above is read by layers.
+SELECT name, countIf(explain ILIKE '%FilterSortedStreamByRange%') > 0 AS has_layer_filter
+FROM
+(
+{%- for name, columns in tables %}
+    {% if not loop.first %}UNION ALL {% endif %}SELECT '{{ name }}' AS name, explain FROM (EXPLAIN PIPELINE SELECT count(), sum(cityHash64(v)) FROM t_{{ name }} FINAL
+        SETTINGS {{ layers_final }}, split_intersecting_parts_ranges_into_layers_final = 1)
+{%- endfor %}
+)
+GROUP BY name
+ORDER BY name;
+
+DROP TABLE {% for name, columns in tables %}t_{{ name }}, {% endfor %}t_other, t_prefix, results;
