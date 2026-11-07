@@ -23,6 +23,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char rmt_cancel_removed_parts_check_pause_in_gap[];
+    extern const char rmt_part_check_thread_pause_in_stop[];
     extern const char check_table_inject_part_check_cancelled[];
 }
 
@@ -70,6 +71,8 @@ void ReplicatedMergeTreePartCheckThread::stop()
 
     std::lock_guard lock(start_stop_mutex);
     need_stop = true;
+    /// Used only by tests to hold the stop request between raising the flag and waiting for the running check.
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_part_check_thread_pause_in_stop);
     getTask()->deactivate();
 }
 
