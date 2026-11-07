@@ -361,7 +361,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     /// which is not linked to current module
     if (step->getName() == "ReadFromSystemOne")
     {
-        /// system.one always produces exactly one row — used to implement constant SELECTs like `SELECT 1`.
+        /// system.one always produces exactly one row - used to implement constant SELECTs like `SELECT 1`.
         return RelationStats{.estimated_rows = 1, .table_name = "system.one"};
     }
 

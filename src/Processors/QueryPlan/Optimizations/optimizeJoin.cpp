@@ -217,13 +217,13 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
     bool need_swap = false;
     if (!join_step->swap_join_tables.has_value())
     {
-        auto lhs_extimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
-        auto rhs_extimation = estimateReadRowsCount(*node.children[1]).estimated_rows;
+        auto lhs_estimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
+        auto rhs_estimation = estimateReadRowsCount(*node.children[1]).estimated_rows;
         LOG_TRACE(getLogger("optimizeJoinLegacy"), "Left table estimation: {}, right table estimation: {}",
-            lhs_extimation ? toString(lhs_extimation.value()) : "unknown",
-            rhs_extimation ? toString(rhs_extimation.value()) : "unknown");
+            lhs_estimation ? toString(lhs_estimation.value()) : "unknown",
+            rhs_estimation ? toString(rhs_estimation.value()) : "unknown");
 
-        if (lhs_extimation && rhs_extimation && lhs_extimation < rhs_extimation)
+        if (lhs_estimation && rhs_estimation && lhs_estimation < rhs_estimation)
             need_swap = true;
     }
     else if (join_step->swap_join_tables.value())

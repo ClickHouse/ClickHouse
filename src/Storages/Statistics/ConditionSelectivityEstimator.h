@@ -46,7 +46,7 @@ public:
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
-    RelationProfile estimateRelationProfile() const;
+    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata = {}) const;
 
     struct RPNElement
     {
@@ -175,6 +175,8 @@ public:
 private:
     bool has_data = false;
     ConditionSelectivityEstimatorPtr estimator;
+    /// Columns whose parts carry statistics for different data types. They get no statistics, see `addStatistics`.
+    NameSet columns_with_mixed_types;
 };
 
 }
