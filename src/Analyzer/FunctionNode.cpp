@@ -171,21 +171,26 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     }
 }
 
-bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*compare_options*/) const
+bool FunctionNode::isEqualExceptResultType(const FunctionNode & rhs) const
 {
-    const auto & rhs_typed = assert_cast<const FunctionNode &>(rhs);
-    if (function_name != rhs_typed.function_name || isAggregateFunction() != rhs_typed.isAggregateFunction()
-        || isOrdinaryFunction() != rhs_typed.isOrdinaryFunction() || isWindowFunction() != rhs_typed.isWindowFunction()
-        || nulls_action != rhs_typed.nulls_action)
+    if (function_name != rhs.function_name || isAggregateFunction() != rhs.isAggregateFunction()
+        || isOrdinaryFunction() != rhs.isOrdinaryFunction() || isWindowFunction() != rhs.isWindowFunction()
+        || nulls_action != rhs.nulls_action)
         return false;
 
     /// is_operator is ignored here because it affects only AST formatting, except for the function
     /// composition operator `f | g`: the operator and an ordinary call to a function of the same
     /// name are different expressions.
-    if (function_name == function_composition_name && is_operator != rhs_typed.is_operator)
+    if (function_name == function_composition_name && is_operator != rhs.is_operator)
         return false;
 
-    if (isResolved() != rhs_typed.isResolved())
+    return isResolved() == rhs.isResolved();
+}
+
+bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*compare_options*/) const
+{
+    const auto & rhs_typed = assert_cast<const FunctionNode &>(rhs);
+    if (!isEqualExceptResultType(rhs_typed))
         return false;
     if (!isResolved())
         return true;
