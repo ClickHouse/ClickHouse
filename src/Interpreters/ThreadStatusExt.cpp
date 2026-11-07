@@ -132,6 +132,15 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
     };
 }
 
+// c-tor for method createWithoutQueryContext
+ThreadGroup::ThreadGroup(const ContextWeakPtr & global_context_)
+    : master_thread_id(CurrentThread::get().thread_id)
+    , global_context(global_context_)
+    , os_threads_nice_value(0)
+    , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>())
+{
+}
+
 // c-tor for methods createForMaterializedView, createForExplainAnalyze and createWithoutQueryMemoryTracker
 ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group, bool charge_memory_to_parent)
     : parent(std::move(parent_thread_group))
@@ -300,6 +309,11 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
 ThreadGroupPtr ThreadGroup::createWithoutQueryMemoryTracker(ThreadGroupPtr parent_thread_group)
 {
     return ThreadGroupPtr(new ThreadGroup(std::move(parent_thread_group), /*charge_memory_to_parent=*/ false));
+}
+
+ThreadGroupPtr ThreadGroup::createWithoutQueryContext(ContextPtr global_context_)
+{
+    return ThreadGroupPtr(new ThreadGroup(ContextWeakPtr(global_context_->getGlobalContext())));
 }
 
 ThreadGroupPtr ThreadGroup::createForExplainAnalyze(ThreadGroupPtr parent_thread_group)
