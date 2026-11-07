@@ -556,13 +556,6 @@ void updateConfigurationFromConfig(
             }
         });
 
-    /// NOTE: statistics should be consumed, otherwise it creates too much
-    /// entries in the queue, that leads to memory leak and slow shutdown.
-    if (!kafka_config.has_property("statistics.interval.ms"))
-    {
-        // every 3 seconds by default. set to 0 to disable.
-        kafka_config.set("statistics.interval.ms", "3000");
-    }
     // Configure interceptor to change thread name
     //
     // TODO: add interceptors support into the cppkafka.
@@ -632,6 +625,11 @@ cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorag
     conf.set("client.software.name", VERSION_NAME);
     conf.set("client.software.version", VERSION_DESCRIBE);
     conf.set("auto.offset.reset", "earliest"); // If no offset stored for this group, read all messages from the start
+
+    /// Only pre-seed when the storage drains idle consumers; the old engine cannot safely
+    /// drain a held consumer (data and events share one queue), so it stays opt-in.
+    if (params.drain_idle_consumers)
+        conf.set("statistics.interval.ms", "3000");
 
     // that allows to prevent fast draining of the librdkafka queue
     // during building of single insert block. Improves performance

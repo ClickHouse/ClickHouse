@@ -165,6 +165,18 @@ void KeeperHandlingConsumer::setKeeper(const std::shared_ptr<zkutil::ZooKeeper> 
     poll_count = 0;
 }
 
+void KeeperHandlingConsumer::drainKafkaEvents()
+{
+    chassert(isInUse());
+    pollEventsNonOwning();
+}
+
+void KeeperHandlingConsumer::pollEventsNonOwning()
+{
+    /// Drain a deep backlog in one go: this may be the only servicing for a while.
+    kafka_consumer->pollEvents(/*max_tries=*/10000);
+}
+
 std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::prepareToPoll(UInt64 locks_refresh_polls)
 {
     chassert(isInUse());

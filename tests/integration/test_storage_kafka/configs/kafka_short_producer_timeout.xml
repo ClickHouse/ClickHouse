@@ -1,0 +1,9 @@
+<clickhouse>
+    <kafka>
+        <producer>
+            <!-- Long enough for the statistics interval (3 s) plus the assertion window
+                 in the blocked-insert tests; short enough to bound their teardown. -->
+            <message_timeout_ms>60000</message_timeout_ms>
+        </producer>
+    </kafka>
+</clickhouse>

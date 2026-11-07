@@ -105,10 +105,10 @@ CppKafkaConsumerPtr && KafkaConsumer2::moveConsumer()
     return std::move(consumer);
 }
 
-void KafkaConsumer2::pollEvents()
+void KafkaConsumer2::pollEvents(size_t max_tries)
 {
-    static constexpr auto max_tries = 5;
-    for (auto i = 0; i < max_tries; ++i)
+    std::lock_guard lock(events_poll_mutex);
+    for (size_t i = 0; i < max_tries; ++i)
     {
         auto msg = consumer->poll(EVENT_POLL_TIMEOUT);
         if (!msg)

@@ -30,6 +30,8 @@ namespace DB
 /// the functions of category a).
 ///   c) All other functions: they can be called simultaneously with `getStat`, but nothing else, not even each other
 /// or themselves.
+///   d) `pollEventsNonOwning`: only polls the events queue of the handle (data lives on detached
+/// partition queues) and touches no other state, so it is safe with everything except category a).
 class KeeperHandlingConsumer
 {
 public:
@@ -124,6 +126,13 @@ public:
     /// `StorageKafka2::startup()` and reused across Keeper sessions, so a captured value would stay
     /// frozen for the lifetime of the attachment. 0 refreshes on every cycle.
     std::optional<CannotPollReason> prepareToPoll(UInt64 locks_refresh_polls);
+
+    /// Serves librdkafka callbacks (statistics, errors). The consumer must be in use.
+    void drainKafkaEvents();
+
+    /// Same, but without owning the consumer - safe while another thread holds it: it only polls
+    /// the events queue (data lives on detached partition queues), see category d) above.
+    void pollEventsNonOwning();
 
     /// Returns empty optional if polling it not possible or no messages were polled.
     /// Returns an OffsetGuard that rollbacks the offsets unless it is committed or deactivated.

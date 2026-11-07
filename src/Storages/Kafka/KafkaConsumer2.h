@@ -10,6 +10,7 @@
 #include <cppkafka/topic_partition_list.h>
 #include <Common/CurrentMetrics.h>
 
+#include <mutex>
 #include <unordered_set>
 
 namespace CurrentMetrics
@@ -102,7 +103,7 @@ public:
 
     // Poll only the main consumer queue without any topic-partition queues. This is useful to get notified about events, such as rebalance,
     // new assignment, etc..
-    void pollEvents();
+    void pollEvents(size_t max_tries = 5);
 
     auto pollTimeout() const { return poll_timeout; }
 
@@ -164,6 +165,9 @@ private:
     std::atomic<UInt64> num_messages_read = 0;
 
     CppKafkaConsumerPtr consumer{nullptr};
+    /// Serializes pollEvents(): librdkafka's rd_kafka_consume0 writes non-atomic
+    /// rkq_ts_last_poll_start/end fields outside the queue lock.
+    std::mutex events_poll_mutex;
     LoggerPtr log;
     const size_t batch_size = 1;
     const size_t poll_timeout = 0;

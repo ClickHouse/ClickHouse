@@ -222,7 +222,9 @@ StorageKafka2::StorageKafka2(
     }
 
     activating_task = getContext()->getSchedulePool()->createTask(getStorageID(), log->name() + " (activating task)", [this]() { activateAndReschedule(); });
+    drain_task = getContext()->getSchedulePool()->createTask(getStorageID(), log->name() + " (drain events)", [this]() { drainEventsTask(); });
     activating_task->deactivate();
+    drain_task->deactivate();
 }
 
 StorageKafka2::~StorageKafka2()
@@ -611,6 +613,7 @@ void StorageKafka2::startup()
         }
     }
     activating_task->activateAndSchedule();
+    drain_task->activateAndSchedule();
 }
 
 void StorageKafka2::scheduleStreamingTasksImpl()
@@ -628,6 +631,9 @@ void StorageKafka2::shutdown(bool)
     cv.notify_all();
     activating_task->deactivate();
     partialShutdown();
+    /// Stop the drain task only after the streaming tasks: partialShutdown can block on a
+    /// stalled MV insert, and the drain task must keep serving events during that wait.
+    drain_task->deactivate();
     LOG_TRACE(log, "Closing consumers");
     cleanConsumers();
     LOG_TRACE(log, "Consumers closed");
@@ -699,10 +705,9 @@ cppkafka::Configuration StorageKafka2::getConsumerConfiguration(size_t consumer_
         num_consumers > 1,
         consumer_number,
         client_id,
-        getMaxBlockSize()};
+        getMaxBlockSize(),
+        /*drain_idle_consumers=*/true};
     auto kafka_config = KafkaConfigLoader::getConsumerConfiguration(*this, params, std::move(exception_sink));
-    // It is disabled, because in case of no materialized views are attached, it can cause live memory leak. To enable it, a similar cleanup mechanism must be introduced as for StorageKafka.
-    kafka_config.set("statistics.interval.ms", "0");
     // Making more frequent updates, now 1 min
     kafka_config.set("topic.metadata.refresh.interval.ms", "60000");
     return kafka_config;
@@ -1375,6 +1380,10 @@ void StorageKafka2::threadFunc(size_t idx)
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
+    /// Nobody polls the consumer when this cycle did not stream, so serve its events to keep the queue bounded.
+    if (!incremented_mv_streamers && !task->stream_cancelled)
+        pollIdleConsumerEvents(idx);
+
     if (incremented_mv_streamers)
         active_mv_streamers.fetch_sub(1);
 
@@ -1504,6 +1513,43 @@ void StorageKafka2::releaseConsumer(KeeperHandlingConsumerPtr && consumer_ptr)
     /// Use notify_all so that all threads waiting for different consumer indices get a chance to check.
     cv.notify_all();
     CurrentMetrics::sub(CurrentMetrics::KafkaConsumersInUse);
+}
+
+void StorageKafka2::pollIdleConsumerEvents(size_t idx)
+{
+    try
+    {
+        KeeperHandlingConsumerPtr consumer;
+        {
+            std::lock_guard lock(consumers_mutex);
+            if (idx >= consumers.size() || !consumers[idx])
+                return;
+            /// No handle means nothing to drain.
+            if (!consumers[idx]->hasConsumer())
+                return;
+            consumer = consumers[idx];
+        }
+
+        /// Always non-owning: acquiring an idle consumer can block for up to
+        /// kafka_consumer_acquire_timeout_ms if it becomes busy in between, which
+        /// would stall this task and every later slot for the whole wait.
+        consumer->pollEventsNonOwning();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, fmt::format("Failed to poll events of consumer #{}", idx));
+    }
+}
+
+void StorageKafka2::drainEventsTask()
+{
+    /// Periodic drainer independent of the streaming and activation tasks: a blocked MV insert
+    /// keeps its streaming task inside streamToViews, and a Keeper outage makes activate() wait
+    /// in partialShutdown() for that task, so neither can drain events during such waits.
+    for (size_t idx = 0; idx < tasks.size(); ++idx)
+        pollIdleConsumerEvents(idx);
+
+    drain_task->scheduleAfter(500);
 }
 
 void StorageKafka2::cleanConsumers()
