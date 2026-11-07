@@ -178,6 +178,10 @@ workflow = Workflow.Config(
         ],
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.functional_tests_arm_binary_plan_based_parallel_replicas_jobs
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.functional_test_llvm_coverage_jobs
         ],
         *[

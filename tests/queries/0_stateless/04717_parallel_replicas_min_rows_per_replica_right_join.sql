@@ -26,6 +26,9 @@ SET enable_parallel_replicas = 1, max_parallel_replicas = 3,
     parallel_replicas_local_plan = 1,
     automatic_parallel_replicas_mode = 0,
     parallel_replicas_min_number_of_rows_per_replica = 100;
+-- Pin Top-K dynamic filtering for the `ORDER BY ... LIMIT 5` queries: with plan-based parallel replicas it keeps
+-- the read local, so the result depends on these randomized settings unless they are pinned.
+SET use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100;
 
 -- Liveness oracle: the results below are also produced by plain execution, so assert that the
 -- query really runs with parallel replicas. Prints 1; prints 0 if the path is ever bypassed.

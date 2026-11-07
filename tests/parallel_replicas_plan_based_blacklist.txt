@@ -1,0 +1,111 @@
+    A read from a UNIQUE KEY table is shipped, but cannot be serialized (SUPPORT_IS_DISABLED)
+    https://github.com/ClickHouse/ClickHouse/issues/128534
+03313_unique_key_mutation_guard
+04046_unique_key_ddl
+04105_unique_key_insert
+04107_unique_key_insert_concurrency
+04161_unique_key_insert_duplicate
+04168_unique_key_conflict_action
+04174_unique_key_insert_dedup
+04196_unique_key_read_skips_an_uncommitted_part
+04198_unique_key_read_sees_a_lost_reply_commit
+
+    A join with `mergeTreeProjection` throws `NOT_FOUND_COLUMN_IN_BLOCK`: the replica resolves the projection side as the base table
+    https://github.com/ClickHouse/ClickHouse/issues/128537
+03401_normal_projection_with_part_offset
+03785_rebuild_projection_with_part_offset
+
+    A read from a temporary table is shipped, and the replica cannot access it (DATABASE_ACCESS_DENIED)
+00542_access_to_temporary_table_in_readonly_mode
+02525_different_engines_in_temporary_tables
+02766_prql
+02995_bad_formatting_union_intersect
+03045_unknown_identifier_alias_substitution
+03143_cte_scope
+03156_nullable_number_tips
+
+    A `GLOBAL IN` set built from `input()` has no plan to ship, so plan-based keeps the read local
+05237_parallel_replicas_input_table_function
+
+    A read with Top-K dynamic filtering stays local (`__topKFilter` cannot be shipped), so the query does not use parallel replicas
+04717_parallel_replicas_min_rows_per_replica_right_join
+
+    A query that is not distributed keeps a split aggregation and a `ParallelReplicasSplit` step
+    https://github.com/ClickHouse/ClickHouse/issues/128539
+02377_optimize_sorting_by_input_stream_properties_2
+02404_memory_bound_merging
+03305_mergine_aggregated_filter_push_down
+03355_join_to_in_optimization
+04093_lazy_final_combined_filtering
+04095_lazy_final_with_lazy_materialization
+
+    `force_primary_key` throws `INDEX_NOT_USED` on a replica when the filter is a constant above `ARRAY JOIN`
+    https://github.com/ClickHouse/ClickHouse/issues/128542
+05350_comparison_tuple_elimination_shared_alias
+
+    Three plan optimizations are switched off for every query, not only for steps that are shipped
+    https://github.com/ClickHouse/ClickHouse/issues/128546
+01655_plan_optimizations
+04669_fuse_filter_into_array_join
+05042_fuse_filter_array_join_left_distributed
+05044_lower_array_join_function
+05137_fuse_row_conditions_into_array_join
+05243_array_join_element_filter_block_boundary
+05385_fuse_filter_array_join_lift_row_actions
+05397_fuse_filter_into_left_array_join
+05399_additional_result_filter_extremes
+05405_lazy_materialization_for_join_object_storage_default_dependency
+
+    `DISTINCT` and `LIMIT` are not shipped with the plan fragment, so replicas return every row they read
+    https://github.com/ClickHouse/ClickHouse/issues/128560
+02862_sorted_distinct_sparse_fix
+04330_distinct_sorted_const_key_after_filter
+04549_virtual_row_distinct_in_order_boundary
+05217_aggregation_in_order_fixed_keys
+05401_aggregation_nullable_fixed_keys_batch_pack
+
+    A replica throws `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN` on `hasToken(CAST(s, 'String'), ...)`: the text index does not skip the NULL granule there
+05340_text_index_preprocessor_cast_drop_nullable
+
+    A replica throws `NOT_FOUND_COLUMN_IN_BLOCK` for `_parent_part_offset` when reading a projection
+03546_merge_tree_projection_shared_snapshot
+05427_projection_where_order_by_columns
+
+    A replica throws `NOT_IMPLEMENTED` (`createColumn` for a `Function` type) for a lambda in the shipped fragment
+05033_lazy_materialization_column_function_structure_equals
+05034_lazy_materialization_column_function_set_capture
+
+    A replica throws `UNKNOWN_IDENTIFIER` in `timeSeriesIdToGroup`
+05175_time_series_table_functions_parallel_replicas
+05293_promql_constant_scalar_arithmetic
+
+    The test greps EXPLAIN, and ReadFromParallelReplicas prints the whole shipped fragment in its description
+05141_hypothetical_projection_verdict_rules
+05175_hypothetical_projection_part_offset
+
+    The test checks EXPLAIN output, which parallel replicas wrap differently; the optimization itself still applies
+02725_agg_projection_respect_PK
+03892_grouping_sets_force_aggregation_in_order
+05076_hypothetical_projection_estimate
+05176_hypothetical_projection_estimate_part_layout
+
+    The test asserts read counters, ProfileEvents or query_log, which differ when the work is split differently
+01045_order_by_pk_special_storages
+01283_max_threads_simple_query_optimization
+01913_exact_rows_before_limit
+02465_limit_trivial_max_rows_to_read
+02784_parallel_replicas_automatic_decision_join
+04340_autopr_input_bytes_estimation_join
+04836_merge_table_parallel_replicas_duplicate_announcement
+05175_autopr_lazy_read_statistics
+05292_autopr_stats_key_constants
+05399_autopr_plan_without_parallel_replicas
+
+    The test describes query-based behaviour (setting semantics, statistics, step names)
+01513_optimize_aggregation_in_order_memory_long
+01655_plan_optimizations_optimize_read_in_window_order_long
+02910_prefetch_unexpceted_exception
+03850_nested_cluster_table_function_task_iterator
+04908_group_by_top_k_max_k_cap
+05019_group_by_top_k_compatibility
+05175_autopr_keep_cluster_engines

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel, no-fasttest
+# Tag no-parallel, no-fasttest: the failpoint is server-wide
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -27,7 +29,13 @@ $CLICKHOUSE_CLIENT --query "CREATE TABLE replicas_summary (n Int64) ENGINE = Mer
 
 query_id_base="02841_summary_$CLICKHOUSE_DATABASE"
 
-# TODO: rethink the test, for now temporary disable parallel_replicas_local_plan
+# Slow down the local replica, so the remote replicas always take part in the query: otherwise the local replica
+# may read the whole result alone, and no remote replica would be involved.
+# Plan-based parallel replicas does not ship a `LIMIT` without `ORDER BY` to the replicas yet, so a remote replica
+# reads until the initiator cancels it, and a cancelled replica never reports its progress. Remove the
+# `parallel_replicas_plan_based` pin once https://github.com/ClickHouse/ClickHouse/pull/129811 is merged.
+$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT slowdown_parallel_replicas_local_plan_read"
+
 echo "
     SELECT *
     FROM replicas_summary
@@ -39,7 +47,8 @@ echo "
         automatic_parallel_replicas_mode = 0,
         parallel_replicas_for_non_replicated_merge_tree = 1,
         interactive_delay=0,
-        parallel_replicas_local_plan=0
+        parallel_replicas_local_plan=1,
+        parallel_replicas_plan_based=0
     "\
     | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=1&query_id=${query_id_base}_interactive_0" --data-binary @- -vvv 2>&1 \
     | grep "Summary" | grep -v 'Access-Control-Expose-Headers' | grep -cv '"read_rows":"0"'
@@ -55,10 +64,13 @@ echo "
         automatic_parallel_replicas_mode = 0,
         parallel_replicas_for_non_replicated_merge_tree = 1,
         interactive_delay=99999999999,
-        parallel_replicas_local_plan=0
+        parallel_replicas_local_plan=1,
+        parallel_replicas_plan_based=0
     "\
     | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=1&query_id=${query_id_base}_interactive_high" --data-binary @- -vvv 2>&1 \
     | grep "Summary" | grep -v 'Access-Control-Expose-Headers' | grep -cv '"read_rows":"0"'
+
+$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT slowdown_parallel_replicas_local_plan_read"
 
 # Wait for query_log entries from parallel replicas queries.
 # There is a race between HTTP response being sent and the query_log entry being written.
