@@ -4,7 +4,7 @@
 
 # A source grant filter must only authorize the location the storage accesses: a location the
 # normalization used for the check would change (dot segments, empty segments, escapes, a fragment)
-# needs the grant on the whole source, and glob characters are matched as written.
+# needs the grant on the whole source, and a glob character must match the filter both as written and escaped.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -40,6 +40,9 @@ GRANT READ ON URL('$s3/test/.*') TO $user;
 GRANT READ ON S3('$s3/esc/a%2A.tsv') TO $user;
 GRANT READ ON URL('$s3/esc/%7Ba%2Cb%7D.tsv') TO $user;
 GRANT WRITE ON AZURE('$db/arc/ok.tar') TO $user;
+GRANT READ ON S3('$s3/exact/report.csv') TO $user;
+GRANT READ ON URL('$s3/exact/report.csv') TO $user;
+GRANT READ ON AZURE('$db/exact/report.csv') TO $user;
 "
 
 # Prints whether the query was refused for the named grant; any other outcome is "not denied".
@@ -56,6 +59,11 @@ function check()
 function azure()
 {
     echo "AzureBlobStorage('http://localhost:10000/devstoreaccount1', '$container', '$1', 'devstoreaccount1', '$azure_key')"
+}
+
+function azure_table()
+{
+    echo "azureBlobStorage('http://localhost:10000/devstoreaccount1', '$container', '$1', 'devstoreaccount1', '$azure_key', 'CSV')"
 }
 
 s3_backup_settings="SETTINGS backup_restore_s3_retry_attempts = 0"
@@ -86,6 +94,11 @@ echo "s3 glob: $(check 'READ ON S3' "SELECT * FROM s3('$s3/test/$db/*.tsv', 'TSV
 echo "url glob alternatives: $(check 'READ ON URL' "SELECT * FROM url('$s3/test/$db/{a,b}.tsv', 'TSV')")"
 echo "file: $(check 'READ ON FILE' "SELECT * FROM icebergLocal('$ufp/$db/allowed/t')")"
 echo "azure archive: $(check 'WRITE ON AZURE' "BACKUP TABLE $db.t TO $(azure "$db/arc/ok.tar")")"
+echo "s3 exact filter: $(check 'READ ON S3' "SELECT * FROM s3('$s3/exact/report.csv', 'CSV')")"
+echo "s3 glob against an exact filter: $(check 'READ ON S3' "SELECT * FROM s3('$s3/exact/report*csv', 'CSV')")"
+echo "s3 escaped wildcard against an exact filter: $(check 'READ ON S3' "SELECT * FROM s3('$s3/exact/report%3Fcsv', 'CSV')")"
+echo "url failover against an exact filter: $(check 'READ ON URL' "SELECT * FROM url('$s3/exact/report|csv', 'CSV')")"
+echo "azure glob against an exact filter: $(check 'READ ON AZURE' "SELECT * FROM $(azure_table "$db/exact/report*csv")")"
 
 ${CLICKHOUSE_CLIENT} -q "GRANT READ ON S3 TO $user"
 echo "s3 dot segment with the whole-source grant: $(check 'READ ON S3' "SELECT * FROM s3('$s3/other/../test/a.tsv', 'TSV')")"

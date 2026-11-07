@@ -185,13 +185,41 @@ String unescapeGlobCharacters(const String & subject)
     return result;
 }
 
-/// What a source grant filter is matched against for `uri`, or an empty string when no filter can be trusted
-/// with it, which leaves only the grant on the whole source.
-String getSourceAccessSubject(AccessTypeObjects::Source source, const String & uri)
+/// `*?{}|` escaped as `toString` escapes them in a path.
+String escapeGlobCharacters(const String & name)
+{
+    String result;
+    result.reserve(name.size());
+    for (const char c : name)
+    {
+        if (c == '*')
+            result += "%2A";
+        else if (c == '?')
+            result += "%3F";
+        else if (c == '{')
+            result += "%7B";
+        else if (c == '}')
+            result += "%7D";
+        else if (c == '|')
+            result += "%7C";
+        else
+            result += c;
+    }
+    return result;
+}
+
+/// What source grant filters are matched against for `uri`: the location with glob characters as written, and with
+/// them escaped. Both are empty when no filter can be trusted with the location, which leaves only the grant on the
+/// whole source.
+std::pair<String, String> getSourceAccessSubjects(AccessTypeObjects::Source source, const String & uri)
 {
     /// A blob path and a local path are names, used as written.
     if (source == AccessTypeObjects::Source::AZURE || source == AccessTypeObjects::Source::FILE)
-        return hasDotSegment(uri) ? String{} : uri;
+    {
+        if (hasDotSegment(uri))
+            return {};
+        return {uri, escapeGlobCharacters(uri)};
+    }
 
     /// A fragment is never part of the accessed location.
     if (uri.contains('#'))
@@ -217,7 +245,10 @@ String getSourceAccessSubject(AccessTypeObjects::Source source, const String & u
     {
         return {};
     }
-    return unescapeGlobCharacters(ITableFunction::normalizeURIForAccessCheck(uri));
+
+    String escaped = ITableFunction::normalizeURIForAccessCheck(uri);
+    String as_written = unescapeGlobCharacters(escaped);
+    return {std::move(as_written), std::move(escaped)};
 }
 
 }
@@ -225,7 +256,14 @@ String getSourceAccessSubject(AccessTypeObjects::Source source, const String & u
 void ITableFunction::checkSourceAccessForURI(
     const ContextPtr & context, const AccessFlags & flags, AccessTypeObjects::Source source, const String & uri)
 {
-    context->getAccess()->checkAccessWithFilter(flags, toStringSource(source), getSourceAccessSubject(source, uri));
+    const auto access = context->getAccess();
+    const auto source_name = toStringSource(source);
+    auto [subject, escaped_subject] = getSourceAccessSubjects(source, uri);
+    /// A glob is expanded after the check, so its characters must match both as written and escaped: a single `.` (as in
+    /// `report.csv`) matches `*` but not its expansion.
+    if (subject != escaped_subject && !access->isGrantedWithFilter(flags, source_name, escaped_subject))
+        subject.clear();
+    access->checkAccessWithFilter(flags, source_name, subject);
 }
 
 }

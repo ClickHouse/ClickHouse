@@ -24,4 +24,9 @@ s3 glob: not denied
 url glob alternatives: not denied
 file: not denied
 azure archive: not denied
+s3 exact filter: not denied
+s3 glob against an exact filter: denied READ ON S3
+s3 escaped wildcard against an exact filter: denied READ ON S3
+url failover against an exact filter: denied READ ON URL
+azure glob against an exact filter: denied READ ON AZURE
 s3 dot segment with the whole-source grant: not denied

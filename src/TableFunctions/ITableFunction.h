@@ -164,7 +164,7 @@ public:
     /// Check the `TABLE ENGINE` grant, for engines that opt in via `requiresTableEngineGrant`.
     void checkEngineAccess(ContextPtr context) const;
 
-    /// Normalizes `uri` as source grant filters are matched against; an unparsable URI becomes empty.
+    /// `uri` normalized by Poco; an unparsable URI becomes empty.
     static String normalizeURIForAccessCheck(const String & uri);
 
     /// Checks the source grant for `uri`. A filter is matched only when it would see the location the source
