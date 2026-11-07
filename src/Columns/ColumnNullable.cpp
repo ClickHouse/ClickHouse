@@ -59,7 +59,7 @@ std::string_view ColumnNullable::getDataAt(size_t n) const
 void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
 {
     const auto & arr = getNullMapData();
-    hash.update(arr[n]);
+    hash.update(static_cast<UInt8>(arr[n] != 0));
     if (arr[n] == 0)
         getNestedColumn().updateHashWithValue(n, hash);
 }
@@ -200,7 +200,7 @@ std::string_view ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena
 
     /// First serialize the NULL map byte.
     auto * pos = arena.allocContinue(1, begin);
-    *pos = arr[n];
+    *pos = arr[n] != 0;
 
     /// If the value is NULL, that's it.
     if (arr[n])
@@ -217,7 +217,7 @@ char * ColumnNullable::serializeValueIntoMemory(size_t n, char * memory, const I
 {
     const auto & arr = getNullMapData();
 
-    *memory = arr[n];
+    *memory = arr[n] != 0;
     ++memory;
 
     if (arr[n])
@@ -242,7 +242,7 @@ void ColumnNullable::deserializeAndInsertFromArena(ReadBuffer & in, const IColum
     UInt8 val = 0;
     readBinaryLittleEndian<UInt8>(val, in);
 
-    getNullMapData().push_back(val);
+    getNullMapData().push_back(val != 0);
 
     if (val == 0)
         getNestedColumn().deserializeAndInsertFromArena(in, settings);
@@ -1219,7 +1219,8 @@ bool ColumnNullable::hasOnlyTypeDefaults() const
     const auto & data = getNullMapData();
     if (data.empty())
         return true;
-    return memoryIsByte(data.data(), 0, data.size(), 1);
+    /// Every row is NULL, the type default here, exactly when no null-map byte is zero.
+    return memchr(data.data(), 0, data.size()) == nullptr;
 }
 
 ColumnPlanes ColumnNullable::getPlanes() const
