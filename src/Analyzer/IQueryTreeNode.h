@@ -3,6 +3,7 @@
 #include <memory>
 #include <vector>
 
+#include <Formats/FormatSettings.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
@@ -81,6 +82,10 @@ struct ConvertToASTOptions
     /// instants share across a DST overlap. Valid wherever the consumer re-applies the literal's declared
     /// type; clear it for a consumer that parses the text itself, such as an external database.
     bool date_time_constants_as_numbers = true;
+
+    /// The `date_time_input_format` the consumer parses a `JSON` constant with. A typed `DateTime64` leaf that
+    /// not every format reads back from the same text is written in the form this one reads exactly.
+    FormatSettings::DateTimeInputFormat date_time_input_format = FormatSettings::DateTimeInputFormat::BestEffort;
 
     bool use_source_expression_for_constants = false;
 

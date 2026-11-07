@@ -228,7 +228,7 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     if (typeNeedsExactLiteralSerialization(*constant_value_type))
     {
         auto exact_ast = columnConstantToExactLiteralAST(
-            constant_value.getColumn(), 0, constant_value_type, options.date_time_constants_as_numbers);
+            constant_value.getColumn(), 0, constant_value_type, options.date_time_constants_as_numbers, options.date_time_input_format);
         if (!options.add_cast_for_constants)
             return exact_ast;
         /// columnConstantToExactLiteralAST already casts a scalar Decimal/DateTime64/Time64 value to its

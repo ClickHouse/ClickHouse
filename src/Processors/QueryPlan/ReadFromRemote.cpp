@@ -62,6 +62,7 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsDateTimeInputFormat date_time_input_format;
     extern const SettingsBool extremes;
     extern const SettingsSeconds max_execution_time;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
@@ -248,6 +249,7 @@ ASTPtr tryBuildAdditionalFilterAST(
     const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
     ContextMutablePtr & context,
+    FormatSettings::DateTimeInputFormat date_time_input_format,
     std::vector<const ActionsDAG::Node *> * dropped_conjuncts)
 {
     std::unordered_map<const ActionsDAG::Node *, ASTPtr> node_to_ast;
@@ -348,7 +350,8 @@ ASTPtr tryBuildAdditionalFilterAST(
             if (typeNeedsExactLiteralSerialization(*node->result_type))
                 /// Serialize decimal-backed constants (`Decimal`/`DateTime64`/`Time64`, incl. nested) and the
                 /// active member of a `Variant` exactly, so the shard cannot re-parse either into another type.
-                literal = columnConstantToExactLiteralAST(node->column, 0, node->result_type, /*date_time_as_numbers=*/true);
+                literal = columnConstantToExactLiteralAST(
+                    node->column, 0, node->result_type, /*date_time_as_numbers=*/true, date_time_input_format);
             else
                 /// Other types keep their raw Field literal. In particular a DateTime serialized as local
                 /// date-time text would be ambiguous across DST overlaps in non-UTC time zones (two instants
@@ -402,7 +405,7 @@ ASTPtr tryBuildAdditionalFilterAST(
                 if (it != execution_name_to_projection_query_tree.end())
                     /// Append full expression as an AST.
                     /// We rely on plan optimization that the result is (expected to be) valid.
-                    res = it->second->toAST();
+                    res = it->second->toAST({.date_time_input_format = date_time_input_format});
             }
         }
 
@@ -555,7 +558,8 @@ static bool addFilters(
         execution_name_to_projection_query_tree[calculateActionNodeName(node, *planner_context)] = node;
 
     ASTPtr predicate = tryBuildAdditionalFilterAST(
-        pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context, dropped_conjuncts);
+        pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context,
+        settings[Setting::date_time_input_format], dropped_conjuncts);
     if (!predicate)
         return false;
 
