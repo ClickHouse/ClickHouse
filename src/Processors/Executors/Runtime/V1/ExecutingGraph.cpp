@@ -350,6 +350,10 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipelineImpl(
 
         /// Record new processors in pipeline
         const IProcessor & parent = *cur_node.processor();
+        std::shared_ptr<PendingRemovalGroup> parent_group;
+        if (auto it = removed_processors.find(*cur_node.processor_iter); it != removed_processors.end())
+            parent_group = it->second;
+
         for (const auto & new_proc : update.to_add)
         {
             /// Runtime-added processors (lazy reads, external sort, ...) usually have no step,
@@ -359,7 +363,15 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipelineImpl(
             if (!new_proc->getQueryPlanStep())
                 new_proc->inheritQueryPlanStepFromParent(parent, parent.getQueryPlanStepGroup());
 
-            addNode(new_proc);
+            addNode(new_proc).expanded_from = &cur_node;
+
+            /// What a processor pending removal adds is removed with it.
+            if (parent_group)
+            {
+                parent_group->processors.push_back(new_proc);
+                parent_group->not_finished.fetch_add(1);
+                removed_processors.emplace(new_proc, parent_group);
+            }
         }
 
         /// Record removed processors in pending removal queue
@@ -377,6 +389,20 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipelineImpl(
 
             for (const auto & removed_proc : group->processors)
                 removed_processors.emplace(removed_proc, group);
+
+            /// What the removed processors added is removed with them. A node always follows the node that added it.
+            for (const auto & node : nodes)
+            {
+                if (!node.expanded_from || removed_processors.contains(*node.processor_iter))
+                    continue;
+                auto it = removed_processors.find(*node.expanded_from->processor_iter);
+                if (it == removed_processors.end() || it->second != group)
+                    continue;
+                removed_processors.emplace(*node.processor_iter, group);
+                group->processors.push_back(*node.processor_iter);
+                if (node.last_processor_status != IProcessor::Status::Finished)
+                    group->not_finished.fetch_add(1);
+            }
         }
 
         /// Propagate cancellation to newly added processors.
