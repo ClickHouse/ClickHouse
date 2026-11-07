@@ -97,6 +97,14 @@ def default_clickhouse_native_conn_args():
             "cast_keep_nullable": 1,
             "prefer_column_name_to_alias": 1,
             "aggregate_functions_null_for_empty": 1,
+            "data_type_default_nullable": 1,
+            "intersect_default_mode": "DISTINCT",
+            "except_default_mode": "DISTINCT",
+            "allow_lossy_numeric_supertype": 1,
+            "sql_compatible_division_for_integers": 1,
+            "short_circuit_function_evaluation": "force_enable",
+            "semi_join_include_columns_from_both_sides": 0,
+            "anti_join_include_columns_from_both_sides": 0,
         }
     )
 
