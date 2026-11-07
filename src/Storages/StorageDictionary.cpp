@@ -1,3 +1,4 @@
+#include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Storages/StorageDictionary.h>
@@ -52,6 +53,26 @@ namespace ErrorCodes
 
 namespace
 {
+    void checkDictionarySettingNames(const StorageFactory::Arguments & args)
+    {
+        const auto * dict_settings = args.query.dictionary ? args.query.dictionary->dict_settings : nullptr;
+        if (!dict_settings)
+            return;
+
+        const auto local_context = args.getLocalContext();
+        if (isReplayedTableDefinition(args.mode, args.query, local_context))
+            return;
+
+        /// These changes reach the source query's context through `applySettingsChanges`, which skips the constraints a `SET` passes.
+        const auto & access_control = local_context->getAccessControl();
+        for (const auto & change : dict_settings->changes)
+        {
+            const std::string_view name = Settings::resolveName(change.name);
+            if (name != "profile")
+                access_control.checkSettingNameIsAllowed(name);
+        }
+    }
+
     void checkNamesAndTypesCompatibleWithDictionary(const String & dictionary_name, const ColumnsDescription & columns, const DictionaryStructure & dictionary_structure)
     {
         auto dictionary_names_and_types = StorageDictionary::getNamesAndTypes(dictionary_structure, false);
@@ -372,6 +393,8 @@ void registerStorageDictionary(StorageFactory & factory)
 
         if (query.is_dictionary)
         {
+            checkDictionarySettingNames(args);
+
             auto dictionary_id = args.table_id;
             auto & external_dictionaries_loader = local_context->getExternalDictionariesLoader();
 
