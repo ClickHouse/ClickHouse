@@ -131,6 +131,11 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    /// For `Nullable`, `Dynamic` or `JSON` the bulk serialization in `addBatchSinglePlace` writes other bytes
+    /// than `add` row by row (separate streams, a prefix describing the whole column), so replacing one with
+    /// the other would make the result depend on how the rows are split into ranges.
+    bool canOptimizeEqualKeysRanges() const override { return false; }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & column = columns[0];
@@ -150,21 +155,18 @@ public:
         addBatchSinglePlace(row_begin, row_end, place, columns, arena, -1);
     }
 
-    void addBatchSinglePlaceNotNull(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        const UInt8 *,
-        Arena * arena,
-        ssize_t) const override
-    {
-        addBatchSinglePlace(row_begin, row_end, place, columns, arena, -1);
-    }
-
     void addBatchSinglePlace(
-        size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena *, ssize_t) const override
+        size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos)
+        const override
     {
+        /// The bulk serialization below cannot skip rows, so a filtered range is added row by row.
+        /// `addBatchSinglePlaceNotNull` is not overridden for the same reason.
+        if (if_argument_pos >= 0)
+        {
+            IAggregateFunctionDataHelper::addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
+            return;
+        }
+
         const auto & column = columns[0];
 
         resetCalculatorIfNeeded(place);
