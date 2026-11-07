@@ -1477,6 +1477,65 @@ html:not(.dark) body .prose .ch-install-cloud-card .ch-install-cloud-actions a.c
     background-color: #1c1c1c;
 }
 
+/* Tier cards on the Managed Postgres pricing page. */
+.ch-tier-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin: 24px 0;
+}
+
+@media (max-width: 768px) {
+    .ch-tier-cards {
+        grid-template-columns: 1fr;
+    }
+}
+
+.ch-tier-card {
+    padding: 20px;
+    border: 1px solid #e6e7e9;
+    border-top: 3px solid #161517;
+    border-radius: 8px;
+    background-color: #f7f7f7;
+}
+
+.ch-tier-card .ch-tier-card-title {
+    margin-bottom: 8px;
+    font-size: 1.125rem;
+    font-weight: 600;
+    text-align: center;
+}
+
+.ch-tier-card .ch-tier-card-description {
+    min-height: 3.5em;
+    margin: 0 0 16px;
+    color: #696e79;
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+.ch-tier-card .ch-tier-card-lead {
+    margin: 0 0 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.ch-tier-card .ch-tier-card-list {
+    margin: 0;
+    padding-left: 20px;
+    font-size: 0.9rem;
+}
+
+.dark .ch-tier-card {
+    border-color: #2b2b2b;
+    border-top-color: #fdff75;
+    background-color: #191919;
+}
+
+.dark .ch-tier-card .ch-tier-card-description {
+    color: #8c8c8c;
+}
+
 html.dark .prose .ch-install-cloud-card a.ch-install-cloud-cta,
 html.dark .prose .ch-install-cloud-card a.ch-install-cloud-cta:hover {
     border: 1px solid #fdff75 !important;
