@@ -67,6 +67,9 @@ struct IndexDescription
     /// a function such as `toDateTime` folds differently under another zone, so the condition can be matched
     /// only by a query that is analysed in the same zone.
     String where_timezone;
+    /// True if neither the settings salt nor the time zone above can change what the condition and the indexed
+    /// expressions evaluate to.
+    bool where_is_session_independent = false;
 
     /// True if index is created implicitly using settings:
     /// add_minmax_index_for_numeric_columns, add_minmax_index_for_string_columns, or add_minmax_index_for_temporal_columns

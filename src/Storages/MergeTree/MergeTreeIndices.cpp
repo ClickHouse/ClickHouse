@@ -484,7 +484,8 @@ String IMergeTreeIndex::getPartialIndexSignature(const IndexDescription & index_
     /// The settings of the writing query are not: the writer runs `where_expression`, whose functions were
     /// resolved and built when the index was analysed (`toTime` against `use_legacy_to_time` included), and
     /// `where_identity` already hashes them by name and captured state.
-    hash.update(DateLUT::instance().getTimeZone());
+    if (!index_description.where_is_session_independent)
+        hash.update(DateLUT::instance().getTimeZone());
     const UInt128 value = hash.get128();
     return String(reinterpret_cast<const char *>(&value), sizeof(value));
 }

@@ -39,6 +39,27 @@ namespace ErrorCodes
 namespace
 {
 
+/// True if the expression calls only comparisons and logical functions, whose captured state `updateHash` records.
+bool callsOnlyStatelessFunctions(const IAST & ast)
+{
+    static const std::unordered_set<std::string_view> functions = {
+        "and", "or", "not", "xor", "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals", "isNull", "isNotNull"};
+    if (const auto * function = ast.as<ASTFunction>(); function && !functions.contains(function->name))
+        return false;
+    for (const auto & child : ast.children)
+        if (!callsOnlyStatelessFunctions(*child))
+            return false;
+    return true;
+}
+
+/// True for types whose values and comparisons do not depend on a time zone.
+bool isTimeZoneFreeType(const DataTypePtr & type)
+{
+    const WhichDataType which(removeNullable(removeLowCardinality(type)));
+    return which.isNativeUInt() || which.isNativeInt() || which.isFloat() || which.isDecimal() || which.isStringOrFixedString()
+        || which.isEnum() || which.isUUID() || which.isIPv4() || which.isIPv6() || which.isNothing();
+}
+
 /// Only the `preprocessor` and `postprocessor` arguments contain column expressions.
 void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDescription & columns)
 {
@@ -75,6 +96,7 @@ IndexDescription::IndexDescription(const IndexDescription & other)
     , where_settings_salt(other.where_settings_salt)
     , where_identity(other.where_identity)
     , where_timezone(other.where_timezone)
+    , where_is_session_independent(other.where_is_session_independent)
     , is_implicitly_created(other.is_implicitly_created)
     , escape_filenames(other.escape_filenames)
 {
@@ -139,6 +161,7 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
     where_settings_salt = other.where_settings_salt;
     where_identity = other.where_identity;
     where_timezone = other.where_timezone;
+    where_is_session_independent = other.where_is_session_independent;
     is_implicitly_created = other.is_implicitly_created;
     escape_filenames = other.escape_filenames;
     return *this;
@@ -236,6 +259,12 @@ IndexDescription IndexDescription::getIndexFromAST(
 
         /// The functions of the condition capture the global settings, not the ones of the session that defines the index.
         result.where_settings_salt = queryConditionCacheSettingsSalt(context->getGlobalContext()->getSettingsRef());
+
+        result.where_is_session_independent = callsOnlyStatelessFunctions(*result.where_ast)
+            && callsOnlyStatelessFunctions(*result.expression_list_ast);
+        for (const auto * actions : {&result.where_expression->getActionsDAG(), &result.selected_rows_expression->getActionsDAG()})
+            for (const auto & node : actions->getNodes())
+                result.where_is_session_independent = result.where_is_session_independent && isTimeZoneFreeType(node.result_type);
     }
 
     if (index_type && index_type->arguments)

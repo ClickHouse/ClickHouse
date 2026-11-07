@@ -3326,12 +3326,12 @@ bool hasSameFunctionSemantics(const ActionsDAG::Node * query_node, const Matched
 /// every conjunct of that condition is also a conjunct of the query filter.
 bool filterImpliesIndexCondition(const ActionsDAG & filter_dag, const IndexDescription & index, const Settings & settings, size_t max_set_size_to_compare)
 {
-    if (queryConditionCacheSettingsSalt(settings) != index.where_settings_salt)
+    if (!index.where_is_session_independent && queryConditionCacheSettingsSalt(settings) != index.where_settings_salt)
         return false;
 
     /// The constants of the stored condition were folded in the time zone it was analysed in: it can be matched
     /// only by a filter analysed in the same one.
-    if (DateLUT::instance().getTimeZone() != index.where_timezone)
+    if (!index.where_is_session_independent && DateLUT::instance().getTimeZone() != index.where_timezone)
         return false;
 
     std::unordered_set<const ActionsDAG::Node *> index_conjuncts;
