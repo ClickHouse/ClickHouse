@@ -4247,6 +4247,34 @@ void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSourc
     clampToSettingsConstraintsWithLock(changes, source);
 }
 
+SettingsChanges Context::applyNestedQuerySettingsClamped(const SettingsChanges & changes, const std::vector<String> & default_settings)
+{
+    /// Clamping the whole clause as a batch would check every change against the settings as they were
+    /// before the clause - so `SETTINGS use_query_cache = 1, use_query_cache = 0` could resolve differently
+    /// from the last-wins reading the clause has everywhere else. `clampToSettingsConstraintsRejectingInvalidChanges`
+    /// keeps a change that does not change the value, so clamping one change at a time does not lose the batch's
+    /// `compatibility` marker: `SETTINGS use_variant_as_common_type = 1, compatibility = '25.12'` keeps the `1`.
+    SettingsChanges effective_changes;
+    for (const auto & change : changes)
+    {
+        SettingsChanges single_change{change};
+        clampToSettingsConstraintsRejectingInvalidChanges(single_change, SettingSource::QUERY);
+        applySettingsChanges(single_change);
+        effective_changes.insert(effective_changes.end(), single_change.begin(), single_change.end());
+    }
+
+    if (!default_settings.empty())
+    {
+        auto allowed_resets = default_settings;
+        SettingsChanges clamped_resets;
+        clampSettingsConstraintsForSettingsReset(allowed_resets, clamped_resets, SettingSource::QUERY);
+        resetSettingsToDefaultValue(allowed_resets);
+        applySettingsChanges(clamped_resets);
+    }
+
+    return effective_changes;
+}
+
 void Context::clampToSettingsConstraintsRejectingInvalidChanges(SettingsChanges & changes, SettingSource source)
 {
     if (std::ranges::any_of(changes, isProfileChange))

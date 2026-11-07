@@ -30,6 +30,13 @@ public:
 
     ASTs getListOfSelects() const;
 
+    /// A trailing query-level `SETTINGS` clause of a set operation is left by the parser on its last
+    /// operand. `SelectIntersectExceptQueryVisitor` may then nest that operand into `INTERSECT` / `EXCEPT`
+    /// nodes, as the last operand of each: `A UNION ALL B INTERSECT ALL C SETTINGS ...` becomes a union
+    /// of `A` and `B INTERSECT ALL C`. Returns the clause of `last_operand`, descending through such
+    /// nodes, or nullptr if there is none.
+    static ASTPtr getTrailingSettings(const ASTPtr & last_operand);
+
     static const char * fromOperator(Operator op);
 
     void writeJSON(WriteBuffer & out) const override;

@@ -1376,6 +1376,14 @@ public:
     void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void clampToSettingsConstraintsRejectingInvalidChanges(SettingsChanges & changes, SettingSource source);
+    /// Applies the `SETTINGS` clause of a nested (sub)query - `changes` and the `SETTINGS name = DEFAULT`
+    /// resets - clamped to the settings constraints instead of throwing, as for other settings crossing
+    /// execution contexts; an unknown name or an uncastable value throws, as for a top-level clause.
+    /// Changes are applied one at a time, each clamped against the settings the preceding ones left, so
+    /// that the clause reads last-wins. A change that keeps the value is still applied, so that an explicit
+    /// assignment is not overridden by a `compatibility` in the same clause. Returns the effective changes:
+    /// the ones that survive, with their clamped values.
+    SettingsChanges applyNestedQuerySettingsClamped(const SettingsChanges & changes, const std::vector<String> & default_settings);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     /// Reset settings to the default in effect for them, which under an active `compatibility` is the value of that version.
