@@ -1,0 +1,237 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "3a93e4c0-5357-4203-a7e1-242168207af8",
+  "location" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_uppercase_col",
+  "last-updated-ms" : 1648649057966,
+  "last-column-id" : 1,
+  "schema" : {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "Region",
+      "required" : false,
+      "type" : "string",
+      "doc" : "from deserializer"
+    }, {
+      "id" : 2,
+      "name" : "Nested_Struct",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 3,
+          "name" : "A",
+          "required" : true,
+          "type" : "int"
+        }, {
+          "id" : 4,
+          "name" : "B",
+          "required" : true,
+          "type" : {
+            "type" : "list",
+            "element-id" : 7,
+            "element" : "int",
+            "element-required" : true
+          }
+        }, {
+          "id" : 5,
+          "name" : "C",
+          "required" : true,
+          "type" : {
+            "type" : "struct",
+            "fields" : [ {
+              "id" : 8,
+              "name" : "D",
+              "required" : true,
+              "type" : {
+                "type" : "list",
+                "element-id" : 9,
+                "element" : {
+                  "type" : "list",
+                  "element-id" : 10,
+                  "element" : {
+                    "type" : "struct",
+                    "fields" : [ {
+                      "id" : 11,
+                      "name" : "E",
+                      "required" : true,
+                      "type" : "int"
+                    }, {
+                      "id" : 12,
+                      "name" : "F",
+                      "required" : true,
+                      "type" : "string"
+                    } ]
+                  },
+                  "element-required" : true
+                },
+                "element-required" : true
+              }
+            } ]
+          }
+        }, {
+          "id" : 6,
+          "name" : "G",
+          "required" : true,
+          "type" : {
+            "type" : "map",
+            "key-id" : 13,
+            "key" : "string",
+            "value-id" : 14,
+            "value" : {
+              "type" : "struct",
+              "fields" : [ {
+                "id" : 15,
+                "name" : "H",
+                "required" : true,
+                "type" : {
+                  "type" : "struct",
+                  "fields" : [ {
+                    "id" : 16,
+                    "name" : "I",
+                    "required" : true,
+                    "type" : {
+                      "type" : "list",
+                      "element-id" : 17,
+                      "element" : "double",
+                      "element-required" : true
+                    }
+                  } ]
+                }
+              } ]
+            },
+            "value-required" : true
+          }
+        } ]
+      }
+    } ]
+  },
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "region",
+      "required" : false,
+      "type" : "string",
+      "doc" : "from deserializer"
+    }, {
+      "id" : 2,
+      "name" : "Nested_Struct",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 3,
+          "name" : "A",
+          "required" : true,
+          "type" : "int"
+        }, {
+          "id" : 4,
+          "name" : "B",
+          "required" : true,
+          "type" : {
+            "type" : "list",
+            "element-id" : 7,
+            "element" : "int",
+            "element-required" : true
+          }
+        }, {
+          "id" : 5,
+          "name" : "C",
+          "required" : true,
+          "type" : {
+            "type" : "struct",
+            "fields" : [ {
+              "id" : 8,
+              "name" : "D",
+              "required" : true,
+              "type" : {
+                "type" : "list",
+                "element-id" : 9,
+                "element" : {
+                  "type" : "list",
+                  "element-id" : 10,
+                  "element" : {
+                    "type" : "struct",
+                    "fields" : [ {
+                      "id" : 11,
+                      "name" : "E",
+                      "required" : true,
+                      "type" : "int"
+                    }, {
+                      "id" : 12,
+                      "name" : "F",
+                      "required" : true,
+                      "type" : "string"
+                    } ]
+                  },
+                  "element-required" : true
+                },
+                "element-required" : true
+              }
+            } ]
+          }
+        }, {
+          "id" : 6,
+          "name" : "G",
+          "required" : true,
+          "type" : {
+            "type" : "map",
+            "key-id" : 13,
+            "key" : "string",
+            "value-id" : 14,
+            "value" : {
+              "type" : "struct",
+              "fields" : [ {
+                "id" : 15,
+                "name" : "H",
+                "required" : true,
+                "type" : {
+                  "type" : "struct",
+                  "fields" : [ {
+                    "id" : 16,
+                    "name" : "I",
+                    "required" : true,
+                    "type" : {
+                      "type" : "list",
+                      "element-id" : 17,
+                      "element" : "double",
+                      "element-required" : true
+                    }
+                  } ]
+                }
+              } ]
+            },
+            "value-required" : true
+          }
+        } ]
+      }
+    } ]
+  } ],
+  "partition-spec" : [ ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "engine.hive.enabled" : "true",
+    "external.table.purge" : "TRUE",
+    "write.format.default" : "parquet",
+    "OBJCAPABILITIES" : "EXTREAD,EXTWRITE",
+    "storage_handler" : "org.apache.iceberg.mr.hive.HiveIcebergStorageHandler"
+  },
+  "current-snapshot-id" : -1,
+  "snapshots" : [ ],
+  "snapshot-log" : [ ],
+  "metadata-log" : [ ]
+}

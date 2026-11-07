@@ -1,0 +1,53 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "56e56cde-1aac-49d0-810a-15d2998778b2",
+  "location" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_v2_delete_equality_nulls",
+  "last-sequence-number" : 0,
+  "last-updated-ms" : 1702383834781,
+  "last-column-id" : 2,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "i",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "s",
+      "required" : false,
+      "type" : "string"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "engine.hive.enabled" : "true",
+    "write.merge.mode" : "merge-on-read",
+    "write.format.default" : "parquet",
+    "write.delete.mode" : "merge-on-read",
+    "iceberg.catalog_location" : "/test-warehouse/iceberg_test/hadoop_catalog",
+    "OBJCAPABILITIES" : "EXTREAD,EXTWRITE",
+    "write.update.mode" : "merge-on-read",
+    "storage_handler" : "org.apache.iceberg.mr.hive.HiveIcebergStorageHandler",
+    "iceberg.catalog" : "hadoop.catalog",
+    "iceberg.table_identifier" : "ice.iceberg_v2_delete_equality_nulls"
+  },
+  "current-snapshot-id" : -1,
+  "refs" : { },
+  "snapshots" : [ ],
+  "statistics" : [ ],
+  "snapshot-log" : [ ],
+  "metadata-log" : [ ]
+}

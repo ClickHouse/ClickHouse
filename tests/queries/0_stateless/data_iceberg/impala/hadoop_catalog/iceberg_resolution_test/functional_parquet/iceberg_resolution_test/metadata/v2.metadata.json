@@ -1,0 +1,144 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "0927e4b8-119b-4c17-8b80-15c405938a09",
+  "location" : "/test-warehouse/iceberg_test/hadoop_catalog/iceberg_resolution_test/functional_parquet/iceberg_resolution_test",
+  "last-updated-ms" : 1606891926986,
+  "last-column-id" : 16,
+  "schema" : {
+    "type" : "struct",
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "user",
+      "required" : true,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "action",
+      "required" : true,
+      "type" : "string"
+    }, {
+      "id" : 4,
+      "name" : "event_time",
+      "required" : true,
+      "type" : "timestamptz"
+    }, {
+      "id" : 5,
+      "name" : "phone",
+      "required" : true,
+      "type" : {
+        "type" : "list",
+        "element-id" : 8,
+        "element" : "string",
+        "element-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "favorites",
+      "required" : true,
+      "type" : {
+        "type" : "map",
+        "key-id" : 9,
+        "key" : "string",
+        "value-id" : 10,
+        "value" : "string",
+        "value-required" : false
+      }
+    }, {
+      "id" : 7,
+      "name" : "current_address",
+      "required" : true,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 11,
+          "name" : "street_address",
+          "required" : true,
+          "type" : {
+            "type" : "struct",
+            "fields" : [ {
+              "id" : 14,
+              "name" : "street_number",
+              "required" : true,
+              "type" : "int"
+            }, {
+              "id" : 15,
+              "name" : "street_name",
+              "required" : true,
+              "type" : "string"
+            }, {
+              "id" : 16,
+              "name" : "street_type",
+              "required" : true,
+              "type" : "string"
+            } ]
+          }
+        }, {
+          "id" : 12,
+          "name" : "country",
+          "required" : true,
+          "type" : "string"
+        }, {
+          "id" : 13,
+          "name" : "postal_code",
+          "required" : true,
+          "type" : "string"
+        } ]
+      }
+    } ]
+  },
+  "partition-spec" : [ {
+    "name" : "event_time_hour",
+    "transform" : "hour",
+    "source-id" : 4,
+    "field-id" : 1000
+  }, {
+    "name" : "action",
+    "transform" : "identity",
+    "source-id" : 3,
+    "field-id" : 1001
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "event_time_hour",
+      "transform" : "hour",
+      "source-id" : 4,
+      "field-id" : 1000
+    }, {
+      "name" : "action",
+      "transform" : "identity",
+      "source-id" : 3,
+      "field-id" : 1001
+    } ]
+  } ],
+  "properties" : { },
+  "current-snapshot-id" : 8063525763252762178,
+  "snapshots" : [ {
+    "snapshot-id" : 8063525763252762178,
+    "timestamp-ms" : 1606891926986,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1606891916054",
+      "added-data-files" : "20",
+      "added-records" : "20",
+      "changed-partition-count" : "3",
+      "total-records" : "20",
+      "total-data-files" : "20"
+    },
+    "manifest-list" : "/test-warehouse/iceberg_test/hadoop_catalog/iceberg_resolution_test/functional_parquet/iceberg_resolution_test/metadata/snap-8063525763252762178-1-4ceee3ab-8653-423c-b8ac-0ad5f7b0579b.avro"
+  } ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1606891926986,
+    "snapshot-id" : 8063525763252762178
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1606891921876,
+    "metadata-file" : "/test-warehouse/iceberg_test/hadoop_catalog/iceberg_resolution_test/functional_parquet/iceberg_resolution_test/metadata/v1.metadata.json"
+  } ]
+}

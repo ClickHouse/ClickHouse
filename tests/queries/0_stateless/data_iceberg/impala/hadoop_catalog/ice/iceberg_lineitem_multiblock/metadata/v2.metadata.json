@@ -1,0 +1,182 @@
+{
+  "table-uuid": "69c2bb75-7833-4112-bf3e-b848315ef761", 
+  "statistics": [], 
+  "snapshot-log": [
+    {
+      "timestamp-ms": 1688546907580, 
+      "snapshot-id": 7963820769190930835
+    }
+  ], 
+  "last-partition-id": 999, 
+  "last-updated-ms": 1688546907580, 
+  "last-column-id": 16, 
+  "refs": {
+    "main": {
+      "snapshot-id": 7963820769190930835, 
+      "type": "branch"
+    }
+  }, 
+  "format-version": 2, 
+  "default-sort-order-id": 0, 
+  "partition-specs": [
+    {
+      "fields": [], 
+      "spec-id": 0
+    }
+  ], 
+  "properties": {
+    "serialization.format": "|", 
+    "field.delim": "|", 
+    "created_with_ctlt": "true", 
+    "write.delete.mode": "merge-on-read", 
+    "write.update.mode": "merge-on-read", 
+    "TRANSLATED_TO_EXTERNAL": "TRUE", 
+    "engine.hive.enabled": "true", 
+    "EXTERNAL": "TRUE", 
+    "storage_handler": "org.apache.iceberg.mr.hive.HiveIcebergStorageHandler", 
+    "write.merge.mode": "merge-on-read"
+  }, 
+  "metadata-log": [
+    {
+      "timestamp-ms": 1688546893502, 
+      "metadata-file": "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_lineitem_multiblock/metadata/00000-683e61e4-f3bd-4fbe-8c08-698fdb1489ec.metadata.json"
+    }
+  ], 
+  "location": "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_lineitem_multiblock", 
+  "last-sequence-number": 1, 
+  "current-snapshot-id": 7963820769190930835, 
+  "default-spec-id": 0, 
+  "current-schema-id": 0, 
+  "sort-orders": [
+    {
+      "fields": [], 
+      "order-id": 0
+    }
+  ], 
+  "snapshots": [
+    {
+      "timestamp-ms": 1688546907580, 
+      "sequence-number": 1, 
+      "snapshot-id": 7963820769190930835, 
+      "manifest-list": "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_lineitem_multiblock/metadata/snap-7963820769190930835-1-01dc3e0b-fe92-4d60-973b-fcbb58f71be5.avro", 
+      "summary": {
+        "changed-partition-count": "1", 
+        "added-files-size": "1811714", 
+        "added-data-files": "1", 
+        "added-records": "20000", 
+        "total-data-files": "1", 
+        "total-equality-deletes": "0", 
+        "total-records": "20000", 
+        "operation": "append", 
+        "total-files-size": "1811714", 
+        "total-delete-files": "0", 
+        "total-position-deletes": "0"
+      }, 
+      "schema-id": 0
+    }
+  ], 
+  "schemas": [
+    {
+      "schema-id": 0, 
+      "type": "struct", 
+      "fields": [
+        {
+          "required": false, 
+          "type": "long", 
+          "id": 1, 
+          "name": "l_orderkey"
+        }, 
+        {
+          "required": false, 
+          "type": "long", 
+          "id": 2, 
+          "name": "l_partkey"
+        }, 
+        {
+          "required": false, 
+          "type": "long", 
+          "id": 3, 
+          "name": "l_suppkey"
+        }, 
+        {
+          "required": false, 
+          "type": "int", 
+          "id": 4, 
+          "name": "l_linenumber"
+        }, 
+        {
+          "required": false, 
+          "type": "decimal(12, 2)", 
+          "id": 5, 
+          "name": "l_quantity"
+        }, 
+        {
+          "required": false, 
+          "type": "decimal(12, 2)", 
+          "id": 6, 
+          "name": "l_extendedprice"
+        }, 
+        {
+          "required": false, 
+          "type": "decimal(12, 2)", 
+          "id": 7, 
+          "name": "l_discount"
+        }, 
+        {
+          "required": false, 
+          "type": "decimal(12, 2)", 
+          "id": 8, 
+          "name": "l_tax"
+        }, 
+        {
+          "required": false, 
+          "type": "string", 
+          "id": 9, 
+          "name": "l_returnflag"
+        }, 
+        {
+          "required": false, 
+          "type": "string", 
+          "id": 10, 
+          "name": "l_linestatus"
+        }, 
+        {
+          "required": false, 
+          "type": "string", 
+          "id": 11, 
+          "name": "l_shipdate"
+        }, 
+        {
+          "required": false, 
+          "type": "string", 
+          "id": 12, 
+          "name": "l_commitdate"
+        }, 
+        {
+          "required": false, 
+          "type": "string", 
+          "id": 13, 
+          "name": "l_receiptdate"
+        }, 
+        {
+          "required": false, 
+          "type": "string", 
+          "id": 14, 
+          "name": "l_shipinstruct"
+        }, 
+        {
+          "required": false, 
+          "type": "string", 
+          "id": 15, 
+          "name": "l_shipmode"
+        }, 
+        {
+          "required": false, 
+          "type": "string", 
+          "id": 16, 
+          "name": "l_comment"
+        }
+      ]
+    }
+  ]
+}

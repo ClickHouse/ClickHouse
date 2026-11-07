@@ -1,0 +1,89 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "40f528e5-19f7-465b-86a6-6943e536b009",
+  "location" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_legacy_partition_schema_evolution",
+  "last-updated-ms" : 1645033399611,
+  "last-column-id" : 4,
+  "schema" : {
+    "type" : "struct",
+    "fields" : [ {
+      "id" : 1,
+      "name" : "i",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "p_int_long",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 3,
+      "name" : "p_float_double",
+      "required" : false,
+      "type" : "float"
+    }, {
+      "id" : 4,
+      "name" : "p_dec_dec",
+      "required" : false,
+      "type" : "decimal(5, 3)"
+    } ]
+  },
+  "partition-spec" : [ {
+    "name" : "p_int_long",
+    "transform" : "identity",
+    "source-id" : 2,
+    "field-id" : 1000
+  }, {
+    "name" : "p_float_double",
+    "transform" : "identity",
+    "source-id" : 3,
+    "field-id" : 1001
+  }, {
+    "name" : "p_dec_dec",
+    "transform" : "identity",
+    "source-id" : 4,
+    "field-id" : 1002
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "p_int_long",
+      "transform" : "identity",
+      "source-id" : 2,
+      "field-id" : 1000
+    }, {
+      "name" : "p_float_double",
+      "transform" : "identity",
+      "source-id" : 3,
+      "field-id" : 1001
+    }, {
+      "name" : "p_dec_dec",
+      "transform" : "identity",
+      "source-id" : 4,
+      "field-id" : 1002
+    } ]
+  } ],
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "engine.hive.enabled" : "true",
+    "MIGRATED_TO_ICEBERG" : "true",
+    "last_modified_time" : "1645033399",
+    "EXTERNAL" : "TRUE",
+    "write.format.default" : "parquet",
+    "gc.enabled" : "TRUE",
+    "TRANSLATED_TO_EXTERNAL" : "TRUE",
+    "bucketing_version" : "2",
+    "last_modified_by" : "boroknagyz",
+    "storage_handler" : "org.apache.iceberg.mr.hive.HiveIcebergStorageHandler",
+    "table_type" : "ICEBERG"
+  },
+  "current-snapshot-id" : -1,
+  "snapshots" : [ ],
+  "snapshot-log" : [ ],
+  "metadata-log" : [ ]
+}

@@ -1,0 +1,206 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "8a46331e-8746-4fb1-9cc3-1c02546bc51e",
+  "location" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/complextypestbl_iceberg_orc",
+  "last-updated-ms" : 1617190450845,
+  "last-column-id" : 29,
+  "schema" : {
+    "type" : "struct",
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "int_array",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 7,
+        "element" : "int",
+        "element-required" : false
+      }
+    }, {
+      "id" : 3,
+      "name" : "int_array_array",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 8,
+        "element" : {
+          "type" : "list",
+          "element-id" : 9,
+          "element" : "int",
+          "element-required" : false
+        },
+        "element-required" : false
+      }
+    }, {
+      "id" : 4,
+      "name" : "int_map",
+      "required" : false,
+      "type" : {
+        "type" : "map",
+        "key-id" : 10,
+        "key" : "string",
+        "value-id" : 11,
+        "value" : "int",
+        "value-required" : false
+      }
+    }, {
+      "id" : 5,
+      "name" : "int_map_array",
+      "required" : false,
+      "type" : {
+        "type" : "list",
+        "element-id" : 12,
+        "element" : {
+          "type" : "map",
+          "key-id" : 13,
+          "key" : "string",
+          "value-id" : 14,
+          "value" : "int",
+          "value-required" : false
+        },
+        "element-required" : false
+      }
+    }, {
+      "id" : 6,
+      "name" : "nested_struct",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 15,
+          "name" : "a",
+          "required" : false,
+          "type" : "int"
+        }, {
+          "id" : 16,
+          "name" : "b",
+          "required" : false,
+          "type" : {
+            "type" : "list",
+            "element-id" : 19,
+            "element" : "int",
+            "element-required" : false
+          }
+        }, {
+          "id" : 17,
+          "name" : "c",
+          "required" : false,
+          "type" : {
+            "type" : "struct",
+            "fields" : [ {
+              "id" : 20,
+              "name" : "d",
+              "required" : false,
+              "type" : {
+                "type" : "list",
+                "element-id" : 21,
+                "element" : {
+                  "type" : "list",
+                  "element-id" : 22,
+                  "element" : {
+                    "type" : "struct",
+                    "fields" : [ {
+                      "id" : 23,
+                      "name" : "e",
+                      "required" : false,
+                      "type" : "int"
+                    }, {
+                      "id" : 24,
+                      "name" : "f",
+                      "required" : false,
+                      "type" : "string"
+                    } ]
+                  },
+                  "element-required" : false
+                },
+                "element-required" : false
+              }
+            } ]
+          }
+        }, {
+          "id" : 18,
+          "name" : "g",
+          "required" : false,
+          "type" : {
+            "type" : "map",
+            "key-id" : 25,
+            "key" : "string",
+            "value-id" : 26,
+            "value" : {
+              "type" : "struct",
+              "fields" : [ {
+                "id" : 27,
+                "name" : "h",
+                "required" : false,
+                "type" : {
+                  "type" : "struct",
+                  "fields" : [ {
+                    "id" : 28,
+                    "name" : "i",
+                    "required" : false,
+                    "type" : {
+                      "type" : "list",
+                      "element-id" : 29,
+                      "element" : "double",
+                      "element-required" : false
+                    }
+                  } ]
+                }
+              } ]
+            },
+            "value-required" : false
+          }
+        } ]
+      }
+    } ]
+  },
+  "partition-spec" : [ ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "engine.hive.enabled" : "true",
+    "bucketing_version" : "2",
+    "EXTERNAL" : "TRUE",
+    "storage_handler" : "org.apache.iceberg.mr.hive.HiveIcebergStorageHandler",
+    "write.format.default" : "ORC"
+  },
+  "current-snapshot-id" : 8747481058330439933,
+  "snapshots" : [ {
+    "snapshot-id" : 8747481058330439933,
+    "timestamp-ms" : 1617190450845,
+    "summary" : {
+      "operation" : "append",
+      "added-data-files" : "2",
+      "added-records" : "8",
+      "added-files-size" : "4067",
+      "changed-partition-count" : "1",
+      "total-records" : "8",
+      "total-data-files" : "2",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/complextypestbl_iceberg_orc/metadata/snap-8747481058330439933-1-46b4a907-2ff3-4799-ba4a-074d04734265.avro"
+  } ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1617190450845,
+    "snapshot-id" : 8747481058330439933
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1617190429548,
+    "metadata-file" : "/test-warehouse/iceberg_test/hadoop_catalog/ice/complextypestbl_iceberg_orc/metadata/v1.metadata.json"
+  } ]
+}

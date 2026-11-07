@@ -1,0 +1,146 @@
+{
+  "table-uuid": "69c2bb75-7833-4112-bf3e-b848315ef761", 
+  "statistics": [], 
+  "snapshot-log": [], 
+  "last-partition-id": 999, 
+  "last-updated-ms": 1688546893502, 
+  "last-column-id": 16, 
+  "refs": {}, 
+  "format-version": 2, 
+  "default-sort-order-id": 0, 
+  "partition-specs": [
+    {
+      "fields": [], 
+      "spec-id": 0
+    }
+  ], 
+  "properties": {
+    "serialization.format": "|", 
+    "field.delim": "|", 
+    "created_with_ctlt": "true", 
+    "write.delete.mode": "merge-on-read", 
+    "write.update.mode": "merge-on-read", 
+    "TRANSLATED_TO_EXTERNAL": "TRUE", 
+    "engine.hive.enabled": "true", 
+    "EXTERNAL": "TRUE", 
+    "storage_handler": "org.apache.iceberg.mr.hive.HiveIcebergStorageHandler", 
+    "write.merge.mode": "merge-on-read"
+  }, 
+  "metadata-log": [], 
+  "location": "/test-warehouse/iceberg_test/hadoop_catalog/ice/iceberg_lineitem_multiblock", 
+  "last-sequence-number": 0, 
+  "current-snapshot-id": -1, 
+  "default-spec-id": 0, 
+  "current-schema-id": 0, 
+  "sort-orders": [
+    {
+      "fields": [], 
+      "order-id": 0
+    }
+  ], 
+  "snapshots": [], 
+  "schemas": [
+    {
+      "schema-id": 0, 
+      "type": "struct", 
+      "fields": [
+        {
+          "required": false, 
+          "type": "long", 
+          "id": 1, 
+          "name": "l_orderkey"
+        }, 
+        {
+          "required": false, 
+          "type": "long", 
+          "id": 2, 
+          "name": "l_partkey"
+        }, 
+        {
+          "required": false, 
+          "type": "long", 
+          "id": 3, 
+          "name": "l_suppkey"
+        }, 
+        {
+          "required": false, 
+          "type": "int", 
+          "id": 4, 
+          "name": "l_linenumber"
+        }, 
+        {
+          "required": false, 
+          "type": "decimal(12, 2)", 
+          "id": 5, 
+          "name": "l_quantity"
+        }, 
+        {
+          "required": false, 
+          "type": "decimal(12, 2)", 
+          "id": 6, 
+          "name": "l_extendedprice"
+        }, 
+        {
+          "required": false, 
+          "type": "decimal(12, 2)", 
+          "id": 7, 
+          "name": "l_discount"
+        }, 
+        {
+          "required": false, 
+          "type": "decimal(12, 2)", 
+          "id": 8, 
+          "name": "l_tax"
+        }, 
+        {
+          "required": false, 
+          "type": "string", 
+          "id": 9, 
+          "name": "l_returnflag"
+        }, 
+        {
+          "required": false, 
+          "type": "string", 
+          "id": 10, 
+          "name": "l_linestatus"
+        }, 
+        {
+          "required": false, 
+          "type": "string", 
+          "id": 11, 
+          "name": "l_shipdate"
+        }, 
+        {
+          "required": false, 
+          "type": "string", 
+          "id": 12, 
+          "name": "l_commitdate"
+        }, 
+        {
+          "required": false, 
+          "type": "string", 
+          "id": 13, 
+          "name": "l_receiptdate"
+        }, 
+        {
+          "required": false, 
+          "type": "string", 
+          "id": 14, 
+          "name": "l_shipinstruct"
+        }, 
+        {
+          "required": false, 
+          "type": "string", 
+          "id": 15, 
+          "name": "l_shipmode"
+        }, 
+        {
+          "required": false, 
+          "type": "string", 
+          "id": 16, 
+          "name": "l_comment"
+        }
+      ]
+    }
+  ]
+}

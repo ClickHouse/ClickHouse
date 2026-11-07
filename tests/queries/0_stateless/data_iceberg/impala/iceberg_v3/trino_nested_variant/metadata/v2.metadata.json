@@ -1,0 +1,231 @@
+{
+  "format-version": 3,
+  "table-uuid": "a88c2e0a-3b62-4a30-8944-88728b01a969",
+  "location": "hdfs://localhost:20500/test-warehouse/trino_nested_variant-40cf1503a2cd4c6b97611cf70338ffa7",
+  "last-sequence-number": 2,
+  "last-updated-ms": 1783079718506,
+  "last-column-id": 14,
+  "current-schema-id": 0,
+  "schemas": [
+    {
+      "type": "struct",
+      "schema-id": 0,
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "id": 2,
+          "name": "descr",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "id": 3,
+          "name": "top_v",
+          "required": false,
+          "type": "variant"
+        },
+        {
+          "id": 4,
+          "name": "arr_v",
+          "required": false,
+          "type": {
+            "type": "list",
+            "element-id": 8,
+            "element": "variant",
+            "element-required": false
+          }
+        },
+        {
+          "id": 5,
+          "name": "map_v",
+          "required": false,
+          "type": {
+            "type": "map",
+            "key-id": 9,
+            "key": "string",
+            "value-id": 10,
+            "value": "variant",
+            "value-required": false
+          }
+        },
+        {
+          "id": 6,
+          "name": "struct_v",
+          "required": false,
+          "type": {
+            "type": "struct",
+            "fields": [
+              {
+                "id": 11,
+                "name": "a",
+                "required": false,
+                "type": "variant"
+              },
+              {
+                "id": 12,
+                "name": "b",
+                "required": false,
+                "type": "int"
+              }
+            ]
+          }
+        },
+        {
+          "id": 7,
+          "name": "arr_struct_v",
+          "required": false,
+          "type": {
+            "type": "list",
+            "element-id": 13,
+            "element": {
+              "type": "struct",
+              "fields": [
+                {
+                  "id": 14,
+                  "name": "v",
+                  "required": false,
+                  "type": "variant"
+                }
+              ]
+            },
+            "element-required": false
+          }
+        }
+      ]
+    }
+  ],
+  "default-spec-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": []
+    }
+  ],
+  "last-partition-id": 999,
+  "default-sort-order-id": 0,
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": []
+    }
+  ],
+  "properties": {
+    "write.format.default": "PARQUET"
+  },
+  "current-snapshot-id": 5173553188971267000,
+  "next-row-id": 2,
+  "refs": {
+    "main": {
+      "snapshot-id": 5173553188971267000,
+      "type": "branch"
+    }
+  },
+  "snapshots": [
+    {
+      "sequence-number": 1,
+      "snapshot-id": 5208362247809940000,
+      "timestamp-ms": 1783079677295,
+      "summary": {
+        "operation": "append",
+        "trino_query_id": "20260703_115436_00017_wa2kj",
+        "trino_user": "trino",
+        "changed-partition-count": "0",
+        "total-records": "0",
+        "total-files-size": "0",
+        "total-data-files": "0",
+        "total-delete-files": "0",
+        "total-position-deletes": "0",
+        "total-equality-deletes": "0",
+        "engine-version": "481",
+        "engine-name": "trino",
+        "iceberg-version": "Apache Iceberg 1.10.1 (commit ccb8bc435062171e64bc8b7e5f56e6aed9c5b934)"
+      },
+      "manifest-list": "hdfs://localhost:20500/test-warehouse/trino_nested_variant-40cf1503a2cd4c6b97611cf70338ffa7/metadata/snap-5208362247809940782-1-10d5391c-e63e-4913-b898-ad7ef55cf306.avro",
+      "schema-id": 0,
+      "first-row-id": 0,
+      "added-rows": 0
+    },
+    {
+      "sequence-number": 2,
+      "snapshot-id": 5173553188971267000,
+      "parent-snapshot-id": 5208362247809940000,
+      "timestamp-ms": 1783079718473,
+      "summary": {
+        "operation": "append",
+        "trino_query_id": "20260703_115517_00018_wa2kj",
+        "trino_user": "trino",
+        "added-data-files": "1",
+        "added-records": "2",
+        "added-files-size": "2537",
+        "changed-partition-count": "1",
+        "total-records": "2",
+        "total-files-size": "2537",
+        "total-data-files": "1",
+        "total-delete-files": "0",
+        "total-position-deletes": "0",
+        "total-equality-deletes": "0",
+        "engine-version": "481",
+        "engine-name": "trino",
+        "iceberg-version": "Apache Iceberg 1.10.1 (commit ccb8bc435062171e64bc8b7e5f56e6aed9c5b934)"
+      },
+      "manifest-list": "hdfs://localhost:20500/test-warehouse/trino_nested_variant-40cf1503a2cd4c6b97611cf70338ffa7/metadata/snap-5173553188971266738-1-f8d5c650-108d-46aa-ae9f-e9d94e10adf4.avro",
+      "schema-id": 0,
+      "first-row-id": 0,
+      "added-rows": 2
+    }
+  ],
+  "statistics": [
+    {
+      "snapshot-id": 5173553188971267000,
+      "statistics-path": "hdfs://localhost:20500/test-warehouse/trino_nested_variant-40cf1503a2cd4c6b97611cf70338ffa7/metadata/20260703_115517_00018_wa2kj-6375d4da-66f3-4adf-b0d6-fb7964f5b953.stats",
+      "file-size-in-bytes": 534,
+      "file-footer-size-in-bytes": 440,
+      "blob-metadata": [
+        {
+          "type": "apache-datasketches-theta-v1",
+          "snapshot-id": 5173553188971267000,
+          "sequence-number": 2,
+          "fields": [
+            1
+          ],
+          "properties": {
+            "ndv": "2"
+          }
+        },
+        {
+          "type": "apache-datasketches-theta-v1",
+          "snapshot-id": 5173553188971267000,
+          "sequence-number": 2,
+          "fields": [
+            2
+          ],
+          "properties": {
+            "ndv": "2"
+          }
+        }
+      ]
+    }
+  ],
+  "partition-statistics": [],
+  "snapshot-log": [
+    {
+      "timestamp-ms": 1783079677295,
+      "snapshot-id": 5208362247809940000
+    },
+    {
+      "timestamp-ms": 1783079718473,
+      "snapshot-id": 5173553188971267000
+    }
+  ],
+  "metadata-log": [
+    {
+      "timestamp-ms": 1783079677295,
+      "metadata-file": "hdfs://localhost:20500/test-warehouse/trino_nested_variant-40cf1503a2cd4c6b97611cf70338ffa7/metadata/v1.metadata.json"
+    }
+  ]
+}
