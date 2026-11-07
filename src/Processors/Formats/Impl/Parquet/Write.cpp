@@ -1259,8 +1259,18 @@ void writeColumnImpl(
         {
             encodeRepDefLevelsRLE(s.def.data() + def_offset, def_count, s.max_def, encoded);
 
-            for (size_t i = def_offset; i < def_offset + def_count; ++i)
-                ++s.column_chunk.meta_data.size_statistics.definition_level_histogram[s.def[i]];
+            auto & histogram = s.column_chunk.meta_data.size_statistics.definition_level_histogram;
+            if (s.max_def == 1 && s.max_rep == 0)
+            {
+                /// The page counts already distinguish nulls from present values.
+                histogram[0] += static_cast<Int64>(def_count - data_count);
+                histogram[1] += static_cast<Int64>(data_count);
+            }
+            else
+            {
+                for (size_t i = def_offset; i < def_offset + def_count; ++i)
+                    ++histogram[s.def[i]];
+            }
         }
 
         std::shared_ptr<parquet::Buffer> values = encoder->FlushValues(); // resets it for next page
