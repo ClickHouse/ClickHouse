@@ -379,6 +379,11 @@ public:
         const StoredObjects & object,
         StoredObjects * successful_objects = nullptr) = 0;
 
+    /// Remove the objects written by a transaction whose commit failed. Unlike `removeObjectsIfExist`, a
+    /// caching wrapper removes them from the object storage it wraps as well: nothing references them, so the
+    /// removal queue of the wrapped disk, which removes the objects of committed metadata, never gets them.
+    virtual void removeObjectsOfFailedTransaction(const StoredObjects & objects) { removeObjectsIfExist(objects); }
+
     /// Copy object with different attributes if required
     virtual void copyObject( /// NOLINT
         const StoredObject & object_from,

@@ -71,6 +71,16 @@ FileCachePtr FileCacheFactory::get(const std::string & cache_name)
     return it->second->cache;
 }
 
+FileCachePtr FileCacheFactory::tryGet(const std::string & cache_name)
+{
+    std::lock_guard lock(mutex);
+
+    auto it = caches_by_name.find(cache_name);
+    if (it == caches_by_name.end())
+        return nullptr;
+    return it->second->cache;
+}
+
 FileCachePtr FileCacheFactory::getOrCreate(
     const std::string & cache_name,
     const FileCacheSettings & file_cache_settings,

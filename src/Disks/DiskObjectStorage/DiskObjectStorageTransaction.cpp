@@ -750,11 +750,21 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
 
 void DiskObjectStorageTransaction::undo() noexcept
 {
+    /// With random blob paths every written blob is a new object owned by this transaction, so a caching wrapper
+    /// may remove it from the storage it wraps as well. Otherwise a blob key can be the key of an existing object,
+    /// for example when an ordinary file of `plain_rewritable` is overwritten in place, and that object stays
+    /// referenced by the committed metadata: removing it physically would lose committed data.
+    const bool written_blobs_are_owned = metadata_storage->areBlobPathsRandom();
+
     for (const auto & [location, blobs] : written_blobs)
     {
         try
         {
-            object_storages->takePointingTo(location)->removeObjectsIfExist(blobs);
+            auto object_storage = object_storages->takePointingTo(location);
+            if (written_blobs_are_owned)
+                object_storage->removeObjectsOfFailedTransaction(blobs);
+            else
+                object_storage->removeObjectsIfExist(blobs);
         }
         catch (...)
         {

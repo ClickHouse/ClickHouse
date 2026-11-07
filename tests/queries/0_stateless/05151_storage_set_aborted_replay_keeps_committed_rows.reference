@@ -1,0 +1,9 @@
+FAULT_INJECTED
+matching rows after the failed insert:
+1
+matching rows after reattach:
+1
+matching rows after a successful insert:
+2
+matching rows after reattach:
+2

@@ -1,0 +1,17 @@
+SET_SIZE_LIMIT_EXCEEDED
+reads after the rollback could not restore the state:
+NOT_INITIALIZED
+NOT_INITIALIZED
+NOT_INITIALIZED
+NOT_INITIALIZED
+rows after the next insert:
+1	committed
+4	next
+rows after reattach:
+1	committed
+4	next
+SET_SIZE_LIMIT_EXCEEDED
+NOT_INITIALIZED
+rows after optimize:
+1	committed
+4	next

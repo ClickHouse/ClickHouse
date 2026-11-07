@@ -65,6 +65,8 @@ public:
         const StoredObjects & objects,
         StoredObjects * successful_objects = nullptr) override;
 
+    void removeObjectsOfFailedTransaction(const StoredObjects & objects) override;
+
     void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,

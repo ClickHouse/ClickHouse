@@ -3,6 +3,10 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 
+#include <functional>
+#include <mutex>
+#include <unordered_set>
+
 
 namespace DB
 {
@@ -31,6 +35,11 @@ public:
     /// With `persistent = 0` the table keeps its data only in memory, like `Memory`.
     bool hasUnreplicatedTableDataOnDisk() const override { return persistent; }
     Strings getDataPaths() const override { return {path}; }
+    Disks getDataDisks() const override { return {disk}; }
+
+    /// Throw if the query behind `context` cannot update the live state, for example because it is
+    /// reading from this table. Checked before the staged backup of an `INSERT` is published.
+    virtual void checkInsertIsPossible(ContextPtr /*context*/) const {}
 
 protected:
     StorageSetOrJoinBase(
@@ -48,12 +57,49 @@ protected:
 
     std::atomic<UInt64> increment = 0;    /// For the backup file names.
 
+    /// Serializes the operations that publish or roll back committed backups: an `INSERT`
+    /// publishing its staged backup, the rollback of a failed `INSERT`, and (for `Join`)
+    /// mutations and truncation. Without it, the rollback of one failed insert could swap
+    /// the live state while another insert is still replaying its own committed backup,
+    /// so that insert would apply the same rows twice.
+    mutable std::mutex mutate_mutex;
+
+    /// Promoted backups of failed `INSERT`s that could neither be removed nor moved out of the
+    /// table directory. They must not be replayed, so `forEachBackupBlock` skips them. Guarded by
+    /// `mutate_mutex`.
+    std::unordered_set<String> discarded_backups;
+
+    /// Called under `mutate_mutex`, in the same critical section that promoted the backup of an
+    /// `INSERT` which then failed: removes the backup, or quarantines it if it cannot be removed,
+    /// so that no later publish, rollback, or restart replays its rows.
+    void discardPromotedBackup(const String & file_name) noexcept;
+
+    /// Called under `mutate_mutex` when the promoted backup of a failed `INSERT` could not be
+    /// removed. Moves it back to `tmp/`, which is never replayed (also not on restart), and if
+    /// that fails as well, excludes it from replays for the lifetime of the table object.
+    void quarantineDiscardedBackup(const String & file_name) noexcept;
+
     /// Restore from backup.
     void restore();
 
-private:
-    void restoreFromFile(const String & file_path);
+    /// Read every committed backup in insertion order, optionally skipping one file by name. The
+    /// caller owns the destination state, so it can keep an update private until it has been
+    /// built successfully.
+    void forEachBackupBlock(const std::function<void(const Block &)> & callback, const String & exclude_file_name = {}) const;
 
+    /// Read the blocks of a single backup file in insertion order.
+    void forEachBlockInBackupFile(const String & file_path, const std::function<void(const Block &)> & callback) const;
+
+    /// Apply the just-promoted backup file of an `INSERT` to the live state, with the strong
+    /// exception guarantee: on failure the live state has been restored to what it was before.
+    /// Called under `mutate_mutex`; on failure the caller discards the backup file
+    /// (`discardPromotedBackup`) before leaving the critical section, so a failed `INSERT` never
+    /// publishes any rows.
+    virtual void publishBackup(const String & backup_file_path, ContextPtr context) = 0;
+
+    void restoreFromFile(const String & file_path, ContextPtr context = nullptr);
+
+private:
     /// Insert the block into the state.
     virtual void insertBlock(const Block & block, ContextPtr context) = 0;
     /// Call after all blocks were inserted.
@@ -105,6 +151,7 @@ private:
     void insertBlock(const Block & block, ContextPtr) override;
     void finishInsert() override;
     size_t getSize(ContextPtr) const override;
+    void publishBackup(const String & backup_file_path, ContextPtr context) override;
 };
 
 }

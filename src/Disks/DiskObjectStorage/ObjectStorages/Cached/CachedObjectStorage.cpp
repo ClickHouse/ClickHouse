@@ -180,6 +180,14 @@ void CachedObjectStorage::removeObjectsIfExist( /// NOLINT
     }
 }
 
+void CachedObjectStorage::removeObjectsOfFailedTransaction(const StoredObjects & objects)
+{
+    for (const auto & object : objects)
+        removeCacheIfExists(object.remote_path);
+
+    object_storage->removeObjectsOfFailedTransaction(objects);
+}
+
 void CachedObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
