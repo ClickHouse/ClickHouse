@@ -449,6 +449,12 @@ def test_iceberg_inverted_decimal_manifest_bounds(started_cluster_iceberg_no_spa
     assert pruned_files(e_expr) == 0
     assert pruned_files(f"{id_expr} AND {e_expr}") == 1
 
+    # Bounds just past the precision (1000000004 and 1000000005 unscaled) do not bound the file
+    # either, even though shifting the lower one outwards lands back inside the precision.
+    assert _set_bounds_in_manifests(manifests, 3, b"\x3b\x9a\xca\x04", b"\x3b\x9a\xca\x05") > 0
+    assert pruned_files(e_expr) == 0
+    assert pruned_files(f"{id_expr} AND {e_expr}") == 1
+
 
 def test_iceberg_narrow_fixed_manifest_bounds(started_cluster_iceberg_no_spark):
     """A `fixed[N]` bound narrower than its column is zero filled to the column's width instead of
