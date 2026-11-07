@@ -11,6 +11,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 opts=(
     --join_algorithm='parallel_hash'
     --query_plan_join_swap_table='auto'
+    # Only the statistics of earlier runs may size the builds, not the column statistics.
+    --use_statistics=0
 )
 
 $CLICKHOUSE_CLIENT -q "

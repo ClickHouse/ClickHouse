@@ -1,0 +1,16 @@
+final	1000
+sample	10039
+policy	1000
+deleted	1000
+patch_delete	1000
+update	100000
+on_fly	1000
+plain	100000
+05489 deleted	0	1
+05489 final	0	1
+05489 on_fly	0	1
+05489 patch_delete	0	1
+05489 plain	1	0
+05489 policy	0	1
+05489 sample	0	1
+05489 update	0	1

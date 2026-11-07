@@ -18,6 +18,8 @@ set max_bytes_in_join=0;
 -- The expected OOM is the peak when the one-bucket map of the serial layout doubles. A two-level map grows
 -- bucket by bucket and may stay below the limit.
 set hash_join_layout='serial';
+-- A deferred build reserves the map once, so the map never doubles and the expected OOM does not happen.
+set enable_hash_join_deferred_build=0;
 -- Put the join's own spill threshold out of reach so that only the scheduler can make it spill.
 set max_bytes_before_external_join='100Gi';
 set max_bytes_ratio_before_external_join=0;

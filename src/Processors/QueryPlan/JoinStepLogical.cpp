@@ -322,6 +322,8 @@ void JoinStepLogical::swapInputs()
     expression_actions.swapExpressionSources();
 
     std::swap(left_relation, right_relation);
+    /// The distinct counts belong to the columns of the previous right input.
+    right_distinct_values_from_uniq.clear();
 }
 
 std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties() const
@@ -2563,6 +2565,31 @@ static QueryPlanNode buildPhysicalJoinImpl(
     return node;
 }
 
+/// The `uniq` statistic of the right key, when the join condition is a single equality whose right side is a column of
+/// the right input, and the row estimate of the right input comes from statistics.
+std::optional<UInt64> JoinStepLogical::getRightKeyDistinctValuesFromUniq() const
+{
+    if (right_relation.source != RowEstimateSource::Statistics || join_operator.expression.size() != 1)
+        return {};
+
+    auto [op, lhs, rhs] = join_operator.expression.front().asBinaryPredicate();
+    if (op != JoinConditionOperator::Equals)
+        return {};
+    if (lhs.fromRight() && rhs.fromLeft())
+        std::swap(lhs, rhs);
+    if (!lhs.fromLeft() || !rhs.fromRight())
+        return {};
+
+    const auto right_key = rhs.resolveAliases();
+    if (right_key.getNode()->type != ActionsDAG::ActionType::INPUT)
+        return {};
+    const auto it = right_distinct_values_from_uniq.find(right_key.getColumnName());
+    if (it == right_distinct_values_from_uniq.end())
+        return {};
+    /// The sketch can count a little more than there are rows.
+    return right_relation.estimated_rows ? std::min(it->second, *right_relation.estimated_rows) : it->second;
+}
+
 void JoinStepLogical::buildPhysicalJoin(
     QueryPlanNode & node,
     const QueryPlanOptimizationSettings & optimization_settings,
@@ -2604,6 +2631,7 @@ void JoinStepLogical::buildPhysicalJoin(
 
         if (join_step->right_relation.estimated_rows)
             join_step->join_algorithm_params->rhs_size_estimation = join_step->right_relation.estimated_rows;
+        join_step->join_algorithm_params->rhs_key_distinct_values_from_uniq = join_step->getRightKeyDistinctValuesFromUniq();
 
         if (join_step->result_rows_estimation)
             join_step->join_algorithm_params->result_rows_estimation = join_step->result_rows_estimation;
@@ -3093,6 +3121,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->join_output_cache_key = join_output_cache_key;
     result_step->left_relation = left_relation;
     result_step->right_relation = right_relation;
+    result_step->right_distinct_values_from_uniq = right_distinct_values_from_uniq;
     result_step->table_stats_hint = table_stats_hint;
     result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
     result_step->planned_algorithm = planned_algorithm;

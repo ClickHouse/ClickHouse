@@ -1,0 +1,9 @@
+1
+1
+1000000
+1000000
+all_fits_inner	QueryFinish	1
+all_fits_right	QueryFinish	1
+blocks_over_inner	ExceptionWhileProcessing	0
+blocks_over_right	ExceptionWhileProcessing	0
+stored_fits_inner	ExceptionWhileProcessing	1
