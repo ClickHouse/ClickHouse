@@ -32,12 +32,10 @@ SELECT 'has(a, 0)', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id))
 SELECT 'hasAny(a, [0.0])', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_signed_zero WHERE hasAny(a, [0.0]) SETTINGS use_skip_indexes = 0) FROM t_bf_signed_zero WHERE hasAny(a, [0.0]);
 SELECT 'hasAll(a, [-0.0])', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_signed_zero WHERE hasAll(a, [-0.0]) SETTINGS use_skip_indexes = 0) FROM t_bf_signed_zero WHERE hasAll(a, [-0.0]);
 SELECT 'mapContainsKey(m, 0.0)', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_signed_zero WHERE mapContainsKey(m, 0.0) SETTINGS use_skip_indexes = 0) FROM t_bf_signed_zero WHERE mapContainsKey(m, 0.0);
--- With `optimize_functions_to_subcolumns = 0`, `m[0.0]` on a `Map(Float64, String)` throws `ILLEGAL_TYPE_OF_ARGUMENT`
--- even without an index, so the setting is pinned for the queries that use it.
+-- A basic Map is not eligible for the bucketed `m[k]` rewrite; test its floating keys through `mapKeys`.
 SET optimize_functions_to_subcolumns = 1;
-SELECT 'm[0.0] = \'x\'', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_signed_zero WHERE m[0.0] = 'x' SETTINGS use_skip_indexes = 0) FROM t_bf_signed_zero WHERE m[0.0] = 'x';
--- The key of `m[k]` is looked up by equality, also when the value is compared with `IN`.
-SELECT 'm[0.0] IN (\'x\')', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_signed_zero WHERE m[0.0] IN ('x') SETTINGS use_skip_indexes = 0) FROM t_bf_signed_zero WHERE m[0.0] IN ('x');
+SELECT 'hasAll(mapKeys(m), [0.0])', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_signed_zero WHERE hasAll(mapKeys(m), [0.0]) SETTINGS use_skip_indexes = 0) FROM t_bf_signed_zero WHERE hasAll(mapKeys(m), [0.0]);
+SELECT 'hasAny(mapKeys(m), [0.0, 0.5])', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_signed_zero WHERE hasAny(mapKeys(m), [0.0, 0.5]) SETTINGS use_skip_indexes = 0) FROM t_bf_signed_zero WHERE hasAny(mapKeys(m), [0.0, 0.5]);
 -- `IN` compares bits, with and without the index.
 SELECT 'f IN (0.0)', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_signed_zero WHERE f IN (0.0) SETTINGS use_skip_indexes = 0) FROM t_bf_signed_zero WHERE f IN (0.0);
 SELECT 'f = 0.5', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_signed_zero WHERE f = 0.5 SETTINGS use_skip_indexes = 0) FROM t_bf_signed_zero WHERE f = 0.5;
