@@ -22,3 +22,16 @@ if
 {"a":"first"}
 {"a":"x"}
 {"a":"x"}
+multiIf
+{"a":"first"}
+{"a":"first"}
+{"a":"first"}
+{"a":"first"}
+{"a":"first"}
+{"a":"second"}
+{"a":"first"}
+{"a":"second"}
+{"a":"x"}
+{"a":"first"}
+{"a":"first"}
+{"a":"first"}

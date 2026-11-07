@@ -359,6 +359,21 @@ static void fillUnusedRowsWithValidValues(IColumn & column, const IDataType & ty
     }
 }
 
+/// Create a column of `size` default values of the type for rows that are never used, e.g. an argument of a short-circuit
+/// function that is skipped for the whole block. Such a column is still converted together with the used columns,
+/// so its values must be valid values of the type, see `hasInvalidColumnDefault`.
+static ColumnPtr createUnusedColumnWithValidValues(const DataTypePtr & type, size_t size)
+{
+    auto column = type->createColumnConstWithDefaultValue(size)->convertToFullColumnIfConst();
+    if (!hasInvalidColumnDefault(*type))
+        return column;
+
+    auto mutable_column = IColumn::mutate(std::move(column));
+    PaddedPODArray<UInt8> zero_mask(size, 0);
+    fillUnusedRowsWithValidValues(*mutable_column, *type, zero_mask);
+    return mutable_column;
+}
+
 void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, const MaskInfo & mask_info)
 {
     const auto * column_function = checkAndGetShortCircuitArgument(column.column);
@@ -371,16 +386,8 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
     if (!mask_info.has_ones)
     {
         /// If mask contains only zeros, we can just create a column with default values as it will be ignored.
-        /// But it is still converted together with other columns, so the values must be valid values of the type.
         auto result_type = column_function->getResultType();
-        auto default_column = result_type->createColumnConstWithDefaultValue(original_size)->convertToFullColumnIfConst();
-        if (hasInvalidColumnDefault(*result_type))
-        {
-            auto mut_default_column = IColumn::mutate(std::move(default_column));
-            fillUnusedRowsWithValidValues(*mut_default_column, *result_type, mask);
-            default_column = std::move(mut_default_column);
-        }
-        column = {default_column, result_type, ""};
+        column = {createUnusedColumnWithValidValues(result_type, original_size), result_type, ""};
     }
     else if (mask_info.has_zeros)
     {
@@ -455,7 +462,7 @@ void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty)
     if (!empty)
         column = column_function->reduce();
     else
-        column.column = column_function->getResultType()->createColumnConstWithDefaultValue(original_size)->convertToFullColumnIfConst();
+        column.column = createUnusedColumnWithValidValues(column_function->getResultType(), original_size);
 
     chassert(column.column->size() == original_size);
 }
