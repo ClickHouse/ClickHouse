@@ -388,32 +388,6 @@ std::string getTablePath(const std::string & table_dir_path, const std::string &
     return table_dir_path + "/data." + escapeForFileName(format_name);
 }
 
-/// Splits `path` at its last `..`, resolves the head (up to and including that `..`) physically and
-/// appends the tail as written: a `..` resolves against the target of a preceding symlink, while a
-/// symlink in the tail must stay unresolved to stay reachable. `ec` is set only if resolving fails.
-fs::path resolveDotDotForContainmentCheck(const fs::path & path, std::error_code & ec)
-{
-    fs::path head;
-    fs::path tail;
-    for (const auto & component : path)
-    {
-        tail /= component;
-        if (component == "..")
-        {
-            head /= tail;
-            tail.clear();
-        }
-    }
-
-    if (head.empty())
-        return path;
-
-    head = fs::weakly_canonical(head, ec);
-    if (ec)
-        return {};
-    return tail.empty() ? head : head / tail;
-}
-
 /// Both db_dir_path and table_path must be converted to absolute paths (in particular, path cannot contain '..').
 void checkCreationIsAllowed(
     ContextPtr context_global,
