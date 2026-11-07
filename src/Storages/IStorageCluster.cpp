@@ -5,6 +5,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
+#include <DataTypes/NestedUtils.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -15,6 +16,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Parsers/stripQuerySettings.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
@@ -23,6 +25,8 @@
 #include <Storages/IStorage.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/extractTableFunctionFromSelectQuery.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Interpreters/PreparedSets.h>
@@ -50,6 +54,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool skip_unavailable_shards;
@@ -220,6 +225,60 @@ void IStorageCluster::read(
     /// `formatWithSecretsOneLine()` with its `SETTINGS` clause intact, which would otherwise leak those
     /// names to shards (and trip `UNKNOWN_SETTING` on an older shard in a rolling upgrade).
     ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_to_send);
+
+    /// Replicas match `additional_table_filters` (first matching entry wins) against the forwarded query, whose table
+    /// expression has a generated alias. At `FetchColumns` the initiator applies `additional_filter_ast` itself.
+    if (query_info.additional_filter_ast && processed_stage != QueryProcessingStage::FetchColumns)
+    {
+        if (const auto * table_function = extractTableFunctionFromSelectQuery(query_to_send))
+        {
+            /// Replicas interpret the filter with their own current database.
+            ASTPtr filter_ast = query_info.additional_filter_ast->clone();
+            const auto columns = storage_snapshot->getColumns(
+                GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
+            auto is_column = [&](const String & name)
+            {
+                if (!name.contains('.'))
+                {
+                    /// The prefix of `Nested` columns, e.g. `nest` for `nest.x Array(UInt64)`.
+                    const String prefix = name + ".";
+                    for (const auto & column : columns)
+                        if (column.name.starts_with(prefix) && isArray(column.type))
+                            return true;
+                }
+
+                for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+                    if (auto column = columns.tryGetByName(String(column_name)); column && column->type->tryGetSubcolumnType(subcolumn_name))
+                        return true;
+                return false;
+            };
+            AddDefaultDatabaseVisitor(context, context->getCurrentDatabase())
+                .visitStandaloneExpression(filter_ast, columns.getNameSet(), is_column);
+
+            /// A replica names the storage after the canonical name of the function, not after its spelling in the query.
+            String function_name = table_function->name;
+            if (auto resolved_function = TableFunctionFactory::instance().tryGet(function_name, context))
+                function_name = resolved_function->getName();
+
+            Tuple resolved_filter;
+            resolved_filter.push_back(StorageID(ITableFunction::getDatabaseName(), function_name).getFullNameNotQuoted());
+            resolved_filter.push_back(filter_ast->formatWithSecretsOneLine());
+
+            Map forwarded_filters;
+            forwarded_filters.push_back(std::move(resolved_filter));
+            for (const auto & entry : context->getSettingsRef()[Setting::additional_table_filters].value)
+                forwarded_filters.push_back(entry);
+
+            query_to_send = query_to_send->clone();
+            static constexpr std::string_view additional_table_filters_name[] = {"additional_table_filters"};
+            removeSettingsFromQueryTopLevel(query_to_send, additional_table_filters_name);
+
+            auto forwarded_context = Context::createCopy(context);
+            forwarded_context->setSetting("additional_table_filters", Field(std::move(forwarded_filters)));
+            query_plan.addInterpreterContext(forwarded_context);
+            context = std::move(forwarded_context);
+        }
+    }
 
     auto this_ptr = std::static_pointer_cast<IStorageCluster>(shared_from_this());
 
