@@ -8077,6 +8077,8 @@ Toggles a query-plan-level optimization which moves volume-reducing functions (`
 down in the execution plan, below `Sorting` and `Filter` steps. The fixed-size result replaces the
 wide `String` / `FixedString` argument, so the argument is no longer carried through those steps.
 The rewrite is only applied when the argument column is not needed above the step it is pushed below.
+It also pushes reads of a subcolumn (for example `data.a`, `length(arr)` or `isNull(n)` over a column returned by a subquery,
+CTE, view or `UNION ALL` branch) down to the step reading the column from a `MergeTree` table, so that only the subcolumn is read.
 
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 

@@ -1,4 +1,5 @@
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
+#include <Analyzer/Passes/getSubcolumnOfFunction.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeString.h>
 
@@ -242,15 +243,6 @@ bool sourceHasColumnCaseInsensitive(const QueryTreeNodePtr & column_source, cons
     return false;
 }
 
-/// Two substreams are the same step only if they are the same kind AND name the same element: `type`
-/// alone cannot tell ``TupleElement(j)`` from ``TupleElement(`j.m`)``, nor one JSON path from another.
-bool isSameSubstream(const ISerialization::Substream & lhs, const ISerialization::Substream & rhs)
-{
-    return lhs.type == rhs.type && lhs.name_of_substream == rhs.name_of_substream
-        && lhs.variant_element_name == rhs.variant_element_name
-        && lhs.object_path_name == rhs.object_path_name && lhs.bucket == rhs.bucket;
-}
-
 /// A rewrite descends into the column it started from, so that column's substream path must be a proper
 /// prefix of the rewritten subcolumn's: inside ``Tuple(`j.m` Map(..), j JSON(m Map(..)))`` the element and
 /// the JSON path both answer to `c.j.m` and only the paths differ. A non-subcolumn sits at the root.
@@ -319,23 +311,12 @@ bool canOptimizeToExpectedSubcolumn(
     return subcolumnDescendsFromColumn(storage_snapshot, ctx.column.name, *resolved, info->substreams_path);
 }
 
-/// The type of the `size` subcolumn of a String or Nullable(String) column.
-/// For Nullable(String) it is Nullable(UInt64) with NULL in the rows where the column is NULL,
-/// which is the same as the result of `length`, `empty` and `notEmpty` for these rows.
-DataTypePtr getStringSizesSubcolumnType(const ColumnContext & ctx)
-{
-    DataTypePtr type = std::make_shared<DataTypeUInt64>();
-    if (ctx.column.type->isNullable())
-        return makeNullable(type);
-    return type;
-}
-
 void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
 {
     /// Replace `length(argument)` with `argument.size`.
     /// `argument` is String or Nullable(String).
 
-    NameAndTypePair column{ctx.column.name + ".size", getStringSizesSubcolumnType(ctx)};
+    NameAndTypePair column{ctx.column.name + ".size", getStringSizesSubcolumnType(ctx.column.type)};
     if (sourceHasColumn(ctx.column_source, column.name)
         || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationString::isStringSizesSubcolumn, column.type))
         return;
@@ -349,7 +330,7 @@ void optimizeFunctionStringEmpty(QueryTreeNodePtr &, FunctionNode & function_nod
     /// Replace `notEmpty(argument)` with `notEquals(argument.size, 0)` if not positive.
     /// `argument` is String or Nullable(String).
 
-    NameAndTypePair column{ctx.column.name + ".size", getStringSizesSubcolumnType(ctx)};
+    NameAndTypePair column{ctx.column.name + ".size", getStringSizesSubcolumnType(ctx.column.type)};
     if (sourceHasColumn(ctx.column_source, column.name)
         || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationString::isStringSizesSubcolumn, column.type))
         return;
@@ -413,33 +394,12 @@ void optimizeFunctionArrayElementForMap(QueryTreeNodePtr & node, FunctionNode & 
         return;
 
     const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
-    const auto & key_type = data_type_map.getKeyType();
-
-    Field key_value = second_argument_constant_node->getValue();
-    if (isEnum(key_type))
-    {
-        /// A map with Enum keys can be indexed either by the name of the enum value or by its numeric value.
-        /// Convert both forms to the numeric value of the enum. This also rejects a value that is not in
-        /// the Enum at all, which has no name and hence no key subcolumn, while `arrayElement` returns
-        /// the default value for it.
-        key_value = tryConvertFieldToType(key_value, *key_type);
-        if (key_value.isNull())
-            return;
-    }
-
-    auto tmp_key_column = key_type->createColumn();
-    /// Verify that the constant value is compatible with the map's key type.
-    if (!tmp_key_column->tryInsert(key_value))
+    auto subcolumn_name = tryGetMapKeySubcolumnName(data_type_map, second_argument_constant_node->getValue());
+    if (!subcolumn_name)
         return;
 
-    /// Serialize the key to its text representation to construct the subcolumn name,
-    /// e.g. the string key "foo" becomes the subcolumn suffix "key_foo".
-    WriteBufferFromOwnString buf;
-    key_type->getDefaultSerialization()->serializeText(*tmp_key_column, 0, buf, FormatSettings());
-    String subcolumn_name = String(DataTypeMap::KEY_SUBCOLUMN_PREFIX) + buf.str();
-
     /// The resulting subcolumn has the map's value type, e.g. `m.key_foo : V` for `Map(K, V)`.
-    NameAndTypePair column{ctx.column.name + "." + subcolumn_name, data_type_map.getValueType()};
+    NameAndTypePair column{ctx.column.name + "." + *subcolumn_name, data_type_map.getValueType()};
     if (sourceHasColumn(ctx.column_source, column.name)
         || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isKeyValueSubcolumn, column.type))
         return;
@@ -458,96 +418,6 @@ void optimizeFunctionArrayElementForJSON(QueryTreeNodePtr & node, FunctionNode &
 {
     std::vector<FunctionNode *> empty;
     optimizeJSONArrayElementChain(node, function_node, ctx, empty);
-}
-
-std::optional<String> getElementSubcolumnName(const Field & value, const DataTypeTuple & data_type_tuple)
-{
-    const auto & names = data_type_tuple.getElementNames();
-
-    if (value.getType() == Field::Types::String)
-    {
-        const auto & name = value.safeGet<String>();
-        auto pos = data_type_tuple.tryGetPositionByName(name);
-
-        if (!pos)
-            return {};
-
-        return name;
-    }
-
-    if (value.getType() == Field::Types::UInt64)
-    {
-        size_t index = value.safeGet<UInt64>();
-
-        if (index == 0 || index > names.size())
-            return {};
-
-        return names[index - 1];
-    }
-
-    /// Signed indices can address elements from the end of the tuple.
-    if (value.getType() == Field::Types::Int64)
-    {
-        ssize_t index = value.safeGet<Int64>();
-        ssize_t size = names.size();
-
-        if (index == 0 || index < -size || index > size)
-            return {};
-
-        if (index > 0)
-            return names[index - 1];
-        else
-            return names[size + index];
-    }
-
-    return {};
-}
-
-std::optional<String> getElementSubcolumnName(const Field & value, const DataTypeVariant & data_type_variant)
-{
-    if (value.getType() != Field::Types::String)
-        return {};
-
-    const auto & name = value.safeGet<String>();
-    auto discr = data_type_variant.tryGetVariantDiscriminator(name);
-
-    if (!discr)
-        return {};
-
-    return name;
-}
-
-std::optional<String> getElementSubcolumnName(const Field & value, const DataTypeQBit & data_type_qbit)
-{
-    size_t index = 0;
-
-    if (value.getType() == Field::Types::UInt64)
-        index = value.safeGet<UInt64>();
-    else
-        return {};
-
-    if (index == 0 || index > data_type_qbit.getElementSize() * data_type_qbit.getNumStrides())
-        return {};
-
-    return toString(index);
-}
-
-/// True when `element_name` and some nested path of `tuple` flatten to the same dotted name, so
-/// `<column>.<element_name>` no longer identifies one element: an exact element-name lookup binds
-/// the dotted element while a prefix walk over a file schema binds the nested one.
-bool tupleElementNameIsAmbiguousWhenFlattened(const DataTypeTuple & tuple, const String & element_name)
-{
-    std::string_view name = element_name;
-    for (size_t dot = name.find('.'); dot != std::string_view::npos; dot = name.find('.', dot + 1))
-    {
-        auto head = name.substr(0, dot);
-        auto tail = name.substr(dot + 1);
-        /// Case-insensitively, because a reader may match field names that way.
-        if (!head.empty() && !tail.empty()
-            && (tuple.tryGetPositionByName(head) || tuple.tryGetPositionByName(head, /*case_insensitive=*/true)))
-            return true;
-    }
-    return false;
 }
 
 /// True when the element name is a bare ordinal that is not guaranteed to occur in the file schema:

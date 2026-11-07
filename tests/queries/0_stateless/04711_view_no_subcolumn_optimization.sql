@@ -39,10 +39,14 @@ SELECT sum(length(arr)) FROM okv SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT sum(length(arr)) FROM tgt SETTINGS optimize_functions_to_subcolumns = 1) WHERE explain ILIKE '%arr.size0%';
 
 -- Reading through a view does not request the subcolumn from the inner query.
-SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT sum(length(arr)) FROM okv SETTINGS optimize_functions_to_subcolumns = 1) WHERE explain ILIKE '%arr.size0%';
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT sum(length(arr)) FROM okv SETTINGS optimize_functions_to_subcolumns = 1, query_plan_push_down_volume_reducing_functions = 0) WHERE explain ILIKE '%arr.size0%';
 -- Positive control for the row above: the un-rewritten `length` call IS in that same plan, so the
 -- absent-substring assertion cannot pass merely because nothing rendered.
-SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT sum(length(arr)) FROM okv SETTINGS optimize_functions_to_subcolumns = 1) WHERE explain ILIKE '%length%';
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT sum(length(arr)) FROM okv SETTINGS optimize_functions_to_subcolumns = 1, query_plan_push_down_volume_reducing_functions = 0) WHERE explain ILIKE '%length%';
+-- The query plan reads the subcolumn from the table under the view, where the column has the type of the view.
+-- The push-down is off for plans that can be shipped and for parallel replicas, which some CI suites turn on in the server profile.
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT sum(length(arr)) FROM okv SETTINGS optimize_functions_to_subcolumns = 1, query_plan_push_down_volume_reducing_functions = 1, serialize_query_plan = 0, enable_parallel_replicas = 0) WHERE explain ILIKE '%arr.size0%';
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT sum(length(arr)) FROM vw SETTINGS optimize_functions_to_subcolumns = 1, query_plan_push_down_volume_reducing_functions = 1, serialize_query_plan = 0, enable_parallel_replicas = 0) WHERE explain ILIKE '%arr.size0%';
 
 DROP TABLE okv;
 DROP TABLE tgt;
