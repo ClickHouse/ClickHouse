@@ -102,7 +102,7 @@ void WireReader::skip(WireType wire_type)
     throw Exception(ErrorCodes::INCORRECT_DATA, "Unsupported protobuf wire type {} in ORC metadata", static_cast<int>(wire_type));
 }
 
-bool WireReader::readRepeatedVarint(WireType wire_type, std::vector<UInt64> & out)
+bool WireReader::readRepeatedVarint(WireType wire_type, VectorWithMemoryTracking<UInt64> & out)
 {
     if (wire_type == LENGTH_DELIMITED)
     {
@@ -152,7 +152,7 @@ void WireWriter::writeBytes(UInt32 field, std::string_view value)
     out.append(value);
 }
 
-void WireWriter::writePackedVarint(UInt32 field, const std::vector<UInt64> & values)
+void WireWriter::writePackedVarint(UInt32 field, const VectorWithMemoryTracking<UInt64> & values)
 {
     if (values.empty())
         return;
@@ -162,7 +162,7 @@ void WireWriter::writePackedVarint(UInt32 field, const std::vector<UInt64> & val
     writeBytes(field, packed);
 }
 
-void WireWriter::writePackedFixed64(UInt32 field, const std::vector<UInt64> & values)
+void WireWriter::writePackedFixed64(UInt32 field, const VectorWithMemoryTracking<UInt64> & values)
 {
     if (values.empty())
         return;
@@ -885,7 +885,7 @@ std::string Metadata::serialize() const
 void Footer::parse(std::string_view data)
 {
     /// The statistics are parsed after the types, to limit their number by the number of columns.
-    std::vector<std::string_view> statistics_data;
+    VectorWithMemoryTracking<std::string_view> statistics_data;
     parseMessage(data, [&](WireReader & r, UInt32 field, WireType type)
     {
         switch (field)

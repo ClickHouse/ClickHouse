@@ -1,11 +1,13 @@
 #pragma once
 
 #include <Common/PODArray.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/Formats/Impl/Parquet/ReadCommon.h>
 
 #include <optional>
 #include <span>
-#include <unordered_set>
 
 namespace DB
 {
@@ -48,21 +50,21 @@ public:
 
     /// Replace a requested range with a set of disjoint smaller ranges contained within it.
     /// `subranges` must be sorted.
-    std::vector<PrefetchHandle> splitRange(
-        PrefetchHandle request, const std::vector<std::pair</*global_offset*/ size_t, /*length*/ size_t>> & subranges, bool likely_to_be_used);
+    VectorWithMemoryTracking<PrefetchHandle> splitRange(
+        PrefetchHandle request, const VectorWithMemoryTracking<std::pair</*global_offset*/ size_t, /*length*/ size_t>> & subranges, bool likely_to_be_used);
 
     /// Kicks off background tasks to prefetch these range, if needed (if not already started, and
     /// prefetching is enabled, and handle is valid).
     /// Adds the range's memory usage to MemoryUsageDiff. Remembers memory_usage->stage so that
     /// PrefetchHandle::reset can later subtract from MemoryUsageDiff correctly.
-    void startPrefetch(const std::vector<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff);
+    void startPrefetch(const VectorWithMemoryTracking<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff);
 
     /// Like startPrefetch, but a read task covers only these requests and the gaps between them, so what is
     /// charged is what it allocates. Starts nothing and returns nullopt if that could exceed `max_memory`.
     /// `created_task_first_handle` receives, per created read task, the position in `requests_to_start` of its first handle.
     std::optional<size_t> startPrefetchWithinLimit(
-        const std::vector<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff, size_t max_memory,
-        std::vector<size_t> * created_task_first_handle = nullptr);
+        const VectorWithMemoryTracking<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff, size_t max_memory,
+        VectorWithMemoryTracking<size_t> * created_task_first_handle = nullptr);
 
     /// Consecutive (in sorted order) ranges registered before finalizeRanges(), with gaps below min_bytes_for_seek between them (as in a read task).
     struct AdjacentRanges
@@ -74,7 +76,7 @@ public:
     };
 
     /// Nullopt if the handles' ranges are not such ranges.
-    std::optional<AdjacentRanges> getAdjacentRanges(const std::vector<PrefetchHandle *> & handles);
+    std::optional<AdjacentRanges> getAdjacentRanges(const VectorWithMemoryTracking<PrefetchHandle *> & handles);
     bool extendsAdjacentRanges(const AdjacentRanges & run, const AdjacentRanges & next) const;
 
     /// If prefetched, returns prefetched data.
@@ -200,7 +202,7 @@ private:
     struct RangeSet
     {
         /// Pre-registered ranges. Sorted and immutable after finalizeRanges().
-        std::vector<RangeState> ranges;
+        VectorWithMemoryTracking<RangeState> ranges;
     };
 
     FormatParserSharedResourcesPtr parser_shared_resources;
@@ -221,9 +223,9 @@ private:
     std::mutex mutex;
 
     /// Arenas.
-    std::deque<RequestState> requests;
-    std::deque<Task> tasks;
-    std::deque<RangeSet> range_sets;
+    DequeWithMemoryTracking<RequestState> requests;
+    DequeWithMemoryTracking<Task> tasks;
+    DequeWithMemoryTracking<RangeSet> range_sets;
 
     std::atomic<bool> ranges_finalized {false};
 
@@ -239,7 +241,7 @@ private:
     /// (splitAndPrefetchRange), and only subrange [subrange_start, subrange_end) needs to be read.
     void pickRangesAndCreateTaskIfNotExists(RequestState *, const PrefetchHandle &, bool splitting, size_t start_offset, size_t end_offset, std::unique_lock<std::mutex> lock);
     /// Returns nullptr if the request already has a task. If set, only requests in `coalesce_only` are coalesced into it.
-    Task * pickRangesAndCreateTaskLocked(RequestState * initial_req, bool splitting, size_t start_offset, size_t end_offset, const std::unordered_set<const RequestState *> * coalesce_only);
+    Task * pickRangesAndCreateTaskLocked(RequestState * initial_req, bool splitting, size_t start_offset, size_t end_offset, const UnorderedSetWithMemoryTracking<const RequestState *> * coalesce_only);
     static void decreaseTaskRefcount(Task * task, size_t amount);
     void scheduleTask(Task * task);
     Task::State runTask(Task * task);

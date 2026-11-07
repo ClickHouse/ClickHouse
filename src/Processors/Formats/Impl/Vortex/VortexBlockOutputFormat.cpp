@@ -119,7 +119,7 @@ void VortexBlockOutputFormat::consume(Chunk chunk)
     size_t columns_num = chunk.getNumColumns();
     std::shared_ptr<arrow::Table> arrow_table;
 
-    std::vector<Chunk> chunks;
+    Chunks chunks;
     chunks.push_back(std::move(chunk));
     ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunks, columns_num);
 

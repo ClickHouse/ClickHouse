@@ -2,6 +2,7 @@
 #include "config.h"
 #if USE_PARQUET
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatSettings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -14,11 +15,11 @@ namespace DB
 
 struct ParquetFileBucketInfo : public FileBucketInfo
 {
-    std::vector<size_t> row_group_ids;
+    RowGroupIndices row_group_ids;
     std::optional<std::pair<UInt64, UInt64>> byte_range;
 
     ParquetFileBucketInfo() = default;
-    explicit ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_);
+    explicit ParquetFileBucketInfo(const RowGroupIndices & row_group_ids_);
     ParquetFileBucketInfo(UInt64 offset, UInt64 length);
     void serialize(WriteBuffer & buffer, size_t protocol_version) const override;
     void deserialize(ReadBuffer & buffer, size_t protocol_version) override;
@@ -27,20 +28,20 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     {
         return "Parquet";
     }
-    std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const override;
+    std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const RowGroupIndices & matching_row_groups) const override;
 };
 using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
 
 struct ParquetBucketSplitter : public IBucketSplitter
 {
     ParquetBucketSplitter() = default;
-    std::vector<FileBucketInfoPtr> splitToBuckets(
+    VectorWithMemoryTracking<FileBucketInfoPtr> splitToBuckets(
         size_t bucket_size,
         ReadBuffer & buf,
         const RelativePathWithMetadata & object,
         const FormatSettings & format_settings_,
         const ContextPtr & context) override;
-    std::vector<FileBucketInfoPtr> splitByByteRanges(size_t bucket_size, size_t file_size, const std::vector<UInt64> & split_offsets) override;
+    VectorWithMemoryTracking<FileBucketInfoPtr> splitByByteRanges(size_t bucket_size, size_t file_size, const VectorWithMemoryTracking<UInt64> & split_offsets) override;
 };
 
 class KeyCondition;
@@ -74,8 +75,8 @@ public:
 
     void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
 
-    std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const override;
-    std::vector<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override;
+    std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> getMatchedBuckets() const override;
+    VectorWithMemoryTracking<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override;
     bool isTopKFilterApplied() const override;
     bool isMinMaxFromStatisticsApplied() const override { return min_max_from_statistics; }
 
@@ -153,7 +154,7 @@ struct ParquetCachedStatisticsFilter
 private:
     std::shared_ptr<const KeyCondition> key_condition;
     /// Positions are in the header followed by `FormatFilterInfo::additional_columns`, as `key_condition` was built for.
-    std::vector<std::pair<size_t, String>> column_keys;
+    VectorWithMemoryTracking<std::pair<size_t, String>> column_keys;
     DataTypes key_types;
 };
 

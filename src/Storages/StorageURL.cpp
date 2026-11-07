@@ -735,7 +735,7 @@ StorageURLSource::StorageURLSource(
             if (!matching_marks)
                 break;
 
-            std::vector<size_t> matching_row_groups;
+            RowGroupIndices matching_row_groups;
             for (size_t i = 0; i < matching_marks->size(); ++i)
                 if ((*matching_marks)[i])
                     matching_row_groups.push_back(i);

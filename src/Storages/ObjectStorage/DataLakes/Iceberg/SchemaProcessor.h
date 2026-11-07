@@ -1,6 +1,7 @@
 #pragma once
 
 
+#include <Formats/ColumnNameMaps.h>
 #include <memory>
 #include <mutex>
 
@@ -117,7 +118,7 @@ public:
 
     static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true);
 
-    static std::unordered_map<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema);
+    static ColumnNameToFieldId traverseSchema(Poco::JSON::Array::Ptr schema);
 
     /// The largest field id in `schema`, nested ids included.
     static Int64 getMaxFieldId(Poco::JSON::Array::Ptr schema);

@@ -303,8 +303,8 @@ int32_t VortexBlockInputFormat::onChunk(::ArrowArray * array, UInt64 split_index
                 data_batch = *removed;
             }
 
+            /// Returned only on success: returning may throw, so it cannot be done from a scope guard.
             auto converter = takeConverter();
-            SCOPE_EXIT({ returnConverter(std::move(converter)); });
 
             /// One piece unless the row numbers are too far apart to share a chunk.
             const size_t num_rows = data_batch->num_rows();
@@ -327,6 +327,8 @@ int32_t VortexBlockInputFormat::onChunk(::ArrowArray * array, UInt64 split_index
 
                 begin += length;
             } while (begin < num_rows);
+
+            returnConverter(std::move(converter));
         }
 
         {
@@ -531,7 +533,7 @@ void VortexBlockInputFormat::prepareReader()
     }
 
     /// Points into `plan.column_names`, which must not be modified from here on.
-    std::vector<const char *> column_name_pointers;
+    VectorWithMemoryTracking<const char *> column_name_pointers;
     column_name_pointers.reserve(plan.column_names.size());
     for (const auto & name : plan.column_names)
         column_name_pointers.push_back(name.c_str());
@@ -658,11 +660,12 @@ Chunk VortexBlockInputFormat::readWithoutColumns()
     auto table = arrow::Table::FromRecordBatches({batch});
     throwFromArrowStatusIfFailed(table.status());
 
+    /// Returned only on success: returning may throw, so it cannot be done from a scope guard.
     auto converter = takeConverter();
-    SCOPE_EXIT({ returnConverter(std::move(converter)); });
 
     BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
     auto chunk = converter->arrowTableToCHChunk(*table, num_rows, nullptr, block_missing_values_ptr);
+    returnConverter(std::move(converter));
 
     if (row_index_column)
         chunk.getChunkInfos().add(rowNumbersWithoutColumns(first_delivered, num_rows));

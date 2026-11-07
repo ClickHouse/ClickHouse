@@ -7,6 +7,7 @@
 #include <IO/Progress.h>
 #include <Common/Logger.h>
 #include <Common/Macros.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatSettings.h>
 
 namespace DB
@@ -53,7 +54,7 @@ struct ObjectInfo
     /// The exact size of the object as the table metadata records it, if it records a positive one.
     virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
 
-    virtual std::vector<UInt64> getSplitOffsetsHint() const { return {}; }
+    virtual VectorWithMemoryTracking<UInt64> getSplitOffsetsHint() const { return {}; }
 
     /// The number of rows of the object as the table metadata records it, before applying deletes, if known.
     /// It is only an estimate used to report the progress of a query, not to compute any result.

@@ -56,7 +56,7 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 namespace
 {
 
-void traverseComplexType(Poco::JSON::Object::Ptr type, std::unordered_map<String, Int64> & result, const String & current_path)
+void traverseComplexType(Poco::JSON::Object::Ptr type, ColumnNameToFieldId & result, const String & current_path)
 {
     auto type_str = type->getValue<String>(Iceberg::f_type);
     if (type_str == "map")
@@ -1001,9 +1001,9 @@ bool IcebergSchemaProcessor::isSchemaRegisteredFromMetadata(Int32 id) const
     return iceberg_table_schemas_by_ids.contains(id) && !manifest_sourced_schema_ids.contains(id);
 }
 
-std::unordered_map<String, Int64> IcebergSchemaProcessor::traverseSchema(Poco::JSON::Array::Ptr schema)
+ColumnNameToFieldId IcebergSchemaProcessor::traverseSchema(Poco::JSON::Array::Ptr schema)
 {
-    std::unordered_map<String, Int64> result;
+    ColumnNameToFieldId result;
     for (UInt32 i = 0; i < schema->size(); ++i)
     {
         auto current_object = schema->getObject(i);
