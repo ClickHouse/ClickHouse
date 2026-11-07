@@ -75,13 +75,15 @@ def create_retry_view(database, view, refresh, fail=False):
 
 
 def wait_retry_state(replica, database, view, predicate):
-    return replica.query_with_retry(
+    result = replica.query_with_retry(
         f"SELECT count() = 1 AND countIf({predicate}) = 1 FROM system.view_refreshes "
         f"WHERE database = '{database}' AND view = '{view}'",
         check_callback=lambda result: result == "1\n",
         retry_count=100,
         sleep_time=0.1,
     )
+    assert result == "1\n"
+    return result
 
 
 def test_cycle_retry_shared_inputs_after_restart(retry_database):
@@ -120,12 +122,12 @@ def test_cycle_retry_shared_inputs_after_restart(retry_database):
     # A genuinely newer EVERY dependency must bypass the shared backoff, on the other replica.
     # The clock is still at second 10, well before the retry deadline at second 71.
     wait_retry_state(node2, database, "b", "last_success_time IS NOT NULL")
-    node2.query_with_retry(
+    assert node2.query_with_retry(
         f"SELECT count() FROM {database}.b",
         check_callback=lambda result: result == "1\n",
         retry_count=100,
         sleep_time=0.1,
-    )
+    ) == "1\n"
 
 
 def test_cycle_retry_with_detached_transitive_dependency(retry_database):
@@ -159,12 +161,12 @@ def test_cycle_retry_with_detached_transitive_dependency(retry_database):
     )
     # No manual refresh after reattachment: the retained input must restart the whole cycle.
     wait_retry_state(node, database, "c", "last_success_time IS NOT NULL")
-    node.query_with_retry(
+    assert node.query_with_retry(
         f"SELECT count() >= 2 FROM {database}.a",
         check_callback=lambda result: result == "1\n",
         retry_count=100,
         sleep_time=0.1,
-    )
+    ) == "1\n"
 
 
 @pytest.fixture(scope="module", autouse=True)
