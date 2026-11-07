@@ -140,6 +140,12 @@ class ClickHouseIcebergWriter(Writer):
                     t for t in caps.partition_transforms if t != "bucket"
                 ),
             )
+        if gates.active("clickhouse_iceberg_truncate_int_partition_type"):
+            caps = dataclasses.replace(
+                caps,
+                excluded_partition_shapes=caps.excluded_partition_shapes
+                + (("truncate", "int"),),
+            )
         return caps
 
     @property

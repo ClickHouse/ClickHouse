@@ -65,6 +65,11 @@ KNOWN_ISSUES = [
         "https://github.com/ClickHouse/ClickHouse/issues/125366",
         "ClickHouse writes Iceberg `bucket` partition values as `long` instead of `int`, so Spark never matches a ClickHouse position delete file that covers two data files of a partition and returns the rows that `DELETE` or `UPDATE` removed; the ClickHouse Iceberg writer does not partition by `bucket`.",
     ),
+    KnownIssue(
+        "clickhouse_iceberg_truncate_int_partition_type",
+        "https://github.com/ClickHouse/ClickHouse/issues/118905",
+        "ClickHouse writes Iceberg `truncate` partition values of an `int` column as `long` (`icebergTruncate` returns `Int64` for `Int32`), so Spark never matches a ClickHouse position delete file that covers two data files of a partition and returns the rows that `DELETE` or `UPDATE` removed; the ClickHouse Iceberg writer does not partition `int` columns by `truncate`.",
+    ),
 ]
 
 
