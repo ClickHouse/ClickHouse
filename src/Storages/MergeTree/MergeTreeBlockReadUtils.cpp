@@ -116,7 +116,7 @@ bool injectRequiredColumnsRecursively(
             /// If the column was dropped by a pending mutation that hasn't been applied yet,
             /// the data in this part is stale. Treat it as missing so that the default value is used.
             /// This can happen if the column was dropped and then re-added with the same name.
-            && !(alter_conversions && alter_conversions->isColumnDropped(column_name_in_part, share_nested)))
+            && !(alter_conversions && alter_conversions->isColumnDropped(column_name_in_part, share_nested, &data_part_info_for_reader)))
         {
             /// Resolved against the serialization the part holds for the column - which it always does, the column
             /// comes from its own list - instead of a newly built one.

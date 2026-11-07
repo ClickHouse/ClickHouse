@@ -128,10 +128,20 @@ static MutationCommand createLightweightDeleteCommand(const MutationCommand & co
 AlterConversions::AlterConversions(
     const MutationCommands & mutation_commands_,
     const PatchPartsForReader & patch_parts_,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const ColumnsDescription * schema)
 {
     for (const auto & command : mutation_commands_)
         addMutationCommand(command, context);
+
+    if (schema)
+    {
+        for (const auto & name : dropped_columns)
+        {
+            if (schema->has(name) || schema->hasNested(name))
+                exact_column_drops.insert(name);
+        }
+    }
 
     for (const auto & patch : patch_parts_)
         addPatchPart(patch);
@@ -356,23 +366,37 @@ NameSet AlterConversions::getColumnsInvalidatingIndexes() const
     return res;
 }
 
-bool AlterConversions::isColumnDropped(const std::string & name, bool share_nested_offsets) const
+bool AlterConversions::isColumnDropped(
+    const std::string & name,
+    bool share_nested_offsets,
+    const IMergeTreeDataPartInfoForReader * part_info) const
 {
-    /// Check exact match (e.g. DROP COLUMN `n.s`)
     if (dropped_columns.contains(name))
         return true;
 
-    /// When share_nested_offsets is disabled, dotted-name columns are independent
-    /// and dropping `n` should not affect `n.a`.
+    /// Dotted names are independent when nested offsets are not shared.
     if (!share_nested_offsets)
         return false;
 
-    /// Check if the parent nested column was dropped (e.g. DROP COLUMN `n` should match `n.s`, `n.d`, etc.)
+    /// `DROP n` drops `n.*` only when `n` is a Nested parent, not its own column or missing-column marker.
     auto nested_prefix_end = name.find('.');
-    if (nested_prefix_end != std::string::npos && dropped_columns.contains(name.substr(0, nested_prefix_end)))
-        return true;
+    if (nested_prefix_end == std::string::npos)
+        return false;
 
-    return false;
+    const String prefix = name.substr(0, nested_prefix_end);
+    if (!dropped_columns.contains(prefix))
+        return false;
+
+    /// Exact `n` (including one that was never stored) leaves `n.*` in the schema. A nested-parent
+    /// drop removes them, so only then is `n.a` dropped along with `n`.
+    if (exact_column_drops.contains(prefix))
+        return false;
+
+    if (part_info
+        && (part_info->getColumns().contains(prefix) || part_info->getSerializationInfos().isMissingColumn(prefix)))
+        return false;
+
+    return true;
 }
 
 PrewhereExprSteps AlterConversions::getMutationSteps(

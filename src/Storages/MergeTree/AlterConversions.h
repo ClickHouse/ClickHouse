@@ -8,6 +8,7 @@ namespace DB
 {
 
 struct StorageInMemoryMetadata;
+class ColumnsDescription;
 class IMergeTreeDataPartInfoForReader;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
@@ -23,7 +24,8 @@ public:
     AlterConversions(
         const MutationCommands & mutation_commands_,
         const PatchPartsForReader & patch_parts_,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        const ColumnsDescription * schema = nullptr);
 
     struct RenamePair
     {
@@ -44,7 +46,11 @@ public:
 
     /// Column was dropped by a pending mutation (data in part is stale).
     /// `name` is the name the column has in the part, not in the current metadata.
-    bool isColumnDropped(const std::string & name, bool share_nested_offsets = true) const;
+    /// `part_info`, when set, keeps a dotted column when `name`'s prefix is its own column or missing-column marker.
+    bool isColumnDropped(
+        const std::string & name,
+        bool share_nested_offsets = true,
+        const IMergeTreeDataPartInfoForReader * part_info = nullptr) const;
 
     static bool isSupportedDataMutation(MutationCommand::Type type);
     static bool isSupportedAlterMutation(MutationCommand::Type type);
@@ -128,6 +134,10 @@ private:
     /// Columns that were dropped by pending mutations.
     /// If a column with the same name is re-added, old data in parts should be ignored.
     NameSet dropped_columns;
+
+    /// Subset of `dropped_columns` whose name is an exact column, or whose dotted siblings are still
+    /// in the table schema. Those drops must not hide `name.*`.
+    NameSet exact_column_drops;
 
     /// Every name used by a pending `RENAME COLUMN` (both sides) or `DROP COLUMN` command, as written
     /// in the command, before the normalization done for `rename_map` and `dropped_columns`.

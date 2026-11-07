@@ -83,6 +83,11 @@ struct StorageInMemoryMetadata
     /// (zero-initialization is important)
     int32_t metadata_version = 0;
 
+    /// `Memory` schema generation at the moment this snapshot was published.
+    /// An INSERT keeps the snapshot it opened with, so the generation has to travel with it.
+    /// Other engines leave this at 0. Not part of the table definition.
+    UInt64 memory_schema_generation = 0;
+
     ///  Current state of a datalake table.
     std::optional<DataLakeTableStateSnapshot> datalake_table_state;
 
