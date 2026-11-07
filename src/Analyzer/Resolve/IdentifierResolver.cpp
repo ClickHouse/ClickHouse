@@ -382,25 +382,21 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
     /// converted to; the catalog table may have been altered since. Take the types from it, but
     /// keep the catalog storage so engine checks (FINAL, SAMPLE, `_shard_num`) see the real table.
     /// `replaceStorageInQueryTree` swaps the view source in for execution after the passes.
-    /// The inner query of an ordinary view reads the table itself.
+    /// An analysis that does not swap it in (`replaced_storage`), like the inner query of an ordinary view, reads the table itself.
     ///
     /// If this analysis swaps the view source in (`replaced_storage`), the real table is needed only
     /// for its metadata, so skip taking a snapshot of its data. For `MergeTree` tables that snapshot
     /// covers all active parts, and taking it for every block and every view is expensive on tables
-    /// with many parts. A nested analysis can have the view source in the context but not swap it in
-    /// itself. Such a node may read the real table, so it keeps the data: a missed swap then costs
-    /// a full snapshot, not an empty read.
+    /// with many parts.
     ///
     /// A snapshot from `getStorageSnapshot` can be shared by every read of the table in the query,
     /// so only a copy gets the view source's types.
     StorageSnapshotPtr storage_snapshot;
     if (auto view_source = context->getViewSource();
-        view_source && !context->isViewInnerQuery()
+        view_source && view_source == replaced_storage && !context->isViewInnerQuery()
         && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted())
     {
-        storage_snapshot = replaced_storage && replaced_storage == view_source
-            ? storage->getStorageSnapshotWithoutData(metadata_snapshot, context)
-            : storage->getStorageSnapshot(metadata_snapshot, context);
+        storage_snapshot = storage->getStorageSnapshotWithoutData(metadata_snapshot, context);
         auto view_source_metadata = view_source->getInMemoryMetadataPtr(context, false);
         storage_snapshot = storage_snapshot->clone(view_source_metadata, storage_snapshot->data);
     }
