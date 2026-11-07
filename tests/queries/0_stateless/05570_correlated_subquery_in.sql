@@ -300,6 +300,15 @@ SELECT n, n IN (SELECT c2.n FROM c AS c2 WHERE c2.n = c.n) FROM c ORDER BY n;
 SELECT 'distinct';
 SELECT k, x, x IN (SELECT DISTINCT e FROM i WHERE i.k = o.k) FROM o ORDER BY k, x;
 SELECT k, x, x IN (SELECT DISTINCT e FROM i WHERE i.k = o.k) FROM o ORDER BY k, x SETTINGS max_rows_in_distinct = 1, distinct_overflow_mode = 'break'; -- { serverError NOT_IMPLEMENTED }
+SELECT k, x,
+    x IN (SELECT e FROM i WHERE i.k = o.k UNION DISTINCT SELECT j.e FROM j WHERE j.a = o.k * 10) AS got,
+    isNotDistinctFrom(got, multiIf(
+        k = 1, x IN (SELECT e FROM i WHERE i.k = 1 UNION DISTINCT SELECT j.e FROM j WHERE j.a = 10),
+        k = 2, x IN (SELECT e FROM i WHERE i.k = 2 UNION DISTINCT SELECT j.e FROM j WHERE j.a = 20),
+        x IN (SELECT e FROM i WHERE i.k = 3 UNION DISTINCT SELECT j.e FROM j WHERE j.a = 30)))
+FROM o ORDER BY k, x;
+SELECT k, x, x IN (SELECT e FROM i WHERE i.k = o.k UNION DISTINCT SELECT j.e FROM j WHERE j.a = o.k * 10)
+FROM o ORDER BY k, x SETTINGS max_rows_in_distinct = 1, distinct_overflow_mode = 'break'; -- { serverError NOT_IMPLEMENTED }
 
 SELECT 'refusals';
 SELECT k FROM o WHERE x IN (SELECT e FROM i WHERE i.k = o.kn); -- { serverError NOT_IMPLEMENTED }

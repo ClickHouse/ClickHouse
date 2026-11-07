@@ -1491,6 +1491,7 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
         column_names.push_back(fmt::format("__in_column_{}_{}_{}", subquery_hash.low64, subquery_hash.high64, i));
 
     /// The set does not depend on DISTINCT, unless DISTINCT is limited or followed by a limit.
+    /// The DISTINCT of an EXCEPT or INTERSECT arm changes the membership, so it is kept.
     const bool distinct_is_unlimited = !settings[Setting::max_rows_in_distinct] && !settings[Setting::max_bytes_in_distinct];
     std::function<void(const QueryTreeNodePtr &)> drop_distinct = [&](const QueryTreeNodePtr & subquery)
     {
@@ -1501,6 +1502,13 @@ ProjectionNames QueryAnalyzer::resolveInWithCorrelatedSubquery(
         }
         else if (auto * union_node = subquery->as<UnionNode>())
         {
+            const auto union_mode = union_node->getUnionMode();
+            if (union_mode != SelectUnionMode::UNION_ALL && union_mode != SelectUnionMode::UNION_DISTINCT)
+                return;
+
+            if (union_mode == SelectUnionMode::UNION_DISTINCT && distinct_is_unlimited)
+                union_node->setUnionMode(SelectUnionMode::UNION_ALL);
+
             for (const auto & union_query : union_node->getQueries().getNodes())
                 drop_distinct(union_query);
         }

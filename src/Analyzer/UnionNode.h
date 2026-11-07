@@ -196,6 +196,9 @@ public:
         return union_mode;
     }
 
+    /// Set union mode, it must be normalized
+    void setUnionMode(SelectUnionMode union_mode_value);
+
     /// Get union node queries
     const ListNode & getQueries() const
     {

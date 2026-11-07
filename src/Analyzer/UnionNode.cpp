@@ -72,6 +72,16 @@ UnionNode::UnionNode(
     children[correlated_columns_list_index] = std::make_shared<ListNode>();
 }
 
+void UnionNode::setUnionMode(SelectUnionMode union_mode_value)
+{
+    if (union_mode_value == SelectUnionMode::UNION_DEFAULT ||
+        union_mode_value == SelectUnionMode::EXCEPT_DEFAULT ||
+        union_mode_value == SelectUnionMode::INTERSECT_DEFAULT)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION mode {} must be normalized", toString(union_mode_value));
+
+    union_mode = union_mode_value;
+}
+
 bool UnionNode::isResolved() const
 {
     for (const auto & query_node : getQueries().getNodes())
