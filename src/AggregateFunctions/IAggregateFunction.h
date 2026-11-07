@@ -463,12 +463,23 @@ public:
         ssize_t if_argument_pos = -1) const = 0;
 
     /// The version of "addBatchSinglePlace", that handle sparse columns as arguments.
+    /// It does not have to add the rows in their order: the default implementation adds
+    /// all non-default values first and then all default rows.
     virtual void addBatchSparseSinglePlace(
         size_t row_begin,
         size_t row_end,
         AggregateDataPtr __restrict place,
         const IColumn ** columns,
         Arena * arena) const;
+
+    /// The same as "addBatchSparseSinglePlace", but adds the rows in their order.
+    /// Used for functions whose result depends on the order of rows (`is_order_dependent`).
+    virtual void addBatchSparseSinglePlaceInOrder(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena) const = 0;
 
     /** The same for single place when need to aggregate only filtered data.
       * Instead of using an if-column, the condition is combined inside the null_map
@@ -889,6 +900,41 @@ public:
             for (size_t i = row_begin; i < row_end; ++i)
                 static_cast<const Derived *>(this)->add(place, columns, i, arena);
         }
+    }
+
+    void addBatchSparseSinglePlaceInOrder(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
+        const auto * values = &column_sparse.getValuesColumn();
+        const auto & offsets = column_sparse.getOffsetsData();
+
+        /// Add the gaps of default rows and the runs of consecutive non-default rows one after another.
+        /// The value of the `i`-th non-default row is at `i + 1` in `values`, the default value is at 0.
+        size_t from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin();
+        size_t to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin();
+        size_t row = row_begin;
+
+        while (from < to)
+        {
+            if (offsets[from] > row)
+                static_cast<const Derived *>(this)->addManyDefaults(place, &values, offsets[from] - row, arena);
+
+            size_t run_end = from + 1;
+            while (run_end < to && offsets[run_end] == offsets[run_end - 1] + 1)
+                ++run_end;
+
+            static_cast<const Derived *>(this)->addBatchSinglePlace(from + 1, run_end + 1, place, &values, arena, -1);
+            row = offsets[run_end - 1] + 1;
+            from = run_end;
+        }
+
+        if (row < row_end)
+            static_cast<const Derived *>(this)->addManyDefaults(place, &values, row_end - row, arena);
     }
 
     void addBatchSinglePlaceNotNull( /// NOLINT

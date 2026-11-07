@@ -562,6 +562,17 @@ public:
         this->nested_function->addBatchSinglePlace(from, to, this->nestedPlace(place), &nested_column, arena, -1);
     }
 
+    /// The default rows are NULL and are skipped, so `addBatchSparseSinglePlace` already adds the rows in their order.
+    void addBatchSparseSinglePlaceInOrder(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        addBatchSparseSinglePlace(row_begin, row_end, place, columns, arena);
+    }
+
     void addBatchSparse(
         size_t row_begin,
         size_t row_end,
